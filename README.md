@@ -15,7 +15,7 @@ As decisões de arquitetura, a estrutura de pastas e as regras do projeto estão
 
 ```bash
 npm install
-cp .env.example .env   # preencha com a config do app da Web do Firebase (projeto imagine-up)
+cp .env.example .env   # preencha com a config do app da Web do Firebase (projeto imagine-up-app)
 npm start
 ```
 
