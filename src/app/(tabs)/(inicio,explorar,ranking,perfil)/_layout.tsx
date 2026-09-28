@@ -1,11 +1,11 @@
 import { Stack } from 'expo-router';
 
-import { colors } from '@/theme';
+import { useStackScreenOptions } from '@/hooks/use-stack-screen-options';
 
 /**
  * Uma pilha por aba. A pasta com os quatro grupos gera um layout para cada um,
  * e a âncora diz qual tela fica na base da pilha (inclusive quando o app abre
- * direto num link de artista ou de post).
+ * direto num link de artista).
  */
 export const unstable_settings = {
   inicio: { anchor: 'index' },
@@ -15,9 +15,5 @@ export const unstable_settings = {
 };
 
 export default function TabStackLayout() {
-  return (
-    <Stack
-      screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.background } }}
-    />
-  );
+  return <Stack screenOptions={useStackScreenOptions()} />;
 }

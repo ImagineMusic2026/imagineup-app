@@ -55,7 +55,12 @@ module.exports = defineConfig([
   },
   {
     // Os únicos lugares que podem tocar nas APIs cruas que a regra acima bloqueia.
-    files: ['src/components/text/**', 'src/services/haptics/**', '**/__tests__/**'],
+    files: [
+      'src/components/text/**',
+      'src/components/error-boundary/**',
+      'src/services/haptics/**',
+      '**/__tests__/**',
+    ],
     rules: { 'no-restricted-imports': 'off' },
   },
   {

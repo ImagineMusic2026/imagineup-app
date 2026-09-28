@@ -1,4 +1,4 @@
-import { storage, StorageKeys } from '@/services/storage';
+import { storage, StorageKeys } from '@/storage/storage';
 
 export interface PendingInvite {
   code: string;

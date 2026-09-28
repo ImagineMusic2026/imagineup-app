@@ -7,7 +7,7 @@ import { Screen } from '@/components/screen';
 import { Text } from '@/components/text';
 import { TextInput } from '@/components/text-input';
 import { t } from '@/i18n';
-import { isFirebaseConfigured } from '@/services/firebase';
+import { isFirebaseConfigured } from '@/firebase';
 import { colors, spacing } from '@/theme';
 
 import { authErrorMessageKey } from '../api';
@@ -17,7 +17,7 @@ import { signInSchema, type SignInForm } from '../schemas';
 /** 1k. Por enquanto, e-mail e senha; o visual final segue o protótipo. */
 export function SignInScreen() {
   const signIn = useSignIn();
-  const { control, handleSubmit, formState } = useForm<SignInForm>({
+  const { control, handleSubmit, formState, setFocus } = useForm<SignInForm>({
     resolver: zodResolver(signInSchema),
     defaultValues: { email: '', password: '' },
   });
@@ -45,8 +45,10 @@ export function SignInScreen() {
         <Controller
           control={control}
           name="email"
-          render={({ field: { onChange, onBlur, value } }) => (
+          render={({ field: { ref, onChange, onBlur, value } }) => (
             <TextInput
+              // O ref deixa o envio inválido levar o foco ao campo com erro.
+              ref={ref}
               label={t('auth.email')}
               value={value}
               onChangeText={onChange}
@@ -57,14 +59,17 @@ export function SignInScreen() {
               keyboardType="email-address"
               textContentType="emailAddress"
               returnKeyType="next"
+              submitBehavior="submit"
+              onSubmitEditing={() => setFocus('password')}
             />
           )}
         />
         <Controller
           control={control}
           name="password"
-          render={({ field: { onChange, onBlur, value } }) => (
+          render={({ field: { ref, onChange, onBlur, value } }) => (
             <TextInput
+              ref={ref}
               label={t('auth.password')}
               value={value}
               onChangeText={onChange}
@@ -79,7 +84,7 @@ export function SignInScreen() {
           )}
         />
         {signIn.isError ? (
-          <Text variant="caption" color={colors.danger} accessibilityLiveRegion="polite">
+          <Text variant="caption" color={colors.danger}>
             {t(authErrorMessageKey(signIn.error))}
           </Text>
         ) : null}

@@ -1,7 +1,7 @@
 import axios, { type AxiosError, type InternalAxiosRequestConfig } from 'axios';
 
 import { apiUrl } from '@/config/env';
-import { getFirebaseAuth, isFirebaseConfigured } from '@/services/firebase';
+import { getFirebaseAuth, isFirebaseConfigured } from '@/firebase';
 
 import { toApiError } from './errors';
 
@@ -23,7 +23,11 @@ export const api = axios.create({
 
 async function currentIdToken(forceRefresh = false): Promise<string | null> {
   if (!isFirebaseConfigured) return null;
-  const user = getFirebaseAuth().currentUser;
+  const auth = getFirebaseAuth();
+  // O app pode abrir as abas antes do Firebase confirmar a sessão (dica de sessão
+  // local); sem esperar, a primeira requisição sairia sem token.
+  await auth.authStateReady();
+  const user = auth.currentUser;
   return user ? user.getIdToken(forceRefresh) : null;
 }
 

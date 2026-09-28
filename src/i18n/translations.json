@@ -34,7 +34,7 @@
   "onboarding": {
     "chooseArtists": {
       "title": "Quem você acompanha?",
-      "subtitle": "Escolha pelo menos 3 artistas para montar seu início."
+      "subtitle": "Escolha pelo menos 3 para montar seu feed."
     }
   },
   "home": {
@@ -100,5 +100,9 @@
   "points": {
     "balance": "{{points}} pontos",
     "earned": "{{points}} pontos"
+  },
+  "errors": {
+    "title": "Algo deu errado",
+    "message": "Tente de novo. Se continuar, feche e abra o app."
   }
 }

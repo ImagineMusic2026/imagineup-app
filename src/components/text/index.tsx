@@ -9,9 +9,15 @@ export interface TextProps extends NativeTextProps {
   tabular?: boolean;
 }
 
-// Tamanhos pequenos do design quebram o layout com fonte muito ampliada; o
-// limite ainda deixa o texto crescer para quem precisa.
-const MAX_FONT_SIZE_MULTIPLIER = 1.6;
+// O texto cresce até 200% com a fonte do sistema (WCAG 1.4.4). Só as variantes
+// minúsculas presas a um layout fixo (tab bar, chips) param antes; a tab bar
+// compensa com o visualizador de conteúdo ampliado do iOS.
+const DEFAULT_MAX_FONT_SIZE_MULTIPLIER = 2;
+const MAX_FONT_SIZE_MULTIPLIER: Partial<Record<TypographyVariant, number>> = {
+  tabLabel: 1.3,
+  tabLabelActive: 1.3,
+  chip: 1.5,
+};
 
 /** Todo texto do app passa por aqui, com as variantes do tema. */
 export function Text({
@@ -19,13 +25,17 @@ export function Text({
   color = colors.text,
   tabular = false,
   style,
-  maxFontSizeMultiplier = MAX_FONT_SIZE_MULTIPLIER,
+  maxFontSizeMultiplier,
   ...props
 }: TextProps) {
   return (
     <NativeText
       {...props}
-      maxFontSizeMultiplier={maxFontSizeMultiplier}
+      maxFontSizeMultiplier={
+        maxFontSizeMultiplier ??
+        MAX_FONT_SIZE_MULTIPLIER[variant] ??
+        DEFAULT_MAX_FONT_SIZE_MULTIPLIER
+      }
       style={[typography[variant], { color }, tabular && { fontVariant: ['tabular-nums'] }, style]}
     />
   );

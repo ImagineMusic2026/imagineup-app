@@ -1,7 +1,7 @@
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
 import { usePathname } from 'expo-router';
-import { BottomTabBarHeightCallbackContext, type BottomTabBarProps } from 'expo-router/js-tabs';
+import { BottomTabBarHeightCallbackContext } from 'expo-router/js-tabs';
 import type { LucideIcon } from 'lucide-react-native';
 import { useContext } from 'react';
 import { Platform, StyleSheet, View, type LayoutChangeEvent } from 'react-native';
@@ -13,7 +13,9 @@ import { Text } from '@/components/text';
 import { colors, layout, radii, shadows, spacing } from '@/theme';
 import { withAlpha } from '@/utils/color';
 
-import { useTabItems, type TabItem } from './use-tab-items';
+import type { TabItem } from './tab-items';
+
+export { toTabItems, type TabItem } from './tab-items';
 
 export interface TabBarCenterAction {
   icon: LucideIcon;
@@ -21,7 +23,8 @@ export interface TabBarCenterAction {
   onPress: () => void;
 }
 
-export interface TabBarProps extends BottomTabBarProps {
+export interface TabBarProps {
+  items: TabItem[];
   /** Botão rosa no meio da barra, que não é aba: dispara uma ação. */
   centerAction?: TabBarCenterAction;
 }
@@ -29,14 +32,13 @@ export interface TabBarProps extends BottomTabBarProps {
 // No Ranking (1f) o card "Você" flutua sobre a barra, então ela fica sólida.
 const SOLID_ON = ['/ranking'];
 
-const CENTER_WIDTH = 46;
-const CENTER_HEIGHT = 34;
-const CENTER_HIT_SLOP = {
-  top: (layout.minTouchTarget - CENTER_HEIGHT) / 2,
-  bottom: (layout.minTouchTarget - CENTER_HEIGHT) / 2,
-  left: 4,
-  right: 4,
-};
+// O espaço de cima da barra fica dentro de cada item, para contar como área de
+// toque. hitSlop não serve aqui: no Fabric do iOS, toque fora do pai não chega.
+const ITEM_PADDING_TOP = 11;
+
+// No iOS o papel "tab" não vira nenhum trait e o VoiceOver não diz que é
+// tocável; o React Navigation dentro do expo-router usa "button" pelo mesmo motivo.
+const TAB_ROLE = Platform.OS === 'ios' ? 'button' : 'tab';
 
 function TabButton({ item }: { item: TabItem }) {
   const color = item.focused ? colors.accent : colors.textMuted;
@@ -45,9 +47,12 @@ function TabButton({ item }: { item: TabItem }) {
       onPress={item.onPress}
       onLongPress={item.onLongPress}
       haptic={item.focused ? null : 'selection'}
-      accessibilityRole="tab"
+      accessibilityRole={TAB_ROLE}
       accessibilityState={{ selected: item.focused }}
       accessibilityLabel={item.accessibilityLabel}
+      // Rótulo de 9,5 px: segurar o toque mostra o item ampliado (iOS).
+      accessibilityShowsLargeContentViewer
+      accessibilityLargeContentTitle={item.label}
       style={styles.item}
     >
       {item.renderIcon(color)}
@@ -63,8 +68,7 @@ function TabButton({ item }: { item: TabItem }) {
  * iOS, ícones só em contorno e o ativo em rosa. Fica por cima do conteúdo, então
  * as telas somam `useTabBarInset()` ao espaço de baixo.
  */
-export function TabBar({ centerAction, ...props }: TabBarProps) {
-  const items = useTabItems(props);
+export function TabBar({ items, centerAction }: TabBarProps) {
   const insets = useSafeAreaInsets();
   const onHeightChange = useContext(BottomTabBarHeightCallbackContext);
   const solid = SOLID_ON.includes(usePathname());
@@ -102,17 +106,16 @@ export function TabBar({ centerAction, ...props }: TabBarProps) {
           <TabButton key={item.key} item={item} />
         ))}
         {centerAction ? (
-          <View style={styles.item}>
-            <PressableScale
-              onPress={centerAction.onPress}
-              haptic="tap"
-              accessibilityLabel={centerAction.accessibilityLabel}
-              hitSlop={CENTER_HIT_SLOP}
-              style={styles.centerButton}
-            >
+          <PressableScale
+            onPress={centerAction.onPress}
+            haptic="tap"
+            accessibilityLabel={centerAction.accessibilityLabel}
+            style={styles.item}
+          >
+            <View style={styles.centerButton}>
               <Icon icon={centerAction.icon} size={20} strokeWidth={2.4} color={colors.onAccent} />
-            </PressableScale>
-          </View>
+            </View>
+          </PressableScale>
         ) : null}
         {right.map((item) => (
           <TabButton key={item.key} item={item} />
@@ -128,9 +131,9 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    paddingTop: 11,
     paddingHorizontal: 10,
-    borderTopWidth: StyleSheet.hairlineWidth,
+    // 1 pt como no protótipo; hairline some sobre o fundo escuro.
+    borderTopWidth: 1,
     borderTopColor: colors.divider,
     overflow: 'hidden',
   },
@@ -139,17 +142,18 @@ const styles = StyleSheet.create({
   },
   row: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
+    alignItems: 'stretch',
   },
   item: {
     flex: 1,
     alignItems: 'center',
     gap: spacing.iconLabelGap,
-    minHeight: layout.tabBarContentHeight - 11,
+    paddingTop: ITEM_PADDING_TOP,
+    minHeight: Math.max(layout.tabBarContentHeight, layout.minTouchTarget),
   },
   centerButton: {
-    width: CENTER_WIDTH,
-    height: CENTER_HEIGHT,
+    width: 46,
+    height: 34,
     borderRadius: radii.sm,
     alignItems: 'center',
     justifyContent: 'center',

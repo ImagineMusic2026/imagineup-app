@@ -7,7 +7,7 @@ import {
 } from 'firebase/auth';
 
 import type { TranslationKey } from '@/i18n';
-import { getFirebaseAuth, isFirebaseConfigured } from '@/services/firebase';
+import { getFirebaseAuth, isFirebaseConfigured } from '@/firebase';
 import type { SessionUser } from '@/stores/session';
 
 export function toSessionUser(user: User): SessionUser {

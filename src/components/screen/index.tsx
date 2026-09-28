@@ -1,5 +1,12 @@
 import type { ReactNode } from 'react';
-import { ScrollView, StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
+import {
+  KeyboardAvoidingView,
+  ScrollView,
+  StyleSheet,
+  View,
+  type StyleProp,
+  type ViewStyle,
+} from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { OfflineBanner } from '@/components/offline-banner';
@@ -46,15 +53,19 @@ export function Screen({
     <View style={[styles.root, frame]}>
       <OfflineBanner />
       {scroll ? (
-        <ScrollView
-          style={styles.fill}
-          contentContainerStyle={[styles.grow, inner]}
-          keyboardShouldPersistTaps="handled"
-          keyboardDismissMode="on-drag"
-          showsVerticalScrollIndicator={false}
-        >
-          {children}
-        </ScrollView>
+        // 'padding' nos dois sistemas: com edge-to-edge (obrigatório no Android)
+        // a janela não encolhe com o teclado, e o formulário ficaria coberto.
+        <KeyboardAvoidingView style={styles.fill} behavior="padding">
+          <ScrollView
+            style={styles.fill}
+            contentContainerStyle={[styles.grow, inner]}
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode="on-drag"
+            showsVerticalScrollIndicator={false}
+          >
+            {children}
+          </ScrollView>
+        </KeyboardAvoidingView>
       ) : (
         <View style={[styles.fill, inner]}>{children}</View>
       )}

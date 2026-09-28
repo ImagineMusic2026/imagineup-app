@@ -19,9 +19,12 @@ interface ParsedLink {
 function parse(input: string): ParsedLink {
   // Em https o que vem depois de // é o domínio; no esquema do app
   // (imagineup://c/ABC) já é o caminho.
-  const withoutScheme = /^https?:\/\//i.test(input)
+  let withoutScheme = /^https?:\/\//i.test(input)
     ? input.replace(/^https?:\/\/[^/]*/i, '')
     : input.replace(/^[a-z][a-z0-9+.-]*:\/\//i, '');
+  // No Expo Go o link vem como exp://192.168.0.10:8081/--/c/ABC.
+  if (/^exps?:\/\//i.test(input))
+    withoutScheme = withoutScheme.replace(/^[^/]*\/--(?=\/|\?|$)/, '');
   const [pathPart = '', rest = ''] = withoutScheme.split('?');
   const queryPart = rest.split('#')[0] ?? '';
   const cleanPath = pathPart.split('#')[0] ?? '';

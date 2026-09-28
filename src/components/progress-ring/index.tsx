@@ -20,16 +20,18 @@ export interface ProgressRingProps {
 }
 
 /**
- * Anel de progresso em Skia (meta da temporada, nível do avatar). O React Native
+ * Anel de progresso em Skia (meta da temporada, nível do avatar). Os padrões
+ * são os do anel da 1g: espessura 7, trilho branco a .1 e ponta reta (ponta
+ * redonda faria 12/20 parecer mais que 60%). O React Native
  * não desenha gradiente cônico; o Skia sim, e anima direto do shared value do
  * Reanimated, sem passar pelo JS a cada quadro.
  */
 export function ProgressRing({
   progress,
   size = 62,
-  strokeWidth = 6,
+  strokeWidth = 7,
   colors: ringColors = [colors.points],
-  trackColor = withAlpha(colors.text, 0.08),
+  trackColor = withAlpha(colors.text, 0.1),
   accessibilityLabel,
   style,
   children,
@@ -70,7 +72,7 @@ export function ProgressRing({
           path={path}
           style="stroke"
           strokeWidth={strokeWidth}
-          strokeCap="round"
+          strokeCap="butt"
           start={0}
           end={end}
           color={ringColors[0]}

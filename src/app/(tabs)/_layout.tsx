@@ -3,7 +3,7 @@ import { Tabs } from 'expo-router/js-tabs';
 import { House, Plus, Search, Trophy, User } from 'lucide-react-native';
 
 import { Icon } from '@/components/icon';
-import { TabBar } from '@/components/tab-bar';
+import { TabBar, toTabItems } from '@/components/tab-bar';
 import { usePrefersReducedMotion } from '@/hooks/use-prefers-reduced-motion';
 import { t } from '@/i18n';
 import { colors } from '@/theme';
@@ -11,8 +11,8 @@ import { colors } from '@/theme';
 /**
  * Abas JS do Expo Router com a tab bar desenhada no protótipo. As NativeTabs
  * não servem: não aceitam botão central nem o fundo em gradiente com blur.
- * Cada aba é uma pilha própria (pasta com _layout), para que artista e post
- * abram dentro da aba sem esconder a barra.
+ * Cada aba é uma pilha própria (pasta com _layout), para que o artista abra
+ * dentro da aba sem esconder a barra.
  */
 export default function TabsLayout() {
   const reducedMotion = usePrefersReducedMotion();
@@ -26,7 +26,7 @@ export default function TabsLayout() {
       }}
       tabBar={(props) => (
         <TabBar
-          {...props}
+          items={toTabItems(props)}
           centerAction={{
             icon: Plus,
             accessibilityLabel: t('tabs.invite'),

@@ -2,8 +2,9 @@ import { Easing, type WithSpringConfig } from 'react-native-reanimated';
 
 /**
  * Movimento fluido e discreto: curvas suaves, nada de troca seca, e sempre
- * respeitando "reduzir movimento" (as animações do Reanimated já seguem a
- * configuração do sistema por padrão; não passe `ReduceMotion.Never`).
+ * respeitando "reduzir movimento". O AppProviders espelha a opção do sistema no
+ * Reanimated (inclusive quando ela muda com o app aberto), então as animações
+ * seguem sozinhas; não passe `ReduceMotion.Never` numa animação.
  */
 export const motion = {
   duration: {

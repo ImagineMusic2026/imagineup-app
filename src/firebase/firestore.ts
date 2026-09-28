@@ -1,6 +1,6 @@
 import { getFirestore, type Firestore } from 'firebase/firestore';
 
-import { getFirebaseApp } from './app';
+import { getFirebaseApp } from './config';
 
 /**
  * Firestore `(default)` do projeto imagine-up, em southamerica-east1. No SDK JS

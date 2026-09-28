@@ -8,7 +8,11 @@ import { useIsOnline } from '@/hooks/use-is-online';
 import { t } from '@/i18n';
 import { colors, radii, spacing } from '@/theme';
 
-/** Aviso discreto de que a tela mostra o cache salvo, não dados ao vivo. */
+/**
+ * Aviso discreto de que a tela mostra o cache salvo, não dados ao vivo. Cada
+ * Screen montada tem o seu, então o anúncio para o leitor de tela não sai daqui:
+ * sai uma vez só, do `useAnnounceOffline` no AppProviders.
+ */
 export function OfflineBanner() {
   const isOnline = useIsOnline();
   if (isOnline) return null;
@@ -18,8 +22,6 @@ export function OfflineBanner() {
       entering={FadeInUp.duration(250)}
       exiting={FadeOutUp.duration(200)}
       style={styles.container}
-      accessibilityRole="alert"
-      accessibilityLiveRegion="polite"
     >
       <View style={styles.row}>
         <Icon icon={WifiOff} size={14} color={colors.textSecondary} />

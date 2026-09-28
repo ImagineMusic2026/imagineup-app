@@ -8,6 +8,7 @@ describe('link de convite', () => {
     ['imagineup://c/abc_12-x', 'abc_12-x'],
     ['https://imaginegroup.com.br/c/ABC123', 'ABC123'],
     ['/convite/ABC123', 'ABC123'],
+    ['exp://192.168.0.10:8081/--/c/ABC123', 'ABC123'],
   ])('%s leva ao código %s', (path, code) => {
     expect(inviteCodeFromPath(path)).toBe(code);
   });
@@ -23,6 +24,10 @@ describe('link de convite', () => {
     expect(
       parseInviteLink('https://imaginegroup.com.br/artista/netto?ref=ABC123&aba=agenda'),
     ).toEqual({ code: 'ABC123', destination: '/artista/netto?aba=agenda' });
+    expect(parseInviteLink('exp://192.168.0.10:8081/--/artista/netto?ref=ABC123')).toEqual({
+      code: 'ABC123',
+      destination: '/artista/netto',
+    });
     expect(parseInviteLink('imagineup://post/99?ref=ABC123')).toEqual({
       code: 'ABC123',
       destination: '/post/99',

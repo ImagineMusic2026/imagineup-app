@@ -14,7 +14,12 @@ export interface TextInputProps extends Omit<NativeTextInputProps, 'style'> {
   error?: string;
 }
 
-/** Campo de formulário com rótulo visível e erro anunciado pelo leitor de tela. */
+/**
+ * Campo de formulário com rótulo visível. Para o leitor de tela, rótulo e erro
+ * chegam pelo próprio campo (label e hint), então os textos visíveis ficam
+ * escondidos dele e nada é lido duas vezes. Com `ref` do react-hook-form, o
+ * envio inválido leva o foco ao primeiro campo com erro.
+ */
 export const TextInput = forwardRef<NativeTextInput, TextInputProps>(function TextInput(
   { label, error, onFocus, onBlur, ...props },
   ref,
@@ -23,7 +28,12 @@ export const TextInput = forwardRef<NativeTextInput, TextInputProps>(function Te
 
   return (
     <View style={styles.container}>
-      <Text variant="labelSmall" color={colors.textSecondary}>
+      <Text
+        variant="labelSmall"
+        color={colors.textSecondary}
+        accessibilityElementsHidden
+        importantForAccessibility="no"
+      >
         {label}
       </Text>
       <NativeTextInput
@@ -44,7 +54,12 @@ export const TextInput = forwardRef<NativeTextInput, TextInputProps>(function Te
         style={[styles.input, focused && styles.focused, !!error && styles.invalid]}
       />
       {error ? (
-        <Text variant="caption" color={colors.danger} accessibilityLiveRegion="polite">
+        <Text
+          variant="caption"
+          color={colors.danger}
+          accessibilityElementsHidden
+          importantForAccessibility="no"
+        >
           {error}
         </Text>
       ) : null}

@@ -42,8 +42,13 @@ Pontos, níveis, missões e resgates são decididos **no servidor**. O app nunca
 
 1. **Expo Router, não React Navigation.** O desenho da tab bar e dos headers não desempata: o Expo Router 57 traz o mesmo código do React Navigation por dentro, e a prop `tabBar` é a mesma. O que decidiu: o convite com atribuição (mês 3) sai da própria árvore de arquivos e do `+native-intent`; `Stack.Protected` separa login, onboarding e app; rotas tipadas; `renderRouter` testa deep link no Jest; e é o caminho oficial da SDK. Desde a SDK 56 não dá para importar `@react-navigation/*` com o Expo Router (o lint bloqueia).
 2. **SDK JS do Firebase, não `@react-native-firebase`.** Sem conta Apple e sem Mac, o único jeito de testar no iPhone é o Expo Go, e o RNFB não roda nele. O custo: o Firestore do SDK JS só tem cache em memória no React Native, então o offline vem do React Query persistido, e não há Crashlytics, Analytics nem App Check nativo. Reavaliar quando a conta Apple sair.
-3. **AsyncStorage, não MMKV.** Mesmo motivo (Expo Go). A troca fica contida em `src/services/storage`, no persister do Query e no store de preferências.
-4. **Estrutura do Delirium adaptada ao Expo Router.** O projeto `clubdelirium/mobile` organiza por `src/domains/<domínio>/{views,components,...}`. Aqui o mesmo desenho vale, com uma diferença: as rotas moram em `src/app`, como arquivos finos que só reexportam a view do domínio.
+3. **AsyncStorage, não MMKV.** Mesmo motivo (Expo Go). A troca fica contida em `src/storage/storage`, no persister do Query e no store de preferências. Se a troca acontecer, o `onRehydrateStorage` das preferências não pode usar `usePreferencesStore` direto: com storage síncrono ele roda dentro do `create`, antes de o store existir, e o app fica preso na splash.
+4. **Estrutura do Delirium (`clubdelirium/mobile`) adaptada ao Expo Router.** Vieram de lá: `src/domains/<domínio>/{views,components,types.ts,consts.ts}`, `src/components/<nome>/index.tsx`, `src/firebase`, `src/storage/storage/{index,keys}.ts`, `src/theme/{colors,spacings,borders,shadow,index}.ts`, `src/hooks`, `src/providers` e `src/utils`. O que mudou, e por quê:
+   - O Delirium tinha um nível de público (`domains/customer`, `domains/admin`). Aqui o app só tem o fã (o admin é o painel web), então os domínios ficam direto em `src/domains/<domínio>`.
+   - O `index.tsx` de cada domínio do Delirium montava o navegador. Aqui as rotas são arquivos em `src/app`, e o `index.ts` do domínio vira a API pública dele.
+   - O Delirium usava Context para estado (`src/contexts`); aqui o estado do cliente fica em `src/stores` (Zustand) e o do servidor no React Query.
+   - Não havia camada de API no Delirium (tudo ia direto ao Firestore). Axios, React Query e haptics ficam em `src/services`.
+   - O `secure-storage` entra quando houver segredo para guardar; a sessão do Firebase segue a persistência padrão do SDK JS, no AsyncStorage.
 5. **Abas JS com tab bar própria, não NativeTabs.** As NativeTabs usam a barra do sistema e não aceitam o botão central nem o fundo em gradiente com blur do protótipo.
 
 ## Estrutura
@@ -72,13 +77,16 @@ src/
 │   ├── schemas.ts        # zod
 │   ├── types.ts
 │   └── index.ts          # API pública do domínio; outros domínios importam só daqui
-├── components/<nome>/    # UI compartilhada: text, button, icon, screen, header,
-│                         # tab-bar, pressable-scale, text-input, progress-ring...
-├── services/             # api (axios), firebase, query (client, persister, NetInfo),
-│                         # haptics, storage
+├── components/<nome>/    # UI compartilhada: text, button, icon, screen, header, tab-bar,
+│                         # pressable-scale, text-input, progress-ring, error-boundary...
+├── firebase/             # config (app), auth, firestore
+├── storage/storage/      # AsyncStorage com chaves versionadas (index, keys)
+├── services/             # api (axios), query (client, persister, NetInfo), haptics
 ├── stores/               # Zustand: session (espelho do Auth), preferences (persistido)
-├── hooks/                # use-tab-bar-inset, use-haptics, use-is-online, reduzir movimento
-├── theme/                # colors, typography, spacing (radii, layout), shadows, motion
+├── hooks/                # use-session-gate, use-stack-screen-options, use-tab-bar-inset,
+│                         # use-haptics, use-is-online, use-announce-offline, reduzir movimento
+├── theme/                # colors, typography, spacings (layout), borders (raios), shadow,
+│                         # motion, navigation
 ├── i18n/                 # translations.json (pt-BR) e t()
 ├── config/               # env (zod sobre EXPO_PUBLIC_*), zod (locale pt-BR)
 ├── providers/            # AppProviders
@@ -108,24 +116,27 @@ src/
 
 ## Navegação
 
-- **Guards:** o `_layout.tsx` raiz usa `Stack.Protected` com o status da sessão (`useSessionStore`) e `hasCompletedOnboarding` (`usePreferencesStore`). Telas não navegam para trocar de fluxo: mudou o estado, o guard troca a pilha.
+- **Guards:** o `_layout.tsx` raiz usa `Stack.Protected` com `useSessionGate()` (sessão e onboarding). Telas não navegam para trocar de fluxo: mudou o estado, o guard troca a pilha.
+- **Navegar para rota barrada pelo guard não faz nada, nem avisa.** Quem sai de uma tela que fica fora dos guards (`convite/[codigo]`, `+not-found`) mira em `entryRoute(gate)`, que devolve login, onboarding ou o destino. Para voltar às abas que já existem, `router.dismissTo(..., { withAnchor: true })`; `replace` ou `<Redirect>` empilham outra árvore de abas. `src/navigation/__tests__/guards.test.tsx` trava os dois casos.
+- **Abertura sem esperar a rede:** o uid da última sessão fica em `preferences.lastSessionUid`. Com ele, o app abre nas abas com o cache salvo enquanto o Firebase confirma a sessão (o SDK JS pode levar até 60 s com sinal ruim); se a sessão tiver caído, o listener derruba e os guards corrigem. Por isso o axios espera `auth.authStateReady()` antes de ler o usuário.
 - **Uma pilha por aba** via grupo em array `(inicio,explorar,ranking,perfil)/_layout.tsx`. A tela da base de cada aba sai de `unstable_settings[grupo].anchor`.
 - **Artista é rota compartilhada** e abre dentro da aba de onde veio, com a tab bar. Vindo de link a frio, abre na aba Início com o Início embaixo na pilha (testado em `src/navigation/__tests__/routes.test.tsx`; a doc da Expo fala em ordem alfabética, o código não faz isso).
-- **Tab bar** em `src/components/tab-bar`. `use-tab-items.ts` é o único arquivo que conhece `BottomTabBarProps`, que muda na SDK 58. A barra fica por cima do conteúdo: telas dentro das abas somam `useTabBarInset()` ao espaço de baixo. Tela que não deve mostrar a barra (teclado) fica fora de `(tabs)`, como `post/[postId]`. `tabBarHideOnKeyboard` e `tabBarStyle` não funcionam com barra própria.
+- **Tab bar** em `src/components/tab-bar`. `tab-items.ts` (`toTabItems`) é o único arquivo que conhece `BottomTabBarProps`, que muda na SDK 58; a `TabBar` só recebe itens prontos. A barra fica por cima do conteúdo: telas dentro das abas somam `useTabBarInset()` ao espaço de baixo. Tela que não deve mostrar a barra (teclado) fica fora de `(tabs)`, como `post/[postId]`. `tabBarHideOnKeyboard` e `tabBarStyle` não funcionam com barra própria.
 - **Botão central** abre `/convidar`. No protótipo ele criava post de fã (fora do contrato); virar "Convidar" **precisa de aprovação da cliente por escrito**.
+- **Pilhas:** todo `Stack` usa `useStackScreenOptions()` (sem header, fundo escuro, sem animação com reduzir movimento). As opções de um navegador não passam para os aninhados, então cada pilha chama o hook.
 - **Headers:** todos os Stacks com `headerShown: false`. Os headers são componentes dentro do conteúdo (`LargeTitleHeader`, `BackHeader`, `GreetingHeader`), porque o design rola junto. Não use a prop `header` do Stack.
 - **Sheets:** `presentation: 'formSheet'` do Stack, sem lib de bottom sheet. Testar o Android na primeira dev build.
-- **Links:** esquema `imagineup://`. O `+native-intent` transforma `/c/CODIGO` e qualquer link com `?ref=CODIGO` em `/convite/CODIGO?destino=...`; essa rota guarda o código e segue. Quem credita os pontos é a API, depois do cadastro. Universal Links e App Links dependem do Team ID da Apple e do domínio (UP-46).
+- **Links:** esquema `imagineup://`. O `+native-intent` transforma `/c/CODIGO` e qualquer link com `?ref=CODIGO` em `/convite/CODIGO?destino=...` (inclusive o `exp://.../--/` do Expo Go); essa rota guarda o código e segue. Quem credita os pontos é a API, depois do cadastro. Universal Links e App Links dependem do Team ID da Apple e do domínio (UP-46).
 - **Rotas tipadas:** `.expo/types` é gerado pelo `expo start` ou por `npx expo customize tsconfig.json`. `router.push('/rota-que-nao-existe')` vira erro de tipo.
 
 ## Dados
 
-- **Fluxo:** view → hook de `queries.ts` → `api.ts` → `@/services/api` (axios) ou `@/services/firebase`. View não chama axios nem Firebase.
-- **React Query:** chaves por fábrica no domínio (`postKeys.detail(id)`), incluindo tudo que muda o resultado. O cache vai para o disco (`services/query/persister.ts`) e abre o app offline; dado sensível ou efêmero leva `meta: { persist: false }`. Mudou o formato de algo persistido? O `buster` (versão do app) descarta o cache antigo.
-- **Offline:** sem internet, queries e mutations pausam e o `OfflineBanner` aparece. Mutation que precisa sobreviver a app fechado registra a função em `registerXMutationDefaults` (chamado no `AppProviders`) e usa `mutationKey`. Ação otimista desfaz no erro (modelo: `useToggleLikeMutation`).
+- **Fluxo:** view → hook de `queries.ts` → `api.ts` → `@/services/api` (axios) ou `@/firebase`. View não chama axios nem Firebase.
+- **React Query:** chaves por fábrica no domínio (`postKeys.detail(id)`), incluindo tudo que muda o resultado. O cache vai para o disco (`services/query/persister.ts`) e abre o app offline; dado sensível ou efêmero leva `meta: { persist: false }`. Mudou o formato de algo persistido? Suba `QUERY_CACHE_VERSION` (`services/query/persister.ts`), que viaja no EAS Update. A `version` do app não serve: ela entra no fingerprint e mudá-la corta o update dos binários instalados.
+- **Offline:** sem internet, queries e mutations pausam e o `OfflineBanner` aparece. Mutation que precisa sobreviver a app fechado registra a função em `registerXMutationDefaults` (chamado no `AppProviders`) e usa `mutationKey`. Ação otimista desfaz no erro (modelo: `useToggleLikeMutation`). Mutações pausadas voltam todas juntas quando a rede volta: ações que se anulam (curtir e descurtir) levam `scope` para sair em fila.
 - **axios** (`services/api/client.ts`): manda o ID token do Firebase, renova uma vez no 401 e devolve sempre `ApiError` (`kind`, `status`, `isRetryable`). Base em `EXPO_PUBLIC_API_URL`; sem ela, as queries ficam desligadas.
 - **Zustand** guarda só estado do cliente: `session` (espelho do Firebase Auth, não persistido) e `preferences` (haptics, onboarding, persistido). Perfil, pontos e nível vêm da API pelo React Query.
-- **Firebase:** inicialização preguiçosa em `services/firebase`. Sem `.env`, o app abre, avisa no console e não autentica. Sair limpa o cache do Query, inclusive o do disco.
+- **Firebase:** inicialização preguiçosa em `src/firebase`. Sem `.env`, o app abre, avisa no console e não autentica. Sempre que o Auth diz "sem sessão" (sair no app ou sessão que caiu por fora), o cache do Query vai embora, inclusive o do disco, antes de o guard liberar a próxima tela.
 - **Variáveis:** só `EXPO_PUBLIC_*`, lidas em `src/config/env.ts` com acesso estático. Local em `.env` (modelo no `.env.example`); nas builds, em Environment variables do projeto no expo.dev.
 
 ## Formulários, listas, datas
@@ -138,20 +149,24 @@ src/
 ## Animação e haptics
 
 - O dono quer movimento **fluido e discreto**: curvas suaves (`motion.easing.out`), molas de `motion.spring`, duração sincronizada com o movimento principal, nada de troca seca. Troca de cor entre rosa, lima e escuro interpola em HSV, não em RGB.
-- **Sempre respeite "reduzir movimento"** (`usePrefersReducedMotion`). As animações do Reanimated já seguem o sistema; não passe `ReduceMotion.Never`.
+- **Sempre respeite "reduzir movimento"** (`usePrefersReducedMotion`). O `AppProviders` espelha a opção no `ReducedMotionConfig` do Reanimated, que sozinho só lê o valor da abertura do app; com isso as animações seguem o sistema. Não passe `ReduceMotion.Never` numa animação.
 - Reanimated para transformação, cor, layout, scroll e contadores. Com o React Compiler ligado, use `shared.get()` e `shared.set()`, não `.value`. Skia para o que o RN não desenha: anéis e gradiente cônico (`ProgressRing`), listras da marca, brilho com blur, confete.
-- **Haptics só por evento semântico:** `haptics.trigger('like')` ou `useHaptics()`. A tabela em `src/services/haptics/patterns.ts` decide o toque de cada evento (`tap`, `selection`, `like`, `pointsEarned`, `missionComplete`, `levelUp`, `rankUp`, `redeem`, `insufficientPoints`, `locked`, `confirm`, `refresh`, `success`, `warning`, `error`...). O fã pode desligar nas preferências; rajada do mesmo evento vira um toque. `PressableScale` e `Button` recebem `haptic`.
+- **Haptics só por evento semântico:** `haptics.trigger('like')` ou `useHaptics()`. A tabela em `src/services/haptics/patterns.ts` decide o toque de cada evento (`tap`, `selection`, `like`, `pointsEarned`, `missionComplete`, `levelUp`, `rankUp`, `redeem`, `insufficientPoints`, `locked`, `confirm`, `refresh`, `success`, `warning`, `error`...). O fã pode desligar nas preferências; rajada do mesmo evento vira um toque. `PressableScale` e `Button` recebem `haptic`, que dispara no `onPress` (no início do toque, rolar sobre um card vibraria).
 
 ## Acessibilidade
 
 - Vale a regra do workspace (`.claude/rules/a11y-no-nested-pressables.md` em `Projetos`): props de a11y no pressável de fora, sem role nos filhos, alvo interno repetido oculto, `accessibilityLabel` sempre via `t()`.
-- Alvo de toque mínimo de 44: use `hitSlop` quando o desenho for menor (botões de vidro de 36, chips, botão central).
+- Alvo de toque mínimo de 44. `hitSlop` só vale dentro da área do pai: no Fabric do iOS, toque fora do pai não chega. Quando o pai é justo (tab bar), cresça o próprio pressável e desenhe o visual menor dentro.
 - Ícone é decorativo por padrão (`Icon` já se esconde do leitor de tela).
+- O iOS não tem live region nem papel "alert": mensagem de status (sem internet, erro de login) é anunciada com `AccessibilityInfo.announceForAccessibility`, num lugar só. O papel "tab" também não existe no iOS; a tab bar usa "button" lá, como o React Navigation.
+- Campo de formulário recebe o `ref` do `Controller`, para o envio inválido levar o foco ao primeiro erro. Rótulo e erro chegam ao leitor pelo próprio campo.
+- O texto cresce até 200% (WCAG 1.4.4); só as variantes minúsculas presas a layout fixo têm limite menor (em `components/text`).
 
 ## Testes
 
 - jest-expo com `@testing-library/react-native` **13**. A 14 deixou o `render` assíncrono e quebra o `renderRouter` do expo-router 57.
-- Lógica pura com teste em tabela (`utils`, `invites/deep-link`, `haptics`). Árvore de rotas com `renderRouter` em `src/navigation/__tests__`. Nome de teste descreve o comportamento, em português.
+- Lógica pura com teste em tabela (`utils`, `invites/deep-link`, `auth/schemas`, `haptics`). Árvore de rotas e guards com `renderRouter` em `src/navigation/__tests__`. Nome de teste descreve o comportamento, em português.
+- O Jest roda com o mock do Reanimated (`jest.setup.js`), o resolver do `react-native-worklets` e o lucide apontado para o build CommonJS (`jest.config.js`); sem isso, qualquer teste que importe o tema ou um ícone quebra.
 
 ## Comandos
 
@@ -174,11 +189,11 @@ npm run update:preview    # OTA para o canal preview
 - Update é sempre manual (`npm run update:preview`), nunca automático no push.
 - `.eas/workflows/testflight-ios.yml` (build de produção e envio ao TestFlight, no modelo do VerseUp) só roda à mão até existir a conta Apple; o arquivo diz o que ligar.
 - **Sem conta Apple e sem Play Console:** Android funciona em APK interno com EAS Update; iOS só em build de simulador, que precisa de Mac para rodar. No iPhone, use o Expo Go. `eas submit` e Universal Links esperam as contas.
-- Nunca commitar `.env`, `credentials.json`, `.p8`, `.p12`, `.jks` ou keystores.
+- Nunca commitar `.env`, `credentials.json`, `credentials/`, `.p8`, `.p12`, `.jks`, `.keystore` ou a chave de conta de serviço do Play; o `.gitignore` já cobre, e o repositório é público.
 
 ## Git
 
-- Repositório próprio, separado do `imagineup-painel`.
+- Repositório `ImagineMusic2026/imagineup-app` no GitHub, na conta da cliente e **público** (decisão do dono). Nada sensível entra nele.
 - Commits e PRs **sem** a linha `Co-Authored-By` do Claude e sem rodapé de atribuição: o repositório é da cliente (mesma regra do `imagineup-painel`).
 
 ## Pendências

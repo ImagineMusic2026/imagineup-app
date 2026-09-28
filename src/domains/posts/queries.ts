@@ -86,6 +86,10 @@ export function useToggleLikeMutation() {
 
   const mutation = useMutation({
     mutationKey: postMutationKeys.like,
+    // Mutações pausadas voltam todas juntas quando a rede volta. O scope põe as
+    // curtidas em fila (inclusive as restauradas do disco), para o servidor
+    // receber curtir e descurtir na ordem em que o fã tocou.
+    scope: { id: 'posts-like' },
     mutationFn: (variables: SetLikeVariables) => setPostLike(variables),
     onMutate: async ({ postId, liked }) => {
       await queryClient.cancelQueries({ queryKey: postKeys.detail(postId) });

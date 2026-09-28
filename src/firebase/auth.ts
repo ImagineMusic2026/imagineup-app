@@ -1,7 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getAuth, getReactNativePersistence, initializeAuth, type Auth } from 'firebase/auth';
 
-import { getFirebaseApp } from './app';
+import { getFirebaseApp } from './config';
 
 let auth: Auth | null = null;
 

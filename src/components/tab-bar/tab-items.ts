@@ -15,10 +15,11 @@ export interface TabItem {
 }
 
 /**
- * Único ponto que conhece o navegador de abas. Na SDK 58 o `BottomTabBarProps`
- * perde `navigation` e ganha `emitter` e `navigateToTab`: a migração mexe só aqui.
+ * Único ponto que conhece o navegador de abas: converte as props do navegador
+ * em itens que a TabBar desenha. Na SDK 58 o `BottomTabBarProps` perde
+ * `navigation` e ganha `emitter` e `navigateToTab`; a migração mexe só aqui.
  */
-export function useTabItems({ state, descriptors, navigation }: BottomTabBarProps): TabItem[] {
+export function toTabItems({ state, descriptors, navigation }: BottomTabBarProps): TabItem[] {
   return state.routes
     .filter((route) => {
       // `href: null` no Tabs.Screen chega aqui como tabBarItemStyle display none.

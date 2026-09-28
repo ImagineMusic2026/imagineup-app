@@ -22,19 +22,6 @@ export const spacing = {
   iconLabelGap: 5,
 } as const;
 
-export const radii = {
-  xxs: 10,
-  xs: 11,
-  sm: 12,
-  md: 14,
-  cta: 15,
-  lg: 16,
-  xl: 18,
-  xxl: 20,
-  sheet: 24,
-  pill: 999,
-} as const;
-
 /** Medidas fixas de peças do layout. */
 export const layout = {
   tabBarContentHeight: 46,

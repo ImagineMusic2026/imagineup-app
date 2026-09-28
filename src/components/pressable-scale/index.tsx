@@ -16,7 +16,10 @@ const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 export interface PressableScaleProps extends Omit<PressableProps, 'style' | 'children'> {
   children: ReactNode;
   style?: StyleProp<ViewStyle>;
-  /** Toque do evento, disparado no início do toque. `null` desliga. */
+  /**
+   * Toque do evento, disparado quando o toque vira ação (onPress). No início do
+   * toque ele vibraria também quando o dedo só começa uma rolagem. `null` desliga.
+   */
   haptic?: HapticEvent | null;
   scaleTo?: number;
 }
@@ -32,6 +35,7 @@ export function PressableScale({
   haptic = 'tap',
   scaleTo = motion.pressScale,
   disabled,
+  onPress,
   onPressIn,
   onPressOut,
   accessibilityRole = 'button',
@@ -50,8 +54,11 @@ export function PressableScale({
       disabled={disabled}
       accessibilityRole={accessibilityRole}
       accessibilityState={{ disabled: !!disabled, ...props.accessibilityState }}
-      onPressIn={(event) => {
+      onPress={(event) => {
         if (haptic) haptics.trigger(haptic);
+        onPress?.(event);
+      }}
+      onPressIn={(event) => {
         if (!reducedMotion) {
           scale.set(
             withTiming(scaleTo, {
