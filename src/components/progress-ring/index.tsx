@@ -1,0 +1,98 @@
+import { Canvas, Path, Skia, SweepGradient, vec } from '@shopify/react-native-skia';
+import { useEffect, useMemo, type ReactNode } from 'react';
+import { StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
+import { useSharedValue, withTiming } from 'react-native-reanimated';
+
+import { colors, motion } from '@/theme';
+import { withAlpha } from '@/utils/color';
+
+export interface ProgressRingProps {
+  /** De 0 a 1. */
+  progress: number;
+  size?: number;
+  strokeWidth?: number;
+  /** Uma cor sólida ou um gradiente em volta do anel. */
+  colors?: readonly string[];
+  trackColor?: string;
+  accessibilityLabel?: string;
+  style?: StyleProp<ViewStyle>;
+  children?: ReactNode;
+}
+
+/**
+ * Anel de progresso em Skia (meta da temporada, nível do avatar). O React Native
+ * não desenha gradiente cônico; o Skia sim, e anima direto do shared value do
+ * Reanimated, sem passar pelo JS a cada quadro.
+ */
+export function ProgressRing({
+  progress,
+  size = 62,
+  strokeWidth = 6,
+  colors: ringColors = [colors.points],
+  trackColor = withAlpha(colors.text, 0.08),
+  accessibilityLabel,
+  style,
+  children,
+}: ProgressRingProps) {
+  const clamped = Math.min(1, Math.max(0, progress));
+  const end = useSharedValue(0);
+
+  useEffect(() => {
+    end.set(
+      withTiming(clamped, {
+        duration: motion.duration.counter,
+        easing: motion.easing.out,
+      }),
+    );
+  }, [clamped, end]);
+
+  const path = useMemo(() => {
+    const radius = (size - strokeWidth) / 2;
+    const circle = Skia.Path.Make();
+    circle.addCircle(size / 2, size / 2, radius);
+    return circle;
+  }, [size, strokeWidth]);
+
+  const center = vec(size / 2, size / 2);
+  const gradient = ringColors.length > 1 ? [...ringColors, ringColors[0] as string] : null;
+
+  return (
+    <View
+      style={[{ width: size, height: size }, style]}
+      accessible={!!accessibilityLabel}
+      accessibilityRole="progressbar"
+      accessibilityLabel={accessibilityLabel}
+      accessibilityValue={{ min: 0, max: 100, now: Math.round(clamped * 100) }}
+    >
+      <Canvas style={StyleSheet.absoluteFill}>
+        <Path path={path} style="stroke" strokeWidth={strokeWidth} color={trackColor} />
+        <Path
+          path={path}
+          style="stroke"
+          strokeWidth={strokeWidth}
+          strokeCap="round"
+          start={0}
+          end={end}
+          color={ringColors[0]}
+          transform={[{ rotate: -Math.PI / 2 }]}
+          origin={center}
+        >
+          {gradient ? <SweepGradient c={center} colors={gradient} /> : null}
+        </Path>
+      </Canvas>
+      {children ? <View style={styles.center}>{children}</View> : null}
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  center: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+});

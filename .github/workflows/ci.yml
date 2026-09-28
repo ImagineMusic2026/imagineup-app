@@ -1,0 +1,29 @@
+# Checagens rápidas em PR e na main. Build e publicação ficam na EAS.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      # Gera .expo/types, para o tsc checar as rotas tipadas.
+      - run: npx expo customize tsconfig.json
+        env:
+          CI: 1
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm test -- --ci

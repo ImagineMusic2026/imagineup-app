@@ -1,0 +1,104 @@
+{
+  "common": {
+    "back": "Voltar",
+    "close": "Fechar",
+    "continue": "Continuar",
+    "retry": "Tentar de novo",
+    "comingSoon": "Em construção",
+    "loading": "Carregando"
+  },
+  "offline": {
+    "banner": "Você está sem internet. Mostrando o que ficou salvo."
+  },
+  "tabs": {
+    "home": "Início",
+    "explore": "Explorar",
+    "ranking": "Ranking",
+    "profile": "Perfil",
+    "invite": "Convidar"
+  },
+  "auth": {
+    "title": "ImagineUP",
+    "lead": "Siga seus artistas, espalhe o link e ganhe pontos para trocar por recompensas.",
+    "email": "E-mail",
+    "password": "Senha",
+    "submit": "Entrar",
+    "missingConfig": "O Firebase ainda não foi configurado. Preencha o arquivo .env a partir do .env.example.",
+    "errors": {
+      "invalidCredentials": "E-mail ou senha incorretos.",
+      "tooManyRequests": "Muitas tentativas. Espere um pouco e tente de novo.",
+      "network": "Sem conexão. Confira a internet e tente de novo.",
+      "unknown": "Não foi possível entrar agora."
+    }
+  },
+  "onboarding": {
+    "chooseArtists": {
+      "title": "Quem você acompanha?",
+      "subtitle": "Escolha pelo menos 3 artistas para montar seu início."
+    }
+  },
+  "home": {
+    "greeting": {
+      "morning": "Bom dia,",
+      "afternoon": "Boa tarde,",
+      "evening": "Boa noite,"
+    },
+    "fallbackName": "fã",
+    "feedEmpty": "O mural dos seus artistas aparece aqui."
+  },
+  "explore": {
+    "title": "Explorar",
+    "agenda": "Agenda"
+  },
+  "artist": {
+    "title": "Artista"
+  },
+  "post": {
+    "title": "Post",
+    "like": "Curtir",
+    "unlike": "Descurtir",
+    "commentPlaceholder": "Escreva um comentário"
+  },
+  "ranking": {
+    "title": "Ranking",
+    "sections": {
+      "ranking": "Ranking",
+      "missions": "Missões",
+      "rewards": "Recompensas"
+    }
+  },
+  "missions": {
+    "title": "Missões",
+    "subtitle": "Toda ação que leva gente nova pro app vale ponto.",
+    "progressLabel": "{{done}} de {{total}} concluídas"
+  },
+  "rewards": {
+    "title": "Resgatar"
+  },
+  "agenda": {
+    "title": "Agenda"
+  },
+  "profile": {
+    "title": "Meu perfil",
+    "settings": "Ajustes",
+    "signOut": "Sair"
+  },
+  "invite": {
+    "title": "Convidar",
+    "subtitle": "Cada pessoa que abrir seu link vale pontos."
+  },
+  "notFound": {
+    "title": "Página não encontrada",
+    "action": "Ir para o início"
+  },
+  "validation": {
+    "emailInvalid": "Digite um e-mail válido.",
+    "passwordMin": "A senha precisa de pelo menos {{min}} caracteres.",
+    "commentEmpty": "Escreva algo antes de enviar.",
+    "commentMax": "O comentário pode ter até {{max}} caracteres."
+  },
+  "points": {
+    "balance": "{{points}} pontos",
+    "earned": "{{points}} pontos"
+  }
+}

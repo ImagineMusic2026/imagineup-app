@@ -1,0 +1,35 @@
+# Build de produção do iOS e envio ao TestFlight pela EAS Workflows (Expo GitHub App,
+# não GitHub Actions), no modelo do VerseUp. As credenciais ficam na EAS.
+#
+# Por enquanto só roda à mão: sem conta Apple Developer, o build e o submit falham.
+# Quando a conta sair:
+#   1. preencher submit.production.ios no eas.json (ascAppId e appleTeamId);
+#   2. rodar uma vez `eas build -p ios --profile production` para criar as credenciais;
+#   3. ligar o gatilho de push abaixo.
+#
+# Manual: eas workflow:run .eas/workflows/testflight-ios.yml
+# Pular num commit (depois do push ligado): [eas skip] na mensagem.
+# `type: submit` é o envio gratuito; não troque por `type: testflight`.
+# Nada de publicar EAS Update automático no push: OTA é manual.
+
+name: TestFlight iOS
+
+on:
+  # push:
+  #   branches: [main]
+  workflow_dispatch: {}
+
+jobs:
+  build_ios:
+    name: Build iOS
+    type: build
+    params:
+      platform: ios
+      profile: production
+  submit_ios:
+    name: Enviar ao App Store Connect
+    needs: [build_ios]
+    type: submit
+    params:
+      build_id: ${{ needs.build_ios.outputs.build_id }}
+      profile: production
