@@ -64,7 +64,7 @@ module.exports = defineConfig([
     rules: { 'no-restricted-imports': 'off' },
   },
   {
-    files: ['**/__tests__/**', 'jest.setup.js'],
+    files: ['**/__tests__/**', 'jest.setup.js', 'jest.after-env.js'],
     languageOptions: { globals: { jest: 'readonly' } },
   },
 ]);

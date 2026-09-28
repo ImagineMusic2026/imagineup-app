@@ -6,9 +6,8 @@ import { t } from '@/i18n';
 import { colors, spacing } from '@/theme';
 
 /**
- * Sheet "Gerar meu link". Aberta pelo botão central da tab bar: no protótipo
- * ele criava post de fã (fora do contrato), e virar "Convidar" é proposta que
- * precisa de aprovação da cliente por escrito.
+ * Sheet "Gerar meu link", aberta pelo atalho Convidar do "+" da tab bar
+ * (aprovado em 2026-09-28; no protótipo o "+" criava post de fã, fora do contrato).
  */
 export function InviteSheetScreen() {
   return (

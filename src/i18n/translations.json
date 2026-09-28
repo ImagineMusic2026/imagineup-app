@@ -15,7 +15,10 @@
     "explore": "Explorar",
     "ranking": "Ranking",
     "profile": "Perfil",
-    "invite": "Convidar"
+    "menu": {
+      "open": "Abrir atalhos",
+      "close": "Fechar atalhos"
+    }
   },
   "auth": {
     "title": "ImagineUP",
@@ -60,12 +63,7 @@
     "commentPlaceholder": "Escreva um comentário"
   },
   "ranking": {
-    "title": "Ranking",
-    "sections": {
-      "ranking": "Ranking",
-      "missions": "Missões",
-      "rewards": "Recompensas"
-    }
+    "title": "Ranking"
   },
   "missions": {
     "title": "Missões",
@@ -104,5 +102,10 @@
   "errors": {
     "title": "Algo deu errado",
     "message": "Tente de novo. Se continuar, feche e abra o app."
+  },
+  "quickActions": {
+    "invite": "Convidar",
+    "missions": "Missões",
+    "rewards": "Recompensas"
   }
 }

@@ -2,6 +2,7 @@
 module.exports = {
   preset: 'jest-expo',
   setupFiles: ['<rootDir>/jest.setup.js'],
+  setupFilesAfterEnv: ['<rootDir>/jest.after-env.js'],
   // Faz o react-native-worklets (usado pelo Reanimated) carregar a versão JS no Jest.
   resolver: 'react-native-worklets/jest/resolver.js',
   moduleNameMapper: {
