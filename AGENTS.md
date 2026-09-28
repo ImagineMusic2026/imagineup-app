@@ -17,7 +17,7 @@ Contrato assinado com a IMAGINE MUSIC LTDA, 10 entregas mensais. O painel admin 
 
 Fora do contrato, mesmo que apareçam no protótipo: notificações push e in-app, montador de playlists, post criado por fã (o fã só curte e comenta), pagamentos, integrações com Spotify, Meta, TikTok, YouTube e OneRPM, ranking de amigos, filtro "perto de mim" e "ao vivo". Tela do protótipo que não está no Anexo I do contrato é aditivo: pergunte antes de construir.
 
-Pontos, níveis, missões e resgates são decididos **no servidor**. O app nunca grava saldo, e toda ação que vale ponto manda chave de idempotência.
+Pontos, níveis, missões e resgates são decididos **no servidor**. O app nunca grava saldo, e toda ação que vale ponto manda chave de idempotência. As regras (valores de pontos, missões, temporadas, recompensas) são ajustáveis pelo painel admin e chegam pela API: nada disso fica fixo no app.
 
 ## Stack (Expo SDK 57)
 
@@ -112,7 +112,7 @@ src/
 - Brilho colorido com `boxShadow` (tokens em `shadows`); `elevation` não tinge.
 - Cada peso da fonte é uma família (`Sora_800ExtraBold`, `Manrope_600SemiBold`...). Nunca `fontWeight` com elas. O texto sai pelo `<Text variant>`.
 - O app é só escuro (`userInterfaceStyle: 'dark'`).
-- Contraste: texto secundário não desce de branco a .5 (o protótipo usa .42, que reprova AA). O botão primário usa `accentStrong` (#D9105A) porque branco sobre #FF2D6F dá 3,59:1. Isso diverge do protótipo e **precisa de aprovação**.
+- Contraste: texto secundário não desce de branco a .5 (o protótipo usa .42, que reprova AA). O botão primário usa `accentStrong` (#D9105A) porque branco sobre #FF2D6F dá 3,59:1. Isso diverge do protótipo e foi aprovado em 2026-09-28.
 
 ## Navegação
 
@@ -122,7 +122,7 @@ src/
 - **Uma pilha por aba** via grupo em array `(inicio,explorar,ranking,perfil)/_layout.tsx`. A tela da base de cada aba sai de `unstable_settings[grupo].anchor`.
 - **Artista é rota compartilhada** e abre dentro da aba de onde veio, com a tab bar. Vindo de link a frio, abre na aba Início com o Início embaixo na pilha (testado em `src/navigation/__tests__/routes.test.tsx`; a doc da Expo fala em ordem alfabética, o código não faz isso).
 - **Tab bar** em `src/components/tab-bar`. `tab-items.ts` (`toTabItems`) é o único arquivo que conhece `BottomTabBarProps`, que muda na SDK 58; a `TabBar` só recebe itens prontos. A barra fica por cima do conteúdo: telas dentro das abas somam `useTabBarInset()` ao espaço de baixo. Tela que não deve mostrar a barra (teclado) fica fora de `(tabs)`, como `post/[postId]`. `tabBarHideOnKeyboard` e `tabBarStyle` não funcionam com barra própria.
-- **Botão central** abre `/convidar`. No protótipo ele criava post de fã (fora do contrato); virar "Convidar" **precisa de aprovação da cliente por escrito**.
+- **Botão central "+"** (aprovado em 2026-09-28): abre um menu que expande, com Convidar, Missões e Recompensas, e espaço para opções futuras. A aba Ranking continua na barra (2 abas de cada lado do "+"). No protótipo ele criava post de fã, fora do contrato. Hoje ainda abre `/convidar` direto; o menu está por construir.
 - **Pilhas:** todo `Stack` usa `useStackScreenOptions()` (sem header, fundo escuro, sem animação com reduzir movimento). As opções de um navegador não passam para os aninhados, então cada pilha chama o hook.
 - **Headers:** todos os Stacks com `headerShown: false`. Os headers são componentes dentro do conteúdo (`LargeTitleHeader`, `BackHeader`, `GreetingHeader`), porque o design rola junto. Não use a prop `header` do Stack.
 - **Sheets:** `presentation: 'formSheet'` do Stack, sem lib de bottom sheet. Testar o Android na primeira dev build.
@@ -196,10 +196,22 @@ npm run update:preview    # OTA para o canal preview
 - Repositório `ImagineMusic2026/imagineup-app` no GitHub, na conta da cliente e **público** (decisão do dono). Nada sensível entra nele.
 - Commits e PRs **sem** a linha `Co-Authored-By` do Claude e sem rodapé de atribuição: o repositório é da cliente (mesma regra do `imagineup-painel`).
 
+## Aprovações de 2026-09-28
+
+- **Botão "+" do meio:** abre um menu que expande, com Convidar, Missões e Recompensas, e espaço para opções futuras. A aba Ranking continua na barra. Substitui o post de fã do protótipo, que está fora do contrato.
+- **Telas sem desenho** (post com comentários, cadastro, ajustes com exclusão de conta): seguem o mesmo visual das outras telas, sem nova rodada de protótipo.
+- **Entrada no app:** começa por e-mail e senha; depois entram Apple, Google e o login automático, sem o fã escolher o método a cada abertura.
+- **Botão primário em `accentStrong` (#D9105A):** aprovado.
+- **Pontos em três contadores:** saldo para trocar por recompensas, nível (não cai no resgate) e pontos da temporada para o ranking.
+- **Regras ajustáveis pelo painel admin:** valores de pontos, missões, temporadas e recompensas vêm da API. Nada disso fica fixo no app.
+- **Aba Explorar:** a primeira tela continua sem definição; a aba fica com o placeholder.
+
 ## Pendências
 
 - `.env` local e Environment variables da EAS com a config do Firebase (app da Web do projeto `imagine-up`).
-- Aprovações da cliente: papel do botão central, seletor da aba Ranking (Ranking, Missões, Recompensas), raiz da aba Explorar, telas não desenhadas (detalhe do post e comentários, cadastro, ajustes com exclusão de conta), métodos de login (o protótipo pede Apple e celular; o Firebase está com e-mail e link por e-mail), CTA em `accentStrong`.
-- Modelo de pontos com contadores separados: saldo gastável, XP de nível (não cai no resgate), pontos da temporada e pontos por central.
+- Construir o menu do "+" e desenhar as telas que faltam no visual das outras.
+- Primeira tela da aba Explorar, ainda sem definição.
+- Métodos de entrada além de e-mail e senha: Apple, Google e login automático.
+- Modelo de pontos no backend com os três contadores aprovados, mais os pontos por central.
 - Backend (M2): Cloud Functions para pontos, missões, convite e resgate; regras do Firestore bloqueando escrita de saldo.
 - Ícone e splash são provisórios (seta da marca sobre o fundo escuro).
