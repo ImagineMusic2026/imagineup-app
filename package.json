@@ -11,7 +11,7 @@
     "ios": "expo start --ios",
     "lint": "expo lint",
     "format": "prettier --write .",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tests",
     "test": "jest",
     "doctor": "npx expo-doctor",
     "check": "npm run typecheck && npm run lint && npm test",
@@ -19,7 +19,9 @@
     "build:dev:ios-sim": "eas build --profile development-simulator --platform ios",
     "build:preview:android": "eas build --profile preview --platform android",
     "update:preview": "eas update --channel preview --environment preview",
-    "update:production": "eas update --channel production --environment production"
+    "update:production": "eas update --channel production --environment production",
+    "test:rules": "npx --yes firebase-tools@15 emulators:exec --only firestore --project imagine-up-app \"jest -c jest.rules.config.js\"",
+    "rules:deploy": "npx --yes firebase-tools@15 deploy --only firestore:rules,firestore:indexes --project imagine-up-app"
   },
   "dependencies": {
     "@expo-google-fonts/manrope": "^0.4.2",
@@ -64,9 +66,11 @@
     "zustand": "^5.0.15"
   },
   "devDependencies": {
+    "@firebase/rules-unit-testing": "^5.0.2",
     "@react-native/jest-preset": "^0.86.3",
     "@testing-library/react-native": "^13.3.3",
     "@types/jest": "^29.5.14",
+    "@types/node": "^22.20.4",
     "@types/react": "~19.2.2",
     "eslint": "^9.39.5",
     "eslint-config-expo": "^57.0.2",

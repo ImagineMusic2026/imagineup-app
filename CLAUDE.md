@@ -27,7 +27,7 @@ Pontos, níveis, missões e resgates são decididos **no servidor**. O app nunca
 | Dados do servidor    | TanStack Query 5 com axios, cache persistido no aparelho                                                 |
 | Estado do cliente    | Zustand 5                                                                                                |
 | Formulários          | zod 4 com react-hook-form e `@hookform/resolvers`                                                        |
-| Autenticação e banco | Firebase, SDK JS 12 (projeto `imagine-up`, Firestore em southamerica-east1)                              |
+| Autenticação e banco | Firebase, SDK JS 12 (projeto `imagine-up-app`, só do app; Firestore em southamerica-east1)               |
 | Animação             | Reanimated 4 (com react-native-worklets) e Skia 2                                                        |
 | Listas               | `@shopify/flash-list` 2                                                                                  |
 | Ícones               | `lucide-react-native`                                                                                    |
@@ -120,7 +120,7 @@ src/
 - **Uma pilha por aba** via grupo em array `(inicio,explorar,ranking,perfil)/_layout.tsx`. A tela da base de cada aba sai de `unstable_settings[grupo].anchor`.
 - **Artista é rota compartilhada** e abre dentro da aba de onde veio, com a tab bar. Vindo de link a frio, abre na aba Início com o Início embaixo na pilha (testado em `src/navigation/__tests__/routes.test.tsx`; a doc da Expo fala em ordem alfabética, o código não faz isso).
 - **Tab bar** em `src/components/tab-bar`. `tab-items.ts` (`toTabItems`) é o único arquivo que conhece `BottomTabBarProps`, que muda na SDK 58; a `TabBar` só recebe itens prontos. A barra fica por cima do conteúdo: telas dentro das abas somam `useTabBarInset()` ao espaço de baixo. Tela que não deve mostrar a barra (teclado) fica fora de `(tabs)`, como `post/[postId]`. `tabBarHideOnKeyboard` e `tabBarStyle` não funcionam com barra própria.
-- **Botão central "+"** (aprovado em 2026-09-28): abre um menu que expande, com Convidar, Missões e Recompensas, e espaço para opções futuras. A aba Ranking continua na barra (2 abas de cada lado do "+"). No protótipo ele criava post de fã, fora do contrato. Hoje ainda abre `/convidar` direto; o menu está por construir.
+- **Botão central "+"** (aprovado em 2026-09-28): abre um menu que expande, com Convidar, Missões e Recompensas, e espaço para opções futuras. A aba Ranking continua na barra (2 abas de cada lado do "+"). No protótipo ele criava post de fã, fora do contrato. O "+" gira até virar "×" e os atalhos sobem em leque (`components/tab-bar/center-menu.tsx`); fundo, voltar do Android, o próprio "×" ou tocar numa aba fecham o menu. A lista de atalhos mora em `@/domains/quick-actions` e vai passar a vir do painel admin.
 - **Pilhas:** todo `Stack` usa `useStackScreenOptions()` (sem header, fundo escuro, sem animação com reduzir movimento). As opções de um navegador não passam para os aninhados, então cada pilha chama o hook.
 - **Headers:** todos os Stacks com `headerShown: false`. Os headers são componentes dentro do conteúdo (`LargeTitleHeader`, `BackHeader`, `GreetingHeader`), porque o design rola junto. Não use a prop `header` do Stack.
 - **Sheets:** `presentation: 'formSheet'` do Stack, sem lib de bottom sheet. Testar o Android na primeira dev build.
@@ -134,8 +134,9 @@ src/
 - **Offline:** sem internet, queries e mutations pausam e o `OfflineBanner` aparece. Mutation que precisa sobreviver a app fechado registra a função em `registerXMutationDefaults` (chamado no `AppProviders`) e usa `mutationKey`. Ação otimista desfaz no erro (modelo: `useToggleLikeMutation`). Mutações pausadas voltam todas juntas quando a rede volta: ações que se anulam (curtir e descurtir) levam `scope` para sair em fila.
 - **axios** (`services/api/client.ts`): manda o ID token do Firebase, renova uma vez no 401 e devolve sempre `ApiError` (`kind`, `status`, `isRetryable`). Base em `EXPO_PUBLIC_API_URL`; sem ela, as queries ficam desligadas.
 - **Zustand** guarda só estado do cliente: `session` (espelho do Firebase Auth, não persistido) e `preferences` (haptics, onboarding, persistido). Perfil, pontos e nível vêm da API pelo React Query.
+- **Regras do Firestore** em `firestore.rules` (com `firebase.json` e `.firebaserc` apontando para `imagine-up-app`), publicadas em 2026-09-28. Tudo fechado. **O perfil `users/{uid}` nasce no servidor**, no cadastro, com createdAt, @, pontos e foto; o celular só lê o próprio perfil e edita `displayName` e `city`, sempre com `updatedAt: serverTimestamp()` e no máximo uma edição a cada 10 s. Nome e cidade passam por `visibleLine()`: uma linha visível, sem espaço nas pontas, sem caractere em branco, sem mais de 3 acentos seguidos e com o ZWJ só entre emoji (a cantora 👩‍🎤 passa). O motor de regras classifica caracteres com tabelas antigas do Unicode (6.0 no emulador) e não reconhece os invisíveis mais novos, por isso a lista explícita em `blankChars()`: caractere invisível novo entra ali, com teste. O `updatedAt` é o carimbo de edição do fã, e o servidor não grava esse campo em `users/{uid}` (se gravar, o fã fica 10 s travado). O schema zod da edição de perfil, quando existir, espelha essas regras e tira do texto colado os isolantes bidi (U+2066 a U+2069), que a regra recusa. A foto é gravada pelo servidor depois de validar o upload. Pontos, nível, @, convites, missões, ranking e centrais são só do servidor (Admin SDK). Mudou a regra? `npm run test:rules` (emulador; testes em `tests/`, com `tsconfig` próprio, um arquivo por vez) e depois `npm run rules:deploy`. O firebase-tools 15 exige Java 21: nesta máquina o Java do sistema está quebrado, use o do Android Studio (`JAVA_HOME="/c/Program Files/Android/Android Studio/jbr"`). O CI roda os mesmos testes com Java 21.
 - **Firebase:** inicialização preguiçosa em `src/firebase`. Sem `.env`, o app abre, avisa no console e não autentica. Sempre que o Auth diz "sem sessão" (sair no app ou sessão que caiu por fora), o cache do Query vai embora, inclusive o do disco, antes de o guard liberar a próxima tela.
-- **Variáveis:** só `EXPO_PUBLIC_*`, lidas em `src/config/env.ts` com acesso estático. Local em `.env` (modelo no `.env.example`); nas builds, em Environment variables do projeto no expo.dev.
+- **Variáveis:** só `EXPO_PUBLIC_*`, lidas em `src/config/env.ts` com acesso estático. Local em `.env` (modelo no `.env.example`); nas builds, em Environment variables do projeto no expo.dev, já preenchidas nos três ambientes com a config do app Web "ImagineUP (app)". O SDK JS usa essa mesma config no iOS e no Android; os apps iOS e Android também estão registrados no `imagine-up-app` (`br.com.imaginegroup.imagineup`) para quando entrarem login com Google, Crashlytics ou App Check.
 
 ## Formulários, listas, datas
 
@@ -164,7 +165,7 @@ src/
 
 - jest-expo com `@testing-library/react-native` **13**. A 14 deixou o `render` assíncrono e quebra o `renderRouter` do expo-router 57.
 - Lógica pura com teste em tabela (`utils`, `invites/deep-link`, `auth/schemas`, `haptics`). Árvore de rotas e guards com `renderRouter` em `src/navigation/__tests__`. Nome de teste descreve o comportamento, em português.
-- O Jest roda com o mock do Reanimated (`jest.setup.js`), o resolver do `react-native-worklets` e o lucide apontado para o build CommonJS (`jest.config.js`); sem isso, qualquer teste que importe o tema ou um ícone quebra.
+- O Jest roda com o mock do Reanimated (`jest.setup.js`), o resolver do `react-native-worklets` e o lucide apontado para o build CommonJS (`jest.config.js`); sem isso, qualquer teste que importe o tema ou um ícone quebra. O `expo-router/testing-library` troca o mock do Reanimated pelo simples quando é importado; o `jest.after-env.js` devolve o `useReducedMotion` e o `ReducedMotionConfig` depois dos imports.
 
 ## Comandos
 
@@ -172,6 +173,8 @@ src/
 npm start                 # dev server (dev client); tecla s alterna para o Expo Go
 npm run start:go          # direto no Expo Go (iPhone sem conta Apple)
 npm run check             # tipos, lint e testes
+npm run test:rules        # regras do Firestore no emulador (Java 21)
+npm run rules:deploy      # publica regras e índices no imagine-up-app
 npm run doctor            # expo-doctor
 npm run build:dev:android # APK de desenvolvimento pela EAS
 npm run build:preview:android
@@ -181,7 +184,7 @@ npm run update:preview    # OTA para o canal preview
 ## EAS
 
 - Projeto `@imagineup-app/imagineup` no expo.dev (ID `6984e734-3efc-40bc-8b9b-4d65bffbe085`, no topo do `app.config.ts`), ligado em 2026-09-28. O eas-cli entra com a conta `thelozx`, admin da conta `imagineup-app`.
-- As variáveis `EXPO_PUBLIC_*` das builds ficam em Environment variables do projeto no expo.dev, uma vez por ambiente (development, preview, production). Ainda estão vazias.
+- As variáveis `EXPO_PUBLIC_*` das builds ficam em Environment variables do projeto no expo.dev, uma vez por ambiente (development, preview, production), já preenchidas com a config do Firebase `imagine-up-app`.
 - Perfis em `eas.json`, cada um com o canal de mesmo nome: `development` (dev client, APK interno), `development-simulator` (iOS simulador), `preview` (APK interno), `preview-simulator`, `production` (`autoIncrement`, versão remota).
 - `runtimeVersion` por **fingerprint**: update só chega a binário com o mesmo nativo. Mudou lib nativa, plugin ou SDK? Nova build antes de publicar update.
 - Update é sempre manual (`npm run update:preview`), nunca automático no push.
@@ -206,8 +209,9 @@ npm run update:preview    # OTA para o canal preview
 
 ## Pendências
 
-- `.env` local e Environment variables da EAS com a config do Firebase (app da Web do projeto `imagine-up`).
-- Construir o menu do "+" e desenhar as telas que faltam no visual das outras.
+- Conferir no console do Firebase se a entrada por e-mail e senha está ativa no `imagine-up-app` (Authentication); a CLI não liga provedores.
+- Contrato: a infraestrutura deve ficar no nome da Imagine Music. A CLI desta máquina acessa o `imagine-up-app` com a conta talisfilipe54@gmail.com; se o projeto não estiver na conta da cliente, a conta Google dela precisa entrar como proprietária.
+- Desenhar as telas que faltam no visual das outras.
 - Primeira tela da aba Explorar, ainda sem definição.
 - Métodos de entrada além de e-mail e senha: Apple, Google e login automático.
 - Modelo de pontos no backend com os três contadores aprovados, mais os pontos por central.

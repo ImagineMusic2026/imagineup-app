@@ -1,0 +1,99 @@
+rules_version = '2';
+
+// Regras do Firestore do app ImagineUP (projeto imagine-up-app).
+//
+// Tudo fechado por padrão. O servidor (Admin SDK nas Cloud Functions, que não
+// passa por estas regras) cria o perfil no cadastro e grava pontos, nível,
+// saldo, @, foto, missões, resgates, ranking, convites e a entrada em centrais.
+// O celular só lê o próprio perfil e edita o nome e a cidade.
+//
+// Mudou algo aqui? Rode `npm run test:rules` antes de publicar.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSelf(uid) {
+      return request.auth != null && request.auth.uid == uid;
+    }
+
+    // Campos que o próprio fã pode editar. A foto fica fora: o servidor grava a
+    // URL depois de validar o upload, para ninguém apontar para um endereço de fora.
+    function editableProfileFields() {
+      return ['displayName', 'city', 'updatedAt'];
+    }
+
+    // O motor de regras classifica caracteres com tabelas antigas do Unicode
+    // (6.0 no emulador): U+2066, U+180F e U+FFF0, por exemplo, não contam como
+    // \p{C} nem \p{M} para ele e aparecem em branco no aparelho. Por isso a
+    // lista explícita, junto com as letras "em branco" do Hangul e do Braille.
+    function blankChars() {
+      return '\\x{034F}\\x{061C}\\x{115F}\\x{1160}\\x{180E}\\x{180F}\\x{2065}-\\x{2069}\\x{2800}\\x{3164}\\x{FFA0}\\x{FFF0}-\\x{FFF8}\\x{16FE4}\\x{1D159}\\x{E0000}-\\x{E0FFF}';
+    }
+
+    // Marcas combinantes (acentos), com os blocos que o motor não reconhece como \p{M}.
+    function markChars() {
+      return '\\p{M}\\x{0300}-\\x{036F}\\x{1AB0}-\\x{1AFF}\\x{1DC0}-\\x{1DFF}\\x{20D0}-\\x{20FF}\\x{FE20}-\\x{FE2F}';
+    }
+
+    // Uma linha de texto visível: não começa por acento solto, não tem espaço
+    // nas pontas, nem controle, quebra de linha ou caractere em branco no meio,
+    // nem mais de 3 acentos seguidos (texto "zalgo" invade as linhas vizinhas;
+    // nome vietnamita decomposto usa 2). O ZWJ (U+200D) só passa entre emoji,
+    // como na cantora ou no coração em chamas.
+    function visibleLine(s) {
+      return s.matches('^[^\\s\\p{Z}\\p{C}' + markChars() + '](([^\\p{C}\\p{Zl}\\p{Zp}]|\\x{200D})*[^\\s\\p{Z}\\p{C}])?$')
+        && !s.matches('.*[' + blankChars() + '].*')
+        && !s.matches('.*[' + markChars() + ']{4,}.*')
+        && !s.matches('.*([^\\p{So}\\p{Sk}\\x{FE0F}\\x{1F000}-\\x{1FAFF}]\\x{200D}|\\x{200D}[^\\p{So}\\x{2190}-\\x{21FF}\\x{1F000}-\\x{1FAFF}]).*');
+    }
+
+    // Nome visível no ranking e nos comentários: 1 a 60 caracteres, numa linha visível.
+    function validDisplayName(data) {
+      return data.get('displayName', null) is string
+        && data.displayName.size() >= 1
+        && data.displayName.size() <= 60
+        && visibleLine(data.displayName);
+    }
+
+    // Cidade é opcional: null limpa o campo. Texto vazio não vale.
+    function validCity(data) {
+      return data.get('city', null) == null
+        || (data.city is string
+          && data.city.size() >= 1
+          && data.city.size() <= 80
+          && visibleLine(data.city));
+    }
+
+    // Só os campos que mudaram são validados, para um valor gravado pelo servidor
+    // em outro campo não travar a edição. updatedAt é obrigatório, vem do
+    // servidor (serverTimestamp) e segura a edição a no máximo uma a cada 10 s.
+    // É o carimbo de edição do fã: o servidor não grava esse campo. Se gravar
+    // algo que não é data, a trava pula uma vez em vez de bloquear para sempre.
+    function validProfileUpdate(changed) {
+      return changed.hasOnly(editableProfileFields())
+        && request.resource.data.updatedAt == request.time
+        && (!(resource.data.get('updatedAt', null) is timestamp)
+          || request.time > resource.data.updatedAt + duration.value(10, 's'))
+        && (!('displayName' in changed) || validDisplayName(request.resource.data))
+        && (!('city' in changed) || validCity(request.resource.data));
+    }
+
+    match /users/{uid} {
+      allow get: if isSelf(uid);
+
+      // O perfil nasce no servidor, no cadastro (com createdAt, @ e pontos).
+      // Assim não há corrida com o servidor nem perfil recriado por um token
+      // ainda válido depois de a conta ser excluída.
+      allow create: if false;
+
+      allow update: if isSelf(uid)
+        && validProfileUpdate(request.resource.data.diff(resource.data).affectedKeys());
+
+      // Excluir a conta apaga perfil, pontos e resgates juntos: é o servidor.
+      allow delete: if false;
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
