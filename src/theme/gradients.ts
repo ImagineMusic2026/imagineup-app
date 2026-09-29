@@ -79,6 +79,9 @@ export const gradients = {
     locations: [0, 1],
     angle: 150,
   } as const satisfies LinearGradientToken,
+  // Fundo da abertura (1k) enquanto a foto não é entregue: o rosa para roxo do
+  // placeholder, fixo (não sai do id), sob o véu e as listras da 1k.
+  authPhotoFallback: [palette.pink, palette.purple] as const,
   /**
    * Placeholder de foto, igual ao do site: listras `stripes.placeholder`, um
    * brilho branco no canto de cima e um gradiente de 150° com um par escolhido

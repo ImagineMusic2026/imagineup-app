@@ -70,6 +70,15 @@ describe('TextInput', () => {
     expect(fieldStyle().borderColor).toBe(colors.danger);
   });
 
+  it('inválido pinta a borda de erro sem mensagem embaixo nem dica para o leitor', () => {
+    render(<TextInput label="Senha" variant="glass" invalid />);
+    expect(fieldStyle().borderColor).toBe(colors.danger);
+
+    fireEvent(screen.getByLabelText('Senha'), 'focus');
+    expect(fieldStyle().borderColor).toBe(colors.danger);
+    expect(screen.getByLabelText('Senha').props.accessibilityHint).toBeUndefined();
+  });
+
   it('repassa foco e saída para quem chama', () => {
     const onFocus = jest.fn();
     const onBlur = jest.fn();

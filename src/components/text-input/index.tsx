@@ -26,6 +26,11 @@ export type TextInputVariant = 'default' | 'glass';
 export interface TextInputProps extends Omit<NativeTextInputProps, 'style'> {
   label: string;
   error?: string;
+  /**
+   * Borda de erro sem mensagem embaixo, quando o erro é do envio e aparece em
+   * outro lugar da tela ("E-mail ou senha incorretos." embaixo do botão).
+   */
+  invalid?: boolean;
   /** Orientação fixa embaixo do campo ("Pelo menos 6 caracteres"), lida junto com o erro. */
   hint?: string;
   variant?: TextInputVariant;
@@ -64,6 +69,7 @@ export const TextInput = forwardRef<NativeTextInput, TextInputProps>(function Te
   {
     label,
     error,
+    invalid = false,
     hint,
     variant = 'default',
     leadingIcon,
@@ -76,10 +82,11 @@ export const TextInput = forwardRef<NativeTextInput, TextInputProps>(function Te
   ref,
 ) {
   const [focused, setFocused] = useState(false);
+  const failed = !!error || invalid;
   const borderStyle = useFocusBorder(
     focused,
-    error ? colors.danger : REST_BORDER[variant],
-    error ? colors.danger : colors.accent,
+    failed ? colors.danger : REST_BORDER[variant],
+    failed ? colors.danger : colors.accent,
   );
 
   return (

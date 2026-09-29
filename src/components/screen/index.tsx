@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import {
   KeyboardAvoidingView,
+  Platform,
   ScrollView,
   StyleSheet,
   View,
@@ -11,6 +12,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { OfflineBanner } from '@/components/offline-banner';
 import { colors, spacing } from '@/theme';
+
+const isIOS = Platform.OS === 'ios';
 
 export interface ScreenProps {
   children: ReactNode;
@@ -36,6 +39,11 @@ export interface ScreenProps {
    * botões da capa); mesmo assim, ponha-o onde não esconda esses controles.
    */
   bannerTop?: number;
+  /**
+   * Sem fundo próprio, para aparecer o que o navegador desenha atrás da pilha
+   * (a foto da 1k, que fica parada enquanto as telas de conta trocam).
+   */
+  transparent?: boolean;
   contentStyle?: StyleProp<ViewStyle>;
 }
 
@@ -51,6 +59,7 @@ export function Screen({
   safeTop = true,
   backdrop,
   bannerTop,
+  transparent = false,
   contentStyle,
 }: ScreenProps) {
   const insets = useSafeAreaInsets();
@@ -67,7 +76,7 @@ export function Screen({
   ];
 
   return (
-    <View style={[styles.root, frame]}>
+    <View style={[styles.root, transparent && styles.transparent, frame]}>
       {backdrop ? (
         <View pointerEvents="none" style={StyleSheet.absoluteFill}>
           {backdrop}
@@ -75,14 +84,20 @@ export function Screen({
       ) : null}
       {floatingBanner ? null : <OfflineBanner />}
       {scroll ? (
-        // 'padding' nos dois sistemas: com edge-to-edge (obrigatório no Android)
-        // a janela não encolhe com o teclado, e o formulário ficaria coberto.
-        <KeyboardAvoidingView style={styles.fill} behavior="padding">
+        // Android: com edge-to-edge (obrigatório) a janela não encolhe com o
+        // teclado; o 'padding' encolhe a rolagem, que leva sozinha o campo
+        // focado para a vista. iOS: a própria rolagem ganha o espaço do teclado
+        // e rola até o campo focado, o que só acontece com
+        // `automaticallyAdjustKeyboardInsets` (os dois juntos somariam o espaço).
+        <KeyboardAvoidingView style={styles.fill} behavior="padding" enabled={!isIOS}>
           <ScrollView
             style={styles.fill}
             contentContainerStyle={[styles.grow, inner]}
+            automaticallyAdjustKeyboardInsets={isIOS}
             keyboardShouldPersistTaps="handled"
-            keyboardDismissMode="on-drag"
+            // No iOS, arrastar leva o teclado junto com o dedo, e rolar até um
+            // campo escondido não fecha o teclado de cara.
+            keyboardDismissMode={isIOS ? 'interactive' : 'on-drag'}
             showsVerticalScrollIndicator={false}
           >
             {children}
@@ -112,6 +127,9 @@ const styles = StyleSheet.create({
   root: {
     flex: 1,
     backgroundColor: colors.background,
+  },
+  transparent: {
+    backgroundColor: colors.transparent,
   },
   fill: {
     flex: 1,

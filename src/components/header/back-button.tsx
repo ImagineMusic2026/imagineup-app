@@ -5,11 +5,13 @@ import { StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 import { Icon } from '@/components/icon';
 import { PressableScale } from '@/components/pressable-scale';
 import { t } from '@/i18n';
-import { borderWidths, colors, layout } from '@/theme';
+import { borderWidths, colors, layout, opacities } from '@/theme';
 
 export interface BackButtonProps {
   /** Padrão: volta na pilha ou, sem para onde voltar (link aberto a frio), vai ao início. */
   onPress?: () => void;
+  /** Enquanto uma ação não pode ser deixada no meio (a conta sendo criada). */
+  disabled?: boolean;
   style?: StyleProp<ViewStyle>;
 }
 
@@ -30,12 +32,13 @@ function goBack(): void {
  * no Fabric do iOS o hitSlop fora do pai não recebe toque. O círculo fica colado
  * no começo do alvo, para alinhar com a margem da tela; a sobra vai para a direita.
  */
-export function BackButton({ onPress = goBack, style }: BackButtonProps) {
+export function BackButton({ onPress = goBack, disabled = false, style }: BackButtonProps) {
   return (
     <PressableScale
       onPress={onPress}
+      disabled={disabled}
       accessibilityLabel={t('common.back')}
-      style={[styles.target, style]}
+      style={[styles.target, disabled && styles.inactive, style]}
     >
       <View style={styles.circle}>
         <Icon icon={ChevronLeft} size={ICON_SIZE} strokeWidth={ICON_STROKE} />
@@ -50,6 +53,9 @@ const styles = StyleSheet.create({
     height: layout.minTouchTarget,
     justifyContent: 'center',
     alignItems: 'flex-start',
+  },
+  inactive: {
+    opacity: opacities.disabled,
   },
   circle: {
     width: layout.headerButtonSize,

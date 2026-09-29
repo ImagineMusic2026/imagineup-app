@@ -21,17 +21,55 @@
     }
   },
   "auth": {
-    "title": "ImagineUP",
-    "lead": "Siga seus artistas, espalhe o link e ganhe pontos para trocar por recompensas.",
     "email": "E-mail",
     "password": "Senha",
-    "submit": "Entrar",
+    "showPassword": "Mostrar senha",
+    "hidePassword": "Esconder senha",
     "missingConfig": "O Firebase ainda não foi configurado. Preencha o arquivo .env a partir do .env.example.",
+    "welcome": {
+      "title": "ImagineUP",
+      "lead": "A central de fãs oficial dos artistas da Imagine. Siga, comente e ganhe pontos levando gente nova pro fandom.",
+      "createAccount": "Criar minha conta",
+      "haveAccount": "Já tenho conta"
+    },
+    "terms": {
+      "continue": "Ao continuar, você aceita os {{terms}} e a {{privacy}} da Imagine Music.",
+      "signUp": "Ao criar a conta, você aceita os {{terms}} e a {{privacy}}.",
+      "termsLink": "Termos de uso",
+      "privacyLink": "Política de privacidade"
+    },
+    "signIn": {
+      "title": "Bom te ver de novo",
+      "lead": "Entre com o e-mail e a senha da sua conta.",
+      "submit": "Entrar",
+      "forgot": "Esqueci minha senha",
+      "forgotNeedsEmail": "Digite seu e-mail para receber o link.",
+      "resetSent": "Se existir uma conta com esse e-mail, enviamos um link para criar uma senha nova.",
+      "noAccount": "Ainda não tem conta?",
+      "createAccount": "Criar conta"
+    },
+    "signUp": {
+      "title": "Crie sua conta",
+      "lead": "Leva menos de um minuto. Depois você escolhe seus artistas.",
+      "name": "Seu nome",
+      "nameHint": "É assim que você aparece no ranking e nos comentários.",
+      "passwordHint": "Pelo menos {{min}} caracteres.",
+      "submit": "Criar conta",
+      "creating": "Criando sua conta",
+      "haveAccount": "Já tem conta?",
+      "signIn": "Entrar",
+      "signInWithEmail": "Entrar com este e-mail"
+    },
     "errors": {
       "invalidCredentials": "E-mail ou senha incorretos.",
       "tooManyRequests": "Muitas tentativas. Espere um pouco e tente de novo.",
       "network": "Sem conexão. Confira a internet e tente de novo.",
-      "unknown": "Não foi possível entrar agora."
+      "unknown": "Não foi possível entrar agora.",
+      "emailInUse": "Esse e-mail já tem conta. Entre com ele.",
+      "weakPassword": "Escolha uma senha mais forte.",
+      "notAllowed": "Cadastro indisponível agora. Tente mais tarde.",
+      "signUpUnknown": "Não foi possível criar a conta agora.",
+      "resetUnknown": "Não foi possível enviar o link agora."
     }
   },
   "onboarding": {
@@ -92,6 +130,9 @@
   "validation": {
     "emailInvalid": "Digite um e-mail válido.",
     "passwordMin": "A senha precisa de pelo menos {{min}} caracteres.",
+    "nameRequired": "Digite seu nome.",
+    "nameMax": "O nome pode ter até {{max}} caracteres.",
+    "nameInvalid": "Use só letras, números e emoji.",
     "commentEmpty": "Escreva algo antes de enviar.",
     "commentMax": "O comentário pode ter até {{max}} caracteres."
   },

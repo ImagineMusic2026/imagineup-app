@@ -14,9 +14,15 @@ export interface SessionGate {
  * Quem pode ir para onde. Enquanto o Firebase confirma a sessão, um aparelho
  * que já tinha sessão (`lastSessionUid`) entra como logado, com o cache salvo;
  * se a sessão tiver caído, o listener derruba e os guards corrigem.
+ *
+ * Enquanto um fluxo das telas de conta segura o fã (`authHolds`), a conta já
+ * existe e está logada, mas ele ainda conta como fora: sem isso, o guard
+ * tiraria a tela de cadastro no primeiro passo, antes de o nome ir para a
+ * conta e de o perfil nascer, e trocaria a pilha antes da saída em fade.
  */
 export function useSessionGate(): SessionGate {
   const status = useSessionStore((state) => state.status);
+  const held = useSessionStore((state) => state.authHolds > 0);
   const hydrated = usePreferencesStore((state) => state.hydrated);
   const lastSessionUid = usePreferencesStore((state) => state.lastSessionUid);
   const onboarded = usePreferencesStore((state) => state.hasCompletedOnboarding);
@@ -24,7 +30,7 @@ export function useSessionGate(): SessionGate {
 
   return {
     ready: hydrated && (status !== 'loading' || presumed),
-    signedIn: status === 'signedIn' || presumed,
+    signedIn: (status === 'signedIn' || presumed) && !held,
     onboarded,
   };
 }

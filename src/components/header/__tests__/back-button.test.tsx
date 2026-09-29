@@ -50,6 +50,15 @@ describe('BackButton', () => {
     expect(mockedRouter.replace).toHaveBeenCalledWith('/');
   });
 
+  it('desativado, não volta e diz ao leitor que está desativado', () => {
+    const onPress = jest.fn();
+    render(<BackButton onPress={onPress} disabled />);
+    const button = screen.getByLabelText(t('common.back'));
+    fireEvent.press(button);
+    expect(onPress).not.toHaveBeenCalled();
+    expect(button).toBeDisabled();
+  });
+
   it('a ação própria substitui a volta padrão', () => {
     const onPress = jest.fn();
     render(<BackButton onPress={onPress} />);

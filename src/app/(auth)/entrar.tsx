@@ -1,3 +1,3 @@
-import { SignInScreen } from '@/domains/auth';
+import { WelcomeScreen } from '@/domains/auth';
 
-export default SignInScreen;
+export default WelcomeScreen;

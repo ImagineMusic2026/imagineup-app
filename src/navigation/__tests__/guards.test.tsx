@@ -41,6 +41,7 @@ const appTree = {
   _layout: RootLayout,
   '(auth)/_layout': () => <Stack />,
   '(auth)/entrar': label('login'),
+  '(auth)/cadastro': label('signup'),
   '(onboarding)/_layout': () => <Stack />,
   '(onboarding)/artistas': label('onboarding'),
   '(tabs)/_layout': () => <Tabs />,
@@ -65,6 +66,7 @@ function setSession(signedIn: boolean, onboarded: boolean): void {
   useSessionStore.setState({
     status: signedIn ? 'signedIn' : 'signedOut',
     user: signedIn ? { uid: 'fa', email: null, displayName: null, photoURL: null } : null,
+    authHolds: 0,
   });
   usePreferencesStore.setState({
     hydrated: true,
@@ -81,6 +83,59 @@ const rootRoutes = (view: Router): string[] => {
   const container = view.getRouterState() as StateNode | undefined;
   return container?.routes?.[0]?.state?.routes?.map((route) => route.name) ?? [];
 };
+
+const newAccount = {
+  uid: 'nova',
+  email: 'nova@x.com',
+  displayName: 'Beatriz Santos',
+  photoURL: null,
+};
+
+describe('cadastro com os guards de sessão', () => {
+  it('a conta nasce logada, mas o guard segura o cadastro até o perfil existir', async () => {
+    setSession(false, false);
+    const view = renderRouter(appTree, { initialUrl: '/cadastro' });
+    view.getByText('signup');
+
+    // Passo 1 do cadastro: o listener do Firebase já avisa que a conta existe.
+    let release = (): void => undefined;
+    act(() => {
+      release = useSessionStore.getState().holdAuth();
+      useSessionStore.getState().setSignedIn(newAccount);
+    });
+    expect(view.getPathname()).toBe('/cadastro');
+    expect(view.getByText('signup')).toBeTruthy();
+    expect(rootRoutes(view)).toEqual(['(auth)']);
+
+    // O perfil nasceu: o guard troca para a escolha de artistas.
+    act(() => release());
+    await waitFor(() => expect(view.getPathname()).toBe('/artistas'));
+    expect(rootRoutes(view)).toEqual(['(onboarding)']);
+  });
+
+  it('um fluxo não solta o fã que outro ainda segura', async () => {
+    setSession(false, false);
+    const view = renderRouter(appTree, { initialUrl: '/cadastro' });
+
+    let first = (): void => undefined;
+    let second = (): void => undefined;
+    act(() => {
+      first = useSessionStore.getState().holdAuth();
+      second = useSessionStore.getState().holdAuth();
+      useSessionStore.getState().setSignedIn(newAccount);
+    });
+    // Soltar duas vezes vale uma.
+    act(() => {
+      second();
+      second();
+    });
+    expect(view.getPathname()).toBe('/cadastro');
+    expect(rootRoutes(view)).toEqual(['(auth)']);
+
+    act(() => first());
+    await waitFor(() => expect(view.getPathname()).toBe('/artistas'));
+  });
+});
 
 describe('convite com os guards de sessão', () => {
   it('sem sessão, guarda o código e vai para o login', async () => {

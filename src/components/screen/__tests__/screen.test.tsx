@@ -1,7 +1,7 @@
 import { onlineManager } from '@tanstack/react-query';
 import { act, render, screen } from '@testing-library/react-native';
 import type { ReactElement } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { KeyboardAvoidingView, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { Text } from '@/components/text';
@@ -110,6 +110,40 @@ describe('Screen', () => {
     const [floating] = absoluteBoxes();
     expect(floating).toHaveStyle({ top: 120 });
     expect(floating?.findByType(Text)).toBeTruthy();
+  });
+
+  it('transparente, deixa aparecer o fundo que o navegador desenha atrás da pilha', () => {
+    renderScreen(
+      <Screen transparent>
+        <Text>Formulário</Text>
+      </Screen>,
+    );
+    const opaque = screen.root.findAll(
+      (node) =>
+        typeof node.type === 'string' &&
+        StyleSheet.flatten(node.props.style)?.backgroundColor === colors.background,
+    );
+    expect(opaque).toHaveLength(0);
+    const root = screen.root.find(
+      (node) =>
+        typeof node.type === 'string' &&
+        StyleSheet.flatten(node.props.style)?.backgroundColor === colors.transparent,
+    );
+    expect(root).toHaveStyle({ flex: 1, paddingTop: insets.top });
+  });
+
+  it('no iOS, a rolagem ganha o espaço do teclado e rola até o campo focado', () => {
+    renderScreen(
+      <Screen scroll>
+        <Text>Formulário</Text>
+      </Screen>,
+    );
+    expect(screen.UNSAFE_getByType(ScrollView).props).toMatchObject({
+      automaticallyAdjustKeyboardInsets: true,
+      keyboardDismissMode: 'interactive',
+    });
+    // Os dois juntos somariam o espaço do teclado.
+    expect(screen.UNSAFE_getByType(KeyboardAvoidingView).props.enabled).toBe(false);
   });
 
   it('online, nenhum aviso aparece', () => {
