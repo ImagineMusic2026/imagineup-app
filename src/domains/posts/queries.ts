@@ -6,7 +6,6 @@ import {
   type QueryClient,
 } from '@tanstack/react-query';
 
-import { apiUrl } from '@/config/env';
 import { haptics } from '@/services/haptics';
 import { createIdempotencyKey } from '@/utils/id';
 
@@ -47,15 +46,12 @@ export function registerPostMutationDefaults(client: QueryClient): void {
   });
 }
 
-const hasApi = !!apiUrl;
-
 export function useFeedQuery() {
   return useInfiniteQuery({
     queryKey: postKeys.feed(),
     queryFn: ({ pageParam }) => fetchFeed(pageParam),
     initialPageParam: null as string | null,
     getNextPageParam: (lastPage) => lastPage.nextCursor,
-    enabled: hasApi,
   });
 }
 
@@ -63,7 +59,7 @@ export function usePostQuery(postId: string) {
   return useQuery({
     queryKey: postKeys.detail(postId),
     queryFn: () => fetchPost(postId),
-    enabled: hasApi && !!postId,
+    enabled: !!postId,
   });
 }
 
@@ -73,7 +69,7 @@ export function useCommentsQuery(postId: string) {
     queryFn: ({ pageParam }) => fetchComments(postId, pageParam),
     initialPageParam: null as string | null,
     getNextPageParam: (lastPage) => lastPage.nextCursor,
-    enabled: hasApi && !!postId,
+    enabled: !!postId,
   });
 }
 

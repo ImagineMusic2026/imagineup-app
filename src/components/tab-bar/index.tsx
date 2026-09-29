@@ -12,7 +12,7 @@ import { Icon } from '@/components/icon';
 import { PressableScale } from '@/components/pressable-scale';
 import { Text } from '@/components/text';
 import { t } from '@/i18n';
-import { colors, layout, motion, radii, shadows, spacing } from '@/theme';
+import { blur, colors, layout, motion, radii, shadows, spacing } from '@/theme';
 import { withAlpha } from '@/utils/color';
 
 import { CenterMenu, type CenterMenuAction } from './center-menu';
@@ -148,7 +148,11 @@ export function TabBar({ items, centerMenu }: TabBarProps) {
         ]}
       >
         {!solid && Platform.OS === 'ios' ? (
-          <BlurView intensity={30} tint="dark" style={StyleSheet.absoluteFill} />
+          <BlurView
+            intensity={blur.tabBar}
+            tint="dark"
+            style={[StyleSheet.absoluteFill, styles.blur]}
+          />
         ) : null}
         {!solid ? (
           <LinearGradient
@@ -195,6 +199,9 @@ const styles = StyleSheet.create({
     // 1 pt como no protótipo; hairline some sobre o fundo escuro.
     borderTopWidth: 1,
     borderTopColor: colors.divider,
+  },
+  // Só o desfoque é recortado: a barra toda recortada cortava o brilho do "+".
+  blur: {
     overflow: 'hidden',
   },
   solid: {

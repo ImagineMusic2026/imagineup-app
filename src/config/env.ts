@@ -47,6 +47,16 @@ export const firebaseEnv = parseFirebaseEnv();
 
 export const apiUrl = optionalString.parse(rawEnv.apiUrl);
 
+export type DataSource = 'api' | 'fixtures';
+
+/**
+ * Sem a API (backend M2), as telas leem as fixtures tipadas de cada domínio.
+ * Nos domínios, só o `api.ts` olha para isto (view e `queries.ts` não sabem de
+ * onde o dado veio); fora deles, o cache do React Query, que não grava fixture
+ * no disco.
+ */
+export const dataSource: DataSource = apiUrl ? 'api' : 'fixtures';
+
 /**
  * Host dos emuladores do Firebase (`npm run emulators`), só em desenvolvimento:
  * uma build nunca aponta para eles, mesmo que a variável exista.

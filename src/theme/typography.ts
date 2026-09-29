@@ -55,6 +55,14 @@ export const typography = {
     lineHeight: 20,
     letterSpacing: -0.5,
   },
+  numberPodiumFirst: {
+    fontFamily: fonts.soraExtraBold,
+    fontSize: 24,
+    lineHeight: 27,
+  },
+  numberDate: { fontFamily: fonts.soraExtraBold, fontSize: 19, lineHeight: 21 },
+  numberStat: { fontFamily: fonts.soraExtraBold, fontSize: 16, lineHeight: 19 },
+  numberSmall: { fontFamily: fonts.soraExtraBold, fontSize: 15, lineHeight: 18 },
   headingSection: {
     fontFamily: fonts.soraExtraBold,
     fontSize: 14,
@@ -65,12 +73,45 @@ export const typography = {
   buttonSmall: { fontFamily: fonts.soraExtraBold, fontSize: 13, lineHeight: 16 },
   points: { fontFamily: fonts.soraExtraBold, fontSize: 13, lineHeight: 16 },
   chip: { fontFamily: fonts.soraExtraBold, fontSize: 11.5, lineHeight: 14 },
+  chipSmall: { fontFamily: fonts.soraExtraBold, fontSize: 10.5, lineHeight: 13 },
+  badge: {
+    fontFamily: fonts.soraExtraBold,
+    fontSize: 10.5,
+    lineHeight: 13,
+    letterSpacing: 0.5,
+    textTransform: 'uppercase',
+  },
+  badgeSmall: {
+    fontFamily: fonts.soraExtraBold,
+    fontSize: 9.5,
+    lineHeight: 12,
+    letterSpacing: 0.6,
+    textTransform: 'uppercase',
+  },
+  pointsTiny: { fontFamily: fonts.soraBold, fontSize: 10, lineHeight: 12 },
   bodyLead: { fontFamily: fonts.manropeMedium, fontSize: 15, lineHeight: 22 },
   body: { fontFamily: fonts.manropeRegular, fontSize: 13, lineHeight: 19.5 },
   bodySmall: { fontFamily: fonts.manropeRegular, fontSize: 12.5, lineHeight: 18 },
+  bodyXs: { fontFamily: fonts.manropeRegular, fontSize: 11.5, lineHeight: 16.5 },
+  input: { fontFamily: fonts.manropeMedium, fontSize: 15, lineHeight: 20 },
+  inputCompact: { fontFamily: fonts.manropeMedium, fontSize: 13.5, lineHeight: 18 },
+  buttonAlt: { fontFamily: fonts.manropeBold, fontSize: 14, lineHeight: 17 },
   label: { fontFamily: fonts.manropeBold, fontSize: 13, lineHeight: 16 },
+  tabItem: { fontFamily: fonts.manropeSemiBold, fontSize: 12.5, lineHeight: 15 },
+  labelCompact: { fontFamily: fonts.manropeBold, fontSize: 12, lineHeight: 15 },
   labelSmall: { fontFamily: fonts.manropeSemiBold, fontSize: 11.5, lineHeight: 14 },
   caption: { fontFamily: fonts.manropeMedium, fontSize: 11.5, lineHeight: 15 },
+  buttonXs: { fontFamily: fonts.manropeBold, fontSize: 11, lineHeight: 14 },
+  metaSmall: { fontFamily: fonts.manropeMedium, fontSize: 10.5, lineHeight: 13 },
+  micro: { fontFamily: fonts.manropeSemiBold, fontSize: 10, lineHeight: 12 },
+  statLabel: {
+    fontFamily: fonts.manropeSemiBold,
+    fontSize: 10,
+    lineHeight: 12,
+    letterSpacing: 0.4,
+    textTransform: 'uppercase',
+  },
+  labelTiny: { fontFamily: fonts.manropeBold, fontSize: 10, lineHeight: 12 },
   overline: {
     fontFamily: fonts.manropeBold,
     fontSize: 10,
@@ -78,10 +119,30 @@ export const typography = {
     letterSpacing: 1.3,
     textTransform: 'uppercase',
   },
+  // Sobre o lima (missão do dia da 1b): o peso 800 segura o contraste do texto a .6.
+  overlineStrong: {
+    fontFamily: fonts.manropeExtraBold,
+    fontSize: 9.5,
+    lineHeight: 12,
+    letterSpacing: 1.5,
+    textTransform: 'uppercase',
+  },
+  dateMonth: {
+    fontFamily: fonts.manropeBold,
+    fontSize: 9,
+    lineHeight: 11,
+    letterSpacing: 0.8,
+    textTransform: 'uppercase',
+  },
+  // 8,5 fica abaixo do mínimo recomendado, como a tab bar: rótulo das conquistas
+  // (1e) e título do 1º no pódio (1f). Pergunta aberta com a cliente.
+  microLabel: { fontFamily: fonts.manropeBold, fontSize: 8.5, lineHeight: 11 },
   // 9,5 px vem do protótipo e fica abaixo do mínimo recomendado. Revisar com a
-  // cliente antes de travar a tab bar.
-  tabLabel: { fontFamily: fonts.manropeSemiBold, fontSize: 9.5, lineHeight: 12 },
-  tabLabelActive: { fontFamily: fonts.manropeBold, fontSize: 9.5, lineHeight: 12 },
+  // cliente antes de travar a tab bar. Entrelinha colada no corpo, como a
+  // entrelinha 1 do protótipo, para a barra ficar na altura do desenho: a
+  // Manrope não corta descendente como a Sora.
+  tabLabel: { fontFamily: fonts.manropeSemiBold, fontSize: 9.5, lineHeight: 10 },
+  tabLabelActive: { fontFamily: fonts.manropeBold, fontSize: 9.5, lineHeight: 10 },
 } as const satisfies Record<string, TextStyle>;
 
 export type TypographyVariant = keyof typeof typography;

@@ -3,12 +3,18 @@ import {
   formatDate,
   formatDateBadge,
   formatDayMonth,
+  formatLongDate,
   formatMonthName,
+  formatRelativeAgo,
   formatRelativeShort,
+  formatSeasonCountdown,
+  formatShowTime,
   formatTime,
+  formatTimeLeft,
 } from '../date';
 
 const JUNE_21 = new Date(2026, 5, 21, 22, 5);
+const MINUTE = 60_000;
 
 describe('datas em pt-BR', () => {
   it('formata dia, hora e mês como o protótipo', () => {
@@ -46,5 +52,61 @@ describe('datas em pt-BR', () => {
     [2, 'evening'],
   ])('às %i h a saudação é %s', (hour, expected) => {
     expect(dayPeriod(new Date(2026, 5, 21, hour))).toBe(expected);
+  });
+
+  it.each([
+    [0, 'agora'],
+    [5, 'há 5 min'],
+    [120, 'há 2 h'],
+    [60 * 24 * 3, 'há 3 d'],
+    [60 * 24 * 10, '11 jun'],
+  ])('meta de autor com %i minutos de diferença', (minutesAgo, expected) => {
+    const posted = new Date(JUNE_21.getTime() - minutesAgo * MINUTE);
+    expect(formatRelativeAgo(posted, JUNE_21)).toBe(expected);
+  });
+
+  it.each([
+    [4 * 60, '4 h'],
+    [4 * 60 + 59, '4 h'],
+    [35, '35 min'],
+    [0.5, 'menos de 1 min'],
+    [60 * 24 * 2 + 30, '2 d'],
+    [0, ''],
+    [-10, ''],
+  ])('tempo que falta com %d minutos até o fim', (minutesLeft, expected) => {
+    const endsAt = new Date(JUNE_21.getTime() + minutesLeft * MINUTE);
+    expect(formatTimeLeft(endsAt, JUNE_21)).toBe(expected);
+  });
+
+  it.each([
+    ['daqui a 12 dias', new Date(2026, 6, 3, 23, 59), 'encerra em 12 dias'],
+    ['amanhã de madrugada', new Date(2026, 5, 22, 0, 30), 'encerra amanhã'],
+    ['hoje mais tarde', new Date(2026, 5, 21, 23, 59), 'encerra hoje'],
+    ['hoje, horário já passado', new Date(2026, 5, 21, 22, 0), 'encerrada'],
+    ['no mês passado', new Date(2026, 4, 30), 'encerrada'],
+  ])('temporada que termina %s', (_when, endsAt, expected) => {
+    expect(formatSeasonCountdown(endsAt, JUNE_21)).toBe(expected);
+  });
+
+  it.each([
+    ['22:00', new Date(2026, 5, 21, 22, 0), '22 h'],
+    ['22:30', new Date(2026, 5, 21, 22, 30), '22 h 30'],
+    ['09:05', new Date(2026, 5, 21, 9, 5), '9 h 05'],
+    ['00:00', new Date(2026, 5, 22, 0, 0), '0 h'],
+  ])('hora do show às %s', (_clock, startsAt, expected) => {
+    expect(formatShowTime(startsAt)).toBe(expected);
+  });
+
+  it('escreve a data por extenso para o leitor de tela', () => {
+    expect(formatLongDate(JUNE_21)).toBe('21 de junho');
+    expect(formatLongDate(new Date(2026, 9, 1))).toBe('1 de outubro');
+  });
+
+  it('os formatadores novos devolvem vazio para data inválida', () => {
+    expect(formatRelativeAgo('não é data', JUNE_21)).toBe('');
+    expect(formatTimeLeft('não é data', JUNE_21)).toBe('');
+    expect(formatSeasonCountdown('não é data', JUNE_21)).toBe('');
+    expect(formatShowTime('não é data')).toBe('');
+    expect(formatLongDate('não é data')).toBe('');
   });
 });

@@ -1,7 +1,9 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createAsyncStoragePersister } from '@tanstack/query-async-storage-persister';
+import type { Query } from '@tanstack/react-query';
 import type { PersistQueryClientOptions } from '@tanstack/react-query-persist-client';
 
+import { dataSource, type DataSource } from '@/config/env';
 import { StorageKeys } from '@/storage/storage/keys';
 
 import { PERSIST_MAX_AGE_MS } from './client';
@@ -22,14 +24,20 @@ export const queryPersister = createAsyncStoragePersister({
 /**
  * O que vai para o disco: só consultas que deram certo e não pediram para ficar
  * de fora (`meta: { persist: false }`, para dados sensíveis ou efêmeros).
- * Mudou o formato salvo? Suba QUERY_CACHE_VERSION (`buster`).
+ * No modo fixtures nada vai: dado de exemplo salvo apareceria no aparelho
+ * depois que a API entrasse.
  */
+export function shouldPersistQuery(query: Query, source: DataSource = dataSource): boolean {
+  if (source === 'fixtures') return false;
+  return query.state.status === 'success' && query.meta?.persist !== false;
+}
+
+/** Mudou o formato salvo? Suba QUERY_CACHE_VERSION (`buster`). */
 export const persistOptions: Omit<PersistQueryClientOptions, 'queryClient'> = {
   persister: queryPersister,
   maxAge: PERSIST_MAX_AGE_MS,
   buster: String(QUERY_CACHE_VERSION),
   dehydrateOptions: {
-    shouldDehydrateQuery: (query) =>
-      query.state.status === 'success' && query.meta?.persist !== false,
+    shouldDehydrateQuery: (query) => shouldPersistQuery(query),
   },
 };

@@ -107,5 +107,35 @@
     "invite": "Convidar",
     "missions": "Missões",
     "rewards": "Recompensas"
+  },
+  "date": {
+    "now": "agora",
+    "lessThanMinute": "menos de 1 min",
+    "minutes": "{{count}} min",
+    "hours": "{{count}} h",
+    "days": "{{count}} d",
+    "ago": "há {{time}}",
+    "showTime": "{{hours}} h",
+    "showTimeWithMinutes": "{{hours}} h {{minutes}}",
+    "season": {
+      "endsInDays": "encerra em {{count}} dias",
+      "endsTomorrow": "encerra amanhã",
+      "endsToday": "encerra hoje",
+      "ended": "encerrada"
+    }
+  },
+  "components": {
+    "pointsPill": {
+      "label": "Seu saldo: {{points}} pontos",
+      "labelOne": "Seu saldo: 1 ponto",
+      "loading": "Carregando seu saldo"
+    },
+    "stepProgress": {
+      "label": "Etapa {{current}} de {{total}}"
+    },
+    "pointsToast": {
+      "announcement": "Mais {{points}} pontos",
+      "announcementOne": "Mais 1 ponto"
+    }
   }
 }

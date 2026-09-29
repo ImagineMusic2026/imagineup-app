@@ -79,7 +79,8 @@ src/
 │   ├── types.ts
 │   └── index.ts          # API pública do domínio; outros domínios importam só daqui
 ├── components/<nome>/    # UI compartilhada: text, button, icon, screen, header, tab-bar,
-│                         # pressable-scale, text-input, progress-ring, error-boundary...
+│                         # pressable-scale, text-input, progress-ring, error-boundary e os
+│                         # primitivos do design (avatar, card, pill, chip, glass, stripes...)
 ├── firebase/             # config (app), auth, firestore
 ├── storage/storage/      # AsyncStorage com chaves versionadas (index, keys)
 ├── services/             # api (axios), query (client, persister, NetInfo), haptics
@@ -121,7 +122,7 @@ functions/                # Cloud Functions: pacote Node à parte (package.json,
 - Brilho colorido com `boxShadow` (tokens em `shadows`); `elevation` não tinge.
 - Cada peso da fonte é uma família (`Sora_800ExtraBold`, `Manrope_600SemiBold`...). Nunca `fontWeight` com elas. O texto sai pelo `<Text variant>`.
 - O app é só escuro (`userInterfaceStyle: 'dark'`).
-- Contraste: texto secundário não desce de branco a .5 (o protótipo usa .42, que reprova AA). O botão primário usa `accentStrong` (#D9105A) porque branco sobre #FF2D6F dá 3,59:1. Isso diverge do protótipo e foi aprovado em 2026-09-28.
+- Contraste: texto secundário não desce de branco a .5 (o protótipo usa .42, que reprova AA). O botão primário usa `accentStrong` (#D9105A) porque branco sobre #FF2D6F dá 3,59:1. Isso diverge do protótipo e foi aprovado em 2026-09-28. Pela mesma regra, o vidro escuro com texto (`glassDarkStrong`, selos sobre foto) é .9, não o .68 do protótipo.
 
 ## Navegação
 
@@ -142,8 +143,9 @@ functions/                # Cloud Functions: pacote Node à parte (package.json,
 
 - **Fluxo:** view → hook de `queries.ts` → `api.ts` → `@/services/api` (axios) ou `@/firebase`. View não chama axios nem Firebase.
 - **React Query:** chaves por fábrica no domínio (`postKeys.detail(id)`), incluindo tudo que muda o resultado. O cache vai para o disco (`services/query/persister.ts`) e abre o app offline; dado sensível ou efêmero leva `meta: { persist: false }`. Mudou o formato de algo persistido? Suba `QUERY_CACHE_VERSION` (`services/query/persister.ts`), que viaja no EAS Update. A `version` do app não serve: ela entra no fingerprint e mudá-la corta o update dos binários instalados.
+- **Dados provisórios:** enquanto a API (M2) não existe, `dataSource` (`src/config/env.ts`) é `fixtures`: o `api.ts` de cada domínio devolve fixtures tipadas de `fixtures.ts`, com datas relativas a `fixtureNow()`, e a view e o `queries.ts` não sabem de onde veio. Nesse modo nada vai para o cache do disco e as queries não pausam offline (`networkMode: always`); mutações continuam `online`. Os três contadores de pontos atravessam domínios em `fixtureWallet` (`src/services/fixtures`). Com `EXPO_PUBLIC_API_URL` preenchida, tudo passa para a API. O perfil básico (`users/{uid}`) já vem do Firestore de verdade e usa `networkMode: online`.
 - **Offline:** sem internet, queries e mutations pausam e o `OfflineBanner` aparece. Mutation que precisa sobreviver a app fechado registra a função em `registerXMutationDefaults` (chamado no `AppProviders`) e usa `mutationKey`. Ação otimista desfaz no erro (modelo: `useToggleLikeMutation`). Mutações pausadas voltam todas juntas quando a rede volta: ações que se anulam (curtir e descurtir) levam `scope` para sair em fila.
-- **axios** (`services/api/client.ts`): manda o ID token do Firebase, renova uma vez no 401 e devolve sempre `ApiError` (`kind`, `status`, `isRetryable`). Base em `EXPO_PUBLIC_API_URL`; sem ela, as queries ficam desligadas.
+- **axios** (`services/api/client.ts`): manda o ID token do Firebase, renova uma vez no 401 e devolve sempre `ApiError` (`kind`, `status`, `isRetryable`). Base em `EXPO_PUBLIC_API_URL`; sem ela, as telas usam os dados provisórios.
 - **Zustand** guarda só estado do cliente: `session` (espelho do Firebase Auth, não persistido) e `preferences` (haptics, onboarding, persistido). Perfil, pontos e nível vêm da API pelo React Query.
 - **Regras do Firestore** em `firestore.rules` (com `firebase.json` e `.firebaserc` apontando para `imagine-up-app`), publicadas em 2026-09-28. Tudo fechado. **O perfil `users/{uid}` nasce no servidor**, no cadastro, com createdAt, @, pontos e foto; o celular só lê o próprio perfil e edita `displayName` e `city`, sempre com `updatedAt: serverTimestamp()` e no máximo uma edição a cada 10 s. Nome e cidade passam por `visibleLine()`: uma linha visível, sem espaço nas pontas, sem caractere em branco, sem mais de 3 acentos seguidos e com o ZWJ só entre emoji (a cantora 👩‍🎤 passa). O motor de regras classifica caracteres com tabelas antigas do Unicode (6.0 no emulador) e não reconhece os invisíveis mais novos, por isso a lista explícita em `blankChars()`: caractere invisível novo entra ali, com teste. O `updatedAt` é o carimbo de edição do fã, e o servidor não grava esse campo em `users/{uid}` (se gravar, o fã fica 10 s travado). O schema zod da edição de perfil, quando existir, espelha essas regras e tira do texto colado os isolantes bidi (U+2066 a U+2069), que a regra recusa. A foto é gravada pelo servidor depois de validar o upload. Pontos, nível, @, convites, missões, ranking e centrais são só do servidor (Admin SDK). Mudou a regra? `npm run test:rules` (emulador; testes em `tests/`, com `tsconfig` próprio, um arquivo por vez) e depois `npm run rules:deploy`. O firebase-tools 15 exige Java 21: nesta máquina o Java do sistema está quebrado, use o do Android Studio (`JAVA_HOME="/c/Program Files/Android/Android Studio/jbr"`). O CI roda os mesmos testes com Java 21.
 - **Projeto Firebase `imagine-up-app`:** fica na conta Google da Imagine Music, como pede o contrato; a conta talisfilipe54@gmail.com, usada pela CLI desta máquina, entra como colaboradora. Entrada por e-mail e senha ativada no Authentication em 2026-09-28 (a CLI não liga provedores; outro método, como Apple ou Google, se ativa no console).
@@ -185,7 +187,7 @@ functions/                # Cloud Functions: pacote Node à parte (package.json,
 
 - jest-expo com `@testing-library/react-native` **13**. A 14 deixou o `render` assíncrono e quebra o `renderRouter` do expo-router 57.
 - Lógica pura com teste em tabela (`utils`, `invites/deep-link`, `auth/schemas`, `haptics`). Árvore de rotas e guards com `renderRouter` em `src/navigation/__tests__`. Nome de teste descreve o comportamento, em português.
-- O Jest roda com o mock do Reanimated (`jest.setup.js`), o resolver do `react-native-worklets` e o lucide apontado para o build CommonJS (`jest.config.js`); sem isso, qualquer teste que importe o tema ou um ícone quebra. O `expo-router/testing-library` troca o mock do Reanimated pelo simples quando é importado; o `jest.after-env.js` devolve o `useReducedMotion` e o `ReducedMotionConfig` depois dos imports.
+- O Jest roda com o mock do Reanimated (`jest.setup.js`), o resolver do `react-native-worklets` e o lucide apontado para o build CommonJS (`jest.config.js`); sem isso, qualquer teste que importe o tema ou um ícone quebra. O Skia usa o mock do próprio pacote sobre um CanvasKit que não desenha: teste de componente com Skia confere a árvore e a acessibilidade, não pixel. O `expo-router/testing-library` troca o mock do Reanimated pelo simples quando é importado; o `jest.after-env.js` devolve o `useReducedMotion` e o `ReducedMotionConfig` depois dos imports.
 
 ## Comandos
 
@@ -230,6 +232,18 @@ npm run update:preview    # OTA para o canal preview
 - **Pontos em três contadores:** saldo para trocar por recompensas, nível (não cai no resgate) e pontos da temporada para o ranking.
 - **Regras ajustáveis pelo painel admin:** valores de pontos, missões, temporadas e recompensas vêm da API. Nada disso fica fixo no app.
 - **Aba Explorar:** a primeira tela continua sem definição; a aba fica com o placeholder.
+
+## Aprovações de 2026-09-29 (design nas telas)
+
+O plano de construção do design saiu de um levantamento tela por tela do protótipo. Aprovadas as propostas padrão:
+
+- **Abertura (1k):** botão principal rosa `accentStrong`, como o resto do app.
+- **Missões, Resgatar e Agenda (1g, 1h, 1m):** a seta de voltar fica na linha do título (`LargeTitleHeader` com voltar), sem empurrar o título.
+- **Escolher artistas (1l):** mínimo de 3; abaixo disso o botão fica desabilitado e diz quantos faltam.
+- **Contadores:** o "SEUS PONTOS" da 1e é o saldo para resgatar (o mesmo da 1h); a barra, o anel e o "Faltam ..." usam o XP de nível, que nunca cai. A home (1b) segue o protótipo, sem saldo no header.
+- **Segundo post da home (1b):** sai o post de playlist; entra um post de show com "Eu vou", que conta como presença na agenda.
+- **Resgate (1h):** detalhe, confirmação e instruções no visual das outras telas, sem pedir endereço no app; a entrega física fica com a equipe.
+- As outras perguntas do levantamento (lista de artistas, textos jurídicos, idade no cadastro, moderação de comentários, regras do ranking) seguem propostas padrão fáceis de trocar e vão numa lista para a cliente.
 
 ## Pendências
 

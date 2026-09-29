@@ -8,6 +8,8 @@ import {
 } from 'date-fns';
 import { ptBR } from 'date-fns/locale/pt-BR';
 
+import { t } from '@/i18n';
+
 // Toda formatação do app sai em pt-BR, inclusive quando alguém chama date-fns direto.
 setDefaultOptions({ locale: ptBR });
 
@@ -61,6 +63,21 @@ export function formatMonthName(input: DateInput): string {
   return month.charAt(0).toUpperCase() + month.slice(1);
 }
 
+type RelativeTime =
+  { kind: 'now' } | { kind: 'elapsed'; text: string } | { kind: 'date'; text: string };
+
+/** Minutos, horas e dias até uma semana; depois disso, a data. */
+function relativeTime(date: Date, now: Date): RelativeTime {
+  const minutes = differenceInMinutes(now, date);
+  if (minutes < 1) return { kind: 'now' };
+  if (minutes < 60) return { kind: 'elapsed', text: t('date.minutes', { count: minutes }) };
+  const hours = differenceInHours(now, date);
+  if (hours < 24) return { kind: 'elapsed', text: t('date.hours', { count: hours }) };
+  const days = differenceInCalendarDays(now, date);
+  if (days < 7) return { kind: 'elapsed', text: t('date.days', { count: days }) };
+  return { kind: 'date', text: formatDayMonth(date) };
+}
+
 /**
  * Tempo curto do feed: "agora", "5 min", "2 h", "3 d" e, a partir de uma
  * semana, a data. O `formatDistanceToNowStrict` devolveria "2 horas".
@@ -68,14 +85,68 @@ export function formatMonthName(input: DateInput): string {
 export function formatRelativeShort(input: DateInput, now: Date = new Date()): string {
   const date = safe(input);
   if (!date) return '';
-  const minutes = differenceInMinutes(now, date);
-  if (minutes < 1) return 'agora';
-  if (minutes < 60) return `${minutes} min`;
-  const hours = differenceInHours(now, date);
-  if (hours < 24) return `${hours} h`;
-  const days = differenceInCalendarDays(now, date);
-  if (days < 7) return `${days} d`;
-  return formatDayMonth(date);
+  const relative = relativeTime(date, now);
+  return relative.kind === 'now' ? t('date.now') : relative.text;
+}
+
+/**
+ * Meta de autor e comentário: "há 2 h". O "há" só entra com minutos, horas e
+ * dias; "há agora" e "há 21 jun" não existem, então esses saem puros.
+ */
+export function formatRelativeAgo(input: DateInput, now: Date = new Date()): string {
+  const date = safe(input);
+  if (!date) return '';
+  const relative = relativeTime(date, now);
+  if (relative.kind === 'now') return t('date.now');
+  if (relative.kind === 'elapsed') return t('date.ago', { time: relative.text });
+  return relative.text;
+}
+
+/**
+ * Tempo que falta, como em "termina em 4 h": "35 min", "4 h", "2 d" e, no
+ * último minuto, "menos de 1 min". Arredonda para baixo, para nunca prometer
+ * mais tempo do que há. Depois do prazo devolve vazio: quem chama mostra o
+ * estado de encerrada.
+ */
+export function formatTimeLeft(endsAtInput: DateInput, now: Date = new Date()): string {
+  const endsAt = safe(endsAtInput);
+  if (!endsAt || endsAt.getTime() <= now.getTime()) return '';
+  const minutes = differenceInMinutes(endsAt, now);
+  if (minutes < 1) return t('date.lessThanMinute');
+  if (minutes < 60) return t('date.minutes', { count: minutes });
+  const hours = differenceInHours(endsAt, now);
+  if (hours < 24) return t('date.hours', { count: hours });
+  return t('date.days', { count: Math.floor(hours / 24) });
+}
+
+/**
+ * Fim da temporada por dia do calendário: "encerra em 12 dias", "encerra
+ * amanhã", "encerra hoje" e, passado o horário, "encerrada".
+ */
+export function formatSeasonCountdown(endsAtInput: DateInput, now: Date = new Date()): string {
+  const endsAt = safe(endsAtInput);
+  if (!endsAt) return '';
+  if (endsAt.getTime() <= now.getTime()) return t('date.season.ended');
+  const days = differenceInCalendarDays(endsAt, now);
+  if (days === 0) return t('date.season.endsToday');
+  if (days === 1) return t('date.season.endsTomorrow');
+  return t('date.season.endsInDays', { count: days });
+}
+
+/** Hora do show: "22 h" e, com minutos, "22 h 30". */
+export function formatShowTime(input: DateInput): string {
+  const date = safe(input);
+  if (!date) return '';
+  const hours = date.getHours();
+  const minutes = date.getMinutes();
+  if (minutes === 0) return t('date.showTime', { hours });
+  return t('date.showTimeWithMinutes', { hours, minutes: String(minutes).padStart(2, '0') });
+}
+
+/** "21 de junho", para o leitor de tela (o selo "21 JUN" é lido assim). */
+export function formatLongDate(input: DateInput): string {
+  const date = safe(input);
+  return date ? format(date, "d 'de' MMMM", { locale: ptBR }) : '';
 }
 
 export type DayPeriod = 'morning' | 'afternoon' | 'evening';
