@@ -1,0 +1,25 @@
+{
+  "name": "imagineup-functions",
+  "private": true,
+  "license": "UNLICENSED",
+  "description": "Cloud Functions do app ImagineUP (projeto Firebase imagine-up-app).",
+  "main": "lib/index.js",
+  "engines": {
+    "node": "24"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc",
+    "test": "vitest run --dir src",
+    "test:emulator": "vitest run --dir test --no-file-parallelism --testTimeout=60000"
+  },
+  "dependencies": {
+    "firebase-admin": "^14.5.0",
+    "firebase-functions": "^7.4.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.19.0",
+    "typescript": "~6.0.3",
+    "vitest": "^5.0.2"
+  }
+}

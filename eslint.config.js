@@ -42,7 +42,8 @@ module.exports = defineConfig([
   expoConfig,
   prettierConfig,
   {
-    ignores: ['dist/*', 'coverage/*', '.expo/*'],
+    // functions/ é outro pacote (Node), com tsc e testes próprios.
+    ignores: ['dist/*', 'coverage/*', '.expo/*', 'functions/**'],
   },
   {
     rules: {

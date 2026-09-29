@@ -40,3 +40,15 @@ As atualizações pelo ar só chegam a builds com o mesmo nativo (`runtimeVersio
 npm run check   # tipos, lint e testes
 npm run doctor  # expo-doctor
 ```
+
+## Firebase
+
+As regras do Firestore (`firestore.rules`) e as Cloud Functions (`functions/`) moram aqui e vão para o projeto `imagine-up-app`. Os testes delas rodam nos emuladores do Firebase, que precisam de Java 21.
+
+```bash
+npm --prefix functions install  # dependências das Cloud Functions (uma vez)
+npm run test:rules               # regras do Firestore no emulador
+npm run test:functions           # Cloud Functions nos emuladores de Auth, Firestore e Functions
+npm run rules:deploy             # publica as regras
+npm run functions:deploy         # publica as Cloud Functions (exige o plano Blaze)
+```

@@ -19,22 +19,23 @@ Pontos, níveis, missões e resgates são decididos **no servidor**. O app nunca
 
 ## Stack (Expo SDK 57)
 
-| Área                 | Escolha                                                                                                  |
-| -------------------- | -------------------------------------------------------------------------------------------------------- |
-| Base                 | Expo 57, React Native 0.86.3, React 19.2, TypeScript 6 (strict), Nova Arquitetura, React Compiler ligado |
-| Navegação            | Expo Router 57, abas JS de `expo-router/js-tabs` com tab bar própria                                     |
-| Estilo               | `StyleSheet` puro com os tokens de `src/theme`. Nenhuma lib de estilo                                    |
-| Dados do servidor    | TanStack Query 5 com axios, cache persistido no aparelho                                                 |
-| Estado do cliente    | Zustand 5                                                                                                |
-| Formulários          | zod 4 com react-hook-form e `@hookform/resolvers`                                                        |
-| Autenticação e banco | Firebase, SDK JS 12 (projeto `imagine-up-app`, só do app; Firestore em southamerica-east1)               |
-| Animação             | Reanimated 4 (com react-native-worklets) e Skia 2                                                        |
-| Listas               | `@shopify/flash-list` 2                                                                                  |
-| Ícones               | `lucide-react-native`                                                                                    |
-| Datas                | date-fns 4 em pt-BR                                                                                      |
-| Haptics              | `expo-haptics` atrás de `src/services/haptics`                                                           |
-| Build e OTA          | EAS Build e EAS Update                                                                                   |
-| Testes               | jest-expo com Testing Library 13                                                                         |
+| Área                 | Escolha                                                                                                                 |
+| -------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| Base                 | Expo 57, React Native 0.86.3, React 19.2, TypeScript 6 (strict), Nova Arquitetura, React Compiler ligado                |
+| Navegação            | Expo Router 57, abas JS de `expo-router/js-tabs` com tab bar própria                                                    |
+| Estilo               | `StyleSheet` puro com os tokens de `src/theme`. Nenhuma lib de estilo                                                   |
+| Dados do servidor    | TanStack Query 5 com axios, cache persistido no aparelho                                                                |
+| Estado do cliente    | Zustand 5                                                                                                               |
+| Formulários          | zod 4 com react-hook-form e `@hookform/resolvers`                                                                       |
+| Autenticação e banco | Firebase, SDK JS 12 (projeto `imagine-up-app`, só do app; Firestore em southamerica-east1)                              |
+| Animação             | Reanimated 4 (com react-native-worklets) e Skia 2                                                                       |
+| Listas               | `@shopify/flash-list` 2                                                                                                 |
+| Ícones               | `lucide-react-native`                                                                                                   |
+| Datas                | date-fns 4 em pt-BR                                                                                                     |
+| Haptics              | `expo-haptics` atrás de `src/services/haptics`                                                                          |
+| Build e OTA          | EAS Build e EAS Update                                                                                                  |
+| Backend              | Cloud Functions de 2ª geração em `functions/` (Node 24, firebase-functions 7, firebase-admin 14), em southamerica-east1 |
+| Testes               | jest-expo com Testing Library 13                                                                                        |
 
 ## Decisões e o porquê
 
@@ -91,6 +92,14 @@ src/
 ├── utils/                # date, number, color, id
 ├── navigation/           # testes da árvore de rotas
 └── types/                # declarações globais (React Query, firebase/auth RN)
+
+functions/                # Cloud Functions: pacote Node à parte (package.json, tsconfig e testes próprios)
+├── src/index.ts          # gatilhos: createUserProfile (cadastro) e deleteUserProfile (exclusão)
+├── src/handlers.ts       # o que o gatilho de cadastro faz (confere a conta antes e depois)
+├── src/store.ts          # gravações no Firestore (perfil, reserva do @, limpeza)
+├── src/profile.ts        # nome do perfil e geração do @
+├── src/visible-line.ts   # espelho de visibleLine() do firestore.rules
+└── test/                 # testes de ponta a ponta nos emuladores
 ```
 
 ## Regras de código
@@ -136,6 +145,13 @@ src/
 - **Zustand** guarda só estado do cliente: `session` (espelho do Firebase Auth, não persistido) e `preferences` (haptics, onboarding, persistido). Perfil, pontos e nível vêm da API pelo React Query.
 - **Regras do Firestore** em `firestore.rules` (com `firebase.json` e `.firebaserc` apontando para `imagine-up-app`), publicadas em 2026-09-28. Tudo fechado. **O perfil `users/{uid}` nasce no servidor**, no cadastro, com createdAt, @, pontos e foto; o celular só lê o próprio perfil e edita `displayName` e `city`, sempre com `updatedAt: serverTimestamp()` e no máximo uma edição a cada 10 s. Nome e cidade passam por `visibleLine()`: uma linha visível, sem espaço nas pontas, sem caractere em branco, sem mais de 3 acentos seguidos e com o ZWJ só entre emoji (a cantora 👩‍🎤 passa). O motor de regras classifica caracteres com tabelas antigas do Unicode (6.0 no emulador) e não reconhece os invisíveis mais novos, por isso a lista explícita em `blankChars()`: caractere invisível novo entra ali, com teste. O `updatedAt` é o carimbo de edição do fã, e o servidor não grava esse campo em `users/{uid}` (se gravar, o fã fica 10 s travado). O schema zod da edição de perfil, quando existir, espelha essas regras e tira do texto colado os isolantes bidi (U+2066 a U+2069), que a regra recusa. A foto é gravada pelo servidor depois de validar o upload. Pontos, nível, @, convites, missões, ranking e centrais são só do servidor (Admin SDK). Mudou a regra? `npm run test:rules` (emulador; testes em `tests/`, com `tsconfig` próprio, um arquivo por vez) e depois `npm run rules:deploy`. O firebase-tools 15 exige Java 21: nesta máquina o Java do sistema está quebrado, use o do Android Studio (`JAVA_HOME="/c/Program Files/Android/Android Studio/jbr"`). O CI roda os mesmos testes com Java 21.
 - **Projeto Firebase `imagine-up-app`:** fica na conta Google da Imagine Music, como pede o contrato; a conta talisfilipe54@gmail.com, usada pela CLI desta máquina, entra como colaboradora. Entrada por e-mail e senha ativada no Authentication em 2026-09-28 (a CLI não liga provedores; outro método, como Apple ou Google, se ativa no console).
+- **Cloud Functions** em `functions/`, pacote Node à parte (instale com `npm --prefix functions install`); o lint, o `tsc` e o Jest da raiz ignoram a pasta. Gatilhos de Auth de 2ª geração (`onUserCreated` e `onUserDeleted` de `firebase-functions/identity`), com `retry: true` e região `southamerica-east1` fixada no `setGlobalOptions` (sem ela, vão para os EUA). A doc do Firebase ainda chama esses gatilhos de Preview, embora o SDK 7.4 os declare GA.
+  - `createUserProfile` cria `users/{uid}` a cada conta nova (e-mail e senha, Apple, Google ou Admin SDK) com `displayName`, `username`, `city: null`, `photoURL: null` e `createdAt`, e reserva o @ em `usernames/{@}` na mesma transação. Nunca grava `updatedAt`. O nome é o do registro atual do Auth (`getUser`), não o do evento: o SDK JS cria a conta sem nome, então a tela de cadastro chama `updateProfile` logo depois de `createUserWithEmailAndPassword`. Se o nome chegar depois da função, o @ fica `fa` com dígitos. O nome vem do Auth, que aceita qualquer texto pela API REST, então passa por `isVisibleLine` (espelho de `visibleLine()` do `firestore.rules`: mudou um, mude o outro e os testes dos dois); nome longo perde as últimas palavras até caber em 60, e nome inválido vira null para o fã preencher. A foto do provedor não é copiada.
+  - O @ é o primeiro nome mais as 3 primeiras letras do último, sem acento ("Camila Ribeiro" vira `camilarib`), com 2 ou 4 dígitos se já existir; sem nome latino, curto ou parecido com a marca e a equipe, vira `fa` com 6 dígitos. `usernames/` é só do servidor. Variações com número no lugar de letra ("adm1n") ou "rn" no lugar de "m" também caem no `fa`.
+  - `deleteUserProfile` apaga as reservas de @ e o perfil com as subcoleções quando a conta é excluída. Dado novo do fã fora de `users/{uid}` (carteira, convites) precisa entrar em `deleteUserData`. A reserva só é apagada se não mudou desde a leitura (`lastUpdateTime`), para uma limpeza atrasada não levar o @ que outra fã tomou depois.
+  - A entrega é "pelo menos uma vez" e sem ordem garantida: a criação não repete (perfil existente fica como está), e `handleUserCreated` confere a conta antes e depois de gravar: se ela sumiu, desfaz o perfil e a reserva. Sem a segunda conferência, excluir a conta nos milissegundos da criação deixava o @ (às vezes o perfil) de uma conta morta. O perfil chega alguns segundos depois do cadastro, então a tela de cadastro espera `users/{uid}` aparecer (`onSnapshot`) antes de liberar o app.
+  - Os scripts fixam `firebase-tools@15.32.0`: o `@15` resolvia para o 15.15.0 instalado na máquina, que não publica nem emula gatilhos de Auth de 2ª geração (precisa de 15.30.2 ou mais). Publicar exige o plano Blaze no `imagine-up-app` e liga as APIs de Functions, Cloud Build, Artifact Registry, Eventarc e Cloud Run no projeto da cliente.
+  - `npm run test:functions` usa o projeto `demo-imagine-up-app`, para o emulador não falar com o projeto real, e sobe o prazo de descoberta das funções para 60 s (`FUNCTIONS_DISCOVERY_TIMEOUT`, via `cross-env` por causa do cmd do Windows). Com os 10 s padrão, a primeira execução depois de instalar estourava o prazo, e o `emulators:exec` rodava os testes sem gatilho nenhum; o `beforeAll` do teste agora falha logo se as funções não carregaram. O `functions/tsconfig.json` cobre `src` e `test`: sem isso, o vitest procura o tsconfig da raiz, que depende do Expo e quebra no CI. O build usa `tsconfig.build.json`.
 - **Firebase:** inicialização preguiçosa em `src/firebase`. Sem `.env`, o app abre, avisa no console e não autentica. Sempre que o Auth diz "sem sessão" (sair no app ou sessão que caiu por fora), o cache do Query vai embora, inclusive o do disco, antes de o guard liberar a próxima tela.
 - **Variáveis:** só `EXPO_PUBLIC_*`, lidas em `src/config/env.ts` com acesso estático. Local em `.env` (modelo no `.env.example`); nas builds, em Environment variables do projeto no expo.dev, já preenchidas nos três ambientes com a config do app Web "ImagineUP (app)". O SDK JS usa essa mesma config no iOS e no Android; os apps iOS e Android também estão registrados no `imagine-up-app` (`br.com.imaginegroup.imagineup`) para quando entrarem login com Google, Crashlytics ou App Check.
 
@@ -176,6 +192,8 @@ npm run start:go          # direto no Expo Go (iPhone sem conta Apple)
 npm run check             # tipos, lint e testes
 npm run test:rules        # regras do Firestore no emulador (Java 21)
 npm run rules:deploy      # publica regras e índices no imagine-up-app
+npm run test:functions    # Cloud Functions nos emuladores de Auth, Firestore e Functions (Java 21)
+npm run functions:deploy  # publica as Cloud Functions (exige o plano Blaze; ainda não publicadas)
 npm run doctor            # expo-doctor
 npm run build:dev:android # APK de desenvolvimento pela EAS
 npm run build:preview:android
@@ -187,7 +205,7 @@ npm run update:preview    # OTA para o canal preview
 - Projeto `@imagineup-app/imagineup` no expo.dev (ID `6984e734-3efc-40bc-8b9b-4d65bffbe085`, no topo do `app.config.ts`), ligado em 2026-09-28. O eas-cli entra com a conta `thelozx`, admin da conta `imagineup-app`.
 - As variáveis `EXPO_PUBLIC_*` das builds ficam em Environment variables do projeto no expo.dev, uma vez por ambiente (development, preview, production), já preenchidas com a config do Firebase `imagine-up-app`.
 - Perfis em `eas.json`, cada um com o canal de mesmo nome: `development` (dev client, APK interno), `development-simulator` (iOS simulador), `preview` (APK interno), `preview-simulator`, `production` (`autoIncrement`, versão remota).
-- `runtimeVersion` por **fingerprint**: update só chega a binário com o mesmo nativo. Mudou lib nativa, plugin ou SDK? Nova build antes de publicar update.
+- `runtimeVersion` por **fingerprint**: update só chega a binário com o mesmo nativo. Mudou lib nativa, plugin ou SDK? Nova build antes de publicar update. Os scripts do `package.json` e o `.gitignore` da raiz também entram no fingerprint.
 - Update é sempre manual (`npm run update:preview`), nunca automático no push.
 - `.eas/workflows/testflight-ios.yml` (build de produção e envio ao TestFlight, no modelo do VerseUp) só roda à mão até existir a conta Apple; o arquivo diz o que ligar.
 - **Sem conta Apple e sem Play Console:** Android funciona em APK interno com EAS Update; iOS só em build de simulador, que precisa de Mac para rodar. No iPhone, use o Expo Go. `eas submit` e Universal Links esperam as contas.
@@ -214,5 +232,8 @@ npm run update:preview    # OTA para o canal preview
 - Primeira tela da aba Explorar, ainda sem definição.
 - Métodos de entrada além de e-mail e senha: Apple, Google e login automático.
 - Modelo de pontos no backend com os três contadores aprovados, mais os pontos por central.
-- Backend (M2): Cloud Functions para criar o perfil `users/{uid}` no cadastro (as regras não deixam o celular criar), pontos, missões, convite e resgate. As regras já bloqueiam saldo, nível e @ pelo celular.
+- Publicar as Cloud Functions de perfil (`npm run functions:deploy`) depois que a cliente confirmar o plano Blaze no `imagine-up-app`. Até lá, conta criada fica sem `users/{uid}`.
+- Tela de cadastro: chamar `updateProfile` com o nome logo depois de criar a conta e esperar `users/{uid}` aparecer.
+- Decidir se o @ automático (`fa` com dígitos) vira o @ do nome quando o nome chega depois do cadastro (Apple sem nome, nome digitado numa tela seguinte). Hoje o @ não muda.
+- Backend (M2): pontos, missões, convite e resgate em Cloud Functions. As regras já bloqueiam saldo, nível e @ pelo celular.
 - Ícone e splash são provisórios (seta da marca sobre o fundo escuro).

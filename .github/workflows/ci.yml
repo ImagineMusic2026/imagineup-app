@@ -44,3 +44,24 @@ jobs:
           java-version: 21
       - run: npm ci
       - run: npm run test:rules
+
+  # Cloud Functions (functions/): tipos, testes unitários e o cadastro de ponta
+  # a ponta nos emuladores de Auth, Firestore e Functions.
+  functions:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: functions/package-lock.json
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: 21
+      - run: npm ci --prefix functions
+      - run: npm --prefix functions run typecheck
+      - run: npm --prefix functions test
+      - run: npm run test:functions

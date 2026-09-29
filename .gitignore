@@ -49,6 +49,9 @@ firestore-debug.log*
 ui-debug.log*
 .firebase/
 
+# Cloud Functions compiladas (o deploy gera de novo)
+functions/lib/
+
 # generated native folders
 /ios
 /android
