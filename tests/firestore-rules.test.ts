@@ -171,10 +171,10 @@ describe('perfil do fã (users/{uid})', () => {
       ' Camila',
       'Camila ',
       'x'.repeat(61),
-      '​',
-      'ㅤ',
+      '\u200B',
+      '\u3164',
       'A\nB',
-      '‮gpj.exe',
+      '\u202Egpj.exe',
       'a\u0000b',
       42,
       null,
@@ -190,40 +190,50 @@ describe('perfil do fã (users/{uid})', () => {
     await checkEach(
       'displayName',
       [
-        '͏',
-        '️',
-        '᠋',
+        '\u034F',
+        '\uFE0F',
+        '\u180B',
         '\u{E0100}',
-        '́',
-        '́Camila',
-        '⁥',
-        '⁦',
-        '؜',
-        '￰',
-        '᠏',
+        '\u0301',
+        '\u0301Camila',
+        '\u2065',
+        '\u2066',
+        '\u061C',
+        '\uFFF0',
+        '\u180F',
         '\u{E0000}',
         '\u{16FE4}',
         '\u{1D159}',
-        '᪰',
-        '᷶',
+        '\u1AB0',
+        '\u1DF6',
+        '\u17B4',
+        'Camila\u17B5',
+        '\u{1BCA0}',
+        'Camila\u{1BCA3}',
+        '\u{13430}',
+        '\u2800',
+        '\u115F',
+        '\u1160',
+        '\uFFA0',
+        '\u180E',
       ],
       assertFails,
     );
   });
 
   it('o nome fica numa linha só', async () => {
-    await checkEach('displayName', ['Camila Oficial', 'A B'], assertFails);
+    await checkEach('displayName', ['Camila\u2028Oficial', 'A\u2029B'], assertFails);
   });
 
   it('recusa acento empilhado (texto "zalgo")', async () => {
     await checkEach(
       'displayName',
       [
-        'a' + '̶'.repeat(59),
-        'Camila' + '҉'.repeat(40),
-        'a' + '᷶'.repeat(20),
-        'a' + '᫁'.repeat(20),
-        'a' + '̍̎̄᫁'.repeat(10),
+        'a' + '\u0336'.repeat(59),
+        'Camila' + '\u0489'.repeat(40),
+        'a' + '\u1DF6'.repeat(20),
+        'a' + '\u1AC1'.repeat(20),
+        'a' + '\u030D\u030E\u0304\u1AC1'.repeat(10),
       ],
       assertFails,
     );
@@ -233,17 +243,17 @@ describe('perfil do fã (users/{uid})', () => {
     await checkEach(
       'displayName',
       [
-        'Camila \u{1F469}‍\u{1F3A4}',
-        'Camila \u{1F469}\u{1F3FD}‍\u{1F3A4}',
-        'Camila \u{1F9D1}‍\u{1F3A4}',
-        'Camila \u{1F64B}‍♀️',
-        'Camila ❤️‍\u{1F525}',
-        'Camila ❤️‍\u{1FA79}',
-        'Camila \u{1F3F3}️‍\u{1F308}',
-        'Camila \u{1F3F3}️‍⚧️',
-        '\u{1F468}‍\u{1F469}‍\u{1F467} Silva',
-        'Camila \u{1F9D1}‍\u{1F91D}‍\u{1F9D1}',
-        'Camila \u{1F642}‍↔️',
+        'Camila \u{1F469}\u200D\u{1F3A4}',
+        'Camila \u{1F469}\u{1F3FD}\u200D\u{1F3A4}',
+        'Camila \u{1F9D1}\u200D\u{1F3A4}',
+        'Camila \u{1F64B}\u200D♀\uFE0F',
+        'Camila ❤\uFE0F\u200D\u{1F525}',
+        'Camila ❤\uFE0F\u200D\u{1FA79}',
+        'Camila \u{1F3F3}\uFE0F\u200D\u{1F308}',
+        'Camila \u{1F3F3}\uFE0F\u200D⚧\uFE0F',
+        '\u{1F468}\u200D\u{1F469}\u200D\u{1F467} Silva',
+        'Camila \u{1F9D1}\u200D\u{1F91D}\u200D\u{1F9D1}',
+        'Camila \u{1F642}\u200D↔\uFE0F',
       ],
       assertSucceeds,
     );
@@ -252,7 +262,14 @@ describe('perfil do fã (users/{uid})', () => {
   it('o ZWJ fora de emoji continua recusado', async () => {
     await checkEach(
       'displayName',
-      ['A‍B', 'A‍‍B', 'Camila‍', '‍Camila', '\u{1F3A4}‍', 'A‍\u{1F3A4}'],
+      [
+        'A\u200DB',
+        'A\u200D\u200DB',
+        'Camila\u200D',
+        '\u200DCamila',
+        '\u{1F3A4}\u200D',
+        'A\u200D\u{1F3A4}',
+      ],
       assertFails,
     );
   });
@@ -262,9 +279,9 @@ describe('perfil do fã (users/{uid})', () => {
       'displayName',
       [
         'Camila Ribeiro 🎶',
-        'Camila ❤️',
-        'Nº 1️⃣',
-        '1️⃣ Camila',
+        'Camila ❤\uFE0F',
+        'Nº 1\uFE0F\u20E3',
+        '1\uFE0F\u20E3 Camila',
         'Nguyễn Thị Ánh',
         'Nguyễn Thị Ánh'.normalize('NFD'),
         'Cámila José'.normalize('NFD'),
@@ -293,10 +310,10 @@ describe('perfil do fã (users/{uid})', () => {
         '   ',
         ' Irará, BA',
         'Irará, BA ',
-        'Irará BA',
-        '͏',
-        '⁥',
-        'A⁧B',
+        'Irará\u2028BA',
+        '\u034F',
+        '\u2065',
+        'A\u2067B',
       ],
       assertFails,
     );
@@ -307,7 +324,7 @@ describe('perfil do fã (users/{uid})', () => {
         'São João del-Rei, MG',
         'São Paulo, SP'.normalize('NFD'),
         "Olho-d'Água das Flores, AL",
-        'Salvador \u{1F3F3}️‍\u{1F308}',
+        'Salvador \u{1F3F3}\uFE0F\u200D\u{1F308}',
       ],
       assertSucceeds,
     );
@@ -349,6 +366,7 @@ describe('todo o resto é do servidor', () => {
     'missions/diaria',
     'invites/ABC123',
     'rankings/geral',
+    'usernames/camilarib',
   ])('%s: o celular não lê nem grava', async (path) => {
     await assertFails(getDoc(doc(fan(), path)));
     await assertFails(setDoc(doc(fan(), path), { qualquer: 1 }));

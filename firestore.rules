@@ -26,7 +26,7 @@ service cloud.firestore {
     // \p{C} nem \p{M} para ele e aparecem em branco no aparelho. Por isso a
     // lista explícita, junto com as letras "em branco" do Hangul e do Braille.
     function blankChars() {
-      return '\\x{034F}\\x{061C}\\x{115F}\\x{1160}\\x{180E}\\x{180F}\\x{2065}-\\x{2069}\\x{2800}\\x{3164}\\x{FFA0}\\x{FFF0}-\\x{FFF8}\\x{16FE4}\\x{1D159}\\x{E0000}-\\x{E0FFF}';
+      return '\\x{034F}\\x{061C}\\x{115F}\\x{1160}\\x{17B4}\\x{17B5}\\x{180E}\\x{180F}\\x{2065}-\\x{2069}\\x{2800}\\x{3164}\\x{FFA0}\\x{FFF0}-\\x{FFF8}\\x{13430}-\\x{1343F}\\x{16FE4}\\x{1BCA0}-\\x{1BCA3}\\x{1D159}\\x{E0000}-\\x{E0FFF}';
     }
 
     // Marcas combinantes (acentos), com os blocos que o motor não reconhece como \p{M}.
