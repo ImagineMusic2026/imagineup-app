@@ -3,10 +3,11 @@ import { defineSecret, defineString } from 'firebase-functions/params';
 import type { EmailConfig } from './email';
 
 /**
- * Origens que chamam as funções da equipe pelo navegador. O endereço de
- * produção do painel entra aqui quando ele for publicado na Vercel.
+ * Origens que chamam as funções da equipe pelo navegador: o painel publicado
+ * na Vercel (projeto imagineup-admin) e o local, para desenvolvimento. Quando
+ * o painel ganhar domínio próprio, o endereço novo entra aqui.
  */
-export const PANEL_ORIGINS = ['http://localhost:3000'];
+export const PANEL_ORIGINS = ['https://imagineup-admin.vercel.app', 'http://localhost:3000'];
 
 /** Painel local do Next.js, usado quando PANEL_URL não foi definido. */
 export const DEFAULT_PANEL_URL = 'http://localhost:3000';
