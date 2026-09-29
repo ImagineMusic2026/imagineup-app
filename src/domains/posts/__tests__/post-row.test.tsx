@@ -8,6 +8,7 @@ import type { ReactTestInstance } from 'react-test-renderer';
 import { PressableScale } from '@/components/pressable-scale';
 import { agendaKeys } from '@/domains/agenda';
 import { rsvpFixture } from '@/domains/agenda/fixtures';
+import { missionsFixture } from '@/domains/missions';
 import { profileKeys } from '@/domains/profile';
 import { buildMyInviteFixture } from '@/domains/profile/fixtures';
 
@@ -67,6 +68,7 @@ function nestedPressables(): ReactTestInstance[] {
 beforeEach(() => {
   jest.clearAllMocks();
   rsvpFixture.reset();
+  missionsFixture.reset();
   client = new QueryClient({
     defaultOptions: { queries: { retry: false, gcTime: Infinity } },
   });

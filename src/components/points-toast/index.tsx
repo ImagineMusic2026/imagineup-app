@@ -31,6 +31,12 @@ export interface PointsToastProps {
    * mensagem ("Comentário enviado. Mais 2 pontos"). Padrão: só os pontos.
    */
   announcement?: string;
+  /**
+   * Só a pílula, sem toque e sem anúncio: quem chama já avisou o fã. A 1g toca
+   * e anuncia as missões concluídas na própria tela, porque a célula da lista
+   * pode nem estar montada.
+   */
+  silent?: boolean;
   /** Por padrão nasce centralizado na borda de cima do pai. */
   style?: StyleProp<ViewStyle>;
   testID?: string;
@@ -40,7 +46,8 @@ interface Toast {
   /** Conta os ganhos desta pílula: a mesma chave pode voltar depois de outra. */
   id: number;
   points: number;
-  announcement: string;
+  /** `null`: sem toque e sem anúncio. */
+  announcement: string | null;
 }
 
 // Sobe 12 e some no tempo do contador: aparece rápido, fica e apaga.
@@ -61,7 +68,14 @@ export function pointsToastAnnouncement(points: number): string {
  * anúncio só; a pílula fica fora do leitor de tela, que já ouviu o anúncio, e
  * não recebe toque. Com reduzir movimento, aparece parada pelo mesmo tempo.
  */
-export function PointsToast({ points, trigger, announcement, style, testID }: PointsToastProps) {
+export function PointsToast({
+  points,
+  trigger,
+  announcement,
+  silent = false,
+  style,
+  testID,
+}: PointsToastProps) {
   const reducedMotion = usePrefersReducedMotion();
   const playHaptic = useHaptics();
   const [seenTrigger, setSeenTrigger] = useState(trigger);
@@ -80,14 +94,14 @@ export function PointsToast({ points, trigger, announcement, style, testID }: Po
       setToast({
         id: gains + 1,
         points,
-        announcement: announcement ?? pointsToastAnnouncement(points),
+        announcement: silent ? null : (announcement ?? pointsToastAnnouncement(points)),
       });
     }
   }
 
   // Separado da animação: se o efeito rodar de novo, o fã não ouve duas vezes.
   useEffect(() => {
-    if (!toast || announced.current === toast.id) return;
+    if (!toast || toast.announcement === null || announced.current === toast.id) return;
     announced.current = toast.id;
     playHaptic('pointsEarned');
     // Na fila, no iOS: os pontos chegam com a resposta, logo depois do anúncio

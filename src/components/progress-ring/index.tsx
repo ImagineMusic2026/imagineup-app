@@ -48,12 +48,12 @@ export function ProgressRing({
     );
   }, [clamped, end]);
 
-  const path = useMemo(() => {
-    const radius = (size - strokeWidth) / 2;
-    const circle = Skia.Path.Make();
-    circle.addCircle(size / 2, size / 2, radius);
-    return circle;
-  }, [size, strokeWidth]);
+  // `Path.Circle` no lugar do `addCircle` num path vazio, que o Skia 2.6 marca
+  // como obsoleto (e avisa no console a cada abertura). Mesmo sentido e início.
+  const path = useMemo(
+    () => Skia.Path.Circle(size / 2, size / 2, (size - strokeWidth) / 2),
+    [size, strokeWidth],
+  );
 
   const center = vec(size / 2, size / 2);
   const gradient = ringColors.length > 1 ? [...ringColors, ringColors[0] as string] : null;

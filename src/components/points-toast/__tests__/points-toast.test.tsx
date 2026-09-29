@@ -53,6 +53,15 @@ describe('PointsToast', () => {
     expect(announce).toHaveBeenCalledWith(pointsToastAnnouncement(20), { queue: true });
   });
 
+  it('em silêncio (quem chama já avisou), só a pílula aparece: sem toque e sem anúncio', () => {
+    const { rerender } = render(<PointsToast points={15} trigger={null} silent />);
+    rerender(<PointsToast points={15} trigger="missao-1" silent />);
+
+    expect(screen.getByText('+15', hidden)).toBeTruthy();
+    expect(vibrate).not.toHaveBeenCalled();
+    expect(announce).not.toHaveBeenCalled();
+  });
+
   it('renderizar de novo com a mesma chave não repete toque nem anúncio', () => {
     const { rerender } = render(<PointsToast points={20} trigger={null} />);
     rerender(<PointsToast points={20} trigger="join-1" />);

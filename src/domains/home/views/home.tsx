@@ -1,4 +1,5 @@
 import { FlashList } from '@shopify/flash-list';
+import { useIsFocused } from 'expo-router';
 import { ActivityIndicator, RefreshControl, StyleSheet, View } from 'react-native';
 
 import { EmptyState } from '@/components/empty-state';
@@ -8,13 +9,13 @@ import { useFanCentralsQuery } from '@/domains/artists';
 import { DailyMissionSection, useDailyMissionQuery } from '@/domains/missions';
 import { PostDivider, PostRow, PostRowsSkeleton, useFeedQuery, type Post } from '@/domains/posts';
 import { useWatchMyProfile } from '@/domains/profile';
+import { useAnnounceWhen } from '@/hooks/use-announce-when';
 import { useTabBarInset } from '@/hooks/use-tab-bar-inset';
 import { t } from '@/i18n';
 import { colors, spacing } from '@/theme';
 
 import { CentralsSection } from '../components/centrals-carousel';
 import { HomeHeader } from '../components/home-header';
-import { useAnnounceWhen } from '../hooks/use-announce-when';
 import { useHomeRefresh } from '../hooks/use-home-refresh';
 
 /** Tipos de célula da FlashList: cada um reaproveita só células do mesmo desenho. */
@@ -23,12 +24,16 @@ function postItemType(post: Post): 'event' | 'media' | 'text' {
   return post.media ? 'media' : 'text';
 }
 
-/** Tudo o que vem antes do mural, de ponta a ponta (o carrossel sai da margem). */
-function HomeListHeader() {
+/**
+ * Tudo o que vem antes do mural, de ponta a ponta (o carrossel sai da margem).
+ * Fora de foco, a missão do dia que conclui não festeja: quem fala é a tela
+ * que o fã está vendo (a 1g, quando a conclusão chega por lá).
+ */
+function HomeListHeader({ focused }: { focused: boolean }) {
   return (
     <View>
       <HomeHeader />
-      <DailyMissionSection style={styles.mission} />
+      <DailyMissionSection celebrate={focused} style={styles.mission} />
       <CentralsSection />
       <SectionHeader title={t('home.feed.title')} style={styles.feedTitle} />
     </View>
@@ -112,6 +117,7 @@ function useAnnounceHomeFailures(postCount: number): void {
  */
 export function HomeScreen() {
   const bottomInset = useTabBarInset();
+  const focused = useIsFocused();
   useWatchMyProfile();
   const feed = useFeedQuery();
   const { refreshing, refresh } = useHomeRefresh();
@@ -127,7 +133,7 @@ export function HomeScreen() {
         getItemType={postItemType}
         renderItem={({ item }) => <PostRow post={item} />}
         ItemSeparatorComponent={PostDivider}
-        ListHeaderComponent={<HomeListHeader />}
+        ListHeaderComponent={<HomeListHeader focused={focused} />}
         ListEmptyComponent={
           <FeedPlaceholder
             state={feedState}

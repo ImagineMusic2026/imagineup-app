@@ -25,6 +25,7 @@ import { withAlpha } from '@/utils/color';
 import { formatTimeLeft, formatTimeLeftSpoken } from '@/utils/date';
 import { formatPointsDelta, formatPointsSpoken } from '@/utils/number';
 
+import { inviteHref } from '../describe-mission';
 import { useDailyMission } from '../hooks/use-daily-mission';
 import type { DailyMission } from '../types';
 
@@ -63,17 +64,26 @@ const hiddenFromReader = {
 /**
  * Toque, anúncio e pulso do "+20" quando a missão é concluída diante do fã
  * (não ao montar). Como todo ganho de pontos, um toque e um anúncio só, na
- * fila para não cortar o que o leitor estiver falando.
+ * fila para não cortar o que o leitor estiver falando. Com a home fora de
+ * foco (o fã na 1g, que festeja a mesma missão), a conclusão passa em
+ * silêncio: só a tela que o fã está vendo fala.
+ *
+ * A tela fora de foco pode só ver o dado novo quando volta a ele (a lista da
+ * aba escondida não redesenha na hora): conclusão que chega junto com a volta
+ * do foco também aconteceu longe da home, e não festeja.
  */
-function useCompletionPulse(completed: boolean, rewardPoints: number) {
+function useCompletionPulse(completed: boolean, rewardPoints: number, celebrate: boolean) {
   const reducedMotion = usePrefersReducedMotion();
   const scale = useSharedValue(1);
   const wasCompleted = useRef(completed);
+  const wasCelebrating = useRef(celebrate);
 
   useEffect(() => {
     const justCompleted = completed && !wasCompleted.current;
+    const cameBack = celebrate && !wasCelebrating.current;
     wasCompleted.current = completed;
-    if (!justCompleted) return;
+    wasCelebrating.current = celebrate;
+    if (!justCompleted || !celebrate || cameBack) return;
     haptics.trigger('missionComplete');
     AccessibilityInfo.announceForAccessibilityWithOptions(
       t('missions.daily.completedAnnouncement', { points: formatPointsSpoken(rewardPoints) }),
@@ -86,7 +96,7 @@ function useCompletionPulse(completed: boolean, rewardPoints: number) {
         withSpring(1, motion.spring.gentle),
       ),
     );
-  }, [completed, rewardPoints, reducedMotion, scale]);
+  }, [completed, rewardPoints, celebrate, reducedMotion, scale]);
 
   return useAnimatedStyle(() => ({ transform: [{ scale: scale.get() }] }));
 }
@@ -96,16 +106,12 @@ function sharesLink(mission: DailyMission): boolean {
   return mission.action === 'share' || mission.action === 'invite';
 }
 
-/** O que a sheet de convite precisa para montar o link: a missão e, se houver, o post alvo. */
-function inviteParams(mission: DailyMission): { missionId: string; postId?: string } {
-  const postId = mission.target?.postId;
-  return postId ? { missionId: mission.id, postId } : { missionId: mission.id };
-}
-
 export interface DailyMissionCardProps {
   mission: DailyMission;
   /** Relógio da contagem ("termina em 4 h"). */
   now: Date;
+  /** Falso com a home fora de foco: a conclusão não toca, não anuncia nem pulsa. */
+  celebrate?: boolean;
   style?: StyleProp<ViewStyle>;
 }
 
@@ -116,10 +122,11 @@ export interface DailyMissionCardProps {
  * "Suas centrais" e "Do seu fandom" abrem as delas; depois vêm o título e a
  * barra, um `progressbar` ("3 de 5"). O "3/5" visível fica fora do leitor.
  *
- * "Gerar meu link" abre a sheet de convite levando a missão e o post alvo.
+ * "Gerar meu link" abre a sheet de convite levando a missão e o post alvo (o
+ * mesmo destino do card lima da 1g).
  * Concluída: barra cheia, "+20" com check e "Ver missões" como botão principal.
  */
-export function DailyMissionCard({ mission, now, style }: DailyMissionCardProps) {
+export function DailyMissionCard({ mission, now, celebrate = true, style }: DailyMissionCardProps) {
   const completed = mission.status === 'completed';
   const { target } = mission.progress;
   const done = completed ? target : Math.min(mission.progress.current, target);
@@ -130,7 +137,7 @@ export function DailyMissionCard({ mission, now, style }: DailyMissionCardProps)
   const summary = completed
     ? t('missions.daily.summaryCompleted', { points })
     : t('missions.daily.summary', { time: formatTimeLeftSpoken(mission.endsAt, now), points });
-  const rewardStyle = useCompletionPulse(completed, mission.rewardPoints);
+  const rewardStyle = useCompletionPulse(completed, mission.rewardPoints, celebrate);
   const withLink = !completed && sharesLink(mission);
 
   return (
@@ -154,7 +161,7 @@ export function DailyMissionCard({ mission, now, style }: DailyMissionCardProps)
               strokeWidth={CHECK_STROKE}
             />
           ) : null}
-          <Text variant="points" color={colors.onPoints} tabular>
+          <Text variant="points" color={colors.onPoints}>
             {formatPointsDelta(mission.rewardPoints)}
           </Text>
         </Animated.View>
@@ -178,7 +185,7 @@ export function DailyMissionCard({ mission, now, style }: DailyMissionCardProps)
           accessibilityValue={{ min: 0, max: target, now: done }}
           style={styles.bar}
         />
-        <Text variant="chip" color={colors.onPoints} tabular {...hiddenFromReader}>
+        <Text variant="chip" color={colors.onPoints} {...hiddenFromReader}>
           {`${done}/${target}`}
         </Text>
       </View>
@@ -188,7 +195,7 @@ export function DailyMissionCard({ mission, now, style }: DailyMissionCardProps)
             label={t('missions.daily.generateLink')}
             variant="onPoints"
             size="mdCompact"
-            onPress={() => router.push({ pathname: '/convidar', params: inviteParams(mission) })}
+            onPress={() => router.push(inviteHref(mission))}
             style={styles.main}
           />
         ) : null}
@@ -214,6 +221,8 @@ export function DailyMissionSkeleton({ style }: { style?: StyleProp<ViewStyle> }
 }
 
 export interface DailyMissionSectionProps {
+  /** Falso com a home fora de foco (ver `DailyMissionCard`). */
+  celebrate?: boolean;
   style?: StyleProp<ViewStyle>;
 }
 
@@ -223,7 +232,7 @@ export interface DailyMissionSectionProps {
  * sobe). Expirada, some na hora. Se não carregou, a mensagem de erro com
  * "Tentar de novo" fica no lugar do card; o anúncio da falha é da tela.
  */
-export function DailyMissionSection({ style }: DailyMissionSectionProps) {
+export function DailyMissionSection({ celebrate = true, style }: DailyMissionSectionProps) {
   const { mission, now, loading, failed, retrying, retry } = useDailyMission();
   if (loading) return <DailyMissionSkeleton style={style} />;
   if (failed) {
@@ -240,7 +249,7 @@ export function DailyMissionSection({ style }: DailyMissionSectionProps) {
   if (!mission) return null;
   return (
     <Animated.View entering={FadeIn.duration(motion.duration.base)} style={style}>
-      <DailyMissionCard mission={mission} now={now} />
+      <DailyMissionCard mission={mission} now={now} celebrate={celebrate} />
     </Animated.View>
   );
 }

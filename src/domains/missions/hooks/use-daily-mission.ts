@@ -3,6 +3,7 @@ import { useEffect } from 'react';
 
 import { useNow } from '@/hooks/use-now';
 
+import { isMissionOver } from '../describe-mission';
 import { missionKeys, useDailyMissionQuery } from '../queries';
 import type { DailyMission } from '../types';
 
@@ -19,11 +20,6 @@ export interface DailyMissionState {
   retry: () => void;
 }
 
-function isOver(mission: DailyMission, now: Date): boolean {
-  if (mission.status === 'expired') return true;
-  return mission.status === 'active' && new Date(mission.endsAt).getTime() <= now.getTime();
-}
-
 /**
  * Missão do dia com a contagem andando. Quando o prazo acaba, ela some da home
  * na hora e a busca de novo traz a próxima (ou nenhuma), sem esperar o fã
@@ -34,7 +30,7 @@ export function useDailyMission(): DailyMissionState {
   const now = useNow();
   const queryClient = useQueryClient();
   const mission = query.data ?? null;
-  const over = mission !== null && isOver(mission, now);
+  const over = mission !== null && isMissionOver(mission, now);
 
   useEffect(() => {
     if (over) void queryClient.invalidateQueries({ queryKey: missionKeys.daily() });

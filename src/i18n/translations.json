@@ -156,6 +156,47 @@
     "title": "Missões",
     "subtitle": "Toda ação que leva gente nova pro app vale ponto.",
     "progressLabel": "{{done}} de {{total}} concluídas",
+    "loading": "Carregando as missões",
+    "empty": "Sem missões por agora. Novas missões aparecem aqui.",
+    "loadError": "Não deu para carregar as missões.",
+    "updateError": "Não deu para atualizar as missões.",
+    "loaded": "Missões carregadas.",
+    "sections": {
+      "today": "Hoje",
+      "week": "Esta semana"
+    },
+    "season": {
+      "label": "{{title}}. {{progress}}. {{description}}"
+    },
+    "meta": {
+      "breakdown": "{{visit}} por visita · {{signup}} por cadastro",
+      "progress": "Você tem {{current}} de {{target}}",
+      "invites": "{{current}} de {{target}} cadastrados",
+      "event": "{{name}} · {{date}}",
+      "completedAt": "Concluída às {{time}}",
+      "completed": "Concluída",
+      "locked": "Ainda não abriu"
+    },
+    "spoken": {
+      "progress": "{{current}} de {{target}}",
+      "breakdown": "{{visit}} por visita e {{signup}} por cadastro",
+      "event": "{{name}}, {{date}}"
+    },
+    "label": {
+      "active": "{{title}}. {{meta}}. Vale {{points}}.",
+      "withBreakdown": "{{title}}. {{progress}}. Vale {{points}}, {{breakdown}}.",
+      "completed": "{{title}}. {{meta}}. Rendeu {{points}}.",
+      "locked": "{{title}}. Bloqueada. {{hint}}. Vale {{points}}."
+    },
+    "hint": {
+      "invite": "Abre seu link de convite",
+      "post": "Abre o post",
+      "agenda": "Abre a agenda",
+      "artist": "Abre a central do artista",
+      "home": "Abre o início"
+    },
+    "lockedAnnouncement": "Bloqueada. {{hint}}",
+    "completedAnnouncement": "Missão concluída: {{title}}. Rendeu {{points}}",
     "daily": {
       "badge": "Missão de hoje · termina em {{time}}",
       "badgeCompleted": "Missão de hoje · concluída",

@@ -58,7 +58,7 @@ const appTree = {
   '(tabs)/(explorar)/explorar': label('explore'),
   '(tabs)/(ranking)/ranking': label('ranking'),
   '(tabs)/(perfil)/perfil': label('profile'),
-  '(tabs)/(inicio,explorar,perfil)/artista/[artistaId]': label('artist'),
+  '(tabs)/(inicio,explorar,ranking,perfil)/artista/[artistaId]': label('artist'),
   'convite/[codigo]': InviteCaptureScreen,
 };
 

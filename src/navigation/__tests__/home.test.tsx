@@ -1,12 +1,20 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Stack } from 'expo-router';
 import { Tabs } from 'expo-router/js-tabs';
-import { act, fireEvent, renderRouter, screen, waitFor } from 'expo-router/testing-library';
+import {
+  act,
+  fireEvent,
+  renderRouter,
+  screen,
+  testRouter,
+  waitFor,
+} from 'expo-router/testing-library';
 import { getDoc, onSnapshot } from 'firebase/firestore';
 import { AccessibilityInfo, Text } from 'react-native';
 
 import HomeRoute from '@/app/(tabs)/(inicio)/index';
 import { buildFanCentralsFixture } from '@/domains/artists/fixtures';
+import { missionKeys, type Mission } from '@/domains/missions';
 import { buildDailyMissionFixture } from '@/domains/missions/fixtures';
 import { buildFeedPageFixture } from '@/domains/posts/fixtures';
 import { t } from '@/i18n';
@@ -136,7 +144,7 @@ const appTree = {
   '(tabs)/(ranking)/ranking': label('ranking'),
   '(tabs)/(ranking)/missoes': label('missions'),
   '(tabs)/(perfil)/perfil': label('profile'),
-  '(tabs)/(inicio,explorar,perfil)/artista/[artistaId]': label('artist'),
+  '(tabs)/(inicio,explorar,ranking,perfil)/artista/[artistaId]': label('artist'),
   'post/[postId]': label('post'),
   convidar: label('invite'),
 };
@@ -242,6 +250,35 @@ describe('home (1b)', () => {
     await waitFor(() => expect(view.getPathname()).toBe('/missoes'));
     expect(view.getSegments()).toEqual(['(tabs)', '(ranking)', 'missoes']);
     expect(rootRoutes(view)).toEqual(['(tabs)']);
+  });
+
+  it('a missão do dia que conclui com a home fora de foco não vibra nem anuncia: quem festeja é a 1g', async () => {
+    let daily: Mission = buildDailyMissionFixture(new Date());
+    mockApi({ '/missions/daily': async () => ({ mission: daily }) });
+    const view = renderRouter(appTree, { initialUrl: '/' });
+    fireEvent.press(await screen.findByRole('button', { name: 'Ver missões' }));
+    await waitFor(() => expect(view.getPathname()).toBe('/missoes'));
+
+    // Na 1g, o puxar para atualizar manda a missão do dia buscar de novo, e ela concluiu.
+    daily = {
+      ...daily,
+      status: 'completed',
+      progress: { ...daily.progress, current: daily.progress.target },
+      completedAt: new Date().toISOString(),
+    };
+    await act(async () => {
+      await client.invalidateQueries({ queryKey: missionKeys.daily() });
+    });
+    act(() => testRouter.back());
+
+    expect(
+      await screen.findByLabelText(t('missions.daily.summaryCompleted', { points: '20 pontos' })),
+    ).toBeTruthy();
+    expect(haptics.trigger).not.toHaveBeenCalledWith('missionComplete');
+    expect(AccessibilityInfo.announceForAccessibilityWithOptions).not.toHaveBeenCalledWith(
+      t('missions.daily.completedAnnouncement', { points: '20 pontos' }),
+      expect.anything(),
+    );
   });
 
   it('tocar no texto do post abre o post fora das abas, por cima delas', async () => {

@@ -3,7 +3,8 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-
 import type { ReactNode } from 'react';
 import { AccessibilityInfo } from 'react-native';
 
-import { missionKeys } from '@/domains/missions';
+import { missionKeys, missionsFixture } from '@/domains/missions';
+import { RSVP_MISSION_POINTS as FIRST_RSVP_POINTS } from '@/domains/missions/fixtures';
 import { profileKeys } from '@/domains/profile';
 import { t } from '@/i18n';
 import { api } from '@/services/api';
@@ -13,7 +14,7 @@ import { haptics } from '@/services/haptics';
 
 import { fetchMyRsvps, setEventRsvp } from '../api';
 import { RsvpChip } from '../components/rsvp-chip';
-import { FIRST_RSVP_POINTS, rsvpFixture } from '../fixtures';
+import { rsvpFixture } from '../fixtures';
 import { agendaKeys, agendaMutationKeys, registerAgendaMutationDefaults } from '../queries';
 
 // O build do Firebase que o Jest resolve é ESM. A presença não fala com ele, mas
@@ -57,6 +58,7 @@ beforeEach(() => {
   jest.clearAllMocks();
   mockDataSource = 'fixtures';
   rsvpFixture.reset();
+  missionsFixture.reset();
   fixtureWallet.reset();
   // Sem prazo de coleta: os timers dele deixariam o Jest aberto depois dos testes.
   client = new QueryClient({
@@ -151,9 +153,10 @@ describe('"Eu vou" do post de show', () => {
     expect(rsvpFixture.mine().eventIds).toEqual([EVENT.id]);
   });
 
-  it('a presença que rende pontos faz o saldo e as missões buscarem de novo', async () => {
+  it('a presença que rende pontos faz o saldo e as missões (1b e 1g) buscarem de novo', async () => {
     client.setQueryData(profileKeys.wallet(), { balance: 12_480, xp: 12_480, seasonPoints: 4_120 });
     client.setQueryData(missionKeys.daily(), null);
+    client.setQueryData(missionKeys.list(), { season: null, missions: [] });
     render(<RsvpChip eventId={EVENT.id} eventTitle={EVENT.title} />, { wrapper });
 
     fireEvent.press(await screen.findByRole('button', { name: goLabel }));
@@ -162,11 +165,14 @@ describe('"Eu vou" do post de show', () => {
       expect(client.getQueryState(profileKeys.wallet())?.isInvalidated).toBe(true),
     );
     expect(client.getQueryState(missionKeys.daily())?.isInvalidated).toBe(true);
+    // A lista da 1g é a que festeja a missão concluída quando o fã volta a ela.
+    expect(client.getQueryState(missionKeys.list())?.isInvalidated).toBe(true);
   });
 
-  it('presença sem pontos (a segunda) não mexe no saldo', async () => {
+  it('presença sem pontos (a segunda) não mexe no saldo, mas as missões buscam de novo', async () => {
     rsvpFixture.set('outro-show', true, 'antes');
     client.setQueryData(profileKeys.wallet(), { balance: 12_495, xp: 12_495, seasonPoints: 4_135 });
+    client.setQueryData(missionKeys.list(), { season: null, missions: [] });
     render(<RsvpChip eventId={EVENT.id} eventTitle={EVENT.title} />, { wrapper });
 
     fireEvent.press(await screen.findByRole('button', { name: goLabel }));
@@ -174,6 +180,8 @@ describe('"Eu vou" do post de show', () => {
     await waitFor(() => expect(rsvpFixture.mine().eventIds).toContain(EVENT.id));
     await waitFor(() => expect(client.isMutating()).toBe(0));
     expect(client.getQueryState(profileKeys.wallet())?.isInvalidated).toBe(false);
+    // Uma missão de presença com meta maior que 1 anda sem concluir (e sem pontos).
+    expect(client.getQueryState(missionKeys.list())?.isInvalidated).toBe(true);
   });
 
   it('a presença que volta da fila depois de o app reabrir também atualiza o saldo', async () => {
@@ -189,8 +197,9 @@ describe('"Eu vou" do post de show', () => {
     expect(client.getQueryState(profileKeys.wallet())?.isInvalidated).toBe(true);
   });
 
-  it('tocar de novo desfaz, sem pontos', async () => {
+  it('tocar de novo desfaz, sem pontos, e as missões buscam de novo', async () => {
     rsvpFixture.set(EVENT.id, true, 'antes');
+    client.setQueryData(missionKeys.list(), { season: null, missions: [] });
     render(<RsvpChip eventId={EVENT.id} eventTitle={EVENT.title} />, { wrapper });
 
     fireEvent.press(await screen.findByRole('button', { name: goingLabel }));
@@ -200,6 +209,7 @@ describe('"Eu vou" do post de show', () => {
     expect(announce).toHaveBeenCalledWith(t('agenda.rsvp.canceled'));
     await waitFor(() => expect(rsvpFixture.mine().eventIds).toEqual([]));
     expect(screen.queryByText(/^\+/, hidden)).toBeNull();
+    await waitFor(() => expect(client.getQueryState(missionKeys.list())?.isInvalidated).toBe(true));
   });
 
   it('se a API recusar, volta ao estado de antes e avisa', async () => {

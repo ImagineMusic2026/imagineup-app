@@ -21,13 +21,14 @@ export const agendaMutationKeys = {
 };
 
 /**
- * Presença que rendeu pontos muda o saldo (1e, 1h) e o andamento das missões
- * ("Confirme presença em um show"): as duas buscam de novo.
+ * Toda presença confirmada ou desfeita pode andar (ou voltar) uma missão de
+ * presença, mesmo sem concluí-la e sem render pontos: as missões buscam de
+ * novo sempre. O saldo (1e, 1h) só muda quando a presença rendeu pontos.
  */
 function refreshPointsAfterRsvp(client: QueryClient, result: RsvpResult): void {
+  void client.invalidateQueries({ queryKey: missionKeys.all });
   if (result.pointsAwarded <= 0) return;
   void client.invalidateQueries({ queryKey: profileKeys.wallet() });
-  void client.invalidateQueries({ queryKey: missionKeys.all });
 }
 
 /**

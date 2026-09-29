@@ -150,6 +150,28 @@ describe('card da missão do dia', () => {
     expect(haptics.trigger).not.toHaveBeenCalled();
     expect(announce).not.toHaveBeenCalled();
   });
+
+  it('concluir com a home fora de foco não vibra nem anuncia, nem quando ela volta', () => {
+    // O fã está na 1g, que festeja a mesma missão: só a tela que ele vê fala.
+    const announce = jest.mocked(AccessibilityInfo.announceForAccessibilityWithOptions);
+    const { rerender } = render(<DailyMissionCard mission={MISSION} now={NOW} celebrate={false} />);
+    rerender(<DailyMissionCard mission={completed(MISSION)} now={NOW} celebrate={false} />);
+    rerender(<DailyMissionCard mission={completed(MISSION)} now={NOW} celebrate />);
+
+    expect(haptics.trigger).not.toHaveBeenCalled();
+    expect(announce).not.toHaveBeenCalled();
+    expect(screen.getByLabelText('Missão de hoje concluída, valeu 20 pontos')).toBeTruthy();
+  });
+
+  it('a conclusão que só aparece junto com a volta do foco também não festeja', () => {
+    // A aba escondida pode só ver o dado novo quando o fã volta a ela.
+    const announce = jest.mocked(AccessibilityInfo.announceForAccessibilityWithOptions);
+    const { rerender } = render(<DailyMissionCard mission={MISSION} now={NOW} celebrate={false} />);
+    rerender(<DailyMissionCard mission={completed(MISSION)} now={NOW} celebrate />);
+
+    expect(haptics.trigger).not.toHaveBeenCalled();
+    expect(announce).not.toHaveBeenCalled();
+  });
 });
 
 describe('missão do dia na home', () => {
