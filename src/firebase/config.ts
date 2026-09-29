@@ -1,8 +1,14 @@
 import { getApp, getApps, initializeApp, type FirebaseApp } from 'firebase/app';
 
-import { firebaseEnv } from '@/config/env';
+import { firebaseEmulatorHost, firebaseEnv } from '@/config/env';
 
 export const isFirebaseConfigured = firebaseEnv !== null;
+
+/**
+ * Com os emuladores, o app usa o projeto demo dos scripts (`npm run emulators`):
+ * o que não estiver emulado falha, em vez de cair no imagine-up-app de verdade.
+ */
+export const EMULATOR_PROJECT_ID = 'demo-imagine-up-app';
 
 /**
  * SDK JS do Firebase (não o @react-native-firebase): funciona no Expo Go, que é
@@ -17,7 +23,7 @@ export function getFirebaseApp(): FirebaseApp {
   return initializeApp({
     apiKey: firebaseEnv.firebaseApiKey,
     authDomain: firebaseEnv.firebaseAuthDomain,
-    projectId: firebaseEnv.firebaseProjectId,
+    projectId: firebaseEmulatorHost ? EMULATOR_PROJECT_ID : firebaseEnv.firebaseProjectId,
     storageBucket: firebaseEnv.firebaseStorageBucket,
     messagingSenderId: firebaseEnv.firebaseMessagingSenderId,
     appId: firebaseEnv.firebaseAppId,

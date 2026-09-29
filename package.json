@@ -23,6 +23,8 @@
     "test:rules": "npx --yes firebase-tools@15.32.0 emulators:exec --only firestore --project imagine-up-app \"jest -c jest.rules.config.js\"",
     "test:functions": "npm --prefix functions run build && npx --yes cross-env@10.1.0 FUNCTIONS_DISCOVERY_TIMEOUT=60 npx --yes firebase-tools@15.32.0 emulators:exec --only auth,firestore,functions --project demo-imagine-up-app \"npm --prefix functions run test:emulator\"",
     "rules:deploy": "npx --yes firebase-tools@15.32.0 deploy --only firestore:rules,firestore:indexes --project imagine-up-app",
+    "emulators": "node scripts/emulators.mjs",
+    "emulators:seed": "node scripts/seed-emulators.mjs",
     "functions:deploy": "npx --yes firebase-tools@15.32.0 deploy --only functions --project imagine-up-app"
   },
   "dependencies": {

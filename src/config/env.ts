@@ -12,6 +12,7 @@ const rawEnv = {
   firebaseMessagingSenderId: process.env.EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
   firebaseAppId: process.env.EXPO_PUBLIC_FIREBASE_APP_ID,
   apiUrl: process.env.EXPO_PUBLIC_API_URL,
+  firebaseEmulatorHost: process.env.EXPO_PUBLIC_FIREBASE_EMULATOR_HOST,
 };
 
 const optionalString = z
@@ -45,3 +46,11 @@ function parseFirebaseEnv(): FirebaseEnv | null {
 export const firebaseEnv = parseFirebaseEnv();
 
 export const apiUrl = optionalString.parse(rawEnv.apiUrl);
+
+/**
+ * Host dos emuladores do Firebase (`npm run emulators`), só em desenvolvimento:
+ * uma build nunca aponta para eles, mesmo que a variável exista.
+ */
+export const firebaseEmulatorHost = __DEV__
+  ? optionalString.parse(rawEnv.firebaseEmulatorHost)
+  : undefined;
