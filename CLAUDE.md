@@ -2,7 +2,7 @@
 
 App iOS e Android de fãs dos artistas da Imagine Music: central de fãs por artista, mural com posts dos artistas (o fã curte e comenta), gamificação (toda interação vale pontos, missões, ranking por temporada, loja de recompensas) e agenda de shows. O fã ganha pontos por trazer gente nova pelo link de convite com atribuição.
 
-Contrato assinado com a IMAGINE MUSIC LTDA, 10 entregas mensais. O painel admin web e o site público moram em outro repositório (`Projetos/imagineup`, repo `ImagineMusic2026/imagineup-painel`). Tarefas no Notion (página ImagineUP, banco Tarefas, refs `UP-n`), nunca no Linear.
+Contrato assinado com a IMAGINE MUSIC LTDA, 10 entregas mensais. O painel admin web e o site público moram em outros repositórios: o painel em `Projetos/imagineup-admin` (repo `ImagineMusic2026/imagineup-admin`) e o site em `Projetos/imagineup` (repo `ImagineMusic2026/imagineup-LP`, publicado no projeto `imagineup-painel` da Vercel). Tarefas no Notion (página ImagineUP, banco Tarefas, refs `UP-n`), nunca no Linear.
 
 ## Antes de mexer
 
@@ -234,7 +234,7 @@ npm run update:preview    # OTA para o canal preview
 ## Git
 
 - Repositório `ImagineMusic2026/imagineup-app` no GitHub, na conta da cliente e **público** (decisão do dono). Nada sensível entra nele.
-- Commits e PRs **sem** a linha `Co-Authored-By` do Claude e sem rodapé de atribuição: o repositório é da cliente (mesma regra do `imagineup-painel`).
+- Commits e PRs **sem** a linha `Co-Authored-By` do Claude e sem rodapé de atribuição: o repositório é da cliente (mesma regra do `imagineup-LP` e do `imagineup-admin`).
 
 ## Aprovações de 2026-09-28
 
@@ -266,7 +266,7 @@ O plano de construção do design saiu de um levantamento tela por tela do prot�
 - Modelo de pontos no backend com os três contadores aprovados, mais os pontos por central.
 - Foto da abertura (slot `up-1k-bg`) não entregue: até lá, o fundo da 1k é o placeholder rosa para roxo (`gradients.authPhotoFallback`).
 - Termos e privacidade abrem `imagineup-painel.vercel.app/termos/` e `/privacidade/` (`auth/consts.ts`) até o domínio próprio (UP-46).
-- Links compartilhados do app (`/post/ID?ref=CODIGO`, em `invites/consts.ts`) caem no 404 do site, que ainda não tem essas páginas. Proposta para o dono: o `vercel.json` do `imagineup-painel` manda `/post/:id/` e `/artista/:id/` para `/baixar/`, mantendo o caminho e o `?ref=` para os App Links (UP-46).
+- Links compartilhados do app (`/post/ID?ref=CODIGO`, em `invites/consts.ts`) caem no 404 do site, que ainda não tem essas páginas. Proposta para o dono: o `vercel.json` do site (`imagineup-LP`) manda `/post/:id/` e `/artista/:id/` para `/baixar/`, mantendo o caminho e o `?ref=` para os App Links (UP-46).
 - Idade e consentimento do responsável no cadastro (LGPD, art. 14): pergunta para a cliente; o cadastro não pede idade.
 - Decidir se o @ automático (`fa` com dígitos) vira o @ do nome quando o nome chega depois do cadastro (Apple sem nome, nome digitado numa tela seguinte). Hoje o @ não muda.
 - Backend (M2): pontos, missões, convite e resgate em Cloud Functions. As regras já bloqueiam saldo, nível e @ pelo celular.
