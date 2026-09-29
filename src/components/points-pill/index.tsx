@@ -5,6 +5,7 @@ import {
   useAnimatedReaction,
   useSharedValue,
   withTiming,
+  type EasingFunctionFactory,
 } from 'react-native-reanimated';
 import { scheduleOnRN } from 'react-native-worklets';
 
@@ -23,6 +24,23 @@ export interface PointsPillProps {
 }
 
 const LOADING = '…';
+
+/**
+ * A curva `out` presa em 0 no começo. A contagem sai do JS no meio de um
+ * quadro, e o primeiro quadro pode chegar com o tempo um pouco negativo; a
+ * `out`, íngreme na origem, passa então do valor de partida (12.480 virava
+ * 12.582 antes de descer para 3.980). Fábrica, como a `motion.easing.out`.
+ */
+export const countEasing: EasingFunctionFactory = {
+  factory: () => {
+    'worklet';
+    const ease = motion.easing.out.factory();
+    return (progress: number) => {
+      'worklet';
+      return ease(Math.max(0, progress));
+    };
+  },
+};
 
 function balanceLabel(value: number | null): string {
   if (value === null) return t('components.pointsPill.loading');
@@ -59,9 +77,7 @@ export function PointsPill({ value, style, testID }: PointsPillProps) {
       counter.set(value);
       return;
     }
-    counter.set(
-      withTiming(value, { duration: motion.duration.counter, easing: motion.easing.out }),
-    );
+    counter.set(withTiming(value, { duration: motion.duration.counter, easing: countEasing }));
   }, [value, reducedMotion, counter, settled]);
 
   const shown =

@@ -1,12 +1,6 @@
-import { ApiError } from '@/services/api/errors';
+import { API_ERROR_CODES, ApiError } from '@/services/api/errors';
 
-import {
-  fixtureDelay,
-  fixtureNow,
-  fixtureWallet,
-  INSUFFICIENT_POINTS_CODE,
-  setFixtureNow,
-} from '..';
+import { fixtureDelay, fixtureNow, fixtureWallet, setFixtureNow } from '..';
 
 describe('ajudantes das fixtures', () => {
   afterEach(() => {
@@ -74,7 +68,7 @@ describe('carteira das fixtures', () => {
     expect(error).toMatchObject({
       kind: 'validation',
       status: 409,
-      code: INSUFFICIENT_POINTS_CODE,
+      code: API_ERROR_CODES.insufficientPoints,
     });
     expect((error as ApiError).isRetryable).toBe(false);
     expect(fixtureWallet.get().balance).toBe(12_480);

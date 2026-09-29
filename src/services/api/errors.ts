@@ -10,6 +10,16 @@ export type ApiErrorKind =
   | 'server'
   | 'unknown';
 
+/**
+ * Códigos que a API manda no corpo do erro (`code`) e que mais de um domínio
+ * trata. Moram no contrato da API, e não nas fixtures: as fixtures imitam a
+ * API, e os códigos ficam quando o ramo das fixtures sair.
+ */
+export const API_ERROR_CODES = {
+  /** O saldo não cobre o gasto (resgate da 1h). */
+  insufficientPoints: 'insufficient_points',
+} as const;
+
 /** Erro único que telas e hooks tratam, venha de onde vier. */
 export class ApiError extends Error {
   readonly kind: ApiErrorKind;

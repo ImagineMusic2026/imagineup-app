@@ -35,6 +35,7 @@ const appTree = {
   '(tabs)/(perfil)/perfil': label('profile'),
   '(tabs)/(inicio,explorar,ranking,perfil)/artista/[artistaId]': label('artist'),
   'post/[postId]': label('post'),
+  'recompensa/[recompensaId]': label('reward'),
   'convite/[codigo]': label('invite'),
 };
 
@@ -78,6 +79,13 @@ describe('rotas do app', () => {
     const view = renderRouter(appTree, { initialUrl: '/post/99' });
     expect(view.getByText('post')).toBeTruthy();
     expect(view.getSegments()).toEqual(['post', '[postId]']);
+  });
+
+  it('o detalhe do resgate abre fora das abas, como a sheet do convite', () => {
+    const view = renderRouter(appTree, { initialUrl: '/recompensa/videochamada' });
+    expect(view.getByText('reward')).toBeTruthy();
+    expect(view.getSegments()).toEqual(['recompensa', '[recompensaId]']);
+    expect(view.getSearchParams()).toEqual({ recompensaId: 'videochamada' });
   });
 
   it('o convite tem rota própria, fora das abas', () => {

@@ -1,4 +1,4 @@
-import { ApiError } from '@/services/api/errors';
+import { API_ERROR_CODES, ApiError } from '@/services/api/errors';
 
 /**
  * Ajudantes das fixtures, usadas enquanto a API (M2) não existe. Aqui não mora
@@ -38,9 +38,6 @@ export interface FixtureWalletState {
 // o primeiro resgate separa os dois, porque o nível não cai no resgate.
 const INITIAL_WALLET: FixtureWalletState = { balance: 12_480, xp: 12_480, seasonPoints: 4_120 };
 
-/** Código que o resgate sem saldo devolve, como a API devolveria. */
-export const INSUFFICIENT_POINTS_CODE = 'insufficient_points';
-
 let wallet: FixtureWalletState = { ...INITIAL_WALLET };
 
 function assertPoints(points: number): void {
@@ -75,7 +72,12 @@ export const fixtureWallet = {
   spend(points: number): FixtureWalletState {
     assertPoints(points);
     if (points > wallet.balance) {
-      throw new ApiError('validation', 'Saldo insuficiente.', 409, INSUFFICIENT_POINTS_CODE);
+      throw new ApiError(
+        'validation',
+        'Saldo insuficiente.',
+        409,
+        API_ERROR_CODES.insufficientPoints,
+      );
     }
     wallet = { ...wallet, balance: wallet.balance - points };
     return fixtureWallet.get();

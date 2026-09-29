@@ -81,11 +81,56 @@ describe('LargeTitleHeader', () => {
     expect(withMarginTop(spacing.titleToChips - SLACK)).toHaveLength(1);
   });
 
+  it('com voltar e sem nada embaixo do título (1h), o primeiro card fica a 18 do título', () => {
+    setFontScale(1);
+    render(<LargeTitleHeader title="Resgatar" showBack accessory={<View testID="saldo" />} />);
+    expect(screen.root).toHaveStyle({
+      paddingTop: spacing.md - SLACK,
+      paddingBottom: spacing.blockGap - SLACK,
+    });
+  });
+
+  it('com voltar e subtítulo, a sobra sai do vão do subtítulo, e o pé fica em 18', () => {
+    setFontScale(1);
+    render(<LargeTitleHeader title="Missões" subtitle="Toda ação vale ponto." showBack />);
+    expect(screen.root).toHaveStyle({ paddingBottom: spacing.blockGap });
+  });
+
   it('com voltar e a fonte grande, o título passa dos 44 e nada é descontado', () => {
     setFontScale(2);
     render(<LargeTitleHeader title="Missões" subtitle="Toda ação vale ponto." showBack />);
     expect(screen.root).toHaveStyle({ paddingTop: spacing.md });
     expect(screen.getByText('Toda ação vale ponto.')).toHaveStyle({ marginTop: spacing.tileGap });
+  });
+
+  it('a peça à direita desce para uma linha própria quando o título quebra ao lado dela', () => {
+    render(<LargeTitleHeader title="Resgatar" showBack accessory={<View testID="saldo" />} />);
+    const title = screen.getByRole('header', { name: 'Resgatar' });
+    const ownLine = () =>
+      screen
+        .UNSAFE_getAllByType(View)
+        .filter((node) => StyleSheet.flatten(node.props.style)?.alignSelf === 'flex-end');
+
+    // Uma linha: fica ao lado.
+    fireEvent(title, 'textLayout', { nativeEvent: { lines: [{ text: 'Resgatar' }] } });
+    expect(ownLine()).toHaveLength(0);
+    expect(screen.getByTestId('saldo')).toBeTruthy();
+
+    // "Resgat" / "ar": a pílula desce para a linha dela, à direita.
+    fireEvent(title, 'textLayout', {
+      nativeEvent: { lines: [{ text: 'Resgat' }, { text: 'ar' }] },
+    });
+    expect(ownLine()).toHaveLength(1);
+    expect(within(ownLine()[0]!).getByTestId('saldo')).toBeTruthy();
+    expect(screen.getAllByTestId('saldo')).toHaveLength(1);
+  });
+
+  it('com a peça embaixo, o pé volta a 18: o título não é mais o último', () => {
+    setFontScale(1);
+    render(<LargeTitleHeader title="Resgatar" showBack accessory={<View testID="saldo" />} />);
+    const title = screen.getByRole('header', { name: 'Resgatar' });
+    fireEvent(title, 'textLayout', { nativeEvent: { lines: [{}, {}] } });
+    expect(screen.root).toHaveStyle({ paddingBottom: spacing.blockGap });
   });
 
   it('o voltar usa a ação da tela quando ela passa uma', () => {

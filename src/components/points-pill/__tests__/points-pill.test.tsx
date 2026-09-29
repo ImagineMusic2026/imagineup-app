@@ -4,7 +4,7 @@ import * as Reanimated from 'react-native-reanimated';
 import { t } from '@/i18n';
 import { colors, motion } from '@/theme';
 
-import { PointsPill } from '..';
+import { countEasing, PointsPill } from '..';
 
 let mockReducedMotion = false;
 jest.mock('@/hooks/use-prefers-reduced-motion', () => ({
@@ -71,8 +71,21 @@ describe('PointsPill', () => {
     rerender(<PointsPill value={6480} />);
     expect(timing).toHaveBeenCalledWith(
       6480,
-      expect.objectContaining({ duration: motion.duration.counter, easing: motion.easing.out }),
+      expect.objectContaining({ duration: motion.duration.counter, easing: countEasing }),
     );
+  });
+
+  it('a contagem não passa do valor de partida quando o primeiro quadro chega adiantado', () => {
+    // O mock do Reanimated não desenha curva: uma reta íngreme na origem, como a `out`
+    // (inclinação de cerca de 4,3), faz o papel dela.
+    const out = (progress: number) => Math.min(1, progress * 4.35);
+    jest.spyOn(motion.easing.out, 'factory').mockReturnValue(out);
+    const ease = countEasing.factory();
+    // Tempo negativo: a curva pura sairia abaixo de 0 (o número subiria antes de descer).
+    expect(out(-0.004)).toBeLessThan(0);
+    expect(ease(-0.004)).toBe(0);
+    expect(ease(0.1)).toBe(out(0.1));
+    expect(ease(1)).toBe(1);
   });
 
   it('com reduzir movimento, o número troca direto, sem contar', () => {

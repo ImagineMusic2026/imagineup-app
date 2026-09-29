@@ -73,6 +73,18 @@ export default function RootLayout() {
               contentStyle: { backgroundColor: colors.surface },
             }}
           />
+          {/* Detalhe, confirmação e instruções do resgate (1h), em altura cheia:
+              a foto, o quadro de pontos e o botão preso no pé. */}
+          <Stack.Screen
+            name="recompensa/[recompensaId]"
+            options={{
+              presentation: 'formSheet',
+              sheetAllowedDetents: [1],
+              sheetGrabberVisible: true,
+              sheetCornerRadius: radii.sheet,
+              contentStyle: { backgroundColor: colors.surface },
+            }}
+          />
         </Stack.Protected>
         {/* Fora dos guards: guarda o código do convite e segue para uma rota permitida. */}
         <Stack.Screen name="convite/[codigo]" options={{ animation: 'none' }} />

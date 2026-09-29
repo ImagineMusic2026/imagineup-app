@@ -13,10 +13,11 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { EmptyState } from '@/components/empty-state';
 import { BackButton } from '@/components/header';
+import { SheetGrabber } from '@/components/sheet-grabber';
 import { Text } from '@/components/text';
 import { TextInput } from '@/components/text-input';
 import { t } from '@/i18n';
-import { colors, radii, spacing } from '@/theme';
+import { colors, spacing } from '@/theme';
 
 import { ArtistGridSkeleton } from '../components/artist-grid-skeleton';
 import { SelectableArtistCard } from '../components/artist-select-card';
@@ -25,9 +26,6 @@ import { filterArtists, sortByOrder } from '../selection';
 
 const COLUMNS = 2;
 const isIOS = Platform.OS === 'ios';
-
-// O puxador nas medidas do nativo do iOS (36 x 5, a 8 do topo).
-const GRABBER = { width: 36, height: 5, top: spacing.sm } as const;
 
 /** Aberta a frio, sem a 1l embaixo, a sheet volta para ela. */
 function closeSheet(): void {
@@ -72,17 +70,7 @@ export function AllArtistsSheetScreen() {
 
   return (
     <View style={styles.root}>
-      {/* O `sheetGrabberVisible` só vale no iOS (react-native-screens 4.26):
-          no Android, o puxador é desenhado aqui, no mesmo lugar. */}
-      {isIOS ? null : (
-        <View
-          pointerEvents="none"
-          accessible={false}
-          importantForAccessibility="no-hide-descendants"
-          accessibilityElementsHidden
-          style={styles.grabber}
-        />
-      )}
+      <SheetGrabber />
       <View style={styles.header}>
         <Text variant="titleHeader" accessibilityRole="header" style={styles.title}>
           {t('onboarding.chooseArtists.allTitle')}
@@ -154,15 +142,6 @@ const styles = StyleSheet.create({
   root: {
     flex: 1,
     backgroundColor: colors.surface,
-  },
-  grabber: {
-    position: 'absolute',
-    top: GRABBER.top,
-    alignSelf: 'center',
-    width: GRABBER.width,
-    height: GRABBER.height,
-    borderRadius: radii.pill,
-    backgroundColor: colors.borderGlassStrong,
   },
   // Abaixo do puxador da sheet. O "×" fica colado ao fim do alvo, na mesma
   // coluna do campo de busca e da grade.

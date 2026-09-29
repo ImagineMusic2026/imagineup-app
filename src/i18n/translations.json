@@ -211,7 +211,79 @@
     }
   },
   "rewards": {
-    "title": "Resgatar"
+    "title": "Resgatar",
+    "loading": "Carregando as recompensas",
+    "empty": "As recompensas aparecem aqui quando a loja abrir.",
+    "loadError": "Não deu para carregar as recompensas.",
+    "updateError": "Não deu para atualizar as recompensas.",
+    "balanceError": "Não deu para carregar seu saldo.",
+    "loaded": "Recompensas carregadas.",
+    "sections": {
+      "reachable": "Ao seu alcance"
+    },
+    "price": "{{points}} pts",
+    "missing": "faltam {{points}}",
+    "missingOne": "falta 1",
+    "soldOut": "Esgotado",
+    "scarcity": "Só {{count}} vagas",
+    "scarcityOne": "Só 1 vaga",
+    "hint": "Abre os detalhes do resgate",
+    "meta": {
+      "event": "{{name}} · {{date}}"
+    },
+    "spoken": {
+      "event": "{{name}}, {{date}}",
+      "missing": "Faltam {{points}}",
+      "missingOne": "Falta 1 ponto"
+    },
+    "label": {
+      "card": "{{title}}. {{meta}}. {{value}}.",
+      "featuredScarce": "{{title}}. {{scarcity}}. {{meta}}. {{value}}."
+    },
+    "summary": {
+      "line": "{{label}}: {{points}}.",
+      "cost": "Custo",
+      "balance": "Seu saldo",
+      "balanceNow": "Saldo agora",
+      "balanceAfter": "Seu saldo depois"
+    },
+    "details": {
+      "loading": "Carregando a recompensa",
+      "loadError": "Não deu para carregar esta recompensa.",
+      "notFound": "Esta recompensa não está mais na loja.",
+      "redeem": "Resgatar por {{points}} pts",
+      "redeemLabel": "Resgatar por {{points}}",
+      "redeemHint": "Pede confirmação antes de gastar os pontos",
+      "seeMissions": "Ver missões",
+      "seeMissionsHint": "Abre as missões, para ganhar pontos",
+      "offline": "Sem internet. Conecte-se para resgatar."
+    },
+    "confirm": {
+      "title": "Confirmar resgate?",
+      "body": "Você troca {{points}} do seu saldo por {{title}}.",
+      "note": "Seu nível não cai: só o saldo diminui. A entrega fica com a equipe da Imagine Music, e depois de confirmar você vê como retirar ou como a equipe vai falar com você.",
+      "action": "Confirmar resgate",
+      "back": "Voltar"
+    },
+    "success": {
+      "title": "Resgate confirmado",
+      "code": "Código do resgate",
+      "codeLabel": "Código do resgate: {{code}}",
+      "nextSteps": "Próximos passos",
+      "done": "Pronto",
+      "announcement": "Resgate confirmado. Seu saldo agora é {{balance}}."
+    },
+    "redeemed": {
+      "title": "Você já resgatou",
+      "date": "Resgatado em {{date}}",
+      "codeLabel": "Código do resgate: {{code}}. Resgatado em {{date}}."
+    },
+    "errors": {
+      "insufficientPoints": "Seu saldo mudou e não cobre mais este resgate.",
+      "soldOut": "Esta recompensa esgotou.",
+      "notFound": "Esta recompensa saiu da loja.",
+      "failed": "Não deu para confirmar o resgate. Tente de novo."
+    }
   },
   "agenda": {
     "title": "Agenda",
