@@ -6,11 +6,13 @@ import {
   formatLongDate,
   formatMonthName,
   formatRelativeAgo,
+  formatRelativeAgoSpoken,
   formatRelativeShort,
   formatSeasonCountdown,
   formatShowTime,
   formatTime,
   formatTimeLeft,
+  formatTimeLeftSpoken,
 } from '../date';
 
 const JUNE_21 = new Date(2026, 5, 21, 22, 5);
@@ -79,6 +81,34 @@ describe('datas em pt-BR', () => {
   });
 
   it.each([
+    [4 * 60 + 30, '4 horas'],
+    [60, '1 hora'],
+    [35, '35 minutos'],
+    [1, '1 minuto'],
+    [0.5, 'menos de 1 minuto'],
+    [60 * 24, '1 dia'],
+    [60 * 24 * 2 + 30, '2 dias'],
+    [0, ''],
+  ])('tempo que falta por extenso, para o leitor, com %d minutos', (minutesLeft, expected) => {
+    const endsAt = new Date(JUNE_21.getTime() + minutesLeft * MINUTE);
+    expect(formatTimeLeftSpoken(endsAt, JUNE_21)).toBe(expected);
+  });
+
+  it.each([
+    [0, 'agora'],
+    [1, 'há 1 minuto'],
+    [5, 'há 5 minutos'],
+    [60, 'há 1 hora'],
+    [120, 'há 2 horas'],
+    [60 * 24, 'há 1 dia'],
+    [60 * 24 * 3, 'há 3 dias'],
+    [60 * 24 * 10, '11 de junho'],
+  ])('meta de autor por extenso, para o leitor, com %i minutos', (minutesAgo, expected) => {
+    const posted = new Date(JUNE_21.getTime() - minutesAgo * MINUTE);
+    expect(formatRelativeAgoSpoken(posted, JUNE_21)).toBe(expected);
+  });
+
+  it.each([
     ['daqui a 12 dias', new Date(2026, 6, 3, 23, 59), 'encerra em 12 dias'],
     ['amanhã de madrugada', new Date(2026, 5, 22, 0, 30), 'encerra amanhã'],
     ['hoje mais tarde', new Date(2026, 5, 21, 23, 59), 'encerra hoje'],
@@ -105,6 +135,8 @@ describe('datas em pt-BR', () => {
   it('os formatadores novos devolvem vazio para data inválida', () => {
     expect(formatRelativeAgo('não é data', JUNE_21)).toBe('');
     expect(formatTimeLeft('não é data', JUNE_21)).toBe('');
+    expect(formatTimeLeftSpoken('não é data', JUNE_21)).toBe('');
+    expect(formatRelativeAgoSpoken('não é data', JUNE_21)).toBe('');
     expect(formatSeasonCountdown('não é data', JUNE_21)).toBe('');
     expect(formatShowTime('não é data')).toBe('');
     expect(formatLongDate('não é data')).toBe('');

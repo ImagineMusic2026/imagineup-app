@@ -1,19 +1,18 @@
 import { dataSource } from '@/config/env';
 import { ApiError, api } from '@/services/api';
-import { fixtureDelay } from '@/services/fixtures';
+import { fixtureDelay, fixtureNow } from '@/services/fixtures';
 
+import { buildFeedPageFixture, buildPostsFixture } from './fixtures';
 import type { Page, PointsAward, Post, PostComment } from './types';
 
-// Sem a API, o mural ainda não tem posts de exemplo: as consultas ficam ligadas
-// e devolvem vazio, como devolviam desligadas. Os posts de exemplo entram num
-// fixtures.ts deste domínio, junto com os cards do feed.
+// Os comentários de exemplo entram com o detalhe do post (F11); até lá, vazio.
 const emptyPage = <T>(): Page<T> => ({ items: [], nextCursor: null });
 
 /** Chamadas cruas à API. Sem React: quem cacheia é o queries.ts. */
 export async function fetchFeed(cursor: string | null): Promise<Page<Post>> {
   if (dataSource === 'fixtures') {
     await fixtureDelay();
-    return emptyPage();
+    return buildFeedPageFixture(fixtureNow(), cursor);
   }
   const { data } = await api.get<Page<Post>>('/feed', { params: { cursor } });
   return data;
@@ -22,7 +21,9 @@ export async function fetchFeed(cursor: string | null): Promise<Page<Post>> {
 export async function fetchPost(postId: string): Promise<Post> {
   if (dataSource === 'fixtures') {
     await fixtureDelay();
-    throw new ApiError('notFound', `Post ${postId} não existe nas fixtures.`, 404);
+    const post = buildPostsFixture(fixtureNow()).find((item) => item.id === postId);
+    if (!post) throw new ApiError('notFound', `Post ${postId} não existe nas fixtures.`, 404);
+    return post;
   }
   const { data } = await api.get<Post>(`/posts/${postId}`);
   return data;

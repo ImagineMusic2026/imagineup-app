@@ -5,6 +5,7 @@ import { StyleSheet } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { ReduceMotion, ReducedMotionConfig } from 'react-native-reanimated';
 
+import { registerAgendaMutationDefaults } from '@/domains/agenda';
 import { registerPostMutationDefaults } from '@/domains/posts';
 import { useAnnounceOffline } from '@/hooks/use-announce-offline';
 import { usePrefersReducedMotion } from '@/hooks/use-prefers-reduced-motion';
@@ -13,6 +14,7 @@ import { colors, navigationTheme } from '@/theme';
 
 // As funções das mutações offline precisam existir antes do cache ser restaurado.
 registerPostMutationDefaults(queryClient);
+registerAgendaMutationDefaults(queryClient);
 
 function resumeOfflineMutations(): void {
   queryClient.resumePausedMutations().catch(() => undefined);

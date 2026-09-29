@@ -1,3 +1,5 @@
+import { t } from '@/i18n';
+
 const integerFormatter = new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 0 });
 
 /** "12.480" */
@@ -28,6 +30,12 @@ export function formatCompact(value: number): string {
 export function formatPointsDelta(value: number): string {
   const formatted = formatNumber(Math.abs(value));
   return value < 0 ? `-${formatted}` : `+${formatted}`;
+}
+
+/** "20 pontos", "1 ponto": pontos por extenso, para frases e para o leitor de tela. */
+export function formatPointsSpoken(value: number): string {
+  if (Math.abs(value) === 1) return t('points.spokenOne', { points: formatNumber(value) });
+  return t('points.spoken', { points: formatNumber(value) });
 }
 
 /**

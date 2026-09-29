@@ -124,7 +124,7 @@ describe('AvatarStack', () => {
   it('mostra um avatar por pessoa, na ordem, cada um sobre o anterior', () => {
     render(<AvatarStack people={people} />);
     // Círculo, caixa oculta do Avatar e a borda da pilha.
-    const wrappers = ['RS', 'JM', 'N'].map((initials) => styleAbove(initials, 3));
+    const wrappers = ['RS', 'JM', 'NE'].map((initials) => styleAbove(initials, 3));
     expect(wrappers[0]?.marginLeft).toBeUndefined();
     expect(wrappers[1]?.marginLeft).toBe(-layout.avatarStackOverlap);
     expect(wrappers[2]?.marginLeft).toBe(-layout.avatarStackOverlap);

@@ -24,3 +24,17 @@ export interface FollowArtistsVariables {
 export interface FollowArtistsResult {
   followedArtistIds: string[];
 }
+
+/**
+ * Central que o fã segue, como a home (1b) mostra no carrossel. A posição é a
+ * do fã na central, na temporada; quem calcula é o servidor.
+ */
+export interface FanCentral {
+  artistId: string;
+  name: string;
+  /** Nome curto que cabe no card ("Juninho M."); sem ele, o nome inteiro com reticências. */
+  shortName: string | null;
+  photoURL: string | null;
+  /** Posição do fã na central; `null` quando ele ainda não tem posição ("novo"). */
+  fanRank: number | null;
+}

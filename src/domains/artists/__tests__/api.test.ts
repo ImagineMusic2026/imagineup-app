@@ -1,8 +1,8 @@
 import { api } from '@/services/api';
 import { ApiError } from '@/services/api/errors';
 
-import { fetchArtists, followArtists } from '../api';
-import { buildArtistsFixture, followFixture } from '../fixtures';
+import { fetchArtists, fetchFanCentrals, followArtists } from '../api';
+import { buildArtistsFixture, buildFanCentralsFixture, followFixture } from '../fixtures';
 
 // A API real passa pelo axios com o token do Firebase; aqui só importa o que o domínio pede a ela.
 jest.mock('@/services/api', () => ({
@@ -111,5 +111,49 @@ describe('seguir artistas', () => {
       { artistIds: ['nenho'] },
       { headers: { 'Idempotency-Key': 'chave-3' } },
     );
+  });
+});
+
+describe('centrais do fã', () => {
+  it('as três do protótipo, com a posição do fã: #12, #41 e "novo"', () => {
+    expect(buildFanCentralsFixture()).toEqual([
+      {
+        artistId: 'netto-brito',
+        name: 'Netto Brito',
+        shortName: null,
+        photoURL: null,
+        fanRank: 12,
+      },
+      { artistId: 'nenho', name: 'Nenho', shortName: null, photoURL: null, fanRank: 41 },
+      {
+        artistId: 'juninho-moraes',
+        name: 'Juninho Moraes',
+        shortName: 'Juninho M.',
+        photoURL: null,
+        fanRank: null,
+      },
+    ]);
+  });
+
+  it('as que a escolha de artistas somou entram no fim, ainda sem posição', async () => {
+    await followArtists({ artistIds: ['rock-salles'], idempotencyKey: 'chave-4' });
+    await expect(fetchFanCentrals()).resolves.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ artistId: 'rock-salles', name: 'Rock Salles', fanRank: null }),
+      ]),
+    );
+    expect((await fetchFanCentrals()).map((central) => central.artistId)).toEqual([
+      'netto-brito',
+      'nenho',
+      'juninho-moraes',
+      'rock-salles',
+    ]);
+  });
+
+  it('com a API, pede /me/centrals', async () => {
+    mockDataSource = 'api';
+    get.mockResolvedValue({ data: [] });
+    await expect(fetchFanCentrals()).resolves.toEqual([]);
+    expect(get).toHaveBeenCalledWith('/me/centrals');
   });
 });

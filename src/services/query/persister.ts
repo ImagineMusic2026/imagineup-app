@@ -24,12 +24,13 @@ export const queryPersister = createAsyncStoragePersister({
 /**
  * O que vai para o disco: só consultas que deram certo e não pediram para ficar
  * de fora (`meta: { persist: false }`, para dados sensíveis ou efêmeros).
- * No modo fixtures nada vai: dado de exemplo salvo apareceria no aparelho
- * depois que a API entrasse.
+ * No modo fixtures só vai o dado de verdade (`meta: { realData: true }`, o
+ * perfil do Firestore): dado de exemplo salvo apareceria no aparelho depois
+ * que a API entrasse.
  */
 export function shouldPersistQuery(query: Query, source: DataSource = dataSource): boolean {
-  if (source === 'fixtures') return false;
-  return query.state.status === 'success' && query.meta?.persist !== false;
+  if (query.state.status !== 'success' || query.meta?.persist === false) return false;
+  return source === 'api' || query.meta?.realData === true;
 }
 
 /** Mudou o formato salvo? Suba QUERY_CACHE_VERSION (`buster`). */

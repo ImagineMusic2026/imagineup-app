@@ -1,6 +1,6 @@
 import { ApiError } from '@/services/api/errors';
 
-import type { Artist, FollowArtistsResult } from './types';
+import type { Artist, FanCentral, FollowArtistsResult } from './types';
 
 /**
  * Dados de exemplo enquanto a API (M2) não existe. Os quatro primeiros são os
@@ -82,3 +82,33 @@ export const followFixture = {
     answered = new Map();
   },
 };
+
+/**
+ * Posição do fã de exemplo nas centrais do protótipo (1b, 1e): #12 no Netto e
+ * #41 no Nenho; no Juninho ele ainda não tem posição ("novo"). E o nome curto
+ * que o card do protótipo usa.
+ */
+const FAN_RANKS: Readonly<Record<string, number>> = { 'netto-brito': 12, nenho: 41 };
+const SHORT_NAMES: Readonly<Record<string, string>> = { 'juninho-moraes': 'Juninho M.' };
+
+/**
+ * Centrais que o fã segue, na ordem em que ele entrou nelas: as três do
+ * protótipo e as que a escolha de artistas (1l) somou, que ainda não têm
+ * posição. Lista nova a cada chamada.
+ */
+export function buildFanCentralsFixture(): FanCentral[] {
+  const artists = new Map(buildArtistsFixture().map((artist) => [artist.id, artist]));
+  return followFixture.followedIds().flatMap((id) => {
+    const artist = artists.get(id);
+    if (!artist) return [];
+    return [
+      {
+        artistId: artist.id,
+        name: artist.name,
+        shortName: SHORT_NAMES[id] ?? null,
+        photoURL: artist.photoURL,
+        fanRank: FAN_RANKS[id] ?? null,
+      } satisfies FanCentral,
+    ];
+  });
+}

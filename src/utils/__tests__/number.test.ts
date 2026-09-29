@@ -1,4 +1,10 @@
-import { formatCompact, formatNumber, formatPointsDelta, formatThousandsWorklet } from '../number';
+import {
+  formatCompact,
+  formatNumber,
+  formatPointsDelta,
+  formatPointsSpoken,
+  formatThousandsWorklet,
+} from '../number';
 import { withAlpha } from '../color';
 
 describe('números em pt-BR', () => {
@@ -21,6 +27,15 @@ describe('números em pt-BR', () => {
   it('marca ganho e gasto de pontos', () => {
     expect(formatPointsDelta(20)).toBe('+20');
     expect(formatPointsDelta(-10000)).toBe('-10.000');
+  });
+
+  it.each([
+    [20, '20 pontos'],
+    [1, '1 ponto'],
+    [12480, '12.480 pontos'],
+    [0, '0 pontos'],
+  ])('%i por extenso vira "%s"', (value, expected) => {
+    expect(formatPointsSpoken(value)).toBe(expected);
   });
 
   it('tinge cores do tema com opacidade', () => {

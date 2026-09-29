@@ -26,6 +26,7 @@ describe('Text', () => {
     'dateMonth',
     'microLabel',
     'overlineStrong',
+    'thumbLabel',
   ])('a variante %s, presa a layout fixo, para em 150%', (variant) => {
     render(<Text variant={variant}>texto</Text>);
     expect(screen.getByText('texto')).toHaveProp('maxFontSizeMultiplier', 1.5);

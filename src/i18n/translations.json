@@ -100,21 +100,54 @@
       "afternoon": "Boa tarde,",
       "evening": "Boa noite,"
     },
+    "greetingLabel": "{{greeting}} {{name}}",
     "fallbackName": "fã",
-    "feedEmpty": "O mural dos seus artistas aparece aqui."
+    "openProfile": "Abrir meu perfil",
+    "feedEmpty": "O mural dos seus artistas aparece aqui.",
+    "centrals": {
+      "title": "Suas centrais",
+      "seeAll": "Ver todas",
+      "seeAllLabel": "Ver todas as suas centrais",
+      "loading": "Carregando suas centrais",
+      "loadError": "Não foi possível carregar suas centrais.",
+      "join": "Entrar numa central"
+    },
+    "feed": {
+      "title": "Do seu fandom",
+      "loading": "Carregando o mural",
+      "loadError": "Não foi possível carregar o mural.",
+      "updateError": "Não foi possível atualizar o mural."
+    }
   },
   "explore": {
     "title": "Explorar",
     "agenda": "Agenda"
   },
   "artist": {
-    "title": "Artista"
+    "title": "Artista",
+    "central": {
+      "rank": "você é #{{rank}}",
+      "new": "novo",
+      "rankLabel": "{{name}}, você é o {{rank}}º",
+      "newLabel": "{{name}}, central nova"
+    }
   },
   "post": {
     "title": "Post",
     "like": "Curtir",
     "unlike": "Descurtir",
-    "commentPlaceholder": "Escreva um comentário"
+    "commentPlaceholder": "Escreva um comentário",
+    "author": "{{name}}, artista verificado",
+    "show": "Show",
+    "meta": "· {{time}}",
+    "blockLabel": "{{author}}, {{time}}. {{text}}",
+    "share": "Compartilhar {{points}}",
+    "sharePlain": "Compartilhar",
+    "shareLabel": "Compartilhar o post de {{author}}, {{time}}, ganha {{points}} por pessoa que abrir",
+    "shareLabelPlain": "Compartilhar o post de {{author}}, {{time}}",
+    "shareMessage": "Olha esse post de {{artist}} no ImagineUP",
+    "likes": "{{count}} curtidas",
+    "likesOne": "1 curtida"
   },
   "ranking": {
     "title": "Ranking"
@@ -122,13 +155,34 @@
   "missions": {
     "title": "Missões",
     "subtitle": "Toda ação que leva gente nova pro app vale ponto.",
-    "progressLabel": "{{done}} de {{total}} concluídas"
+    "progressLabel": "{{done}} de {{total}} concluídas",
+    "daily": {
+      "badge": "Missão de hoje · termina em {{time}}",
+      "badgeCompleted": "Missão de hoje · concluída",
+      "summary": "Missão de hoje, termina em {{time}}, vale {{points}}",
+      "summaryCompleted": "Missão de hoje concluída, valeu {{points}}",
+      "progress": "{{done}} de {{total}}",
+      "generateLink": "Gerar meu link",
+      "seeAll": "Ver missões",
+      "loading": "Carregando a missão de hoje",
+      "loadError": "Não foi possível carregar a missão de hoje.",
+      "completedAnnouncement": "Missão de hoje concluída. Mais {{points}}"
+    }
   },
   "rewards": {
     "title": "Resgatar"
   },
   "agenda": {
-    "title": "Agenda"
+    "title": "Agenda",
+    "rsvp": {
+      "go": "Eu vou",
+      "going": "Confirmado",
+      "label": "{{status}}, {{show}}",
+      "cancelHint": "Cancela a presença",
+      "confirmed": "Presença confirmada",
+      "canceled": "Presença cancelada",
+      "error": "Não foi possível salvar sua presença. Tente de novo."
+    }
   },
   "profile": {
     "title": "Meu perfil",
@@ -154,7 +208,9 @@
   },
   "points": {
     "balance": "{{points}} pontos",
-    "earned": "{{points}} pontos"
+    "earned": "{{points}} pontos",
+    "spoken": "{{points}} pontos",
+    "spokenOne": "{{points}} ponto"
   },
   "errors": {
     "title": "Algo deu errado",
@@ -179,6 +235,15 @@
       "endsTomorrow": "encerra amanhã",
       "endsToday": "encerra hoje",
       "ended": "encerrada"
+    },
+    "spoken": {
+      "lessThanMinute": "menos de 1 minuto",
+      "minuteOne": "1 minuto",
+      "minutes": "{{count}} minutos",
+      "hourOne": "1 hora",
+      "hours": "{{count}} horas",
+      "dayOne": "1 dia",
+      "days": "{{count}} dias"
     }
   },
   "components": {

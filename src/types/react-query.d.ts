@@ -8,6 +8,11 @@ declare module '@tanstack/react-query' {
     queryMeta: {
       /** `false` deixa a consulta fora do cache salvo no aparelho. */
       persist?: boolean;
+      /**
+       * Dado de verdade (o perfil do Firestore) numa tela que ainda lê
+       * fixtures: vai para o disco também no modo fixtures.
+       */
+      realData?: boolean;
     };
   }
 }

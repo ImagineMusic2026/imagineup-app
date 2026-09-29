@@ -34,6 +34,7 @@ const MAX_FONT_SIZE_MULTIPLIER: Partial<Record<TypographyVariant, number>> = {
   dateMonth: FIXED_LAYOUT_MULTIPLIER,
   microLabel: FIXED_LAYOUT_MULTIPLIER,
   overlineStrong: FIXED_LAYOUT_MULTIPLIER,
+  thumbLabel: FIXED_LAYOUT_MULTIPLIER,
 };
 
 /**

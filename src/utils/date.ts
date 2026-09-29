@@ -8,7 +8,7 @@ import {
 } from 'date-fns';
 import { ptBR } from 'date-fns/locale/pt-BR';
 
-import { t } from '@/i18n';
+import { t, type TranslationKey } from '@/i18n';
 
 // Toda formatação do app sai em pt-BR, inclusive quando alguém chama date-fns direto.
 setDefaultOptions({ locale: ptBR });
@@ -63,19 +63,45 @@ export function formatMonthName(input: DateInput): string {
   return month.charAt(0).toUpperCase() + month.slice(1);
 }
 
+type DurationUnit = 'minute' | 'hour' | 'day';
+
+const SHORT_UNIT: Record<DurationUnit, TranslationKey> = {
+  minute: 'date.minutes',
+  hour: 'date.hours',
+  day: 'date.days',
+};
+
+// Por extenso, para o leitor de tela: "2 h" seria lido letra a letra.
+const SPOKEN_UNIT: Record<DurationUnit, { one: TranslationKey; many: TranslationKey }> = {
+  minute: { one: 'date.spoken.minuteOne', many: 'date.spoken.minutes' },
+  hour: { one: 'date.spoken.hourOne', many: 'date.spoken.hours' },
+  day: { one: 'date.spoken.dayOne', many: 'date.spoken.days' },
+};
+
+function shortDuration(unit: DurationUnit, count: number): string {
+  return t(SHORT_UNIT[unit], { count });
+}
+
+function spokenDuration(unit: DurationUnit, count: number): string {
+  const keys = SPOKEN_UNIT[unit];
+  return count === 1 ? t(keys.one) : t(keys.many, { count });
+}
+
 type RelativeTime =
-  { kind: 'now' } | { kind: 'elapsed'; text: string } | { kind: 'date'; text: string };
+  | { kind: 'now' }
+  | { kind: 'elapsed'; unit: DurationUnit; count: number }
+  | { kind: 'date'; date: Date };
 
 /** Minutos, horas e dias até uma semana; depois disso, a data. */
 function relativeTime(date: Date, now: Date): RelativeTime {
   const minutes = differenceInMinutes(now, date);
   if (minutes < 1) return { kind: 'now' };
-  if (minutes < 60) return { kind: 'elapsed', text: t('date.minutes', { count: minutes }) };
+  if (minutes < 60) return { kind: 'elapsed', unit: 'minute', count: minutes };
   const hours = differenceInHours(now, date);
-  if (hours < 24) return { kind: 'elapsed', text: t('date.hours', { count: hours }) };
+  if (hours < 24) return { kind: 'elapsed', unit: 'hour', count: hours };
   const days = differenceInCalendarDays(now, date);
-  if (days < 7) return { kind: 'elapsed', text: t('date.days', { count: days }) };
-  return { kind: 'date', text: formatDayMonth(date) };
+  if (days < 7) return { kind: 'elapsed', unit: 'day', count: days };
+  return { kind: 'date', date };
 }
 
 /**
@@ -86,7 +112,9 @@ export function formatRelativeShort(input: DateInput, now: Date = new Date()): s
   const date = safe(input);
   if (!date) return '';
   const relative = relativeTime(date, now);
-  return relative.kind === 'now' ? t('date.now') : relative.text;
+  if (relative.kind === 'now') return t('date.now');
+  if (relative.kind === 'elapsed') return shortDuration(relative.unit, relative.count);
+  return formatDayMonth(relative.date);
 }
 
 /**
@@ -98,25 +126,66 @@ export function formatRelativeAgo(input: DateInput, now: Date = new Date()): str
   if (!date) return '';
   const relative = relativeTime(date, now);
   if (relative.kind === 'now') return t('date.now');
-  if (relative.kind === 'elapsed') return t('date.ago', { time: relative.text });
-  return relative.text;
+  if (relative.kind === 'elapsed') {
+    return t('date.ago', { time: shortDuration(relative.unit, relative.count) });
+  }
+  return formatDayMonth(relative.date);
+}
+
+/**
+ * O `formatRelativeAgo` por extenso, para o leitor de tela: "há 2 horas",
+ * "há 1 dia", "agora" e, a partir de uma semana, "21 de junho".
+ */
+export function formatRelativeAgoSpoken(input: DateInput, now: Date = new Date()): string {
+  const date = safe(input);
+  if (!date) return '';
+  const relative = relativeTime(date, now);
+  if (relative.kind === 'now') return t('date.now');
+  if (relative.kind === 'elapsed') {
+    return t('date.ago', { time: spokenDuration(relative.unit, relative.count) });
+  }
+  return formatLongDate(relative.date);
+}
+
+type TimeLeft =
+  { kind: 'over' } | { kind: 'underMinute' } | { kind: 'left'; unit: DurationUnit; count: number };
+
+/** Arredonda para baixo, para nunca prometer mais tempo do que há. */
+function timeLeft(endsAt: Date, now: Date): TimeLeft {
+  if (endsAt.getTime() <= now.getTime()) return { kind: 'over' };
+  const minutes = differenceInMinutes(endsAt, now);
+  if (minutes < 1) return { kind: 'underMinute' };
+  if (minutes < 60) return { kind: 'left', unit: 'minute', count: minutes };
+  const hours = differenceInHours(endsAt, now);
+  if (hours < 24) return { kind: 'left', unit: 'hour', count: hours };
+  return { kind: 'left', unit: 'day', count: Math.floor(hours / 24) };
 }
 
 /**
  * Tempo que falta, como em "termina em 4 h": "35 min", "4 h", "2 d" e, no
- * último minuto, "menos de 1 min". Arredonda para baixo, para nunca prometer
- * mais tempo do que há. Depois do prazo devolve vazio: quem chama mostra o
- * estado de encerrada.
+ * último minuto, "menos de 1 min". Depois do prazo devolve vazio: quem chama
+ * mostra o estado de encerrada.
  */
 export function formatTimeLeft(endsAtInput: DateInput, now: Date = new Date()): string {
   const endsAt = safe(endsAtInput);
-  if (!endsAt || endsAt.getTime() <= now.getTime()) return '';
-  const minutes = differenceInMinutes(endsAt, now);
-  if (minutes < 1) return t('date.lessThanMinute');
-  if (minutes < 60) return t('date.minutes', { count: minutes });
-  const hours = differenceInHours(endsAt, now);
-  if (hours < 24) return t('date.hours', { count: hours });
-  return t('date.days', { count: Math.floor(hours / 24) });
+  if (!endsAt) return '';
+  const left = timeLeft(endsAt, now);
+  if (left.kind === 'over') return '';
+  if (left.kind === 'underMinute') return t('date.lessThanMinute');
+  return shortDuration(left.unit, left.count);
+}
+
+/**
+ * O `formatTimeLeft` por extenso, para o leitor de tela: "4 horas", "1 minuto",
+ * "menos de 1 minuto". Depois do prazo, vazio.
+ */
+export function formatTimeLeftSpoken(endsAtInput: DateInput, now: Date = new Date()): string {
+  const endsAt = safe(endsAtInput);
+  if (!endsAt) return '';
+  const left = timeLeft(endsAt, now);
+  if (left.kind === 'over') return '';
+  if (left.kind === 'underMinute') return t('date.spoken.lessThanMinute');
+  return spokenDuration(left.unit, left.count);
 }
 
 /**

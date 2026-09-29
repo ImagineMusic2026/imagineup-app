@@ -2,8 +2,8 @@ import { dataSource } from '@/config/env';
 import { api } from '@/services/api';
 import { fixtureDelay } from '@/services/fixtures';
 
-import { buildArtistsFixture, followFixture } from './fixtures';
-import type { Artist, FollowArtistsResult, FollowArtistsVariables } from './types';
+import { buildArtistsFixture, buildFanCentralsFixture, followFixture } from './fixtures';
+import type { Artist, FanCentral, FollowArtistsResult, FollowArtistsVariables } from './types';
 
 /** Chamadas cruas à API. Sem React: quem cacheia é o queries.ts. */
 export async function fetchArtists(): Promise<Artist[]> {
@@ -32,5 +32,15 @@ export async function followArtists({
     { artistIds },
     { headers: { 'Idempotency-Key': idempotencyKey } },
   );
+  return data;
+}
+
+/** Centrais que o fã segue, com a posição dele em cada uma (carrossel da 1b). */
+export async function fetchFanCentrals(): Promise<FanCentral[]> {
+  if (dataSource === 'fixtures') {
+    await fixtureDelay();
+    return buildFanCentralsFixture();
+  }
+  const { data } = await api.get<FanCentral[]>('/me/centrals');
   return data;
 }

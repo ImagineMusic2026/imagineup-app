@@ -127,6 +127,14 @@ export const typography = {
     letterSpacing: 1.5,
     textTransform: 'uppercase',
   },
+  // Rótulo sobre a miniatura do post de show (1b), como o "PLAYLIST" do protótipo.
+  thumbLabel: {
+    fontFamily: fonts.manropeExtraBold,
+    fontSize: 9.5,
+    lineHeight: 12,
+    letterSpacing: 0.6,
+    textTransform: 'uppercase',
+  },
   dateMonth: {
     fontFamily: fonts.manropeBold,
     fontSize: 9,

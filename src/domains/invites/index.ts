@@ -11,5 +11,6 @@ export {
   savePendingInvite,
   type PendingInvite,
 } from './storage';
+export { buildInviteUrl } from './link';
 export { InviteCaptureScreen } from './views/invite-capture';
 export { InviteSheetScreen } from './views/invite-sheet';

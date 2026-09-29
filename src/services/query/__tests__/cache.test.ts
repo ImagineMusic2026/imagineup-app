@@ -18,7 +18,7 @@ jest.mock('@/config/env', () => {
 async function settledQuery(
   client: QueryClient,
   key: string,
-  options: { fails?: boolean; persist?: boolean } = {},
+  options: { fails?: boolean; persist?: boolean; realData?: boolean } = {},
 ): Promise<Query> {
   await client
     .fetchQuery({
@@ -28,7 +28,7 @@ async function settledQuery(
         return key;
       },
       retry: false,
-      meta: options.persist === undefined ? undefined : { persist: options.persist },
+      meta: { persist: options.persist, realData: options.realData },
     })
     .catch(() => undefined);
   const query = client.getQueryCache().find({ queryKey: [key] });
@@ -53,6 +53,14 @@ describe('cache salvo no aparelho', () => {
     const query = await settledQuery(client, 'feed');
     expect(shouldPersistQuery(query, 'fixtures')).toBe(false);
     expect(persistOptions.dehydrateOptions?.shouldDehydrateQuery?.(query)).toBe(false);
+  });
+
+  it('no modo fixtures, grava o dado de verdade (o perfil do Firestore) que deu certo', async () => {
+    const profile = await settledQuery(client, 'perfil', { realData: true });
+    const failed = await settledQuery(client, 'perfil-quebrado', { realData: true, fails: true });
+    expect(shouldPersistQuery(profile, 'fixtures')).toBe(true);
+    expect(persistOptions.dehydrateOptions?.shouldDehydrateQuery?.(profile)).toBe(true);
+    expect(shouldPersistQuery(failed, 'fixtures')).toBe(false);
   });
 
   it('com a API, grava a consulta que deu certo', async () => {
