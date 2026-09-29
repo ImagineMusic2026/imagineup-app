@@ -5,9 +5,15 @@
  *
  * O emulador do Firestore precisa de Java 21. Se houver JAVA_HOME, o java dele
  * vem antes do java do PATH.
+ *
+ * Os parâmetros e o secret das funções da equipe (EmailJS) vêm de
+ * functions/.env.demo-imagine-up-app e functions/.secret.local, criados aqui
+ * se faltarem: sem eles, o emulador para e pergunta cada valor no terminal.
  */
 import { spawn } from 'node:child_process';
 import path from 'node:path';
+
+import { ensureFunctionsEmulatorEnv } from './functions-emulator-env.mjs';
 
 const env = { ...process.env, FUNCTIONS_DISCOVERY_TIMEOUT: '60' };
 if (process.env.JAVA_HOME) {
@@ -25,6 +31,7 @@ function run(command, args) {
   });
 }
 
+ensureFunctionsEmulatorEnv();
 await run('npm', ['--prefix', 'functions', 'run', 'build']);
 await run('npx', [
   '--yes',

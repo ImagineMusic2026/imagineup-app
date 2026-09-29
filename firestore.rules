@@ -7,12 +7,56 @@ rules_version = '2';
 // saldo, @, foto, missões, resgates, ranking, convites e a entrada em centrais.
 // O celular só lê o próprio perfil e edita o nome e a cidade.
 //
+// A equipe do painel admin entra pelo mesmo Authentication dos fãs, mas estar
+// logado nunca basta: só um staff/{uid} com status 'active' (gravado pelo
+// servidor, no aceite do convite) dá acesso, e o papel e as seções saem dele.
+//
 // Mudou algo aqui? Rode `npm run test:rules` antes de publicar.
 service cloud.firestore {
   match /databases/{database}/documents {
 
     function isSelf(uid) {
       return request.auth != null && request.auth.uid == uid;
+    }
+
+    // Doc da equipe de quem pede. Lido a cada pedido (conta como leitura): a
+    // desativação corta o acesso na hora, sem esperar o token vencer.
+    function staffMember() {
+      return get(/databases/$(database)/documents/staff/$(request.auth.uid)).data;
+    }
+
+    function isActiveStaff() {
+      return request.auth != null
+        && exists(/databases/$(database)/documents/staff/$(request.auth.uid))
+        && staffMember().get('status', '') == 'active'
+        && staffSessionAllowed();
+    }
+
+    // Conta que já existia e foi ligada à equipe (linkStaffInvite) guarda em
+    // authValidAfter o auth_time do login que ligou. Sessão com login anterior
+    // (de quem criou a conta com o e-mail da pessoa convidada, por exemplo)
+    // não usa o acesso. Sem o campo, qualquer sessão vale.
+    function staffSessionAllowed() {
+      return request.auth.token.get('auth_time', 0) >= staffMember().get('authValidAfter', 0);
+    }
+
+    function isStaffAdmin() {
+      return isActiveStaff() && staffMember().get('role', '') == 'admin';
+    }
+
+    // Admin vê todas as seções; editor e leitor, só as liberadas.
+    function canSeeSection(section) {
+      return isActiveStaff()
+        && (staffMember().get('role', '') == 'admin'
+          || section in staffMember().get('sections', []));
+    }
+
+    // Para as seções que o painel vai editar: admin, ou editor com a seção liberada.
+    function canEditSection(section) {
+      return isActiveStaff()
+        && (staffMember().get('role', '') == 'admin'
+          || (staffMember().get('role', '') == 'editor'
+            && section in staffMember().get('sections', [])));
     }
 
     // Campos que o próprio fã pode editar. A foto fica fora: o servidor grava a
@@ -90,6 +134,26 @@ service cloud.firestore {
 
       // Excluir a conta apaga perfil, pontos e resgates juntos: é o servidor.
       allow delete: if false;
+    }
+
+    // Equipe do painel. Convites, aceite e mudanças de acesso passam pelas
+    // Cloud Functions (Admin SDK); pelo cliente, ninguém grava, nem admin.
+    match /staff/{uid} {
+      // O próprio membro lê o seu em qualquer status: o painel mostra
+      // "acesso desativado" em vez de uma tela vazia.
+      allow get: if isSelf(uid) || isStaffAdmin();
+      allow list: if isStaffAdmin();
+      allow write: if false;
+    }
+
+    match /staffInvites/{inviteId} {
+      allow read: if isStaffAdmin();
+      allow write: if false;
+    }
+
+    match /staffAudit/{entryId} {
+      allow read: if canSeeSection('audit');
+      allow write: if false;
     }
 
     match /{document=**} {

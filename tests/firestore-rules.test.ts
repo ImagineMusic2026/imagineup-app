@@ -367,6 +367,9 @@ describe('todo o resto é do servidor', () => {
     'invites/ABC123',
     'rankings/geral',
     'usernames/camilarib',
+    'staff/x',
+    'staffInvites/x',
+    'staffAudit/x',
   ])('%s: o celular não lê nem grava', async (path) => {
     await assertFails(getDoc(doc(fan(), path)));
     await assertFails(setDoc(doc(fan(), path), { qualquer: 1 }));

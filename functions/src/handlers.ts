@@ -1,24 +1,33 @@
 import type { Firestore } from 'firebase-admin/firestore';
 
-import { createProfile, deleteUserData } from './store';
+import { createProfile, deleteUserData, isStaffAccount } from './store';
 
 /** Busca a conta no Auth agora; null se ela não existe mais. */
 export type FindUser = (uid: string) => Promise<{ displayName?: string | null } | null>;
 
 export type UserCreatedResult =
-  { status: 'created'; username: string } | { status: 'exists' } | { status: 'undone' };
+  | { status: 'created'; username: string }
+  | { status: 'exists' }
+  | { status: 'undone' }
+  | { status: 'staff' };
 
 /**
  * Conta nova: cria o perfil. A entrega é "pelo menos uma vez" e fora de ordem
  * com a da exclusão, então a conta é conferida antes e depois de gravar. Se a
  * exclusão vier depois da segunda conferência, o deleteUserProfile já enxerga o
  * perfil; se vier antes, a limpeza fica aqui.
+ *
+ * Conta da equipe do painel não ganha perfil de fã nem @: o aceite do convite
+ * grava staff/{uid} (pending) antes de criar a conta, então a marca sempre
+ * chega antes deste gatilho. Qualquer status conta. Conta de fã ligada à
+ * equipe (accountCreatedByInvite: false) ganha o perfil normalmente.
  */
 export async function handleUserCreated(
   db: Firestore,
   findUser: FindUser,
   event: { uid: string; displayName?: string | null },
 ): Promise<UserCreatedResult> {
+  if (await isStaffAccount(db, event.uid)) return { status: 'staff' };
   const user = await findUser(event.uid);
   if (user) {
     // O registro de agora, não o do evento: o SDK cria a conta sem nome, e o

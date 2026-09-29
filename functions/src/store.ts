@@ -55,9 +55,22 @@ export async function createProfile(
 }
 
 /**
- * Apaga tudo do fã: as reservas de @ e o perfil com as subcoleções. Pode rodar
- * mais de uma vez. Dado novo do fã fora de users/{uid} (carteira, convites)
- * precisa entrar aqui.
+ * true se a conta é só da equipe do painel: staff/{uid} existe, em qualquer
+ * status. O aceite do convite grava essa marca antes de criar a conta. A
+ * exceção é a conta de fã ligada à equipe (linkStaffInvite grava
+ * accountCreatedByInvite: false): ela é de fã e continua com o perfil, mesmo
+ * que este gatilho chegue atrasado, depois da ligação.
+ */
+export async function isStaffAccount(db: Firestore, uid: string): Promise<boolean> {
+  const marker = await db.collection('staff').doc(uid).get();
+  return marker.exists && marker.get('accountCreatedByInvite') !== false;
+}
+
+/**
+ * Apaga tudo do fã: as reservas de @ e o perfil com as subcoleções, e o acesso
+ * ao painel (staff/{uid}) se a conta era da equipe. Pode rodar mais de uma
+ * vez. Dado novo do fã fora de users/{uid} (carteira, convites) precisa entrar
+ * aqui.
  */
 export async function deleteUserData(db: Firestore, uid: string): Promise<void> {
   const reservations = await db.collection('usernames').where('uid', '==', uid).get();
@@ -74,4 +87,5 @@ export async function deleteUserData(db: Firestore, uid: string): Promise<void> 
     }),
   );
   await db.recursiveDelete(db.collection('users').doc(uid));
+  await db.collection('staff').doc(uid).delete();
 }

@@ -211,6 +211,36 @@ describe('handleUserCreated', () => {
     expect(result).toEqual({ status: 'created', username: 'brunaand' });
     expect((await db.doc('users/nome-depois').get()).get('displayName')).toBe('Bruna Andrade');
   });
+
+  it('conta da equipe do painel (staff/{uid}, qualquer status) não ganha perfil nem @', async () => {
+    // O aceite do convite grava a marca antes de criar a conta no Auth.
+    for (const status of ['pending', 'active', 'disabled']) {
+      const uid = `equipe-${status}`;
+      await db.doc(`staff/${uid}`).set({ uid, status, role: 'viewer', sections: ['fans'] });
+      const result = await handleUserCreated(db, answers(true, true), { uid });
+      expect(result).toEqual({ status: 'staff' });
+      expect((await db.doc(`users/${uid}`).get()).exists).toBe(false);
+      expect(await reservationsOf(uid)).toEqual([]);
+      // A marca fica: é ela que dá (ou não) o acesso ao painel.
+      expect((await db.doc(`staff/${uid}`).get()).exists).toBe(true);
+    }
+  });
+
+  it('fã ligada à equipe (accountCreatedByInvite false) ganha o perfil com o gatilho atrasado', async () => {
+    // O cadastro no app chega aqui só depois do linkStaffInvite: a conta é de fã.
+    const uid = 'fa-ligada';
+    await db.doc(`staff/${uid}`).set({
+      uid,
+      status: 'active',
+      role: 'viewer',
+      sections: ['fans'],
+      accountCreatedByInvite: false,
+    });
+    const result = await handleUserCreated(db, answers(true, true), { uid });
+    expect(result).toEqual({ status: 'created', username: 'brunaand' });
+    expect((await db.doc(`users/${uid}`).get()).get('displayName')).toBe('Bruna Andrade');
+    expect((await db.doc(`staff/${uid}`).get()).get('status')).toBe('active');
+  });
 });
 
 describe('createProfile e deleteUserData', () => {
@@ -247,6 +277,17 @@ describe('createProfile e deleteUserData', () => {
       fixed,
     );
     expect(result).toEqual({ status: 'created', username: 'fa77777777' });
+  });
+
+  it('apagar os dados da conta tira também o acesso ao painel (staff/{uid})', async () => {
+    await createProfile(db, { uid: 'fa-da-equipe', displayName: 'Bruna Andrade' });
+    await db
+      .doc('staff/fa-da-equipe')
+      .set({ uid: 'fa-da-equipe', status: 'active', role: 'admin' });
+    await deleteUserData(db, 'fa-da-equipe');
+    expect((await db.doc('users/fa-da-equipe').get()).exists).toBe(false);
+    expect((await db.doc('staff/fa-da-equipe').get()).exists).toBe(false);
+    expect(await reservationsOf('fa-da-equipe')).toEqual([]);
   });
 
   it('apagar os dados pode rodar mais de uma vez, até ao mesmo tempo', async () => {

@@ -52,6 +52,17 @@ ui-debug.log*
 # Cloud Functions compiladas (o deploy gera de novo)
 functions/lib/
 
+# Parâmetros e secrets das Cloud Functions (o repositório é público). Fica no
+# git só o modelo, functions/.env.example, com os nomes.
+functions/.env.*
+!functions/.env.example
+.secret.local
+*.secret.local
+
+# Chave de conta de serviço do Firebase (use ADC; nunca entra no git)
+serviceAccountKey*.json
+*-firebase-adminsdk-*.json
+
 # generated native folders
 /ios
 /android
