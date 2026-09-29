@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light">
+<title>Convite para o painel do ImagineUP</title>
+</head>
+<body style="margin:0;padding:0;background:#f6f6f8;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#f6f6f8;">
+  <tr>
+    <td align="center" style="padding:32px 16px;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:560px;background:#ffffff;border-radius:16px;overflow:hidden;">
+        <tr>
+          <td style="background:#0b0b10;padding:28px 32px;">
+            <img src="https://imagineup-painel.vercel.app/assets/imagine-logo-225.png" width="112" alt="Imagine" style="display:block;border:0;height:auto;">
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:32px 32px 8px 32px;font-family:Arial,Helvetica,sans-serif;color:#0b0b10;">
+            <p style="margin:0 0 16px 0;font-size:22px;line-height:30px;font-weight:bold;">Olá{{#to_name}}, {{to_name}}{{/to_name}}!</p>
+            <p style="margin:0 0 16px 0;font-size:16px;line-height:24px;">{{inviter_name}} convidou você para o painel administrativo do ImagineUP, o app de fãs dos artistas da Imagine Music.</p>
+            <p style="margin:0 0 24px 0;font-size:16px;line-height:24px;">Seu nível de acesso: <strong>{{role_label}}</strong>.</p>
+          </td>
+        </tr>
+        <tr>
+          <td align="left" style="padding:0 32px 24px 32px;">
+            <table role="presentation" cellpadding="0" cellspacing="0" border="0">
+              <tr>
+                <td style="border-radius:10px;background:#d9105a;">
+                  <a href="{{invite_link}}" style="display:inline-block;padding:14px 28px;font-family:Arial,Helvetica,sans-serif;font-size:16px;font-weight:bold;color:#ffffff;text-decoration:none;border-radius:10px;">Aceitar convite</a>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:0 32px 32px 32px;font-family:Arial,Helvetica,sans-serif;color:#4a4a55;">
+            <p style="margin:0 0 12px 0;font-size:14px;line-height:22px;">No link, você escolhe o nome que vai aparecer no painel e cria sua senha. Se já usa o app ImagineUP com este e-mail, entra com a senha que já tem. O convite vale até {{expires_label}} e só pode ser usado uma vez.</p>
+            <p style="margin:0 0 12px 0;font-size:14px;line-height:22px;">Se o botão não abrir, copie este endereço no navegador:<br><span style="word-break:break-all;color:#d9105a;">{{invite_link}}</span></p>
+            <p style="margin:0;font-size:14px;line-height:22px;">Não esperava este convite? Pode ignorar este e-mail: sem aceitar o convite, nenhuma conta é criada.</p>
+          </td>
+        </tr>
+      </table>
+      <p style="margin:16px 0 0 0;font-family:Arial,Helvetica,sans-serif;font-size:12px;line-height:18px;color:#6b6b76;">ImagineUP · Imagine Music</p>
+    </td>
+  </tr>
+</table>
+</body>
+</html>
