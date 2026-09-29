@@ -48,6 +48,23 @@ describe('EmptyState', () => {
     expect(onAction).toHaveBeenCalledTimes(1);
   });
 
+  it('tentando de novo, o botão fica na tela, ocupado e sem disparar outra vez', () => {
+    const onAction = jest.fn();
+    render(
+      <EmptyState
+        tone="error"
+        message="Não foi possível carregar os artistas."
+        onAction={onAction}
+        actionLoading
+      />,
+    );
+
+    const retry = screen.getByRole('button', { name: 'Tentar de novo' });
+    expect(retry).toBeBusy();
+    fireEvent.press(retry);
+    expect(onAction).not.toHaveBeenCalled();
+  });
+
   it('erro sem onAction não desenha botão', () => {
     render(<EmptyState tone="error" message="Não deu para carregar as recompensas." />);
     expect(screen.queryByRole('button')).toBeNull();

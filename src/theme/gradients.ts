@@ -42,6 +42,9 @@ const scrims = {
   authForm: { colors: [ink(0.25), ink(0.88), ink(1)], locations: [0, 0.24, 0.38] },
   // Card de artista da 1l.
   artistTile: { colors: [ink(0), ink(0.99)], locations: [0.26, 0.52] },
+  // Acima do texto do card de artista, quando a fonte grande quebra o nome e
+  // ele sobe para fora da faixa escura do `artistTile`.
+  artistTileCopy: { colors: [ink(0), ink(0.99)], locations: [0, 1] },
   // Capa da 1d: escurece em cima (botões) e embaixo (nome).
   cover: { colors: [ink(0.7), ink(0), ink(0.55), ink(1)], locations: [0, 0.34, 0.66, 1] },
   // Destaque da 1h.

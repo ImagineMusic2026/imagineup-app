@@ -55,6 +55,13 @@ describe('StepProgress', () => {
     fillsCurrentStep();
   });
 
+  it('com delay, a etapa atual espera antes de encher (a entrada da pilha, na 1l)', () => {
+    const delayed = jest.spyOn(Reanimated, 'withDelay');
+    render(<StepProgress total={2} current={2} delay={motion.duration.slow} />);
+    expect(delayed).toHaveBeenCalledWith(motion.duration.slow, expect.anything());
+    fillsCurrentStep();
+  });
+
   it('com reduzir movimento, a etapa atual já nasce cheia', () => {
     mockReducedMotion = true;
     render(<StepProgress testID="steps" total={2} current={2} />);

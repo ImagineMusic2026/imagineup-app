@@ -8,14 +8,31 @@ import { withAlpha } from '@/utils/color';
 
 import { Button, type ButtonSize, type ButtonVariant } from '..';
 
-/** O desenho do botão: a superfície com raio dentro do alvo de toque. */
-function surfaceStyle(): ViewStyle {
-  const styles = screen
+function viewStyles(): (ViewStyle | undefined)[] {
+  return screen
     .UNSAFE_getAllByType(View)
     .map((node) => StyleSheet.flatten(node.props.style) as ViewStyle | undefined);
-  const surface = styles.find((style) => style?.borderRadius !== undefined);
+}
+
+/** O desenho do botão: a superfície com raio e borda dentro do alvo de toque. */
+function surfaceStyle(): ViewStyle {
+  const surface = viewStyles().find((style) => style?.borderWidth !== undefined);
   if (!surface) throw new Error('botão sem superfície');
   return surface;
+}
+
+/** A camada do brilho, embaixo do desenho; sem brilho, não existe. */
+function glowStyle(): ViewStyle | undefined {
+  return viewStyles().find((style) => style?.boxShadow !== undefined);
+}
+
+/** O grupo que apaga o desenho quando o botão está desativado ou carregando. */
+function fadedOpacity(): number | undefined {
+  const layer = screen
+    .UNSAFE_getAllByType(View)
+    .find((node) => node.props.needsOffscreenAlphaCompositing === true);
+  return (StyleSheet.flatten(layer?.props.style) as ViewStyle | undefined)?.opacity as
+    number | undefined;
 }
 
 describe('Button', () => {
@@ -52,9 +69,30 @@ describe('Button', () => {
 
     const button = screen.getByRole('button', { name: 'Criar minha conta' });
     expect(button).toBeDisabled();
-    expect(button).toHaveStyle({ opacity: opacities.disabled });
+    expect(fadedOpacity()).toBe(opacities.disabled);
     fireEvent.press(button);
     expect(onPress).not.toHaveBeenCalled();
+  });
+
+  it('liberado de novo, volta à opacidade cheia', () => {
+    const view = render(<Button label="Escolha mais 1 artista" onPress={jest.fn()} disabled />);
+    expect(fadedOpacity()).toBe(opacities.disabled);
+
+    view.rerender(<Button label="Continuar com 3 artistas" onPress={jest.fn()} />);
+    expect(screen.getByRole('button', { name: 'Continuar com 3 artistas' })).toBeEnabled();
+    expect(fadedOpacity()).toBe(1);
+  });
+
+  it('travado ou salvando, fica chapado: sem brilho, que volta junto com o botão', () => {
+    const view = render(<Button label="Escolha mais 3 artistas" onPress={jest.fn()} disabled />);
+    expect(glowStyle()).toMatchObject({ ...shadows.glowAccent, opacity: 0 });
+
+    view.rerender(<Button label="Continuar com 3 artistas" onPress={jest.fn()} />);
+    expect(glowStyle()).toMatchObject({ opacity: 1 });
+
+    view.rerender(<Button label="Continuar com 3 artistas" onPress={jest.fn()} loading />);
+    expect(glowStyle()).toMatchObject({ opacity: 0 });
+    expect(fadedOpacity()).toBe(opacities.disabled);
   });
 
   it('o estado escolhido chega ao leitor de tela', () => {
@@ -161,24 +199,24 @@ describe('Button', () => {
 
   it('o brilho sai por padrão só no primário grande', () => {
     const { rerender } = render(<Button label="Entrar" onPress={jest.fn()} />);
-    expect(surfaceStyle()).toMatchObject(shadows.glowAccent);
+    expect(glowStyle()).toMatchObject({ ...shadows.glowAccent, borderRadius: radii.cta });
 
     rerender(<Button label="Eu vou" size="sm" onPress={jest.fn()} />);
-    expect(surfaceStyle().boxShadow).toBeUndefined();
+    expect(glowStyle()).toBeUndefined();
 
     rerender(<Button label="Gerar meu link" size="mdCompact" onPress={jest.fn()} />);
-    expect(surfaceStyle().boxShadow).toBeUndefined();
+    expect(glowStyle()).toBeUndefined();
 
     rerender(<Button label="Resgatar" variant="points" onPress={jest.fn()} />);
-    expect(surfaceStyle().boxShadow).toBeUndefined();
+    expect(glowStyle()).toBeUndefined();
   });
 
   it('glow liga e desliga o brilho de quem chama', () => {
     const { rerender } = render(<Button label="Entrar" glow={false} onPress={jest.fn()} />);
-    expect(surfaceStyle().boxShadow).toBeUndefined();
+    expect(glowStyle()).toBeUndefined();
 
     rerender(<Button label="Resgatar" variant="points" glow onPress={jest.fn()} />);
-    expect(surfaceStyle()).toMatchObject(shadows.glowPoints);
+    expect(glowStyle()).toMatchObject(shadows.glowPoints);
   });
 
   it('o ícone acompanha a cor do rótulo e fica escondido do leitor', () => {

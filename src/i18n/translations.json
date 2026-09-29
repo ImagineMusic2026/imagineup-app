@@ -74,8 +74,24 @@
   },
   "onboarding": {
     "chooseArtists": {
-      "title": "Quem você acompanha?",
-      "subtitle": "Escolha pelo menos 3 para montar seu feed."
+      "title": "Quem você\nacompanha?",
+      "subtitle": "Escolha pelo menos {{min}} para montar seu feed.",
+      "fans": "{{count}} fãs",
+      "cardLabel": "{{name}}, {{fans}} fãs",
+      "more": "+{{count}} artistas",
+      "moreLabel": "Ver todos os artistas, mais {{count}}",
+      "seeAll": "Ver todos",
+      "search": "Buscar por nome",
+      "searchLabel": "Buscar por nome do artista",
+      "continue": "Continuar com {{count}} artistas",
+      "needMoreOne": "Escolha mais 1 artista",
+      "needMore": "Escolha mais {{count}} artistas",
+      "needMoreHint": "Escolha pelo menos {{min}} artistas.",
+      "loading": "Carregando os artistas",
+      "loadError": "Não foi possível carregar os artistas.",
+      "saveError": "Não foi possível salvar agora. Tente de novo.",
+      "allTitle": "Todos os artistas",
+      "noResults": "Nenhum artista com esse nome."
     }
   },
   "home": {

@@ -1,6 +1,6 @@
 import type { LucideIcon } from 'lucide-react-native';
 import { useEffect, useRef } from 'react';
-import { ActivityIndicator, StyleSheet, type StyleProp, type ViewStyle } from 'react-native';
+import { ActivityIndicator, StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 import Animated, {
   interpolateColor,
   useAnimatedStyle,
@@ -189,13 +189,10 @@ export function Button({
   const labelVariant = LABEL_VARIANT[size][PLAIN_LABEL.has(variant) ? 'plain' : 'brand'];
   const colorStyle = useSurfaceColors(surface.background, surface.border);
   const contentStyle = useContentFade(`${variant}|${label}|${loading}`);
+  const { inactiveStyle, glowStyle } = useInactiveFade(inactive);
+  const glowShadow = glowing ? GLOW[variant] : undefined;
 
-  const surfaceStyle = [
-    styles.surface,
-    styles[size],
-    compact ? null : styles.fill,
-    glowing ? GLOW[variant] : null,
-  ];
+  const surfaceStyle = [styles.surface, styles[size], compact ? null : styles.fill];
 
   const content = (
     <Animated.View style={[styles.content, compact && styles.contentCompact, contentStyle]}>
@@ -229,17 +226,62 @@ export function Button({
       accessibilityHint={accessibilityHint}
       accessibilityState={{ busy: loading, disabled: inactive, selected }}
       testID={testID}
-      style={[compact && styles.target, inactive && styles.inactive, style]}
+      style={[compact && styles.target, style]}
     >
-      {variant === 'glass' ? (
-        <Glass tone="light" strength="glass" radius={RADIUS[size]} style={surfaceStyle}>
-          {content}
-        </Glass>
-      ) : (
-        <Animated.View style={[surfaceStyle, colorStyle]}>{content}</Animated.View>
-      )}
+      <View style={compact ? null : styles.fill}>
+        {glowShadow ? (
+          // O brilho fica fora do grupo que apaga: no Android, a camada fora da
+          // tela corta o que passa da borda do botão, e ele sumiria no fade.
+          <Animated.View
+            pointerEvents="none"
+            style={[StyleSheet.absoluteFill, { borderRadius: RADIUS[size] }, glowShadow, glowStyle]}
+          />
+        ) : null}
+        {/* Um grupo só: no Android, sem a composição fora da tela, fundo, borda
+            e rótulo apagariam cada um sozinho (aro claro e rótulo rosado). */}
+        <Animated.View
+          needsOffscreenAlphaCompositing
+          style={[compact ? null : styles.fill, inactiveStyle]}
+        >
+          {variant === 'glass' ? (
+            <Glass tone="light" strength="glass" radius={RADIUS[size]} style={surfaceStyle}>
+              {content}
+            </Glass>
+          ) : (
+            <Animated.View style={[surfaceStyle, colorStyle]}>{content}</Animated.View>
+          )}
+        </Animated.View>
+      </View>
     </PressableScale>
   );
+}
+
+/**
+ * Desativado ou carregando, o botão apaga até `opacities.disabled` e o brilho
+ * some (o botão travado da 1l é chapado); ao liberar (o terceiro artista
+ * escolhido), os dois voltam juntos em 250 ms, sem troca seca. Com reduzir
+ * movimento, troca na hora. Nasce no estado atual, sem animar.
+ */
+function useInactiveFade(inactive: boolean) {
+  const reducedMotion = usePrefersReducedMotion();
+  const opacity = useSharedValue(inactive ? opacities.disabled : 1);
+
+  useEffect(() => {
+    const target = inactive ? opacities.disabled : 1;
+    opacity.set(
+      reducedMotion
+        ? target
+        : withTiming(target, { duration: motion.duration.base, easing: motion.easing.out }),
+    );
+  }, [inactive, reducedMotion, opacity]);
+
+  const inactiveStyle = useAnimatedStyle(() => ({ opacity: opacity.get() }));
+  // O brilho vai de 0 (travado) a 1 (ativo) no mesmo passo do botão.
+  const glowStyle = useAnimatedStyle(() => ({
+    opacity: Math.max(0, (opacity.get() - opacities.disabled) / (1 - opacities.disabled)),
+  }));
+
+  return { inactiveStyle, glowStyle };
 }
 
 /** A mesma cor com alfa 0 ("transparent" continua como está). */
@@ -365,9 +407,6 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.xs,
     paddingHorizontal: spacing.md,
     borderRadius: RADIUS.xs,
-  },
-  inactive: {
-    opacity: opacities.disabled,
   },
   content: {
     flexDirection: 'row',

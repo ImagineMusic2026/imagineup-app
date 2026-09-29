@@ -3,6 +3,7 @@ import { StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
+  withDelay,
   withTiming,
   type SharedValue,
 } from 'react-native-reanimated';
@@ -15,6 +16,12 @@ export interface StepProgressProps {
   total: number;
   /** Etapa em que o fã está, a partir de 1 (o cadastro é a 1, a escolha de artistas a 2). */
   current: number;
+  /**
+   * Espera antes de encher a etapa atual. A 1l passa o tempo da entrada da
+   * pilha (`useStackFade`): enchendo junto com ela, a barra já estava quase
+   * cheia quando a tela aparecia.
+   */
+  delay?: number;
   style?: StyleProp<ViewStyle>;
   testID?: string;
 }
@@ -45,7 +52,7 @@ function Segment({
  * Barra de etapas do cadastro e da escolha de artistas (1l): as etapas feitas
  * em rosa e a atual enchendo da esquerda para a direita quando a tela abre.
  */
-export function StepProgress({ total, current, style, testID }: StepProgressProps) {
+export function StepProgress({ total, current, delay = 0, style, testID }: StepProgressProps) {
   const steps = Math.max(1, Math.round(total));
   const step = Math.min(steps, Math.max(0, Math.round(current)));
   const reducedMotion = usePrefersReducedMotion();
@@ -58,8 +65,13 @@ export function StepProgress({ total, current, style, testID }: StepProgressProp
       return;
     }
     currentFill.set(0);
-    currentFill.set(withTiming(1, { duration: motion.duration.slow, easing: motion.easing.out }));
-  }, [step, reducedMotion, currentFill]);
+    currentFill.set(
+      withDelay(
+        delay,
+        withTiming(1, { duration: motion.duration.slow, easing: motion.easing.out }),
+      ),
+    );
+  }, [step, delay, reducedMotion, currentFill]);
 
   return (
     <View

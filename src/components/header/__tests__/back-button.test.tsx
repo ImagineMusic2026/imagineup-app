@@ -66,4 +66,14 @@ describe('BackButton', () => {
     expect(onPress).toHaveBeenCalled();
     expect(mockedRouter.back).not.toHaveBeenCalled();
   });
+
+  it('no fechar, diz "Fechar" e cola o círculo no fim do alvo, junto da margem da direita', () => {
+    mockedRouter.canGoBack.mockReturnValue(true);
+    render(<BackButton variant="close" />);
+    const button = screen.getByRole('button', { name: t('common.close') });
+    expect(button).toHaveStyle({ alignItems: 'flex-end' });
+    expect(screen.queryByLabelText(t('common.back'))).toBeNull();
+    fireEvent.press(button);
+    expect(mockedRouter.back).toHaveBeenCalled();
+  });
 });

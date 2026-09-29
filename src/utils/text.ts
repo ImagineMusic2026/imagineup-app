@@ -18,3 +18,25 @@ export function initialsOf(name: string): string {
   const last = initials.length > 1 ? (initials[initials.length - 1] ?? '') : '';
   return `${first}${last}`.toLocaleUpperCase('pt-BR');
 }
+
+// Acentos e outros sinais que o NFD separa da letra.
+const COMBINING_MARKS = /\p{M}/gu;
+
+/**
+ * Forma de comparar na busca: sem acento, sem maiúscula e com os espaços
+ * juntados ("  São  João " e "sao joao" dão o mesmo).
+ */
+export function searchKey(text: string): string {
+  return text
+    .normalize('NFD')
+    .replace(COMBINING_MARKS, '')
+    .toLocaleLowerCase('pt-BR')
+    .trim()
+    .replace(/\s+/g, ' ');
+}
+
+/** O texto contém a busca, sem ligar para acento nem maiúscula. Busca vazia casa com tudo. */
+export function matchesSearch(text: string, query: string): boolean {
+  const needle = searchKey(query);
+  return needle === '' || searchKey(text).includes(needle);
+}

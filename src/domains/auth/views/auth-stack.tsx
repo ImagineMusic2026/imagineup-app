@@ -24,7 +24,11 @@ export function AuthStack() {
     <View style={styles.root}>
       {/* No Android, sem a composição fora da tela, cada camada apagaria
           sozinha e a foto vazaria pelo véu do formulário no meio do fade. */}
-      <Animated.View needsOffscreenAlphaCompositing style={[styles.fill, fade]}>
+      <Animated.View
+        needsOffscreenAlphaCompositing
+        onLayout={fade.onLayout}
+        style={[styles.fill, fade.style]}
+      >
         <AuthBackdrop />
         <Stack
           screenOptions={{

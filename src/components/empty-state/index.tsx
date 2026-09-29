@@ -19,6 +19,11 @@ export interface EmptyStateProps {
   /** No erro, o padrão é "Tentar de novo"; no vazio, sem rótulo não há botão. */
   actionLabel?: string;
   onAction?: () => void;
+  /**
+   * A ação está em andamento ("Tentar de novo" buscando de novo): o botão fica
+   * na tela, ocupado, em vez de sumir com o foco do leitor de tela nele.
+   */
+  actionLoading?: boolean;
   style?: StyleProp<ViewStyle>;
 }
 
@@ -41,6 +46,7 @@ export function EmptyState({
   title,
   actionLabel,
   onAction,
+  actionLoading = false,
   style,
 }: EmptyStateProps) {
   const label = actionLabel ?? (tone === 'error' ? t('common.retry') : undefined);
@@ -63,7 +69,13 @@ export function EmptyState({
         </Text>
       </View>
       {onAction && label ? (
-        <Button variant="secondary" size="md" label={label} onPress={onAction} />
+        <Button
+          variant="secondary"
+          size="md"
+          label={label}
+          onPress={onAction}
+          loading={actionLoading}
+        />
       ) : null}
     </View>
   );

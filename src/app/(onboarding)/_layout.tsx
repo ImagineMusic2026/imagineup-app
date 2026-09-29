@@ -1,7 +1,4 @@
-import { Stack } from 'expo-router';
+import { OnboardingStack } from '@/domains/onboarding';
 
-import { useStackScreenOptions } from '@/hooks/use-stack-screen-options';
-
-export default function OnboardingLayout() {
-  return <Stack screenOptions={{ ...useStackScreenOptions(), gestureEnabled: false }} />;
-}
+export const unstable_settings = { anchor: 'artistas' };
+export default OnboardingStack;
