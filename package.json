@@ -20,9 +20,9 @@
     "build:preview:android": "eas build --profile preview --platform android",
     "update:preview": "eas update --channel preview --environment preview",
     "update:production": "eas update --channel production --environment production",
-    "test:rules": "npx --yes firebase-tools@15.32.0 emulators:exec --only firestore --project imagine-up-app \"jest -c jest.rules.config.js\"",
-    "test:functions": "node scripts/functions-emulator-env.mjs && npm --prefix functions run build && npx --yes cross-env@10.1.0 FUNCTIONS_DISCOVERY_TIMEOUT=60 npx --yes firebase-tools@15.32.0 emulators:exec --only auth,firestore,functions --project demo-imagine-up-app \"npm --prefix functions run test:emulator\"",
-    "rules:deploy": "npx --yes firebase-tools@15.32.0 deploy --only firestore:rules,firestore:indexes --project imagine-up-app",
+    "test:rules": "npx --yes firebase-tools@15.32.0 emulators:exec --only firestore,storage --project imagine-up-app \"jest -c jest.rules.config.js\"",
+    "test:functions": "node scripts/functions-emulator-env.mjs && npm --prefix functions run build && npx --yes cross-env@10.1.0 FUNCTIONS_DISCOVERY_TIMEOUT=60 npx --yes firebase-tools@15.32.0 emulators:exec --only auth,firestore,functions,storage --project demo-imagine-up-app \"npm --prefix functions run test:emulator\"",
+    "rules:deploy": "npx --yes firebase-tools@15.32.0 deploy --only firestore:rules,firestore:indexes,storage --project imagine-up-app",
     "emulators": "node scripts/emulators.mjs",
     "emulators:seed": "node scripts/seed-emulators.mjs",
     "functions:deploy": "npx --yes firebase-tools@15.32.0 deploy --only functions --project imagine-up-app"

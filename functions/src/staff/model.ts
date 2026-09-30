@@ -204,6 +204,42 @@ export function sessionAllowed(member: { authValidAfter?: unknown }, authTime: u
   return time >= after;
 }
 
+/** Campos de staff/{uid} que decidem o acesso a uma seção. */
+export type MemberAccessFields = {
+  status?: unknown;
+  role?: unknown;
+  sections?: unknown;
+  authValidAfter?: unknown;
+};
+
+/**
+ * true se o membro usa o painel nesta sessão: status active e login a partir
+ * de authValidAfter. Mesma conta de isActiveStaff() no firestore.rules.
+ */
+export function isActiveMember(member: MemberAccessFields | undefined, authTime: unknown): boolean {
+  return member?.status === 'active' && sessionAllowed(member, authTime);
+}
+
+/** O que um membro faz numa seção: nada, só ver ou alterar. */
+export type SectionAccess = 'none' | 'view' | 'edit';
+
+/**
+ * Acesso do membro a uma seção nesta sessão. Espelho de canSeeSection (view)
+ * e canEditSection (edit) do firestore.rules: admin altera tudo, editor altera
+ * as seções liberadas e qualquer outro papel só vê as liberadas.
+ */
+export function sectionAccess(
+  member: MemberAccessFields | undefined,
+  section: SectionId,
+  authTime: unknown,
+): SectionAccess {
+  if (!member || !isActiveMember(member, authTime)) return 'none';
+  if (member.role === 'admin') return 'edit';
+  const sections: unknown[] = Array.isArray(member.sections) ? member.sections : [];
+  if (!sections.includes(section)) return 'none';
+  return member.role === 'editor' ? 'edit' : 'view';
+}
+
 /**
  * true se tirar o acesso de admin de `targetUid` deixa o painel sem nenhum
  * admin ativo. `activeAdminUids` são os admins ativos lidos na mesma transação.

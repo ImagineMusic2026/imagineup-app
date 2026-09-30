@@ -87,6 +87,7 @@ export type StaffInvite = {
   cancelReason: 'admin' | 'replaced' | null;
 };
 
+/** Ações registradas em staffAudit: as da equipe e as das seções do painel. */
 export type AuditAction =
   | 'invite.created'
   | 'invite.resent'
@@ -95,9 +96,19 @@ export type AuditAction =
   | 'member.updated'
   | 'member.disabled'
   | 'member.enabled'
-  | 'member.removed';
+  | 'member.removed'
+  | 'artist.created'
+  | 'artist.updated'
+  | 'artist.published'
+  | 'artist.unpublished'
+  | 'artist.deleted'
+  | 'artist.reordered';
 
-/** staffAudit/{autoId}: uma entrada por mudança na equipe. */
+/**
+ * staffAudit/{autoId}: uma entrada por mudança feita pelo painel. Nas ações
+ * de outras seções (artistas), targetEmail fica '' e targetUid null, e o alvo
+ * vai em details.
+ */
 export type AuditEntry = {
   action: AuditAction;
   actorUid: string | null;
@@ -156,7 +167,8 @@ const clock = (deps: { now?: () => number }) => (deps.now ?? Date.now)();
 const staffRef = (db: Firestore, uid: string) => db.collection('staff').doc(uid);
 const invitesOf = (db: Firestore) => db.collection('staffInvites');
 
-function writeAudit(
+/** Grava uma entrada de staffAudit na transação da mudança. */
+export function writeAudit(
   tx: Transaction,
   db: Firestore,
   entry: Omit<AuditEntry, 'createdAt'>,
@@ -1130,7 +1142,9 @@ export async function setMemberActive(
  * convite e não é de fã (sem users/{uid}); senão continua como estava. Admin
  * removido perde os convites pendentes que criou ou reenviou. Membro pendente
  * (aceite que caiu no meio) solta a reserva no convite: a próxima tentativa
- * de aceite gera outro uid em vez de reviver este.
+ * de aceite gera outro uid em vez de reviver este. As centrais que ele geria
+ * (artistPrivate com managerUid dele) ficam sem gestor na mesma transação, e a
+ * auditoria da remoção lista quais foram.
  */
 export async function removeMember(
   deps: StaffDeps,
@@ -1154,6 +1168,9 @@ export async function removeMember(
         : null;
     const losesAdmin = target.role === 'admin';
     const issued = losesAdmin ? await readIssuedInvites(tx, db, uid) : NO_ISSUED_INVITES;
+    // Centrais geridas por ele: o gestor fica em artistPrivate/{artistId} (só a
+    // equipe lê) e aponta para um staff/{uid} existente.
+    const managed = await tx.get(db.collection('artistPrivate').where('managerUid', '==', uid));
     if (isActiveAdmin(target) && leavesNoActiveAdmin(admins, uid)) {
       throw staffError('last-admin');
     }
@@ -1163,6 +1180,15 @@ export async function removeMember(
     if (reservedInvite?.get('status') === 'pending' && reservedInvite.get('acceptingUid') === uid) {
       tx.update(reservedInvite.ref, { acceptingUid: null });
     }
+    for (const internal of managed.docs) {
+      tx.update(internal.ref, {
+        managerUid: null,
+        managerName: null,
+        updatedAt: now,
+        updatedBy: actorUid,
+      });
+    }
+    const managedArtistIds = managed.docs.map((internal) => internal.id);
     const canceledInviteIds = cancelIssuedInvites(tx, db, issued, {
       actorUid,
       actorName: actor.displayName,
@@ -1184,6 +1210,7 @@ export async function removeMember(
           status: target.status,
           accountDeleted: deleteAccount,
           ...(losesAdmin ? { canceledInviteIds } : {}),
+          ...(managedArtistIds.length > 0 ? { managedArtistIds } : {}),
         },
       },
       now,

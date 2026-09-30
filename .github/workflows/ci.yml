@@ -28,7 +28,8 @@ jobs:
       - run: npm run lint
       - run: npm test -- --ci
 
-  # Regras do Firestore contra o emulador, que precisa de Java.
+  # Regras do Firestore e do Storage contra os emuladores, que precisam de Java.
+  # O emulador do Storage baixa o motor de regras dele na primeira execução.
   firestore-rules:
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -45,8 +46,8 @@ jobs:
       - run: npm ci
       - run: npm run test:rules
 
-  # Cloud Functions (functions/): tipos, testes unitários e o cadastro de ponta
-  # a ponta nos emuladores de Auth, Firestore e Functions.
+  # Cloud Functions (functions/): tipos, testes unitários e as funções de ponta
+  # a ponta nos emuladores de Auth, Firestore, Functions e Storage.
   functions:
     runs-on: ubuntu-latest
     timeout-minutes: 15

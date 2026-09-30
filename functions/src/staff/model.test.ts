@@ -9,6 +9,7 @@ import {
   inviteState,
   inviteUrl,
   isActiveAdmin,
+  isActiveMember,
   leavesNoActiveAdmin,
   parseAccess,
   parseEmail,
@@ -21,6 +22,7 @@ import {
   parseUid,
   requestFields,
   ROLE_LABELS,
+  sectionAccess,
   SECTION_IDS,
   sessionAllowed,
 } from './model';
@@ -231,5 +233,47 @@ describe('sessão que usa o acesso (authValidAfter)', () => {
     expect(sessionAllowed(linked, 1_800_000_001)).toBe(true);
     // Token sem auth_time não passa por cima do campo.
     expect(sessionAllowed(linked, undefined)).toBe(false);
+  });
+});
+
+describe('acesso a uma seção (canSeeSection e canEditSection das regras)', () => {
+  const member = (role: string, sections: string[], extra: Record<string, unknown> = {}) => ({
+    status: 'active',
+    role,
+    sections,
+    ...extra,
+  });
+
+  it('admin altera qualquer seção', () => {
+    expect(sectionAccess(member('admin', []), 'artists', 1)).toBe('edit');
+  });
+
+  it('editor altera as seções liberadas; leitor só vê', () => {
+    expect(sectionAccess(member('editor', ['artists']), 'artists', 1)).toBe('edit');
+    expect(sectionAccess(member('viewer', ['artists']), 'artists', 1)).toBe('view');
+    expect(sectionAccess(member('editor', ['fans']), 'artists', 1)).toBe('none');
+    expect(sectionAccess(member('viewer', ['fans']), 'artists', 1)).toBe('none');
+  });
+
+  it('papel desconhecido com a seção só vê, como nas regras', () => {
+    expect(sectionAccess(member('owner', ['artists']), 'artists', 1)).toBe('view');
+  });
+
+  it('desativado, pendente, sem doc ou com seções que não são lista: nada', () => {
+    expect(sectionAccess(member('admin', [], { status: 'disabled' }), 'artists', 1)).toBe('none');
+    expect(sectionAccess(member('editor', ['artists'], { status: 'pending' }), 'artists', 1)).toBe(
+      'none',
+    );
+    expect(sectionAccess(undefined, 'artists', 1)).toBe('none');
+    expect(
+      sectionAccess({ status: 'active', role: 'editor', sections: 'artists' }, 'artists', 1),
+    ).toBe('none');
+  });
+
+  it('sessão de antes do authValidAfter não usa o acesso', () => {
+    const linked = member('admin', [], { authValidAfter: 1_800_000_000 });
+    expect(isActiveMember(linked, 1_799_999_999)).toBe(false);
+    expect(sectionAccess(linked, 'artists', 1_799_999_999)).toBe('none');
+    expect(sectionAccess(linked, 'artists', 1_800_000_000)).toBe('edit');
   });
 });

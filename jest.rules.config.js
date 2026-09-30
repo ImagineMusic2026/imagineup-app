@@ -1,6 +1,6 @@
 /**
- * Testes das regras do Firestore, em Node e contra o emulador. Rode com
- * `npm run test:rules` (sobe o emulador e roda esta config).
+ * Testes das regras do Firestore e do Storage, em Node e contra os emuladores.
+ * Rode com `npm run test:rules` (sobe os emuladores e roda esta config).
  * @type {import('jest').Config}
  */
 module.exports = {

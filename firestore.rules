@@ -10,6 +10,8 @@ rules_version = '2';
 // A equipe do painel admin entra pelo mesmo Authentication dos fãs, mas estar
 // logado nunca basta: só um staff/{uid} com status 'active' (gravado pelo
 // servidor, no aceite do convite) dá acesso, e o papel e as seções saem dele.
+// O storage.rules repete canEditSection('artists') para o envio das fotos:
+// mudou a regra da equipe aqui, mude lá também.
 //
 // Mudou algo aqui? Rode `npm run test:rules` antes de publicar.
 service cloud.firestore {
@@ -153,6 +155,25 @@ service cloud.firestore {
 
     match /staffAudit/{entryId} {
       allow read: if canSeeSection('audit');
+      allow write: if false;
+    }
+
+    // Centrais dos artistas (o id é o @). O painel cria, edita, publica e
+    // ordena pelas Cloud Functions; pelo cliente, ninguém grava. O fã logado lê
+    // só as publicadas, e a consulta dele precisa de where('status', '==',
+    // 'published'); a equipe com a seção artists lê todas. As regras não
+    // escondem campo: o fã lê o documento inteiro, então aqui só fica o que o
+    // app pode mostrar.
+    match /artists/{artistId} {
+      allow get, list: if (request.auth != null && resource.data.status == 'published')
+        || canSeeSection('artists');
+      allow write: if false;
+    }
+
+    // O que é só da equipe em cada central (contato, gestor, autorização de
+    // uso de imagem, quem criou e quem editou): só a equipe com a seção artists.
+    match /artistPrivate/{artistId} {
+      allow read: if canSeeSection('artists');
       allow write: if false;
     }
 

@@ -359,8 +359,9 @@ describe('perfil do fã (users/{uid})', () => {
 });
 
 describe('todo o resto é do servidor', () => {
+  // artists/ (o fã lê as publicadas) tem os testes em artists-rules.test.ts.
   it.each([
-    'artists/netto',
+    'artistPrivate/netto',
     'posts/1',
     'wallets/fa',
     'missions/diaria',

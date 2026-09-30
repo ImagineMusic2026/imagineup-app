@@ -12,6 +12,7 @@ module.exports = {
     '^@/assets/(.*)$': '<rootDir>/assets/$1',
     '^@/(.*)$': '<rootDir>/src/$1',
   },
-  // tests/ roda só com o emulador do Firestore (npm run test:rules); functions/ tem os próprios testes.
+  // tests/ roda só com os emuladores do Firestore e do Storage (npm run test:rules);
+  // functions/ tem os próprios testes.
   testPathIgnorePatterns: ['/node_modules/', '/.expo/', '<rootDir>/tests/', '<rootDir>/functions/'],
 };

@@ -1,0 +1,77 @@
+rules_version = '2';
+
+// Regras do Cloud Storage do app ImagineUP (bucket imagine-up-app.firebasestorage.app).
+//
+// Tudo fechado por padrão. As fotos das centrais sobem do painel admin direto
+// para artists/{artistId}/, com um nome novo a cada envio; a Cloud Function
+// confere o arquivo e grava a URL em artists/{artistId}. Qualquer um baixa uma
+// foto pelo caminho exato (o app mostra a URL), ninguém lista a pasta, e só o
+// servidor apaga ou troca arquivos.
+//
+// Quem sobe é quem altera Artistas e centrais no painel: a mesma conta de
+// canEditSection('artists') e staffSessionAllowed() do firestore.rules, lendo
+// staff/{uid} no Firestore. E só para uma central que já existe em
+// artists/{artistId} (o painel cria a central antes de subir a foto): foto de
+// central já apagada, ou de um @ que ainda não é central, é recusada e não
+// fica largada no bucket. Cada envio lê staff/{uid} e artists/{artistId} no Firestore (conta
+// como leitura, só no envio). Mudou a regra da equipe lá? Mude aqui também,
+// com teste nos dois.
+//
+// Mudou algo aqui? Rode `npm run test:rules` antes de publicar.
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    function staffPath() {
+      return /databases/(default)/documents/staff/$(request.auth.uid);
+    }
+
+    function staffMember() {
+      return firestore.get(staffPath()).data;
+    }
+
+    // Admin, ou editor com a seção liberada, ativo e com sessão de login a
+    // partir do authValidAfter (conta que já existia e foi ligada à equipe).
+    function canEditSection(section) {
+      return request.auth != null
+        && firestore.exists(staffPath())
+        && staffMember().get('status', '') == 'active'
+        && request.auth.token.get('auth_time', 0) >= staffMember().get('authValidAfter', 0)
+        && (staffMember().get('role', '') == 'admin'
+          || (staffMember().get('role', '') == 'editor'
+            && section in staffMember().get('sections', [])));
+    }
+
+    // Foto já redimensionada pelo painel: webp, jpeg ou png, de 1 byte a 5 MB.
+    function validImage() {
+      return request.resource.size > 0
+        && request.resource.size <= 5 * 1024 * 1024
+        && request.resource.contentType.matches('image/(webp|jpeg|png)');
+    }
+
+    function artistExists(artistId) {
+      return firestore.exists(/databases/(default)/documents/artists/$(artistId));
+    }
+
+    match /artists/{artistId}/{fileName} {
+      allow get: if true;
+      allow list: if false;
+      // Nome novo a cada envio (resource == null): um arquivo nunca é trocado
+      // por cima, porque os aparelhos guardam a foto de uma URL para sempre.
+      // O @ no formato das centrais, fora dos ids que o Firestore reserva
+      // (__.*__), e a central já criada.
+      allow create: if resource == null
+        && artistId.matches('[a-z0-9_]{3,30}')
+        && !artistId.matches('__.*__')
+        && validImage()
+        && canEditSection('artists')
+        && artistExists(artistId);
+      // Metadados e exclusão: só o servidor (Admin SDK), que apaga as fotos
+      // de um rascunho apagado.
+      allow update, delete: if false;
+    }
+
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

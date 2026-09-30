@@ -1,11 +1,22 @@
 import { initializeApp } from 'firebase-admin/app';
 import { getAuth } from 'firebase-admin/auth';
 import { getFirestore } from 'firebase-admin/firestore';
+import { getStorage } from 'firebase-admin/storage';
 import { onCall } from 'firebase-functions/https';
 import { onUserCreated, onUserDeleted } from 'firebase-functions/identity';
 import * as logger from 'firebase-functions/logger';
 import { setGlobalOptions } from 'firebase-functions/options';
 
+import {
+  addArtist,
+  bucketFiles,
+  changeArtistStatus,
+  checkHandle,
+  editArtist,
+  removeArtist,
+  reorderArtistList,
+  type ArtistDeps,
+} from './artists';
 import { handleUserCreated, type FindUser } from './handlers';
 import {
   acceptInvite,
@@ -143,5 +154,57 @@ export const setStaffMemberActive = onCall({ cors: PANEL_ORIGINS }, async (reque
 export const removeStaffMember = onCall({ cors: PANEL_ORIGINS }, async (request) => {
   const result = await removeMember(staffDeps(), request.auth, request.data);
   logger.info('Membro removido da equipe.', { actorUid: request.auth?.uid });
+  return result;
+});
+
+// Artistas e centrais: callables do painel, para admin e editor com a seção
+// artists (leitor só usa o checkArtistHandle). Tudo que o painel muda passa
+// por aqui, com auditoria em staffAudit; as fotos sobem do navegador direto
+// para o Storage (storage.rules), e a função confere o arquivo antes de gravar.
+
+const artistDeps = (): ArtistDeps => ({
+  db: getFirestore(),
+  // Bucket padrão do projeto (imagine-up-app.firebasestorage.app; no emulador,
+  // demo-imagine-up-app.appspot.com), vindo do FIREBASE_CONFIG.
+  files: bucketFiles(() => getStorage().bucket()),
+});
+
+/** Formulário da central: o @ está livre? (formato, reservados, fãs e outras centrais). */
+export const checkArtistHandle = onCall({ cors: PANEL_ORIGINS }, (request) =>
+  checkHandle(artistDeps(), request.auth, request.data),
+);
+
+/** Cria a central como rascunho e reserva o @ no mesmo espaço dos @ dos fãs. */
+export const createArtist = onCall({ cors: PANEL_ORIGINS }, async (request) => {
+  const result = await addArtist(artistDeps(), request.auth, request.data);
+  logger.info('Central criada.', { actorUid: request.auth?.uid, artistId: result.artistId });
+  return result;
+});
+
+/** Edita a central: textos, gestor, contato, selo, autorização e fotos já enviadas. */
+export const updateArtist = onCall({ cors: PANEL_ORIGINS }, async (request) => {
+  const result = await editArtist(artistDeps(), request.auth, request.data);
+  logger.info('Central alterada.', { actorUid: request.auth?.uid });
+  return result;
+});
+
+/** Publica ou tira do ar. Publicar exige foto e autorização de uso de imagem. */
+export const setArtistStatus = onCall({ cors: PANEL_ORIGINS }, async (request) => {
+  const result = await changeArtistStatus(artistDeps(), request.auth, request.data);
+  logger.info('Status da central alterado.', { actorUid: request.auth?.uid });
+  return result;
+});
+
+/** Nova ordem das centrais (os 4 primeiros publicados são os destaques). */
+export const reorderArtists = onCall({ cors: PANEL_ORIGINS }, async (request) => {
+  const result = await reorderArtistList(artistDeps(), request.auth, request.data);
+  logger.info('Ordem das centrais alterada.', { actorUid: request.auth?.uid });
+  return result;
+});
+
+/** Admin apaga um rascunho que nunca foi publicado, com as fotos e a reserva do @. */
+export const deleteArtist = onCall({ cors: PANEL_ORIGINS }, async (request) => {
+  const result = await removeArtist(artistDeps(), request.auth, request.data);
+  logger.info('Central apagada.', { actorUid: request.auth?.uid });
   return result;
 });

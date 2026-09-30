@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import { RESERVED_HANDLES } from './artists/model';
 import {
   DISPLAY_NAME_MAX,
   profileDisplayName,
@@ -71,8 +72,22 @@ describe('usernameBase', () => {
     ['número no meio', 'Imag1ne Up'],
     ['rn no lugar de m', 'Irnagineup'],
     ['atendimento', 'Atendimento Silva'],
+    ['@ reservado das centrais: ajuda', 'Ajuda'],
+    ['@ reservado das centrais: contato', 'Contato'],
+    ['@ reservado com número no lugar de letra', 'C0ntat0'],
   ])('%s vira "fa"', (_, name) => {
     expect(usernameBase(name)).toBe('fa');
+  });
+
+  it('nenhum @ reservado das centrais sai como base de fã', () => {
+    for (const handle of RESERVED_HANDLES) {
+      expect(usernameBase(handle.charAt(0).toUpperCase() + handle.slice(1))).toBe('fa');
+    }
+  });
+
+  it('reservado das centrais vale só exato: nome que começa com a palavra segue', () => {
+    expect(usernameBase('Contato Silva')).toBe('contatosil');
+    expect(usernameBase('Ajudante')).toBe('ajudante');
   });
 
   it('corta a base em 15 caracteres', () => {

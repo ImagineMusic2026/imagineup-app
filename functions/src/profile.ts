@@ -1,5 +1,6 @@
 import { randomInt } from 'node:crypto';
 
+import { RESERVED_HANDLES } from './artists/model';
 import { isVisibleLine } from './visible-line';
 
 /** Limite do nome no firestore.rules. */
@@ -23,11 +24,15 @@ const LOOKALIKE_DIGITS: Record<string, string> = {
 };
 
 // Número no lugar de letra ("adm1n", "1magine") e "rn" no lugar de "m" não driblam a lista.
+// Os @ reservados das centrais (RESERVED_HANDLES, como "ajuda" e "contato")
+// valem só exatos: os @ dos fãs e das centrais dividem usernames/.
 function looksReserved(base: string): boolean {
   const letters = base
     .replace(/rn/g, 'm')
     .replace(/[01345]/g, (digit) => LOOKALIKE_DIGITS[digit] ?? digit);
-  return RESERVED.test(letters);
+  return (
+    RESERVED.test(letters) || RESERVED_HANDLES.includes(base) || RESERVED_HANDLES.includes(letters)
+  );
 }
 
 export type RandomDigits = (count: number) => string;

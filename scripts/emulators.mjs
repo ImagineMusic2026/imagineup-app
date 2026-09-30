@@ -1,10 +1,12 @@
 /**
- * Sobe os emuladores do Firebase para o app usar no desenvolvimento: Auth,
- * Firestore (com o firestore.rules) e as Cloud Functions de functions/, no
- * projeto demo-imagine-up-app, que nunca fala com o projeto de verdade.
+ * Sobe os emuladores do Firebase para o app e o painel usarem no
+ * desenvolvimento: Auth, Firestore (com o firestore.rules), as Cloud Functions
+ * de functions/ e o Storage (com o storage.rules, porta 9199, para as fotos das
+ * centrais), no projeto demo-imagine-up-app, que nunca fala com o projeto de
+ * verdade.
  *
- * O emulador do Firestore precisa de Java 21. Se houver JAVA_HOME, o java dele
- * vem antes do java do PATH.
+ * Os emuladores do Firestore e do Storage precisam de Java 21. Se houver
+ * JAVA_HOME, o java dele vem antes do java do PATH.
  *
  * Os parâmetros e o secret das funções da equipe (EmailJS) vêm de
  * functions/.env.demo-imagine-up-app e functions/.secret.local, criados aqui
@@ -38,7 +40,7 @@ await run('npx', [
   'firebase-tools@15.32.0',
   'emulators:start',
   '--only',
-  'auth,firestore,functions',
+  'auth,firestore,functions,storage',
   '--project',
   'demo-imagine-up-app',
 ]);
