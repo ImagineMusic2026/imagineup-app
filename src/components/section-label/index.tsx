@@ -1,6 +1,7 @@
+import type { Ref } from 'react';
 import { StyleSheet, type StyleProp, type TextStyle } from 'react-native';
 
-import { Text } from '@/components/text';
+import { Text, type TextInstance } from '@/components/text';
 import { colors, spacing } from '@/theme';
 
 /**
@@ -16,6 +17,8 @@ export interface SectionLabelProps {
   children: string;
   spacing?: SectionLabelSpacing;
   style?: StyleProp<TextStyle>;
+  /** O cabeçalho, para levar o foco do leitor de tela até ele (o chip do mês na 1m). */
+  ref?: Ref<TextInstance>;
   testID?: string;
 }
 
@@ -28,10 +31,12 @@ export function SectionLabel({
   children,
   spacing: preset = 'default',
   style,
+  ref,
   testID,
 }: SectionLabelProps) {
   return (
     <Text
+      ref={ref}
       variant="overline"
       color={colors.textMuted}
       accessibilityRole="header"

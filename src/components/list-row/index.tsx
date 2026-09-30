@@ -37,6 +37,12 @@ interface ListRowBaseProps {
   gap?: keyof typeof spacing;
   /** Troca o padding do card (a linha da agenda usa 12). Não vale para `divided`. */
   padding?: CardPadding;
+  /**
+   * Onde fica o `trailing`: à direita (padrão) ou embaixo do selo, do título
+   * e da meta, alinhado à esquerda. Com a fonte grande, o "Eu vou" da agenda
+   * (1m) desce para o título não ficar sem espaço e ser cortado.
+   */
+  trailingPlacement?: 'end' | 'below';
   accessibilityHint?: string;
   style?: StyleProp<ViewStyle>;
   testID?: string;
@@ -125,12 +131,14 @@ export function ListRow(props: ListRowProps) {
     titleNumberOfLines,
     gap,
     padding,
+    trailingPlacement = 'end',
     accessibilityLabel,
     accessibilityHint,
     style,
     testID,
   } = props;
   const locked = tone === 'locked';
+  const below = trailing ? trailingPlacement === 'below' : false;
   const pressable = props.onPress !== undefined;
   const group = pressable ? 'row' : (props.accessibilityGroup ?? 'row');
   // Só a linha estática bloqueada se diz desativada. A pressável responde ao
@@ -157,7 +165,7 @@ export function ListRow(props: ListRowProps) {
         accessibilityLabel={group === 'content' ? accessibilityLabel : undefined}
         accessibilityHint={group === 'content' ? accessibilityHint : undefined}
         accessibilityState={group === 'content' ? accessibilityState : undefined}
-        style={[styles.content, gapStyle]}
+        style={[styles.content, gapStyle, below && styles.contentAbove]}
       >
         {leading ? <View style={[styles.leading, gapStyle]}>{leading}</View> : null}
         <View style={styles.texts}>
@@ -184,7 +192,7 @@ export function ListRow(props: ListRowProps) {
           {...(pressable ? HIDDEN_FROM_READER : null)}
           pointerEvents={pressable ? 'none' : undefined}
           testID={testID ? `${testID}-trailing` : undefined}
-          style={styles.trailing}
+          style={[styles.trailing, below && styles.trailingBelow]}
         >
           {trailing}
         </View>
@@ -195,7 +203,7 @@ export function ListRow(props: ListRowProps) {
   const haptic = pressable && props.haptic !== undefined ? props.haptic : locked ? 'locked' : 'tap';
 
   if (variant === 'divided') {
-    const rowStyle = [styles.row, styles.divided, gapStyle, style];
+    const rowStyle = [styles.row, styles.divided, gapStyle, below && styles.stacked, style];
     if (pressable) {
       return (
         <PressableScale
@@ -228,7 +236,13 @@ export function ListRow(props: ListRowProps) {
       accessibilityRole={props.accessibilityRole}
       {...rowAccessibility}
       testID={testID}
-      style={[styles.row, gapStyle, locked && variant === 'compact' && styles.lockedBorder, style]}
+      style={[
+        styles.row,
+        gapStyle,
+        below && styles.stacked,
+        locked && variant === 'compact' && styles.lockedBorder,
+        style,
+      ]}
     >
       {content}
     </Card>
@@ -270,6 +284,20 @@ const styles = StyleSheet.create({
   trailing: {
     flexShrink: 0,
     alignItems: 'flex-end',
+  },
+  // O trailing embaixo: o alvo de 44 do botão já traz a sobra em volta do desenho.
+  stacked: {
+    flexDirection: 'column',
+    alignItems: 'stretch',
+    gap: spacing.xs,
+  },
+  // Na coluna, o conteúdo fica com a altura dele (com `flex: 1` sumiria).
+  contentAbove: {
+    flex: 0,
+  },
+  trailingBelow: {
+    alignSelf: 'flex-start',
+    alignItems: 'flex-start',
   },
 });
 

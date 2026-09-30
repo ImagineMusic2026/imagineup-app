@@ -1,4 +1,10 @@
-import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
+import {
+  useInfiniteQuery,
+  useMutation,
+  useQuery,
+  useQueryClient,
+  type QueryClient,
+} from '@tanstack/react-query';
 import { AccessibilityInfo } from 'react-native';
 
 import { missionKeys } from '@/domains/missions';
@@ -7,12 +13,13 @@ import { t } from '@/i18n';
 import { haptics } from '@/services/haptics';
 import { createIdempotencyKey } from '@/utils/id';
 
-import { fetchMyRsvps, setEventRsvp } from './api';
+import { fetchAgenda, fetchMyRsvps, setEventRsvp } from './api';
 import type { MyRsvps, RsvpResult, RsvpVariables } from './types';
 
 /** A chave inclui tudo que muda o resultado. */
 export const agendaKeys = {
   all: ['agenda'] as const,
+  events: () => [...agendaKeys.all, 'events'] as const,
   rsvps: () => [...agendaKeys.all, 'rsvps'] as const,
 };
 
@@ -40,6 +47,20 @@ export function registerAgendaMutationDefaults(client: QueryClient): void {
   client.setMutationDefaults(agendaMutationKeys.rsvp, {
     mutationFn: (variables: RsvpVariables) => setEventRsvp(variables),
     onSuccess: (result: RsvpResult) => refreshPointsAfterRsvp(client, result),
+  });
+}
+
+/**
+ * Shows da agenda (1m), uma página por vez: a primeira traz os próximos meses
+ * e o "Ver agenda completa" busca o resto. A presença não vem aqui: vem de
+ * `useMyRsvpsQuery`, a mesma lista que o post de show da home lê.
+ */
+export function useAgendaQuery() {
+  return useInfiniteQuery({
+    queryKey: agendaKeys.events(),
+    queryFn: ({ pageParam }) => fetchAgenda(pageParam),
+    initialPageParam: null as string | null,
+    getNextPageParam: (lastPage) => lastPage.nextCursor,
   });
 }
 

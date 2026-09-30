@@ -1,6 +1,7 @@
 import { fireEvent, render, screen } from '@testing-library/react-native';
 import { Platform, ScrollView, StyleSheet } from 'react-native';
 
+import { haptics } from '@/services/haptics';
 import { spacing } from '@/theme';
 
 import { ChipGroup, type ChipItem } from '..';
@@ -72,6 +73,29 @@ describe('ChipGroup', () => {
     render(<ChipGroup items={scopes} value="geral" onChange={onChange} />);
     fireEvent.press(screen.getByRole('button', { name: 'Geral' }));
     expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it('com onReselect, tocar no escolhido avisa por ele, e o toque vibra como os outros', () => {
+    const onChange = jest.fn();
+    const onReselect = jest.fn();
+    const trigger = jest.spyOn(haptics, 'trigger').mockImplementation(() => undefined);
+    render(<ChipGroup items={scopes} value="geral" onChange={onChange} onReselect={onReselect} />);
+
+    fireEvent.press(screen.getByRole('button', { name: 'Geral' }));
+    expect(onReselect).toHaveBeenCalledWith('geral');
+    expect(onChange).not.toHaveBeenCalled();
+    expect(trigger).toHaveBeenCalledWith('selection');
+
+    fireEvent.press(screen.getByRole('button', { name: 'Nenho' }));
+    expect(onChange).toHaveBeenCalledWith('nenho');
+    expect(onReselect).toHaveBeenCalledTimes(1);
+  });
+
+  it('sem onReselect, tocar no escolhido não vibra', () => {
+    const trigger = jest.spyOn(haptics, 'trigger').mockImplementation(() => undefined);
+    render(<ChipGroup items={scopes} value="geral" onChange={jest.fn()} />);
+    fireEvent.press(screen.getByRole('button', { name: 'Geral' }));
+    expect(trigger).not.toHaveBeenCalled();
   });
 
   it('na seleção múltipla, liga e desliga devolvendo na ordem dos itens', () => {

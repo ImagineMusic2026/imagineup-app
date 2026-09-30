@@ -13,7 +13,7 @@ import { fixtureWallet } from '@/services/fixtures';
 import { haptics } from '@/services/haptics';
 
 import { fetchMyRsvps, setEventRsvp } from '../api';
-import { RsvpChip } from '../components/rsvp-chip';
+import { RsvpChip } from '../components/rsvp-button';
 import { rsvpFixture } from '../fixtures';
 import { agendaKeys, agendaMutationKeys, registerAgendaMutationDefaults } from '../queries';
 
@@ -84,20 +84,20 @@ afterEach(() => {
 
 describe('presença nas fixtures', () => {
   it('a primeira confirmação rende os pontos da missão, uma vez só', () => {
-    expect(rsvpFixture.set('show-a', true, 'k1')).toEqual({
-      eventId: 'show-a',
+    expect(rsvpFixture.set('sao-joao-irara', true, 'k1')).toEqual({
+      eventId: 'sao-joao-irara',
       going: true,
       pointsAwarded: FIRST_RSVP_POINTS,
     });
-    expect(rsvpFixture.set('show-b', true, 'k2').pointsAwarded).toBe(0);
+    expect(rsvpFixture.set('festa-do-vaqueiro', true, 'k2').pointsAwarded).toBe(0);
     expect(fixtureWallet.get().balance).toBe(12_480 + FIRST_RSVP_POINTS);
-    expect(rsvpFixture.mine().eventIds).toEqual(['show-a', 'show-b']);
+    expect(rsvpFixture.mine().eventIds).toEqual(['sao-joao-irara', 'festa-do-vaqueiro']);
   });
 
   it('desfazer tira da lista e não rende ponto', () => {
-    rsvpFixture.set('show-a', true, 'k1');
-    expect(rsvpFixture.set('show-a', false, 'k2')).toEqual({
-      eventId: 'show-a',
+    rsvpFixture.set('sao-joao-irara', true, 'k1');
+    expect(rsvpFixture.set('sao-joao-irara', false, 'k2')).toEqual({
+      eventId: 'sao-joao-irara',
       going: false,
       pointsAwarded: 0,
     });
@@ -105,9 +105,17 @@ describe('presença nas fixtures', () => {
   });
 
   it('a mesma chave de novo devolve a primeira resposta, sem contar outra vez', () => {
-    const first = rsvpFixture.set('show-a', true, 'k1');
-    expect(rsvpFixture.set('show-a', true, 'k1')).toEqual(first);
+    const first = rsvpFixture.set('sao-joao-irara', true, 'k1');
+    expect(rsvpFixture.set('sao-joao-irara', true, 'k1')).toEqual(first);
     expect(fixtureWallet.get().balance).toBe(12_480 + FIRST_RSVP_POINTS);
+  });
+
+  it('show que não está na agenda é recusado, como a API faria, sem contar na missão', () => {
+    expect(() => rsvpFixture.set('show-que-nao-existe', true, 'k1')).toThrow(
+      expect.objectContaining({ kind: 'notFound', status: 404 }),
+    );
+    expect(rsvpFixture.mine().eventIds).toEqual([]);
+    expect(fixtureWallet.get().balance).toBe(12_480);
   });
 });
 
@@ -170,7 +178,7 @@ describe('"Eu vou" do post de show', () => {
   });
 
   it('presença sem pontos (a segunda) não mexe no saldo, mas as missões buscam de novo', async () => {
-    rsvpFixture.set('outro-show', true, 'antes');
+    rsvpFixture.set('festa-do-vaqueiro', true, 'antes');
     client.setQueryData(profileKeys.wallet(), { balance: 12_495, xp: 12_495, seasonPoints: 4_135 });
     client.setQueryData(missionKeys.list(), { season: null, missions: [] });
     render(<RsvpChip eventId={EVENT.id} eventTitle={EVENT.title} />, { wrapper });

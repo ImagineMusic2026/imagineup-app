@@ -1,12 +1,18 @@
+import type { Ref } from 'react';
 import { Text as NativeText, type TextProps as NativeTextProps } from 'react-native';
 
 import { colors, typography, type TypographyVariant } from '@/theme';
+
+/** O texto montado, para quem guarda o `ref` (levar o foco do leitor de tela até ele). */
+export type TextInstance = NativeText;
 
 export interface TextProps extends NativeTextProps {
   variant?: TypographyVariant;
   color?: string;
   /** Números alinhados, para contadores e placares que mudam de valor. */
   tabular?: boolean;
+  /** Para levar o foco do leitor de tela até o texto (um cabeçalho, por exemplo). */
+  ref?: Ref<TextInstance>;
 }
 
 /**

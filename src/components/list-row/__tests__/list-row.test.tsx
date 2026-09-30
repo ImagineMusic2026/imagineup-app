@@ -186,6 +186,35 @@ describe('ListRow', () => {
     expect(row).not.toHaveStyle({ backgroundColor: colors.surface });
   });
 
+  it('o botão da direita pode descer para baixo do conteúdo, alinhado à esquerda', () => {
+    render(
+      <ListRow
+        testID="linha"
+        title="Pra Encher e Derramar"
+        meta="Feira de Santana, BA"
+        accessibilityGroup="content"
+        accessibilityLabel="28 de outubro, Pra Encher e Derramar, Feira de Santana, Bahia"
+        trailingPlacement="below"
+        trailing={
+          <PressableScale onPress={jest.fn()} accessibilityLabel="Eu vou, Pra Encher e Derramar">
+            <Text>Eu vou</Text>
+          </PressableScale>
+        }
+      />,
+    );
+
+    expect(screen.getByTestId('linha')).toHaveStyle({
+      flexDirection: 'column',
+      alignItems: 'stretch',
+    });
+    expect(screen.getByTestId('linha-trailing')).toHaveStyle({ alignSelf: 'flex-start' });
+    // O conteúdo fica com a altura dele, e continua um foco só.
+    expect(
+      screen.getByLabelText('28 de outubro, Pra Encher e Derramar, Feira de Santana, Bahia'),
+    ).toHaveStyle({ flex: 0 });
+    expect(screen.getByRole('button', { name: 'Eu vou, Pra Encher e Derramar' })).toBeTruthy();
+  });
+
   it('vão e padding podem trocar pelos tokens da agenda', () => {
     render(<ListRow testID="linha" title="Arrocha na Praia" gap="rowGap" padding="md" />);
     expect(screen.getByTestId('linha')).toHaveStyle({

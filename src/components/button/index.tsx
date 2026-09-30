@@ -396,10 +396,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.cardPadding,
     borderRadius: RADIUS.mdCompact,
   },
+  // 12 dos lados, o "Chamar amigos" da 1m (o "Eu vou" rosa ao lado tem 14, e
+  // quem o desenha é o `RsvpButton`).
   sm: {
     minHeight: layout.buttonHeight.sm,
     paddingVertical: spacing.xs,
-    paddingHorizontal: spacing.cardPadding,
+    paddingHorizontal: spacing.md,
     borderRadius: RADIUS.sm,
   },
   xs: {

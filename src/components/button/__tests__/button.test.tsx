@@ -154,18 +154,23 @@ describe('Button', () => {
     expect(surfaceStyle()).toMatchObject({ minHeight: height, borderRadius: radius });
   });
 
-  it.each<[ButtonSize, number, number]>([
-    ['mdCompact', 36, radii.sm],
-    ['sm', 30, radii.xs],
-    ['xs', 29, radii.xxs],
-  ])('%s desenha menor, dentro de um alvo de 44', (size, height, radius) => {
+  it.each<[ButtonSize, number, number, number]>([
+    ['mdCompact', 36, radii.sm, 14],
+    // "Chamar amigos +10" da 1m: 9 x 12 no protótipo.
+    ['sm', 30, radii.xs, 12],
+    ['xs', 29, radii.xxs, 12],
+  ])('%s desenha menor, dentro de um alvo de 44', (size, height, radius, padding) => {
     render(<Button label="Eu vou" size={size} variant="outline" onPress={jest.fn()} />);
 
     expect(screen.getByRole('button', { name: 'Eu vou' })).toHaveStyle({
       minHeight: layout.minTouchTarget,
       minWidth: layout.minTouchTarget,
     });
-    expect(surfaceStyle()).toMatchObject({ minHeight: height, borderRadius: radius });
+    expect(surfaceStyle()).toMatchObject({
+      minHeight: height,
+      borderRadius: radius,
+      paddingHorizontal: padding,
+    });
   });
 
   it('cada tamanho usa a variante de texto do protótipo', () => {

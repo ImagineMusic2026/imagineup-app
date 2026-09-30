@@ -19,6 +19,11 @@ export interface ChipProps {
   selected: boolean;
   onPress: () => void;
   mode?: ChipSelectionMode;
+  /**
+   * Na seleção única, tocar no escolhido faz alguma coisa (a 1m rola de volta
+   * ao começo do mês): o toque vibra como os outros. Sem isso, não vibra.
+   */
+  reselectable?: boolean;
   /** Troca o nome lido quando o texto visível não basta. */
   accessibilityLabel?: string;
   /** "Mostra os shows de junho" (1m), via `t()`. */
@@ -53,6 +58,7 @@ export function Chip({
   selected,
   onPress,
   mode = 'single',
+  reselectable = false,
   accessibilityLabel,
   accessibilityHint,
   onLayout,
@@ -69,8 +75,9 @@ export function Chip({
     <PressableScale
       onPress={onPress}
       onLayout={onLayout}
-      // Tocar no que já está escolhido, na seleção única, não muda nada.
-      haptic={mode === 'single' && selected ? null : 'selection'}
+      // Tocar no que já está escolhido, na seleção única, não muda nada (a
+      // não ser que quem chama faça algo com o toque).
+      haptic={mode === 'single' && selected && !reselectable ? null : 'selection'}
       accessibilityRole={role}
       accessibilityState={state}
       accessibilityLabel={accessibilityLabel ?? label}

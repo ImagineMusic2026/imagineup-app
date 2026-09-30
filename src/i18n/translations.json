@@ -287,6 +287,34 @@
   },
   "agenda": {
     "title": "Agenda",
+    "loading": "Carregando a agenda",
+    "empty": "Nenhum show marcado por enquanto. Os próximos aparecem aqui.",
+    "loadError": "Não deu para carregar a agenda.",
+    "updateError": "Não deu para atualizar a agenda.",
+    "loaded": "Agenda carregada.",
+    "seeAll": "Ver agenda completa",
+    "seeAllHint": "Carrega os shows dos meses seguintes",
+    "moreLoaded": "Agenda completa carregada.",
+    "moreError": "Não deu para carregar o resto da agenda.",
+    "today": "Hoje",
+    "artistsSeparator": " + ",
+    "meta": "{{artists}} · {{city}}, {{state}} · {{time}}",
+    "metaNoArtists": "{{city}}, {{state}} · {{time}}",
+    "place": "{{city}}, {{state}}",
+    "invite": {
+      "label": "Chamar amigos {{points}}",
+      "labelPlain": "Chamar amigos",
+      "a11y": "Chamar amigos para {{show}}, {{points}} por cadastro",
+      "a11yPlain": "Chamar amigos para {{show}}"
+    },
+    "a11y": {
+      "featured": "Show em destaque. {{date}}, {{show}}, {{artists}}, {{place}}, {{time}}",
+      "featuredNoArtists": "Show em destaque. {{date}}, {{show}}, {{place}}, {{time}}",
+      "row": "{{date}}, {{show}}, {{place}}",
+      "today": "hoje",
+      "and": "{{first}} e {{last}}",
+      "monthHint": "Mostra os shows de {{month}}"
+    },
     "rsvp": {
       "go": "Eu vou",
       "going": "Confirmado",
@@ -356,7 +384,8 @@
       "hourOne": "1 hora",
       "hours": "{{count}} horas",
       "dayOne": "1 dia",
-      "days": "{{count}} dias"
+      "days": "{{count}} dias",
+      "showTimeWithMinutes": "{{hours}} e {{minutes}}"
     }
   },
   "components": {

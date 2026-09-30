@@ -1,11 +1,22 @@
 import { dataSource } from '@/config/env';
 import { api } from '@/services/api';
-import { fixtureDelay } from '@/services/fixtures';
+import { fixtureDelay, fixtureNow } from '@/services/fixtures';
 
-import { rsvpFixture } from './fixtures';
-import type { MyRsvps, RsvpResult, RsvpVariables } from './types';
+import { buildAgendaPageFixture, rsvpFixture } from './fixtures';
+import type { AgendaPage, MyRsvps, RsvpResult, RsvpVariables } from './types';
 
 /** Chamadas cruas à API. Sem React: quem cacheia é o queries.ts. */
+
+/** Shows futuros em ordem de data, uma página por vez. */
+export async function fetchAgenda(cursor: string | null): Promise<AgendaPage> {
+  if (dataSource === 'fixtures') {
+    await fixtureDelay();
+    return buildAgendaPageFixture(fixtureNow(), cursor);
+  }
+  const { data } = await api.get<AgendaPage>('/agenda', { params: { cursor } });
+  return data;
+}
+
 export async function fetchMyRsvps(): Promise<MyRsvps> {
   if (dataSource === 'fixtures') {
     await fixtureDelay();

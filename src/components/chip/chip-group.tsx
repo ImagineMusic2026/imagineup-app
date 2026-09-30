@@ -40,6 +40,11 @@ interface SingleSelection<T extends string> {
   multiple?: false;
   value: T;
   onChange: (value: T) => void;
+  /**
+   * Toque no chip que já está escolhido. Na 1m o escolhido segue a rolagem, e
+   * tocar nele volta ao começo do mês.
+   */
+  onReselect?: (value: T) => void;
 }
 
 interface MultipleSelection<T extends string> {
@@ -47,6 +52,7 @@ interface MultipleSelection<T extends string> {
   value: readonly T[];
   /** Os escolhidos na ordem dos `items`, não na ordem dos toques. */
   onChange: (value: T[]) => void;
+  onReselect?: undefined;
 }
 
 export type ChipGroupProps<T extends string> = ChipGroupBaseProps<T> &
@@ -104,6 +110,7 @@ export function ChipGroup<T extends string>(props: ChipGroupProps<T>) {
   const press = (value: T): void => {
     if (!props.multiple) {
       if (value !== props.value) props.onChange(value);
+      else props.onReselect?.(value);
       return;
     }
     const next = new Set(props.value);
@@ -148,6 +155,7 @@ export function ChipGroup<T extends string>(props: ChipGroupProps<T>) {
             label={item.label}
             selected={isSelected(item.value)}
             mode={props.multiple ? 'multiple' : 'single'}
+            reselectable={props.onReselect !== undefined}
             onPress={() => press(item.value)}
             onLayout={(event) => handleChipLayout(item.value, event)}
             accessibilityLabel={item.accessibilityLabel}
