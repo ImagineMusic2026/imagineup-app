@@ -176,6 +176,27 @@ export function buildAgendaPageFixture(now: Date, cursor: string | null): Agenda
   };
 }
 
+/**
+ * Os shows de uma central (aba Agenda da 1d): os mesmos da agenda, só os em
+ * que o artista toca, sem destaque, em páginas do mesmo tamanho.
+ */
+export function buildArtistAgendaPageFixture(
+  now: Date,
+  artistId: string,
+  cursor: string | null,
+): AgendaPage {
+  const events = buildAgendaEventsFixture(now).filter((event) =>
+    event.artists.some((artist) => artist.id === artistId),
+  );
+  const start = cursor === null ? 0 : Math.max(0, Number.parseInt(cursor, 10) || 0);
+  const end = start + AGENDA_PAGE_SIZE;
+  return {
+    featured: null,
+    items: events.slice(start, end),
+    nextCursor: end < events.length ? String(end) : null,
+  };
+}
+
 let going = new Set<string>();
 // Chave de idempotência já vista e o que ela devolveu, como o servidor faria.
 let answered = new Map<string, RsvpResult>();

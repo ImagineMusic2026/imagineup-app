@@ -178,4 +178,27 @@ describe('ChipGroup', () => {
     const end = spacing.gutter + 5 * CHIP_STRIDE + CHIP_WIDTH + spacing.gutter;
     expect(scrollTo).toHaveBeenLastCalledWith({ x: end - VIEWPORT, animated: false });
   });
+
+  it('o chip escolhido que entra no fim da fileira aparece quando o conteúdo cresce', () => {
+    // A central que o fã não segue, aberta por /ranking?artista=: o chip dela
+    // nasce junto com a escolha, e a rolagem pedida antes de o conteúdo crescer
+    // parava no fim antigo.
+    const first = months.slice(0, 5);
+    const { rerender } = render(
+      <ChipGroup testID="meses" items={first} value="mar" onChange={jest.fn()} />,
+    );
+    measure('meses', first);
+    rerender(<ChipGroup testID="meses" items={months} value="mar" onChange={jest.fn()} />);
+    measure('meses', months);
+    // O nativo parou antes: a rolagem só chegou ao fim antigo.
+    fireEvent.scroll(screen.UNSAFE_getByType(ScrollView), {
+      nativeEvent: { contentOffset: { x: 100, y: 0 } },
+    });
+    scrollTo.mockClear();
+
+    fireEvent(screen.UNSAFE_getByType(ScrollView), 'contentSizeChange', 600, 44);
+
+    const end = spacing.gutter + 5 * CHIP_STRIDE + CHIP_WIDTH + spacing.gutter;
+    expect(scrollTo).toHaveBeenLastCalledWith({ x: end - VIEWPORT, animated: false });
+  });
 });

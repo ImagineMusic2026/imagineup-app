@@ -1,12 +1,20 @@
 import { api } from '@/services/api';
 import { ApiError } from '@/services/api/errors';
 
-import { fetchArtists, fetchFanCentrals, followArtists } from '../api';
-import { buildArtistsFixture, buildFanCentralsFixture, followFixture } from '../fixtures';
+import { fixtureWallet } from '@/services/fixtures';
+
+import { fetchArtist, fetchArtists, fetchFanCentrals, followArtists, joinCentral } from '../api';
+import {
+  buildArtistDetailsFixture,
+  buildArtistsFixture,
+  buildFanCentralsFixture,
+  followFixture,
+  JOIN_CENTRAL_POINTS,
+} from '../fixtures';
 
 // A API real passa pelo axios com o token do Firebase; aqui só importa o que o domínio pede a ela.
 jest.mock('@/services/api', () => ({
-  api: { get: jest.fn(), post: jest.fn() },
+  api: { get: jest.fn(), post: jest.fn(), put: jest.fn() },
 }));
 
 // Lido na hora da chamada: cada teste escolhe a fonte.
@@ -19,11 +27,13 @@ jest.mock('@/config/env', () => ({
 
 const get = jest.mocked(api.get);
 const post = jest.mocked(api.post);
+const put = jest.mocked(api.put);
 
 beforeEach(() => {
   jest.clearAllMocks();
   mockDataSource = 'fixtures';
   followFixture.reset();
+  fixtureWallet.reset();
 });
 
 describe('artistas de exemplo', () => {
@@ -172,5 +182,87 @@ describe('centrais do fã', () => {
     get.mockResolvedValue({ data: [] });
     await expect(fetchFanCentrals()).resolves.toEqual([]);
     expect(get).toHaveBeenCalledWith('/me/centrals');
+  });
+});
+
+describe('página da central', () => {
+  it('o Netto do protótipo: 412 mil fãs, 1.284 posts, 8,4 mi de pontos, gestão da Imagine e o fã dentro', () => {
+    expect(buildArtistDetailsFixture('netto-brito')).toEqual({
+      id: 'netto-brito',
+      name: 'Netto Brito',
+      coverUrl: null,
+      photoURL: null,
+      verified: true,
+      managedByImagine: true,
+      fanCount: 412_000,
+      postCount: 1_284,
+      centralPoints: 8_400_000,
+      isMember: true,
+    });
+  });
+
+  it('o Rock Salles fica fora das centrais do fã, para o "Entrar na central"', () => {
+    expect(buildArtistDetailsFixture('rock-salles')).toMatchObject({ isMember: false });
+  });
+
+  it('as centrais genéricas não têm a pílula de gestão oficial', () => {
+    expect(buildArtistDetailsFixture('artista-5')).toMatchObject({ managedByImagine: false });
+  });
+
+  it('artista que não existe dá 404, como a API', async () => {
+    await expect(fetchArtist('ninguem')).rejects.toMatchObject({
+      kind: 'notFound',
+    } satisfies Partial<ApiError>);
+  });
+
+  it('com a API, pede /artists/<id>', async () => {
+    mockDataSource = 'api';
+    get.mockResolvedValue({ data: { id: 'nenho' } });
+    await fetchArtist('nenho');
+    expect(get).toHaveBeenCalledWith('/artists/nenho');
+  });
+});
+
+describe('entrar na central', () => {
+  it('rende os pontos de exemplo na carteira e põe a central nas do fã', async () => {
+    const before = fixtureWallet.get();
+    await expect(
+      joinCentral({ artistId: 'rock-salles', idempotencyKey: 'entrar-1' }),
+    ).resolves.toEqual({ artistId: 'rock-salles', pointsAwarded: JOIN_CENTRAL_POINTS });
+
+    expect(fixtureWallet.get()).toEqual({
+      balance: before.balance + JOIN_CENTRAL_POINTS,
+      xp: before.xp + JOIN_CENTRAL_POINTS,
+      seasonPoints: before.seasonPoints + JOIN_CENTRAL_POINTS,
+    });
+    expect(buildArtistDetailsFixture('rock-salles').isMember).toBe(true);
+    expect(buildFanCentralsFixture().at(-1)).toMatchObject({
+      artistId: 'rock-salles',
+      fanRank: null,
+    });
+  });
+
+  it('a mesma chave de novo devolve a mesma resposta, sem pontos a mais', async () => {
+    await joinCentral({ artistId: 'rock-salles', idempotencyKey: 'entrar-2' });
+    const after = fixtureWallet.get();
+    await expect(
+      joinCentral({ artistId: 'rock-salles', idempotencyKey: 'entrar-2' }),
+    ).resolves.toEqual({ artistId: 'rock-salles', pointsAwarded: JOIN_CENTRAL_POINTS });
+    expect(fixtureWallet.get()).toEqual(after);
+  });
+
+  it('quem já está na central não ganha de novo', async () => {
+    await expect(
+      joinCentral({ artistId: 'netto-brito', idempotencyKey: 'entrar-3' }),
+    ).resolves.toEqual({ artistId: 'netto-brito', pointsAwarded: 0 });
+  });
+
+  it('com a API, manda a chave de idempotência', async () => {
+    mockDataSource = 'api';
+    put.mockResolvedValue({ data: { artistId: 'nenho', pointsAwarded: 5 } });
+    await joinCentral({ artistId: 'nenho', idempotencyKey: 'entrar-4' });
+    expect(put).toHaveBeenCalledWith('/me/centrals/nenho', null, {
+      headers: { 'Idempotency-Key': 'entrar-4' },
+    });
   });
 });

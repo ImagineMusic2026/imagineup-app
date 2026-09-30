@@ -235,6 +235,23 @@ export function buildFeedPageFixture(now: Date, cursor: string | null): Page<Pos
   return pageOf(buildPostsFixture(now), cursor, FEED_PAGE_SIZE);
 }
 
+/** Posts por página na grade da central (1d): quatro linhas de três. */
+export const ARTIST_POSTS_PAGE_SIZE = 12;
+
+/**
+ * Uma página dos posts de uma central (a grade da 1d), do mais novo ao mais
+ * antigo: os mesmos posts do mural, com as mesmas curtidas e comentários.
+ * Central sem post devolve a página vazia.
+ */
+export function buildArtistPostsPageFixture(
+  now: Date,
+  artistId: string,
+  cursor: string | null,
+): Page<Post> {
+  const posts = buildPostsFixture(now).filter((post) => post.artist.id === artistId);
+  return pageOf(posts, cursor, ARTIST_POSTS_PAGE_SIZE);
+}
+
 function pageOf<T>(items: readonly T[], cursor: string | null, size: number): Page<T> {
   const start = cursor === null ? 0 : Math.max(0, Number.parseInt(cursor, 10) || 0);
   const end = start + size;

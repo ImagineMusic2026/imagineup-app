@@ -98,7 +98,11 @@ export function ChipGroup<T extends string>(props: ChipGroupProps<T>) {
     );
   }, [single, gutterSize, reducedMotion]);
 
-  // Na abertura as medidas chegam depois do efeito: o escolhido aparece sem animar.
+  // Na abertura as medidas chegam depois do efeito: o escolhido aparece sem
+  // animar. O mesmo quando a fileira cresce: o chip que entra no fim (a central
+  // que o fã não segue, aberta por `/ranking?artista=`) nasce junto com a
+  // escolha, e a rolagem pedida antes de o conteúdo crescer parava no fim
+  // antigo, com o chip cortado à direita.
   const revealOnMount = (): void => {
     if (single === null) return;
     revealChip(scrollRef.current, boxes.current.get(single), viewport.current, gutterSize, false);
@@ -145,6 +149,7 @@ export function ChipGroup<T extends string>(props: ChipGroupProps<T>) {
         horizontal
         showsHorizontalScrollIndicator={false}
         onLayout={handleViewportLayout}
+        onContentSizeChange={() => revealOnMount()}
         onScroll={handleScroll}
         scrollEventThrottle={16}
         contentContainerStyle={[styles.content, { paddingHorizontal: gutterSize }]}

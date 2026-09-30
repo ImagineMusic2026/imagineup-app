@@ -5,6 +5,7 @@ export {
   postMutationKeys,
   registerPostMutationDefaults,
   useAddCommentMutation,
+  useArtistPostsQuery,
   useCommentsQuery,
   useFeedQuery,
   useLocalComments,

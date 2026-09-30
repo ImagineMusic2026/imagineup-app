@@ -145,9 +145,9 @@ function ListPlaceholder({
  * tocar nele rola até ela, buscando as páginas que faltam.
  *
  * O recorte vem do parâmetro `?artista=<id>`, que o chip muda: o link a frio
- * `/ranking?artista=<id>` já abre com o chip da central escolhido, pronto para
- * o "Ver ranking" da página do artista (1d, fatia F12; a pergunta 7.1.6 segue
- * em aberto). Posições, pontos e metas vêm da API; os pontos são os da
+ * `/ranking?artista=<id>` já abre com o chip da central escolhido (o "Ver
+ * ranking" da página do artista, 1d, escolhe a aba interna de lá, proposta
+ * padrão da pergunta 7.1.6). Posições, pontos e metas vêm da API; os pontos são os da
  * temporada. Missões (1g) e Resgatar (1h) moram na pilha desta aba, e o fã
  * chega a elas pelo "+" do meio da tab bar.
  */

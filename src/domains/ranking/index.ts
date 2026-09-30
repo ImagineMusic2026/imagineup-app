@@ -1,5 +1,7 @@
 export type { RankingSelf } from './components/entry-avatar';
 export { RankingRow, type RankingRowProps } from './components/ranking-row';
+export { SeasonLine } from './components/season-line';
+export { entryName } from './describe-rank';
 export {
   rankingKeys,
   useLeaderboardInfiniteQuery,

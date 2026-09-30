@@ -68,6 +68,12 @@ export interface ButtonProps {
   disabled?: boolean;
   /** Estado de escolha para o leitor de tela, como o "Confirmado" da 1m. */
   selected?: boolean;
+  /**
+   * Estado, não ação (o "Na central" da 1d): o mesmo desenho, sem toque e lido
+   * como texto. Fica no mesmo pressável, para a troca de uma ação para ele
+   * seguir animada e o foco do leitor de tela não pular.
+   */
+  readOnly?: boolean;
   /** Brilho colorido embaixo. Padrão: só o `primary` em `lg` e `md`. Vale para `primary` e `points`. */
   glow?: boolean;
   haptic?: HapticEvent | null;
@@ -175,6 +181,7 @@ export function Button({
   loading = false,
   disabled = false,
   selected,
+  readOnly = false,
   glow,
   haptic = 'tap',
   accessibilityLabel,
@@ -219,12 +226,17 @@ export function Button({
 
   return (
     <PressableScale
-      onPress={onPress}
+      onPress={readOnly ? undefined : onPress}
       disabled={inactive}
-      haptic={haptic}
+      // Sem `focusable`, o Android não marca o elemento como tocável ("toque
+      // duas vezes para ativar"); o leitor de tela continua chegando nele.
+      focusable={!readOnly}
+      haptic={readOnly ? null : haptic}
+      scaleTo={readOnly ? 1 : undefined}
+      accessibilityRole={readOnly ? 'text' : 'button'}
       accessibilityLabel={accessibilityLabel ?? label}
       accessibilityHint={accessibilityHint}
-      accessibilityState={{ busy: loading, disabled: inactive, selected }}
+      accessibilityState={readOnly ? undefined : { busy: loading, disabled: inactive, selected }}
       testID={testID}
       style={[compact && styles.target, style]}
     >

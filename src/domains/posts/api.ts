@@ -3,6 +3,7 @@ import { api } from '@/services/api';
 import { fixtureDelay, fixtureNow } from '@/services/fixtures';
 
 import {
+  buildArtistPostsPageFixture,
   buildCommentsPageFixture,
   buildFeedPageFixture,
   findPostFixture,
@@ -20,6 +21,21 @@ export async function fetchFeed(cursor: string | null): Promise<Page<Post>> {
     return buildFeedPageFixture(fixtureNow(), cursor);
   }
   const { data } = await api.get<Page<Post>>('/feed', { params: { cursor } });
+  return data;
+}
+
+/** Posts de uma central (grade da 1d), do mais novo ao mais antigo. */
+export async function fetchArtistPosts(
+  artistId: string,
+  cursor: string | null,
+): Promise<Page<Post>> {
+  if (dataSource === 'fixtures') {
+    await fixtureDelay();
+    return buildArtistPostsPageFixture(fixtureNow(), artistId, cursor);
+  }
+  const { data } = await api.get<Page<Post>>(`/artists/${encodeURIComponent(artistId)}/posts`, {
+    params: { cursor },
+  });
   return data;
 }
 

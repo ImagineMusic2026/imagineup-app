@@ -21,6 +21,7 @@ import { createIdempotencyKey } from '@/utils/id';
 
 import {
   addComment,
+  fetchArtistPosts,
   fetchComments,
   fetchFeed,
   fetchPost,
@@ -30,20 +31,10 @@ import {
   type SetLikeVariables,
 } from './api';
 import { insertComment, patchPostEverywhere, readPost, withCommentDelta, withLike } from './cache';
+import { postKeys } from './keys';
 import type { CommentStatus, PostComment } from './types';
 
-/**
- * A chave inclui tudo que muda o resultado. Toda lista de posts fica debaixo
- * de `postKeys.all` (a curtida e a contagem de comentários chegam a ela).
- */
-export const postKeys = {
-  all: ['posts'] as const,
-  feed: () => [...postKeys.all, 'feed'] as const,
-  /** Posts de uma central, para a grade da 1d. */
-  byArtist: (artistId: string) => [...postKeys.all, 'artist', artistId] as const,
-  detail: (postId: string) => [...postKeys.all, 'detail', postId] as const,
-  comments: (postId: string) => [...postKeys.all, 'comments', postId] as const,
-};
+export { postKeys };
 
 export const postMutationKeys = {
   like: ['posts', 'like'] as const,
@@ -186,6 +177,20 @@ export function useFeedQuery() {
     queryFn: ({ pageParam }) => fetchFeed(pageParam),
     initialPageParam: null as string | null,
     getNextPageParam: (lastPage) => lastPage.nextCursor,
+  });
+}
+
+/**
+ * Posts de uma central (grade da 1d), uma página por vez. A lista mora debaixo
+ * de `postKeys.all`: curtir e comentar no detalhe chegam a ela.
+ */
+export function useArtistPostsQuery(artistId: string) {
+  return useInfiniteQuery({
+    queryKey: postKeys.byArtist(artistId),
+    queryFn: ({ pageParam }) => fetchArtistPosts(artistId, pageParam),
+    initialPageParam: null as string | null,
+    getNextPageParam: (lastPage) => lastPage.nextCursor,
+    enabled: !!artistId,
   });
 }
 

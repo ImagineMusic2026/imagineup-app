@@ -3,8 +3,13 @@ import { buildPostsFixture } from '@/domains/posts/fixtures';
 import { buildRewardsFixture } from '@/domains/rewards/fixtures';
 import { api } from '@/services/api';
 
-import { fetchAgenda } from '../api';
-import { AGENDA_PAGE_SIZE, buildAgendaEventsFixture, buildAgendaPageFixture } from '../fixtures';
+import { fetchAgenda, fetchArtistAgenda } from '../api';
+import {
+  AGENDA_PAGE_SIZE,
+  buildAgendaEventsFixture,
+  buildAgendaPageFixture,
+  buildArtistAgendaPageFixture,
+} from '../fixtures';
 import { groupByMonth } from '../group-by-month';
 
 // O build do Firebase que o Jest resolve é ESM; a agenda não fala com ele.
@@ -125,5 +130,38 @@ describe('agenda pela API', () => {
     get.mockResolvedValue({ data: empty });
     await expect(fetchAgenda('6')).resolves.toEqual(empty);
     expect(get).toHaveBeenCalledWith('/agenda', { params: { cursor: '6' } });
+  });
+});
+
+describe('shows de uma central (aba Agenda da 1d)', () => {
+  it('são os mesmos da agenda, só os em que o artista toca, sem destaque', () => {
+    const page = buildArtistAgendaPageFixture(NOW, 'nenho', null);
+    const everyone = buildAgendaEventsFixture(NOW);
+    expect(page.featured).toBeNull();
+    expect(page.items).toEqual(
+      everyone.filter((event) => event.artists.some((artist) => artist.id === 'nenho')),
+    );
+    expect(page.items.map((event) => event.id)).toContain('sao-joao-irara');
+  });
+
+  it('páginas do mesmo tamanho da agenda', () => {
+    expect(buildArtistAgendaPageFixture(NOW, 'nenho', null).items.length).toBeLessThanOrEqual(
+      AGENDA_PAGE_SIZE,
+    );
+  });
+
+  it('central sem show devolve a página vazia', () => {
+    expect(buildArtistAgendaPageFixture(NOW, 'artista-9', null)).toEqual({
+      featured: null,
+      items: [],
+      nextCursor: null,
+    });
+  });
+
+  it('com a API, pede a agenda filtrada pelo artista', async () => {
+    mockDataSource = 'api';
+    get.mockResolvedValue({ data: { featured: null, items: [], nextCursor: null } });
+    await fetchArtistAgenda('nenho', null);
+    expect(get).toHaveBeenCalledWith('/agenda', { params: { artistId: 'nenho', cursor: null } });
   });
 });

@@ -5,9 +5,15 @@
 // API entrar.
 import { buildMyRankFixture } from '@/domains/ranking/fixtures';
 import { ApiError } from '@/services/api/errors';
-import { onFixtureSessionEnd } from '@/services/fixtures';
+import { fixtureWallet, onFixtureSessionEnd } from '@/services/fixtures';
 
-import type { Artist, FanCentral, FollowArtistsResult } from './types';
+import type {
+  Artist,
+  ArtistDetails,
+  FanCentral,
+  FollowArtistsResult,
+  JoinCentralResult,
+} from './types';
 
 /**
  * Dados de exemplo enquanto a API (M2) não existe. Os quatro primeiros são os
@@ -49,12 +55,24 @@ export function buildArtistsFixture(): Artist[] {
  */
 const INITIAL_FOLLOWED: readonly string[] = ['netto-brito', 'nenho', 'juninho-moraes'];
 
+/** Pontos por entrar numa central pela página do artista (exemplo; o valor vem do painel). */
+export const JOIN_CENTRAL_POINTS = 10;
+
 let followed = new Set<string>(INITIAL_FOLLOWED);
 // Chave de idempotência já vista e o que ela devolveu, como o servidor faria.
 let answered = new Map<string, FollowArtistsResult>();
+let joinAnswers = new Map<string, JoinCentralResult>();
 
 function snapshot(): FollowArtistsResult {
   return { followedArtistIds: [...followed] };
+}
+
+function assertKnown(artistIds: readonly string[]): void {
+  const known = new Set(buildArtistsFixture().map((artist) => artist.id));
+  const unknown = artistIds.find((id) => !known.has(id));
+  if (unknown !== undefined) {
+    throw new ApiError('notFound', `Artista ${unknown} não existe nas fixtures.`, 404);
+  }
 }
 
 /**
@@ -67,16 +85,30 @@ export const followFixture = {
     const previous = answered.get(idempotencyKey);
     if (previous) return { followedArtistIds: [...previous.followedArtistIds] };
 
-    const known = new Set(buildArtistsFixture().map((artist) => artist.id));
-    const unknown = artistIds.find((id) => !known.has(id));
-    if (unknown !== undefined) {
-      throw new ApiError('notFound', `Artista ${unknown} não existe nas fixtures.`, 404);
-    }
-
+    assertKnown(artistIds);
     for (const id of artistIds) followed.add(id);
     const result = snapshot();
     answered.set(idempotencyKey, result);
     return snapshot();
+  },
+
+  /**
+   * Entrar numa central pela página do artista (1d). Rende os pontos de
+   * exemplo na carteira só na primeira vez: quem já está nela recebe zero,
+   * como a API idempotente faria. A mesma chave de novo devolve a resposta da
+   * primeira vez.
+   */
+  join(artistId: string, idempotencyKey: string): JoinCentralResult {
+    const previous = joinAnswers.get(idempotencyKey);
+    if (previous) return { ...previous };
+
+    assertKnown([artistId]);
+    const pointsAwarded = followed.has(artistId) ? 0 : JOIN_CENTRAL_POINTS;
+    followed.add(artistId);
+    if (pointsAwarded > 0) fixtureWallet.earn(pointsAwarded);
+    const result: JoinCentralResult = { artistId, pointsAwarded };
+    joinAnswers.set(idempotencyKey, result);
+    return { ...result };
   },
 
   followedIds(): string[] {
@@ -87,6 +119,7 @@ export const followFixture = {
   reset(): void {
     followed = new Set(INITIAL_FOLLOWED);
     answered = new Map();
+    joinAnswers = new Map();
   },
 };
 
@@ -120,4 +153,43 @@ export function buildFanCentralsFixture(): FanCentral[] {
       } satisfies FanCentral,
     ];
   });
+}
+
+/** Números de exemplo das centrais do protótipo (1d): o Netto é o do desenho. */
+const FEATURED_NUMBERS: Readonly<Record<string, { postCount: number; centralPoints: number }>> = {
+  'netto-brito': { postCount: 1_284, centralPoints: 8_400_000 },
+  nenho: { postCount: 936, centralPoints: 5_900_000 },
+  'juninho-moraes': { postCount: 412, centralPoints: 2_300_000 },
+  'rock-salles': { postCount: 268, centralPoints: 1_100_000 },
+};
+
+// Centrais genéricas: posts e pontos proporcionais aos fãs, sem gestão da
+// Imagine (a pílula "gestão oficial" some), até a lista real chegar.
+const GENERIC_POSTS_PER_THOUSAND_FANS = 1;
+const GENERIC_POINTS_PER_FAN = 12;
+
+/**
+ * A central de um artista para a página dele (1d), com o fã dentro ou fora
+ * dela conforme o que ele seguiu nesta abertura do app. Artista que não existe
+ * dá 404, como a API. Objeto novo a cada chamada; sem capa nem foto (as telas
+ * mostram o placeholder de marca pelo id).
+ */
+export function buildArtistDetailsFixture(artistId: string): ArtistDetails {
+  const artist = buildArtistsFixture().find((item) => item.id === artistId);
+  if (!artist) throw new ApiError('notFound', `Artista ${artistId} não existe nas fixtures.`, 404);
+  const featured = FEATURED_NUMBERS[artistId];
+  return {
+    id: artist.id,
+    name: artist.name,
+    coverUrl: null,
+    photoURL: artist.photoURL,
+    verified: true,
+    managedByImagine: featured !== undefined,
+    fanCount: artist.fanCount,
+    postCount:
+      featured?.postCount ??
+      Math.round((artist.fanCount / 1_000) * GENERIC_POSTS_PER_THOUSAND_FANS),
+    centralPoints: featured?.centralPoints ?? artist.fanCount * GENERIC_POINTS_PER_FAN,
+    isMember: followFixture.followedIds().includes(artistId),
+  } satisfies ArtistDetails;
 }

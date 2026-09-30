@@ -1,5 +1,5 @@
 import { buildMissionsFixture } from '../fixtures';
-import { buildMissionItems, type MissionListItem } from '../sections';
+import { buildMissionItems, missionsOfArtist, type MissionListItem } from '../sections';
 import type { Mission } from '../types';
 
 const NOW = new Date(2026, 8, 29, 20, 0);
@@ -66,5 +66,22 @@ describe('seções da 1g', () => {
 
   it('sem missões, lista vazia', () => {
     expect(buildMissionItems([], NOW)).toEqual([]);
+  });
+});
+
+describe('missões de uma central (aba Missões da 1d)', () => {
+  it('só as que o painel ligou ao artista, na ordem dele', () => {
+    expect(missionsOfArtist(missions, 'netto-brito').map((mission) => mission.id)).toEqual([
+      'm-clipe-netto',
+      'm-comentar-central',
+      'm-relampago-show',
+    ]);
+    expect(missionsOfArtist(missions, 'nenho').map((mission) => mission.id)).toEqual([
+      'm-curtir-nenho',
+    ]);
+  });
+
+  it('central sem missão fica sem nenhuma', () => {
+    expect(missionsOfArtist(missions, 'rock-salles')).toEqual([]);
   });
 });

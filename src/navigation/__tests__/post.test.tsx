@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { Stack } from 'expo-router';
+import { router, Stack } from 'expo-router';
 import { Tabs } from 'expo-router/js-tabs';
 import {
   act,
@@ -204,4 +204,29 @@ describe('post com comentários', () => {
     await waitFor(() => expect(view.getPathname()).toBe('/'));
     expect(rootRoutes(view)).toEqual(['(tabs)']);
   });
+
+  it.each([
+    ['Perfil', '/perfil', '(perfil)'],
+    ['Início', '/', '(inicio)'],
+  ])(
+    'do post aberto pela grade da central (%s), o autor volta à mesma central, sem outra por cima',
+    async (_tab, root, group) => {
+      const view = renderRouter(appTree, { initialUrl: root });
+      await waitFor(() => expect(view.getPathname()).toBe(root));
+      act(() => router.push('/artista/netto-brito'));
+      await waitFor(() =>
+        expect(view.getSegments()).toEqual(['(tabs)', group, 'artista', '[artistaId]']),
+      );
+      // A grade da 1d abre o post por cima das abas.
+      act(() => router.push('/post/p-clipe'));
+
+      fireEvent.press(await screen.findByRole('button', { name: AUTHOR }));
+
+      await waitFor(() => expect(rootRoutes(view)).toEqual(['(tabs)']));
+      expect(view.getSegments()).toEqual(['(tabs)', group, 'artista', '[artistaId]']);
+      // Um voltar só chega à raiz da aba: a central não ficou duplicada.
+      act(() => testRouter.back());
+      await waitFor(() => expect(view.getPathname()).toBe(root));
+    },
+  );
 });

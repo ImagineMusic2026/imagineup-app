@@ -29,38 +29,54 @@ const scrollTo = (ScrollView.prototype as unknown as { scrollTo: jest.Mock }).sc
 const INSET = spacing.sectionTopTight / 2;
 const ROW_INSET = spacing.gutter - INSET;
 
-/** Larguras dos rótulos; as abas somam a margem de dentro e ficam lado a lado. */
-function layoutFor(labelWidths: Record<ArtistTab, number>) {
+type Widths = Record<ArtistTab, { active: number; idle: number }>;
+
+/**
+ * Onde as abas ficam com a escolha: a escolhida mede o rótulo em Sora, as
+ * outras em Manrope, cada uma com a margem de dentro, lado a lado.
+ */
+function layoutFor(widths: Widths, value: ArtistTab) {
   let x = ROW_INSET;
   const boxes = {} as Record<ArtistTab, { x: number; width: number; label: number }>;
   for (const tab of tabs) {
-    const width = labelWidths[tab.value] + 2 * INSET;
-    boxes[tab.value] = { x, width, label: labelWidths[tab.value] };
+    const label = tab.value === value ? widths[tab.value].active : widths[tab.value].idle;
+    const width = label + 2 * INSET;
+    boxes[tab.value] = { x, width, label };
     x += width;
   }
   return { boxes, contentEnd: x + ROW_INSET };
 }
 
-// Rótulos da 1d a 100% (Mural, Missões, Agenda, Ranking) e a 200%.
-const regular = layoutFor({ mural: 37, missoes: 50, agenda: 45, ranking: 48 });
-const doubled = layoutFor({ mural: 78, missoes: 112, agenda: 106, ranking: 114 });
+// Rótulos da 1d a 100% (Sora na escolhida, Manrope nas outras) e a 200%.
+const regular: Widths = {
+  mural: { active: 38, idle: 35 },
+  missoes: { active: 51, idle: 48 },
+  agenda: { active: 47, idle: 45 },
+  ranking: { active: 49, idle: 47 },
+};
+const doubled: Widths = {
+  mural: { active: 78, idle: 72 },
+  missoes: { active: 112, idle: 104 },
+  agenda: { active: 106, idle: 98 },
+  ranking: { active: 114, idle: 106 },
+};
 const VIEWPORT = 390;
 
-function layoutEvent(x: number, width: number) {
-  return { nativeEvent: { layout: { x, y: 0, width, height: layout.minTouchTarget } } };
+function layoutEvent(width: number) {
+  return { nativeEvent: { layout: { x: 0, y: 0, width, height: layout.minTouchTarget } } };
 }
 
-/** Mede como o nativo: a janela da rolagem, cada aba e o rótulo dentro dela. */
-function measureTabs(boxes = regular.boxes) {
-  fireEvent(screen.UNSAFE_getByType(ScrollView), 'layout', layoutEvent(0, VIEWPORT));
+/** Mede como o nativo: a janela da rolagem e as réguas de cada rótulo, nos dois estados. */
+function measureTabs(widths: Widths = regular) {
+  fireEvent(screen.UNSAFE_getByType(ScrollView), 'layout', layoutEvent(VIEWPORT));
   for (const tab of tabs) {
-    const box = boxes[tab.value];
-    fireEvent(screen.getByTestId(`abas-${tab.value}`), 'layout', layoutEvent(box.x, box.width));
-    fireEvent(
-      screen.getByTestId(`abas-${tab.value}-label`),
-      'layout',
-      layoutEvent(INSET, box.label),
-    );
+    for (const part of ['active', 'idle'] as const) {
+      fireEvent(
+        screen.getByTestId(`abas-${tab.value}-ruler-${part}`, { includeHiddenElements: true }),
+        'layout',
+        layoutEvent(widths[tab.value][part]),
+      );
+    }
   }
 }
 
@@ -98,8 +114,24 @@ describe('UnderlineTabs', () => {
       minWidth: layout.minTouchTarget,
       paddingHorizontal: INSET,
     });
-    // "Mural" tem 37 de rótulo e 57 de aba.
-    expect(regular.boxes.mural.width).toBeGreaterThanOrEqual(layout.minTouchTarget);
+    // "Mural" tem 38 de rótulo e 58 de aba.
+    expect(layoutFor(regular, 'mural').boxes.mural.width).toBeGreaterThanOrEqual(
+      layout.minTouchTarget,
+    );
+  });
+
+  it('cada rótulo fica com a largura do estado em que está, e a aba escolhida com a do rótulo em Sora', () => {
+    const { rerender } = render(
+      <UnderlineTabs testID="abas" tabs={tabs} value="mural" onChange={jest.fn()} />,
+    );
+    measureTabs();
+    expect(screen.getByTestId('abas-mural-label')).toHaveStyle({ width: regular.mural.active });
+    expect(screen.getByTestId('abas-agenda-label')).toHaveStyle({ width: regular.agenda.idle });
+
+    // O mock do Reanimated vai direto ao fim da animação.
+    rerender(<UnderlineTabs testID="abas" tabs={tabs} value="agenda" onChange={jest.fn()} />);
+    expect(screen.getByTestId('abas-agenda-label')).toHaveStyle({ width: regular.agenda.active });
+    expect(screen.getByTestId('abas-mural-label')).toHaveStyle({ width: regular.mural.idle });
   });
 
   it('tocar noutra aba avisa a escolha, com o toque de seleção', () => {
@@ -123,7 +155,7 @@ describe('UnderlineTabs', () => {
     expect(screen.queryByTestId('abas-indicator')).toBeNull();
 
     measureTabs();
-    const missoes = regular.boxes.missoes;
+    const missoes = layoutFor(regular, 'missoes').boxes.missoes;
     expect(screen.getByTestId('abas-indicator')).toHaveStyle({
       width: missoes.label,
       transform: [{ translateX: missoes.x + INSET }],
@@ -144,7 +176,8 @@ describe('UnderlineTabs', () => {
     );
     measureTabs();
     rerender(<UnderlineTabs testID="abas" tabs={tabs} value="agenda" onChange={jest.fn()} />);
-    const agenda = regular.boxes.agenda;
+    // As abas antes dela encolhem (Mural volta ao Manrope) e o traço vai ao lugar final.
+    const agenda = layoutFor(regular, 'agenda').boxes.agenda;
     expect(screen.getByTestId('abas-indicator')).toHaveStyle({
       width: agenda.label,
       transform: [{ translateX: agenda.x + INSET }],
@@ -159,13 +192,13 @@ describe('UnderlineTabs', () => {
     expect(row.props.horizontal).toBe(true);
     expect(StyleSheet.flatten(row.props.contentContainerStyle).paddingHorizontal).toBe(ROW_INSET);
 
-    measureTabs(doubled.boxes);
-    expect(doubled.contentEnd).toBeGreaterThan(VIEWPORT);
+    measureTabs(doubled);
+    expect(layoutFor(doubled, 'mural').contentEnd).toBeGreaterThan(VIEWPORT);
     expect(scrollTo).not.toHaveBeenCalled();
 
     rerender(<UnderlineTabs testID="abas" tabs={tabs} value="ranking" onChange={jest.fn()} />);
     expect(scrollTo).toHaveBeenLastCalledWith({
-      x: doubled.contentEnd - VIEWPORT,
+      x: layoutFor(doubled, 'ranking').contentEnd - VIEWPORT,
       animated: true,
     });
   });
@@ -175,16 +208,16 @@ describe('UnderlineTabs', () => {
     const { rerender } = render(
       <UnderlineTabs testID="abas" tabs={tabs} value="mural" onChange={jest.fn()} />,
     );
-    measureTabs(doubled.boxes);
+    measureTabs(doubled);
     rerender(<UnderlineTabs testID="abas" tabs={tabs} value="ranking" onChange={jest.fn()} />);
     expect(scrollTo).toHaveBeenLastCalledWith(expect.objectContaining({ animated: false }));
   });
 
   it('abre já mostrando a aba escolhida, sem animar', () => {
     render(<UnderlineTabs testID="abas" tabs={tabs} value="ranking" onChange={jest.fn()} />);
-    measureTabs(doubled.boxes);
+    measureTabs(doubled);
     expect(scrollTo).toHaveBeenLastCalledWith({
-      x: doubled.contentEnd - VIEWPORT,
+      x: layoutFor(doubled, 'ranking').contentEnd - VIEWPORT,
       animated: false,
     });
   });

@@ -1,6 +1,7 @@
 import {
   buildAgendaItems,
   groupByMonth,
+  groupUpcomingByMonth,
   monthInView,
   monthTargetIndex,
   type AgendaListItem,
@@ -218,5 +219,28 @@ describe('destaque de um mês depois do primeiro', () => {
   it('o destaque antes de todas as linhas, num mês sem outra, abre os chips', () => {
     const early = groupByMonth([IRARA, VAQUEIRO], NOW_OCT, IRARA);
     expect(early.chips.map((chip) => chip.key)).toEqual(['2026-11', '2026-12']);
+  });
+});
+
+describe('shows de uma central por mês (aba Agenda da 1d)', () => {
+  it('sem destaque: todo show entra no seu mês, em ordem, e o que passou some', () => {
+    const months = groupUpcomingByMonth(
+      [
+        show('dezembro', new Date(2026, 11, 2, 22)),
+        show('passado', new Date(2026, 8, 1, 22)),
+        show('outubro-2', new Date(2026, 9, 28, 21)),
+        show('outubro-1', new Date(2026, 9, 21, 22)),
+      ],
+      NOW,
+    );
+    expect(months.map((month) => [month.label, ids(month.events)])).toEqual([
+      ['Outubro', ['outubro-1', 'outubro-2']],
+      ['Dezembro', ['dezembro']],
+    ]);
+  });
+
+  it('páginas que se repetem não repetem o show', () => {
+    const repeated = show('outubro-1', new Date(2026, 9, 21, 22));
+    expect(groupUpcomingByMonth([repeated, repeated], NOW)[0]?.events).toHaveLength(1);
   });
 });

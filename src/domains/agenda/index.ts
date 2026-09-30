@@ -7,11 +7,13 @@ export {
   type RsvpChipProps,
   type RsvpLook,
 } from './components/rsvp-button';
+export { groupUpcomingByMonth, type AgendaMonth } from './group-by-month';
 export {
   agendaKeys,
   agendaMutationKeys,
   registerAgendaMutationDefaults,
   useAgendaQuery,
+  useArtistAgendaQuery,
   useIsGoing,
   useMyRsvpsQuery,
   useRsvpMutation,

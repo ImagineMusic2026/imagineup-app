@@ -1,4 +1,5 @@
 import type { LucideIcon } from 'lucide-react-native';
+import type { Ref } from 'react';
 import { StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 
 import { Button } from '@/components/button';
@@ -25,6 +26,8 @@ export interface EmptyStateProps {
    */
   actionLoading?: boolean;
   style?: StyleProp<ViewStyle>;
+  /** A mensagem, para levar o foco do leitor de tela até ela (a aba nova da 1d). */
+  ref?: Ref<View>;
 }
 
 const ICON_SIZE = 22;
@@ -48,6 +51,7 @@ export function EmptyState({
   onAction,
   actionLoading = false,
   style,
+  ref,
 }: EmptyStateProps) {
   const label = actionLabel ?? (tone === 'error' ? t('common.retry') : undefined);
 
@@ -55,6 +59,7 @@ export function EmptyState({
     <View style={[styles.container, style]}>
       {icon ? <Icon icon={icon} size={ICON_SIZE} color={colors.textMuted} /> : null}
       <View
+        ref={ref}
         accessible
         accessibilityLabel={title ? `${title}. ${message}` : message}
         style={styles.copy}

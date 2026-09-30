@@ -14,13 +14,15 @@ import { t } from '@/i18n';
 import { haptics } from '@/services/haptics';
 import { createIdempotencyKey } from '@/utils/id';
 
-import { fetchAgenda, fetchMyRsvps, setEventRsvp } from './api';
+import { fetchAgenda, fetchArtistAgenda, fetchMyRsvps, setEventRsvp } from './api';
 import type { MyRsvps, RsvpResult, RsvpVariables } from './types';
 
 /** A chave inclui tudo que muda o resultado. */
 export const agendaKeys = {
   all: ['agenda'] as const,
   events: () => [...agendaKeys.all, 'events'] as const,
+  /** Shows de uma central (1d), debaixo dos da agenda: invalidar a agenda leva estes junto. */
+  byArtist: (artistId: string) => [...agendaKeys.events(), 'artist', artistId] as const,
   rsvps: () => [...agendaKeys.all, 'rsvps'] as const,
 };
 
@@ -64,6 +66,20 @@ export function useAgendaQuery() {
     queryFn: ({ pageParam }) => fetchAgenda(pageParam),
     initialPageParam: null as string | null,
     getNextPageParam: (lastPage) => lastPage.nextCursor,
+  });
+}
+
+/**
+ * Shows de uma central (aba Agenda da 1d), uma página por vez. A presença vem
+ * de `useMyRsvpsQuery`, como na agenda.
+ */
+export function useArtistAgendaQuery(artistId: string) {
+  return useInfiniteQuery({
+    queryKey: agendaKeys.byArtist(artistId),
+    queryFn: ({ pageParam }) => fetchArtistAgenda(artistId, pageParam),
+    initialPageParam: null as string | null,
+    getNextPageParam: (lastPage) => lastPage.nextCursor,
+    enabled: !!artistId,
   });
 }
 

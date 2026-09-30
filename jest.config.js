@@ -1,3 +1,14 @@
+const expoPreset = require('jest-expo/jest-preset');
+
+// A FlashList publica o dist em ESM desde a 2.1 (import/export): o Jest só roda
+// o pacote transformado. Os outros pacotes seguem a lista do jest-expo.
+const PRESET_ALLOWLIST = '/node_modules/(?!(';
+const transformIgnorePatterns = expoPreset.transformIgnorePatterns.map((pattern) =>
+  pattern.startsWith(PRESET_ALLOWLIST)
+    ? pattern.replace(PRESET_ALLOWLIST, `${PRESET_ALLOWLIST}@shopify/flash-list|`)
+    : pattern,
+);
+
 /** @type {import('jest').Config} */
 module.exports = {
   preset: 'jest-expo',
@@ -5,6 +16,7 @@ module.exports = {
   setupFilesAfterEnv: ['<rootDir>/jest.after-env.js'],
   // Faz o react-native-worklets (usado pelo Reanimated) carregar a versão JS no Jest.
   resolver: 'react-native-worklets/jest/resolver.js',
+  transformIgnorePatterns,
   moduleNameMapper: {
     // A condição react-native do lucide aponta para ESM (.mjs), que o Jest não transforma.
     '^lucide-react-native$':

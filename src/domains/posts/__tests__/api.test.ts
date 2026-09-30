@@ -5,8 +5,13 @@ import { api } from '@/services/api';
 import { ApiError } from '@/services/api/errors';
 import { setFixtureNow } from '@/services/fixtures';
 
-import { fetchFeed, fetchPost } from '../api';
-import { buildPostsFixture, FEED_PAGE_SIZE } from '../fixtures';
+import { fetchArtistPosts, fetchFeed, fetchPost } from '../api';
+import {
+  ARTIST_POSTS_PAGE_SIZE,
+  buildArtistPostsPageFixture,
+  buildPostsFixture,
+  FEED_PAGE_SIZE,
+} from '../fixtures';
 import { postPath, sharePost } from '../share-post';
 
 jest.mock('@/services/api', () => ({
@@ -139,5 +144,32 @@ describe('compartilhar um post', () => {
     expect(spy).toHaveBeenCalledWith(
       expect.objectContaining({ url: `${SHARE_LINK_BASE}/post/p-clipe` }),
     );
+  });
+});
+
+describe('posts de uma central (grade da 1d)', () => {
+  it('são os do mural, só os do artista, do mais novo ao mais antigo', () => {
+    const page = buildArtistPostsPageFixture(NOW, 'netto-brito', null);
+    expect(page.items.map((post) => post.id)).toEqual(
+      buildPostsFixture(NOW)
+        .filter((post) => post.artist.id === 'netto-brito')
+        .map((post) => post.id),
+    );
+    expect(page.items.length).toBeLessThanOrEqual(ARTIST_POSTS_PAGE_SIZE);
+    expect(page.nextCursor).toBeNull();
+  });
+
+  it('central sem post devolve a página vazia', () => {
+    expect(buildArtistPostsPageFixture(NOW, 'rock-salles', null)).toEqual({
+      items: [],
+      nextCursor: null,
+    });
+  });
+
+  it('com a API, pede os posts do artista pelo cursor', async () => {
+    mockDataSource = 'api';
+    get.mockResolvedValue({ data: { items: [], nextCursor: null } });
+    await fetchArtistPosts('netto-brito', '12');
+    expect(get).toHaveBeenCalledWith('/artists/netto-brito/posts', { params: { cursor: '12' } });
   });
 });

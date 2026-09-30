@@ -12,23 +12,10 @@ import {
   fetchWallet,
   watchMyProfile,
 } from './api';
+import { profileKeys } from './keys';
 import type { FanProfile } from './types';
 
-/** A chave inclui tudo que muda o resultado. */
-export const profileKeys = {
-  all: ['profile'] as const,
-  me: (uid: string) => [...profileKeys.all, 'me', uid] as const,
-  wallet: () => [...profileKeys.all, 'wallet'] as const,
-  /**
-   * Nível e ganhos da semana saem do mesmo XP da carteira. A chave fica debaixo
-   * da dela: quem invalida a carteira depois de um ganho (o "Eu vou" da agenda)
-   * ou de um resgate invalida o progresso junto, e o anel nunca fica com o
-   * nível de antes.
-   */
-  progress: () => [...profileKeys.wallet(), 'progress'] as const,
-  achievements: () => [...profileKeys.all, 'achievements'] as const,
-  invite: () => [...profileKeys.all, 'invite'] as const,
-};
+export { profileKeys };
 
 /** Uid da sessão que o Firebase já confirmou; `null` enquanto ela é só presumida. */
 function useConfirmedUid(): string | null {

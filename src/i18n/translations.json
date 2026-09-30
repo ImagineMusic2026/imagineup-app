@@ -130,6 +130,89 @@
       "new": "novo",
       "rankLabel": "{{name}}, você é o {{rank}}º",
       "newLabel": "{{name}}, central nova"
+    },
+    "loading": "Carregando a central",
+    "loadError": "Não deu para carregar a central.",
+    "notFound": "Esta central não existe mais.",
+    "updateError": "Não deu para atualizar a central.",
+    "share": "Compartilhar a central",
+    "shareHint": "Manda o link da central com o seu convite",
+    "shareMessage": "Entra na central de {{name}} no ImagineUP",
+    "managed": "gestão oficial",
+    "heading": {
+      "verified": "{{name}}, artista verificado",
+      "managed": "gestão oficial Imagine"
+    },
+    "stats": {
+      "fans": "fãs",
+      "posts": "posts",
+      "points": "pts da central",
+      "fansLabel": "{{amount}} fãs",
+      "fansLabelOf": "{{amount}} de fãs",
+      "fansLabelOne": "1 fã",
+      "postsLabel": "{{amount}} posts",
+      "postsLabelOf": "{{amount}} de posts",
+      "postsLabelOne": "1 post",
+      "pointsLabel": "{{amount}} pontos da central",
+      "pointsLabelOf": "{{amount}} de pontos da central",
+      "pointsLabelOne": "1 ponto da central",
+      "million": "{{value}} milhão",
+      "millions": "{{value}} milhões",
+      "billion": "{{value}} bilhão",
+      "billions": "{{value}} bilhões"
+    },
+    "join": {
+      "action": "Entrar na central",
+      "label": "Entrar na central de {{name}}",
+      "member": "Na central",
+      "memberLabel": "Você está na central de {{name}}",
+      "joined": "Você entrou na central de {{name}}.",
+      "error": "Não deu para entrar na central. Tente de novo."
+    },
+    "tabs": {
+      "mural": "Mural",
+      "missions": "Missões",
+      "agenda": "Agenda",
+      "ranking": "Ranking"
+    },
+    "topFans": {
+      "title": "Top fãs da temporada",
+      "seeRanking": "Ver ranking",
+      "seeRankingLabel": "Ver o ranking da central",
+      "seeRankingHint": "Abre a aba Ranking desta página",
+      "cell": "{{place}}, {{name}}, {{points}}",
+      "cellMe": "{{place}}, você, {{points}}",
+      "vacant": "Vaga aberta",
+      "vacantLabel": "{{place}}, vaga aberta",
+      "loading": "Carregando os top fãs",
+      "place": "#{{position}}"
+    },
+    "posts": {
+      "loading": "Carregando os posts",
+      "empty": "Ainda não tem post nesta central.",
+      "loadError": "Não deu para carregar os posts.",
+      "moreError": "Não deu para carregar mais posts.",
+      "photoLabel": "Post de {{name}}, {{time}}: {{text}}",
+      "videoLabel": "Vídeo de {{name}}, {{time}}: {{text}}",
+      "showLabel": "Show de {{name}}, {{time}}: {{text}}",
+      "textLabel": "Post de {{name}}, {{time}}: {{text}}"
+    },
+    "missions": {
+      "loading": "Carregando as missões",
+      "empty": "Nenhuma missão desta central agora.",
+      "loadError": "Não deu para carregar as missões."
+    },
+    "agenda": {
+      "loading": "Carregando os shows",
+      "empty": "Nenhum show desta central na agenda.",
+      "loadError": "Não deu para carregar os shows.",
+      "moreError": "Não deu para carregar mais shows."
+    },
+    "ranking": {
+      "loading": "Carregando o ranking da central",
+      "empty": "Ninguém pontuou nesta central ainda.",
+      "loadError": "Não deu para carregar o ranking da central.",
+      "moreError": "Não deu para carregar mais posições."
     }
   },
   "post": {

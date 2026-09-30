@@ -16,13 +16,13 @@ export interface RankingScopeState {
 
 /**
  * O recorte do ranking mora no parâmetro de rota `?artista=<id>`, que o chip
- * tocado muda. O link a frio `/ranking?artista=<id>` já abre com o chip da
- * central escolhido, pronto para o "Ver ranking" da página do artista (1d,
- * fatia F12; a pergunta 7.1.6, aba interna da 1d ou esta tela, segue em aberto).
+ * tocado muda. O link `/ranking?artista=<id>` abre com o chip da central
+ * escolhido. O "Ver ranking" da página do artista (1d) não vem para cá: escolhe
+ * a aba interna Ranking de lá (proposta padrão da pergunta 7.1.6).
  *
- * Os chips são as centrais que o fã segue, na ordem dele. Aberto pela página
- * de uma central que ele não segue, o chip dela entra no fim, com o nome da
- * lista de artistas; um id que não existe cai no Geral.
+ * Os chips são as centrais que o fã segue, na ordem dele. Aberto por um link
+ * `/ranking?artista=` de uma central que ele não segue, o chip dela entra no
+ * fim, com o nome da lista de artistas; um id que não existe cai no Geral.
  */
 export function useRankingScope(): RankingScopeState {
   const { artista } = useLocalSearchParams<{ artista?: string }>();

@@ -54,6 +54,39 @@ export function isUpcoming(event: AgendaEvent, now: Date): boolean {
   return isValid(date) && date.getTime() >= startOfDay(now).getTime();
 }
 
+/** Shows futuros, sem repetir e em ordem de data. */
+function upcomingOf(events: readonly AgendaEvent[], now: Date): AgendaEvent[] {
+  // Páginas que se sobrepõem (a lista mudou entre uma e outra) não repetem show.
+  const seen = new Set<string>();
+  return events
+    .filter((event) => {
+      if (seen.has(event.id) || !isUpcoming(event, now)) return false;
+      seen.add(event.id);
+      return true;
+    })
+    .sort((a, b) => startsAtOf(a) - startsAtOf(b));
+}
+
+/** Shows já em ordem, agrupados por mês. */
+function monthsOf(events: readonly AgendaEvent[]): AgendaMonth[] {
+  const months: AgendaMonth[] = [];
+  for (const event of events) {
+    const key = monthKeyOf(event);
+    const month = months.at(-1);
+    if (month?.key === key) month.events.push(event);
+    else months.push({ key, label: formatMonthName(event.startsAt), events: [event] });
+  }
+  return months;
+}
+
+/**
+ * Só os meses, sem destaque: os shows de uma central (aba Agenda da 1d), com a
+ * sobrelinha de cada mês como na 1m.
+ */
+export function groupUpcomingByMonth(events: readonly AgendaEvent[], now: Date): AgendaMonth[] {
+  return monthsOf(upcomingOf(events, now));
+}
+
 /**
  * `marked` é o destaque que a API manda (`AgendaPage.featured`); sem ele, ou
  * com ele já passado, o destaque é o próximo show.
@@ -63,26 +96,10 @@ export function groupByMonth(
   now: Date,
   marked: AgendaEvent | null = null,
 ): AgendaSections {
-  // Páginas que se sobrepõem (a lista mudou entre uma e outra) não repetem show.
-  const seen = new Set<string>();
-  const upcoming = events
-    .filter((event) => {
-      if (seen.has(event.id) || !isUpcoming(event, now)) return false;
-      seen.add(event.id);
-      return true;
-    })
-    .sort((a, b) => startsAtOf(a) - startsAtOf(b));
-
+  const upcoming = upcomingOf(events, now);
   const featured = marked && isUpcoming(marked, now) ? marked : (upcoming[0] ?? null);
   const rest = upcoming.filter((event) => event.id !== featured?.id);
-  const months: AgendaMonth[] = [];
-
-  for (const event of rest) {
-    const key = monthKeyOf(event);
-    const month = months.at(-1);
-    if (month?.key === key) month.events.push(event);
-    else months.push({ key, label: formatMonthName(event.startsAt), events: [event] });
-  }
+  const months = monthsOf(rest);
 
   const chips: AgendaChip[] = months.map(({ key, label }) => ({ key, label }));
   const first = rest[0];

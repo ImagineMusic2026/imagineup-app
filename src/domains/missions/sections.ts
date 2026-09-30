@@ -39,3 +39,11 @@ export function buildMissionItems(missions: readonly Mission[], now: Date): Miss
   }
   return items;
 }
+
+/**
+ * As missões de uma central (aba Missões da 1d): as que o painel ligou ao
+ * artista, na ordem dele. Passam depois por `buildMissionItems`, como na 1g.
+ */
+export function missionsOfArtist(missions: readonly Mission[], artistId: string): Mission[] {
+  return missions.filter((mission) => mission.target?.artistId === artistId);
+}
