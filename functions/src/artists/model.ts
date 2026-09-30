@@ -248,6 +248,21 @@ export function artistPrefix(artistId: string): string {
   return `artists/${artistId}/`;
 }
 
+/**
+ * Arquivos da pasta da central que saem depois de trocar ou tirar a foto: tudo
+ * em artists/{artistId}/ que não está em `keep` (as fotos novas e as que a
+ * central usa na hora da limpeza). Caminho de outra pasta nunca entra.
+ */
+export function staleArtistFiles(
+  paths: readonly string[],
+  artistId: string,
+  keep: readonly (string | null | undefined)[],
+): string[] {
+  const prefix = artistPrefix(artistId);
+  const kept = new Set(keep.filter((path): path is string => typeof path === 'string'));
+  return [...new Set(paths)].filter((path) => path.startsWith(prefix) && !kept.has(path));
+}
+
 /** `photo` do updateArtist: null tira as fotos; senão os dois caminhos desta central. */
 export function parsePhotoPaths(value: unknown, artistId: string): PhotoPaths | null {
   if (value === null) return null;
@@ -304,6 +319,14 @@ export function publishProblems(artist: {
   if (!artist.photo || !artist.thumb) problems.push('missing-photo');
   if (artist.imageRightsConfirmed !== true) problems.push('missing-image-rights');
   return problems;
+}
+
+/**
+ * Por que a central não pode ser apagada: com fãs (fanCount > 0), sai do ar em
+ * vez de sumir. Em qualquer status, sem fãs, pode.
+ */
+export function deleteProblem(artist: { fanCount: unknown }): 'has-fans' | null {
+  return typeof artist.fanCount === 'number' && artist.fanCount > 0 ? 'has-fans' : null;
 }
 
 /** Status pedido no setArtistStatus. */

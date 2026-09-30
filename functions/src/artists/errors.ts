@@ -30,7 +30,7 @@ export type ArtistErrorReason =
   | 'missing-image-rights'
   | 'unknown-artist'
   | 'incomplete-list'
-  | 'was-published';
+  | 'has-fans';
 
 const ERRORS: Record<ArtistErrorReason, [FunctionsErrorCode, string]> = {
   unauthenticated: ['unauthenticated', 'Entre na sua conta para continuar.'],
@@ -88,10 +88,7 @@ const ERRORS: Record<ArtistErrorReason, [FunctionsErrorCode, string]> = {
     'failed-precondition',
     'A lista de centrais mudou enquanto você ordenava. Confira a ordem e tente de novo.',
   ],
-  'was-published': [
-    'failed-precondition',
-    'Central que já foi publicada não pode ser apagada. Tire do ar em vez de apagar.',
-  ],
+  'has-fans': ['failed-precondition', 'Essa central tem fãs. Tire do ar em vez de apagar.'],
 };
 
 /**

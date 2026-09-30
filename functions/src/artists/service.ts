@@ -8,9 +8,10 @@ import {
 import * as logger from 'firebase-functions/logger';
 
 import { artistError } from './errors';
-import type { ArtistFiles } from './files';
+import { removeFiles, type ArtistFiles, type LeftoverFile } from './files';
 import {
   artistPrefix,
+  deleteProblem,
   handleProblem,
   imageSize,
   isImageContentType,
@@ -32,6 +33,7 @@ import {
   PHOTO_SIZE,
   publishProblems,
   reorderChanges,
+  staleArtistFiles,
   THUMB_SIZE,
   type ArtistImage,
   type ArtistStatus,
@@ -341,15 +343,61 @@ function touchPrivate(
   tx.set(privateRef(db, artistId), next, { merge: true });
 }
 
+/** Log dos arquivos que o removeFiles não conseguiu apagar (nada, se saíram todos). */
+function warnLeftovers(message: string, artistId: string, leftovers: LeftoverFile[]): void {
+  const [first] = leftovers;
+  if (!first) return;
+  logger.warn(message, {
+    artistId,
+    paths: leftovers.map((leftover) => leftover.path),
+    error: first.error,
+  });
+}
+
+/**
+ * Limpa a pasta da central depois que o updateArtist grava foto nova ou tira a
+ * foto: saem as versões antigas e os envios abandonados. Ficam os caminhos de
+ * `keep` (as fotos novas) e as fotos que a central usa na hora, relidas depois
+ * de listar a pasta: a foto que outra pessoa gravou no meio não some. Roda
+ * depois da transação e nunca derruba o pedido: a falha só vai para o log.
+ */
+async function pruneArtistFiles(
+  deps: ArtistDeps,
+  artistId: string,
+  keep: readonly string[],
+): Promise<void> {
+  try {
+    const paths = await deps.files.list(artistPrefix(artistId));
+    const current = (await artistRef(deps.db, artistId).get()).data() as
+      Partial<Artist> | undefined;
+    const stale = staleArtistFiles(paths, artistId, [
+      ...keep,
+      current?.photo?.path,
+      current?.thumb?.path,
+    ]);
+    warnLeftovers(
+      'Arquivos antigos de uma central ficaram no Storage.',
+      artistId,
+      await removeFiles(deps.files, stale),
+    );
+  } catch (error) {
+    logger.warn('A limpeza da pasta de uma central no Storage falhou.', {
+      artistId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+}
+
 /**
  * updateArtist: campos ausentes não mudam e null limpa os opcionais. As fotos
  * são conferidas no bucket antes da transação (caminho da própria central,
- * arquivo existente, tipo de imagem) e os arquivos antigos ficam, para o cache
- * dos aparelhos. Central no ar não perde a foto nem a autorização de imagem.
- * Cada campo vai para o seu documento: textos, selo e fotos em artists/ (com
- * updatedAt), e contato, gestor e autorização em artistPrivate/, que também
- * guarda updatedAt e updatedBy de toda mudança. Nada mudou: ok, sem gravar nem
- * auditar.
+ * arquivo existente, tipo de imagem). Central no ar não perde a foto nem a
+ * autorização de imagem. Cada campo vai para o seu documento: textos, selo e
+ * fotos em artists/ (com updatedAt), e contato, gestor e autorização em
+ * artistPrivate/, que também guarda updatedAt e updatedBy de toda mudança.
+ * Nada mudou: ok, sem gravar nem auditar. Pedido com `photo` que passou: depois
+ * da transação, a pasta da central fica só com as fotos novas (ou vazia, com
+ * `photo: null`), sem travar a resposta se a limpeza falhar.
  */
 export async function editArtist(
   deps: ArtistDeps,
@@ -439,6 +487,10 @@ export async function editArtist(
       now,
     );
   });
+
+  if (images !== undefined) {
+    await pruneArtistFiles(deps, artistId, images ? [images.photo.path, images.thumb.path] : []);
+  }
   return { ok: true };
 }
 
@@ -533,10 +585,13 @@ export async function reorderArtistList(
 }
 
 /**
- * deleteArtist: só admin, e só central que nunca foi publicada (publishedAt
- * null). Apaga a central, o artistPrivate/, a reserva do @ (se ainda é desta
- * central) e depois os arquivos de artists/{id}/. A falha ao apagar arquivos
- * fica no log: a central já saiu.
+ * deleteArtist: só admin, em qualquer status (rascunho, no ar ou fora do ar),
+ * menos central com fãs (has-fans: essa sai do ar em vez de sumir). Apaga a
+ * central, o artistPrivate/, a reserva do @ (se ainda é desta central) e
+ * depois todos os arquivos de artists/{id}/. A auditoria guarda o status na
+ * hora e se ela já foi publicada. Os arquivos saem um por um (removeFiles):
+ * o que falha não impede os outros e vai para o log com o caminho, porque a
+ * central já saiu e ninguém mais lista essa pasta.
  */
 export async function removeArtist(
   deps: ArtistDeps,
@@ -552,18 +607,33 @@ export async function removeArtist(
     const current = (await tx.get(artistRef(db, artistId))).data() as Artist | undefined;
     if (!current) throw artistError('artist-not-found');
     const reservation = await tx.get(usernameRef(db, artistId));
-    if (current.publishedAt) throw artistError('was-published');
+    const problem = deleteProblem(current);
+    if (problem) throw artistError(problem);
     const now = Timestamp.fromMillis(clock(deps));
     tx.delete(artistRef(db, artistId));
     tx.delete(privateRef(db, artistId));
     if (reservation.get('artistId') === artistId) tx.delete(reservation.ref);
-    audit(tx, db, 'artist.deleted', actor, { artistId, name: current.name }, now);
+    audit(
+      tx,
+      db,
+      'artist.deleted',
+      actor,
+      {
+        artistId,
+        name: current.name,
+        status: current.status,
+        wasPublished: current.publishedAt != null,
+      },
+      now,
+    );
   });
 
+  const message = 'As fotos de uma central apagada ficaram no Storage.';
   try {
-    await deps.files.deleteAll(artistPrefix(artistId));
+    const paths = await deps.files.list(artistPrefix(artistId));
+    warnLeftovers(message, artistId, await removeFiles(deps.files, paths));
   } catch (error) {
-    logger.warn('As fotos de uma central apagada ficaram no Storage.', {
+    logger.warn(message, {
       artistId,
       error: error instanceof Error ? error.message : String(error),
     });

@@ -65,8 +65,9 @@ service firebase.storage {
         && validImage()
         && canEditSection('artists')
         && artistExists(artistId);
-      // Metadados e exclusão: só o servidor (Admin SDK), que apaga as fotos
-      // de um rascunho apagado.
+      // Metadados e exclusão: só o servidor (Admin SDK), que apaga a pasta de
+      // uma central apagada e as versões antigas depois de trocar ou tirar a
+      // foto.
       allow update, delete: if false;
     }
 

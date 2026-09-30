@@ -296,10 +296,14 @@ async function uploadPhotos(artistId: string): Promise<{ photoPath: string; thum
   return { photoPath, thumbPath };
 }
 
-async function fileExists(path: string): Promise<boolean> {
-  const [found] = await bucket.file(path).exists();
-  return found;
+/** Arquivos da pasta de uma central no bucket, em ordem. */
+async function folder(artistId: string): Promise<string[]> {
+  const [files] = await bucket.getFiles({ prefix: `artists/${artistId}/` });
+  return files.map((file) => file.name).sort();
 }
+
+const pathsOf = (photos: { photoPath: string; thumbPath: string }) =>
+  [photos.photoPath, photos.thumbPath].sort();
 
 /** Central pronta para publicar: fotos e autorização de imagem. */
 async function readyArtist(member: Member): Promise<string> {
@@ -644,13 +648,46 @@ describe('editar a central (updateArtist)', () => {
     expect((await auditOf('artist.updated'))[0]).toMatchObject({
       details: { artistId, changed: ['photo'] },
     });
+  });
 
-    // Foto nova: nome novo, e os arquivos antigos ficam (cache dos aparelhos).
+  it('foto nova: a pasta fica só com as duas fotos novas; tirar a foto esvazia a pasta', async () => {
+    const editor = await seedMember('Editora', 'editor', ['artists']);
+    const artistId = await createArtist(editor);
+    const first = await uploadPhotos(artistId);
+    await ok('updateArtist', { artistId, photo: first }, editor.token);
+    expect(await folder(artistId)).toEqual(pathsOf(first));
+
+    // Envio abandonado (o painel subiu e não gravou) e a pasta de outra
+    // central com o mesmo começo de @, que não é desta.
+    const orphan = `artists/${artistId}/photo-${unique('')}-1200.webp`;
+    await uploadFile(orphan);
+    const neighbourId = `${artistId}x`;
+    const neighbour = await uploadPhotos(neighbourId);
+
     const next = await uploadPhotos(artistId);
     await ok('updateArtist', { artistId, photo: next }, editor.token);
-    expect((await read(`artists/${artistId}`))!.photo.path).toBe(next.photoPath);
-    expect(await fileExists(photoPath)).toBe(true);
-    expect(await fileExists(thumbPath)).toBe(true);
+    const artist = await read(`artists/${artistId}`);
+    expect(artist).toMatchObject({
+      photo: { path: next.photoPath },
+      thumb: { path: next.thumbPath },
+    });
+    // Saem a versão antiga e o envio abandonado; as novas ficam e baixam.
+    expect(await folder(artistId)).toEqual(pathsOf(next));
+    expect((await fetch(artist!.photo.url)).status).toBe(200);
+    expect((await fetch(artist!.thumb.url)).status).toBe(200);
+
+    // As mesmas fotos de novo: nada muda, nada sai.
+    await ok('updateArtist', { artistId, photo: next }, editor.token);
+    expect(await folder(artistId)).toEqual(pathsOf(next));
+
+    // Tirar a foto (fora do ar) esvazia a pasta.
+    await ok('updateArtist', { artistId, photo: null }, editor.token);
+    expect(await read(`artists/${artistId}`)).toMatchObject({ photo: null, thumb: null });
+    expect(await folder(artistId)).toEqual([]);
+    expect(await folder(neighbourId)).toEqual(pathsOf(neighbour));
+    const entries = await auditOf('artist.updated');
+    expect(entries).toHaveLength(3);
+    for (const entry of entries) expect(entry.details.changed).toEqual(['photo']);
   });
 
   it('foto de outra central, que não existe ou que não é imagem: recusada', async () => {
@@ -689,6 +726,8 @@ describe('editar a central (updateArtist)', () => {
     }
     expect(await read(`artists/${artistId}`)).toMatchObject({ photo: null, thumb: null });
     expect(await auditOf('artist.updated')).toHaveLength(0);
+    // Pedido recusado não limpa a pasta.
+    expect(await folder(artistId)).toEqual([...pathsOf(own), textPath].sort());
     expect(
       await fails('updateArtist', { artistId: 'nao_existe', name: 'X' }, admin.token),
     ).toMatchObject(reason('NOT_FOUND', 'artist-not-found'));
@@ -705,7 +744,10 @@ describe('editar a central (updateArtist)', () => {
     expect(
       await fails('updateArtist', { artistId, imageRightsConfirmed: false }, admin.token),
     ).toMatchObject(reason('FAILED_PRECONDITION', 'published-needs-image-rights'));
-    expect((await read(`artists/${artistId}`))!.photo).not.toBeNull();
+    const { photo, thumb } = (await read(`artists/${artistId}`))!;
+    expect(photo).not.toBeNull();
+    // A recusa não mexe na pasta.
+    expect(await folder(artistId)).toEqual([photo.path, thumb.path].sort());
 
     expect(await read(`artistPrivate/${artistId}`)).toMatchObject({ imageRightsConfirmed: true });
 
@@ -717,6 +759,7 @@ describe('editar a central (updateArtist)', () => {
       status: 'unpublished',
     });
     expect(await read(`artistPrivate/${artistId}`)).toMatchObject({ imageRightsConfirmed: false });
+    expect(await folder(artistId)).toEqual([]);
   });
 
   it('gestor removido da equipe: as centrais dele ficam sem gestor, e a remoção lista quais', async () => {
@@ -960,6 +1003,8 @@ describe('apagar (deleteArtist)', () => {
     await uploadFile(orphan);
     const neighbour = await createArtist(editor);
     const neighbourPhotos = await uploadPhotos(neighbour);
+    // Pasta com o mesmo começo do @ (artists/{id}x/): não é desta central.
+    const prefixNeighbourPhotos = await uploadPhotos(`${artistId}x`);
 
     expect(await fails('deleteArtist', { artistId }, editor.token)).toMatchObject(
       reason('PERMISSION_DENIED', 'not-admin'),
@@ -972,12 +1017,22 @@ describe('apagar (deleteArtist)', () => {
     // A vizinha continua inteira.
     expect(await exists(`artistPrivate/${neighbour}`)).toBe(true);
     expect(await exists(`usernames/${artistId}`)).toBe(false);
-    const [left] = await bucket.getFiles({ prefix: `artists/${artistId}/` });
-    expect(left).toEqual([]);
-    // A central vizinha fica com as fotos dela.
-    expect(await fileExists(neighbourPhotos.photoPath)).toBe(true);
+    expect(await folder(artistId)).toEqual([]);
+    // A central vizinha e a pasta com o mesmo começo ficam com as fotos delas.
+    expect(await folder(neighbour)).toEqual(pathsOf(neighbourPhotos));
+    expect(await folder(`${artistId}x`)).toEqual(pathsOf(prefixNeighbourPhotos));
     expect(await auditOf('artist.deleted')).toMatchObject([
-      { actorUid: admin.uid, targetEmail: '', details: { artistId, name: `Central ${artistId}` } },
+      {
+        actorUid: admin.uid,
+        targetEmail: '',
+        targetUid: null,
+        details: {
+          artistId,
+          name: `Central ${artistId}`,
+          status: 'draft',
+          wasPublished: false,
+        },
+      },
     ]);
     // O @ volta a ficar livre.
     expect(await ok('checkArtistHandle', { handle: artistId }, admin.token)).toEqual({
@@ -989,20 +1044,93 @@ describe('apagar (deleteArtist)', () => {
     );
   });
 
-  it('central que já foi publicada não se apaga, mesmo fora do ar', async () => {
+  it('admin apaga a central no ar: some do Firestore, do usernames/ e do bucket', async () => {
+    const admin = await seedMember('Admin Um', 'admin');
+    const editor = await seedMember('Editora', 'editor', ['artists']);
+    const fan = await signUpFan('Camila Ribeiro');
+    const artistId = await readyArtist(admin);
+    await ok('setArtistStatus', { artistId, status: 'published' }, admin.token);
+    await uploadFile(`artists/${artistId}/photo-${unique('')}-1200.webp`);
+    const { photo } = (await read(`artists/${artistId}`))!;
+    expect((await readWithRules(fan.token, `artists/${artistId}`)).status).toBe(200);
+    expect(await folder(artistId)).toHaveLength(3);
+
+    // O editor com a seção não apaga, nem a central no ar.
+    expect(await fails('deleteArtist', { artistId }, editor.token)).toMatchObject(
+      reason('PERMISSION_DENIED', 'not-admin'),
+    );
+    expect(await exists(`artists/${artistId}`)).toBe(true);
+    expect(await folder(artistId)).toHaveLength(3);
+
+    await ok('deleteArtist', { artistId }, admin.token);
+    expect(await exists(`artists/${artistId}`)).toBe(false);
+    expect(await exists(`artistPrivate/${artistId}`)).toBe(false);
+    expect(await exists(`usernames/${artistId}`)).toBe(false);
+    expect(await folder(artistId)).toEqual([]);
+    // O fã não lê mais a central, e a URL da foto não baixa mais.
+    expect((await readWithRules(fan.token, `artists/${artistId}`)).status).not.toBe(200);
+    expect((await fetch(photo.url)).status).toBe(404);
+    expect(await auditOf('artist.deleted')).toMatchObject([
+      {
+        actorUid: admin.uid,
+        targetEmail: '',
+        targetUid: null,
+        details: { artistId, status: 'published', wasPublished: true },
+      },
+    ]);
+    // O @ volta a ficar livre.
+    expect(await ok('checkArtistHandle', { handle: artistId }, admin.token)).toEqual({
+      available: true,
+      reason: null,
+    });
+  });
+
+  it('admin apaga a central fora do ar, que já esteve no ar', async () => {
     const admin = await seedMember('Admin Um', 'admin');
     const artistId = await readyArtist(admin);
     await ok('setArtistStatus', { artistId, status: 'published' }, admin.token);
     await ok('setArtistStatus', { artistId, status: 'unpublished' }, admin.token);
-    const photo = (await read(`artists/${artistId}`))!.photo.path;
+    expect(await folder(artistId)).toHaveLength(2);
 
-    expect(await fails('deleteArtist', { artistId }, admin.token)).toMatchObject(
-      reason('FAILED_PRECONDITION', 'was-published'),
-    );
-    expect(await exists(`artists/${artistId}`)).toBe(true);
+    await ok('deleteArtist', { artistId }, admin.token);
+    expect(await exists(`artists/${artistId}`)).toBe(false);
+    expect(await exists(`artistPrivate/${artistId}`)).toBe(false);
+    expect(await exists(`usernames/${artistId}`)).toBe(false);
+    expect(await folder(artistId)).toEqual([]);
+    expect(await auditOf('artist.deleted')).toMatchObject([
+      {
+        actorUid: admin.uid,
+        details: {
+          artistId,
+          name: `Central ${artistId}`,
+          status: 'unpublished',
+          wasPublished: true,
+        },
+      },
+    ]);
+  });
+
+  it('central com fãs não se apaga, no ar ou fora do ar: tire do ar em vez de apagar', async () => {
+    const admin = await seedMember('Admin Um', 'admin');
+    const artistId = await readyArtist(admin);
+    // Nada incrementa o fanCount nesta etapa: o teste semeia os fãs.
+    await db.doc(`artists/${artistId}`).update({ fanCount: 3 });
+    const files = await folder(artistId);
+    expect(files).toHaveLength(2);
+
+    for (const status of ['published', 'unpublished'] as const) {
+      await ok('setArtistStatus', { artistId, status }, admin.token);
+      const error = await fails('deleteArtist', { artistId }, admin.token);
+      expect(error).toMatchObject(reason('FAILED_PRECONDITION', 'has-fans'));
+      expect(error.message).toBe('Essa central tem fãs. Tire do ar em vez de apagar.');
+    }
+    expect(await read(`artists/${artistId}`)).toMatchObject({
+      fanCount: 3,
+      status: 'unpublished',
+    });
     expect(await exists(`artistPrivate/${artistId}`)).toBe(true);
-    expect(await exists(`usernames/${artistId}`)).toBe(true);
-    expect(await fileExists(photo)).toBe(true);
+    expect(await read(`usernames/${artistId}`)).toMatchObject({ artistId });
+    expect(await folder(artistId)).toEqual(files);
     expect(await auditOf('artist.deleted')).toHaveLength(0);
   });
 

@@ -202,7 +202,7 @@ export const reorderArtists = onCall({ cors: PANEL_ORIGINS }, async (request) =>
   return result;
 });
 
-/** Admin apaga um rascunho que nunca foi publicado, com as fotos e a reserva do @. */
+/** Admin apaga uma central sem fãs, em qualquer status, com as fotos e a reserva do @. */
 export const deleteArtist = onCall({ cors: PANEL_ORIGINS }, async (request) => {
   const result = await removeArtist(artistDeps(), request.auth, request.data);
   logger.info('Central apagada.', { actorUid: request.auth?.uid });

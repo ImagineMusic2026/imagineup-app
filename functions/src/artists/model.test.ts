@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
-import { errorReason } from './errors';
+import { artistError, errorReason } from './errors';
 import {
   artistPrefix,
+  deleteProblem,
   GENRES,
   handleProblem,
   imageSize,
@@ -28,6 +29,7 @@ import {
   REORDER_MAX,
   reorderChanges,
   RESERVED_HANDLES,
+  staleArtistFiles,
   suggestHandle,
   THUMB_SIZE,
 } from './model';
@@ -276,6 +278,38 @@ describe('fotos', () => {
     }
   });
 
+  it('limpeza da pasta: sai tudo de artists/{id}/, menos as fotos que ficam', () => {
+    const photo = 'artists/trio/photo-2-1200.webp';
+    const thumb = 'artists/trio/thumb-2-480.webp';
+    const folder = [
+      'artists/trio/photo-1-1200.webp',
+      'artists/trio/thumb-1-480.webp',
+      photo,
+      thumb,
+      'artists/trio/photo-abandonada.webp',
+    ];
+    expect(staleArtistFiles(folder, 'trio', [photo, thumb])).toEqual([
+      'artists/trio/photo-1-1200.webp',
+      'artists/trio/thumb-1-480.webp',
+      'artists/trio/photo-abandonada.webp',
+    ]);
+    // As fotos novas nunca saem, nem repetidas na lista.
+    const stale = staleArtistFiles([...folder, photo, thumb], 'trio', [photo, thumb, null]);
+    expect(stale).not.toContain(photo);
+    expect(stale).not.toContain(thumb);
+    // Tirar a foto: a pasta inteira sai.
+    expect(staleArtistFiles(folder, 'trio', [undefined, null])).toEqual(folder);
+    // Arquivo de outra pasta (outra central, mesmo começo de @) nunca entra.
+    expect(
+      staleArtistFiles(
+        ['artists/triozinho/photo.webp', 'artists/outro/photo.webp', 'users/trio/photo.webp'],
+        'trio',
+        [],
+      ),
+    ).toEqual([]);
+    expect(staleArtistFiles([], 'trio', [photo])).toEqual([]);
+  });
+
   it('só webp, jpeg e png contam como imagem', () => {
     for (const type of ['image/webp', 'image/jpeg', 'image/png']) {
       expect(isImageContentType(type)).toBe(true);
@@ -325,6 +359,18 @@ describe('publicar e ordenar', () => {
     expect(publishProblems({ photo: image, thumb: null, imageRightsConfirmed: true })).toEqual([
       'missing-photo',
     ]);
+  });
+
+  it('apagar: em qualquer status, menos central com fãs', () => {
+    expect(deleteProblem({ fanCount: 0 })).toBeNull();
+    expect(deleteProblem({ fanCount: 3 })).toBe('has-fans');
+    expect(deleteProblem({ fanCount: 1 })).toBe('has-fans');
+    // fanCount é do servidor e sempre número; ausente conta como 0.
+    expect(deleteProblem({ fanCount: undefined })).toBeNull();
+    const error = artistError('has-fans');
+    expect(error.code).toBe('failed-precondition');
+    expect(error.message).toBe('Essa central tem fãs. Tire do ar em vez de apagar.');
+    expect(errorReason(error)).toBe('has-fans');
   });
 
   it('status pedido: published ou unpublished', () => {
