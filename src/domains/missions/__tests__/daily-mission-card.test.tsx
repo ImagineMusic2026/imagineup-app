@@ -221,6 +221,8 @@ describe('missão do dia na home', () => {
   });
 
   it('se não carregou, mostra o erro com "Tentar de novo", que busca de novo', async () => {
+    // Relógio fixo: com o relógio real, a missão de exemplo expira às 0h30 de 30/09 e some.
+    jest.useFakeTimers({ now: NOW, doNotFake: ['nextTick', 'setImmediate', 'queueMicrotask'] });
     mockDataSource = 'api';
     get.mockRejectedValueOnce(new Error('rede')).mockResolvedValue({ data: { mission: MISSION } });
     render(<DailyMissionSection />, { wrapper });

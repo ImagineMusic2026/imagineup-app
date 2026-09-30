@@ -123,7 +123,8 @@ const announcements = () =>
 /** A 21 de outubro, como o São João de Irará das fixtures cai com o relógio de hoje. */
 const featuredLabel = (value: string) =>
   new RegExp(
-    `^Meet & greet com o Netto\\. Só \\d+ vagas\\. São João de Irará, 21 de \\w+\\. ${value}\\.$`,
+    `^Meet & greet com o Netto\\. Só \\d+ vagas\\. São João de Irará, 21 de \\p{L}+\\. ${value}\\.$`,
+    'u',
   );
 
 /** Promessa que o teste resolve quando quiser. */

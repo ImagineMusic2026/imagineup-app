@@ -107,7 +107,7 @@ const COMMENT = /^Comente em 3 posts da central\. Concluída às \d\d:\d\d\. Ren
 const FLASH =
   'Missão relâmpago do show. Bloqueada. Abre quando o Netto subir no palco. Vale 50 pontos.';
 const INVITE = 'Traga 3 amigos novos pro app. 1 de 3 cadastrados. Vale 30 pontos.';
-const RSVP = /^Confirme presença em um show\. São João de Irará, 21 de \w+\. Vale 15 pontos\.$/;
+const RSVP = /^Confirme presença em um show\. São João de Irará, 21 de \p{L}+\. Vale 15 pontos\.$/u;
 const RSVP_DONE = /^Confirme presença em um show\. Concluída às \d\d:\d\d\. Rendeu 15 pontos\.$/;
 const SEASON = (done: number) =>
   `Semana do arrocha. ${done} de 20 concluídas. Complete 20 missões e garanta um lote de ingressos do São João.`;
