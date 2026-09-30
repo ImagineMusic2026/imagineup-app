@@ -7,9 +7,11 @@ import { usePrefersReducedMotion } from './use-prefers-reduced-motion';
 
 /**
  * Grupos da pilha raiz que entram do fundo escuro: as telas de conta
- * (`(auth)`), a escolha de artistas (`(onboarding)`) e as abas (`(tabs)`). As
- * duas primeiras também saem para ele (`playStackExit`) antes de o guard
- * trocar de grupo; as abas só entram (depois do splash, da 1l ou de entrar).
+ * (`(auth)`), a escolha de artistas (`(onboarding)`) e as abas (`(tabs)`). Os
+ * três também saem para ele (`playStackExit`) antes de o guard trocar de
+ * grupo: as telas de conta ao entrar, a 1l ao concluir, e as abas quando a
+ * sessão termina (sair, excluir a conta, sessão que caiu), pelo
+ * `useAuthListener`.
  */
 export type FadingStack = 'auth' | 'onboarding' | 'tabs';
 

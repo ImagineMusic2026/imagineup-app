@@ -27,6 +27,11 @@ export interface LargeTitleHeaderProps {
   showBack?: boolean;
   /** Padrão do voltar: volta na pilha ou vai ao início. */
   onBack?: () => void;
+  /**
+   * Voltar desativado (apagado e dito desativado ao leitor) enquanto uma ação
+   * não pode ser deixada no meio: a conta sendo excluída.
+   */
+  backDisabled?: boolean;
 }
 
 /**
@@ -75,6 +80,7 @@ export function LargeTitleHeader({
   children,
   showBack = false,
   onBack,
+  backDisabled = false,
 }: LargeTitleHeaderProps) {
   const slack = useBackRowSlack(showBack);
   const { below, onTitleLayout } = useAccessoryBelow(accessory !== undefined && accessory !== null);
@@ -89,7 +95,7 @@ export function LargeTitleHeader({
     >
       <View style={styles.row}>
         <View style={styles.lead}>
-          {showBack ? <BackButton onPress={onBack} /> : null}
+          {showBack ? <BackButton onPress={onBack} disabled={backDisabled} /> : null}
           <Text
             variant="titlePage"
             accessibilityRole="header"

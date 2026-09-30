@@ -26,8 +26,10 @@ export interface FollowArtistsResult {
 }
 
 /**
- * Central que o fã segue, como a home (1b) mostra no carrossel. A posição é a
- * do fã na central, na temporada; quem calcula é o servidor.
+ * Central que o fã segue, como a home (1b) mostra no carrossel e o perfil (1e)
+ * lista em "Suas centrais". Posição e pontos são os do fã no ranking da
+ * central, na temporada (os mesmos do ranking da 1f); quem calcula é o
+ * servidor.
  */
 export interface FanCentral {
   artistId: string;
@@ -35,6 +37,10 @@ export interface FanCentral {
   /** Nome curto que cabe no card ("Juninho M."); sem ele, o nome inteiro com reticências. */
   shortName: string | null;
   photoURL: string | null;
+  /** Quantos fãs a central tem ("#12 entre 412 mil fãs"). */
+  fanCount: number;
   /** Posição do fã na central; `null` quando ele ainda não tem posição ("novo"). */
   fanRank: number | null;
+  /** Pontos da temporada do fã nesta central; 0 enquanto ele não pontuou nela. */
+  seasonPoints: number;
 }

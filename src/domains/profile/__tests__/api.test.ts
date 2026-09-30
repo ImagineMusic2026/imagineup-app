@@ -3,7 +3,15 @@ import { doc, getDoc, onSnapshot } from 'firebase/firestore';
 import { api } from '@/services/api';
 import { fixtureWallet } from '@/services/fixtures';
 
-import { fetchMyInvite, fetchMyProfile, fetchWallet, toFanProfile, watchMyProfile } from '../api';
+import {
+  fetchMyAchievements,
+  fetchMyInvite,
+  fetchMyProfile,
+  fetchMyProgress,
+  fetchWallet,
+  toFanProfile,
+  watchMyProfile,
+} from '../api';
 
 // O build do Firebase que o Jest resolve é ESM; o domínio só usa estas peças.
 jest.mock('firebase/firestore', () => ({
@@ -146,6 +154,31 @@ describe('carteira', () => {
     get.mockResolvedValue({ data: { balance: 1, xp: 2, seasonPoints: 3 } });
     await expect(fetchWallet()).resolves.toEqual({ balance: 1, xp: 2, seasonPoints: 3 });
     expect(get).toHaveBeenCalledWith('/me/wallet');
+  });
+});
+
+describe('nível e conquistas', () => {
+  it('sem a API, o nível sai do XP da carteira das fixtures', async () => {
+    await expect(fetchMyProgress()).resolves.toMatchObject({
+      xp: 12_480,
+      level: { number: 7, name: 'Purainha' },
+      weekEarned: 840,
+    });
+    await expect(fetchMyAchievements()).resolves.toMatchObject({
+      unlockedCount: 14,
+      totalCount: 32,
+    });
+    expect(get).not.toHaveBeenCalled();
+  });
+
+  it('com a API, pede /me/progress e /me/achievements', async () => {
+    mockDataSource = 'api';
+    get
+      .mockResolvedValueOnce({ data: { xp: 1 } })
+      .mockResolvedValueOnce({ data: { totalCount: 2 } });
+    await expect(fetchMyProgress()).resolves.toEqual({ xp: 1 });
+    await expect(fetchMyAchievements()).resolves.toEqual({ totalCount: 2 });
+    expect(get.mock.calls.map(([url]) => url)).toEqual(['/me/progress', '/me/achievements']);
   });
 });
 

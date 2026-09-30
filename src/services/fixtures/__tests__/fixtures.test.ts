@@ -53,6 +53,16 @@ describe('carteira das fixtures', () => {
     expect(fixtureWallet.earn(20)).toEqual({ balance: 12_500, xp: 12_500, seasonPoints: 4_140 });
   });
 
+  it('guarda quanto o fã ganhou desde a abertura, sem descontar o resgate', () => {
+    expect(fixtureWallet.earned()).toBe(0);
+    fixtureWallet.earn(15);
+    fixtureWallet.earn(20);
+    fixtureWallet.spend(1_000);
+    expect(fixtureWallet.earned()).toBe(35);
+    fixtureWallet.reset();
+    expect(fixtureWallet.earned()).toBe(0);
+  });
+
   it('resgate desconta só do saldo: o nível não cai', () => {
     expect(fixtureWallet.spend(8_500)).toEqual({ balance: 3_980, xp: 12_480, seasonPoints: 4_120 });
   });

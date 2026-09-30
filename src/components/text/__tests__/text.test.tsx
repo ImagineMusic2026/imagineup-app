@@ -22,6 +22,7 @@ describe('Text', () => {
     'pointsTiny',
     'micro',
     'statLabel',
+    'statCaption',
     'labelTiny',
     'dateMonth',
     'microLabel',

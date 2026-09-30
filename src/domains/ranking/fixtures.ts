@@ -13,8 +13,9 @@ import type { LeaderboardEntry, LeaderboardPage, MyRank, RankingScope, Season } 
  *   pontos (a missão de presença da agenda), sobe junto.
  * - Centrais: a mesma gente em outra ordem, com menos pontos. O fã é 12º no
  *   Netto e 41º no Nenho, como o "você é #12" da home e o perfil (1e); nas
- *   outras centrais ele ainda não pontuou. `__tests__/fixtures.test.ts`
- *   trava as duas coisas.
+ *   outras centrais ele ainda não pontuou. As centrais da home e do perfil
+ *   (`buildFanCentralsFixture`, em artists) leem posição e pontos daqui, de
+ *   `buildMyRankFixture`. `__tests__/fixtures.test.ts` trava as duas coisas.
  *
  * Nomes, cidades e pontos são exemplo; os de verdade vêm da API.
  */

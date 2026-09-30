@@ -115,22 +115,34 @@ describe('seguir artistas', () => {
 });
 
 describe('centrais do fã', () => {
-  it('as três do protótipo, com a posição do fã: #12, #41 e "novo"', () => {
+  it('as três do protótipo, com a posição e os pontos do fã: #12, #41 e "novo"', () => {
     expect(buildFanCentralsFixture()).toEqual([
       {
         artistId: 'netto-brito',
         name: 'Netto Brito',
         shortName: null,
         photoURL: null,
+        fanCount: 412_000,
         fanRank: 12,
+        seasonPoints: 4_120,
       },
-      { artistId: 'nenho', name: 'Nenho', shortName: null, photoURL: null, fanRank: 41 },
+      {
+        artistId: 'nenho',
+        name: 'Nenho',
+        shortName: null,
+        photoURL: null,
+        fanCount: 298_000,
+        fanRank: 41,
+        seasonPoints: 2_980,
+      },
       {
         artistId: 'juninho-moraes',
         name: 'Juninho Moraes',
         shortName: 'Juninho M.',
         photoURL: null,
+        fanCount: 141_000,
         fanRank: null,
+        seasonPoints: 0,
       },
     ]);
   });
@@ -139,7 +151,12 @@ describe('centrais do fã', () => {
     await followArtists({ artistIds: ['rock-salles'], idempotencyKey: 'chave-4' });
     await expect(fetchFanCentrals()).resolves.toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ artistId: 'rock-salles', name: 'Rock Salles', fanRank: null }),
+        expect.objectContaining({
+          artistId: 'rock-salles',
+          name: 'Rock Salles',
+          fanRank: null,
+          seasonPoints: 0,
+        }),
       ]),
     );
     expect((await fetchFanCentrals()).map((central) => central.artistId)).toEqual([

@@ -139,4 +139,13 @@ describe('LargeTitleHeader', () => {
     fireEvent.press(screen.getByLabelText(t('common.back')));
     expect(onBack).toHaveBeenCalled();
   });
+
+  it('com o voltar desativado, ele fica apagado, diz que está desativado e não volta', () => {
+    const onBack = jest.fn();
+    render(<LargeTitleHeader title="Excluir conta" showBack onBack={onBack} backDisabled />);
+    const back = screen.getByLabelText(t('common.back'));
+    expect(back).toBeDisabled();
+    fireEvent.press(back);
+    expect(onBack).not.toHaveBeenCalled();
+  });
 });

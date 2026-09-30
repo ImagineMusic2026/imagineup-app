@@ -112,6 +112,10 @@ export const typography = {
     textTransform: 'uppercase',
   },
   labelTiny: { fontFamily: fonts.manropeBold, fontSize: 10, lineHeight: 12 },
+  // Rótulo das caixas de número da 1e ("links criados"): o 9,5 do protótipo,
+  // em minúsculas e com a entrelinha 1,3 dele, abaixo do mínimo recomendado
+  // como a tab bar (pergunta aberta com a cliente).
+  statCaption: { fontFamily: fonts.manropeSemiBold, fontSize: 9.5, lineHeight: 12.5 },
   overline: {
     fontFamily: fonts.manropeBold,
     fontSize: 10,

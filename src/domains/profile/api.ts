@@ -3,10 +3,15 @@ import { doc, getDoc, onSnapshot, type DocumentData } from 'firebase/firestore';
 import { dataSource } from '@/config/env';
 import { getDb } from '@/firebase';
 import { api } from '@/services/api';
-import { fixtureDelay } from '@/services/fixtures';
+import { fixtureDelay, fixtureNow } from '@/services/fixtures';
 
-import { buildMyInviteFixture, buildWalletFixture } from './fixtures';
-import type { FanProfile, MyInvite, Wallet } from './types';
+import {
+  buildMyAchievementsFixture,
+  buildMyInviteFixture,
+  buildMyProgressFixture,
+  buildWalletFixture,
+} from './fixtures';
+import type { FanProfile, MyAchievements, MyInvite, MyProgress, Wallet } from './types';
 
 // Chamadas cruas ao Firestore e à API. Sem React: quem cacheia é o queries.ts.
 
@@ -93,6 +98,26 @@ export async function fetchWallet(): Promise<Wallet> {
     return buildWalletFixture();
   }
   const { data } = await api.get<Wallet>('/me/wallet');
+  return data;
+}
+
+/** Nível (com o XP que nunca cai), ganhos da semana e números do fã (1e). */
+export async function fetchMyProgress(): Promise<MyProgress> {
+  if (dataSource === 'fixtures') {
+    await fixtureDelay();
+    return buildMyProgressFixture();
+  }
+  const { data } = await api.get<MyProgress>('/me/progress');
+  return data;
+}
+
+/** Contagem de conquistas e as que o perfil mostra. */
+export async function fetchMyAchievements(): Promise<MyAchievements> {
+  if (dataSource === 'fixtures') {
+    await fixtureDelay();
+    return buildMyAchievementsFixture(fixtureNow());
+  }
+  const { data } = await api.get<MyAchievements>('/me/achievements');
   return data;
 }
 

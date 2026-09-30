@@ -17,7 +17,9 @@ const NETTO: FanCentral = {
   name: 'Netto Brito',
   shortName: null,
   photoURL: null,
+  fanCount: 412_000,
   fanRank: 12,
+  seasonPoints: 4_120,
 };
 
 const JUNINHO: FanCentral = {
@@ -25,7 +27,9 @@ const JUNINHO: FanCentral = {
   name: 'Juninho Moraes',
   shortName: 'Juninho M.',
   photoURL: null,
+  fanCount: 141_000,
   fanRank: null,
+  seasonPoints: 0,
 };
 
 beforeEach(() => jest.clearAllMocks());

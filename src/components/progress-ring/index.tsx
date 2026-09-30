@@ -1,7 +1,7 @@
 import { Canvas, Path, Skia, SweepGradient, vec } from '@shopify/react-native-skia';
-import { useEffect, useMemo, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, type ReactNode } from 'react';
 import { StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
-import { useSharedValue, withTiming } from 'react-native-reanimated';
+import { useSharedValue, withSequence, withTiming } from 'react-native-reanimated';
 
 import { colors, motion } from '@/theme';
 import { withAlpha } from '@/utils/color';
@@ -14,6 +14,12 @@ export interface ProgressRingProps {
   /** Uma cor sólida ou um gradiente em volta do anel. */
   colors?: readonly string[];
   trackColor?: string;
+  /**
+   * Quando muda, o anel volta a 0 e sobe de novo até o valor (a subida de
+   * nível da 1e), sem remontar o Canvas: o Skia leva alguns quadros até o
+   * primeiro desenho, e o anel remontado sumia nesse tempo, trilho incluído.
+   */
+  restartKey?: string | number | null;
   accessibilityLabel?: string;
   style?: StyleProp<ViewStyle>;
   children?: ReactNode;
@@ -32,21 +38,25 @@ export function ProgressRing({
   strokeWidth = 7,
   colors: ringColors = [colors.points],
   trackColor = withAlpha(colors.text, 0.1),
+  restartKey = null,
   accessibilityLabel,
   style,
   children,
 }: ProgressRingProps) {
   const clamped = Math.min(1, Math.max(0, progress));
   const end = useSharedValue(0);
+  // A chave que já está desenhada: a que chega com o anel montado não reinicia.
+  const drawnKey = useRef(restartKey);
 
   useEffect(() => {
-    end.set(
-      withTiming(clamped, {
-        duration: motion.duration.counter,
-        easing: motion.easing.out,
-      }),
-    );
-  }, [clamped, end]);
+    const restart = drawnKey.current !== restartKey;
+    drawnKey.current = restartKey;
+    const grow = withTiming(clamped, {
+      duration: motion.duration.counter,
+      easing: motion.easing.out,
+    });
+    end.set(restart ? withSequence(withTiming(0, { duration: 0 }), grow) : grow);
+  }, [clamped, restartKey, end]);
 
   // `Path.Circle` no lugar do `addCircle` num path vazio, que o Skia 2.6 marca
   // como obsoleto (e avisa no console a cada abertura). Mesmo sentido e início.

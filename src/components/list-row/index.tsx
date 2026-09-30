@@ -73,6 +73,11 @@ interface PressableRowBase {
   /** Padrão: `tap`; na linha bloqueada, `locked`. */
   haptic?: HapticEvent | null;
   accessibilityRole?: AccessibilityRole;
+  /**
+   * A ação da linha está andando (sair da conta): o leitor ouve que ela está
+   * ocupada, já que o indicador do `trailing` fica fora dele.
+   */
+  busy?: boolean;
   accessibilityGroup?: never;
 }
 
@@ -95,6 +100,7 @@ interface StaticRow extends RowLabel {
   /** Valor à direita ou um botão com ação própria (com `accessibilityGroup="content"`). */
   trailing?: ReactNode;
   haptic?: never;
+  busy?: never;
   accessibilityRole?: never;
   /**
    * O que o leitor lê como um elemento só:
@@ -151,7 +157,7 @@ export function ListRow(props: ListRowProps) {
   // Só a linha estática bloqueada se diz desativada. A pressável responde ao
   // toque, e o TalkBack nem entrega a ação a um nó desativado.
   const accessibilityState: AccessibilityState | undefined =
-    locked && !pressable ? { disabled: true } : undefined;
+    locked && !pressable ? { disabled: true } : props.busy ? { busy: true } : undefined;
   const gapStyle = [gapStyles[variant], gap ? gapFor(gap) : null];
 
   // O rótulo vai para quem o leitor foca: a linha, ou só o bloco de conteúdo.

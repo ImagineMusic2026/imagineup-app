@@ -2,7 +2,7 @@ import { addMonths, nextSaturday, set, startOfMonth } from 'date-fns';
 
 import { missionsFixture } from '@/domains/missions';
 import { ApiError } from '@/services/api/errors';
-import { fixtureNow } from '@/services/fixtures';
+import { fixtureNow, onFixtureSessionEnd } from '@/services/fixtures';
 
 import type { AgendaArtist, AgendaEvent, AgendaPage, MyRsvps, RsvpResult } from './types';
 
@@ -182,7 +182,8 @@ let answered = new Map<string, RsvpResult>();
 
 /**
  * Estado de "servidor" das presenças do fã. Fica em memória e volta ao início
- * quando o app reabre. Só aceita os shows da agenda, como a API.
+ * quando o app reabre ou a sessão termina. Só aceita os shows da agenda, como
+ * a API.
  *
  * Confirmar presença conta na missão "Confirme presença em um show" (1g): o
  * servidor das missões diz quantos pontos a confirmação rendeu (os da missão,
@@ -214,9 +215,11 @@ export const rsvpFixture = {
     return { eventIds: [...going] };
   },
 
-  /** Volta ao início (testes). As missões voltam com `missionsFixture.reset()`. */
+  /** Volta ao início (fim da sessão e testes). As missões voltam com `missionsFixture.reset()`. */
   reset(): void {
     going = new Set();
     answered = new Map();
   },
 };
+
+onFixtureSessionEnd(() => rsvpFixture.reset());

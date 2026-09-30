@@ -120,9 +120,11 @@ describe('ranking de exemplo', () => {
       ['nenho', 41],
       ['juninho-moraes', null],
     ]);
-    for (const { artistId, fanRank } of centrals) {
+    for (const { artistId, fanRank, seasonPoints } of centrals) {
       const scope: RankingScope = { kind: 'artist', artistId };
+      // A home e o perfil (1e) mostram a mesma posição e os mesmos pontos do ranking.
       expect(buildMyRankFixture(scope).position).toBe(fanRank);
+      expect(buildMyRankFixture(scope).points).toBe(seasonPoints);
       expect(wholeBoard(scope).find((entry) => entry.isMe)?.position ?? null).toBe(fanRank);
     }
     expect(buildMyRankFixture(NETTO)).toEqual({

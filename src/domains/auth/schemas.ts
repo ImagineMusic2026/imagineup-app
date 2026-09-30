@@ -60,3 +60,14 @@ export type SignUpForm = z.output<typeof signUpSchema>;
 
 /** Só o e-mail, para o "Esqueci minha senha" usar o que foi digitado no login. */
 export const resetEmailSchema = emailField;
+
+/**
+ * A senha que o Firebase pede de novo para excluir a conta com login antigo.
+ * Só não pode ir vazia: quem confere é o Firebase (senha errada volta como
+ * erro no campo), e uma conta antiga pode ter senha mais curta que a regra de hoje.
+ */
+export const reauthSchema = z.object({
+  password: z.string().min(1, { error: t('deleteAccount.passwordRequired') }),
+});
+
+export type ReauthForm = z.infer<typeof reauthSchema>;

@@ -1,7 +1,9 @@
 export { signOut } from './api';
 export { ENTRY_STEP_COUNT } from './consts';
 export { useAuthListener } from './hooks/use-auth-listener';
+export { useSignOut } from './hooks/use-sign-out';
 export { AuthStack } from './views/auth-stack';
+export { DeleteAccountScreen } from './views/delete-account';
 export { SignInScreen } from './views/sign-in';
 export { SignUpScreen } from './views/sign-up';
 export { WelcomeScreen } from './views/welcome';

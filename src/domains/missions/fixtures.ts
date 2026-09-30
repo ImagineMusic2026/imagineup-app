@@ -1,6 +1,6 @@
 import { addMonths, endOfDay, endOfWeek, set, startOfMonth } from 'date-fns';
 
-import { fixtureNow, fixtureWallet } from '@/services/fixtures';
+import { fixtureNow, fixtureWallet, onFixtureSessionEnd } from '@/services/fixtures';
 
 import type { Mission, MissionAction, MissionsResponse, SeasonGoal } from './types';
 
@@ -204,7 +204,7 @@ export function buildMissionsFixture(now: Date): MissionsResponse {
  * fã que andam uma missão (o "Eu vou" da agenda); quando a ação completa a
  * missão, os pontos entram na carteira (`fixtureWallet`) e voltam na resposta
  * da ação, como a API faria. Fica em memória e volta ao início quando o app
- * reabre.
+ * reabre ou a sessão termina.
  */
 export const missionsFixture = {
   /**
@@ -224,8 +224,10 @@ export const missionsFixture = {
     return open.rewardPoints;
   },
 
-  /** Volta ao início (testes). */
+  /** Volta ao início (fim da sessão e testes). */
   reset(): void {
     advances = new Map();
   },
 };
+
+onFixtureSessionEnd(() => missionsFixture.reset());

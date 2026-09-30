@@ -1,7 +1,7 @@
 import { addMonths, set, startOfMonth } from 'date-fns';
 
 import { ApiError } from '@/services/api/errors';
-import { fixtureNow, fixtureWallet } from '@/services/fixtures';
+import { fixtureNow, fixtureWallet, onFixtureSessionEnd } from '@/services/fixtures';
 
 import { REDEEM_ERROR_CODES } from './consts';
 import type { RedeemResult, Reward, RewardKind, RewardRedemption, RewardsResponse } from './types';
@@ -141,7 +141,8 @@ export function buildRewardsFixture(now: Date): RewardsResponse {
  * instruções, que também voltam na loja (`redemptions`). Recusa sem saldo
  * (`insufficient_points`) e esgotado (`sold_out`) com os erros que a API
  * mandaria. A mesma chave de idempotência devolve o resgate da primeira vez,
- * sem gastar de novo. Fica em memória e volta ao início quando o app reabre.
+ * sem gastar de novo. Fica em memória e volta ao início quando o app reabre ou
+ * a sessão termina.
  */
 export const rewardsFixture = {
   redeem(rewardId: string, idempotencyKey: string, now: Date = fixtureNow()): RedeemResult {
@@ -183,10 +184,12 @@ export const rewardsFixture = {
     return { ...result };
   },
 
-  /** Volta ao início (testes). A carteira volta com `fixtureWallet.reset()`. */
+  /** Volta ao início (fim da sessão e testes). A carteira volta com `fixtureWallet.reset()`. */
   reset(): void {
     redeemedById = new Map();
     answered = new Map();
     redemptionCount = 0;
   },
 };
+
+onFixtureSessionEnd(() => rewardsFixture.reset());

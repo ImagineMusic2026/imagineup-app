@@ -388,7 +388,106 @@
   "profile": {
     "title": "Meu perfil",
     "settings": "Ajustes",
-    "signOut": "Sair"
+    "settingsHint": "Abre os ajustes da conta",
+    "fallbackName": "Fã",
+    "loading": "Carregando seu perfil",
+    "updateError": "Não deu para atualizar o perfil.",
+    "level": {
+      "badge": "Nível {{number}} · {{name}}",
+      "spoken": "nível {{number}}, {{name}}",
+      "up": "Você subiu para o nível {{number}}, {{name}}."
+    },
+    "points": {
+      "title": "Seus pontos",
+      "week": "Esta semana",
+      "toNext": "Faltam {{points}} para o nível {{number}} · {{name}}",
+      "toNextOne": "Falta {{points}} para o nível {{number}} · {{name}}",
+      "amount": "{{points}} pts",
+      "amountOne": "{{points}} pt",
+      "maxLevel": "Você chegou ao nível máximo",
+      "label": "Seus pontos: {{balance}}. Esta semana: {{week}}. {{next}}.",
+      "loading": "Carregando seus pontos",
+      "loadError": "Não deu para carregar seus pontos.",
+      "loaded": "Pontos carregados.",
+      "spoken": {
+        "weekGain": "mais {{points}}",
+        "toNext": "Faltam {{points}} pontos para o nível {{number}}, {{name}}",
+        "toNextOne": "Falta 1 ponto para o nível {{number}}, {{name}}"
+      }
+    },
+    "stats": {
+      "label": "{{value}} {{label}}",
+      "links": "links criados",
+      "linksOne": "link criado",
+      "people": "pessoas trazidas",
+      "peopleOne": "pessoa trazida",
+      "seasons": "temporadas",
+      "seasonsOne": "temporada"
+    },
+    "achievements": {
+      "title": "Conquistas",
+      "count": "{{unlocked}} de {{total}}",
+      "countLabel": "Conquistas, {{unlocked}} de {{total}} conquistadas",
+      "unlocked": "{{title}}, conquistada",
+      "locked": "{{title}}, bloqueada",
+      "loading": "Carregando suas conquistas",
+      "loadError": "Não deu para carregar suas conquistas.",
+      "loaded": "Conquistas carregadas.",
+      "empty": "Suas conquistas aparecem aqui."
+    },
+    "centrals": {
+      "title": "Suas centrais",
+      "meta": "#{{rank}} entre {{fans}} fãs",
+      "metaUnranked": "Sem posição ainda · {{fans}} fãs",
+      "label": "{{name}}, {{rank}}º lugar entre {{fans}} fãs, {{points}} na temporada.",
+      "labelUnranked": "{{name}}, ainda sem posição, entre {{fans}} fãs.",
+      "hint": "Abre a central",
+      "loading": "Carregando suas centrais",
+      "loadError": "Não deu para carregar suas centrais.",
+      "loaded": "Centrais carregadas.",
+      "empty": "Você ainda não entrou em nenhuma central.",
+      "explore": "Explorar artistas"
+    }
+  },
+  "settings": {
+    "title": "Ajustes",
+    "account": "Conta",
+    "signOut": "Sair",
+    "signOutMeta": "Entrou como {{email}}",
+    "signOutLabel": "Sair da conta",
+    "signOutHint": "Sai da conta neste aparelho",
+    "signOutError": "Não deu para sair agora. Tente de novo.",
+    "deleteAccount": "Excluir conta",
+    "deleteAccountMeta": "Apaga seu perfil, seus pontos e seu @",
+    "deleteAccountHint": "Mostra o que se perde antes de confirmar"
+  },
+  "deleteAccount": {
+    "title": "Excluir conta",
+    "lead": "A exclusão é definitiva e não dá para desfazer. Com a conta, vão embora:",
+    "losses": {
+      "profile": "Seu perfil: nome, foto, cidade e o seu @, que fica livre para outra pessoa.",
+      "points": "Seus pontos: o saldo, o nível e as conquistas.",
+      "ranking": "Sua posição no ranking e as centrais que você segue.",
+      "rewards": "As recompensas resgatadas com os seus pontos."
+    },
+    "fresh": "Dá para criar uma conta nova depois, mas ela começa do zero.",
+    "submit": "Excluir minha conta",
+    "submitHint": "Exclui a conta para sempre",
+    "keep": "Manter minha conta",
+    "passwordLead": "Por segurança, confirme sua senha para excluir a conta.",
+    "password": "Sua senha",
+    "confirm": "Confirmar e excluir",
+    "offline": "Sem internet. Conecte-se para excluir a conta.",
+    "done": "Sua conta foi excluída.",
+    "errors": {
+      "needsPassword": "Por segurança, confirme sua senha para excluir a conta.",
+      "wrongPassword": "Senha incorreta.",
+      "network": "Sem conexão. Sua conta continua como estava. Confira a internet e tente de novo.",
+      "tooManyRequests": "Muitas tentativas. Espere um pouco e tente de novo.",
+      "sessionEnded": "Sua sessão terminou. Entre de novo para excluir a conta.",
+      "unknown": "Não deu para excluir a conta agora. Ela continua como estava."
+    },
+    "passwordRequired": "Digite sua senha."
   },
   "invite": {
     "title": "Convidar",

@@ -147,6 +147,11 @@ describe('ListRow', () => {
     expect(screen.getByLabelText('Backstage. Bloqueada.')).toBeDisabled();
   });
 
+  it('pressável ocupada: o leitor ouve que a ação está andando', () => {
+    render(<ListRow title="Sair" onPress={jest.fn()} busy />);
+    expect(screen.getByRole('button', { name: 'Sair' })).toBeBusy();
+  });
+
   it('haptic null desliga o toque', () => {
     render(<ListRow title="Comente em 3 posts" onPress={jest.fn()} haptic={null} />);
     fireEvent.press(screen.getByRole('button'));

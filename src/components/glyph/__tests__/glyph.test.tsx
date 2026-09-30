@@ -28,4 +28,13 @@ describe('Glyph', () => {
     expect(glyphPath()?.props.fill).toBe(colors.onPoints);
     expect(glyphPath()?.props.stroke).toBeUndefined();
   });
+
+  it('a taça tem o copo cheio e o pé em traço, na mesma cor', () => {
+    render(<Glyph name="goblet" size={24} color={colors.points} />);
+    const [cup, stem] = screen.root.findAll((node) => node.type === Path);
+    expect(cup?.props.fill).toBe(colors.points);
+    expect(cup?.props.stroke).toBeUndefined();
+    expect(stem?.props.fill).toBe('none');
+    expect(stem?.props.stroke).toBe(colors.points);
+  });
 });
