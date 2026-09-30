@@ -6,6 +6,7 @@ import { AccessibilityInfo } from 'react-native';
 import { missionKeys, missionsFixture } from '@/domains/missions';
 import { RSVP_MISSION_POINTS as FIRST_RSVP_POINTS } from '@/domains/missions/fixtures';
 import { profileKeys } from '@/domains/profile';
+import { GLOBAL_SCOPE, rankingKeys } from '@/domains/ranking';
 import { t } from '@/i18n';
 import { api } from '@/services/api';
 import { ApiError } from '@/services/api/errors';
@@ -161,8 +162,13 @@ describe('"Eu vou" do post de show', () => {
     expect(rsvpFixture.mine().eventIds).toEqual([EVENT.id]);
   });
 
-  it('a presença que rende pontos faz o saldo e as missões (1b e 1g) buscarem de novo', async () => {
+  it('a presença que rende pontos faz o saldo, o ranking e as missões (1b e 1g) buscarem de novo', async () => {
     client.setQueryData(profileKeys.wallet(), { balance: 12_480, xp: 12_480, seasonPoints: 4_120 });
+    client.setQueryData(rankingKeys.myRank(GLOBAL_SCOPE), {
+      position: 12,
+      points: 4_120,
+      target: null,
+    });
     client.setQueryData(missionKeys.daily(), null);
     client.setQueryData(missionKeys.list(), { season: null, missions: [] });
     render(<RsvpChip eventId={EVENT.id} eventTitle={EVENT.title} />, { wrapper });
@@ -173,6 +179,8 @@ describe('"Eu vou" do post de show', () => {
       expect(client.getQueryState(profileKeys.wallet())?.isInvalidated).toBe(true),
     );
     expect(client.getQueryState(missionKeys.daily())?.isInvalidated).toBe(true);
+    // Os pontos da temporada mudaram: a posição do fã no ranking (1f) também.
+    expect(client.getQueryState(rankingKeys.myRank(GLOBAL_SCOPE))?.isInvalidated).toBe(true);
     // A lista da 1g é a que festeja a missão concluída quando o fã volta a ela.
     expect(client.getQueryState(missionKeys.list())?.isInvalidated).toBe(true);
   });
@@ -180,6 +188,11 @@ describe('"Eu vou" do post de show', () => {
   it('presença sem pontos (a segunda) não mexe no saldo, mas as missões buscam de novo', async () => {
     rsvpFixture.set('festa-do-vaqueiro', true, 'antes');
     client.setQueryData(profileKeys.wallet(), { balance: 12_495, xp: 12_495, seasonPoints: 4_135 });
+    client.setQueryData(rankingKeys.myRank(GLOBAL_SCOPE), {
+      position: 12,
+      points: 4_135,
+      target: null,
+    });
     client.setQueryData(missionKeys.list(), { season: null, missions: [] });
     render(<RsvpChip eventId={EVENT.id} eventTitle={EVENT.title} />, { wrapper });
 
@@ -188,6 +201,7 @@ describe('"Eu vou" do post de show', () => {
     await waitFor(() => expect(rsvpFixture.mine().eventIds).toContain(EVENT.id));
     await waitFor(() => expect(client.isMutating()).toBe(0));
     expect(client.getQueryState(profileKeys.wallet())?.isInvalidated).toBe(false);
+    expect(client.getQueryState(rankingKeys.myRank(GLOBAL_SCOPE))?.isInvalidated).toBe(false);
     // Uma missão de presença com meta maior que 1 anda sem concluir (e sem pontos).
     expect(client.getQueryState(missionKeys.list())?.isInvalidated).toBe(true);
   });

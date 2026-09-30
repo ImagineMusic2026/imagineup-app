@@ -69,13 +69,20 @@ export function EmptyState({
         </Text>
       </View>
       {onAction && label ? (
-        <Button
-          variant="secondary"
-          size="md"
-          label={label}
-          onPress={onAction}
-          loading={actionLoading}
-        />
+        // Numa fileira, o botão fica da altura do conteúdo. Direto na coluna,
+        // no vazio de uma FlashList (vazio e erro da 1f), o desenho do Button,
+        // que cresce para ocupar a altura que o pai der, esticava até o fim
+        // da tela.
+        <View style={styles.actionRow}>
+          <Button
+            variant="secondary"
+            size="md"
+            label={label}
+            onPress={onAction}
+            loading={actionLoading}
+            style={styles.action}
+          />
+        </View>
       ) : null}
     </View>
   );
@@ -93,5 +100,12 @@ const styles = StyleSheet.create({
   },
   centered: {
     textAlign: 'center',
+  },
+  actionRow: {
+    flexDirection: 'row',
+  },
+  // Com a fonte grande, o rótulo quebra dentro da largura da tela.
+  action: {
+    flexShrink: 1,
   },
 });

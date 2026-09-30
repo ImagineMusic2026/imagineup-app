@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import type { ReactNode, Ref } from 'react';
 import {
   StyleSheet,
   View,
@@ -46,6 +46,12 @@ interface ListRowBaseProps {
   accessibilityHint?: string;
   style?: StyleProp<ViewStyle>;
   testID?: string;
+  /**
+   * O elemento que o leitor de tela foca (a linha ou, com
+   * `accessibilityGroup="content"`, o bloco de conteúdo), para levar o foco
+   * até ele (a linha do próprio fã no ranking 1f).
+   */
+  ref?: Ref<View>;
 }
 
 /**
@@ -136,6 +142,7 @@ export function ListRow(props: ListRowProps) {
     accessibilityHint,
     style,
     testID,
+    ref,
   } = props;
   const locked = tone === 'locked';
   const below = trailing ? trailingPlacement === 'below' : false;
@@ -161,6 +168,7 @@ export function ListRow(props: ListRowProps) {
   const content = (
     <>
       <View
+        ref={group === 'content' ? ref : undefined}
         accessible={group === 'content' ? true : undefined}
         accessibilityLabel={group === 'content' ? accessibilityLabel : undefined}
         accessibilityHint={group === 'content' ? accessibilityHint : undefined}
@@ -207,6 +215,7 @@ export function ListRow(props: ListRowProps) {
     if (pressable) {
       return (
         <PressableScale
+          ref={ref}
           onPress={props.onPress}
           haptic={haptic}
           accessibilityRole={props.accessibilityRole}
@@ -221,7 +230,12 @@ export function ListRow(props: ListRowProps) {
       );
     }
     return (
-      <View {...rowAccessibility} testID={testID} style={rowStyle}>
+      <View
+        ref={group === 'row' ? ref : undefined}
+        {...rowAccessibility}
+        testID={testID}
+        style={rowStyle}
+      >
         {content}
       </View>
     );
@@ -229,6 +243,7 @@ export function ListRow(props: ListRowProps) {
 
   return (
     <Card
+      ref={group === 'row' ? ref : undefined}
       variant={variant === 'compact' ? 'compact' : locked ? 'locked' : 'default'}
       padding={padding}
       onPress={props.onPress}

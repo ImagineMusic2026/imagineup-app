@@ -2,14 +2,11 @@ import { StyleSheet, View } from 'react-native';
 
 import { ChipGroup, type ChipItem } from '@/components/chip';
 import { t } from '@/i18n';
-import { colors, layout, spacing, typography } from '@/theme';
+import { colors } from '@/theme';
 
 import type { AgendaChip } from '../group-by-month';
 
-/** Altura desenhada do chip: texto de 14 com 7 em cima e embaixo (o `Chip`). */
-export const CHIP_HEIGHT = typography.chip.lineHeight + spacing.chipGap * 2;
-/** Sobra do alvo de 44 em cima e embaixo do chip desenhado. */
-export const CHIP_SLACK = (layout.minTouchTarget - CHIP_HEIGHT) / 2;
+export { CHIP_HEIGHT, CHIP_SLACK } from '@/components/chip';
 
 export interface MonthChipsProps {
   chips: readonly AgendaChip[];

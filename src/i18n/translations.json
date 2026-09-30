@@ -150,7 +150,67 @@
     "likesOne": "1 curtida"
   },
   "ranking": {
-    "title": "Ranking"
+    "title": "Ranking",
+    "loading": "Carregando o ranking",
+    "loadError": "Não deu para carregar o ranking.",
+    "updateError": "Não deu para atualizar o ranking.",
+    "moreError": "Não deu para carregar mais posições.",
+    "loaded": "Ranking carregado.",
+    "moreLoaded": "Mais posições carregadas.",
+    "empty": "Ninguém pontuou ainda nesta temporada.",
+    "emptyNoSeason": "O ranking volta com a próxima temporada.",
+    "seeMissions": "Ver missões",
+    "fallbackName": "Fã",
+    "you": "Você",
+    "position": "{{position}}º",
+    "scopes": {
+      "global": "Geral",
+      "globalHint": "Mostra o ranking geral da temporada",
+      "artistHint": "Mostra o ranking da central de {{name}}"
+    },
+    "season": {
+      "active": "Temporada de {{name}} · {{countdown}}",
+      "ended": "Temporada de {{name}} encerrada",
+      "none": "Nenhuma temporada em andamento"
+    },
+    "podium": {
+      "leaderTitle": "Líder da temporada",
+      "vacant": "?"
+    },
+    "change": {
+      "upOne": "subiu 1 posição",
+      "up": "subiu {{count}} posições",
+      "downOne": "caiu 1 posição",
+      "down": "caiu {{count}} posições"
+    },
+    "a11y": {
+      "place": "{{position}}º lugar",
+      "vacant": "{{place}}, vago"
+    },
+    "me": {
+      "toTop": "{{points}} pts para entrar no top {{top}}",
+      "toTopOne": "1 pt para entrar no top {{top}}",
+      "toPosition": "{{points}} pts para o {{position}}º lugar",
+      "toPositionOne": "1 pt para o {{position}}º lugar",
+      "podium": "No pódio da temporada",
+      "unranked": "Ganhe pontos para entrar no ranking",
+      "ranked": "Sua posição nesta temporada",
+      "finished": "Terminou em {{position}}º",
+      "finishedUnranked": "Não pontuou nesta temporada",
+      "loading": "Carregando sua posição",
+      "seeking": "Buscando sua posição",
+      "rankUp": "Você subiu para o {{position}}º lugar.",
+      "hint": "Mostra sua linha no ranking",
+      "podiumHint": "Mostra o pódio",
+      "label": "Você, {{position}}º lugar, {{points}}. {{status}}.",
+      "labelUnranked": "Você. {{status}}.",
+      "spoken": {
+        "toTop": "Faltam {{points}} para entrar no top {{top}}",
+        "toTopOne": "Falta 1 ponto para entrar no top {{top}}",
+        "toPosition": "Faltam {{points}} para o {{position}}º lugar",
+        "toPositionOne": "Falta 1 ponto para o {{position}}º lugar"
+      }
+    }
   },
   "missions": {
     "title": "Missões",

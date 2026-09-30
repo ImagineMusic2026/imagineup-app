@@ -12,11 +12,16 @@ export const artistKeys = {
   centrals: () => [...artistKeys.all, 'centrals'] as const,
 };
 
-/** Todos os artistas da Imagine, na ordem de destaque. */
-export function useArtistsQuery() {
+/**
+ * Todos os artistas da Imagine, na ordem de destaque. `enabled: false` deixa
+ * para buscar só quando precisar (o nome de uma central que o fã não segue,
+ * no chip do ranking).
+ */
+export function useArtistsQuery({ enabled = true }: { enabled?: boolean } = {}) {
   return useQuery({
     queryKey: artistKeys.list(),
     queryFn: fetchArtists,
+    enabled,
   });
 }
 

@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import type { ReactNode, Ref } from 'react';
 import {
   StyleSheet,
   View,
@@ -44,6 +44,8 @@ export interface CardProps {
   accessibilityState?: AccessibilityState;
   accessibilityValue?: AccessibilityValue;
   testID?: string;
+  /** O card montado, para levar o foco do leitor de tela até ele. */
+  ref?: Ref<View>;
 }
 
 /**
@@ -68,6 +70,7 @@ export function Card({
   accessibilityState,
   accessibilityValue,
   testID,
+  ref,
 }: CardProps) {
   const surface = [
     styles.base,
@@ -80,6 +83,7 @@ export function Card({
   if (onPress) {
     return (
       <PressableScale
+        ref={ref}
         onPress={onPress}
         onLongPress={onLongPress}
         haptic={haptic}
@@ -99,6 +103,7 @@ export function Card({
 
   return (
     <View
+      ref={ref}
       accessible={accessible}
       accessibilityLabel={accessibilityLabel}
       accessibilityHint={accessibilityHint}

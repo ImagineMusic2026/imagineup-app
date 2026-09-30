@@ -4,7 +4,7 @@ import Animated, { useAnimatedStyle, withTiming } from 'react-native-reanimated'
 import { PressableScale } from '@/components/pressable-scale';
 import { maxFontScaleOf, Text } from '@/components/text';
 import { usePrefersReducedMotion } from '@/hooks/use-prefers-reduced-motion';
-import { borderWidths, colors, layout, motion, radii, spacing } from '@/theme';
+import { borderWidths, colors, layout, motion, radii, spacing, typography } from '@/theme';
 import { selectionAccessibility, type SelectionMode } from '@/utils/selection-accessibility';
 
 /**
@@ -31,6 +31,15 @@ export interface ChipProps {
   onLayout?: (event: LayoutChangeEvent) => void;
   testID?: string;
 }
+
+/** Altura desenhada do chip: texto de 14 com 7 em cima e embaixo. */
+export const CHIP_HEIGHT = typography.chip.lineHeight + spacing.chipGap * 2;
+/**
+ * Sobra do alvo de 44 em cima e embaixo do chip desenhado. Quem mede o vão
+ * do protótipo até o chip (título até a fileira, fileira até o que vem
+ * embaixo) desconta esta sobra.
+ */
+export const CHIP_SLACK = (layout.minTouchTarget - CHIP_HEIGHT) / 2;
 
 const TIMING = { duration: motion.duration.base, easing: motion.easing.out };
 

@@ -9,6 +9,7 @@ import { AccessibilityInfo } from 'react-native';
 
 import { missionKeys } from '@/domains/missions';
 import { profileKeys } from '@/domains/profile';
+import { rankingKeys } from '@/domains/ranking';
 import { t } from '@/i18n';
 import { haptics } from '@/services/haptics';
 import { createIdempotencyKey } from '@/utils/id';
@@ -30,12 +31,14 @@ export const agendaMutationKeys = {
 /**
  * Toda presença confirmada ou desfeita pode andar (ou voltar) uma missão de
  * presença, mesmo sem concluí-la e sem render pontos: as missões buscam de
- * novo sempre. O saldo (1e, 1h) só muda quando a presença rendeu pontos.
+ * novo sempre. O saldo (1e, 1h) e o ranking (1f, pontos da temporada) só
+ * mudam quando a presença rendeu pontos.
  */
 function refreshPointsAfterRsvp(client: QueryClient, result: RsvpResult): void {
   void client.invalidateQueries({ queryKey: missionKeys.all });
   if (result.pointsAwarded <= 0) return;
   void client.invalidateQueries({ queryKey: profileKeys.wallet() });
+  void client.invalidateQueries({ queryKey: rankingKeys.all });
 }
 
 /**

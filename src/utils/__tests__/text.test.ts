@@ -1,4 +1,4 @@
-import { initialsOf, matchesSearch, searchKey } from '../text';
+import { firstNameAndInitial, initialsOf, matchesSearch, searchKey } from '../text';
 
 describe('iniciais do avatar sem foto', () => {
   it.each([
@@ -22,6 +22,32 @@ describe('iniciais do avatar sem foto', () => {
 
   it('junta o acento separado antes de pegar a letra', () => {
     expect(initialsOf('Álvaro Neto')).toBe('ÁN');
+  });
+});
+
+describe('nome curto do pódio', () => {
+  it.each([
+    ['Thalita Santos', 'Thalita S.'],
+    ['Davi Lima', 'Davi L.'],
+    ['Maria Clara Souza', 'Maria S.'],
+    ['João da Silva', 'João S.'],
+    ['Júlia Ávila', 'Júlia Á.'],
+    ['Thalita S.', 'Thalita S.'],
+    ['Nenho', 'Nenho'],
+    ['  camila   ribeiro ', 'camila R.'],
+    ["Ana D'Ávila", 'Ana D.'],
+    ['👩‍🎤 Ana', 'Ana'],
+    ['Ana 👩‍🎤', 'Ana'],
+    ['Ana 👩‍🎤 Lima', 'Ana L.'],
+    ['', ''],
+    ['   ', ''],
+  ])('"%s" vira "%s"', (name, expected) => {
+    expect(firstNameAndInitial(name)).toBe(expected);
+  });
+
+  it('junta o acento separado antes de pegar a inicial', () => {
+    // "A" e o acento agudo combinante (U+0301) em separado.
+    expect(firstNameAndInitial(`Ana A${String.fromCharCode(0x301)}vila`)).toBe('Ana Á.');
   });
 });
 
