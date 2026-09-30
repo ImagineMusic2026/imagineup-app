@@ -16,6 +16,7 @@ import Animated, {
 } from 'react-native-reanimated';
 
 import { Icon } from '@/components/icon';
+import { pillMinHeight } from '@/components/pill';
 import { PointsToast } from '@/components/points-toast';
 import { PressableScale } from '@/components/pressable-scale';
 import { MAX_FONT_SCALE, maxFontScaleOf, Text } from '@/components/text';
@@ -29,7 +30,6 @@ import {
   radii,
   spacing,
   tints,
-  typography,
   type TypographyVariant,
 } from '@/theme';
 import { withAlpha } from '@/utils/color';
@@ -39,13 +39,15 @@ import { useIsGoing, useRsvpMutation } from '../queries';
 /**
  * Onde o "Eu vou" aparece:
  * - `chip`: pílula do post de show da home (1b), com borda ciano;
+ * - `chipMd`: a mesma pílula no tamanho das ações do post com comentários,
+ *   ao lado do curtir e do comentar (a `Pill` `md` do compartilhar);
  * - `hero`: botão pequeno rosa do show em destaque da agenda (1m), sem brilho;
  * - `row`: botão contornado das linhas da agenda (1m).
  *
  * Confirmado, os três ficam no ciano tingido com check (proposta padrão da
  * 1m, 8,42:1): ciano é a cor de shows.
  */
-export type RsvpLook = 'chip' | 'hero' | 'row';
+export type RsvpLook = 'chip' | 'chipMd' | 'hero' | 'row';
 
 export interface RsvpButtonProps {
   eventId: string;
@@ -57,7 +59,10 @@ export interface RsvpButtonProps {
   testID?: string;
 }
 
-export type RsvpChipProps = Omit<RsvpButtonProps, 'look'>;
+export interface RsvpChipProps extends Omit<RsvpButtonProps, 'look'> {
+  /** `sm` na linha do post da home (1b); `md` nas ações do post com comentários. */
+  size?: 'sm' | 'md';
+}
 
 interface Tone {
   background: string;
@@ -90,20 +95,36 @@ const GOING: Tone = {
   label: colors.events,
 };
 
-// Medidas da `Pill` `sm` (6 x 11 no protótipo, com a borda de 1).
-const CHIP_MIN_HEIGHT = typography.chipSmall.lineHeight + spacing.xs * 2 + borderWidths.default * 2;
+// Superfície com borda ciano, como a pílula de shows (`Pill` events).
+const CHIP_REST: Tone = {
+  background: colors.surfaceRaised,
+  border: colors.events,
+  label: colors.events,
+};
 
 const LOOKS: Record<RsvpLook, LookStyle> = {
+  // Medidas da `Pill` `sm` (6 x 11 no protótipo, com a borda de 1).
   chip: {
-    // Superfície com borda ciano, como a pílula de shows (`Pill` events).
-    rest: { background: colors.surfaceRaised, border: colors.events, label: colors.events },
+    rest: CHIP_REST,
     labelVariant: 'chipSmall',
     maxFontScale: maxFontScaleOf('chipSmall'),
-    minHeight: CHIP_MIN_HEIGHT,
+    minHeight: pillMinHeight.sm,
     paddingHorizontal: spacing.gridGap,
     radius: radii.pill,
     checkSize: 12,
     checkStroke: 2.6,
+    colorSpace: 'HSV',
+  },
+  // Medidas do "Compartilhar +2" `md` do post (9 x 14 no protótipo), no lugar dele.
+  chipMd: {
+    rest: CHIP_REST,
+    labelVariant: 'chip',
+    maxFontScale: maxFontScaleOf('chip'),
+    minHeight: pillMinHeight.md,
+    paddingHorizontal: spacing.cardPadding,
+    radius: radii.pill,
+    checkSize: 14,
+    checkStroke: 2.2,
     colorSpace: 'HSV',
   },
   hero: {
@@ -300,9 +321,9 @@ export function RsvpButton({
   );
 }
 
-/** "Eu vou" do post de show da home (1b), na pílula. */
-export function RsvpChip(props: RsvpChipProps) {
-  return <RsvpButton {...props} look="chip" />;
+/** "Eu vou" do post de show, na pílula: `sm` na home (1b), `md` no post aberto. */
+export function RsvpChip({ size = 'sm', ...props }: RsvpChipProps) {
+  return <RsvpButton {...props} look={size === 'md' ? 'chipMd' : 'chip'} />;
 }
 
 const styles = StyleSheet.create({

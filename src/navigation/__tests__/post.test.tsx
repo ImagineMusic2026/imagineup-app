@@ -1,0 +1,207 @@
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { Stack } from 'expo-router';
+import { Tabs } from 'expo-router/js-tabs';
+import {
+  act,
+  fireEvent,
+  renderRouter,
+  screen,
+  testRouter,
+  waitFor,
+} from 'expo-router/testing-library';
+import { getDoc, onSnapshot } from 'firebase/firestore';
+import { AccessibilityInfo, Text } from 'react-native';
+
+import HomeRoute from '@/app/(tabs)/(inicio)/index';
+import PostRoute from '@/app/post/[postId]';
+import { missionsFixture } from '@/domains/missions';
+import { postsFixture } from '@/domains/posts/fixtures';
+import { haptics } from '@/services/haptics';
+import { usePreferencesStore } from '@/stores/preferences';
+import { useSessionStore } from '@/stores/session';
+
+// O build do Firebase que o Jest resolve é ESM; as telas só leem o perfil.
+jest.mock('firebase/app', () => ({ FirebaseError: class FirebaseError extends Error {} }));
+jest.mock('firebase/auth', () => ({}));
+jest.mock('firebase/firestore', () => ({
+  doc: jest.fn((_db: unknown, ...path: string[]) => path.join('/')),
+  getDoc: jest.fn(),
+  onSnapshot: jest.fn(),
+}));
+jest.mock('@/firebase', () => ({
+  getFirebaseAuth: () => ({}),
+  getDb: () => ({}),
+  isFirebaseConfigured: true,
+}));
+jest.mock('@/services/api', () => ({
+  api: { get: jest.fn(), post: jest.fn(), request: jest.fn() },
+}));
+// Sem .env no Jest: fixtures.
+jest.mock('@/config/env', () => ({
+  firebaseEnv: null,
+  apiUrl: undefined,
+  dataSource: 'fixtures',
+  firebaseEmulatorHost: undefined,
+}));
+
+// Sem layout nativo no Jest, a FlashList não mede nada e não desenha item nenhum.
+jest.mock('@shopify/flash-list/dist/recyclerview/utils/measureLayout', () => {
+  const actual = jest.requireActual('@shopify/flash-list/dist/recyclerview/utils/measureLayout');
+  const screenSize = { x: 0, y: 0, width: 402, height: 874 };
+  return {
+    ...actual,
+    measureParentSize: jest.fn(() => screenSize),
+    measureFirstChildLayout: jest.fn(() => screenSize),
+    measureItemLayout: jest.fn(() => ({ x: 0, y: 0, width: 402, height: 126 })),
+  };
+});
+
+type Router = ReturnType<typeof renderRouter>;
+type StateNode = { routes?: { name: string; state?: StateNode }[] };
+
+/** Rotas da pilha raiz (o nível de cima é o contêiner `__root`). */
+const rootRoutes = (view: Router): string[] => {
+  const container = view.getRouterState() as StateNode | undefined;
+  return container?.routes?.[0]?.state?.routes?.map((route) => route.name) ?? [];
+};
+
+const CLIP_ROW = new RegExp('^Netto Brito, artista verificado, há 2 horas\\. Saiu o clipe');
+const AUTHOR = 'Netto Brito, artista verificado, Artista Imagine, há 2 horas';
+
+let client: QueryClient;
+
+function RootLayout() {
+  return (
+    <QueryClientProvider client={client}>
+      <Stack screenOptions={{ headerShown: false }} />
+    </QueryClientProvider>
+  );
+}
+
+const label = (text: string) =>
+  function Label() {
+    return <Text>{text}</Text>;
+  };
+
+/** A home e o post de verdade, pelas próprias rotas; o resto vazio. */
+const appTree = {
+  _layout: RootLayout,
+  '(tabs)/_layout': () => <Tabs />,
+  '(tabs)/(inicio,explorar,ranking,perfil)/_layout': {
+    default: () => <Stack screenOptions={{ headerShown: false }} />,
+    unstable_settings: {
+      inicio: { anchor: 'index' },
+      explorar: { anchor: 'explorar' },
+      ranking: { anchor: 'ranking' },
+      perfil: { anchor: 'perfil' },
+    },
+  },
+  '(tabs)/(inicio)/index': HomeRoute,
+  '(tabs)/(explorar)/explorar': label('explore'),
+  '(tabs)/(ranking)/ranking': label('ranking'),
+  '(tabs)/(ranking)/missoes': label('missions'),
+  '(tabs)/(perfil)/perfil': label('profile'),
+  '(tabs)/(inicio,explorar,ranking,perfil)/artista/[artistaId]': label('artist'),
+  'post/[postId]': PostRoute,
+  convidar: label('invite'),
+};
+
+beforeEach(() => {
+  jest.clearAllMocks();
+  postsFixture.reset();
+  missionsFixture.reset();
+  client = new QueryClient({
+    defaultOptions: {
+      queries: { retry: false, gcTime: Infinity },
+      mutations: { retry: false, gcTime: Infinity },
+    },
+  });
+  useSessionStore.setState({
+    status: 'signedIn',
+    user: {
+      uid: 'uid-camila',
+      email: 'camila@teste.imagineup',
+      displayName: 'Camila Ribeiro',
+      photoURL: null,
+    },
+    authHolds: 0,
+  });
+  usePreferencesStore.setState({
+    hydrated: true,
+    hasCompletedOnboarding: true,
+    lastSessionUid: 'uid-camila',
+  });
+  jest.mocked(onSnapshot).mockReturnValue(() => undefined);
+  jest.mocked(getDoc).mockResolvedValue({
+    exists: () => true,
+    data: () => ({ displayName: 'Camila Ribeiro', username: 'camilarib', city: null }),
+  } as never);
+  jest.spyOn(haptics, 'trigger').mockImplementation(() => undefined);
+  jest.spyOn(AccessibilityInfo, 'announceForAccessibility').mockImplementation(() => undefined);
+  jest
+    .spyOn(AccessibilityInfo, 'announceForAccessibilityWithOptions')
+    .mockImplementation(() => undefined);
+});
+
+afterEach(() => {
+  client.clear();
+  jest.restoreAllMocks();
+});
+
+describe('post com comentários', () => {
+  // Link a frio antes dos que navegam: o Jest guarda os segmentos da última navegação.
+  it('aberto por link, mostra o post e os comentários, sem tab bar', async () => {
+    const view = renderRouter(appTree, { initialUrl: '/post/p-clipe' });
+
+    expect(await screen.findByRole('button', { name: AUTHOR })).toBeTruthy();
+    expect(view.getSegments()).toEqual(['post', '[postId]']);
+    expect(
+      await screen.findByLabelText(
+        'Netto Brito, artista verificado, há 48 minutos: Thalita sempre na frente 🔥',
+      ),
+    ).toBeTruthy();
+    // Fora das abas: a pilha raiz só tem o post, e a árvore de abas nem monta.
+    expect(rootRoutes(view)).toEqual(['post/[postId]']);
+  });
+
+  it('aberto por link, o autor abre a central no Início, com a home embaixo', async () => {
+    const view = renderRouter(appTree, { initialUrl: '/post/p-clipe' });
+
+    fireEvent.press(await screen.findByRole('button', { name: AUTHOR }));
+
+    await waitFor(() => expect(view.getPathname()).toBe('/artista/netto-brito'));
+    expect(view.getSegments()).toEqual(['(tabs)', '(inicio)', 'artista', '[artistaId]']);
+    act(() => testRouter.back());
+    await waitFor(() => expect(view.getPathname()).toBe('/'));
+  });
+
+  it('a curtida dada no post aparece no mural da home ao voltar', async () => {
+    const view = renderRouter(appTree, { initialUrl: '/' });
+    fireEvent.press(await screen.findByRole('button', { name: CLIP_ROW }));
+    // Vindo do mural, o post abre por cima das abas, na pilha raiz.
+    await waitFor(() => expect(rootRoutes(view)).toEqual(['(tabs)', 'post/[postId]']));
+
+    fireEvent.press(await screen.findByRole('button', { name: 'Curtir, 4.812 curtidas' }));
+    expect(await screen.findByRole('button', { name: 'Curtir, 4.813 curtidas' })).toBeTruthy();
+    await waitFor(() => expect(client.isMutating()).toBe(0));
+
+    act(() => testRouter.back());
+    expect(await screen.findByLabelText('4.813 curtidas')).toBeTruthy();
+  });
+
+  it('o autor abre a central na aba de onde o fã veio, por cima das abas', async () => {
+    const view = renderRouter(appTree, { initialUrl: '/' });
+    fireEvent.press(await screen.findByRole('button', { name: CLIP_ROW }));
+
+    fireEvent.press(await screen.findByRole('button', { name: AUTHOR }));
+
+    await waitFor(() => expect(view.getPathname()).toBe('/artista/netto-brito'));
+    expect(view.getSegments()).toEqual(['(tabs)', '(inicio)', 'artista', '[artistaId]']);
+    // O post sai e a central abre na aba que já existe, sem outra árvore de abas.
+    expect(rootRoutes(view)).toEqual(['(tabs)']);
+
+    act(() => testRouter.back());
+    await waitFor(() => expect(view.getPathname()).toBe('/'));
+    expect(rootRoutes(view)).toEqual(['(tabs)']);
+  });
+});

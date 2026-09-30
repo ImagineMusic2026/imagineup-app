@@ -22,6 +22,8 @@ export interface PillButtonProps extends Omit<
   accessibilityHint?: string;
   /** Vai no alvo de toque (margem, `alignSelf`), não na pílula. */
   style?: StyleProp<ViewStyle>;
+  /** Vai no desenho da pílula, como o padding mais largo do compartilhar do post. */
+  pillStyle?: StyleProp<ViewStyle>;
   testID?: string;
 }
 
@@ -38,6 +40,7 @@ export function PillButton({
   accessibilityLabel,
   accessibilityHint,
   style,
+  pillStyle,
   testID,
   ...pill
 }: PillButtonProps) {
@@ -52,7 +55,7 @@ export function PillButton({
       testID={testID}
       style={[styles.target, disabled && styles.inactive, style]}
     >
-      <Pill {...pill} />
+      <Pill {...pill} style={pillStyle} />
     </PressableScale>
   );
 }

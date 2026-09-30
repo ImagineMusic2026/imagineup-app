@@ -1,6 +1,19 @@
 import { nextSaturday, set } from 'date-fns';
 
-import type { Page, Post, PostArtist } from './types';
+import { missionsFixture } from '@/domains/missions';
+import { ApiError } from '@/services/api/errors';
+import { fixtureWallet, onFixtureSessionEnd } from '@/services/fixtures';
+
+import { COMMENT_MAX_LENGTH } from './schemas';
+import type {
+  CommentAuthor,
+  Page,
+  PointsAward,
+  Post,
+  PostArtist,
+  PostComment,
+  PostMedia,
+} from './types';
 
 /**
  * Posts de exemplo do mural enquanto a API (M2) não existe. Os dois primeiros
@@ -8,15 +21,26 @@ import type { Page, Post, PostArtist } from './types';
  * playlist (fora do contrato), o post de show do Nenho com "Eu vou" (aprovado
  * em 2026-09-29). Os outros são exemplo, para a paginação e a grade da 1d.
  * Sem foto: as miniaturas mostram o placeholder de marca pelo id do post.
+ *
+ * Os comentários também são exemplo: no clipe, os três fãs do pódio e a
+ * resposta do Netto; o resto sai de uma lista de nomes e frases, até a
+ * contagem do post. Curtir e comentar mudam um estado em memória (o
+ * "servidor" das fixtures), que volta ao início quando a sessão termina.
  */
 
 export const FEED_PAGE_SIZE = 5;
+export const COMMENTS_PAGE_SIZE = 10;
 
-const HOUR_MS = 60 * 60 * 1000;
+/** Pontos por comentário (exemplo; o valor de verdade vem do painel). */
+export const COMMENT_POINTS = 2;
+
+const MINUTE_MS = 60 * 1000;
+const HOUR_MS = 60 * MINUTE_MS;
 // Pontos por pessoa que abre o link compartilhado (exemplo; vem do painel).
 const SHARE_POINTS = 2;
-const VIDEO_ASPECT = 16 / 9;
-const PHOTO_ASPECT = 4 / 5;
+// Medidas de exemplo: vídeo deitado e foto em pé, como o Instagram corta.
+const VIDEO_SIZE = { width: 1920, height: 1080 } as const;
+const PHOTO_SIZE = { width: 1080, height: 1350 } as const;
 
 const NETTO: PostArtist = {
   id: 'netto-brito',
@@ -35,6 +59,12 @@ const JUNINHO: PostArtist = {
 /** "Sábado tem show": o sábado seguinte a `now`, às 22 h. */
 function nextSaturdayNight(now: Date): Date {
   return set(nextSaturday(now), { hours: 22, minutes: 0, seconds: 0, milliseconds: 0 });
+}
+
+function mediaOf(kind: Post['kind']): PostMedia | null {
+  if (kind !== 'photo' && kind !== 'video') return null;
+  const size = kind === 'video' ? VIDEO_SIZE : PHOTO_SIZE;
+  return { url: null, thumbnailUrl: null, ...size };
 }
 
 interface Sample {
@@ -122,8 +152,8 @@ const SAMPLES: readonly Sample[] = [
   },
 ];
 
-/** Mural inteiro, do mais novo ao mais antigo, com datas relativas a `now`. Lista nova a cada chamada. */
-export function buildPostsFixture(now: Date): Post[] {
+/** O mural como o servidor guardou, antes das curtidas e dos comentários do fã. */
+function buildBasePosts(now: Date): Post[] {
   const ago = (ms: number) => new Date(now.getTime() - ms).toISOString();
 
   const clip: Post = {
@@ -131,7 +161,7 @@ export function buildPostsFixture(now: Date): Post[] {
     kind: 'video',
     artist: NETTO,
     text: 'Saiu o clipe de “Sonho de Amor”, gravado no São João de Irará.',
-    media: { thumbnailUrl: null, aspectRatio: VIDEO_ASPECT },
+    media: mediaOf('video'),
     event: null,
     createdAt: ago(2 * HOUR_MS),
     likeCount: 4_812,
@@ -162,10 +192,7 @@ export function buildPostsFixture(now: Date): Post[] {
   const rest = SAMPLES.map(({ hoursAgo, kind, ...sample }): Post => ({
     ...sample,
     kind,
-    media:
-      kind === 'text'
-        ? null
-        : { thumbnailUrl: null, aspectRatio: kind === 'video' ? VIDEO_ASPECT : PHOTO_ASPECT },
+    media: mediaOf(kind),
     event: null,
     createdAt: ago(hoursAgo * HOUR_MS),
     likedByMe: false,
@@ -175,13 +202,254 @@ export function buildPostsFixture(now: Date): Post[] {
   return [clip, show, ...rest] satisfies Post[];
 }
 
-/** Uma página do mural: o cursor é a posição do primeiro post da página. */
-export function buildFeedPageFixture(now: Date, cursor: string | null): Page<Post> {
-  const posts = buildPostsFixture(now);
-  const start = cursor === null ? 0 : Math.max(0, Number.parseInt(cursor, 10) || 0);
-  const end = start + FEED_PAGE_SIZE;
+// "Servidor" das fixtures: o que o fã fez nesta abertura do app.
+let likes = new Map<string, boolean>();
+/** Comentários do fã por post, do mais novo ao mais antigo. */
+let fanComments = new Map<string, PostComment[]>();
+/** Resposta de cada chave de idempotência: a mesma chave de novo não conta outra vez. */
+let answered = new Map<string, PointsAward | (PostComment & PointsAward)>();
+let fanCommentSeq = 0;
+
+function withServerState(post: Post): Post {
+  const liked = likes.get(post.id);
+  const extra = fanComments.get(post.id)?.length ?? 0;
+  const likeDelta = liked === undefined || liked === post.likedByMe ? 0 : liked ? 1 : -1;
   return {
-    items: posts.slice(start, end),
-    nextCursor: end < posts.length ? String(end) : null,
+    ...post,
+    likedByMe: liked ?? post.likedByMe,
+    likeCount: Math.max(0, post.likeCount + likeDelta),
+    commentCount: post.commentCount + extra,
   };
 }
+
+/**
+ * Mural inteiro, do mais novo ao mais antigo, com datas relativas a `now` e
+ * as curtidas e os comentários que o fã fez. Lista nova a cada chamada.
+ */
+export function buildPostsFixture(now: Date): Post[] {
+  return buildBasePosts(now).map(withServerState);
+}
+
+/** Uma página do mural: o cursor é a posição do primeiro post da página. */
+export function buildFeedPageFixture(now: Date, cursor: string | null): Page<Post> {
+  return pageOf(buildPostsFixture(now), cursor, FEED_PAGE_SIZE);
+}
+
+function pageOf<T>(items: readonly T[], cursor: string | null, size: number): Page<T> {
+  const start = cursor === null ? 0 : Math.max(0, Number.parseInt(cursor, 10) || 0);
+  const end = start + size;
+  return {
+    items: items.slice(start, end),
+    nextCursor: end < items.length ? String(end) : null,
+  };
+}
+
+function findBasePost(now: Date, postId: string): Post {
+  const post = buildBasePosts(now).find((item) => item.id === postId);
+  if (!post) throw new ApiError('notFound', `Post ${postId} não existe nas fixtures.`, 404);
+  return post;
+}
+
+/** O post como a API devolveria, ou 404 como ela. */
+export function findPostFixture(now: Date, postId: string): Post {
+  return withServerState(findBasePost(now, postId));
+}
+
+interface NamedComment {
+  id: string;
+  authorId: string;
+  authorName: string;
+  authorIsArtist?: boolean;
+  text: string;
+  minutesAgo: number;
+}
+
+/** Os comentários do topo do clipe: os três do pódio (1f) e a resposta do Netto. */
+const CLIP_COMMENTS: readonly NamedComment[] = [
+  {
+    id: 'c-clipe-netto',
+    authorId: NETTO.id,
+    authorName: NETTO.name,
+    authorIsArtist: true,
+    text: 'Thalita sempre na frente 🔥',
+    minutesAgo: 48,
+  },
+  {
+    id: 'c-clipe-thalita',
+    authorId: 'fa-thalita',
+    authorName: 'Thalita S.',
+    text: 'Já mandei pro grupo da família inteira, Irará em peso! 💃',
+    minutesAgo: 60,
+  },
+  {
+    id: 'c-clipe-davi',
+    authorId: 'fa-davi',
+    authorName: 'Davi Lima',
+    text: 'Esse clipe ficou lindo demais. Já vi umas dez vezes.',
+    minutesAgo: 66,
+  },
+  {
+    id: 'c-clipe-jean',
+    authorId: 'fa-jean',
+    authorName: 'Jean P.',
+    text: 'Irará nunca mais vai ser a mesma depois desse São João.',
+    minutesAgo: 73,
+  },
+];
+
+const FANS: readonly { id: string; name: string }[] = [
+  { id: 'fa-maria-clara', name: 'Maria Clara S.' },
+  { id: 'fa-alan', name: 'Alan Ferreira' },
+  { id: 'fa-bruna', name: 'Bruna Andrade' },
+  { id: 'fa-igor', name: 'Igor N.' },
+  { id: 'fa-leila', name: 'Leila Matos' },
+  { id: 'fa-rafael', name: 'Rafael Costa' },
+  { id: 'fa-julia', name: 'Júlia Ramos' },
+  { id: 'fa-pedro', name: 'Pedro H.' },
+  { id: 'fa-carla', name: 'Carla M.' },
+  { id: 'fa-diego', name: 'Diego S.' },
+  { id: 'fa-eduarda', name: 'Duda Rocha' },
+];
+
+const FAN_TEXTS: readonly string[] = [
+  'Que música boa demais!',
+  'Tô ouvindo sem parar desde que saiu.',
+  'Vem pra Salvador, por favor!',
+  'Compartilhei com a galera toda.',
+  'Arrepiei aqui.',
+  'Quero essa no show!',
+  'Orgulho de acompanhar desde o começo.',
+  'Já tá no repeat.',
+  'Chama que a Bahia vai em peso!',
+  'Que voz, meu Deus.',
+  'Esse refrão não sai da minha cabeça.',
+  'Melhor da semana, sem dúvida.',
+  'Tô contando os dias pro próximo show.',
+];
+
+// Primeiro comentário genérico: logo depois dos do topo ou, sem eles, 1 min atrás.
+const GENERIC_START_GAP_MINUTES = 1;
+
+/**
+ * Os comentários do servidor para um post, do mais novo ao mais antigo, até a
+ * contagem dele. Os genéricos se espalham entre o último do topo e a hora do
+ * post; nome e frase saem da posição, para a lista ser sempre a mesma.
+ */
+function buildBaseComments(now: Date, post: Post): PostComment[] {
+  const minutesAgo = (minutes: number) =>
+    new Date(now.getTime() - minutes * MINUTE_MS).toISOString();
+  const named = post.id === 'p-clipe' ? CLIP_COMMENTS : [];
+  const top = named.map((comment): PostComment => ({
+    id: comment.id,
+    postId: post.id,
+    authorId: comment.authorId,
+    authorName: comment.authorName,
+    authorAvatarUrl: null,
+    authorIsArtist: comment.authorIsArtist ?? false,
+    text: comment.text,
+    createdAt: minutesAgo(comment.minutesAgo),
+  }));
+
+  const genericCount = Math.max(0, post.commentCount - top.length);
+  const newest = (named.at(-1)?.minutesAgo ?? 0) + GENERIC_START_GAP_MINUTES;
+  const postAge = (now.getTime() - new Date(post.createdAt).getTime()) / MINUTE_MS;
+  const oldest = Math.max(newest, postAge - GENERIC_START_GAP_MINUTES);
+  const step = genericCount > 1 ? (oldest - newest) / (genericCount - 1) : 0;
+  // O post muda a ordem dos nomes e das frases, para os posts não repetirem a mesma conversa.
+  const seed = post.id.length;
+
+  const generic = Array.from({ length: genericCount }, (_, index): PostComment => {
+    const fan = FANS[(index + seed) % FANS.length] as (typeof FANS)[number];
+    return {
+      id: `${post.id}-c${index + 1}`,
+      postId: post.id,
+      authorId: fan.id,
+      authorName: fan.name,
+      authorAvatarUrl: null,
+      authorIsArtist: false,
+      text: FAN_TEXTS[(index * 5 + seed) % FAN_TEXTS.length] as string,
+      createdAt: minutesAgo(newest + index * step),
+    };
+  });
+
+  return [...top, ...generic];
+}
+
+/**
+ * Uma página de comentários, do mais novo ao mais antigo: os do fã primeiro
+ * (os mais novos), depois os do servidor. O cursor é a posição do primeiro da
+ * página, e post que não existe dá 404, como a API.
+ */
+export function buildCommentsPageFixture(
+  now: Date,
+  postId: string,
+  cursor: string | null,
+): Page<PostComment> {
+  const post = findBasePost(now, postId);
+  const all = [...(fanComments.get(postId) ?? []), ...buildBaseComments(now, post)];
+  return pageOf(all, cursor, COMMENTS_PAGE_SIZE);
+}
+
+export interface FixtureCommentInput {
+  postId: string;
+  text: string;
+  idempotencyKey: string;
+  /** A API tira nome e foto da sessão; as fixtures recebem do app. */
+  author: CommentAuthor;
+}
+
+/**
+ * O servidor dos posts nas fixtures: curtir e comentar, com a chave de
+ * idempotência e as recusas que a API faria. Comentar rende pontos (exemplo)
+ * e conta nas missões de comentário.
+ */
+export const postsFixture = {
+  setLike(postId: string, liked: boolean, idempotencyKey: string, now: Date): PointsAward {
+    const previous = answered.get(idempotencyKey);
+    if (previous) return { pointsAwarded: previous.pointsAwarded };
+    findBasePost(now, postId);
+    likes.set(postId, liked);
+    const result: PointsAward = { pointsAwarded: 0 };
+    answered.set(idempotencyKey, result);
+    return { ...result };
+  },
+
+  addComment(input: FixtureCommentInput, now: Date): PostComment & PointsAward {
+    const previous = answered.get(input.idempotencyKey);
+    if (previous && 'id' in previous) return { ...previous };
+
+    findBasePost(now, input.postId);
+    const text = input.text.trim();
+    if (text.length === 0 || text.length > COMMENT_MAX_LENGTH) {
+      throw new ApiError('validation', 'Comentário vazio ou longo demais.', 422);
+    }
+
+    fanCommentSeq += 1;
+    const comment: PostComment = {
+      id: `c-fa-${fanCommentSeq}`,
+      postId: input.postId,
+      authorId: input.author.id,
+      authorName: input.author.name,
+      authorAvatarUrl: input.author.photoURL,
+      authorIsArtist: false,
+      text,
+      createdAt: now.toISOString(),
+    };
+    fanComments.set(input.postId, [comment, ...(fanComments.get(input.postId) ?? [])]);
+    fixtureWallet.earn(COMMENT_POINTS);
+    const pointsAwarded = COMMENT_POINTS + missionsFixture.record('comment', now);
+    const result = { ...comment, pointsAwarded };
+    answered.set(input.idempotencyKey, result);
+    return { ...result };
+  },
+
+  /** Volta ao início (fim da sessão e testes). As missões voltam com `missionsFixture.reset()`. */
+  reset(): void {
+    likes = new Map();
+    fanComments = new Map();
+    answered = new Map();
+    fanCommentSeq = 0;
+  },
+};
+
+onFixtureSessionEnd(() => postsFixture.reset());
