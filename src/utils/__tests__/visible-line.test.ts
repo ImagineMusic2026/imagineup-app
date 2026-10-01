@@ -1,4 +1,4 @@
-import { cleanLine, isVisibleLine } from '../visible-line';
+import { cleanLine, DISPLAY_NAME_MAX, displayNameOrNull, isVisibleLine } from '../visible-line';
 
 // Os mesmos casos de functions/src/visible-line.test.ts e de
 // tests/firestore-rules.test.ts: as três validações precisam concordar.
@@ -98,5 +98,26 @@ describe('limpeza do texto digitado', () => {
   it('só tira as pontas: o que sobra no meio continua sendo validado', () => {
     expect(cleanLine('A\nB')).toBe('A\nB');
     expect(isVisibleLine(cleanLine('A\nB'))).toBe(false);
+  });
+});
+
+describe('nome que as regras deixam gravar no perfil', () => {
+  it.each([
+    ['  Camila Ribeiro ', 'Camila Ribeiro'],
+    ['Cámila'.normalize('NFD'), 'Cámila'],
+    ['x'.repeat(DISPLAY_NAME_MAX), 'x'.repeat(DISPLAY_NAME_MAX)],
+  ])('%j vira %j', (name, expected) => {
+    expect(displayNameOrNull(name)).toBe(expected);
+  });
+
+  it.each([
+    ['sem nome', null],
+    ['vazio', ''],
+    ['só espaços', '   '],
+    ['longo demais', 'x'.repeat(DISPLAY_NAME_MAX + 1)],
+    ['com quebra de linha', 'Camila\nRibeiro'],
+    ['só de caracteres em branco', 'ㅤㅤ'],
+  ])('%s fica null', (_, name) => {
+    expect(displayNameOrNull(name)).toBeNull();
   });
 });

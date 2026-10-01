@@ -54,6 +54,11 @@ export async function createProfile(
   });
 }
 
+/** true se users/{uid} já existe: a entrega repetida do cadastro não espera o nome. */
+export async function profileExists(db: Firestore, uid: string): Promise<boolean> {
+  return (await db.collection('users').doc(uid).get()).exists;
+}
+
 /**
  * true se a conta é só da equipe do painel: staff/{uid} existe, em qualquer
  * status. O aceite do convite grava essa marca antes de criar a conta. A

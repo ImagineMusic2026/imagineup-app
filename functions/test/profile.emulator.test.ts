@@ -4,7 +4,7 @@ import { getFirestore, Timestamp } from 'firebase-admin/firestore';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
-import { handleUserCreated, type FindUser } from '../src/handlers';
+import { handleUserCreated, NAME_WAIT_MS, type FindUser } from '../src/handlers';
 import { createProfile, deleteUserData } from '../src/store';
 
 /**
@@ -105,7 +105,29 @@ describe('cadastro (onUserCreated)', () => {
     expect(profile.username).toMatch(/^camilarib\d{2}$/);
   });
 
+  it('conta criada sem nome e com o nome posto logo depois: o perfil nasce com ele e o @ dele', async () => {
+    // Aquece o gatilho: com o worker frio (teste rodando sozinho, Windows, CI
+    // lento), ele leva segundos para começar e já leria a conta com o nome.
+    const warm = await auth.createUser({ email: newEmail(), displayName: 'Bruna Andrade' });
+    await profileOf(warm.uid);
+
+    // Como no app: o SDK JS cria a conta sem nome, e o nome chega depois, no
+    // updateProfile. A função lê a conta ainda sem nome e espera por ele. Aos
+    // 2,5 s, o nome cai entre as releituras de 1,75 s e de 3,75 s
+    // (NAME_WAIT_MS): um gatilho que comece até uns 2,5 s atrasado ainda lê a
+    // conta sem nome, e a última releitura pega o nome com folga. A espera
+    // de verdade, sem depender do gatilho, é provada em handleUserCreated.
+    const user = await auth.createUser({ email: newEmail(), password: 'segredo123' });
+    await sleep(2_500);
+    await auth.updateUser(user.uid, { displayName: 'Larissa Moura' });
+
+    const profile = await profileOf(user.uid);
+    expect(profile).toMatchObject({ displayName: 'Larissa Moura', username: 'larissamou' });
+    expect(await reservationsOf(user.uid)).toEqual(['larissamou']);
+  });
+
   it('conta sem nome ganha @ "fa" com números e nome vazio', async () => {
+    // A função espera o nome (NAME_WAIT_MS) e, sem ele, cria o perfil assim mesmo.
     const user = await auth.createUser({ email: newEmail(), password: 'segredo123' });
     const profile = await profileOf(user.uid);
     expect(profile.displayName).toBeNull();
@@ -204,6 +226,31 @@ describe('handleUserCreated', () => {
     expect(result).toEqual({ status: 'undone' });
     expect((await db.doc('users/reentrega').get()).exists).toBe(false);
     expect(await reservationsOf('reentrega')).toEqual([]);
+  });
+
+  it('conta sem nome: relê a conta depois das esperas de verdade e o perfil nasce com o nome', async () => {
+    // Sem nome nas duas primeiras leituras e com ele na terceira; a quarta é a
+    // conferência depois de gravar. A espera é a padrão (NAME_WAIT_MS), não a
+    // falsa dos testes unitários, e não depende de quando o gatilho começa.
+    const names = [null, null, 'Larissa Moura', 'Larissa Moura'];
+    const readAt: number[] = [];
+    const findUser: FindUser = async () => {
+      readAt.push(performance.now());
+      return { displayName: names[readAt.length - 1] ?? null };
+    };
+
+    const result = await handleUserCreated(db, findUser, { uid: 'nome-na-espera' });
+
+    expect(result).toEqual({ status: 'created', username: 'larissamou' });
+    expect(readAt).toHaveLength(4);
+    // O timer do Node pode disparar um tico antes do pedido: 10 ms de folga.
+    expect(readAt[1] - readAt[0]).toBeGreaterThanOrEqual(NAME_WAIT_MS[0] - 10);
+    expect(readAt[2] - readAt[1]).toBeGreaterThanOrEqual(NAME_WAIT_MS[1] - 10);
+    expect((await db.doc('users/nome-na-espera').get()).data()).toMatchObject({
+      displayName: 'Larissa Moura',
+      username: 'larissamou',
+    });
+    expect(await reservationsOf('nome-na-espera')).toEqual(['larissamou']);
   });
 
   it('usa o nome de agora do Auth, que o app grava logo depois de criar a conta', async () => {

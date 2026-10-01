@@ -1,12 +1,11 @@
 import { z } from 'zod';
 
 import { t } from '@/i18n';
-import { cleanLine, isVisibleLine } from '@/utils/visible-line';
+import { cleanLine, DISPLAY_NAME_MAX, isVisibleLine } from '@/utils/visible-line';
 
 export const PASSWORD_MIN_LENGTH = 6;
 
-/** Limite do nome no `firestore.rules` e na função de cadastro. */
-export const DISPLAY_NAME_MAX = 60;
+export { DISPLAY_NAME_MAX };
 
 // Normaliza antes de validar: no zod 4 o formato do z.email() roda antes de
 // um .trim() encadeado, e o espaço da sugestão do teclado barraria o login.
