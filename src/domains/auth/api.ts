@@ -11,7 +11,7 @@ import {
   updateProfile,
   type User,
 } from 'firebase/auth';
-import { doc, onSnapshot } from 'firebase/firestore';
+import { doc, onSnapshot, serverTimestamp, updateDoc } from 'firebase/firestore';
 
 import { dataSource } from '@/config/env';
 import { clearPendingInvite, readPendingInvite } from '@/domains/invites';
@@ -19,6 +19,7 @@ import { getDb, getFirebaseAuth, isFirebaseConfigured } from '@/firebase';
 import type { TranslationKey } from '@/i18n';
 import { api } from '@/services/api';
 import type { SessionUser } from '@/stores/session';
+import { displayNameOrNull } from '@/utils/visible-line';
 
 import { PROFILE_WAIT_MS } from './consts';
 
@@ -45,8 +46,9 @@ export interface SignUpInput {
 /**
  * Cria a conta e põe o nome nela logo em seguida. O SDK JS cria a conta sem
  * nome, e a função de cadastro (`createUserProfile`) lê o nome do registro
- * atual do Auth para montar o perfil e o @: quanto antes o nome chegar, menos
- * chance de o @ virar `fa` com dígitos.
+ * atual do Auth para montar o perfil e o @, esperando por ele alguns segundos:
+ * se o nome chegar depois disso, o @ vira `fa` com dígitos (e o cadastro tenta
+ * gravar o nome no perfil por `fillMissingProfileName`).
  *
  * A conta já nasce logada. Se só o nome falhar (rede caindo no meio), o
  * cadastro segue: o perfil nasce sem nome e o fã preenche depois.
@@ -65,37 +67,81 @@ export async function signUpWithEmail({
   return toSessionUser(user);
 }
 
+/** O que o cadastro lê do perfil que acabou de nascer. */
+export interface NewProfile {
+  displayName: string | null;
+}
+
 /**
  * Espera o perfil (`users/{uid}`) aparecer: ele nasce na função de cadastro,
- * alguns segundos depois da conta. Devolve `true` quando ele existe e `false`
+ * alguns segundos depois da conta. Devolve o perfil quando ele existe e `null`
  * quando o prazo acaba ou a leitura falha; nos dois casos o app segue, e o
  * perfil chega depois.
  */
-export function waitForProfile(uid: string, timeoutMs: number = PROFILE_WAIT_MS): Promise<boolean> {
+export function waitForProfile(
+  uid: string,
+  timeoutMs: number = PROFILE_WAIT_MS,
+): Promise<NewProfile | null> {
   return new Promise((resolve) => {
     let settled = false;
     let unsubscribe: (() => void) | null = null;
 
-    const finish = (found: boolean): void => {
+    const finish = (profile: NewProfile | null): void => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
       unsubscribe?.();
-      resolve(found);
+      resolve(profile);
     };
 
-    const timer = setTimeout(() => finish(false), timeoutMs);
+    const timer = setTimeout(() => finish(null), timeoutMs);
     const stop = onSnapshot(
       doc(getDb(), 'users', uid),
       (snapshot) => {
-        if (snapshot.exists()) finish(true);
+        if (!snapshot.exists()) return;
+        const { displayName } = snapshot.data();
+        finish({
+          displayName: typeof displayName === 'string' && displayName ? displayName : null,
+        });
       },
-      () => finish(false),
+      () => finish(null),
     );
     // Se já terminou antes de o listener existir, desliga na hora.
     if (settled) stop();
     else unsubscribe = stop;
   });
+}
+
+/**
+ * Rede de segurança da corrida do cadastro. A função de cadastro espera o nome
+ * por alguns segundos (`NAME_WAIT_MS` em `functions/src/handlers.ts`); se o
+ * `updateProfile` chegou depois disso, o perfil nasce sem nome. Aqui o fã grava
+ * o nome da sessão pelo caminho que as regras dão a ele (`displayName` com
+ * `updatedAt` do servidor). É a primeira edição do perfil, então a trava de
+ * 10 s não pega.
+ *
+ * O @ não muda: ele é do servidor (o fã não grava `username` nem `usernames/`)
+ * e continua `fa` com dígitos.
+ *
+ * Só grava com o perfil já nascido, sem nome, e com um nome na sessão que as
+ * regras aceitam (linha visível de até 60). Devolve se gravou. É uma tentativa
+ * só, no cadastro: perfil que chega depois do `PROFILE_WAIT_MS` não recebe o
+ * nome, e a recusa não tenta de novo. Quem chama não espera: sem rede, a
+ * gravação fica na fila do SDK e não segura o cadastro, mas essa fila fica só
+ * na memória no React Native e se perde se o app fechar antes de a rede voltar.
+ */
+export async function fillMissingProfileName(
+  uid: string,
+  profile: NewProfile | null,
+  sessionName: string | null,
+): Promise<boolean> {
+  const name = displayNameOrNull(sessionName);
+  if (!profile || profile.displayName !== null || !name) return false;
+  await updateDoc(doc(getDb(), 'users', uid), {
+    displayName: name,
+    updatedAt: serverTimestamp(),
+  });
+  return true;
 }
 
 /**

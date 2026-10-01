@@ -6,7 +6,13 @@ import { haptics } from '@/services/haptics';
 import { usePreferencesStore } from '@/stores/preferences';
 import { useSessionStore } from '@/stores/session';
 
-import { authErrorMessageKey, claimPendingInvite, signUpWithEmail, waitForProfile } from '../api';
+import {
+  authErrorMessageKey,
+  claimPendingInvite,
+  fillMissingProfileName,
+  signUpWithEmail,
+  waitForProfile,
+} from '../api';
 import type { SignUpForm } from '../schemas';
 import { playAuthExit } from './use-auth-exit';
 
@@ -14,7 +20,9 @@ import { playAuthExit } from './use-auth-exit';
  * Cadastro por e-mail e senha:
  * 1. cria a conta e põe o nome nela logo em seguida (a função de cadastro lê
  *    o nome atual da conta para gerar o @);
- * 2. espera o perfil (`users/{uid}`) nascer, com prazo;
+ * 2. espera o perfil (`users/{uid}`) nascer, com prazo; se ele nasceu sem
+ *    nome (o nome chegou depois da espera da função), grava o nome da sessão
+ *    nele, sem esperar a gravação;
  * 3. apaga as telas de conta em fade e solta o fã;
  * 4. manda o convite guardado, se houver, já sem segurar o fã.
  *
@@ -34,7 +42,11 @@ export function useSignUp() {
         // O listener de sessão já pode ter gravado a conta sem nome; o nome
         // novo vale para as telas desde já.
         useSessionStore.getState().setSignedIn(user);
-        await waitForProfile(user.uid);
+        const profile = await waitForProfile(user.uid);
+        // Sem await: a falha (ou a falta de rede) não segura nem derruba o cadastro.
+        void fillMissingProfileName(user.uid, profile, user.displayName).catch((error: unknown) => {
+          if (__DEV__) console.warn('[auth] O nome não foi para o perfil no cadastro.', error);
+        });
         haptics.trigger('success');
         await playAuthExit();
       } finally {

@@ -46,8 +46,9 @@ initializeApp();
 /**
  * O perfil do fã nasce aqui, a cada conta nova (e-mail e senha, Apple, Google
  * ou criada pelo servidor). Nova tentativa no erro. O app espera users/{uid}
- * aparecer depois do cadastro: leva alguns segundos. Conta da equipe do
- * painel (staff/{uid}) fica sem perfil de fã.
+ * aparecer depois do cadastro: leva alguns segundos, e conta que nasce sem nome
+ * espera mais um pouco por ele (NAME_WAIT_MS, em handlers.ts). Conta da equipe
+ * do painel (staff/{uid}) fica sem perfil de fã.
  */
 export const createUserProfile = onUserCreated({ retry: true }, async (event) => {
   const result = await handleUserCreated(getFirestore(), findUser, event.data);

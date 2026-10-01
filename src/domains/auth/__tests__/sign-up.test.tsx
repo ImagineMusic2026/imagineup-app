@@ -8,7 +8,7 @@ import {
   type User,
   type UserCredential,
 } from 'firebase/auth';
-import { onSnapshot } from 'firebase/firestore';
+import { onSnapshot, updateDoc } from 'firebase/firestore';
 import type { ReactNode } from 'react';
 
 import { readPendingInvite, savePendingInvite } from '@/domains/invites';
@@ -16,7 +16,13 @@ import { haptics } from '@/services/haptics';
 import { usePreferencesStore } from '@/stores/preferences';
 import { useSessionStore } from '@/stores/session';
 
-import { authErrorMessageKey, sendPasswordReset, signUpWithEmail, waitForProfile } from '../api';
+import {
+  authErrorMessageKey,
+  fillMissingProfileName,
+  sendPasswordReset,
+  signUpWithEmail,
+  waitForProfile,
+} from '../api';
 import { usePasswordReset } from '../hooks/use-password-reset';
 import { useSignUp } from '../hooks/use-sign-up';
 
@@ -43,6 +49,8 @@ jest.mock('firebase/auth', () => ({
 jest.mock('firebase/firestore', () => ({
   doc: jest.fn((_db: unknown, ...path: string[]) => path.join('/')),
   onSnapshot: jest.fn(),
+  updateDoc: jest.fn(),
+  serverTimestamp: jest.fn(() => 'agora-do-servidor'),
 }));
 
 // Sem .env no Jest: a API fica de fora (fixtures) e o aviso de configuração não polui a saída.
@@ -59,11 +67,15 @@ jest.mock('@/firebase', () => ({
   isFirebaseConfigured: true,
 }));
 
-type SnapshotListener = (snapshot: { exists: () => boolean }) => void;
+type SnapshotListener = (snapshot: {
+  exists: () => boolean;
+  data: () => { displayName?: unknown };
+}) => void;
 
 const createUser = jest.mocked(createUserWithEmailAndPassword);
 const setProfile = jest.mocked(updateProfile);
 const listen = jest.mocked(onSnapshot);
+const writeProfile = jest.mocked(updateDoc);
 const sendReset = jest.mocked(sendPasswordResetEmail);
 
 const form = { name: 'Beatriz Santos', email: 'beatriz@x.com', password: 'senha-123' };
@@ -95,8 +107,10 @@ function fakeFirebase() {
   return {
     calls,
     unsubscribe,
-    profileArrives: () => profileListener?.({ exists: () => true }),
-    profileMissing: () => profileListener?.({ exists: () => false }),
+    /** O perfil nasce na função de cadastro, com o nome que ela leu da conta. */
+    profileArrives: (displayName: string | null = form.name) =>
+      profileListener?.({ exists: () => true, data: () => ({ displayName }) }),
+    profileMissing: () => profileListener?.({ exists: () => false, data: () => ({}) }),
     readFails: () => profileError?.(),
   };
 }
@@ -224,15 +238,26 @@ describe('espera do perfil (waitForProfile)', () => {
     firebase.profileMissing();
     jest.advanceTimersByTime(1);
 
-    await expect(waiting).resolves.toBe(false);
+    await expect(waiting).resolves.toBeNull();
     expect(firebase.unsubscribe).toHaveBeenCalledTimes(1);
+  });
+
+  it('devolve o nome com que o perfil nasceu', async () => {
+    const firebase = fakeFirebase();
+    const withName = waitForProfile('nova');
+    firebase.profileArrives('Beatriz Santos');
+    await expect(withName).resolves.toEqual({ displayName: 'Beatriz Santos' });
+
+    const withoutName = waitForProfile('nova');
+    firebase.profileArrives(null);
+    await expect(withoutName).resolves.toEqual({ displayName: null });
   });
 
   it('se a leitura falhar, libera na hora', async () => {
     const firebase = fakeFirebase();
     const waiting = waitForProfile('nova');
     firebase.readFails();
-    await expect(waiting).resolves.toBe(false);
+    await expect(waiting).resolves.toBeNull();
     expect(firebase.unsubscribe).toHaveBeenCalledTimes(1);
   });
 
@@ -242,8 +267,126 @@ describe('espera do perfil (waitForProfile)', () => {
     const waiting = waitForProfile('nova', 1_000);
     jest.advanceTimersByTime(1_000);
     firebase.profileArrives();
-    await expect(waiting).resolves.toBe(false);
+    await expect(waiting).resolves.toBeNull();
     expect(firebase.unsubscribe).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('nome que faltou no perfil (rede de segurança da corrida do cadastro)', () => {
+  // O perfil nasce sem nome quando o updateProfile chega depois da espera da
+  // função de cadastro. O app grava o nome da sessão; o @ continua o do servidor.
+
+  it('perfil que nasceu sem nome recebe o nome da sessão, com o updatedAt do servidor', async () => {
+    const firebase = fakeFirebase();
+    writeProfile.mockResolvedValueOnce(undefined);
+    const { result } = renderHook(() => useSignUp(), { wrapper });
+
+    act(() => result.current.mutate(form));
+    await waitFor(() => expect(listen).toHaveBeenCalled());
+    act(() => firebase.profileArrives(null));
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(writeProfile).toHaveBeenCalledTimes(1);
+    expect(writeProfile).toHaveBeenCalledWith('users/nova', {
+      displayName: 'Beatriz Santos',
+      updatedAt: 'agora-do-servidor',
+    });
+  });
+
+  it('perfil que já nasceu com nome não é regravado', async () => {
+    const firebase = fakeFirebase();
+    const { result } = renderHook(() => useSignUp(), { wrapper });
+
+    act(() => result.current.mutate(form));
+    await waitFor(() => expect(listen).toHaveBeenCalled());
+    act(() => firebase.profileArrives('Beatriz Santos'));
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(writeProfile).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['com quebra de linha', 'Beatriz\nSantos'],
+    ['só de caracteres em branco', '\u3164\u3164'],
+    ['longo demais', 'x'.repeat(61)],
+  ])('nome da sessão %s, que as regras recusam, não é gravado', async (_, name) => {
+    const firebase = fakeFirebase();
+    const { result } = renderHook(() => useSignUp(), { wrapper });
+
+    act(() => result.current.mutate({ ...form, name }));
+    await waitFor(() => expect(listen).toHaveBeenCalled());
+    act(() => firebase.profileArrives(null));
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(writeProfile).not.toHaveBeenCalled();
+  });
+
+  it('sem nome na sessão (o updateProfile falhou), nada é gravado', async () => {
+    const firebase = fakeFirebase();
+    setProfile.mockRejectedValueOnce(new FirebaseError('auth/network-request-failed', 'rede'));
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const { result } = renderHook(() => useSignUp(), { wrapper });
+
+    act(() => result.current.mutate(form));
+    await waitFor(() => expect(listen).toHaveBeenCalled());
+    act(() => firebase.profileArrives(null));
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(writeProfile).not.toHaveBeenCalled();
+    warn.mockRestore();
+  });
+
+  it('gravação recusada não derruba o cadastro', async () => {
+    const firebase = fakeFirebase();
+    writeProfile.mockRejectedValueOnce(new FirebaseError('permission-denied', 'regras'));
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const { result } = renderHook(() => useSignUp(), { wrapper });
+
+    act(() => result.current.mutate(form));
+    await waitFor(() => expect(listen).toHaveBeenCalled());
+    act(() => firebase.profileArrives(null));
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(writeProfile).toHaveBeenCalled();
+    expect(useSessionStore.getState().authHolds).toBe(0);
+    expect(haptics.trigger).toHaveBeenCalledWith('success');
+    expect(haptics.trigger).not.toHaveBeenCalledWith('error');
+    await waitFor(() =>
+      expect(warn).toHaveBeenCalledWith(
+        '[auth] O nome não foi para o perfil no cadastro.',
+        expect.anything(),
+      ),
+    );
+    warn.mockRestore();
+  });
+
+  it('gravação que não responde (sem rede, fica na fila do SDK) não segura o cadastro', async () => {
+    const firebase = fakeFirebase();
+    writeProfile.mockReturnValueOnce(new Promise(() => undefined));
+    const { result } = renderHook(() => useSignUp(), { wrapper });
+
+    act(() => result.current.mutate(form));
+    await waitFor(() => expect(listen).toHaveBeenCalled());
+    act(() => firebase.profileArrives(null));
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(writeProfile).toHaveBeenCalled();
+    expect(useSessionStore.getState().authHolds).toBe(0);
+  });
+
+  it('perfil que não chegou no prazo: nada é gravado', async () => {
+    await expect(fillMissingProfileName('nova', null, 'Beatriz Santos')).resolves.toBe(false);
+    expect(writeProfile).not.toHaveBeenCalled();
+  });
+
+  it('o nome gravado sai como as regras aceitam: sem espaço nas pontas e em NFC', async () => {
+    writeProfile.mockResolvedValueOnce(undefined);
+    const typed = '  Cámila Ribeiro '.normalize('NFD');
+    await expect(fillMissingProfileName('nova', { displayName: null }, typed)).resolves.toBe(true);
+    expect(writeProfile).toHaveBeenCalledWith('users/nova', {
+      displayName: 'Cámila Ribeiro'.normalize('NFC'),
+      updatedAt: 'agora-do-servidor',
+    });
   });
 });
 

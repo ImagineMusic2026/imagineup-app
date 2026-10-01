@@ -141,6 +141,29 @@ describe('perfil do fã (users/{uid})', () => {
     }
   });
 
+  it('o perfil como o servidor cria (sem nome e sem updatedAt) recebe o nome do cadastro', async () => {
+    // O formato de createProfile (functions/src/store.ts) e a gravação de
+    // fillMissingProfileName (src/domains/auth/api.ts), quando o nome chegou
+    // depois da espera da função de cadastro.
+    await env.withSecurityRulesDisabled(async (context) => {
+      await setDoc(doc(context.firestore(), 'users/fa'), {
+        displayName: null,
+        username: 'fa123456',
+        city: null,
+        photoURL: null,
+        createdAt: Timestamp.now(),
+      });
+    });
+    await assertSucceeds(
+      updateDoc(doc(fan(), 'users/fa'), {
+        displayName: 'Beatriz Santos',
+        updatedAt: serverTimestamp(),
+      }),
+    );
+    // A partir dessa gravação, a trava de 10 s vale.
+    await assertFails(edit({ displayName: 'Beatriz S.' }));
+  });
+
   it('o fã não mexe em pontos, nível, @, foto nem na data de criação', async () => {
     await seedProfile();
     for (const change of [

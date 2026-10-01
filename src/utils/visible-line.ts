@@ -49,3 +49,17 @@ const BIDI_ISOLATES = /[⁦-⁩]/g;
 export function cleanLine(text: string): string {
   return text.replace(BIDI_ISOLATES, '').normalize('NFC').trim();
 }
+
+/** Limite do nome no `firestore.rules` e na função de cadastro, em unidades de UTF-16. */
+export const DISPLAY_NAME_MAX = 60;
+
+/**
+ * O nome como as regras deixam gravar no perfil (`validDisplayName()`): uma
+ * linha visível de 1 a 60, em NFC e sem espaço nas pontas. O que não passa
+ * vira `null`, como a função de cadastro deixaria.
+ */
+export function displayNameOrNull(name: string | null | undefined): string | null {
+  if (!name) return null;
+  const trimmed = name.normalize('NFC').trim();
+  return trimmed.length <= DISPLAY_NAME_MAX && isVisibleLine(trimmed) ? trimmed : null;
+}
