@@ -1,4 +1,10 @@
-import { StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
+import {
+  StyleSheet,
+  useWindowDimensions,
+  View,
+  type StyleProp,
+  type ViewStyle,
+} from 'react-native';
 
 import { PhotoCard } from '@/components/photo-card';
 import { Pill } from '@/components/pill';
@@ -63,6 +69,11 @@ export function FeaturedRewardCard({
   testID,
 }: FeaturedRewardCardProps) {
   const scarcity = scarcityText(reward);
+  // A loja põe o destaque entre as margens da tela.
+  const fallbackSize = {
+    width: useWindowDimensions().width - 2 * spacing.gutter,
+    height: layout.rewardHeroMinHeight,
+  };
   const badge =
     availability.state === 'soldOut' ? (
       <Pill label={t('rewards.soldOut')} tone="neutral" size="xs" caps style={styles.badge} />
@@ -74,6 +85,7 @@ export function FeaturedRewardCard({
     <PhotoCard
       uri={reward.imageUrl}
       fallback={{ kind: 'brand', seed: reward.id }}
+      fallbackSize={fallbackSize}
       scrim="rewardHero"
       minHeight={layout.rewardHeroMinHeight}
       radius={radii.xxl}

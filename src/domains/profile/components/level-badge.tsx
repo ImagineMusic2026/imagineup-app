@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { StyleSheet, type StyleProp, type ViewStyle } from 'react-native';
 import Animated, {
   interpolateColor,
@@ -33,8 +33,9 @@ const PULSE_SCALE = 1.08;
 export interface LevelBadgeProps {
   level: Level;
   /**
-   * Muda a cada subida de nível vista pelo fã (`useLevelUp`): o selo pulsa e
-   * a cor volta do rosa ao lima. Com reduzir movimento, só o texto troca.
+   * Muda a cada subida de nível vista pelo fã (`useLevelUp`): o selo pulsa, a
+   * cor volta do rosa ao lima e as barras acendem uma depois da outra. Com
+   * reduzir movimento, só o texto troca.
    */
   celebration?: number | null;
   style?: StyleProp<ViewStyle>;
@@ -51,6 +52,9 @@ export function LevelBadge({ level, celebration = null, style, testID }: LevelBa
   const scale = useSharedValue(1);
   // A festa que já tocou: a que chega com o selo montado não se repete.
   const played = useRef(celebration);
+  const [atMount] = useState(celebration);
+  // Na subida de nível, as barras acendem de novo junto com a volta ao lima.
+  const celebrating = celebration !== null && celebration !== atMount;
 
   useEffect(() => {
     if (celebration === null || celebration === played.current) return;
@@ -82,7 +86,12 @@ export function LevelBadge({ level, celebration = null, style, testID }: LevelBa
 
   return (
     <Animated.View testID={testID} style={[styles.badge, animatedStyle, style]}>
-      <BrandBars color={colors.points} size="badge" />
+      <BrandBars
+        key={celebrating ? celebration : 'quieta'}
+        color={colors.points}
+        size="badge"
+        lightUp={celebrating}
+      />
       <Text variant="badge" color={colors.points}>
         {levelBadgeText(level)}
       </Text>

@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { StyleSheet, View, type LayoutChangeEvent } from 'react-native';
-import Animated, { useAnimatedStyle, type SharedValue } from 'react-native-reanimated';
+import Animated, { FadeIn, useAnimatedStyle, type SharedValue } from 'react-native-reanimated';
+import { useSafeAreaFrame } from 'react-native-safe-area-context';
 
 import { BrandBars } from '@/components/brand-bars';
 import { Glass } from '@/components/glass';
@@ -14,7 +15,7 @@ import { VerifiedBadge } from '@/components/verified-badge';
 import type { ArtistDetails } from '@/domains/artists';
 import { usePrefersReducedMotion } from '@/hooks/use-prefers-reduced-motion';
 import { t } from '@/i18n';
-import { colors, spacing, textShadows, typography } from '@/theme';
+import { colors, motion, spacing, textShadows, typography } from '@/theme';
 
 import { COVER_PARALLAX } from '../consts';
 import { artistHeadingLabel, splitCoverName } from '../describe';
@@ -27,6 +28,10 @@ const BADGE_BOTTOM = 7;
 const BARS_BOTTOM = spacing.tileGap;
 // Esqueleto do nome enquanto a central chega.
 const NAME_SKELETON_WIDTH = 180;
+// O nome entra em fade no lugar do esqueleto, e as barras da marca acendem
+// uma depois da outra logo atrás dele.
+const IDENTITY_ENTERING = FadeIn.duration(motion.duration.base);
+const BARS_LIGHT_UP_DELAY = motion.duration.fast;
 
 const hiddenFromReader = {
   accessible: false,
@@ -83,6 +88,8 @@ export function ArtistCover({
   const reducedMotion = usePrefersReducedMotion();
   const [measured, setMeasured] = useState(height);
   const size = Math.max(height, measured);
+  // A capa vai de ponta a ponta: o placeholder da foto sai junto com a tela.
+  const frame = useSafeAreaFrame();
 
   const photoStyle = useAnimatedStyle(() => {
     if (reducedMotion) return { transform: [{ translateY: 0 }, { scale: 1 }] };
@@ -109,6 +116,7 @@ export function ArtistCover({
         <RemoteImage
           uri={artist?.coverUrl}
           fallback={{ kind: 'brand', seed: artistId, stripes: null }}
+          fallbackSize={{ width: frame.width, height: size }}
           style={StyleSheet.absoluteFill}
         />
       </Animated.View>
@@ -116,7 +124,7 @@ export function ArtistCover({
       <Stripes preset="photo" />
       <View style={styles.identity}>
         {artist ? (
-          <>
+          <Animated.View entering={IDENTITY_ENTERING}>
             {artist.managedByImagine ? <ManagedPill /> : null}
             <View
               accessible
@@ -133,9 +141,14 @@ export function ArtistCover({
                   <VerifiedBadge size={20} />
                 </View>
               ) : null}
-              <BrandBars size="title" style={styles.bars} />
+              <BrandBars
+                size="title"
+                lightUp
+                lightUpDelay={BARS_LIGHT_UP_DELAY}
+                style={styles.bars}
+              />
             </View>
-          </>
+          </Animated.View>
         ) : (
           <SkeletonGroup accessibilityLabel={t('artist.loading')} style={styles.nameSkeleton}>
             <Skeleton

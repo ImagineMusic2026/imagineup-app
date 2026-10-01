@@ -9,7 +9,11 @@ import {
 } from 'react-native';
 
 import { PressableScale } from '@/components/pressable-scale';
-import { RemoteImage, type RemoteImageFallback } from '@/components/remote-image';
+import {
+  RemoteImage,
+  type RemoteImageFallback,
+  type RemoteImageProps,
+} from '@/components/remote-image';
 import { Scrim } from '@/components/scrim';
 import type { HapticEvent } from '@/services/haptics';
 import { radii, spacing, type ScrimPreset } from '@/theme';
@@ -26,6 +30,12 @@ interface PhotoCardBaseProps {
   /** Conteúdo preso embaixo, sobre a parte escura do véu. */
   children?: ReactNode;
   contentPosition?: ImageContentPosition;
+  /**
+   * Medida esperada do card (largura da tela menos as margens, altura mínima):
+   * sem foto, o placeholder sai em SVG no primeiro quadro, junto com a
+   * transição da tela, em vez de surgir seco depois dela (`RemoteImage`).
+   */
+  fallbackSize?: RemoteImageProps['fallbackSize'];
   /** Margens e ajuste de padding da tela (a 1h pede 16 dos lados). */
   style?: StyleProp<ViewStyle>;
   testID?: string;
@@ -68,6 +78,7 @@ export function PhotoCard(props: PhotoCardProps) {
     topLeft,
     children,
     contentPosition,
+    fallbackSize,
     style,
     testID,
   } = props;
@@ -85,6 +96,7 @@ export function PhotoCard(props: PhotoCardProps) {
         uri={uri}
         fallback={fallback}
         contentPosition={contentPosition}
+        fallbackSize={fallbackSize}
         style={StyleSheet.absoluteFill}
       />
       <Scrim preset={scrim} />

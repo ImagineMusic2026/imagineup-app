@@ -29,10 +29,14 @@ import { redeemFailure, rewardAvailability, type RedeemFailure } from '../descri
 import { useRedeemRewardMutation, useRewardQuery } from '../queries';
 import type { Reward } from '../types';
 
-/** Aberta a frio (link), sem a 1h embaixo, a sheet volta para ela. */
+/**
+ * Aberta a frio (link), sem a 1h embaixo, a sheet volta para ela, com a 1f
+ * embaixo na pilha da Ranking (a âncora): sem ela, a pilha nascia só com a 1h,
+ * o voltar caía no Início e a aba Ranking não chegava mais à 1f.
+ */
 function closeSheet(): void {
   if (router.canGoBack()) router.back();
-  else router.replace('/recompensas');
+  else router.replace('/recompensas', { withAnchor: true });
 }
 
 /**
@@ -41,7 +45,7 @@ function closeSheet(): void {
  */
 function goToMissions(): void {
   if (!router.canGoBack()) {
-    router.replace('/missoes');
+    router.replace('/missoes', { withAnchor: true });
     return;
   }
   router.back();

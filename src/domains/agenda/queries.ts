@@ -1,12 +1,16 @@
 import {
+  infiniteQueryOptions,
   useInfiniteQuery,
   useMutation,
   useQuery,
   useQueryClient,
+  type InfiniteData,
   type QueryClient,
 } from '@tanstack/react-query';
 import { AccessibilityInfo } from 'react-native';
 
+// As centrais pelo arquivo, fora do index, como os posts fazem.
+import { artistKeys } from '@/domains/artists/queries';
 import { missionKeys } from '@/domains/missions';
 import { profileKeys } from '@/domains/profile';
 import { rankingKeys } from '@/domains/ranking';
@@ -15,7 +19,7 @@ import { haptics } from '@/services/haptics';
 import { createIdempotencyKey } from '@/utils/id';
 
 import { fetchAgenda, fetchArtistAgenda, fetchMyRsvps, setEventRsvp } from './api';
-import type { MyRsvps, RsvpResult, RsvpVariables } from './types';
+import type { AgendaEvent, AgendaPage, MyRsvps, RsvpResult, RsvpVariables } from './types';
 
 /** A chave inclui tudo que muda o resultado. */
 export const agendaKeys = {
@@ -33,14 +37,16 @@ export const agendaMutationKeys = {
 /**
  * Toda presença confirmada ou desfeita pode andar (ou voltar) uma missão de
  * presença, mesmo sem concluí-la e sem render pontos: as missões buscam de
- * novo sempre. O saldo (1e, 1h) e o ranking (1f, pontos da temporada) só
- * mudam quando a presença rendeu pontos.
+ * novo sempre. O saldo (1e, 1h), o ranking (1f, pontos da temporada) e a
+ * posição e os pontos nas centrais (1b, 1e) só mudam quando a presença rendeu
+ * pontos.
  */
 function refreshPointsAfterRsvp(client: QueryClient, result: RsvpResult): void {
   void client.invalidateQueries({ queryKey: missionKeys.all });
   if (result.pointsAwarded <= 0) return;
   void client.invalidateQueries({ queryKey: profileKeys.wallet() });
   void client.invalidateQueries({ queryKey: rankingKeys.all });
+  void client.invalidateQueries({ queryKey: artistKeys.centrals() });
 }
 
 /**
@@ -61,12 +67,39 @@ export function registerAgendaMutationDefaults(client: QueryClient): void {
  * `useMyRsvpsQuery`, a mesma lista que o post de show da home lê.
  */
 export function useAgendaQuery() {
-  return useInfiniteQuery({
+  return useInfiniteQuery(agendaQueryOptions());
+}
+
+function agendaQueryOptions() {
+  return infiniteQueryOptions({
     queryKey: agendaKeys.events(),
     queryFn: ({ pageParam }) => fetchAgenda(pageParam),
     initialPageParam: null as string | null,
     getNextPageParam: (lastPage) => lastPage.nextCursor,
   });
+}
+
+function findEvent(data: InfiniteData<AgendaPage>, eventId: string): AgendaEvent | null {
+  for (const page of data.pages) {
+    if (page.featured?.id === eventId) return page.featured;
+    const event = page.items.find((item) => item.id === eventId);
+    if (event) return event;
+  }
+  return null;
+}
+
+/**
+ * Um show da agenda, procurado nas páginas que o fã já carregou (o "Chamar
+ * amigos" da 1m abre o convite com ele). Não há página de um show só: fora das
+ * páginas carregadas, ou sem `eventId`, devolve `null`.
+ */
+export function useAgendaEvent(eventId: string | null): AgendaEvent | null {
+  const query = useInfiniteQuery({
+    ...agendaQueryOptions(),
+    enabled: eventId !== null,
+    select: (data) => (eventId === null ? null : findEvent(data, eventId)),
+  });
+  return query.data ?? null;
 }
 
 /**

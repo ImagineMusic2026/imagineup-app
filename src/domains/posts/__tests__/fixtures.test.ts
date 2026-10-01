@@ -1,4 +1,5 @@
 import { missionsFixture } from '@/domains/missions';
+import { buildMissionsFixture } from '@/domains/missions/fixtures';
 import { fixtureWallet, resetFixtureSession, setFixtureNow } from '@/services/fixtures';
 
 import { addComment, fetchComments, fetchPost, setPostLike } from '../api';
@@ -169,5 +170,37 @@ describe('curtir nas fixtures', () => {
     await expect(
       setPostLike({ postId: 'nao-existe', liked: true, idempotencyKey: 'k2' }),
     ).rejects.toMatchObject({ kind: 'notFound' });
+  });
+
+  describe('missão "Curta 5 posts do Nenho" (2 de 5)', () => {
+    const likeMission = () =>
+      buildMissionsFixture(NOW).missions.find((item) => item.id === 'm-curtir-nenho');
+
+    it('a curtida num post do Nenho anda a missão; num post de outra central, não', async () => {
+      await setPostLike({ postId: 'p-clipe', liked: true, idempotencyKey: 'netto' });
+      expect(likeMission()?.progress.current).toBe(2);
+
+      await setPostLike({ postId: 'p-show', liked: true, idempotencyKey: 'nenho' });
+      expect(likeMission()?.progress.current).toBe(3);
+    });
+
+    it('descurtir e curtir de novo o mesmo post não conta outra vez', async () => {
+      await setPostLike({ postId: 'p-show', liked: true, idempotencyKey: 'k1' });
+      await setPostLike({ postId: 'p-show', liked: false, idempotencyKey: 'k2' });
+      await setPostLike({ postId: 'p-show', liked: true, idempotencyKey: 'k3' });
+      expect(likeMission()?.progress.current).toBe(3);
+    });
+
+    it('a curtida que conclui rende os pontos da missão, que entram na carteira', async () => {
+      const before = fixtureWallet.get().balance;
+      await setPostLike({ postId: 'p-show', liked: true, idempotencyKey: 'k1' });
+      await setPostLike({ postId: 'p-nenho-2', liked: true, idempotencyKey: 'k2' });
+      await expect(
+        setPostLike({ postId: 'p-nenho-3', liked: true, idempotencyKey: 'k3' }),
+      ).resolves.toEqual({ pointsAwarded: 10 });
+
+      expect(likeMission()).toMatchObject({ status: 'completed', progress: { current: 5 } });
+      expect(fixtureWallet.get().balance).toBe(before + 10);
+    });
   });
 });

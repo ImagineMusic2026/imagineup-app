@@ -16,6 +16,7 @@ import { pickStable } from '@/utils/pick-stable';
 import { initialsOf } from '@/utils/text';
 
 import { PhotoFallback } from './photo-fallback';
+import { StaticPhotoFallback } from './static-photo-fallback';
 
 export {
   PhotoFallback,
@@ -23,6 +24,7 @@ export {
   type PhotoFallbackProps,
   type PhotoFallbackVariant,
 } from './photo-fallback';
+export { StaticPhotoFallback, type StaticPhotoFallbackProps } from './static-photo-fallback';
 
 /**
  * O que aparece sem foto, enquanto ela carrega ou se ela falhar:
@@ -48,6 +50,14 @@ export interface RemoteImageProps {
   transition?: number;
   /** Tamanho das iniciais do fallback `initials`. */
   initialsVariant?: TypographyVariant;
+  /**
+   * Medida que a tela já sabe (capa da 1d, destaques da 1h e da 1m): o
+   * placeholder de marca ou de show sai em SVG no primeiro quadro
+   * (`StaticPhotoFallback`), com as listras, junto com a transição da tela, em
+   * vez de esperar a superfície do Skia. Se o espaço real for outro, ele se
+   * corrige no `onLayout`.
+   */
+  fallbackSize?: { width: number; height: number };
   /** Só quando a foto é o conteúdo; por padrão ela é decorativa e o card em volta descreve. */
   accessibilityLabel?: string;
   style?: StyleProp<ViewStyle>;
@@ -62,13 +72,26 @@ export function useImageFade(duration: number = motion.duration.base): number {
 function FallbackLayer({
   fallback,
   initialsVariant,
+  size,
 }: {
   fallback: RemoteImageFallback;
   initialsVariant: TypographyVariant;
+  size: RemoteImageProps['fallbackSize'];
 }) {
   switch (fallback.kind) {
     case 'brand':
     case 'events':
+      if (size) {
+        return (
+          <StaticPhotoFallback
+            seed={fallback.seed}
+            variant={fallback.kind}
+            stripes={fallback.stripes}
+            width={size.width}
+            height={size.height}
+          />
+        );
+      }
       return (
         <PhotoFallback seed={fallback.seed} variant={fallback.kind} stripes={fallback.stripes} />
       );
@@ -103,6 +126,7 @@ export function RemoteImage({
   contentPosition,
   transition = motion.duration.base,
   initialsVariant = 'titleGreeting',
+  fallbackSize,
   accessibilityLabel,
   style,
   testID,
@@ -132,7 +156,7 @@ export function RemoteImage({
       accessibilityElementsHidden={!described}
     >
       {showFallback ? (
-        <FallbackLayer fallback={fallback} initialsVariant={initialsVariant} />
+        <FallbackLayer fallback={fallback} initialsVariant={initialsVariant} size={fallbackSize} />
       ) : null}
       {photo ? (
         <Image

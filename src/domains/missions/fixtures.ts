@@ -2,7 +2,7 @@ import { addMonths, endOfDay, endOfWeek, set, startOfMonth } from 'date-fns';
 
 import { fixtureNow, fixtureWallet, onFixtureSessionEnd } from '@/services/fixtures';
 
-import type { Mission, MissionAction, MissionsResponse, SeasonGoal } from './types';
+import type { Mission, MissionAction, MissionsResponse, MissionTarget, SeasonGoal } from './types';
 
 /**
  * Missões de exemplo da 1g enquanto a API (M2) não existe: as do protótipo, sem
@@ -200,20 +200,36 @@ export function buildMissionsFixture(now: Date): MissionsResponse {
 }
 
 /**
+ * A ação vale para a missão: a missão sem central serve a qualquer uma, e a de
+ * uma central ("Curta 5 posts do Nenho") só conta a ação naquela central. Ação
+ * sem central informada conta em qualquer missão do tipo.
+ */
+function countsFor(item: Mission, on: Pick<MissionTarget, 'artistId'> | undefined): boolean {
+  const artistId = item.target?.artistId;
+  return !artistId || !on?.artistId || artistId === on.artistId;
+}
+
+/**
  * O servidor das missões nas fixtures. Outras fixtures contam aqui as ações do
- * fã que andam uma missão (o "Eu vou" da agenda); quando a ação completa a
- * missão, os pontos entram na carteira (`fixtureWallet`) e voltam na resposta
- * da ação, como a API faria. Fica em memória e volta ao início quando o app
- * reabre ou a sessão termina.
+ * fã que andam uma missão (o "Eu vou" da agenda, curtir e comentar um post);
+ * quando a ação completa a missão, os pontos entram na carteira
+ * (`fixtureWallet`) e voltam na resposta da ação, como a API faria. Fica em
+ * memória e volta ao início quando o app reabre ou a sessão termina.
  */
 export const missionsFixture = {
   /**
-   * Uma ação do fã. Anda a primeira missão aberta desse tipo e devolve os
-   * pontos que ela rendeu (zero se não concluiu, ou se não havia missão aberta).
+   * Uma ação do fã, na central `on` quando ela importa (curtir e comentar um
+   * post do artista). Anda a primeira missão aberta desse tipo que vale para
+   * ela e devolve os pontos que a missão rendeu (zero se não concluiu, ou se
+   * não havia missão aberta).
    */
-  record(action: MissionAction, now: Date = fixtureNow()): number {
+  record(
+    action: MissionAction,
+    now: Date = fixtureNow(),
+    on?: Pick<MissionTarget, 'artistId'>,
+  ): number {
     const open = buildMissionsFixture(now).missions.find(
-      (item) => item.action === action && item.status === 'active',
+      (item) => item.action === action && item.status === 'active' && countsFor(item, on),
     );
     if (!open) return 0;
     const current = Math.min(open.progress.current + 1, open.progress.target);

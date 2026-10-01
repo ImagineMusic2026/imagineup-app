@@ -13,6 +13,7 @@ import { Glyph } from '@/components/glyph';
 import { Icon } from '@/components/icon';
 import { pillPaddingVertical } from '@/components/pill';
 import { PillButton } from '@/components/pill-button';
+import { PointsToast } from '@/components/points-toast';
 import { RsvpChip } from '@/domains/agenda';
 import { usePrefersReducedMotion } from '@/hooks/use-prefers-reduced-motion';
 import { t } from '@/i18n';
@@ -21,6 +22,7 @@ import { withAlpha } from '@/utils/color';
 import { formatCompact, formatNumber, formatPointsDelta, formatPointsSpoken } from '@/utils/number';
 
 import { useSharePost } from '../hooks/use-share-post';
+import type { LikeAward } from '../queries';
 import type { Post } from '../types';
 
 // A partir daqui, a contagem vira "12 mil" para caber na pílula (como na home).
@@ -41,6 +43,8 @@ const PILL_HEIGHT =
   pillPaddingVertical.md * 2 +
   borderWidths.default * 2;
 const PILL_OUTSET = (layout.minTouchTarget - PILL_HEIGHT) / 2;
+// O "+N" da curtida nasce no topo da pílula, não no do alvo de 44.
+const LIKE_TOAST_BOTTOM = layout.minTouchTarget - PILL_OUTSET;
 
 function countText(count: number): string {
   return count >= COMPACT_FROM ? formatCompact(count) : formatNumber(count);
@@ -110,6 +114,8 @@ function LikeHeart({ liked }: { liked: boolean }) {
 export interface PostActionsProps {
   post: Post;
   onToggleLike: () => void;
+  /** Pontos da curtida que concluiu uma missão: sobem num "+N" do botão. */
+  likeAward?: LikeAward | null;
   /** "Comentar" leva o foco ao campo do comentário. */
   onComment: () => void;
 }
@@ -121,24 +127,32 @@ export interface PostActionsProps {
  * O post de show leva o "Eu vou" da agenda no lugar do compartilhar, como na
  * home, no tamanho das outras pílulas da linha.
  */
-export function PostActions({ post, onToggleLike, onComment }: PostActionsProps) {
+export function PostActions({ post, onToggleLike, likeAward = null, onComment }: PostActionsProps) {
   const share = useSharePost();
   const points = post.sharePointsPerVisit ?? 0;
 
   return (
     <View style={styles.row}>
-      <PillButton
-        size="md"
-        label={countText(post.likeCount)}
-        labelColor={post.likedByMe ? colors.text : ACTION_COUNT_COLOR}
-        leading={<LikeHeart liked={post.likedByMe} />}
-        selected={post.likedByMe}
-        // Curtir vibra pelo evento `like` (na mutação); descurtir, com o toque comum.
-        haptic={post.likedByMe ? 'tap' : null}
-        accessibilityLabel={t('post.details.likeLabel', { likes: likesSpoken(post.likeCount) })}
-        onPress={onToggleLike}
-        testID="post-like"
-      />
+      <View>
+        <PillButton
+          size="md"
+          label={countText(post.likeCount)}
+          labelColor={post.likedByMe ? colors.text : ACTION_COUNT_COLOR}
+          leading={<LikeHeart liked={post.likedByMe} />}
+          selected={post.likedByMe}
+          // Curtir vibra pelo evento `like` (na mutação); descurtir, com o toque comum.
+          haptic={post.likedByMe ? 'tap' : null}
+          accessibilityLabel={t('post.details.likeLabel', { likes: likesSpoken(post.likeCount) })}
+          onPress={onToggleLike}
+          testID="post-like"
+        />
+        <PointsToast
+          points={likeAward?.points ?? 0}
+          trigger={likeAward?.id ?? null}
+          style={{ bottom: LIKE_TOAST_BOTTOM }}
+          testID="post-like-points"
+        />
+      </View>
       <PillButton
         size="md"
         label={countText(post.commentCount)}

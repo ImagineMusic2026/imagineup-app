@@ -12,6 +12,13 @@ export const motion = {
     base: 250,
     slow: 400,
     counter: 700,
+    // Movimento de fundo, que assenta devagar por trás do resto (a foto da 1k).
+    settle: 1200,
+  },
+  // Entrada em sequência (1k): cada bloco sobe um pouco, um depois do outro.
+  stagger: {
+    rise: 12,
+    step: 60,
   },
   easing: {
     out: Easing.bezier(0.23, 1, 0.32, 1),

@@ -10,7 +10,7 @@ export { MissionRow, type MissionRowProps } from './components/mission-row';
 export { missionHref } from './describe-mission';
 export { missionsFixture } from './fixtures';
 export { useMissionAction } from './hooks/use-mission-action';
-export { missionKeys, useDailyMissionQuery, useMissionsQuery } from './queries';
+export { missionKeys, useDailyMissionQuery, useMissionQuery, useMissionsQuery } from './queries';
 export {
   buildMissionItems,
   missionsOfArtist,

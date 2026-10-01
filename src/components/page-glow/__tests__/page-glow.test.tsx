@@ -4,22 +4,19 @@ import {
   render,
   screen,
 } from '@testing-library/react-native';
+import { Mask, Pattern, RadialGradient, Rect, Stop } from 'react-native-svg';
 
-import { glows } from '@/theme';
+import { colors, glows } from '@/theme';
 
 import { PageGlow } from '..';
 
-function nodesOf(type: string) {
-  return screen.root.findAll((node) => node.type === type);
-}
-
 function radial() {
-  const [node] = nodesOf('skRadialGradient');
-  return node?.props as {
-    r: number;
-    transform: { scaleX: number }[];
-    colors: string[];
-    positions: number[];
+  const gradient = screen.UNSAFE_getByType(RadialGradient);
+  return {
+    props: gradient.props as { cx: number; cy: number; rx: number; ry: number },
+    stops: gradient
+      .findAllByType(Stop)
+      .map(({ props }) => [props.offset, props.stopColor, props.stopOpacity]),
   };
 }
 
@@ -44,28 +41,32 @@ describe('PageGlow', () => {
     },
   );
 
-  it('o brilho some na parada do preset, na cor dele', () => {
+  it('o brilho some na parada do preset, na cor dele (a opacidade à parte, como o SVG pede)', () => {
     render(<PageGlow preset="ranking" />);
-    expect(radial().colors).toEqual(['rgba(214, 255, 63, 0.16)', 'rgba(214, 255, 63, 0)']);
-    expect(radial().positions).toEqual([0, glows.ranking.stop]);
+    expect(radial().stops).toEqual([
+      [0, colors.points, 0.16],
+      [glows.ranking.stop, colors.points, 0],
+    ]);
   });
 
-  it('estica o círculo em elipse de 120% da largura medida por 100% da faixa', () => {
+  it('é uma elipse de 120% da largura medida por 100% da faixa, centrada no topo', () => {
     render(<PageGlow preset="profile" />);
     fireEvent(screen.root, 'layout', { nativeEvent: { layout: { width: 400, height: 250 } } });
-    expect(radial().r).toBe(250);
-    expect(radial().transform).toEqual([{ scaleX: (1.2 * 400) / 250 }]);
+    expect(radial().props).toMatchObject({ cx: 200, cy: 0, rx: 480, ry: 250 });
   });
 
   it('o perfil leva as listras da marca, que somem no fim da faixa', () => {
     render(<PageGlow preset="profile" />);
-    const [stripes] = nodesOf('skLinearGradient').filter((node) => node.props.mode === 'repeat');
-    expect(stripes?.props.colors[0]).toBe('rgba(255, 255, 255, 0.045)');
-    expect(nodesOf('skFill').some((node) => node.props.blendMode === 'dstIn')).toBe(true);
+    const stripe = screen.UNSAFE_getByType(Pattern).findByType(Rect);
+    expect(stripe.props).toMatchObject({ fill: colors.text, fillOpacity: 0.045 });
+    const striped = screen.UNSAFE_getAllByType(Rect).find((rect) => rect.props.mask);
+    expect(striped?.props).toMatchObject({ fill: 'url(#stripes)', mask: 'url(#fadeOut)' });
+    expect(screen.UNSAFE_getByType(Mask)).toBeTruthy();
   });
 
   it('o ranking é só o brilho, sem listras', () => {
     render(<PageGlow preset="ranking" />);
-    expect(nodesOf('skLinearGradient')).toHaveLength(0);
+    expect(screen.UNSAFE_queryAllByType(Pattern)).toHaveLength(0);
+    expect(screen.UNSAFE_queryAllByType(Mask)).toHaveLength(0);
   });
 });

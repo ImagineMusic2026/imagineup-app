@@ -71,6 +71,19 @@ const rootRoutes = (view: Router): string[] => {
   return container?.routes?.[0]?.state?.routes?.map((route) => route.name) ?? [];
 };
 
+/** As telas da pilha de uma aba (`(ranking)`...), de baixo para cima. */
+const tabStack = (view: Router, tab: string): string[] => {
+  const find = (node: StateNode | undefined): StateNode | undefined => {
+    for (const route of node?.routes ?? []) {
+      if (route.name === tab) return route.state;
+      const found = find(route.state);
+      if (found) return found;
+    }
+    return undefined;
+  };
+  return find(view.getRouterState() as StateNode | undefined)?.routes?.map((r) => r.name) ?? [];
+};
+
 let client: QueryClient;
 
 function RootLayout() {
@@ -234,6 +247,20 @@ describe('detalhe do resgate aberto por link', () => {
     expect(
       await screen.findByRole('button', { name: featuredLabel('10.000 pontos') }),
     ).toBeTruthy();
+    // A loja nasce com a 1f embaixo: o voltar chega no Ranking, e não no Início.
+    expect(tabStack(view, '(ranking)')).toEqual(['ranking', 'recompensas']);
+    act(() => testRouter.back());
+    expect(view.getPathname()).toBe('/ranking');
+  });
+
+  it('"Ver missões" sem a loja embaixo abre a 1g com a 1f embaixo', async () => {
+    const view = renderRouter(appTree, { initialUrl: '/recompensa/camisa' });
+
+    fireEvent.press(await screen.findByRole('button', { name: t('rewards.details.seeMissions') }));
+    await waitFor(() => expect(view.getPathname()).toBe('/missoes'));
+    expect(tabStack(view, '(ranking)')).toEqual(['ranking', 'missoes']);
+    act(() => testRouter.back());
+    expect(view.getPathname()).toBe('/ranking');
   });
 
   it('recompensa que saiu da loja diz isso, sem quebrar', async () => {

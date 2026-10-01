@@ -12,6 +12,7 @@ export {
   agendaKeys,
   agendaMutationKeys,
   registerAgendaMutationDefaults,
+  useAgendaEvent,
   useAgendaQuery,
   useArtistAgendaQuery,
   useIsGoing,

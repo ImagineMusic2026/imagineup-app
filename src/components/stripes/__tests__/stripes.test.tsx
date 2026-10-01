@@ -1,15 +1,23 @@
 import { isHiddenFromAccessibility, render, screen } from '@testing-library/react-native';
+import { Pattern, Rect } from 'react-native-svg';
 
 import { stripes, type StripeToken } from '@/theme';
 
 import { Stripes, stripeGradient } from '..';
 
-// Nó do Skia que o mock deixa na árvore, com as props que iriam para o desenho.
-const LINEAR_GRADIENT: string = 'skLinearGradient';
-
-function drawnGradient() {
-  const [gradient] = screen.root.findAll((node) => node.type === LINEAR_GRADIENT);
-  return gradient?.props as { colors: string[]; positions: number[]; mode: string };
+/** O padrão do SVG que as listras desenham, com a listra de dentro. */
+function drawnPattern() {
+  const pattern = screen.UNSAFE_getByType(Pattern);
+  const [stripe] = pattern.findAllByType(Rect);
+  return {
+    pattern: pattern.props as {
+      width: number;
+      height: number;
+      patternUnits: string;
+      patternTransform: string;
+    },
+    stripe: stripe?.props as { width: number; fill: string; fillOpacity: number },
+  };
 }
 
 describe('stripeGradient', () => {
@@ -53,21 +61,28 @@ describe('Stripes', () => {
     expect(isHiddenFromAccessibility(screen.root)).toBe(true);
   });
 
-  it('cobre o pai inteiro e repete o período pela área toda', () => {
+  it('cobre o pai inteiro e repete o período pela área toda, no ângulo da marca', () => {
     render(<Stripes preset="photo" />);
     expect(screen.root).toHaveStyle({ position: 'absolute', top: 0, right: 0, bottom: 0, left: 0 });
-    expect(drawnGradient().mode).toBe('repeat');
+    // Um período por ladrilho, em pt da tela, girado até o eixo do gradiente do CSS.
+    expect(drawnPattern().pattern).toMatchObject({
+      width: 12,
+      height: 12,
+      patternUnits: 'userSpaceOnUse',
+      patternTransform: 'rotate(24)',
+    });
+    expect(screen.UNSAFE_getAllByType(Rect).at(-1)?.props.fill).toBe('url(#stripes)');
   });
 
   it('desenha o preset e aceita ajuste fino por prop', () => {
     render(<Stripes preset="onPoints" alpha={0.08} />);
-    expect(drawnGradient().colors[0]).toBe('rgba(11, 11, 16, 0.08)');
-    expect(drawnGradient().positions).toEqual([0, 3 / 11, 3 / 11, 1]);
+    expect(drawnPattern().pattern).toMatchObject({ width: 11, height: 11 });
+    expect(drawnPattern().stripe).toMatchObject({ width: 3, fill: '#0B0B10', fillOpacity: 0.08 });
   });
 
   it('sem preset, desenha com os valores passados', () => {
-    render(<Stripes color="#FFFFFF" alpha={0.1} width={4} period={16} />);
-    expect(drawnGradient().colors[0]).toBe('rgba(255, 255, 255, 0.1)');
-    expect(drawnGradient().positions).toEqual([0, 0.25, 0.25, 1]);
+    render(<Stripes color="#FFFFFF" alpha={0.1} width={4} period={16} angle={90} />);
+    expect(drawnPattern().pattern).toMatchObject({ width: 16, patternTransform: 'rotate(0)' });
+    expect(drawnPattern().stripe).toMatchObject({ width: 4, fill: '#FFFFFF', fillOpacity: 0.1 });
   });
 });

@@ -44,13 +44,20 @@ const ACTIONS_TOP = spacing.gridGap - ACTIONS_SLACK;
 export function EventHeroCard({ event, now, onInvite, infoRef, testID }: EventHeroCardProps) {
   const badge = eventDateBadge(event, now);
   const invite = inviteButtonText(event);
+  const dimensions = useWindowDimensions();
   // Com a fonte grande, título e meta quebram inteiros em vez de cortar.
-  const lines = useWindowDimensions().fontScale >= LARGE_TEXT_SCALE ? undefined : 2;
+  const lines = dimensions.fontScale >= LARGE_TEXT_SCALE ? undefined : 2;
+  // A agenda põe o destaque entre as margens da tela.
+  const fallbackSize = {
+    width: dimensions.width - 2 * spacing.gutter,
+    height: layout.eventHeroMinHeight,
+  };
 
   return (
     <PhotoCard
       uri={event.imageUrl}
       fallback={{ kind: 'events', seed: event.id }}
+      fallbackSize={fallbackSize}
       scrim="eventHero"
       minHeight={layout.eventHeroMinHeight}
       radius={radii.xl}

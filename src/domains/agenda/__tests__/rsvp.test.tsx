@@ -3,6 +3,7 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-
 import type { ReactNode } from 'react';
 import { AccessibilityInfo } from 'react-native';
 
+import { artistKeys } from '@/domains/artists';
 import { missionKeys, missionsFixture } from '@/domains/missions';
 import { RSVP_MISSION_POINTS as FIRST_RSVP_POINTS } from '@/domains/missions/fixtures';
 import { profileKeys } from '@/domains/profile';
@@ -162,8 +163,9 @@ describe('"Eu vou" do post de show', () => {
     expect(rsvpFixture.mine().eventIds).toEqual([EVENT.id]);
   });
 
-  it('a presença que rende pontos faz o saldo, o ranking e as missões (1b e 1g) buscarem de novo', async () => {
+  it('a presença que rende pontos faz o saldo, o ranking, as centrais e as missões (1b e 1g) buscarem de novo', async () => {
     client.setQueryData(profileKeys.wallet(), { balance: 12_480, xp: 12_480, seasonPoints: 4_120 });
+    client.setQueryData(artistKeys.centrals(), []);
     client.setQueryData(rankingKeys.myRank(GLOBAL_SCOPE), {
       position: 12,
       points: 4_120,
@@ -183,11 +185,14 @@ describe('"Eu vou" do post de show', () => {
     expect(client.getQueryState(rankingKeys.myRank(GLOBAL_SCOPE))?.isInvalidated).toBe(true);
     // A lista da 1g é a que festeja a missão concluída quando o fã volta a ela.
     expect(client.getQueryState(missionKeys.list())?.isInvalidated).toBe(true);
+    // A posição e os pontos nas centrais ("você é #12" da 1b, "Suas centrais" da 1e).
+    expect(client.getQueryState(artistKeys.centrals())?.isInvalidated).toBe(true);
   });
 
   it('presença sem pontos (a segunda) não mexe no saldo, mas as missões buscam de novo', async () => {
     rsvpFixture.set('festa-do-vaqueiro', true, 'antes');
     client.setQueryData(profileKeys.wallet(), { balance: 12_495, xp: 12_495, seasonPoints: 4_135 });
+    client.setQueryData(artistKeys.centrals(), []);
     client.setQueryData(rankingKeys.myRank(GLOBAL_SCOPE), {
       position: 12,
       points: 4_135,
@@ -202,6 +207,7 @@ describe('"Eu vou" do post de show', () => {
     await waitFor(() => expect(client.isMutating()).toBe(0));
     expect(client.getQueryState(profileKeys.wallet())?.isInvalidated).toBe(false);
     expect(client.getQueryState(rankingKeys.myRank(GLOBAL_SCOPE))?.isInvalidated).toBe(false);
+    expect(client.getQueryState(artistKeys.centrals())?.isInvalidated).toBe(false);
     // Uma missão de presença com meta maior que 1 anda sem concluir (e sem pontos).
     expect(client.getQueryState(missionKeys.list())?.isInvalidated).toBe(true);
   });

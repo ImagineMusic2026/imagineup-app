@@ -24,3 +24,16 @@ export function useMissionsQuery() {
     queryFn: fetchMissions,
   });
 }
+
+/**
+ * Uma missão da lista da 1g (a sheet do convite diz para qual missão é o
+ * link). Sem `missionId`, não busca nada; fora da lista, `null`.
+ */
+export function useMissionQuery(missionId: string | null) {
+  return useQuery({
+    queryKey: missionKeys.list(),
+    queryFn: fetchMissions,
+    enabled: missionId !== null,
+    select: (data) => data.missions.find((mission) => mission.id === missionId) ?? null,
+  });
+}

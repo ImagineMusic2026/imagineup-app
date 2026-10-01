@@ -11,6 +11,9 @@ import {
 import { useEffect, useRef, useState } from 'react';
 import { AccessibilityInfo } from 'react-native';
 
+// As centrais pelo arquivo, fora do index: o `artists/queries` lê as chaves dos
+// posts, e pelo index seria um ciclo.
+import { artistKeys } from '@/domains/artists/queries';
 import { missionKeys } from '@/domains/missions';
 import { profileKeys, useFanIdentity } from '@/domains/profile';
 import { rankingKeys } from '@/domains/ranking';
@@ -32,7 +35,7 @@ import {
 } from './api';
 import { insertComment, patchPostEverywhere, readPost, withCommentDelta, withLike } from './cache';
 import { postKeys } from './keys';
-import type { CommentStatus, PostComment } from './types';
+import type { CommentStatus, PointsAward, PostComment } from './types';
 
 export { postKeys };
 
@@ -89,14 +92,17 @@ function refetchComments(client: QueryClient, postId: string): void {
 }
 
 /**
- * Comentar pode andar uma missão de comentário, mesmo sem render pontos. O
- * saldo e o ranking só mudam quando rendeu.
+ * Comentar e curtir podem andar uma missão (de comentário, de curtida), mesmo
+ * sem render pontos: as missões buscam de novo sempre. O saldo (1e, 1h), o
+ * ranking (1f) e a posição e os pontos nas centrais ("você é #12" da 1b,
+ * "Suas centrais" da 1e) só mudam quando rendeu.
  */
-function refreshPointsAfterComment(client: QueryClient, result: AddCommentResult): void {
+function refreshAfterPoints(client: QueryClient, pointsAwarded: number): void {
   void client.invalidateQueries({ queryKey: missionKeys.all });
-  if (result.pointsAwarded <= 0) return;
+  if (pointsAwarded <= 0) return;
   void client.invalidateQueries({ queryKey: profileKeys.wallet() });
   void client.invalidateQueries({ queryKey: rankingKeys.all });
+  void client.invalidateQueries({ queryKey: artistKeys.centrals() });
 }
 
 /**
@@ -128,7 +134,7 @@ function commitComment(
       refetchComments(client, postId);
     }
   });
-  refreshPointsAfterComment(client, result);
+  refreshAfterPoints(client, result.pointsAwarded);
 }
 
 /**
@@ -156,6 +162,7 @@ function refreshPostAfterComment(client: QueryClient, variables: AddCommentVaria
 export function registerPostMutationDefaults(client: QueryClient): void {
   client.setMutationDefaults(postMutationKeys.like, {
     mutationFn: (variables: SetLikeVariables) => setPostLike(variables),
+    onSuccess: (result: PointsAward) => refreshAfterPoints(client, result.pointsAwarded),
   });
   client.setMutationDefaults<AddCommentResult, ApiError, AddCommentVariables>(
     postMutationKeys.comment,
@@ -213,13 +220,33 @@ export function useCommentsQuery(postId: string) {
   });
 }
 
+/** Os pontos de uma curtida, para o "+N" do botão. Muda a cada ganho. */
+export interface LikeAward {
+  id: string;
+  points: number;
+}
+
 /**
  * Curtir aparece na hora (otimista), no detalhe e em toda lista com o post
  * (home, grade da central), e desfaz se a API recusar. O toque de "like"
  * acompanha só o curtir, não o descurtir.
+ *
+ * A curtida pode andar uma missão de curtida: as missões buscam de novo, e a
+ * que concluiu rende pontos, que sobem no "+N" do botão (`award`, para o
+ * `PointsToast`, que dá o toque `pointsEarned` e o anúncio) e mudam o saldo, o
+ * ranking e as centrais.
  */
 export function useToggleLikeMutation() {
   const queryClient = useQueryClient();
+  const [award, setAward] = useState<LikeAward | null>(null);
+  const mounted = useRef(false);
+
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
 
   const mutation = useMutation({
     mutationKey: postMutationKeys.like,
@@ -232,6 +259,13 @@ export function useToggleLikeMutation() {
       await queryClient.cancelQueries({ queryKey: postKeys.detail(postId) });
       patchPostEverywhere(queryClient, postId, (post) => withLike(post, liked));
       if (liked) haptics.trigger('like');
+    },
+    onSuccess: (result, { idempotencyKey }) => {
+      refreshAfterPoints(queryClient, result.pointsAwarded);
+      // Chegou com a tela fechada (a rede voltou depois): sem o "+N".
+      if (mounted.current && result.pointsAwarded > 0) {
+        setAward({ id: idempotencyKey, points: result.pointsAwarded });
+      }
     },
     onError: (_error, { postId, liked }) => {
       // Volta só se nada mudou depois: com curtir e descurtir em fila, o toque
@@ -251,6 +285,7 @@ export function useToggleLikeMutation() {
 
   return {
     ...mutation,
+    award,
     toggle: (postId: string, liked: boolean) =>
       mutation.mutate({ postId, liked, idempotencyKey: createIdempotencyKey() }),
   };

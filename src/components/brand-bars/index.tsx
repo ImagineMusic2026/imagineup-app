@@ -1,7 +1,16 @@
+import { useEffect } from 'react';
 import { StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
+import Animated, {
+  useAnimatedProps,
+  useSharedValue,
+  withDelay,
+  withTiming,
+} from 'react-native-reanimated';
 import Svg, { Polygon } from 'react-native-svg';
 
-import { colors } from '@/theme';
+import { usePrefersReducedMotion } from '@/hooks/use-prefers-reduced-motion';
+import { ALREADY_ENTERED, type StackEntrance } from '@/hooks/use-stack-fade';
+import { colors, motion } from '@/theme';
 
 /**
  * Tamanho das barras, cada um de um lugar do protótipo:
@@ -20,6 +29,18 @@ export interface BrandBarsProps {
   size?: BrandBarsSize;
   /** Sem valor, segue o protótipo: `bold` em `title` e `hero`, `soft` nas outras. */
   opacities?: BrandBarsOpacities;
+  /**
+   * As barras acendem uma depois da outra quando aparecem (80 ms entre elas),
+   * até a opacidade de cada uma. Com reduzir movimento, já nascem acesas.
+   */
+  lightUp?: boolean;
+  /** Espera antes da primeira barra, para acender junto com o resto da tela. */
+  lightUpDelay?: number;
+  /**
+   * A entrada da pilha em que as barras estão (a 1k): elas esperam o fade dela
+   * começar para acender. Sem ela, acendem quando aparecem.
+   */
+  entrance?: StackEntrance;
   style?: StyleProp<ViewStyle>;
 }
 
@@ -43,6 +64,9 @@ const MEASURES: Record<BrandBarsSize, { width: number; height: number; gap: numb
   hero: { width: 4, height: 21, gap: 2.5 },
 };
 
+// Intervalo entre uma barra e a seguinte quando elas acendem.
+const LIGHT_UP_STEP_MS = 80;
+
 /** Largura da caixa das barras no layout (a inclinação passa para fora dela). */
 export function brandBarsWidth(size: BrandBarsSize, count = OPACITIES.soft.length): number {
   const { width, gap } = MEASURES[size];
@@ -53,6 +77,41 @@ export function brandBarsWidth(size: BrandBarsSize, count = OPACITIES.soft.lengt
 const SLANT = Math.tan((22 * Math.PI) / 180);
 
 const round = (value: number): number => Math.round(value * 100) / 100;
+
+const AnimatedPolygon = Animated.createAnimatedComponent(Polygon);
+
+interface BarProps {
+  points: string;
+  color: string;
+  opacity: number;
+  index: number;
+  delay: number;
+  entrance: StackEntrance;
+}
+
+/** Uma barra que sai do apagado até a opacidade dela, na vez dela. */
+function LitBar({ points, color, opacity, index, delay, entrance }: BarProps) {
+  const reducedMotion = usePrefersReducedMotion();
+  const lit = useSharedValue(reducedMotion ? 1 : 0);
+
+  useEffect(() => {
+    if (reducedMotion) {
+      lit.set(1);
+      return undefined;
+    }
+    return entrance.onEnter(() => {
+      lit.set(
+        withDelay(
+          delay + index * LIGHT_UP_STEP_MS,
+          withTiming(1, { duration: motion.duration.slow, easing: motion.easing.out }),
+        ),
+      );
+    });
+  }, [delay, entrance, index, lit, reducedMotion]);
+
+  const animatedProps = useAnimatedProps(() => ({ fillOpacity: opacity * lit.get() }));
+  return <AnimatedPolygon points={points} fill={color} animatedProps={animatedProps} />;
+}
 
 /**
  * As três barras inclinadas do logo, a marca de pontos do design. Desenho, não
@@ -67,6 +126,9 @@ export function BrandBars({
   color = colors.accent,
   size = 'pill',
   opacities,
+  lightUp = false,
+  lightUpDelay = 0,
+  entrance = ALREADY_ENTERED,
   style,
 }: BrandBarsProps) {
   const levels = OPACITIES[opacities ?? DEFAULT_OPACITIES[size]];
@@ -97,7 +159,19 @@ export function BrandBars({
             [foot, height],
           ];
           const points = corners.map(([x, y]) => `${round(x)},${round(y)}`).join(' ');
-          return <Polygon key={index} points={points} fill={color} fillOpacity={opacity} />;
+          return lightUp ? (
+            <LitBar
+              key={index}
+              points={points}
+              color={color}
+              opacity={opacity}
+              index={index}
+              delay={lightUpDelay}
+              entrance={entrance}
+            />
+          ) : (
+            <Polygon key={index} points={points} fill={color} fillOpacity={opacity} />
+          );
         })}
       </Svg>
     </View>

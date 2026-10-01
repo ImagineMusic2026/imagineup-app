@@ -621,7 +621,29 @@
   },
   "invite": {
     "title": "Convidar",
-    "subtitle": "Cada pessoa que abrir seu link vale pontos."
+    "subtitle": "Cada pessoa que abrir seu link vale pontos.",
+    "mission": "Para a missão “{{title}}”",
+    "link": "Seu link",
+    "target": {
+      "post": "Leva para o post de {{artist}}.",
+      "postPlain": "Leva para o post.",
+      "event": "Leva para a agenda de shows: {{show}}.",
+      "eventPlain": "Leva para a agenda de shows.",
+      "app": "Leva para o ImagineUP."
+    },
+    "linkA11y": "Seu link, com o seu código de convite, {{code}}. {{target}}",
+    "linkA11yNoCode": "Seu link, ainda sem o seu código de convite. {{target}}",
+    "loading": "Carregando seu link",
+    "noCode": "Seu código de convite não carregou, e o link sai sem os pontos.",
+    "howYouEarn": "Como você ganha",
+    "perVisit": "por pessoa que abre o link",
+    "perSignup": "por pessoa que se cadastra pelo link",
+    "share": "Compartilhar meu link",
+    "shareHint": "Abre as opções de compartilhar do celular",
+    "message": {
+      "app": "Vem pro ImagineUP, a central de fãs dos artistas da Imagine Music",
+      "event": "Vamos juntos? {{show}} está na agenda do ImagineUP"
+    }
   },
   "notFound": {
     "title": "Página não encontrada",

@@ -142,9 +142,11 @@ const SAMPLES: readonly Sample[] = [
     commentCount: 233,
   },
   {
-    id: 'p-juninho-2',
+    // O terceiro post do Nenho: a missão de exemplo "Curta 5 posts do Nenho"
+    // (2 de 5) dá para concluir curtindo os três.
+    id: 'p-nenho-3',
     kind: 'text',
-    artist: JUNINHO,
+    artist: NENHO,
     text: 'Valeu por cada mensagem desta semana. Tô lendo tudo.',
     hoursAgo: 13 * 24,
     likeCount: 980,
@@ -204,6 +206,8 @@ function buildBasePosts(now: Date): Post[] {
 
 // "Servidor" das fixtures: o que o fã fez nesta abertura do app.
 let likes = new Map<string, boolean>();
+/** Posts cuja primeira curtida já contou nas missões: descurtir e curtir de novo não conta. */
+let likesCounted = new Set<string>();
 /** Comentários do fã por post, do mais novo ao mais antigo. */
 let fanComments = new Map<string, PostComment[]>();
 /** Resposta de cada chave de idempotência: a mesma chave de novo não conta outra vez. */
@@ -418,15 +422,22 @@ export interface FixtureCommentInput {
 /**
  * O servidor dos posts nas fixtures: curtir e comentar, com a chave de
  * idempotência e as recusas que a API faria. Comentar rende pontos (exemplo)
- * e conta nas missões de comentário.
+ * e conta nas missões de comentário. A primeira curtida de um post conta nas
+ * missões de curtida da central dele ("Curta 5 posts do Nenho"), e só rende
+ * pontos quando conclui uma.
  */
 export const postsFixture = {
   setLike(postId: string, liked: boolean, idempotencyKey: string, now: Date): PointsAward {
     const previous = answered.get(idempotencyKey);
     if (previous) return { pointsAwarded: previous.pointsAwarded };
-    findBasePost(now, postId);
+    const post = findBasePost(now, postId);
     likes.set(postId, liked);
-    const result: PointsAward = { pointsAwarded: 0 };
+    let pointsAwarded = 0;
+    if (liked && !post.likedByMe && !likesCounted.has(postId)) {
+      likesCounted.add(postId);
+      pointsAwarded = missionsFixture.record('like', now, { artistId: post.artist.id });
+    }
+    const result: PointsAward = { pointsAwarded };
     answered.set(idempotencyKey, result);
     return { ...result };
   },
@@ -435,7 +446,7 @@ export const postsFixture = {
     const previous = answered.get(input.idempotencyKey);
     if (previous && 'id' in previous) return { ...previous };
 
-    findBasePost(now, input.postId);
+    const post = findBasePost(now, input.postId);
     const text = input.text.trim();
     if (text.length === 0 || text.length > COMMENT_MAX_LENGTH) {
       throw new ApiError('validation', 'Comentário vazio ou longo demais.', 422);
@@ -454,7 +465,8 @@ export const postsFixture = {
     };
     fanComments.set(input.postId, [comment, ...(fanComments.get(input.postId) ?? [])]);
     fixtureWallet.earn(COMMENT_POINTS);
-    const pointsAwarded = COMMENT_POINTS + missionsFixture.record('comment', now);
+    const pointsAwarded =
+      COMMENT_POINTS + missionsFixture.record('comment', now, { artistId: post.artist.id });
     const result = { ...comment, pointsAwarded };
     answered.set(input.idempotencyKey, result);
     return { ...result };
@@ -463,6 +475,7 @@ export const postsFixture = {
   /** Volta ao início (fim da sessão e testes). As missões voltam com `missionsFixture.reset()`. */
   reset(): void {
     likes = new Map();
+    likesCounted = new Set();
     fanComments = new Map();
     answered = new Map();
     fanCommentSeq = 0;

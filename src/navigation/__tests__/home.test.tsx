@@ -10,7 +10,7 @@ import {
   waitFor,
 } from 'expo-router/testing-library';
 import { getDoc, onSnapshot } from 'firebase/firestore';
-import { AccessibilityInfo, Text } from 'react-native';
+import { AccessibilityInfo, Platform, Text } from 'react-native';
 
 import HomeRoute from '@/app/(tabs)/(inicio)/index';
 import { buildFanCentralsFixture } from '@/domains/artists/fixtures';
@@ -74,6 +74,19 @@ type StateNode = { routes?: { name: string; state?: StateNode }[] };
 const rootRoutes = (view: Router): string[] => {
   const container = view.getRouterState() as StateNode | undefined;
   return container?.routes?.[0]?.state?.routes?.map((route) => route.name) ?? [];
+};
+
+/** As telas da pilha de uma aba (`(ranking)`...), de baixo para cima. */
+const tabStack = (view: Router, tab: string): string[] => {
+  const find = (node: StateNode | undefined): StateNode | undefined => {
+    for (const route of node?.routes ?? []) {
+      if (route.name === tab) return route.state;
+      const found = find(route.state);
+      if (found) return found;
+    }
+    return undefined;
+  };
+  return find(view.getRouterState() as StateNode | undefined)?.routes?.map((r) => r.name) ?? [];
 };
 
 const failure = () => Promise.reject(new Error('fora do ar'));
@@ -243,13 +256,18 @@ describe('home (1b)', () => {
     expect(rootRoutes(view)).toEqual(['(tabs)']);
   });
 
-  it('"Ver missões" abre a 1g na pilha do Ranking', async () => {
+  it('"Ver missões" abre a 1g na pilha do Ranking, com a 1f embaixo', async () => {
     const view = renderRouter(appTree, { initialUrl: '/' });
 
     fireEvent.press(await screen.findByRole('button', { name: 'Ver missões' }));
     await waitFor(() => expect(view.getPathname()).toBe('/missoes'));
     expect(view.getSegments()).toEqual(['(tabs)', '(ranking)', 'missoes']);
     expect(rootRoutes(view)).toEqual(['(tabs)']);
+    expect(tabStack(view, '(ranking)')).toEqual(['ranking', 'missoes']);
+
+    // Sem a 1f embaixo, o voltar caía no Início e a aba Ranking só mostrava a 1g.
+    act(() => testRouter.back());
+    expect(view.getPathname()).toBe('/ranking');
   });
 
   it('a missão do dia que conclui com a home fora de foco não vibra nem anuncia: quem festeja é a 1g', async () => {
@@ -269,7 +287,8 @@ describe('home (1b)', () => {
     await act(async () => {
       await client.invalidateQueries({ queryKey: missionKeys.daily() });
     });
-    act(() => testRouter.back());
+    // De volta ao Início pela aba: o voltar da 1g leva à 1f, na pilha da Ranking.
+    fireEvent.press(screen.getByRole(Platform.OS === 'ios' ? 'button' : 'tab', { name: /inicio/ }));
 
     expect(
       await screen.findByLabelText(t('missions.daily.summaryCompleted', { points: '20 pontos' })),

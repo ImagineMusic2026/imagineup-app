@@ -7,6 +7,7 @@ import { useStackScreenOptions } from '@/hooks/use-stack-screen-options';
 import { colors } from '@/theme';
 
 import { AuthBackdrop } from '../components/auth-backdrop';
+import { AuthEntranceContext } from '../hooks/use-auth-entrance';
 import { useAuthStackFade } from '../hooks/use-auth-exit';
 
 /**
@@ -14,7 +15,9 @@ import { useAuthStackFade } from '../hooks/use-auth-exit';
  * da 1k fica atrás da pilha e as telas são transparentes, então a foto e o logo
  * ficam parados e só o conteúdo troca, em fade (sem animação com reduzir
  * movimento). A pilha inteira entra e sai do fundo escuro em fade, porque a
- * troca de grupo na pilha raiz é seca (`useAuthStackFade`).
+ * troca de grupo na pilha raiz é seca (`useAuthStackFade`). O que entra junto
+ * com ela (a sequência da 1k, a foto assentando) começa no mesmo instante do
+ * fade, pelo `AuthEntranceContext`.
  */
 export function AuthStack() {
   const screenOptions = useStackScreenOptions();
@@ -29,14 +32,16 @@ export function AuthStack() {
         onLayout={fade.onLayout}
         style={[styles.fill, fade.style]}
       >
-        <AuthBackdrop />
-        <Stack
-          screenOptions={{
-            ...screenOptions,
-            contentStyle: styles.screen,
-            animation: reducedMotion ? 'none' : 'fade',
-          }}
-        />
+        <AuthBackdrop entrance={fade.entrance} />
+        <AuthEntranceContext value={fade.entrance}>
+          <Stack
+            screenOptions={{
+              ...screenOptions,
+              contentStyle: styles.screen,
+              animation: reducedMotion ? 'none' : 'fade',
+            }}
+          />
+        </AuthEntranceContext>
       </Animated.View>
     </View>
   );

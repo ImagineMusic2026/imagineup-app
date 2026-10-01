@@ -37,6 +37,7 @@ import {
   useLocalComments,
   usePostQuery,
   useToggleLikeMutation,
+  type LikeAward,
 } from '../queries';
 import type { Post, PostComment } from '../types';
 
@@ -84,18 +85,25 @@ function PostHeader({
   post,
   now,
   onToggleLike,
+  likeAward,
   onComment,
 }: {
   post: Post;
   now: Date;
   onToggleLike: () => void;
+  likeAward: LikeAward | null;
   onComment: () => void;
 }) {
   return (
     <View>
       <PostAuthorRow post={post} now={now} />
       <PostContent post={post} />
-      <PostActions post={post} onToggleLike={onToggleLike} onComment={onComment} />
+      <PostActions
+        post={post}
+        onToggleLike={onToggleLike}
+        likeAward={likeAward}
+        onComment={onComment}
+      />
       <SectionHeader
         title={t('post.comments.title')}
         count={formatNumber(post.commentCount)}
@@ -311,6 +319,7 @@ export function PostDetailsScreen() {
               post={current}
               now={now}
               onToggleLike={() => like.toggle(current.id, !current.likedByMe)}
+              likeAward={like.award}
               onComment={() => composer.current?.focus()}
             />
           }

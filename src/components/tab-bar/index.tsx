@@ -12,7 +12,7 @@ import { Icon } from '@/components/icon';
 import { PressableScale } from '@/components/pressable-scale';
 import { Text } from '@/components/text';
 import { t } from '@/i18n';
-import { blur, colors, layout, motion, radii, shadows, spacing } from '@/theme';
+import { blur, blurFallback, colors, layout, motion, radii, shadows, spacing } from '@/theme';
 import { withAlpha } from '@/utils/color';
 
 import { CenterMenu, type CenterMenuAction } from './center-menu';
@@ -36,6 +36,15 @@ const ITEM_PADDING_TOP = 11;
 
 // Os atalhos nascem um pouco acima da barra.
 const MENU_GAP = spacing.lg;
+
+// Topo do degradê do fundo: o .4 do protótipo sobre o desfoque no iOS, sólido
+// aos 45% da altura. O Android não desfoca, e o conteúdo de baixo aparecia
+// nítido entre os ícones: lá o degradê começa mais fechado
+// (`blurFallback.tabBar`) e fica sólido aos 20%, antes da linha dos ícones (11
+// pt do topo); só a borda de cima deixa ver um vulto escuro do que passa.
+const GRADIENT_TOP_ALPHA = 0.4;
+const GRADIENT_SOLID_AT = 0.45;
+const GRADIENT_SOLID_AT_ANDROID = 0.2;
 
 // No iOS o papel "tab" não vira nenhum trait e o VoiceOver não diz que é
 // tocável; o React Navigation dentro do expo-router usa "button" pelo mesmo motivo.
@@ -66,7 +75,8 @@ function TabButton({ item, onPress }: { item: TabItem; onPress: () => void }) {
 
 /**
  * Tab bar do protótipo (1b): ancorada no rodapé, gradiente do fundo com blur no
- * iOS, ícones só em contorno e o ativo em rosa. Fica por cima do conteúdo, então
+ * iOS (no Android, sem blur, o gradiente começa mais fechado), ícones só em
+ * contorno e o ativo em rosa. Fica por cima do conteúdo, então
  * as telas somam `useTabBarInset()` ao espaço de baixo.
  *
  * O "+" do meio não é aba: gira até virar um "×" e abre os atalhos em leque
@@ -76,6 +86,9 @@ export function TabBar({ items, centerMenu }: TabBarProps) {
   const insets = useSafeAreaInsets();
   const onHeightChange = useContext(BottomTabBarHeightCallbackContext);
   const solid = SOLID_ON.includes(usePathname());
+  const blurs = Platform.OS === 'ios';
+  const gradientTop = blurs ? GRADIENT_TOP_ALPHA : blurFallback.tabBar;
+  const gradientSolidAt = blurs ? GRADIENT_SOLID_AT : GRADIENT_SOLID_AT_ANDROID;
   const [barHeight, setBarHeight] = useState(0);
   const [menuOpen, setMenuOpen] = useState(false);
   const progress = useSharedValue(0);
@@ -147,7 +160,7 @@ export function TabBar({ items, centerMenu }: TabBarProps) {
           { paddingBottom: Math.max(insets.bottom, spacing.md) },
         ]}
       >
-        {!solid && Platform.OS === 'ios' ? (
+        {!solid && blurs ? (
           <BlurView
             intensity={blur.tabBar}
             tint="dark"
@@ -156,8 +169,8 @@ export function TabBar({ items, centerMenu }: TabBarProps) {
         ) : null}
         {!solid ? (
           <LinearGradient
-            colors={[withAlpha(colors.background, 0.4), colors.background]}
-            locations={[0, 0.45]}
+            colors={[withAlpha(colors.background, gradientTop), colors.background]}
+            locations={[0, gradientSolidAt]}
             style={StyleSheet.absoluteFill}
           />
         ) : null}

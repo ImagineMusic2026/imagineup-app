@@ -2,7 +2,7 @@ import { fireEvent, render, screen } from '@testing-library/react-native';
 import { router } from 'expo-router';
 import { Dimensions } from 'react-native';
 import * as Reanimated from 'react-native-reanimated';
-import { Path } from 'react-native-svg';
+import { Path, Polygon } from 'react-native-svg';
 
 import type { FanCentral } from '@/domains/artists';
 import { borderWidths, colors, spacing, tints, typography } from '@/theme';
@@ -200,6 +200,16 @@ describe('ProfileHero', () => {
   });
 });
 
+/** Opacidade de cada barra da marca no selo: a fixa, ou a do primeiro quadro quando acende. */
+function barsOpacity(): number[] {
+  return screen.root
+    .findAll((node) => node.type === Polygon)
+    .map((node) => {
+      const animated = node.props.animatedProps as { fillOpacity: number } | undefined;
+      return animated ? animated.fillOpacity : (node.props.fillOpacity as number);
+    });
+}
+
 describe('LevelBadge', () => {
   it('pulsa e volta do rosa ao lima quando o nível sobe diante do fã', () => {
     const sequence = jest.spyOn(Reanimated, 'withSequence');
@@ -216,6 +226,18 @@ describe('LevelBadge', () => {
     const sequence = jest.spyOn(Reanimated, 'withSequence');
     render(<LevelBadge level={XODO} celebration={3} />);
     expect(sequence).not.toHaveBeenCalled();
+    expect(barsOpacity()).toEqual([1, 0.6, 0.3]);
+  });
+
+  it('na subida de nível, as barras apagam e acendem de novo, uma depois da outra', () => {
+    const { rerender } = render(<LevelBadge level={PURAINHA} celebration={null} />);
+    expect(barsOpacity()).toEqual([1, 0.6, 0.3]);
+    const delay = jest.spyOn(Reanimated, 'withDelay');
+
+    rerender(<LevelBadge level={XODO} celebration={1} />);
+    expect(barsOpacity()).toEqual([0, 0, 0]);
+    // O mock refaz o valor a cada render: o acender se confere pelas esperas.
+    expect(delay.mock.calls.map(([wait]) => wait)).toEqual([0, 80, 160]);
   });
 
   it('com reduzir movimento, só o texto troca', () => {

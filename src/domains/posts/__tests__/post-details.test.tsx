@@ -11,8 +11,10 @@ import type { ReactNode } from 'react';
 import { AccessibilityInfo } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
-import { missionsFixture } from '@/domains/missions';
+import { artistKeys } from '@/domains/artists';
+import { missionKeys, missionsFixture } from '@/domains/missions';
 import { profileKeys } from '@/domains/profile';
+import { rankingKeys } from '@/domains/ranking';
 import { buildMyInviteFixture } from '@/domains/profile/fixtures';
 import { t } from '@/i18n';
 import { api } from '@/services/api';
@@ -737,5 +739,69 @@ describe('curtir no post', () => {
     expect(feedPost()).toMatchObject({ likedByMe: false, likeCount: 4_812 });
     expect(haptics.trigger).toHaveBeenCalledWith('error');
     expect(announcements()).toContain(t('post.likeError'));
+  });
+
+  describe('missão de curtida', () => {
+    const NENHO_TEXT = 'Um pedaço do ensaio de ontem. Qual música vocês querem no show?';
+    const invalidated = (spy: jest.SpyInstance) =>
+      spy.mock.calls.map(([filters]) => (filters as { queryKey: readonly unknown[] }).queryKey);
+
+    async function renderNenhoPost() {
+      mockPostId = 'p-nenho-2';
+      render(<PostDetailsScreen />, { wrapper });
+      await screen.findByText(NENHO_TEXT);
+      await settle();
+    }
+
+    it('a curtida que conclui "Curta 5 posts do Nenho" sobe "+10" e atualiza missões, saldo, ranking e centrais', async () => {
+      // A missão já em 4 de 5: falta uma curtida num post do Nenho.
+      missionsFixture.record('like', new Date(), { artistId: 'nenho' });
+      missionsFixture.record('like', new Date(), { artistId: 'nenho' });
+      await renderNenhoPost();
+      const invalidate = jest.spyOn(client, 'invalidateQueries');
+
+      fireEvent.press(screen.getByRole('button', { name: 'Curtir, 2.310 curtidas' }));
+
+      expect(await screen.findByText('+10', hidden)).toBeTruthy();
+      expect(haptics.trigger).toHaveBeenCalledWith('pointsEarned');
+      expect(invalidated(invalidate)).toEqual(
+        expect.arrayContaining([
+          missionKeys.all,
+          profileKeys.wallet(),
+          rankingKeys.all,
+          artistKeys.centrals(),
+        ]),
+      );
+      await settle();
+    });
+
+    it('a curtida que só anda a missão faz as missões buscarem de novo, sem "+N" nem saldo', async () => {
+      await renderNenhoPost();
+      const invalidate = jest.spyOn(client, 'invalidateQueries');
+
+      fireEvent.press(screen.getByRole('button', { name: 'Curtir, 2.310 curtidas' }));
+
+      await waitFor(() => expect(invalidated(invalidate)).toContainEqual(missionKeys.all));
+      expect(invalidated(invalidate)).not.toContainEqual(profileKeys.wallet());
+      expect(screen.queryByTestId('post-like-points', hidden)).toBeNull();
+      await settle();
+    });
+
+    it('a curtida que volta da fila com o app reaberto também atualiza o saldo e as centrais', async () => {
+      registerPostMutationDefaults(client);
+      missionsFixture.record('like', new Date(), { artistId: 'nenho' });
+      missionsFixture.record('like', new Date(), { artistId: 'nenho' });
+      client.setQueryData(profileKeys.wallet(), { balance: 1, xp: 1, seasonPoints: 1 });
+      client.setQueryData(artistKeys.centrals(), []);
+
+      // Sem a tela montada: só as opções registradas no AppProviders.
+      await client
+        .getMutationCache()
+        .build(client, { mutationKey: postMutationKeys.like })
+        .execute({ postId: 'p-nenho-2', liked: true, idempotencyKey: 'da-fila' });
+
+      expect(client.getQueryState(profileKeys.wallet())?.isInvalidated).toBe(true);
+      expect(client.getQueryState(artistKeys.centrals())?.isInvalidated).toBe(true);
+    });
   });
 });
