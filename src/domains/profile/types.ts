@@ -40,3 +40,65 @@ export interface MyInvite {
   /** Por pessoa que se cadastra pelo link. */
   pointsPerSignup: number;
 }
+
+/** Um degrau da régua de níveis, configurada no painel admin. */
+export interface Level {
+  number: number;
+  /** "Purainha". */
+  name: string;
+  /** XP a partir do qual o fã está neste nível. */
+  minXp: number;
+}
+
+/**
+ * Os números do fã na 1e. O terceiro é provisório: no protótipo era
+ * "playlists", fora do contrato (pergunta 7.3.2 para a cliente).
+ */
+export interface FanStats {
+  /** Links de convite que o fã gerou. */
+  linksCreated: number;
+  /** Cadastros atribuídos aos links dele. */
+  peopleBrought: number;
+  /** Temporadas em que o fã pontuou. */
+  seasons: number;
+}
+
+/**
+ * Nível e números do fã (1e), decididos no servidor. O XP é o de nível, que
+ * nunca cai (o resgate só desconta o saldo): o anel, a barra e o "Faltam ..."
+ * leem daqui, e o número grande "SEUS PONTOS" é o saldo da carteira.
+ */
+export interface MyProgress {
+  xp: number;
+  level: Level;
+  /** `null` no nível máximo. */
+  nextLevel: Level | null;
+  /** Pontos ganhos nos últimos 7 dias, sem descontar resgates ("+840"). */
+  weekEarned: number;
+  stats: FanStats;
+}
+
+/** Cor da conquista: rosa para ação e convite, lima para pontos e ranking, ciano para shows. */
+export type AchievementTone = 'action' | 'points' | 'events';
+
+export interface Achievement {
+  id: string;
+  /** "Boca a boca". */
+  title: string;
+  /**
+   * Chave do ícone (`share`, `trophy`, `ticket`...). A lista vem do painel:
+   * chave que o app não conhece cai num ícone genérico.
+   */
+  icon: string;
+  tone: AchievementTone;
+  /** ISO; `null` enquanto a conquista está bloqueada. */
+  unlockedAt: string | null;
+}
+
+/** As conquistas do fã: a contagem e as que o perfil mostra (as últimas e a próxima). */
+export interface MyAchievements {
+  unlockedCount: number;
+  totalCount: number;
+  /** Na ordem do servidor: as últimas desbloqueadas e a próxima bloqueada. */
+  highlights: Achievement[];
+}

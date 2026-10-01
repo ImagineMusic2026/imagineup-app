@@ -1,5 +1,6 @@
-import { Canvas, Fill, LinearGradient, vec } from '@shopify/react-native-skia';
+import { LinearGradient, vec } from '@shopify/react-native-skia';
 import { StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
+import Svg, { Defs, Pattern, Rect } from 'react-native-svg';
 
 import { STRIPE_ANGLE, stripes, type StripePreset, type StripeToken } from '@/theme';
 import { withAlpha } from '@/utils/color';
@@ -55,8 +56,9 @@ export function stripeGradient({
 }
 
 /**
- * As listras como shader, para quem já desenha num Canvas próprio (o brilho da
- * 1e, o placeholder de foto): vai dentro de um `Fill` ou de uma forma do Skia.
+ * As listras como shader, para quem já desenha num Canvas próprio (o
+ * placeholder de foto das listas e dos cards): vai dentro de um `Fill` ou de
+ * uma forma do Skia.
  */
 export function StripesShader({ stripe }: { stripe: StripeToken }) {
   const { start, end, colors, positions } = stripeGradient(stripe);
@@ -68,6 +70,31 @@ export function StripesShader({ stripe }: { stripe: StripeToken }) {
       positions={positions}
       mode="repeat"
     />
+  );
+}
+
+/**
+ * As listras como `<Pattern>` do react-native-svg, para quem desenha em SVG (o
+ * brilho da 1e, o placeholder da capa e dos destaques): vai dentro de um
+ * `<Defs>` e pinta uma forma com `fill="url(#id)"`. É o mesmo desenho do
+ * shader: a listra em `[0, width]` de cada período, medido ao longo do eixo do
+ * ângulo a partir do canto de cima. O eixo x do padrão gira até o eixo do
+ * gradiente do CSS (`angle - 90` no sentido horário).
+ */
+export function StripesPattern({ id, stripe }: { id: string; stripe: StripeToken }) {
+  const { color, alpha, width, period, angle } = stripe;
+  return (
+    <Pattern
+      id={id}
+      patternUnits="userSpaceOnUse"
+      x={0}
+      y={0}
+      width={period}
+      height={period}
+      patternTransform={`rotate(${angle - 90})`}
+    >
+      <Rect x={0} y={0} width={width} height={period} fill={color} fillOpacity={alpha} />
+    </Pattern>
   );
 }
 
@@ -87,10 +114,14 @@ function resolveStripe(props: StripesFromPreset | StripesFromValues): StripeToke
 }
 
 /**
- * Listras diagonais da marca (1k, 1b, 1g, 1d, 1e e o placeholder de foto),
- * inclinadas como as barras do logo. Textura por cima do fundo do pai: não
- * recebe toque e não existe para o leitor de tela. O pai com `overflow: hidden`
- * recorta os cantos.
+ * Listras diagonais da marca (1k, 1b, 1g, 1d), inclinadas como as barras do
+ * logo. Textura por cima do fundo do pai: não recebe toque e não existe para o
+ * leitor de tela. O pai com `overflow: hidden` recorta os cantos.
+ *
+ * Em SVG, e não no Skia: no Android, o `Canvas` do Skia desenha numa
+ * superfície que só fica pronta alguns quadros depois de a tela aparecer, e as
+ * listras da capa da 1d e do fundo da 1k surgiam secas depois da transição. O
+ * SVG entra no primeiro quadro, junto com o resto.
  */
 export function Stripes(props: StripesProps) {
   const token = resolveStripe(props);
@@ -102,11 +133,12 @@ export function Stripes(props: StripesProps) {
       accessibilityElementsHidden
       style={[StyleSheet.absoluteFill, props.style]}
     >
-      <Canvas style={StyleSheet.absoluteFill}>
-        <Fill>
-          <StripesShader stripe={token} />
-        </Fill>
-      </Canvas>
+      <Svg width="100%" height="100%" style={StyleSheet.absoluteFill}>
+        <Defs>
+          <StripesPattern id="stripes" stripe={token} />
+        </Defs>
+        <Rect width="100%" height="100%" fill="url(#stripes)" />
+      </Svg>
     </View>
   );
 }

@@ -4,7 +4,7 @@ import Animated, { useAnimatedStyle, withTiming } from 'react-native-reanimated'
 import { PressableScale } from '@/components/pressable-scale';
 import { maxFontScaleOf, Text } from '@/components/text';
 import { usePrefersReducedMotion } from '@/hooks/use-prefers-reduced-motion';
-import { borderWidths, colors, layout, motion, radii, spacing } from '@/theme';
+import { borderWidths, colors, layout, motion, radii, spacing, typography } from '@/theme';
 import { selectionAccessibility, type SelectionMode } from '@/utils/selection-accessibility';
 
 /**
@@ -19,6 +19,11 @@ export interface ChipProps {
   selected: boolean;
   onPress: () => void;
   mode?: ChipSelectionMode;
+  /**
+   * Na seleção única, tocar no escolhido faz alguma coisa (a 1m rola de volta
+   * ao começo do mês): o toque vibra como os outros. Sem isso, não vibra.
+   */
+  reselectable?: boolean;
   /** Troca o nome lido quando o texto visível não basta. */
   accessibilityLabel?: string;
   /** "Mostra os shows de junho" (1m), via `t()`. */
@@ -26,6 +31,15 @@ export interface ChipProps {
   onLayout?: (event: LayoutChangeEvent) => void;
   testID?: string;
 }
+
+/** Altura desenhada do chip: texto de 14 com 7 em cima e embaixo. */
+export const CHIP_HEIGHT = typography.chip.lineHeight + spacing.chipGap * 2;
+/**
+ * Sobra do alvo de 44 em cima e embaixo do chip desenhado. Quem mede o vão
+ * do protótipo até o chip (título até a fileira, fileira até o que vem
+ * embaixo) desconta esta sobra.
+ */
+export const CHIP_SLACK = (layout.minTouchTarget - CHIP_HEIGHT) / 2;
 
 const TIMING = { duration: motion.duration.base, easing: motion.easing.out };
 
@@ -53,6 +67,7 @@ export function Chip({
   selected,
   onPress,
   mode = 'single',
+  reselectable = false,
   accessibilityLabel,
   accessibilityHint,
   onLayout,
@@ -69,8 +84,9 @@ export function Chip({
     <PressableScale
       onPress={onPress}
       onLayout={onLayout}
-      // Tocar no que já está escolhido, na seleção única, não muda nada.
-      haptic={mode === 'single' && selected ? null : 'selection'}
+      // Tocar no que já está escolhido, na seleção única, não muda nada (a
+      // não ser que quem chama faça algo com o toque).
+      haptic={mode === 'single' && selected && !reselectable ? null : 'selection'}
       accessibilityRole={role}
       accessibilityState={state}
       accessibilityLabel={accessibilityLabel ?? label}

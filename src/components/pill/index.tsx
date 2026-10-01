@@ -33,6 +33,8 @@ export interface PillProps {
   caps?: boolean;
   /** Peça antes do texto (barras da marca, ícone). Decorativa: some para o leitor de tela. */
   leading?: ReactNode;
+  /** Cor do texto fora a do tom, como o número branco do curtir ligado (post). */
+  labelColor?: string;
   /**
    * Com rótulo, a pílula vira um elemento só para o leitor ("+20" lido como
    * "vale 20 pontos"). Sem ele, o texto é lido como está. Dentro de um
@@ -69,6 +71,7 @@ export function Pill({
   size = 'sm',
   caps = false,
   leading,
+  labelColor,
   accessibilityLabel,
   style,
   testID,
@@ -92,7 +95,7 @@ export function Pill({
           {leading}
         </View>
       ) : null}
-      <Text variant={variant} color={pillForeground[tone]}>
+      <Text variant={variant} color={labelColor ?? pillForeground[tone]}>
         {label}
       </Text>
     </View>
@@ -100,11 +103,28 @@ export function Pill({
 }
 
 // Todo tom tem borda (da cor do fundo nos cheios) para pílulas lado a lado
-// terem a mesma altura. O padding de cima e de baixo é o do protótipo menos a
-// sobra da entrelinha do RN (o CSS usa entrelinha 1); a altura mínima iguala a
-// Manrope, de entrelinha menor, à Sora do mesmo tamanho.
+// terem a mesma altura. No `xs` e no `sm`, o padding de cima e de baixo é o do
+// protótipo menos a sobra da entrelinha do RN (o CSS usa entrelinha 1). No
+// `md`, quem dá a altura é o ícone de 15 e 16 das ações do post, e o padding
+// fica o do protótipo (8): 34 no curtir e 33 no compartilhar. A altura mínima
+// iguala a Manrope, de entrelinha menor, à Sora do mesmo tamanho.
+
+/** Padding de cima e de baixo de cada tamanho, para quem se alinha a uma pílula. */
+export const pillPaddingVertical: Record<PillSize, number> = {
+  xs: spacing.xxs,
+  sm: spacing.xs,
+  md: spacing.sm,
+};
+
 const minHeight = (lineHeight: number, paddingVertical: number) =>
   lineHeight + paddingVertical * 2 + borderWidths.default * 2;
+
+/** Altura da pílula só com texto; um ícone maior que a entrelinha a faz crescer. */
+export const pillMinHeight: Record<PillSize, number> = {
+  xs: minHeight(typography.badgeSmall.lineHeight, pillPaddingVertical.xs),
+  sm: minHeight(typography.chipSmall.lineHeight, pillPaddingVertical.sm),
+  md: minHeight(typography.labelCompact.lineHeight, pillPaddingVertical.md),
+};
 
 const styles = StyleSheet.create({
   base: {
@@ -116,18 +136,18 @@ const styles = StyleSheet.create({
     borderWidth: borderWidths.default,
   },
   xs: {
-    minHeight: minHeight(typography.badgeSmall.lineHeight, spacing.xxs),
-    paddingVertical: spacing.xxs,
+    minHeight: pillMinHeight.xs,
+    paddingVertical: pillPaddingVertical.xs,
     paddingHorizontal: spacing.listGap,
   },
   sm: {
-    minHeight: minHeight(typography.chipSmall.lineHeight, spacing.xs),
-    paddingVertical: spacing.xs,
+    minHeight: pillMinHeight.sm,
+    paddingVertical: pillPaddingVertical.sm,
     paddingHorizontal: spacing.gridGap,
   },
   md: {
-    minHeight: minHeight(typography.labelCompact.lineHeight, spacing.chipGap),
-    paddingVertical: spacing.chipGap,
+    minHeight: pillMinHeight.md,
+    paddingVertical: pillPaddingVertical.md,
     paddingHorizontal: spacing.md,
   },
   points: {

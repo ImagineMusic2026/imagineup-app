@@ -1,0 +1,91 @@
+import { router } from 'expo-router';
+import { ChevronRight, LogOut, Trash2 } from 'lucide-react-native';
+import { ActivityIndicator, StyleSheet, View } from 'react-native';
+
+import { LargeTitleHeader } from '@/components/header';
+import { Icon } from '@/components/icon';
+import { IconTile } from '@/components/icon-tile';
+import { ListRow } from '@/components/list-row';
+import { Screen } from '@/components/screen';
+import { SectionLabel } from '@/components/section-label';
+import { Text } from '@/components/text';
+import { useSignOut } from '@/domains/auth';
+import { useTabBarInset } from '@/hooks/use-tab-bar-inset';
+import { t } from '@/i18n';
+import { useSessionStore } from '@/stores/session';
+import { colors, spacing } from '@/theme';
+
+const CHEVRON_SIZE = 18;
+
+function Chevron() {
+  return <Icon icon={ChevronRight} size={CHEVRON_SIZE} color={colors.textMuted} />;
+}
+
+/**
+ * Ajustes (sem desenho, no visual das outras telas), aberto pela engrenagem
+ * do perfil: a conta, com Sair e Excluir conta. Sair não pede confirmação
+ * (dá para entrar de novo) e por isso não leva a seta de "abre outra tela";
+ * excluir abre uma tela que diz o que se perde.
+ */
+export function SettingsScreen() {
+  const bottomInset = useTabBarInset();
+  const email = useSessionStore((state) => state.user?.email ?? null);
+  const signOut = useSignOut();
+  // Depois de sair, a linha segue ocupada até o guard trocar a tela.
+  const leaving = signOut.isPending || signOut.isSuccess;
+
+  return (
+    <Screen scroll bottomInset={bottomInset}>
+      <LargeTitleHeader title={t('settings.title')} showBack />
+      <SectionLabel style={styles.firstLabel}>{t('settings.account')}</SectionLabel>
+      <View style={styles.rows}>
+        <ListRow
+          leading={<IconTile icon={LogOut} tone="glass" />}
+          title={t('settings.signOut')}
+          meta={email ? t('settings.signOutMeta', { email }) : undefined}
+          trailing={leaving ? <ActivityIndicator color={colors.textMuted} /> : undefined}
+          onPress={() => {
+            if (!leaving) signOut.mutate();
+          }}
+          busy={leaving}
+          accessibilityLabel={
+            email
+              ? `${t('settings.signOutLabel')}. ${t('settings.signOutMeta', { email })}`
+              : t('settings.signOutLabel')
+          }
+          accessibilityHint={t('settings.signOutHint')}
+          testID="settings-sign-out"
+        />
+        <ListRow
+          leading={<IconTile icon={Trash2} tone="action" />}
+          title={t('settings.deleteAccount')}
+          meta={t('settings.deleteAccountMeta')}
+          trailing={<Chevron />}
+          onPress={() => router.push('/excluir-conta')}
+          accessibilityLabel={`${t('settings.deleteAccount')}. ${t('settings.deleteAccountMeta')}`}
+          accessibilityHint={t('settings.deleteAccountHint')}
+          testID="settings-delete-account"
+        />
+      </View>
+      {signOut.isError ? (
+        <Text variant="caption" color={colors.danger} style={styles.message}>
+          {t('settings.signOutError')}
+        </Text>
+      ) : null}
+    </Screen>
+  );
+}
+
+const styles = StyleSheet.create({
+  // O título já deixa 18 embaixo: a primeira sobrelinha não soma o espaço dela em cima.
+  firstLabel: {
+    paddingTop: 0,
+  },
+  rows: {
+    gap: spacing.listGap,
+  },
+  message: {
+    marginTop: spacing.md,
+    textAlign: 'center',
+  },
+});

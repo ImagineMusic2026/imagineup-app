@@ -4,16 +4,18 @@ import { useEffect } from 'react';
 import { usePreferencesStore } from '@/stores/preferences';
 import { useSessionStore } from '@/stores/session';
 
-import { fetchMyInvite, fetchMyProfile, fetchWallet, watchMyProfile } from './api';
+import {
+  fetchMyAchievements,
+  fetchMyInvite,
+  fetchMyProfile,
+  fetchMyProgress,
+  fetchWallet,
+  watchMyProfile,
+} from './api';
+import { profileKeys } from './keys';
 import type { FanProfile } from './types';
 
-/** A chave inclui tudo que muda o resultado. */
-export const profileKeys = {
-  all: ['profile'] as const,
-  me: (uid: string) => [...profileKeys.all, 'me', uid] as const,
-  wallet: () => [...profileKeys.all, 'wallet'] as const,
-  invite: () => [...profileKeys.all, 'invite'] as const,
-};
+export { profileKeys };
 
 /** Uid da sessão que o Firebase já confirmou; `null` enquanto ela é só presumida. */
 function useConfirmedUid(): string | null {
@@ -68,6 +70,22 @@ export function useWalletQuery() {
   return useQuery({
     queryKey: profileKeys.wallet(),
     queryFn: fetchWallet,
+  });
+}
+
+/** Nível, XP de nível, ganhos da semana e números do fã (1e). */
+export function useMyProgressQuery() {
+  return useQuery({
+    queryKey: profileKeys.progress(),
+    queryFn: fetchMyProgress,
+  });
+}
+
+/** Conquistas do fã: a contagem e as que o perfil mostra (1e). */
+export function useMyAchievementsQuery() {
+  return useQuery({
+    queryKey: profileKeys.achievements(),
+    queryFn: fetchMyAchievements,
   });
 }
 

@@ -21,6 +21,26 @@ export function initialsOf(name: string): string {
   return initials.toLocaleUpperCase('pt-BR');
 }
 
+/**
+ * Nome curto de pessoa: o primeiro nome e a inicial do último ("Thalita
+ * Santos" dá "Thalita S.", "Maria Clara Souza" dá "Maria S."), como o pódio
+ * do ranking (1f) mostra todo mundo. Com uma palavra só, ela inteira. Palavra
+ * sem letra nem número, como um emoji, fica de fora; nome vazio devolve vazio.
+ */
+export function firstNameAndInitial(name: string): string {
+  const words = name
+    .normalize('NFC')
+    .trim()
+    .split(/\s+/)
+    .filter((word) => LETTER_OR_DIGIT.test(word));
+
+  const first = words[0];
+  if (!first) return '';
+  const last = words.length > 1 ? words[words.length - 1] : undefined;
+  const initial = last ? Array.from(last).find((char) => LETTER_OR_DIGIT.test(char)) : undefined;
+  return initial ? `${first} ${initial.toLocaleUpperCase('pt-BR')}.` : first;
+}
+
 // Acentos e outros sinais que o NFD separa da letra.
 const COMBINING_MARKS = /\p{M}/gu;
 

@@ -5,7 +5,7 @@ import { StyleSheet } from 'react-native';
 import { avatarFallbacks, colors, motion } from '@/theme';
 import { pickStable } from '@/utils/pick-stable';
 
-import { PhotoFallback, RemoteImage } from '..';
+import { PhotoFallback, RemoteImage, StaticPhotoFallback } from '..';
 
 let mockReducedMotion = false;
 jest.mock('@/hooks/use-prefers-reduced-motion', () => ({
@@ -95,6 +95,44 @@ describe('RemoteImage', () => {
     expect(StyleSheet.flatten(box?.props.style).backgroundColor).toBe(
       pickStable('nenho', avatarFallbacks),
     );
+  });
+
+  it('com a medida da tela, o placeholder sai em SVG, sem esperar o Skia', () => {
+    const { rerender } = render(
+      <RemoteImage
+        uri={null}
+        fallback={{ kind: 'brand', seed: 'netto-brito', stripes: null }}
+        fallbackSize={{ width: 402, height: 270 }}
+      />,
+    );
+    expect(screen.UNSAFE_getByType(StaticPhotoFallback).props).toMatchObject({
+      seed: 'netto-brito',
+      variant: 'brand',
+      stripes: null,
+      width: 402,
+      height: 270,
+    });
+    expect(screen.UNSAFE_queryAllByType(PhotoFallback)).toHaveLength(0);
+
+    // O show sem foto (1m), com as listras do placeholder, também.
+    rerender(
+      <RemoteImage
+        uri={null}
+        fallback={{ kind: 'events', seed: 'sao-joao' }}
+        fallbackSize={{ width: 366, height: 186 }}
+      />,
+    );
+    expect(screen.UNSAFE_getByType(StaticPhotoFallback).props).toMatchObject({
+      variant: 'events',
+      stripes: undefined,
+    });
+    expect(screen.UNSAFE_queryAllByType(PhotoFallback)).toHaveLength(0);
+  });
+
+  it('sem a medida (listas e cards), fica o placeholder do Skia', () => {
+    render(<RemoteImage uri={null} fallback={{ kind: 'brand', seed: 'netto-brito' }} />);
+    expect(screen.UNSAFE_queryAllByType(StaticPhotoFallback)).toHaveLength(0);
+    expect(screen.UNSAFE_getByType(PhotoFallback)).toBeTruthy();
   });
 
   it('`surface` deixa só o fundo neutro', () => {

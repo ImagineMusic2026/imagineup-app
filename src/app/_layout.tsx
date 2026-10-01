@@ -15,6 +15,7 @@ import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect } from 'react';
 
+import { preloadLogo } from '@/components/logo';
 import { useAuthListener } from '@/domains/auth';
 import { useSessionGate } from '@/hooks/use-session-gate';
 import { useStackScreenOptions } from '@/hooks/use-stack-screen-options';
@@ -41,7 +42,15 @@ export default function RootLayout() {
   const { ready: sessionReady, signedIn, onboarded } = useSessionGate();
   const stackScreenOptions = useStackScreenOptions();
 
-  const ready = (fontsLoaded || !!fontError) && sessionReady;
+  const fontsSettled = fontsLoaded || !!fontError;
+  const ready = fontsSettled && sessionReady;
+
+  // O logo da 1k e da 1d decodifica depois das fontes: junto com elas, no
+  // Expo Go, as fontes chegavam depois da primeira tela (título cortado e
+  // texto na fonte do sistema).
+  useEffect(() => {
+    if (fontsSettled) preloadLogo();
+  }, [fontsSettled]);
 
   useEffect(() => {
     if (ready) SplashScreen.hideAsync().catch(() => undefined);
@@ -63,11 +72,25 @@ export default function RootLayout() {
           <Stack.Screen name="(tabs)" />
           {/* Post fica fora das abas: a tela de comentários tem teclado e não leva tab bar. */}
           <Stack.Screen name="post/[postId]" />
+          {/* "Gerar meu link" na altura do conteúdo: o link, as regras e o botão
+              aparecem sem o fã puxar a sheet. */}
           <Stack.Screen
             name="convidar"
             options={{
               presentation: 'formSheet',
-              sheetAllowedDetents: [0.5, 1],
+              sheetAllowedDetents: 'fitToContents',
+              sheetGrabberVisible: true,
+              sheetCornerRadius: radii.sheet,
+              contentStyle: { backgroundColor: colors.surface },
+            }}
+          />
+          {/* Detalhe, confirmação e instruções do resgate (1h), em altura cheia:
+              a foto, o quadro de pontos e o botão preso no pé. */}
+          <Stack.Screen
+            name="recompensa/[recompensaId]"
+            options={{
+              presentation: 'formSheet',
+              sheetAllowedDetents: [1],
               sheetGrabberVisible: true,
               sheetCornerRadius: radii.sheet,
               contentStyle: { backgroundColor: colors.surface },

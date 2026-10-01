@@ -203,7 +203,8 @@ export function DailyMissionCard({ mission, now, celebrate = true, style }: Dail
           label={t('missions.daily.seeAll')}
           variant={withLink ? 'onPointsSoft' : 'onPoints'}
           size="mdCompact"
-          onPress={() => router.push('/missoes')}
+          // Na pilha da Ranking, com a 1f embaixo (a âncora), como o atalho do "+".
+          onPress={() => router.navigate('/missoes', { withAnchor: true })}
           style={withLink ? undefined : styles.main}
         />
       </View>

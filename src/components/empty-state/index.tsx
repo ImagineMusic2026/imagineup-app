@@ -1,4 +1,5 @@
 import type { LucideIcon } from 'lucide-react-native';
+import type { Ref } from 'react';
 import { StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 
 import { Button } from '@/components/button';
@@ -25,6 +26,8 @@ export interface EmptyStateProps {
    */
   actionLoading?: boolean;
   style?: StyleProp<ViewStyle>;
+  /** A mensagem, para levar o foco do leitor de tela até ela (a aba nova da 1d). */
+  ref?: Ref<View>;
 }
 
 const ICON_SIZE = 22;
@@ -48,6 +51,7 @@ export function EmptyState({
   onAction,
   actionLoading = false,
   style,
+  ref,
 }: EmptyStateProps) {
   const label = actionLabel ?? (tone === 'error' ? t('common.retry') : undefined);
 
@@ -55,6 +59,7 @@ export function EmptyState({
     <View style={[styles.container, style]}>
       {icon ? <Icon icon={icon} size={ICON_SIZE} color={colors.textMuted} /> : null}
       <View
+        ref={ref}
         accessible
         accessibilityLabel={title ? `${title}. ${message}` : message}
         style={styles.copy}
@@ -69,13 +74,20 @@ export function EmptyState({
         </Text>
       </View>
       {onAction && label ? (
-        <Button
-          variant="secondary"
-          size="md"
-          label={label}
-          onPress={onAction}
-          loading={actionLoading}
-        />
+        // Numa fileira, o botão fica da altura do conteúdo. Direto na coluna,
+        // no vazio de uma FlashList (vazio e erro da 1f), o desenho do Button,
+        // que cresce para ocupar a altura que o pai der, esticava até o fim
+        // da tela.
+        <View style={styles.actionRow}>
+          <Button
+            variant="secondary"
+            size="md"
+            label={label}
+            onPress={onAction}
+            loading={actionLoading}
+            style={styles.action}
+          />
+        </View>
       ) : null}
     </View>
   );
@@ -93,5 +105,12 @@ const styles = StyleSheet.create({
   },
   centered: {
     textAlign: 'center',
+  },
+  actionRow: {
+    flexDirection: 'row',
+  },
+  // Com a fonte grande, o rótulo quebra dentro da largura da tela.
+  action: {
+    flexShrink: 1,
   },
 });

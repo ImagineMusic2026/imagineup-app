@@ -1,7 +1,10 @@
 import { FirebaseError } from 'firebase/app';
 import {
   createUserWithEmailAndPassword,
+  deleteUser,
+  EmailAuthProvider,
   onAuthStateChanged,
+  reauthenticateWithCredential,
   sendPasswordResetEmail,
   signInWithEmailAndPassword,
   signOut as firebaseSignOut,
@@ -132,6 +135,71 @@ export async function sendPasswordReset(email: string): Promise<void> {
 
 export async function signOut(): Promise<void> {
   await firebaseSignOut(getFirebaseAuth());
+}
+
+/** Não há conta logada para a ação (a sessão caiu por fora do app). */
+export class SessionEndedError extends Error {
+  constructor(message = 'Sem sessão no Firebase Auth.') {
+    super(message);
+    this.name = 'SessionEndedError';
+  }
+}
+
+/**
+ * Exclui a conta no Firebase Auth. Com `password`, reautentica antes com a
+ * credencial de e-mail: o Firebase recusa a exclusão
+ * (`auth/requires-recent-login`) quando o login foi há muito tempo. O perfil
+ * (`users/{uid}`) e a reserva do @ são apagados no servidor, pela função
+ * `deleteUserProfile`; o app não apaga nada no Firestore. A exclusão é uma
+ * só chamada ao Auth: ou a conta some, ou fica como estava.
+ *
+ * Espera a sessão confirmada (o app abre com a sessão presumida). Sem conta
+ * logada, ou sem e-mail para reautenticar, devolve `SessionEndedError`: o fã
+ * entra de novo e a exclusão passa.
+ */
+export async function deleteAccount(password?: string): Promise<void> {
+  const auth = getFirebaseAuth();
+  await auth.authStateReady();
+  const user = auth.currentUser;
+  if (!user) throw new SessionEndedError();
+  if (password !== undefined) {
+    // Só e-mail e senha por enquanto; Apple e Google vão reautenticar pelo provedor deles.
+    if (!user.email) throw new SessionEndedError('Conta sem e-mail para reautenticar.');
+    await reauthenticateWithCredential(user, EmailAuthProvider.credential(user.email, password));
+  }
+  await deleteUser(user);
+}
+
+/**
+ * Por que a exclusão não passou:
+ * - `needsPassword`: o login é antigo, e o Firebase pede a senha de novo;
+ * - `wrongPassword`: a senha da reautenticação não confere;
+ * - `sessionEnded`: a conta já não está logada (ou sumiu, ou foi desativada);
+ * - `network`, `tooManyRequests` e `unknown`: a conta continua como estava.
+ */
+export type DeleteAccountFailure =
+  'needsPassword' | 'wrongPassword' | 'network' | 'tooManyRequests' | 'sessionEnded' | 'unknown';
+
+export function deleteAccountFailure(error: unknown): DeleteAccountFailure {
+  if (error instanceof SessionEndedError) return 'sessionEnded';
+  if (!(error instanceof FirebaseError)) return 'unknown';
+  switch (error.code) {
+    case 'auth/requires-recent-login':
+      return 'needsPassword';
+    case 'auth/invalid-credential':
+    case 'auth/wrong-password':
+      return 'wrongPassword';
+    case 'auth/network-request-failed':
+      return 'network';
+    case 'auth/too-many-requests':
+      return 'tooManyRequests';
+    case 'auth/user-not-found':
+    case 'auth/user-token-expired':
+    case 'auth/user-disabled':
+      return 'sessionEnded';
+    default:
+      return 'unknown';
+  }
 }
 
 /** Avisa a cada mudança de sessão. Sem Firebase configurado, responde "deslogado". */

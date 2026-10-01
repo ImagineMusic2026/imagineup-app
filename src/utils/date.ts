@@ -212,6 +212,22 @@ export function formatShowTime(input: DateInput): string {
   return t('date.showTimeWithMinutes', { hours, minutes: String(minutes).padStart(2, '0') });
 }
 
+/**
+ * O `formatShowTime` por extenso, para o leitor de tela: "22 horas", "1 hora"
+ * e, com minutos, "22 horas e 30 minutos" ("22 h" seria lido letra a letra).
+ */
+export function formatShowTimeSpoken(input: DateInput): string {
+  const date = safe(input);
+  if (!date) return '';
+  const hours = spokenDuration('hour', date.getHours());
+  const minutes = date.getMinutes();
+  if (minutes === 0) return hours;
+  return t('date.spoken.showTimeWithMinutes', {
+    hours,
+    minutes: spokenDuration('minute', minutes),
+  });
+}
+
 /** "21 de junho", para o leitor de tela (o selo "21 JUN" é lido assim). */
 export function formatLongDate(input: DateInput): string {
   const date = safe(input);

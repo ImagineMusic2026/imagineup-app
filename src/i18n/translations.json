@@ -130,6 +130,89 @@
       "new": "novo",
       "rankLabel": "{{name}}, você é o {{rank}}º",
       "newLabel": "{{name}}, central nova"
+    },
+    "loading": "Carregando a central",
+    "loadError": "Não deu para carregar a central.",
+    "notFound": "Esta central não existe mais.",
+    "updateError": "Não deu para atualizar a central.",
+    "share": "Compartilhar a central",
+    "shareHint": "Manda o link da central com o seu convite",
+    "shareMessage": "Entra na central de {{name}} no ImagineUP",
+    "managed": "gestão oficial",
+    "heading": {
+      "verified": "{{name}}, artista verificado",
+      "managed": "gestão oficial Imagine"
+    },
+    "stats": {
+      "fans": "fãs",
+      "posts": "posts",
+      "points": "pts da central",
+      "fansLabel": "{{amount}} fãs",
+      "fansLabelOf": "{{amount}} de fãs",
+      "fansLabelOne": "1 fã",
+      "postsLabel": "{{amount}} posts",
+      "postsLabelOf": "{{amount}} de posts",
+      "postsLabelOne": "1 post",
+      "pointsLabel": "{{amount}} pontos da central",
+      "pointsLabelOf": "{{amount}} de pontos da central",
+      "pointsLabelOne": "1 ponto da central",
+      "million": "{{value}} milhão",
+      "millions": "{{value}} milhões",
+      "billion": "{{value}} bilhão",
+      "billions": "{{value}} bilhões"
+    },
+    "join": {
+      "action": "Entrar na central",
+      "label": "Entrar na central de {{name}}",
+      "member": "Na central",
+      "memberLabel": "Você está na central de {{name}}",
+      "joined": "Você entrou na central de {{name}}.",
+      "error": "Não deu para entrar na central. Tente de novo."
+    },
+    "tabs": {
+      "mural": "Mural",
+      "missions": "Missões",
+      "agenda": "Agenda",
+      "ranking": "Ranking"
+    },
+    "topFans": {
+      "title": "Top fãs da temporada",
+      "seeRanking": "Ver ranking",
+      "seeRankingLabel": "Ver o ranking da central",
+      "seeRankingHint": "Abre a aba Ranking desta página",
+      "cell": "{{place}}, {{name}}, {{points}}",
+      "cellMe": "{{place}}, você, {{points}}",
+      "vacant": "Vaga aberta",
+      "vacantLabel": "{{place}}, vaga aberta",
+      "loading": "Carregando os top fãs",
+      "place": "#{{position}}"
+    },
+    "posts": {
+      "loading": "Carregando os posts",
+      "empty": "Ainda não tem post nesta central.",
+      "loadError": "Não deu para carregar os posts.",
+      "moreError": "Não deu para carregar mais posts.",
+      "photoLabel": "Post de {{name}}, {{time}}: {{text}}",
+      "videoLabel": "Vídeo de {{name}}, {{time}}: {{text}}",
+      "showLabel": "Show de {{name}}, {{time}}: {{text}}",
+      "textLabel": "Post de {{name}}, {{time}}: {{text}}"
+    },
+    "missions": {
+      "loading": "Carregando as missões",
+      "empty": "Nenhuma missão desta central agora.",
+      "loadError": "Não deu para carregar as missões."
+    },
+    "agenda": {
+      "loading": "Carregando os shows",
+      "empty": "Nenhum show desta central na agenda.",
+      "loadError": "Não deu para carregar os shows.",
+      "moreError": "Não deu para carregar mais shows."
+    },
+    "ranking": {
+      "loading": "Carregando o ranking da central",
+      "empty": "Ninguém pontuou nesta central ainda.",
+      "loadError": "Não deu para carregar o ranking da central.",
+      "moreError": "Não deu para carregar mais posições."
     }
   },
   "post": {
@@ -147,10 +230,117 @@
     "shareLabelPlain": "Compartilhar o post de {{author}}, {{time}}",
     "shareMessage": "Olha esse post de {{artist}} no ImagineUP",
     "likes": "{{count}} curtidas",
-    "likesOne": "1 curtida"
+    "likesOne": "1 curtida",
+    "likeError": "Não deu para curtir o post. Tente de novo.",
+    "comments": {
+      "title": "Comentários",
+      "titleLabel": "Comentários, {{count}}",
+      "count": "{{count}} comentários",
+      "countOne": "1 comentário",
+      "loading": "Carregando os comentários",
+      "empty": "Ninguém comentou ainda. Comece a conversa.",
+      "loadError": "Não deu para carregar os comentários.",
+      "moreError": "Não deu para carregar mais comentários.",
+      "sending": "· enviando…",
+      "failed": "Não enviado. Toque para tentar de novo",
+      "rowLabel": "{{author}}, {{time}}: {{text}}",
+      "pendingLabel": "{{author}}, enviando: {{text}}",
+      "failedLabel": "{{author}}, não enviado: {{text}}",
+      "retryHint": "Tenta enviar de novo",
+      "failedAnnouncement": "Comentário não enviado. Toque nele para tentar de novo.",
+      "fallbackName": "Fã",
+      "you": "Você"
+    },
+    "composer": {
+      "send": "Enviar comentário",
+      "counter": "{{count}}/{{max}}",
+      "counterLabel": "{{count}} de {{max}} caracteres",
+      "sent": "Comentário enviado.",
+      "sentWithPoints": "Comentário enviado. {{points}}",
+      "error": "Não deu para enviar o comentário. O texto voltou para o campo.",
+      "queued": "Sem internet. O comentário vai quando a rede voltar.",
+      "limitReached": "Chegou ao limite de {{max}} caracteres."
+    },
+    "details": {
+      "loading": "Carregando o post",
+      "loadError": "Não deu para carregar o post.",
+      "notFound": "Este post não existe mais.",
+      "artistRole": "Artista Imagine",
+      "authorMeta": "{{role}} · {{time}}",
+      "authorLabel": "{{author}}, {{role}}, {{time}}",
+      "authorHint": "Abre a central do artista",
+      "photoLabel": "Foto do post de {{artist}}",
+      "videoLabel": "Vídeo do post de {{artist}}",
+      "likeLabel": "Curtir, {{likes}}",
+      "commentLabel": "Comentar, {{comments}}",
+      "shareLabel": "Compartilhar o post, ganha {{points}} por pessoa que abrir",
+      "shareLabelPlain": "Compartilhar o post",
+      "eventMeta": "{{date}} · {{time}} · {{city}}",
+      "eventLabel": "Show {{title}}, {{date}}, {{time}}, {{city}}"
+    }
   },
   "ranking": {
-    "title": "Ranking"
+    "title": "Ranking",
+    "loading": "Carregando o ranking",
+    "loadError": "Não deu para carregar o ranking.",
+    "updateError": "Não deu para atualizar o ranking.",
+    "moreError": "Não deu para carregar mais posições.",
+    "loaded": "Ranking carregado.",
+    "moreLoaded": "Mais posições carregadas.",
+    "empty": "Ninguém pontuou ainda nesta temporada.",
+    "emptyNoSeason": "O ranking volta com a próxima temporada.",
+    "seeMissions": "Ver missões",
+    "fallbackName": "Fã",
+    "you": "Você",
+    "position": "{{position}}º",
+    "scopes": {
+      "global": "Geral",
+      "globalHint": "Mostra o ranking geral da temporada",
+      "artistHint": "Mostra o ranking da central de {{name}}"
+    },
+    "season": {
+      "active": "Temporada de {{name}} · {{countdown}}",
+      "ended": "Temporada de {{name}} encerrada",
+      "none": "Nenhuma temporada em andamento"
+    },
+    "podium": {
+      "leaderTitle": "Líder da temporada",
+      "vacant": "?"
+    },
+    "change": {
+      "upOne": "subiu 1 posição",
+      "up": "subiu {{count}} posições",
+      "downOne": "caiu 1 posição",
+      "down": "caiu {{count}} posições"
+    },
+    "a11y": {
+      "place": "{{position}}º lugar",
+      "vacant": "{{place}}, vago"
+    },
+    "me": {
+      "toTop": "{{points}} pts para entrar no top {{top}}",
+      "toTopOne": "1 pt para entrar no top {{top}}",
+      "toPosition": "{{points}} pts para o {{position}}º lugar",
+      "toPositionOne": "1 pt para o {{position}}º lugar",
+      "podium": "No pódio da temporada",
+      "unranked": "Ganhe pontos para entrar no ranking",
+      "ranked": "Sua posição nesta temporada",
+      "finished": "Terminou em {{position}}º",
+      "finishedUnranked": "Não pontuou nesta temporada",
+      "loading": "Carregando sua posição",
+      "seeking": "Buscando sua posição",
+      "rankUp": "Você subiu para o {{position}}º lugar.",
+      "hint": "Mostra sua linha no ranking",
+      "podiumHint": "Mostra o pódio",
+      "label": "Você, {{position}}º lugar, {{points}}. {{status}}.",
+      "labelUnranked": "Você. {{status}}.",
+      "spoken": {
+        "toTop": "Faltam {{points}} para entrar no top {{top}}",
+        "toTopOne": "Falta 1 ponto para entrar no top {{top}}",
+        "toPosition": "Faltam {{points}} para o {{position}}º lugar",
+        "toPositionOne": "Falta 1 ponto para o {{position}}º lugar"
+      }
+    }
   },
   "missions": {
     "title": "Missões",
@@ -211,10 +401,110 @@
     }
   },
   "rewards": {
-    "title": "Resgatar"
+    "title": "Resgatar",
+    "loading": "Carregando as recompensas",
+    "empty": "As recompensas aparecem aqui quando a loja abrir.",
+    "loadError": "Não deu para carregar as recompensas.",
+    "updateError": "Não deu para atualizar as recompensas.",
+    "balanceError": "Não deu para carregar seu saldo.",
+    "loaded": "Recompensas carregadas.",
+    "sections": {
+      "reachable": "Ao seu alcance"
+    },
+    "price": "{{points}} pts",
+    "missing": "faltam {{points}}",
+    "missingOne": "falta 1",
+    "soldOut": "Esgotado",
+    "scarcity": "Só {{count}} vagas",
+    "scarcityOne": "Só 1 vaga",
+    "hint": "Abre os detalhes do resgate",
+    "meta": {
+      "event": "{{name}} · {{date}}"
+    },
+    "spoken": {
+      "event": "{{name}}, {{date}}",
+      "missing": "Faltam {{points}}",
+      "missingOne": "Falta 1 ponto"
+    },
+    "label": {
+      "card": "{{title}}. {{meta}}. {{value}}.",
+      "featuredScarce": "{{title}}. {{scarcity}}. {{meta}}. {{value}}."
+    },
+    "summary": {
+      "line": "{{label}}: {{points}}.",
+      "cost": "Custo",
+      "balance": "Seu saldo",
+      "balanceNow": "Saldo agora",
+      "balanceAfter": "Seu saldo depois"
+    },
+    "details": {
+      "loading": "Carregando a recompensa",
+      "loadError": "Não deu para carregar esta recompensa.",
+      "notFound": "Esta recompensa não está mais na loja.",
+      "redeem": "Resgatar por {{points}} pts",
+      "redeemLabel": "Resgatar por {{points}}",
+      "redeemHint": "Pede confirmação antes de gastar os pontos",
+      "seeMissions": "Ver missões",
+      "seeMissionsHint": "Abre as missões, para ganhar pontos",
+      "offline": "Sem internet. Conecte-se para resgatar."
+    },
+    "confirm": {
+      "title": "Confirmar resgate?",
+      "body": "Você troca {{points}} do seu saldo por {{title}}.",
+      "note": "Seu nível não cai: só o saldo diminui. A entrega fica com a equipe da Imagine Music, e depois de confirmar você vê como retirar ou como a equipe vai falar com você.",
+      "action": "Confirmar resgate",
+      "back": "Voltar"
+    },
+    "success": {
+      "title": "Resgate confirmado",
+      "code": "Código do resgate",
+      "codeLabel": "Código do resgate: {{code}}",
+      "nextSteps": "Próximos passos",
+      "done": "Pronto",
+      "announcement": "Resgate confirmado. Seu saldo agora é {{balance}}."
+    },
+    "redeemed": {
+      "title": "Você já resgatou",
+      "date": "Resgatado em {{date}}",
+      "codeLabel": "Código do resgate: {{code}}. Resgatado em {{date}}."
+    },
+    "errors": {
+      "insufficientPoints": "Seu saldo mudou e não cobre mais este resgate.",
+      "soldOut": "Esta recompensa esgotou.",
+      "notFound": "Esta recompensa saiu da loja.",
+      "failed": "Não deu para confirmar o resgate. Tente de novo."
+    }
   },
   "agenda": {
     "title": "Agenda",
+    "loading": "Carregando a agenda",
+    "empty": "Nenhum show marcado por enquanto. Os próximos aparecem aqui.",
+    "loadError": "Não deu para carregar a agenda.",
+    "updateError": "Não deu para atualizar a agenda.",
+    "loaded": "Agenda carregada.",
+    "seeAll": "Ver agenda completa",
+    "seeAllHint": "Carrega os shows dos meses seguintes",
+    "moreLoaded": "Agenda completa carregada.",
+    "moreError": "Não deu para carregar o resto da agenda.",
+    "today": "Hoje",
+    "artistsSeparator": " + ",
+    "meta": "{{artists}} · {{city}}, {{state}} · {{time}}",
+    "metaNoArtists": "{{city}}, {{state}} · {{time}}",
+    "place": "{{city}}, {{state}}",
+    "invite": {
+      "label": "Chamar amigos {{points}}",
+      "labelPlain": "Chamar amigos",
+      "a11y": "Chamar amigos para {{show}}, {{points}} por cadastro",
+      "a11yPlain": "Chamar amigos para {{show}}"
+    },
+    "a11y": {
+      "featured": "Show em destaque. {{date}}, {{show}}, {{artists}}, {{place}}, {{time}}",
+      "featuredNoArtists": "Show em destaque. {{date}}, {{show}}, {{place}}, {{time}}",
+      "row": "{{date}}, {{show}}, {{place}}",
+      "today": "hoje",
+      "and": "{{first}} e {{last}}",
+      "monthHint": "Mostra os shows de {{month}}"
+    },
     "rsvp": {
       "go": "Eu vou",
       "going": "Confirmado",
@@ -228,11 +518,132 @@
   "profile": {
     "title": "Meu perfil",
     "settings": "Ajustes",
-    "signOut": "Sair"
+    "settingsHint": "Abre os ajustes da conta",
+    "fallbackName": "Fã",
+    "loading": "Carregando seu perfil",
+    "updateError": "Não deu para atualizar o perfil.",
+    "level": {
+      "badge": "Nível {{number}} · {{name}}",
+      "spoken": "nível {{number}}, {{name}}",
+      "up": "Você subiu para o nível {{number}}, {{name}}."
+    },
+    "points": {
+      "title": "Seus pontos",
+      "week": "Esta semana",
+      "toNext": "Faltam {{points}} para o nível {{number}} · {{name}}",
+      "toNextOne": "Falta {{points}} para o nível {{number}} · {{name}}",
+      "amount": "{{points}} pts",
+      "amountOne": "{{points}} pt",
+      "maxLevel": "Você chegou ao nível máximo",
+      "label": "Seus pontos: {{balance}}. Esta semana: {{week}}. {{next}}.",
+      "loading": "Carregando seus pontos",
+      "loadError": "Não deu para carregar seus pontos.",
+      "loaded": "Pontos carregados.",
+      "spoken": {
+        "weekGain": "mais {{points}}",
+        "toNext": "Faltam {{points}} pontos para o nível {{number}}, {{name}}",
+        "toNextOne": "Falta 1 ponto para o nível {{number}}, {{name}}"
+      }
+    },
+    "stats": {
+      "label": "{{value}} {{label}}",
+      "links": "links criados",
+      "linksOne": "link criado",
+      "people": "pessoas trazidas",
+      "peopleOne": "pessoa trazida",
+      "seasons": "temporadas",
+      "seasonsOne": "temporada"
+    },
+    "achievements": {
+      "title": "Conquistas",
+      "count": "{{unlocked}} de {{total}}",
+      "countLabel": "Conquistas, {{unlocked}} de {{total}} conquistadas",
+      "unlocked": "{{title}}, conquistada",
+      "locked": "{{title}}, bloqueada",
+      "loading": "Carregando suas conquistas",
+      "loadError": "Não deu para carregar suas conquistas.",
+      "loaded": "Conquistas carregadas.",
+      "empty": "Suas conquistas aparecem aqui."
+    },
+    "centrals": {
+      "title": "Suas centrais",
+      "meta": "#{{rank}} entre {{fans}} fãs",
+      "metaUnranked": "Sem posição ainda · {{fans}} fãs",
+      "label": "{{name}}, {{rank}}º lugar entre {{fans}} fãs, {{points}} na temporada.",
+      "labelUnranked": "{{name}}, ainda sem posição, entre {{fans}} fãs.",
+      "hint": "Abre a central",
+      "loading": "Carregando suas centrais",
+      "loadError": "Não deu para carregar suas centrais.",
+      "loaded": "Centrais carregadas.",
+      "empty": "Você ainda não entrou em nenhuma central.",
+      "explore": "Explorar artistas"
+    }
+  },
+  "settings": {
+    "title": "Ajustes",
+    "account": "Conta",
+    "signOut": "Sair",
+    "signOutMeta": "Entrou como {{email}}",
+    "signOutLabel": "Sair da conta",
+    "signOutHint": "Sai da conta neste aparelho",
+    "signOutError": "Não deu para sair agora. Tente de novo.",
+    "deleteAccount": "Excluir conta",
+    "deleteAccountMeta": "Apaga seu perfil, seus pontos e seu @",
+    "deleteAccountHint": "Mostra o que se perde antes de confirmar"
+  },
+  "deleteAccount": {
+    "title": "Excluir conta",
+    "lead": "A exclusão é definitiva e não dá para desfazer. Com a conta, vão embora:",
+    "losses": {
+      "profile": "Seu perfil: nome, foto, cidade e o seu @, que fica livre para outra pessoa.",
+      "points": "Seus pontos: o saldo, o nível e as conquistas.",
+      "ranking": "Sua posição no ranking e as centrais que você segue.",
+      "rewards": "As recompensas resgatadas com os seus pontos."
+    },
+    "fresh": "Dá para criar uma conta nova depois, mas ela começa do zero.",
+    "submit": "Excluir minha conta",
+    "submitHint": "Exclui a conta para sempre",
+    "keep": "Manter minha conta",
+    "passwordLead": "Por segurança, confirme sua senha para excluir a conta.",
+    "password": "Sua senha",
+    "confirm": "Confirmar e excluir",
+    "offline": "Sem internet. Conecte-se para excluir a conta.",
+    "done": "Sua conta foi excluída.",
+    "errors": {
+      "needsPassword": "Por segurança, confirme sua senha para excluir a conta.",
+      "wrongPassword": "Senha incorreta.",
+      "network": "Sem conexão. Sua conta continua como estava. Confira a internet e tente de novo.",
+      "tooManyRequests": "Muitas tentativas. Espere um pouco e tente de novo.",
+      "sessionEnded": "Sua sessão terminou. Entre de novo para excluir a conta.",
+      "unknown": "Não deu para excluir a conta agora. Ela continua como estava."
+    },
+    "passwordRequired": "Digite sua senha."
   },
   "invite": {
     "title": "Convidar",
-    "subtitle": "Cada pessoa que abrir seu link vale pontos."
+    "subtitle": "Cada pessoa que abrir seu link vale pontos.",
+    "mission": "Para a missão “{{title}}”",
+    "link": "Seu link",
+    "target": {
+      "post": "Leva para o post de {{artist}}.",
+      "postPlain": "Leva para o post.",
+      "event": "Leva para a agenda de shows: {{show}}.",
+      "eventPlain": "Leva para a agenda de shows.",
+      "app": "Leva para o ImagineUP."
+    },
+    "linkA11y": "Seu link, com o seu código de convite, {{code}}. {{target}}",
+    "linkA11yNoCode": "Seu link, ainda sem o seu código de convite. {{target}}",
+    "loading": "Carregando seu link",
+    "noCode": "Seu código de convite não carregou, e o link sai sem os pontos.",
+    "howYouEarn": "Como você ganha",
+    "perVisit": "por pessoa que abre o link",
+    "perSignup": "por pessoa que se cadastra pelo link",
+    "share": "Compartilhar meu link",
+    "shareHint": "Abre as opções de compartilhar do celular",
+    "message": {
+      "app": "Vem pro ImagineUP, a central de fãs dos artistas da Imagine Music",
+      "event": "Vamos juntos? {{show}} está na agenda do ImagineUP"
+    }
   },
   "notFound": {
     "title": "Página não encontrada",
@@ -284,7 +695,8 @@
       "hourOne": "1 hora",
       "hours": "{{count}} horas",
       "dayOne": "1 dia",
-      "days": "{{count}} dias"
+      "days": "{{count}} dias",
+      "showTimeWithMinutes": "{{hours}} e {{minutes}}"
     }
   },
   "components": {

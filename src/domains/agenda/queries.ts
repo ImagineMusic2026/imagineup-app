@@ -1,18 +1,32 @@
-import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
+import {
+  infiniteQueryOptions,
+  useInfiniteQuery,
+  useMutation,
+  useQuery,
+  useQueryClient,
+  type InfiniteData,
+  type QueryClient,
+} from '@tanstack/react-query';
 import { AccessibilityInfo } from 'react-native';
 
+// As centrais pelo arquivo, fora do index, como os posts fazem.
+import { artistKeys } from '@/domains/artists/queries';
 import { missionKeys } from '@/domains/missions';
 import { profileKeys } from '@/domains/profile';
+import { rankingKeys } from '@/domains/ranking';
 import { t } from '@/i18n';
 import { haptics } from '@/services/haptics';
 import { createIdempotencyKey } from '@/utils/id';
 
-import { fetchMyRsvps, setEventRsvp } from './api';
-import type { MyRsvps, RsvpResult, RsvpVariables } from './types';
+import { fetchAgenda, fetchArtistAgenda, fetchMyRsvps, setEventRsvp } from './api';
+import type { AgendaEvent, AgendaPage, MyRsvps, RsvpResult, RsvpVariables } from './types';
 
 /** A chave inclui tudo que muda o resultado. */
 export const agendaKeys = {
   all: ['agenda'] as const,
+  events: () => [...agendaKeys.all, 'events'] as const,
+  /** Shows de uma central (1d), debaixo dos da agenda: invalidar a agenda leva estes junto. */
+  byArtist: (artistId: string) => [...agendaKeys.events(), 'artist', artistId] as const,
   rsvps: () => [...agendaKeys.all, 'rsvps'] as const,
 };
 
@@ -23,12 +37,16 @@ export const agendaMutationKeys = {
 /**
  * Toda presença confirmada ou desfeita pode andar (ou voltar) uma missão de
  * presença, mesmo sem concluí-la e sem render pontos: as missões buscam de
- * novo sempre. O saldo (1e, 1h) só muda quando a presença rendeu pontos.
+ * novo sempre. O saldo (1e, 1h), o ranking (1f, pontos da temporada) e a
+ * posição e os pontos nas centrais (1b, 1e) só mudam quando a presença rendeu
+ * pontos.
  */
 function refreshPointsAfterRsvp(client: QueryClient, result: RsvpResult): void {
   void client.invalidateQueries({ queryKey: missionKeys.all });
   if (result.pointsAwarded <= 0) return;
   void client.invalidateQueries({ queryKey: profileKeys.wallet() });
+  void client.invalidateQueries({ queryKey: rankingKeys.all });
+  void client.invalidateQueries({ queryKey: artistKeys.centrals() });
 }
 
 /**
@@ -40,6 +58,61 @@ export function registerAgendaMutationDefaults(client: QueryClient): void {
   client.setMutationDefaults(agendaMutationKeys.rsvp, {
     mutationFn: (variables: RsvpVariables) => setEventRsvp(variables),
     onSuccess: (result: RsvpResult) => refreshPointsAfterRsvp(client, result),
+  });
+}
+
+/**
+ * Shows da agenda (1m), uma página por vez: a primeira traz os próximos meses
+ * e o "Ver agenda completa" busca o resto. A presença não vem aqui: vem de
+ * `useMyRsvpsQuery`, a mesma lista que o post de show da home lê.
+ */
+export function useAgendaQuery() {
+  return useInfiniteQuery(agendaQueryOptions());
+}
+
+function agendaQueryOptions() {
+  return infiniteQueryOptions({
+    queryKey: agendaKeys.events(),
+    queryFn: ({ pageParam }) => fetchAgenda(pageParam),
+    initialPageParam: null as string | null,
+    getNextPageParam: (lastPage) => lastPage.nextCursor,
+  });
+}
+
+function findEvent(data: InfiniteData<AgendaPage>, eventId: string): AgendaEvent | null {
+  for (const page of data.pages) {
+    if (page.featured?.id === eventId) return page.featured;
+    const event = page.items.find((item) => item.id === eventId);
+    if (event) return event;
+  }
+  return null;
+}
+
+/**
+ * Um show da agenda, procurado nas páginas que o fã já carregou (o "Chamar
+ * amigos" da 1m abre o convite com ele). Não há página de um show só: fora das
+ * páginas carregadas, ou sem `eventId`, devolve `null`.
+ */
+export function useAgendaEvent(eventId: string | null): AgendaEvent | null {
+  const query = useInfiniteQuery({
+    ...agendaQueryOptions(),
+    enabled: eventId !== null,
+    select: (data) => (eventId === null ? null : findEvent(data, eventId)),
+  });
+  return query.data ?? null;
+}
+
+/**
+ * Shows de uma central (aba Agenda da 1d), uma página por vez. A presença vem
+ * de `useMyRsvpsQuery`, como na agenda.
+ */
+export function useArtistAgendaQuery(artistId: string) {
+  return useInfiniteQuery({
+    queryKey: agendaKeys.byArtist(artistId),
+    queryFn: ({ pageParam }) => fetchArtistAgenda(artistId, pageParam),
+    initialPageParam: null as string | null,
+    getNextPageParam: (lastPage) => lastPage.nextCursor,
+    enabled: !!artistId,
   });
 }
 

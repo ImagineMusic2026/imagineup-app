@@ -97,6 +97,9 @@ export const gradients = {
     // radial-gradient(120% 80% at 18% 12%, branco .3, transparente 48%)
     sheen: {
       colors: [withAlpha(palette.white, 0.3), withAlpha(palette.white, 0)],
+      // Os mesmos, em cor e opacidade: o SVG não lê o alfa do rgba nas paradas.
+      color: palette.white,
+      alphas: [0.3, 0],
       center: { x: 0.18, y: 0.12 },
       radius: { x: 1.2, y: 0.8 },
       stop: 0.48,
@@ -134,12 +137,15 @@ export const stripes = {
 export type StripePreset = keyof typeof stripes;
 
 /**
- * Brilho radial no topo da página, atrás do conteúdo (Skia `RadialGradient`).
+ * Brilho radial no topo da página, atrás do conteúdo (`RadialGradient` do SVG).
  * Em CSS: `radial-gradient(120% 100% at 50% 0%, cor, transparente <stop>)`
  * numa faixa de `height` pt a partir do topo da tela.
  */
 export interface GlowToken {
-  colors: readonly [string, string];
+  /** A cor do brilho; a opacidade vai à parte, porque o SVG não lê o alfa do rgba nas paradas. */
+  color: string;
+  /** Opacidade no centro e na parada `stop`. */
+  alphas: readonly [number, number];
   /** Onde o brilho some, em fração do raio. */
   stop: number;
   height: number;
@@ -154,7 +160,8 @@ export interface GlowToken {
 export const glows = {
   // 1e: rosa com as listras da marca.
   profile: {
-    colors: [withAlpha(colors.accent, 0.28), withAlpha(colors.accent, 0)],
+    color: colors.accent,
+    alphas: [0.28, 0],
     stop: 0.62,
     height: 250,
     radius: { x: 1.2, y: 1 },
@@ -164,7 +171,8 @@ export const glows = {
   },
   // 1f: lima, porque a página é de pontos. Sem listras.
   ranking: {
-    colors: [withAlpha(colors.points, 0.16), withAlpha(colors.points, 0)],
+    color: colors.points,
+    alphas: [0.16, 0],
     stop: 0.6,
     height: 300,
     radius: { x: 1.2, y: 1 },

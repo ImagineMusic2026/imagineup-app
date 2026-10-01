@@ -18,11 +18,18 @@ export interface PostArtist {
   photoURL: string | null;
 }
 
+/**
+ * Uma mídia por post (foto ou vídeo, pelo `kind` do post). O app não toca
+ * vídeo: o detalhe mostra a miniatura com um selo de play.
+ */
 export interface PostMedia {
+  /** A foto inteira ou o arquivo do vídeo; `null` até existir. */
+  url: string | null;
   /** `null` até a foto existir: a miniatura mostra o placeholder de marca pelo id do post. */
   thumbnailUrl: string | null;
-  /** Largura sobre altura, para o detalhe do post. */
-  aspectRatio: number;
+  /** Medidas da mídia em px, para a proporção do detalhe; `null` quando a API não mandar. */
+  width: number | null;
+  height: number | null;
 }
 
 /** O show do post de show, resumido. A presença ("Eu vou") é a da agenda. */
@@ -53,13 +60,37 @@ export interface Post {
   sharePointsPerVisit: number | null;
 }
 
+/**
+ * Comentário do próprio fã que ainda não chegou ao servidor: indo (ou
+ * esperando a rede) ou recusado. Só existe no app, nunca vem da API.
+ */
+export type CommentStatus = 'pending' | 'failed';
+
 export interface PostComment {
   id: string;
   postId: string;
   authorId: string;
   authorName: string;
+  /** Foto do fã ou do artista; `null` mostra as iniciais. */
+  authorAvatarUrl: string | null;
+  /** Resposta do próprio artista: leva o selo de verificado. */
+  authorIsArtist: boolean;
   text: string;
   createdAt: string;
+  /** Só no app: o comentário do fã enquanto vai ou depois de falhar. */
+  status?: CommentStatus;
+  /**
+   * Só no app: o comentário que o fã acabou de mandar, já com o id do
+   * servidor, guarda o id local de quando ia, para a linha continuar a mesma.
+   */
+  localId?: string;
+}
+
+/** Quem comenta: o fã logado, com o nome e a foto do perfil. */
+export interface CommentAuthor {
+  id: string;
+  name: string;
+  photoURL: string | null;
 }
 
 export interface Page<T> {

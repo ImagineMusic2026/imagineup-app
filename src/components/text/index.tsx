@@ -1,12 +1,18 @@
+import type { Ref } from 'react';
 import { Text as NativeText, type TextProps as NativeTextProps } from 'react-native';
 
 import { colors, typography, type TypographyVariant } from '@/theme';
+
+/** O texto montado, para quem guarda o `ref` (levar o foco do leitor de tela até ele). */
+export type TextInstance = NativeText;
 
 export interface TextProps extends NativeTextProps {
   variant?: TypographyVariant;
   color?: string;
   /** Números alinhados, para contadores e placares que mudam de valor. */
   tabular?: boolean;
+  /** Para levar o foco do leitor de tela até o texto (um cabeçalho, por exemplo). */
+  ref?: Ref<TextInstance>;
 }
 
 /**
@@ -30,9 +36,11 @@ const MAX_FONT_SIZE_MULTIPLIER: Partial<Record<TypographyVariant, number>> = {
   pointsTiny: FIXED_LAYOUT_MULTIPLIER,
   micro: FIXED_LAYOUT_MULTIPLIER,
   statLabel: FIXED_LAYOUT_MULTIPLIER,
+  statCaption: FIXED_LAYOUT_MULTIPLIER,
   labelTiny: FIXED_LAYOUT_MULTIPLIER,
   dateMonth: FIXED_LAYOUT_MULTIPLIER,
   microLabel: FIXED_LAYOUT_MULTIPLIER,
+  podiumTitle: FIXED_LAYOUT_MULTIPLIER,
   overlineStrong: FIXED_LAYOUT_MULTIPLIER,
   thumbLabel: FIXED_LAYOUT_MULTIPLIER,
 };

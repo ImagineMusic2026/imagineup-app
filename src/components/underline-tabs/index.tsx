@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { Fragment, useEffect, useEffectEvent, useRef, useState } from 'react';
 import {
   Platform,
   ScrollView,
@@ -10,7 +10,7 @@ import {
   type StyleProp,
   type ViewStyle,
 } from 'react-native';
-import Animated, { useAnimatedStyle, withTiming } from 'react-native-reanimated';
+import Animated, { useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 
 import { PressableScale } from '@/components/pressable-scale';
 import { Text } from '@/components/text';
@@ -33,10 +33,16 @@ export interface UnderlineTabsProps<T extends string> {
   testID?: string;
 }
 
-/** A aba no conteúdo da rolagem e o rótulo dentro da aba, que é onde vai o traço. */
-interface TabMeasure {
-  tab?: ScrollItemBox;
-  label?: ScrollItemBox;
+/** Largura do rótulo de uma aba escolhida (Sora 800) e não escolhida (Manrope 600). */
+interface LabelWidths {
+  active: number;
+  idle: number;
+}
+
+/** Onde a aba fica no conteúdo da rolagem e onde vai o traço, sob o rótulo. */
+interface TabBox {
+  tab: ScrollItemBox;
+  underline: ScrollItemBox;
 }
 
 const TIMING = { duration: motion.duration.base, easing: motion.easing.out };
@@ -46,37 +52,94 @@ const TIMING = { duration: motion.duration.base, easing: motion.easing.out };
 const TAB_INSET = spacing.sectionTopTight / 2;
 // Com a margem da primeira aba, o primeiro rótulo continua a 18 da borda.
 const ROW_INSET = spacing.gutter - TAB_INSET;
+// Nenhum rótulo chega perto disso, nem com a fonte grande.
+const RULER_WIDTH = 1000;
 
-function useFade(visible: boolean, reducedMotion: boolean) {
-  return useAnimatedStyle(() => {
-    const target = visible ? 1 : 0;
-    return { opacity: reducedMotion ? target : withTiming(target, TIMING) };
-  });
+const hiddenFromReader = {
+  accessible: false,
+  importantForAccessibility: 'no-hide-descendants',
+  accessibilityElementsHidden: true,
+} as const;
+
+/** Largura natural de um rótulo, medida fora da fileira, sem nada apertando o texto. */
+function widthOf(event: LayoutChangeEvent): number {
+  return Math.ceil(event.nativeEvent.layout.width);
+}
+
+function ActiveLabel({ label }: { label: string }) {
+  return (
+    <Text variant="buttonSmall" numberOfLines={1}>
+      {label}
+    </Text>
+  );
+}
+
+function IdleLabel({ label }: { label: string }) {
+  return (
+    <Text variant="tabItem" color={colors.textMuted} numberOfLines={1}>
+      {label}
+    </Text>
+  );
+}
+
+/**
+ * Onde cada aba e o traço ficam com a escolha atual: a escolhida mede o
+ * rótulo em Sora, as outras em Manrope. `null` até todos os rótulos medirem.
+ */
+function layoutTabs<T extends string>(
+  tabs: readonly UnderlineTab<T>[],
+  value: T,
+  widths: Partial<Record<T, LabelWidths>>,
+): Record<T, TabBox> | null {
+  const boxes = {} as Record<T, TabBox>;
+  let x = ROW_INSET;
+  for (const tab of tabs) {
+    const measured = widths[tab.value];
+    if (!measured) return null;
+    const label = tab.value === value ? measured.active : measured.idle;
+    const width = Math.max(layout.minTouchTarget, label + 2 * TAB_INSET);
+    boxes[tab.value] = {
+      tab: { x, width },
+      underline: { x: x + (width - label) / 2, width: label },
+    };
+    x += width;
+  }
+  return boxes;
 }
 
 function TabButton<T extends string>({
   tab,
   selected,
+  widths,
   onPress,
-  onLayout,
-  onLabelLayout,
   testID,
 }: {
   tab: UnderlineTab<T>;
   selected: boolean;
+  /** Antes de medir, o rótulo do estado atual dá a largura. */
+  widths: LabelWidths | undefined;
   onPress: () => void;
-  onLayout: (event: LayoutChangeEvent) => void;
-  onLabelLayout: (event: LayoutChangeEvent) => void;
   testID?: string;
 }) {
   const reducedMotion = usePrefersReducedMotion();
-  const activeLabelStyle = useFade(selected, reducedMotion);
-  const idleLabelStyle = useFade(!selected, reducedMotion);
+  const progress = useSharedValue(selected ? 1 : 0);
+
+  useEffect(() => {
+    const target = selected ? 1 : 0;
+    progress.set(reducedMotion ? target : withTiming(target, TIMING));
+  }, [selected, reducedMotion, progress]);
+
+  // A caixa do rótulo anda da largura de um estado à do outro junto com o
+  // traço, e as vizinhas acompanham no mesmo passo.
+  const boxStyle = useAnimatedStyle(() =>
+    widths ? { width: widths.idle + (widths.active - widths.idle) * progress.get() } : {},
+  );
+  const activeStyle = useAnimatedStyle(() => ({ opacity: progress.get() }));
+  const idleStyle = useAnimatedStyle(() => ({ opacity: 1 - progress.get() }));
 
   return (
     <PressableScale
       onPress={onPress}
-      onLayout={onLayout}
       haptic={selected ? null : 'selection'}
       // No iOS o papel "tab" não vira nenhum trait e o VoiceOver não diz que é
       // tocável: lá a aba é botão com "selecionado", como na tab bar.
@@ -87,18 +150,24 @@ function TabButton<T extends string>({
       testID={testID}
       style={styles.tab}
     >
-      <View onLayout={onLabelLayout} testID={testID ? `${testID}-label` : undefined}>
-        <Animated.View style={activeLabelStyle}>
-          <Text variant="buttonSmall" numberOfLines={1}>
-            {tab.label}
-          </Text>
+      <Animated.View
+        style={[styles.labelBox, boxStyle]}
+        testID={testID ? `${testID}-label` : undefined}
+      >
+        {/* O rótulo do estado atual fica no fluxo; o outro, por cima, sumindo.
+            Cada um tem a própria largura e fica no meio da caixa: o que é mais
+            largo que ela passa dos dois lados, sem cortar nem quebrar. */}
+        <Animated.View style={[styles.layer, !selected && styles.overlay, activeStyle]}>
+          <View style={widths && { width: widths.active }}>
+            <ActiveLabel label={tab.label} />
+          </View>
         </Animated.View>
-        <Animated.View style={[StyleSheet.absoluteFill, styles.idleLabel, idleLabelStyle]}>
-          <Text variant="tabItem" color={colors.textMuted} numberOfLines={1}>
-            {tab.label}
-          </Text>
+        <Animated.View style={[styles.layer, selected && styles.overlay, idleStyle]}>
+          <View style={widths && { width: widths.idle }}>
+            <IdleLabel label={tab.label} />
+          </View>
         </Animated.View>
-      </View>
+      </Animated.View>
     </PressableScale>
   );
 }
@@ -128,12 +197,6 @@ function revealTab(
   if (x !== null) scroll.scrollTo({ x, animated });
 }
 
-/** O traço vai sob o rótulo, não sob a aba inteira, que tem a margem do toque. */
-function underlineOf(measure: TabMeasure | undefined): ScrollItemBox | null {
-  if (!measure?.tab || !measure.label) return null;
-  return { x: measure.tab.x + measure.label.x, width: measure.label.width };
-}
-
 /**
  * Abas internas com sublinhado (Mural, Missões, Agenda e Ranking da 1d). O
  * traço de 2 pt desliza até a aba escolhida; a linha de baixo vai de ponta a
@@ -142,9 +205,12 @@ function underlineOf(measure: TabMeasure | undefined): ScrollItemBox | null {
  * Com a fonte grande as abas não cabem na largura da tela: a fileira rola, como
  * os chips, e a aba escolhida é trazida para dentro da tela.
  *
- * Como no `Chip`, cada rótulo tem as duas versões montadas (Sora 800 na
- * escolhida, Manrope 600 nas outras) e troca por opacidade: a aba mede pela
- * mais larga e o traço não precisa correr atrás de uma largura que muda.
+ * Cada aba tem a largura do rótulo que mostra (Sora 800 na escolhida, Manrope
+ * 600 nas outras), com o vão de 20 do protótipo entre elas. As larguras dos
+ * dois estados são medidas fora da fileira, e o traço vai direto para o lugar
+ * final dele: na troca, os rótulos trocam por opacidade, a caixa da aba anda
+ * de uma largura à outra e as vizinhas andam 1 ou 2 pt, tudo no mesmo tempo
+ * do traço.
  */
 export function UnderlineTabs<T extends string>({
   tabs,
@@ -154,37 +220,47 @@ export function UnderlineTabs<T extends string>({
   testID,
 }: UnderlineTabsProps<T>) {
   const reducedMotion = usePrefersReducedMotion();
-  const [measures, setMeasures] = useState<Partial<Record<T, TabMeasure>>>({});
+  const [widths, setWidths] = useState<Partial<Record<T, Partial<LabelWidths>>>>({});
   const scrollRef = useRef<ScrollView>(null);
-  const tabBoxes = useRef(new Map<T, ScrollItemBox>());
   const viewport = useRef<ScrollViewport>({ offset: 0, width: 0 });
-  const underline = underlineOf(measures[value]);
+  // A aba que a fileira já trouxe para a tela; na primeira vez, sem animar.
+  const revealed = useRef<T | null>(null);
+
+  const complete: Partial<Record<T, LabelWidths>> = {};
+  for (const tab of tabs) {
+    const measured = widths[tab.value];
+    if (measured?.active !== undefined && measured.idle !== undefined) {
+      complete[tab.value] = { active: measured.active, idle: measured.idle };
+    }
+  }
+  const boxes = layoutTabs(tabs, value, complete);
+  const layoutKey = boxes
+    ? tabs.map((tab) => `${boxes[tab.value].tab.x}:${boxes[tab.value].tab.width}`).join('|')
+    : null;
+
+  const reveal = useEffectEvent(() => {
+    if (!boxes) return;
+    const animated = revealed.current !== null && revealed.current !== value && !reducedMotion;
+    revealed.current = value;
+    revealTab(scrollRef.current, boxes[value].tab, viewport.current, animated);
+  });
 
   useEffect(() => {
-    revealTab(scrollRef.current, tabBoxes.current.get(value), viewport.current, !reducedMotion);
-  }, [value, reducedMotion]);
+    reveal();
+  }, [value, layoutKey]);
 
-  // Na abertura as medidas chegam depois do efeito: a escolhida aparece sem animar.
-  const revealOnMount = (): void => {
-    revealTab(scrollRef.current, tabBoxes.current.get(value), viewport.current, false);
-  };
-
-  const handleLayout = (tabValue: T, part: keyof TabMeasure, event: LayoutChangeEvent): void => {
-    const { x, width } = event.nativeEvent.layout;
-    if (part === 'tab') {
-      tabBoxes.current.set(tabValue, { x, width });
-      if (tabValue === value) revealOnMount();
-    }
-    setMeasures((current) => {
-      const previous = current[tabValue]?.[part];
-      if (previous && previous.x === x && previous.width === width) return current;
-      return { ...current, [tabValue]: { ...current[tabValue], [part]: { x, width } } };
+  const handleRulerLayout = (tabValue: T, part: keyof LabelWidths, event: LayoutChangeEvent) => {
+    const width = widthOf(event);
+    setWidths((current) => {
+      if (current[tabValue]?.[part] === width) return current;
+      return { ...current, [tabValue]: { ...current[tabValue], [part]: width } };
     });
   };
 
   const handleViewportLayout = (event: LayoutChangeEvent): void => {
     viewport.current.width = event.nativeEvent.layout.width;
-    revealOnMount();
+    // Na abertura, a escolhida aparece sem animar.
+    if (boxes) revealTab(scrollRef.current, boxes[value].tab, viewport.current, false);
   };
 
   const handleScroll = (event: NativeSyntheticEvent<NativeScrollEvent>): void => {
@@ -209,19 +285,40 @@ export function UnderlineTabs<T extends string>({
             key={tab.value}
             tab={tab}
             selected={tab.value === value}
+            widths={complete[tab.value]}
             onPress={() => {
               if (tab.value !== value) onChange(tab.value);
             }}
-            onLayout={(event) => handleLayout(tab.value, 'tab', event)}
-            onLabelLayout={(event) => handleLayout(tab.value, 'label', event)}
             testID={testID ? `${testID}-${tab.value}` : undefined}
           />
         ))}
         {/* Só aparece medido: nasce já na aba escolhida, sem deslizar da esquerda. */}
-        {underline ? (
-          <Indicator box={underline} testID={testID ? `${testID}-indicator` : undefined} />
+        {boxes ? (
+          <Indicator
+            box={boxes[value].underline}
+            testID={testID ? `${testID}-indicator` : undefined}
+          />
         ) : null}
       </ScrollView>
+      {/* Réguas invisíveis: a largura natural de cada rótulo nos dois estados, com a fonte do aparelho. */}
+      <View pointerEvents="none" {...hiddenFromReader} style={styles.rulers}>
+        {tabs.map((tab) => (
+          <Fragment key={tab.value}>
+            <View
+              onLayout={(event) => handleRulerLayout(tab.value, 'active', event)}
+              testID={testID ? `${testID}-${tab.value}-ruler-active` : undefined}
+            >
+              <ActiveLabel label={tab.label} />
+            </View>
+            <View
+              onLayout={(event) => handleRulerLayout(tab.value, 'idle', event)}
+              testID={testID ? `${testID}-${tab.value}-ruler-idle` : undefined}
+            >
+              <IdleLabel label={tab.label} />
+            </View>
+          </Fragment>
+        ))}
+      </View>
     </View>
   );
 }
@@ -245,9 +342,19 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
     paddingBottom: spacing.gridGap + borderWidths.strong,
   },
-  idleLabel: {
+  labelBox: {
+    alignItems: 'center',
+  },
+  layer: {
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  overlay: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
   },
   indicator: {
     position: 'absolute',
@@ -255,5 +362,13 @@ const styles = StyleSheet.create({
     bottom: 0,
     height: borderWidths.strong,
     backgroundColor: colors.text,
+  },
+  rulers: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    width: RULER_WIDTH,
+    alignItems: 'flex-start',
+    opacity: 0,
   },
 });

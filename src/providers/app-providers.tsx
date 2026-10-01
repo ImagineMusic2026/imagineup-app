@@ -1,11 +1,12 @@
 import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client';
 import { ThemeProvider } from 'expo-router';
 import { useEffect, type ReactNode } from 'react';
-import { StyleSheet } from 'react-native';
+import { LogBox, StyleSheet } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { ReduceMotion, ReducedMotionConfig } from 'react-native-reanimated';
 
 import { registerAgendaMutationDefaults } from '@/domains/agenda';
+import { registerArtistMutationDefaults } from '@/domains/artists';
 import { registerPostMutationDefaults } from '@/domains/posts';
 import { useAnnounceOffline } from '@/hooks/use-announce-offline';
 import { usePrefersReducedMotion } from '@/hooks/use-prefers-reduced-motion';
@@ -15,6 +16,12 @@ import { colors, navigationTheme } from '@/theme';
 // As funções das mutações offline precisam existir antes do cache ser restaurado.
 registerPostMutationDefaults(queryClient);
 registerAgendaMutationDefaults(queryClient);
+registerArtistMutationDefaults(queryClient);
+
+// O `ReducedMotionConfig` abaixo é de propósito, mas o Reanimated avisa a cada
+// abertura em desenvolvimento, e o aviso cobria a tab bar em toda conferência
+// no aparelho.
+LogBox.ignoreLogs(['[Reanimated] Reduced motion setting is overwritten']);
 
 function resumeOfflineMutations(): void {
   queryClient.resumePausedMutations().catch(() => undefined);

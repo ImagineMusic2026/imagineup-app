@@ -8,6 +8,7 @@ import { Text } from '@/components/text';
 import { TextInput } from '@/components/text-input';
 import { TextLink } from '@/components/text-link';
 import { isFirebaseConfigured } from '@/firebase';
+import { useStayOnScreen } from '@/hooks/use-stay-on-screen';
 import { t } from '@/i18n';
 import { colors, spacing } from '@/theme';
 import { announceFirstError } from '@/utils/form-errors';
@@ -20,7 +21,6 @@ import { TermsNotice } from '../components/terms-notice';
 import { ENTRY_STEP_COUNT } from '../consts';
 import { handOffEmail } from '../email-handoff';
 import { useSignUp } from '../hooks/use-sign-up';
-import { useStayOnScreen } from '../hooks/use-stay-on-screen';
 import { PASSWORD_MIN_LENGTH, signUpSchema, type SignUpFormInput } from '../schemas';
 
 const FIELD_ORDER = ['name', 'email', 'password'] as const;

@@ -112,6 +112,10 @@ export const typography = {
     textTransform: 'uppercase',
   },
   labelTiny: { fontFamily: fonts.manropeBold, fontSize: 10, lineHeight: 12 },
+  // Rótulo das caixas de número da 1e ("links criados"): o 9,5 do protótipo,
+  // em minúsculas e com a entrelinha 1,3 dele, abaixo do mínimo recomendado
+  // como a tab bar (pergunta aberta com a cliente).
+  statCaption: { fontFamily: fonts.manropeSemiBold, fontSize: 9.5, lineHeight: 12.5 },
   overline: {
     fontFamily: fonts.manropeBold,
     fontSize: 10,
@@ -147,6 +151,14 @@ export const typography = {
   // 8,5 fica abaixo do mínimo recomendado, como a tab bar: rótulo das conquistas
   // (1e) e título do 1º no pódio (1f). Pergunta aberta com a cliente.
   microLabel: { fontFamily: fonts.manropeBold, fontSize: 8.5, lineHeight: 11 },
+  // O título do 1º no pódio (1f): o `microLabel` em caixa alta, com o espaçamento do protótipo.
+  podiumTitle: {
+    fontFamily: fonts.manropeBold,
+    fontSize: 8.5,
+    lineHeight: 11,
+    letterSpacing: 0.6,
+    textTransform: 'uppercase',
+  },
   // 9,5 px vem do protótipo e fica abaixo do mínimo recomendado. Revisar com a
   // cliente antes de travar a tab bar. Entrelinha colada no corpo, como a
   // entrelinha 1 do protótipo, para a barra ficar na altura do desenho: a

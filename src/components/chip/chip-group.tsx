@@ -40,6 +40,11 @@ interface SingleSelection<T extends string> {
   multiple?: false;
   value: T;
   onChange: (value: T) => void;
+  /**
+   * Toque no chip que já está escolhido. Na 1m o escolhido segue a rolagem, e
+   * tocar nele volta ao começo do mês.
+   */
+  onReselect?: (value: T) => void;
 }
 
 interface MultipleSelection<T extends string> {
@@ -47,6 +52,7 @@ interface MultipleSelection<T extends string> {
   value: readonly T[];
   /** Os escolhidos na ordem dos `items`, não na ordem dos toques. */
   onChange: (value: T[]) => void;
+  onReselect?: undefined;
 }
 
 export type ChipGroupProps<T extends string> = ChipGroupBaseProps<T> &
@@ -92,7 +98,11 @@ export function ChipGroup<T extends string>(props: ChipGroupProps<T>) {
     );
   }, [single, gutterSize, reducedMotion]);
 
-  // Na abertura as medidas chegam depois do efeito: o escolhido aparece sem animar.
+  // Na abertura as medidas chegam depois do efeito: o escolhido aparece sem
+  // animar. O mesmo quando a fileira cresce: o chip que entra no fim (a central
+  // que o fã não segue, aberta por `/ranking?artista=`) nasce junto com a
+  // escolha, e a rolagem pedida antes de o conteúdo crescer parava no fim
+  // antigo, com o chip cortado à direita.
   const revealOnMount = (): void => {
     if (single === null) return;
     revealChip(scrollRef.current, boxes.current.get(single), viewport.current, gutterSize, false);
@@ -104,6 +114,7 @@ export function ChipGroup<T extends string>(props: ChipGroupProps<T>) {
   const press = (value: T): void => {
     if (!props.multiple) {
       if (value !== props.value) props.onChange(value);
+      else props.onReselect?.(value);
       return;
     }
     const next = new Set(props.value);
@@ -138,6 +149,7 @@ export function ChipGroup<T extends string>(props: ChipGroupProps<T>) {
         horizontal
         showsHorizontalScrollIndicator={false}
         onLayout={handleViewportLayout}
+        onContentSizeChange={() => revealOnMount()}
         onScroll={handleScroll}
         scrollEventThrottle={16}
         contentContainerStyle={[styles.content, { paddingHorizontal: gutterSize }]}
@@ -148,6 +160,7 @@ export function ChipGroup<T extends string>(props: ChipGroupProps<T>) {
             label={item.label}
             selected={isSelected(item.value)}
             mode={props.multiple ? 'multiple' : 'single'}
+            reselectable={props.onReselect !== undefined}
             onPress={() => press(item.value)}
             onLayout={(event) => handleChipLayout(item.value, event)}
             accessibilityLabel={item.accessibilityLabel}

@@ -1,9 +1,11 @@
 import { render, screen } from '@testing-library/react-native';
 import { BlurView } from 'expo-blur';
+import { LinearGradient } from 'expo-linear-gradient';
 import { Platform, StyleSheet } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
-import { blur, typography } from '@/theme';
+import { blur, blurFallback, colors, typography } from '@/theme';
+import { withAlpha } from '@/utils/color';
 
 import { TabBar, type TabItem } from '..';
 
@@ -57,6 +59,27 @@ describe('TabBar', () => {
       (node) => typeof node.type === 'string' && node.props.accessibilityRole === 'tablist',
     );
     expect(StyleSheet.flatten(bar.props.style).overflow).toBeUndefined();
+  });
+
+  it('no iOS o degradê começa no .4 do protótipo, por cima do desfoque, e fecha aos 45%', () => {
+    jest.replaceProperty(Platform, 'OS', 'ios');
+    renderBar();
+    const gradient = screen.UNSAFE_getByType(LinearGradient);
+    expect(gradient.props.colors[0]).toBe(withAlpha(colors.background, 0.4));
+    expect(gradient.props.locations).toEqual([0, 0.45]);
+  });
+
+  it('no Android, que não desfoca, o degradê começa mais fechado para o conteúdo não vazar', () => {
+    jest.replaceProperty(Platform, 'OS', 'android');
+    renderBar();
+    expect(screen.UNSAFE_queryByType(BlurView)).toBeNull();
+    const gradient = screen.UNSAFE_getByType(LinearGradient);
+    expect(gradient.props.colors).toEqual([
+      withAlpha(colors.background, blurFallback.tabBar),
+      colors.background,
+    ]);
+    // Sólido antes da linha dos ícones: o texto de baixo não aparece entre eles.
+    expect(gradient.props.locations).toEqual([0, 0.2]);
   });
 
   it('no Ranking a barra fica sólida, sem desfoque', () => {

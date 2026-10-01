@@ -31,6 +31,7 @@ jest.mock('@/config/env', () => ({
 
 const get = jest.mocked(api.get);
 const push = jest.mocked(router.push);
+const navigate = jest.mocked(router.navigate);
 
 const NOW = new Date(2026, 8, 29, 20, 0);
 const MISSION = buildDailyMissionFixture(NOW);
@@ -116,11 +117,12 @@ describe('card da missão do dia', () => {
 
     fireEvent.press(link);
     fireEvent.press(missions);
-    expect(push).toHaveBeenNthCalledWith(1, {
+    expect(push).toHaveBeenCalledWith({
       pathname: '/convidar',
       params: { missionId: MISSION.id, postId: 'p-clipe' },
     });
-    expect(push).toHaveBeenNthCalledWith(2, '/missoes');
+    // Na pilha da Ranking com a 1f embaixo, sem empilhar a 1g de novo.
+    expect(navigate).toHaveBeenCalledWith('/missoes', { withAnchor: true });
   });
 
   it('concluída: barra cheia, selo de concluída e "Ver missões" como botão principal', () => {
@@ -221,6 +223,8 @@ describe('missão do dia na home', () => {
   });
 
   it('se não carregou, mostra o erro com "Tentar de novo", que busca de novo', async () => {
+    // Relógio fixo: com o relógio real, a missão de exemplo expira às 0h30 de 30/09 e some.
+    jest.useFakeTimers({ now: NOW, doNotFake: ['nextTick', 'setImmediate', 'queueMicrotask'] });
     mockDataSource = 'api';
     get.mockRejectedValueOnce(new Error('rede')).mockResolvedValue({ data: { mission: MISSION } });
     render(<DailyMissionSection />, { wrapper });

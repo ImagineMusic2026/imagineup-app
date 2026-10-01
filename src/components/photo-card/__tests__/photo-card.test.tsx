@@ -2,7 +2,7 @@ import { fireEvent, render, screen } from '@testing-library/react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Pressable, StyleSheet } from 'react-native';
 
-import { PhotoFallback } from '@/components/remote-image';
+import { PhotoFallback, StaticPhotoFallback } from '@/components/remote-image';
 import { Text } from '@/components/text';
 import { gradients, layout } from '@/theme';
 
@@ -24,6 +24,24 @@ describe('PhotoCard', () => {
       gradients.scrims.rewardHero.colors,
     );
     expect(screen.getByText('Meet & greet com o Netto')).toBeTruthy();
+  });
+
+  it('com a medida esperada (destaques da 1h e da 1m), o placeholder sai em SVG no primeiro quadro', () => {
+    render(
+      <PhotoCard
+        uri={null}
+        fallback={{ kind: 'events', seed: 'sao-joao' }}
+        fallbackSize={{ width: 366, height: layout.eventHeroMinHeight }}
+        scrim="eventHero"
+      />,
+    );
+    expect(screen.UNSAFE_getByType(StaticPhotoFallback).props).toMatchObject({
+      seed: 'sao-joao',
+      variant: 'events',
+      width: 366,
+      height: layout.eventHeroMinHeight,
+    });
+    expect(screen.UNSAFE_queryAllByType(PhotoFallback)).toHaveLength(0);
   });
 
   it('pressável: vira um botão só, com o rótulo do card, e o toque chega', () => {

@@ -60,7 +60,7 @@ export const layout = {
     md: 44,
     // Botões do card da missão do dia (1b).
     mdCompact: 36,
-    // "Eu vou" do destaque (1m).
+    // Botões do destaque da agenda (1m): "Eu vou" e "Chamar amigos".
     sm: 30,
     // "Eu vou" das linhas (1m).
     xs: 29,
@@ -79,6 +79,8 @@ export const layout = {
   stepBar: 3,
   // minWidth da coluna do selo de data (1m).
   dateColumn: 50,
+  // Divisória vertical entre a data e o título na linha da agenda (1m).
+  dateDivider: 38,
   dateBadge: { width: 44, height: 50 },
   eventHeroMinHeight: 186,
   rewardHeroMinHeight: 196,

@@ -147,6 +147,11 @@ describe('ListRow', () => {
     expect(screen.getByLabelText('Backstage. Bloqueada.')).toBeDisabled();
   });
 
+  it('pressável ocupada: o leitor ouve que a ação está andando', () => {
+    render(<ListRow title="Sair" onPress={jest.fn()} busy />);
+    expect(screen.getByRole('button', { name: 'Sair' })).toBeBusy();
+  });
+
   it('haptic null desliga o toque', () => {
     render(<ListRow title="Comente em 3 posts" onPress={jest.fn()} haptic={null} />);
     fireEvent.press(screen.getByRole('button'));
@@ -184,6 +189,35 @@ describe('ListRow', () => {
       borderBottomColor: colors.borderSubtle,
     });
     expect(row).not.toHaveStyle({ backgroundColor: colors.surface });
+  });
+
+  it('o botão da direita pode descer para baixo do conteúdo, alinhado à esquerda', () => {
+    render(
+      <ListRow
+        testID="linha"
+        title="Pra Encher e Derramar"
+        meta="Feira de Santana, BA"
+        accessibilityGroup="content"
+        accessibilityLabel="28 de outubro, Pra Encher e Derramar, Feira de Santana, Bahia"
+        trailingPlacement="below"
+        trailing={
+          <PressableScale onPress={jest.fn()} accessibilityLabel="Eu vou, Pra Encher e Derramar">
+            <Text>Eu vou</Text>
+          </PressableScale>
+        }
+      />,
+    );
+
+    expect(screen.getByTestId('linha')).toHaveStyle({
+      flexDirection: 'column',
+      alignItems: 'stretch',
+    });
+    expect(screen.getByTestId('linha-trailing')).toHaveStyle({ alignSelf: 'flex-start' });
+    // O conteúdo fica com a altura dele, e continua um foco só.
+    expect(
+      screen.getByLabelText('28 de outubro, Pra Encher e Derramar, Feira de Santana, Bahia'),
+    ).toHaveStyle({ flex: 0 });
+    expect(screen.getByRole('button', { name: 'Eu vou, Pra Encher e Derramar' })).toBeTruthy();
   });
 
   it('vão e padding podem trocar pelos tokens da agenda', () => {

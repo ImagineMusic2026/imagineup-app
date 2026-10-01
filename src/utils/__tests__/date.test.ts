@@ -10,6 +10,7 @@ import {
   formatRelativeShort,
   formatSeasonCountdown,
   formatShowTime,
+  formatShowTimeSpoken,
   formatTime,
   formatTimeLeft,
   formatTimeLeftSpoken,
@@ -127,6 +128,15 @@ describe('datas em pt-BR', () => {
     expect(formatShowTime(startsAt)).toBe(expected);
   });
 
+  it.each([
+    ['22:00', new Date(2026, 5, 21, 22, 0), '22 horas'],
+    ['22:30', new Date(2026, 5, 21, 22, 30), '22 horas e 30 minutos'],
+    ['01:01', new Date(2026, 5, 21, 1, 1), '1 hora e 1 minuto'],
+    ['00:00', new Date(2026, 5, 22, 0, 0), '0 horas'],
+  ])('hora do show às %s, por extenso para o leitor de tela', (_clock, startsAt, expected) => {
+    expect(formatShowTimeSpoken(startsAt)).toBe(expected);
+  });
+
   it('escreve a data por extenso para o leitor de tela', () => {
     expect(formatLongDate(JUNE_21)).toBe('21 de junho');
     expect(formatLongDate(new Date(2026, 9, 1))).toBe('1 de outubro');
@@ -139,6 +149,7 @@ describe('datas em pt-BR', () => {
     expect(formatRelativeAgoSpoken('não é data', JUNE_21)).toBe('');
     expect(formatSeasonCountdown('não é data', JUNE_21)).toBe('');
     expect(formatShowTime('não é data')).toBe('');
+    expect(formatShowTimeSpoken('não é data')).toBe('');
     expect(formatLongDate('não é data')).toBe('');
   });
 });

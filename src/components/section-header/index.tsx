@@ -26,10 +26,19 @@ export interface SectionHeaderProps {
   title: string;
   /**
    * Número ao lado do título, cinza e sem toque ("327" nos comentários). Chega
-   * formatado (`formatNumber`). "14 de 32" das conquistas entra aqui enquanto
-   * a lista não existir: rosa é ação, e texto rosa sem toque engana.
+   * formatado (`formatNumber`). "14 de 32" das conquistas (1e) entra aqui
+   * enquanto a lista não existir: rosa é ação, e texto rosa sem toque engana.
+   * Sem algarismos tabulares: ela não conta animada, e o "1" tabular abre um
+   * vão ("1 4").
    */
   count?: string;
+  /**
+   * Onde fica a contagem: colada no título (`inline`, "Comentários 327") ou na
+   * ponta direita da linha (`end`, o "14 de 32" das conquistas da 1e, no lugar
+   * em que o protótipo desenhava um link). Nos dois casos ela é lida junto com
+   * o título, num cabeçalho só.
+   */
+  countPlacement?: 'inline' | 'end';
   /** Link rosa à direita, com alvo de 44 sem mudar o desenho da linha. */
   action?: SectionHeaderAction;
   spacing?: SectionHeaderSpacing;
@@ -48,6 +57,7 @@ export interface SectionHeaderProps {
 export function SectionHeader({
   title,
   count,
+  countPlacement = 'inline',
   action,
   spacing: preset = 'default',
   accessibilityLabel,
@@ -67,13 +77,13 @@ export function SectionHeader({
         accessible
         accessibilityRole="header"
         accessibilityLabel={accessibilityLabel}
-        style={styles.heading}
+        style={[styles.heading, countPlacement === 'end' && styles.headingSpread]}
       >
         <Text variant="headingSection" style={styles.title}>
           {title}
         </Text>
         {count ? (
-          <Text variant="labelSmall" color={colors.textMuted} tabular>
+          <Text variant="labelSmall" color={colors.textMuted}>
             {count}
           </Text>
         ) : null}
@@ -131,6 +141,11 @@ const styles = StyleSheet.create({
     alignItems: 'baseline',
     gap: spacing.sm,
     flexShrink: 1,
+  },
+  // A contagem na ponta: o cabeçalho ocupa a linha toda.
+  headingSpread: {
+    flex: 1,
+    justifyContent: 'space-between',
   },
   title: {
     flexShrink: 1,

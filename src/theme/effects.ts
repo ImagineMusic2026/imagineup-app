@@ -29,6 +29,15 @@ export type BlurStrength = keyof typeof blur;
 export const blurFallback = {
   glassDark: 0.72,
   glassDarkStrong: 0.9,
+  /**
+   * Topo do degradê da tab bar no Android (o protótipo começa em .4 sobre o
+   * desfoque). Sem desfoque, o .4 deixava o texto de baixo nítido entre os
+   * ícones. Com .82 no topo e o fundo sólido aos 20% da barra, a linha dos
+   * ícones e dos rótulos fica sobre o fundo fechado (o ícone inativo, branco a
+   * .5, passa de 5:1) e só a borda de cima deixa um vulto escuro do conteúdo.
+   * No iOS, o desfoque com o .4 fica.
+   */
+  tabBar: 0.82,
 } as const;
 
 /** Opacidade de peça desativada (botões, links, pílulas). */

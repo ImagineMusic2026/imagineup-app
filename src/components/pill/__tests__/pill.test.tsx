@@ -4,7 +4,7 @@ import { View } from 'react-native';
 import { colors, tints, typography } from '@/theme';
 import { withAlpha } from '@/utils/color';
 
-import { Pill, pillForeground, type PillTone } from '..';
+import { Pill, pillForeground, pillMinHeight, pillPaddingVertical, type PillTone } from '..';
 
 describe('Pill', () => {
   it.each<[PillTone, string, string]>([
@@ -40,6 +40,17 @@ describe('Pill', () => {
     );
     expect(screen.getByText('Nível 7 · Purainha')).toHaveStyle(typography.badge);
     expect(screen.getByText('Só 20 vagas')).toHaveStyle(typography.badgeSmall);
+  });
+
+  it('a md tem o padding de 8 do protótipo: 34 com o ícone de 16 e 33 só com o texto', () => {
+    render(<Pill testID="pill" label="4.812" size="md" />);
+    expect(screen.getByTestId('pill')).toHaveStyle({
+      paddingVertical: pillPaddingVertical.md,
+      minHeight: pillMinHeight.md,
+    });
+    expect(pillPaddingVertical.md).toBe(8);
+    expect(16 + pillPaddingVertical.md * 2 + 2).toBe(34);
+    expect(pillMinHeight.md).toBe(33);
   });
 
   it('a peça da esquerda fica escondida do leitor de tela', () => {

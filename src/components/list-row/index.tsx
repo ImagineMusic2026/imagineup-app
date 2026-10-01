@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import type { ReactNode, Ref } from 'react';
 import {
   StyleSheet,
   View,
@@ -37,9 +37,21 @@ interface ListRowBaseProps {
   gap?: keyof typeof spacing;
   /** Troca o padding do card (a linha da agenda usa 12). Não vale para `divided`. */
   padding?: CardPadding;
+  /**
+   * Onde fica o `trailing`: à direita (padrão) ou embaixo do selo, do título
+   * e da meta, alinhado à esquerda. Com a fonte grande, o "Eu vou" da agenda
+   * (1m) desce para o título não ficar sem espaço e ser cortado.
+   */
+  trailingPlacement?: 'end' | 'below';
   accessibilityHint?: string;
   style?: StyleProp<ViewStyle>;
   testID?: string;
+  /**
+   * O elemento que o leitor de tela foca (a linha ou, com
+   * `accessibilityGroup="content"`, o bloco de conteúdo), para levar o foco
+   * até ele (a linha do próprio fã no ranking 1f).
+   */
+  ref?: Ref<View>;
 }
 
 /**
@@ -61,6 +73,11 @@ interface PressableRowBase {
   /** Padrão: `tap`; na linha bloqueada, `locked`. */
   haptic?: HapticEvent | null;
   accessibilityRole?: AccessibilityRole;
+  /**
+   * A ação da linha está andando (sair da conta): o leitor ouve que ela está
+   * ocupada, já que o indicador do `trailing` fica fora dele.
+   */
+  busy?: boolean;
   accessibilityGroup?: never;
 }
 
@@ -83,6 +100,7 @@ interface StaticRow extends RowLabel {
   /** Valor à direita ou um botão com ação própria (com `accessibilityGroup="content"`). */
   trailing?: ReactNode;
   haptic?: never;
+  busy?: never;
   accessibilityRole?: never;
   /**
    * O que o leitor lê como um elemento só:
@@ -125,18 +143,21 @@ export function ListRow(props: ListRowProps) {
     titleNumberOfLines,
     gap,
     padding,
+    trailingPlacement = 'end',
     accessibilityLabel,
     accessibilityHint,
     style,
     testID,
+    ref,
   } = props;
   const locked = tone === 'locked';
+  const below = trailing ? trailingPlacement === 'below' : false;
   const pressable = props.onPress !== undefined;
   const group = pressable ? 'row' : (props.accessibilityGroup ?? 'row');
   // Só a linha estática bloqueada se diz desativada. A pressável responde ao
   // toque, e o TalkBack nem entrega a ação a um nó desativado.
   const accessibilityState: AccessibilityState | undefined =
-    locked && !pressable ? { disabled: true } : undefined;
+    locked && !pressable ? { disabled: true } : props.busy ? { busy: true } : undefined;
   const gapStyle = [gapStyles[variant], gap ? gapFor(gap) : null];
 
   // O rótulo vai para quem o leitor foca: a linha, ou só o bloco de conteúdo.
@@ -153,11 +174,12 @@ export function ListRow(props: ListRowProps) {
   const content = (
     <>
       <View
+        ref={group === 'content' ? ref : undefined}
         accessible={group === 'content' ? true : undefined}
         accessibilityLabel={group === 'content' ? accessibilityLabel : undefined}
         accessibilityHint={group === 'content' ? accessibilityHint : undefined}
         accessibilityState={group === 'content' ? accessibilityState : undefined}
-        style={[styles.content, gapStyle]}
+        style={[styles.content, gapStyle, below && styles.contentAbove]}
       >
         {leading ? <View style={[styles.leading, gapStyle]}>{leading}</View> : null}
         <View style={styles.texts}>
@@ -184,7 +206,7 @@ export function ListRow(props: ListRowProps) {
           {...(pressable ? HIDDEN_FROM_READER : null)}
           pointerEvents={pressable ? 'none' : undefined}
           testID={testID ? `${testID}-trailing` : undefined}
-          style={styles.trailing}
+          style={[styles.trailing, below && styles.trailingBelow]}
         >
           {trailing}
         </View>
@@ -195,10 +217,11 @@ export function ListRow(props: ListRowProps) {
   const haptic = pressable && props.haptic !== undefined ? props.haptic : locked ? 'locked' : 'tap';
 
   if (variant === 'divided') {
-    const rowStyle = [styles.row, styles.divided, gapStyle, style];
+    const rowStyle = [styles.row, styles.divided, gapStyle, below && styles.stacked, style];
     if (pressable) {
       return (
         <PressableScale
+          ref={ref}
           onPress={props.onPress}
           haptic={haptic}
           accessibilityRole={props.accessibilityRole}
@@ -213,7 +236,12 @@ export function ListRow(props: ListRowProps) {
       );
     }
     return (
-      <View {...rowAccessibility} testID={testID} style={rowStyle}>
+      <View
+        ref={group === 'row' ? ref : undefined}
+        {...rowAccessibility}
+        testID={testID}
+        style={rowStyle}
+      >
         {content}
       </View>
     );
@@ -221,6 +249,7 @@ export function ListRow(props: ListRowProps) {
 
   return (
     <Card
+      ref={group === 'row' ? ref : undefined}
       variant={variant === 'compact' ? 'compact' : locked ? 'locked' : 'default'}
       padding={padding}
       onPress={props.onPress}
@@ -228,7 +257,13 @@ export function ListRow(props: ListRowProps) {
       accessibilityRole={props.accessibilityRole}
       {...rowAccessibility}
       testID={testID}
-      style={[styles.row, gapStyle, locked && variant === 'compact' && styles.lockedBorder, style]}
+      style={[
+        styles.row,
+        gapStyle,
+        below && styles.stacked,
+        locked && variant === 'compact' && styles.lockedBorder,
+        style,
+      ]}
     >
       {content}
     </Card>
@@ -270,6 +305,20 @@ const styles = StyleSheet.create({
   trailing: {
     flexShrink: 0,
     alignItems: 'flex-end',
+  },
+  // O trailing embaixo: o alvo de 44 do botão já traz a sobra em volta do desenho.
+  stacked: {
+    flexDirection: 'column',
+    alignItems: 'stretch',
+    gap: spacing.xs,
+  },
+  // Na coluna, o conteúdo fica com a altura dele (com `flex: 1` sumiria).
+  contentAbove: {
+    flex: 0,
+  },
+  trailingBelow: {
+    alignSelf: 'flex-start',
+    alignItems: 'flex-start',
   },
 });
 

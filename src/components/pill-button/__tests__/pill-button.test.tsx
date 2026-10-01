@@ -58,6 +58,21 @@ describe('PillButton', () => {
     expect(screen.queryByTestId('coracao')).toBeNull();
   });
 
+  it('o estilo da pílula vai no desenho, e o do alvo no pressável', () => {
+    render(
+      <PillButton
+        label="Compartilhar +2"
+        tone="points"
+        size="md"
+        pillStyle={{ paddingHorizontal: 14 }}
+        style={{ marginLeft: 3 }}
+        onPress={jest.fn()}
+      />,
+    );
+    expect(screen.UNSAFE_getByType(Pill).props.style).toEqual({ paddingHorizontal: 14 });
+    expect(screen.getByRole('button')).toHaveStyle({ marginLeft: 3 });
+  });
+
   it('o estado ligado chega ao leitor, como o curtir', () => {
     render(<PillButton label="4.813" selected onPress={jest.fn()} accessibilityLabel="Curtido" />);
     expect(screen.getByRole('button', { name: 'Curtido' })).toBeSelected();

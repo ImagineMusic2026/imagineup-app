@@ -1,18 +1,30 @@
 import { act, fireEvent, render, screen } from '@testing-library/react-native';
+import { useEffect } from 'react';
 import { View } from 'react-native';
 import Animated, * as Reanimated from 'react-native-reanimated';
 
 import { motion } from '@/theme';
 
-import { playStackExit, useStackFade, type FadingStack } from '../use-stack-fade';
+import {
+  playStackExit,
+  useStackFade,
+  type FadingStack,
+  type StackEntrance,
+} from '../use-stack-fade';
 
 let mockReducedMotion = false;
 jest.mock('@/hooks/use-prefers-reduced-motion', () => ({
   usePrefersReducedMotion: () => mockReducedMotion,
 }));
 
+let entrance: StackEntrance | null = null;
+const keepEntrance = (value: StackEntrance) => {
+  entrance = value;
+};
+
 function FadingGroup({ stack }: { stack: FadingStack }) {
   const fade = useStackFade(stack);
+  useEffect(() => keepEntrance(fade.entrance), [fade.entrance]);
   return (
     <Animated.View testID="group" onLayout={fade.onLayout} style={fade.style}>
       <View />
@@ -50,6 +62,35 @@ describe('useStackFade', () => {
       );
     },
   );
+
+  it('quem entra junto com a pilha começa no mesmo layout do fade, sem esperar um render', () => {
+    render(<FadingGroup stack="auth" />);
+    const start = jest.fn();
+    const cancelled = jest.fn();
+    entrance?.onEnter(start);
+    const cancel = entrance?.onEnter(cancelled);
+    cancel?.();
+    expect(start).not.toHaveBeenCalled();
+
+    fireEvent(screen.getByTestId('group'), 'layout', layout);
+    expect(start).toHaveBeenCalledTimes(1);
+    expect(cancelled).not.toHaveBeenCalled();
+
+    // Quem chega depois de a pilha entrar começa na hora.
+    const late = jest.fn();
+    entrance?.onEnter(late);
+    expect(late).toHaveBeenCalledTimes(1);
+    fireEvent(screen.getByTestId('group'), 'layout', layout);
+    expect(start).toHaveBeenCalledTimes(1);
+  });
+
+  it('com reduzir movimento, a entrada já nasce feita', () => {
+    mockReducedMotion = true;
+    render(<FadingGroup stack="auth" />);
+    const start = jest.fn();
+    entrance?.onEnter(start);
+    expect(start).toHaveBeenCalledTimes(1);
+  });
 
   it('entra uma vez só, mesmo com outro layout (rotação, teclado)', () => {
     render(<FadingGroup stack="tabs" />);

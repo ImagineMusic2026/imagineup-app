@@ -20,6 +20,25 @@ describe('SectionHeader', () => {
     expect(screen.queryByRole('button')).toBeNull();
   });
 
+  it('a contagem na ponta ("14 de 32" da 1e) continua dentro do cabeçalho, sem toque', () => {
+    render(
+      <SectionHeader
+        title="Conquistas"
+        count="14 de 32"
+        countPlacement="end"
+        accessibilityLabel="Conquistas, 14 de 32 conquistadas"
+      />,
+    );
+    const header = screen.getByRole('header', { name: 'Conquistas, 14 de 32 conquistadas' });
+    expect(header).toHaveStyle({ flex: 1, justifyContent: 'space-between' });
+    expect(within(header).getByText('14 de 32')).toHaveStyle({ color: colors.textMuted });
+    // Sem tabular: o "1" tabular abre um vão ("1 4").
+    expect(within(header).getByText('14 de 32')).not.toHaveStyle({
+      fontVariant: ['tabular-nums'],
+    });
+    expect(screen.queryByRole('button')).toBeNull();
+  });
+
   it('título e contagem podem ser lidos numa frase de quem chama', () => {
     render(
       <SectionHeader

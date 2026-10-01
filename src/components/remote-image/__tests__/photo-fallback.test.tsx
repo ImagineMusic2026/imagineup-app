@@ -4,12 +4,13 @@ import {
   render,
   screen,
 } from '@testing-library/react-native';
+import { LinearGradient, Pattern, RadialGradient, Rect, Stop } from 'react-native-svg';
 import type { ReactTestInstance } from 'react-test-renderer';
 
 import { colors, gradients, photoFallbackPairs, stripes } from '@/theme';
 import { stableHash } from '@/utils/pick-stable';
 
-import { PhotoFallback, photoFallbackPair } from '..';
+import { PhotoFallback, photoFallbackPair, StaticPhotoFallback } from '..';
 
 // Pares do render-telas.js do site, na ordem dele (o lima na posição 2).
 const SITE_PAIRS = [
@@ -120,5 +121,69 @@ describe('PhotoFallback', () => {
     const root = screen.getByTestId('fallback', { includeHiddenElements: true });
     expect(isHiddenFromAccessibility(root)).toBe(true);
     expect(root).toHaveProp('pointerEvents', 'none');
+  });
+});
+
+describe('StaticPhotoFallback', () => {
+  const stopsOf = (gradient: 'linear' | 'radial') =>
+    screen
+      .UNSAFE_getByType<object>(gradient === 'linear' ? LinearGradient : RadialGradient)
+      .findAllByType(Stop);
+
+  it('desenha já no primeiro quadro, sem medir: o mesmo par do id e o brilho do canto', () => {
+    render(<StaticPhotoFallback seed="up-1d-g1" width={402} height={874} />);
+    expect(stopsOf('linear').map((stop) => stop.props.stopColor)).toEqual([
+      ...photoFallbackPair('up-1d-g1'),
+    ]);
+    const { color, alphas, stop } = gradients.photoFallback.sheen;
+    expect(
+      stopsOf('radial').map(({ props }) => [props.offset, props.stopColor, props.stopOpacity]),
+    ).toEqual([
+      [0, color, alphas[0]],
+      [stop, color, alphas[1]],
+    ]);
+  });
+
+  it('um par fixo vence o do id, como no fundo da abertura (1k)', () => {
+    const pinkToPurple = photoFallbackPairs[0];
+    render(<StaticPhotoFallback seed="auth" pair={pinkToPurple} width={402} height={874} />);
+    expect(stopsOf('linear').map((stop) => stop.props.stopColor)).toEqual([...pinkToPurple]);
+  });
+
+  it('é decorativo: oculto do leitor de tela e sem receber toque', () => {
+    render(<StaticPhotoFallback seed="auth" width={402} height={874} />);
+    const [root] = screen.UNSAFE_root.findAll((node) => node.props.pointerEvents === 'none');
+    expect(root && isHiddenFromAccessibility(root)).toBe(true);
+  });
+
+  it('leva as listras do placeholder do site, como o do Skia, ou nenhuma com `null`', () => {
+    const { rerender } = render(<StaticPhotoFallback seed="x" width={402} height={270} />);
+    const stripe = screen.UNSAFE_getByType(Pattern).findByType(Rect);
+    expect(stripe.props).toMatchObject({
+      width: stripes.placeholder.width,
+      fillOpacity: stripes.placeholder.alpha,
+    });
+
+    rerender(<StaticPhotoFallback seed="x" stripes={null} width={402} height={270} />);
+    expect(screen.UNSAFE_queryAllByType(Pattern)).toHaveLength(0);
+  });
+
+  it('`events` é o bloco ciano dos shows (1m), sem o brilho do canto', () => {
+    render(<StaticPhotoFallback seed="sao-joao" variant="events" width={366} height={186} />);
+    expect(stopsOf('linear').map((stop) => stop.props.stopColor)).toEqual([
+      ...gradients.eventsTile.colors,
+    ]);
+    expect(screen.UNSAFE_queryAllByType(RadialGradient)).toHaveLength(0);
+  });
+
+  it('desenha na medida esperada e se corrige se o espaço real for outro (fonte grande)', () => {
+    render(<StaticPhotoFallback seed="x" width={366} height={186} />);
+    const base = () =>
+      screen.UNSAFE_getAllByType(Rect).find((rect) => rect.props.fill === 'url(#base)');
+    expect(base()?.props).toMatchObject({ width: 366, height: 186 });
+
+    const [root] = screen.UNSAFE_root.findAll((node) => node.props.pointerEvents === 'none');
+    fireEvent(root!, 'layout', { nativeEvent: { layout: { width: 366, height: 260 } } });
+    expect(base()?.props).toMatchObject({ width: 366, height: 260 });
   });
 });

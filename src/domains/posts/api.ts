@@ -1,14 +1,20 @@
 import { dataSource } from '@/config/env';
-import { ApiError, api } from '@/services/api';
+import { api } from '@/services/api';
 import { fixtureDelay, fixtureNow } from '@/services/fixtures';
 
-import { buildFeedPageFixture, buildPostsFixture } from './fixtures';
-import type { Page, PointsAward, Post, PostComment } from './types';
-
-// Os comentários de exemplo entram com o detalhe do post (F11); até lá, vazio.
-const emptyPage = <T>(): Page<T> => ({ items: [], nextCursor: null });
+import {
+  buildArtistPostsPageFixture,
+  buildCommentsPageFixture,
+  buildFeedPageFixture,
+  findPostFixture,
+  postsFixture,
+} from './fixtures';
+import type { CommentAuthor, Page, PointsAward, Post, PostComment } from './types';
 
 /** Chamadas cruas à API. Sem React: quem cacheia é o queries.ts. */
+
+const postUrl = (postId: string) => `/posts/${encodeURIComponent(postId)}`;
+
 export async function fetchFeed(cursor: string | null): Promise<Page<Post>> {
   if (dataSource === 'fixtures') {
     await fixtureDelay();
@@ -18,26 +24,40 @@ export async function fetchFeed(cursor: string | null): Promise<Page<Post>> {
   return data;
 }
 
-export async function fetchPost(postId: string): Promise<Post> {
+/** Posts de uma central (grade da 1d), do mais novo ao mais antigo. */
+export async function fetchArtistPosts(
+  artistId: string,
+  cursor: string | null,
+): Promise<Page<Post>> {
   if (dataSource === 'fixtures') {
     await fixtureDelay();
-    const post = buildPostsFixture(fixtureNow()).find((item) => item.id === postId);
-    if (!post) throw new ApiError('notFound', `Post ${postId} não existe nas fixtures.`, 404);
-    return post;
+    return buildArtistPostsPageFixture(fixtureNow(), artistId, cursor);
   }
-  const { data } = await api.get<Post>(`/posts/${postId}`);
+  const { data } = await api.get<Page<Post>>(`/artists/${encodeURIComponent(artistId)}/posts`, {
+    params: { cursor },
+  });
   return data;
 }
 
+export async function fetchPost(postId: string): Promise<Post> {
+  if (dataSource === 'fixtures') {
+    await fixtureDelay();
+    return findPostFixture(fixtureNow(), postId);
+  }
+  const { data } = await api.get<Post>(postUrl(postId));
+  return data;
+}
+
+/** Comentários do mais novo ao mais antigo, uma página por vez. */
 export async function fetchComments(
   postId: string,
   cursor: string | null,
 ): Promise<Page<PostComment>> {
   if (dataSource === 'fixtures') {
     await fixtureDelay();
-    return emptyPage();
+    return buildCommentsPageFixture(fixtureNow(), postId, cursor);
   }
-  const { data } = await api.get<Page<PostComment>>(`/posts/${postId}/comments`, {
+  const { data } = await api.get<Page<PostComment>>(`${postUrl(postId)}/comments`, {
     params: { cursor },
   });
   return data;
@@ -54,9 +74,13 @@ export async function setPostLike({
   liked,
   idempotencyKey,
 }: SetLikeVariables): Promise<PointsAward> {
+  if (dataSource === 'fixtures') {
+    await fixtureDelay();
+    return postsFixture.setLike(postId, liked, idempotencyKey, fixtureNow());
+  }
   const { data } = await api.request<PointsAward>({
     method: liked ? 'PUT' : 'DELETE',
-    url: `/posts/${postId}/like`,
+    url: `${postUrl(postId)}/like`,
     headers: { 'Idempotency-Key': idempotencyKey },
   });
   return data;
@@ -64,17 +88,34 @@ export async function setPostLike({
 
 export interface AddCommentVariables {
   postId: string;
+  /** Já validado e sem espaço nas pontas (`commentSchema`). */
   text: string;
   idempotencyKey: string;
+  /** Id da linha no app enquanto o comentário vai; o mesmo nas novas tentativas. */
+  localId: string;
+  /** ISO, de quando o fã mandou: a hora da linha enquanto ela vai. */
+  sentAt: string;
+  /**
+   * Nome e foto do perfil do fã, para a linha aparecer na hora. Não vai para a
+   * API, que tira os dois da sessão.
+   */
+  author: CommentAuthor;
 }
+
+export type AddCommentResult = PostComment & PointsAward;
 
 export async function addComment({
   postId,
   text,
   idempotencyKey,
-}: AddCommentVariables): Promise<PostComment & PointsAward> {
-  const { data } = await api.post<PostComment & PointsAward>(
-    `/posts/${postId}/comments`,
+  author,
+}: AddCommentVariables): Promise<AddCommentResult> {
+  if (dataSource === 'fixtures') {
+    await fixtureDelay();
+    return postsFixture.addComment({ postId, text, idempotencyKey, author }, fixtureNow());
+  }
+  const { data } = await api.post<AddCommentResult>(
+    `${postUrl(postId)}/comments`,
     { text },
     { headers: { 'Idempotency-Key': idempotencyKey } },
   );

@@ -214,8 +214,22 @@ describe('nome e foto das telas', () => {
     expect(result.current.name).toBeNull();
   });
 
-  it('nome que o servidor recusou (null no perfil) não volta ao da sessão', async () => {
+  it('perfil que nasceu sem nome (o nome do cadastro chegou depois da função) mostra o da sessão', async () => {
     signIn();
+    getDocMock.mockResolvedValue(profileSnapshot(null) as never);
+
+    const { result } = renderHook(() => useFanIdentity(), { wrapper });
+
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(result.current.name).toBe('Camila da Sessão');
+  });
+
+  it.each([
+    ['com quebra de linha', 'Camila\nRibeiro'],
+    ['só de caracteres em branco', 'ㅤㅤ'],
+  ])('nome %s, que o servidor recusou (null no perfil), não volta pela sessão', async (_, name) => {
+    signIn();
+    useSessionStore.setState({ user: { ...SESSION_CAMILA, displayName: name } });
     getDocMock.mockResolvedValue(profileSnapshot(null) as never);
 
     const { result } = renderHook(() => useFanIdentity(), { wrapper });

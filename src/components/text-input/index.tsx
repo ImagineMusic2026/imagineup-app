@@ -160,8 +160,9 @@ export const TextInput = forwardRef<NativeTextInput, TextInputProps>(function Te
 /**
  * Borda que vai até a cor do foco em 150 ms. Aqui a troca é em RGB: do branco
  * translúcido ao rosa, o HSV passaria o matiz por todas as cores no caminho.
+ * Exportada para os campos sem rótulo visível, como o do comentário do post.
  */
-function useFocusBorder(focused: boolean, rest: string, active: string) {
+export function useFocusBorder(focused: boolean, rest: string, active: string) {
   const reducedMotion = usePrefersReducedMotion();
   const focus = useSharedValue(focused ? 1 : 0);
 

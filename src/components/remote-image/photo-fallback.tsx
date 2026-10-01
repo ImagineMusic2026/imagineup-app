@@ -40,14 +40,16 @@ export function photoFallbackPair(seed: string): readonly [string, string] {
  * Pontas de um `linear-gradient(<ângulo>deg)` do CSS numa caixa: a linha passa
  * pelo centro e tem o comprimento que faz os cantos caírem nas paradas 0 e 1.
  */
-function cssGradientLine(angle: number, width: number, height: number) {
+export function cssGradientLine(angle: number, width: number, height: number) {
   const radians = (angle * Math.PI) / 180;
   const dx = Math.sin(radians);
   const dy = -Math.cos(radians);
   const half = (Math.abs(width * dx) + Math.abs(height * dy)) / 2;
   return {
-    start: vec(width / 2 - dx * half, height / 2 - dy * half),
-    end: vec(width / 2 + dx * half, height / 2 + dy * half),
+    x1: width / 2 - dx * half,
+    y1: height / 2 - dy * half,
+    x2: width / 2 + dx * half,
+    y2: height / 2 + dy * half,
   };
 }
 
@@ -107,8 +109,8 @@ export function PhotoFallback({
         <Canvas style={StyleSheet.absoluteFill}>
           <Fill>
             <LinearGradient
-              start={line.start}
-              end={line.end}
+              start={vec(line.x1, line.y1)}
+              end={vec(line.x2, line.y2)}
               colors={[...base.colors]}
               positions={[...base.locations]}
             />

@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 
 import { motion } from '@/theme';
@@ -7,9 +7,11 @@ import { usePrefersReducedMotion } from './use-prefers-reduced-motion';
 
 /**
  * Grupos da pilha raiz que entram do fundo escuro: as telas de conta
- * (`(auth)`), a escolha de artistas (`(onboarding)`) e as abas (`(tabs)`). As
- * duas primeiras também saem para ele (`playStackExit`) antes de o guard
- * trocar de grupo; as abas só entram (depois do splash, da 1l ou de entrar).
+ * (`(auth)`), a escolha de artistas (`(onboarding)`) e as abas (`(tabs)`). Os
+ * três também saem para ele (`playStackExit`) antes de o guard trocar de
+ * grupo: as telas de conta ao entrar, a 1l ao concluir, e as abas quando a
+ * sessão termina (sair, excluir a conta, sessão que caiu), pelo
+ * `useAuthListener`.
  */
 export type FadingStack = 'auth' | 'onboarding' | 'tabs';
 
@@ -21,6 +23,52 @@ const mountedExits = new Map<FadingStack, ExitAnimation>();
 // Se o guard não trocar a pilha depois da saída (sessão que caiu no meio do
 // caminho, ação que não deu certo), a pilha volta a aparecer.
 const RESTORE_AFTER_MS = 1000;
+
+/**
+ * O início da entrada de uma pilha, para o que entra junto com ela (a
+ * sequência da 1k, a foto do fundo, as barras da marca).
+ */
+export interface StackEntrance {
+  /**
+   * Roda `start` no instante em que a pilha começa a entrar, no mesmo `onLayout`
+   * que começa o fade dela (na hora, se ela já começou). Devolve o
+   * cancelamento, para o efeito que assinou.
+   */
+  onEnter(start: () => void): () => void;
+}
+
+/** A entrada com o gatilho: só a pilha (e o teste) chama `enter`. */
+export interface StackEntranceTrigger extends StackEntrance {
+  /** Começa a entrada e roda quem estava esperando. Vale uma vez só. */
+  enter(): void;
+}
+
+export function createStackEntrance(entered = false): StackEntranceTrigger {
+  let started = entered;
+  const waiting = new Set<() => void>();
+  return {
+    onEnter(start) {
+      if (started) {
+        start();
+        return () => undefined;
+      }
+      waiting.add(start);
+      return () => {
+        waiting.delete(start);
+      };
+    },
+    enter() {
+      if (started) return;
+      started = true;
+      const starts = [...waiting];
+      waiting.clear();
+      starts.forEach((start) => start());
+    },
+  };
+}
+
+/** Fora de uma pilha que entra em fade, a entrada já aconteceu: quem assina começa na hora. */
+export const ALREADY_ENTERED: StackEntrance = createStackEntrance(true);
 
 /**
  * Apaga a pilha até o fundo escuro e resolve quando ela some. A troca de grupo
@@ -43,11 +91,18 @@ export function playStackExit(stack: FadingStack): Promise<void> {
  * árvore de um grupo inteiro leva um tempo entre montar e aparecer (no
  * emulador, 150 ms na abertura e mais na ida da 1l para as abas), e o fade
  * que começava antes já estava quase no fim no primeiro quadro visível.
+ *
+ * O que entra junto com a pilha (a sequência da 1k, a foto do fundo) assina
+ * `entrance.onEnter` e começa nesse mesmo `onLayout`, sem esperar um render:
+ * na montagem, terminava por trás da pilha apagada, e por um estado do React
+ * começava uns 300 ms depois do fade, com o JS ocupado. Com reduzir
+ * movimento, a entrada já nasce feita.
  */
 export function useStackFade(stack: FadingStack) {
   const reducedMotion = usePrefersReducedMotion();
   const opacity = useSharedValue(reducedMotion ? 1 : 0);
-  const entered = useRef(false);
+  const started = useRef(false);
+  const [entrance] = useState(() => createStackEntrance(reducedMotion));
 
   // Reduzir movimento ligado com a pilha já montada: ela fica inteira na hora.
   useEffect(() => {
@@ -55,13 +110,14 @@ export function useStackFade(stack: FadingStack) {
   }, [opacity, reducedMotion]);
 
   const onLayout = (): void => {
-    if (entered.current) return;
-    entered.current = true;
+    if (started.current) return;
+    started.current = true;
     opacity.set(
       reducedMotion
         ? 1
         : withTiming(1, { duration: motion.duration.slow, easing: motion.easing.out }),
     );
+    entrance.enter();
   };
 
   useEffect(() => {
@@ -89,5 +145,6 @@ export function useStackFade(stack: FadingStack) {
   }, [opacity, reducedMotion, stack]);
 
   const style = useAnimatedStyle(() => ({ opacity: opacity.get() }));
-  return { style, onLayout };
+  const entranceView: StackEntrance = entrance;
+  return { style, onLayout, entrance: entranceView };
 }

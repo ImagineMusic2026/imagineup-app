@@ -1,6 +1,7 @@
 import { fireEvent, render, screen } from '@testing-library/react-native';
 import { Platform, ScrollView, StyleSheet } from 'react-native';
 
+import { haptics } from '@/services/haptics';
 import { spacing } from '@/theme';
 
 import { ChipGroup, type ChipItem } from '..';
@@ -72,6 +73,29 @@ describe('ChipGroup', () => {
     render(<ChipGroup items={scopes} value="geral" onChange={onChange} />);
     fireEvent.press(screen.getByRole('button', { name: 'Geral' }));
     expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it('com onReselect, tocar no escolhido avisa por ele, e o toque vibra como os outros', () => {
+    const onChange = jest.fn();
+    const onReselect = jest.fn();
+    const trigger = jest.spyOn(haptics, 'trigger').mockImplementation(() => undefined);
+    render(<ChipGroup items={scopes} value="geral" onChange={onChange} onReselect={onReselect} />);
+
+    fireEvent.press(screen.getByRole('button', { name: 'Geral' }));
+    expect(onReselect).toHaveBeenCalledWith('geral');
+    expect(onChange).not.toHaveBeenCalled();
+    expect(trigger).toHaveBeenCalledWith('selection');
+
+    fireEvent.press(screen.getByRole('button', { name: 'Nenho' }));
+    expect(onChange).toHaveBeenCalledWith('nenho');
+    expect(onReselect).toHaveBeenCalledTimes(1);
+  });
+
+  it('sem onReselect, tocar no escolhido não vibra', () => {
+    const trigger = jest.spyOn(haptics, 'trigger').mockImplementation(() => undefined);
+    render(<ChipGroup items={scopes} value="geral" onChange={jest.fn()} />);
+    fireEvent.press(screen.getByRole('button', { name: 'Geral' }));
+    expect(trigger).not.toHaveBeenCalled();
   });
 
   it('na seleção múltipla, liga e desliga devolvendo na ordem dos itens', () => {
@@ -151,6 +175,29 @@ describe('ChipGroup', () => {
   it('abre já mostrando o escolhido, sem animar', () => {
     render(<ChipGroup testID="meses" items={months} value="mar" onChange={jest.fn()} />);
     measure('meses', months);
+    const end = spacing.gutter + 5 * CHIP_STRIDE + CHIP_WIDTH + spacing.gutter;
+    expect(scrollTo).toHaveBeenLastCalledWith({ x: end - VIEWPORT, animated: false });
+  });
+
+  it('o chip escolhido que entra no fim da fileira aparece quando o conteúdo cresce', () => {
+    // A central que o fã não segue, aberta por /ranking?artista=: o chip dela
+    // nasce junto com a escolha, e a rolagem pedida antes de o conteúdo crescer
+    // parava no fim antigo.
+    const first = months.slice(0, 5);
+    const { rerender } = render(
+      <ChipGroup testID="meses" items={first} value="mar" onChange={jest.fn()} />,
+    );
+    measure('meses', first);
+    rerender(<ChipGroup testID="meses" items={months} value="mar" onChange={jest.fn()} />);
+    measure('meses', months);
+    // O nativo parou antes: a rolagem só chegou ao fim antigo.
+    fireEvent.scroll(screen.UNSAFE_getByType(ScrollView), {
+      nativeEvent: { contentOffset: { x: 100, y: 0 } },
+    });
+    scrollTo.mockClear();
+
+    fireEvent(screen.UNSAFE_getByType(ScrollView), 'contentSizeChange', 600, 44);
+
     const end = spacing.gutter + 5 * CHIP_STRIDE + CHIP_WIDTH + spacing.gutter;
     expect(scrollTo).toHaveBeenLastCalledWith({ x: end - VIEWPORT, animated: false });
   });

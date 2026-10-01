@@ -1,9 +1,16 @@
-import { isHiddenFromAccessibility, render, screen } from '@testing-library/react-native';
+import { act, isHiddenFromAccessibility, render, screen } from '@testing-library/react-native';
+import * as Reanimated from 'react-native-reanimated';
 import { Polygon } from 'react-native-svg';
 
-import { colors } from '@/theme';
+import { createStackEntrance } from '@/hooks/use-stack-fade';
+import { colors, motion } from '@/theme';
 
 import { BrandBars, type BrandBarsProps } from '..';
+
+const mockReducedMotion = jest.fn(() => false);
+jest.mock('@/hooks/use-prefers-reduced-motion', () => ({
+  usePrefersReducedMotion: () => mockReducedMotion(),
+}));
 
 type Point = { x: number; y: number };
 
@@ -76,5 +83,57 @@ describe('BrandBars', () => {
   it('as opacidades podem ser trocadas por prop', () => {
     render(<BrandBars size="hero" opacities="soft" />);
     expect(bars().map((bar) => bar.opacity)).toEqual([1, 0.6, 0.3]);
+  });
+
+  describe('acendendo', () => {
+    const litOpacities = () =>
+      screen.root
+        .findAll((node) => node.type === Polygon)
+        .map((node) => (node.props.animatedProps as { fillOpacity: number }).fillOpacity);
+
+    afterEach(() => {
+      mockReducedMotion.mockReturnValue(false);
+      jest.restoreAllMocks();
+    });
+
+    it('nascem apagadas, no mesmo desenho e na mesma cor', () => {
+      render(<BrandBars size="hero" lightUp />);
+      expect(litOpacities()).toEqual([0, 0, 0]);
+      expect(bars().map((bar) => bar.fill)).toEqual(Array(3).fill(colors.accent));
+      for (const { topLeft, footLeft } of bars()) {
+        expect(topLeft.x - footLeft.x).toBeCloseTo(21 * Math.tan((22 * Math.PI) / 180), 1);
+      }
+    });
+
+    // O mock do Reanimated cria o valor de novo a cada render: o desenho mostra
+    // o primeiro quadro, e o acender se confere pelas animações que ele pede.
+    it('acendem uma depois da outra (80 ms entre elas), depois da espera pedida', () => {
+      const delay = jest.spyOn(Reanimated, 'withDelay');
+      const timing = jest.spyOn(Reanimated, 'withTiming');
+      render(<BrandBars size="hero" lightUp lightUpDelay={150} />);
+
+      expect(delay.mock.calls.map(([wait]) => wait)).toEqual([150, 230, 310]);
+      expect(timing).toHaveBeenCalledTimes(3);
+      for (const [target, config] of timing.mock.calls) {
+        expect(target).toBe(1);
+        expect(config).toMatchObject({ duration: motion.duration.slow, easing: motion.easing.out });
+      }
+    });
+
+    it('com a entrada de uma pilha, esperam o fade dela começar para acender', () => {
+      const entrance = createStackEntrance();
+      const delay = jest.spyOn(Reanimated, 'withDelay');
+      render(<BrandBars size="hero" lightUp entrance={entrance} />);
+      expect(delay).not.toHaveBeenCalled();
+
+      act(() => entrance.enter());
+      expect(delay.mock.calls.map(([wait]) => wait)).toEqual([0, 80, 160]);
+    });
+
+    it('com reduzir movimento, já nascem acesas na opacidade de cada uma', () => {
+      mockReducedMotion.mockReturnValue(true);
+      render(<BrandBars size="hero" lightUp />);
+      expect(litOpacities()).toEqual([1, 0.6, 0.28]);
+    });
   });
 });

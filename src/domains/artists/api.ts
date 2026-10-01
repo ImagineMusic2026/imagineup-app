@@ -2,8 +2,23 @@ import { dataSource } from '@/config/env';
 import { api } from '@/services/api';
 import { fixtureDelay } from '@/services/fixtures';
 
-import { buildArtistsFixture, buildFanCentralsFixture, followFixture } from './fixtures';
-import type { Artist, FanCentral, FollowArtistsResult, FollowArtistsVariables } from './types';
+import {
+  buildArtistDetailsFixture,
+  buildArtistsFixture,
+  buildFanCentralsFixture,
+  followFixture,
+} from './fixtures';
+import type {
+  Artist,
+  ArtistDetails,
+  FanCentral,
+  FollowArtistsResult,
+  FollowArtistsVariables,
+  JoinCentralResult,
+  JoinCentralVariables,
+} from './types';
+
+const artistUrl = (artistId: string) => `/artists/${encodeURIComponent(artistId)}`;
 
 /** Chamadas cruas à API. Sem React: quem cacheia é o queries.ts. */
 export async function fetchArtists(): Promise<Artist[]> {
@@ -42,5 +57,35 @@ export async function fetchFanCentrals(): Promise<FanCentral[]> {
     return buildFanCentralsFixture();
   }
   const { data } = await api.get<FanCentral[]>('/me/centrals');
+  return data;
+}
+
+/** A central de um artista (página 1d), com o fã dentro ou fora dela. */
+export async function fetchArtist(artistId: string): Promise<ArtistDetails> {
+  if (dataSource === 'fixtures') {
+    await fixtureDelay();
+    return buildArtistDetailsFixture(artistId);
+  }
+  const { data } = await api.get<ArtistDetails>(artistUrl(artistId));
+  return data;
+}
+
+/**
+ * Entra na central pela página do artista. Quem decide os pontos é o
+ * servidor; a chave de idempotência impede que uma repetição conte duas vezes.
+ */
+export async function joinCentral({
+  artistId,
+  idempotencyKey,
+}: JoinCentralVariables): Promise<JoinCentralResult> {
+  if (dataSource === 'fixtures') {
+    await fixtureDelay();
+    return followFixture.join(artistId, idempotencyKey);
+  }
+  const { data } = await api.put<JoinCentralResult>(
+    `/me/centrals/${encodeURIComponent(artistId)}`,
+    null,
+    { headers: { 'Idempotency-Key': idempotencyKey } },
+  );
   return data;
 }

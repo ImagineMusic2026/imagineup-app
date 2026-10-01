@@ -1,5 +1,11 @@
-import { createContext, useContext, useEffect, type ReactNode } from 'react';
-import { StyleSheet, type DimensionValue, type StyleProp, type ViewStyle } from 'react-native';
+import { createContext, useContext, useEffect, type ReactNode, type Ref } from 'react';
+import {
+  StyleSheet,
+  type DimensionValue,
+  type StyleProp,
+  type View,
+  type ViewStyle,
+} from 'react-native';
 import Animated, {
   cancelAnimation,
   useAnimatedStyle,
@@ -36,6 +42,8 @@ export interface SkeletonGroupProps {
   /** Sem ele, o leitor de tela ouve "Carregando". */
   accessibilityLabel?: string;
   style?: StyleProp<ViewStyle>;
+  /** Para levar o foco do leitor de tela até o "Carregando" (a aba nova da 1d). */
+  ref?: Ref<View>;
 }
 
 // Pulso lento de opacidade, 1 a .6 e de volta em 1,2 s, como pede o protótipo.
@@ -107,11 +115,12 @@ export function Skeleton({
  * foco só para o leitor de tela, que ouve "Carregando". Com reduzir movimento,
  * fica parado.
  */
-export function SkeletonGroup({ children, accessibilityLabel, style }: SkeletonGroupProps) {
+export function SkeletonGroup({ children, accessibilityLabel, style, ref }: SkeletonGroupProps) {
   const pulseStyle = usePulse(true);
 
   return (
     <Animated.View
+      ref={ref}
       accessible
       accessibilityLabel={accessibilityLabel ?? t('common.loading')}
       accessibilityState={{ busy: true }}
