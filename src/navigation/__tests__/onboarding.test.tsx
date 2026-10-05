@@ -304,7 +304,7 @@ describe('concluir a escolha de artistas', () => {
     await waitFor(() => expect(post).toHaveBeenCalledTimes(1));
     expect(post).toHaveBeenCalledWith(
       '/me/artists',
-      { artistIds: ['nenho', 'netto-brito', 'juninho-moraes'] },
+      { artistIds: ['nenho', 'nettobrito', 'juninhomoraes'] },
       { headers: { 'Idempotency-Key': expect.stringMatching(/.+/) } },
     );
 
@@ -313,7 +313,7 @@ describe('concluir a escolha de artistas', () => {
     expect(screen.getByRole('button', { name: NETTO })).toBeDisabled();
     expect(usePreferencesStore.getState().hasCompletedOnboarding).toBe(false);
 
-    act(() => answer({ data: { followedArtistIds: ['nenho', 'netto-brito', 'juninho-moraes'] } }));
+    act(() => answer({ data: { followedArtistIds: ['nenho', 'nettobrito', 'juninhomoraes'] } }));
 
     await waitFor(() => expect(view.getPathname()).toBe('/'));
     expect(screen.getByText('home')).toBeOnTheScreen();
@@ -334,7 +334,7 @@ describe('concluir a escolha de artistas', () => {
     // Seguiu, e a saída começou: o onboarding ainda não foi concluído.
     await waitFor(() => expect(exit).toHaveBeenCalledWith('onboarding'));
     expect(followFixture.followedIds()).toEqual(
-      expect.arrayContaining(['netto-brito', 'nenho', 'juninho-moraes']),
+      expect.arrayContaining(['nettobrito', 'nenho', 'juninhomoraes']),
     );
     expect(usePreferencesStore.getState().hasCompletedOnboarding).toBe(false);
     expect(view.getPathname()).toBe('/artistas');
@@ -350,7 +350,7 @@ describe('concluir a escolha de artistas', () => {
     fireEvent.press(continueButton(t('onboarding.chooseArtists.continue', { count: 3 })));
 
     await waitFor(() => expect(view.getPathname()).toBe('/'));
-    expect(followFixture.followedIds()).toContain('rock-salles');
+    expect(followFixture.followedIds()).toContain('rocksalles');
   });
 
   it('se não salvar, avisa, não conclui e deixa tentar de novo com a mesma chave', async () => {
@@ -402,6 +402,72 @@ describe('concluir a escolha de artistas', () => {
     expect(await screen.findByText(t('onboarding.chooseArtists.saveError'))).toBeOnTheScreen();
     expect(post).toHaveBeenCalledTimes(1);
     client.clear();
+  });
+
+  it('com menos de 3 centrais publicadas, o mínimo é o que há, e "1 fã" vem no singular', async () => {
+    mockDataSource = 'api';
+    get.mockResolvedValue({
+      data: [
+        { id: 'nettobrito', name: 'Netto Brito', photoURL: null, fanCount: 1, order: 0 },
+        { id: 'nenho', name: 'Nenho', photoURL: null, fanCount: 0, order: 1 },
+      ],
+    });
+    renderRouter(appTree, { initialUrl: '/artistas' });
+
+    const netto = await screen.findByRole('button', { name: 'Netto Brito, 1 fã' });
+    expect(screen.getByText('1 fã')).toBeOnTheScreen();
+    expect(screen.getByText('Escolha pelo menos 2 para montar seu feed.')).toBeOnTheScreen();
+    expect(continueButton(t('onboarding.chooseArtists.needMore', { count: 2 }))).toBeDisabled();
+    fireEvent.press(netto);
+    fireEvent.press(screen.getByRole('button', { name: cardName('Nenho', '0') }));
+    expect(continueButton(t('onboarding.chooseArtists.continue', { count: 2 }))).toBeEnabled();
+  });
+
+  it('com uma central publicada só, o botão e a dica dele ficam no singular', async () => {
+    mockDataSource = 'api';
+    get.mockResolvedValue({
+      data: [{ id: 'nettobrito', name: 'Netto Brito', photoURL: null, fanCount: 1, order: 0 }],
+    });
+    renderRouter(appTree, { initialUrl: '/artistas' });
+
+    const netto = await screen.findByRole('button', { name: 'Netto Brito, 1 fã' });
+    const locked = continueButton(t('onboarding.chooseArtists.needMoreOne'));
+    expect(locked).toBeDisabled();
+    expect(locked).toHaveProp('accessibilityHint', 'Escolha pelo menos 1 artista.');
+    fireEvent.press(netto);
+    const ready = continueButton('Continuar com 1 artista');
+    expect(ready).toBeEnabled();
+    expect(ready.props.accessibilityHint).toBeUndefined();
+  });
+
+  it('sem nenhuma central publicada, a lista vazia é erro de carregar, com o "Tentar de novo"', async () => {
+    mockDataSource = 'api';
+    get.mockResolvedValue({ data: [] });
+    renderRouter(appTree, { initialUrl: '/artistas' });
+
+    expect(await screen.findByText(t('onboarding.chooseArtists.loadError'))).toBeOnTheScreen();
+    expect(screen.getByRole('button', { name: t('common.retry') })).toBeOnTheScreen();
+  });
+
+  it('central que saiu do ar entre a lista e o toque: a lista busca de novo e ela sai da escolha', async () => {
+    mockDataSource = 'api';
+    const all = buildArtistsFixture();
+    get
+      .mockResolvedValueOnce({ data: all })
+      .mockResolvedValue({ data: all.filter((artist) => artist.id !== 'juninhomoraes') });
+    post.mockRejectedValueOnce(new ApiError('notFound', 'Central não encontrada.', 404));
+
+    renderRouter(appTree, { initialUrl: '/artistas' });
+    await chooseFeatured(NENHO, NETTO, JUNINHO);
+    fireEvent.press(continueButton(t('onboarding.chooseArtists.continue', { count: 3 })));
+
+    expect(await screen.findByText(t('onboarding.chooseArtists.saveError'))).toBeOnTheScreen();
+    await waitFor(() =>
+      expect(useArtistSelection.getState().selectedIds).toEqual(['nenho', 'nettobrito']),
+    );
+    expect(continueButton(t('onboarding.chooseArtists.needMoreOne'))).toBeDisabled();
+    expect(screen.queryByRole('button', { name: JUNINHO })).toBeNull();
+    expect(usePreferencesStore.getState().hasCompletedOnboarding).toBe(false);
   });
 
   it('lista que não carregou mostra o erro e tenta de novo sem perder o foco', async () => {

@@ -5,6 +5,7 @@ import { authenticate } from './auth';
 import { ApiHttpError, apiError, toApiHttpError } from './errors';
 import { parseIdempotencyKey, requestFingerprint, runIdempotent } from './idempotency';
 import { matchRoute, normalizePath } from './router';
+import { centralRoutes } from './routes/centrals';
 import { meRoutes } from './routes/me';
 import type { ApiDeps, ApiRequest, ApiResponse, ApiRoute, ResolvedDeps, RouteInput } from './types';
 
@@ -25,7 +26,7 @@ export { matchRoute } from './router';
 export type * from './types';
 
 /** Rotas de hoje. Cada bloco acrescenta as suas aqui. */
-export const API_ROUTES: readonly ApiRoute[] = [...meRoutes];
+export const API_ROUTES: readonly ApiRoute[] = [...meRoutes, ...centralRoutes];
 
 /** Corpo até 16 KiB, medido em req.rawBody. */
 export const MAX_BODY_BYTES = 16 * 1024;

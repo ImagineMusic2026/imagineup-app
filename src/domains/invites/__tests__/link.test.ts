@@ -16,11 +16,11 @@ describe('link compartilhado com o convite do fã', () => {
   });
 
   it('página que já tem parâmetro ganha o ref no fim, sem perder o que tinha', () => {
-    const link = buildInviteUrl('CAMILA12', '/artista/netto-brito?aba=mural');
-    expect(link).toBe(`${SHARE_LINK_BASE}/artista/netto-brito?aba=mural&ref=CAMILA12`);
+    const link = buildInviteUrl('CAMILA12', '/artista/nettobrito?aba=mural');
+    expect(link).toBe(`${SHARE_LINK_BASE}/artista/nettobrito?aba=mural&ref=CAMILA12`);
     expect(parseInviteLink(link)).toEqual({
       code: 'CAMILA12',
-      destination: '/artista/netto-brito?aba=mural',
+      destination: '/artista/nettobrito?aba=mural',
     });
   });
 

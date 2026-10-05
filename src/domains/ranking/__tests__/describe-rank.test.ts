@@ -166,6 +166,20 @@ describe('card "Você" por situação', () => {
       'Não pontuou nesta temporada',
       'Você. Não pontuou nesta temporada.',
     ],
+    [
+      'central de exemplo ao lado das centrais do servidor, sem posição, com os pontos dele',
+      { position: null, points: 4_120, target: null, example: true },
+      false,
+      'Sem posição ainda',
+      'Você, sem posição ainda, 4.120 pontos.',
+    ],
+    [
+      'central de exemplo ao lado das centrais do servidor, sem posição e sem pontos',
+      { position: null, points: 0, target: null, example: true },
+      false,
+      'Sem posição ainda',
+      'Você. Sem posição ainda.',
+    ],
   ];
 
   it.each(cases)('%s', (_situation, myRank, seasonOver, text, label) => {

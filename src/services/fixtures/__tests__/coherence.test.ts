@@ -80,7 +80,7 @@ describe('carteira nas fixtures (builds de hoje)', () => {
 
   it('comentar, entrar na central e concluir missão rendem como hoje', () => {
     expect(comment('c-1').pointsAwarded).toBe(2);
-    expect(followFixture.join('rock-salles', 'join-1').pointsAwarded).toBe(JOIN_CENTRAL_POINTS);
+    expect(followFixture.join('rocksalles', 'join-1').pointsAwarded).toBe(JOIN_CENTRAL_POINTS);
     expect(missionsFixture.record('rsvp', NOW)).toBe(RSVP_MISSION_POINTS);
     expect(fixtureWallet.get().balance).toBe(
       12_480 + 2 + JOIN_CENTRAL_POINTS + RSVP_MISSION_POINTS,
@@ -110,11 +110,11 @@ describe('carteira na API (emuladores no bloco 1)', () => {
   });
 
   it('entrar na central acontece e rende 0', () => {
-    expect(followFixture.join('rock-salles', 'join-1')).toEqual({
-      artistId: 'rock-salles',
+    expect(followFixture.join('rocksalles', 'join-1')).toEqual({
+      artistId: 'rocksalles',
       pointsAwarded: 0,
     });
-    expect(followFixture.followedIds()).toContain('rock-salles');
+    expect(followFixture.followedIds()).toContain('rocksalles');
     expect(fixtureWallet.get()).toEqual(INITIAL);
   });
 

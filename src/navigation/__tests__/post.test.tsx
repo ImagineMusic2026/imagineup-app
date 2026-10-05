@@ -172,7 +172,7 @@ describe('post com comentários', () => {
 
     fireEvent.press(await screen.findByRole('button', { name: AUTHOR }));
 
-    await waitFor(() => expect(view.getPathname()).toBe('/artista/netto-brito'));
+    await waitFor(() => expect(view.getPathname()).toBe('/artista/nettobrito'));
     expect(view.getSegments()).toEqual(['(tabs)', '(inicio)', 'artista', '[artistaId]']);
     act(() => testRouter.back());
     await waitFor(() => expect(view.getPathname()).toBe('/'));
@@ -198,7 +198,7 @@ describe('post com comentários', () => {
 
     fireEvent.press(await screen.findByRole('button', { name: AUTHOR }));
 
-    await waitFor(() => expect(view.getPathname()).toBe('/artista/netto-brito'));
+    await waitFor(() => expect(view.getPathname()).toBe('/artista/nettobrito'));
     expect(view.getSegments()).toEqual(['(tabs)', '(inicio)', 'artista', '[artistaId]']);
     // O post sai e a central abre na aba que já existe, sem outra árvore de abas.
     expect(rootRoutes(view)).toEqual(['(tabs)']);
@@ -216,7 +216,7 @@ describe('post com comentários', () => {
     async (_tab, root, group) => {
       const view = renderRouter(appTree, { initialUrl: root });
       await waitFor(() => expect(view.getPathname()).toBe(root));
-      act(() => router.push('/artista/netto-brito'));
+      act(() => router.push('/artista/nettobrito'));
       await waitFor(() =>
         expect(view.getSegments()).toEqual(['(tabs)', group, 'artista', '[artistaId]']),
       );

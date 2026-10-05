@@ -37,7 +37,7 @@ const NOW = new Date(2026, 8, 29, 20, 0);
 const types = (items: readonly ArtistListItem[]) => items.map((item) => item.type);
 
 describe('Mural', () => {
-  const netto = buildPostsFixture(NOW).filter((post) => post.artist.id === 'netto-brito');
+  const netto = buildPostsFixture(NOW).filter((post) => post.artist.id === 'nettobrito');
 
   it('os posts vão em linhas de três, e a última pode vir incompleta', () => {
     const rows = postRows([...netto, netto[0]!].slice(0, 7));
@@ -61,7 +61,7 @@ describe('Mural', () => {
 
 describe('Missões', () => {
   it('só as desta central, no desenho da 1g: a sobrelinha, a destacada em lima e as linhas', () => {
-    const missions = missionsOfArtist(buildMissionsFixture(NOW).missions, 'netto-brito');
+    const missions = missionsOfArtist(buildMissionsFixture(NOW).missions, 'nettobrito');
     expect(missions.map((mission) => mission.id)).toEqual([
       'm-clipe-netto',
       'm-comentar-central',
@@ -76,7 +76,7 @@ describe('Missões', () => {
   });
 
   it('central sem missão mostra o vazio', () => {
-    const missions = missionsOfArtist(buildMissionsFixture(NOW).missions, 'rock-salles');
+    const missions = missionsOfArtist(buildMissionsFixture(NOW).missions, 'rocksalles');
     expect(missionItems(missions, NOW, 'ready').map((item) => item.key)).toEqual([
       'missions-empty',
     ]);
@@ -86,7 +86,7 @@ describe('Missões', () => {
 describe('Agenda', () => {
   it('os shows em que o artista toca, com a sobrelinha de cada mês e sem destaque', () => {
     const events = buildAgendaEventsFixture(NOW).filter((event) =>
-      event.artists.some((artist) => artist.id === 'netto-brito'),
+      event.artists.some((artist) => artist.id === 'nettobrito'),
     );
     const items = agendaItems(events, NOW, 'ready');
     expect(
@@ -104,7 +104,7 @@ describe('Agenda', () => {
 describe('Ranking', () => {
   it('a linha da temporada e todas as posições da central, a partir do 1º', () => {
     const { items: entries } = buildLeaderboardPageFixture(
-      { kind: 'artist', artistId: 'netto-brito' },
+      { kind: 'artist', artistId: 'nettobrito' },
       null,
     );
     const items = rankingItems(entries, 'ready');

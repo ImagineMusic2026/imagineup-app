@@ -43,14 +43,14 @@ const VIDEO_SIZE = { width: 1920, height: 1080 } as const;
 const PHOTO_SIZE = { width: 1080, height: 1350 } as const;
 
 const NETTO: PostArtist = {
-  id: 'netto-brito',
+  id: 'nettobrito',
   name: 'Netto Brito',
   verified: true,
   photoURL: null,
 };
 const NENHO: PostArtist = { id: 'nenho', name: 'Nenho', verified: true, photoURL: null };
 const JUNINHO: PostArtist = {
-  id: 'juninho-moraes',
+  id: 'juninhomoraes',
   name: 'Juninho Moraes',
   verified: true,
   photoURL: null,
@@ -254,6 +254,14 @@ export function buildArtistPostsPageFixture(
 ): Page<Post> {
   const posts = buildPostsFixture(now).filter((post) => post.artist.id === artistId);
   return pageOf(posts, cursor, ARTIST_POSTS_PAGE_SIZE);
+}
+
+/**
+ * Quantos posts de exemplo a central tem: o "N posts" da 1d quando as
+ * centrais já vêm do servidor e o mural ainda é de exemplo (até o bloco 6).
+ */
+export function countArtistPostsFixture(now: Date, artistId: string): number {
+  return buildBasePosts(now).filter((post) => post.artist.id === artistId).length;
 }
 
 function pageOf<T>(items: readonly T[], cursor: string | null, size: number): Page<T> {

@@ -113,8 +113,11 @@ export function ArtistCover({
       style={[styles.cover, { minHeight: height, paddingTop: topClearance }]}
     >
       <Animated.View style={[StyleSheet.absoluteFill, photoStyle]} {...hiddenFromReader}>
+        {/* O painel só guarda a foto 3:4: a capa mostra a faixa de cima dela, onde
+            fica o rosto num retrato (decisão 5 da seção 19 da nota da API). */}
         <RemoteImage
           uri={artist?.coverUrl}
+          contentPosition="top"
           fallback={{ kind: 'brand', seed: artistId, stripes: null }}
           fallbackSize={{ width: frame.width, height: size }}
           style={StyleSheet.absoluteFill}

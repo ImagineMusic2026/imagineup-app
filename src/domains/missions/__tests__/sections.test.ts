@@ -71,7 +71,7 @@ describe('seções da 1g', () => {
 
 describe('missões de uma central (aba Missões da 1d)', () => {
   it('só as que o painel ligou ao artista, na ordem dele', () => {
-    expect(missionsOfArtist(missions, 'netto-brito').map((mission) => mission.id)).toEqual([
+    expect(missionsOfArtist(missions, 'nettobrito').map((mission) => mission.id)).toEqual([
       'm-clipe-netto',
       'm-comentar-central',
       'm-relampago-show',
@@ -82,6 +82,6 @@ describe('missões de uma central (aba Missões da 1d)', () => {
   });
 
   it('central sem missão fica sem nenhuma', () => {
-    expect(missionsOfArtist(missions, 'rock-salles')).toEqual([]);
+    expect(missionsOfArtist(missions, 'rocksalles')).toEqual([]);
   });
 });

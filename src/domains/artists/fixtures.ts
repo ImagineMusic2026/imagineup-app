@@ -13,6 +13,7 @@ import type {
   FanCentral,
   FollowArtistsResult,
   JoinCentralResult,
+  LeaveCentralResult,
 } from './types';
 
 /**
@@ -22,10 +23,10 @@ import type {
  * mostram o placeholder de marca pelo id.
  */
 const FEATURED: readonly Omit<Artist, 'order' | 'photoURL'>[] = [
-  { id: 'netto-brito', name: 'Netto Brito', fanCount: 412_000 },
+  { id: 'nettobrito', name: 'Netto Brito', fanCount: 412_000 },
   { id: 'nenho', name: 'Nenho', fanCount: 298_000 },
-  { id: 'juninho-moraes', name: 'Juninho Moraes', fanCount: 141_000 },
-  { id: 'rock-salles', name: 'Rock Salles', fanCount: 96_000 },
+  { id: 'juninhomoraes', name: 'Juninho Moraes', fanCount: 141_000 },
+  { id: 'rocksalles', name: 'Rock Salles', fanCount: 96_000 },
 ];
 
 const FIRST_GENERIC = FEATURED.length + 1;
@@ -39,7 +40,7 @@ export function buildArtistsFixture(): Artist[] {
   const generic = Array.from({ length: LAST_GENERIC - FIRST_GENERIC + 1 }, (_, index) => {
     const number = FIRST_GENERIC + index;
     return {
-      id: `artista-${number}`,
+      id: `artista${number}`,
       name: `Artista ${number}`,
       photoURL: null,
       fanCount: GENERIC_TOP_FANS - index * GENERIC_FANS_STEP,
@@ -53,18 +54,23 @@ export function buildArtistsFixture(): Artist[] {
  * Centrais que o fã de exemplo (a Camila do protótipo) já segue: as três que a
  * home (1b) e o perfil (1e) mostram. Seguir soma a elas.
  */
-const INITIAL_FOLLOWED: readonly string[] = ['netto-brito', 'nenho', 'juninho-moraes'];
+const INITIAL_FOLLOWED: readonly string[] = ['nettobrito', 'nenho', 'juninhomoraes'];
 
 /** Pontos por entrar numa central pela página do artista (exemplo; o valor vem do painel). */
 export const JOIN_CENTRAL_POINTS = 10;
 
 let followed = new Set<string>(INITIAL_FOLLOWED);
+// Centrais em que o fã já entrou nesta sessão: a entrada paga uma vez só por
+// central, como o servidor (central_join:<id>). Nasce com as do protótipo.
+let joinedOnce = new Set<string>(INITIAL_FOLLOWED);
 // Chave de idempotência já vista e o que ela devolveu, como o servidor faria.
 let answered = new Map<string, FollowArtistsResult>();
 let joinAnswers = new Map<string, JoinCentralResult>();
+let leaveAnswers = new Map<string, LeaveCentralResult>();
 
 function snapshot(): FollowArtistsResult {
-  return { followedArtistIds: [...followed] };
+  // A escolha de artistas das fixtures não rende pontos (decisão 3 da seção 19).
+  return { followedArtistIds: [...followed], pointsAwarded: 0 };
 }
 
 function assertKnown(artistIds: readonly string[]): void {
@@ -83,10 +89,13 @@ export const followFixture = {
   /** Segue os artistas; a mesma chave de novo devolve a resposta da primeira vez. */
   follow(artistIds: readonly string[], idempotencyKey: string): FollowArtistsResult {
     const previous = answered.get(idempotencyKey);
-    if (previous) return { followedArtistIds: [...previous.followedArtistIds] };
+    if (previous) return { ...previous, followedArtistIds: [...previous.followedArtistIds] };
 
     assertKnown(artistIds);
-    for (const id of artistIds) followed.add(id);
+    for (const id of artistIds) {
+      followed.add(id);
+      joinedOnce.add(id);
+    }
     const result = snapshot();
     answered.set(idempotencyKey, result);
     return snapshot();
@@ -94,9 +103,10 @@ export const followFixture = {
 
   /**
    * Entrar numa central pela página do artista (1d). Rende os pontos de
-   * exemplo na carteira só na primeira vez: quem já está nela recebe zero,
-   * como a API idempotente faria. A mesma chave de novo devolve a resposta da
-   * primeira vez.
+   * exemplo na carteira só na primeira entrada de cada central na sessão:
+   * quem já está nela, ou saiu e entrou de novo, recebe zero, como o servidor
+   * (a entrada paga uma vez na vida). A mesma chave de novo devolve a
+   * resposta da primeira vez.
    */
   join(artistId: string, idempotencyKey: string): JoinCentralResult {
     const previous = joinAnswers.get(idempotencyKey);
@@ -104,10 +114,26 @@ export const followFixture = {
 
     assertKnown([artistId]);
     // Com a carteira na API, entrar na central de exemplo não rende ponto (earnFixturePoints).
-    const pointsAwarded = followed.has(artistId) ? 0 : earnFixturePoints(JOIN_CENTRAL_POINTS);
+    const pointsAwarded = joinedOnce.has(artistId) ? 0 : earnFixturePoints(JOIN_CENTRAL_POINTS);
     followed.add(artistId);
+    joinedOnce.add(artistId);
     const result: JoinCentralResult = { artistId, pointsAwarded };
     joinAnswers.set(idempotencyKey, result);
+    return { ...result };
+  },
+
+  /**
+   * Sair da central: tira das centrais seguidas e não mexe em ponto. Sem
+   * estar nela, é sucesso sem efeito, como o servidor. A mesma chave de novo
+   * devolve a resposta da primeira vez.
+   */
+  leave(artistId: string, idempotencyKey: string): LeaveCentralResult {
+    const previous = leaveAnswers.get(idempotencyKey);
+    if (previous) return { ...previous };
+
+    followed.delete(artistId);
+    const result: LeaveCentralResult = { artistId };
+    leaveAnswers.set(idempotencyKey, result);
     return { ...result };
   },
 
@@ -118,15 +144,17 @@ export const followFixture = {
   /** Volta ao início (fim da sessão e testes). */
   reset(): void {
     followed = new Set(INITIAL_FOLLOWED);
+    joinedOnce = new Set(INITIAL_FOLLOWED);
     answered = new Map();
     joinAnswers = new Map();
+    leaveAnswers = new Map();
   },
 };
 
 onFixtureSessionEnd(() => followFixture.reset());
 
 /** O nome curto que o card da home (1b) usa no protótipo. */
-const SHORT_NAMES: Readonly<Record<string, string>> = { 'juninho-moraes': 'Juninho M.' };
+const SHORT_NAMES: Readonly<Record<string, string>> = { juninhomoraes: 'Juninho M.' };
 
 /**
  * Centrais que o fã segue, na ordem em que ele entrou nelas: as três do
@@ -157,10 +185,10 @@ export function buildFanCentralsFixture(): FanCentral[] {
 
 /** Números de exemplo das centrais do protótipo (1d): o Netto é o do desenho. */
 const FEATURED_NUMBERS: Readonly<Record<string, { postCount: number; centralPoints: number }>> = {
-  'netto-brito': { postCount: 1_284, centralPoints: 8_400_000 },
+  nettobrito: { postCount: 1_284, centralPoints: 8_400_000 },
   nenho: { postCount: 936, centralPoints: 5_900_000 },
-  'juninho-moraes': { postCount: 412, centralPoints: 2_300_000 },
-  'rock-salles': { postCount: 268, centralPoints: 1_100_000 },
+  juninhomoraes: { postCount: 412, centralPoints: 2_300_000 },
+  rocksalles: { postCount: 268, centralPoints: 1_100_000 },
 };
 
 // Centrais genéricas: posts e pontos proporcionais aos fãs, sem gestão da

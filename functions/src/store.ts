@@ -1,5 +1,6 @@
 import { FieldValue, type Firestore } from 'firebase-admin/firestore';
 
+import { leaveAllCentrals } from './centrals/service';
 import {
   profileDisplayName,
   randomDigits,
@@ -88,17 +89,21 @@ async function deleteIdempotencyKeys(db: Firestore, uid: string): Promise<void> 
 }
 
 /**
- * Apaga tudo do fã: as reservas de @, o perfil com as subcoleções, a carteira
+ * Apaga tudo do fã: as reservas de @, o perfil, os vínculos com as centrais
+ * (descontando o fanCount de cada uma), as subcoleções do perfil, a carteira
  * (com o extrato e os pontos por central), as chaves de idempotência e o
  * acesso ao painel (staff/{uid}) se a conta era da equipe. Pode rodar mais de
  * uma vez. Dado novo do fã fora de users/{uid} (convites, comentários)
  * precisa entrar aqui.
  *
  * A ordem importa: toda gravação da API lê users/{uid} na transação
- * (requireFan), então depois que o perfil some nenhuma gravação nova do fã
- * passa, e a carteira apagada em seguida não ganha nada no meio. Os
- * agregados do painel (statsDaily) não descontam: guardam o que aconteceu em
- * cada dia, sem uid (docs/arquitetura-api.md, seção 12).
+ * (requireFan), então depois que o documento do perfil some nenhuma gravação
+ * nova do fã passa. Por isso ele sai sozinho primeiro, antes dos vínculos: o
+ * recursiveDelete apaga o documento por último, e uma entrada no meio da
+ * exclusão criaria um vínculo depois da listagem, que ele levaria sem
+ * descontar o fanCount. Os agregados do painel (statsDaily) não descontam:
+ * guardam o que aconteceu em cada dia, sem uid (docs/arquitetura-api.md,
+ * seções 12 e 19.12).
  */
 export async function deleteUserData(db: Firestore, uid: string): Promise<void> {
   const reservations = await db.collection('usernames').where('uid', '==', uid).get();
@@ -114,7 +119,10 @@ export async function deleteUserData(db: Firestore, uid: string): Promise<void> 
       }
     }),
   );
-  await db.recursiveDelete(db.collection('users').doc(uid));
+  const profile = db.collection('users').doc(uid);
+  await profile.delete();
+  await leaveAllCentrals(db, uid);
+  await db.recursiveDelete(profile);
   await db.recursiveDelete(db.collection('wallets').doc(uid));
   await deleteIdempotencyKeys(db, uid);
   await db.collection('staff').doc(uid).delete();

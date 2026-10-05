@@ -2,6 +2,7 @@ import type { Firestore } from 'firebase-admin/firestore';
 import * as logger from 'firebase-functions/logger';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { CentralError } from '../centrals/model';
 import { staticConfigSource } from '../points/config';
 import { API_ROUTES, createApiHandler } from './index';
 import type { ApiRequest, ApiRoute } from './types';
@@ -280,5 +281,91 @@ describe('formato da resposta e dos erros', () => {
     );
     const sent = await call(request('GET', '/me/wallet'));
     expect(sent.status).toBe(500);
+  });
+});
+
+describe('centrais (bloco 4)', () => {
+  it('central que não existe: 404 artist_not_found no formato combinado, com os ids', async () => {
+    const routes: ApiRoute[] = [
+      {
+        method: 'GET',
+        pattern: '/teste/central',
+        writes: false,
+        handle: async () => {
+          throw new CentralError('artist_not_found', { artistIds: ['artista7'] });
+        },
+      },
+    ];
+    const sent = await call(request('GET', '/teste/central'), routes);
+    expect(sent.status).toBe(404);
+    expect(sent.body).toEqual({
+      code: 'artist_not_found',
+      message: 'Central não encontrada.',
+      details: { artistIds: ['artista7'] },
+    });
+    expect(logger.error).not.toHaveBeenCalled();
+  });
+
+  it('entradas demais no dia: 429 too_many_requests com o teto e o Retry-After', async () => {
+    const routes: ApiRoute[] = [
+      {
+        method: 'GET',
+        pattern: '/teste/teto',
+        writes: false,
+        handle: async () => {
+          throw new CentralError('too_many_entries', { limit: 30 }, 3600);
+        },
+      },
+    ];
+    const sent = await call(request('GET', '/teste/teto'), routes);
+    expect(sent.status).toBe(429);
+    expect(sent.body).toEqual({
+      code: 'too_many_requests',
+      message: 'Tentativas demais por hoje. Tente amanhã.',
+      details: { limit: 30 },
+    });
+    expect(sent.headers['Retry-After']).toBe('3600');
+    expect(logger.error).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['GET', '/artists/Netto-Brito'],
+    ['GET', '/artists/__trio__'],
+    ['PUT', '/me/centrals/ab'],
+    ['DELETE', '/me/centrals/net%C3%B6'],
+  ])('id fora do formato do @ em %s %s: 404 artist_not_found', async (method, path) => {
+    const sent = await call(
+      request(method, path, { headers: { 'Idempotency-Key': 'chave-central-1' } }),
+    );
+    expect(sent.status).toBe(404);
+    expect(sent.body).toEqual({ code: 'artist_not_found', message: 'Central não encontrada.' });
+  });
+
+  it('seguir com o corpo fora do formato: 400 com o campo', async () => {
+    for (const body of [{ artistIds: [] }, { artistIds: ['nenho', 'nenho'] }, null]) {
+      const sent = await call(
+        request('POST', '/me/artists', { body, headers: { 'Idempotency-Key': 'chave-seguir-1' } }),
+      );
+      expect(sent.status).toBe(400);
+      expect(sent.body).toMatchObject({ code: 'invalid_request', details: { field: 'artistIds' } });
+    }
+  });
+
+  it('as três que gravam exigem a Idempotency-Key', async () => {
+    for (const [method, path] of [
+      ['POST', '/me/artists'],
+      ['PUT', '/me/centrals/nenho'],
+      ['DELETE', '/me/centrals/nenho'],
+    ] as const) {
+      const sent = await call(request(method, path, { body: { artistIds: ['nenho'] } }));
+      expect(sent.status).toBe(400);
+      expect(sent.body).toMatchObject({ code: 'idempotency_key_required' });
+    }
+  });
+
+  it('GET /me/centrals/nenho: 405 com PUT e DELETE', async () => {
+    const sent = await call(request('GET', '/me/centrals/nenho'));
+    expect(sent.status).toBe(405);
+    expect(sent.headers.Allow).toBe('PUT, DELETE');
   });
 });

@@ -1,5 +1,22 @@
 {
-  "indexes": [],
+  "indexes": [
+    {
+      "collectionGroup": "artists",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "order", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "centralPoints",
+      "queryScope": "COLLECTION_GROUP",
+      "fields": [
+        { "fieldPath": "artistId", "order": "ASCENDING" },
+        { "fieldPath": "totalPoints", "order": "ASCENDING" }
+      ]
+    }
+  ],
   "fieldOverrides": [
     { "collectionGroup": "idempotency", "fieldPath": "expiresAt", "ttl": true, "indexes": [] },
     { "collectionGroup": "idempotency", "fieldPath": "body", "indexes": [] },
@@ -13,6 +30,16 @@
     { "collectionGroup": "wallets", "fieldPath": "seasonPointsAt", "indexes": [] },
     { "collectionGroup": "statsShards", "fieldPath": "bySource", "indexes": [] },
     { "collectionGroup": "statsShards", "fieldPath": "byArtist", "indexes": [] },
-    { "collectionGroup": "statsShards", "fieldPath": "cohorts", "indexes": [] }
+    { "collectionGroup": "statsShards", "fieldPath": "cohorts", "indexes": [] },
+    {
+      "collectionGroup": "centrals",
+      "fieldPath": "artistId",
+      "indexes": [
+        { "order": "ASCENDING", "queryScope": "COLLECTION" },
+        { "order": "DESCENDING", "queryScope": "COLLECTION" },
+        { "arrayConfig": "CONTAINS", "queryScope": "COLLECTION" },
+        { "order": "ASCENDING", "queryScope": "COLLECTION_GROUP" }
+      ]
+    }
   ]
 }

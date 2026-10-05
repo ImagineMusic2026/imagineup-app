@@ -33,6 +33,7 @@ import { EmptyState } from '@/components/empty-state';
 import { LargeTitleHeader } from '@/components/header';
 import { PageGlow } from '@/components/page-glow';
 import { Screen } from '@/components/screen';
+import { useFanCentralsQuery } from '@/domains/artists';
 import { useFanIdentity } from '@/domains/profile';
 import { useAnnounceWhen } from '@/hooks/use-announce-when';
 import { useNow } from '@/hooks/use-now';
@@ -42,6 +43,7 @@ import { t } from '@/i18n';
 import { colors, motion, spacing } from '@/theme';
 
 import type { RankingSelf } from '../components/entry-avatar';
+import { ExampleNotice } from '../components/example-notice';
 import { MyRankCard } from '../components/my-rank-card';
 import { Podium } from '../components/podium';
 import { RankingRow } from '../components/ranking-row';
@@ -52,7 +54,7 @@ import { isSeasonOver } from '../describe-rank';
 import { useRankingRefresh } from '../hooks/use-ranking-refresh';
 import { useRankingScope } from '../hooks/use-ranking-scope';
 import { useLeaderboardInfiniteQuery, useMyRankQuery, useSeasonQuery } from '../queries';
-import { scopeKey, type ScopeKey } from '../scope';
+import { artistIdOf, scopeKey, type ScopeKey } from '../scope';
 import type { LeaderboardEntry, LeaderboardPage } from '../types';
 
 // O título até a linha de chips é 15 no protótipo, contado até o chip
@@ -162,6 +164,7 @@ export function RankingScreen() {
   const season = useSeasonQuery();
   const board = useLeaderboardInfiniteQuery(scope);
   const myRank = useMyRankQuery(scope);
+  const centrals = useFanCentralsQuery();
   const { refreshing, refresh } = useRankingRefresh(scope);
   const listRef = useRef<FlashListRef<LeaderboardEntry>>(null);
   // A linha (ou a coluna do pódio) do próprio fã, para o foco do leitor de tela.
@@ -180,6 +183,19 @@ export function RankingScreen() {
   const [meSeen, setMeSeen] = useState({ key, visible: false });
 
   const entries = entriesOf(board.data);
+  // Ranking de exemplo ao lado de dado de verdade: o aviso abaixo da temporada.
+  const example = board.data?.pages[0]?.example === true;
+  // No recorte de central de exemplo, o fã fica sem posição, e o card mostra
+  // os pontos de verdade dele na central (os mesmos de "Suas centrais").
+  const scopeArtistId = artistIdOf(scope);
+  const myRankShown =
+    myRank.data?.example && scopeArtistId !== undefined
+      ? {
+          ...myRank.data,
+          points:
+            centrals.data?.find((central) => central.artistId === scopeArtistId)?.seasonPoints ?? 0,
+        }
+      : myRank.data;
   const podium = entries.filter((entry) => entry.position <= 3);
   const rows = listRowsOf(entries);
   const loaded = board.data !== undefined;
@@ -399,6 +415,7 @@ export function RankingScreen() {
       {season.isError && season.data === undefined ? null : (
         <SeasonLine season={season.data} now={now} style={[styles.gutter, styles.season]} />
       )}
+      {example ? <ExampleNotice style={[styles.gutter, styles.notice]} /> : null}
       {/* O puxar para atualizar acontece aqui no topo: a falha aparece onde o fã puxou. */}
       {loaded && board.isRefetchError ? (
         <EmptyState
@@ -486,7 +503,7 @@ export function RankingScreen() {
       />
       {hasSeason ? (
         <MyRankCard
-          myRank={myRank.data}
+          myRank={myRankShown}
           seasonOver={seasonOver}
           self={self}
           visible={cardVisible}
@@ -519,6 +536,9 @@ const styles = StyleSheet.create({
   },
   season: {
     marginTop: SEASON_TOP,
+  },
+  notice: {
+    marginTop: spacing.xs,
   },
   // 18 da temporada ao pódio e 8 do pódio à primeira linha.
   podium: {

@@ -12,15 +12,22 @@ export type ArtistsLoadState = 'loading' | 'error' | 'ready';
  * busca de novo (`retrying`): trocar pelo esqueleto tirava da tela o botão em
  * que o leitor de tela estava. (Sem dado, a busca nova tira a consulta do
  * estado de erro, então quem lembra que ela veio de um erro é a tela.)
+ *
+ * Lista vazia (nenhuma central publicada no painel) também é erro de
+ * carregar: a 1l não teria o que escolher. Não acontece com o seed, e a API
+ * só vai para as builds com as centrais da cliente no ar (UP-2).
  */
 export function useArtistsLoad() {
   const artists = useArtistsQuery();
   const [retrying, setRetrying] = useState(false);
-  const failed = artists.isError || artists.fetchStatus === 'paused';
-  const state: ArtistsLoadState = artists.data ? 'ready' : failed || retrying ? 'error' : 'loading';
+  const empty = artists.data !== undefined && artists.data.length === 0;
+  const failed =
+    artists.isError || artists.fetchStatus === 'paused' || (empty && !artists.isFetching);
+  const state: ArtistsLoadState =
+    artists.data && !empty ? 'ready' : failed || retrying ? 'error' : 'loading';
 
   return {
-    artists: artists.data,
+    artists: empty ? undefined : artists.data,
     state,
     // Pausada sem rede, não está buscando: o botão volta a ficar livre.
     retrying: state === 'error' && retrying && artists.fetchStatus === 'fetching',

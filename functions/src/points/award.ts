@@ -10,23 +10,26 @@ import {
 import { parseSeasonConfig, seasonConfigRef } from './config';
 import {
   activityMarks,
+  cloneWallet,
   computeAwards,
   emptyCentral,
   emptyWallet,
   entryArtistId,
   ledgerId,
   PointsError,
+  trimDays,
   type ActivityMarks,
   type Actor,
   type AwardEntry,
   type CentralState,
   type ComputeOutput,
+  type DailyActionKey,
   type DayStats,
   type FanInput,
   type PointsConfig,
   type WalletState,
 } from './model';
-import { pickShard, shardRef, shardWrite } from './stats';
+import { addMembershipToShard, emptyShardDelta, pickShard, shardRef, shardWrite } from './stats';
 
 // Lançamento de pontos no Firestore, em duas fases, porque a transação exige
 // todas as leituras antes de qualquer gravação: planAwards só lê e calcula,
@@ -339,6 +342,42 @@ export function applyAwards(tx: Transaction, db: Firestore, plan: AwardPlan): vo
       merge: true,
     });
   }
+}
+
+/** Uma entrada ou saída de central, para os agregados do painel (bloco 4). */
+export type MembershipChange = { artistId: string; kind: 'joined' | 'left' };
+
+/**
+ * Soma entradas e saídas de centrais no shard do dia do plano, que o
+ * applyAwards grava (continua uma gravação de shard por transação). Cria o
+ * shard quando o plano não tinha o que somar. Chame antes de o runIdempotent
+ * gravar o plano.
+ */
+export function addMembershipCounts(plan: AwardPlan, changes: readonly MembershipChange[]): void {
+  if (changes.length === 0) return;
+  plan.shard ??= emptyShardDelta();
+  for (const change of changes) addMembershipToShard(plan.shard, change.artistId, change.kind);
+}
+
+/**
+ * Soma 1 a um contador do dia que não rende ponto (`days[dia].count[key]`) na
+ * carteira de quem chama, no dia do plano. Sem lançamento nem marca de
+ * atividade, o plano não gravaria a carteira: ela passa a ser gravada, a
+ * partir da lida no pedido (com os dias velhos cortados, como o cálculo faria).
+ * Chame depois do planAwards e antes de o runIdempotent gravar o plano.
+ */
+export function addDailyCount(plan: AwardPlan, fan: FanContext, key: DailyActionKey): void {
+  const caller = plan.fans.find((item) => item.uid === fan.uid);
+  if (!caller) throw new Error('O fã que chama não está no plano.');
+  if (!caller.wallet) {
+    const state = cloneWallet(fan.wallet);
+    state.days = trimDays(state.days, plan.day);
+    caller.wallet = { create: !fan.wallet.exists, state: { ...state, exists: true } };
+  }
+  const { days } = caller.wallet.state;
+  const today = days[plan.day] ?? { earned: 0, count: {} };
+  today.count[key] = (today.count[key] ?? 0) + 1;
+  days[plan.day] = today;
 }
 
 /** gRPC ALREADY_EXISTS: o runTransaction do Admin SDK não repete esse código sozinho. */

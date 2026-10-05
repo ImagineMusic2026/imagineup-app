@@ -4,6 +4,11 @@ interface ArtistSelectionState {
   /** Na ordem em que o fã tocou. */
   selectedIds: readonly string[];
   toggle: (artistId: string) => void;
+  /**
+   * Fica só com os ids da lista: a central que saiu do ar (a lista buscou de
+   * novo depois de a 1l recusar) sai da escolha. Sem mudança, nada muda.
+   */
+  retain: (artistIds: readonly string[]) => void;
   clear: () => void;
 }
 
@@ -21,6 +26,12 @@ export const useArtistSelection = create<ArtistSelectionState>()((set) => ({
         ? selectedIds.filter((id) => id !== artistId)
         : [...selectedIds, artistId],
     })),
+  retain: (artistIds) =>
+    set((state) => {
+      const known = new Set(artistIds);
+      const kept = state.selectedIds.filter((id) => known.has(id));
+      return kept.length === state.selectedIds.length ? state : { selectedIds: kept };
+    }),
   clear: () => set({ selectedIds: [] }),
 }));
 

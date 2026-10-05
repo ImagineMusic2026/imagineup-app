@@ -1,3 +1,4 @@
+import { sourceOf } from '@/config/data-source';
 import { fixtureWallet, type FixtureWalletState } from '@/services/fixtures';
 import { stableHash } from '@/utils/pick-stable';
 
@@ -18,6 +19,12 @@ import type { LeaderboardEntry, LeaderboardPage, MyRank, RankingScope, Season } 
  *   `buildMyRankFixture`. `__tests__/fixtures.test.ts` trava as duas coisas.
  *
  * Nomes, cidades e pontos são exemplo; os de verdade vêm da API.
+ *
+ * Ao lado de dado de verdade (as centrais na API, desde o bloco 4, ou a
+ * carteira, desde o bloco 1), o ranking de exemplo vem marcado (`example`), e
+ * a tela mostra o aviso. Num recorte de central marcado, o fã fica de fora: a
+ * posição dele ("você é #12") valia para qualquer fã, e os pontos de verdade
+ * dele na central estão em "Suas centrais". O bloco 8 troca tudo pelo servidor.
  */
 
 export const LEADERBOARD_PAGE_SIZE = 10;
@@ -189,7 +196,7 @@ interface CentralSample {
 
 /** O fã no Netto (12º) e no Nenho (41º), como a home e o perfil mostram. */
 const FAN_CENTRALS: Readonly<Record<string, CentralSample>> = {
-  'netto-brito': { myPoints: 4_120, myChange: 1, above: 11, below: 18, top: 7_480 },
+  nettobrito: { myPoints: 4_120, myChange: 1, above: 11, below: 18, top: 7_480 },
   nenho: { myPoints: 2_980, myChange: -2, above: 40, below: 8, top: 5_860 },
 };
 
@@ -258,6 +265,19 @@ interface BoardSample {
   myChange: number;
 }
 
+/**
+ * O ranking de exemplo aparece ao lado de dado de verdade: o de uma central
+ * com as centrais na API, e o geral com a carteira na API.
+ */
+export function isExampleBesideRealData(scope: RankingScope): boolean {
+  return sourceOf(scope.kind === 'artist' ? 'artists' : 'wallet') === 'api';
+}
+
+/** Recorte de central ao lado das centrais do servidor: o fã não entra no ranking de exemplo. */
+function leavesFanOut(scope: RankingScope): boolean {
+  return scope.kind === 'artist' && isExampleBesideRealData(scope);
+}
+
 function boardSample(scope: RankingScope, wallet: FixtureWalletState): BoardSample {
   if (scope.kind === 'global') {
     return { others: globalOthers(), myPoints: wallet.seasonPoints, myChange: MY_GLOBAL_CHANGE };
@@ -265,7 +285,7 @@ function boardSample(scope: RankingScope, wallet: FixtureWalletState): BoardSamp
   const sample = FAN_CENTRALS[scope.artistId];
   return {
     others: centralOthers(scope.artistId),
-    myPoints: sample?.myPoints ?? 0,
+    myPoints: leavesFanOut(scope) ? 0 : (sample?.myPoints ?? 0),
     myChange: sample?.myChange ?? 0,
   };
 }
@@ -313,6 +333,7 @@ export function buildLeaderboardPageFixture(
   return {
     items: board.slice(start, end),
     nextCursor: end < board.length ? String(end) : null,
+    ...(isExampleBesideRealData(scope) ? { example: true } : {}),
   } satisfies LeaderboardPage;
 }
 
@@ -325,9 +346,10 @@ export function buildMyRankFixture(
   wallet: FixtureWalletState = fixtureWallet.get(),
 ): MyRank {
   const board = buildBoard(scope, wallet);
+  const example = isExampleBesideRealData(scope) ? { example: true } : {};
   const index = board.findIndex((entry) => entry.isMe);
   const me = board[index];
-  if (!me) return { position: null, points: 0, target: null } satisfies MyRank;
+  if (!me) return { position: null, points: 0, target: null, ...example } satisfies MyRank;
 
   const topEntry = board[TOP_TARGET - 1];
   const above = board[index - 1];
@@ -341,7 +363,7 @@ export function buildMyRankFixture(
             pointsLeft: above.points - me.points,
           }
         : null;
-  return { position: me.position, points: me.points, target } satisfies MyRank;
+  return { position: me.position, points: me.points, target, ...example } satisfies MyRank;
 }
 
 /** A temporada de São João, em andamento: encerra em 12 dias, como a meta das missões. */

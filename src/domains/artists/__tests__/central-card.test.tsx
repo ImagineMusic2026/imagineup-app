@@ -13,7 +13,7 @@ jest.mock('expo-router', () => ({
 }));
 
 const NETTO: FanCentral = {
-  artistId: 'netto-brito',
+  artistId: 'nettobrito',
   name: 'Netto Brito',
   shortName: null,
   photoURL: null,
@@ -23,7 +23,7 @@ const NETTO: FanCentral = {
 };
 
 const JUNINHO: FanCentral = {
-  artistId: 'juninho-moraes',
+  artistId: 'juninhomoraes',
   name: 'Juninho Moraes',
   shortName: 'Juninho M.',
   photoURL: null,
@@ -46,6 +46,22 @@ describe('CentralCard', () => {
     expect(screen.getByRole('button', { name: 'Juninho Moraes, central nova' })).toBeTruthy();
     expect(screen.getByText('Juninho M.')).toBeTruthy();
     expect(screen.getByText('novo')).toHaveStyle({ color: colors.textMuted });
+  });
+
+  it('sem posição e com pontos (o servidor, até o bloco 8): os pontos do fã na central, em lima', () => {
+    render(<CentralCard central={{ ...NETTO, fanRank: null, fanCount: 1 }} />);
+    expect(
+      screen.getByRole('button', { name: 'Netto Brito, 4.120 pontos na temporada' }),
+    ).toBeTruthy();
+    expect(screen.getByText('4.120 pts')).toHaveStyle({ color: colors.points });
+    expect(screen.queryByText('novo')).toBeNull();
+    expect(screen.queryByText(/você é/)).toBeNull();
+  });
+
+  it('sem posição e sem pontos, "novo" (o fã ainda não pontuou nela)', () => {
+    render(<CentralCard central={{ ...JUNINHO, fanCount: 1 }} />);
+    expect(screen.getByText('novo')).toBeTruthy();
+    expect(screen.queryByText(/pts$/)).toBeNull();
   });
 
   it('sem foto, as iniciais do artista ficam como imagem, fora do leitor', () => {
@@ -78,7 +94,7 @@ describe('CentralCard', () => {
     fireEvent.press(screen.getByRole('button', { name: 'Netto Brito, você é o 12º' }));
     expect(router.push).toHaveBeenCalledWith({
       pathname: '/artista/[artistaId]',
-      params: { artistaId: 'netto-brito' },
+      params: { artistaId: 'nettobrito' },
     });
   });
 });

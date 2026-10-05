@@ -47,14 +47,14 @@ describe('rotas do app', () => {
   });
 
   it('um link de artista abre a página do artista', () => {
-    const view = renderRouter(appTree, { initialUrl: '/artista/netto-brito' });
-    expect(view.getPathname()).toBe('/artista/netto-brito');
+    const view = renderRouter(appTree, { initialUrl: '/artista/nettobrito' });
+    expect(view.getPathname()).toBe('/artista/nettobrito');
     expect(view.getByText('artist')).toBeTruthy();
     expect(view.getSegments()).toEqual(['(tabs)', '(inicio)', 'artista', '[artistaId]']);
   });
 
   it('vindo de um link, o voltar do artista leva à raiz da aba', () => {
-    const view = renderRouter(appTree, { initialUrl: '/artista/netto-brito' });
+    const view = renderRouter(appTree, { initialUrl: '/artista/nettobrito' });
     expect(testRouter.canGoBack()).toBe(true);
     testRouter.back();
     // O Expo Router repassa os parâmetros do link para a âncora (/?artistaId=...).

@@ -137,6 +137,21 @@ service cloud.firestore {
 
       // Excluir a conta apaga perfil, pontos e resgates juntos: é o servidor.
       allow delete: if false;
+
+      // Vínculo do fã com as centrais: só o servidor grava (API). O fã não lê
+      // nem o próprio: chega pela API (/me/centrals, isMember). A equipe com a
+      // seção fans lê (seção Fãs do painel).
+      match /centrals/{artistId} {
+        allow read: if canSeeSection('fans');
+        allow write: if false;
+      }
+    }
+
+    // Os fãs de uma central, pelo grupo de coleção (seção Fãs do painel).
+    // Vale para qualquer caminho que termine em centrals/{id}, inclusive uma
+    // coleção de raiz: nenhuma outra coleção pode se chamar centrals.
+    match /{path=**}/centrals/{artistId} {
+      allow read: if canSeeSection('fans');
     }
 
     // Equipe do painel. Convites, aceite e mudanças de acesso passam pelas
@@ -218,6 +233,17 @@ service cloud.firestore {
       match /statsShards/{shard} {
         allow read: if canSeeSection('overview') || canSeeSection('growth');
         allow write: if false;
+      }
+    }
+
+    // Contagem de fãs de cada central, em shards. Só o servidor lê e grava.
+    // O número que o app e o painel mostram é o fanCount de artists/{id},
+    // copiado daqui pela fila syncArtistFanCount.
+    match /artistStats/{artistId} {
+      allow read, write: if false;
+
+      match /fanShards/{shard} {
+        allow read, write: if false;
       }
     }
 

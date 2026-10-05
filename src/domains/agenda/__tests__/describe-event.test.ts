@@ -12,9 +12,9 @@ import {
 import type { AgendaArtist, AgendaEvent } from '../types';
 
 const NOW = new Date(2026, 8, 29, 20, 0);
-const NETTO: AgendaArtist = { id: 'netto-brito', name: 'Netto Brito' };
+const NETTO: AgendaArtist = { id: 'nettobrito', name: 'Netto Brito' };
 const NENHO: AgendaArtist = { id: 'nenho', name: 'Nenho' };
-const JUNINHO: AgendaArtist = { id: 'juninho-moraes', name: 'Juninho Moraes' };
+const JUNINHO: AgendaArtist = { id: 'juninhomoraes', name: 'Juninho Moraes' };
 
 const IRARA: AgendaEvent = {
   id: 'sao-joao-irara',

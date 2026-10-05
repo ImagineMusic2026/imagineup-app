@@ -133,12 +133,12 @@ describe('fim da sessão', () => {
   it('no modo fixtures, o "servidor" em memória volta ao início com a sessão', async () => {
     jest.mocked(playStackExit).mockResolvedValue(undefined);
     fixtureWallet.spend(6_000);
-    followFixture.follow(['rock-salles'], 'chave-teste');
+    followFixture.follow(['rocksalles'], 'chave-teste');
     renderHook(() => useAuthListener());
 
     await act(async () => authCallback()(null));
 
     expect(fixtureWallet.get().balance).toBe(12_480);
-    expect(followFixture.followedIds()).not.toContain('rock-salles');
+    expect(followFixture.followedIds()).not.toContain('rocksalles');
   });
 });

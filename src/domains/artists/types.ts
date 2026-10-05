@@ -1,14 +1,15 @@
 /**
- * Contrato provisório com a API. Muda quando o backend (M2) for desenhado: a
- * lista real de artistas e o que "fãs" conta (membros da central no app ou
- * seguidores nas redes) ainda são perguntas para a cliente.
+ * Contrato com a API das centrais (bloco 4, docs/arquitetura-api.md, seção
+ * 19), espelho de `functions/src/api/contract.ts`: mudou um, mude o outro.
+ * "Fãs" conta os membros da central no app (decisão 4; pergunta para a
+ * cliente na UP-48), e a lista real de artistas vem do painel (UP-2).
  */
 export interface Artist {
   id: string;
   name: string;
   /** Miniatura da foto; `null` até a foto existir (o card mostra o placeholder de marca). */
   photoURL: string | null;
-  /** Quantos fãs a central tem ("412 mil fãs"). */
+  /** Membros da central no app ("412 mil fãs"). */
   fanCount: number;
   /** Ordem de destaque: os primeiros aparecem na grade da escolha de artistas (1l). */
   order: number;
@@ -23,6 +24,11 @@ export interface FollowArtistsVariables {
 /** Centrais que o fã segue depois da ação. */
 export interface FollowArtistsResult {
   followedArtistIds: string[];
+  /**
+   * Pontos de entrada pagos agora pelo servidor (uma vez na vida por central).
+   * Opcional: as fixtures e um servidor antigo não mandam.
+   */
+  pointsAwarded?: number;
 }
 
 /**
@@ -37,9 +43,13 @@ export interface FanCentral {
   /** Nome curto que cabe no card ("Juninho M."); sem ele, o nome inteiro com reticências. */
   shortName: string | null;
   photoURL: string | null;
-  /** Quantos fãs a central tem ("#12 entre 412 mil fãs"). */
+  /** Membros da central no app ("#12 entre 412 mil fãs"). */
   fanCount: number;
-  /** Posição do fã na central; `null` quando ele ainda não tem posição ("novo"). */
+  /**
+   * Posição do fã na central; `null` quando ele ainda não tem posição. O
+   * servidor manda sempre `null` até o ranking por central (bloco 8): sem
+   * posição, a 1b e a 1e mostram os pontos do fã na central.
+   */
   fanRank: number | null;
   /** Pontos da temporada do fã nesta central; 0 enquanto ele não pontuou nela. */
   seasonPoints: number;
@@ -53,7 +63,12 @@ export interface FanCentral {
 export interface ArtistDetails {
   id: string;
   name: string;
-  /** Capa em paisagem; `null` mostra o placeholder de marca pelo id do artista. */
+  /**
+   * Capa da página. O painel só guarda a foto 3:4, que vem aqui e a 1d recorta
+   * pelo topo (onde fica o rosto); uma capa em paisagem do painel, se um dia
+   * existir, vem no lugar dela (decisão 5). `null` mostra o placeholder de
+   * marca pelo id do artista.
+   */
   coverUrl: string | null;
   /** Foto do rosto (header compacto, posts); `null` mostra as iniciais. */
   photoURL: string | null;
@@ -83,4 +98,18 @@ export interface JoinCentralVariables {
 export interface JoinCentralResult {
   artistId: string;
   pointsAwarded: number;
+}
+
+export interface LeaveCentralVariables {
+  artistId: string;
+  /** A mesma chave depois de uma falha incerta (rede, servidor); chave nova depois de uma recusa. */
+  idempotencyKey: string;
+}
+
+/**
+ * Resposta de sair da central. Sair não tira pontos, e entrar de novo não
+ * rende a entrada outra vez. Sem estar na central, é sucesso sem efeito.
+ */
+export interface LeaveCentralResult {
+  artistId: string;
 }

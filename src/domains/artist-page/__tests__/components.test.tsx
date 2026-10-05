@@ -47,7 +47,7 @@ function entry(position: number, overrides: Partial<LeaderboardEntry> = {}): Lea
 }
 
 const ROCK: ArtistDetails = {
-  id: 'rock-salles',
+  id: 'rocksalles',
   name: 'Rock Salles',
   coverUrl: null,
   photoURL: null,
@@ -104,6 +104,27 @@ describe('TopFansCard', () => {
     expect(screen.getByLabelText('Carregando os top fãs')).toBeTruthy();
   });
 
+  it('ranking de exemplo ao lado das centrais do servidor: o aviso abaixo do título', () => {
+    const view = render(
+      <TopFansCard entries={[entry(1)]} state="ready" self={self} onSeeRanking={jest.fn()} />,
+    );
+    expect(screen.queryByTestId('artist-top-fans-example')).toBeNull();
+    view.rerender(
+      <TopFansCard
+        entries={[entry(1)]}
+        state="ready"
+        self={self}
+        onSeeRanking={jest.fn()}
+        example
+      />,
+    );
+    expect(
+      screen.getByText(
+        'Ranking de exemplo: as posições de verdade chegam com o ranking do servidor.',
+      ),
+    ).toBeTruthy();
+  });
+
   it('"Ver ranking" tem alvo de 44 e diz o que faz', () => {
     const onSeeRanking = jest.fn();
     render(
@@ -151,16 +172,31 @@ describe('PostGridRow', () => {
 });
 
 describe('ArtistActions', () => {
-  it('fora da central, "Entrar na central" com o nome do artista', () => {
-    const onJoin = jest.fn();
-    render(<ArtistActions artist={ROCK} onJoin={onJoin} award={null} />);
-    fireEvent.press(screen.getByLabelText('Entrar na central de Rock Salles'));
-    expect(onJoin).toHaveBeenCalled();
+  const actions = { onJoin: jest.fn(), onLeave: jest.fn(), joinPending: false, award: null };
+
+  beforeEach(() => {
+    actions.onJoin.mockClear();
+    actions.onLeave.mockClear();
   });
 
-  it('dentro, "Na central" é estado e não botão: lido como texto, sem toque e sem ação de sair', () => {
-    const onJoin = jest.fn();
-    render(<ArtistActions artist={{ ...ROCK, isMember: true }} onJoin={onJoin} award={null} />);
+  it('fora da central, "Entrar na central" com o nome do artista', () => {
+    render(<ArtistActions {...actions} artist={ROCK} />);
+    fireEvent.press(screen.getByLabelText('Entrar na central de Rock Salles'));
+    expect(actions.onJoin).toHaveBeenCalled();
+    expect(actions.onLeave).not.toHaveBeenCalled();
+  });
+
+  it('dentro, "Na central" abre a opção de sair (padrão provisório da UP-48)', () => {
+    render(<ArtistActions {...actions} artist={{ ...ROCK, isMember: true }} />);
+    const button = screen.getByRole('button', { name: 'Você está na central de Rock Salles' });
+    expect(button.props.accessibilityHint).toBe('Abre a opção de sair da central');
+    fireEvent.press(button);
+    expect(actions.onLeave).toHaveBeenCalledTimes(1);
+    expect(actions.onJoin).not.toHaveBeenCalled();
+  });
+
+  it('com a entrada esperando o servidor, "Na central" é estado: lido como texto, sem toque', () => {
+    render(<ArtistActions {...actions} joinPending artist={{ ...ROCK, isMember: true }} />);
     const status = screen.getByLabelText('Você está na central de Rock Salles');
     expect(status.props.accessibilityRole).toBe('text');
     // Sem `focusable`, o Android não o anuncia como tocável.
@@ -169,15 +205,17 @@ describe('ArtistActions', () => {
       screen.queryByRole('button', { name: 'Você está na central de Rock Salles' }),
     ).toBeNull();
     fireEvent.press(status);
-    expect(onJoin).not.toHaveBeenCalled();
+    expect(actions.onLeave).not.toHaveBeenCalled();
+    expect(actions.onJoin).not.toHaveBeenCalled();
   });
 
   it('os pontos que a API devolveu sobem num "+N", anunciado uma vez', () => {
-    const view = render(<ArtistActions artist={ROCK} onJoin={jest.fn()} award={null} />);
+    const view = render(<ArtistActions {...actions} artist={ROCK} />);
     view.rerender(
       <ArtistActions
+        {...actions}
+        joinPending
         artist={{ ...ROCK, isMember: true }}
-        onJoin={jest.fn()}
         award={{ id: 1, points: 10 }}
       />,
     );
@@ -190,7 +228,7 @@ describe('ArtistActions', () => {
   });
 
   it('enquanto a central chega, o botão fica em esqueleto, fora do leitor (a capa já avisa)', () => {
-    render(<ArtistActions artist={undefined} onJoin={jest.fn()} award={null} />);
+    render(<ArtistActions {...actions} artist={undefined} />);
     expect(screen.getByLabelText(/^Carregando/, hidden)).toBeTruthy();
     expect(screen.queryByLabelText(/^Carregando/)).toBeNull();
   });

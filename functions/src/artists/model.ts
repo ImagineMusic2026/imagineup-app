@@ -15,7 +15,7 @@ const HANDLE_MAX = 30;
 const RESERVED_DOC_ID = /^__.*__$/;
 
 /** @ no formato do HANDLE_PATTERN e fora dos ids que o Firestore reserva. */
-function isHandleFormat(value: unknown): value is string {
+export function isHandleFormat(value: unknown): value is string {
   return typeof value === 'string' && HANDLE_PATTERN.test(value) && !RESERVED_DOC_ID.test(value);
 }
 

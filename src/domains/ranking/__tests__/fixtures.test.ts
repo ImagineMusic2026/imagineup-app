@@ -25,8 +25,10 @@ jest.mock('@/firebase', () => ({
 jest.mock('@/services/api', () => ({ api: { get: jest.fn() } }));
 
 let mockDataSource: 'api' | 'fixtures' = 'fixtures';
+// O modo misto do desenvolvimento com emulador: alguns domínios já no servidor.
+let mockDomainSources: Partial<Record<string, 'api' | 'fixtures'>> = {};
 jest.mock('@/config/data-source', () => ({
-  sourceOf: () => mockDataSource,
+  sourceOf: (domain: string) => mockDomainSources[domain] ?? mockDataSource,
   usesFixtures: () => mockDataSource === 'fixtures',
 }));
 
@@ -35,9 +37,9 @@ const get = jest.mocked(api.get);
 // Terça, 29 de setembro de 2026, 20 h.
 const NOW = new Date(2026, 8, 29, 20, 0);
 
-const NETTO: RankingScope = { kind: 'artist', artistId: 'netto-brito' };
+const NETTO: RankingScope = { kind: 'artist', artistId: 'nettobrito' };
 const NENHO: RankingScope = { kind: 'artist', artistId: 'nenho' };
-const JUNINHO: RankingScope = { kind: 'artist', artistId: 'juninho-moraes' };
+const JUNINHO: RankingScope = { kind: 'artist', artistId: 'juninhomoraes' };
 
 /** O ranking inteiro do recorte, página por página. */
 function wholeBoard(scope: RankingScope): LeaderboardEntry[] {
@@ -54,6 +56,7 @@ function wholeBoard(scope: RankingScope): LeaderboardEntry[] {
 beforeEach(() => {
   jest.clearAllMocks();
   mockDataSource = 'fixtures';
+  mockDomainSources = {};
   fixtureWallet.reset();
   followFixture.reset();
 });
@@ -115,9 +118,9 @@ describe('ranking de exemplo', () => {
   it('nas centrais, a posição do fã é a da home: 12º no Netto, 41º no Nenho, sem posição no Juninho', () => {
     const centrals = buildFanCentralsFixture();
     expect(centrals.map(({ artistId, fanRank }) => [artistId, fanRank])).toEqual([
-      ['netto-brito', 12],
+      ['nettobrito', 12],
       ['nenho', 41],
-      ['juninho-moraes', null],
+      ['juninhomoraes', null],
     ]);
     for (const { artistId, fanRank, seasonPoints } of centrals) {
       const scope: RankingScope = { kind: 'artist', artistId };
@@ -173,6 +176,44 @@ describe('ranking de exemplo', () => {
   });
 });
 
+describe('ranking de exemplo ao lado de dado de verdade (bloco 4)', () => {
+  it('tudo nas fixtures (as builds de hoje): nada marcado, e o fã no ranking das centrais', () => {
+    for (const scope of [GLOBAL_SCOPE, NETTO, NENHO]) {
+      expect(buildLeaderboardPageFixture(scope, null)).not.toHaveProperty('example');
+      expect(buildMyRankFixture(scope)).not.toHaveProperty('example');
+    }
+    expect(buildMyRankFixture(NETTO).position).toBe(12);
+  });
+
+  it('com as centrais no servidor: o ranking da central vem marcado e o fã fica fora dele', () => {
+    mockDomainSources = { artists: 'api' };
+    for (const scope of [NETTO, NENHO, JUNINHO]) {
+      expect(buildLeaderboardPageFixture(scope, null).example).toBe(true);
+      expect(wholeBoard(scope).some((entry) => entry.isMe)).toBe(false);
+      // O card "Você" diz "Sem posição ainda" (os pontos de verdade estão em "Suas centrais").
+      expect(buildMyRankFixture(scope)).toEqual({
+        position: null,
+        points: 0,
+        target: null,
+        example: true,
+      });
+    }
+    // As posições dos outros continuam em ordem, sem buraco.
+    expect(wholeBoard(NETTO).map((entry) => entry.position)).toEqual(
+      wholeBoard(NETTO).map((_, index) => index + 1),
+    );
+    // O geral só ganha a marca com a carteira no servidor.
+    expect(buildLeaderboardPageFixture(GLOBAL_SCOPE, null)).not.toHaveProperty('example');
+  });
+
+  it('com a carteira no servidor: o geral vem marcado, com o fã nele como a seção 13 decidiu', () => {
+    mockDomainSources = { wallet: 'api' };
+    expect(buildLeaderboardPageFixture(GLOBAL_SCOPE, null).example).toBe(true);
+    expect(buildMyRankFixture(GLOBAL_SCOPE)).toMatchObject({ position: 12, example: true });
+    expect(buildLeaderboardPageFixture(NETTO, null)).not.toHaveProperty('example');
+  });
+});
+
 describe('ranking pela API', () => {
   it('nas fixtures, nada vai à rede', async () => {
     await expect(fetchSeason()).resolves.toMatchObject({ name: 'São João' });
@@ -197,7 +238,7 @@ describe('ranking pela API', () => {
     get.mockResolvedValueOnce({ data: page });
     await fetchLeaderboard(NETTO, '10');
     expect(get).toHaveBeenLastCalledWith('/ranking', {
-      params: { artistId: 'netto-brito', cursor: '10' },
+      params: { artistId: 'nettobrito', cursor: '10' },
     });
 
     const mine = { position: 3, points: 10, target: null };

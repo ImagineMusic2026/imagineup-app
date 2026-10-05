@@ -33,19 +33,19 @@ describe('Avatar', () => {
   });
 
   it('a cor de fundo sai do id e não muda com o nome nem entre telas', () => {
-    const expected = pickStable('netto-brito', avatarFallbacks);
-    const { rerender } = render(<Avatar name="Netto Brito" id="netto-brito" />);
+    const expected = pickStable('nettobrito', avatarFallbacks);
+    const { rerender } = render(<Avatar name="Netto Brito" id="nettobrito" />);
     expect(faceStyle('NB').backgroundColor).toBe(expected);
 
-    rerender(<Avatar name="Netto B." id="netto-brito" size="lg" />);
+    rerender(<Avatar name="Netto B." id="nettobrito" size="lg" />);
     expect(faceStyle('NB').backgroundColor).toBe(expected);
   });
 
   it('ids diferentes caem em cores diferentes da paleta, sem depender do nome', () => {
     // Mesmas iniciais, ids que o hash separa.
-    const { rerender } = render(<Avatar name="Nina Brito" id="netto-brito" />);
+    const { rerender } = render(<Avatar name="Nina Brito" id="nettobrito" />);
     const first = faceStyle('NB').backgroundColor;
-    rerender(<Avatar name="Nina Brito" id="rock-salles" />);
+    rerender(<Avatar name="Nina Brito" id="rocksalles" />);
     const second = faceStyle('NB').backgroundColor;
 
     expect(first).not.toBe(second);
@@ -116,8 +116,8 @@ describe('Avatar', () => {
 
 describe('AvatarStack', () => {
   const people = [
-    { id: 'rock-salles', name: 'Rock Salles' },
-    { id: 'juninho-moraes', name: 'Juninho Moraes' },
+    { id: 'rocksalles', name: 'Rock Salles' },
+    { id: 'juninhomoraes', name: 'Juninho Moraes' },
     { id: 'nenho', name: 'Nenho' },
   ];
 

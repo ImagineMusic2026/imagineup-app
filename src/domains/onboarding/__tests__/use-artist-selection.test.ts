@@ -8,16 +8,30 @@ describe('escolha de artistas compartilhada', () => {
   it('tocar liga e desliga, na ordem em que o fã tocou', () => {
     const { toggle } = useArtistSelection.getState();
     toggle('nenho');
-    toggle('netto-brito');
-    toggle('rock-salles');
+    toggle('nettobrito');
+    toggle('rocksalles');
     expect(useArtistSelection.getState().selectedIds).toEqual([
       'nenho',
-      'netto-brito',
-      'rock-salles',
+      'nettobrito',
+      'rocksalles',
     ]);
 
-    toggle('netto-brito');
-    expect(useArtistSelection.getState().selectedIds).toEqual(['nenho', 'rock-salles']);
+    toggle('nettobrito');
+    expect(useArtistSelection.getState().selectedIds).toEqual(['nenho', 'rocksalles']);
+  });
+
+  it('a lista mudou (central que saiu do ar): fica só o que ainda está nela, na ordem', () => {
+    const { toggle, retain } = useArtistSelection.getState();
+    toggle('nenho');
+    toggle('artista7');
+    toggle('nettobrito');
+    retain(['nettobrito', 'nenho', 'rocksalles']);
+    expect(useArtistSelection.getState().selectedIds).toEqual(['nenho', 'nettobrito']);
+
+    // Sem mudança, o estado é o mesmo (nenhum card renderiza de novo).
+    const before = useArtistSelection.getState().selectedIds;
+    retain(['nettobrito', 'nenho']);
+    expect(useArtistSelection.getState().selectedIds).toBe(before);
   });
 
   it('limpar começa de novo', () => {

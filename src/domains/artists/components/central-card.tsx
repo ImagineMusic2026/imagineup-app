@@ -6,7 +6,7 @@ import { RemoteImage } from '@/components/remote-image';
 import { maxFontScaleOf, Text } from '@/components/text';
 import { t } from '@/i18n';
 import { borderWidths, colors, layout, radii, spacing, typography } from '@/theme';
-import { formatNumber } from '@/utils/number';
+import { formatNumber, formatPointsSpoken } from '@/utils/number';
 
 import type { FanCentral } from '../types';
 
@@ -64,27 +64,56 @@ export interface CentralCardProps {
   testID?: string;
 }
 
+/** O que o card mostra embaixo do nome: a posição, os pontos sem posição, ou "novo". */
+function standingOf({ name, fanRank, seasonPoints }: FanCentral): {
+  text: string;
+  label: string;
+  points: boolean;
+} {
+  if (fanRank !== null) {
+    const rank = formatNumber(fanRank);
+    return {
+      text: t('artist.central.rank', { rank }),
+      label: t('artist.central.rankLabel', { name, rank }),
+      points: true,
+    };
+  }
+  // Sem posição (o servidor, até o ranking por central do bloco 8): os pontos
+  // do fã na central, em lima; "novo" só para quem ainda não pontuou nela.
+  if (seasonPoints > 0) {
+    return {
+      text: t('artist.central.points', { points: formatNumber(seasonPoints) }),
+      label: t('artist.central.pointsLabel', { name, points: formatPointsSpoken(seasonPoints) }),
+      points: true,
+    };
+  }
+  return {
+    text: t('artist.central.new'),
+    label: t('artist.central.newLabel', { name }),
+    points: false,
+  };
+}
+
 /**
  * Card de uma central que o fã segue, no carrossel da home (1b): foto do
  * artista (iniciais sobre a cor estável dele, sem foto), nome e a posição do
- * fã, em lima, ou "novo". O card inteiro é um alvo só, lido como "Netto Brito,
- * você é o 12º"; tocar abre o artista dentro da aba de onde veio.
+ * fã, em lima. Sem posição (até o bloco 8), os pontos dele na central, também
+ * em lima, e "novo" quando ainda não pontuou nela: posição de exemplo nunca
+ * aparece ao lado de número de verdade. O card inteiro é um alvo só, lido
+ * como "Netto Brito, você é o 12º" ou "Netto Brito, 4.120 pontos na
+ * temporada"; tocar abre o artista dentro da aba de onde veio.
  */
 export function CentralCard({ central, testID }: CentralCardProps) {
-  const { artistId, name, fanRank } = central;
+  const { artistId, name } = central;
   const metrics = useCentralCardMetrics();
-  const rank = fanRank === null ? null : formatNumber(fanRank);
-  const label =
-    rank === null
-      ? t('artist.central.newLabel', { name })
-      : t('artist.central.rankLabel', { name, rank });
+  const standing = standingOf(central);
 
   return (
     <PressableScale
       onPress={() =>
         router.push({ pathname: '/artista/[artistaId]', params: { artistaId: artistId } })
       }
-      accessibilityLabel={label}
+      accessibilityLabel={standing.label}
       testID={testID}
       style={[styles.card, { width: metrics.width }]}
     >
@@ -96,8 +125,8 @@ export function CentralCard({ central, testID }: CentralCardProps) {
       <Text variant="labelCompact" numberOfLines={metrics.nameLines} style={styles.name}>
         {central.shortName ?? name}
       </Text>
-      <Text variant="micro" color={rank === null ? colors.textMuted : colors.points}>
-        {rank === null ? t('artist.central.new') : t('artist.central.rank', { rank })}
+      <Text variant="micro" color={standing.points ? colors.points : colors.textMuted}>
+        {standing.text}
       </Text>
     </PressableScale>
   );

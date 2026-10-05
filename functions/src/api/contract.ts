@@ -47,3 +47,61 @@ export type LedgerEntry = {
   /** ISO 8601 UTC. */
   createdAt: string;
 };
+
+// --- Centrais (bloco 4), espelho de src/domains/artists/types.ts ---------------
+
+/** `Artist` do app: uma central publicada da lista (1l, busca, chips do ranking). */
+export type Artist = {
+  id: string;
+  name: string;
+  /** Miniatura da foto (`thumb.url`); null sem foto. */
+  photoURL: string | null;
+  /** Membros da central no app. */
+  fanCount: number;
+  /** Ordem do painel: os primeiros são os destaques da 1l. */
+  order: number;
+};
+
+/** `FanCentral` do app: uma central de "Suas centrais" (1b, 1e). */
+export type FanCentral = {
+  artistId: string;
+  name: string;
+  shortName: string | null;
+  photoURL: string | null;
+  fanCount: number;
+  /** null até o bloco 8 (posição por central). */
+  fanRank: number | null;
+  /** Pontos do fã na central, na temporada da configuração. */
+  seasonPoints: number;
+};
+
+/** `ArtistDetails` do app: a página da central (1d). */
+export type ArtistDetails = {
+  id: string;
+  name: string;
+  /** A capa em paisagem do painel, se existir; senão a foto 3:4 (a 1d recorta pelo topo). */
+  coverUrl: string | null;
+  photoURL: string | null;
+  verified: boolean;
+  managedByImagine: boolean;
+  fanCount: number;
+  /** 0 até o mural (bloco 6). */
+  postCount: number;
+  /** Soma do total de pontos dos fãs na central ("PTS DA CENTRAL"). */
+  centralPoints: number;
+  isMember: boolean;
+};
+
+/** `FollowArtistsResult` do app (`POST /me/artists`). */
+export type FollowArtistsResult = {
+  /** Todas as centrais publicadas que o fã segue depois da ação, na ordem do /me/centrals. */
+  followedArtistIds: string[];
+  /** Pontos de entrada pagos agora (campo novo, opcional no app). */
+  pointsAwarded: number;
+};
+
+/** `JoinCentralResult` do app (`PUT /me/centrals/:artistId`). */
+export type JoinCentralResult = { artistId: string; pointsAwarded: number };
+
+/** `LeaveCentralResult` do app (`DELETE /me/centrals/:artistId`). */
+export type LeaveCentralResult = { artistId: string };

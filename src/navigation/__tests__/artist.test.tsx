@@ -1,20 +1,28 @@
 import { FlashList } from '@shopify/flash-list';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { onlineManager, QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { router, Stack } from 'expo-router';
 import { Tabs } from 'expo-router/js-tabs';
 import { act, fireEvent, renderRouter, screen, waitFor } from 'expo-router/testing-library';
 import { AccessibilityInfo, Share, Text } from 'react-native';
 
 import ArtistRoute from '@/app/(tabs)/(inicio,explorar,ranking,perfil)/artista/[artistaId]';
-import { artistKeys, type FanCentral } from '@/domains/artists';
-import { fetchArtist } from '@/domains/artists/api';
+import LeaveCentralRoute from '@/app/sair-da-central/[artistaId]';
 import {
+  artistKeys,
+  type FanCentral,
+  type JoinCentralResult,
+  type LeaveCentralResult,
+} from '@/domains/artists';
+import { fetchArtist, joinCentral, leaveCentral } from '@/domains/artists/api';
+import {
+  buildArtistDetailsFixture,
   buildFanCentralsFixture,
   followFixture,
   JOIN_CENTRAL_POINTS,
 } from '@/domains/artists/fixtures';
 import { missionKeys, missionsFixture } from '@/domains/missions';
 import { buildMissionsFixture } from '@/domains/missions/fixtures';
+import { api } from '@/services/api';
 import { ApiError } from '@/services/api/errors';
 import { fixtureWallet, setFixtureNow } from '@/services/fixtures';
 import { haptics } from '@/services/haptics';
@@ -35,15 +43,22 @@ jest.mock('@/config/env', () => ({
   apiUrl: undefined,
   firebaseEmulatorHost: undefined,
 }));
+// Tudo nas fixtures; um teste põe as centrais na API (o modo misto do emulador).
+let mockDomainSources: Record<string, 'api' | 'fixtures'> = {};
 jest.mock('@/config/data-source', () => ({
-  sourceOf: () => 'fixtures',
+  sourceOf: (domain: string) => mockDomainSources[domain] ?? 'fixtures',
   usesFixtures: () => true,
 }));
-// A central vem das fixtures; um teste faz a busca de novo falhar.
+// A central vem das fixtures; um teste faz a busca de novo falhar, e outro segura a entrada.
 jest.mock('@/domains/artists/api', () => {
   const actual =
     jest.requireActual<typeof import('@/domains/artists/api')>('@/domains/artists/api');
-  return { ...actual, fetchArtist: jest.fn(actual.fetchArtist) };
+  return {
+    ...actual,
+    fetchArtist: jest.fn(actual.fetchArtist),
+    joinCentral: jest.fn(actual.joinCentral),
+    leaveCentral: jest.fn(actual.leaveCentral),
+  };
 });
 
 // Sem layout nativo no Jest, a FlashList não mede nada e não desenha item nenhum.
@@ -97,6 +112,7 @@ const appTree = {
   '(tabs)/(perfil)/perfil': label('profile'),
   '(tabs)/(inicio,explorar,ranking,perfil)/artista/[artistaId]': ArtistRoute,
   'post/[postId]': label('post'),
+  'sair-da-central/[artistaId]': LeaveCentralRoute,
 };
 
 /** A aba visível (a grudada, quando a lista a desenha grudada), pelo nome. */
@@ -128,6 +144,7 @@ beforeEach(() => {
   jest.spyOn(AccessibilityInfo, 'sendAccessibilityEvent').mockImplementation(() => undefined);
   jest.useFakeTimers({ now: NOW, doNotFake: ['nextTick', 'setImmediate'] });
   setFixtureNow(NOW);
+  mockDomainSources = {};
   followFixture.reset();
   missionsFixture.reset();
   fixtureWallet.reset();
@@ -141,13 +158,14 @@ beforeEach(() => {
 
 afterEach(() => {
   client.clear();
+  onlineManager.setOnline(true);
   setFixtureNow(null);
   jest.useRealTimers();
 });
 
 describe('página do artista (1d)', () => {
   it('a capa diz quem é, os números vêm lidos por extenso e o fã já está na central do Netto', async () => {
-    await openArtist('netto-brito');
+    await openArtist('nettobrito');
 
     expect(
       screen.getByLabelText('Netto Brito, artista verificado, gestão oficial Imagine'),
@@ -159,7 +177,7 @@ describe('página do artista (1d)', () => {
   });
 
   it('as abas são Mural, Missões, Agenda e Ranking, com o Mural escolhido; Playlists não existe', async () => {
-    await openArtist('netto-brito');
+    await openArtist('nettobrito');
 
     expect(selected('Mural')).toBe(true);
     for (const name of ['Missões', 'Agenda', 'Ranking']) expect(selected(name)).toBe(false);
@@ -174,11 +192,13 @@ describe('página do artista (1d)', () => {
   });
 
   it('os top fãs são os três primeiros do ranking da temporada na central, e "Ver ranking" abre a aba Ranking', async () => {
-    await openArtist('netto-brito');
+    await openArtist('nettobrito');
 
-    expect(await screen.findByLabelText('1º lugar, Alan F., 7.480 pontos')).toBeTruthy();
-    expect(screen.getByLabelText('2º lugar, Davi L., 7.134 pontos')).toBeTruthy();
-    expect(screen.getByLabelText('3º lugar, Igor N., 6.803 pontos')).toBeTruthy();
+    expect(await screen.findByLabelText('1º lugar, Alan F., 7.467 pontos')).toBeTruthy();
+    expect(screen.getByLabelText('2º lugar, Davi L., 7.150 pontos')).toBeTruthy();
+    expect(screen.getByLabelText('3º lugar, Igor N., 6.819 pontos')).toBeTruthy();
+    // Tudo nas fixtures (as builds de hoje): o ranking de exemplo não leva aviso.
+    expect(screen.queryByTestId('artist-top-fans-example')).toBeNull();
 
     fireEvent.press(screen.getByLabelText('Ver o ranking da central'));
 
@@ -186,15 +206,33 @@ describe('página do artista (1d)', () => {
     // A aba mostra as mesmas posições, a partir do 1º.
     expect(await screen.findByTestId('artist-rank-1')).toBeTruthy();
     expect(screen.getByTestId('artist-rank-1').props.accessibilityLabel).toMatch(
-      /^1º, Alan Ferreira, .*7\.480 pontos/,
+      /^1º, Alan Ferreira, .*7\.467 pontos/,
     );
     // O leitor de tela vai à temporada, o começo da aba.
     afterScroll();
     expect(focused()).toEqual(['artist-season']);
   });
 
+  it('com as centrais no servidor, os top fãs e a aba Ranking avisam que o ranking é de exemplo', async () => {
+    mockDomainSources = { artists: 'api' };
+    jest.mocked(api.get).mockImplementation(async (url: string) => {
+      if (url === '/artists/nettobrito') {
+        return { data: { ...buildArtistDetailsFixture('nettobrito'), fanCount: 1 } };
+      }
+      if (url === '/me/centrals') return { data: [] };
+      throw new Error(`rota sem resposta no teste: ${url}`);
+    });
+    await openArtist('nettobrito');
+
+    expect(await screen.findByTestId('artist-top-fans-example')).toHaveTextContent(
+      'Ranking de exemplo: as posições de verdade chegam com o ranking do servidor.',
+    );
+    fireEvent.press(tab('Ranking'));
+    expect(await screen.findByTestId('artist-ranking-example')).toBeTruthy();
+  });
+
   it('trocar de aba pela barra grudada leva o foco do leitor ao começo do conteúdo novo; pela da lista, não', async () => {
-    await openArtist('netto-brito');
+    await openArtist('nettobrito');
 
     // Na lista, o conteúdo vem logo depois das abas na ordem de leitura.
     fireEvent.press(screen.getByTestId('artist-tabs-agenda', hidden));
@@ -210,7 +248,7 @@ describe('página do artista (1d)', () => {
   });
 
   it('a aba Missões mostra só as missões desta central, no desenho da 1g', async () => {
-    await openArtist('netto-brito');
+    await openArtist('nettobrito');
 
     fireEvent.press(tab('Missões'));
 
@@ -240,22 +278,22 @@ describe('página do artista (1d)', () => {
       ...base,
       missions: base.missions.map((mission) =>
         mission.action === 'rsvp'
-          ? { ...mission, target: { ...mission.target, artistId: 'netto-brito' } }
+          ? { ...mission, target: { ...mission.target, artistId: 'nettobrito' } }
           : mission,
       ),
     });
-    const view = await openArtist('netto-brito');
+    const view = await openArtist('nettobrito');
     fireEvent.press(tab('Missões'));
 
     fireEvent.press(await screen.findByText('Confirme presença em um show'));
 
     expect(selected('Agenda')).toBe(true);
     expect(await screen.findByTestId('artist-event-sao-joao-irara')).toBeTruthy();
-    expect(view.getPathname()).toBe('/artista/netto-brito');
+    expect(view.getPathname()).toBe('/artista/nettobrito');
   });
 
   it('a aba Agenda mostra os shows em que o artista toca, com o "Eu vou" da agenda', async () => {
-    await openArtist('netto-brito');
+    await openArtist('nettobrito');
 
     fireEvent.press(tab('Agenda'));
 
@@ -266,7 +304,7 @@ describe('página do artista (1d)', () => {
   });
 
   it('tocar num post da grade abre o post, fora das abas', async () => {
-    await openArtist('netto-brito');
+    await openArtist('nettobrito');
 
     fireEvent.press(await screen.findByTestId('artist-post-p-clipe'));
 
@@ -277,7 +315,7 @@ describe('página do artista (1d)', () => {
     const trigger = jest.spyOn(haptics, 'trigger');
     // "Suas centrais" já carregada (home e perfil), para ver a central entrar nela.
     client.setQueryData(artistKeys.centrals(), buildFanCentralsFixture());
-    await openArtist('rock-salles');
+    await openArtist('rocksalles');
 
     fireEvent.press(await screen.findByLabelText('Entrar na central de Rock Salles'));
 
@@ -293,26 +331,167 @@ describe('página do artista (1d)', () => {
     );
     expect(trigger).toHaveBeenCalledWith('confirm');
     expect(trigger).toHaveBeenCalledWith('pointsEarned');
-    expect(followFixture.followedIds()).toContain('rock-salles');
+    expect(followFixture.followedIds()).toContain('rocksalles');
     await waitFor(() =>
       expect(
         client
           .getQueryData<FanCentral[]>(artistKeys.centrals())
-          ?.some((central) => central.artistId === 'rock-salles'),
+          ?.some((central) => central.artistId === 'rocksalles'),
       ).toBe(true),
+    );
+  });
+
+  it('"Na central" abre a sheet provisória de sair; "Sair da central" volta a página para "Entrar na central"', async () => {
+    client.setQueryData(artistKeys.centrals(), buildFanCentralsFixture());
+    const before = fixtureWallet.get();
+    await openArtist('nettobrito');
+
+    fireEvent.press(
+      await screen.findByRole('button', { name: 'Você está na central de Netto Brito' }),
+    );
+    expect(await screen.findByText('Sair da central?')).toBeTruthy();
+    expect(
+      screen.getByText(
+        'A central sai de Suas centrais. Os pontos que você ganhou nela continuam com você, e entrar de novo não rende os pontos de entrada outra vez.',
+      ),
+    ).toBeTruthy();
+
+    fireEvent.press(screen.getByRole('button', { name: 'Sair da central' }));
+
+    expect(await screen.findByLabelText('Entrar na central de Netto Brito')).toBeTruthy();
+    expect(screen.queryByText('Sair da central?')).toBeNull();
+    expect(AccessibilityInfo.announceForAccessibility).toHaveBeenCalledWith(
+      'Você saiu da central.',
+    );
+    expect(followFixture.followedIds()).not.toContain('nettobrito');
+    expect(
+      client
+        .getQueryData<FanCentral[]>(artistKeys.centrals())
+        ?.some((central) => central.artistId === 'nettobrito'),
+    ).toBe(false);
+    // Sair não tira pontos.
+    expect(fixtureWallet.get()).toEqual(before);
+  });
+
+  it('a sheet fechada com o pedido indo (o arrasto do Android) não tira a 1d da pilha quando o servidor responde', async () => {
+    let settle: () => void = () => undefined;
+    jest.mocked(leaveCentral).mockImplementationOnce(
+      ({ artistId, idempotencyKey }) =>
+        new Promise<LeaveCentralResult>((resolve) => {
+          settle = () => resolve(followFixture.leave(artistId, idempotencyKey));
+        }),
+    );
+    const view = await openArtist('nettobrito');
+    fireEvent.press(
+      await screen.findByRole('button', { name: 'Você está na central de Netto Brito' }),
+    );
+    fireEvent.press(await screen.findByRole('button', { name: 'Sair da central' }));
+    await waitFor(() => expect(jest.mocked(leaveCentral)).toHaveBeenCalled());
+
+    // O voltar do Android e o gesto do iOS ficam presos; o arrasto da sheet no Android, não.
+    act(() => router.back());
+    await waitFor(() => expect(screen.queryByText('Sair da central?')).toBeNull());
+    expect(view.getPathname()).toBe('/artista/nettobrito');
+
+    await act(async () => settle());
+
+    expect(await screen.findByLabelText('Entrar na central de Netto Brito')).toBeTruthy();
+    expect(view.getPathname()).toBe('/artista/nettobrito');
+    expect(AccessibilityInfo.announceForAccessibility).toHaveBeenCalledWith(
+      'Você saiu da central.',
+    );
+  });
+
+  it('"Continuar na central" fecha a sheet sem mudar nada', async () => {
+    await openArtist('nettobrito');
+    fireEvent.press(
+      await screen.findByRole('button', { name: 'Você está na central de Netto Brito' }),
+    );
+    expect(await screen.findByText('Sair da central?')).toBeTruthy();
+
+    fireEvent.press(screen.getByRole('button', { name: 'Continuar na central' }));
+
+    await waitFor(() => expect(screen.queryByText('Sair da central?')).toBeNull());
+    expect(
+      screen.getByRole('button', { name: 'Você está na central de Netto Brito' }),
+    ).toBeTruthy();
+    expect(followFixture.followedIds()).toContain('nettobrito');
+  });
+
+  it('enquanto a entrada vai, o "Na central" fica sem toque (sair chegaria antes da entrada)', async () => {
+    // A resposta só chega quando o teste manda, e aí a entrada vale nas fixtures.
+    let settle: () => void = () => undefined;
+    jest.mocked(joinCentral).mockImplementationOnce(
+      ({ artistId, idempotencyKey }) =>
+        new Promise<JoinCentralResult>((resolve) => {
+          settle = () => resolve(followFixture.join(artistId, idempotencyKey));
+        }),
+    );
+    await openArtist('rocksalles');
+    fireEvent.press(await screen.findByLabelText('Entrar na central de Rock Salles'));
+
+    const status = await screen.findByLabelText('Você está na central de Rock Salles');
+    expect(status.props.accessibilityRole).toBe('text');
+    fireEvent.press(status);
+    expect(screen.queryByText('Sair da central?')).toBeNull();
+
+    await act(async () => settle());
+    expect(
+      await screen.findByRole('button', { name: 'Você está na central de Rock Salles' }),
+    ).toBeTruthy();
+  });
+
+  it('com a página montada de novo sobre uma entrada pausada sem rede, o "Na central" segue sem toque', async () => {
+    const first = await openArtist('rocksalles');
+    act(() => onlineManager.setOnline(false));
+    fireEvent.press(await screen.findByLabelText('Entrar na central de Rock Salles'));
+    expect(await screen.findByLabelText('Você está na central de Rock Salles')).toBeTruthy();
+    expect(client.getMutationCache().getAll()[0]?.state.isPaused).toBe(true);
+    first.unmount();
+
+    // A página nasce de novo (outra instância do hook), com a entrada ainda na fila.
+    await openArtist('rocksalles');
+    const status = await screen.findByLabelText('Você está na central de Rock Salles');
+    expect(status.props.accessibilityRole).toBe('text');
+    fireEvent.press(status);
+    expect(screen.queryByText('Sair da central?')).toBeNull();
+
+    // A rede volta, a entrada chega ao servidor, e o "Na central" volta a abrir a sheet.
+    await act(async () => onlineManager.setOnline(true));
+    expect(
+      await screen.findByRole('button', { name: 'Você está na central de Rock Salles' }),
+    ).toBeTruthy();
+    expect(followFixture.followedIds()).toContain('rocksalles');
+  });
+
+  it('entrar numa central que saiu do ar com a página aberta: a página diz que ela não existe mais', async () => {
+    const trigger = jest.spyOn(haptics, 'trigger');
+    await openArtist('rocksalles');
+    const gone = () => new ApiError('notFound', 'Central não encontrada.', 404);
+    jest.mocked(joinCentral).mockRejectedValueOnce(gone());
+    jest.mocked(fetchArtist).mockRejectedValueOnce(gone());
+
+    fireEvent.press(await screen.findByLabelText('Entrar na central de Rock Salles'));
+
+    expect(await screen.findByText('Esta central não existe mais.')).toBeTruthy();
+    expect(screen.queryByTestId('artist-heading')).toBeNull();
+    expect(trigger).toHaveBeenCalledWith('error');
+    // Sem o "Tente de novo": tentar de novo daria 404 para sempre.
+    expect(AccessibilityInfo.announceForAccessibility).not.toHaveBeenCalledWith(
+      'Não deu para entrar na central. Tente de novo.',
     );
   });
 
   it('compartilhar manda o link da central com o código de convite do fã', async () => {
     const share = jest.spyOn(Share, 'share').mockResolvedValue({ action: 'sharedAction' });
-    await openArtist('netto-brito');
+    await openArtist('nettobrito');
     await waitFor(() => expect(client.getQueryData(['profile', 'invite'])).toBeDefined());
 
     fireEvent.press(screen.getByLabelText('Compartilhar a central'));
 
     expect(share).toHaveBeenCalledWith(
       expect.objectContaining({
-        url: expect.stringMatching(/\/artista\/netto-brito\?ref=CAMILA12$/),
+        url: expect.stringMatching(/\/artista\/nettobrito\?ref=CAMILA12$/),
         message: 'Entra na central de Netto Brito no ImagineUP',
       }),
     );
@@ -327,7 +506,7 @@ describe('página do artista (1d)', () => {
   });
 
   it('a atualização que falha deixa a central na tela, avisa e tenta de novo', async () => {
-    await openArtist('netto-brito');
+    await openArtist('nettobrito');
     jest.mocked(fetchArtist).mockRejectedValueOnce(new ApiError('server', 'Erro.', 500));
 
     await act(async () => {
@@ -348,7 +527,7 @@ describe('página do artista (1d)', () => {
   });
 
   it('um link para outra central com esta aberta nasce de novo no Mural', async () => {
-    await openArtist('netto-brito');
+    await openArtist('nettobrito');
     fireEvent.press(tab('Agenda'));
     expect(selected('Agenda')).toBe(true);
 

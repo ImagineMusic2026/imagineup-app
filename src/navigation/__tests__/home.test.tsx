@@ -240,7 +240,7 @@ describe('home (1b)', () => {
     fireEvent.press(await screen.findByRole('button', { name: 'Netto Brito, você é o 12º' }));
 
     await waitFor(() => expect(screen.getByText('artist')).toBeTruthy());
-    expect(view.getPathname()).toBe('/artista/netto-brito');
+    expect(view.getPathname()).toBe('/artista/nettobrito');
     expect(view.getSegments()).toEqual(['(tabs)', '(inicio)', 'artista', '[artistaId]']);
     // Na pilha da aba que já existe, sem empilhar outra árvore de abas.
     expect(rootRoutes(view)).toEqual(['(tabs)']);

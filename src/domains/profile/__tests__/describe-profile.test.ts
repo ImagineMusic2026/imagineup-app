@@ -32,7 +32,7 @@ function progress(overrides: Partial<MyProgress> = {}): MyProgress {
 }
 
 const NETTO: FanCentral = {
-  artistId: 'netto-brito',
+  artistId: 'nettobrito',
   name: 'Netto Brito',
   shortName: null,
   photoURL: null,
@@ -176,7 +176,7 @@ describe('centrais do fã', () => {
   it('sem posição, diz que ainda não pontuou ali', () => {
     const juninho: FanCentral = {
       ...NETTO,
-      artistId: 'juninho-moraes',
+      artistId: 'juninhomoraes',
       name: 'Juninho Moraes',
       fanCount: 141_000,
       fanRank: null,
@@ -184,5 +184,17 @@ describe('centrais do fã', () => {
     };
     expect(centralMeta(juninho)).toBe('Sem posição ainda · 141 mil fãs');
     expect(centralLabel(juninho)).toBe('Juninho Moraes, ainda sem posição, entre 141 mil fãs.');
+  });
+
+  it('central com 1 fã no singular, e sem posição com pontos diz os pontos', () => {
+    const alone: FanCentral = { ...NETTO, fanCount: 1, fanRank: null, seasonPoints: 0 };
+    expect(centralMeta(alone)).toBe('Sem posição ainda · 1 fã');
+    expect(centralLabel(alone)).toBe('Netto Brito, ainda sem posição, 1 fã.');
+    expect(centralLabel({ ...alone, seasonPoints: 4_120 })).toBe(
+      'Netto Brito, ainda sem posição, 1 fã, 4.120 pontos na temporada.',
+    );
+    expect(centralLabel({ ...alone, fanCount: 2, seasonPoints: 4_120 })).toBe(
+      'Netto Brito, ainda sem posição, entre 2 fãs, 4.120 pontos na temporada.',
+    );
   });
 });

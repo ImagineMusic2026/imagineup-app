@@ -101,12 +101,12 @@ describe('RemoteImage', () => {
     const { rerender } = render(
       <RemoteImage
         uri={null}
-        fallback={{ kind: 'brand', seed: 'netto-brito', stripes: null }}
+        fallback={{ kind: 'brand', seed: 'nettobrito', stripes: null }}
         fallbackSize={{ width: 402, height: 270 }}
       />,
     );
     expect(screen.UNSAFE_getByType(StaticPhotoFallback).props).toMatchObject({
-      seed: 'netto-brito',
+      seed: 'nettobrito',
       variant: 'brand',
       stripes: null,
       width: 402,
@@ -130,7 +130,7 @@ describe('RemoteImage', () => {
   });
 
   it('sem a medida (listas e cards), fica o placeholder do Skia', () => {
-    render(<RemoteImage uri={null} fallback={{ kind: 'brand', seed: 'netto-brito' }} />);
+    render(<RemoteImage uri={null} fallback={{ kind: 'brand', seed: 'nettobrito' }} />);
     expect(screen.UNSAFE_queryAllByType(StaticPhotoFallback)).toHaveLength(0);
     expect(screen.UNSAFE_getByType(PhotoFallback)).toBeTruthy();
   });

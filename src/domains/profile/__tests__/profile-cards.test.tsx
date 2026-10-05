@@ -317,7 +317,7 @@ describe('AchievementTile', () => {
 
 describe('CentralRow', () => {
   const NETTO: FanCentral = {
-    artistId: 'netto-brito',
+    artistId: 'nettobrito',
     name: 'Netto Brito',
     shortName: null,
     photoURL: null,
@@ -345,7 +345,7 @@ describe('CentralRow', () => {
     fireEvent.press(screen.getByRole('button'));
     expect(router.push).toHaveBeenCalledWith({
       pathname: '/artista/[artistaId]',
-      params: { artistaId: 'netto-brito' },
+      params: { artistaId: 'nettobrito' },
     });
   });
 
@@ -354,7 +354,7 @@ describe('CentralRow', () => {
       <CentralRow
         central={{
           ...NETTO,
-          artistId: 'juninho-moraes',
+          artistId: 'juninhomoraes',
           name: 'Juninho Moraes',
           fanCount: 141_000,
           fanRank: null,
@@ -367,5 +367,16 @@ describe('CentralRow', () => {
     ).toBeTruthy();
     expect(screen.getByText('Sem posição ainda · 141 mil fãs', hidden)).toBeTruthy();
     expect(screen.queryByText('0', hidden)).toBeNull();
+  });
+
+  it('sem posição e com pontos (o servidor, até o bloco 8): os pontos à direita e no rótulo', () => {
+    render(<CentralRow central={{ ...NETTO, fanRank: null, fanCount: 1 }} />);
+    expect(
+      screen.getByRole('button', {
+        name: 'Netto Brito, ainda sem posição, 1 fã, 4.120 pontos na temporada.',
+      }),
+    ).toBeTruthy();
+    expect(screen.getByText('Sem posição ainda · 1 fã', hidden)).toBeTruthy();
+    expect(screen.getByText('4.120', hidden)).toHaveStyle({ color: colors.points });
   });
 });

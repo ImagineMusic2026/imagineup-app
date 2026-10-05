@@ -54,7 +54,7 @@ describe('comentários de exemplo', () => {
       'Davi Lima',
       'Jean P.',
     ]);
-    expect(items[0]).toMatchObject({ authorId: 'netto-brito', authorIsArtist: true });
+    expect(items[0]).toMatchObject({ authorId: 'nettobrito', authorIsArtist: true });
     expect(items.slice(1).every((comment) => !comment.authorIsArtist)).toBe(true);
     expect(minutesBefore(items[0])).toBe(48);
     expect(minutesBefore(items[1])).toBe(60);

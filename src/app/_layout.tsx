@@ -84,6 +84,18 @@ export default function RootLayout() {
               contentStyle: { backgroundColor: colors.surface },
             }}
           />
+          {/* "Sair da central" da 1d, provisória (UP-48), na altura do conteúdo,
+              no visual do "Gerar meu link". */}
+          <Stack.Screen
+            name="sair-da-central/[artistaId]"
+            options={{
+              presentation: 'formSheet',
+              sheetAllowedDetents: 'fitToContents',
+              sheetGrabberVisible: true,
+              sheetCornerRadius: radii.sheet,
+              contentStyle: { backgroundColor: colors.surface },
+            }}
+          />
           {/* Detalhe, confirmação e instruções do resgate (1h), em altura cheia:
               a foto, o quadro de pontos e o botão preso no pé. */}
           <Stack.Screen
