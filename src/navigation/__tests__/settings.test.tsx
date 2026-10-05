@@ -67,8 +67,11 @@ jest.mock('@/services/api', () => ({ api: { get: jest.fn(), post: jest.fn() } })
 jest.mock('@/config/env', () => ({
   firebaseEnv: null,
   apiUrl: undefined,
-  dataSource: 'fixtures',
   firebaseEmulatorHost: undefined,
+}));
+jest.mock('@/config/data-source', () => ({
+  sourceOf: () => 'fixtures',
+  usesFixtures: () => true,
 }));
 
 /** Os guards do app, o listener do Auth de verdade e o cache do app (que ele limpa). */

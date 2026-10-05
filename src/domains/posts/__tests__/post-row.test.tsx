@@ -30,8 +30,11 @@ jest.mock('@/services/api', () => ({ api: { get: jest.fn(), request: jest.fn() }
 jest.mock('@/config/env', () => ({
   firebaseEnv: null,
   apiUrl: undefined,
-  dataSource: 'fixtures',
   firebaseEmulatorHost: undefined,
+}));
+jest.mock('@/config/data-source', () => ({
+  sourceOf: () => 'fixtures',
+  usesFixtures: () => true,
 }));
 
 // Só a navegação imperativa sai do ar; o resto (tema de navegação) é o de verdade.

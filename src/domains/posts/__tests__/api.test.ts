@@ -21,10 +21,9 @@ jest.mock('@/services/api', () => ({
 
 // Lido na hora da chamada: cada teste escolhe a fonte.
 let mockDataSource: 'api' | 'fixtures' = 'fixtures';
-jest.mock('@/config/env', () => ({
-  get dataSource() {
-    return mockDataSource;
-  },
+jest.mock('@/config/data-source', () => ({
+  sourceOf: () => mockDataSource,
+  usesFixtures: () => mockDataSource === 'fixtures',
 }));
 
 const get = jest.mocked(api.get);

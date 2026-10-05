@@ -2,7 +2,7 @@ import { initializeApp } from 'firebase-admin/app';
 import { getAuth } from 'firebase-admin/auth';
 import { getFirestore } from 'firebase-admin/firestore';
 import { getStorage } from 'firebase-admin/storage';
-import { onCall } from 'firebase-functions/https';
+import { onCall, onRequest } from 'firebase-functions/https';
 import { onUserCreated, onUserDeleted } from 'firebase-functions/identity';
 import * as logger from 'firebase-functions/logger';
 import { setGlobalOptions } from 'firebase-functions/options';
@@ -17,6 +17,7 @@ import {
   reorderArtistList,
   type ArtistDeps,
 } from './artists';
+import { createApiHandler } from './api';
 import { handleUserCreated, type FindUser } from './handlers';
 import {
   acceptInvite,
@@ -209,3 +210,26 @@ export const deleteArtist = onCall({ cors: PANEL_ORIGINS }, async (request) => {
   logger.info('Central apagada.', { actorUid: request.auth?.uid });
   return result;
 });
+
+// API HTTP do app (docs/arquitetura-api.md): carteira, progresso e extrato no
+// bloco 1; os blocos seguintes acrescentam as rotas deles em src/api. Quem
+// protege é o ID token do Firebase em toda rota, por isso o invoker público.
+// Sem CORS: o app nativo não faz preflight, e o painel usa as callables.
+
+let apiHandler: ReturnType<typeof createApiHandler> | null = null;
+
+/** GET /me/wallet, /me/progress e /me/ledger; os pontos são sempre calculados no servidor. */
+export const api = onRequest(
+  {
+    invoker: 'public',
+    cors: false,
+    timeoutSeconds: 30,
+    memory: '512MiB',
+    cpu: 1,
+    concurrency: 80,
+  },
+  (req, res) => {
+    apiHandler ??= createApiHandler({ db: getFirestore(), auth: getAuth() });
+    return apiHandler(req, res);
+  },
+);

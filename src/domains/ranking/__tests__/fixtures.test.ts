@@ -25,10 +25,9 @@ jest.mock('@/firebase', () => ({
 jest.mock('@/services/api', () => ({ api: { get: jest.fn() } }));
 
 let mockDataSource: 'api' | 'fixtures' = 'fixtures';
-jest.mock('@/config/env', () => ({
-  get dataSource() {
-    return mockDataSource;
-  },
+jest.mock('@/config/data-source', () => ({
+  sourceOf: () => mockDataSource,
+  usesFixtures: () => mockDataSource === 'fixtures',
 }));
 
 const get = jest.mocked(api.get);

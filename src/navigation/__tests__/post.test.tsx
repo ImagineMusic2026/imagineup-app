@@ -40,8 +40,11 @@ jest.mock('@/services/api', () => ({
 jest.mock('@/config/env', () => ({
   firebaseEnv: null,
   apiUrl: undefined,
-  dataSource: 'fixtures',
   firebaseEmulatorHost: undefined,
+}));
+jest.mock('@/config/data-source', () => ({
+  sourceOf: () => 'fixtures',
+  usesFixtures: () => true,
 }));
 
 // Sem layout nativo no Jest, a FlashList não mede nada e não desenha item nenhum.

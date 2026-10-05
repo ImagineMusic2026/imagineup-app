@@ -1,6 +1,6 @@
 import { doc, getDoc, onSnapshot, type DocumentData } from 'firebase/firestore';
 
-import { dataSource } from '@/config/env';
+import { sourceOf } from '@/config/data-source';
 import { getDb } from '@/firebase';
 import { api } from '@/services/api';
 import { fixtureDelay, fixtureNow } from '@/services/fixtures';
@@ -93,7 +93,7 @@ export function watchMyProfile(
 
 /** Saldo, nível e temporada. Só o servidor grava; o app só lê. */
 export async function fetchWallet(): Promise<Wallet> {
-  if (dataSource === 'fixtures') {
+  if (sourceOf('wallet') === 'fixtures') {
     await fixtureDelay();
     return buildWalletFixture();
   }
@@ -103,7 +103,7 @@ export async function fetchWallet(): Promise<Wallet> {
 
 /** Nível (com o XP que nunca cai), ganhos da semana e números do fã (1e). */
 export async function fetchMyProgress(): Promise<MyProgress> {
-  if (dataSource === 'fixtures') {
+  if (sourceOf('wallet') === 'fixtures') {
     await fixtureDelay();
     return buildMyProgressFixture();
   }
@@ -113,7 +113,7 @@ export async function fetchMyProgress(): Promise<MyProgress> {
 
 /** Contagem de conquistas e as que o perfil mostra. */
 export async function fetchMyAchievements(): Promise<MyAchievements> {
-  if (dataSource === 'fixtures') {
+  if (sourceOf('achievements') === 'fixtures') {
     await fixtureDelay();
     return buildMyAchievementsFixture(fixtureNow());
   }
@@ -123,7 +123,7 @@ export async function fetchMyAchievements(): Promise<MyAchievements> {
 
 /** Código de convite do fã e o que cada pessoa trazida rende. */
 export async function fetchMyInvite(): Promise<MyInvite> {
-  if (dataSource === 'fixtures') {
+  if (sourceOf('invite') === 'fixtures') {
     await fixtureDelay();
     return buildMyInviteFixture();
   }

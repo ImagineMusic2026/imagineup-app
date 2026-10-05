@@ -1,19 +1,18 @@
 import { onlineManager, QueryClient, type Query } from '@tanstack/react-query';
 
-import { dataSource } from '@/config/env';
+import { usesFixtures } from '@/config/data-source';
 
-import { queryClient, queryNetworkMode } from '../client';
+import { queryClient, queryNetworkMode, queryOptionsFor } from '../client';
 import { persistOptions, shouldPersistQuery } from '../persister';
 
-// O env real, sem o aviso de Firebase sem .env, com a fonte fixada em vez de
-// lida do .env: com EXPO_PUBLIC_API_URL preenchida (CI, depois do M2), estes
-// testes continuam falando do modo fixtures.
-jest.mock('@/config/env', () => {
-  const warn = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
-  const env = jest.requireActual('@/config/env');
-  warn.mockRestore();
-  return { ...env, dataSource: 'fixtures' };
-});
+// Sem API e sem emulador, em vez de lidos do ambiente: com EXPO_PUBLIC_API_URL
+// preenchida (CI, depois do deploy), estes testes continuam falando do modo
+// fixtures, o das builds de hoje.
+jest.mock('@/config/server', () => ({
+  ...jest.requireActual('@/config/server'),
+  apiUrl: undefined,
+  firebaseEmulatorHost: undefined,
+}));
 
 async function settledQuery(
   client: QueryClient,
@@ -45,34 +44,37 @@ describe('cache salvo no aparelho', () => {
 
   afterEach(() => client.clear());
 
-  it('estes testes rodam no modo fixtures', () => {
-    expect(dataSource).toBe('fixtures');
+  it('estes testes rodam com todos os domínios nas fixtures', () => {
+    expect(usesFixtures()).toBe(true);
   });
 
-  it('no modo fixtures não grava consulta nenhuma, nem a que deu certo', async () => {
+  it('com fixtures em uso, não grava consulta de exemplo, nem a que deu certo', async () => {
     const query = await settledQuery(client, 'feed');
-    expect(shouldPersistQuery(query, 'fixtures')).toBe(false);
+    expect(shouldPersistQuery(query, true)).toBe(false);
     expect(persistOptions.dehydrateOptions?.shouldDehydrateQuery?.(query)).toBe(false);
+    // A consulta de um domínio que ainda lê das fixtures diz realData: false.
+    const wallet = await settledQuery(client, 'carteira', { realData: false });
+    expect(shouldPersistQuery(wallet, true)).toBe(false);
   });
 
-  it('no modo fixtures, grava o dado de verdade (o perfil do Firestore) que deu certo', async () => {
+  it('com fixtures em uso, grava o dado de verdade (perfil do Firestore, domínio na API) que deu certo', async () => {
     const profile = await settledQuery(client, 'perfil', { realData: true });
     const failed = await settledQuery(client, 'perfil-quebrado', { realData: true, fails: true });
-    expect(shouldPersistQuery(profile, 'fixtures')).toBe(true);
+    expect(shouldPersistQuery(profile, true)).toBe(true);
     expect(persistOptions.dehydrateOptions?.shouldDehydrateQuery?.(profile)).toBe(true);
-    expect(shouldPersistQuery(failed, 'fixtures')).toBe(false);
+    expect(shouldPersistQuery(failed, true)).toBe(false);
   });
 
-  it('com a API, grava a consulta que deu certo', async () => {
+  it('sem domínio nas fixtures, grava a consulta que deu certo', async () => {
     const query = await settledQuery(client, 'feed');
-    expect(shouldPersistQuery(query, 'api')).toBe(true);
+    expect(shouldPersistQuery(query, false)).toBe(true);
   });
 
-  it('com a API, deixa de fora o que pediu para não ir ao disco e o que falhou', async () => {
+  it('sem domínio nas fixtures, deixa de fora o que pediu para não ir ao disco e o que falhou', async () => {
     const sensitive = await settledQuery(client, 'token', { persist: false });
     const failed = await settledQuery(client, 'quebrada', { fails: true });
-    expect(shouldPersistQuery(sensitive, 'api')).toBe(false);
-    expect(shouldPersistQuery(failed, 'api')).toBe(false);
+    expect(shouldPersistQuery(sensitive, false)).toBe(false);
+    expect(shouldPersistQuery(failed, false)).toBe(false);
   });
 });
 
@@ -96,6 +98,10 @@ describe('consultas no modo fixtures', () => {
 });
 
 describe('modo de rede das consultas', () => {
+  it('sem API, a carteira roda como fixture e fica fora do disco', () => {
+    expect(queryOptionsFor('wallet')).toEqual({ networkMode: 'always', meta: { realData: false } });
+  });
+
   it.each([
     ['fixtures', 'always'],
     ['api', 'online'],

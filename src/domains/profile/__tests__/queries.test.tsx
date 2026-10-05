@@ -17,7 +17,11 @@ jest.mock('firebase/firestore', () => ({
 jest.mock('@/firebase', () => ({ getDb: () => ({}) }));
 jest.mock('@/services/api', () => ({ api: { get: jest.fn() } }));
 // Sem .env no Jest: o aviso de Firebase sem configuração não polui a saída.
-jest.mock('@/config/env', () => ({ dataSource: 'fixtures', firebaseEmulatorHost: undefined }));
+jest.mock('@/config/env', () => ({ firebaseEmulatorHost: undefined }));
+jest.mock('@/config/data-source', () => ({
+  sourceOf: () => 'fixtures',
+  usesFixtures: () => true,
+}));
 
 const getDocMock = jest.mocked(getDoc);
 const onSnapshotMock = jest.mocked(onSnapshot);

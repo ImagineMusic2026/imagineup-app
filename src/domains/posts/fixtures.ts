@@ -2,7 +2,7 @@ import { nextSaturday, set } from 'date-fns';
 
 import { missionsFixture } from '@/domains/missions';
 import { ApiError } from '@/services/api/errors';
-import { fixtureWallet, onFixtureSessionEnd } from '@/services/fixtures';
+import { earnFixturePoints, onFixtureSessionEnd } from '@/services/fixtures';
 
 import { COMMENT_MAX_LENGTH } from './schemas';
 import type {
@@ -464,9 +464,10 @@ export const postsFixture = {
       createdAt: now.toISOString(),
     };
     fanComments.set(input.postId, [comment, ...(fanComments.get(input.postId) ?? [])]);
-    fixtureWallet.earn(COMMENT_POINTS);
+    // Com a carteira na API, o comentário de exemplo não rende ponto (earnFixturePoints).
     const pointsAwarded =
-      COMMENT_POINTS + missionsFixture.record('comment', now, { artistId: post.artist.id });
+      earnFixturePoints(COMMENT_POINTS) +
+      missionsFixture.record('comment', now, { artistId: post.artist.id });
     const result = { ...comment, pointsAwarded };
     answered.set(input.idempotencyKey, result);
     return { ...result };

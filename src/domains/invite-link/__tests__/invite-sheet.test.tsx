@@ -26,10 +26,11 @@ let mockDataSource: 'api' | 'fixtures' = 'fixtures';
 jest.mock('@/config/env', () => ({
   firebaseEnv: null,
   apiUrl: undefined,
-  get dataSource() {
-    return mockDataSource;
-  },
   firebaseEmulatorHost: undefined,
+}));
+jest.mock('@/config/data-source', () => ({
+  sourceOf: () => mockDataSource,
+  usesFixtures: () => mockDataSource === 'fixtures',
 }));
 
 let mockParams: Record<string, string> = {};

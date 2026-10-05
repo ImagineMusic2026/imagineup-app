@@ -1,4 +1,4 @@
-import { dataSource } from '@/config/env';
+import { sourceOf } from '@/config/data-source';
 import { api } from '@/services/api';
 import { fixtureDelay } from '@/services/fixtures';
 
@@ -22,7 +22,7 @@ const artistUrl = (artistId: string) => `/artists/${encodeURIComponent(artistId)
 
 /** Chamadas cruas à API. Sem React: quem cacheia é o queries.ts. */
 export async function fetchArtists(): Promise<Artist[]> {
-  if (dataSource === 'fixtures') {
+  if (sourceOf('artists') === 'fixtures') {
     await fixtureDelay();
     return buildArtistsFixture();
   }
@@ -38,7 +38,7 @@ export async function followArtists({
   artistIds,
   idempotencyKey,
 }: FollowArtistsVariables): Promise<FollowArtistsResult> {
-  if (dataSource === 'fixtures') {
+  if (sourceOf('artists') === 'fixtures') {
     await fixtureDelay();
     return followFixture.follow(artistIds, idempotencyKey);
   }
@@ -52,7 +52,7 @@ export async function followArtists({
 
 /** Centrais que o fã segue, com a posição dele em cada uma (carrossel da 1b). */
 export async function fetchFanCentrals(): Promise<FanCentral[]> {
-  if (dataSource === 'fixtures') {
+  if (sourceOf('artists') === 'fixtures') {
     await fixtureDelay();
     return buildFanCentralsFixture();
   }
@@ -62,7 +62,7 @@ export async function fetchFanCentrals(): Promise<FanCentral[]> {
 
 /** A central de um artista (página 1d), com o fã dentro ou fora dela. */
 export async function fetchArtist(artistId: string): Promise<ArtistDetails> {
-  if (dataSource === 'fixtures') {
+  if (sourceOf('artists') === 'fixtures') {
     await fixtureDelay();
     return buildArtistDetailsFixture(artistId);
   }
@@ -78,7 +78,7 @@ export async function joinCentral({
   artistId,
   idempotencyKey,
 }: JoinCentralVariables): Promise<JoinCentralResult> {
-  if (dataSource === 'fixtures') {
+  if (sourceOf('artists') === 'fixtures') {
     await fixtureDelay();
     return followFixture.join(artistId, idempotencyKey);
   }

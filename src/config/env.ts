@@ -11,9 +11,11 @@ const rawEnv = {
   firebaseStorageBucket: process.env.EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET,
   firebaseMessagingSenderId: process.env.EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
   firebaseAppId: process.env.EXPO_PUBLIC_FIREBASE_APP_ID,
-  apiUrl: process.env.EXPO_PUBLIC_API_URL,
-  firebaseEmulatorHost: process.env.EXPO_PUBLIC_FIREBASE_EMULATOR_HOST,
 };
+
+// O endereço do servidor (emuladores ou API) mora em ./server: o seletor de
+// fonte (data-source.ts) lê de lá sem passar pela configuração do Firebase.
+export { apiUrl, EMULATOR_PROJECT_ID, firebaseEmulatorHost, resolveApiUrl } from './server';
 
 const optionalString = z
   .string()
@@ -44,23 +46,3 @@ function parseFirebaseEnv(): FirebaseEnv | null {
 
 /** `null` enquanto o .env não estiver preenchido: o app abre, mas não autentica. */
 export const firebaseEnv = parseFirebaseEnv();
-
-export const apiUrl = optionalString.parse(rawEnv.apiUrl);
-
-export type DataSource = 'api' | 'fixtures';
-
-/**
- * Sem a API (backend M2), as telas leem as fixtures tipadas de cada domínio.
- * Nos domínios, só o `api.ts` olha para isto (view e `queries.ts` não sabem de
- * onde o dado veio); fora deles, o cache do React Query, que não grava fixture
- * no disco.
- */
-export const dataSource: DataSource = apiUrl ? 'api' : 'fixtures';
-
-/**
- * Host dos emuladores do Firebase (`npm run emulators`), só em desenvolvimento:
- * uma build nunca aponta para eles, mesmo que a variável exista.
- */
-export const firebaseEmulatorHost = __DEV__
-  ? optionalString.parse(rawEnv.firebaseEmulatorHost)
-  : undefined;
