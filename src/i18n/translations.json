@@ -62,6 +62,7 @@
       "inviteCode": "Código de convite (opcional)",
       "inviteCodeHint": "Se alguém te convidou, o código vem no link que você recebeu.",
       "inviteRejected": {
+        "title": "Confira seu convite",
         "lead": "Sua conta já foi criada. Confira o código de convite ou continue sem ele.",
         "notFound": "Não achamos esse código. Confira com quem te convidou.",
         "notAllowed": "Esse código não vale para esta conta."

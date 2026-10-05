@@ -162,7 +162,7 @@ export function SignUpScreen() {
     <AuthFormLayout
       step={{ current: 1, total: ENTRY_STEP_COUNT }}
       locked={pending || stage}
-      title={t('auth.signUp.title')}
+      title={stage ? t('auth.signUp.inviteRejected.title') : t('auth.signUp.title')}
       lead={stage ? t('auth.signUp.inviteRejected.lead') : t('auth.signUp.lead')}
       footer={
         stage ? null : (

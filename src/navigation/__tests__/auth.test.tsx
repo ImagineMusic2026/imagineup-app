@@ -414,6 +414,9 @@ describe('cadastro', () => {
 
       const message = t('auth.signUp.inviteRejected.notFound');
       await waitFor(() => expect(announce()).toHaveBeenCalledWith(message));
+      // A conta já existe: o título deixa de pedir para criar.
+      expect(screen.getByText(t('auth.signUp.inviteRejected.title'))).toBeTruthy();
+      expect(screen.queryByText(t('auth.signUp.title'))).toBeNull();
       expect(screen.getByText(t('auth.signUp.inviteRejected.lead'))).toBeTruthy();
       expect(screen.getByLabelText(t('auth.signUp.inviteCode'))).toHaveProp(
         'accessibilityHint',
