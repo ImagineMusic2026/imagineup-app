@@ -571,9 +571,13 @@ describe('award pela API', () => {
         body: { artistId: 'nettobrito' },
       });
     }
-    const shards = await db.collection(`statsDaily/${TODAY}/statsShards`).get();
-    expect(shards.docs.map((doc) => doc.id)).toEqual(['0']);
-    expect(shards.docs[0]!.data()).toMatchObject({
+    // Só os shards com pontos: o cadastro do fã (gatilho, signups.total) pode cair
+    // no mesmo dia, num shard sorteado, quando o relógio real é o deste teste.
+    const shards = (await db.collection(`statsDaily/${TODAY}/statsShards`).get()).docs.filter(
+      (doc) => doc.get('totals') !== undefined,
+    );
+    expect(shards.map((doc) => doc.id)).toEqual(['0']);
+    expect(shards[0]!.data()).toMatchObject({
       totals: { earned: 4, earnedEvents: 2 },
       bySource: { comment: { points: 4, events: 2 } },
       byArtist: {

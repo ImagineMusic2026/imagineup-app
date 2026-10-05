@@ -173,6 +173,7 @@ function deps(db: Firestore, random: () => number): ResolvedDeps {
     now: () => NOW,
     random,
     config: staticConfigSource(),
+    inviteKey: () => 'segredo-de-teste',
   };
 }
 

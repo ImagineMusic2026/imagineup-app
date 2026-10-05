@@ -15,6 +15,16 @@
  * Artista 7 em rascunho e o Artista 8 fora do ar, que o app não mostra. Depois
  * da carteira, a Camila vira fã de Netto, Nenho e Juninho pelo mesmo caminho
  * das rotas da API; o Alan não segue nada e passa pela escolha de artistas.
+ *
+ * Convite (functions/lib/invites, bloco 5): a Camila ganha o código CAMILA12
+ * (o mesmo da fixture) e 4 links compartilhados (o atalho Convidar, o clipe, a
+ * central do Netto e a agenda), e traz três fãs de teste pelo mesmo claim da
+ * API, com os valores do convite em 0 (a carteira dela fica a do protótipo):
+ * a Bia pelo link do clipe com campanha (instagram, story, sao-joao), a Duda
+ * pelo link da central do Netto e o Enzo pelo código digitado no cadastro. A
+ * 1e da Camila mostra 4 links e 3 pessoas trazidas; o Alan ganha o código na
+ * primeira vez que abrir "Gerar meu link".
+ *
  * Rodar de novo não muda nada.
  *
  * Só funciona contra o emulador local (127.0.0.1:9099): estas senhas não servem
@@ -44,6 +54,29 @@ const FANS = [
     password: 'fa-de-teste-2',
     displayName: 'Alan Ferreira',
     city: 'Irará, BA',
+  },
+  // Convidados da Camila: a origem de cada um está em SEED_INVITEES
+  // (functions/src/invites/seed.ts), pelo e-mail.
+  {
+    email: 'bia@teste.imagineup',
+    password: 'fa-de-teste-3',
+    displayName: 'Bia Santos',
+    city: 'Salvador, BA',
+    invited: true,
+  },
+  {
+    email: 'duda@teste.imagineup',
+    password: 'fa-de-teste-4',
+    displayName: 'Duda Lima',
+    city: 'Alagoinhas, BA',
+    invited: true,
+  },
+  {
+    email: 'enzo@teste.imagineup',
+    password: 'fa-de-teste-5',
+    displayName: 'Enzo Rocha',
+    city: 'Santo Amaro, BA',
+    invited: true,
   },
 ];
 
@@ -105,14 +138,30 @@ async function seedCentrals() {
   return withFirestore((db) => seed(db));
 }
 
-/** A carteira da Camila pelo award das funções e as centrais dela pelo caminho das rotas. */
-async function seedWallet(uid) {
+/**
+ * A carteira da Camila pelo award das funções, as centrais dela pelo caminho
+ * das rotas e o convite dela (o código CAMILA12 e os links).
+ */
+async function seedWallet(uid, email) {
   const { seedCamilaWallet } = functionsBuild('points');
   const { seedCamilaCentrals } = functionsBuild('centrals');
-  await withFirestore(async (db) => {
+  const { seedCamilaInvite } = functionsBuild('invites');
+  return withFirestore(async (db) => {
     await seedCamilaWallet(db, uid);
     await seedCamilaCentrals(db, uid);
+    return seedCamilaInvite(db, { uid, email });
   });
+}
+
+/** Os convidados da Camila pelo mesmo claim da API, cada um com a origem do SEED_INVITEES. */
+async function seedClaims(invitees) {
+  const { SEED_INVITEES, seedInviteClaims } = functionsBuild('invites');
+  const withOrigin = invitees.map((invitee) => {
+    const seed = SEED_INVITEES.find((item) => item.email === invitee.email);
+    if (!seed) throw new Error(`Sem origem de convite para ${invitee.email}.`);
+    return { ...invitee, origin: seed.origin };
+  });
+  return withFirestore((db) => seedInviteClaims(db, withOrigin));
 }
 
 const created = await seedCentrals();
@@ -120,7 +169,8 @@ console.log(
   `Centrais de teste: ${created} criadas (6 publicadas, 1 em rascunho e 1 fora do ar no total).`,
 );
 
-for (const { city, wallet, ...fan } of FANS) {
+const invitees = [];
+for (const { city, wallet, invited, ...fan } of FANS) {
   let result = await auth('accounts:signUp', fan);
   if (result.ok) {
     console.log(`Conta criada: ${fan.email} (${fan.displayName}).`);
@@ -134,8 +184,18 @@ for (const { city, wallet, ...fan } of FANS) {
   await setCity(result.body.localId, city);
   console.log(`Cidade de ${fan.displayName}: ${city}.`);
   if (wallet) {
-    await seedWallet(result.body.localId);
+    const links = await seedWallet(result.body.localId, fan.email);
     console.log(`Carteira de ${fan.displayName}: saldo 12.480, temporada 4.120, Netto e Nenho.`);
     console.log(`Centrais de ${fan.displayName}: Netto Brito, Nenho e Juninho Moraes.`);
+    console.log(
+      `Convite de ${fan.displayName}: código CAMILA12, ${links} links novos (4 no total).`,
+    );
   }
+  if (invited) invitees.push({ uid: result.body.localId, email: fan.email, name: fan.displayName });
 }
+
+const outcomes = await seedClaims(invitees);
+invitees.forEach((invitee, index) => {
+  const status = outcomes[index]?.status === 'claimed' ? 'convidado agora' : 'já era convidado';
+  console.log(`Convite da Camila: ${invitee.name} (${status}).`);
+});

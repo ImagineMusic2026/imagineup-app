@@ -1,5 +1,6 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { Stack } from 'expo-router';
+import { router, Stack } from 'expo-router';
 import { act, fireEvent, renderRouter, screen, waitFor } from 'expo-router/testing-library';
 import * as WebBrowser from 'expo-web-browser';
 import { FirebaseError } from 'firebase/app';
@@ -17,7 +18,11 @@ import AuthLayout from '@/app/(auth)/_layout';
 import SignUpRoute from '@/app/(auth)/cadastro';
 import WelcomeRoute from '@/app/(auth)/entrar';
 import SignInRoute from '@/app/(auth)/entrar-com-email';
+import InviteRoute from '@/app/convite/[codigo]';
+import { sendInviteClaim } from '@/domains/auth/api';
+import { readBoundInvite, savePendingInvite } from '@/domains/invites';
 import { t } from '@/i18n';
+import { ApiError } from '@/services/api';
 import { haptics } from '@/services/haptics';
 import { useSessionStore } from '@/stores/session';
 
@@ -65,6 +70,12 @@ jest.mock('@/firebase', () => ({
 
 jest.mock('expo-web-browser', () => ({ openBrowserAsync: jest.fn(() => Promise.resolve()) }));
 
+// O claim do convite é o do app de verdade, menos a ida ao servidor.
+jest.mock('@/domains/auth/api', () => ({
+  ...jest.requireActual('@/domains/auth/api'),
+  sendInviteClaim: jest.fn(async () => ({ status: 'claimed' })),
+}));
+
 function RootLayout() {
   const client = new QueryClient({
     defaultOptions: { mutations: { retry: false, gcTime: Infinity } },
@@ -79,7 +90,8 @@ function RootLayout() {
 /**
  * O grupo `(auth)` de verdade, pelos próprios arquivos de rota: a pilha com o
  * fundo da 1k e as três telas de conta. Assim a rota fina que aponta para cada
- * tela (`/entrar` é a abertura) também fica travada.
+ * tela (`/entrar` é a abertura) também fica travada. A rota do convite, fora
+ * dos guards, recebe o link aberto por fora no meio do cadastro.
  */
 const appTree = {
   _layout: RootLayout,
@@ -87,11 +99,13 @@ const appTree = {
   '(auth)/entrar': WelcomeRoute,
   '(auth)/entrar-com-email': SignInRoute,
   '(auth)/cadastro': SignUpRoute,
+  'convite/[codigo]': InviteRoute,
 };
 
 const announce = () => jest.mocked(AccessibilityInfo.announceForAccessibility);
 
-beforeEach(() => {
+beforeEach(async () => {
+  await AsyncStorage.clear();
   jest.clearAllMocks();
   jest.spyOn(haptics, 'trigger').mockImplementation(() => undefined);
   jest.spyOn(AccessibilityInfo, 'announceForAccessibility').mockImplementation(() => undefined);
@@ -266,13 +280,14 @@ describe('cadastro', () => {
     const view = renderRouter(appTree, { initialUrl: '/cadastro' });
 
     fillSignUp('Camila Ribeiro', 'camila@x.com', 'senha-123');
-    const password = screen.getByLabelText(t('auth.password'));
+    // O "próximo" da senha leva ao código de convite, e o "ir" dele envia.
+    const inviteCode = screen.getByLabelText(t('auth.signUp.inviteCode'));
     await act(async () => {
-      fireEvent(password, 'submitEditing');
+      fireEvent(inviteCode, 'submitEditing');
     });
     await waitFor(() => expect(onSnapshot).toHaveBeenCalled());
     await act(async () => {
-      fireEvent(password, 'submitEditing');
+      fireEvent(inviteCode, 'submitEditing');
     });
 
     expect(createUserWithEmailAndPassword).toHaveBeenCalledTimes(1);
@@ -328,6 +343,204 @@ describe('cadastro', () => {
 
     await waitFor(() => expect(view.getPathname()).toBe('/entrar-com-email'));
     expect(screen.getByLabelText(t('auth.email'))).toHaveProp('value', 'camila@x.com');
+  });
+
+  describe('código de convite', () => {
+    const claim = jest.mocked(sendInviteClaim);
+
+    /** O perfil nasce na hora em que o cadastro passa a esperar por ele. */
+    function profileArrivesAtOnce(): void {
+      jest.mocked(onSnapshot).mockImplementation(((
+        _ref: unknown,
+        next: (snap: unknown) => void,
+      ) => {
+        next({ exists: () => true, data: () => ({ displayName: 'Camila Ribeiro' }) });
+        return () => undefined;
+      }) as unknown as typeof onSnapshot);
+    }
+
+    beforeEach(() => {
+      jest
+        .mocked(createUserWithEmailAndPassword)
+        .mockResolvedValue({ user } as unknown as UserCredential);
+      claim.mockImplementation(async () => ({ status: 'claimed' }));
+    });
+
+    afterEach(() => {
+      jest.mocked(onSnapshot).mockImplementation(() => () => undefined);
+      useSessionStore.setState({ authHolds: 0 });
+    });
+
+    it('vem preenchido com o código do link guardado, e a regra fica embaixo dele', async () => {
+      await savePendingInvite('k7p3m9qx', { path: '/post/p-clipe', utm: {} });
+      renderRouter(appTree, { initialUrl: '/cadastro' });
+      const field = screen.getByLabelText(t('auth.signUp.inviteCode'));
+      await waitFor(() =>
+        expect(screen.getByLabelText(t('auth.signUp.inviteCode'))).toHaveProp('value', 'K7P3M9QX'),
+      );
+      expect(field).toHaveProp('accessibilityHint', t('auth.signUp.inviteCodeHint'));
+      expect(field).toHaveProp('autoCapitalize', 'characters');
+      expect(field).toHaveProp('autoCorrect', false);
+    });
+
+    it('formato inválido: o erro no campo, anunciado, e nada vai ao Firebase', async () => {
+      renderRouter(appTree, { initialUrl: '/cadastro' });
+      fillSignUp('Camila Ribeiro', 'camila@x.com', 'senha-123');
+      fireEvent.changeText(screen.getByLabelText(t('auth.signUp.inviteCode')), 'ab!');
+      await act(async () => {
+        fireEvent.press(screen.getByRole('button', { name: t('auth.signUp.submit') }));
+      });
+      await waitFor(() =>
+        expect(screen.getByLabelText(t('auth.signUp.inviteCode'))).toHaveProp(
+          'accessibilityHint',
+          `${t('validation.inviteCodeInvalid')} ${t('auth.signUp.inviteCodeHint')}`,
+        ),
+      );
+      expect(announce()).toHaveBeenCalledWith(t('validation.inviteCodeInvalid'));
+      expect(createUserWithEmailAndPassword).not.toHaveBeenCalled();
+    });
+
+    it('código digitado recusado: a tela fica no estágio, com os campos travados, e "Continuar sem código" solta o fã', async () => {
+      profileArrivesAtOnce();
+      claim.mockRejectedValueOnce(
+        new ApiError('notFound', 'Convite não encontrado.', 404, 'invite_not_found'),
+      );
+      const view = renderRouter(appTree, { initialUrl: '/cadastro' });
+      fillSignUp('Camila Ribeiro', 'camila@x.com', 'senha-123');
+      fireEvent.changeText(screen.getByLabelText(t('auth.signUp.inviteCode')), 'errado12');
+      await act(async () => {
+        fireEvent.press(screen.getByRole('button', { name: t('auth.signUp.submit') }));
+      });
+
+      const message = t('auth.signUp.inviteRejected.notFound');
+      await waitFor(() => expect(announce()).toHaveBeenCalledWith(message));
+      expect(screen.getByText(t('auth.signUp.inviteRejected.lead'))).toBeTruthy();
+      expect(screen.getByLabelText(t('auth.signUp.inviteCode'))).toHaveProp(
+        'accessibilityHint',
+        `${message} ${t('auth.signUp.inviteCodeHint')}`,
+      );
+      for (const label of [t('auth.signUp.name'), t('auth.email'), t('auth.password')]) {
+        expect(screen.getByLabelText(label)).toHaveProp('editable', false);
+      }
+      // A conta já existe: sem o "Já tem conta?", sem voltar, e o fã segue seguro.
+      expect(screen.queryByRole('button', { name: t('auth.signUp.signIn') })).toBeNull();
+      expect(screen.getByRole('button', { name: t('common.back') })).toBeDisabled();
+      expect(useSessionStore.getState().authHolds).toBe(1);
+      expect(claim).toHaveBeenCalledWith(
+        expect.objectContaining({ code: 'ERRADO12', via: 'code' }),
+      );
+
+      await act(async () => {
+        fireEvent.press(screen.getByRole('button', { name: t('auth.signUp.skipInvite') }));
+      });
+      await waitFor(() => expect(useSessionStore.getState().authHolds).toBe(0));
+      expect(claim).toHaveBeenCalledTimes(1);
+      expect(view.getPathname()).toBe('/cadastro');
+    });
+
+    it('no estágio, "Continuar" com o código corrigido manda de novo e solta o fã', async () => {
+      profileArrivesAtOnce();
+      claim.mockRejectedValueOnce(
+        new ApiError('validation', 'Não vale.', 409, 'invite_not_allowed'),
+      );
+      renderRouter(appTree, { initialUrl: '/cadastro' });
+      fillSignUp('Camila Ribeiro', 'camila@x.com', 'senha-123');
+      fireEvent.changeText(screen.getByLabelText(t('auth.signUp.inviteCode')), 'CAMILA12');
+      await act(async () => {
+        fireEvent.press(screen.getByRole('button', { name: t('auth.signUp.submit') }));
+      });
+      await waitFor(() =>
+        expect(announce()).toHaveBeenCalledWith(t('auth.signUp.inviteRejected.notAllowed')),
+      );
+
+      fireEvent.changeText(screen.getByLabelText(t('auth.signUp.inviteCode')), 'certo-123');
+      await act(async () => {
+        fireEvent.press(screen.getByRole('button', { name: t('auth.signUp.continue') }));
+      });
+      await waitFor(() => expect(useSessionStore.getState().authHolds).toBe(0));
+      expect(claim).toHaveBeenLastCalledWith(
+        expect.objectContaining({ code: 'CERTO123', via: 'code' }),
+      );
+    });
+
+    /** Cadastro com um código digitado que o servidor recusa: a tela para no estágio. */
+    async function reachRejectedStage(): Promise<ReturnType<typeof renderRouter>> {
+      profileArrivesAtOnce();
+      claim.mockRejectedValueOnce(
+        new ApiError('notFound', 'Convite não encontrado.', 404, 'invite_not_found'),
+      );
+      const view = renderRouter(appTree, { initialUrl: '/cadastro' });
+      fillSignUp('Camila Ribeiro', 'camila@x.com', 'senha-123');
+      fireEvent.changeText(screen.getByLabelText(t('auth.signUp.inviteCode')), 'errado12');
+      await act(async () => {
+        fireEvent.press(screen.getByRole('button', { name: t('auth.signUp.submit') }));
+      });
+      await waitFor(() =>
+        expect(announce()).toHaveBeenCalledWith(t('auth.signUp.inviteRejected.notFound')),
+      );
+      expect(useSessionStore.getState().authHolds).toBe(1);
+      return view;
+    }
+
+    it('no estágio, o link de convite aberto por fora volta ao cadastro, com o fã seguro e o código novo no campo', async () => {
+      const view = await reachRejectedStage();
+
+      await act(async () => {
+        router.navigate('/convite/outro-123?destino=%2Fpost%2Fp-clipe');
+      });
+      await waitFor(() =>
+        expect(screen.getByLabelText(t('auth.signUp.inviteCode'))).toHaveProp('value', 'OUTRO123'),
+      );
+      expect(view.getPathname()).toBe('/cadastro');
+      expect(screen.getByText(t('auth.signUp.inviteRejected.lead'))).toBeTruthy();
+      expect(useSessionStore.getState().authHolds).toBe(1);
+      // O erro do código recusado sai com o código novo.
+      expect(screen.getByLabelText(t('auth.signUp.inviteCode'))).toHaveProp(
+        'accessibilityHint',
+        t('auth.signUp.inviteCodeHint'),
+      );
+
+      await act(async () => {
+        fireEvent.press(screen.getByRole('button', { name: t('auth.signUp.continue') }));
+      });
+      await waitFor(() => expect(useSessionStore.getState().authHolds).toBe(0));
+      // O código do link vai como link, com a página de onde veio.
+      expect(claim).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          uid: 'nova',
+          code: 'OUTRO123',
+          via: 'link',
+          origin: { path: '/post/p-clipe', utm: {} },
+        }),
+      );
+    });
+
+    it('a tela de cadastro que sai no estágio sem passar pelos botões solta o fã', async () => {
+      const view = await reachRejectedStage();
+
+      await act(async () => {
+        router.replace('/entrar');
+      });
+      await waitFor(() => expect(view.getPathname()).toBe('/entrar'));
+      expect(useSessionStore.getState().authHolds).toBe(0);
+    });
+
+    it('o código do link (o mesmo do campo) não para o cadastro: vai depois, pela sincronização', async () => {
+      profileArrivesAtOnce();
+      await savePendingInvite('K7P3M9QX', { path: '/post/p-clipe', utm: {} });
+      renderRouter(appTree, { initialUrl: '/cadastro' });
+      await waitFor(() =>
+        expect(screen.getByLabelText(t('auth.signUp.inviteCode'))).toHaveProp('value', 'K7P3M9QX'),
+      );
+      fillSignUp('Camila Ribeiro', 'camila@x.com', 'senha-123');
+      await act(async () => {
+        fireEvent.press(screen.getByRole('button', { name: t('auth.signUp.submit') }));
+      });
+
+      await waitFor(() => expect(useSessionStore.getState().authHolds).toBe(0));
+      expect(claim).not.toHaveBeenCalled();
+      expect(await readBoundInvite('nova')).toMatchObject({ code: 'K7P3M9QX', via: 'link' });
+    });
   });
 });
 

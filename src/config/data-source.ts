@@ -12,7 +12,7 @@ export type DataDomain =
   | 'wallet'
   /** /me/achievements (bloco 7). */
   | 'achievements'
-  /** /me/invite e o claim do convite (bloco 5). */
+  /** /me/invite, o claim, a visita e os links do convite (bloco 5). */
   | 'invite'
   /** Centrais e artistas (bloco 4). */
   | 'artists'
@@ -31,7 +31,11 @@ export type DataDomain =
  * Domínios com rota no servidor. Cada bloco acrescenta o seu no commit que
  * entrega as rotas dele; os outros seguem nas fixtures mesmo com a API ligada.
  */
-export const SERVER_DOMAINS: ReadonlySet<DataDomain> = new Set<DataDomain>(['wallet', 'artists']);
+export const SERVER_DOMAINS: ReadonlySet<DataDomain> = new Set<DataDomain>([
+  'wallet',
+  'artists',
+  'invite',
+]);
 
 /**
  * A fonte de um domínio: a API quando ela está configurada (emulador em

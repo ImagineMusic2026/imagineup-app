@@ -64,18 +64,31 @@ export function walletView(wallet: WalletState, config: LoadedConfig): WalletVie
   };
 }
 
+/** Os números do convite do fã (bloco 5): contados fora da carteira (`countInviteStats`). */
+export type InviteStats = { linksCreated: number; peopleBrought: number };
+
 /**
  * Nível pela régua da configuração (sai do XP a cada leitura), ganhos dos
- * últimos 7 dias e os números do fã. Links e pessoas trazidas são do bloco 5.
+ * últimos 7 dias e os números do fã. Links e pessoas trazidas vêm do convite
+ * (bloco 5), contados à parte; sem eles, 0.
  */
-export function progressView(wallet: WalletState, config: LoadedConfig, now: number): ProgressView {
+export function progressView(
+  wallet: WalletState,
+  config: LoadedConfig,
+  now: number,
+  invites: InviteStats = { linksCreated: 0, peopleBrought: 0 },
+): ProgressView {
   const { level, nextLevel } = levelForXp(wallet.xp, config.points.levels);
   return {
     xp: wallet.xp,
     level,
     nextLevel,
     weekEarned: weekEarned(wallet.days, now),
-    stats: { linksCreated: 0, peopleBrought: 0, seasons: seasonsPlayed(wallet) },
+    stats: {
+      linksCreated: invites.linksCreated,
+      peopleBrought: invites.peopleBrought,
+      seasons: seasonsPlayed(wallet),
+    },
   };
 }
 

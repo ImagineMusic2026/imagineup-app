@@ -256,6 +256,36 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    // Convite (bloco 5): o código de cada fã, os links que ele compartilhou e
+    // quem trouxe quem, com a origem. Só o servidor grava (API). O fã não lê
+    // nada disso direto, nem o próprio: chega pela API (/me/invite e
+    // /me/progress). A equipe com a seção fans lê (seção Fãs do painel).
+    // O dono de um código, pela equipe, é fanInvites com where('code', '==', ...):
+    // inviteCodes guarda o ownerKey, que não sai do servidor.
+    match /inviteCodes/{code} {
+      allow read, write: if false;
+    }
+
+    match /fanInvites/{uid} {
+      allow read: if canSeeSection('fans');
+      allow write: if false;
+
+      match /inviteLinks/{linkId} {
+        allow read: if canSeeSection('fans');
+        allow write: if false;
+      }
+
+      // Quem já contou como visitante (o id é a chave da pessoa): só o servidor.
+      match /inviteVisitors/{personKey} {
+        allow read, write: if false;
+      }
+    }
+
+    match /referrals/{uid} {
+      allow read: if canSeeSection('fans');
+      allow write: if false;
+    }
+
     match /{document=**} {
       allow read, write: if false;
     }

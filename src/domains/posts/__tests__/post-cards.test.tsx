@@ -93,7 +93,14 @@ function nestedPressables(): ReactTestInstance[] {
 beforeEach(() => {
   jest.clearAllMocks();
   mockRootState.current = undefined;
-  client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: Infinity } } });
+  // gcTime infinito também nas mutações: o compartilhar conta o link
+  // (useRegisterInviteLinkMutation), e o timer de limpeza seguraria o Jest.
+  client = new QueryClient({
+    defaultOptions: {
+      queries: { retry: false, gcTime: Infinity },
+      mutations: { retry: false, gcTime: Infinity },
+    },
+  });
   client.setQueryData(profileKeys.invite(), buildMyInviteFixture());
   client.setQueryData(agendaKeys.rsvps(), { eventIds: [] });
   jest.spyOn(haptics, 'trigger').mockImplementation(() => undefined);
@@ -340,7 +347,7 @@ describe('PostActions', () => {
     expect(screen.getByText('Compartilhar +2')).toBeTruthy();
     fireEvent.press(
       screen.getByRole('button', {
-        name: 'Compartilhar o post, ganha 2 pontos por pessoa que abrir',
+        name: 'Compartilhar o post, ganha 2 pontos por pessoa que abre o link no app',
       }),
     );
     expect(JSON.stringify(share.mock.calls[0])).toContain('/post/p-clipe?ref=CAMILA12');

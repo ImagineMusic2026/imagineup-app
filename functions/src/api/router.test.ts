@@ -96,3 +96,37 @@ describe('rotas das centrais (bloco 4)', () => {
     });
   });
 });
+
+describe('rotas do convite (bloco 5)', () => {
+  it('/me/invite e /me/invite/links/:linkId não se confundem; o : chega decodificado', () => {
+    expect(matchRoute(API_ROUTES, 'GET', '/me/invite')).toMatchObject({
+      kind: 'match',
+      route: { method: 'GET', pattern: '/me/invite' },
+    });
+    expect(matchRoute(API_ROUTES, 'PUT', '/me/invite/links/post%3Ap-clipe')).toMatchObject({
+      kind: 'match',
+      route: { method: 'PUT', pattern: '/me/invite/links/:linkId' },
+      params: { linkId: 'post:p-clipe' },
+    });
+    expect(matchRoute(API_ROUTES, 'PUT', '/me/invite')).toEqual({
+      kind: 'method_not_allowed',
+      allow: ['GET'],
+    });
+  });
+
+  it('GET /me/invite/links/x é 405 com PUT; GET no claim e na visita é 405 com POST', () => {
+    expect(matchRoute(API_ROUTES, 'GET', '/me/invite/links/invite')).toEqual({
+      kind: 'method_not_allowed',
+      allow: ['PUT'],
+    });
+    expect(matchRoute(API_ROUTES, 'GET', '/invites/claim')).toEqual({
+      kind: 'method_not_allowed',
+      allow: ['POST'],
+    });
+    expect(matchRoute(API_ROUTES, 'GET', '/invites/visit')).toEqual({
+      kind: 'method_not_allowed',
+      allow: ['POST'],
+    });
+    expect(matchRoute(API_ROUTES, 'POST', '/invites')).toEqual({ kind: 'not_found' });
+  });
+});

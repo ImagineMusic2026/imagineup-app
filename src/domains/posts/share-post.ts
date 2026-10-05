@@ -13,12 +13,21 @@ export function postPath(postId: string): string {
 /**
  * Abre a folha de compartilhar do sistema com o link do post e o código de
  * convite do fã (`?ref=`), que o `+native-intent` lê do outro lado. Quem
- * credita os pontos é a API, quando alguém abre o link: nada de "+N" na hora.
- * No iOS o link vai no campo próprio (com ele também na mensagem, sairia
- * duas vezes); no Android, na mensagem.
+ * credita os pontos é a API, quando alguém abre o link no app ou se cadastra
+ * por ele: nada de "+N" na hora. No iOS o link vai no campo próprio (com ele
+ * também na mensagem, sairia duas vezes); no Android, na mensagem. Devolve se
+ * a folha voltou compartilhada (no Android, o sistema sempre diz que sim; no
+ * iOS, cancelar volta `dismissedAction`).
  */
-export async function sharePost(post: Pick<Post, 'id' | 'artist'>, inviteCode: string | null) {
-  const url = buildInviteUrl(inviteCode, postPath(post.id));
+export async function sharePost(
+  post: Pick<Post, 'id' | 'artist'>,
+  inviteCode: string | null,
+  linkBase?: string,
+): Promise<boolean> {
+  const url = buildInviteUrl(inviteCode, postPath(post.id), linkBase);
   const message = t('post.shareMessage', { artist: post.artist.name });
-  await Share.share(Platform.OS === 'ios' ? { message, url } : { message: `${message}\n${url}` });
+  const result = await Share.share(
+    Platform.OS === 'ios' ? { message, url } : { message: `${message}\n${url}` },
+  );
+  return result.action === Share.sharedAction;
 }

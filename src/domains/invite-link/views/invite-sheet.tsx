@@ -14,12 +14,13 @@ import { SheetGrabber } from '@/components/sheet-grabber';
 import { Skeleton, SkeletonGroup } from '@/components/skeleton';
 import { Text } from '@/components/text';
 import { TextLink } from '@/components/text-link';
-import { useMyInviteQuery } from '@/domains/profile';
+import { useMyInviteQuery, useRegisterInviteLinkMutation } from '@/domains/profile';
 import { t } from '@/i18n';
 import { colors, motion, spacing, typography } from '@/theme';
+import { createIdempotencyKey } from '@/utils/id';
 import { formatPointsDelta, formatPointsSpoken } from '@/utils/number';
 
-import { describeInviteLink, inviteMessage } from '../describe-link';
+import { describeInviteLink, inviteMessage, inviteTargetLinkId } from '../describe-link';
 import { useInviteTarget, type InviteParams } from '../hooks/use-invite-target';
 import { shareInvite } from '../share-invite';
 
@@ -76,10 +77,12 @@ function LinkSkeleton() {
  * mensagem). Os pontos são creditados pela API quando alguém abre o link ou se
  * cadastra por ele, e os valores vêm do painel.
  *
- * O link é um endereço do site (o domínio próprio é a UP-46), e o
- * `+native-intent` lê o `?ref=` quando ele abre o app. Sem o código (não
- * carregou), o link sai sem ele e a tela avisa que não rende pontos. Não há
- * botão de copiar: a folha do sistema já tem o "Copiar".
+ * O link é um endereço do site (o domínio próprio é a UP-46; a base vem do
+ * servidor, `linkBase`), e o `+native-intent` lê o `?ref=` quando ele abre o
+ * app. Sem o código (não carregou), o link sai sem ele e a tela avisa que não
+ * rende pontos. Não há botão de copiar: a folha do sistema já tem o "Copiar".
+ * Com o código e a folha voltando compartilhada, o link conta nos "links
+ * criados" do Perfil (`invite`, `post:<id>` ou `agenda`).
  */
 export function InviteSheetScreen() {
   const params = useLocalSearchParams<InviteParams>();
@@ -88,17 +91,26 @@ export function InviteSheetScreen() {
   // sem puxador, e o topo desce abaixo da barra de status.
   const [standalone] = useState(() => !router.canGoBack());
   const invite = useMyInviteQuery();
+  const register = useRegisterInviteLinkMutation();
   const { target, mission } = useInviteTarget(params);
   const rules = invite.data;
   const code = rules?.code ?? null;
   // Sem o código e ainda buscando pela primeira vez: o link sai quando ele chegar.
   const waiting = rules === undefined && invite.fetchStatus === 'fetching' && !invite.isError;
   const codeMissing = rules === undefined && !waiting;
-  const link = describeInviteLink(target, code);
+  const link = describeInviteLink(target, code, rules?.linkBase);
 
   const share = (): void => {
     // Fechar a folha sem escolher ninguém também resolve; erro do sistema não tem o que mostrar.
-    shareInvite(link.url, inviteMessage(target)).catch(() => undefined);
+    shareInvite(link.url, inviteMessage(target))
+      .then((shared) => {
+        if (!shared || !code) return;
+        register.mutate({
+          linkId: inviteTargetLinkId(target),
+          idempotencyKey: createIdempotencyKey(),
+        });
+      })
+      .catch(() => undefined);
   };
 
   return (

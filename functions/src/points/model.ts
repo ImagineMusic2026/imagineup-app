@@ -107,9 +107,11 @@ export type AwardResult = { uid: string; entryId: string; status: AwardStatus; p
 /**
  * Contadores do dia que não rendem ponto, ao lado das origens em
  * `days[dia].count`: `central_entry` são os pedidos que criaram vínculo com
- * alguma central (o teto diário do bloco 4, docs/arquitetura-api.md, 19.5).
+ * alguma central (o teto diário do bloco 4, docs/arquitetura-api.md, 19.5);
+ * `invite_visit_sent` são as visitas a links de convite que a conta mandou, e
+ * `invite_link` os links novos que ela registrou (os tetos do bloco 5, 20.4).
  */
-export type DailyActionKey = 'central_entry';
+export type DailyActionKey = 'central_entry' | 'invite_visit_sent' | 'invite_link';
 
 export type DayStats = {
   earned: number;

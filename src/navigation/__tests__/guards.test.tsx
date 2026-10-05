@@ -1,9 +1,15 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { router, Stack } from 'expo-router';
 import { Tabs } from 'expo-router/js-tabs';
 import { act, renderRouter, waitFor } from 'expo-router/testing-library';
 import { Text } from 'react-native';
 
-import { InviteCaptureScreen } from '@/domains/invites';
+import {
+  InviteCaptureScreen,
+  inviteRoute,
+  parseInviteLink,
+  readPendingInvite,
+} from '@/domains/invites';
 import { useSessionGate } from '@/hooks/use-session-gate';
 import { usePreferencesStore } from '@/stores/preferences';
 import { useSessionStore } from '@/stores/session';
@@ -167,5 +173,31 @@ describe('convite com os guards de sessão', () => {
     act(() => router.navigate('/convite/ABC123'));
     await waitFor(() => expect(view.getPathname()).toBe('/'));
     expect(rootRoutes(view)).toEqual(['(tabs)']);
+  });
+});
+
+describe('convite guardado pela rota /convite/[codigo]', () => {
+  beforeEach(async () => {
+    await AsyncStorage.clear();
+  });
+
+  it('o ?ref= em minúsculas guarda o código normalizado, com a página e a campanha do link', async () => {
+    setSession(false, false);
+    const link =
+      'https://imagineup-painel.vercel.app/post/p-clipe?ref=k7p3m9qx&utm_source=instagram&utm_content=ana';
+    const invite = parseInviteLink(link)!;
+    const view = renderRouter(appTree, { initialUrl: inviteRoute(invite) });
+    await waitFor(() => expect(view.getPathname()).toBe('/entrar'));
+    expect(await readPendingInvite()).toMatchObject({
+      code: 'K7P3M9QX',
+      origin: { path: '/post/p-clipe', utm: { source: 'instagram' } },
+    });
+  });
+
+  it('código fora do formato não guarda nada e segue', async () => {
+    setSession(false, false);
+    const view = renderRouter(appTree, { initialUrl: '/convite/a!b' });
+    await waitFor(() => expect(view.getPathname()).toBe('/entrar'));
+    expect(await readPendingInvite()).toBeNull();
   });
 });

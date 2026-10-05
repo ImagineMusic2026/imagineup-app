@@ -1,6 +1,6 @@
 # Arquitetura da API do app
 
-Nota de arquitetura do servidor do ImagineUP. Ela diz como o app fala com as Cloud Functions, onde moram os pontos, como o ponto é lançado e como o painel lê os números. Vale para o bloco 1 (base do servidor e núcleo de pontos) e deixa a estrutura pronta para os blocos seguintes. O bloco 4 (centrais de verdade) está na seção 19.
+Nota de arquitetura do servidor do ImagineUP. Ela diz como o app fala com as Cloud Functions, onde moram os pontos, como o ponto é lançado e como o painel lê os números. Vale para o bloco 1 (base do servidor e núcleo de pontos) e deixa a estrutura pronta para os blocos seguintes. O bloco 4 (centrais de verdade) está na seção 19, e o bloco 5 (convite com atribuição e origem do fã), na seção 20.
 
 Origem: decisão do dono em 05/10/2026 (API HTTP numa função `onRequest`, pontos calculados na transação da ação) e o levantamento de 05/10/2026 (13 blocos, 26 endpoints, perguntas técnicas em aberto).
 
@@ -9,7 +9,7 @@ Quem mexe no servidor lê esta nota antes. Mudou uma decisão daqui? Mude a nota
 ## Decisões em uma página
 
 1. Uma função HTTP `api` (`onRequest`, 2ª geração, `southamerica-east1`) com roteador próprio, sem Express e sem dependência nova. O app continua com o axios de `src/services/api`, o `toApiError` e os endpoints que os `api.ts` já chamam.
-2. Toda rota exige o ID token do Firebase no `Authorization`. Toda rota que grava exige `Idempotency-Key`, guardada no servidor por 30 dias, na mesma transação do efeito, e lê o perfil do fã nessa transação: conta sem `users/{uid}` não grava nada, com ou sem ponto. A visita ao link de convite, que vem do site sem conta, não passa por esta função (bloco 5).
+2. Toda rota exige o ID token do Firebase no `Authorization`. Toda rota que grava exige `Idempotency-Key`, guardada no servidor por 30 dias, na mesma transação do efeito, e lê o perfil do fã nessa transação: conta sem `users/{uid}` não grava nada, com ou sem ponto. A visita ao link de convite conta no app, de conta logada, por uma rota que grava como as outras; o clique no site não conta (seção 20).
 3. Erro sempre como `{ code, message, details? }`, com o status HTTP que o `toApiError` já entende.
 4. O app lê direto do Firestore só o próprio perfil (`users/{uid}`). Todo o resto passa pela API. As coleções novas ficam fechadas para o fã, e só o servidor grava.
 5. Carteira em `wallets/{uid}`, separada do perfil, com os três contadores. Extrato em `wallets/{uid}/ledger`. Pontos por central em `wallets/{uid}/centralPoints/{artistId}`.
@@ -21,6 +21,7 @@ Quem mexe no servidor lê esta nota antes. Mudou uma decisão daqui? Mude a nota
 11. No app, o `dataSource` global vira um seletor por domínio. No bloco 1, só a carteira (com o progresso) vai para a API, e só em desenvolvimento com os emuladores: `EXPO_PUBLIC_API_URL` entra nas builds da cliente depois que as ações que rendem e gastam pontos estiverem na API. Com a carteira na API, ação de fixture não rende ponto.
 12. Um projeto Firebase só (`imagine-up-app`), mais os emuladores. O ambiente de testes espera o ok da cliente (UP-15).
 13. Bloco 4 (seção 19): vínculo em `users/{uid}/centrals/{artistId}`; `fanCount` somado num shard na transação e copiado para `artists/{id}` por uma fila de tarefas, no máximo uma vez a cada 10 s por central; vínculo novo paga `central_join` uma vez na vida, também na 1l; sair não tira ponto; posição do fã por central só no bloco 8.
+14. Bloco 5 (seção 20): código de convite por fã, sorteado no servidor e criado no primeiro `GET /me/invite`; claim uma vez por conta, em `referrals/{uid}`, só para conta de até 7 dias, pagando quem convidou (visita e cadastro) com o id do evento pela chave da pessoa (o e-mail normalizado, em HMAC-SHA256 com um segredo do servidor), para a conta excluída e recriada não pagar de novo; visita só no app, de conta logada diferente do dono e de outra pessoa (a chave do dono também barra o apelido do e-mail), contada no painel uma vez por pessoa e convidante, pague ou não; origem (tipo de link, destino e `utm_source`, `utm_medium` e `utm_campaign`) no convite e nos agregados por origem e campanha; cadastros por dia no gatilho de cadastro.
 
 ## 1. Formato da API
 
@@ -29,7 +30,7 @@ Quem mexe no servidor lê esta nota antes. Mudou uma decisão daqui? Mude a nota
 - Função `api`, exportada em `functions/src/index.ts`, depois do `setGlobalOptions` (região `southamerica-east1`, `maxInstances: 10`).
 - Produção: `https://southamerica-east1-imagine-up-app.cloudfunctions.net/api`. Esse valor só entra em `EXPO_PUBLIC_API_URL` (variáveis da EAS) depois do deploy, com o ok do dono. Hoje a variável fica vazia.
 - Emuladores: `http://<EXPO_PUBLIC_FIREBASE_EMULATOR_HOST>:5001/demo-imagine-up-app/southamerica-east1/api`. O app monta essa URL sozinho (seção 13). O alcance é o mesmo dos outros emuladores: `10.0.2.2` no emulador Android; aparelho na rede local precisaria dos emuladores ouvindo fora do 127.0.0.1, o que hoje nenhum faz.
-- Opções: `invoker: 'public'` (quem protege é o ID token), `cors: false` (app nativo não faz preflight; o painel não usa esta API, usa callables; a visita ao link de convite, que vem do site, vai para outra função no bloco 5), `timeoutSeconds: 30`, `memory: '512MiB'`, `cpu: 1`, `concurrency: 80`. Confira na doc do firebase-functions 7 os padrões de cpu e concorrência antes de fixar: concorrência acima de 1 pede cpu 1.
+- Opções: `invoker: 'public'` (quem protege é o ID token), `cors: false` (app nativo não faz preflight; o painel não usa esta API, usa callables; a visita ao link de convite conta no app, pela própria `api`, seção 20), `timeoutSeconds: 30`, `memory: '512MiB'`, `cpu: 1`, `concurrency: 80`. Confira na doc do firebase-functions 7 os padrões de cpu e concorrência antes de fixar: concorrência acima de 1 pede cpu 1.
 - `minInstances` fica 0. Ligar 1 no lançamento é decisão de custo, para cortar a partida a frio (1 a 3 s; o axios espera 15 s).
 - Sem prefixo de versão. App instalado não pode quebrar: campo novo na resposta é sempre opcional para o app, e rota que muda de formato ganha endereço novo.
 
@@ -108,9 +109,9 @@ Fluxo de um pedido:
 
 - `Authorization: Bearer <ID token>` em toda rota da `api`, sem exceção. Sem token, token malformado, vencido ou de outro projeto: 401 `unauthenticated`. O interceptor do app renova o token uma vez no 401 e repete; por isso token vencido é sempre 401, nunca 403.
 - Falha do servidor ao conferir o token não é 401: 503 `unavailable` com `Retry-After: 1`, que o app tenta de novo. O firebase-admin 14 devolve a falha ao buscar as chaves públicas do Google com o mesmo `auth/argument-error` do token inválido, e só a mensagem separa as duas (`Error fetching public keys...` na resposta do Google, `Error while making request...` na rede); `auth/internal-error` também é 503. Como 401, o app renovaria o token, receberia 401 de novo, mandaria o fã entrar na conta e a mutação da fila offline falharia de vez.
-- A visita ao link de convite (bloco 5) vem do site, de quem ainda não tem conta nem token, e pede CORS. Ela não entra na `api`: vai para uma função própria, com CORS só para a origem do site e antiabuso próprio. Assim a `api` continua sem rota aberta e com `cors: false`.
+- A visita ao link de convite conta no app, de quem já tem conta e token, pela própria `api` (`POST /invites/visit`, seção 20). O clique no site não conta: sem conta, não dá para separar pessoa de robô. Assim a `api` continua sem rota aberta e com `cors: false`.
 - `verifyIdToken(token)` sem `checkRevoked`: conferir revogação gasta uma chamada ao Auth por pedido. A conta excluída perde o direito de gravar por outro caminho: toda rota que grava lê `users/{uid}` na transação, logo depois da chave (`requireFan`, em Idempotência), e a exclusão apaga esse documento antes da carteira.
-- Leitura (`GET`) não exige o perfil: carteira que não existe responde zerada, e nada é criado.
+- Leitura (`GET`) não exige o perfil: carteira que não existe responde zerada, e nada é criado. A exceção é o `GET /me/invite`, que cria o código do fã na primeira chamada e por isso exige o perfil (seção 20).
 - Gravação exige o perfil, em toda rota que grava, rendendo ponto ou não (descurtir, desfazer o "Eu vou", seguir centrais, entrar numa central depois do limite). Sem `users/{uid}`: 403 `not_fan` quando existe `staff/{uid}` sem `accountCreatedByInvite: false` (conta só da equipe), e 503 `profile_not_ready` no resto (perfil que ainda não nasceu no cadastro, ou conta que acabou de ser excluída). O 503 é `isRetryable` no app. Sem essa conferência nas rotas que não lançam ponto, uma conta excluída com o token ainda válido gravaria, por exemplo, o vínculo com uma central depois do `recursiveDelete`, e sobrariam a subcoleção órfã e um `fanCount` somado que a exclusão nunca desconta.
 - Conta desativada no Auth não é conferida no bloco 1. O bloqueio de fã da moderação (bloco 6) vai ser uma marca no servidor, lida na gravação.
 
@@ -175,8 +176,10 @@ Corpo de erro, sempre:
 | `not_fan`                  | 403    | forbidden    | conta só da equipe tentando gravar                              |
 | `not_found`                | 404    | notFound     | rota que não existe                                             |
 | `artist_not_found`         | 404    | notFound     | central inexistente, fora do ar ou id fora do formato (bloco 4) |
+| `invite_not_found`         | 404    | notFound     | código de convite que não existe (bloco 5)                      |
 | `method_not_allowed`       | 405    | unknown      | rota existe, método não                                         |
 | `insufficient_points`      | 409    | validation   | débito maior que o saldo (já em `API_ERROR_CODES`)              |
+| `invite_not_allowed`       | 409    | validation   | autoconvite ou conta fora da janela do claim (bloco 5)          |
 | `payload_too_large`        | 413    | unknown      | corpo acima de 16 KiB                                           |
 | `idempotency_key_reused`   | 422    | validation   | mesma chave com outro pedido                                    |
 | `too_many_requests`        | 429    | unknown      | entrada em central acima do teto do dia (bloco 4, 19.5)         |
@@ -184,7 +187,7 @@ Corpo de erro, sempre:
 | `profile_not_ready`        | 503    | server       | gravação sem `users/{uid}` (perfil nascendo ou conta excluída)  |
 | `unavailable`              | 503    | server       | disputa, Firestore fora ou falha ao conferir o token            |
 
-Mensagens: `invalid_request` "Pedido inválido."; `idempotency_key_required` "Falta a chave de idempotência."; `unauthenticated` "Entre na sua conta para continuar."; `not_fan` "Esta conta não é de fã."; `not_found` "Não encontrado."; `artist_not_found` "Central não encontrada."; `method_not_allowed` "Método não aceito nesta rota."; `insufficient_points` "Saldo insuficiente."; `payload_too_large` "Pedido grande demais."; `idempotency_key_reused` "Esta chave já foi usada em outro pedido."; `too_many_requests` "Tentativas demais por hoje. Tente amanhã."; `internal` "Algo deu errado. Tente de novo."; `profile_not_ready` "Seu perfil ainda está sendo criado. Tente de novo em instantes."; `unavailable` "Serviço ocupado. Tente de novo."
+Mensagens: `invalid_request` "Pedido inválido."; `idempotency_key_required` "Falta a chave de idempotência."; `unauthenticated` "Entre na sua conta para continuar."; `not_fan` "Esta conta não é de fã."; `not_found` "Não encontrado."; `artist_not_found` "Central não encontrada."; `invite_not_found` "Convite não encontrado."; `invite_not_allowed` "Este convite não vale para esta conta."; `method_not_allowed` "Método não aceito nesta rota."; `insufficient_points` "Saldo insuficiente."; `payload_too_large` "Pedido grande demais."; `idempotency_key_reused` "Esta chave já foi usada em outro pedido."; `too_many_requests` "Tentativas demais por hoje. Tente amanhã."; `internal` "Algo deu errado. Tente de novo."; `profile_not_ready` "Seu perfil ainda está sendo criado. Tente de novo em instantes."; `unavailable` "Serviço ocupado. Tente de novo."
 
 Códigos que os próximos blocos vão criar entram nesta tabela quando nascerem: `post_not_found`, `event_not_found` e `reward_not_found` (404), `comment_invalid` (400) e `sold_out` (409, que também entra no `API_ERROR_CODES` do app no bloco 10). Não há limite de pedidos por minuto no bloco 1: o `maxInstances` segura o custo, e os limites de pontos não são erro (seção 5). A exceção, do bloco 4, é o teto diário de entradas em centrais (19.5), com 429 e `Retry-After`: sem ele, um script que entra e sai sem parar gravaria sem teto e inflaria os fluxos do painel.
 
@@ -202,7 +205,7 @@ Os 26 endpoints que os `api.ts` do app já chamam. Curtir e "Eu vou" contam como
 | 6   | `GET /me/centrals`                       | `artists/api.ts` `fetchFanCentrals`                 | 4     |
 | 7   | `PUT /me/centrals/:artistId`             | `artists/api.ts` `joinCentral`                      | 4     |
 | 8   | `GET /me/invite`                         | `profile/api.ts` `fetchMyInvite`                    | 5     |
-| 9   | `POST /invites/claim`                    | `auth/api.ts` `claimPendingInvite`                  | 5     |
+| 9   | `POST /invites/claim`                    | `auth/api.ts` `sendInviteClaim`                     | 5     |
 | 10  | `GET /feed`                              | `posts/api.ts` `fetchFeed`                          | 6     |
 | 11  | `GET /artists/:artistId/posts`           | `posts/api.ts` `fetchArtistPosts`                   | 6     |
 | 12  | `GET /posts/:postId`                     | `posts/api.ts` `fetchPost`                          | 6     |
@@ -225,9 +228,11 @@ Fora dos 26, nova no bloco 1: `GET /me/ledger` (extrato). O app ainda não chama
 
 Fora dos 26, nova no bloco 4: `DELETE /me/centrals/:artistId` (sair da central, `artists/api.ts` `leaveCentral`, seção 19).
 
-O `POST /invites/claim` é endereço provisório (comentário em `auth/api.ts`). O bloco 5 decide o final; se mudar, mudam o `auth/api.ts`, esta tabela e o teste do domínio.
+Fora dos 26, novas no bloco 5: `POST /invites/visit` (visita ao link no app, `auth/api.ts` `sendInviteVisit`) e `PUT /me/invite/links/:linkId` (link compartilhado, `profile/api.ts` `registerInviteLink`), seção 20.
 
-A chave do claim (`invite-<código>-<receivedAt>`) só cabe no formato da `Idempotency-Key` quando o código é válido. Hoje a rota `/convite/[codigo]` guarda o parâmetro sem conferir (`invite-capture.tsx` chama `savePendingInvite` com o que veio); só o `+native-intent` confere o `CODE` de `invites/deep-link.ts`. Um código com caractere fora do formato gera uma chave recusada (400, que o app não repete), e o `claimPendingInvite` só esquece o código depois de sucesso: ele fica preso no aparelho. O bloco 5 confere o código com o mesmo `CODE` antes de guardar, e o app esquece o código quando o servidor recusar de vez (`invalid_request` ou convite que não existe).
+O `POST /invites/claim` era endereço provisório (comentário em `auth/api.ts`). O bloco 5 o mantém como final, com o corpo novo (seção 20).
+
+A chave do claim (`invite-<código>-<receivedAt>`) só cabe no formato da `Idempotency-Key` quando o código é válido. Até o bloco 5, a rota `/convite/[codigo]` guardava o parâmetro sem conferir, e o `claimPendingInvite` só esquecia o código depois de sucesso: um código fora do formato gerava uma chave recusada (400, que o app não repete) e ficava preso no aparelho. Hoje a captura normaliza o código (`normalizeInviteCode`) e descarta o que fica fora do formato, a chave do claim usa o código normalizado, e o app esquece o convite só pelas recusas definitivas de `isFinalInviteRejection` (20.11).
 
 ## 3. O que o app lê direto e o que passa pela API
 
@@ -246,18 +251,22 @@ Por que a API para o resto: um caminho só no app (axios, React Query e cache no
 
 ### Coleções novas
 
-| Caminho                                                 | Quem grava                                      | Quem lê pelo cliente              | Para quê                                                                    |
-| ------------------------------------------------------- | ----------------------------------------------- | --------------------------------- | --------------------------------------------------------------------------- |
-| `wallets/{uid}`                                         | servidor (`award` e a marca de atividade)       | equipe com a seção `fans`         | os três contadores, totais, últimos 7 dias, temporadas passadas e atividade |
-| `wallets/{uid}/ledger/{entryId}`                        | servidor (`award`)                              | equipe com `fans`                 | extrato                                                                     |
-| `wallets/{uid}/centralPoints/{artistId}`                | servidor (`award`)                              | equipe com `fans`                 | pontos do fã em cada central                                                |
-| `config/points` e `config/points/versions/{n}`          | servidor (callable do painel, bloco seguinte)   | equipe ativa                      | valores, limites diários e régua de níveis                                  |
-| `config/season` e `config/season/versions/{n}`          | servidor (callable do painel, bloco 8)          | equipe ativa                      | temporada atual                                                             |
-| `statsDaily/{dia}` e `statsDaily/{dia}/statsShards/{n}` | servidor (`award`; fechamento do dia depois)    | equipe com `overview` ou `growth` | contadores agregados do painel                                              |
-| `statsMeta/close`                                       | servidor (fechamento do dia, quando ele entrar) | ninguém                           | último dia fechado                                                          |
-| `idempotency/{id}`                                      | servidor (API)                                  | ninguém                           | chaves de idempotência                                                      |
-| `users/{uid}/centrals/{artistId}`                       | servidor (API, bloco 4)                         | equipe com `fans`                 | vínculo do fã com a central (seção 19)                                      |
-| `artistStats/{artistId}/fanShards/{n}`                  | servidor (API e exclusão de conta, bloco 4)     | equipe com `artists`              | `fanCount` em shards, copiado para `artists/{id}` (seção 19)                |
+| Caminho                                                      | Quem grava                                      | Quem lê pelo cliente              | Para quê                                                                    |
+| ------------------------------------------------------------ | ----------------------------------------------- | --------------------------------- | --------------------------------------------------------------------------- |
+| `wallets/{uid}`                                              | servidor (`award` e a marca de atividade)       | equipe com a seção `fans`         | os três contadores, totais, últimos 7 dias, temporadas passadas e atividade |
+| `wallets/{uid}/ledger/{entryId}`                             | servidor (`award`)                              | equipe com `fans`                 | extrato                                                                     |
+| `wallets/{uid}/centralPoints/{artistId}`                     | servidor (`award`)                              | equipe com `fans`                 | pontos do fã em cada central                                                |
+| `config/points` e `config/points/versions/{n}`               | servidor (callable do painel, bloco seguinte)   | equipe ativa                      | valores, limites diários e régua de níveis                                  |
+| `config/season` e `config/season/versions/{n}`               | servidor (callable do painel, bloco 8)          | equipe ativa                      | temporada atual                                                             |
+| `statsDaily/{dia}` e `statsDaily/{dia}/statsShards/{n}`      | servidor (`award`; fechamento do dia depois)    | equipe com `overview` ou `growth` | contadores agregados do painel                                              |
+| `statsMeta/close`                                            | servidor (fechamento do dia, quando ele entrar) | ninguém                           | último dia fechado                                                          |
+| `idempotency/{id}`                                           | servidor (API)                                  | ninguém                           | chaves de idempotência                                                      |
+| `users/{uid}/centrals/{artistId}`                            | servidor (API, bloco 4)                         | equipe com `fans`                 | vínculo do fã com a central (seção 19)                                      |
+| `artistStats/{artistId}/fanShards/{n}`                       | servidor (API e exclusão de conta, bloco 4)     | equipe com `artists`              | `fanCount` em shards, copiado para `artists/{id}` (seção 19)                |
+| `inviteCodes/{code}`                                         | servidor (API e exclusão de conta, bloco 5)     | ninguém                           | dono de cada código de convite (seção 20)                                   |
+| `fanInvites/{uid}` e `fanInvites/{uid}/inviteLinks/{linkId}` | servidor (API e exclusão de conta, bloco 5)     | equipe com `fans`                 | o código do fã e os links que ele compartilhou (seção 20)                   |
+| `fanInvites/{uid}/inviteVisitors/{personKey}`                | servidor (API e exclusão de conta, bloco 5)     | ninguém                           | quem já contou como visitante de cada convidante (seção 20)                 |
+| `referrals/{uid}`                                            | servidor (API e exclusão de conta, bloco 5)     | equipe com `fans`                 | quem trouxe o fã, por qual link e campanha (seção 20)                       |
 
 O fã não lê nenhuma delas direto, nem a própria carteira: tudo chega pela API.
 
@@ -300,7 +309,7 @@ wallets/{uid} {
 
 Gravação: só quando algo mudou, isto é, algum lançamento foi aplicado, o fã ganhou uma marca de atividade nova (seção 5, passo 9) ou, desde o bloco 4, uma entrada em central somou o `central_entry` do dia (19.5). `tx.create` na primeira gravação; depois, `tx.update` só com os campos que o servidor cuida (`balance`, `xp`, `seasonId`, `seasonPoints`, `seasonPointsAt`, `earnedTotal`, `spentTotal`, `days`, `stats.pastSeasons`, `activity`, `updatedAt`). O `update` com `days` troca o mapa inteiro, e é assim que os dias velhos saem. Nunca `set` com `merge` no `days`: o merge junta os mapas e os dias velhos ficam. Toda gravação na carteira passa por transação que lê a carteira.
 
-Os números do convite (links criados e pessoas trazidas) não moram na carteira: um link que viraliza faria dela um documento disputado, e a disputa derrubaria o cadastro de quem foi convidado. O bloco 5 os guarda sem documento disputado (seção 18), e o `/me/progress` lê os dois lugares.
+Os números do convite (links criados e pessoas trazidas) não moram na carteira: um link que viraliza faria dela um documento disputado, e a disputa derrubaria o cadastro de quem foi convidado. O bloco 5 os guarda sem documento disputado (seção 20), e o `/me/progress` lê os dois lugares.
 
 ### `wallets/{uid}/ledger/{entryId}`
 
@@ -436,18 +445,18 @@ O `requireFan` mora em `award.ts`, porque o `runAward` também o usa, e recusa c
 
 ### Origens do ponto
 
-| source          | kind   | eventId                       | valor padrão                     | limite diário padrão |
-| --------------- | ------ | ----------------------------- | -------------------------------- | -------------------- |
-| `like`          | earn   | id do post                    | 0                                | 50                   |
-| `comment`       | earn   | id do comentário              | 2                                | 20                   |
-| `rsvp`          | earn   | id do show                    | 0                                | 10                   |
-| `central_join`  | earn   | id da central                 | 10                               | 10                   |
-| `mission`       | earn   | `<missionId>:<período>`       | o da missão (`points` explícito) | sem limite           |
-| `invite_visit`  | earn   | id da visita (bloco 5 define) | 2                                | 50                   |
-| `invite_signup` | earn   | uid de quem se cadastrou      | 10                               | 20                   |
-| `redeem`        | spend  | id do resgate                 | o custo da recompensa            | não se aplica        |
-| `adjustment`    | adjust | id do ajuste da equipe        | explícito por contador           | não se aplica        |
-| `seed`          | adjust | nome fixo do seed             | explícito por contador           | não se aplica        |
+| source          | kind   | eventId                 | valor padrão                     | limite diário padrão |
+| --------------- | ------ | ----------------------- | -------------------------------- | -------------------- |
+| `like`          | earn   | id do post              | 0                                | 50                   |
+| `comment`       | earn   | id do comentário        | 2                                | 20                   |
+| `rsvp`          | earn   | id do show              | 0                                | 10                   |
+| `central_join`  | earn   | id da central           | 10                               | 10                   |
+| `mission`       | earn   | `<missionId>:<período>` | o da missão (`points` explícito) | sem limite           |
+| `invite_visit`  | earn   | chave da pessoa (20.5)  | 2                                | 50                   |
+| `invite_signup` | earn   | chave da pessoa (20.5)  | 10                               | 20                   |
+| `redeem`        | spend  | id do resgate           | o custo da recompensa            | não se aplica        |
+| `adjustment`    | adjust | id do ajuste da equipe  | explícito por contador           | não se aplica        |
+| `seed`          | adjust | nome fixo do seed       | explícito por contador           | não se aplica        |
 
 O `eventId` decide quantas vezes um evento paga. A primeira curtida de cada post paga uma vez na vida (`like:<postId>`), mesmo depois de descurtir e curtir de novo. Cada comentário paga (`comment:<commentId>`), até o limite do dia. Entrar numa central paga uma vez (`central_join:<artistId>`), como o `followFixture.join`. Origem nova é mudança de código: entra no tipo, no padrão e nesta tabela.
 
@@ -578,7 +587,7 @@ O `MyProgress` do app.
 
 - `level` e `nextLevel`: `levelForXp(xp, config.levels)`, a mesma conta do `levelForXp` do app (o degrau mais alto com `minXp <= xp`; `nextLevel: null` no último). O nível não é guardado: sai do XP a cada leitura.
 - `weekEarned`: soma de `days[d].earned` para hoje e os 6 dias anteriores, em dias de São Paulo. Resgate e ajuste não contam.
-- `stats.linksCreated` e `stats.peopleBrought`: 0 no bloco 1. O bloco 5 os lê de onde guardar o convite, fora da carteira (seção 4).
+- `stats.linksCreated` e `stats.peopleBrought`: 0 no bloco 1. Desde o bloco 5, os `count()` dos links que o fã compartilhou e dos convidados dele, fora da carteira (seção 4 e 20.2).
 - `stats.seasons`: `pastSeasons + (seasonPoints > 0 ? 1 : 0)`. Isso conta certo antes e depois da troca preguiçosa de temporada.
 - Carteira que não existe: XP 0, nível 1, `nextLevel` 2, semana 0, números 0.
 
@@ -653,7 +662,7 @@ statsMeta/close { lastClosedDay: string, updatedAt: Timestamp }
 - "Por dia" é o id do documento; "por origem" é `bySource` (a origem do ponto: curtida, comentário, missão, resgate...); "por artista" é `byArtist`, com a origem dentro.
 - O dia é o de São Paulo, o mesmo do `days` da carteira e do limite diário. A semana é a ISO (`2026-W41`) e o mês é `2026-10`, contados no mesmo fuso.
 - Ajuste e seed contam só em `totals.adjusted` e em `bySource`, nunca em `byArtist`.
-- A origem do fã (link, campanha, UTM) não é isto: o bloco 5 acrescenta `signups` e `byOrigin` nos mesmos shards. Cadastros por dia também são do bloco 5; os anteriores saem do `createdAt` de `users/` numa carga única.
+- A origem do fã (link, campanha, UTM) não é isto: o bloco 5 acrescenta `signups`, `invites` e `byOrigin` nos mesmos shards (20.7). Cadastros por dia também são do bloco 5, somados no gatilho de cadastro; os anteriores saem do `createdAt` de `users/` numa carga única (20.7).
 - Gravação: `tx.set(shardRef, objetoComIncrements, { merge: true })`. Chaves de mapa vão como objeto aninhado, não como caminho com ponto.
 - Contador zerado não é gravado (`pruneZeros`, em `points/stats.ts`): um shard que só viu atividade não tem `totals`, e um sem resgate não tem `spent`. Quem lê (o fechamento do dia, o painel) trata campo ausente como 0.
 
@@ -664,7 +673,7 @@ A Crescimento do painel promete "cadastros, ativos e retenção" (`imagineup-adm
 - **Definição de ativo:** o fã que fez, no período, ao menos uma ação que grava pela API (curtir, descurtir, comentar, "Eu vou", seguir ou entrar numa central, missão, resgate, convite), rendendo ponto ou não. Abrir o app e só ler não conta, porque a leitura não grava nada. Se a cliente quiser contar quem só abriu o app, um bloco seguinte marca a atividade também no primeiro `GET` do dia (uma gravação por fã por dia).
 - **Marca:** o `requireFan` compara o dia, a semana e o mês do pedido com `wallet.activity`. Dia novo soma `actives.day`; semana nova soma `actives.newInWeek` e `cohorts[<semana do cadastro>].active`; mês novo soma `actives.newInMonth`. A semana do cadastro sai do `createdAt` de `users/{uid}`, que o `requireFan` já leu. A carteira guarda as marcas novas. São no máximo uma gravação de carteira e uma de shard por fã por dia, além das que o ponto já faz.
 - Só quem chama marca, e só com `actor.type: 'fan'`. Ajuste da equipe, seed e o crédito de quem convidou não marcam.
-- **Leitura:** ativos do dia D são a soma de `actives.day` em D; da semana, a soma de `actives.newInWeek` nos dias dela; do mês, a soma de `actives.newInMonth` nos dias dele (somar os ativos de cada dia contaria o mesmo fã várias vezes). Ativos da coorte C na semana S são a soma de `cohorts[C].active` nos dias de S; a retenção divide isso pelos cadastros da semana C (bloco 5).
+- **Leitura:** ativos do dia D são a soma de `actives.day` em D; da semana, a soma de `actives.newInWeek` nos dias dela; do mês, a soma de `actives.newInMonth` nos dias dele (somar os ativos de cada dia contaria o mesmo fã várias vezes). Ativos da coorte C na semana S são a soma de `cohorts[C].active` nos dias de S; a retenção divide isso pelos cadastros da semana C (`signups.total`, 20.7).
 
 ### Custo e limite de escrita
 
@@ -798,7 +807,7 @@ Só acréscimo: nenhuma regra existente muda. As regras novas entram antes do `m
     }
 ```
 
-As regras do bloco 4 (vínculo e shards do `fanCount`) estão na seção 19.
+As regras do bloco 4 (vínculo e shards do `fanCount`) estão na seção 19, e as do bloco 5 (convite), em 20.9.
 
 Testes em `tests/points-rules.test.ts`, no molde de `tests/artists-rules.test.ts` (mesmos membros de exemplo: admin, editora, leitor, sem seção, desativada, pendente e ligada com `authValidAfter`):
 
@@ -824,7 +833,7 @@ Ficam para depois: a leitura de `users/{uid}` pela seção Fãs (bloco 11, uma l
 4. Novo: as chaves de `idempotency` com `uid == <uid>`, em lotes de até 500 (as respostas guardadas podem ter texto do fã; o TTL só apagaria em 30 dias).
 5. `staff/{uid}` (como hoje).
 
-O bloco 4 muda o passo 2: o documento do perfil sai sozinho primeiro, depois saem os vínculos com as centrais (descontando o `fanCount`) e só então o `recursiveDelete(users/{uid})`. Ordem completa e motivo na seção 19 (19.12).
+O bloco 4 muda o passo 2: o documento do perfil sai sozinho primeiro, depois saem os vínculos com as centrais (descontando o `fanCount`) e só então o `recursiveDelete(users/{uid})`. Ordem completa e motivo na seção 19 (19.12). O bloco 5 acrescenta o código, os links e os convites (20.10).
 
 Continua idempotente e seguro de repetir (o gatilho tem `retry: true`), e o `handleUserCreated` que desfaz a conta usa a mesma função.
 
@@ -923,11 +932,11 @@ Os ids das centrais são `nettobrito` (Netto) e `nenho` (Nenho), no formato do @
 
 - O seed usa o `runAward` com `actor.type: 'system'`: não marca atividade.
 - `stats.pastSeasons` não é ponto e ainda não tem caminho de servidor (temporadas passadas são do bloco 8): o seed grava direto `wallets/{uid}.stats.pastSeasons = 2`, e a 1e mostra 3 temporadas.
-- Links criados e pessoas trazidas (63 e 418 nas fixtures) ficam 0 até o bloco 5, que cria o lugar deles, fora da carteira (seção 4), e põe os da Camila no seed.
+- Links criados e pessoas trazidas (63 e 418 nas fixtures) ficam 0 até o bloco 5. Com ele, a Camila tem 4 links e 3 pessoas trazidas no servidor (20.12), e os 63 e 418 ficam só nas fixtures.
 - Rodar de novo não muda nada: os lançamentos já existem e voltam `duplicate`, e transação sem nada aplicado não grava a carteira (seção 5, passo 9).
 - O Alan fica sem carteira: é o fã novo (0 pontos, nível 1).
 
-Resultado na 1e: "SEUS PONTOS" 12.480; Purainha (7), anel e barra em 68,5%, faltam 2.520; "Esta semana" +840; 0 links, 0 pessoas e 3 temporadas (o 63 e o 418 voltam com o bloco 5).
+Resultado na 1e: "SEUS PONTOS" 12.480; Purainha (7), anel e barra em 68,5%, faltam 2.520; "Esta semana" +840; 0 links, 0 pessoas e 3 temporadas (com o bloco 5, 4 links e 3 pessoas, 20.12).
 
 ## 15. Ambientes
 
@@ -976,7 +985,7 @@ Regras: `tests/points-rules.test.ts` (seção 11). App: seção 13.
 ## 18. O que fica para os próximos blocos
 
 - **Bloco 4 (centrais):** desenhado na seção 19. O que ele deixa para os blocos seguintes está em 19.16.
-- **Bloco 5 (convite):** `/me/invite` e o claim final; a visita ao link numa função própria, sem login, com CORS só para a origem do site, e `invite_visit` pelo `award`; `invite_signup` pelo `planAwards` com dois fãs (o convidado chama, quem convidou recebe, e sai `skipped` se excluiu a conta); links criados e pessoas trazidas fora da carteira e sem documento disputado (por exemplo uma entrada por convidado, contada com `count()`; um contador único somado no claim derrubaria o cadastro dos convidados de um link que viraliza), lidos pelo `/me/progress`, e os 63 e 418 da Camila no seed; o código do convite conferido com o `CODE` de `invites/deep-link.ts` antes de guardar, e o app esquecendo o código quando o servidor recusar de vez (seção 2); `signups` e `byOrigin` nos shards e cadastros por semana, o denominador da retenção (seção 7); a carga dos cadastros antigos.
+- **Bloco 5 (convite):** desenhado na seção 20. A visita conta no app, e não numa função própria para o site, como esta nota dizia antes (decisão 3 de 20.1). Os 63 e 418 da Camila ficam nas fixtures, e o seed dá a ela 4 links e 3 convidados (20.12). O que fica fora do bloco está em 20.15.
 - **Bloco 6 (mural e agenda):** rotas, coleções e regras de posts, comentários, curtidas, shows e presenças; `like`, `comment` e `rsvp` pelo `award`; contadores de engajamento; bloqueio de fã; exclusão do conteúdo do fã.
 - **Bloco 7 (missões e conquistas):** progresso de missão na transação; conquistas; tela do extrato (`/me/ledger`, com desenho); `updatePointsConfig` e a seção Missões e régua no painel.
 - **Bloco 8 (ranking e temporadas):** `updateSeason` com `season-id-locked` e `season-id-used` (seção 8), histórico em `seasons/{id}`, arquivo do resultado, índices compostos, posição por `count()` com o desempate da lista (seção 10), foto semanal do `change`.
@@ -1528,6 +1537,549 @@ App:
 - Quem sai e entra de novo antes da cópia seguinte do `fanCount` é contado duas vezes, só para ele, até ela (limite aceito, 19.2).
 - O teto de entradas mora em `days[dia].count.central_entry` da carteira: a carteira é gravada em toda entrada nova. Sair nunca é recusado.
 - Callback passado ao `useMutation` roda mesmo com a tela desmontada (só os do `mutate` conferem): o que navega ou mexe na tela confere se o hook está montado.
+
+## 20. Bloco 5: convite com atribuição e origem do fã
+
+O fã ganha um código de convite do servidor, o link dele passa a trazer gente de verdade, e cada fã novo fica com a origem: quem trouxe, por qual link e por qual campanha. Esta seção é o contrato do bloco 5: rotas, coleções, transações, antifraude, regras, efeitos no painel, exclusão de conta, mudanças no app, seed e testes. Ela segue os padrões dos blocos 1 e 4 (seções 1 a 19) e só diz o que muda ou acrescenta.
+
+Origem: o levantamento de 05/10/2026 (bloco 5); a UP-16 e a UP-20 (+2 por pessoa que abre o link e +10 por cadastro, valores provisórios de `config/points`); a UP-33 (qual link trouxe cada fã); a UP-39 (comparar campanhas no painel). A build sem emulador continua nas fixtures, e o `EXPO_PUBLIC_API_URL` segue a regra da seção 13.
+
+Estado: implementado em 05/10/2026 no app e nas funções, sem deploy (ordem da publicação em 20.16). Onde o código detalhou ou desviou desta seção, o texto abaixo já diz como ficou, marcado com "(implementação)", como na seção 19.
+
+Como era antes do bloco: o `+native-intent` lia o `?ref=` de qualquer link e o `/c/CODIGO`; a rota `/convite/[codigo]` guardava o código no aparelho sem conferir; o cadastro mandava `{ code }` para `POST /invites/claim`, que ninguém respondia (com o emulador, a chamada nem saía, porque `sourceOf('invite')` estava nas fixtures). Os `utm_*` do link ficavam no destino da navegação e se perdiam; no link curto, a busca inteira sumia. O código ficava preso ao aparelho, e não à conta: se o envio falhasse, ele ia no próximo cadastro feito ali, que podia ser de outra pessoa.
+
+### 20.1 Decisões
+
+Cada item traz a recomendação e o motivo. As perguntas para a cliente e para o dono estão em 20.14, e o código já nasce com o padrão daqui.
+
+1. **Código por fã, sorteado no servidor e criado no primeiro `GET /me/invite`.** Oito caracteres de `23456789BCDFGHJKMNPQRSTVWXYZ`: sem vogal (não forma palavra) e sem 0, 1, I, L e O (não se confundem ao ditar nem ao digitar no cadastro). São 28^8, perto de 3,8 × 10^11 códigos: colisão e chute ficam fora de alcance. Único por `inviteCodes/{code}` com `tx.create`, e nunca muda. Motivo de criar na leitura: o gatilho de cadastro não muda por isso, e os perfis de antes do bloco 5 não pedem carga. É a exceção à regra do GET que não cria nada (seção 1): a criação é idempotente (o mesmo fã recebe sempre o mesmo código) e exige o perfil. Código tirado do @ foi descartado: o @ ainda pode mudar (Pendências do `CLAUDE.md`), e o código não pode.
+2. **Claim final em `POST /invites/claim`, uma vez por conta.** O endereço provisório fica como final, com o corpo novo (20.2). O registro é `referrals/{uid do convidado}`, criado com `tx.create`: um segundo claim, com qualquer código, responde `already_claimed` sem efeito. Só vale para conta criada há até 7 dias (`INVITE_CLAIM_WINDOW_MS`): conta antiga que abre um link não vira convidada. O claim exige o perfil (`requireFan`), que é o "cadastro concluído", e paga quem convidou na mesma transação.
+3. **Visita conta só no app, de conta logada de outra pessoa que não o dono do código.** O app manda `POST /invites/visit` quando um link com código abre o app com uma conta, ou quando a pessoa entra numa conta que já existe logo depois de abrir o link. A visita é contada no painel uma vez por par convidante e pessoa, pelo marcador `fanInvites/{inviterUid}/inviteVisitors/{personKey}`, pague ou não; o ponto (`invite_visit`) segue o extrato, também uma vez na vida por par (20.5), dentro do limite diário de quem convidou (`invite_visit`, padrão 50). Cada conta manda no máximo 20 visitas por dia. O claim também conta e paga a visita: quem se cadastra pelo link abriu o link antes. Contar e pagar ficam separados porque o lançamento barrado pelo limite (`capped`) ou que valia 0 (`zero`) não grava no extrato (`computeAwards`, em `points/model.ts`): sem o marcador, a mesma pessoa contaria de novo a cada visita. Motivo de contar só no app: o clique no site não tem conta nem token, e qualquer script o repete (o IP não separa as pessoas atrás da mesma operadora); contar no site também pede mudança no repositório do site, que depende da UP-49. Contar só na instalação vale só no Android e depende do bloco 3. Consequência: até os links abrirem o app (bloco 13), a visita no app só acontece com o link do esquema `imagineup://`; na prática, a visita paga vem junto com o cadastro. Troca a direção das seções 1 e 18 (uma função própria para a visita do site, com CORS).
+4. **O id do evento é a chave da pessoa, e não o uid.** `personKey`: `e` mais os 40 primeiros caracteres hexadecimais de `HMAC-SHA256(INVITE_KEY_SECRET, "imagineup:invite:v1:" + e-mail normalizado)`, com o e-mail do ID token; sem e-mail no token, `u` mais o uid. Normalização: minúsculas, sem espaço nas pontas, sem o `+` e o que vem depois na parte local; no `gmail.com` e no `googlemail.com`, sem os pontos da parte local e com o domínio `gmail.com`. Os lançamentos são `invite_visit:<personKey>` e `invite_signup:<personKey>`, no extrato de quem convidou. Motivo: esse extrato fica na carteira de quem convidou, que não some quando o convidado exclui a conta. A conta excluída e recriada com o mesmo e-mail ganha outro uid, mas a mesma chave: o lançamento sai `duplicate`, e o mesmo convite não paga de novo. Com outro e-mail paga, dentro do limite diário (limite aceito, 20.6). A mesma chave, calculada com o e-mail de quem é dono do código, barra o autoconvite pelo apelido do e-mail (`ownerKey`, 20.3). HMAC, e não sha256, desde o primeiro deploy: o extrato é lido pela equipe com a seção `fans`, e com sha256 e prefixo fixo qualquer um ali testaria um e-mail conhecido contra o id do lançamento, mesmo depois de o convidado excluir a conta; trocar para HMAC depois faria cada pessoa já convidada pagar de novo uma vez. O segredo fica no Secret Manager (`defineSecret('INVITE_KEY_SECRET')`, no molde do `EMAILJS_PRIVATE_KEY`), declarado só na `api`, e nunca muda (20.16). Guardar essa chave depois da exclusão continua pergunta jurídica (20.14).
+5. **Convidado que exclui a conta não desfaz os pontos já pagos.** Sai o `referrals/{uid}` dele, e "pessoas trazidas" de quem convidou cai 1. Os lançamentos ficam no extrato de quem convidou. Motivo: desfazer pediria reescrever a carteira de outro fã no gatilho de exclusão, podia deixar saldo negativo depois de um resgate, e os agregados guardam fluxo (seção 12). Recriar a conta não paga de novo (decisão 4).
+6. **Convidante que exclui a conta leva o código, os links e os marcadores de visita.** O código para de valer na hora (404, e o app esquece). Os `referrals` das pessoas que ele trouxe ficam, com `inviterUid: null`. Motivo: a origem é dado do convidado e serve ao painel; o uid de quem saiu não aponta mais para ninguém.
+7. **"Links criados" são os links diferentes que o fã compartilhou com o código; "pessoas trazidas" são as contas que existem e entraram pelo convite dele.** Um link por destino: `invite` (o app, pelo atalho Convidar), `agenda`, `post:<postId>` e `artist:<artistId>`. O app registra o link (`PUT /me/invite/links/:linkId`) quando a folha de compartilhar do sistema volta com `sharedAction`. Os dois números são `count()`, fora da carteira e sem documento disputado (seção 4). Motivo: com o código estável, criar um link é compartilhar uma página, e o servidor só sabe disso se o app contar. Contar os links que trouxeram alguém mudaria o sentido para "links que funcionaram".
+8. **Origem: o app manda o caminho e os `utm_*`; o servidor classifica e normaliza.** O tipo do link sai do caminho (`invite`, `post`, `artist`, `agenda`, `other`; `code` quando o código foi digitado). Só `utm_source`, `utm_medium` e `utm_campaign` são guardados, normalizados e sem dado pessoal (20.3); `utm_content`, `utm_term` e `utm_id` são descartados, porque é neles que costuma ir o e-mail ou o id de quem recebeu o link. A origem fica no `referrals` e entra nos agregados do dia: o tipo em cadastros, visitas e links; `utm_source` e `utm_campaign` só nos cadastros (20.7). Campanha é o `utm_campaign` de um link com código até a cliente responder; o link que só tem `utm_*`, sem código, não guarda nada neste bloco (pergunta 3 de 20.14). Motivo: um lugar só classifica, e um tipo de link novo não pede app novo.
+9. **Campo "Código de convite" no cadastro, opcional e conferido pelo próprio claim.** Vem preenchido com o código do link guardado, quando há. O código digitado é conferido no servidor antes de o fã sair do cadastro: recusado, a conta já existe, e a tela fica para ele corrigir ou continuar sem código (20.11). Motivo: não há rota sem token (decisão 2 desta nota), e o token só existe depois da conta.
+10. **Convite pendente amarrado ao uid no cadastro.** O cadastro move o convite do aparelho para o armazenamento de convites amarrados (`invite-claims`, por uid), e só a sessão confirmada desse uid tenta de novo, por até 7 dias. A sincronização também amarra quando a conta da sessão nasceu neste aparelho depois de o link chegar e ninguém entrou nela desde então (o app fechou entre criar a conta e amarrar, ou a conta nasceu por um fluxo de entrar, como Apple ou Google), 20.11. Quem entra numa conta que já existe, com um convite guardado de menos de 24 h, manda a visita, e o convite sai do aparelho. Motivo: o convite de uma pessoa nunca vai para a conta de outra que entrar depois no mesmo aparelho, e a conta nova não perde o convite porque o app fechou na hora errada.
+11. **Pontos do convite fora das centrais.** Os dois lançamentos vão sem `artistId`, também no link de uma central ou de um post. Motivo: o convite é do fã, não uma ação na central, e o artista do post exigiria ler o post (bloco 6).
+12. **Cadastros por dia no gatilho de cadastro.** `signups.total` soma 1 no shard do dia, na mesma transação que cria o perfil (`createProfile`), que marca o perfil como contado (`signupCounted: true`); os cadastros de antes saem do `createdAt` dos perfis sem a marca, numa carga única (20.7). Motivo: é o denominador da retenção por coorte (seção 7) e a base da parte dos cadastros que veio de convite, e só o gatilho vê todo cadastro.
+13. **Resposta 200 para o que não paga, e erro só para o que o app deve esquecer.** Claim repetido, visita do próprio dono, visita acima do teto e link já registrado respondem 200 sem efeito. Código que não existe é 404 `invite_not_found`; a própria conta dona do código e a conta fora da janela são 409 `invite_not_allowed`. Motivo: o app trata as recusas definitivas de um jeito só (esquece o código), e a resposta repetida pela idempotência fica simples. (implementação) Nenhuma resposta diz a quem chama se a pessoa do e-mail dele é dona do código ou já passou por ele: a visita responde sempre o mesmo corpo, e a dona do código noutra conta (o apelido do e-mail) recebe no claim a resposta de um claim comum (20.6).
+
+### 20.2 Rotas
+
+| Método e caminho               | Grava                 | Função do app                                                  | Resposta                                |
+| ------------------------------ | --------------------- | -------------------------------------------------------------- | --------------------------------------- |
+| `GET /me/invite`               | cria o código uma vez | `profile/api.ts` `fetchMyInvite`                               | `MyInvite`                              |
+| `POST /invites/claim`          | sim                   | `auth/api.ts` `sendInviteClaim` (troca o `claimPendingInvite`) | `InviteClaimResult`                     |
+| `POST /invites/visit`          | sim                   | `auth/api.ts` `sendInviteVisit` (novo)                         | `InviteVisitResult`                     |
+| `PUT /me/invite/links/:linkId` | sim                   | `profile/api.ts` `registerInviteLink` (novo)                   | `InviteLinkResult`                      |
+| `GET /me/progress`             | não                   | `profile/api.ts` `fetchMyProgress` (como hoje)                 | `MyProgress`, com os números de verdade |
+
+Arquivos: `functions/src/api/routes/invites.ts` (`inviteRoutes`, somadas ao `API_ROUTES` depois de `centralRoutes`) e o domínio em `functions/src/invites/`, no molde de `functions/src/centrals`: `model.ts` (puro, com teste em tabela, constantes e o `InviteError`), `service.ts` (Firestore: `ensureInviteCode`, `claimInvite`, `recordInviteVisit`, `recordInviteLink`, `countInviteStats`, `removeInviteData`, `detachReferrals`, `runClaim` e, para o seed, `runInviteLinks`), `config.ts` (o secret), `seed.ts` e `index.ts`. O `requireFan` ganhou a metade que só confere o perfil, `requireProfile` (em `points/award.ts`), que o `ensureInviteCode` usa (implementação). Os tipos das respostas entram em `api/contract.ts`, espelho de `src/domains/invites/types.ts` (novo) e do `MyInvite` de `src/domains/profile/types.ts`.
+
+O `authenticate` (`api/auth.ts`) passa a devolver `{ uid, email }` (o `email` do token decodificado, ou `null`), e o `ReadContext` ganha `email` (o `WriteContext` o estende). O e-mail sai sempre do token, nunca do corpo. O `ApiDeps` ganha `inviteKey`, o segredo do HMAC (decisão 4): a `api` lê `INVITE_KEY_SECRET.value()` a cada pedido e declara `secrets: [INVITE_KEY_SECRET]` nas opções; os testes fixam a chave. (implementação) É uma função (`inviteKey: () => string`), lida só pelas rotas do convite: sem ela nas dependências, só elas respondem 500, e os testes das outras rotas não precisam dela. A chave da pessoa recusa segredo vazio (erro, nunca chave fraca). O secret mora em `functions/src/invites/config.ts`, como o `EMAILJS_PRIVATE_KEY` em `staff/config.ts`.
+
+Códigos novos, já na tabela da seção 1: `invite_not_found`, 404, "Convite não encontrado.", kind `notFound`; `invite_not_allowed`, 409, "Este convite não vale para esta conta.", kind `validation`, com `details.reason` `self` ou `account_too_old`. O núcleo recusa com `InviteError` (motivo e `details`), e o `toApiHttpError` traduz, como faz com o `CentralError`.
+
+#### `GET /me/invite`
+
+```json
+{
+  "code": "K7P3M9QX",
+  "url": "https://imagineup-painel.vercel.app/?ref=K7P3M9QX",
+  "linkBase": "https://imagineup-painel.vercel.app",
+  "pointsPerVisit": 2,
+  "pointsPerSignup": 10
+}
+```
+
+- `code`: o de `fanInvites/{uid}`. Sem ele, o `ensureInviteCode` cria (20.4).
+- `url`: o link do atalho Convidar, o `linkBase` mais `/?ref=<code>`.
+- `linkBase`: `INVITE_LINK_BASE`, de `invites/model.ts`, espelho do `SHARE_LINK_BASE` do app. Com ele, a troca de domínio (bloco 13) muda os links que o fã compartilha sem build nova.
+- `pointsPerVisit` e `pointsPerSignup`: `values.invite_visit` e `values.invite_signup` da configuração, pelo cache de 60 s.
+- `url` e `linkBase` são campos novos, opcionais no `MyInvite` do app.
+- Sem perfil: 403 `not_fan` (conta só da equipe) ou 503 `profile_not_ready`, como nas rotas que gravam. Não marca atividade e não grava shard.
+- Custo: 1 leitura, mais a configuração do cache. Na primeira vez, até 8 leituras e 2 gravações.
+
+#### `POST /invites/claim`
+
+Cabeçalho `Idempotency-Key`: a chave do convite amarrado (`invite-<CODIGO>-<receivedAt>`, 20.11). Corpo:
+
+```json
+{
+  "code": "K7P3M9QX",
+  "via": "link",
+  "link": { "path": "/post/p-clipe" },
+  "utm": { "source": "instagram", "medium": "story", "campaign": "sao-joao" },
+  "openedAt": "2026-10-05T14:02:11.000Z"
+}
+```
+
+Validação (`parseClaimBody`, pura). Fora dela, 400 `invalid_request` com `details.field` (implementação: `body` para corpo que não é objeto, `utm.source`, `utm.medium` e `utm.campaign` para o valor que não é texto ou passa de 200, e `openedAt` para o texto que não é data):
+
+- `code`: texto de 3 a 64 caracteres em `^[A-Za-z0-9_-]+$` (o `CODE` do app). O servidor normaliza com o `normalizeInviteCode` (sem espaços nem hífens, em maiúsculas) e confere `^[A-Z0-9_]{3,64}$` antes de procurar. O app manda o código já normalizado pela cópia da mesma função (20.11), e é esse o código da chave de idempotência.
+- `via`: `link` (link aberto no app) ou `code` (digitado no cadastro). O Install Referrer do bloco 3 acrescenta `install` (20.15).
+- `link`: `{ path }` com `via: 'link'`, e `null` com `via: 'code'`. O `path` começa com `/`, sem `//`, até 200 caracteres; o servidor só o usa para classificar (20.3) e não o guarda.
+- `utm`: opcional, só com `via: 'link'`. Chaves `source`, `medium` e `campaign`, cada uma texto de até 200. Chave desconhecida é ignorada, inclusive `content`, `term` e `id` (decisão 8).
+- `openedAt`: ISO ou `null`, opcional, só com `via: 'link'`; com `via: 'code'`, o servidor grava `null` (o app manda `null`). Fora da faixa de 30 dias antes de agora até 5 min depois, vira `null`. É só informativo (relógio do aparelho).
+
+Respostas: 200 `{ "status": "claimed" }` ou `{ "status": "already_claimed" }`; 404 `invite_not_found`; 409 `invite_not_allowed` (`self`, só para a própria conta dona do código, ou `account_too_old`); 403 e 503 do `requireFan`. (implementação) A dona do código noutra conta, reconhecida pelo `ownerKey`, recebe 200 `claimed`, como qualquer outro claim, e não 409 `self` (20.4 e 20.6).
+
+#### `POST /invites/visit`
+
+Cabeçalho `Idempotency-Key`: `visit-<CODIGO>-<receivedAt>`. Corpo como o do claim, sem `via` e com `link` obrigatório:
+
+```json
+{
+  "code": "K7P3M9QX",
+  "link": { "path": "/artista/nettobrito" },
+  "utm": {},
+  "openedAt": "2026-10-05T14:02:11.000Z"
+}
+```
+
+Responde sempre 200 `{ "status": "received" }`, conte ou não, e 404 `invite_not_found` quando o código não existe. O app não mostra nada. (implementação) O desenho anterior respondia `{ "counted": true | false }` (o marcador nasceu nesta chamada ou não), e com ele uma conta com o apelido de um e-mail descobria se aquela pessoa era dona do código ou já tinha passado pelo convite (20.6). O servidor continua calculando o `counted` (`recordInviteVisit`) para os testes e o seed: conta quando a pessoa vira visitante desse convidante pela primeira vez (o marcador nasce), pagando, batendo no limite de quem convidou ou valendo 0; não conta para o próprio dono (pelo uid ou pela chave do e-mail), para a pessoa que já visitou ou se cadastrou pelo convite desse convidante, com a conta de quem convidou excluída e acima do teto de quem visita. O ponto não depende de contar: a visita da mesma pessoa que antes bateu no limite ou valia 0 ainda paga, uma vez, sem contar de novo (20.5).
+
+#### `PUT /me/invite/links/:linkId`
+
+Sem corpo. O `linkId` segue `^(invite|agenda|post:[A-Za-z0-9_-]{1,128}|artist:[a-z0-9_]{3,30})$`, com o @ da central fora dos ids `__.*__`; fora disso, 400 `invalid_request` com `details.field: 'linkId'`. O app manda o id com `encodeURIComponent` (o `:` vira `%3A`). Responde `{ "linkId": "post:p-clipe", "created": true }`; o link que já existe, ou acima do teto de 30 novos por dia, responde `created: false`. Fã que ainda não tem código (nunca chamou o `GET /me/invite`): 404 `invite_not_found`, que o app ignora. (implementação) O link de uma central lê `artists/{@}` no mesmo `getAll` e só nasce com a central publicada: a que não existe, está em rascunho ou fora do ar responde `created: false`, fora do teto do dia e dos agregados (as centrais são reais desde o bloco 4, e sem isso um fã inflaria "links criados" e `byOrigin.kind.artist.links` com @ inventados). O post não é conferido, porque o mural ainda é de exemplo; o bloco 6 pode conferir. A origem `artist` do claim e da visita (o caminho `/artista/<@>`) também não: conferir pediria uma leitura a mais na transação mais disputada do convite para um campo informativo, que o painel cruza com `artists` ao mostrar, e um @ inventado ali custa ao fraudador uma conta por cadastro (o claim é um por conta).
+
+#### `GET /me/progress`
+
+- `stats.linksCreated`: `count()` de `fanInvites/{uid}/inviteLinks`.
+- `stats.peopleBrought`: `count()` de `referrals` com `inviterUid == uid`.
+- As duas contagens saem em paralelo com a leitura da carteira. Custo: 2 agregações a mais, cada uma 1 leitura a cada 1.000 entradas. O resto da resposta fica como na seção 6.
+
+### 20.3 Coleções e campos
+
+```
+inviteCodes/{code} {          // o código, em maiúsculas, é o id
+  code: string
+  kind: 'fan'                 // 'campaign' fica para o código de campanha, se a cliente quiser (20.14)
+  uid: string                 // dono
+  ownerKey: string            // a chave da pessoa do dono (decisão 4), do e-mail do token na criação
+  createdAt: Timestamp
+  schemaVersion: 1
+}
+
+fanInvites/{uid} {
+  uid: string
+  code: string
+  createdAt: Timestamp
+  schemaVersion: 1
+}
+
+fanInvites/{uid}/inviteLinks/{linkId} {
+  uid: string
+  linkId: string              // "invite", "agenda", "post:p-clipe", "artist:nettobrito"
+  kind: 'invite' | 'agenda' | 'post' | 'artist'
+  targetId: string | null     // o id do post ou da central (publicada quando o link nasceu)
+  createdAt: Timestamp        // a primeira vez que o fã compartilhou
+}
+
+fanInvites/{uid}/inviteVisitors/{personKey} {   // uma pessoa que contou como visitante deste convidante
+  via: 'visit' | 'claim'      // o que criou o marcador
+  day: string                 // dia de São Paulo
+  createdAt: Timestamp
+}
+
+referrals/{uid} {             // uid do convidado
+  uid: string
+  inviterUid: string | null   // null depois que a conta de quem convidou foi excluída, e no autoconvite pela mesma pessoa noutra conta
+  code: string
+  via: 'link' | 'code'
+  link: {
+    kind: 'invite' | 'post' | 'artist' | 'agenda' | 'other'
+    targetId: string | null   // o id do post ou da central; null no invite, na agenda e no other
+  } | null                    // null no código digitado
+  utm: { source, medium, campaign }   // normalizados (abaixo), cada um texto ou null
+  openedAt: Timestamp | null  // quando o app recebeu o link (relógio do aparelho)
+  signupAt: Timestamp | null  // createdAt de users/{uid}
+  claimedAt: Timestamp        // o "agora" do pedido
+  day: string                 // dia de São Paulo do claim
+  award: { visit: AwardStatus | 'self', signup: AwardStatus | 'self' }   // o que quem convidou recebeu; 'self' no autoconvite pela mesma pessoa noutra conta
+  inviterRemovedAt: Timestamp | null
+  schemaVersion: 1
+}
+```
+
+- Os cinco nascem com `tx.create`. Ninguém grava pelo cliente.
+- As subcoleções se chamam `inviteLinks` e `inviteVisitors`, e não `links` e `visitors`: uma consulta de grupo futura (o painel listando os links mais compartilhados) com um nome genérico alcançaria qualquer coleção com esse nome (a lição da regra de grupo de `centrals`, 19.10).
+- O marcador `inviteVisitors` separa contar de pagar (decisão 3): nasce na primeira visita contada ou no claim da pessoa, nunca muda, e só ele soma visita no painel. O id é a chave da pessoa, então a conta excluída e recriada com o mesmo e-mail não conta de novo. Não guarda o uid de quem visitou.
+- `classifyInvitePath(path)` (puro): `/` e `/c/<código>` são `invite`; `/post/<id>` é `post` (id em `^[A-Za-z0-9_-]{1,128}$`); `/artista/<id>` é `artist` (id no formato do @); `/agenda` é `agenda`; o resto, e id fora do formato, é `other` com `targetId: null`. O caminho em si não é guardado: o tipo e o id bastam para o painel, e um caminho `other` pode levar qualquer texto.
+- `normalizeUtm` (puro), para `source`, `medium` e `campaign`: o valor com `@`, ou com 10 dígitos ou mais contados juntos (ignorando espaço e pontuação), vira `null` antes de tudo; senão, sem espaço nas pontas e em minúsculas; cada trecho fora de `[a-z0-9._~-]` vira um `-`; sem `-` nas pontas; até 100 caracteres; vazio vira `null`. (implementação) Os acentos saem antes da troca (`São João` vira `sao-joao`, e não `s-o-jo-o`), símbolos também entram na conta dos dígitos (o `+` do `+55`), e as pontas perdem também o `_`: o valor nunca é o `_none` dos recortes nem um `__x__`, que o Firestore reserva nos nomes de campo e derrubaria o claim. Os valores crus não são guardados. Motivo: o `.` fica para nomes como `v1.2`, então um e-mail colado (`joao.silva@gmail.com`) viraria `joao.silva-gmail.com`, ainda o e-mail, num documento que a equipe lê; e telefone com DDD (10 ou 11 dígitos) e CPF (11) caem no corte de dígitos, enquanto uma data como `2026-10-05` (8) passa.
+- Carteira: `days[dia].count` ganha duas chaves que não rendem ponto, como o `central_entry` (o `DailyActionKey` de `points/model.ts`): `invite_visit_sent` (visitas que a conta mandou no dia) e `invite_link` (links novos no dia). As origens `invite_visit` e `invite_signup` já contam, na carteira de quem convidou, os eventos pagos.
+- A chave da pessoa (`personKey`) fica só em ids (dos lançamentos e dos marcadores) e no `ownerKey` de `inviteCodes`, que ninguém lê pelo cliente. Como é HMAC com o segredo do servidor (decisão 4), quem lê o extrato não a liga a um e-mail.
+- Contrato, no app e no `contract.ts`: `MyInvite` ganha `url?: string` e `linkBase?: string`. Novos: `InviteClaimBody`, `InviteClaimResult { status: 'claimed' | 'already_claimed' }`, `InviteVisitBody`, `InviteVisitResult { status: 'received' }` (implementação: era `{ counted: boolean }`, 20.2) e `InviteLinkResult { linkId: string; created: boolean }`.
+
+### 20.4 Transações passo a passo
+
+A ordem é a de sempre (seção 5): chave e fã (`runIdempotent`), leituras do domínio, `planAwards`, gravações do domínio. Depois, o `runIdempotent` grava o plano e a chave. O núcleo fica em `invites/service.ts`, usado pelas rotas e pelo seed.
+
+`ensureInviteCode(db, { uid, email }, deps)`, do `GET /me/invite`, fora do `runIdempotent`:
+
+1. Lê `fanInvites/{uid}` fora de transação. Existe: devolve o código.
+2. Numa transação, com o `retryOnAlreadyExists`: lê `fanInvites/{uid}` e `users/{uid}`. Já existe (outra chamada criou no meio): devolve. Sem perfil: lê `staff/{uid}` e recusa como o `requireFan` (`not_fan` ou `profile_not_ready`).
+3. Sorteia 5 códigos (o `random` das dependências, que os testes fixam) e lê os 5 `inviteCodes/{c}` num `getAll`. Fica com o primeiro livre. Os 5 tomados é erro (500), que na prática não acontece.
+4. `tx.create` de `inviteCodes/{code}`, com o `ownerKey` (`personKey(email, uid, inviteKey)`), e de `fanInvites/{uid}`.
+
+Dois `GET` ao mesmo tempo dão um código só: um repete e acha o `fanInvites` criado.
+
+`claimInvite`, do `POST /invites/claim`:
+
+1. O `runIdempotent` leu a chave, o perfil e a carteira do convidado e marcou a atividade.
+2. Um `getAll`: `inviteCodes/{CODIGO}` e `referrals/{uid}`.
+3. Código que não existe: `InviteError('invite_not_found')`. Nada foi gravado, e a chave não fica.
+4. `referrals/{uid}` existe: responde `already_claimed`, sem plano (fica só a atividade).
+5. A chave de quem chama, `personKey(email, uid, inviteKey)`, sai uma vez aqui. O dono do código é quem chama (o `uid` do código) ou a mesma pessoa noutra conta (o `ownerKey` do código igual a essa chave: `nome+1@gmail.com` ou `n.o.m.e@gmail.com` da dona de `nome@gmail.com`; `inviteOwnership`, em `invites/model.ts`). A própria conta dona do código: `invite_not_allowed` com `reason: 'self'`.
+6. `fan.profileCreatedAt` nulo, ou mais de 7 dias antes do agora: `invite_not_allowed` com `reason: 'account_too_old'`.
+7. (implementação) A mesma pessoa noutra conta: `tx.create` de `referrals/{uid}` com `inviterUid: null` e `award: { visit: 'self', signup: 'self' }`, sem plano, sem marcador e sem agregado, e responde `claimed`. A conta gasta o claim único, como num claim comum, e não entra em "pessoas trazidas" (a consulta é por `inviterUid`). O desenho anterior respondia 409 `self` também aqui, e a recusa, que não gastava o claim, deixava qualquer um testar se um e-mail é o dono de um código público criando uma conta com o apelido dele (20.6). A ordem conta: a janela de 7 dias vem antes, para a dona e a outra pessoa receberem a mesma recusa com uma conta antiga.
+8. `tx.get` do marcador `fanInvites/{inviterUid}/inviteVisitors/{personKey}`. Fica fora do `getAll` do passo 2 porque o caminho depende do dono, que só se sabe depois de ler o código: é uma ida a mais dentro da transação.
+9. `planAwards(tx, db, [{ uid, entries: [], fan }, { uid: inviterUid, entries }], award)`, com `{ kind: 'earn', source: 'invite_visit', eventId: personKey, subject: { type: 'invite', id: CODIGO } }` e o mesmo com `invite_signup`. O plano lê a temporada, o perfil e a carteira de quem convidou e os dois lançamentos no extrato dele. Quem convidou sem perfil (conta excluída no meio) sai `skipped` (seção 5, passo 3).
+10. `tx.create` de `referrals/{uid}`, com o `award` tirado do `plan.results` (o status de cada lançamento de quem convidou).
+11. Quem convidou tem perfil (os lançamentos não saíram `skipped`) e o marcador não existe: `tx.create` do marcador, com `via: 'claim'`.
+12. `addInviteCounts(plan, ...)`, em `points/award.ts`, como o `addMembershipCounts`: um cadastro convidado, com o tipo, a `utm_source` e a `utm_campaign`, e uma visita, só pelo tipo, quando o marcador nasceu no passo 11 (20.7).
+13. Responde `claimed` com o plano.
+
+Custo: 11 leituras (chave, perfil, carteira, código, convite, marcador, temporada, perfil e carteira de quem convidou, dois lançamentos) e até 8 gravações (chave, `referrals`, marcador, carteira de quem convidou, dois lançamentos, shard e a carteira do convidado, pela atividade).
+
+`recordInviteVisit`, do `POST /invites/visit`:
+
+1. O `runIdempotent` leu a chave, o perfil e a carteira de quem visita.
+2. `tx.get(inviteCodes/{CODIGO})`. Não existe: 404.
+3. O dono do código é quem chama, pelo `uid` ou pelo `ownerKey` (como no passo 5 do claim): não conta, sem plano.
+4. `fan.wallet.days[dia].count.invite_visit_sent` já em 20 (`INVITE_VISITS_SENT_PER_DAY`): não conta, sem plano. (implementação) O teto e o contador valem para o fã que chama; o sistema (seed, testes) não conta, como o `central_entry` do bloco 4. O mesmo vale para os links (`invite_link`).
+5. `tx.get` do marcador `fanInvites/{inviterUid}/inviteVisitors/{personKey}`.
+6. `planAwards` com quem chama sem lançamentos e quem convidou com o `invite_visit` (`eventId: personKey`). Roda também com o marcador já criado: a visita que antes saiu `capped` ou `zero` paga agora, e a que já pagou sai `duplicate`.
+7. `addDailyCount(plan, fan, 'invite_visit_sent')`.
+8. Quem convidou tem perfil e o marcador não existe: `tx.create` do marcador, com `via: 'visit'`, e o `addInviteCounts` soma uma visita pelo tipo. `counted` é o marcador ter nascido aqui.
+9. A rota responde `{ status: 'received' }` em todos os casos, com o plano quando houve (implementação, 20.2): o `counted` fica no servidor.
+
+Custo: 9 leituras (chave, perfil, carteira, código, marcador, temporada, perfil e carteira de quem convidou, o lançamento) e até 6 gravações (chave, as duas carteiras, o lançamento, o marcador e o shard).
+
+`recordInviteLink`, do `PUT /me/invite/links/:linkId`:
+
+1. Um `getAll`: `fanInvites/{uid}` e `fanInvites/{uid}/inviteLinks/{linkId}` e, no link de uma central, `artists/{@}` (implementação).
+2. Sem `fanInvites`: 404 `invite_not_found`.
+3. O link existe, a central não existe ou não está `published`, ou `days[dia].count.invite_link` já em 30 (`INVITE_LINKS_PER_DAY`): `created: false`, sem plano.
+4. `planAwards` sem lançamentos (não lê nada), `tx.create` do link, `addDailyCount(plan, fan, 'invite_link')` e o `addInviteCounts` com um link do tipo dele.
+5. Responde `created: true` com o plano.
+
+Concorrência: muitos convidados do mesmo código ao mesmo tempo leem a carteira de quem convidou, e os que pagam gravam nela. Os limites diários seguram isso: depois de 20 cadastros e 50 visitas pagos no dia, o claim só lê a carteira de quem convidou, e leitura não trava leitura. Até lá, a disputa faz a transação repetir e, no pior caso, o claim responde 503 e o app tenta de novo depois, com o convite amarrado. O cadastro em si nunca cai por isso, porque não depende do claim. Os números do perfil (links e pessoas) não ficam em documento nenhum de quem convidou, então um link que viraliza não cria contador disputado. Dois claims da mesma conta ao mesmo tempo, com códigos diferentes, disputam o `referrals/{uid}`: um repete e responde `already_claimed`. O marcador é um documento por pessoa e convidante, então não cria disputa entre convidados; duas visitas da mesma pessoa ao mesmo tempo disputam o mesmo marcador, e a que repete (pela disputa ou pelo `ALREADY_EXISTS` do `tx.create`, que o `runIdempotent` repete uma vez) acha o marcador e não conta de novo.
+
+### 20.5 Idempotência e o evento de pontos
+
+- Pedido: a `Idempotency-Key` de sempre. No claim, é a chave do convite amarrado ao uid (20.11): a mesma em toda tentativa, e o convite sai do aparelho depois de sucesso ou recusa definitiva. Na visita, `visit-<CODIGO>-<receivedAt>`. No link, `createIdempotencyKey()` nas variáveis da mutação, a mesma nas novas tentativas dela.
+- Negócio, em quatro camadas: `referrals/{uid}` é um por conta; `invite_signup:<personKey>` e `invite_visit:<personKey>` pagam uma vez na vida por par de quem convidou e pessoa, também depois de a conta ser excluída e recriada; o marcador `inviteVisitors/{personKey}` conta a visita no painel uma vez por par, pague ou não; o link é um por `linkId` e fã. O extrato não serve para contar: o lançamento `capped` ou `zero` não é gravado, e a trava pelo extrato só existe depois de pagar.
+- Valores e limites de `config/points` (seção 4): `invite_visit` 2 por evento e 50 por dia, `invite_signup` 10 e 20 por dia, os dois contados na carteira de quem recebe. É o "limite diário por convidante".
+- O cadastro que bateu no limite do dia não paga depois: o claim acontece uma vez por conta, e o `award` do `referrals` guarda `capped`. A visita que bateu no limite (ou valia 0) pode pagar depois, uma vez, se a mesma pessoa abrir um link desse convidante no app noutro dia (seção 5, limites diários); essa visita paga sem contar de novo, porque a pessoa já foi contada no painel.
+
+### 20.6 Antifraude
+
+| Risco                                     | Barreira                                                                                                                                                                                                                                                                                                                                                                           |
+| ----------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Autoconvite                               | a própria conta dona do código: 409 `self` no claim; a mesma pessoa noutra conta, pelo `ownerKey` do código (o apelido do e-mail da dona, com `+` ou com os pontos do Gmail, dá a mesma chave): o claim responde `claimed`, como qualquer outro, e grava o `referrals` sem quem convidou, com o `award` `self`, sem ponto, marcador nem agregado; na visita, nenhum dos dois conta |
+| Mais de um claim por conta                | `referrals/{uid}` com `tx.create`; o segundo é `already_claimed`                                                                                                                                                                                                                                                                                                                   |
+| Conta antiga virando convidada            | janela de 7 dias desde o `createdAt` do perfil                                                                                                                                                                                                                                                                                                                                     |
+| Convidante fabricando contas              | limite diário de quem convidou (20 cadastros e 50 visitas pagos) e o perfil exigido                                                                                                                                                                                                                                                                                                |
+| Conta excluída e recriada                 | o id do evento é a chave da pessoa, e o lançamento sai `duplicate`; o marcador da visita também é por pessoa, e ela não conta de novo no painel                                                                                                                                                                                                                                    |
+| Visitas em massa                          | contadas uma vez por par pelo marcador e pagas uma vez por par pelo extrato, 20 por dia por conta que visita, só com perfil                                                                                                                                                                                                                                                        |
+| Links inflados                            | um por destino, 30 novos por dia; o link de uma central só com ela publicada                                                                                                                                                                                                                                                                                                       |
+| Chaves de campanha ao acaso nos agregados | `utm_source` e `utm_campaign` só nos cadastros (um claim por conta, de conta com perfil e de até 7 dias); visitas e links só pelo tipo, que é fechado; valor normalizado (20.3) e chave cortada em 40 caracteres                                                                                                                                                                   |
+| E-mail testado contra o extrato           | a chave da pessoa é HMAC com segredo do servidor, e não sha256 (decisão 4)                                                                                                                                                                                                                                                                                                         |
+| Sondagem do e-mail pelas respostas        | a visita responde sempre o mesmo corpo, e a dona do código noutra conta recebe no claim a resposta de um claim comum: uma conta com o apelido de um e-mail não descobre pela API se aquela pessoa é dona de um código nem se já passou por ele (implementação)                                                                                                                     |
+
+Limites aceitos: e-mail diferente paga de novo (o Firebase não exige e-mail confirmado, e o app não tem a confirmação); uma pessoa pode ser convidada por um fã, excluir a conta e se cadastrar pelo código de outro.
+
+(implementação) A chave da pessoa, tirada de um e-mail que ninguém confirma, é pseudônimo fraco: qualquer um cria uma conta com o apelido de um e-mail (`maria+1@gmail.com`) e passa a ter a chave daquela pessoa. A API não mostra o resultado da comparação (as duas barreiras de sondagem da tabela), mas os efeitos dela continuam à vista de dois lados: quem convidou vê o próprio saldo subir ou não quando visita o próprio link com o apelido de alguém (descobre se aquela pessoa já tinha passado por ele), e a equipe com `fans`, que lê qualquer carteira e qualquer extrato com os ids crus, consegue o HMAC de um e-mail pelo extrato da própria conta de fã e procura nos outros, ou vê um lançamento novo aparecer no extrato de outro fã depois de uma visita. O HMAC segura só quem lê os ids sem criar contas (um backup ou uma exportação). O `id` do `GET /me/ledger` continua o id do documento (`invite_visit:<chave>`): escondê-lo do fã não fecharia nada disso, porque o fã não lê o extrato de mais ninguém e a equipe lê os ids direto no Firestore; a tela do extrato é do bloco 7, que decide o que ela mostra. Fechar de vez pede o e-mail confirmado para o convite contar (pergunta 5 de 20.14). Os dois ficam dentro dos limites diários, e excluir a conta custa ao fraudador os pontos dela. Exigir e-mail confirmado para pagar o cadastro é pergunta para a cliente (20.14). Cada chave nova de `utm_source` ou `utm_campaign` nos shards custa ao fraudador uma conta nova com perfil; se os shards começarem a crescer por isso (o documento tem teto de 1 MiB e de 20 mil campos), o passo seguinte é só as campanhas cadastradas pela equipe virarem chave, e o resto cair em `_other`, o que combina com a resposta à pergunta 3 de 20.14. Sem App Check, como no bloco 1 (seção 5).
+
+### 20.7 Agregados do painel e cadastros por dia
+
+O `ShardDelta` (`points/stats.ts`) ganha:
+
+```
+signups: {
+  total: number      // contas de fã criadas no dia (gatilho de cadastro)
+  invited: number    // claims aceitos no dia (a conta entrou por convite; o dia é o do claim)
+}
+invites: {
+  visits: number     // pessoas contadas como visitantes de um convidante (o marcador nasceu), do claim e do app
+  links: number      // links novos registrados
+}
+byOrigin: {
+  kind: { <invite|post|artist|agenda|other|code>: { signups, visits, links } }
+  utmSource: { <utm_source ou "_none">: { signups } }
+  utmCampaign: { <utm_campaign ou "_none">: { signups } }
+}
+```
+
+- `addInviteToShard(delta, { event: 'signup' | 'visit' | 'link', kind, utmSource?, utmCampaign? })` soma 1 no total e no `kind`; os recortes de `utm_*` só no `signup`. O `addInviteCounts(plan, change)` cria o `plan.shard` quando ele veio `null`, como o `addMembershipCounts`. Continua uma gravação de shard por transação. Contador zerado não é gravado (`pruneZeros`).
+- Por que os `utm_*` só nos cadastros: quem cria o link escolhe o valor, e cada valor novo é uma chave nova no shard. O claim é um por conta, de conta com perfil e de até 7 dias, então cada chave nova custa uma conta nova; a visita e o link custariam bem menos (20 visitas e 30 links por conta e dia). O `kind` é fechado (seis valores).
+- Chave dos recortes: o valor normalizado (20.3) cortado em 40 caracteres; sem valor, `_none` (nunca `__x__`, que o Firestore reserva).
+- São fluxo, como o resto do shard: a exclusão de conta não desconta nada (seção 12). O estoque (pessoas trazidas hoje) é o `count()` de `referrals`.
+- Isenção de índice: `statsShards.byOrigin` (mapas com chaves soltas), como `bySource` e `byArtist`.
+- **Cadastros no gatilho:** o `createProfile` (`functions/src/store.ts`) recebe o relógio e o sorteio do shard (injetáveis nos testes; implementação: `createProfile(db, user, random, { now, shardRandom })`) e, na mesma transação que cria o perfil, faz `tx.set(shardRef(db, dia, pickShard(random)), shardWrite(delta, dia, agora), { merge: true })`, com `signups.total: 1` no `delta`, e grava `signupCounted: true` no perfil novo (a marca que a carga abaixo usa). Só quando cria: a entrega repetida acha o perfil e não soma de novo. Conta da equipe não passa por aqui. A conta excluída nos milissegundos da criação (o `handleUserCreated` desfaz) fica contada: foi um cadastro. O dia é o do relógio da função, e o `createdAt` do perfil é o `serverTimestamp`; perto da meia-noite, os dois podem cair em dias diferentes por milissegundos, sem efeito prático. A marca não muda nada para o fã: o app lê só os campos que conhece (`toFanProfile`, em `profile/api.ts`), e a regra de edição do perfil olha só as chaves que o pedido muda (`diff().affectedKeys()`).
+- **Retenção:** ativos da coorte C na semana S (seção 7) divididos pela soma de `signups.total` nos dias da semana C.
+- **Parte dos cadastros que veio de convite:** `signups.invited` sobre `signups.total`, lida por semana ou período maior, nunca por dia. O `signups.invited` cai no dia do claim, que pode vir até 7 dias depois do cadastro (o convite amarrado que só foi aceito numa nova tentativa), e o `signups.total` no dia do cadastro: num dia só, a razão pode passar de 100%. Somar o claim no dia do cadastro foi descartado: pediria uma segunda gravação de shard, num dia que o fechamento (seção 7) pode já ter fechado, e o dia fechado não muda. O número exato por dia de cadastro sai do `signupAt` de cada `referrals`, na seção Fãs.
+- **Carga dos cadastros de antes:** `scripts/backfill-signups.mjs`, no molde do `staff-bootstrap-invite.mjs`. Fora do emulador, pede `--project imagine-up-app` escrito. Lê todo `users` em páginas, conta os perfis sem `signupCounted` (os que nasceram antes do `createUserProfile` novo, ou por uma instância antiga durante a troca de versão do deploy), agrupa pelo dia de São Paulo do `createdAt` (o `dayKey` do build das funções) e soma em `statsDaily/{dia}/statsShards/backfill`: `{ day, signups: { total }, backfill: true, updatedAt }`. Sem `--before`: a marca separa o que o gatilho contou do que a carga conta, então nada conta duas vezes nem fica de fora na troca de versão, quando instâncias velhas e novas convivem. Mostra os dias e os totais antes de gravar. Não ganha entrada no `package.json`, para não mexer no fingerprint da EAS: roda com `node scripts/backfill-signups.mjs`. (implementação) A contagem e a gravação moram em `functions/src/points/backfill.ts` (`countUnmarkedSignups` e `writeSignupBackfill`), que o script carrega do build; `--dry-run` só mostra. Quem lê os shards lista a subcoleção, então o documento `backfill` entra na soma sem mudança.
+- (implementação) A carga é só aditiva: em transações de até 200 perfis, relê cada perfil, grava `signupCounted: true` nos que seguem sem a marca e soma com `increment` (`set` com `merge`) no documento `backfill` do dia deles. Rodar de novo só soma os perfis que nasceram sem a marca desde a rodada anterior e nunca desconta: a conta excluída entre duas rodadas continua somada, como em todo agregado (seção 12), e o dia sem perfil novo fica como está. O primeiro desenho regravava cada dia com `set` a partir dos perfis que ainda existiam, e uma segunda rodada (a de 20.16, ou uma meses depois) descontava os fãs que tinham excluído a conta no meio, mudando o denominador da retenção conforme o dia em que a carga rodava. O perfil que sumiu entre a leitura e a transação não é recriado nem somado (`update`, só nos que a transação achou).
+- Conta excluída antes da carga não entra, porque não está mais em `users` (nem no Auth). Nenhuma delas tem atividade contada nos shards: nenhuma build chama a API antes do bloco 10 (seção 13), e a carga roda junto com a publicação do bloco 5. A retenção das coortes antigas fica sobre as contas que existiam na carga.
+- **Fechamento do dia** (seção 7, ainda não feito): a carga roda antes de o fechamento entrar no ar, senão os dias já fechados ficam sem ela, porque o dia fechado não muda. O fechamento soma também `signups`, `invites` e `byOrigin`, e lista a subcoleção inteira, com o documento `backfill`.
+
+### 20.8 Efeitos no painel
+
+- **Fãs** (bloco 11): de cada fã, o `referrals/{uid}` (quem trouxe, por qual link e campanha, e se pagou; `inviterUid` nulo com o `award` `self` é a dona do código numa segunda conta, e com o `inviterRemovedAt`, quem convidou excluiu a conta); de cada convidante, os convidados (`referrals` por `inviterUid`), o código e os links (`fanInvites/{uid}` e `inviteLinks`). Tudo com a seção `fans`, por `getDoc`, `getDocs` e `count()`, nunca com escuta em tempo real.
+- **Visão geral e Crescimento** (bloco 11): cadastros por dia (`signups.total`), a parte que veio de convite (por semana ou mais, 20.7), visitas e links, e os comparativos por tipo de link (cadastros, visitas e links) e por `utm_source` e `utm_campaign` (só cadastros), da UP-39, lidos dos shards (seção 7).
+- **Nenhuma mudança no código do painel** neste bloco, e as callables do painel não mudam. O `removeStaffMember` só chega à exclusão de conta pelo gatilho, que passa a limpar também o convite (20.10), sem mudar o que o painel vê.
+
+### 20.9 Regras e índices
+
+Acréscimo ao `firestore.rules`, antes do `match /{document=**}` final. Nenhuma regra existente muda.
+
+```
+    // Convite (bloco 5): o código de cada fã, os links que ele compartilhou e
+    // quem trouxe quem, com a origem. Só o servidor grava (API). O fã não lê
+    // nada disso direto, nem o próprio: chega pela API (/me/invite e
+    // /me/progress). A equipe com a seção fans lê (seção Fãs do painel).
+    match /inviteCodes/{code} {
+      allow read, write: if false;
+    }
+
+    match /fanInvites/{uid} {
+      allow read: if canSeeSection('fans');
+      allow write: if false;
+
+      match /inviteLinks/{linkId} {
+        allow read: if canSeeSection('fans');
+        allow write: if false;
+      }
+
+      // Quem já contou como visitante (o id é a chave da pessoa): só o servidor.
+      match /inviteVisitors/{personKey} {
+        allow read, write: if false;
+      }
+    }
+
+    match /referrals/{uid} {
+      allow read: if canSeeSection('fans');
+      allow write: if false;
+    }
+```
+
+O `inviteCodes` fica fechado até para a equipe: achar o dono de um código é `fanInvites` com `where('code', '==', ...)`, que a seção `fans` já lê, e o `ownerKey` não sai do servidor. O `inviteVisitors` também: o painel conta visitas pelos shards, e a lista de chaves não diz nada à equipe. O `match /{document=**}` final já negaria os dois; as regras explícitas deixam a intenção escrita e os testes presos a ela. Sem regra de grupo neste bloco.
+
+Índices: só a isenção `{ "collectionGroup": "statsShards", "fieldPath": "byOrigin", "indexes": [] }` em `firestore.indexes.json`. A contagem de `referrals` por `inviterUid` e a busca de `fanInvites` por `code` usam os índices automáticos de campo único. Nenhuma consulta nova pede índice composto, então a publicação não espera índice montado (diferente do bloco 4).
+
+### 20.10 Exclusão de conta
+
+`deleteUserData` (`functions/src/store.ts`), na ordem nova:
+
+1. Reservas de @, como hoje.
+2. `users/{uid}` sozinho, como hoje (19.12). Daqui em diante nenhuma gravação da API passa.
+3. Novo: `removeInviteData(db, uid)`, em `invites/service.ts`. Lê `fanInvites/{uid}` (e, por segurança, os `inviteCodes` com `uid == <uid>`, implementação); numa transação por código, relê `inviteCodes/{code}` e só o apaga se o `uid` dele for este (o código de outro fã nunca sai); depois, `recursiveDelete(fanInvites/{uid})`, que leva os links e os marcadores de visita. Daqui em diante o código responde 404, e o app de quem guardou o link esquece o código. Um claim ou uma visita que leu o código antes do passo 3 segura a leitura: ou grava o marcador antes de o código sair (e o `recursiveDelete` o leva), ou repete depois e responde 404, então nenhum marcador sobra debaixo de um convidante excluído.
+4. `leaveAllCentrals`, como hoje.
+5. `recursiveDelete(users/{uid})`, como hoje.
+6. Novo: `referrals/{uid}` (o fã como convidado). Os pontos que ele rendeu ficam com quem convidou (decisão 5), e as "pessoas trazidas" de quem convidou caem 1.
+7. Novo: `detachReferrals(db, uid, now)`. Consulta `referrals` com `inviterUid == uid` em páginas e faz `update({ inviterUid: null, inviterRemovedAt })` por página, até a consulta voltar vazia. (implementação) Páginas de 200, cada uma numa transação que relê os documentos: o convidado pode estar excluindo a conta ao mesmo tempo, e um `update` num lote sobre um documento que sumiu derrubaria a página inteira. O `update` tira o documento da consulta seguinte, como no `deleteIdempotencyKeys`.
+8. Carteira, chaves de idempotência e `staff/{uid}`, como hoje.
+
+Por que nessa ordem: um claim que leu o código antes do passo 3 segura a leitura e grava antes. Se ele achou o perfil de quem convidou já apagado (passo 2), os pontos saem `skipped`, e o `referrals` que ele criou entra na consulta do passo 7. Um claim do próprio fã depois do passo 2 é recusado pelo `requireFan`, então o passo 6 não deixa nada para trás. Repetir é seguro: cada passo relê ou consulta o que sobrou.
+
+O que fica de propósito: no extrato de quem convidou, os lançamentos `invite_*:<personKey>` (a chave da pessoa, que impede pagar de novo), com o `actor` do convidado (um uid que não aponta mais para conta nenhuma); no `inviteVisitors` de quem convidou, o marcador do convidado (a mesma chave, que impede contar de novo no painel). O `referrals` de quem foi trazido por um fã excluído fica, sem o `inviterUid`. Os agregados não descontam.
+
+O `functions/src/store.test.ts` prende a ordem nova, como hoje.
+
+### 20.11 App
+
+**Seletor e consultas**
+
+- `SERVER_DOMAINS` ganha `invite`, no commit que entrega as rotas. Com o emulador, o código, o claim, a visita e os links vão ao servidor; nas builds, tudo fica nas fixtures, como hoje.
+- `useMyInviteQuery` espalha `queryOptionsFor('invite')` (rede e disco, seção 13). O código não muda, então o cache salvo serve sem rede.
+- `useMyProgressQuery` não muda: "links criados" e "pessoas trazidas" passam a ser os do servidor (seção 6 e 20.2). Nas fixtures, 63 e 418, como hoje.
+- O `QUERY_CACHE_VERSION` não sobe: os campos novos do `MyInvite` são opcionais.
+
+**Link recebido** (domínio `invites`, que continua sem API e sem Firebase, por causa do teste de guards)
+
+- `normalizeInviteCode(raw)`, em `invites/link.ts` (puro), cópia do `normalizeInviteCode` do servidor (20.2): tira espaços e hífens, passa para maiúsculas e devolve `null` fora de `^[A-Z0-9_]{3,64}$`. É o único jeito de o app tratar um código: na captura do link, no campo do cadastro, na comparação do `bindPendingInvite`, no corpo do claim e da visita e nas chaves. Mudou um, mude o outro e os testes em tabela dos dois.
+- `parseInviteLink` devolve `{ code, destination, utm }`. Todos os `utm_*` saem do destino da navegação, também no link curto (`/c/CODIGO?utm_source=whatsapp`); só `utm_source`, `utm_medium` e `utm_campaign` vão para `utm`, cada valor com até 200 caracteres, e os outros são descartados (decisão 8).
+- `inviteRoute` leva os três `utm_*` como parâmetros da rota interna (`/convite/ABC?destino=...&utm_source=...`).
+- `InviteCaptureScreen` normaliza o código com o `normalizeInviteCode` antes de guardar (fora do formato, só sai, como a seção 2 pedia) e chama `savePendingInvite(codigoNormalizado, { path: destino ?? '/', utm })`. Assim um `?ref=` em minúsculas ou com hífen guarda o mesmo código que o cadastro mostra. (implementação) Com uma tela de conta segurando o fã (`authHolds > 0`: entrar ou cadastrar no meio, ou o estágio "código recusado"), ela sai com `router.back()`, e não com o `dismissTo(entryRoute(gate))`: com a trava, o `entryRoute` dá a abertura, e o `dismissTo` tirava de baixo a tela que segurava. Hoje isso só acontece com o link `imagineup://` ou `exp://` (o `https` cai no site), e vira o caso comum com os links que abrem o app (bloco 13).
+- `PendingInvite` vira `{ code, receivedAt, origin: { path, utm } }`, na chave `@imagineup/pending-invite/v2`, porque o formato mudou; a v1 é apagada na primeira leitura, sem migração: nenhuma build manda convite ao servidor antes de o `EXPO_PUBLIC_API_URL` entrar nas builds (depois do bloco 10, seção 13), e até lá qualquer convite v1 já passou dos 7 dias. O primeiro convite vale por 7 dias (`PENDING_INVITE_TTL_MS`, em `invites/consts.ts`); vencido, sai na leitura. `savePendingInvite` avisa quem assina (`subscribePendingInvite`), para a sincronização rodar na hora.
+- Armazenamento novo, `@imagineup/invite-claims/v1`: `{ [uid]: BoundInvite }`, com `BoundInvite = { uid, code, via, origin, receivedAt, boundAt, idempotencyKey }`. Funções de armazenamento em `invites/storage.ts`: `bindPendingInvite(uid, typedCode)`, `readBoundInvite(uid)` e `clearBoundInvite(uid)`. No `bindPendingInvite`, código vazio descarta o pendente e devolve `null`; código igual ao do pendente (os dois pelo `normalizeInviteCode`) vira `via: 'link'`, com a origem e o `receivedAt` dele; código diferente vira `via: 'code'`, sem origem, com o `receivedAt` igual ao `boundAt`. A chave é `invite-<CODIGO>-<receivedAt>`, com o código normalizado, fixa enquanto o convite estiver amarrado. O convite amarrado vale por 7 dias desde o `boundAt` (`BOUND_INVITE_TTL_MS`).
+- `inviteLinkId(target)`, em `invites/link.ts` (puro): `invite`, `agenda`, `post:<id>` ou `artist:<id>`.
+- (implementação) `invitePathForServer(path)`, em `invites/link.ts`: o caminho guardado vai ao servidor sem a busca (ele a ignora), e vira `/` quando passa de 200 ou tem `//` (o servidor recusaria com 400, e o convite se perderia). Cada `utm_*` é cortado em 200 já no `parseInviteLink`, pelo mesmo motivo.
+- (implementação) O convite amarrado nunca sai com o token de outra conta: o axios de `services/api` aceita `sessionUid` no pedido, e o interceptador recusa antes de mandar (`SessionChangedError`, que vira `ApiError('unknown')` sem status, incerto) quando a sessão do aparelho já é de outro uid. O claim manda o `sessionUid` do convite, e a visita, o da conta que visita. A rodada da sincronização também confere a sessão antes de cada passo e para se ela mudou.
+- Tipos em `invites/types.ts` (novo): `InviteUtm`, `InviteOrigin`, `PendingInvite`, `BoundInvite` e os corpos e resultados de 20.3.
+
+**Cadastro** (domínio `auth`)
+
+- Campo novo "Código de convite (opcional)", depois da senha. O `signUpSchema` ganha `inviteCode`: vazio é "sem código"; senão, passa pelo `normalizeInviteCode` (de `@/domains/invites`), e o `null` dele recusa com a mensagem `validation.inviteCodeInvalid`. O campo usa `autoCapitalize="characters"`, `autoCorrect={false}`, `autoComplete="off"` e `textContentType="none"`. A senha passa o foco para ele no "próximo" do teclado, e ele envia no "ir". O `FIELD_ORDER` ganha o campo.
+- O campo vem preenchido com o código do convite pendente, na montagem da tela, se ainda não foi tocado.
+- `useSignUp`, na ordem: cria a conta; chama `bindPendingInvite(uid, inviteCode)` logo em seguida, ainda com o `holdAuth`; espera o perfil. Com `via: 'link'`, o cadastro não manda nada: a sincronização manda assim que o `holdAuth` solta. Com `via: 'code'`, o claim é esperado por até 8 s (`INVITE_CLAIM_WAIT_MS`, em `auth/consts.ts`). Recusa do código digitado, só com 404 `invite_not_found` ou 409 `invite_not_allowed`: a mutação resolve `{ status: 'inviteRejected', reason }` e não solta o `holdAuth` (a função que solta fica guardada no módulo do hook). As outras recusas definitivas da sincronização (`invalid_request`, `idempotency_key_required`, `not_fan` e `idempotency_key_reused`, abaixo) apagam o convite amarrado e seguem como hoje, sem o estágio: não é nada que o fã conserte digitando. Sucesso, falha de resultado incerto (a mesma regra da sincronização, inclusive o `unknown` sem status) ou o prazo: segue como hoje, e o convite incerto fica amarrado para a sincronização.
+- Estágio "código recusado" da tela: nome, e-mail e senha ficam com os valores e `editable={false}`; o rodapé "Já tem conta?" sai; o lead vira `auth.signUp.inviteRejected.lead`; o campo do código mostra o erro (`notFound` ou `notAllowed`), recebe o foco, e o erro é anunciado; o botão principal vira "Continuar", com um `TextLink` "Continuar sem código" logo abaixo (irmãos, nenhum dentro do outro). "Continuar" chama `useFinishSignUp`: com código, amarra de novo (chave nova, porque a anterior foi recusada) e espera o claim; recusado de novo (404 ou 409, como acima), fica no estágio; sem código, ou com o claim aceito ou incerto, faz o `playAuthExit` e solta o `holdAuth`. (implementação) "Continuar" com o campo vazio é o mesmo que "Continuar sem código". O `useFinishSignUp` mora em `auth/hooks/use-sign-up.ts`, junto com o `useSignUp`, porque a função que solta o fã fica no módulo deles; a recusa do código digitado tira o convite amarrado na hora, e o app fechado no estágio não manda nada depois. O voltar fica preso no estágio (`useStayOnScreen`). App fechado no estágio: a conta já existe, e na volta o guard leva à 1l, sem convite. (implementação) O `useStayOnScreen` não segura navegação de fora (um link aberto no meio): a tela de cadastro solta o fã ao desmontar (`releaseHeldSignUp`, de `auth/hooks/use-sign-up.ts`), senão a trava ficava no módulo sem tela, a conta logada ficava presa nas telas de conta (nem entrar de novo soltava, porque o `useSignIn` solta só a trava dele) e a sincronização não rodava. A tela também assina `subscribePendingInvite`: o link que chega no estágio (o fã pediu o código certo a quem o convidou) põe o código no campo, no lugar do recusado e sem o erro, e o "Continuar" o amarra como `via: 'link'`, com a origem; fora do estágio, só com o campo ainda não tocado.
+- Nas fixtures, o claim e a visita não chamam nada e o convite sai do aparelho, como hoje. O estágio de recusa não acontece.
+
+**Sincronização** (`auth/hooks/use-invite-sync.ts`, chamado no `_layout.tsx` raiz logo depois do `useAuthListener`)
+
+- Roda quando a sessão está confirmada (`status: 'signedIn'`) e ninguém segura as telas de conta (`authHolds === 0`); de novo quando a rede volta (`onlineManager`), quando um convite novo é guardado (`subscribePendingInvite`) e quando o app volta ao primeiro plano (`AppState` `active`). Uma rodada por vez.
+- Primeiro, o convite amarrado ao uid da sessão. Vencido, sai sem envio; senão, vai o `sendInviteClaim`. Sucesso ou recusa definitiva: o convite sai do aparelho. Recusa definitiva é só o `ApiError` com um destes códigos no corpo: `invalid_request`, `idempotency_key_required` (400), `not_fan` (403), `invite_not_found` (404), `invite_not_allowed` (409) e `idempotency_key_reused` (422), em `isFinalInviteRejection`, de `auth/api.ts`. Todo o resto é incerto e fica para a próxima rodada: `status` nulo (`network`, `timeout` e o `unknown` sem status), 401, 429, 5xx e um 4xx sem um desses códigos (o `not_found` genérico de um servidor que ainda não tem a rota). O `isRetryable` não serve aqui: o interceptador de pedido do axios chama o `getIdToken`, que sem rede e com o token vencido (mais de 1 h) lança um `FirebaseError`, e o de resposta o transforma em `ApiError('unknown')` sem status, que não é `isRetryable`; o 429 também vira `unknown`. Pela regra do `isRetryable`, uma abertura do app com a rede instável apagaria o convite. O convite amarrado a outro uid nunca é enviado nem apagado por esta sessão.
+- Falha incerta põe até 3 novas rodadas na mesma sessão (30 s, 2 min e 10 min, `INVITE_SYNC_RETRY_MS`), canceladas quando a sessão muda. O caso comum é o 503 `profile_not_ready` logo depois do cadastro (o perfil passou dos 20 s): sem elas, o convite só iria quando a rede voltasse, outro convite chegasse ou outra sessão começasse.
+- Depois, o convite pendente, sem dono. Se a conta da sessão não tem convite amarrado neste aparelho, nasceu no `receivedAt` dele ou depois (`auth.currentUser.metadata.creationTime`), há até 7 dias, e ninguém entrou nela desde que nasceu (`lastSignInTime` até 1 min depois do `creationTime`: é a sessão que criou a conta, neste aparelho), a sincronização amarra o pendente a ela (`bindPendingInvite(uid, pendente.code)`, que dá `via: 'link'`) e manda o claim como acima. Cobre o app fechado entre `createUserWithEmailAndPassword` e o `bindPendingInvite` do cadastro (no meio há o `updateProfile`, uma ida e volta de rede) e a conta que nasce por um fluxo de entrar (Apple e Google, aprovados para depois), que nunca passa pelo `useSignUp`. A condição do `lastSignInTime` impede que uma conta criada noutro aparelho depois do link, e que entrou aqui, leve o convite. O relógio do aparelho adiantado (o `receivedAt` depois do `creationTime`) cai na visita: limite aceito. Conferir no SDK JS 12 que o `metadata` do usuário restaurado na abertura é o do servidor.
+- Senão, o pendente sai do aparelho primeiro e, se chegou há menos de 24 h (`VISIT_FRESH_MS`), a visita vai (`sendInviteVisit`), sem esperar e sem nova tentativa. Mais velho que isso, sai sem visita: num aparelho dividido, pode ser de outra pessoa.
+- Excluir a conta (`useDeleteAccount`, no sucesso) apaga o convite amarrado àquele uid. Sair da conta não apaga: ele volta a valer se a mesma conta entrar de novo dentro do prazo.
+
+**Compartilhar**
+
+- `sharePost`, `shareArtist` e `shareInvite` devolvem se a folha voltou com `Share.sharedAction`. No Android, o sistema sempre devolve essa ação; no iOS, cancelar devolve `dismissedAction`.
+- `useRegisterInviteLinkMutation`, novo em `profile/queries.ts` e exportado pelo index, porque `posts`, `artist-page` e `invite-link` já importam o `useMyInviteQuery` de lá: `PUT /me/invite/links/<id>` com `{ linkId, idempotencyKey }` nas variáveis, `networkMode: 'always'`, `retry: 2`, sem fila offline e sem aviso na tela. Com `created: true`, invalida `profileKeys.progress()`.
+- `registerInviteLink` (`profile/api.ts`), com `sourceOf('invite') === 'fixtures'`, devolve `{ linkId, created: false }` sem chamar nada: nas builds há o código de exemplo `CAMILA12`, e o `PUT` sairia com o `apiUrl` vazio. Os 63 links das fixtures não mudam.
+- O "+N" do compartilhar do post (`PostActions` e o `ShareChips` de `post-row`, pelo `useSharePoints` de `posts/hooks/use-share-post.ts`; implementação: `null` ou 0 no post não rende) passa a ser o `pointsPerVisit` do `useMyInviteQuery`, o mesmo da sheet "Gerar meu link"; o `sharePointsPerVisit` do post de exemplo só decide se o compartilhar rende (`null` não rende) e vale enquanto o convite não carregou, até o bloco 6. Sem isso, o post mostraria o 2 fixo de `posts/fixtures.ts` e a sheet o valor da configuração, e os dois divergiriam quando a cliente mudasse o `invite_visit`.
+- `useSharePost`, `useShareArtist` e a sheet "Gerar meu link" registram o link quando houve código e a folha voltou compartilhada: post é `post:<id>`, central é `artist:<id>`, o show do "Chamar amigos" é `agenda` e o atalho Convidar é `invite`.
+- `buildInviteUrl(code, path, base = SHARE_LINK_BASE)` e `describeInviteLink(target, code, base?)`: a base vem do `linkBase` do `MyInvite` quando ele chegou.
+
+**Textos** (`translations.json`)
+
+- `invite.perVisit`: "por pessoa que abre o link no app". O texto de hoje promete pontos por qualquer abertura, o que não vale com a decisão 3. (implementação) O mesmo fim nos rótulos do compartilhar do post (`post.shareLabel` e `post.details.shareLabel`), que usam o mesmo `pointsPerVisit`: "Compartilhar o post, ganha N pontos por pessoa que abre o link no app".
+- `auth.signUp.inviteCode`: "Código de convite (opcional)"; `auth.signUp.inviteCodeHint`: "Se alguém te convidou, o código vem no link que você recebeu."
+- `validation.inviteCodeInvalid`: "Use só as letras e os números do código."
+- `auth.signUp.inviteRejected.lead`: "Sua conta já foi criada. Confira o código de convite ou continue sem ele."
+- `auth.signUp.inviteRejected.notFound`: "Não achamos esse código. Confira com quem te convidou."
+- `auth.signUp.inviteRejected.notAllowed`: "Esse código não vale para esta conta."
+- `auth.signUp.continue`: "Continuar"; `auth.signUp.skipInvite`: "Continuar sem código".
+
+**O que é de verdade e o que é de exemplo** (desenvolvimento com emulador)
+
+| Número ou dado                   | Telas                                               | Fonte no bloco 5                                                                      |
+| -------------------------------- | --------------------------------------------------- | ------------------------------------------------------------------------------------- |
+| Código e link do fã              | sheet "Gerar meu link", compartilhar post e central | servidor                                                                              |
+| Pontos por visita e por cadastro | sheet "Gerar meu link"                              | servidor (configuração)                                                               |
+| "+N" do compartilhar do post     | mural e post                                        | servidor (o mesmo `pointsPerVisit`); o post de exemplo só diz se rende, até o bloco 6 |
+| Pontos de convite                | carteira (1e, 1h)                                   | servidor                                                                              |
+| Links criados e pessoas trazidas | 1e                                                  | servidor                                                                              |
+| Missão de convite do card lima   | 1g, 1b                                              | exemplo, até o bloco 7                                                                |
+
+**`CLAUDE.md` e `AGENTS.md`**
+
+No mesmo commit: Navegação (o item Links: origem guardada, visita com conta e convite amarrado ao uid; o item Convite: a base do link e o registro do link), Dados (`invite` no seletor), Cloud Functions (`createUserProfile` soma o cadastro do dia e marca o perfil; `deleteUserData` com o convite; o secret `INVITE_KEY_SECRET` da `api`, no item da publicação e no do emulador), API do app e pontos (as rotas do bloco 5) e Pendências (sai o "Convite no cadastro (M2)", resolvido; entram as perguntas de 20.14 e o que fica fora do bloco, 20.15). O `AGENTS.md` recebe a mesma cópia, com o cabeçalho dele.
+
+Nada disso entra no fingerprint da EAS: só JavaScript, regras e funções (o script de carga não entra no `package.json`).
+
+### 20.12 Seed dos emuladores
+
+`functions/src/invites/seed.ts` exporta `CAMILA_INVITE_CODE`, `EMULATOR_INVITE_KEY`, `SEED_INVITEES` (o e-mail e a origem de cada convidado), `seedCamilaInvite(db, { uid, email }, now)` e `seedInviteClaims(db, invitees, now)` (implementação: sem o `inviterUid`, que sai do código `CAMILA12`; cada convidado leva `{ uid, email, origin }`). O `scripts/seed-emulators.mjs` carrega `functions/lib/invites/index.js` como já carrega os pontos e as centrais.
+
+- Chave do HMAC no emulador: o `scripts/functions-emulator-env.mjs` acrescenta `INVITE_KEY_SECRET` ao `functions/.secret.local` (como faz com o `EMAILJS_PRIVATE_KEY`, e também num arquivo que já existe sem ela), com o mesmo valor fixo de `EMULATOR_INVITE_KEY`, que o seed e os testes de emulador usam. Assim a `api` do emulador e o seed calculam a mesma chave da pessoa, sem um ramo pelo `FUNCTIONS_EMULATOR` no código que calcula a chave.
+- Código da Camila: `CAMILA12`, o mesmo da fixture (`buildMyInviteFixture`), para a sheet mostrar o mesmo código nos dois modos. Ele tem vogais e não sai do sorteio, então não colide. O seed grava `inviteCodes/CAMILA12`, com o `ownerKey` do e-mail dela, e `fanInvites/{uid}` se não existirem.
+- Links da Camila: `invite`, `post:p-clipe`, `artist:nettobrito` e `agenda`, pelo mesmo núcleo do `PUT`, sem marcar atividade.
+- Três contas de teste novas, criadas como a Camila e o Alan (`accounts:signUp` no emulador do Auth, a espera do perfil e a cidade):
+
+| Conta      | E-mail e senha                          | Como chegou                                                                                      |
+| ---------- | --------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| Bia Santos | `bia@teste.imagineup`, `fa-de-teste-3`  | link do post `p-clipe`, com `utm_source=instagram`, `utm_medium=story` e `utm_campaign=sao-joao` |
+| Duda Lima  | `duda@teste.imagineup`, `fa-de-teste-4` | link da central `nettobrito`, sem utm                                                            |
+| Enzo Rocha | `enzo@teste.imagineup`, `fa-de-teste-5` | código digitado no cadastro                                                                      |
+
+- Os claims passam pelo mesmo `claimInvite` da rota (`runClaim`, numa transação com o `requireFan` sem marca de atividade, como o `runJoinCentrals`), com `actor` de sistema, o e-mail de cada conta e a configuração padrão com `invite_visit` e `invite_signup` em 0. Os lançamentos saem `zero`, e a carteira da Camila fica a do protótipo (12.480, 4.120 e "+840"). O `award` dos três `referrals` guarda `zero`. Os claims criam os três marcadores de visita da Camila. Os shards do dia somam 3 cadastros convidados e 3 visitas (por tipo: `post`, `artist` e `code`), e os recortes de `utm_*` só com o cadastro da Bia (`instagram` e `sao-joao`; os outros dois em `_none`).
+- Resultado na 1e da Camila: 4 links criados e 3 pessoas trazidas. O Alan fica com 0 e 0, e ganha o código na primeira vez que abrir a sheet.
+- Por que não os 63 e 418 do protótipo: 418 contas passariam, uma a uma, pela função de cadastro (com a espera do nome) a cada sessão do emulador; `referrals` sem conta seriam fãs que não existem na seção Fãs do painel, contra a regra de que todo convidado tem conta; e 63 links pediriam 63 destinos, quando o mural de exemplo tem 10 posts. Os números do protótipo seguem nas fixtures. A seção 14 muda junto.
+- Para ver os pontos de verdade: com o Alan logado, abrir `imagineup://post/p-clipe?ref=CAMILA12` (no Expo Go, `exp://<host>:8081/--/post/p-clipe?ref=CAMILA12`) dá +2 à Camila uma vez; uma conta nova com `CAMILA12` no campo do cadastro dá +2 e +10.
+- Rodar de novo não muda nada: o código, os links, os convites e as contas já existem.
+
+### 20.13 Testes
+
+Funções, testes puros (`vitest`, relógio fixo):
+
+- `invites/model.test.ts` (tabela): o sorteio do código (8 caracteres, só o alfabeto, o mesmo com o `random` fixo); `normalizeInviteCode` (minúsculas, hífen e espaço viram o mesmo código; curto ou com caractere fora vira `null`), na mesma tabela do teste do app; `personKey` (maiúsculas, `+` em qualquer domínio, pontos só no Gmail, `googlemail.com` igual a `gmail.com`, sem e-mail usa o uid, o formato do `eventId`, a mesma chave com o mesmo segredo e outra com outro segredo); `classifyInvitePath` (cada tipo, id fora do formato vira `other`, busca ignorada); `normalizeUtm` (o e-mail colado vira `null`, também com `.` na parte local; telefone com DDD e CPF viram `null`; `2026-10-05` passa) e a chave dos recortes (40 caracteres, `_none`); `parseClaimBody` e `parseVisitBody` (sem código, código em minúsculas e com hífen normalizado, `via` desconhecido, `link` com `via: 'code'`, `openedAt` com `via: 'code'` vira `null`, utm longo, `utm_content`, `utm_term` e `utm_id` ignorados, `openedAt` fora da faixa vira `null`, chave desconhecida ignorada); `parseLinkId` (cada formato, `artist:__x__`, id longo); a janela de 7 dias; os tetos de visitas e de links.
+- `points/stats.test.ts`: `addInviteToShard` nos três eventos, os `utm_*` só no `signup`, o `_none` e o `pruneZeros` dos campos novos; o shard do cadastro (`signups.total`).
+- `points/award.test.ts`: `addInviteCounts` com o `plan.shard` nulo; `addDailyCount` com as chaves novas.
+- `api/router.test.ts`: `GET /me/invite/links/x` é 405 com `Allow: PUT`; `GET /invites/claim` é 405; `/me/invite` e `/me/invite/links/:linkId` não se confundem.
+- `api/index.test.ts`: `InviteError` vira 404 e 409 com `details.reason`; `linkId` malformado é 400; o `email` do contexto vem do token, nunca do corpo; o `inviteKey` vem das dependências.
+- `store.test.ts`: a ordem nova do `deleteUserData` (20.10); o `createProfile` grava o shard e a marca `signupCounted` só quando cria.
+
+Funções nos emuladores (`functions/test/invites.emulator.test.ts`, com a `api` de verdade por HTTP e tokens do emulador de Auth):
+
+- `GET /me/invite`: cria o código no formato, com o `ownerKey` do e-mail do token, e devolve o mesmo nas chamadas seguintes; dez chamadas em paralelo dão um código só; sem perfil, 503; conta só da equipe, 403; os valores vêm da configuração (com a fonte injetada).
+- Claim: paga 2 e 10 a quem convidou, com `invite_visit:<chave>` e `invite_signup:<chave>` no extrato dele, o `referrals` com a origem normalizada (sem caminho e só com os três `utm_*`) e o `award`, o marcador com `via: 'claim'` e os shards do dia (`signups.invited`, `invites.visits` e os recortes); a mesma chave devolve a resposta guardada; outro código depois é `already_claimed`, sem efeito; o próprio código é 409 `self` na própria conta, e uma segunda conta da dona com `nome+1@gmail.com` ou com `n.o.m.e@gmail.com` recebe `claimed`, com o `referrals` sem quem convidou e o `award` `self`, sem lançamento, marcador, "pessoas trazidas" nem agregado, e gasta o claim (implementação); a sondagem pelo apelido do e-mail da dona, de quem já visitou e de quem nunca passou recebe as mesmas respostas na visita e no claim (implementação); conta com o perfil de 8 dias atrás (o `createdAt` regravado no teste) é 409 `account_too_old`; código que não existe é 404 e não grava a chave; o 21º cadastro do dia do mesmo convidante sai `capped`, com o `referrals` gravado; conta excluída e recriada com o mesmo e-mail registra o convite e não paga (`duplicate`) nem soma visita (o marcador já existe), e com `nome+1@gmail.com` também não; claim de quem antes visitou soma o cadastro e não a visita; quem convidou excluído no meio sai `skipped`, sem marcador.
+- Visita (implementação: a resposta é sempre `{ status: 'received' }`, e o teste confere o marcador e os shards): paga 2 uma vez por par, com o marcador; a segunda visita da mesma pessoa não soma no shard; o dono não conta, nem por uma segunda conta com o apelido do e-mail; a 21ª visita do dia da mesma conta não conta nem grava lançamento; código que não existe é 404. Limite e valor zero, com repetição: com quem convidou já nas 50 visitas pagas do dia, a visita sai `capped`, com o marcador e uma visita no shard, e a mesma pessoa de novo, no mesmo dia, não soma visita no shard nem grava lançamento; no dia seguinte, a mesma pessoa paga 2 sem contar de novo; com `invite_visit` em 0 na configuração, a primeira visita cria o marcador e as seguintes da mesma pessoa não somam, com uma visita só no shard.
+- Links: cria uma vez; o segundo `PUT` é `created: false`, e o 31º novo do dia também; a central que não existe, em rascunho ou fora do ar é `created: false`, fora do teto e dos agregados (implementação); sem código é 404; o `/me/progress` conta os links e as pessoas trazidas.
+- Concorrência: dez contas novas fazendo claim do mesmo código ao mesmo tempo deixam dez `referrals`, dez marcadores, a carteira de quem convidou com 120 e vinte lançamentos, e os shards somando 10 cadastros e 10 visitas.
+- Exclusão: convidado excluído some de `referrals`, o número de quem convidou cai, e os pontos e o marcador ficam; convidante excluído: o código responde 404, `fanInvites`, os links e os marcadores somem, e os `referrals` dos convidados ficam com `inviterUid: null`; rodar de novo não muda nada.
+- Cadastro (`functions/test/profile.emulator.test.ts`): a conta nova soma 1 em `signups.total` do dia e nasce com `signupCounted: true`; a entrega repetida não soma de novo; conta da equipe não soma.
+- Seed: o código da Camila com o `ownerKey`, os links, os três convidados com as origens e os marcadores, a carteira dela sem mudar, e rodar de novo não muda nada; a conta da Bia excluída e recriada com o mesmo e-mail, com claim pela `api` do emulador, não cria marcador de visita novo e não soma visita (prova que o seed e a `api` usam a mesma chave). (implementação) Os lançamentos dela não saem `duplicate`: no seed o convite vale 0, e o lançamento `zero` não grava extrato; a conta recriada paga uma vez, como a visita que antes valia 0 (20.5).
+- Carga: o `backfill-signups.mjs` no emulador soma, por dia, só os perfis sem a marca (gravados pelo Admin SDK sem ela, como perfis de antes, e um criado pelo gatilho, com ela) e marca cada um; o `--dry-run` não grava; com um perfil contado excluído e outro sem a marca criado entre duas rodadas, a segunda soma só o novo e o total do dia não cai; uma terceira rodada não muda nada (implementação).
+
+Regras, `tests/invites-rules.test.ts` (novo, no molde de `tests/centrals-rules.test.ts`, com os mesmos membros de exemplo):
+
+- `inviteCodes` e `fanInvites/{uid}/inviteVisitors`: ninguém lê nem grava, nem admin.
+- `fanInvites`, `inviteLinks` e `referrals`: o próprio fã não lê (`get` e `list`), e outro fã também não; a equipe ativa com `fans` e admin leem, inclusive `referrals` com `where('inviterUid', '==', ...)` e `fanInvites` com `where('code', '==', ...)`; sem `fans`, desativada, pendente ou com sessão de antes do `authValidAfter`, não lê; ninguém grava.
+- Os arquivos de teste que já existem passam sem mudança.
+
+App:
+
+- `invites/__tests__/link.test.ts`: `normalizeInviteCode`, na mesma tabela do teste do servidor.
+- `invites/__tests__/deep-link.test.ts`: os `utm_*` saem do destino, também no link curto, e só os três ficam em `utm`; o `inviteRoute` leva os três; o resto como hoje.
+- `invites/__tests__/storage.test.ts` (novo): o primeiro convite vale; o vencido sai; `bindPendingInvite` com o mesmo código (`link`, com a origem), com o mesmo código digitado em minúsculas ou com hífen (`link`), com outro (`code`, sem origem) e vazio (descarta); o convite amarrado a um uid não aparece para outro; a chave fica a mesma; a v1 é apagada.
+- Navegação (`src/navigation/__tests__`): a rota `/convite/[codigo]` com código fora do formato não guarda nada e segue; `?ref=k7p3m9qx` guarda `K7P3M9QX`.
+- `auth/__tests__/invite-sync.test.tsx` (novo): o convite amarrado vai só para o uid dele, com a chave dele; cada código de recusa definitiva apaga; a falha incerta guarda, inclusive o `ApiError('unknown')` sem status (o `getIdToken` que falha no interceptador), o 429 e o 404 sem código; a falha incerta tenta de novo pelo relógio (relógio falso) e quando o app volta ao primeiro plano; outra conta entrando no mesmo aparelho manda a visita do pendente e nunca o convite amarrado de outro; a conta que nasceu depois do link, sem convite amarrado e sem entrada desde a criação (o app fechou antes do `bindPendingInvite`), recebe o claim com `via: 'link'`; a conta criada depois do link noutro aparelho, que entrou aqui (`lastSignInTime` longe do `creationTime`), manda a visita; nada roda com `authHolds > 0`; o pendente com mais de 24 h sai sem visita.
+- `auth/__tests__/sign-up.test.tsx`: o campo vem preenchido com o código pendente; formato inválido mostra o erro; código digitado recusado (404 ou 409) deixa a tela no estágio, com os campos travados, e "Continuar sem código" segue para a 1l; o `unknown` sem status no claim do código digitado não leva ao estágio e deixa o convite amarrado; código do link recusado não para o cadastro.
+- (implementação) `src/navigation/__tests__/auth.test.tsx`: no estágio, o link `/convite/OUTRO123` aberto por fora volta ao cadastro, com o fã ainda seguro e o código novo no campo, e o "Continuar" o manda como `via: 'link'`; a tela de cadastro que sai no estágio sem os botões solta o fã.
+- (implementação) `src/services/api/__tests__/client.test.ts`: o interceptador de verdade, com o Firebase trocado e um adaptador falso do axios. Com o `sessionUid` da sessão, o pedido sai com o token dela; com outra conta ou sem ninguém na sessão, recusa antes de sair (`ApiError('unknown')` sem status) e o adaptador não é chamado; o `getIdToken` que falha vira o mesmo erro incerto; o 401 renova uma vez e repete com o token novo; com a sessão trocada no meio, não repete; a renovação que falha não repete.
+- `auth/__tests__/api.test.ts`: o corpo do claim e da visita no modo API, com o código normalizado e o `openedAt` nulo com `via: 'code'`; nas fixtures, nenhuma chamada; `isFinalInviteRejection` em tabela.
+- `posts`, `artist-page` e `invite-link`: o link é registrado depois de `sharedAction`, com o id certo, e não sem código nem com `dismissedAction`. `posts`: o "+N" do compartilhar vem do `pointsPerVisit` do convite, e o post com `sharePointsPerVisit: null` não promete pontos.
+- `src/config/__tests__/data-source.test.ts`: `invite` na API com o emulador.
+- `profile/__tests__/api.test.ts`: `fetchMyInvite` com `url` e `linkBase`; `registerInviteLink` nas fixtures devolve `created: false` sem chamar a API; `invite-link/__tests__/describe-link.test.ts`: a base do servidor no link.
+
+### 20.14 Perguntas
+
+Para a cliente (UP-16, UP-20, UP-33 e UP-39):
+
+1. O que conta como visita? Proposta: pessoa com conta que abre o link no app, uma vez por pessoa, e quem se cadastra pelo link. O clique no site não conta, porque não dá para separar pessoa de robô.
+2. Quem se cadastra pelo link rende a visita também (2 mais 10) ou só o cadastro (10)? Proposta: os dois.
+3. O que é uma campanha? Opções: (a) o `utm_campaign` que a equipe põe nos links que publica; (b) cada link de fã (post, artista, agenda), que já sai separado por tipo; (c) um código próprio de campanha ou de artista, para cartaz, show ou post da equipe, no link (`?ref=`) ou digitado no cadastro, sem pontos para fã (`inviteCodes` com `kind: 'campaign'`, criado pelo painel). A (a) sozinha não funciona com este bloco: o app só guarda a origem de um link com código (`parseInviteLink` devolve nada sem `ref`), o claim exige um código que existe, a conta da equipe não tem código (o `GET /me/invite` responde 403) e o link do fã não leva `utm_*`. Para a (a) existir, ou ela vem com a (c) (`?ref=CAMPANHA&utm_source=instagram&utm_campaign=sao-joao`, que já cai nos recortes de 20.7), ou o app passa a guardar a origem sem código: `PendingInvite.code` nulo quando o link só tem `utm_*`, claim com `code: null` só com `via: 'link'`, `referrals` sem quem convidou e sem pontos, um contador `signups.attributed` e uma regra para o link com código vencer o que veio sem. Proposta: (b) agora; (c) se ela quiser comparar as campanhas da equipe ou fazer ação fora da internet, com a (a) dentro dela. A origem sem código fica registrada, e não entra antes da resposta: muda o contrato do claim para uma resposta que ainda não veio, e não traz dado nenhum até os links abrirem o app (bloco 13) ou o Install Referrer (bloco 3).
+4. Por quanto tempo o convite vale? Proposta: 7 dias depois de aberto no app, e só para conta criada há até 7 dias.
+5. O cadastro só paga com e-mail confirmado? Proposta: não agora, porque o app não tem a confirmação; os limites diários seguram. Sem a confirmação, a chave da pessoa é pseudônimo fraco (20.6).
+
+Para o dono:
+
+6. "Links criados" como os links diferentes que o fã compartilhou (um por página), contados quando a folha de compartilhar volta compartilhada (decisão 7).
+7. Pontos do convite fora das centrais (decisão 11).
+8. Guardar a chave do e-mail do convidado excluído no extrato e no marcador de visita de quem convidou, para não pagar nem contar de novo (decisão 4): levar à revisão jurídica (UP-45) e citar na política de privacidade. A chave já nasce como HMAC com um segredo do servidor (`INVITE_KEY_SECRET`, no Secret Manager), então quem lê o extrato não a liga a um e-mail sem o segredo; ela continua sendo dado pseudonimizado, e não anônimo, e fraco enquanto o e-mail não for confirmado (20.6). Se a revisão pedir que nada fique depois da exclusão, a trava contra a conta recriada sai, e a conta recriada com o mesmo e-mail volta a pagar, dentro dos limites diários.
+9. O `GET /me/invite` que cria o código, exceção à regra do GET (decisão 1).
+
+### 20.15 Fora deste bloco (só documentado)
+
+- **Site** (repositório `imagineup-LP`, depende do ok da UP-49): o `vercel.json` manda `/post/:id/`, `/artista/:id/` e `/agenda/` para `/baixar/`, mantendo o caminho e o `?ref=` para os App Links. O `/baixar/` e uma página `/c/:codigo/` podem mostrar o código, com um botão de copiar, para quem instala pelo iPhone digitar no cadastro (o plano B do iOS na UP-16).
+- **Install Referrer do Android** (bloco 3): na primeira abertura depois de instalar pela Play Store, o app lê o `referrer` da instalação, que carrega o `ref` e os `utm_*`, e guarda o convite pendente com `via: 'install'`. O servidor passa a aceitar esse `via` no mesmo commit. Conferir na doc da SDK 57 se o `expo-application` (`getInstallReferrerAsync`) resolve sem código nativo próprio; ele não está no projeto, e só dá para testar com o app instalado pela Play Store.
+- **Links que abrem direto no app** (bloco 13, depende do domínio, UP-46): `associatedDomains` e `intentFilters`. É com eles que a visita no app passa a acontecer de verdade, e o link do fã deixa de cair no site para quem tem o app. A troca de domínio muda o `INVITE_LINK_BASE` das funções (os links compartilhados mudam sem build, pelo `linkBase`) e o `SHARE_LINK_BASE` do app (o padrão de quem ainda não carregou o convite).
+
+### 20.16 Publicação
+
+Só com o ok do dono, nesta ordem: o secret do HMAC, criado uma vez pelo dono com um valor aleatório que não passa pelo repositório nem pelo chat (`npx --yes firebase-tools@15.32.0 functions:secrets:set INVITE_KEY_SECRET --project imagine-up-app`, com, por exemplo, 32 bytes aleatórios em base64; sem ele, o deploy da `api` para e pergunta); regras e índices (`deploy --only firestore:rules,firestore:indexes`); depois todas as funções (`npm run functions:deploy`), que levam a `api` com as rotas novas e o secret, o `createUserProfile` que soma e marca o cadastro do dia e o `deleteUserData` novo, usado pela `deleteUserProfile` e pela `createUserProfile`. Não há índice composto novo, então não é preciso esperar índice montado. Depois, a carga dos cadastros antigos (`node scripts/backfill-signups.mjs --project imagine-up-app`), quando a troca de versão do `createUserProfile` terminar, e de novo uns minutos depois, para pegar o perfil que uma instância antiga criou sem a marca; tem de rodar antes de o fechamento do dia entrar no ar (20.7). O `EXPO_PUBLIC_API_URL` segue a regra da seção 13.
+
+### 20.17 Armadilhas do bloco 5
+
+- O id dos lançamentos de convite é a chave da pessoa, e não o uid: é o que impede pagar de novo a conta excluída e recriada. Não troque por uid.
+- A chave da pessoa é HMAC com o `INVITE_KEY_SECRET`. Nunca troque o segredo: cada pessoa já convidada pagaria e contaria de novo uma vez, e o autoconvite pelo apelido passaria nos códigos antigos (o `ownerKey` deles é da chave velha).
+- O e-mail da chave sai do token, nunca do corpo do pedido.
+- O autoconvite compara o `uid` e o `ownerKey` do código. Só o `uid` deixa passar a segunda conta da dona com o apelido do e-mail.
+- Só a própria conta dona do código ouve o 409 `self`. A mesma pessoa noutra conta recebe `claimed`, e a visita responde sempre o mesmo corpo: uma resposta que mude com o `ownerKey` ou com o marcador vira teste do e-mail de qualquer pessoa, porque o Firebase não confere o e-mail de quem cria a conta.
+- O link de uma central só nasce com a central publicada (o `getAll` lê `artists/{@}`).
+- A carga dos cadastros antigos é só aditiva: marca o perfil e soma com `increment`. Nunca regrave o dia com `set`, que desconta as contas excluídas entre duas rodadas.
+- O `GET /me/invite` cria o código na primeira chamada: é a única leitura que cria, e por isso exige o perfil.
+- O claim vale uma vez por conta (`referrals/{uid}`) e só para conta de até 7 dias. Recusa definitiva não guarda a chave, e o app esquece o código.
+- A visita conta no painel pelo marcador `inviteVisitors`, nunca pelo status do lançamento: `capped` e `zero` não gravam no extrato, e a mesma pessoa contaria a cada visita.
+- Os limites diários do convite são de quem convidou (`days` da carteira dele). Os tetos de visitas mandadas e de links novos são de quem chama.
+- A visita só conta no app e de conta logada. O site não conta.
+- O convite pendente é do aparelho; o amarrado é do uid. Só a sessão confirmada daquele uid envia o amarrado, e nunca com as telas de conta seguradas. A sincronização só amarra sozinha o pendente à conta que nasceu neste aparelho depois do link e em que ninguém entrou desde então.
+- No app, recusa definitiva do convite é pela lista de códigos de `isFinalInviteRejection`, e não pelo `isRetryable`: o `unknown` sem status (o `getIdToken` que falhou antes do pedido) e o 429 não são recusa.
+- O código de convite passa sempre pelo `normalizeInviteCode`, no app e no servidor, com a mesma tabela de testes.
+- Os `utm_*` crus nunca são guardados, só `source`, `medium` e `campaign` normalizados, sem e-mail e sem número de telefone ou documento.
+- O `byOrigin` tem chaves soltas: isenção de índice, chave de até 40 caracteres e `_none` para o vazio. Os `utm_*` entram só nos cadastros; visita e link, só pelo tipo.
+- O `signups.total` soma na transação que cria o perfil, e só quando cria, com a marca `signupCounted` no perfil. A carga dos cadastros antigos conta só os perfis sem a marca e roda antes do fechamento do dia.
+- O `signups.invited` é do dia do claim: a parte dos cadastros que veio de convite se lê por semana ou mais.
+- Na exclusão, o código sai logo depois do perfil, e os `referrals` de quem foi trazido ficam, sem o `inviterUid`.
+- `inviteLinks` e `inviteVisitors`, e não `links` e `visitors`: subcoleção com nome genérico cai na regra de grupo de outra.
 
 ## Armadilhas
 

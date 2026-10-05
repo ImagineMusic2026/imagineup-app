@@ -1,4 +1,4 @@
-import { skipToken, useQuery, useQueryClient } from '@tanstack/react-query';
+import { skipToken, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect } from 'react';
 
 import { queryOptionsFor } from '@/services/query/client';
@@ -11,6 +11,7 @@ import {
   fetchMyProfile,
   fetchMyProgress,
   fetchWallet,
+  registerInviteLink,
   watchMyProfile,
 } from './api';
 import { profileKeys } from './keys';
@@ -96,10 +97,40 @@ export function useMyAchievementsQuery() {
   });
 }
 
-/** Código de convite do fã, para os links que ele compartilha. */
+/**
+ * Código de convite do fã, para os links que ele compartilha. Da API com o
+ * emulador (`sourceOf('invite')`), com rede e disco: o código não muda, e o
+ * salvo serve sem rede.
+ */
 export function useMyInviteQuery() {
   return useQuery({
     queryKey: profileKeys.invite(),
     queryFn: fetchMyInvite,
+    ...queryOptionsFor('invite'),
+  });
+}
+
+export type RegisterInviteLinkVariables = {
+  linkId: string;
+  /** A mesma nas novas tentativas da mutação. */
+  idempotencyKey: string;
+};
+
+/**
+ * Conta o link compartilhado quando a folha de compartilhar voltou
+ * compartilhada. Sem fila offline e sem aviso na tela: o fã já compartilhou,
+ * e um link que não contou não muda nada para ele. Link novo faz o Perfil
+ * buscar os números de novo ("links criados").
+ */
+export function useRegisterInviteLinkMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ linkId, idempotencyKey }: RegisterInviteLinkVariables) =>
+      registerInviteLink(linkId, idempotencyKey),
+    networkMode: 'always',
+    retry: 2,
+    onSuccess: (result) => {
+      if (result.created) void queryClient.invalidateQueries({ queryKey: profileKeys.progress() });
+    },
   });
 }

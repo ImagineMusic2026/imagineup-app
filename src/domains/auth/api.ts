@@ -14,10 +14,21 @@ import {
 import { doc, onSnapshot, serverTimestamp, updateDoc } from 'firebase/firestore';
 
 import { sourceOf } from '@/config/data-source';
-import { clearPendingInvite, readPendingInvite } from '@/domains/invites';
+import {
+  invitePathForServer,
+  normalizeInviteCode,
+  type BoundInvite,
+  type InviteClaimBody,
+  type InviteClaimResult,
+  type InviteOrigin,
+  type InviteUtm,
+  type InviteVisitBody,
+  type InviteVisitResult,
+  type PendingInvite,
+} from '@/domains/invites';
 import { getDb, getFirebaseAuth, isFirebaseConfigured } from '@/firebase';
 import type { TranslationKey } from '@/i18n';
-import { api } from '@/services/api';
+import { api, ApiError } from '@/services/api';
 import type { SessionUser } from '@/stores/session';
 import { displayNameOrNull } from '@/utils/visible-line';
 
@@ -144,26 +155,140 @@ export async function fillMissingProfileName(
   return true;
 }
 
+// --- Convite (bloco 5, docs/arquitetura-api.md, 20.11) -------------------------------
+
+/** Os `utm_*` que vão no corpo: só os que vieram, e nada quando nenhum veio. */
+function utmOf(origin: InviteOrigin | null): InviteUtm | undefined {
+  if (!origin) return undefined;
+  const utm: InviteUtm = {};
+  if (origin.utm.source) utm.source = origin.utm.source;
+  if (origin.utm.medium) utm.medium = origin.utm.medium;
+  if (origin.utm.campaign) utm.campaign = origin.utm.campaign;
+  return Object.keys(utm).length > 0 ? utm : undefined;
+}
+
 /**
- * Depois do cadastro, manda à API o código do convite guardado (para ela
- * creditar quem convidou) e esquece o código. Sem o convite na API (bloco 5;
- * `sourceOf('invite')`), não há a quem creditar: o código sai do aparelho do
- * mesmo jeito, para não ser atribuído a uma próxima conta criada nele. Falha
- * de rede mantém o código guardado.
+ * O corpo do claim do convite amarrado: o código normalizado, como chegou
+ * (`link`, com a página sem a busca, os `utm_*` e o instante em que o link
+ * abriu o app) ou digitado (`code`, sem página e com `openedAt` null).
  */
-export async function claimPendingInvite(): Promise<void> {
-  const invite = await readPendingInvite();
-  if (!invite) return;
-  if (sourceOf('invite') === 'api') {
-    // Endereço provisório, até o contrato do backend (M2). A chave sai do
-    // próprio convite, para uma nova tentativa não creditar em dobro.
-    await api.post(
-      '/invites/claim',
-      { code: invite.code },
-      { headers: { 'Idempotency-Key': `invite-${invite.code}-${invite.receivedAt}` } },
-    );
+export function buildClaimBody(bound: BoundInvite): InviteClaimBody {
+  const code = normalizeInviteCode(bound.code) ?? bound.code;
+  if (bound.via === 'code' || !bound.origin) {
+    return { code, via: 'code', link: null, openedAt: null };
   }
-  await clearPendingInvite();
+  const utm = utmOf(bound.origin);
+  return {
+    code,
+    via: 'link',
+    link: { path: invitePathForServer(bound.origin.path) },
+    ...(utm ? { utm } : {}),
+    openedAt: bound.receivedAt,
+  };
+}
+
+/** O corpo da visita: o link guardado no aparelho, como no claim. */
+export function buildVisitBody(pending: PendingInvite): InviteVisitBody {
+  const utm = utmOf(pending.origin);
+  return {
+    code: normalizeInviteCode(pending.code) ?? pending.code,
+    link: { path: invitePathForServer(pending.origin.path) },
+    ...(utm ? { utm } : {}),
+    openedAt: pending.receivedAt,
+  };
+}
+
+/** A chave da visita: o mesmo link, a mesma visita. */
+export function visitIdempotencyKey(pending: PendingInvite): string {
+  return `visit-${normalizeInviteCode(pending.code) ?? pending.code}-${pending.receivedAt}`;
+}
+
+/**
+ * Manda o convite amarrado ao servidor, com o token só da conta dele
+ * (`sessionUid`: se outro fã entrou no meio, o pedido não sai) e a chave fixa
+ * do convite. Nas fixtures (`sourceOf('invite')`), não há a quem creditar:
+ * responde como aceito, sem chamar nada, e o convite sai do aparelho.
+ */
+export async function sendInviteClaim(bound: BoundInvite): Promise<InviteClaimResult> {
+  if (sourceOf('invite') === 'fixtures') return { status: 'claimed' };
+  const { data } = await api.post<InviteClaimResult>('/invites/claim', buildClaimBody(bound), {
+    headers: { 'Idempotency-Key': bound.idempotencyKey },
+    sessionUid: bound.uid,
+  });
+  return data;
+}
+
+/**
+ * A visita ao link de convite, da conta logada (`uid`). Nas fixtures, nada.
+ * O app não mostra o resultado.
+ */
+export async function sendInviteVisit(
+  pending: PendingInvite,
+  uid: string,
+): Promise<InviteVisitResult> {
+  if (sourceOf('invite') === 'fixtures') return { status: 'received' };
+  const { data } = await api.post<InviteVisitResult>('/invites/visit', buildVisitBody(pending), {
+    headers: { 'Idempotency-Key': visitIdempotencyKey(pending) },
+    sessionUid: uid,
+  });
+  return data;
+}
+
+/**
+ * As recusas definitivas do convite, pelo código do corpo do erro: o app
+ * esquece o convite. Todo o resto é incerto e fica para a próxima rodada:
+ * sem status (rede, tempo, o `getIdToken` que falhou antes de o pedido sair,
+ * a sessão que mudou), 401, 429, 5xx e um 4xx sem um destes códigos (o
+ * `not_found` de um servidor que ainda não tem a rota). O `isRetryable` não
+ * serve: o `unknown` sem status e o 429 não são recusa.
+ */
+export const FINAL_INVITE_REJECTIONS: readonly string[] = [
+  'invalid_request',
+  'idempotency_key_required',
+  'not_fan',
+  'invite_not_found',
+  'invite_not_allowed',
+  'idempotency_key_reused',
+];
+
+export function isFinalInviteRejection(error: unknown): boolean {
+  return (
+    error instanceof ApiError &&
+    error.status !== null &&
+    error.code !== null &&
+    FINAL_INVITE_REJECTIONS.includes(error.code)
+  );
+}
+
+/** Por que o código digitado no cadastro foi recusado (o fã corrige ou segue sem ele). */
+export type InviteRejection = 'notFound' | 'notAllowed';
+
+/** A recusa que o fã consegue consertar digitando: código que não existe ou que não vale. */
+export function typedInviteRejection(error: unknown): InviteRejection | null {
+  if (!(error instanceof ApiError) || error.status === null) return null;
+  if (error.code === 'invite_not_found') return 'notFound';
+  if (error.code === 'invite_not_allowed') return 'notAllowed';
+  return null;
+}
+
+/**
+ * Quando a conta da sessão nasceu e quando entrou pela última vez (o
+ * `metadata` do Firebase Auth, que vem do servidor), em ms. Sem conta, null.
+ */
+export function currentAccountTimes(
+  uid: string,
+): { createdAt: number | null; lastSignInAt: number | null } | null {
+  if (!isFirebaseConfigured) return null;
+  const user = getFirebaseAuth().currentUser;
+  if (!user || user.uid !== uid) return null;
+  const parse = (value: string | undefined) => {
+    const ms = value ? Date.parse(value) : NaN;
+    return Number.isNaN(ms) ? null : ms;
+  };
+  return {
+    createdAt: parse(user.metadata.creationTime),
+    lastSignInAt: parse(user.metadata.lastSignInTime),
+  };
 }
 
 /**

@@ -5,6 +5,7 @@ import { setTimeout as sleep } from 'node:timers/promises';
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 import { handleUserCreated, NAME_WAIT_MS, type FindUser } from '../src/handlers';
+import { dayKey } from '../src/points';
 import { createProfile, deleteUserData } from '../src/store';
 
 /**
@@ -192,6 +193,11 @@ describe('exclusão da conta (onUserDeleted)', () => {
       uids.push(user.uid);
     }
 
+    // O @ puro volta a ficar livre para a próxima Bruna Andrade. Ele entra na
+    // mesma espera: a transação do perfil também soma o cadastro no shard do
+    // dia (bloco 5), e nesta rajada de contas o último perfil pode gravar
+    // depois da primeira conferência, sumindo logo em seguida pelo "undone".
+    // Sobra de verdade (um @ que nunca sai) estoura a espera e falha.
     await waitFor('as sobras das contas excluídas sumirem', async () => {
       const leftovers = await Promise.all(
         uids.map(
@@ -199,9 +205,9 @@ describe('exclusão da conta (onUserDeleted)', () => {
             (await db.doc(`users/${uid}`).get()).exists || (await reservationsOf(uid)).length > 0,
         ),
       );
-      return leftovers.some(Boolean) ? undefined : true;
+      const pureHandleTaken = (await db.doc('usernames/brunaand').get()).exists;
+      return leftovers.some(Boolean) || pureHandleTaken ? undefined : true;
     });
-    // O @ puro volta a ficar livre para a próxima Bruna Andrade.
     expect((await db.doc('usernames/brunaand').get()).exists).toBe(false);
   });
 });
@@ -358,5 +364,48 @@ describe('createProfile e deleteUserData', () => {
     });
     await deleteUserData(db, 'fa-antiga');
     expect((await db.doc('usernames/carlamen').get()).data()).toEqual({ uid: 'fa-nova' });
+  });
+});
+
+describe('cadastros do dia (bloco 5, signups.total)', () => {
+  /** Soma de signups.total nos shards dos dias em que o cadastro pode ter caído. */
+  async function signupsSince(from: number): Promise<number> {
+    let total = 0;
+    for (const day of new Set([dayKey(from), dayKey(Date.now())])) {
+      const shards = await db.collection(`statsDaily/${day}/statsShards`).get();
+      total += shards.docs.reduce(
+        (sum, doc) => sum + ((doc.get('signups.total') as number | undefined) ?? 0),
+        0,
+      );
+    }
+    return total;
+  }
+
+  it('a conta nova soma 1 no dia e nasce com a marca signupCounted', async () => {
+    const from = Date.now();
+    const user = await auth.createUser({ email: newEmail(), displayName: 'Camila Ribeiro' });
+    const profile = await profileOf(user.uid);
+    expect(profile.signupCounted).toBe(true);
+    expect(await signupsSince(from)).toBe(1);
+  });
+
+  it('a entrega repetida não soma de novo', async () => {
+    const from = Date.now();
+    const user = { uid: 'entrega-contada', displayName: 'Bruna Andrade' };
+    expect((await createProfile(db, user)).status).toBe('created');
+    expect(await createProfile(db, user)).toEqual({ status: 'exists' });
+    await Promise.all([createProfile(db, user), createProfile(db, user)]);
+    expect(await signupsSince(from)).toBe(1);
+  });
+
+  it('conta da equipe não soma', async () => {
+    const from = Date.now();
+    const uid = 'equipe-sem-cadastro';
+    await db.doc(`staff/${uid}`).set({ uid, status: 'pending', role: 'viewer', sections: [] });
+    const result = await handleUserCreated(db, async () => ({ displayName: 'Bruna Andrade' }), {
+      uid,
+    });
+    expect(result).toEqual({ status: 'staff' });
+    expect(await signupsSince(from)).toBe(0);
   });
 });

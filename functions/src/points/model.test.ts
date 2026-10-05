@@ -616,6 +616,10 @@ describe('atividade e o que é gravado', () => {
       },
       actives: { day: 1, newInWeek: 1, newInMonth: 1 },
       cohorts: {},
+      // Do convite (bloco 5): nada aqui, e o pruneZeros não grava os zerados.
+      signups: { total: 0, invited: 0 },
+      invites: { visits: 0, links: 0 },
+      byOrigin: { kind: {}, utmSource: {}, utmCampaign: {} },
     });
   });
 });

@@ -5,8 +5,10 @@ export {
   useMyInviteQuery,
   useMyProfileQuery,
   useMyProgressQuery,
+  useRegisterInviteLinkMutation,
   useWalletQuery,
   useWatchMyProfile,
+  type RegisterInviteLinkVariables,
 } from './queries';
 export type {
   Achievement,

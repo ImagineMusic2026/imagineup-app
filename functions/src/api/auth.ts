@@ -26,9 +26,14 @@ function isTransientAuthFailure(code: string, message: unknown): boolean {
   );
 }
 
+/** Quem fez o pedido, pelo ID token: o uid e o e-mail da conta (null sem e-mail). */
+export type Caller = { uid: string; email: string | null };
+
 /**
- * O uid do ID token do Firebase. Sem token, malformado, vencido ou de outro
- * projeto: 401, nunca 403 (o app renova o token uma vez no 401 e repete).
+ * O uid e o e-mail do ID token do Firebase. O e-mail sai sempre do token,
+ * nunca do corpo do pedido (a chave da pessoa do convite, bloco 5). Sem
+ * token, malformado, vencido ou de outro projeto: 401, nunca 403 (o app
+ * renova o token uma vez no 401 e repete).
  * Falha ao buscar as chaves do Google ou erro interno do Auth: 503 com
  * Retry-After, que o app tenta de novo; como 401, o app desistiria e
  * mandaria o fã entrar de novo. Sem `checkRevoked`: a conta excluída perde o
@@ -37,12 +42,15 @@ function isTransientAuthFailure(code: string, message: unknown): boolean {
 export async function authenticate(
   auth: TokenVerifier,
   header: string | undefined,
-): Promise<string> {
+): Promise<Caller> {
   const token = bearerToken(header);
   if (!token) throw apiError('unauthenticated');
   try {
     const decoded = await auth.verifyIdToken(token);
-    return decoded.uid;
+    return {
+      uid: decoded.uid,
+      email: typeof decoded.email === 'string' && decoded.email !== '' ? decoded.email : null,
+    };
   } catch (error) {
     const { code, message } = error as { code?: unknown; message?: unknown };
     if (typeof code === 'string' && code.startsWith('auth/')) {

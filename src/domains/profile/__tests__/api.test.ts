@@ -9,6 +9,7 @@ import {
   fetchMyProfile,
   fetchMyProgress,
   fetchWallet,
+  registerInviteLink,
   toFanProfile,
   watchMyProfile,
 } from '../api';
@@ -20,7 +21,7 @@ jest.mock('firebase/firestore', () => ({
   onSnapshot: jest.fn(),
 }));
 jest.mock('@/firebase', () => ({ getDb: () => ({}) }));
-jest.mock('@/services/api', () => ({ api: { get: jest.fn() } }));
+jest.mock('@/services/api', () => ({ api: { get: jest.fn(), put: jest.fn() } }));
 
 // Lido na hora da chamada: cada teste escolhe a fonte.
 let mockDataSource: 'api' | 'fixtures' = 'fixtures';
@@ -190,10 +191,38 @@ describe('convite do fã', () => {
     });
   });
 
-  it('com a API, pede /me/invite', async () => {
+  it('com a API, pede /me/invite, com o link e a base do servidor', async () => {
     mockDataSource = 'api';
-    get.mockResolvedValue({ data: { code: 'ABC', pointsPerVisit: 1, pointsPerSignup: 5 } });
-    await expect(fetchMyInvite()).resolves.toMatchObject({ code: 'ABC' });
+    const invite = {
+      code: 'K7P3M9QX',
+      url: 'https://imagineup-painel.vercel.app/?ref=K7P3M9QX',
+      linkBase: 'https://imagineup-painel.vercel.app',
+      pointsPerVisit: 1,
+      pointsPerSignup: 5,
+    };
+    get.mockResolvedValue({ data: invite });
+    await expect(fetchMyInvite()).resolves.toEqual(invite);
     expect(get).toHaveBeenCalledWith('/me/invite');
+  });
+
+  it('o link compartilhado: com a API, o PUT com o id codificado e a chave', async () => {
+    mockDataSource = 'api';
+    const put = jest.mocked(api.put);
+    put.mockResolvedValue({ data: { linkId: 'post:p-clipe', created: true } });
+    await expect(registerInviteLink('post:p-clipe', 'chave-link-0001')).resolves.toEqual({
+      linkId: 'post:p-clipe',
+      created: true,
+    });
+    expect(put).toHaveBeenCalledWith('/me/invite/links/post%3Ap-clipe', undefined, {
+      headers: { 'Idempotency-Key': 'chave-link-0001' },
+    });
+  });
+
+  it('o link compartilhado nas fixtures: nada vai à API, e os links de exemplo não mudam', async () => {
+    await expect(registerInviteLink('invite', 'chave-link-0002')).resolves.toEqual({
+      linkId: 'invite',
+      created: false,
+    });
+    expect(api.put).not.toHaveBeenCalled();
   });
 });

@@ -29,7 +29,15 @@ import {
   type PointsConfig,
   type WalletState,
 } from './model';
-import { addMembershipToShard, emptyShardDelta, pickShard, shardRef, shardWrite } from './stats';
+import {
+  addInviteToShard,
+  addMembershipToShard,
+  emptyShardDelta,
+  pickShard,
+  shardRef,
+  shardWrite,
+  type InviteShardEvent,
+} from './stats';
 
 // Lançamento de pontos no Firestore, em duas fases, porque a transação exige
 // todas as leituras antes de qualquer gravação: planAwards só lê e calcula,
@@ -153,9 +161,26 @@ function isStaffOnly(staff: DocumentSnapshot): boolean {
 }
 
 /**
- * Toda gravação exige o perfil do fã, lido na transação. Sem users/{uid}:
- * not_fan para conta só da equipe, profile_not_ready no resto (perfil que
- * ainda nasce no cadastro ou conta que acabou de ser excluída).
+ * O perfil lido na transação existe? Sem users/{uid}: not_fan para conta só
+ * da equipe, profile_not_ready no resto (perfil que ainda nasce no cadastro ou
+ * conta que acabou de ser excluída). O requireFan e a criação do código de
+ * convite (bloco 5) usam.
+ */
+export async function requireProfile(
+  tx: Transaction,
+  db: Firestore,
+  uid: string,
+  profile: DocumentSnapshot,
+): Promise<void> {
+  if (profile.exists) return;
+  const staff = await tx.get(db.collection('staff').doc(uid));
+  if (isStaffOnly(staff)) throw new PointsError('not_fan', 'Esta conta não é de fã.');
+  throw new PointsError('profile_not_ready', 'O perfil do fã ainda não existe.');
+}
+
+/**
+ * Toda gravação exige o perfil do fã, lido na transação (requireProfile), e
+ * monta o retrato dele: a carteira e as marcas de atividade do pedido.
  */
 export async function requireFan(
   tx: Transaction,
@@ -166,11 +191,7 @@ export async function requireFan(
   now: number,
   options: { markActivity: boolean },
 ): Promise<FanContext> {
-  if (!profile.exists) {
-    const staff = await tx.get(db.collection('staff').doc(uid));
-    if (isStaffOnly(staff)) throw new PointsError('not_fan', 'Esta conta não é de fã.');
-    throw new PointsError('profile_not_ready', 'O perfil do fã ainda não existe.');
-  }
+  await requireProfile(tx, db, uid, profile);
   const state = walletFromDoc(wallet.data());
   const profileCreatedAt = millis(profile.get('createdAt'));
   return {
@@ -357,6 +378,18 @@ export function addMembershipCounts(plan: AwardPlan, changes: readonly Membershi
   if (changes.length === 0) return;
   plan.shard ??= emptyShardDelta();
   for (const change of changes) addMembershipToShard(plan.shard, change.artistId, change.kind);
+}
+
+/**
+ * Soma um evento do convite (cadastro convidado, visita contada ou link novo)
+ * no shard do dia do plano, como o addMembershipCounts: continua uma gravação
+ * de shard por transação, e o shard nasce quando o plano não tinha o que
+ * somar (bloco 5, docs/arquitetura-api.md, 20.7). Chame antes de o
+ * runIdempotent gravar o plano.
+ */
+export function addInviteCounts(plan: AwardPlan, change: InviteShardEvent): void {
+  plan.shard ??= emptyShardDelta();
+  addInviteToShard(plan.shard, change);
 }
 
 /**

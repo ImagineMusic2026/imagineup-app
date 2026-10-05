@@ -1,6 +1,9 @@
 import { FieldValue, type Firestore } from 'firebase-admin/firestore';
 
 import { leaveAllCentrals } from './centrals/service';
+import { detachReferrals, referralRef, removeInviteData } from './invites/service';
+import { dayKey } from './points/model';
+import { emptyShardDelta, pickShard, shardRef, shardWrite } from './points/stats';
 import {
   profileDisplayName,
   randomDigits,
@@ -15,17 +18,26 @@ const FAILED_PRECONDITION = 9;
 
 export type CreateProfileResult = { status: 'created'; username: string } | { status: 'exists' };
 
+/** Relógio e sorteio do shard do cadastro do dia; os testes fixam. */
+export type SignupCountOptions = { now?: () => number; shardRandom?: () => number };
+
 /**
- * Cria users/{uid} e reserva o @ em usernames/{@}, na mesma transação. O
- * evento de cadastro pode chegar mais de uma vez: se o perfil já existe, não
- * mexe em nada. Não grava updatedAt, que é o carimbo de edição do fã e segura
- * as edições dele por 10 s.
+ * Cria users/{uid} e reserva o @ em usernames/{@}, na mesma transação, e soma
+ * o cadastro no shard do dia dos agregados do painel (`signups.total`, bloco
+ * 5, docs/arquitetura-api.md, 20.7), com a marca `signupCounted` no perfil,
+ * que a carga dos cadastros antigos (scripts/backfill-signups.mjs) usa para
+ * não contar duas vezes. O evento de cadastro pode chegar mais de uma vez: se o
+ * perfil já existe, não mexe em nada nem soma de novo. Não grava updatedAt,
+ * que é o carimbo de edição do fã e segura as edições dele por 10 s.
  */
 export async function createProfile(
   db: Firestore,
   user: { uid: string; displayName?: string | null },
   random: RandomDigits = randomDigits,
+  options: SignupCountOptions = {},
 ): Promise<CreateProfileResult> {
+  const now = (options.now ?? Date.now)();
+  const shardRandom = options.shardRandom ?? Math.random;
   const profileRef = db.collection('users').doc(user.uid);
   const displayName = profileDisplayName(user.displayName);
   const base = usernameBase(displayName);
@@ -50,6 +62,15 @@ export async function createProfile(
       // A foto entra depois, pelo servidor, com o upload validado.
       photoURL: null,
       createdAt: FieldValue.serverTimestamp(),
+      signupCounted: true,
+    });
+    // O dia é o do relógio da função; o createdAt é o do servidor. Perto da
+    // meia-noite os dois podem cair em dias diferentes por milissegundos.
+    const day = dayKey(now);
+    const delta = emptyShardDelta();
+    delta.signups.total = 1;
+    tx.set(shardRef(db, day, pickShard(shardRandom)), shardWrite(delta, day, now), {
+      merge: true,
     });
     return { status: 'created', username: free.id };
   });
@@ -89,11 +110,13 @@ async function deleteIdempotencyKeys(db: Firestore, uid: string): Promise<void> 
 }
 
 /**
- * Apaga tudo do fã: as reservas de @, o perfil, os vínculos com as centrais
- * (descontando o fanCount de cada uma), as subcoleções do perfil, a carteira
- * (com o extrato e os pontos por central), as chaves de idempotência e o
- * acesso ao painel (staff/{uid}) se a conta era da equipe. Pode rodar mais de
- * uma vez. Dado novo do fã fora de users/{uid} (convites, comentários)
+ * Apaga tudo do fã: as reservas de @, o perfil, o convite dele (o código, os
+ * links e os marcadores de visita), os vínculos com as centrais (descontando o
+ * fanCount de cada uma), as subcoleções do perfil, quem o trouxe
+ * (referrals/{uid}), o `inviterUid` dos convidados dele (que ficam, com null),
+ * a carteira (com o extrato e os pontos por central), as chaves de
+ * idempotência e o acesso ao painel (staff/{uid}) se a conta era da equipe.
+ * Pode rodar mais de uma vez. Dado novo do fã fora de users/{uid} (comentários)
  * precisa entrar aqui.
  *
  * A ordem importa: toda gravação da API lê users/{uid} na transação
@@ -103,7 +126,10 @@ async function deleteIdempotencyKeys(db: Firestore, uid: string): Promise<void> 
  * exclusão criaria um vínculo depois da listagem, que ele levaria sem
  * descontar o fanCount. Os agregados do painel (statsDaily) não descontam:
  * guardam o que aconteceu em cada dia, sem uid (docs/arquitetura-api.md,
- * seções 12 e 19.12).
+ * seções 12 e 19.12). O código do convite sai logo depois do perfil: um claim
+ * ou uma visita que leu o código antes grava o marcador antes (e o
+ * recursiveDelete o leva) ou repete e responde 404. Os pontos que o fã rendeu a
+ * quem o convidou ficam com quem convidou (20.10).
  */
 export async function deleteUserData(db: Firestore, uid: string): Promise<void> {
   const reservations = await db.collection('usernames').where('uid', '==', uid).get();
@@ -121,8 +147,11 @@ export async function deleteUserData(db: Firestore, uid: string): Promise<void> 
   );
   const profile = db.collection('users').doc(uid);
   await profile.delete();
+  await removeInviteData(db, uid);
   await leaveAllCentrals(db, uid);
   await db.recursiveDelete(profile);
+  await referralRef(db, uid).delete();
+  await detachReferrals(db, uid);
   await db.recursiveDelete(db.collection('wallets').doc(uid));
   await deleteIdempotencyKeys(db, uid);
   await db.collection('staff').doc(uid).delete();
