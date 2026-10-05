@@ -37,10 +37,11 @@ let mockDataSource: 'api' | 'fixtures' = 'fixtures';
 jest.mock('@/config/env', () => ({
   firebaseEnv: null,
   apiUrl: undefined,
-  get dataSource() {
-    return mockDataSource;
-  },
   firebaseEmulatorHost: undefined,
+}));
+jest.mock('@/config/data-source', () => ({
+  sourceOf: () => mockDataSource,
+  usesFixtures: () => mockDataSource === 'fixtures',
 }));
 
 // Terça, 29 de setembro de 2026, 20 h: as datas das conquistas saem daqui.

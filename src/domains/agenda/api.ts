@@ -1,4 +1,4 @@
-import { dataSource } from '@/config/env';
+import { sourceOf } from '@/config/data-source';
 import { api } from '@/services/api';
 import { fixtureDelay, fixtureNow } from '@/services/fixtures';
 
@@ -9,7 +9,7 @@ import type { AgendaPage, MyRsvps, RsvpResult, RsvpVariables } from './types';
 
 /** Shows futuros em ordem de data, uma página por vez. */
 export async function fetchAgenda(cursor: string | null): Promise<AgendaPage> {
-  if (dataSource === 'fixtures') {
+  if (sourceOf('agenda') === 'fixtures') {
     await fixtureDelay();
     return buildAgendaPageFixture(fixtureNow(), cursor);
   }
@@ -22,7 +22,7 @@ export async function fetchArtistAgenda(
   artistId: string,
   cursor: string | null,
 ): Promise<AgendaPage> {
-  if (dataSource === 'fixtures') {
+  if (sourceOf('agenda') === 'fixtures') {
     await fixtureDelay();
     return buildArtistAgendaPageFixture(fixtureNow(), artistId, cursor);
   }
@@ -31,7 +31,7 @@ export async function fetchArtistAgenda(
 }
 
 export async function fetchMyRsvps(): Promise<MyRsvps> {
-  if (dataSource === 'fixtures') {
+  if (sourceOf('agenda') === 'fixtures') {
     await fixtureDelay();
     return rsvpFixture.mine();
   }
@@ -48,7 +48,7 @@ export async function setEventRsvp({
   going,
   idempotencyKey,
 }: RsvpVariables): Promise<RsvpResult> {
-  if (dataSource === 'fixtures') {
+  if (sourceOf('agenda') === 'fixtures') {
     await fixtureDelay();
     return rsvpFixture.set(eventId, going, idempotencyKey);
   }

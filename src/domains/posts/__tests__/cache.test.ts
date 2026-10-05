@@ -26,7 +26,10 @@ jest.mock('@/firebase', () => ({
 jest.mock('@/services/api', () => ({
   api: { get: jest.fn(), post: jest.fn(), request: jest.fn() },
 }));
-jest.mock('@/config/env', () => ({ dataSource: 'fixtures' }));
+jest.mock('@/config/data-source', () => ({
+  sourceOf: () => 'fixtures',
+  usesFixtures: () => true,
+}));
 
 // Terça, 29 de setembro de 2026, 20 h.
 const NOW = new Date(2026, 8, 29, 20, 0);

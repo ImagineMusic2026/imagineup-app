@@ -13,7 +13,7 @@ import {
 } from 'firebase/auth';
 import { doc, onSnapshot, serverTimestamp, updateDoc } from 'firebase/firestore';
 
-import { dataSource } from '@/config/env';
+import { sourceOf } from '@/config/data-source';
 import { clearPendingInvite, readPendingInvite } from '@/domains/invites';
 import { getDb, getFirebaseAuth, isFirebaseConfigured } from '@/firebase';
 import type { TranslationKey } from '@/i18n';
@@ -146,14 +146,15 @@ export async function fillMissingProfileName(
 
 /**
  * Depois do cadastro, manda à API o código do convite guardado (para ela
- * creditar quem convidou) e esquece o código. Sem a API (M2), não há a quem
- * creditar: o código sai do aparelho do mesmo jeito, para não ser atribuído a
- * uma próxima conta criada nele. Falha de rede mantém o código guardado.
+ * creditar quem convidou) e esquece o código. Sem o convite na API (bloco 5;
+ * `sourceOf('invite')`), não há a quem creditar: o código sai do aparelho do
+ * mesmo jeito, para não ser atribuído a uma próxima conta criada nele. Falha
+ * de rede mantém o código guardado.
  */
 export async function claimPendingInvite(): Promise<void> {
   const invite = await readPendingInvite();
   if (!invite) return;
-  if (dataSource === 'api') {
+  if (sourceOf('invite') === 'api') {
     // Endereço provisório, até o contrato do backend (M2). A chave sai do
     // próprio convite, para uma nova tentativa não creditar em dobro.
     await api.post(

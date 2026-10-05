@@ -3,7 +3,7 @@ import { createAsyncStoragePersister } from '@tanstack/query-async-storage-persi
 import type { Query } from '@tanstack/react-query';
 import type { PersistQueryClientOptions } from '@tanstack/react-query-persist-client';
 
-import { dataSource, type DataSource } from '@/config/env';
+import { usesFixtures } from '@/config/data-source';
 import { StorageKeys } from '@/storage/storage/keys';
 
 import { PERSIST_MAX_AGE_MS } from './client';
@@ -24,13 +24,15 @@ export const queryPersister = createAsyncStoragePersister({
 /**
  * O que vai para o disco: só consultas que deram certo e não pediram para ficar
  * de fora (`meta: { persist: false }`, para dados sensíveis ou efêmeros).
- * No modo fixtures só vai o dado de verdade (`meta: { realData: true }`, o
- * perfil do Firestore): dado de exemplo salvo apareceria no aparelho depois
- * que a API entrasse.
+ * Enquanto algum domínio estiver nas fixtures, só vai o dado de verdade
+ * (`meta: { realData: true }`: o perfil do Firestore e os domínios que já leem
+ * da API, por `queryOptionsFor`): dado de exemplo salvo apareceria no aparelho
+ * depois que a API entrasse. Sem fixtures, vai tudo. O formato salvo é o
+ * mesmo nos dois casos.
  */
-export function shouldPersistQuery(query: Query, source: DataSource = dataSource): boolean {
+export function shouldPersistQuery(query: Query, fixturesInUse: boolean = usesFixtures()): boolean {
   if (query.state.status !== 'success' || query.meta?.persist === false) return false;
-  return source === 'api' || query.meta?.realData === true;
+  return !fixturesInUse || query.meta?.realData === true;
 }
 
 /** Mudou o formato salvo? Suba QUERY_CACHE_VERSION (`buster`). */

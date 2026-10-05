@@ -71,11 +71,34 @@ export async function isStaffAccount(db: Firestore, uid: string): Promise<boolea
   return marker.exists && marker.get('accountCreatedByInvite') !== false;
 }
 
+/** Chaves de idempotência apagadas por lote (o limite de um lote do Firestore é 500). */
+const IDEMPOTENCY_DELETE_BATCH = 500;
+
+/** As chaves de idempotência do fã (as respostas guardadas podem ter texto dele). */
+async function deleteIdempotencyKeys(db: Firestore, uid: string): Promise<void> {
+  const keys = db.collection('idempotency').where('uid', '==', uid).limit(IDEMPOTENCY_DELETE_BATCH);
+  for (;;) {
+    const page = await keys.get();
+    if (page.empty) return;
+    const batch = db.batch();
+    for (const doc of page.docs) batch.delete(doc.ref);
+    await batch.commit();
+    if (page.size < IDEMPOTENCY_DELETE_BATCH) return;
+  }
+}
+
 /**
- * Apaga tudo do fã: as reservas de @ e o perfil com as subcoleções, e o acesso
- * ao painel (staff/{uid}) se a conta era da equipe. Pode rodar mais de uma
- * vez. Dado novo do fã fora de users/{uid} (carteira, convites) precisa entrar
- * aqui.
+ * Apaga tudo do fã: as reservas de @, o perfil com as subcoleções, a carteira
+ * (com o extrato e os pontos por central), as chaves de idempotência e o
+ * acesso ao painel (staff/{uid}) se a conta era da equipe. Pode rodar mais de
+ * uma vez. Dado novo do fã fora de users/{uid} (convites, comentários)
+ * precisa entrar aqui.
+ *
+ * A ordem importa: toda gravação da API lê users/{uid} na transação
+ * (requireFan), então depois que o perfil some nenhuma gravação nova do fã
+ * passa, e a carteira apagada em seguida não ganha nada no meio. Os
+ * agregados do painel (statsDaily) não descontam: guardam o que aconteceu em
+ * cada dia, sem uid (docs/arquitetura-api.md, seção 12).
  */
 export async function deleteUserData(db: Firestore, uid: string): Promise<void> {
   const reservations = await db.collection('usernames').where('uid', '==', uid).get();
@@ -92,5 +115,7 @@ export async function deleteUserData(db: Firestore, uid: string): Promise<void> 
     }),
   );
   await db.recursiveDelete(db.collection('users').doc(uid));
+  await db.recursiveDelete(db.collection('wallets').doc(uid));
+  await deleteIdempotencyKeys(db, uid);
   await db.collection('staff').doc(uid).delete();
 }

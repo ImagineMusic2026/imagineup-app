@@ -5,7 +5,7 @@
 // API entrar.
 import { buildMyRankFixture } from '@/domains/ranking/fixtures';
 import { ApiError } from '@/services/api/errors';
-import { fixtureWallet, onFixtureSessionEnd } from '@/services/fixtures';
+import { earnFixturePoints, onFixtureSessionEnd } from '@/services/fixtures';
 
 import type {
   Artist,
@@ -103,9 +103,9 @@ export const followFixture = {
     if (previous) return { ...previous };
 
     assertKnown([artistId]);
-    const pointsAwarded = followed.has(artistId) ? 0 : JOIN_CENTRAL_POINTS;
+    // Com a carteira na API, entrar na central de exemplo não rende ponto (earnFixturePoints).
+    const pointsAwarded = followed.has(artistId) ? 0 : earnFixturePoints(JOIN_CENTRAL_POINTS);
     followed.add(artistId);
-    if (pointsAwarded > 0) fixtureWallet.earn(pointsAwarded);
     const result: JoinCentralResult = { artistId, pointsAwarded };
     joinAnswers.set(idempotencyKey, result);
     return { ...result };

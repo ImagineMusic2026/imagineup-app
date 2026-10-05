@@ -17,7 +17,10 @@ import { artistKeys, useFollowArtistsMutation, useJoinCentralMutation } from '..
 import type { ArtistDetails, FanCentral, JoinCentralResult } from '../types';
 
 jest.mock('@/services/api', () => ({ api: { get: jest.fn(), post: jest.fn() } }));
-jest.mock('@/config/env', () => ({ dataSource: 'fixtures' }));
+jest.mock('@/config/data-source', () => ({
+  sourceOf: () => 'fixtures',
+  usesFixtures: () => true,
+}));
 // Entrar passa pela API de verdade (as fixtures); um teste segura a resposta.
 jest.mock('../api', () => {
   const actual = jest.requireActual<typeof import('../api')>('../api');

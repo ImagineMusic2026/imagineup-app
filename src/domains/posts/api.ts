@@ -1,4 +1,4 @@
-import { dataSource } from '@/config/env';
+import { sourceOf } from '@/config/data-source';
 import { api } from '@/services/api';
 import { fixtureDelay, fixtureNow } from '@/services/fixtures';
 
@@ -16,7 +16,7 @@ import type { CommentAuthor, Page, PointsAward, Post, PostComment } from './type
 const postUrl = (postId: string) => `/posts/${encodeURIComponent(postId)}`;
 
 export async function fetchFeed(cursor: string | null): Promise<Page<Post>> {
-  if (dataSource === 'fixtures') {
+  if (sourceOf('posts') === 'fixtures') {
     await fixtureDelay();
     return buildFeedPageFixture(fixtureNow(), cursor);
   }
@@ -29,7 +29,7 @@ export async function fetchArtistPosts(
   artistId: string,
   cursor: string | null,
 ): Promise<Page<Post>> {
-  if (dataSource === 'fixtures') {
+  if (sourceOf('posts') === 'fixtures') {
     await fixtureDelay();
     return buildArtistPostsPageFixture(fixtureNow(), artistId, cursor);
   }
@@ -40,7 +40,7 @@ export async function fetchArtistPosts(
 }
 
 export async function fetchPost(postId: string): Promise<Post> {
-  if (dataSource === 'fixtures') {
+  if (sourceOf('posts') === 'fixtures') {
     await fixtureDelay();
     return findPostFixture(fixtureNow(), postId);
   }
@@ -53,7 +53,7 @@ export async function fetchComments(
   postId: string,
   cursor: string | null,
 ): Promise<Page<PostComment>> {
-  if (dataSource === 'fixtures') {
+  if (sourceOf('posts') === 'fixtures') {
     await fixtureDelay();
     return buildCommentsPageFixture(fixtureNow(), postId, cursor);
   }
@@ -74,7 +74,7 @@ export async function setPostLike({
   liked,
   idempotencyKey,
 }: SetLikeVariables): Promise<PointsAward> {
-  if (dataSource === 'fixtures') {
+  if (sourceOf('posts') === 'fixtures') {
     await fixtureDelay();
     return postsFixture.setLike(postId, liked, idempotencyKey, fixtureNow());
   }
@@ -110,7 +110,7 @@ export async function addComment({
   idempotencyKey,
   author,
 }: AddCommentVariables): Promise<AddCommentResult> {
-  if (dataSource === 'fixtures') {
+  if (sourceOf('posts') === 'fixtures') {
     await fixtureDelay();
     return postsFixture.addComment({ postId, text, idempotencyKey, author }, fixtureNow());
   }

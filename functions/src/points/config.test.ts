@@ -1,0 +1,297 @@
+import { Timestamp, type Firestore } from 'firebase-admin/firestore';
+import { describe, expect, it, vi } from 'vitest';
+
+import {
+  ConfigValidationError,
+  createConfigSource,
+  DEFAULT_POINTS_CONFIG,
+  parsePointsConfig,
+  parseSeasonConfig,
+  validatePointsConfigInput,
+  validateSeasonInput,
+} from './config';
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+const NOW = Date.parse('2026-10-05T15:00:00.000Z');
+
+function spyLog() {
+  return { warn: vi.fn(), error: vi.fn() };
+}
+
+/** O campo da recusa estrita. */
+function fieldOf(run: () => unknown): string | undefined {
+  try {
+    run();
+  } catch (error) {
+    if (error instanceof ConfigValidationError) return error.field;
+    throw error;
+  }
+  return undefined;
+}
+
+describe('leitura de config/points', () => {
+  it('sem documento vale o padrão do código, versão 0, com a régua das fixtures do app', () => {
+    const config = parsePointsConfig(undefined, spyLog());
+    expect(config).toEqual(DEFAULT_POINTS_CONFIG);
+    expect(config.version).toBe(0);
+    expect(config.levels[6]).toEqual({ number: 7, name: 'Purainha', minXp: 7_000 });
+  });
+
+  it('o que o painel mudou vale, e o resto fica no padrão', () => {
+    const config = parsePointsConfig(
+      { version: 3, values: { like: 1 }, dailyLimits: { comment: 5, rsvp: null } },
+      spyLog(),
+    );
+    expect(config.version).toBe(3);
+    expect(config.values).toEqual({ ...DEFAULT_POINTS_CONFIG.values, like: 1 });
+    expect(config.dailyLimits).toEqual({
+      ...DEFAULT_POINTS_CONFIG.dailyLimits,
+      comment: 5,
+      rsvp: null,
+    });
+  });
+
+  it('origem nova no código (ausente no documento) entra com o padrão e não derruba as outras', () => {
+    // Documento gravado antes de o código conhecer invite_signup.
+    const config = parsePointsConfig(
+      { version: 1, values: { like: 1, comment: 3, rsvp: 1, central_join: 5, invite_visit: 1 } },
+      spyLog(),
+    );
+    expect(config.values).toMatchObject({ like: 1, comment: 3, invite_signup: 10 });
+    expect(Object.values(config.values).every(Number.isInteger)).toBe(true);
+  });
+
+  it('origem desconhecida é ignorada, com aviso', () => {
+    const log = spyLog();
+    const config = parsePointsConfig({ version: 1, values: { share: 9, like: 2 } }, log);
+    expect(config.values).not.toHaveProperty('share');
+    expect(config.values.like).toBe(2);
+    expect(log.warn).toHaveBeenCalledWith(expect.any(String), { source: 'share' });
+    expect(log.error).not.toHaveBeenCalled();
+  });
+
+  it('valor ou limite inválido volta ao padrão só nele, com erro no log', () => {
+    const log = spyLog();
+    const config = parsePointsConfig(
+      {
+        version: 2,
+        values: { like: -1, comment: 2.5, rsvp: 3, central_join: 99_999 },
+        dailyLimits: { like: 0, comment: 'muito', rsvp: 4 },
+      },
+      log,
+    );
+    expect(config.values).toEqual({ ...DEFAULT_POINTS_CONFIG.values, rsvp: 3 });
+    expect(config.dailyLimits).toEqual({ ...DEFAULT_POINTS_CONFIG.dailyLimits, rsvp: 4 });
+    expect(log.error).toHaveBeenCalledTimes(5);
+  });
+
+  it('régua inválida volta inteira ao padrão', () => {
+    const log = spyLog();
+    const config = parsePointsConfig(
+      {
+        version: 2,
+        levels: [
+          { number: 1, name: 'A', minXp: 0 },
+          { number: 2, name: 'B', minXp: 0 },
+        ],
+      },
+      log,
+    );
+    expect(config.levels).toEqual(DEFAULT_POINTS_CONFIG.levels);
+    expect(log.error).toHaveBeenCalledOnce();
+  });
+
+  it('régua válida do painel vale inteira', () => {
+    const levels = [
+      { number: 1, name: 'Chegando', minXp: 0 },
+      { number: 2, name: 'Fã', minXp: 100 },
+    ];
+    expect(parsePointsConfig({ version: 4, levels }, spyLog()).levels).toEqual(levels);
+  });
+});
+
+describe('leitura de config/season', () => {
+  const season = {
+    id: 'temporada-sao-joao',
+    name: 'São João',
+    startsAt: Timestamp.fromMillis(NOW - 18 * DAY_MS),
+    endsAt: Timestamp.fromMillis(NOW + 12 * DAY_MS),
+    leaderTitle: null,
+  };
+
+  it('sem documento ou com season null, não há temporada', () => {
+    expect(parseSeasonConfig(undefined, spyLog())).toEqual({ version: 0, season: null });
+    expect(parseSeasonConfig({ version: 2, season: null }, spyLog())).toEqual({
+      version: 2,
+      season: null,
+    });
+  });
+
+  it('a temporada vem com as datas em ms', () => {
+    expect(parseSeasonConfig({ version: 1, season }, spyLog())).toEqual({
+      version: 1,
+      season: {
+        id: 'temporada-sao-joao',
+        name: 'São João',
+        startsAt: NOW - 18 * DAY_MS,
+        endsAt: NOW + 12 * DAY_MS,
+        leaderTitle: null,
+      },
+    });
+  });
+
+  it('temporada inválida vira sem temporada, com erro no log', () => {
+    const log = spyLog();
+    expect(
+      parseSeasonConfig({ version: 1, season: { ...season, id: 'Com Espaço' } }, log).season,
+    ).toBeNull();
+    expect(
+      parseSeasonConfig({ version: 1, season: { ...season, endsAt: season.startsAt } }, log).season,
+    ).toBeNull();
+    expect(log.error).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('gravação estrita (callable do painel)', () => {
+  it('aceita valores, limites e régua válidos', () => {
+    expect(
+      validatePointsConfigInput({
+        values: { like: 1, invite_signup: 10_000 },
+        dailyLimits: { mission: null, comment: 1_000 },
+        levels: [
+          { number: 1, name: 'Primeiro passo', minXp: 0 },
+          { number: 2, name: 'Na roda', minXp: 600 },
+        ],
+      }),
+    ).toEqual({
+      values: { like: 1, invite_signup: 10_000 },
+      dailyLimits: { mission: null, comment: 1_000 },
+      levels: [
+        { number: 1, name: 'Primeiro passo', minXp: 0 },
+        { number: 2, name: 'Na roda', minXp: 600 },
+      ],
+    });
+  });
+
+  it.each([
+    [{ values: { share: 1 } }, 'values.share'],
+    [{ values: { mission: 10 } }, 'values.mission'],
+    [{ values: { like: 10_001 } }, 'values.like'],
+    [{ values: { like: 1.5 } }, 'values.like'],
+    [{ dailyLimits: { like: 0 } }, 'dailyLimits.like'],
+    [{ dailyLimits: { comment: 1_001 } }, 'dailyLimits.comment'],
+    [{ levels: [{ number: 1, name: 'Só um', minXp: 0 }] }, 'levels'],
+    [
+      {
+        levels: [
+          { number: 1, name: 'A', minXp: 10 },
+          { number: 2, name: 'B', minXp: 20 },
+        ],
+      },
+      'levels',
+    ],
+    [
+      {
+        levels: [
+          { number: 1, name: 'A', minXp: 0 },
+          { number: 3, name: 'B', minXp: 20 },
+        ],
+      },
+      'levels',
+    ],
+    [
+      {
+        levels: [
+          { number: 1, name: ' A', minXp: 0 },
+          { number: 2, name: 'B', minXp: 20 },
+        ],
+      },
+      'levels',
+    ],
+    [
+      {
+        levels: [
+          { number: 1, name: 'A', minXp: 0 },
+          { number: 2, name: 'x'.repeat(41), minXp: 20 },
+        ],
+      },
+      'levels',
+    ],
+    [{ outro: 1 }, 'outro'],
+  ])('recusa %j em %s', (input, field) => {
+    expect(fieldOf(() => validatePointsConfigInput(input))).toBe(field);
+  });
+
+  it('régua com 51 degraus é recusada', () => {
+    const levels = Array.from({ length: 51 }, (_, index) => ({
+      number: index + 1,
+      name: `Nível ${index + 1}`,
+      minXp: index * 100,
+    }));
+    expect(fieldOf(() => validatePointsConfigInput({ levels }))).toBe('levels');
+    expect(
+      fieldOf(() => validatePointsConfigInput({ levels: levels.slice(0, 50) })),
+    ).toBeUndefined();
+  });
+
+  const season = {
+    id: 'temporada-sao-joao',
+    name: 'São João',
+    startsAt: NOW,
+    endsAt: NOW + 30 * DAY_MS,
+    leaderTitle: 'Rainha do São João',
+  };
+
+  it('temporada válida passa', () => {
+    expect(validateSeasonInput(season)).toEqual(season);
+    expect(validateSeasonInput({ ...season, leaderTitle: null }).leaderTitle).toBeNull();
+  });
+
+  it.each([
+    [{ id: 'SJ' }, 'season.id'],
+    [{ name: '' }, 'season.name'],
+    [{ leaderTitle: 'x'.repeat(41) }, 'season.leaderTitle'],
+    [{ endsAt: NOW }, 'season.endsAt'],
+    [{ endsAt: NOW + 367 * DAY_MS }, 'season.endsAt'],
+  ])('recusa a temporada com %j', (change, field) => {
+    expect(fieldOf(() => validateSeasonInput({ ...season, ...change }))).toBe(field);
+  });
+});
+
+describe('cache da configuração', () => {
+  function fakeDb(responses: (() => Promise<unknown[]>)[]) {
+    const getAll = vi.fn(() => responses.shift()!());
+    const doc = (id: string) => ({ id });
+    const db = { getAll, collection: () => ({ doc }) } as unknown as Firestore;
+    return { db, getAll };
+  }
+
+  const snap = (data: unknown) => ({ data: () => data });
+
+  it('lê os dois documentos juntos e guarda por 60 s', async () => {
+    let clock = NOW;
+    const { db, getAll } = fakeDb([
+      () => Promise.resolve([snap({ version: 1, values: { like: 1 } }), snap(undefined)]),
+      () => Promise.resolve([snap({ version: 2, values: { like: 5 } }), snap(undefined)]),
+    ]);
+    const source = createConfigSource(db, { now: () => clock, log: spyLog() });
+    expect((await source.get()).points.values.like).toBe(1);
+    clock += 59_999;
+    expect((await source.get()).points.values.like).toBe(1);
+    expect(getAll).toHaveBeenCalledOnce();
+    clock += 1;
+    expect((await source.get()).points.values.like).toBe(5);
+    expect(getAll).toHaveBeenCalledTimes(2);
+  });
+
+  it('leitura que falha não fica no cache', async () => {
+    const { db, getAll } = fakeDb([
+      () => Promise.reject(new Error('fora do ar')),
+      () => Promise.resolve([snap(undefined), snap(undefined)]),
+    ]);
+    const source = createConfigSource(db, { now: () => NOW, log: spyLog() });
+    await expect(source.get()).rejects.toThrow('fora do ar');
+    await expect(source.get()).resolves.toMatchObject({ points: { version: 0 } });
+    expect(getAll).toHaveBeenCalledTimes(2);
+  });
+});

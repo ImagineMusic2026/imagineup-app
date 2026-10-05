@@ -1,4 +1,4 @@
-import { dataSource } from '@/config/env';
+import { sourceOf } from '@/config/data-source';
 import { api } from '@/services/api';
 import { fixtureDelay, fixtureNow } from '@/services/fixtures';
 
@@ -7,7 +7,7 @@ import type { RedeemResult, RedeemVariables, RewardsResponse } from './types';
 
 /** Chamadas cruas à API. Sem React: quem cacheia é o queries.ts. */
 export async function fetchRewards(): Promise<RewardsResponse> {
-  if (dataSource === 'fixtures') {
+  if (sourceOf('rewards') === 'fixtures') {
     await fixtureDelay();
     return buildRewardsFixture(fixtureNow());
   }
@@ -24,7 +24,7 @@ export async function redeemReward({
   rewardId,
   idempotencyKey,
 }: RedeemVariables): Promise<RedeemResult> {
-  if (dataSource === 'fixtures') {
+  if (sourceOf('rewards') === 'fixtures') {
     await fixtureDelay();
     return rewardsFixture.redeem(rewardId, idempotencyKey);
   }

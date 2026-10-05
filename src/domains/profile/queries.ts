@@ -1,6 +1,7 @@
 import { skipToken, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect } from 'react';
 
+import { queryOptionsFor } from '@/services/query/client';
 import { usePreferencesStore } from '@/stores/preferences';
 import { useSessionStore } from '@/stores/session';
 
@@ -65,19 +66,25 @@ export function useWatchMyProfile(): void {
   }, [uid, queryClient]);
 }
 
-/** Saldo, nível e temporada (fixtures até a API do M2). */
+/**
+ * Saldo, nível e temporada. Da API quando ela está configurada (o emulador em
+ * desenvolvimento), das fixtures no resto; com a API, pausa sem rede e vai
+ * para o disco (`queryOptionsFor`).
+ */
 export function useWalletQuery() {
   return useQuery({
     queryKey: profileKeys.wallet(),
     queryFn: fetchWallet,
+    ...queryOptionsFor('wallet'),
   });
 }
 
-/** Nível, XP de nível, ganhos da semana e números do fã (1e). */
+/** Nível, XP de nível, ganhos da semana e números do fã (1e), da mesma fonte da carteira. */
 export function useMyProgressQuery() {
   return useQuery({
     queryKey: profileKeys.progress(),
     queryFn: fetchMyProgress,
+    ...queryOptionsFor('wallet'),
   });
 }
 

@@ -10,7 +10,10 @@ import {
 
 // O api.ts importa o axios do app, que puxa o Firebase (ESM no Jest).
 jest.mock('@/services/api', () => ({ api: { get: jest.fn() } }));
-jest.mock('@/config/env', () => ({ dataSource: 'fixtures' }));
+jest.mock('@/config/data-source', () => ({
+  sourceOf: () => 'fixtures',
+  usesFixtures: () => true,
+}));
 
 const NOW = new Date(2026, 8, 29, 20, 0);
 

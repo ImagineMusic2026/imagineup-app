@@ -24,8 +24,11 @@ jest.mock('@/services/api', () => ({ api: { get: jest.fn() } }));
 jest.mock('@/config/env', () => ({
   firebaseEnv: null,
   apiUrl: undefined,
-  dataSource: 'fixtures',
   firebaseEmulatorHost: undefined,
+}));
+jest.mock('@/config/data-source', () => ({
+  sourceOf: () => 'fixtures',
+  usesFixtures: () => true,
 }));
 
 // Relógio fixo: terça, 29 de setembro de 2026, 20 h.

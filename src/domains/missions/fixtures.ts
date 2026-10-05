@@ -1,6 +1,6 @@
 import { addMonths, endOfDay, endOfWeek, set, startOfMonth } from 'date-fns';
 
-import { fixtureNow, fixtureWallet, onFixtureSessionEnd } from '@/services/fixtures';
+import { earnFixturePoints, fixtureNow, onFixtureSessionEnd } from '@/services/fixtures';
 
 import type { Mission, MissionAction, MissionsResponse, MissionTarget, SeasonGoal } from './types';
 
@@ -213,8 +213,9 @@ function countsFor(item: Mission, on: Pick<MissionTarget, 'artistId'> | undefine
  * O servidor das missões nas fixtures. Outras fixtures contam aqui as ações do
  * fã que andam uma missão (o "Eu vou" da agenda, curtir e comentar um post);
  * quando a ação completa a missão, os pontos entram na carteira
- * (`fixtureWallet`) e voltam na resposta da ação, como a API faria. Fica em
- * memória e volta ao início quando o app reabre ou a sessão termina.
+ * (`fixtureWallet`, por `earnFixturePoints`) e voltam na resposta da ação,
+ * como a API faria; com a carteira na API, a missão conclui e a ação devolve
+ * 0. Fica em memória e volta ao início quando o app reabre ou a sessão termina.
  */
 export const missionsFixture = {
   /**
@@ -236,8 +237,8 @@ export const missionsFixture = {
     const done = current >= open.progress.target;
     advances.set(open.id, { current, completedAt: done ? now.toISOString() : null });
     if (!done) return 0;
-    fixtureWallet.earn(open.rewardPoints);
-    return open.rewardPoints;
+    // Com a carteira na API, a missão de exemplo conclui sem crédito: a ação devolve 0.
+    return earnFixturePoints(open.rewardPoints);
   },
 
   /** Volta ao início (fim da sessão e testes). */

@@ -1,4 +1,4 @@
-import { dataSource } from '@/config/env';
+import { sourceOf } from '@/config/data-source';
 import { api } from '@/services/api';
 import { fixtureDelay, fixtureNow } from '@/services/fixtures';
 
@@ -7,7 +7,7 @@ import type { DailyMission, DailyMissionResponse, MissionsResponse } from './typ
 
 /** Chamadas cruas à API. Sem React: quem cacheia é o queries.ts. */
 export async function fetchMissions(): Promise<MissionsResponse> {
-  if (dataSource === 'fixtures') {
+  if (sourceOf('missions') === 'fixtures') {
     await fixtureDelay();
     return buildMissionsFixture(fixtureNow());
   }
@@ -20,7 +20,7 @@ export async function fetchMissions(): Promise<MissionsResponse> {
  * 1g, com o que o fã já fez; na API, o servidor escolhe.
  */
 export async function fetchDailyMission(): Promise<DailyMission | null> {
-  if (dataSource === 'fixtures') {
+  if (sourceOf('missions') === 'fixtures') {
     await fixtureDelay();
     const { missions } = buildMissionsFixture(fixtureNow());
     return missions.find((mission) => mission.featured && mission.period === 'daily') ?? null;

@@ -1,4 +1,18 @@
 {
   "indexes": [],
-  "fieldOverrides": []
+  "fieldOverrides": [
+    { "collectionGroup": "idempotency", "fieldPath": "expiresAt", "ttl": true, "indexes": [] },
+    { "collectionGroup": "idempotency", "fieldPath": "body", "indexes": [] },
+    { "collectionGroup": "idempotency", "fieldPath": "createdAt", "indexes": [] },
+    { "collectionGroup": "idempotency", "fieldPath": "route", "indexes": [] },
+    { "collectionGroup": "idempotency", "fieldPath": "fingerprint", "indexes": [] },
+    { "collectionGroup": "idempotency", "fieldPath": "status", "indexes": [] },
+    { "collectionGroup": "wallets", "fieldPath": "days", "indexes": [] },
+    { "collectionGroup": "wallets", "fieldPath": "activity", "indexes": [] },
+    { "collectionGroup": "wallets", "fieldPath": "updatedAt", "indexes": [] },
+    { "collectionGroup": "wallets", "fieldPath": "seasonPointsAt", "indexes": [] },
+    { "collectionGroup": "statsShards", "fieldPath": "bySource", "indexes": [] },
+    { "collectionGroup": "statsShards", "fieldPath": "byArtist", "indexes": [] },
+    { "collectionGroup": "statsShards", "fieldPath": "cohorts", "indexes": [] }
+  ]
 }

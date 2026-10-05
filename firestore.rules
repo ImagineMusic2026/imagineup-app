@@ -5,7 +5,8 @@ rules_version = '2';
 // Tudo fechado por padrão. O servidor (Admin SDK nas Cloud Functions, que não
 // passa por estas regras) cria o perfil no cadastro e grava pontos, nível,
 // saldo, @, foto, missões, resgates, ranking, convites e a entrada em centrais.
-// O celular só lê o próprio perfil e edita o nome e a cidade.
+// O celular só lê o próprio perfil e edita o nome e a cidade; o resto chega
+// pela API (função api, docs/arquitetura-api.md).
 //
 // A equipe do painel admin entra pelo mesmo Authentication dos fãs, mas estar
 // logado nunca basta: só um staff/{uid} com status 'active' (gravado pelo
@@ -175,6 +176,58 @@ service cloud.firestore {
     match /artistPrivate/{artistId} {
       allow read: if canSeeSection('artists');
       allow write: if false;
+    }
+
+    // Carteira, extrato e pontos por central: só o servidor grava (award, na
+    // API). O fã lê pela API, nunca direto, nem a própria. A equipe com a
+    // seção fans lê (seção Fãs do painel).
+    match /wallets/{uid} {
+      allow read: if canSeeSection('fans');
+      allow write: if false;
+
+      match /ledger/{entryId} {
+        allow read: if canSeeSection('fans');
+        allow write: if false;
+      }
+
+      match /centralPoints/{artistId} {
+        allow read: if canSeeSection('fans');
+        allow write: if false;
+      }
+    }
+
+    // Valores, limites, régua e temporada. A equipe ativa lê só estes dois
+    // documentos; muda só por callable, com auditoria. O app recebe os
+    // valores pela API. Documento novo em config/ não fica legível sozinho.
+    match /config/{docId} {
+      allow read: if isActiveStaff() && docId in ['points', 'season'];
+      allow write: if false;
+
+      match /versions/{version} {
+        allow read: if isActiveStaff() && docId in ['points', 'season'];
+        allow write: if false;
+      }
+    }
+
+    // Contadores agregados do painel (Visão geral e Crescimento), lidos direto
+    // com getDocs, nunca com escuta em tempo real (docs/arquitetura-api.md).
+    match /statsDaily/{day} {
+      allow read: if canSeeSection('overview') || canSeeSection('growth');
+      allow write: if false;
+
+      match /statsShards/{shard} {
+        allow read: if canSeeSection('overview') || canSeeSection('growth');
+        allow write: if false;
+      }
+    }
+
+    // Controle do fechamento do dia e chaves de idempotência da API: só o servidor.
+    match /statsMeta/{docId} {
+      allow read, write: if false;
+    }
+
+    match /idempotency/{id} {
+      allow read, write: if false;
     }
 
     match /{document=**} {

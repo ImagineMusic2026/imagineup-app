@@ -1,0 +1,162 @@
+import { FieldPath, Timestamp, type Firestore } from 'firebase-admin/firestore';
+
+import { walletFromDoc, walletRef } from './award';
+import type { LoadedConfig } from './config';
+import {
+  LEDGER_ID_PATTERN,
+  levelForXp,
+  seasonsPlayed,
+  weekEarned,
+  type Level,
+  type PointsSource,
+  type Subject,
+  type WalletState,
+} from './model';
+
+// Leituras da carteira para as rotas (GET), fora de transação: uma leitura da
+// carteira e a configuração do cache. docs/arquitetura-api.md, seção 6.
+
+export type WalletView = { balance: number; xp: number; seasonPoints: number };
+
+export type ProgressView = {
+  xp: number;
+  level: Level;
+  nextLevel: Level | null;
+  weekEarned: number;
+  stats: { linksCreated: number; peopleBrought: number; seasons: number };
+};
+
+export type LedgerItem = {
+  id: string;
+  kind: 'earn' | 'spend' | 'adjust';
+  source: PointsSource;
+  points: number;
+  xpDelta: number;
+  seasonDelta: number;
+  artistId: string | null;
+  centralSeasonDelta: number;
+  centralTotalDelta: number;
+  subject: Subject | null;
+  createdAt: string;
+};
+
+export type LedgerPage = { items: LedgerItem[]; nextCursor: string | null };
+
+export async function readWallet(db: Firestore, uid: string): Promise<WalletState> {
+  return walletFromDoc((await walletRef(db, uid).get()).data());
+}
+
+/**
+ * Os pontos da temporada da configuração. Pontos guardados de outra temporada
+ * (a carteira ainda não trocou) mostram 0; temporada que já acabou e continua
+ * na configuração mostra os pontos dela, congelados.
+ */
+export function visibleSeasonPoints(wallet: WalletState, config: LoadedConfig): number {
+  const season = config.season.season;
+  return season && wallet.seasonId === season.id ? wallet.seasonPoints : 0;
+}
+
+export function walletView(wallet: WalletState, config: LoadedConfig): WalletView {
+  return {
+    balance: wallet.balance,
+    xp: wallet.xp,
+    seasonPoints: visibleSeasonPoints(wallet, config),
+  };
+}
+
+/**
+ * Nível pela régua da configuração (sai do XP a cada leitura), ganhos dos
+ * últimos 7 dias e os números do fã. Links e pessoas trazidas são do bloco 5.
+ */
+export function progressView(wallet: WalletState, config: LoadedConfig, now: number): ProgressView {
+  const { level, nextLevel } = levelForXp(wallet.xp, config.points.levels);
+  return {
+    xp: wallet.xp,
+    level,
+    nextLevel,
+    weekEarned: weekEarned(wallet.days, now),
+    stats: { linksCreated: 0, peopleBrought: 0, seasons: seasonsPlayed(wallet) },
+  };
+}
+
+export const LEDGER_LIMIT_DEFAULT = 20;
+export const LEDGER_LIMIT_MAX = 50;
+
+export type LedgerCursor = { createdAt: number; id: string };
+
+/** Cursor opaco para o app: base64url de `[createdAtEmMs, entryId]`. */
+export function encodeLedgerCursor(cursor: LedgerCursor): string {
+  return Buffer.from(JSON.stringify([cursor.createdAt, cursor.id]), 'utf8').toString('base64url');
+}
+
+/**
+ * O maior instante que o Timestamp do Firestore aceita (9999-12-31T23:59:59.999Z):
+ * acima dele, o `Timestamp.fromMillis` do `startAfter` lança, e o cursor montado à
+ * mão viraria 500 em vez de 400.
+ */
+const MAX_TIMESTAMP_MS = 253_402_300_799_999;
+
+/** null quando o texto não é um cursor nosso. */
+export function decodeLedgerCursor(value: string): LedgerCursor | null {
+  if (!/^[A-Za-z0-9_-]{1,600}$/.test(value)) return null;
+  try {
+    const parsed: unknown = JSON.parse(Buffer.from(value, 'base64url').toString('utf8'));
+    if (
+      Array.isArray(parsed) &&
+      parsed.length === 2 &&
+      Number.isInteger(parsed[0]) &&
+      parsed[0] >= 0 &&
+      parsed[0] <= MAX_TIMESTAMP_MS &&
+      typeof parsed[1] === 'string' &&
+      LEDGER_ID_PATTERN.test(parsed[1])
+    ) {
+      return { createdAt: parsed[0], id: parsed[1] };
+    }
+  } catch {
+    return null;
+  }
+  return null;
+}
+
+/** Extrato do mais novo ao mais antigo, com o id do documento desempatando. */
+export async function readLedgerPage(
+  db: Firestore,
+  uid: string,
+  options: { limit: number; cursor: LedgerCursor | null },
+): Promise<LedgerPage> {
+  let query = walletRef(db, uid)
+    .collection('ledger')
+    .orderBy('createdAt', 'desc')
+    .orderBy(FieldPath.documentId(), 'desc');
+  if (options.cursor) {
+    query = query.startAfter(Timestamp.fromMillis(options.cursor.createdAt), options.cursor.id);
+  }
+  const snapshot = await query.limit(options.limit + 1).get();
+  const docs = snapshot.docs.slice(0, options.limit);
+  const items = docs.map((doc): LedgerItem => {
+    const data = doc.data();
+    const createdAt = data.createdAt instanceof Timestamp ? data.createdAt.toMillis() : 0;
+    return {
+      id: doc.id,
+      kind: data.kind,
+      source: data.source,
+      points: data.points ?? 0,
+      xpDelta: data.xpDelta ?? 0,
+      seasonDelta: data.seasonDelta ?? 0,
+      artistId: data.artistId ?? null,
+      centralSeasonDelta: data.centralSeasonDelta ?? 0,
+      centralTotalDelta: data.centralTotalDelta ?? 0,
+      subject: data.subject ?? null,
+      createdAt: new Date(createdAt).toISOString(),
+    };
+  });
+  const last = docs.at(-1);
+  const nextCursor =
+    snapshot.docs.length > options.limit && last
+      ? encodeLedgerCursor({
+          createdAt: (last.get('createdAt') as Timestamp).toMillis(),
+          id: last.id,
+        })
+      : null;
+  return { items, nextCursor };
+}

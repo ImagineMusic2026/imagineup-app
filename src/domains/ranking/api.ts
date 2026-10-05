@@ -1,4 +1,4 @@
-import { dataSource } from '@/config/env';
+import { sourceOf } from '@/config/data-source';
 import { api } from '@/services/api';
 import { fixtureDelay, fixtureNow } from '@/services/fixtures';
 
@@ -10,7 +10,7 @@ import type { LeaderboardPage, MyRank, RankingScope, Season } from './types';
 
 /** A temporada do ranking; `null` quando não há nenhuma em andamento. */
 export async function fetchSeason(): Promise<Season | null> {
-  if (dataSource === 'fixtures') {
+  if (sourceOf('ranking') === 'fixtures') {
     await fixtureDelay();
     return buildSeasonFixture(fixtureNow());
   }
@@ -23,7 +23,7 @@ export async function fetchLeaderboard(
   scope: RankingScope,
   cursor: string | null,
 ): Promise<LeaderboardPage> {
-  if (dataSource === 'fixtures') {
+  if (sourceOf('ranking') === 'fixtures') {
     await fixtureDelay();
     return buildLeaderboardPageFixture(scope, cursor);
   }
@@ -35,7 +35,7 @@ export async function fetchLeaderboard(
 
 /** A posição do fã no recorte e a próxima meta dele. */
 export async function fetchMyRank(scope: RankingScope): Promise<MyRank> {
-  if (dataSource === 'fixtures') {
+  if (sourceOf('ranking') === 'fixtures') {
     await fixtureDelay();
     return buildMyRankFixture(scope);
   }

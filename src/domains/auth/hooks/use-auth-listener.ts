@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 
-import { dataSource } from '@/config/env';
+import { usesFixtures } from '@/config/data-source';
 import { playStackExit } from '@/hooks/use-stack-fade';
 import { resetFixtureSession } from '@/services/fixtures';
 import { queryClient, queryPersister } from '@/services/query';
@@ -16,7 +16,7 @@ import { listenToAuth } from '../api';
  */
 async function clearSessionData(): Promise<void> {
   queryClient.clear();
-  if (dataSource === 'fixtures') resetFixtureSession();
+  if (usesFixtures()) resetFixtureSession();
   await Promise.resolve(queryPersister.removeClient()).catch(() => undefined);
 }
 

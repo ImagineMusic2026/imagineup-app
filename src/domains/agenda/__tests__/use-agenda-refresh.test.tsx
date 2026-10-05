@@ -22,7 +22,10 @@ jest.mock('@/firebase', () => ({
 }));
 jest.mock('@/services/api', () => ({ api: { get: jest.fn(), request: jest.fn() } }));
 // Com a API: sem rede, as buscas pausam até ela voltar.
-jest.mock('@/config/env', () => ({ dataSource: 'api' }));
+jest.mock('@/config/data-source', () => ({
+  sourceOf: () => 'api',
+  usesFixtures: () => false,
+}));
 
 const get = jest.mocked(api.get);
 const NOW = new Date(2026, 8, 29, 20, 0);

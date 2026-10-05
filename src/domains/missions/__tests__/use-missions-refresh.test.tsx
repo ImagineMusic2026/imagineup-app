@@ -11,7 +11,10 @@ import { missionKeys, useDailyMissionQuery } from '../queries';
 
 jest.mock('@/services/api', () => ({ api: { get: jest.fn() } }));
 // Com a API: sem rede, as buscas pausam até ela voltar.
-jest.mock('@/config/env', () => ({ dataSource: 'api' }));
+jest.mock('@/config/data-source', () => ({
+  sourceOf: () => 'api',
+  usesFixtures: () => false,
+}));
 
 const get = jest.mocked(api.get);
 
