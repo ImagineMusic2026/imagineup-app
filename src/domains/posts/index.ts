@@ -6,15 +6,20 @@ export {
   registerPostMutationDefaults,
   useAddCommentMutation,
   useArtistPostsQuery,
+  useBlockFanMutation,
+  useCachedComment,
   useCommentsQuery,
   useFeedQuery,
   useLocalComments,
   usePostQuery,
+  useReportCommentMutation,
   useToggleLikeMutation,
 } from './queries';
 export { postPath, sharePost } from './share-post';
 export type {
+  BlockFanResult,
   CommentAuthor,
+  CommentReportReason,
   CommentStatus,
   Post,
   PostArtist,
@@ -22,5 +27,7 @@ export type {
   PostEvent,
   PostKind,
   PostMedia,
+  ReportCommentResult,
 } from './types';
+export { CommentOptionsSheetScreen } from './views/comment-options-sheet';
 export { PostDetailsScreen } from './views/post-details';

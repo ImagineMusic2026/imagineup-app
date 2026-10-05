@@ -25,6 +25,7 @@ import {
   type ConfigSource,
   type PointsConfig,
 } from '../src/points';
+import { seedPosts } from '../src/posts';
 import { deleteUserData } from '../src/store';
 
 /**
@@ -200,6 +201,29 @@ async function statsSum(
 
 /** Os dias de São Paulo em que um pedido feito entre `from` e agora pode ter caído. */
 const daysSince = (from: number): string[] => [dayKey(from), dayKey(Date.now())];
+
+/** Post no ar da central do Netto (do seed), direto pelo Admin SDK, como o painel deixaria. */
+async function publishedPost(id: string, extra: Record<string, unknown> = {}): Promise<void> {
+  const at = Timestamp.now();
+  await db.doc(`posts/${id}`).set({
+    artistId: 'nettobrito',
+    kind: 'text',
+    text: 'Post de teste',
+    media: null,
+    eventId: null,
+    status: 'published',
+    publishedAt: at,
+    likeCount: 0,
+    commentCount: 0,
+    countsAt: null,
+    createdAt: at,
+    updatedAt: at,
+    createdBy: 'teste',
+    updatedBy: 'teste',
+    schemaVersion: 1,
+    ...extra,
+  });
+}
 
 /** O dia do claim que o servidor usou (`referrals/{uid}.day`). */
 async function claimDay(uid: string): Promise<string> {
@@ -847,9 +871,21 @@ describe('links compartilhados e os números do perfil', () => {
       expect(await exists(`fanInvites/${fan.uid}/inviteLinks/${linkId}`)).toBe(false);
     }
     expect(await statsSum(daysSince(started), (d) => d.byOrigin?.kind?.artist?.links ?? 0)).toBe(1);
+    // O link de um post só nasce com o post visível (bloco 6, 21.2): post que
+    // não existe, em rascunho ou de central fora do ar não vira link.
+    for (const [id, extra] of [
+      ['p-rascunho', { status: 'draft', publishedAt: null }],
+      ['p-fora', { artistId: 'artista8' }],
+    ] as const) {
+      await publishedPost(id, extra);
+      expect(await put(fan, `post:${id}`)).toMatchObject({ body: { created: false } });
+    }
+    expect(await put(fan, 'post:p-naoexiste')).toMatchObject({ body: { created: false } });
     for (let index = 0; index < 28; index += 1) {
+      await publishedPost(`p${index}`);
       expect(await put(fan, `post:p${index}`)).toMatchObject({ body: { created: true } });
     }
+    await publishedPost('p-trinta-e-um');
     // O 31º novo do dia não entra.
     expect(await put(fan, 'post:p-trinta-e-um')).toMatchObject({
       status: 200,
@@ -871,6 +907,8 @@ describe('links compartilhados e os números do perfil', () => {
   });
 
   it('pela api de verdade, o link vai com o : codificado', async () => {
+    await seedCentrals(db);
+    await publishedPost('p-clipe');
     const fan = await signUpFan();
     await codeOf(fan);
     const from = Date.now();
@@ -977,8 +1015,10 @@ describe('exclusão de conta', () => {
 
 describe('seed do convite', () => {
   it('o código da Camila, os links e três convidados com as origens, sem mudar a carteira dela', async () => {
-    // As centrais antes, como no scripts/seed-emulators.mjs: o link da central do Netto exige a central no ar.
+    // As centrais e os posts antes, como no scripts/seed-emulators.mjs: o link
+    // da central do Netto exige a central no ar, e o do clipe, o post no ar.
     await seedCentrals(db);
+    await seedPosts(db);
     const camila = await signUpFan('camila@teste.imagineup', 'Camila Ribeiro');
     await seedCamilaWallet(db, camila.uid);
     const wallet = await read(`wallets/${camila.uid}`);

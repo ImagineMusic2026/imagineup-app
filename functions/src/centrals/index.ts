@@ -49,6 +49,7 @@ export {
   runJoinCentrals,
   sumCentralPoints,
   syncFanCount,
+  type ArtistPostCounter,
   type CentralPointsAggregate,
   type FanCountSync,
   type JoinOutcome,

@@ -188,7 +188,7 @@
     },
     "leave": {
       "title": "Sair da central?",
-      "body": "A central sai de Suas centrais. Os pontos que você ganhou nela continuam com você, e entrar de novo não rende os pontos de entrada outra vez.",
+      "body": "A central sai de Suas centrais. Os pontos que você ganhou nela continuam com você, e entrar de novo não rende os pontos de entrada outra vez. Os posts desta central saem do seu mural.",
       "confirm": "Sair da central",
       "cancel": "Continuar na central",
       "left": "Você saiu da central.",
@@ -218,7 +218,9 @@
       "loadError": "Não deu para carregar os posts.",
       "moreError": "Não deu para carregar mais posts.",
       "photoLabel": "Post de {{name}}, {{time}}: {{text}}",
+      "photoLabelNoText": "Post de {{name}}, {{time}}",
       "videoLabel": "Vídeo de {{name}}, {{time}}: {{text}}",
+      "videoLabelNoText": "Vídeo de {{name}}, {{time}}",
       "showLabel": "Show de {{name}}, {{time}}: {{text}}",
       "textLabel": "Post de {{name}}, {{time}}: {{text}}"
     },
@@ -249,6 +251,7 @@
     "show": "Show",
     "meta": "· {{time}}",
     "blockLabel": "{{author}}, {{time}}. {{text}}",
+    "blockLabelNoText": "{{author}}, {{time}}.",
     "share": "Compartilhar {{points}}",
     "sharePlain": "Compartilhar",
     "shareLabel": "Compartilhar o post de {{author}}, {{time}}, ganha {{points}} por pessoa que abre o link no app",
@@ -274,7 +277,29 @@
       "retryHint": "Tenta enviar de novo",
       "failedAnnouncement": "Comentário não enviado. Toque nele para tentar de novo.",
       "fallbackName": "Fã",
-      "you": "Você"
+      "you": "Você",
+      "optionsLabel": "Opções do comentário de {{name}}"
+    },
+    "moderation": {
+      "title": "Comentário de {{name}}",
+      "reportSection": "Denunciar",
+      "reportBody": "A equipe do ImagineUP analisa cada denúncia. O motivo é opcional.",
+      "reasons": {
+        "none": "Sem motivo",
+        "spam": "Spam",
+        "offensive": "Ofensivo",
+        "harassment": "Assédio",
+        "other": "Outro"
+      },
+      "report": "Denunciar comentário",
+      "reported": "Denúncia enviada. A equipe vai analisar.",
+      "reportError": "Não deu para enviar a denúncia. Tente de novo.",
+      "blockSection": "Bloquear",
+      "blockBody": "Os comentários de {{name}} somem para você, neste e nos outros posts. {{name}} não fica sabendo.",
+      "block": "Bloquear {{name}}",
+      "blocked": "Bloqueio feito: os comentários de {{name}} somem para você.",
+      "blockedShort": "Bloqueio feito. Os comentários somem para você.",
+      "blockError": "Não deu para bloquear. Tente de novo."
     },
     "composer": {
       "send": "Enviar comentário",
@@ -689,7 +714,8 @@
     "nameInvalid": "Use só letras, números e emoji.",
     "inviteCodeInvalid": "Use só as letras e os números do código.",
     "commentEmpty": "Escreva algo antes de enviar.",
-    "commentMax": "O comentário pode ter até {{max}} caracteres."
+    "commentMax": "O comentário pode ter até {{max}} caracteres.",
+    "commentInvisible": "Tire os caracteres invisíveis do comentário."
   },
   "points": {
     "balance": "{{points}} pontos",

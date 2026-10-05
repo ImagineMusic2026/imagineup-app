@@ -5,9 +5,12 @@ import { authenticate } from './auth';
 import { ApiHttpError, apiError, toApiHttpError } from './errors';
 import { parseIdempotencyKey, requestFingerprint, runIdempotent } from './idempotency';
 import { matchRoute, normalizePath } from './router';
+import { agendaRoutes } from './routes/agenda';
 import { centralRoutes } from './routes/centrals';
 import { inviteRoutes } from './routes/invites';
 import { meRoutes } from './routes/me';
+import { moderationRoutes } from './routes/moderation';
+import { postRoutes } from './routes/posts';
 import type { ApiDeps, ApiRequest, ApiResponse, ApiRoute, ResolvedDeps, RouteInput } from './types';
 
 // API HTTP do app: uma função onRequest com roteador próprio, ID token do
@@ -27,7 +30,14 @@ export { matchRoute } from './router';
 export type * from './types';
 
 /** Rotas de hoje. Cada bloco acrescenta as suas aqui. */
-export const API_ROUTES: readonly ApiRoute[] = [...meRoutes, ...centralRoutes, ...inviteRoutes];
+export const API_ROUTES: readonly ApiRoute[] = [
+  ...meRoutes,
+  ...centralRoutes,
+  ...inviteRoutes,
+  ...postRoutes,
+  ...agendaRoutes,
+  ...moderationRoutes,
+];
 
 /** Sem o segredo do convite nas dependências, só as rotas do convite falham (500). */
 function missingInviteKey(): string {

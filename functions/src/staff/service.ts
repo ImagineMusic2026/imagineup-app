@@ -102,12 +102,26 @@ export type AuditAction =
   | 'artist.published'
   | 'artist.unpublished'
   | 'artist.deleted'
-  | 'artist.reordered';
+  | 'artist.reordered'
+  | 'post.created'
+  | 'post.updated'
+  | 'post.published'
+  | 'post.unpublished'
+  | 'post.deleted'
+  | 'event.created'
+  | 'event.updated'
+  | 'event.published'
+  | 'event.unpublished'
+  | 'event.deleted'
+  | 'comment.hidden'
+  | 'comment.kept'
+  | 'comment.restored';
 
 /**
  * staffAudit/{autoId}: uma entrada por mudança feita pelo painel. Nas ações
- * de outras seções (artistas), targetEmail fica '' e targetUid null, e o alvo
- * vai em details.
+ * de outras seções (artistas, posts, shows e moderação), targetEmail fica ''
+ * e targetUid null, e o alvo vai em details. A auditoria nunca leva o texto de
+ * um comentário.
  */
 export type AuditEntry = {
   action: AuditAction;

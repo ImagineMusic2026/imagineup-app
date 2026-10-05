@@ -599,7 +599,8 @@ export async function reorderArtistList(
 
 /**
  * deleteArtist: só admin, em qualquer status (rascunho, no ar ou fora do ar),
- * menos central com fãs (has-fans: essa sai do ar em vez de sumir). Quem
+ * menos central com fãs (has-fans: essa sai do ar em vez de sumir) ou com
+ * post ou show, mesmo rascunho (has-content, bloco 6). Quem
  * decide é a soma dos shards do fanCount, lida na transação (o fanCount de
  * artists/ é uma cópia que pode estar atrasada); sem shard nenhum (central de
  * antes do bloco 4), o fanCount. Apaga a central, o artistPrivate/, os shards,
@@ -624,8 +625,16 @@ export async function removeArtist(
     if (!current) throw artistError('artist-not-found');
     const reservation = await tx.get(usernameRef(db, artistId));
     const { fans, shards } = await readFanCountForDelete(tx, db, artistId, current.fanCount);
+    // Posts e shows (bloco 6, 21.1, decisão 23): também o rascunho, que a
+    // equipe apaga antes (deletePost, deleteEvent). Sem isso, posts e shows
+    // ficariam apontando para um @ que outra central pode tomar depois.
+    const [posts, events] = await Promise.all([
+      tx.get(db.collection('posts').where('artistId', '==', artistId).limit(1)),
+      tx.get(db.collection('events').where('artistIds', 'array-contains', artistId).limit(1)),
+    ]);
     const problem = deleteProblem({ fanCount: fans });
     if (problem) throw artistError(problem);
+    if (!posts.empty || !events.empty) throw artistError('has-content');
     const now = Timestamp.fromMillis(clock(deps));
     tx.delete(artistRef(db, artistId));
     tx.delete(privateRef(db, artistId));

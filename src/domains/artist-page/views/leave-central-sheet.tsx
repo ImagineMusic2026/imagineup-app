@@ -26,8 +26,8 @@ function closeSheet(): void {
  * "Gerar meu link": o título com o "×", o texto e dois botões no pé. Sair não
  * tira pontos, e entrar de novo não rende a entrada outra vez; o texto diz
  * isso sem o nome da central, para a sheet não depender de a página ter
- * carregado, e sem falar do mural (o mural de exemplo mostra as centrais do
- * protótipo para qualquer fã até o bloco 6).
+ * carregado, e diz que os posts da central saem do mural: desde o bloco 6, o
+ * mural (do servidor e o de exemplo) mostra só as centrais do fã.
  *
  * Não é otimista: o botão fica "carregando" até o servidor responder. No
  * sucesso, a sheet fecha, avisa e a 1d volta a "Entrar na central"; no erro,

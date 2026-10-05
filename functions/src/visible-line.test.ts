@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { isVisibleLine } from './visible-line';
+import { cleanMultiline, isVisibleLine, isVisibleMultiline } from './visible-line';
 
 // Casos em comum com tests/firestore-rules.test.ts, na raiz, mais um por item da lista de
 // caracteres em branco: as duas validações precisam concordar.
@@ -74,5 +74,28 @@ describe('isVisibleLine', () => {
     ['em branco U+E0FFF', 'Camila \u{E0FFF} Ribeiro'],
   ])('recusa %s', (_, text) => {
     expect(isVisibleLine(text)).toBe(false);
+  });
+});
+
+// A mesma tabela de src/utils/__tests__/visible-line.test.ts, no app: o
+// comentário é limpo e validado igual nos dois lados (21.1, decisão 20).
+describe('cleanMultiline e isVisibleMultiline', () => {
+  it.each([
+    ['texto simples', 'Que música boa!', 'Que música boa!', true],
+    ['espaços nas pontas de cada linha', '  oi  \n  tudo bem?  ', 'oi\ntudo bem?', true],
+    ['linhas vazias seguidas viram uma', 'a\n\n\n\nb', 'a\n\nb', true],
+    ['linhas vazias nas pontas saem', '\n\n  a  \n\n', 'a', true],
+    ['isolantes bidi colados saem', '⁦Camila⁩ arrasou', 'Camila arrasou', true],
+    ['acento decomposto vira NFC', 'Irará', 'Irará', true],
+    ['\r\n vira \n', 'a\r\nb', 'a\nb', true],
+    ['\r sozinho vira \n e não é invisível', 'a\rb', 'a\nb', true],
+    ['emoji com ZWJ', 'Arrasou \u{1F469}‍\u{1F3A4}', 'Arrasou \u{1F469}‍\u{1F3A4}', true],
+    ['só espaços fica vazio', ' \n \t ', '', true],
+    ['invisível no meio de uma linha', 'oi ​ tchau', 'oi ​ tchau', false],
+    ['linha só de invisível', 'oi\nㅤ\ntchau', 'oi\nㅤ\ntchau', false],
+    ['controle no meio', 'a\u0007b', 'a\u0007b', false],
+  ])('%s', (_, input, cleaned, visible) => {
+    expect(cleanMultiline(input)).toBe(cleaned);
+    expect(isVisibleMultiline(cleanMultiline(input))).toBe(visible);
   });
 });

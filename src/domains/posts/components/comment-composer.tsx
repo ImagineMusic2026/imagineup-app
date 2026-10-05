@@ -65,7 +65,7 @@ export interface CommentComposerHandle {
 }
 
 export interface CommentComposerProps {
-  /** Texto já validado e sem espaço nas pontas; o campo se limpa logo depois. */
+  /** Texto já limpo e validado (`commentSchema`); o campo se limpa logo depois. */
   onSend: (text: string) => void;
   /** Um comentário está indo agora: com o campo vazio, a seta vira o carregando. */
   sending: boolean;
@@ -161,6 +161,11 @@ function SendButton({
  * O campo desenha 40, mas o toque vale nos 44 do alvo: o `TextInput` ocupa o
  * alvo inteiro, e o contorno (com a borda do foco) é um fundo desenhado atrás
  * dele, sem toque e sem acessibilidade.
+ *
+ * O texto é limpo e validado como o servidor (`commentSchema`): o que só tem
+ * caracteres invisíveis, ou uma linha com eles, mostra o erro abaixo do campo
+ * (anunciado) em vez de sumir; digitar de novo tira o erro. O texto limpo é o
+ * que vai.
  */
 export function CommentComposer({
   onSend,
@@ -175,6 +180,7 @@ export function CommentComposer({
   const { fontScale } = useWindowDimensions();
   const [focused, setFocused] = useState(false);
   const [height, setHeight] = useState(0);
+  const [error, setError] = useState<string | null>(null);
   const borderStyle = useFocusBorder(focused, colors.border, colors.accent);
 
   const length = value.length;
@@ -218,10 +224,21 @@ export function CommentComposer({
   // O teclado fica aberto: o fã pode escrever o próximo em seguida.
   const send = (): void => {
     const parsed = commentSchema.safeParse({ text: value });
-    if (!parsed.success) return;
+    if (!parsed.success) {
+      const message = parsed.error.issues[0]?.message ?? t('validation.commentInvisible');
+      setError(message);
+      AccessibilityInfo.announceForAccessibility(message);
+      return;
+    }
     latest.current = '';
     setValue('');
+    setError(null);
     onSend(parsed.data.text);
+  };
+
+  const change = (text: string): void => {
+    setValue(text);
+    if (error) setError(null);
   };
 
   return (
@@ -248,7 +265,7 @@ export function CommentComposer({
             <TextInput
               ref={input}
               value={value}
-              onChangeText={setValue}
+              onChangeText={change}
               multiline
               maxLength={COMMENT_MAX_LENGTH}
               placeholder={t('post.commentPlaceholder')}
@@ -271,6 +288,12 @@ export function CommentComposer({
           </View>
           <SendButton enabled={canSend} sending={sending} onPress={send} />
         </View>
+        {error ? (
+          // Anunciado no envio; aqui só se vê (e o leitor encontra ao navegar).
+          <Text variant="caption" color={colors.danger} style={styles.error} testID="comment-error">
+            {error}
+          </Text>
+        ) : null}
       </View>
       {/* Depois do compositor, para ficar por cima dele; nasce na borda de cima. */}
       <PointsToast
@@ -306,6 +329,10 @@ const styles = StyleSheet.create({
     marginBottom: spacing.xs,
     // Em cima do campo, sem passar por cima do botão de enviar.
     marginRight: layout.minTouchTarget + ROW_GAP,
+  },
+  error: {
+    marginTop: spacing.xs,
+    paddingHorizontal: INPUT_PADDING_HORIZONTAL,
   },
   // Com o vão de 6, o campo e o círculo ficam a 10 um do outro.
   row: {

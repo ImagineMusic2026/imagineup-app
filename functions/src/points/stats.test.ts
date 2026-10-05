@@ -1,8 +1,9 @@
 import { FieldValue, Timestamp } from 'firebase-admin/firestore';
 import { describe, expect, it } from 'vitest';
 
-import { addMembershipCounts, type AwardPlan } from './award';
+import { addEngagementCounts, addMembershipCounts, type AwardPlan } from './award';
 import {
+  addEngagementToShard,
   addInviteToShard,
   addMembershipToShard,
   emptyShardDelta,
@@ -44,6 +45,12 @@ describe('documento do shard', () => {
       spentEvents: 0,
       joined: 0,
       left: 0,
+      likes: 0,
+      unlikes: 0,
+      comments: 0,
+      rsvps: 0,
+      rsvpsUndone: 0,
+      reports: 0,
       bySource: { comment: { points: 4, events: 2 } },
     };
     expect(shardWrite(delta, '2026-10-05', NOW)).toEqual({
@@ -170,5 +177,42 @@ describe('convite e cadastros nos shards (bloco 5)', () => {
 
   it('shard vazio continua vazio com os campos novos zerados', () => {
     expect(isEmptyShardDelta(emptyShardDelta())).toBe(true);
+  });
+});
+
+describe('engajamento nos shards (bloco 6)', () => {
+  it('curtidas, comentários, presenças e denúncias no total e por central; bloqueios só no total', () => {
+    const delta = emptyShardDelta();
+    addEngagementToShard(delta, 'likes', ['nettobrito']);
+    addEngagementToShard(delta, 'comments', ['nettobrito']);
+    addEngagementToShard(delta, 'rsvps', ['nettobrito', 'nenho', 'nenho']);
+    addEngagementToShard(delta, 'blocks', []);
+    expect(shardWrite(delta, '2026-10-05', NOW)).toEqual({
+      day: '2026-10-05',
+      totals: {
+        likes: FieldValue.increment(1),
+        comments: FieldValue.increment(1),
+        rsvps: FieldValue.increment(1),
+        blocks: FieldValue.increment(1),
+      },
+      byArtist: {
+        nettobrito: {
+          likes: FieldValue.increment(1),
+          comments: FieldValue.increment(1),
+          rsvps: FieldValue.increment(1),
+        },
+        nenho: { rsvps: FieldValue.increment(1) },
+      },
+      updatedAt: Timestamp.fromMillis(NOW),
+    });
+  });
+
+  it('addEngagementCounts cria o shard do plano quando ele veio nulo, e não cria sem mudança', () => {
+    const empty = { shard: null } as unknown as AwardPlan;
+    addEngagementCounts(empty, []);
+    expect(empty.shard).toBeNull();
+    addEngagementCounts(empty, [{ kind: 'unlikes', artistIds: ['nenho'] }]);
+    expect(empty.shard?.totals.unlikes).toBe(1);
+    expect(empty.shard?.byArtist.nenho?.unlikes).toBe(1);
   });
 });

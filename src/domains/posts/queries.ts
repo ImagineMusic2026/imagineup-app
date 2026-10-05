@@ -20,28 +20,50 @@ import { rankingKeys } from '@/domains/ranking';
 import { t } from '@/i18n';
 import { ApiError } from '@/services/api/errors';
 import { haptics } from '@/services/haptics';
+import { queryOptionsFor } from '@/services/query/client';
 import { createIdempotencyKey } from '@/utils/id';
 
 import {
   addComment,
+  blockFan,
   fetchArtistPosts,
   fetchComments,
   fetchFeed,
   fetchPost,
+  reportComment,
   setPostLike,
   type AddCommentResult,
   type AddCommentVariables,
+  type BlockFanVariables,
+  type ReportCommentVariables,
   type SetLikeVariables,
 } from './api';
-import { insertComment, patchPostEverywhere, readPost, withCommentDelta, withLike } from './cache';
+import {
+  findCachedComment,
+  insertComment,
+  patchPostEverywhere,
+  readPost,
+  removeAuthorComments,
+  withCommentDelta,
+  withLike,
+} from './cache';
 import { postKeys } from './keys';
-import type { CommentStatus, PointsAward, PostComment } from './types';
+import type {
+  BlockFanResult,
+  CommentReportReason,
+  CommentStatus,
+  PointsAward,
+  PostComment,
+  ReportCommentResult,
+} from './types';
 
 export { postKeys };
 
 export const postMutationKeys = {
   like: ['posts', 'like'] as const,
   comment: ['posts', 'comment'] as const,
+  report: ['posts', 'report'] as const,
+  block: ['posts', 'block'] as const,
 };
 
 /**
@@ -94,8 +116,9 @@ function refetchComments(client: QueryClient, postId: string): void {
 /**
  * Comentar e curtir podem andar uma missão (de comentário, de curtida), mesmo
  * sem render pontos: as missões buscam de novo sempre. O saldo (1e, 1h), o
- * ranking (1f) e a posição e os pontos nas centrais ("você é #12" da 1b,
- * "Suas centrais" da 1e) só mudam quando rendeu.
+ * ranking (1f), a posição e os pontos nas centrais ("você é #12" da 1b,
+ * "Suas centrais" da 1e) e o "PTS DA CENTRAL" da 1d (os pontos vão para a
+ * central do post) só mudam quando rendeu.
  */
 function refreshAfterPoints(client: QueryClient, pointsAwarded: number): void {
   void client.invalidateQueries({ queryKey: missionKeys.all });
@@ -103,6 +126,22 @@ function refreshAfterPoints(client: QueryClient, pointsAwarded: number): void {
   void client.invalidateQueries({ queryKey: profileKeys.wallet() });
   void client.invalidateQueries({ queryKey: rankingKeys.all });
   void client.invalidateQueries({ queryKey: artistKeys.centrals() });
+  void client.invalidateQueries({ queryKey: artistKeys.details() });
+}
+
+const isNotFound = (error: unknown): boolean =>
+  error instanceof ApiError && error.kind === 'notFound';
+
+/**
+ * O post (ou a central dele) saiu do ar entre a lista e o toque: o servidor
+ * recusa curtir e comentar com 404. O mural, a grade, o detalhe e o "N posts"
+ * da 1d buscam de novo, e a tela do post, com o detalhe ainda no cache, passa
+ * a dizer "Este post não existe mais." (o molde é o `refreshAfterGoneEvent`
+ * da agenda).
+ */
+function refreshAfterGonePost(client: QueryClient): void {
+  void client.invalidateQueries({ queryKey: postKeys.all });
+  void client.invalidateQueries({ queryKey: artistKeys.details() });
 }
 
 /**
@@ -163,6 +202,9 @@ export function registerPostMutationDefaults(client: QueryClient): void {
   client.setMutationDefaults(postMutationKeys.like, {
     mutationFn: (variables: SetLikeVariables) => setPostLike(variables),
     onSuccess: (result: PointsAward) => refreshAfterPoints(client, result.pointsAwarded),
+    onError: (error: unknown) => {
+      if (isNotFound(error)) refreshAfterGonePost(client);
+    },
   });
   client.setMutationDefaults<AddCommentResult, ApiError, AddCommentVariables>(
     postMutationKeys.comment,
@@ -173,6 +215,9 @@ export function registerPostMutationDefaults(client: QueryClient): void {
         commitComment(client, variables, result);
         forgetComment(client, variables.localId);
       },
+      onError: (error) => {
+        if (isNotFound(error)) refreshAfterGonePost(client);
+      },
       onSettled: (_data, _error, variables) => refreshPostAfterComment(client, variables),
     },
   );
@@ -180,6 +225,7 @@ export function registerPostMutationDefaults(client: QueryClient): void {
 
 export function useFeedQuery() {
   return useInfiniteQuery({
+    ...queryOptionsFor('posts'),
     queryKey: postKeys.feed(),
     queryFn: ({ pageParam }) => fetchFeed(pageParam),
     initialPageParam: null as string | null,
@@ -193,6 +239,7 @@ export function useFeedQuery() {
  */
 export function useArtistPostsQuery(artistId: string) {
   return useInfiniteQuery({
+    ...queryOptionsFor('posts'),
     queryKey: postKeys.byArtist(artistId),
     queryFn: ({ pageParam }) => fetchArtistPosts(artistId, pageParam),
     initialPageParam: null as string | null,
@@ -203,6 +250,7 @@ export function useArtistPostsQuery(artistId: string) {
 
 export function usePostQuery(postId: string) {
   return useQuery({
+    ...queryOptionsFor('posts'),
     queryKey: postKeys.detail(postId),
     queryFn: () => fetchPost(postId),
     enabled: !!postId,
@@ -212,6 +260,7 @@ export function usePostQuery(postId: string) {
 /** Comentários do servidor, do mais novo ao mais antigo, uma página por vez. */
 export function useCommentsQuery(postId: string) {
   return useInfiniteQuery({
+    ...queryOptionsFor('posts'),
     queryKey: postKeys.comments(postId),
     queryFn: ({ pageParam }) => fetchComments(postId, pageParam),
     initialPageParam: null as string | null,
@@ -267,12 +316,13 @@ export function useToggleLikeMutation() {
         setAward({ id: idempotencyKey, points: result.pointsAwarded });
       }
     },
-    onError: (_error, { postId, liked }) => {
+    onError: (error, { postId, liked }) => {
       // Volta só se nada mudou depois: com curtir e descurtir em fila, o toque
       // seguinte já deixou o post como o fã quer.
       if (readPost(queryClient, postId)?.likedByMe === liked) {
         patchPostEverywhere(queryClient, postId, (post) => withLike(post, !liked));
       }
+      if (isNotFound(error)) refreshAfterGonePost(queryClient);
       haptics.trigger('error');
       AccessibilityInfo.announceForAccessibility(t('post.likeError'));
     },
@@ -416,6 +466,7 @@ export function useAddCommentMutation(postId: string, { restoreDraft }: AddComme
       else AccessibilityInfo.announceForAccessibility(t('post.composer.sent'));
     },
     onError: (error, variables) => {
+      if (isNotFound(error)) refreshAfterGonePost(queryClient);
       if (!mounted.current) return;
       haptics.trigger('error');
       if (!isUncertain(error) && restoreRef.current?.(variables.text)) {
@@ -468,4 +519,155 @@ export function useAddCommentMutation(postId: string, { restoreDraft }: AddComme
   };
 
   return { send, retry, award };
+}
+
+/**
+ * O comentário que a sheet "Opções do comentário" mostra, lido do cache da
+ * lista do post na abertura (o conteúdo fica fixo, para a altura da sheet não
+ * mudar). Aberta a frio, sem a lista no cache: `undefined`, e a sheet fecha.
+ */
+export function useCachedComment(postId: string, commentId: string): PostComment | undefined {
+  const client = useQueryClient();
+  const [comment] = useState(() =>
+    postId && commentId
+      ? findCachedComment(client, postKeys.comments(postId), commentId)
+      : undefined,
+  );
+  return comment;
+}
+
+/** Os retornos da sheet: só rodam com o hook montado. */
+export interface ModerationCallbacks<T> {
+  /** O servidor confirmou: a sheet fecha e avisa. */
+  onDone?: (result: T) => void;
+  /** Recusa ou falha: a sheet fica, com o erro acima dos botões. */
+  onError?: (error: Error) => void;
+}
+
+function useMounted() {
+  const mounted = useRef(false);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
+  return mounted;
+}
+
+const holdsCommentLists = (query: { queryKey: readonly unknown[] }) =>
+  query.queryKey[0] === postKeys.all[0] && query.queryKey[1] === 'comments';
+
+/**
+ * Denunciar o comentário de outro fã (a sheet "Opções do comentário",
+ * provisória até a UP-48). Não é otimista e não entra na fila offline
+ * (`networkMode: 'always'`, sem tentar de novo sozinha), como o sair da
+ * central: o fã confirma na sheet e espera. A chave é da tentativa: a mesma
+ * depois de uma falha incerta com o mesmo motivo, nova depois de uma recusa
+ * (ou com outro motivo, que o servidor recusaria com a chave de antes).
+ * Denunciar não muda cache nenhum: a denúncia não esconde o comentário.
+ * `onDone` e `onError` só rodam com a sheet montada; a resposta que chega com
+ * ela fechada só avisa.
+ */
+export function useReportCommentMutation(
+  postId: string,
+  commentId: string,
+  { onDone, onError }: ModerationCallbacks<ReportCommentResult> = {},
+) {
+  const mounted = useMounted();
+  const mutation = useMutation<ReportCommentResult, Error, ReportCommentVariables>({
+    mutationKey: postMutationKeys.report,
+    mutationFn: (variables) => reportComment(variables),
+    networkMode: 'always',
+    retry: false,
+    onSuccess: (result) => {
+      if (mounted.current) {
+        onDone?.(result);
+        return;
+      }
+      AccessibilityInfo.announceForAccessibility(t('post.moderation.reported'));
+    },
+    onError: (error) => {
+      if (mounted.current) {
+        onError?.(error);
+        return;
+      }
+      haptics.trigger('error');
+      AccessibilityInfo.announceForAccessibility(t('post.moderation.reportError'));
+    },
+  });
+
+  const report = (reason: CommentReportReason | null): void => {
+    if (mutation.isPending) return;
+    const failed = mutation.isError ? mutation.variables : undefined;
+    const idempotencyKey =
+      failed &&
+      failed.commentId === commentId &&
+      failed.reason === reason &&
+      isUncertain(mutation.error)
+        ? failed.idempotencyKey
+        : createIdempotencyKey();
+    mutation.mutate({ postId, commentId, reason, idempotencyKey });
+  };
+
+  return {
+    report,
+    isPending: mutation.isPending,
+    isError: mutation.isError,
+    reset: mutation.reset,
+  };
+}
+
+/**
+ * Bloquear um fã (a mesma sheet). Como a denúncia: não é otimista, não entra
+ * na fila, a chave é da tentativa. No sucesso, os comentários do bloqueado
+ * saem de todo cache de comentários na hora, e as listas buscam de novo (já
+ * sem ele, do servidor), com a sheet montada ou não.
+ */
+export function useBlockFanMutation(
+  fanId: string,
+  { onDone, onError }: ModerationCallbacks<BlockFanResult> = {},
+) {
+  const queryClient = useQueryClient();
+  const mounted = useMounted();
+  const mutation = useMutation<BlockFanResult, Error, BlockFanVariables>({
+    mutationKey: postMutationKeys.block,
+    mutationFn: (variables) => blockFan(variables),
+    networkMode: 'always',
+    retry: false,
+    onSuccess: (result) => {
+      removeAuthorComments(queryClient, result.fanId);
+      void queryClient.invalidateQueries({ predicate: holdsCommentLists });
+      if (mounted.current) {
+        onDone?.(result);
+        return;
+      }
+      AccessibilityInfo.announceForAccessibility(t('post.moderation.blockedShort'));
+    },
+    onError: (error) => {
+      if (mounted.current) {
+        onError?.(error);
+        return;
+      }
+      haptics.trigger('error');
+      AccessibilityInfo.announceForAccessibility(t('post.moderation.blockError'));
+    },
+  });
+
+  const block = (): void => {
+    if (mutation.isPending) return;
+    const failed = mutation.isError ? mutation.variables : undefined;
+    const idempotencyKey =
+      failed && failed.fanId === fanId && isUncertain(mutation.error)
+        ? failed.idempotencyKey
+        : createIdempotencyKey();
+    mutation.mutate({ fanId, idempotencyKey });
+  };
+
+  return {
+    block,
+    isPending: mutation.isPending,
+    isError: mutation.isError,
+    reset: mutation.reset,
+  };
 }

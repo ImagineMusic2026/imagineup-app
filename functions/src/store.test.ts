@@ -3,16 +3,19 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { leaveAllCentrals } from './centrals/service';
 import { detachReferrals, removeInviteData } from './invites/service';
+import { removeFanEngagement } from './posts/service';
 import { createProfile, deleteUserData } from './store';
 
 // A ordem da exclusão de conta é o que impede o fanCount 1 acima para sempre
 // (docs/arquitetura-api.md, 19.12) e o marcador de visita debaixo de um
 // convidante excluído (20.10): o perfil sai sozinho antes de tudo, o código do
-// convite logo depois, os vínculos antes do recursiveDelete, e os convidados
+// convite logo depois, os vínculos e o engajamento do mural (21.12) antes do
+// recursiveDelete, e os convidados
 // do fã são desligados depois. Nos emuladores, as entradas terminam antes da
 // exclusão, e a ordem trocada passaria; aqui um Firestore falso anota cada
 // passo.
 vi.mock('./centrals/service', () => ({ leaveAllCentrals: vi.fn() }));
+vi.mock('./posts/service', () => ({ removeFanEngagement: vi.fn() }));
 vi.mock('./invites/service', () => ({
   removeInviteData: vi.fn(),
   detachReferrals: vi.fn(),
@@ -58,6 +61,7 @@ describe('exclusão de conta (deleteUserData)', () => {
     vi.mocked(leaveAllCentrals).mockReset();
     vi.mocked(removeInviteData).mockReset();
     vi.mocked(detachReferrals).mockReset();
+    vi.mocked(removeFanEngagement).mockReset();
   });
 
   it('o perfil sai sozinho primeiro, o convite logo depois e os convidados depois do perfil', async () => {
@@ -73,6 +77,10 @@ describe('exclusão de conta (deleteUserData)', () => {
       steps.push(`detachReferrals ${uid}`);
       return 0;
     });
+    vi.mocked(removeFanEngagement).mockImplementation(async (_db, uid) => {
+      steps.push(`removeFanEngagement ${uid}`);
+      return { likes: 0, comments: 0, reports: 0, blocks: 0 };
+    });
 
     await deleteUserData(fakeDb(steps), UID);
 
@@ -81,6 +89,7 @@ describe('exclusão de conta (deleteUserData)', () => {
       `delete users/${UID}`,
       `removeInviteData ${UID}`,
       `leaveAllCentrals ${UID}`,
+      `removeFanEngagement ${UID}`,
       `recursiveDelete users/${UID}`,
       `delete referrals/${UID}`,
       `detachReferrals ${UID}`,
@@ -100,6 +109,24 @@ describe('exclusão de conta (deleteUserData)', () => {
     await deleteUserData(fakeDb(steps), UID);
 
     expect(steps.indexOf('leaveAllCentrals terminou')).toBeLessThan(
+      steps.indexOf(`recursiveDelete users/${UID}`),
+    );
+  });
+
+  it('curtidas, comentários, denúncias e bloqueios saem depois do perfil e antes do recursiveDelete (21.12)', async () => {
+    const steps: string[] = [];
+    vi.mocked(removeFanEngagement).mockImplementation(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      steps.push('removeFanEngagement terminou');
+      return { likes: 1, comments: 1, reports: 0, blocks: 0 };
+    });
+
+    await deleteUserData(fakeDb(steps), UID);
+
+    expect(steps.indexOf(`delete users/${UID}`)).toBeLessThan(
+      steps.indexOf('removeFanEngagement terminou'),
+    );
+    expect(steps.indexOf('removeFanEngagement terminou')).toBeLessThan(
       steps.indexOf(`recursiveDelete users/${UID}`),
     );
   });

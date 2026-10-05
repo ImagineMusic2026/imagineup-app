@@ -1,18 +1,24 @@
 import { nextSaturday, set } from 'date-fns';
 
+// As centrais que o fã segue, pelo arquivo (fora do index): o
+// artists/fixtures.ts não importa posts, então não há ciclo.
+import { followFixture } from '@/domains/artists/fixtures';
 import { missionsFixture } from '@/domains/missions';
 import { ApiError } from '@/services/api/errors';
 import { earnFixturePoints, onFixtureSessionEnd } from '@/services/fixtures';
 
 import { COMMENT_MAX_LENGTH } from './schemas';
 import type {
+  BlockFanResult,
   CommentAuthor,
+  CommentReportReason,
   Page,
   PointsAward,
   Post,
   PostArtist,
   PostComment,
   PostMedia,
+  ReportCommentResult,
 } from './types';
 
 /**
@@ -24,8 +30,11 @@ import type {
  *
  * Os comentários também são exemplo: no clipe, os três fãs do pódio e a
  * resposta do Netto; o resto sai de uma lista de nomes e frases, até a
- * contagem do post. Curtir e comentar mudam um estado em memória (o
- * "servidor" das fixtures), que volta ao início quando a sessão termina.
+ * contagem do post. Curtir, comentar, denunciar e bloquear mudam um estado em
+ * memória (o "servidor" das fixtures), que volta ao início quando a sessão
+ * termina. O mural mostra só as centrais que o fã segue (`followFixture`),
+ * como o servidor (21.1, decisão 19): de início, as três do protótipo, as
+ * mesmas de todos os posts de exemplo.
  */
 
 export const FEED_PAGE_SIZE = 5;
@@ -234,9 +243,14 @@ export function buildPostsFixture(now: Date): Post[] {
   return buildBasePosts(now).map(withServerState);
 }
 
-/** Uma página do mural: o cursor é a posição do primeiro post da página. */
+/**
+ * Uma página do mural, só das centrais que o fã segue: o cursor é a posição do
+ * primeiro post da página.
+ */
 export function buildFeedPageFixture(now: Date, cursor: string | null): Page<Post> {
-  return pageOf(buildPostsFixture(now), cursor, FEED_PAGE_SIZE);
+  const followed = new Set(followFixture.followedIds());
+  const posts = buildPostsFixture(now).filter((post) => followed.has(post.artist.id));
+  return pageOf(posts, cursor, FEED_PAGE_SIZE);
 }
 
 /** Posts por página na grade da central (1d): quatro linhas de três. */
@@ -254,14 +268,6 @@ export function buildArtistPostsPageFixture(
 ): Page<Post> {
   const posts = buildPostsFixture(now).filter((post) => post.artist.id === artistId);
   return pageOf(posts, cursor, ARTIST_POSTS_PAGE_SIZE);
-}
-
-/**
- * Quantos posts de exemplo a central tem: o "N posts" da 1d quando as
- * centrais já vêm do servidor e o mural ainda é de exemplo (até o bloco 6).
- */
-export function countArtistPostsFixture(now: Date, artistId: string): number {
-  return buildBasePosts(now).filter((post) => post.artist.id === artistId).length;
 }
 
 function pageOf<T>(items: readonly T[], cursor: string | null, size: number): Page<T> {
@@ -406,8 +412,9 @@ function buildBaseComments(now: Date, post: Post): PostComment[] {
 
 /**
  * Uma página de comentários, do mais novo ao mais antigo: os do fã primeiro
- * (os mais novos), depois os do servidor. O cursor é a posição do primeiro da
- * página, e post que não existe dá 404, como a API.
+ * (os mais novos), depois os do servidor, sem os de autores que o fã bloqueou.
+ * O cursor é a posição do primeiro da página, e post que não existe dá 404,
+ * como a API.
  */
 export function buildCommentsPageFixture(
   now: Date,
@@ -415,7 +422,9 @@ export function buildCommentsPageFixture(
   cursor: string | null,
 ): Page<PostComment> {
   const post = findBasePost(now, postId);
-  const all = [...(fanComments.get(postId) ?? []), ...buildBaseComments(now, post)];
+  const all = [...(fanComments.get(postId) ?? []), ...buildBaseComments(now, post)].filter(
+    (comment) => !blockedAuthors.has(comment.authorId),
+  );
   return pageOf(all, cursor, COMMENTS_PAGE_SIZE);
 }
 
@@ -492,3 +501,53 @@ export const postsFixture = {
 };
 
 onFixtureSessionEnd(() => postsFixture.reset());
+
+// Moderação de exemplo: as denúncias do fã e quem ele bloqueou.
+let reports = new Set<string>();
+let blockedAuthors = new Set<string>();
+let moderationAnswers = new Map<string, ReportCommentResult | BlockFanResult>();
+
+/**
+ * O servidor da moderação nas fixtures (provisória, UP-48): denunciar guarda
+ * a resposta pela chave e devolve `already_reported` na segunda vez; bloquear
+ * guarda o autor, e os comentários dele somem da lista
+ * (`buildCommentsPageFixture`). Volta ao início com a sessão.
+ */
+export const moderationFixture = {
+  report(
+    postId: string,
+    commentId: string,
+    _reason: CommentReportReason | null,
+    idempotencyKey: string,
+    now: Date,
+  ): ReportCommentResult {
+    const previous = moderationAnswers.get(idempotencyKey);
+    if (previous && 'commentId' in previous) return { ...previous };
+    findBasePost(now, postId);
+    const status: ReportCommentResult['status'] = reports.has(commentId)
+      ? 'already_reported'
+      : 'reported';
+    reports.add(commentId);
+    const result: ReportCommentResult = { commentId, status };
+    moderationAnswers.set(idempotencyKey, result);
+    return { ...result };
+  },
+
+  block(fanId: string, idempotencyKey: string): BlockFanResult {
+    const previous = moderationAnswers.get(idempotencyKey);
+    if (previous && 'fanId' in previous) return { ...previous };
+    blockedAuthors.add(fanId);
+    const result: BlockFanResult = { fanId, blocked: true };
+    moderationAnswers.set(idempotencyKey, result);
+    return { ...result };
+  },
+
+  /** Volta ao início (fim da sessão e testes). */
+  reset(): void {
+    reports = new Set();
+    blockedAuthors = new Set();
+    moderationAnswers = new Map();
+  },
+};
+
+onFixtureSessionEnd(() => moderationFixture.reset());

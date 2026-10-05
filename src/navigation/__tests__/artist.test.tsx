@@ -352,7 +352,7 @@ describe('página do artista (1d)', () => {
     expect(await screen.findByText('Sair da central?')).toBeTruthy();
     expect(
       screen.getByText(
-        'A central sai de Suas centrais. Os pontos que você ganhou nela continuam com você, e entrar de novo não rende os pontos de entrada outra vez.',
+        'A central sai de Suas centrais. Os pontos que você ganhou nela continuam com você, e entrar de novo não rende os pontos de entrada outra vez. Os posts desta central saem do seu mural.',
       ),
     ).toBeTruthy();
 

@@ -16,6 +16,8 @@ function context(uid: string): FanContext {
   return {
     uid,
     profileCreatedAt: null,
+    displayName: null,
+    photoURL: null,
     wallet: emptyWallet(),
     activity: {
       day: '2026-10-05',
@@ -165,6 +167,33 @@ describe('contador do dia sem ponto (addDailyCount)', () => {
     expect(result.fans[0]!.wallet!.state.days['2026-10-05']).toEqual({
       earned: 10,
       count: { central_join: 1, central_entry: 2, invite_visit_sent: 2, invite_link: 1 },
+    });
+  });
+
+  it('as chaves dos tetos do bloco 6, ao lado das outras', () => {
+    const fan = { ...context('uid-a'), wallet: stored() };
+    const result = plan(fan);
+    for (const key of [
+      'like_set',
+      'comment_sent',
+      'rsvp_set',
+      'comment_report',
+      'fan_block',
+    ] as const) {
+      addDailyCount(result, fan, key);
+    }
+    addDailyCount(result, fan, 'like_set');
+    expect(result.fans[0]!.wallet!.state.days['2026-10-05']).toEqual({
+      earned: 10,
+      count: {
+        central_join: 1,
+        central_entry: 2,
+        like_set: 2,
+        comment_sent: 1,
+        rsvp_set: 1,
+        comment_report: 1,
+        fan_block: 1,
+      },
     });
   });
 });

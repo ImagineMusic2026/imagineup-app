@@ -3,6 +3,7 @@ import { FieldValue, type Firestore } from 'firebase-admin/firestore';
 import { leaveAllCentrals } from './centrals/service';
 import { detachReferrals, referralRef, removeInviteData } from './invites/service';
 import { dayKey } from './points/model';
+import { removeFanEngagement } from './posts/service';
 import { emptyShardDelta, pickShard, shardRef, shardWrite } from './points/stats';
 import {
   profileDisplayName,
@@ -116,7 +117,10 @@ async function deleteIdempotencyKeys(db: Firestore, uid: string): Promise<void> 
  * (referrals/{uid}), o `inviterUid` dos convidados dele (que ficam, com null),
  * a carteira (com o extrato e os pontos por central), as chaves de
  * idempotência e o acesso ao painel (staff/{uid}) se a conta era da equipe.
- * Pode rodar mais de uma vez. Dado novo do fã fora de users/{uid} (comentários)
+ * Desde o bloco 6, também as curtidas e os comentários (descontando as
+ * contagens dos posts), as denúncias que ele fez (descontadas da fila) e os
+ * bloqueios (removeFanEngagement), antes do recursiveDelete, que leva as
+ * presenças. Pode rodar mais de uma vez. Dado novo do fã fora de users/{uid}
  * precisa entrar aqui.
  *
  * A ordem importa: toda gravação da API lê users/{uid} na transação
@@ -149,6 +153,7 @@ export async function deleteUserData(db: Firestore, uid: string): Promise<void> 
   await profile.delete();
   await removeInviteData(db, uid);
   await leaveAllCentrals(db, uid);
+  await removeFanEngagement(db, uid);
   await db.recursiveDelete(profile);
   await referralRef(db, uid).delete();
   await detachReferrals(db, uid);

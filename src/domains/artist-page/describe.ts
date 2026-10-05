@@ -88,13 +88,20 @@ const POST_LABEL: Record<Post['kind'], TranslationKey> = {
   text: 'artist.posts.textLabel',
 };
 
-/** Uma célula da grade: "Vídeo de Netto Brito, há 2 horas: Saiu o clipe...". */
+/** Foto e vídeo podem vir sem legenda (bloco 6); texto e show sempre têm texto. */
+const POST_LABEL_NO_TEXT: Partial<Record<Post['kind'], TranslationKey>> = {
+  photo: 'artist.posts.photoLabelNoText',
+  video: 'artist.posts.videoLabelNoText',
+};
+
+/**
+ * Uma célula da grade: "Vídeo de Netto Brito, há 2 horas: Saiu o clipe...".
+ * Sem legenda, sem os dois-pontos: "Vídeo de Netto Brito, há 2 horas".
+ */
 export function postCellLabel(post: Post, now: Date): string {
-  return t(POST_LABEL[post.kind], {
-    name: post.artist.name,
-    time: formatRelativeAgoSpoken(post.createdAt, now),
-    text: post.text,
-  });
+  const params = { name: post.artist.name, time: formatRelativeAgoSpoken(post.createdAt, now) };
+  const noText = post.text ? undefined : POST_LABEL_NO_TEXT[post.kind];
+  return noText ? t(noText, params) : t(POST_LABEL[post.kind], { ...params, text: post.text });
 }
 
 /**

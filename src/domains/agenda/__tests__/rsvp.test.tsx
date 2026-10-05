@@ -1,5 +1,10 @@
-import { onlineManager, QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
+import {
+  onlineManager,
+  QueryClient,
+  QueryClientProvider,
+  type QueryKey,
+} from '@tanstack/react-query';
+import { act, fireEvent, render, renderHook, screen, waitFor } from '@testing-library/react-native';
 import type { ReactNode } from 'react';
 import { AccessibilityInfo } from 'react-native';
 
@@ -17,7 +22,15 @@ import { haptics } from '@/services/haptics';
 import { fetchMyRsvps, setEventRsvp } from '../api';
 import { RsvpChip } from '../components/rsvp-button';
 import { rsvpFixture } from '../fixtures';
-import { agendaKeys, agendaMutationKeys, registerAgendaMutationDefaults } from '../queries';
+import {
+  agendaKeys,
+  agendaMutationKeys,
+  registerAgendaMutationDefaults,
+  useAgendaQuery,
+  useArtistAgendaQuery,
+  useIsGoing,
+  useMyRsvpsQuery,
+} from '../queries';
 
 // O build do Firebase que o Jest resolve é ESM. A presença não fala com ele, mas
 // invalida a carteira do domínio de perfil, que lê o Firestore.
@@ -165,6 +178,7 @@ describe('"Eu vou" do post de show', () => {
   it('a presença que rende pontos faz o saldo, o ranking, as centrais e as missões (1b e 1g) buscarem de novo', async () => {
     client.setQueryData(profileKeys.wallet(), { balance: 12_480, xp: 12_480, seasonPoints: 4_120 });
     client.setQueryData(artistKeys.centrals(), []);
+    client.setQueryData(artistKeys.detail('nenho'), null);
     client.setQueryData(rankingKeys.myRank(GLOBAL_SCOPE), {
       position: 12,
       points: 4_120,
@@ -186,6 +200,8 @@ describe('"Eu vou" do post de show', () => {
     expect(client.getQueryState(missionKeys.list())?.isInvalidated).toBe(true);
     // A posição e os pontos nas centrais ("você é #12" da 1b, "Suas centrais" da 1e).
     expect(client.getQueryState(artistKeys.centrals())?.isInvalidated).toBe(true);
+    // O "PTS DA CENTRAL" da 1d, que soma os pontos da central do show.
+    expect(client.getQueryState(artistKeys.detail('nenho'))?.isInvalidated).toBe(true);
   });
 
   it('presença sem pontos (a segunda) não mexe no saldo, mas as missões buscam de novo', async () => {
@@ -198,6 +214,7 @@ describe('"Eu vou" do post de show', () => {
       target: null,
     });
     client.setQueryData(missionKeys.list(), { season: null, missions: [] });
+    client.setQueryData(artistKeys.detail('nenho'), null);
     render(<RsvpChip eventId={EVENT.id} eventTitle={EVENT.title} />, { wrapper });
 
     fireEvent.press(await screen.findByRole('button', { name: goLabel }));
@@ -207,6 +224,7 @@ describe('"Eu vou" do post de show', () => {
     expect(client.getQueryState(profileKeys.wallet())?.isInvalidated).toBe(false);
     expect(client.getQueryState(rankingKeys.myRank(GLOBAL_SCOPE))?.isInvalidated).toBe(false);
     expect(client.getQueryState(artistKeys.centrals())?.isInvalidated).toBe(false);
+    expect(client.getQueryState(artistKeys.detail('nenho'))?.isInvalidated).toBe(false);
     // Uma missão de presença com meta maior que 1 anda sem concluir (e sem pontos).
     expect(client.getQueryState(missionKeys.list())?.isInvalidated).toBe(true);
   });
@@ -279,4 +297,79 @@ describe('"Eu vou" do post de show', () => {
       expect(client.getQueryData(agendaKeys.rsvps())).toEqual({ eventIds: [EVENT.id] }),
     );
   });
+});
+
+describe('show que saiu do ar ou encerrou (bloco 6)', () => {
+  it('a recusa notFound desfaz e faz a agenda e o mural buscarem de novo', async () => {
+    mockDataSource = 'api';
+    get.mockResolvedValue({ data: { eventIds: [] } });
+    request.mockRejectedValue(new ApiError('notFound', 'Show não encontrado.', 404));
+    client.setQueryData(agendaKeys.events(), { pages: [], pageParams: [] });
+    client.setQueryData(['posts', 'feed'], { pages: [], pageParams: [] });
+    render(<RsvpChip eventId={EVENT.id} eventTitle={EVENT.title} />, { wrapper });
+
+    fireEvent.press(await screen.findByRole('button', { name: goLabel }));
+    expect(await screen.findByRole('button', { name: goLabel })).toBeTruthy();
+    await waitFor(() =>
+      expect(client.getQueryState(agendaKeys.events())?.isInvalidated).toBe(true),
+    );
+    expect(client.getQueryState(['posts', 'feed'])?.isInvalidated).toBe(true);
+  });
+
+  it('a que volta da fila (sem a tela) e é recusada com notFound também busca de novo', async () => {
+    mockDataSource = 'api';
+    registerAgendaMutationDefaults(client);
+    request.mockRejectedValue(new ApiError('notFound', 'Show não encontrado.', 404));
+    client.setQueryData(agendaKeys.events(), { pages: [], pageParams: [] });
+    await expect(
+      client
+        .getMutationCache()
+        .build(client, { mutationKey: agendaMutationKeys.rsvp })
+        .execute({ eventId: EVENT.id, going: true, idempotencyKey: 'chave-fila-1' }),
+    ).rejects.toBeInstanceOf(ApiError);
+    expect(client.getQueryState(agendaKeys.events())?.isInvalidated).toBe(true);
+  });
+});
+
+describe('consultas da agenda pela fonte (bloco 6)', () => {
+  // O padrão de hoje (algum domínio nas fixtures): cada consulta diz o dela.
+  beforeEach(() => {
+    client = new QueryClient({
+      defaultOptions: { queries: { retry: false, gcTime: Infinity, networkMode: 'always' } },
+    });
+  });
+
+  const cases: [string, () => unknown, QueryKey][] = [
+    ['useAgendaQuery', () => useAgendaQuery(), agendaKeys.events()],
+    [
+      'useArtistAgendaQuery',
+      () => useArtistAgendaQuery('nettobrito'),
+      agendaKeys.byArtist('nettobrito'),
+    ],
+    ['useMyRsvpsQuery', () => useMyRsvpsQuery(), agendaKeys.rsvps()],
+    ['useIsGoing', () => useIsGoing(EVENT.id), agendaKeys.rsvps()],
+  ];
+  const queryOf = (queryKey: QueryKey) => client.getQueryCache().find({ queryKey, exact: true });
+
+  it.each(cases)('%s com a API espera a rede e vai para o disco', async (_, hook, queryKey) => {
+    mockDataSource = 'api';
+    onlineManager.setOnline(false);
+    renderHook(hook, { wrapper });
+    await waitFor(() => expect(queryOf(queryKey)?.state.fetchStatus).toBe('paused'));
+    expect(queryOf(queryKey)?.options.networkMode).toBe('online');
+    expect(queryOf(queryKey)?.meta).toEqual({ realData: true });
+    expect(get).not.toHaveBeenCalled();
+  });
+
+  it.each(cases)(
+    '%s nas fixtures roda sem rede e fica fora do disco',
+    async (_, hook, queryKey) => {
+      onlineManager.setOnline(false);
+      renderHook(hook, { wrapper });
+      await waitFor(() => expect(queryOf(queryKey)?.state.status).toBe('success'));
+      expect(queryOf(queryKey)?.options.networkMode).toBe('always');
+      expect(queryOf(queryKey)?.meta).toEqual({ realData: false });
+      expect(get).not.toHaveBeenCalled();
+    },
+  );
 });

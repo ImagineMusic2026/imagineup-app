@@ -30,8 +30,23 @@ export type ArtistCount = {
   joined: number;
   /** Fãs que saíram da central no dia (fluxo; a exclusão de conta não conta). */
   left: number;
+  /** Engajamento do dia nos posts e shows da central (fluxo, bloco 6, 21.10). */
+  likes: number;
+  unlikes: number;
+  comments: number;
+  rsvps: number;
+  rsvpsUndone: number;
+  reports: number;
   bySource: Record<string, Count>;
 };
+
+/**
+ * Fluxos de engajamento do bloco 6 (21.10): trocas para curtido, para não
+ * curtido, comentários, trocas para "Eu vou" e para não vou, e denúncias, no
+ * total e por central; os bloqueios, só no total (não são de uma central).
+ */
+export type EngagementKind =
+  'likes' | 'unlikes' | 'comments' | 'rsvps' | 'rsvpsUndone' | 'reports' | 'blocks';
 
 /** O que uma transação soma no shard. Só números: o award.ts troca por increments. */
 export type ShardDelta = {
@@ -46,6 +61,14 @@ export type ShardDelta = {
     joined: number;
     /** Saídas de centrais no dia. `joined - left` não é o número de membros: esse é o fanCount. */
     left: number;
+    /** Engajamento do dia (bloco 6): fluxo, a exclusão de conta não desconta. */
+    likes: number;
+    unlikes: number;
+    comments: number;
+    rsvps: number;
+    rsvpsUndone: number;
+    reports: number;
+    blocks: number;
   };
   bySource: Record<string, Count>;
   byArtist: Record<string, ArtistCount>;
@@ -86,6 +109,13 @@ export function emptyShardDelta(): ShardDelta {
       adjustedEvents: 0,
       joined: 0,
       left: 0,
+      likes: 0,
+      unlikes: 0,
+      comments: 0,
+      rsvps: 0,
+      rsvpsUndone: 0,
+      reports: 0,
+      blocks: 0,
     },
     bySource: {},
     byArtist: {},
@@ -98,7 +128,21 @@ export function emptyShardDelta(): ShardDelta {
 }
 
 function emptyArtistCount(): ArtistCount {
-  return { earned: 0, earnedEvents: 0, spent: 0, spentEvents: 0, joined: 0, left: 0, bySource: {} };
+  return {
+    earned: 0,
+    earnedEvents: 0,
+    spent: 0,
+    spentEvents: 0,
+    joined: 0,
+    left: 0,
+    likes: 0,
+    unlikes: 0,
+    comments: 0,
+    rsvps: 0,
+    rsvpsUndone: 0,
+    reports: 0,
+    bySource: {},
+  };
 }
 
 function addCount(map: Record<string, Count>, key: string, points: number): void {
@@ -172,6 +216,24 @@ export function addMembershipToShard(
   delta.totals[kind] += 1;
   const artist = (delta.byArtist[artistId] ??= emptyArtistCount());
   artist[kind] += 1;
+}
+
+/**
+ * Soma 1 de engajamento (bloco 6, 21.10) no total e em cada central de
+ * `artistIds` (as centrais no ar da ação). O bloqueio não é de uma central:
+ * conta só no total. São fluxo, como o resto do shard.
+ */
+export function addEngagementToShard(
+  delta: ShardDelta,
+  kind: EngagementKind,
+  artistIds: readonly string[],
+): void {
+  delta.totals[kind] += 1;
+  if (kind === 'blocks') return;
+  for (const artistId of new Set(artistIds)) {
+    const artist = (delta.byArtist[artistId] ??= emptyArtistCount());
+    artist[kind] += 1;
+  }
 }
 
 /** Tipo do link de onde veio o fã: o caminho classificado, ou `code` para o código digitado. */

@@ -1,6 +1,8 @@
 /**
- * Contrato provisório com a API. Muda quando o backend (M2) for desenhado.
- * Fã não cria post: só curte e comenta (post de fã está fora do contrato).
+ * Contrato com a API do mural (bloco 6, docs/arquitetura-api.md, seção 21),
+ * espelho de `functions/src/api/contract.ts`: mudou um, mude o outro. Campo
+ * novo na resposta é sempre opcional aqui. Fã não cria post: só curte, comenta,
+ * denuncia um comentário e bloqueia um fã (post de fã está fora do contrato).
  */
 
 /**
@@ -101,4 +103,22 @@ export interface Page<T> {
 /** Toda ação que vale ponto devolve quantos pontos rendeu, para a animação de "+N". */
 export interface PointsAward {
   pointsAwarded: number;
+}
+
+/**
+ * Motivo da denúncia de um comentário (lista fechada, provisória até a
+ * UP-48). Sem motivo vai `null`.
+ */
+export type CommentReportReason = 'spam' | 'offensive' | 'harassment' | 'other';
+
+/** Resposta da denúncia: a segunda do mesmo fã ao mesmo comentário não muda nada. */
+export interface ReportCommentResult {
+  commentId: string;
+  status: 'reported' | 'already_reported';
+}
+
+/** Resposta do bloqueio (e do desbloqueio, ainda sem tela). */
+export interface BlockFanResult {
+  fanId: string;
+  blocked: boolean;
 }

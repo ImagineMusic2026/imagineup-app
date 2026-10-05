@@ -274,3 +274,100 @@ describe('fotos das centrais: ler, listar, trocar e apagar', () => {
     await assertFails(as('admin').ref('outro/arquivo.webp').getMetadata());
   });
 });
+
+// --- Mídia dos posts e foto dos shows (bloco 6, 21.11) --------------------------------
+
+/** Post e show gravados como as callables gravam (o que importa às regras é o tipo e existir). */
+async function seedContent(): Promise<void> {
+  await env.withSecurityRulesDisabled(async (context) => {
+    const db = context.firestore();
+    for (const kind of ['photo', 'video', 'text', 'event']) {
+      await setDoc(doc(db, `posts/p-${kind}`), {
+        artistId: ARTIST_ID,
+        kind,
+        status: 'draft',
+        media: null,
+      });
+    }
+    await setDoc(doc(db, 'events/show-1'), {
+      title: 'Show',
+      artistIds: [ARTIST_ID],
+      status: 'draft',
+      photo: null,
+    });
+  });
+}
+
+const postPath = (postId: string, ext = 'webp') =>
+  `posts/${postId}/arquivo-${Date.now()}-${++counter}.${ext}`;
+const eventPath = (eventId = 'show-1') => `events/${eventId}/photo-${Date.now()}-${++counter}.webp`;
+
+describe('mídia dos posts (posts/{id}/)', () => {
+  beforeEach(seedContent);
+
+  it('quem edita artists sobe imagem num post de foto; leitor, outra seção e fã não', async () => {
+    for (const uid of ['admin', 'editora']) {
+      await assertSucceeds(upload(as(uid), postPath('p-photo')));
+    }
+    for (const uid of ['leitor', 'editorSemSecao', 'desativada', 'fa']) {
+      await assertFails(upload(as(uid), postPath('p-photo')));
+    }
+    await assertFails(upload(anonymous(), postPath('p-photo')));
+  });
+
+  it('o tipo do post decide: mp4 só no vídeo; imagem na foto e no vídeo; nada no texto e no show', async () => {
+    const mp4 = { contentType: 'video/mp4' };
+    await assertSucceeds(upload(as('editora'), postPath('p-video'), {}));
+    await assertSucceeds(
+      upload(as('editora'), postPath('p-video', 'mp4'), { ...mp4, size: 50 * MB }),
+    );
+    await assertFails(
+      upload(as('editora'), postPath('p-video', 'mp4'), { ...mp4, size: 50 * MB + 1 }),
+    );
+    await assertFails(upload(as('editora'), postPath('p-photo', 'mp4'), mp4));
+    for (const postId of ['p-text', 'p-event']) {
+      await assertFails(upload(as('editora'), postPath(postId)));
+      await assertFails(upload(as('editora'), postPath(postId, 'mp4'), mp4));
+    }
+    await assertFails(upload(as('editora'), postPath('p-photo'), { size: 5 * MB + 1 }));
+    await assertFails(upload(as('editora'), postPath('p-photo'), { contentType: 'image/gif' }));
+  });
+
+  it('só para um post que existe, com o id no formato, sem subpastas', async () => {
+    await assertFails(upload(as('admin'), postPath('p-naoexiste')));
+    await assertFails(upload(as('admin'), postPath('__x__')));
+    await assertFails(upload(as('admin'), `posts/p-photo/sub/arquivo-${++counter}.webp`));
+  });
+
+  it('qualquer um baixa pelo caminho exato; ninguém lista, troca nem apaga', async () => {
+    const path = postPath('p-photo');
+    await assertSucceeds(upload(as('editora'), path));
+    await assertSucceeds(anonymous().ref(path).getMetadata());
+    for (const storage of [as('fa'), as('admin')]) {
+      await assertFails(storage.ref('posts/p-photo').listAll());
+      await assertFails(storage.ref(path).delete());
+      await assertFails(storage.ref(path).updateMetadata({ contentType: 'image/png' }));
+    }
+    await assertFails(upload(as('admin'), path));
+  });
+});
+
+describe('foto dos shows (events/{id}/)', () => {
+  beforeEach(seedContent);
+
+  it('imagem até 5 MB de quem edita artists, só para um show que existe', async () => {
+    await assertSucceeds(upload(as('editora'), eventPath()));
+    await assertFails(upload(as('leitor'), eventPath()));
+    await assertFails(upload(as('fa'), eventPath()));
+    await assertFails(upload(as('editora'), eventPath(), { size: 5 * MB + 1 }));
+    await assertFails(upload(as('editora'), eventPath(), { contentType: 'video/mp4' }));
+    await assertFails(upload(as('editora'), eventPath('show-naoexiste')));
+  });
+
+  it('ninguém lista nem apaga', async () => {
+    const path = eventPath();
+    await assertSucceeds(upload(as('editora'), path));
+    await assertFails(as('admin').ref('events/show-1').listAll());
+    await assertFails(as('admin').ref(path).delete());
+  });
+});

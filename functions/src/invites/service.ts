@@ -29,6 +29,7 @@ import {
   type PointsConfig,
 } from '../points/model';
 import { pickShard } from '../points/stats';
+import { readVisiblePost } from '../posts/store';
 import {
   drawInviteCode,
   INVITE_CODE_DRAWS,
@@ -440,11 +441,12 @@ export type LinkOutcome = { created: boolean; plan?: AwardPlan };
 /**
  * Link compartilhado (`PUT /me/invite/links/:linkId`): um por destino.
  * 1. um getAll: fanInvites/{uid}, o link e, no link de uma central,
- *    artists/{@}; sem código ainda, 404;
- * 2. o link já existe, a central não existe ou não está publicada, ou o fã já
+ *    artists/{@}, ou, no de um post, posts/{id} (e a central dele numa
+ *    segunda leitura); sem código ainda, 404;
+ * 2. o link já existe, a central não existe ou não está publicada, o post não
+ *    está visível (no ar, de central no ar, bloco 6, 21.2), ou o fã já
  *    registrou 30 novos hoje: `created: false`;
  * 3. cria o link, +1 nos links do dia de quem chama e o link nos agregados.
- * O post não é conferido: o mural ainda é de exemplo (bloco 6).
  */
 export async function recordInviteLink(
   tx: Transaction,
@@ -453,13 +455,18 @@ export async function recordInviteLink(
 ): Promise<LinkOutcome> {
   const { fan, award, link } = ctx;
   const refs = [fanInviteRef(db, fan.uid), inviteLinkRef(db, fan.uid, link.linkId)];
+  const isPost = link.kind === 'post' && link.targetId !== null;
+  const { visible, extra } = isPost
+    ? await readVisiblePost(tx, db, link.targetId!, refs)
+    : { visible: null, extra: [] };
   if (link.kind === 'artist' && link.targetId) {
     refs.push(db.collection('artists').doc(link.targetId));
   }
-  const [invite, existing, artist] = await tx.getAll(...refs);
+  const [invite, existing, artist] = isPost ? extra : await tx.getAll(...refs);
   if (!invite!.exists) throw new InviteError('invite_not_found');
   if (existing!.exists) return { created: false };
   if (artist && artist.get('status') !== 'published') return { created: false };
+  if (isPost && !visible) return { created: false };
   const countsDaily = award.actor.type === 'fan';
   const today = fan.wallet.days[dayKey(award.now)]?.count.invite_link ?? 0;
   if (countsDaily && today >= INVITE_LINKS_PER_DAY) return { created: false };

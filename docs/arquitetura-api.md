@@ -1,6 +1,6 @@
 # Arquitetura da API do app
 
-Nota de arquitetura do servidor do ImagineUP. Ela diz como o app fala com as Cloud Functions, onde moram os pontos, como o ponto é lançado e como o painel lê os números. Vale para o bloco 1 (base do servidor e núcleo de pontos) e deixa a estrutura pronta para os blocos seguintes. O bloco 4 (centrais de verdade) está na seção 19, e o bloco 5 (convite com atribuição e origem do fã), na seção 20.
+Nota de arquitetura do servidor do ImagineUP. Ela diz como o app fala com as Cloud Functions, onde moram os pontos, como o ponto é lançado e como o painel lê os números. Vale para o bloco 1 (base do servidor e núcleo de pontos) e deixa a estrutura pronta para os blocos seguintes. O bloco 4 (centrais de verdade) está na seção 19, o bloco 5 (convite com atribuição e origem do fã), na seção 20, e o bloco 6 (mural e agenda com conteúdo real), na seção 21.
 
 Origem: decisão do dono em 05/10/2026 (API HTTP numa função `onRequest`, pontos calculados na transação da ação) e o levantamento de 05/10/2026 (13 blocos, 26 endpoints, perguntas técnicas em aberto).
 
@@ -22,6 +22,7 @@ Quem mexe no servidor lê esta nota antes. Mudou uma decisão daqui? Mude a nota
 12. Um projeto Firebase só (`imagine-up-app`), mais os emuladores. O ambiente de testes espera o ok da cliente (UP-15).
 13. Bloco 4 (seção 19): vínculo em `users/{uid}/centrals/{artistId}`; `fanCount` somado num shard na transação e copiado para `artists/{id}` por uma fila de tarefas, no máximo uma vez a cada 10 s por central; vínculo novo paga `central_join` uma vez na vida, também na 1l; sair não tira ponto; posição do fã por central só no bloco 8.
 14. Bloco 5 (seção 20): código de convite por fã, sorteado no servidor e criado no primeiro `GET /me/invite`; claim uma vez por conta, em `referrals/{uid}`, só para conta de até 7 dias, pagando quem convidou (visita e cadastro) com o id do evento pela chave da pessoa (o e-mail normalizado, em HMAC-SHA256 com um segredo do servidor), para a conta excluída e recriada não pagar de novo; visita só no app, de conta logada diferente do dono e de outra pessoa (a chave do dono também barra o apelido do e-mail), contada no painel uma vez por pessoa e convidante, pague ou não; origem (tipo de link, destino e `utm_source`, `utm_medium` e `utm_campaign`) no convite e nos agregados por origem e campanha; cadastros por dia no gatilho de cadastro.
+15. Bloco 6 (seção 21): a equipe publica posts e shows pelas callables do painel, com a seção `artists` (provisório até a UP-9); post em `posts/{postId}`, show em `events/{eventId}`, curtida e presença em subcoleções do fã, comentário em `posts/{postId}/postComments`; curtidas e comentários contados em shards e copiados para o post por uma fila, no máximo uma vez a cada 10 s; `postCount` por `count()`; curtir paga uma vez na vida, comentar dentro do limite do dia, "Eu vou" uma vez por show; tetos diários de ações; denunciar comentário e bloquear fã, com a fila da Moderação e a callable `moderateComment`; a exclusão de conta apaga comentários, curtidas, presenças, denúncias e bloqueios, descontando as contagens.
 
 ## 1. Formato da API
 
@@ -172,24 +173,30 @@ Corpo de erro, sempre:
 | -------------------------- | ------ | ------------ | --------------------------------------------------------------- |
 | `invalid_request`          | 400    | validation   | parâmetro, corpo ou cursor fora do formato                      |
 | `idempotency_key_required` | 400    | validation   | rota que grava sem `Idempotency-Key`, ou fora do formato        |
+| `comment_invalid`          | 400    | validation   | comentário vazio, longo demais ou com invisível (bloco 6)       |
 | `unauthenticated`          | 401    | unauthorized | sem token, token inválido, vencido ou de outro projeto          |
 | `not_fan`                  | 403    | forbidden    | conta só da equipe tentando gravar                              |
 | `not_found`                | 404    | notFound     | rota que não existe                                             |
 | `artist_not_found`         | 404    | notFound     | central inexistente, fora do ar ou id fora do formato (bloco 4) |
 | `invite_not_found`         | 404    | notFound     | código de convite que não existe (bloco 5)                      |
+| `post_not_found`           | 404    | notFound     | post que não existe ou não está visível (bloco 6)               |
+| `event_not_found`          | 404    | notFound     | show que não existe, fora do ar ou encerrado (bloco 6)          |
+| `comment_not_found`        | 404    | notFound     | comentário que não existe ou oculto (bloco 6)                   |
+| `fan_not_found`            | 404    | notFound     | fã que não existe, no bloqueio (bloco 6)                        |
 | `method_not_allowed`       | 405    | unknown      | rota existe, método não                                         |
 | `insufficient_points`      | 409    | validation   | débito maior que o saldo (já em `API_ERROR_CODES`)              |
 | `invite_not_allowed`       | 409    | validation   | autoconvite ou conta fora da janela do claim (bloco 5)          |
+| `block_list_full`          | 409    | validation   | lista de bloqueios cheia (bloco 6)                              |
 | `payload_too_large`        | 413    | unknown      | corpo acima de 16 KiB                                           |
 | `idempotency_key_reused`   | 422    | validation   | mesma chave com outro pedido                                    |
-| `too_many_requests`        | 429    | unknown      | entrada em central acima do teto do dia (bloco 4, 19.5)         |
+| `too_many_requests`        | 429    | unknown      | ação acima do teto do dia (bloco 4, 19.5; bloco 6, 21.7)        |
 | `internal`                 | 500    | server       | erro inesperado                                                 |
 | `profile_not_ready`        | 503    | server       | gravação sem `users/{uid}` (perfil nascendo ou conta excluída)  |
 | `unavailable`              | 503    | server       | disputa, Firestore fora ou falha ao conferir o token            |
 
-Mensagens: `invalid_request` "Pedido inválido."; `idempotency_key_required` "Falta a chave de idempotência."; `unauthenticated` "Entre na sua conta para continuar."; `not_fan` "Esta conta não é de fã."; `not_found` "Não encontrado."; `artist_not_found` "Central não encontrada."; `invite_not_found` "Convite não encontrado."; `invite_not_allowed` "Este convite não vale para esta conta."; `method_not_allowed` "Método não aceito nesta rota."; `insufficient_points` "Saldo insuficiente."; `payload_too_large` "Pedido grande demais."; `idempotency_key_reused` "Esta chave já foi usada em outro pedido."; `too_many_requests` "Tentativas demais por hoje. Tente amanhã."; `internal` "Algo deu errado. Tente de novo."; `profile_not_ready` "Seu perfil ainda está sendo criado. Tente de novo em instantes."; `unavailable` "Serviço ocupado. Tente de novo."
+Mensagens: `invalid_request` "Pedido inválido."; `idempotency_key_required` "Falta a chave de idempotência."; `unauthenticated` "Entre na sua conta para continuar."; `not_fan` "Esta conta não é de fã."; `not_found` "Não encontrado."; `artist_not_found` "Central não encontrada."; `invite_not_found` "Convite não encontrado."; `invite_not_allowed` "Este convite não vale para esta conta."; `method_not_allowed` "Método não aceito nesta rota."; `insufficient_points` "Saldo insuficiente."; `payload_too_large` "Pedido grande demais."; `idempotency_key_reused` "Esta chave já foi usada em outro pedido."; `too_many_requests` "Tentativas demais por hoje. Tente amanhã."; `internal` "Algo deu errado. Tente de novo."; `profile_not_ready` "Seu perfil ainda está sendo criado. Tente de novo em instantes."; `unavailable` "Serviço ocupado. Tente de novo."; do bloco 6, `post_not_found` "Post não encontrado.", `event_not_found` "Show não encontrado.", `comment_not_found` "Comentário não encontrado.", `fan_not_found` "Fã não encontrado.", `comment_invalid` "Comentário vazio, longo demais ou com caracteres invisíveis." e `block_list_full` "Você chegou ao limite de fãs bloqueados.".
 
-Códigos que os próximos blocos vão criar entram nesta tabela quando nascerem: `post_not_found`, `event_not_found` e `reward_not_found` (404), `comment_invalid` (400) e `sold_out` (409, que também entra no `API_ERROR_CODES` do app no bloco 10). Não há limite de pedidos por minuto no bloco 1: o `maxInstances` segura o custo, e os limites de pontos não são erro (seção 5). A exceção, do bloco 4, é o teto diário de entradas em centrais (19.5), com 429 e `Retry-After`: sem ele, um script que entra e sai sem parar gravaria sem teto e inflaria os fluxos do painel.
+Códigos que os próximos blocos vão criar entram nesta tabela quando nascerem: `reward_not_found` (404) e `sold_out` (409, que também entra no `API_ERROR_CODES` do app no bloco 10). Não há limite de pedidos por minuto no bloco 1: o `maxInstances` segura o custo, e os limites de pontos não são erro (seção 5). A exceção, do bloco 4, é o teto diário de entradas em centrais (19.5), com 429 e `Retry-After`: sem ele, um script que entra e sai sem parar gravaria sem teto e inflaria os fluxos do painel. O bloco 6 faz o mesmo com curtidas, comentários, presenças, denúncias e bloqueios (21.7).
 
 ## 2. Mapa dos 26 endpoints
 
@@ -230,6 +237,8 @@ Fora dos 26, nova no bloco 4: `DELETE /me/centrals/:artistId` (sair da central, 
 
 Fora dos 26, novas no bloco 5: `POST /invites/visit` (visita ao link no app, `auth/api.ts` `sendInviteVisit`) e `PUT /me/invite/links/:linkId` (link compartilhado, `profile/api.ts` `registerInviteLink`), seção 20.
 
+Fora dos 26, novas no bloco 6: `POST /posts/:postId/comments/:commentId/report` (denunciar comentário, `posts/api.ts` `reportComment`) e `PUT` e `DELETE /me/blocks/:fanId` (bloquear e desbloquear um fã, `posts/api.ts` `blockFan`; o desbloquear ainda sem tela), seção 21. Os endpoints 10 a 18 são os do bloco 6.
+
 O `POST /invites/claim` era endereço provisório (comentário em `auth/api.ts`). O bloco 5 o mantém como final, com o corpo novo (seção 20).
 
 A chave do claim (`invite-<código>-<receivedAt>`) só cabe no formato da `Idempotency-Key` quando o código é válido. Até o bloco 5, a rota `/convite/[codigo]` guardava o parâmetro sem conferir, e o `claimPendingInvite` só esquecia o código depois de sucesso: um código fora do formato gerava uma chave recusada (400, que o app não repete) e ficava preso no aparelho. Hoje a captura normaliza o código (`normalizeInviteCode`) e descarta o que fica fora do formato, a chave do claim usa o código normalizado, e o app esquece o convite só pelas recusas definitivas de `isFinalInviteRejection` (20.11).
@@ -251,22 +260,29 @@ Por que a API para o resto: um caminho só no app (axios, React Query e cache no
 
 ### Coleções novas
 
-| Caminho                                                      | Quem grava                                      | Quem lê pelo cliente              | Para quê                                                                    |
-| ------------------------------------------------------------ | ----------------------------------------------- | --------------------------------- | --------------------------------------------------------------------------- |
-| `wallets/{uid}`                                              | servidor (`award` e a marca de atividade)       | equipe com a seção `fans`         | os três contadores, totais, últimos 7 dias, temporadas passadas e atividade |
-| `wallets/{uid}/ledger/{entryId}`                             | servidor (`award`)                              | equipe com `fans`                 | extrato                                                                     |
-| `wallets/{uid}/centralPoints/{artistId}`                     | servidor (`award`)                              | equipe com `fans`                 | pontos do fã em cada central                                                |
-| `config/points` e `config/points/versions/{n}`               | servidor (callable do painel, bloco seguinte)   | equipe ativa                      | valores, limites diários e régua de níveis                                  |
-| `config/season` e `config/season/versions/{n}`               | servidor (callable do painel, bloco 8)          | equipe ativa                      | temporada atual                                                             |
-| `statsDaily/{dia}` e `statsDaily/{dia}/statsShards/{n}`      | servidor (`award`; fechamento do dia depois)    | equipe com `overview` ou `growth` | contadores agregados do painel                                              |
-| `statsMeta/close`                                            | servidor (fechamento do dia, quando ele entrar) | ninguém                           | último dia fechado                                                          |
-| `idempotency/{id}`                                           | servidor (API)                                  | ninguém                           | chaves de idempotência                                                      |
-| `users/{uid}/centrals/{artistId}`                            | servidor (API, bloco 4)                         | equipe com `fans`                 | vínculo do fã com a central (seção 19)                                      |
-| `artistStats/{artistId}/fanShards/{n}`                       | servidor (API e exclusão de conta, bloco 4)     | equipe com `artists`              | `fanCount` em shards, copiado para `artists/{id}` (seção 19)                |
-| `inviteCodes/{code}`                                         | servidor (API e exclusão de conta, bloco 5)     | ninguém                           | dono de cada código de convite (seção 20)                                   |
-| `fanInvites/{uid}` e `fanInvites/{uid}/inviteLinks/{linkId}` | servidor (API e exclusão de conta, bloco 5)     | equipe com `fans`                 | o código do fã e os links que ele compartilhou (seção 20)                   |
-| `fanInvites/{uid}/inviteVisitors/{personKey}`                | servidor (API e exclusão de conta, bloco 5)     | ninguém                           | quem já contou como visitante de cada convidante (seção 20)                 |
-| `referrals/{uid}`                                            | servidor (API e exclusão de conta, bloco 5)     | equipe com `fans`                 | quem trouxe o fã, por qual link e campanha (seção 20)                       |
+| Caminho                                                               | Quem grava                                      | Quem lê pelo cliente                         | Para quê                                                                    |
+| --------------------------------------------------------------------- | ----------------------------------------------- | -------------------------------------------- | --------------------------------------------------------------------------- |
+| `wallets/{uid}`                                                       | servidor (`award` e a marca de atividade)       | equipe com a seção `fans`                    | os três contadores, totais, últimos 7 dias, temporadas passadas e atividade |
+| `wallets/{uid}/ledger/{entryId}`                                      | servidor (`award`)                              | equipe com `fans`                            | extrato                                                                     |
+| `wallets/{uid}/centralPoints/{artistId}`                              | servidor (`award`)                              | equipe com `fans`                            | pontos do fã em cada central                                                |
+| `config/points` e `config/points/versions/{n}`                        | servidor (callable do painel, bloco seguinte)   | equipe ativa                                 | valores, limites diários e régua de níveis                                  |
+| `config/season` e `config/season/versions/{n}`                        | servidor (callable do painel, bloco 8)          | equipe ativa                                 | temporada atual                                                             |
+| `statsDaily/{dia}` e `statsDaily/{dia}/statsShards/{n}`               | servidor (`award`; fechamento do dia depois)    | equipe com `overview` ou `growth`            | contadores agregados do painel                                              |
+| `statsMeta/close`                                                     | servidor (fechamento do dia, quando ele entrar) | ninguém                                      | último dia fechado                                                          |
+| `idempotency/{id}`                                                    | servidor (API)                                  | ninguém                                      | chaves de idempotência                                                      |
+| `users/{uid}/centrals/{artistId}`                                     | servidor (API, bloco 4)                         | equipe com `fans`                            | vínculo do fã com a central (seção 19)                                      |
+| `artistStats/{artistId}/fanShards/{n}`                                | servidor (API e exclusão de conta, bloco 4)     | equipe com `artists`                         | `fanCount` em shards, copiado para `artists/{id}` (seção 19)                |
+| `inviteCodes/{code}`                                                  | servidor (API e exclusão de conta, bloco 5)     | ninguém                                      | dono de cada código de convite (seção 20)                                   |
+| `fanInvites/{uid}` e `fanInvites/{uid}/inviteLinks/{linkId}`          | servidor (API e exclusão de conta, bloco 5)     | equipe com `fans`                            | o código do fã e os links que ele compartilhou (seção 20)                   |
+| `fanInvites/{uid}/inviteVisitors/{personKey}`                         | servidor (API e exclusão de conta, bloco 5)     | ninguém                                      | quem já contou como visitante de cada convidante (seção 20)                 |
+| `referrals/{uid}`                                                     | servidor (API e exclusão de conta, bloco 5)     | equipe com `fans`                            | quem trouxe o fã, por qual link e campanha (seção 20)                       |
+| `posts/{postId}`                                                      | servidor (callables do painel, API, bloco 6)    | equipe com `artists`, `moderation` ou `fans` | mural (seção 21)                                                            |
+| `posts/{postId}/postComments/{commentId}`                             | servidor (API e callable, bloco 6)              | equipe com `artists` ou `moderation`         | comentários (seção 21)                                                      |
+| `postStats/{postId}/countShards/{n}`                                  | servidor (API e exclusão de conta, bloco 6)     | ninguém                                      | curtidas e comentários em shards, copiados para o post (seção 21)           |
+| `events/{eventId}`                                                    | servidor (callables do painel, bloco 6)         | equipe com `artists`, `moderation` ou `fans` | shows da agenda (seção 21)                                                  |
+| `users/{uid}/postLikes/{postId}` e `users/{uid}/eventRsvps/{eventId}` | servidor (API, bloco 6)                         | equipe com `fans`                            | curtidas e presenças do fã, com o estado (seção 21)                         |
+| `commentReports/{id}` e `moderationQueue/{commentId}`                 | servidor (API e callable, bloco 6)              | equipe com `moderation`                      | denúncias e fila da Moderação (seção 21)                                    |
+| `blockLists/{uid}`                                                    | servidor (API e exclusão de conta, bloco 6)     | ninguém                                      | quem cada fã bloqueou (seção 21)                                            |
 
 O fã não lê nenhuma delas direto, nem a própria carteira: tudo chega pela API.
 
@@ -677,8 +693,8 @@ A Crescimento do painel promete "cadastros, ativos e retenção" (`imagineup-adm
 
 ### Custo e limite de escrita
 
-- Uma gravação de shard por transação que lançou ponto ou marcou atividade nova, qualquer que seja o número de lançamentos e de fãs nela. Transação sem nada aplicado e sem marca nova não grava shard (nem carteira).
-- **Teto:** o Firestore aguenta perto de 1 gravação por segundo por documento de forma sustentada (rajadas curtas passam). Com 64 shards, o dia aguenta perto de 64 transações com ponto ou atividade nova por segundo no país todo, cerca de 230 mil por hora, sustentadas. Cada fã, pela carteira, já fica perto de 1 por segundo.
+- Uma gravação de shard por transação que lançou ponto, marcou atividade nova ou somou um fluxo sem ponto, qualquer que seja o número de lançamentos e de fãs nela. Os fluxos sem ponto vieram nos blocos seguintes: entrar e sair de central (bloco 4, 19.9), cadastro, convite, visita e link (bloco 5, 20.7) e, no bloco 6, toda curtida, descurtida, comentário, presença, desfazer, denúncia e bloqueio (21.10), pontue ou não. Transação sem nada aplicado, sem marca nova e sem fluxo não grava shard (nem carteira).
+- **Teto:** o Firestore aguenta perto de 1 gravação por segundo por documento de forma sustentada (rajadas curtas passam). Com 64 shards, o dia aguenta perto de 64 transações que gravam shard por segundo no país todo, cerca de 230 mil por hora, sustentadas, divididas entre os pontos, a atividade, as centrais, o convite e todo o engajamento do bloco 6 (as curtidas e os comentários são o grosso). Cada fã, pela carteira, já fica perto de 1 por segundo.
 - **Disputa:** a disputa num shard faz a transação do fã repetir. Como o shard é sorteado de novo a cada tentativa, a repetição cai em outro documento; as 5 tentativas acabarem em shards disputados (o 503 `unavailable`) só acontece bem acima do teto. Sorteado uma vez por pedido, a repetição bateria no mesmo documento disputado.
 - **Sinal para mexer:** `unavailable` ou transações repetidas nos logs da `api`. Primeiro passo: subir o `SHARD_COUNT`, porque quem lê lista a subcoleção e nunca supõe o número.
 - **Saída sem disputa nenhuma, registrada e não implementada:** tirar o agregado da transação. Uma função agendada, a cada 5 a 15 min, lê os lançamentos novos do extrato (grupo de coleção `ledger` por `createdAt`, com margem para a transação que demorou até 30 s) e soma. Custa 1 leitura por lançamento, mais barato que 1 gravação, mas o painel fica 5 a 15 min atrasado, o grupo `ledger` pede índice próprio e a atividade sem ponto precisa de outro caminho. Fica para quando o teto acima não bastar.
@@ -807,7 +823,7 @@ Só acréscimo: nenhuma regra existente muda. As regras novas entram antes do `m
     }
 ```
 
-As regras do bloco 4 (vínculo e shards do `fanCount`) estão na seção 19, e as do bloco 5 (convite), em 20.9.
+As regras do bloco 4 (vínculo e shards do `fanCount`) estão na seção 19, as do bloco 5 (convite), em 20.9, e as do bloco 6 (mural, agenda e moderação), em 21.11.
 
 Testes em `tests/points-rules.test.ts`, no molde de `tests/artists-rules.test.ts` (mesmos membros de exemplo: admin, editora, leitor, sem seção, desativada, pendente e ligada com `authValidAfter`):
 
@@ -833,7 +849,7 @@ Ficam para depois: a leitura de `users/{uid}` pela seção Fãs (bloco 11, uma l
 4. Novo: as chaves de `idempotency` com `uid == <uid>`, em lotes de até 500 (as respostas guardadas podem ter texto do fã; o TTL só apagaria em 30 dias).
 5. `staff/{uid}` (como hoje).
 
-O bloco 4 muda o passo 2: o documento do perfil sai sozinho primeiro, depois saem os vínculos com as centrais (descontando o `fanCount`) e só então o `recursiveDelete(users/{uid})`. Ordem completa e motivo na seção 19 (19.12). O bloco 5 acrescenta o código, os links e os convites (20.10).
+O bloco 4 muda o passo 2: o documento do perfil sai sozinho primeiro, depois saem os vínculos com as centrais (descontando o `fanCount`) e só então o `recursiveDelete(users/{uid})`. Ordem completa e motivo na seção 19 (19.12). O bloco 5 acrescenta o código, os links e os convites (20.10). O bloco 6 acrescenta as curtidas, os comentários, as denúncias e os bloqueios (21.12).
 
 Continua idempotente e seguro de repetir (o gatilho tem `retry: true`), e o `handleUserCreated` que desfaz a conta usa a mesma função.
 
@@ -976,17 +992,17 @@ Regras: `tests/points-rules.test.ts` (seção 11). App: seção 13.
 5. **Formato dos agregados.** Documento por dia em 64 shards, na transação do ponto e só quando algo mudou, com pontos por origem e por artista, fãs ativos e coortes, mais o fechamento do dia (seção 7). Teto e saída registrados na seção 7.
 6. **Como calcular o ranking.** Consulta ordenada com índice, com desempate por `seasonPointsAt`, e posição por `count()` na mesma ordem da lista; materializar só se o custo pedir (seção 10, bloco 8).
 7. **Como guardar a régua.** `config/points`, versionado, com padrão no código e edição por callable com auditoria. Mudança de valor não vale para ação antiga (seção 9).
-8. **Como montar o feed.** Bloco 6. A consulta por `artistId` com `in` (até 30 centrais) basta enquanto o fã seguir poucas centrais; sem cópia por fã.
+8. **Como montar o feed.** Bloco 6. A consulta por `artistId` com `in` (até 30 centrais) basta enquanto o fã seguir poucas centrais; sem cópia por fã. Fechado no bloco 6 (21.2): `in` em blocos de 30 centrais, juntados na mesma ordem.
 9. **Antifraude.** Limites diários por origem no servidor, sem App Check por enquanto (seção 5).
 10. **Ambiente de testes.** Documentado; espera o ok da cliente (seção 15).
-11. **Onde o mural e a agenda entram no painel.** Bloco 6. Não muda nada no bloco 1.
-12. **Exclusão de conta.** Agregados não descontam (seção 12). Direção para os outros blocos: comentários do fã excluído são apagados, com a contagem do post descontada (bloco 6); resgate em aberto continua para a equipe entregar ou cancelar, sem o uid e com o status de conta excluída (bloco 10).
+11. **Onde o mural e a agenda entram no painel.** Bloco 6. Não muda nada no bloco 1. Fechado no bloco 6 (21.1, decisão 1): dentro da seção `artists`, sem seção nova; as telas são do bloco 11.
+12. **Exclusão de conta.** Agregados não descontam (seção 12). Direção para os outros blocos: comentários do fã excluído são apagados, com a contagem do post descontada (bloco 6, 21.12, ainda pergunta para a cliente e a revisão jurídica); resgate em aberto continua para a equipe entregar ou cancelar, sem o uid e com o status de conta excluída (bloco 10).
 
 ## 18. O que fica para os próximos blocos
 
 - **Bloco 4 (centrais):** desenhado na seção 19. O que ele deixa para os blocos seguintes está em 19.16.
 - **Bloco 5 (convite):** desenhado na seção 20. A visita conta no app, e não numa função própria para o site, como esta nota dizia antes (decisão 3 de 20.1). Os 63 e 418 da Camila ficam nas fixtures, e o seed dá a ela 4 links e 3 convidados (20.12). O que fica fora do bloco está em 20.15.
-- **Bloco 6 (mural e agenda):** rotas, coleções e regras de posts, comentários, curtidas, shows e presenças; `like`, `comment` e `rsvp` pelo `award`; contadores de engajamento; bloqueio de fã; exclusão do conteúdo do fã.
+- **Bloco 6 (mural e agenda):** desenhado na seção 21. O que ele deixa para os blocos seguintes está em 21.17.
 - **Bloco 7 (missões e conquistas):** progresso de missão na transação; conquistas; tela do extrato (`/me/ledger`, com desenho); `updatePointsConfig` e a seção Missões e régua no painel.
 - **Bloco 8 (ranking e temporadas):** `updateSeason` com `season-id-locked` e `season-id-used` (seção 8), histórico em `seasons/{id}`, arquivo do resultado, índices compostos, posição por `count()` com o desempate da lista (seção 10), foto semanal do `change`.
 - **Bloco 10 (loja):** rotas da loja e o resgate com o débito já pronto; `sold_out` no `API_ERROR_CODES`.
@@ -1643,7 +1659,7 @@ Responde sempre 200 `{ "status": "received" }`, conte ou não, e 404 `invite_not
 
 #### `PUT /me/invite/links/:linkId`
 
-Sem corpo. O `linkId` segue `^(invite|agenda|post:[A-Za-z0-9_-]{1,128}|artist:[a-z0-9_]{3,30})$`, com o @ da central fora dos ids `__.*__`; fora disso, 400 `invalid_request` com `details.field: 'linkId'`. O app manda o id com `encodeURIComponent` (o `:` vira `%3A`). Responde `{ "linkId": "post:p-clipe", "created": true }`; o link que já existe, ou acima do teto de 30 novos por dia, responde `created: false`. Fã que ainda não tem código (nunca chamou o `GET /me/invite`): 404 `invite_not_found`, que o app ignora. (implementação) O link de uma central lê `artists/{@}` no mesmo `getAll` e só nasce com a central publicada: a que não existe, está em rascunho ou fora do ar responde `created: false`, fora do teto do dia e dos agregados (as centrais são reais desde o bloco 4, e sem isso um fã inflaria "links criados" e `byOrigin.kind.artist.links` com @ inventados). O post não é conferido, porque o mural ainda é de exemplo; o bloco 6 pode conferir. A origem `artist` do claim e da visita (o caminho `/artista/<@>`) também não: conferir pediria uma leitura a mais na transação mais disputada do convite para um campo informativo, que o painel cruza com `artists` ao mostrar, e um @ inventado ali custa ao fraudador uma conta por cadastro (o claim é um por conta).
+Sem corpo. O `linkId` segue `^(invite|agenda|post:[A-Za-z0-9_-]{1,128}|artist:[a-z0-9_]{3,30})$`, com o @ da central fora dos ids `__.*__`; fora disso, 400 `invalid_request` com `details.field: 'linkId'`. O app manda o id com `encodeURIComponent` (o `:` vira `%3A`). Responde `{ "linkId": "post:p-clipe", "created": true }`; o link que já existe, ou acima do teto de 30 novos por dia, responde `created: false`. Fã que ainda não tem código (nunca chamou o `GET /me/invite`): 404 `invite_not_found`, que o app ignora. (implementação) O link de uma central lê `artists/{@}` no mesmo `getAll` e só nasce com a central publicada: a que não existe, está em rascunho ou fora do ar responde `created: false`, fora do teto do dia e dos agregados (as centrais são reais desde o bloco 4, e sem isso um fã inflaria "links criados" e `byOrigin.kind.artist.links` com @ inventados). O post não é conferido, porque o mural ainda é de exemplo; o bloco 6 confere (21.2). A origem `artist` do claim e da visita (o caminho `/artista/<@>`) também não: conferir pediria uma leitura a mais na transação mais disputada do convite para um campo informativo, que o painel cruza com `artists` ao mostrar, e um @ inventado ali custa ao fraudador uma conta por cadastro (o claim é um por conta).
 
 #### `GET /me/progress`
 
@@ -2080,6 +2096,1018 @@ Só com o ok do dono, nesta ordem: o secret do HMAC, criado uma vez pelo dono co
 - O `signups.invited` é do dia do claim: a parte dos cadastros que veio de convite se lê por semana ou mais.
 - Na exclusão, o código sai logo depois do perfil, e os `referrals` de quem foi trazido ficam, sem o `inviterUid`.
 - `inviteLinks` e `inviteVisitors`, e não `links` e `visitors`: subcoleção com nome genérico cai na regra de grupo de outra.
+
+## 21. Bloco 6: mural e agenda com conteúdo real
+
+O mural e a agenda passam a vir do servidor. A equipe publica posts e shows pelo painel, o fã curte, comenta e confirma presença de verdade, e o app ganha a moderação mínima que as lojas pedem para conteúdo de usuário. Esta seção é o contrato do bloco 6: rotas, coleções, transações, contagens, moderação, callables do painel, regras, efeitos no painel, exclusão de conta, mudanças no app, seed e testes. Ela segue os padrões dos blocos 1, 4 e 5 (seções 1 a 20) e só diz o que muda ou acrescenta.
+
+Origem: o levantamento de 05/10/2026 (bloco 6) e o pedido do dono de 05/10/2026. Decisão provisória do dono até a UP-9: quem publica no mural e na agenda é a equipe, pelo painel, porque o artista não tem conta. As telas do painel para isso são do bloco 11 (projeto `imagineup-admin`); este bloco entrega as callables e deixa o contrato delas em 21.9. A build sem emulador continua nas fixtures, e o `EXPO_PUBLIC_API_URL` segue a regra da seção 13.
+
+Estado: implementado em 05/10/2026 no app e nas funções, sem deploy (ordem da publicação em 21.17). Onde o código detalhou ou desviou desta seção, o texto abaixo já diz como ficou, marcado com "(implementação)", como nas seções 19 e 20.
+
+Como era antes do bloco: posts, comentários, curtidas, shows e o "Eu vou" moravam nas fixtures (`src/domains/posts/fixtures.ts` e `src/domains/agenda/fixtures.ts`), com as rotas que os `api.ts` já chamavam e que ninguém respondia. O "N posts" da 1d contava os posts de exemplo da central (`countArtistPostsFixture`), o mural de exemplo mostrava as mesmas centrais para qualquer fã, e o comentário não tinha como ser denunciado nem o autor bloqueado.
+
+### 21.1 Decisões
+
+Cada item traz a recomendação e o motivo. As perguntas para a cliente e para o dono estão em 21.16, e o código já nasce com o padrão daqui, fácil de trocar.
+
+1. **Quem publica é a equipe, pelo painel, com a seção `artists`.** Admin, ou editor com `artists`, cria, edita, publica e tira do ar posts e shows, e apaga o rascunho que nunca foi ao ar (decisão 4); o leitor com `artists` só vê. Sem seção nova nos `SECTION_IDS`: o conteúdo é da central, e uma seção nova mexeria em papéis, convites e regras do painel. Se a cliente quiser separar quem cuida das centrais de quem publica, uma seção própria entra depois, trocando a seção em três lugares: o `PANEL_CONTENT_SECTION` das funções novas, o `firestore.rules` (a leitura de `posts`, `events` e `postComments`) e o `storage.rules` (o envio da mídia). Provisório até a UP-9.
+2. **Post em `posts/{postId}`, na raiz, com id automático.** O mural junta várias centrais numa consulta (`artistId in [...]`), e a raiz dispensa o grupo de coleção. O id automático (20 caracteres) cabe no `post:<id>` do convite (`[A-Za-z0-9_-]{1,128}`) e no `eventId` do extrato. O seed usa os ids das fixtures (`p-clipe`, `p-show`...), que cabem nos dois.
+3. **A mídia sobe do navegador para `posts/{postId}/`, e a função confere, como as fotos das centrais.** Post de foto: duas versões da foto (a do detalhe e a miniatura). Post de vídeo: a capa em duas versões, obrigatória, e o arquivo `video/mp4` opcional, até 50 MB. O app não toca vídeo (mostra a capa com a marca de vídeo, como hoje); o arquivo fica guardado para quando tocar. Guardar o mp4 é pergunta para o dono (21.16).
+4. **Rascunho, no ar e fora do ar; apagar só o que nunca foi ao ar.** Post e show nascem rascunho, como a central: o `storage.rules` só aceita mídia de um documento que já existe. O que já foi publicado uma vez (`publishedAt` preenchido) não se apaga: pediria limpar curtidas, comentários, denúncias, presenças, links de convite e arquivos, e tirar do ar já some com o conteúdo do app. O rascunho que nunca foi ao ar se apaga (`deletePost` e `deleteEvent`, 21.9): nenhuma rota aceita curtida, comentário, presença ou link de conteúdo que não está no ar, então ele só tem o documento e os arquivos. Sem isso, um rascunho criado por engano prenderia a central para sempre (o `has-content` da decisão 23), e um show rascunho prenderia todas as centrais dele.
+5. **O que o fã vê.** Post no ar de central no ar. O mural (`/feed`) mostra só as centrais do fã; a grade da 1d e o detalhe mostram para qualquer fã logado, porque o link compartilhado abre para quem ainda não é membro. Fã sem central vê o mural vazio, com o texto de hoje ("O mural dos seus artistas aparece aqui."). Motivo: é o "Do seu fandom" do protótipo, e a frase da sheet de sair volta a ser verdade.
+6. **Curtidas e comentários contados em shards e copiados para o post por uma fila, como o `fanCount`.** 16 shards em `postStats/{postId}/countShards/{n}`; a fila `syncPostCounts` copia `likeCount` e `commentCount` para `posts/{postId}` no máximo uma vez a cada 10 s por post. Motivo: um post popular recebe curtidas de muitos fãs ao mesmo tempo, e somar no documento do post o deixaria disputado (perto de 1 gravação por segundo). Para quem acabou de curtir ou comentar, a leitura soma o que a cópia ainda não viu (21.6).
+7. **`postCount` da central por `count()` na leitura**, como o "PTS DA CENTRAL" (19.7). Exato e na hora, sem campo novo em `artists/{id}` disputado pela equipe e pela API. Custo: 1 leitura a cada 1.000 posts no ar da central, por abertura da 1d.
+8. **Curtida e presença ficam com o fã; comentário fica com o post.** `users/{uid}/postLikes/{postId}`, `users/{uid}/eventRsvps/{eventId}` e `posts/{postId}/postComments/{commentId}`. Motivo: curtida e presença são do fã, como o vínculo do bloco 4, e o `likedByMe` e o `/me/rsvps` leem só os documentos dele; o comentário é listado por post. Os nomes são específicos (`postLikes`, e não `likes`) pela lição da regra de grupo de `centrals` (19.10). Desfazer não apaga o documento: ele fica com o estado (`liked: false`, `going: false`) e com o instante da primeira vez (`firstLikedAt`, `firstGoingAt`). Motivo: curtir rende 0 hoje e não grava extrato, e sem o documento nada diria que o fã já curtiu aquele post; o bloco 7 conta só a primeira curtida de cada post e a primeira presença de cada show (a regra das fixtures), e lê esse registro na transação (seção 5, exemplo da curtida que conclui missão). Apagar no desfazer deixaria descurtir e curtir de novo andar a missão outra vez, até o teto do dia. `likedByMe`, `/me/rsvps`, as contagens e a seção Fãs leem só o estado ativo, e o shard e o teto do dia só mexem na troca de estado. A exclusão de conta apaga tudo (21.12).
+9. **Nome e foto do autor copiados no comentário.** O comentário guarda `authorName` e `authorPhotoURL` do perfil na hora em que foi escrito. Motivo: uma página de 20 comentários não lê 20 perfis. Limite aceito: quem troca de nome continua com o nome antigo nos comentários antigos.
+10. **Pontos pelo núcleo, com o id do evento.** `like:<postId>` paga no máximo uma vez na vida, e descurtir não tira; `comment:<commentId>` paga cada comentário dentro do limite diário de `comment`; `rsvp:<eventId>` paga uma vez por show. Valores de `config/points`, hoje provisórios (UP-9): curtir 0, comentar 2 e "Eu vou" 0. O evento que rendeu 0 ou bateu no limite não grava extrato e pode pagar depois, uma vez (seção 5). A presença paga na primeira central do show que está no ar (na ordem do painel, a primeira é a principal), lida na transação, e soma os agregados só nas centrais do show que estão no ar: central em rascunho ou fora do ar não recebe `centralPoints` nem fluxo. Show sem central no ar paga sem central, como o convite. Curtir e comentar só acontecem em post de central no ar (21.2), então pagam numa central publicada. Os três pagam na central mesmo quando o fã não é membro dela: se esse ponto conta no ranking da central é pergunta para o bloco 8 (21.16).
+11. **Tetos do dia por fã para as ações que gravam, além dos limites de pontos.** Curtidas 300 (cada troca para curtido, também a de quem curte de novo depois de descurtir), comentários 100, presenças 50 (cada troca para "Eu vou"), denúncias 30 e bloqueios 30 por dia de São Paulo; acima, 429 `too_many_requests` com `Retry-After` até a meia-noite, antes de gravar. Desfazer (descurtir, desfazer o "Eu vou", desbloquear) nunca é recusado. Motivo: o mesmo do teto de entradas do bloco 4 (19.5). Curtir e descurtir sem parar, com chaves novas, gravaria sem teto, dispararia a fila e inflaria os fluxos do painel.
+12. **Show com data e hora no fuso do lugar.** O painel manda a data e a hora locais e o fuso IANA (sugerido pela UF); o servidor guarda o instante (`startsAt`), o fuso e o texto local. O app continua mostrando no fuso do aparelho, como hoje: quase todos os shows e fãs estão em UTC-3. Mostrar no fuso do lugar é pergunta (21.16).
+13. **Destaque da agenda: marca `featured` no show, e vale o próximo show marcado.** Mais de um marcado não é erro: o topo mostra o mais próximo, e o seguinte assume quando ele passar. Sem marcado à frente, `featured: null`, e o app usa o próximo show, como hoje. Motivo: a callable não precisa desmarcar os outros numa transação, e a equipe pode deixar os destaques da temporada marcados de uma vez.
+14. **Um corte só para o que "já passou": o começo do dia de hoje em São Paulo** (`agendaCutoff(now)`, em `agenda/model.ts`, que é o `nextDayStart(now - 24 h)` de `points/model.ts`). Vale para a lista da agenda, para o destaque, para o show estar aberto (`isEventOpen`: o `event` do post de show, o "Eu vou" e o `/me/rsvps`). É a regra do app (`isUpcoming`, em `agenda/group-by-month.ts`: o show de hoje fica até o dia virar, porque a hora de começo não diz quando ele acaba), no fuso de quase todos os fãs. Motivo: o app descarta o destaque que começou antes de `startOfDay(now)` e cai no próximo show, e não no próximo destaque; com o corte de 24 h, da meia-noite até 24 h depois do começo, o topo mostrava o show errado, e o post de show oferecia "Eu vou" num show de ontem que a agenda já escondia. Limite aceito: o aparelho fora do UTC-3 vira o dia em outra hora. No Acre e no Amazonas, o show de hoje sai da agenda e do "Eu vou" uma ou duas horas antes da meia-noite deles, e um destaque que começa nas duas primeiras horas do dia de São Paulo é trocado pelo próximo show no topo; em Noronha, um show que começa na primeira hora do dia deles some uma hora antes. Agenda em ordem de data, 20 por página. "Por mês" é o agrupamento que o app já faz (`groupByMonth`); o servidor não filtra por mês, porque o app não pede. Não há rota de detalhe do show: o app não tem tela de um show só (`useAgendaEvent` procura nas páginas carregadas). Ela entra com a tela, no formato `AgendaEvent`.
+15. **Post de show aponta para o show da agenda, e o "Eu vou" é um só.** O post guarda `eventId`, e a resposta monta o `event` a partir do show, na hora. Show fora do ar ou encerrado (começou antes do corte da decisão 14) volta `event: null`: o post continua, sem a linha do show e sem o "Eu vou". O "Eu vou" só vale em show no ar e não encerrado; desfazer vale sempre. O show do post sempre tem a central do post entre os artistas: o `createPost` e o `updatePost` conferem, e o `updateEvent` não tira a central de um post que aponta para ele (21.9).
+16. **Moderação mínima e provisória (UP-48).** Denunciar o comentário de outro fã, com motivo opcional de uma lista fechada (sem texto livre, que seria mais conteúdo de usuário para moderar), uma vez por fã e comentário; a fila da seção Moderação junta as denúncias por comentário. Bloquear um fã: os comentários dele somem para quem bloqueou, em todos os posts, e ele não fica sabendo. A equipe com `moderation` oculta, reexibe ou arquiva pela callable `moderateComment`. Nada é ocultado sozinho por número de denúncias até a cliente responder. É o mínimo que a App Store (diretriz 1.2) e o Google Play pedem para conteúdo de usuário: denunciar, bloquear e a equipe agir.
+17. **O fã continua sem apagar o próprio comentário (decisão de 30/09).** Nada aqui pede mudar: as lojas não exigem, e apagar abriria comentar, ganhar os pontos e apagar, além de sumir com a prova de uma denúncia. Quem quer um comentário fora pede à equipe (que oculta pela Moderação) ou exclui a conta.
+18. **A exclusão de conta apaga os comentários do fã** (proposta; pergunta para a cliente e para a revisão jurídica, UP-45), descontando as contagens sem deixar negativo. Anonimizar ("Fã excluído") guardaria um texto que pode ter dado pessoal. Saem também as curtidas (com desconto), as presenças, as denúncias que ele fez (descontadas da fila), a lista de bloqueios dele e o uid dele nas listas dos outros. Os agregados do painel não descontam (seção 12).
+19. **Mural de exemplo filtrado pelas centrais seguidas.** Nas fixtures, o mural mostra só as centrais do `followFixture` (de início, as três do protótipo, as mesmas de todos os posts de exemplo: a demonstração não muda), e a sheet "Sair da central" volta a dizer que os posts saem do mural, verdade nos dois modos.
+20. **Texto do comentário limpo e validado igual no app e no servidor** (`cleanMultiline`, nos dois lados, nesta ordem): tira os isolantes bidi colados (U+2066 a U+2069); normaliza em NFC; troca `\r\n` e `\r` por `\n`; tira os espaços das pontas de cada linha; junta as linhas vazias seguidas numa e tira as das pontas. Depois, cada linha não vazia precisa ser visível (`isVisibleLine`), e o texto tem de 1 a 500 unidades de UTF-16, como o `maxLength` do campo. É a regra da bio das centrais (`parseBio`, que já faz o NFC e a troca do `\r`), com a limpeza dos isolantes do `cleanLine`. Sem o NFC e a troca do `\r`, o app e o servidor contariam tamanho e acentos de forma diferente, e um `\r` colado viraria `invisible`.
+21. **Link de convite de um post só nasce com o post visível** (fecha o pendente de 20.2): o `PUT /me/invite/links/post:<id>` passa a ler o post e a central dele, como já lê a central no link `artist:<id>`.
+22. **Quem lê pelo painel.** Posts e shows: as seções `artists` (quem publica), `moderation` (a fila mostra o post do comentário) e `fans` (as curtidas e presenças de um fã e quem vai a um show mostram o texto do post e o título do show). É conteúdo que o app mostra a qualquer fã logado; só os rascunhos ficam à vista dessas seções a mais. Comentários: `artists` ou `moderation`. Denúncias e fila: `moderation`. Curtidas e presenças, que dizem o que cada fã fez: `fans`, como o vínculo do bloco 4. Listas de bloqueio: ninguém pelo cliente, nem a equipe: dizem quem bloqueou quem, e nenhuma tela do painel as usa (se a Moderação precisar, abre com a tela e o teste). Shards das contagens: ninguém pelo cliente.
+23. **`deleteArtist` recusa central com post ou show (`has-content`).** Única mudança de comportamento numa callable que já existe. Sem ela, apagar uma central sem fãs deixaria posts e shows apontando para um @ que outra central pode tomar depois, e a central nova herdaria a grade da antiga. A equipe tira do ar em vez de apagar, como já faz com `has-fans`. O rascunho que nunca foi ao ar não prende a central: a equipe o apaga antes (`deletePost`, `deleteEvent`) ou tira a central do show (`updateEvent`). Os testes de hoje do `deleteArtist` seguem verdes (eles não criam posts).
+
+### 21.2 Rotas
+
+| Método e caminho                                 | Grava | Função do app                                       | Resposta                     |
+| ------------------------------------------------ | ----- | --------------------------------------------------- | ---------------------------- |
+| `GET /feed`                                      | não   | `posts/api.ts` `fetchFeed`                          | `Page<Post>`                 |
+| `GET /artists/:artistId/posts`                   | não   | `posts/api.ts` `fetchArtistPosts`                   | `Page<Post>`                 |
+| `GET /posts/:postId`                             | não   | `posts/api.ts` `fetchPost`                          | `Post`                       |
+| `GET /posts/:postId/comments`                    | não   | `posts/api.ts` `fetchComments`                      | `Page<PostComment>`          |
+| `POST /posts/:postId/comments`                   | sim   | `posts/api.ts` `addComment`                         | `AddCommentResult`           |
+| `PUT /posts/:postId/like`                        | sim   | `posts/api.ts` `setPostLike` (`liked: true`)        | `PointsAward`                |
+| `DELETE /posts/:postId/like`                     | sim   | `posts/api.ts` `setPostLike` (`liked: false`)       | `PointsAward`                |
+| `POST /posts/:postId/comments/:commentId/report` | sim   | `posts/api.ts` `reportComment` (novo)               | `ReportCommentResult` (novo) |
+| `PUT /me/blocks/:fanId`                          | sim   | `posts/api.ts` `blockFan` (novo)                    | `BlockFanResult` (novo)      |
+| `DELETE /me/blocks/:fanId`                       | sim   | nenhuma ainda (a tela de desbloquear é pergunta)    | `BlockFanResult`             |
+| `GET /agenda` (com `artistId` opcional)          | não   | `agenda/api.ts` `fetchAgenda` e `fetchArtistAgenda` | `AgendaPage`                 |
+| `GET /me/rsvps`                                  | não   | `agenda/api.ts` `fetchMyRsvps`                      | `MyRsvps`                    |
+| `PUT /events/:eventId/rsvp`                      | sim   | `agenda/api.ts` `setEventRsvp` (`going: true`)      | `RsvpResult`                 |
+| `DELETE /events/:eventId/rsvp`                   | sim   | `agenda/api.ts` `setEventRsvp` (`going: false`)     | `RsvpResult`                 |
+| `GET /artists/:artistId` (bloco 4)               | não   | `artists/api.ts` `fetchArtist`                      | `postCount` de verdade       |
+| `PUT /me/invite/links/:linkId` (bloco 5)         | sim   | `profile/api.ts` `registerInviteLink`               | `post:<id>` conferido        |
+
+Arquivos: `functions/src/api/routes/posts.ts` (`postRoutes`), `routes/agenda.ts` (`agendaRoutes`) e `routes/moderation.ts` (`moderationRoutes`), somadas ao `API_ROUTES` depois de `inviteRoutes`. Os domínios, no molde de `functions/src/centrals` e `functions/src/artists`:
+
+- `functions/src/posts/`: `model.ts` (puro, com teste em tabela: textos, visões, cursores, correção das contagens, janela da fila, constantes e o `PostError`), `service.ts` (Firestore: leituras das rotas, curtir, comentar, `removeFanEngagement` da exclusão), `sync.ts` (gatilho e tarefa da fila), `panel.ts` (as callables de posts), `errors.ts` (`HttpsError` com `details.reason`), `seed.ts` e `index.ts`.
+- `functions/src/agenda/`: `model.ts` (fuso, visão do show, destaque, o corte `agendaCutoff` e `isEventOpen`, a central que paga a presença, `RSVP_READ_MAX`, `AgendaError`), `service.ts` (leituras, "Eu vou"), `panel.ts` (as callables de shows), `errors.ts`, `seed.ts` e `index.ts`.
+- `functions/src/moderation/`: `model.ts` (motivos, tetos, filtro de bloqueados, `ModerationError`), `service.ts` (denunciar, bloquear, desbloquear, a fila), `panel.ts` (`moderateComment`), `errors.ts` e `index.ts`.
+- `functions/src/staff/panel-actor.ts` (novo): `readPanelActor(read, db, caller, section, need)`, a leitura de `staff/{uid}` que o `artists/service.ts` faz no `readActor`, para uma seção qualquer. As callables novas usam este; o `readActor` dos artistas fica como está (migrar depois, sem pressa).
+- (Implementação) Para não fechar ciclo de import entre os domínios: os caminhos e a leitura do post visível moram em `posts/store.ts` (`readVisiblePost`, que a moderação, o convite e o mural usam), os dos shows e presenças em `agenda/store.ts`, os da moderação em `moderation/store.ts`, e os tetos do dia sobre a carteira em `moderation/caps.ts` (`enforceDailyCap` e `countDailyAction`). O cursor das listas (`page-cursor.ts`) e a janela das filas (`window-task.ts`, `windowTask`, que o `fanCountSyncTask` do bloco 4 passou a usar) ficam na raiz de `functions/src`. A transação de uma ação de fã fora da API, que os seeds do bloco usam, é o `runAsFan` de `points/award.ts`. O `readArtistDetails` das centrais recebe o contador de posts de fora (a rota passa o `countArtistPosts` do mural), porque o mural importa das centrais. A seção que publica (`PANEL_CONTENT_SECTION`) e o `ContentDeps` das callables de conteúdo moram em `posts/panel.ts`.
+
+Os tipos das respostas entram em `api/contract.ts`, espelho de `src/domains/posts/types.ts` e `src/domains/agenda/types.ts`. O `toApiHttpError` traduz `PostError`, `AgendaError` e `ModerationError`, como faz com o `CentralError`.
+
+**Parâmetros comuns.** `cursor` opaco e `limit` de 1 a 50; sem `limit`, o padrão da rota: mural 10, posts da central 12 (quatro linhas da grade), comentários 20, agenda 20. O app não manda `limit`. Fora da faixa, 400 `invalid_request` com `details.field: 'limit'`. Cursor que não decodifica, com instante acima do maior `Timestamp` ou com id fora do formato, é 400 `invalid_request` com `details.field: 'cursor'`, como o do extrato (seção 6). O cursor é o base64url de `[instanteEmMs, id]`: `publishedAt` nos posts, `createdAt` nos comentários e `startsAt` na agenda.
+
+**Ids na rota.** `postId`, `eventId` e `commentId` seguem `^[A-Za-z0-9_-]{1,128}$`, fora dos ids `__.*__`. Fora disso, o recurso não existe: 404 `post_not_found`, `event_not_found` ou `comment_not_found`, como o `artistParam` do bloco 4. `fanId` segue `^[A-Za-z0-9]{1,128}$` (o uid do Auth); fora disso, 404 `fan_not_found`.
+
+**Códigos novos** (já na tabela da seção 1): `post_not_found` 404 "Post não encontrado."; `event_not_found` 404 "Show não encontrado."; `comment_not_found` 404 "Comentário não encontrado."; `fan_not_found` 404 "Fã não encontrado."; `comment_invalid` 400 "Comentário vazio, longo demais ou com caracteres invisíveis.", com `details.reason` `empty`, `too_long` ou `invisible`; `block_list_full` 409 "Você chegou ao limite de fãs bloqueados.". O 429 `too_many_requests` passa a valer também para os tetos de 21.7, com `details: { limit, action }`.
+
+#### `GET /feed`
+
+1. Lista `users/{uid}/centrals` (até 240) e, num `getAll`, os `artists/{id}` dessas centrais. Ficam as publicadas. Nenhuma: `{ "items": [], "nextCursor": null }`.
+2. Em blocos de 30 centrais (o teto do `in`), em paralelo: `posts` com `status == 'published'`, `artistId in [bloco]`, `orderBy('publishedAt', 'desc')`, `orderBy(FieldPath.documentId(), 'desc')`, `startAfter` do cursor e `limit(limit + 1)`.
+3. Junta os blocos na mesma ordem (instante decrescente, depois o id decrescente) e fica com os `limit` primeiros. Sobrou algum: `nextCursor` é o do último que ficou. Como cada bloco traz os `limit + 1` primeiros dele, a junção dá os primeiros do todo.
+4. Num `getAll`: `users/{uid}/postLikes/{postId}` de cada post e `events/{eventId}` dos posts de show.
+5. Monta cada `Post` (abaixo). As centrais já foram lidas no passo 1.
+
+Custo, com um fã de 10 centrais: 10 vínculos, 10 centrais, até 11 posts, 10 curtidas e os shows dos posts de show, perto de 45 leituras por página. A leitura não exige o perfil (seção 1).
+
+#### `GET /artists/:artistId/posts`
+
+Central que não existe ou não está no ar: 404 `artist_not_found`. Senão, `posts` com `artistId == id`, `status == 'published'`, a mesma ordem e o mesmo cursor, `limit + 1`; depois as curtidas do fã e os shows, num `getAll`. Não exige ser membro.
+
+#### `GET /posts/:postId`
+
+Lê o post; depois, num `getAll`, a central dele, a curtida do fã e o show (post de show). Post que não existe, que não está no ar ou de central fora do ar: 404 `post_not_found`. Para o `commentCount` do detalhe, lê também os comentários do próprio fã nesse post (`authorUid == uid`, `orderBy('createdAt', 'desc')`, `limit(5)`) e soma os visíveis mais novos que a cópia (21.6). Não exige ser membro.
+
+O `Post`, igual nas três rotas:
+
+```json
+{
+  "id": "p-clipe",
+  "kind": "video",
+  "artist": {
+    "id": "nettobrito",
+    "name": "Netto Brito",
+    "verified": true,
+    "photoURL": "https://.../thumb-...-480.webp?alt=media&token=..."
+  },
+  "text": "Saiu o clipe de “Sonho de Amor”, gravado no São João de Irará.",
+  "media": {
+    "url": null,
+    "thumbnailUrl": null,
+    "width": 1920,
+    "height": 1080
+  },
+  "event": null,
+  "createdAt": "2026-10-05T13:00:00.000Z",
+  "likeCount": 3,
+  "commentCount": 4,
+  "likedByMe": false,
+  "sharePointsPerVisit": 2
+}
+```
+
+- `artist`: `name` e `verified` de `artists/{id}`; `photoURL` é o `thumb.url` ou `null`.
+- `media`: foto, `{ url: photo.url, thumbnailUrl: thumb.url, width: photo.width, height: photo.height }`; vídeo, o mesmo com a capa e `url` do mp4 (ou `null` sem o arquivo); texto e show, `null`. Foto ou vídeo sem mídia gravada (só o seed publica assim, como o clipe do exemplo acima) responde `{ url: null, thumbnailUrl: null, width, height }` com as medidas padrão das callables (foto 1080x1350, vídeo 1920x1080), o mesmo formato das fixtures (`mediaOf` em `posts/fixtures.ts`), e nunca `null`: o app decide a miniatura pela mídia (`withThumbnail` da `PostRow`, a mídia e a marca de vídeo da `PostContent`, o play da `PostGridRow`) e mostra o placeholder da marca pelo id quando a URL é nula. Com `media: null`, o clipe do seed sairia sem miniatura na 1b e como texto na grade da 1d.
+- `event`: só no post de show, com o show no ar e não encerrado: `{ id, title, startsAt, city: "<cidade>, <UF>" }` (o `PostEvent` do app, que mostra "Aracaju, SE"). Senão, `null`.
+- `createdAt`: o `publishedAt` (o "há 2 h" do mural é desde a publicação).
+- `likeCount` e `commentCount`: as cópias, com a correção de quem chama (21.6).
+- `likedByMe`: a curtida do fã existe e está ativa (`liked: true`).
+- `sharePointsPerVisit`: `values.invite_visit` da configuração (cache de 60 s), ou `null` quando é 0. O app usa o `pointsPerVisit` do convite para o "+N" e este campo só para saber se o compartilhar rende (20.11).
+
+#### `GET /posts/:postId/comments`
+
+1. Lê o post e a central, como no detalhe (404 `post_not_found`).
+2. Lê `blockLists/{uid}` (uma leitura).
+3. `posts/{postId}/postComments` com `status == 'visible'`, `orderBy('createdAt', 'desc')`, `orderBy(FieldPath.documentId(), 'desc')`, `startAfter` do cursor e `limit(limit + 1)`. Tira os de autores bloqueados. Faltando para encher a página, busca de novo a partir do último lido, até 5 rodadas. `nextCursor` é o do último comentário lido (mostrado ou não) quando ainda há mais, senão `null`. A página pode sair menor que o `limit` e, com muitos comentários seguidos de bloqueados, até vazia com `nextCursor`: o app pede a seguinte sozinho nesse caso (21.13), porque a lista não cresceu e o fim dela não dispara de novo.
+
+```json
+{
+  "items": [
+    {
+      "id": "seed-c-clipe-bia",
+      "postId": "p-clipe",
+      "authorId": "<uid da Bia>",
+      "authorName": "Bia Santos",
+      "authorAvatarUrl": null,
+      "authorIsArtist": false,
+      "text": "Já mandei pro grupo da família inteira, Irará em peso! 💃",
+      "createdAt": "2026-10-05T14:00:00.000Z"
+    }
+  ],
+  "nextCursor": null
+}
+```
+
+`authorId` é o uid de quem escreveu: o app compara com o uid da sessão ("Você") e o usa como semente do avatar e no bloqueio. `authorIsArtist` é sempre `false` neste bloco (a resposta do artista pelo painel é pergunta, 21.16).
+
+#### `POST /posts/:postId/comments`
+
+Corpo `{ "text": "..." }`. O `validate` da rota limpa e confere o texto (`parseCommentText`, 21.1 decisão 20): sem texto depois da limpeza, 400 `comment_invalid` com `reason: 'empty'`; acima de 500, `too_long`; linha com invisível ou controle, `invisible`. Responde o comentário gravado, no formato da lista, com `pointsAwarded` (o `AddCommentResult` do app). O nome e a foto saem do perfil do fã, lido na transação, e nunca do corpo; perfil sem nome grava `authorName: 'Fã'`, o mesmo `post.comments.fallbackName` do app.
+
+#### `PUT` e `DELETE /posts/:postId/like`
+
+Sem corpo. Respondem `{ "pointsAwarded": 0 }` (o `PointsAward`). Curtir o que já está curtido e descurtir o que não está (sem documento, ou com `liked: false`) são sucesso sem efeito. Curtir post invisível: 404 `post_not_found`. Descurtir vale em qualquer status do post.
+
+#### `POST /posts/:postId/comments/:commentId/report`
+
+Corpo `{ "reason": "spam" }`, com `reason` em `spam`, `offensive`, `harassment` e `other`, ou `null` (ausente vale `null`). Outro valor: 400 `invalid_request` com `details.field: 'reason'`. Responde `{ "commentId": "...", "status": "reported" }`, ou `"already_reported"` quando o fã já denunciou este comentário (sem efeito). Comentário que não existe, oculto ou de post invisível: 404 `comment_not_found`. O próprio comentário: 400 `invalid_request` com `details.reason: 'own_comment'` (o app nunca mostra a opção nele).
+
+#### `PUT` e `DELETE /me/blocks/:fanId`
+
+Sem corpo. Respondem `{ "fanId": "...", "blocked": true }` (ou `false` no `DELETE`). Bloquear quem já está bloqueado e desbloquear quem não está são sucesso sem efeito. O próprio uid: 400 `invalid_request` com `details.reason: 'self'`. Fã sem `users/{fanId}`: 404 `fan_not_found` (o desbloqueio não confere, para tirar da lista uma conta excluída). Lista cheia (1.000): 409 `block_list_full`.
+
+#### `GET /agenda`
+
+Sem `artistId`: `events` com `status == 'published'`, `startsAt >= agendaCutoff(agora)` (o começo do dia de hoje em São Paulo, 21.1 decisão 14), `orderBy('startsAt')`, `orderBy(FieldPath.documentId())`, `startAfter` do cursor e `limit + 1`. Na primeira página (sem cursor), também o destaque: a mesma consulta, com o mesmo corte, `featured == true` e `limit(1)`; assim o destaque que o servidor manda nunca é um que o app já considera passado. Com `artistId`: central que não existe ou fora do ar dá 404 `artist_not_found`; a consulta ganha `artistIds array-contains <id>`, e `featured` é sempre `null` (é o que a aba Agenda da 1d já espera). Depois, num `getAll`, as centrais citadas na página e no destaque.
+
+```json
+{
+  "featured": {
+    "id": "sao-joao-irara",
+    "title": "São João de Irará",
+    "artists": [
+      { "id": "nettobrito", "name": "Netto Brito" },
+      { "id": "nenho", "name": "Nenho" }
+    ],
+    "city": "Irará",
+    "state": "BA",
+    "startsAt": "2026-11-22T01:00:00.000Z",
+    "imageUrl": null,
+    "invitePointsPerSignup": 10,
+    "venue": null
+  },
+  "items": [],
+  "nextCursor": null
+}
+```
+
+- `artists`: só as centrais no ar, na ordem do show, com o `name` delas. Show sem central no ar sai com `[]`, e o app já tem o texto sem artistas (`agenda.metaNoArtists`).
+- `imageUrl`: o `photo.url` do show, ou `null` (o app mostra o bloco ciano).
+- `invitePointsPerSignup`: `values.invite_signup` da configuração, ou `null` quando é 0.
+- `venue`: o local, ou `null`. Campo novo, opcional no app, guardado mas ainda não mostrado (pergunta 5 de 21.16).
+- O destaque pode vir também em `items`, na data dele; a tela não o repete (como hoje).
+
+#### `GET /me/rsvps`
+
+Lê `users/{uid}/eventRsvps` até o fim, com o teto alto `RSVP_READ_MAX` (1.000 documentos, em `agenda/model.ts`), em `orderBy('updatedAt', 'desc')` (o índice automático), fica com os de `going: true` e, num `getAll`, lê os shows deles. Responde `{ "eventIds": [...] }` só com os shows no ar e não encerrados. Fã sem presença: `{ "eventIds": [] }`. Um corte menor (o `limit(100)` do primeiro desenho) perdia a presença de um show distante confirmada há tempo, e o app mostrava o "Eu vou" desligado enquanto o servidor respondia "já confirmado" sem efeito. Limite aceito: só um fã com mais de 1.000 trocas de presença depois de confirmar um show perde aquela presença na resposta (os shows vão até 2 anos à frente, e o teto é 50 por dia); a presença continua gravada, e o "Eu vou" do servidor continua certo. Guardar o `startsAt` na presença e consultar por ele foi descartado: o `updateEvent` teria de reescrever todas as presenças do show a cada troca de data.
+
+#### `PUT` e `DELETE /events/:eventId/rsvp`
+
+Sem corpo. Respondem o `RsvpResult`: `{ "eventId": "...", "going": true, "pointsAwarded": 0 }` (ou `going: false` e 0 no `DELETE`). Confirmar o que já está confirmado e desfazer o que não está (sem documento, ou com `going: false`) são sucesso sem efeito. Confirmar show que não existe, fora do ar ou encerrado (começou antes do corte de 21.1, decisão 14): 404 `event_not_found`, com `details.reason` `missing` ou `ended`. Desfazer vale em qualquer status do show.
+
+#### `GET /artists/:artistId` e `PUT /me/invite/links/:linkId`
+
+- `postCount` passa a ser o `count()` dos posts no ar da central (`artistId == id`, `status == 'published'`), lido em paralelo com o resto (`countArtistPosts`, em `posts/service.ts`). Sem o índice (só em produção), a contagem falha com o código 9: vale 0, com `logger.error` e a mensagem do link do índice, como a soma do "PTS DA CENTRAL" (19.7).
+- O link `post:<id>` lê o post no mesmo `getAll` do `recordInviteLink` e, numa segunda leitura, a central dele; post invisível responde `created: false`, fora do teto do dia e dos agregados, como a central fora do ar no link `artist:<id>`. A origem `post` do claim e da visita continua sem conferência (20.2).
+
+Todas as que gravam exigem `Idempotency-Key`, rodam no `runIdempotent` com o `requireFan` (perfil exigido, atividade marcada) e respondem 200.
+
+### 21.3 Coleções e campos
+
+```
+posts/{postId} {
+  artistId: string                   // a central (o @); não muda depois de criado
+  kind: 'photo' | 'video' | 'text' | 'event'   // não muda depois de criado
+  text: string                       // a legenda, várias linhas visíveis: 1 a 2.000 no texto e no show,
+                                     // 0 a 2.000 na foto e no vídeo (foto sem legenda)
+  media: {
+    photo: { url, path, width, height }   // foto, ou a capa do vídeo
+    thumb: { url, path, width, height }   // miniatura do mural e da grade
+    video: { url, path, size } | null     // só no vídeo; video/mp4
+  } | null                           // null em texto e show, e na foto ou vídeo ainda sem mídia
+  eventId: string | null             // só no show; um show que tem a central do post
+  status: 'draft' | 'published' | 'unpublished'
+  publishedAt: Timestamp | null      // primeira publicação; a ordem do mural. Nulo: nunca foi ao ar
+                                     // (só esse se apaga, deletePost)
+  likeCount: number                  // cópia da soma dos shards (fila syncPostCounts)
+  commentCount: number               // cópia, só os visíveis
+  countsAt: Timestamp | null         // o instante da leitura dos shards copiada
+  createdAt: Timestamp
+  updatedAt: Timestamp               // edições da equipe; a fila não mexe
+  createdBy: string                  // uid da equipe; o fã nunca lê este documento
+  updatedBy: string
+  schemaVersion: 1
+}
+
+posts/{postId}/postComments/{commentId} {
+  postId: string
+  artistId: string                   // cópia do post, para os agregados e o painel
+  authorUid: string
+  authorName: string                 // cópia do perfil na hora (21.1, decisão 9)
+  authorPhotoURL: string | null
+  text: string                       // já limpo (21.1, decisão 20)
+  status: 'visible' | 'hidden'       // hidden: ocultado pela equipe (Moderação)
+  createdAt: Timestamp               // o "agora" do pedido
+  countedAt: Timestamp               // (implementação) serverTimestamp do commit que o pôs na contagem
+                                     // (comentar, ou o restore da equipe); compara com o countsAt (21.6)
+  hiddenAt: Timestamp | null
+  hiddenBy: string | null            // uid da equipe
+  schemaVersion: 1
+}
+
+postStats/{postId}/countShards/{0..15} {
+  likes: number                      // soma de +1 e -1; um shard sozinho pode ficar negativo
+  comments: number
+  updatedAt: Timestamp
+}
+
+events/{eventId} {
+  title: string                      // 1 a 80, uma linha visível
+  artistIds: string[]                // 1 a 6 centrais, sem repetir; a primeira é a principal
+  city: string                       // 1 a 60, uma linha visível
+  state: string                      // UF, uma das 27 (BRAZIL_STATE_NAMES do app)
+  venue: string | null               // o local, 1 a 80, uma linha visível
+  startsAt: Timestamp                // o instante do começo
+  startsAtLocal: string              // "2026-11-21T22:00", como a equipe digitou
+  timeZone: string                   // "America/Bahia", um de BRAZIL_TIME_ZONES
+  photo: { url, path, width, height } | null
+  featured: boolean
+  status: 'draft' | 'published' | 'unpublished'
+  publishedAt: Timestamp | null      // nulo: nunca foi ao ar (só esse se apaga, deleteEvent)
+  createdAt, updatedAt: Timestamp
+  createdBy, updatedBy: string
+  schemaVersion: 1
+}
+
+users/{uid}/postLikes/{postId} {     // nasce na primeira curtida e fica (21.1, decisão 8)
+  uid: string
+  postId: string
+  artistId: string
+  liked: boolean                     // o estado de agora; descurtir grava false
+  firstLikedAt: Timestamp            // a primeira curtida; o bloco 7 conta só ela
+  updatedAt: Timestamp               // a última troca de estado (o "agora" do pedido)
+  countedAt: Timestamp               // (implementação) serverTimestamp do commit da última troca;
+                                     // compara com o countsAt (21.6)
+  schemaVersion: 1
+}
+
+users/{uid}/eventRsvps/{eventId} {   // nasce no primeiro "Eu vou" e fica
+  uid: string
+  eventId: string
+  going: boolean                     // o estado de agora; desfazer grava false
+  artistIds: string[]                // as centrais no ar do show na última confirmação, para os
+                                     // agregados do desfazer
+  firstGoingAt: Timestamp            // a primeira confirmação; o bloco 7 conta só ela
+  updatedAt: Timestamp               // a última troca de estado
+  schemaVersion: 1
+}
+
+commentReports/{commentId}_{reporterUid} {
+  commentId: string
+  postId: string
+  artistId: string
+  commentAuthorUid: string
+  reporterUid: string
+  reason: 'spam' | 'offensive' | 'harassment' | 'other' | null
+  day: string                        // dia de São Paulo
+  createdAt: Timestamp
+  schemaVersion: 1
+}
+
+moderationQueue/{commentId} {        // um item por comentário denunciado
+  commentId: string
+  postId: string
+  artistId: string
+  authorUid: string
+  commentText: string | null         // cópia na primeira denúncia; null depois que o autor excluiu a conta
+  commentCreatedAt: Timestamp
+  reportCount: number                // denúncias que existem (a exclusão de quem denunciou desconta)
+  reasons: { spam, offensive, harassment, other, none }   // contagem por motivo
+  status: 'open' | 'resolved'
+  resolution: 'hidden' | 'kept' | 'author_deleted' | 'withdrawn' | null
+                                     // withdrawn: aberto e sem denúncia, depois que quem denunciou
+                                     // excluiu a conta (21.12)
+  firstReportedAt: Timestamp
+  lastReportedAt: Timestamp
+  resolvedAt: Timestamp | null
+  resolvedBy: { uid: string, name: string } | null
+  schemaVersion: 1
+}
+
+blockLists/{uid} {                   // quem este fã bloqueou; só o servidor lê
+  uid: string
+  blocked: string[]                  // uids, até 1.000 (BLOCK_LIST_MAX)
+  updatedAt: Timestamp
+  schemaVersion: 1
+}
+```
+
+- Ninguém grava nada disso pelo cliente. Post, show e o status do comentário mudam só pelas callables (21.9); o resto, só pela API e pela exclusão de conta.
+- Ids do comentário: automáticos (`posts/{postId}/postComments` com `doc()`), novos a cada tentativa da transação, e únicos no banco todo. O seed usa ids fixos com o prefixo `seed-c-`. Por isso a fila e a denúncia usam só o `commentId`.
+- `FanContext` (seção 5) ganha `displayName: string | null` e `photoURL: string | null`, tirados do perfil que o `requireFan` já leu: o comentário não lê o perfil de novo.
+- Carteira: `days[dia].count` ganha as chaves que não rendem ponto dos tetos de 21.7 (`DailyActionKey` de `points/model.ts`): `like_set`, `comment_sent`, `rsvp_set`, `comment_report` e `fan_block`. Contam só com o fã como ator; o seed (sistema) não conta.
+- Agregados: o `ShardDelta` (`points/stats.ts`) ganha em `totals` e em cada `byArtist[id]` os fluxos `likes`, `unlikes`, `comments`, `rsvps`, `rsvpsUndone` e `reports`, e só em `totals` o `blocks` (21.10).
+- Contrato, no app e no `contract.ts`: `Post`, `PostComment` (sem `status` e `localId`, que são só do app), `Page`, `PointsAward`, `AddCommentResult`, `AgendaEvent` (com `venue?: string | null`, novo e opcional), `AgendaPage`, `MyRsvps` e `RsvpResult`, como estão. Novos: `CommentReportReason = 'spam' | 'offensive' | 'harassment' | 'other'`, `ReportCommentBody { reason: CommentReportReason | null }`, `ReportCommentResult { commentId: string; status: 'reported' | 'already_reported' }` e `BlockFanResult { fanId: string; blocked: boolean }`. O comentário do topo de `posts/types.ts` e de `agenda/types.ts` deixa de chamar o contrato de provisório.
+
+### 21.4 Transações passo a passo
+
+A ordem é a de sempre (seção 5): chave e fã (`runIdempotent`), leituras do domínio, `planAwards`, gravações do domínio. Depois, o `runIdempotent` grava o plano e a chave. O shard das contagens do post é `award.shard % 16` (`POST_SHARD_COUNT`), o mesmo sorteio do shard do painel, de novo a cada tentativa, como o do `fanCount`. Gravação sem leitura: `tx.set(ref, { likes: FieldValue.increment(±1), updatedAt }, { merge: true })`.
+
+O núcleo de cada ação mora no `service.ts` do domínio e recebe `(tx, db, { fan, award, ... })`, para as rotas e o seed usarem o mesmo caminho (`runLikePost`, `runComment`, `runRsvp` e `runReport` abrem a transação fora da API, com o `requireFan` sem marca de atividade, como o `runJoinCentrals`).
+
+**Curtir** (`likePost`):
+
+1. `getAll`: `posts/{postId}` e `users/{uid}/postLikes/{postId}`. Depois, `artists/{artistId}` do post.
+2. Post invisível (não existe, não está no ar ou a central não está no ar): `PostError('post_not_found')`.
+3. Já curtido (`liked: true`): `planAwards` sem lançamentos (só a atividade) e responde 0.
+4. Teto: com o fã como ator e `days[hoje].count.like_set` em 300 (`LIKES_PER_DAY`), `DailyCapError('like', LIKES_PER_DAY, segundos até a meia-noite)`, que o `toApiHttpError` traduz para 429 com `details: { limit, action }` e `Retry-After`, como o `too_many_entries` do bloco 4. Os outros tetos usam o mesmo erro.
+5. `planAwards` com `{ kind: 'earn', source: 'like', eventId: postId, artistId, subject: { type: 'post', id: postId } }`. Na curtida de novo (documento com `liked: false`), o mesmo: o extrato `like:<postId>` impede pagar duas vezes (21.5).
+6. Sem documento, `tx.create` da curtida (`liked: true`, `firstLikedAt` e `updatedAt` com o `award.now`, e `countedAt` com o `serverTimestamp`); com `liked: false`, `tx.update` de `liked: true`, `updatedAt` e `countedAt` (o `firstLikedAt` fica). Nos dois, `+1` em `likes` no shard do post; `addEngagementCounts(plan, [{ kind: 'like', artistIds: [artistId] }])`; `addDailyCount(plan, fan, 'like_set')`.
+7. Responde `{ pointsAwarded: plan.pointsAwarded }`.
+
+**Descurtir** (`unlikePost`): lê a curtida; `planAwards` vazio; com `liked: true`, `tx.update` de `liked: false`, `updatedAt` e `countedAt`, `-1` em `likes` no shard e `unlike` nos agregados, com o `artistId` da própria curtida. Sem documento ou com `liked: false`, nada além da atividade. Não lê o post: vale em qualquer status. Não mexe em ponto.
+
+**Comentar** (`commentOnPost`):
+
+1. O texto já veio limpo do `validate`.
+2. Lê o post e a central, como no curtir; invisível, 404.
+3. Teto: `comment_sent` em 100 (`COMMENTS_PER_DAY`), 429.
+4. `ref = posts/{postId}/postComments.doc()`. O `runComment` do seed passa um id fixo (`seed-c-...`) e o comentário entra no `getAll` do passo 2: se ele já existe, sai sem efeito, sem plano. Sem essa leitura, rodar o seed de novo faria o `tx.create` falhar com `ALREADY_EXISTS` nas duas tentativas do `retryOnAlreadyExists`. A rota nunca passa id.
+5. `planAwards` com `{ kind: 'earn', source: 'comment', eventId: ref.id, artistId, subject: { type: 'comment', id: ref.id } }`. Passou do limite diário de `comment` (padrão 20): o comentário entra e rende 0.
+6. `tx.create` do comentário (`status: 'visible'`, `authorName` e `authorPhotoURL` do `FanContext`, `countedAt` com o `serverTimestamp`); `+1` em `comments` no shard; `comment` nos agregados; `addDailyCount(plan, fan, 'comment_sent')`.
+7. Responde o comentário com `pointsAwarded`.
+
+**Denunciar** (`reportComment`, em `moderation/service.ts`):
+
+1. `getAll`: o post, o comentário, `commentReports/{commentId}_{uid}` e `moderationQueue/{commentId}`. Depois, a central do post.
+2. Post invisível, comentário que não existe ou oculto: `ModerationError('comment_not_found')`.
+3. O autor é quem chama: 400 com `reason: 'own_comment'`.
+4. A denúncia existe: `already_reported`, sem plano (fica a atividade).
+5. Teto: `comment_report` em 30 (`REPORTS_PER_DAY`), 429.
+6. `planAwards` vazio.
+7. `tx.create` da denúncia. Fila: sem item, `tx.create` com o texto copiado, `reportCount: 1`, o motivo contado (`none` para `null`), `status: 'open'`; com item, `tx.update` com `reportCount` e o motivo mais 1 e `lastReportedAt`; item `resolved` com `resolution` `kept` ou `withdrawn` volta a `open` (`resolution: null`, `resolvedAt` e `resolvedBy` nulos). `report` nos agregados; `addDailyCount(plan, fan, 'comment_report')`.
+8. Responde `reported`.
+
+**Bloquear** (`blockFan`):
+
+1. O `fanId` é o próprio uid: 400 com `reason: 'self'`.
+2. `getAll`: `blockLists/{uid}` e `users/{fanId}`. Sem o perfil do outro: 404 `fan_not_found`.
+3. Já está na lista: sucesso sem efeito (só a atividade).
+4. Lista com 1.000: 409 `block_list_full`. Teto: `fan_block` em 30 (`BLOCKS_PER_DAY`), 429.
+5. `planAwards` vazio; `tx.set` de `blockLists/{uid}` com a lista lida mais o `fanId` (a lista inteira, não `arrayUnion`: a transação já a leu); `block` nos agregados; `addDailyCount(plan, fan, 'fan_block')`.
+
+**Desbloquear** (`unblockFan`): lê a lista; com o `fanId` nela, grava a lista sem ele. Sem teto e sem agregado.
+
+**Confirmar presença** (`rsvpEvent`, em `agenda/service.ts`):
+
+1. `getAll`: `events/{eventId}` e `users/{uid}/eventRsvps/{eventId}`. Depois, num `getAll`, `artists/{id}` de cada central do show (até 6).
+2. Show que não existe ou fora do ar: `AgendaError('event_not_found', { reason: 'missing' })`; encerrado (`startsAt < agendaCutoff(agora)`, `isEventOpen`, 21.1 decisão 14): `reason: 'ended'`.
+3. Já confirmado (`going: true`): responde `going: true` e 0, sem plano.
+4. Teto: `rsvp_set` em 50 (`RSVPS_PER_DAY`), 429.
+5. As centrais no ar do show, na ordem dele (`published`). `planAwards` com `{ kind: 'earn', source: 'rsvp', eventId, artistId: <a primeira delas>, subject: { type: 'event', id: eventId } }`; sem nenhuma no ar, sem `artistId` (paga sem central).
+6. Sem documento, `tx.create` da presença (`going: true`, `firstGoingAt` e `updatedAt` com o `award.now`, `artistIds` com as centrais no ar); com `going: false`, `tx.update` de `going: true`, `updatedAt` e `artistIds` (o `firstGoingAt` fica). Nos dois, `rsvp` nos agregados de cada central no ar do show; `addDailyCount(plan, fan, 'rsvp_set')`.
+7. Responde `{ eventId, going: true, pointsAwarded }`.
+
+**Desfazer a presença** (`unrsvpEvent`): lê a presença; com `going: true`, `tx.update` de `going: false` e `updatedAt`, e `rsvpsUndone` nos agregados das centrais copiadas nela. Não lê o show nem as centrais. Responde `going: false` e 0.
+
+Custo: curtir que paga numa central, 9 leituras (chave, perfil, carteira, post, curtida, central, temporada, extrato, pontos da central) e até 8 gravações (curtida, shard do post, shard do painel, carteira, extrato, pontos da central, chave e o comentário, no comentar). Curtir que rende 0 grava a curtida, os dois shards, a carteira (o contador do teto) e a chave. O "Eu vou" lê também as centrais do show, até 6. A carteira passa a ser gravada em toda curtida, comentário, presença, denúncia e bloqueio novos, pelo contador do teto: é um documento do fã, sem disputa.
+
+Concorrência: muitos fãs curtindo o mesmo post gravam em 16 shards, e todos leem `posts/{postId}` na transação. A cópia vai por fila (21.6) justamente para o documento do post receber no máximo uma gravação a cada 10 s, e o teto ficar nos shards: perto de 16 curtidas ou comentários por segundo no mesmo post, sustentados. A leitura do post fica na transação de propósito, como a da central no bloco 4: é ela que põe em ordem a curtida e o `setPostStatus`. Sinal: `unavailable` nos logs da `api` nessas rotas. Primeiro passo: subir `POST_SHARD_COUNT`, porque quem soma lista a subcoleção. Dois pedidos do mesmo fã (curtir e descurtir em sequência, com chaves diferentes) disputam a curtida e a carteira; um repete, e o app já manda os dois em ordem (`scope`).
+
+### 21.5 Idempotência e o evento de pontos
+
+- Pedido: a `Idempotency-Key` de sempre. O app já manda no curtir, no comentar e no "Eu vou" (`createIdempotencyKey()` nas variáveis, a mesma nas novas tentativas da fila), e passa a mandar na denúncia e no bloqueio, com a chave da tentativa (21.13).
+- Negócio: `like:<postId>` uma vez na vida por fã e post; `comment:<commentId>` uma vez por comentário (o id muda a cada comentário novo, e uma repetição com a mesma chave devolve a resposta guardada, com o mesmo id); `rsvp:<eventId>` uma vez por fã e show. A curtida e a presença são idempotentes também pelo estado: o documento nasce uma vez e fica, e o shard, os fluxos e o teto só mexem quando o estado troca. A denúncia e o bloqueio, por existir ou não.
+- Missões (bloco 7): a curtida e a presença guardam a primeira vez (`firstLikedAt`, `firstGoingAt`), e só a ação que cria o documento é a primeira. É o que o bloco 7 lê para contar só a primeira curtida de cada post e a primeira presença de cada show, como as fixtures (`missionsFixture.record('like')` só na primeira curtida).
+- Valores e limites de `config/points`: `like` 0 e 50 por dia, `comment` 2 e 20, `rsvp` 0 e 10 (seção 4). Os tetos de 21.7 são outra coisa: contam ações, pagas ou não, e recusam.
+- A curtida que rendeu 0 não grava extrato. Se a cliente subir o valor de curtir, o fã que já curtiu e descurte e curte de novo ganha a curtida uma vez. É o comportamento combinado da seção 5 (limites diários), e não dá para pagar duas vezes.
+
+### 21.6 Contagens: shards, o gatilho e a fila `syncPostCounts`
+
+Duas funções em `posts/sync.ts`, exportadas em `functions/src/index.ts` depois do `setGlobalOptions`, sem dependência nova, no molde de 19.6:
+
+- **Gatilho `queuePostCountSync`:** `onDocumentWritten('postStats/{postId}/countShards/{shard}', { retry: true })`. Põe na fila `syncPostCounts` (`locations/southamerica-east1/functions/syncPostCounts`) a tarefa da janela da gravação: id `postcounts-<postId>-<janela de 10 s>` e `scheduleTime` 1 s depois do fim da janela, pelo `event.time`. Id repetido é ignorado; outro erro lança; `postId` fora do formato vai para o `logger.error` sem lançar. No emulador (`FUNCTIONS_EMULATOR`), sem id e sem horário, uma tarefa por gravação.
+- **Tarefa `syncPostCounts`:** `onTaskDispatched({ retryConfig: { maxAttempts: 5, minBackoffSeconds: 10 } })`. Soma `likes` e `comments` dos shards fora de transação (soma negativa vira 0, com `logger.error`) e, numa transação que lê `posts/{postId}`, copia `likeCount`, `commentCount` e `countsAt` (o `readTime` da leitura) quando a leitura é mais nova que o `countsAt` gravado, com a precisão de microssegundos do `exactMillis`. Post que não existe: não grava. Não mexe no `updatedAt`.
+- O cálculo da janela (`fanCountSyncTask`) sai de `centrals/model.ts` para uma função comum, `windowTask(prefix, id, eventTime)`, usada pelas duas filas. O comportamento do bloco 4 não muda, e os testes dele continuam iguais.
+
+**Correção para quem chama** (`viewCounts`, puro, em `posts/model.ts`), a mesma ideia do `memberFanCount` (19.2):
+
+- `likeCount`: a cópia, mais 1 quando a curtida do fã está ativa (`liked: true`) e o `countedAt` dela é depois do `countsAt` (ou não há `countsAt`). Vale nas três rotas de post, que já leem a curtida do fã.
+- `commentCount`, só no detalhe: a cópia, mais os comentários visíveis do próprio fã nesse post com o `countedAt` depois do `countsAt` (a consulta de até 5 de `GET /posts/:postId`). Nas listas, a cópia: depois de comentar, o app soma 1 em todo cache (`commitComment`) e busca de novo só o detalhe.
+- (Implementação, depois da revisão) A comparação usa o `countedAt`, o `serverTimestamp` do commit da curtida ou do comentário, e não o `updatedAt` ou o `createdAt`, que guardam o `award.now`: o começo do pedido, igual em toda tentativa da transação. O `countsAt` é o `readTime` da leitura dos shards, do mesmo relógio do commit. Uma cópia que lê os shards entre o começo do pedido e o commit não tem a ação e fica com o `countsAt` depois do `award.now`: com o `updatedAt`, o fã que curtiu recebia `likedByMe: true` com a contagem sem a curtida dele por uns 10 s, e isso acontece em post popular (a cópia grava em `posts/{id}`, que a curtida lê na transação, e a curtida repetida grava depois da leitura). Commit e leitura no mesmo instante: a leitura já vê o commit, e a correção não soma. O `restore` da equipe também grava o `countedAt` (o comentário volta à contagem ali). Documento sem `countedAt` (gravado à mão) usa o `updatedAt` ou o `createdAt`.
+- Limites aceitos, como no bloco 4: quem descurte logo depois de a cópia contar a curtida vê 1 a mais por uns 10 a 20 s; as ações dos outros fãs aparecem uns 10 a 20 s depois. O comentário ocultado pela equipe sai da contagem pelo mesmo shard (`-1` em `comments`), e o reexibido volta (`+1`).
+
+Custo por curtida ou comentário: uma execução do gatilho e uma chamada ao Cloud Tasks, quase sempre recusada como repetida; por janela de 10 s com mudança, uma tarefa com até 17 leituras e uma gravação.
+
+### 21.7 Antifraude e tetos do dia
+
+| Risco                                               | Barreira                                                                                   |
+| --------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| Pontos repetidos por curtir e descurtir             | `like:<postId>` paga uma vez na vida; descurtir não tira                                   |
+| Comentários em massa por pontos                     | limite diário de `comment` (20 pagos) e o teto de 100 comentários por dia                  |
+| Curtir e descurtir sem parar (fluxos e fila)        | 300 trocas para curtido por dia; descurtir fica preso às curtidas                          |
+| "Eu vou" em massa                                   | `rsvp:<eventId>` paga uma vez por show, 50 trocas para "Eu vou" por dia, só em show aberto |
+| Pontos para central em rascunho pelo "Eu vou"       | paga e soma só nas centrais do show que estão no ar, lidas na transação                    |
+| Denúncias em massa contra um fã                     | uma por fã e comentário, 30 por dia, só com perfil; nada é ocultado sozinho pelo número    |
+| Bloqueios em massa                                  | 30 por dia e lista de até 1.000                                                            |
+| Comentário com texto invisível ou que quebra a tela | a limpeza e a validação de 21.1 (decisão 20), no app e no servidor                         |
+| Ação em post ou show fora do ar                     | o post e a central (ou o show) lidos na transação                                          |
+| Conta excluída que ainda tem token                  | o `requireFan` em toda gravação (seção 1)                                                  |
+
+Os tetos ficam em constantes de `moderation/model.ts` (`LIKES_PER_DAY`, `COMMENTS_PER_DAY`, `RSVPS_PER_DAY`, `REPORTS_PER_DAY`, `BLOCKS_PER_DAY` e `BLOCK_LIST_MAX`), com o `DailyCapError` e a conta do `Retry-After`, que os três domínios usam; se o painel quiser ajustar, vão para `config/points`, ao lado dos limites diários. Nenhum fã de verdade chega perto. No app, o 429 é o kind `unknown`: a curtida desfaz e avisa, o comentário fica "Não enviado", e a sheet mostra o erro. Sem App Check, como no bloco 1.
+
+### 21.8 Moderação
+
+Provisória até as regras da cliente (UP-48). O que existe neste bloco:
+
+- **Denúncia** de um comentário de outro fã, uma vez por fã, com motivo opcional (`spam`, `offensive`, `harassment`, `other` ou nenhum). A denúncia não esconde o comentário de ninguém. A tela oferece também bloquear o autor, que esconde os comentários dele para quem denunciou.
+- **Fila** em `moderationQueue/{commentId}`: um item por comentário, com a cópia do texto, quantas denúncias e por qual motivo, e o estado. A seção Moderação do painel lista os itens `open` por `lastReportedAt`, decrescente (índice em 21.11), lê as denúncias de um item (`commentReports` com `commentId == ...`) e o comentário e o post (as regras de 21.11 abrem `posts` para a seção `moderation`).
+- **Ação da equipe** pela callable `moderateComment` (21.9), com a seção `moderation`: `hide` (o comentário some para todos, sai da contagem, e o item vai a `resolved` com `hidden`), `keep` (só em comentário visível: o item vai a `resolved` com `kept`; uma denúncia nova o reabre; em comentário oculto é recusado com `comment-hidden`, porque deixaria o item "mantido" com o comentário escondido, e para isso existe o `restore`) e `restore` (o oculto volta, entra na contagem de novo, e o item fica `resolved` com `kept`). Ocultar não tira os pontos do comentário: o ajuste manual da seção Fãs (seção 9) cobre os casos graves.
+- **Bloqueio** unilateral: some para quem bloqueou, em todos os posts, inclusive os comentários antigos; o bloqueado não sabe e continua vendo os comentários de quem o bloqueou. A contagem do post continua a de todos. A lista não aparece no app neste bloco (pergunta 8 de 21.16); a rota de desbloquear já existe. A equipe também não lê as listas (21.1, decisão 22).
+- **O que as lojas pedem e não é código:** a equipe olhar a fila todo dia (a App Store fala em agir em até 24 h), os termos de uso com a regra de conteúdo e o contato da equipe (UP-45). Vai na lista para a cliente.
+
+### 21.9 Callables do painel (contrato para o bloco 11)
+
+No molde de `functions/src/artists`: exportadas no `src/index.ts` depois do `setGlobalOptions`, com `cors: PANEL_ORIGINS`, erro `HttpsError(código, mensagem em pt-BR, { reason })`, o acesso lido de `staff/{uid}` a cada chamada e de novo na transação (`readPanelActor`), e uma entrada em `staffAudit` por mudança (`targetEmail: ''`, `targetUid: null`, o alvo em `details`). Fora da equipe ativa: `not-staff`; sem a seção, ou só leitura numa mudança: `no-section`. Nada mudou: `{ ok: true }` sem gravar nem auditar. As ações novas entram no `AuditAction` de `staff/service.ts`: `post.created`, `post.updated`, `post.published`, `post.unpublished`, `post.deleted`, `event.created`, `event.updated`, `event.published`, `event.unpublished`, `event.deleted`, `comment.hidden`, `comment.kept` e `comment.restored`. A auditoria nunca leva o texto de um comentário.
+
+**Posts** (admin, ou editor com `artists`):
+
+| Callable        | Pedido                                             | Resposta       | Motivos de recusa (`details.reason`)                                                                                                                                                  |
+| --------------- | -------------------------------------------------- | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `createPost`    | `{ artistId, kind, text, eventId? }`               | `{ postId }`   | `invalid-request`, `artist-not-found`, `invalid-kind`, `invalid-text`, `event-not-found`, `event-artist-mismatch`                                                                     |
+| `updatePost`    | `{ postId, text?, eventId?, media? }`              | `{ ok: true }` | `post-not-found`, `invalid-text`, `event-not-found`, `event-artist-mismatch`, `media-not-allowed`, `invalid-media`, `media-not-found`, `published-needs-media`, `event-not-published` |
+| `setPostStatus` | `{ postId, status: 'published' \| 'unpublished' }` | `{ ok: true }` | `post-not-found`, `invalid-status`, `missing-media`, `event-not-published`                                                                                                            |
+| `deletePost`    | `{ postId }`                                       | `{ ok: true }` | `post-not-found`, `was-published`                                                                                                                                                     |
+
+- `createPost` cria o rascunho, com `likeCount` e `commentCount` 0, `countsAt` e `publishedAt` nulos, e devolve o id automático. A central precisa existir (em qualquer status). `kind` é `photo`, `video`, `text` ou `event`, e não muda depois. `text`, depois da limpeza de 21.1 (decisão 20), com o mesmo `cleanMultiline`: de 1 a 2.000 no texto e no show; de 0 a 2.000 na foto e no vídeo, que podem sair sem legenda (`invalid-text`). O app já trata o texto vazio no detalhe (`post.text ? ... : null` na `PostContent`); a linha da 1b ganha o mesmo cuidado (21.13). `eventId` só no `event`, obrigatório nele, de um show que existe e tem a central do post entre os artistas (`event-artist-mismatch`); nos outros tipos, ausente ou `null`.
+- `updatePost`: ausente não muda. `media` só em foto e vídeo (`media-not-allowed` nos outros): `{ photoPath, thumbPath }` na foto; `{ photoPath, thumbPath, videoPath? }` no vídeo (a capa obrigatória, o mp4 opcional); `null` tira, só fora do ar (`published-needs-media`). Os caminhos são arquivos diretos em `posts/{postId}/`, diferentes entre si (`invalid-media`). A função confere no bucket, antes da transação: existe (`media-not-found`), foto e miniatura são `image/(webp|jpeg|png)` e o vídeo é `video/mp4` (`invalid-media`); grava `{ url, path, width, height }` das imagens, com a URL do `getDownloadURL` e as medidas do metadado customizado `width` e `height` (sem eles: foto 1080x1350, miniatura 480x600; capa de vídeo 1920x1080, miniatura 480x270), e `{ url, path, size }` do vídeo. Depois da transação, limpa a pasta `posts/{postId}/` como o `updateArtist` limpa a da central (`removeFiles`, sem travar a resposta). Trocar o show de um post no ar exige o show novo no ar (`event-not-published`).
+- `setPostStatus`: publicar exige a mídia na foto e no vídeo (`missing-media`) e o show no ar no post de show (`event-not-published`). A central pode estar fora do ar: o post aparece quando ela for publicada. A primeira publicação grava `publishedAt`; republicar mantém o primeiro (o post volta para o lugar dele no mural). Tirar do ar não mexe em curtida, comentário nem contagem.
+- `deletePost`: só o post que nunca foi ao ar (`publishedAt` nulo, lido na transação; senão `was-published`, e a equipe tira do ar). Apaga `posts/{postId}` e `postStats/{postId}` (vazio: sem publicação, nenhuma rota grava nele) e, depois da transação, a pasta `posts/{postId}/` no Storage (`removeFiles`, sem travar a resposta, como no `deleteArtist`). Audita `post.deleted` com `artistId` e `kind` em `details`. É o que solta a central de um rascunho criado por engano (21.1, decisões 4 e 23). Admin ou editor com `artists`, como as outras callables de conteúdo: o `deleteArtist` é só do admin porque apaga uma central que pode ter história, e aqui só sai o que nenhum fã viu.
+
+**Shows** (admin, ou editor com `artists`):
+
+| Callable         | Pedido                                                                                                 | Resposta       | Motivos de recusa                                                                                                                                                                      |
+| ---------------- | ------------------------------------------------------------------------------------------------------ | -------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `createEvent`    | `{ title, artistIds, city, state, venue?, startsAtLocal, timeZone, featured? }`                        | `{ eventId }`  | `invalid-request`, `invalid-title`, `invalid-artists`, `artist-not-found`, `invalid-city`, `invalid-state`, `invalid-venue`, `invalid-starts-at`, `invalid-time-zone`, `event-in-past` |
+| `updateEvent`    | `{ eventId, title?, artistIds?, city?, state?, venue?, startsAtLocal?, timeZone?, featured?, photo? }` | `{ ok: true }` | os de cima, mais `event-not-found`, `invalid-photo`, `photo-not-found` e `event-has-posts`                                                                                             |
+| `setEventStatus` | `{ eventId, status: 'published' \| 'unpublished' }`                                                    | `{ ok: true }` | `event-not-found`, `invalid-status`                                                                                                                                                    |
+| `deleteEvent`    | `{ eventId }`                                                                                          | `{ ok: true }` | `event-not-found`, `was-published`, `event-has-posts`                                                                                                                                  |
+
+- `artistIds`: de 1 a 6 @ sem repetir, de centrais que existem (em qualquer status). `state`: uma das 27 UFs. `venue`: opcional, `null` ou vazio limpa. `startsAtLocal`: `YYYY-MM-DDTHH:mm`, uma data que existe. `timeZone`: um de `BRAZIL_TIME_ZONES` (`America/Noronha`, `America/Belem`, `America/Fortaleza`, `America/Recife`, `America/Araguaina`, `America/Maceio`, `America/Bahia`, `America/Sao_Paulo`, `America/Campo_Grande`, `America/Cuiaba`, `America/Santarem`, `America/Porto_Velho`, `America/Boa_Vista`, `America/Manaus`, `America/Eirunepe` e `America/Rio_Branco`). O servidor exporta `DEFAULT_TIME_ZONE_BY_STATE` (BA `America/Bahia`, SE e AL `America/Maceio`, PE `America/Recife`, CE, RN, PB, PI e MA `America/Fortaleza`, PA e AP `America/Belem`, TO `America/Araguaina`, MS `America/Campo_Grande`, MT `America/Cuiaba`, RO `America/Porto_Velho`, RR `America/Boa_Vista`, AM `America/Manaus`, AC `America/Rio_Branco`, o resto `America/Sao_Paulo`), que o painel copia para sugerir o fuso pela UF.
+- O instante sai de `zonedLocalToUtc(startsAtLocal, timeZone)`, puro, em `agenda/model.ts`, só com `Intl.DateTimeFormat` (o deslocamento do fuso naquele instante, calculado duas vezes para cobrir uma mudança de horário). Data mais de 24 h no passado, ao criar ou ao mudar a data, é `event-in-past`; mais de 2 anos à frente é `invalid-starts-at`.
+- `photo`: `{ photoPath }`, um arquivo direto em `events/{eventId}/`, imagem até 5 MB (o painel prepara uma versão em paisagem, 1200x675 sugerida); `null` tira. Conferida e limpa como a mídia do post.
+- `updateEvent` com `artistIds`: na transação, lê os posts que apontam para o show das centrais que saem da lista (`posts` com `eventId == id` e `artistId in` as que saem, até 6, pelos índices automáticos de campo único, até 20 posts) e recusa com `event-has-posts` quando vem algum (`details.postIds` com os ids). (Implementação, depois da revisão) A primeira versão lia os 20 primeiros posts do show, de qualquer central, e filtrava depois: num show com mais de 20 posts, o post da central que sai do 21º em diante passava. Sem isso, a troca quebraria o que o `createPost` garante (`event-artist-mismatch`), e o "Eu vou" do post passaria a pagar outra central. A equipe tira o post do ar e troca o show dele (`updatePost`) antes.
+- `setEventStatus`: publicar não exige foto nem central no ar. Tirar do ar não apaga presenças; o post de show perde a linha do show (21.1, decisão 15).
+- `deleteEvent`: só o show que nunca foi ao ar (`publishedAt` nulo; senão `was-published`) e para o qual nenhum post aponta (`event-has-posts`, com `details.postIds`; a equipe troca o show do post, ou apaga o post se ele também nunca foi ao ar). Apaga `events/{eventId}` e, depois da transação, a pasta `events/{eventId}/`. Audita `event.deleted` com `artistIds` em `details`. Solta as centrais do show (21.1, decisões 4 e 23).
+
+**Moderação** (admin, ou editor com `moderation`):
+
+| Callable          | Pedido                                                         | Resposta               | Motivos de recusa                                                                          |
+| ----------------- | -------------------------------------------------------------- | ---------------------- | ------------------------------------------------------------------------------------------ |
+| `moderateComment` | `{ postId, commentId, action: 'hide' \| 'keep' \| 'restore' }` | `{ ok: true, status }` | `invalid-request`, `comment-not-found`, `invalid-action`, `not-reported`, `comment-hidden` |
+
+- `hide`: na transação, lê o comentário e o item da fila; visível vira `hidden` (`hiddenAt`, `hiddenBy`), `-1` em `comments` num shard do post, e o item (se houver) vai a `resolved` com `hidden`. Já oculto: sem efeito. (Implementação) A auditoria leva em `details` o `postId`, o `commentId`, o `artistId` e o `authorUid`, nunca o texto; o item que já está como pedido (`resolved` com a mesma `resolution`) não é regravado nem auditado.
+- `keep`: o item vai a `resolved` com `kept`. Sem item: `not-reported`. Comentário oculto: `comment-hidden` (21.8; para reexibir, `restore`).
+- `restore`: oculto volta a `visible`, `+1` em `comments`, e o item (se houver) fica `resolved` com `kept`.
+- `status` na resposta é o do comentário depois da ação.
+
+**Storage** (as regras estão em 21.11): `posts/{postId}/{arquivo}` e `events/{eventId}/{arquivo}`, nome novo a cada envio (sugestão: `photo-{ts}-1440.webp`, `thumb-{ts}-480.webp`, `video-{ts}.mp4`), com `cacheControl` de um ano e `width` e `height` no metadado das imagens, como o `uploadArtistPhoto` do painel. Imagem até 5 MB; vídeo `video/mp4` até 50 MB. O documento precisa existir antes do envio, e o tipo do post decide o que entra: foto, só imagem; vídeo, imagem (a capa) ou mp4; texto e show, nada.
+
+**Leituras diretas do painel** (bloco 11), com as regras de 21.11 e sem escuta em tempo real nos posts (a cópia das contagens grava neles a cada 10 s por post com movimento): os posts de uma central (`posts` com `artistId == id`, `orderBy('createdAt', 'desc')`), os shows (`events` por `startsAt`), os comentários de um post, a fila e as denúncias (com o comentário e o post, na Moderação), as curtidas e presenças de um fã (com o post e o show de cada uma, na seção Fãs) e quem vai a um show (grupo `eventRsvps` com `eventId == id` e `going == true`).
+
+### 21.10 Efeitos no painel e agregados
+
+- **Agregados** (`statsShards`, seção 7): `addEngagementCounts(plan, changes)`, em `points/award.ts`, como o `addMembershipCounts`: cria o `plan.shard` quando ele veio `null` e soma, em `totals` e em `byArtist[id]`, `likes`, `unlikes`, `comments`, `rsvps`, `rsvpsUndone` e `reports`, e só em `totals` o `blocks`. Continua uma gravação de shard por transação, e contador zerado não é gravado (`pruneZeros`). São fluxo: a exclusão de conta e a ação da equipe não descontam. `byArtist` recebe só centrais no ar (21.1, decisão 10).
+- **Teto dos shards do dia:** toda curtida, descurtida, comentário, presença, desfazer, denúncia e bloqueio passa a gravar um dos 64 shards do dia, pontue ou não. O teto de perto de 64 transações por segundo no país (seção 7, "Custo e limite de escrita") passa a ser dividido entre os pontos, a atividade, as centrais, o convite e todo o engajamento. Sinal para subir o `SHARD_COUNT`: `unavailable` ou transações repetidas nos logs da `api` nas rotas de curtir, comentar e "Eu vou" (as mais frequentes), como na seção 7; quem lê lista a subcoleção, então subir não pede mudança no painel. "Engajamento por artista e por dia" é `byArtist[id]` nos shards do dia. Os pontos de curtir, comentar e "Eu vou" já entram em `bySource` e `byArtist[id].bySource` pelo `award`, quando pagam.
+- **Visão geral e Crescimento** (bloco 11): curtidas, comentários, presenças e denúncias por dia e por central, e os fãs ativos, que já contam essas ações (seção 7).
+- **Artistas** (bloco 11): as telas de Mural e Agenda dentro da seção, com as callables de 21.9; o `postCount` da central, se quiser, pelo mesmo `count()`. O `deleteArtist` passa a recusar central com post ou show (`has-content`), lido na transação (`posts` com `artistId == id` e `events` com `artistIds array-contains id`, `limit(1)` cada). Conta qualquer post ou show, também o rascunho: o que nunca foi ao ar se apaga antes (`deletePost`, `deleteEvent`), e o painel mostra a mensagem do servidor (`HttpsError` com a frase em pt-BR) sem mudar código.
+- **Moderação** (bloco 11): a fila e as denúncias (21.8), com `moderateComment`, e o post de cada comentário.
+- **Fãs** (bloco 11): as curtidas e presenças ativas de um fã (`users/{uid}/postLikes` com `liked == true` e `eventRsvps` com `going == true`), com o post e o show de cada uma, e quem vai a um show (grupo `eventRsvps` com `eventId == id` e `going == true`).
+- **Nenhuma mudança no código do painel** neste bloco. As callables de hoje não mudam, fora o `has-content` do `deleteArtist`.
+
+### 21.11 Regras do Firestore e do Storage, índices
+
+Acréscimo ao `firestore.rules`. Nenhuma regra existente muda; os blocos de curtida e presença entram dentro do `match /users/{uid}`, e os outros antes do `match /{document=**}` final.
+
+```
+    match /users/{uid} {
+      // (regras de hoje do perfil e do vínculo com as centrais)
+
+      // Curtidas e presenças do fã: só o servidor grava (API). O fã não lê
+      // nem as próprias: chegam pela API (likedByMe, /me/rsvps). A equipe com
+      // a seção fans lê (seção Fãs do painel).
+      match /postLikes/{postId} {
+        allow read: if canSeeSection('fans');
+        allow write: if false;
+      }
+      match /eventRsvps/{eventId} {
+        allow read: if canSeeSection('fans');
+        allow write: if false;
+      }
+    }
+
+    // Pelos grupos de coleção (quem vai a um show, no painel). Valem para
+    // qualquer coleção com estes nomes: nenhuma outra pode se chamar assim.
+    match /{path=**}/postLikes/{postId} {
+      allow read: if canSeeSection('fans');
+    }
+    match /{path=**}/eventRsvps/{eventId} {
+      allow read: if canSeeSection('fans');
+    }
+
+    // Posts e shows: quem publica (artists), a Moderação (o post do comentário
+    // denunciado) e a seção Fãs (o post e o show das curtidas e presenças).
+    function canSeeContent() {
+      return canSeeSection('artists')
+        || canSeeSection('moderation')
+        || canSeeSection('fans');
+    }
+
+    // Mural (bloco 6): a equipe publica pelas callables, com a seção artists.
+    // O fã lê tudo pela API, nunca direto, nem os posts no ar.
+    match /posts/{postId} {
+      allow read: if canSeeContent();
+      allow write: if false;
+
+      // Comentários: a equipe que cuida do conteúdo e a da Moderação.
+      match /postComments/{commentId} {
+        allow read: if canSeeSection('artists') || canSeeSection('moderation');
+        allow write: if false;
+      }
+    }
+
+    match /{path=**}/postComments/{commentId} {
+      allow read: if canSeeSection('artists') || canSeeSection('moderation');
+    }
+
+    // Contagens dos posts em shards: só o servidor.
+    match /postStats/{postId} {
+      allow read, write: if false;
+
+      match /countShards/{shard} {
+        allow read, write: if false;
+      }
+    }
+
+    // Agenda (bloco 6): os shows, pelas callables, com a seção artists.
+    match /events/{eventId} {
+      allow read: if canSeeContent();
+      allow write: if false;
+    }
+
+    // Moderação (bloco 6): denúncias e a fila.
+    match /commentReports/{reportId} {
+      allow read: if canSeeSection('moderation');
+      allow write: if false;
+    }
+    match /moderationQueue/{commentId} {
+      allow read: if canSeeSection('moderation');
+      allow write: if false;
+    }
+
+    // Listas de bloqueio: dizem quem bloqueou quem, e nenhuma tela do painel
+    // as usa. Só o servidor (API e exclusão de conta). Repete o fechado do
+    // match final de propósito, como o postStats.
+    match /blockLists/{uid} {
+      allow read, write: if false;
+    }
+```
+
+O `canSeeContent()` entra junto do `canSeeSection` no topo do `firestore.rules`. A seção que publica (`artists`) é a mesma do `PANEL_CONTENT_SECTION` das funções e do `storage.rules` (21.1, decisão 1).
+
+As regras de grupo alcançam qualquer coleção com o mesmo nome em qualquer profundidade, como a de `centrals` (19.10). Por isso os nomes são `postLikes`, `eventRsvps` e `postComments`, e os testes travam uma coleção de raiz com cada nome. O bloco `postStats` fechado repete o `match /{document=**}` de propósito, como o `artistStats`.
+
+Acréscimo ao `storage.rules`, com a mesma `canEditSection('artists')` de hoje (mudou a regra da equipe no `firestore.rules`? mude a cópia lá):
+
+```
+    function validVideo() {
+      return request.resource.size > 0
+        && request.resource.size <= 50 * 1024 * 1024
+        && request.resource.contentType == 'video/mp4';
+    }
+
+    function docExists(collection, id) {
+      return firestore.exists(/databases/(default)/documents/$(collection)/$(id));
+    }
+
+    // O tipo do post decide o que entra: foto, só imagem; vídeo, imagem (a
+    // capa e a miniatura) ou mp4; texto e show, nada. O get de um post que
+    // não existe dá erro, e erro nega: vale pela conferência de existência,
+    // com a mesma leitura do exists.
+    function postAcceptsFile(postId) {
+      let kind = firestore.get(/databases/(default)/documents/posts/$(postId)).data.get('kind', '');
+      return (kind == 'photo' && validImage())
+        || (kind == 'video' && (validImage() || validVideo()));
+    }
+
+    // Mídia dos posts: foto, miniatura, capa do vídeo e o mp4. Nome novo a
+    // cada envio; só o servidor troca metadados e apaga.
+    match /posts/{postId}/{fileName} {
+      allow get: if true;
+      allow list: if false;
+      allow create: if resource == null
+        && postId.matches('[A-Za-z0-9_-]{1,128}')
+        && !postId.matches('__.*__')
+        && canEditSection('artists')
+        && postAcceptsFile(postId);
+      allow update, delete: if false;
+    }
+
+    // Foto dos shows.
+    match /events/{eventId}/{fileName} {
+      allow get: if true;
+      allow list: if false;
+      allow create: if resource == null
+        && eventId.matches('[A-Za-z0-9_-]{1,128}')
+        && !eventId.matches('__.*__')
+        && validImage()
+        && canEditSection('artists')
+        && docExists('events', eventId);
+      allow update, delete: if false;
+    }
+```
+
+O `artistExists` de hoje pode virar `docExists('artists', artistId)`, sem mudar o comportamento. O tipo conferido na regra fecha o mp4 num post de foto e a imagem num post de texto ou de show; o envio abandonado de um post de foto ou vídeo continua até o próximo `updatePost` (que limpa a pasta) ou o `deletePost` do rascunho. O papel IAM `roles/firebaserules.firestoreServiceAgent` do Storage já é preciso desde o bloco 4; nada novo.
+
+Índices novos em `firestore.indexes.json` (os de hoje ficam):
+
+```json
+{
+  "indexes": [
+    {
+      "collectionGroup": "posts",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "artistId", "order": "ASCENDING" },
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "publishedAt", "order": "DESCENDING" },
+        { "fieldPath": "__name__", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "posts",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "artistId", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "postComments",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" },
+        { "fieldPath": "__name__", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "postComments",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "authorUid", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "events",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "startsAt", "order": "ASCENDING" },
+        { "fieldPath": "__name__", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "events",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "featured", "order": "ASCENDING" },
+        { "fieldPath": "startsAt", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "events",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "artistIds", "arrayConfig": "CONTAINS" },
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "startsAt", "order": "ASCENDING" },
+        { "fieldPath": "__name__", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "moderationQueue",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "lastReportedAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "eventRsvps",
+      "queryScope": "COLLECTION_GROUP",
+      "fields": [
+        { "fieldPath": "eventId", "order": "ASCENDING" },
+        { "fieldPath": "going", "order": "ASCENDING" }
+      ]
+    }
+  ],
+  "fieldOverrides": [
+    {
+      "collectionGroup": "postComments",
+      "fieldPath": "authorUid",
+      "indexes": [
+        { "order": "ASCENDING", "queryScope": "COLLECTION" },
+        { "order": "DESCENDING", "queryScope": "COLLECTION" },
+        { "arrayConfig": "CONTAINS", "queryScope": "COLLECTION" },
+        { "order": "ASCENDING", "queryScope": "COLLECTION_GROUP" }
+      ]
+    },
+    { "collectionGroup": "posts", "fieldPath": "text", "indexes": [] },
+    { "collectionGroup": "posts", "fieldPath": "media", "indexes": [] },
+    { "collectionGroup": "postComments", "fieldPath": "text", "indexes": [] },
+    { "collectionGroup": "moderationQueue", "fieldPath": "commentText", "indexes": [] },
+    { "collectionGroup": "moderationQueue", "fieldPath": "reasons", "indexes": [] },
+    { "collectionGroup": "events", "fieldPath": "photo", "indexes": [] }
+  ]
+}
+```
+
+Para que serve cada um: o primeiro, ao mural (`in` com a ordem), à grade da 1d e ao `postCount`; o segundo, à lista de posts da central no painel (bloco 11); o terceiro, aos comentários do post; o quarto, aos comentários do próprio fã no detalhe; os três de `events`, à agenda, ao destaque e à agenda de uma central; o de `moderationQueue`, à fila do painel; o de `eventRsvps` em grupo, a quem vai a um show no painel (só as presenças ativas, 21.1 decisão 8). O `authorUid` em grupo serve à exclusão de conta. Os textos e mapas ficam sem índice, porque ninguém consulta por eles e cada gravação custa menos. Usam os índices automáticos: a consulta da exclusão por `reporterUid` em `commentReports`, a de `blocked` com `array-contains` em `blockLists`, a do `updateEvent` e do `deleteEvent` por `eventId` em `posts`, a do `/me/rsvps` por `updatedAt` na subcoleção do fã e as da seção Fãs por `liked` e `going` na subcoleção de um fã.
+
+O emulador não exige índice nenhum: a falta só aparece em produção, como o código 9. O mural, a grade, os comentários e a agenda respondem 500 sem eles; o `postCount` vira 0 com log. Os índices sobem antes da `api` e terminam de montar antes de ela ir ao ar (21.17).
+
+### 21.12 Exclusão de conta
+
+`deleteUserData` (`functions/src/store.ts`), na ordem nova:
+
+1. Reservas de @, como hoje.
+2. `users/{uid}` sozinho, como hoje. Daqui em diante nenhuma gravação da API passa (`requireFan`).
+3. `removeInviteData`, como hoje.
+4. `leaveAllCentrals`, como hoje.
+5. Novo: `removeFanEngagement(db, uid)`, em `posts/service.ts`, nesta ordem, cada passo em páginas de 100 (`ENGAGEMENT_DELETE_PAGE`) até a consulta voltar vazia (o que sai não volta na consulta seguinte, como no `deleteIdempotencyKeys`), uma transação por página que relê cada documento (o que já saiu não desconta de novo). Os `-1` de uma página são somados em memória por post, e cada post da página recebe uma gravação só, num shard sorteado. Assim a página de comentários grava no máximo 300 documentos (o comentário, o item da fila e um shard por post), abaixo do teto de 500 gravações por transação que o projeto adota (`IDEMPOTENCY_DELETE_BATCH`, `REORDER_MAX`); com páginas de 200, eram até 600, e o mesmo shard gravado mais de uma vez na transação.
+   1. Curtidas: `users/{uid}/postLikes`; para cada uma que ainda existe, `tx.delete` e, se estava ativa (`liked: true`), `-1` em `likes` no shard do post.
+   2. Comentários: `collectionGroup('postComments')` com `authorUid == uid`; para cada um que ainda existe, `tx.delete` e, se estava `visible`, `-1` em `comments` no shard do post. O item da fila desse comentário, se houver, perde o texto (`commentText: null`) e, aberto, vai a `resolved` com `author_deleted`. As denúncias contra ele ficam, sem o texto: são dado de quem denunciou.
+   3. Denúncias que ele fez: `commentReports` com `reporterUid == uid`; para cada uma, `tx.delete` e, no item da fila, `reportCount` e o motivo menos 1, nunca abaixo de 0. O item que fica `open` com `reportCount` 0 vai a `resolved` com `withdrawn` (`resolvedAt` o "agora", `resolvedBy` nulo): sem isso, a fila mostraria um item aberto sem denúncia nenhuma. Uma denúncia nova o reabre (21.4).
+   4. Bloqueios: apaga `blockLists/{uid}` e tira o uid dele das listas dos outros (`blockLists` com `blocked array-contains uid`, `update` com `arrayRemove`, em páginas).
+6. `recursiveDelete(users/{uid})`, como hoje: leva as presenças (`eventRsvps`, ativas ou não), que não têm contador, e o que sobrou das curtidas.
+7. `referrals/{uid}`, `detachReferrals`, carteira, chaves de idempotência e `staff/{uid}`, como hoje.
+
+Por que nessa ordem: as curtidas saem antes do `recursiveDelete` porque precisam descontar o shard, como os vínculos do bloco 4. Uma curtida ou um comentário que já tinha lido o perfil segura a leitura e grava antes do passo 2 terminar, e a listagem do passo 5 o encontra. Os agregados do painel não descontam (seção 12). O `functions/src/store.test.ts` prende a ordem nova.
+
+Curtidas e presenças desfeitas (`liked: false`, `going: false`) também saem: guardam só o que o fã fez, e nenhuma contagem depende delas.
+
+Comentários: apagados, e não anonimizados (21.1, decisão 18; pergunta 2 de 21.16). Se a cliente ou a revisão jurídica preferirem anonimizar, o passo 5.2 troca o `tx.delete` por `authorUid: null`, `authorName: 'Fã'` e `authorPhotoURL: null`, sem mexer na contagem; o texto continuaria lá, e é por isso que a proposta é apagar.
+
+### 21.13 App
+
+**Seletor e consultas**
+
+- `SERVER_DOMAINS` ganha `posts` e `agenda`, no commit que entrega as rotas. Com o emulador, o mural, os comentários, as curtidas, a agenda e as presenças vêm do servidor; nas builds, das fixtures, como hoje.
+- `useFeedQuery`, `useArtistPostsQuery`, `usePostQuery` e `useCommentsQuery` espalham `queryOptionsFor('posts')`; a consulta da agenda (`agendaQueryOptions`, usada também pelo `useAgendaEvent`), `useArtistAgendaQuery`, `useMyRsvpsQuery` e `useIsGoing` (a mesma chave, com `select`) espalham `queryOptionsFor('agenda')`.
+- `artists/api.ts` tira a troca do `postCount` pelo número de exemplo (19.13): com as centrais na API, os posts também estão. O `countArtistPostsFixture` sai, com o teste dele.
+- O `QUERY_CACHE_VERSION` não sobe: os formatos salvos não mudam, e o `venue` é opcional.
+
+**Mutações e invalidação**
+
+- Curtir, comentar e "Eu vou" ficam como estão: otimismo, fila offline, `scope`, a mesma chave depois de falha incerta e o `refreshAfterPoints`, que já busca carteira, ranking e centrais quando rendeu.
+- (Implementação, depois da revisão) Com pontos, o `refreshAfterPoints` (posts) e o `refreshPointsAfterRsvp` (agenda) buscam também `artistKeys.details()`: comentar paga na central do post (21.1, decisão 10) e o "Eu vou" numa central do show, e o "PTS DA CENTRAL" da 1d, que soma os pontos da central, ficava o de antes com a 1d montada embaixo do post.
+- (Implementação, depois da revisão) Curtir e comentar recusados com `notFound` (o post ou a central saiu do ar) fazem o mural, a grade, o detalhe e o "N posts" buscarem de novo (`refreshAfterGonePost`: `postKeys.all` e `artistKeys.details()`), no hook e no `registerPostMutationDefaults`, no molde do `refreshAfterGoneEvent`. A tela do post mostra "Este post não existe mais." também com o detalhe no cache: o React Query guarda o `data` antigo quando a busca falha, e o detalhe e os comentários vão para o disco com a API (3 dias). Sem isso, o post que o fã já tinha aberto continuava na tela, e curtir e comentar nele erravam a cada toque.
+- `useRsvpMutation` (e o `registerAgendaMutationDefaults`): recusa `notFound` (show fora do ar ou encerrado) faz a agenda e o mural buscarem de novo (`agendaKeys.events()` e `postKeys.all`, com o `postKeys` importado de `@/domains/posts/keys`, fora do index, pelo mesmo motivo de 19.13).
+- `useReportCommentMutation(postId, commentId, { onDone?, onError? })` e `useBlockFanMutation(fanId, { onDone?, onError? })`, novos em `posts/queries.ts` e exportados pelo index, no molde do `useLeaveCentralMutation`: não são otimistas e não entram na fila (`networkMode: 'always'`, `retry: false`); a chave é a da tentativa (a mesma depois de falha incerta, nova depois de recusa); os retornos só rodam com o hook montado. Bloquear, no sucesso: tira os comentários do bloqueado de todo cache de comentários (`removeAuthorComments(client, fanId)`, novo em `posts/cache.ts`) e busca as listas de comentários de novo. Denunciar não muda cache nenhum.
+- `posts/api.ts` ganha `reportComment({ postId, commentId, reason, idempotencyKey })` (`POST .../report`, com `{ reason }`) e `blockFan({ fanId, idempotencyKey })` (`PUT /me/blocks/<id>`), com as fixtures.
+
+**Telas**
+
+- **Linha do comentário (`CommentRow`):** nos comentários de outro fã (não "Você", não do artista, sem `status`), um botão de opções (ícone de três pontos, alvo de 44, rótulo "Opções do comentário de {{name}}") na ponta direita da linha, no alto, na altura do nome. Ele é irmão do pressável da linha, e não filho: a linha tem rótulo próprio, e um botão dentro dela sumiria para o leitor de tela (regra do workspace de pressáveis aninhados). Abre a sheet com `router.push({ pathname: '/comentario/[comentarioId]', params: { comentarioId: comment.id, post: postId } })`.
+- **Sheet "Opções do comentário"**, provisória (UP-48): rota `src/app/comentario/[comentarioId].tsx`, só com o `export default` de `CommentOptionsSheetScreen`, de `@/domains/posts`. Entra na pilha raiz, no guard de quem já entrou, com as opções do `convidar` (`formSheet`, `fitToContents`, `sheetGrabberVisible`, `sheetCornerRadius: radii.sheet`, fundo `colors.surface`). Lê o comentário do cache de comentários do post (`useCachedComment(postId, commentId)`); sem ele (aberta a frio), fecha. Conteúdo fixo, para a altura não mudar: o título "Comentário de {{name}}" com o fechar; a seção Denunciar, com o texto curto, os motivos numa `ChipGroup` de escolha única ("Sem motivo", "Spam", "Ofensivo", "Assédio", "Outro"; "Sem motivo" manda `null`) e "Denunciar comentário" (`primary`); a seção Bloquear, com o texto ("Os comentários de {{name}} somem para você, neste e nos outros posts. {{name}} não fica sabendo.") e "Bloquear {{name}}" (`secondary`). Os dois botões ficam desligados sem internet e enquanto um pedido vai (`loading` no que foi tocado); o voltar fica preso (`useStayOnScreen`). Sucesso: fecha e anuncia ("Denúncia enviada. A equipe vai analisar." ou "Você bloqueou {{name}}. Os comentários somem para você."), com o toque `success`. Erro: fica, com o aviso acima dos botões, anunciado, e o toque `error`. A resposta que chega com a sheet fechada só anuncia.
+- (Implementação) A sheet lê o comentário uma vez, na abertura (`useCachedComment`, com `findCachedComment` de `posts/cache.ts`), e o aviso de erro acima dos botões é o do último pedido que falhou (denunciar ou bloquear). A chave da denúncia é a mesma depois de falha incerta só com o mesmo motivo: com outro motivo, o servidor recusaria a chave antiga com 422.
+- **Compositor do comentário:** o `commentSchema` passa a limpar e validar como o servidor (`cleanMultiline` e `isVisibleMultiline`, novos em `src/utils/visible-line.ts`, espelho de `functions/src/visible-line.ts`, com os mesmos passos de 21.1 decisão 20, inclusive o NFC e a troca do `\r`, e a mesma tabela de testes nos dois lados; o limite de 500 conta unidades de UTF-16 num `refine`, como o nome). Texto que tem só invisíveis, ou uma linha com eles, mostra o erro abaixo do campo ("Tire os caracteres invisíveis do comentário.", anunciado) em vez de não fazer nada, como hoje. O texto limpo é o que vai e o que a linha local mostra.
+- **Lista de comentários:** quando a última página chega vazia e ainda há `nextCursor` (comentários seguidos de bloqueados, 21.2), a tela pede a seguinte sozinha, uma vez por página, com `cancelRefetch: false`.
+- **Sheet "Sair da central":** o texto ganha "Os posts desta central saem do seu mural." (21.1, decisão 19).
+- **Linha do mural (`PostRow`):** foto e vídeo podem vir sem legenda (21.9). O texto só entra quando existe (`post.text ? ... : null`, como na `PostContent`), e o rótulo do bloco sai sem ele (`post.blockLabelNoText`). A grade da 1d mostra a mídia, como antes; o rótulo da célula sem legenda sai sem o texto e sem os dois-pontos soltos (`artist.posts.photoLabelNoText` e `videoLabelNoText`, implementação depois da revisão).
+- Fora isso, nada muda no mural, na grade, no detalhe nem na agenda: o formato das respostas é o que eles já leem (a mídia de foto e vídeo sem arquivo vem com as URLs nulas, como nas fixtures, 21.2).
+
+**Fixtures**
+
+- `buildFeedPageFixture` filtra pelas centrais do `followFixture.followedIds()`, importado direto de `@/domains/artists/fixtures` (o `artists/fixtures.ts` não importa `posts`, então não há ciclo).
+- `moderationFixture`, em `posts/fixtures.ts`: denunciar guarda a resposta pela chave e devolve `already_reported` na segunda vez; bloquear guarda o autor, e `buildCommentsPageFixture` tira os comentários dele. Volta ao início com a sessão (`onFixtureSessionEnd`).
+- Regra de coerência (seção 13): com os posts e a agenda na API, curtir, comentar e "Eu vou" rendem do servidor. **As missões continuam de exemplo até o bloco 7: a ação de verdade não anda missão nenhuma.** O `missionsFixture.record` só roda nos caminhos das fixtures; a "Curta 5 posts do Nenho" da 1g fica em 2 de 5 com o emulador, e nenhuma curtida de verdade sobe o "+N" de missão. As missões continuam buscando de novo depois de cada ação, sem efeito. O servidor já guarda o que o bloco 7 vai contar: a primeira curtida de cada post e a primeira presença de cada show (21.5).
+
+**O que é de verdade e o que é de exemplo** (desenvolvimento com emulador, do bloco 6 ao 7)
+
+| Número ou lista                            | Telas             | Fonte no bloco 6              |
+| ------------------------------------------ | ----------------- | ----------------------------- |
+| Mural, grade e detalhe dos posts           | 1b, 1d, post      | servidor                      |
+| Curtidas e comentários (contagens e lista) | 1b, 1d, post      | servidor (cópia de 10 a 20 s) |
+| "N posts" da central                       | 1d                | servidor (`count()`)          |
+| Agenda, destaque e agenda da central       | 1m, 1d            | servidor                      |
+| "Eu vou"                                   | 1b, 1m, 1d, post  | servidor                      |
+| Pontos de curtir, comentar e "Eu vou"      | carteira (1e, 1h) | servidor                      |
+| Denunciar e bloquear                       | post              | servidor                      |
+| Progresso das missões                      | 1g, 1b, 1d        | exemplo, até o bloco 7        |
+| Ranking e top fãs                          | 1f, 1d            | exemplo, com o aviso, até o 8 |
+
+**Textos novos** (`translations.json`)
+
+- `post.blockLabelNoText`: "{{author}}, {{time}}."
+- `artist.posts.photoLabelNoText`: "Post de {{name}}, {{time}}"; `artist.posts.videoLabelNoText`: "Vídeo de {{name}}, {{time}}" (implementação)
+- `post.comments.optionsLabel`: "Opções do comentário de {{name}}"
+- `post.moderation.title`: "Comentário de {{name}}"
+- `post.moderation.reportSection`: "Denunciar"; `post.moderation.reportBody`: "A equipe do ImagineUP analisa cada denúncia. O motivo é opcional."
+- `post.moderation.reasons.none`: "Sem motivo"; `.spam`: "Spam"; `.offensive`: "Ofensivo"; `.harassment`: "Assédio"; `.other`: "Outro"
+- `post.moderation.report`: "Denunciar comentário"; `post.moderation.reported`: "Denúncia enviada. A equipe vai analisar."; `post.moderation.reportError`: "Não deu para enviar a denúncia. Tente de novo."
+- `post.moderation.blockSection`: "Bloquear"; `post.moderation.blockBody`: o texto da sheet, acima; `post.moderation.block`: "Bloquear {{name}}"; `post.moderation.blocked`: (implementação) "Bloqueio feito: os comentários de {{name}} somem para você." (o texto do desenho, "Você bloqueou {{name}}. Os comentários...", saía com dois pontos seguidos para nomes que terminam em ponto, como "Thalita S."); `post.moderation.blockedShort` (implementação): "Bloqueio feito. Os comentários somem para você.", o anúncio quando a resposta chega com a sheet já fechada; `post.moderation.blockError`: "Não deu para bloquear. Tente de novo."
+- `validation.commentInvisible`: "Tire os caracteres invisíveis do comentário."
+- `artist.leave.body`: o texto de hoje mais "Os posts desta central saem do seu mural."
+
+**`CLAUDE.md` e `AGENTS.md`**
+
+No mesmo commit: Estrutura (`functions/src/posts`, `agenda`, `moderation` e `staff/panel-actor.ts`; a rota `comentario/[comentarioId]`), Navegação (a sheet de opções do comentário), Dados (posts e agenda no seletor; missões que não andam com ação de verdade; o mural de exemplo filtrado), Acessibilidade (o botão de opções irmão da linha), Artistas e centrais (`has-content`), API do app e pontos (as rotas e as callables do bloco 6) e Pendências (moderação provisória, desbloquear sem tela, perguntas de 21.16). O `AGENTS.md` recebe a mesma cópia, com o cabeçalho dele.
+
+Nada disso entra no fingerprint da EAS: só JavaScript, regras e funções. A rota nova é um arquivo JavaScript.
+
+### 21.14 Seed dos emuladores
+
+`functions/src/agenda/seed.ts` exporta `SEED_EVENTS` e `seedEvents(db, now)`; `functions/src/posts/seed.ts` exporta `SEED_POSTS`, `SEED_ENGAGEMENT`, `seedPosts(db, now)` e `seedEngagement(db, fans, now)`. O `scripts/seed-emulators.mjs` carrega `functions/lib/agenda` e `functions/lib/posts` como já carrega os outros, nesta ordem: centrais, shows, posts, contas (com a carteira, as centrais e o convite da Camila: o link `post:p-clipe` agora exige o post no ar, por isso os posts vêm antes), claims, e por último o engajamento dos fãs de teste.
+
+Shows, os mesmos da `buildAgendaEventsFixture`, com os mesmos ids e a mesma regra de datas, na hora local do lugar, todos no ar:
+
+| id                      | Título                | Artistas                      | Cidade, UF               | Fuso             | Quando (hora local)                 | Destaque |
+| ----------------------- | --------------------- | ----------------------------- | ------------------------ | ---------------- | ----------------------------------- | -------- |
+| `arrocha-na-praia`      | Arrocha na Praia      | `nenho`                       | Aracaju, SE              | `America/Maceio` | o sábado seguinte, 22 h             | não      |
+| `sao-joao-irara`        | São João de Irará     | `nettobrito`, `nenho`         | Irará, BA                | `America/Bahia`  | dia 21 do mês seguinte, 22 h        | sim      |
+| `pra-encher-e-derramar` | Pra Encher e Derramar | `nettobrito`                  | Feira de Santana, BA     | `America/Bahia`  | dia 28 do mês seguinte, 21 h        | não      |
+| `festa-do-vaqueiro`     | Festa do Vaqueiro     | `juninhomoraes`               | Serrinha, BA             | `America/Bahia`  | dia 12, dois meses à frente, 20 h   | não      |
+| `vaquejada-de-serrinha` | Vaquejada de Serrinha | `rocksalles`                  | Serrinha, BA             | `America/Bahia`  | dia 2, três meses à frente, 22 h    | não      |
+| `arrocha-do-nenho`      | Arrocha do Nenho      | `nenho`                       | Salvador, BA             | `America/Bahia`  | dia 16, três meses à frente, 22 h   | não      |
+| `verao-arrochado`       | Verão Arrochado       | `nettobrito`                  | Salvador, BA             | `America/Bahia`  | dia 10, quatro meses à frente, 21 h | não      |
+| `festival-do-sertao`    | Festival do Sertão    | `juninhomoraes`, `rocksalles` | Vitória da Conquista, BA | `America/Bahia`  | dia 24, quatro meses à frente, 20 h | não      |
+| `carnaval-do-nenho`     | Carnaval do Nenho     | `nenho`                       | Recife, PE               | `America/Recife` | dia 13, cinco meses à frente, 22 h  | não      |
+
+Mais um rascunho, `show-rascunho` (Netto), que o app não mostra. Sem foto e sem local, como nas fixtures.
+
+Posts, os 10 de `posts/fixtures.ts`, com os mesmos ids, tipos, centrais e textos, e o `publishedAt` no mesmo "há N horas" de hoje (o clipe há 2 h, o show há 5 h, e assim por diante). O `p-show` aponta para `arrocha-na-praia`. Fotos e vídeos são publicados sem mídia (o placeholder da marca, como as centrais do seed sem foto), e a resposta manda `{ url: null, thumbnailUrl: null, width, height }` com as medidas padrão, como as fixtures (21.2): o clipe aparece com a miniatura e a marca de vídeo na 1b e com o play na grade da 1d. O seed usa o mesmo núcleo das callables, sem a conferência de mídia e sem auditoria. Mais um rascunho, `p-rascunho` (Netto, texto), que o app não mostra.
+
+Engajamento dos fãs de teste, pelos mesmos núcleos das rotas (`runLikePost`, `runComment`, `runRsvp` e `runReport`), com `actor` de sistema e `SEED_ENGAGEMENT_CONFIG` (em `posts/seed.ts`): o `DEFAULT_POINTS_CONFIG` com `like`, `comment` e `rsvp` em 0, como o `SEED_INVITE_CONFIG` do bloco 5 e o `central_join: 0` do bloco 4. O padrão sozinho não serve: nele `comment` vale 2, e os comentários do seed pagariam e criariam a carteira do Alan. Com os três em 0, nenhuma carteira muda (a Camila fica a do protótipo, e o Alan continua sem carteira), e o sistema não conta nos tetos.
+
+- Curtidas: Bia, Duda e Enzo no `p-clipe`; Bia e Enzo no `p-show`; Alan no `p-g1`; Duda no `p-nenho-2`.
+- Comentários, com ids fixos:
+  - `seed-c-clipe-bia` (Bia, `p-clipe`, há 60 min): "Já mandei pro grupo da família inteira, Irará em peso! 💃"
+  - `seed-c-clipe-duda` (Duda, há 66 min): "Esse clipe ficou lindo demais. Já vi umas dez vezes."
+  - `seed-c-clipe-enzo` (Enzo, há 73 min): "Irará nunca mais vai ser a mesma depois desse São João."
+  - `seed-c-clipe-alan` (Alan, há 95 min): "Que música boa demais!"
+  - `seed-c-show-bia` (Bia, `p-show`, há 2 h): "Chama que a Bahia vai em peso!"
+  - `seed-c-show-enzo` (Enzo, `p-show`, há 3 h): "Promoção de ingresso no meu perfil, chama no privado!!!"
+  - `seed-c-texto-duda` (Duda, `p-texto`, há 20 h): "Aposto em Sonho de Verão!"
+- Presenças: Bia no `arrocha-na-praia`; Duda no `sao-joao-irara`.
+- Denúncia: Alan denuncia `seed-c-show-enzo` como `spam`. A fila da Moderação nasce com um item aberto.
+- A Camila não curte, não comenta e não vai a show nenhum, como o estado inicial das fixtures: com ela, a primeira ação no app mostra os pontos do servidor (comentar rende 2).
+- A fila copia as contagens em segundos: o clipe fica com 3 curtidas e 4 comentários, e o show com 2 e 2. Os 4.812 e 327 do protótipo ficam só nas fixtures (contagem sem os comentários na lista seria incoerente).
+- Rodar de novo não muda nada: shows, posts, curtidas, presenças, comentários (ids fixos, lidos antes de gravar pelo `runComment`, 21.4) e a denúncia já existem, e cada núcleo devolve sem efeito.
+
+### 21.15 Testes
+
+Funções, testes puros (`vitest`, relógio fixo):
+
+- `visible-line.test.ts`: `cleanMultiline` e `isVisibleMultiline` (linhas vazias seguidas, pontas, isolantes bidi, NFC com o acento decomposto, `\r\n` e `\r` sozinho virando `\n` e não `invisible`, invisível no meio, emoji com ZWJ, 500 e 501 em UTF-16), na mesma tabela do teste do app.
+- `posts/model.test.ts` (tabela): `parseCommentText` (os três motivos); a visão do `Post` (cada tipo; foto e vídeo sem mídia gravada saem com `url` e `thumbnailUrl` nulas e as medidas padrão, 1080x1350 e 1920x1080, e texto e show com `media: null`; vídeo sem o mp4; show fora do ar ou encerrado vira `event: null`; `likedByMe` falso com `liked: false`; `sharePointsPerVisit` nulo com o valor 0); `viewCounts` (sem `countsAt` soma, curtida antes da cópia não soma, curtida desfeita não soma, comentários do fã depois da cópia somam só no detalhe); cursores (ida e volta, malformado, instante acima do maior `Timestamp`); a junção dos blocos do mural (ordem e `nextCursor`, com blocos desiguais); a validação das callables (texto de 1 a 2.000 no texto e no show, de 0 a 2.000 na foto e no vídeo, tipo, show do post, caminhos da mídia na pasta do post); `windowTask` (o mesmo resultado do `fanCountSyncTask` de antes).
+- `agenda/model.test.ts`: `zonedLocalToUtc` em `America/Bahia`, `America/Recife`, `America/Manaus` e `America/Noronha`, e a data que não existe; `agendaCutoff` e `isEventOpen` nas pontas (show de 23 h aberto às 23:59 e encerrado à 0:00 de São Paulo, o de 0:30 de hoje aberto às 0:31); a escolha do destaque (o mais próximo depois do corte, empate pelo id; o destaque de ontem às 22 h não volta à 1:00 de hoje); a central que paga a presença (a primeira no ar do show, nenhuma quando todas estão fora); a visão do show (só centrais no ar, `invitePointsPerSignup` nulo com 0); `DEFAULT_TIME_ZONE_BY_STATE` cobre as 27 UFs; a validação das callables.
+- `moderation/model.test.ts`: os motivos, os tetos com o `Retry-After`, o filtro dos bloqueados, o limite da lista.
+- `points/stats.test.ts` e `points/award.test.ts`: os fluxos novos, o `pruneZeros` deles e o `addEngagementCounts` com o `plan.shard` nulo; as chaves novas do `addDailyCount`.
+- `api/router.test.ts`: `/posts/:postId`, `/posts/:postId/comments`, `/posts/:postId/like` e `/posts/:postId/comments/:commentId/report` não se confundem; `GET /posts/x/like` é 405 com `Allow: PUT, DELETE`; `/artists/:artistId` e `/artists/:artistId/posts` não se confundem; `GET /me/blocks/x` é 405.
+- `api/index.test.ts`: os códigos novos com status e corpo; `PostError`, `AgendaError` e `ModerationError` traduzidos; o 429 dos tetos com `Retry-After`; `limit` e cursor inválidos dão 400; ids fora do formato dão o 404 de cada recurso.
+- `posts/sync.test.ts`: o gatilho ignora o id repetido, lança nos outros erros, enfileira sem id no emulador.
+- `store.test.ts`: a ordem nova do `deleteUserData`.
+
+Funções nos emuladores (a `api` de verdade por HTTP, tokens do emulador de Auth; o gatilho e a fila no emulador, com espera de até 10 s pela cópia):
+
+- `functions/test/posts.emulator.test.ts`: mural só das centrais do fã, na ordem, paginado de 2 em 2 e com mais de 30 centrais (dois blocos do `in`); post de central fora do ar e rascunho não aparecem; detalhe 404 nos dois; curtir paga pelo `like:<postId>` com o valor injetado, a mesma chave devolve a resposta guardada, curtir de novo depois de descurtir não paga, descurtir não tira; descurtir deixa o documento com `liked: false` e o `firstLikedAt` da primeira, e curtir de novo o mantém; o shard e o contador do teto só mexem na troca de estado; a fila copia `likeCount`, e antes da cópia o detalhe já conta a curtida de quem chama; comentar grava com o nome do perfil, paga 2, passa do limite do dia sem pagar, recusa os três textos inválidos sem gravar a chave; os comentários do bloqueado somem da lista de quem bloqueou e não da dos outros, com páginas que atravessam vários bloqueados; 10 fãs curtindo o mesmo post em paralelo deixam 10; o teto de curtidas dá 429 e descurtir passa; o `postCount` do `GET /artists/:id`; o link `post:<id>` só nasce com o post no ar. (Implementação, depois da revisão) A cópia lida entre o começo do pedido e o commit (o `countsAt` gravado entre o `award.now` e o commit, sem as ações) não esconde a curtida nem o comentário de quem chama no detalhe; comentar soma 1 no `comment_sent` e a repetição da chave não; com o contador no teto, 429 com `details.action` e `Retry-After`, sem gravar o comentário nem a chave.
+- `functions/test/agenda.emulator.test.ts`: agenda em ordem, com o corte do começo do dia de São Paulo (relógio fixo perto da meia-noite: o show de ontem às 22 h sai da lista, do destaque, do `event` do post e do "Eu vou" à 0:00), o destaque mais próximo, a agenda de uma central sem destaque e 404 da central fora do ar; "Eu vou" paga uma vez por show, desfazer não tira, desfazer deixa `going: false` com o `firstGoingAt`, show encerrado e fora do ar dão 404 com o motivo, desfazer vale em qualquer status; show com a primeira central em rascunho paga na segunda, no ar, e não soma agregado na de rascunho; `/me/rsvps` só com shows abertos e presenças ativas, e com mais de 100 presenças ainda traz a de um show distante confirmada primeiro; o post de show monta o `event` e o perde quando o show sai do ar. (Implementação, depois da revisão) O "Eu vou" soma 1 no `rsvp_set` e o já confirmado não; com o contador no teto, 429 com `details.action` e `Retry-After`, sem gravar a presença nem a chave, e desfazer passa.
+- `functions/test/moderation.emulator.test.ts`: denunciar cria a denúncia e o item da fila, a segunda do mesmo fã é `already_reported`, de outro fã soma no item, o próprio comentário é 400, comentário oculto é 404; `keep` resolve e uma denúncia nova reabre; `keep` em comentário oculto recusa com `comment-hidden`; `hide` tira o comentário da lista e da contagem, `restore` devolve; bloquear e desbloquear, o próprio uid é 400, fã que não existe é 404, a lista cheia é 409. (Implementação, depois da revisão) Denunciar soma 1 no `comment_report` e o `already_reported` não, bloquear soma 1 no `fan_block` e o já bloqueado não; com cada contador no teto, 429 com `details.action` e `Retry-After`, sem gravar a denúncia, o item da fila, a lista nem a chave, e desbloquear passa. Sem esses testes, tirar o `enforceDailyCap` ou o `countDailyAction` de uma rota (ou passar a ação errada) deixava as suítes verdes.
+- (Implementação) Os quatro arquivos de emulador do bloco dividem `functions/test/support.ts` (o app do Admin SDK, a conferência das funções carregadas, a limpeza, o fã que se cadastra, a `api` pelo HTTP, o handler no processo com o relógio fixo e as callables como o painel chama). A exclusão e o seed ficam em `posts.emulator.test.ts`. O `invites.emulator.test.ts` do bloco 5 passou a publicar os posts antes dos links `post:<id>` e confere que post em rascunho, de central fora do ar ou que não existe não vira link.
+- `functions/test/content-panel.emulator.test.ts`: as callables de post e de show com os membros de exemplo (admin, editora com `artists`, leitor, sem a seção, desativada); a mídia conferida no Storage do emulador, com a pasta limpa depois da troca; foto e vídeo sem legenda aceitos, texto vazio recusado no post de texto; publicar sem mídia e o post de show com o show fora do ar recusam; o fuso grava o instante certo; `updateEvent` que tira a central de um post do show recusa com `event-has-posts`, e o que tira outra central passa, também com 21 posts no show e o da central que sai depois do 20º (implementação, depois da revisão); `deletePost` e `deleteEvent` apagam o rascunho nunca publicado (com a pasta) e recusam o que já foi ao ar (`was-published`) e o show com post (`event-has-posts`); cada mudança grava uma auditoria e nada mudou não grava; `moderateComment` com a seção `moderation`; o `deleteArtist` recusa `has-content` e passa depois de apagar o rascunho que prendia a central, e os testes de `artists.emulator.test.ts` continuam passando sem mudança.
+- Exclusão: fã com curtidas (uma desfeita), comentários (um denunciado, e vários no mesmo post numa página só), presenças, denúncias feitas (uma única num item, outra num item com mais denúncias) e bloqueios, e bloqueado por outro; depois do `deleteUserData`, as contagens caem só pelo que estava ativo e não ficam negativas, o item da fila do comentário dele fica sem o texto e resolvido, o item que só tinha a denúncia dele fica `resolved` com `withdrawn`, o outro perde a denúncia e continua aberto, as listas dos outros não têm mais o uid; rodar de novo não desconta outra vez; comentar depois de o perfil sair dá 503.
+- Seed: os shows, os posts e o engajamento como em 21.14; as carteiras sem mudar (a Camila a do protótipo, o Alan, a Bia, a Duda e o Enzo sem lançamento de curtir, comentar ou "Eu vou", e o Alan sem carteira); a fila com um item; o clipe com a mídia de URLs nulas e as medidas padrão; rodar de novo não muda nada nem lança erro.
+
+Regras (`tests/`, no molde de `tests/centrals-rules.test.ts`, com os mesmos membros de exemplo):
+
+- `tests/posts-rules.test.ts`: `posts` e `postComments` (inclusive pelo grupo): o fã não lê nem o post no ar; a equipe com `artists` lê os dois; `posts` também com `moderation` ou `fans`, e `postComments` também com `moderation` (e não com `fans`); sem nenhuma dessas seções, desativada, pendente ou com sessão de antes do `authValidAfter`, não lê; ninguém grava, nem admin. `postStats` e `countShards`: ninguém. `users/{uid}/postLikes` e `eventRsvps` (e os grupos): o próprio fã não lê; a equipe com `fans` lê. Uma coleção de raiz chamada `postLikes`, `eventRsvps` ou `postComments` cai na regra de grupo (o teste deixa escrito por que nenhuma outra pode ter esses nomes).
+- `tests/agenda-rules.test.ts`: `events`, com a seção `artists`, `moderation` ou `fans`; sem elas, não lê; ninguém grava.
+- `tests/moderation-rules.test.ts`: `commentReports` e `moderationQueue`, só com `moderation`; `blockLists`, ninguém, nem admin nem a equipe com `moderation`, e o fã não lê nem a própria lista.
+- `tests/storage-rules.test.ts`: `posts/{id}/` aceita de quem edita `artists`, só para post que existe e com nome novo, imagem até 5 MB na foto, imagem ou mp4 até 50 MB no vídeo, e nada no texto e no show; recusa mp4 na foto, imagem no texto e no show, leitor, outra seção, tipo errado, tamanho acima e post que não existe. `events/{id}/` aceita imagem até 5 MB de quem edita `artists`, só para show que existe. Ninguém lista, troca nem apaga.
+- Os arquivos de teste que já existem passam sem mudança.
+
+App:
+
+- `src/config/__tests__/data-source.test.ts`: `posts` e `agenda` na API com o emulador.
+- `src/utils/__tests__/visible-line.test.ts`: a mesma tabela do servidor para o texto de várias linhas.
+- `posts/__tests__/api.test.ts`: as rotas no modo API (caminhos, `Idempotency-Key`, corpo do comentário e da denúncia, o bloqueio); nas fixtures, a denúncia repetida e o bloqueio que some com os comentários.
+- `posts/__tests__/queries.test.tsx` (implementação): `useFeedQuery`, `useArtistPostsQuery`, `usePostQuery` e `useCommentsQuery` esperam a rede e vão para o disco com a API (`networkMode: 'online'`, `meta: { realData: true }`, pausadas sem rede) e, nas fixtures, rodam sem rede e ficam fora do disco. `posts/__tests__/moderation-queries.test.tsx`: bloquear tira os comentários do autor de todo cache só no sucesso; denunciar e bloquear com a mesma chave depois de falha incerta e nova depois de recusa; o retorno com o hook desmontado só avisa.
+- `posts/__tests__/post-cards.test.tsx` e o teste da linha: o botão de opções só no comentário de outro fã, irmão da linha, com o rótulo; nada no "Você", no do artista e no "enviando". A `PostRow` de foto sem legenda mostra a miniatura e o rótulo sem o texto; a de vídeo com a mídia de URLs nulas mostra a miniatura com a marca de vídeo.
+- `posts/__tests__/fixtures.test.ts`: o mural filtrado pelas centrais seguidas; sair do Netto tira os posts dele.
+- O compositor: texto só de invisíveis mostra o erro e não envia; o texto limpo é o que vai.
+- `agenda/__tests__/rsvp.test.tsx`: `useAgendaQuery`, `useArtistAgendaQuery`, `useMyRsvpsQuery` e `useIsGoing` com a API e nas fixtures, como as do mural; recusa `notFound` busca a agenda e o mural de novo; a presença com pontos busca também o detalhe da central (e a sem pontos não).
+- `posts/__tests__/post-details.test.tsx` (implementação, depois da revisão): o post com o detalhe no cache e a busca que volta 404 mostra "Este post não existe mais.", sem o campo, anunciado uma vez; curtir com 404 desfaz e invalida o mural (`postKeys.all`) e os detalhes das centrais; a curtida da fila recusada com 404 também; comentar com 404 leva ao aviso; o comentário com pontos busca também `artistKeys.details()`.
+- `artist-page/__tests__/describe.test.ts`: a célula de foto e de vídeo sem legenda é lida sem o texto e sem os dois-pontos.
+- `artists/__tests__/api.test.ts`: sem a troca do `postCount`.
+- Navegação (`src/navigation/__tests__/post.test.tsx`): o botão abre a sheet; "Denunciar comentário" fecha e anuncia; "Bloquear" fecha e o comentário some da lista; sem internet os dois ficam desligados; a sheet aberta a frio fecha.
+- `artist-page`: a sheet de sair com a frase do mural.
+
+### 21.16 Perguntas
+
+Para a cliente (UP-48, UP-45 e UP-9):
+
+1. Moderação: os motivos da denúncia (proposta: spam, ofensivo, assédio, outro, e o motivo opcional); ocultar sozinho com N denúncias (proposta: não agora; a equipe olha a fila todo dia, e a App Store pede agir em até 24 h); quem da equipe cuida (a seção Moderação); o texto dos termos de uso sobre conteúdo (as lojas pedem termos que proíbam conteúdo ofensivo, com a revisão jurídica, UP-45).
+2. Comentários de quem exclui a conta: apagar (proposta) ou anonimizar; o texto de um comentário denunciado sai junto (proposta: sim, a fila fica com os ids). Revisão jurídica, UP-45.
+3. Valores de curtir, comentar e "Eu vou" (hoje 0, 2 e 0, provisórios, UP-9). O contrato diz que toda interação vale pontos.
+4. Hora do show no fuso do lugar ou do aparelho (proposta: do aparelho, como hoje; só muda para quem está fora do UTC-3).
+5. Local do show: mostrar no app (proposta: guardar agora e mostrar no destaque da 1m quando o design passar por ele).
+
+Para o dono:
+
+6. Vídeo: guardar o mp4 (até 50 MB, opcional) ou só a capa. Proposta: guardar, para quando o app tocar vídeo (pede `expo-video` e build nova, fora deste bloco).
+7. Mural só das centrais do fã (proposta) ou todas as centrais quando o fã não segue nenhuma.
+8. Tela "Fãs bloqueados" nos Ajustes, para desbloquear (proposta: num bloco seguinte, com `GET /me/blocks`; a rota de desbloquear já existe).
+9. Resposta do artista nos comentários, publicada pela equipe no painel (`authorIsArtist`, o selo de verificado na linha). Fora deste bloco; o campo já existe no contrato.
+10. `deleteArtist` recusando central com post ou show (`has-content`), a mudança de comportamento numa callable de hoje (21.1, decisão 23), com `deletePost` e `deleteEvent` só para o rascunho que nunca foi ao ar, liberados ao editor com `artists` (proposta).
+11. Quantos vão a cada show no painel (um `goingCount` em shards, como as contagens dos posts). Proposta: só se a equipe pedir; os fluxos por dia já mostram as presenças.
+12. Para o bloco 8: o ponto de curtir, comentar e "Eu vou" numa central da qual o fã não é membro entra em `centralPoints` dela (21.1, decisão 10), e por isso no ranking da central. Proposta: contar (o fã engajou com o artista), e o ranking da central decidir no bloco 8 se mostra só membros.
+
+### 21.17 Fora deste bloco e publicação
+
+- **Fora deste bloco (só documentado):** as telas do painel (Mural e Agenda dentro de Artistas, a fila da Moderação, os rótulos das ações novas na auditoria), bloco 11; a tela de desbloquear; tocar vídeo; a resposta do artista; ocultar por número de denúncias; o `goingCount`; o detalhe de um show (`GET /events/:eventId`), quando houver a tela; a moderação de outro conteúdo de usuário (o app não tem outro).
+- **Publicação**, só com o ok do dono, nesta ordem: regras e índices (`deploy --only firestore:rules,firestore:indexes`); esperar os índices novos ficarem prontos no console (são nove compostos; sem eles, o mural, a grade, os comentários e a agenda respondem 500, e a seção Fãs não lista quem vai a um show); as regras do Storage (`npm run rules:deploy` já leva; o papel IAM do bloco 4 serve); depois todas as funções (`npm run functions:deploy`), que levam a `api` com as rotas novas, o gatilho `queuePostCountSync` e a fila `syncPostCounts` novos, as nove callables novas (`createPost`, `updatePost`, `setPostStatus`, `deletePost`, `createEvent`, `updateEvent`, `setEventStatus`, `deleteEvent` e `moderateComment`), o `deleteArtist` com o `has-content` e o `deleteUserData` novo, usado pela `deleteUserProfile` e pela `createUserProfile`. A fila nova usa a mesma conta de serviço e os mesmos papéis da fila do bloco 4 (19.6). O `EXPO_PUBLIC_API_URL` segue a regra da seção 13: só depois do bloco 10.
+
+### 21.18 Armadilhas do bloco 6
+
+- `likeCount` e `commentCount` de `posts/{id}` são cópias: ficam uns 10 a 20 s atrás. A leitura soma a curtida e os comentários de quem chama que a cópia ainda não viu; nunca grave a contagem direto no post.
+- A tarefa copia mesmo com os números iguais quando a leitura é mais nova: o `countsAt` precisa passar o `countedAt` da curtida de quem curtiu, senão a correção soma 1 a mais para sempre.
+- A correção para quem chama compara o `countsAt` (o `readTime` dos shards) com o `countedAt` (o `serverTimestamp` do commit), nunca com o `award.now`: o "agora" do pedido é anterior ao commit, e a cópia que lê os shards no meio fica sem a ação e com o `countsAt` depois dele. O `updatedAt` e o `createdAt` continuam o `award.now`, para a ordem, o cursor e o bloco 7.
+- O mural usa `in` em blocos de 30 centrais e junta os blocos na mesma ordem; o cursor é `[publishedAt, id]`, e cada bloco busca `limit + 1`.
+- Post visível é post no ar de central no ar. A central fora do ar esconde os posts dela no mural, na grade e no detalhe, mesmo publicados.
+- `publishedAt` é da primeira publicação e não muda: é a ordem do mural e o "há N horas" do app.
+- O "Eu vou" do post de show e o da agenda são a mesma presença; show fora do ar ou encerrado volta `event: null` no post, e o `PUT` recusa com 404.
+- "Já passou" tem um corte só no servidor, o começo do dia de hoje em São Paulo (`agendaCutoff`), na lista, no destaque, no `event` do post, no "Eu vou" e no `/me/rsvps`: é a regra do `isUpcoming` do app. Um corte de 24 h no destaque mandava um show que o app já descarta, e o topo caía no próximo show, e não no próximo destaque.
+- Curtida e presença não somem no desfazer: ficam com `liked: false` ou `going: false`. Toda leitura confere o estado, e o shard, os fluxos e o teto só mexem na troca. O bloco 7 conta a primeira vez pelo documento que nasce.
+- Foto e vídeo sem mídia respondem `media` com as URLs nulas e as medidas padrão, nunca `null`: o app decide a miniatura pela presença de `media`.
+- O "Eu vou" lê as centrais do show na transação e paga e soma só nas que estão no ar.
+- Nomes de subcoleção específicos (`postLikes`, `eventRsvps`, `postComments`): as regras de grupo valem para qualquer coleção com o mesmo nome.
+- O texto do comentário é limpo antes de validar, nos dois lados, e o limite conta UTF-16, como o `maxLength` do campo. Mudou a regra num lado, mude no outro e a tabela dos dois testes.
+- Nome e foto do comentário são cópias: não seguem a renomeação do fã.
+- Bloquear esconde só para quem bloqueou, e a contagem do post continua a de todos.
+- A denúncia não esconde nada; ocultar é da equipe, pela callable. Ocultar e reexibir mexem na contagem pelo shard.
+- Os tetos do dia contam na carteira (`days[dia].count`), que passa a ser gravada em toda curtida, comentário, presença, denúncia e bloqueio novos. Desfazer nunca é recusado.
+- Na exclusão, as curtidas e os comentários saem antes do `recursiveDelete`, porque descontam o shard; as presenças, sem contador, saem com ele. Páginas de 100 e uma gravação de shard por post e transação, para ficar abaixo de 500 gravações.
+- O seed publica foto e vídeo sem mídia; o painel não consegue (`missing-media`). O seed usa o `SEED_ENGAGEMENT_CONFIG`, com curtir, comentar e "Eu vou" em 0: o padrão paga 2 por comentário.
+- `has-content` conta também o rascunho: a equipe apaga o que nunca foi ao ar (`deletePost`, `deleteEvent`) antes de apagar a central. O `updateEvent` não tira a central de um post que aponta para o show (`event-has-posts`), e procura só os posts das centrais que saem (`artistId in`): o `limit` sem esse filtro deixava passar o post do 21º em diante.
+- `blockLists` é só do servidor, nem a equipe lê.
+- O emulador não exige índice: a falta só aparece em produção, como código 9. Índices antes da `api`.
+- Callback passado ao `useMutation` roda com a tela desmontada: a sheet de opções confere se está montada antes de navegar.
 
 ## Armadilhas
 

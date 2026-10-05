@@ -92,6 +92,13 @@ describe('célula da grade', () => {
   ] as const)('post de %s é lido com o autor, a hora e o texto', (kind, label) => {
     expect(postCellLabel(post({ kind }), NOW)).toBe(label);
   });
+
+  it.each([
+    ['photo', 'Post de Netto Brito, há 2 horas'],
+    ['video', 'Vídeo de Netto Brito, há 2 horas'],
+  ] as const)('%s sem legenda é lido sem o texto e sem os dois-pontos', (kind, label) => {
+    expect(postCellLabel(post({ kind, text: '' }), NOW)).toBe(label);
+  });
 });
 
 describe('medidas da capa e do header compacto', () => {

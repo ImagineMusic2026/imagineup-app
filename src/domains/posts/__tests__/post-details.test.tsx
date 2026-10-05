@@ -110,6 +110,21 @@ const savedComment = (text: string, id = 'c-servidor') => ({
   pointsAwarded: 0,
 });
 
+/** As chaves que a tela mandou buscar de novo (`invalidateQueries`). */
+const invalidatedKeys = (spy: jest.SpyInstance) =>
+  spy.mock.calls.map(([filters]) => (filters as { queryKey: readonly unknown[] }).queryKey);
+
+const gone = () => new ApiError('notFound', 'Post não encontrado.', 404);
+
+/** A API respondendo que o post saiu do ar (o detalhe dá 404; o resto como antes). */
+function postGoneFromApi(): void {
+  const answer = get.getMockImplementation();
+  get.mockImplementation(async (url, config) => {
+    if (url === '/posts/p-clipe') throw gone();
+    return answer?.(url, config) as never;
+  });
+}
+
 const idempotencyKeys = () =>
   post.mock.calls.map(
     ([, , config]) => (config?.headers as Record<string, string>)['Idempotency-Key'],
@@ -334,6 +349,7 @@ describe('post com comentários', () => {
 
   it('o comentário entra na hora com "enviando…", a contagem sobe e ele chega com "+2"', async () => {
     await renderPost();
+    const invalidate = jest.spyOn(client, 'invalidateQueries');
     sendComment('  Clipe lindo demais, Netto!  ');
 
     // Na hora, antes da resposta: o campo limpa e a linha aparece no topo.
@@ -353,6 +369,10 @@ describe('post com comentários', () => {
     expect(haptics.trigger).toHaveBeenCalledWith('pointsEarned');
     expect(screen.getByText(`+${COMMENT_POINTS}`, hidden)).toBeTruthy();
     expect(fixtureWallet.get().balance).toBe(12_480 + COMMENT_POINTS);
+    // Com pontos: o saldo, as centrais e o "PTS DA CENTRAL" da 1d buscam de novo.
+    expect(invalidatedKeys(invalidate)).toEqual(
+      expect.arrayContaining([profileKeys.wallet(), artistKeys.centrals(), artistKeys.details()]),
+    );
   });
 
   it('comentário recusado sai: a contagem volta e o texto volta ao campo', async () => {
@@ -608,6 +628,35 @@ describe('post com comentários', () => {
     expect(screen.queryByLabelText(t('post.commentPlaceholder'))).toBeNull();
   });
 
+  it('post que saiu do ar com o detalhe no cache mostra o aviso quando a busca volta 404', async () => {
+    mockApi();
+    postGoneFromApi();
+    // Aberto antes (ou do disco): o detalhe está no cache e a tela busca de novo.
+    client.setQueryData(postKeys.detail('p-clipe'), findPostFixture(new Date(), 'p-clipe'));
+    await client.invalidateQueries({ queryKey: postKeys.detail('p-clipe') });
+    render(<PostDetailsScreen />, { wrapper });
+
+    expect(await screen.findByLabelText(t('post.details.notFound'))).toBeTruthy();
+    expect(screen.queryByText(CLIP_TEXT)).toBeNull();
+    expect(screen.queryByLabelText(t('post.commentPlaceholder'))).toBeNull();
+    await waitFor(() => expect(announcements()).toEqual([t('post.details.notFound')]));
+    await settle();
+  });
+
+  it('comentar num post que saiu do ar (404) leva ao aviso, e o mural busca de novo', async () => {
+    mockApi();
+    await renderPost();
+    post.mockRejectedValue(gone());
+    postGoneFromApi();
+    client.setQueryData(postKeys.feed(), { pages: [], pageParams: [] });
+
+    sendComment('Ainda dá tempo?');
+
+    expect(await screen.findByLabelText(t('post.details.notFound'))).toBeTruthy();
+    expect(client.getQueryState(postKeys.feed())?.isInvalidated).toBe(true);
+    await settle();
+  });
+
   it('post que não carregou mostra "Tentar de novo", anuncia uma vez e busca de novo', async () => {
     mockApi();
     const answer = get.getMockImplementation();
@@ -742,6 +791,41 @@ describe('curtir no post', () => {
     expect(announcements()).toContain(t('post.likeError'));
   });
 
+  it('curtir um post que saiu do ar (404) desfaz, e o mural, a grade, o "N posts" e o detalhe buscam de novo', async () => {
+    mockApi();
+    seedFeed();
+    await renderPost();
+    request.mockRejectedValue(gone());
+    postGoneFromApi();
+    const invalidate = jest.spyOn(client, 'invalidateQueries');
+
+    fireEvent.press(screen.getByRole('button', { name: 'Curtir, 4.812 curtidas' }));
+
+    expect(await screen.findByLabelText(t('post.details.notFound'))).toBeTruthy();
+    expect(feedPost()).toMatchObject({ likedByMe: false, likeCount: 4_812 });
+    expect(client.getQueryState(postKeys.feed())?.isInvalidated).toBe(true);
+    expect(invalidatedKeys(invalidate)).toEqual(
+      expect.arrayContaining([postKeys.all, artistKeys.details()]),
+    );
+    expect(announcements()).toContain(t('post.likeError'));
+    await settle();
+  });
+
+  it('a curtida que volta da fila (sem a tela) e é recusada com 404 também faz o mural buscar de novo', async () => {
+    mockApi();
+    registerPostMutationDefaults(client);
+    seedFeed();
+    request.mockRejectedValue(gone());
+
+    await expect(
+      client
+        .getMutationCache()
+        .build(client, { mutationKey: postMutationKeys.like })
+        .execute({ postId: 'p-clipe', liked: true, idempotencyKey: 'da-fila' }),
+    ).rejects.toBeInstanceOf(ApiError);
+    expect(client.getQueryState(postKeys.feed())?.isInvalidated).toBe(true);
+  });
+
   describe('missão de curtida', () => {
     const NENHO_TEXT = 'Um pedaço do ensaio de ontem. Qual música vocês querem no show?';
     const invalidated = (spy: jest.SpyInstance) =>
@@ -804,5 +888,50 @@ describe('curtir no post', () => {
       expect(client.getQueryState(profileKeys.wallet())?.isInvalidated).toBe(true);
       expect(client.getQueryState(artistKeys.centrals())?.isInvalidated).toBe(true);
     });
+  });
+});
+
+describe('bloco 6: texto limpo, invisíveis e páginas de bloqueados', () => {
+  it('texto só de invisíveis mostra o erro abaixo do campo, anunciado, e não envia', async () => {
+    await renderPost();
+    sendComment('ㅤㅤ');
+    expect(await screen.findByText(t('validation.commentInvisible'))).toBeTruthy();
+    expect(announcements()).toContain(t('validation.commentInvisible'));
+    expect(commentMutations()).toHaveLength(0);
+    // Digitar de novo tira o erro.
+    type('Oi');
+    expect(screen.queryByText(t('validation.commentInvisible'))).toBeNull();
+    await settle();
+  });
+
+  it('o texto limpo (NFC, sem isolantes e sem espaço nas pontas) é o que vai e o que a linha mostra', async () => {
+    await renderPost();
+    sendComment('  ⁦Irará⁩ top  ');
+    expect(await screen.findByLabelText(pendingLabel('Irará top'))).toBeTruthy();
+    await screen.findByLabelText(sentLabel('Irará top'));
+    await settle();
+  });
+
+  it('página que chega vazia com mais adiante (comentários de bloqueados): a tela pede a seguinte sozinha', async () => {
+    mockApi();
+    const answer = get.getMockImplementation();
+    get.mockImplementation(async (url, config) => {
+      const cursor = (config?.params as { cursor?: string | null } | undefined)?.cursor ?? null;
+      if (url === '/posts/p-clipe/comments' && cursor === null) {
+        return { data: { items: [], nextCursor: '0' } } as never;
+      }
+      return answer?.(url, config) as never;
+    });
+    render(<PostDetailsScreen />, { wrapper });
+    expect(
+      await screen.findByText('Thalita sempre na frente 🔥', hidden, { timeout: 5000 }),
+    ).toBeTruthy();
+    const calls = get.mock.calls.filter(
+      ([url, config]) =>
+        url === '/posts/p-clipe/comments' &&
+        (config?.params as { cursor?: string | null }).cursor === '0',
+    );
+    expect(calls).toHaveLength(1);
+    await settle();
   });
 });

@@ -38,25 +38,29 @@ describe('fonte de cada domínio', () => {
     expect(usesFixtures()).toBe(true);
   });
 
-  it('com a API, a carteira (bloco 1), as centrais (bloco 4) e o convite (bloco 5) vão para o servidor; o resto segue nas fixtures', () => {
+  it('com a API, a carteira (bloco 1), as centrais (bloco 4), o convite (bloco 5), o mural e a agenda (bloco 6) vão para o servidor; o resto segue nas fixtures', () => {
     const { sourceOf, usesFixtures, SERVER_DOMAINS } = load({
       apiUrl: 'https://southamerica-east1-imagine-up-app.cloudfunctions.net/api',
     });
-    expect([...SERVER_DOMAINS]).toEqual(['wallet', 'artists', 'invite']);
+    expect([...SERVER_DOMAINS]).toEqual(['wallet', 'artists', 'invite', 'posts', 'agenda']);
     expect(DOMAINS.filter((domain) => sourceOf(domain) === 'api')).toEqual([
       'wallet',
       'invite',
       'artists',
+      'posts',
+      'agenda',
     ]);
     expect(usesFixtures()).toBe(true);
   });
 
-  it('com o emulador, as centrais e o convite vêm da api dele', () => {
+  it('com o emulador, as centrais, o convite, o mural e a agenda vêm da api dele; as missões não', () => {
     const emulatorApi = realServer().resolveApiUrl('10.0.2.2', undefined);
     const { sourceOf } = load({ apiUrl: emulatorApi });
     expect(sourceOf('artists')).toBe('api');
     expect(sourceOf('invite')).toBe('api');
-    expect(sourceOf('posts')).toBe('fixtures');
+    expect(sourceOf('posts')).toBe('api');
+    expect(sourceOf('agenda')).toBe('api');
+    expect(sourceOf('missions')).toBe('fixtures');
   });
 });
 

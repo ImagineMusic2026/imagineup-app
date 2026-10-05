@@ -8,9 +8,14 @@ export type StoredFile = {
   contentType: string | null;
   /** Metadado customizado do upload (o painel manda width e height). */
   customMetadata: Record<string, string>;
+  /** Tamanho em bytes, quando o bucket diz (o mp4 dos posts de vídeo guarda). */
+  size?: number;
 };
 
-/** O que as funções de artistas usam do Storage (trocável nos testes). */
+/**
+ * O que as funções do painel usam do Storage (trocável nos testes): as de
+ * artistas e, desde o bloco 6, as de posts e shows.
+ */
 export type ArtistFiles = {
   /** Metadados do arquivo; null se ele não existe. */
   describe(path: string): Promise<StoredFile | null>;
@@ -38,7 +43,12 @@ export function bucketFiles(getBucket: () => Bucket): ArtistFiles {
         for (const [key, value] of Object.entries(metadata.metadata ?? {})) {
           if (value !== null) customMetadata[key] = String(value);
         }
-        return { contentType: metadata.contentType ?? null, customMetadata };
+        const size = Number(metadata.size);
+        return {
+          contentType: metadata.contentType ?? null,
+          customMetadata,
+          ...(Number.isFinite(size) ? { size } : {}),
+        };
       } catch (error) {
         if ((error as { code?: unknown }).code === 404) return null;
         throw error;

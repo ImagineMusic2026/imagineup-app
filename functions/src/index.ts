@@ -10,6 +10,7 @@ import * as logger from 'firebase-functions/logger';
 import { setGlobalOptions } from 'firebase-functions/options';
 import { onTaskDispatched } from 'firebase-functions/tasks';
 
+import { addEvent, changeEventStatus, editEvent, removeEvent } from './agenda';
 import {
   addArtist,
   bucketFiles,
@@ -30,6 +31,19 @@ import {
 } from './centrals';
 import { handleUserCreated, type FindUser } from './handlers';
 import { INVITE_KEY_SECRET } from './invites';
+import { moderate } from './moderation';
+import {
+  addPost,
+  changePostStatus,
+  editPost,
+  POST_COUNTS_MAX_ATTEMPTS,
+  POST_COUNTS_QUEUE,
+  queuePostCountSync as enqueuePostCountSync,
+  removePost,
+  runPostCountSync,
+  type ContentDeps,
+  type PostCountsQueue,
+} from './posts';
 import {
   acceptInvite,
   cancelInvite,
@@ -222,9 +236,84 @@ export const deleteArtist = onCall({ cors: PANEL_ORIGINS }, async (request) => {
   return result;
 });
 
+// Mural e agenda (bloco 6, docs/arquitetura-api.md, 21.9): a equipe publica
+// posts e shows pelo painel, com a seção artists (o conteúdo é da central;
+// provisório até a UP-9), e age nos comentários denunciados com a seção
+// moderation. Mesmo molde das de artistas: auditoria em staffAudit, a mídia
+// sobe do navegador para o Storage e a função confere o arquivo. As telas são
+// do bloco 11 (imagineup-admin); o contrato está em 21.9.
+
+const contentDeps = (): ContentDeps => ({
+  db: getFirestore(),
+  files: bucketFiles(() => getStorage().bucket()),
+});
+
+/** Cria o post como rascunho (texto, foto, vídeo ou show) numa central. */
+export const createPost = onCall({ cors: PANEL_ORIGINS }, async (request) => {
+  const result = await addPost(contentDeps(), request.auth, request.data);
+  logger.info('Post criado.', { actorUid: request.auth?.uid, postId: result.postId });
+  return result;
+});
+
+/** Edita o texto, o show ou a mídia já enviada de um post. */
+export const updatePost = onCall({ cors: PANEL_ORIGINS }, async (request) => {
+  const result = await editPost(contentDeps(), request.auth, request.data);
+  logger.info('Post alterado.', { actorUid: request.auth?.uid });
+  return result;
+});
+
+/** Publica ou tira do ar um post. Publicar exige a mídia e, no post de show, o show no ar. */
+export const setPostStatus = onCall({ cors: PANEL_ORIGINS }, async (request) => {
+  const result = await changePostStatus(contentDeps(), request.auth, request.data);
+  logger.info('Status do post alterado.', { actorUid: request.auth?.uid });
+  return result;
+});
+
+/** Apaga o post que nunca foi ao ar (o rascunho criado por engano), com a mídia. */
+export const deletePost = onCall({ cors: PANEL_ORIGINS }, async (request) => {
+  const result = await removePost(contentDeps(), request.auth, request.data);
+  logger.info('Post apagado.', { actorUid: request.auth?.uid });
+  return result;
+});
+
+/** Cadastra um show como rascunho, com a data local e o fuso do lugar. */
+export const createEvent = onCall({ cors: PANEL_ORIGINS }, async (request) => {
+  const result = await addEvent(contentDeps(), request.auth, request.data);
+  logger.info('Show criado.', { actorUid: request.auth?.uid, eventId: result.eventId });
+  return result;
+});
+
+/** Edita um show: textos, centrais, data, fuso, destaque e foto já enviada. */
+export const updateEvent = onCall({ cors: PANEL_ORIGINS }, async (request) => {
+  const result = await editEvent(contentDeps(), request.auth, request.data);
+  logger.info('Show alterado.', { actorUid: request.auth?.uid });
+  return result;
+});
+
+/** Publica ou tira do ar um show. */
+export const setEventStatus = onCall({ cors: PANEL_ORIGINS }, async (request) => {
+  const result = await changeEventStatus(contentDeps(), request.auth, request.data);
+  logger.info('Status do show alterado.', { actorUid: request.auth?.uid });
+  return result;
+});
+
+/** Apaga o show que nunca foi ao ar e para o qual nenhum post aponta. */
+export const deleteEvent = onCall({ cors: PANEL_ORIGINS }, async (request) => {
+  const result = await removeEvent(contentDeps(), request.auth, request.data);
+  logger.info('Show apagado.', { actorUid: request.auth?.uid });
+  return result;
+});
+
+/** Oculta, mantém ou reexibe um comentário (seção Moderação, provisória até a UP-48). */
+export const moderateComment = onCall({ cors: PANEL_ORIGINS }, async (request) => {
+  const result = await moderate({ db: getFirestore() }, request.auth, request.data);
+  logger.info('Comentário moderado.', { actorUid: request.auth?.uid, status: result.status });
+  return result;
+});
+
 // API HTTP do app (docs/arquitetura-api.md): carteira, progresso e extrato no
-// bloco 1, centrais no bloco 4, convite no bloco 5; os blocos seguintes
-// acrescentam as rotas deles em src/api. Quem protege é o ID token do Firebase
+// bloco 1, centrais no bloco 4, convite no bloco 5, mural e agenda no bloco 6;
+// os blocos seguintes acrescentam as rotas deles em src/api. Quem protege é o ID token do Firebase
 // em toda rota, por isso o invoker público. Sem CORS: o app nativo não faz
 // preflight, e o painel usa as callables. A visita ao link de convite conta
 // no app, de conta logada, por esta mesma função (20.1, decisão 3).
@@ -233,9 +322,10 @@ let apiHandler: ReturnType<typeof createApiHandler> | null = null;
 
 /**
  * Carteira, progresso e extrato (bloco 1), as centrais (bloco 4: lista,
- * página, "Suas centrais", seguir, entrar e sair) e o convite (bloco 5: o
- * código do fã, o claim, a visita e os links); os pontos são sempre calculados
- * no servidor. O segredo do HMAC da chave da pessoa (INVITE_KEY_SECRET) só
+ * página, "Suas centrais", seguir, entrar e sair), o convite (bloco 5: o
+ * código do fã, o claim, a visita e os links) e o mural e a agenda (bloco 6:
+ * posts, comentários, curtidas, shows, "Eu vou", denúncias e bloqueios); os
+ * pontos são sempre calculados no servidor. O segredo do HMAC da chave da pessoa (INVITE_KEY_SECRET) só
  * chega a esta função, lido a cada pedido.
  */
 export const api = onRequest(
@@ -284,5 +374,35 @@ export const syncArtistFanCount = onTaskDispatched<{ artistId: string }>(
       retryCount: request.retryCount,
     });
     if (result) logger.info('fanCount copiado.', { artistId: request.data.artistId, ...result });
+  },
+);
+
+// Contagens dos posts (bloco 6, docs/arquitetura-api.md, 21.6): curtir,
+// descurtir, comentar e a moderação somam +1 ou -1 num shard
+// (postStats/{id}/countShards), o gatilho põe na fila uma tarefa por post e
+// por janela de 10 s, e a tarefa copia likeCount e commentCount para o post.
+
+let postCountsQueue: PostCountsQueue | null = null;
+
+/** Põe na fila a cópia das contagens do post da gravação (sem ler nada). */
+export const queuePostCountSync = onDocumentWritten(
+  { document: 'postStats/{postId}/countShards/{shard}', retry: true },
+  async (event) => {
+    postCountsQueue ??= getFunctions().taskQueue<{ postId: string }>(POST_COUNTS_QUEUE);
+    await enqueuePostCountSync(postCountsQueue, event.params.postId, Date.parse(event.time), {
+      emulator: process.env.FUNCTIONS_EMULATOR === 'true',
+    });
+  },
+);
+
+/** Soma as curtidas e os comentários dos shards de um post e copia para posts/{id}. */
+export const syncPostCounts = onTaskDispatched<{ postId: string }>(
+  { retryConfig: { maxAttempts: POST_COUNTS_MAX_ATTEMPTS, minBackoffSeconds: 10 } },
+  async (request) => {
+    const result = await runPostCountSync(getFirestore(), request.data, {
+      retryCount: request.retryCount,
+    });
+    if (result)
+      logger.info('Contagens do post copiadas.', { postId: request.data.postId, ...result });
   },
 );

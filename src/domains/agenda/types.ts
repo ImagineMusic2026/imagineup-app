@@ -1,5 +1,6 @@
 /**
- * Contrato provisório com a API. Muda quando o backend (M2) for desenhado.
+ * Contrato com a API da agenda (bloco 6, docs/arquitetura-api.md, seção 21),
+ * espelho de `functions/src/api/contract.ts`: mudou um, mude o outro.
  *
  * Presença em show ("Eu vou"): nasce no post de show da home (1b, aprovado em
  * 2026-09-29) e é a mesma da agenda (1m). As presenças do fã moram numa lista
@@ -55,6 +56,11 @@ export interface AgendaEvent {
    * convite, ajustável no painel). `null` esconde o "+N".
    */
   invitePointsPerSignup: number | null;
+  /**
+   * O local do show (campo novo do bloco 6, opcional): guardado, ainda não
+   * mostrado (pergunta 5 de 21.16).
+   */
+  venue?: string | null;
 }
 
 /** Uma página da agenda: shows futuros em ordem de data. */

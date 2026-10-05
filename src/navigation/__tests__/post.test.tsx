@@ -1,4 +1,4 @@
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { onlineManager, QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { router, Stack } from 'expo-router';
 import { Tabs } from 'expo-router/js-tabs';
 import {
@@ -13,9 +13,10 @@ import { getDoc, onSnapshot } from 'firebase/firestore';
 import { AccessibilityInfo, Text } from 'react-native';
 
 import HomeRoute from '@/app/(tabs)/(inicio)/index';
+import CommentOptionsRoute from '@/app/comentario/[comentarioId]';
 import PostRoute from '@/app/post/[postId]';
 import { missionsFixture } from '@/domains/missions';
-import { postsFixture } from '@/domains/posts/fixtures';
+import { moderationFixture, postsFixture } from '@/domains/posts/fixtures';
 import { haptics } from '@/services/haptics';
 import { usePreferencesStore } from '@/stores/preferences';
 import { useSessionStore } from '@/stores/session';
@@ -106,12 +107,14 @@ const appTree = {
   '(tabs)/(perfil)/perfil': label('profile'),
   '(tabs)/(inicio,explorar,ranking,perfil)/artista/[artistaId]': label('artist'),
   'post/[postId]': PostRoute,
+  'comentario/[comentarioId]': CommentOptionsRoute,
   convidar: label('invite'),
 };
 
 beforeEach(() => {
   jest.clearAllMocks();
   postsFixture.reset();
+  moderationFixture.reset();
   missionsFixture.reset();
   client = new QueryClient({
     defaultOptions: {
@@ -232,4 +235,70 @@ describe('post com comentários', () => {
       await waitFor(() => expect(view.getPathname()).toBe(root));
     },
   );
+});
+
+describe('opções do comentário (denunciar e bloquear, bloco 6)', () => {
+  const THALITA_ROW =
+    'Thalita S., há 1 hora: Já mandei pro grupo da família inteira, Irará em peso! 💃';
+  const OPTIONS = 'Opções do comentário de Thalita S.';
+
+  // Link a frio antes dos que navegam: o Jest guarda os segmentos da última navegação.
+  it('a sheet aberta a frio, sem o comentário no cache, fecha', async () => {
+    const view = renderRouter(appTree, {
+      initialUrl: '/comentario/c-clipe-thalita?post=p-clipe',
+    });
+    await waitFor(() => expect(view.getPathname()).toBe('/'));
+    expect(screen.queryByText('Comentário de Thalita S.')).toBeNull();
+  });
+
+  async function openOptions(view: Router): Promise<void> {
+    expect(await screen.findByLabelText(THALITA_ROW)).toBeTruthy();
+    fireEvent.press(screen.getByRole('button', { name: OPTIONS }));
+    await waitFor(() => expect(view.getPathname()).toBe('/comentario/c-clipe-thalita'));
+    expect(await screen.findByRole('header', { name: 'Comentário de Thalita S.' })).toBeTruthy();
+  }
+
+  it('o botão da linha abre a sheet; "Denunciar comentário" fecha e anuncia', async () => {
+    const view = renderRouter(appTree, { initialUrl: '/post/p-clipe' });
+    await openOptions(view);
+
+    fireEvent.press(screen.getByRole('button', { name: 'Spam' }));
+    fireEvent.press(screen.getByRole('button', { name: 'Denunciar comentário' }));
+
+    await waitFor(() => expect(view.getPathname()).toBe('/post/p-clipe'));
+    expect(AccessibilityInfo.announceForAccessibility).toHaveBeenCalledWith(
+      'Denúncia enviada. A equipe vai analisar.',
+    );
+    // A denúncia não esconde o comentário.
+    expect(screen.getByLabelText(THALITA_ROW)).toBeTruthy();
+  });
+
+  it('"Bloquear" fecha, anuncia e o comentário some da lista', async () => {
+    const view = renderRouter(appTree, { initialUrl: '/post/p-clipe' });
+    await openOptions(view);
+
+    fireEvent.press(screen.getByRole('button', { name: 'Bloquear Thalita S.' }));
+
+    await waitFor(() => expect(view.getPathname()).toBe('/post/p-clipe'));
+    expect(AccessibilityInfo.announceForAccessibility).toHaveBeenCalledWith(
+      'Bloqueio feito: os comentários de Thalita S. somem para você.',
+    );
+    // `not.toBeOnTheScreen`, e não `toBeNull`: a mensagem da volta que ainda
+    // acha a linha imprimiria a árvore inteira (o `_fiber`), uns 2 s de CPU.
+    await waitFor(() => expect(screen.queryByLabelText(THALITA_ROW)).not.toBeOnTheScreen());
+  });
+
+  it('sem internet, denunciar e bloquear ficam desligados', async () => {
+    const view = renderRouter(appTree, { initialUrl: '/post/p-clipe' });
+    await openOptions(view);
+
+    act(() => onlineManager.setOnline(false));
+    expect(
+      screen.getByRole('button', { name: 'Denunciar comentário' }).props.accessibilityState,
+    ).toMatchObject({ disabled: true });
+    expect(
+      screen.getByRole('button', { name: 'Bloquear Thalita S.' }).props.accessibilityState,
+    ).toMatchObject({ disabled: true });
+    act(() => onlineManager.setOnline(true));
+  });
 });

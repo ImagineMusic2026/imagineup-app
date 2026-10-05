@@ -373,3 +373,34 @@ describe('PostActions', () => {
     expect(screen.getAllByRole('button')).toHaveLength(3);
   });
 });
+
+describe('CommentRow: opções do comentário (denunciar e bloquear)', () => {
+  it('no comentário de outro fã, o botão de opções é irmão da linha, com o rótulo e o alvo de 44', () => {
+    const onOptions = jest.fn();
+    render(<CommentRow comment={comment()} now={NOW} onOptions={onOptions} />);
+    const button = screen.getByRole('button', { name: 'Opções do comentário de Thalita S.' });
+    expect(button).toHaveStyle({ width: layout.minTouchTarget, height: layout.minTouchTarget });
+    // A linha continua um elemento só, com o rótulo dela, fora do botão.
+    expect(screen.getByLabelText('Thalita S., há 1 hora: Irará em peso!')).toBeTruthy();
+    expect(nestedPressables()).toEqual([]);
+    fireEvent.press(button);
+    expect(onOptions).toHaveBeenCalledTimes(1);
+  });
+
+  it('nada no "Você", no do artista, no que ainda vai e no que falhou', () => {
+    const onOptions = jest.fn();
+    const cases: { mine?: boolean; overrides: Partial<PostComment> }[] = [
+      { mine: true, overrides: { authorId: 'uid-camila' } },
+      { overrides: { authorIsArtist: true, authorName: 'Netto Brito' } },
+      { overrides: { status: 'pending' } },
+      { overrides: { status: 'failed' } },
+    ];
+    for (const { mine, overrides } of cases) {
+      const view = render(
+        <CommentRow comment={comment(overrides)} now={NOW} mine={mine} onOptions={onOptions} />,
+      );
+      expect(screen.queryByRole('button', { name: /Opções do comentário/ })).toBeNull();
+      view.unmount();
+    }
+  });
+});

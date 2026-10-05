@@ -37,3 +37,33 @@ const LOOSE_ZWJ = new RegExp(
 export function isVisibleLine(text: string): boolean {
   return LINE.test(text) && !BLANK.test(text) && !STACKED_MARKS.test(text) && !LOOSE_ZWJ.test(text);
 }
+
+// Isolantes bidi (U+2066 a U+2069): o teclado não digita, mas vêm em texto
+// colado de outros apps, e a linha visível os recusa.
+const BIDI_ISOLATES = /[⁦-⁩]/g;
+
+/**
+ * Prepara um texto de várias linhas (o comentário do fã, a legenda de um
+ * post), nesta ordem: tira os isolantes bidi colados; junta os acentos (NFC);
+ * troca `\r\n` e `\r` por `\n`; tira os espaços das pontas de cada linha;
+ * junta as linhas vazias seguidas numa e tira as das pontas. É a regra da bio
+ * das centrais com a limpeza dos isolantes. Espelho do `cleanMultiline` do app
+ * (src/utils/visible-line.ts): mudou um, mude o outro e a tabela dos dois
+ * testes (docs/arquitetura-api.md, 21.1, decisão 20).
+ */
+export function cleanMultiline(text: string): string {
+  const lines: string[] = [];
+  const normalized = text.replace(BIDI_ISOLATES, '').normalize('NFC').replace(/\r\n?/g, '\n');
+  for (const raw of normalized.split('\n')) {
+    const line = raw.trim();
+    if (line === '' && (lines.length === 0 || lines.at(-1) === '')) continue;
+    lines.push(line);
+  }
+  while (lines.at(-1) === '') lines.pop();
+  return lines.join('\n');
+}
+
+/** Toda linha não vazia de um texto já limpo (`cleanMultiline`) é visível. */
+export function isVisibleMultiline(text: string): boolean {
+  return text.split('\n').every((line) => line === '' || isVisibleLine(line));
+}

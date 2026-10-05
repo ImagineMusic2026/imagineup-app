@@ -4,7 +4,8 @@ rules_version = '2';
 //
 // Tudo fechado por padrão. O servidor (Admin SDK nas Cloud Functions, que não
 // passa por estas regras) cria o perfil no cadastro e grava pontos, nível,
-// saldo, @, foto, missões, resgates, ranking, convites e a entrada em centrais.
+// saldo, @, foto, missões, resgates, ranking, convites, a entrada em centrais,
+// o mural, a agenda e a moderação.
 // O celular só lê o próprio perfil e edita o nome e a cidade; o resto chega
 // pela API (função api, docs/arquitetura-api.md).
 //
@@ -60,6 +61,17 @@ service cloud.firestore {
         && (staffMember().get('role', '') == 'admin'
           || (staffMember().get('role', '') == 'editor'
             && section in staffMember().get('sections', [])));
+    }
+
+    // Posts e shows (bloco 6): quem publica (artists, a mesma seção do
+    // PANEL_CONTENT_SECTION das funções e do storage.rules), a Moderação (o post
+    // do comentário denunciado) e a seção Fãs (o post e o show das curtidas e
+    // presenças). É conteúdo que o app mostra a qualquer fã logado; só os
+    // rascunhos ficam à vista dessas seções a mais.
+    function canSeeContent() {
+      return canSeeSection('artists')
+        || canSeeSection('moderation')
+        || canSeeSection('fans');
     }
 
     // Campos que o próprio fã pode editar. A foto fica fora: o servidor grava a
@@ -145,6 +157,30 @@ service cloud.firestore {
         allow read: if canSeeSection('fans');
         allow write: if false;
       }
+
+      // Curtidas e presenças do fã (bloco 6): só o servidor grava (API). O fã
+      // não lê nem as próprias: chegam pela API (likedByMe, /me/rsvps). A
+      // equipe com a seção fans lê (seção Fãs do painel).
+      match /postLikes/{postId} {
+        allow read: if canSeeSection('fans');
+        allow write: if false;
+      }
+
+      match /eventRsvps/{eventId} {
+        allow read: if canSeeSection('fans');
+        allow write: if false;
+      }
+    }
+
+    // Pelos grupos de coleção (quem vai a um show, na seção Fãs). Valem para
+    // qualquer coleção com estes nomes, em qualquer profundidade: nenhuma outra
+    // pode se chamar assim.
+    match /{path=**}/postLikes/{postId} {
+      allow read: if canSeeSection('fans');
+    }
+
+    match /{path=**}/eventRsvps/{eventId} {
+      allow read: if canSeeSection('fans');
     }
 
     // Os fãs de uma central, pelo grupo de coleção (seção Fãs do painel).
@@ -284,6 +320,57 @@ service cloud.firestore {
     match /referrals/{uid} {
       allow read: if canSeeSection('fans');
       allow write: if false;
+    }
+
+    // Mural (bloco 6): a equipe publica pelas callables, com a seção artists.
+    // O fã lê tudo pela API, nunca direto, nem os posts no ar.
+    match /posts/{postId} {
+      allow read: if canSeeContent();
+      allow write: if false;
+
+      // Comentários: a equipe que cuida do conteúdo e a da Moderação.
+      match /postComments/{commentId} {
+        allow read: if canSeeSection('artists') || canSeeSection('moderation');
+        allow write: if false;
+      }
+    }
+
+    match /{path=**}/postComments/{commentId} {
+      allow read: if canSeeSection('artists') || canSeeSection('moderation');
+    }
+
+    // Contagens dos posts em shards: só o servidor. O número que o app mostra
+    // é a cópia em posts/{id}, gravada pela fila syncPostCounts.
+    match /postStats/{postId} {
+      allow read, write: if false;
+
+      match /countShards/{shard} {
+        allow read, write: if false;
+      }
+    }
+
+    // Agenda (bloco 6): os shows, pelas callables, com a seção artists.
+    match /events/{eventId} {
+      allow read: if canSeeContent();
+      allow write: if false;
+    }
+
+    // Moderação (bloco 6, provisória até a UP-48): as denúncias e a fila.
+    match /commentReports/{reportId} {
+      allow read: if canSeeSection('moderation');
+      allow write: if false;
+    }
+
+    match /moderationQueue/{commentId} {
+      allow read: if canSeeSection('moderation');
+      allow write: if false;
+    }
+
+    // Listas de bloqueio: dizem quem bloqueou quem, e nenhuma tela do painel
+    // as usa. Só o servidor (API e exclusão de conta). Repete o fechado do
+    // match final de propósito, como o postStats.
+    match /blockLists/{uid} {
+      allow read, write: if false;
     }
 
     match /{document=**} {
