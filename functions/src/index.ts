@@ -29,6 +29,7 @@ import {
   type FanCountQueue,
 } from './centrals';
 import { handleUserCreated, type FindUser } from './handlers';
+import { INVITE_KEY_SECRET } from './invites';
 import {
   acceptInvite,
   cancelInvite,
@@ -222,17 +223,20 @@ export const deleteArtist = onCall({ cors: PANEL_ORIGINS }, async (request) => {
 });
 
 // API HTTP do app (docs/arquitetura-api.md): carteira, progresso e extrato no
-// bloco 1, centrais no bloco 4; os blocos seguintes acrescentam as rotas deles
-// em src/api. Quem
-// protege é o ID token do Firebase em toda rota, por isso o invoker público.
-// Sem CORS: o app nativo não faz preflight, e o painel usa as callables.
+// bloco 1, centrais no bloco 4, convite no bloco 5; os blocos seguintes
+// acrescentam as rotas deles em src/api. Quem protege é o ID token do Firebase
+// em toda rota, por isso o invoker público. Sem CORS: o app nativo não faz
+// preflight, e o painel usa as callables. A visita ao link de convite conta
+// no app, de conta logada, por esta mesma função (20.1, decisão 3).
 
 let apiHandler: ReturnType<typeof createApiHandler> | null = null;
 
 /**
- * Carteira, progresso e extrato (bloco 1) e as centrais (bloco 4: lista,
- * página, "Suas centrais", seguir, entrar e sair); os pontos são sempre
- * calculados no servidor.
+ * Carteira, progresso e extrato (bloco 1), as centrais (bloco 4: lista,
+ * página, "Suas centrais", seguir, entrar e sair) e o convite (bloco 5: o
+ * código do fã, o claim, a visita e os links); os pontos são sempre calculados
+ * no servidor. O segredo do HMAC da chave da pessoa (INVITE_KEY_SECRET) só
+ * chega a esta função, lido a cada pedido.
  */
 export const api = onRequest(
   {
@@ -242,9 +246,14 @@ export const api = onRequest(
     memory: '512MiB',
     cpu: 1,
     concurrency: 80,
+    secrets: [INVITE_KEY_SECRET],
   },
   (req, res) => {
-    apiHandler ??= createApiHandler({ db: getFirestore(), auth: getAuth() });
+    apiHandler ??= createApiHandler({
+      db: getFirestore(),
+      auth: getAuth(),
+      inviteKey: () => INVITE_KEY_SECRET.value(),
+    });
     return apiHandler(req, res);
   },
 );

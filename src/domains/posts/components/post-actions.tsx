@@ -21,7 +21,7 @@ import { borderWidths, colors, layout, motion, spacing, typography } from '@/the
 import { withAlpha } from '@/utils/color';
 import { formatCompact, formatNumber, formatPointsDelta, formatPointsSpoken } from '@/utils/number';
 
-import { useSharePost } from '../hooks/use-share-post';
+import { useSharePoints, useSharePost } from '../hooks/use-share-post';
 import type { LikeAward } from '../queries';
 import type { Post } from '../types';
 
@@ -129,7 +129,7 @@ export interface PostActionsProps {
  */
 export function PostActions({ post, onToggleLike, likeAward = null, onComment }: PostActionsProps) {
   const share = useSharePost();
-  const points = post.sharePointsPerVisit ?? 0;
+  const points = useSharePoints(post);
 
   return (
     <View style={styles.row}>

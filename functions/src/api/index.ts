@@ -6,6 +6,7 @@ import { ApiHttpError, apiError, toApiHttpError } from './errors';
 import { parseIdempotencyKey, requestFingerprint, runIdempotent } from './idempotency';
 import { matchRoute, normalizePath } from './router';
 import { centralRoutes } from './routes/centrals';
+import { inviteRoutes } from './routes/invites';
 import { meRoutes } from './routes/me';
 import type { ApiDeps, ApiRequest, ApiResponse, ApiRoute, ResolvedDeps, RouteInput } from './types';
 
@@ -26,7 +27,12 @@ export { matchRoute } from './router';
 export type * from './types';
 
 /** Rotas de hoje. Cada bloco acrescenta as suas aqui. */
-export const API_ROUTES: readonly ApiRoute[] = [...meRoutes, ...centralRoutes];
+export const API_ROUTES: readonly ApiRoute[] = [...meRoutes, ...centralRoutes, ...inviteRoutes];
+
+/** Sem o segredo do convite nas dependências, só as rotas do convite falham (500). */
+function missingInviteKey(): string {
+  throw new Error('Falta o segredo do convite (inviteKey) nas dependências da API.');
+}
 
 /** Corpo até 16 KiB, medido em req.rawBody. */
 export const MAX_BODY_BYTES = 16 * 1024;
@@ -60,6 +66,7 @@ export function createApiHandler(deps: ApiDeps, routes: readonly ApiRoute[] = AP
     now: deps.now ?? Date.now,
     random: deps.random ?? Math.random,
     config: deps.config ?? createConfigSource(deps.db),
+    inviteKey: deps.inviteKey ?? missingInviteKey,
   };
 
   return async (req: ApiRequest, res: ApiResponse): Promise<void> => {
@@ -81,13 +88,14 @@ export function createApiHandler(deps: ApiDeps, routes: readonly ApiRoute[] = AP
       route = `${target.method} ${target.pattern}`;
 
       if ((req.rawBody?.length ?? 0) > MAX_BODY_BYTES) throw apiError('payload_too_large');
-      uid = await authenticate(resolved.auth, req.get('Authorization'));
+      const caller = await authenticate(resolved.auth, req.get('Authorization'));
+      uid = caller.uid;
       const key = target.writes ? parseIdempotencyKey(req.get('Idempotency-Key')) : null;
 
       const input: RouteInput = { params: match.params, query: queryOf(req), body: req.body };
       target.validate?.(input);
       const now = resolved.now();
-      const base = { ...input, uid, now, deps: resolved };
+      const base = { ...input, uid, email: caller.email, now, deps: resolved };
 
       if (!target.writes) {
         status = 200;

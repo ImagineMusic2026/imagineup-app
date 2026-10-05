@@ -72,8 +72,13 @@ beforeEach(() => {
   jest.clearAllMocks();
   rsvpFixture.reset();
   missionsFixture.reset();
+  // gcTime infinito também nas mutações: o compartilhar conta o link
+  // (useRegisterInviteLinkMutation), e o timer de limpeza seguraria o Jest.
   client = new QueryClient({
-    defaultOptions: { queries: { retry: false, gcTime: Infinity } },
+    defaultOptions: {
+      queries: { retry: false, gcTime: Infinity },
+      mutations: { retry: false, gcTime: Infinity },
+    },
   });
   // O convite do fã e as presenças já no cache, como depois da primeira carga.
   client.setQueryData(profileKeys.invite(), buildMyInviteFixture());
@@ -130,7 +135,7 @@ describe('PostRow', () => {
 
     // O nome diz de qual post é: no mural, os vários "Compartilhar" não saem iguais.
     const chip = screen.getByRole('button', {
-      name: 'Compartilhar o post de Netto Brito, há 2 horas, ganha 2 pontos por pessoa que abrir',
+      name: 'Compartilhar o post de Netto Brito, há 2 horas, ganha 2 pontos por pessoa que abre o link no app',
     });
     expect(screen.getByText('Compartilhar +2')).toBeTruthy();
     expect(chip).toHaveStyle({ minHeight: 44 });

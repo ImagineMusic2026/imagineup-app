@@ -31,6 +31,12 @@ export type ApiDeps = {
   random?: () => number;
   /** Valores e régua com cache; a temporada do lançamento vem da transação. */
   config?: ConfigSource;
+  /**
+   * O segredo do HMAC da chave da pessoa do convite (bloco 5): a função api lê
+   * o INVITE_KEY_SECRET a cada pedido; os testes fixam. Sem ele, só as rotas do
+   * convite falham.
+   */
+  inviteKey?: () => string;
 };
 
 export type ResolvedDeps = Required<ApiDeps>;
@@ -41,7 +47,13 @@ export type RouteInput = {
   body: unknown;
 };
 
-export type ReadContext = RouteInput & { uid: string; now: number; deps: ResolvedDeps };
+export type ReadContext = RouteInput & {
+  uid: string;
+  /** O e-mail do ID token, ou null; nunca o do corpo. */
+  email: string | null;
+  now: number;
+  deps: ResolvedDeps;
+};
 
 export type WriteContext = ReadContext & {
   tx: Transaction;

@@ -31,6 +31,7 @@
     { "collectionGroup": "statsShards", "fieldPath": "bySource", "indexes": [] },
     { "collectionGroup": "statsShards", "fieldPath": "byArtist", "indexes": [] },
     { "collectionGroup": "statsShards", "fieldPath": "cohorts", "indexes": [] },
+    { "collectionGroup": "statsShards", "fieldPath": "byOrigin", "indexes": [] },
     {
       "collectionGroup": "centrals",
       "fieldPath": "artistId",

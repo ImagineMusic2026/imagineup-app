@@ -1,6 +1,7 @@
 import {
   describeInviteLink,
   inviteMessage,
+  inviteTargetLinkId,
   inviteTargetPath,
   inviteTargetText,
   type InviteTarget,
@@ -67,5 +68,24 @@ describe('link do convite', () => {
     expect(link.accessibilityLabel).toBe(
       'Seu link, ainda sem o seu código de convite. Leva para a agenda de shows: São João de Irará.',
     );
+  });
+});
+
+describe('o link com a base do servidor e o link nos números do Perfil', () => {
+  it('a base do servidor (linkBase) troca o domínio do link', () => {
+    expect(describeInviteLink(POST, 'CAMILA12', 'https://imagineup.app').url).toBe(
+      'https://imagineup.app/post/p-clipe?ref=CAMILA12',
+    );
+    expect(describeInviteLink(APP, 'CAMILA12', 'https://imagineup.app').display).toBe(
+      'imagineup.app/?ref=CAMILA12',
+    );
+  });
+
+  it.each<[InviteTarget, string]>([
+    [POST, 'post:p-clipe'],
+    [EVENT, 'agenda'],
+    [APP, 'invite'],
+  ])('%j conta como o link %s', (target, linkId) => {
+    expect(inviteTargetLinkId(target)).toBe(linkId);
   });
 });

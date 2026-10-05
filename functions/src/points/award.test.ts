@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
-import { addDailyCount, mergeFanAwards, type AwardPlan, type FanContext } from './award';
+import {
+  addDailyCount,
+  addInviteCounts,
+  mergeFanAwards,
+  type AwardPlan,
+  type FanContext,
+} from './award';
 import { emptyWallet, type AwardEntry, type WalletState } from './model';
 
 const comment = (id: string): AwardEntry => ({ kind: 'earn', source: 'comment', eventId: id });
@@ -148,5 +154,43 @@ describe('contador do dia sem ponto (addDailyCount)', () => {
     expect(() => addDailyCount(plan(context('uid-a')), context('uid-b'), 'central_entry')).toThrow(
       /não está no plano/,
     );
+  });
+
+  it('as chaves do convite (bloco 5): visitas mandadas e links novos, ao lado das outras', () => {
+    const fan = { ...context('uid-a'), wallet: stored() };
+    const result = plan(fan);
+    addDailyCount(result, fan, 'invite_visit_sent');
+    addDailyCount(result, fan, 'invite_visit_sent');
+    addDailyCount(result, fan, 'invite_link');
+    expect(result.fans[0]!.wallet!.state.days['2026-10-05']).toEqual({
+      earned: 10,
+      count: { central_join: 1, central_entry: 2, invite_visit_sent: 2, invite_link: 1 },
+    });
+  });
+});
+
+describe('convite nos agregados (addInviteCounts)', () => {
+  it('cria o shard do plano quando ele veio nulo, e soma no que já tinha', () => {
+    const empty = { shard: null } as unknown as AwardPlan;
+    addInviteCounts(empty, { event: 'link', kind: 'post' });
+    expect(empty.shard).toMatchObject({
+      invites: { visits: 0, links: 1 },
+      byOrigin: { kind: { post: { signups: 0, visits: 0, links: 1 } } },
+    });
+
+    const withPoints = { shard: null } as unknown as AwardPlan;
+    addInviteCounts(withPoints, { event: 'visit', kind: 'invite' });
+    const shard = withPoints.shard!;
+    addInviteCounts(withPoints, {
+      event: 'signup',
+      kind: 'invite',
+      utmSource: 'instagram',
+      utmCampaign: null,
+    });
+    expect(withPoints.shard).toBe(shard);
+    expect(shard.signups).toEqual({ total: 0, invited: 1 });
+    expect(shard.byOrigin.kind.invite).toEqual({ signups: 1, visits: 1, links: 0 });
+    expect(shard.byOrigin.utmSource).toEqual({ instagram: { signups: 1 } });
+    expect(shard.byOrigin.utmCampaign).toEqual({ _none: { signups: 1 } });
   });
 });

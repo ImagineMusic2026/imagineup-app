@@ -105,3 +105,53 @@ export type JoinCentralResult = { artistId: string; pointsAwarded: number };
 
 /** `LeaveCentralResult` do app (`DELETE /me/centrals/:artistId`). */
 export type LeaveCentralResult = { artistId: string };
+
+// --- Convite (bloco 5), espelho de src/domains/invites/types.ts e do MyInvite de
+// src/domains/profile/types.ts -------------------------------------------------
+
+/** `MyInvite` do app (`GET /me/invite`). `url` e `linkBase` são novos, opcionais no app. */
+export type MyInvite = {
+  code: string;
+  /** O link do atalho Convidar: `linkBase` mais `/?ref=<code>`. */
+  url: string;
+  /** Base dos links que o fã compartilha (muda com o domínio, sem build nova). */
+  linkBase: string;
+  /** `values.invite_visit` da configuração. */
+  pointsPerVisit: number;
+  /** `values.invite_signup` da configuração. */
+  pointsPerSignup: number;
+};
+
+/** Os `utm_*` que o app manda: só estes três; os outros são descartados. */
+export type InviteUtm = { source?: string; medium?: string; campaign?: string };
+
+/** `InviteClaimBody` do app (`POST /invites/claim`). */
+export type InviteClaimBody = {
+  code: string;
+  via: 'link' | 'code';
+  /** Com `via: 'link'`; null com `via: 'code'`. */
+  link: { path: string } | null;
+  utm?: InviteUtm;
+  /** ISO; null com `via: 'code'`. */
+  openedAt?: string | null;
+};
+
+/** `InviteClaimResult` do app. */
+export type InviteClaimResult = { status: 'claimed' | 'already_claimed' };
+
+/** `InviteVisitBody` do app (`POST /invites/visit`). */
+export type InviteVisitBody = {
+  code: string;
+  link: { path: string };
+  utm?: InviteUtm;
+  openedAt?: string | null;
+};
+
+/**
+ * `InviteVisitResult` do app: sempre o mesmo corpo, contando ou não (a
+ * resposta não diz se a pessoa é dona do código nem se já passou por ele).
+ */
+export type InviteVisitResult = { status: 'received' };
+
+/** `InviteLinkResult` do app (`PUT /me/invite/links/:linkId`). */
+export type InviteLinkResult = { linkId: string; created: boolean };

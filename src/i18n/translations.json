@@ -58,7 +58,17 @@
       "creating": "Criando sua conta",
       "haveAccount": "Já tem conta?",
       "signIn": "Entrar",
-      "signInWithEmail": "Entrar com este e-mail"
+      "signInWithEmail": "Entrar com este e-mail",
+      "inviteCode": "Código de convite (opcional)",
+      "inviteCodeHint": "Se alguém te convidou, o código vem no link que você recebeu.",
+      "inviteRejected": {
+        "title": "Confira seu convite",
+        "lead": "Sua conta já foi criada. Confira o código de convite ou continue sem ele.",
+        "notFound": "Não achamos esse código. Confira com quem te convidou.",
+        "notAllowed": "Esse código não vale para esta conta."
+      },
+      "continue": "Continuar",
+      "skipInvite": "Continuar sem código"
     },
     "errors": {
       "invalidCredentials": "E-mail ou senha incorretos.",
@@ -241,7 +251,7 @@
     "blockLabel": "{{author}}, {{time}}. {{text}}",
     "share": "Compartilhar {{points}}",
     "sharePlain": "Compartilhar",
-    "shareLabel": "Compartilhar o post de {{author}}, {{time}}, ganha {{points}} por pessoa que abrir",
+    "shareLabel": "Compartilhar o post de {{author}}, {{time}}, ganha {{points}} por pessoa que abre o link no app",
     "shareLabelPlain": "Compartilhar o post de {{author}}, {{time}}",
     "shareMessage": "Olha esse post de {{artist}} no ImagineUP",
     "likes": "{{count}} curtidas",
@@ -288,7 +298,7 @@
       "videoLabel": "Vídeo do post de {{artist}}",
       "likeLabel": "Curtir, {{likes}}",
       "commentLabel": "Comentar, {{comments}}",
-      "shareLabel": "Compartilhar o post, ganha {{points}} por pessoa que abrir",
+      "shareLabel": "Compartilhar o post, ganha {{points}} por pessoa que abre o link no app",
       "shareLabelPlain": "Compartilhar o post",
       "eventMeta": "{{date}} · {{time}} · {{city}}",
       "eventLabel": "Show {{title}}, {{date}}, {{time}}, {{city}}"
@@ -643,7 +653,7 @@
   },
   "invite": {
     "title": "Convidar",
-    "subtitle": "Cada pessoa que abrir seu link vale pontos.",
+    "subtitle": "Cada pessoa que vier pelo seu link vale pontos.",
     "mission": "Para a missão “{{title}}”",
     "link": "Seu link",
     "target": {
@@ -658,7 +668,7 @@
     "loading": "Carregando seu link",
     "noCode": "Seu código de convite não carregou, e o link sai sem os pontos.",
     "howYouEarn": "Como você ganha",
-    "perVisit": "por pessoa que abre o link",
+    "perVisit": "por pessoa que abre o link no app",
     "perSignup": "por pessoa que se cadastra pelo link",
     "share": "Compartilhar meu link",
     "shareHint": "Abre as opções de compartilhar do celular",
@@ -677,6 +687,7 @@
     "nameRequired": "Digite seu nome.",
     "nameMax": "O nome pode ter até {{max}} caracteres.",
     "nameInvalid": "Use só letras, números e emoji.",
+    "inviteCodeInvalid": "Use só as letras e os números do código.",
     "commentEmpty": "Escreva algo antes de enviar.",
     "commentMax": "O comentário pode ter até {{max}} caracteres."
   },

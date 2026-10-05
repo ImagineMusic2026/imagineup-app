@@ -3,6 +3,7 @@ import { doc, getDoc, onSnapshot, type DocumentData } from 'firebase/firestore';
 import { sourceOf } from '@/config/data-source';
 import { getDb } from '@/firebase';
 import { api } from '@/services/api';
+import type { InviteLinkResult } from '@/domains/invites';
 import { fixtureDelay, fixtureNow } from '@/services/fixtures';
 
 import {
@@ -121,12 +122,34 @@ export async function fetchMyAchievements(): Promise<MyAchievements> {
   return data;
 }
 
-/** Código de convite do fã e o que cada pessoa trazida rende. */
+/**
+ * Código de convite do fã e o que cada pessoa trazida rende. Na API, o
+ * código nasce na primeira chamada e nunca muda.
+ */
 export async function fetchMyInvite(): Promise<MyInvite> {
   if (sourceOf('invite') === 'fixtures') {
     await fixtureDelay();
     return buildMyInviteFixture();
   }
   const { data } = await api.get<MyInvite>('/me/invite');
+  return data;
+}
+
+/**
+ * Conta o link que o fã compartilhou ("links criados" do Perfil): um por
+ * destino (`invite`, `agenda`, `post:<id>`, `artist:<id>`). Nas fixtures,
+ * não chama nada: nas builds há o código de exemplo, e o `PUT` sairia com o
+ * endereço da API vazio; os links de exemplo não mudam.
+ */
+export async function registerInviteLink(
+  linkId: string,
+  idempotencyKey: string,
+): Promise<InviteLinkResult> {
+  if (sourceOf('invite') === 'fixtures') return { linkId, created: false };
+  const { data } = await api.put<InviteLinkResult>(
+    `/me/invite/links/${encodeURIComponent(linkId)}`,
+    undefined,
+    { headers: { 'Idempotency-Key': idempotencyKey } },
+  );
   return data;
 }

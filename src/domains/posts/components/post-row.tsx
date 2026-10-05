@@ -16,7 +16,7 @@ import { borderWidths, colors, layout, radii, spacing, typography } from '@/them
 import { formatRelativeAgoSpoken, formatRelativeShort } from '@/utils/date';
 import { formatCompact, formatNumber, formatPointsDelta, formatPointsSpoken } from '@/utils/number';
 
-import { useSharePost } from '../hooks/use-share-post';
+import { useSharePoints, useSharePost } from '../hooks/use-share-post';
 import type { Post } from '../types';
 
 // A partir daqui, a contagem vira "12 mil" para caber na pílula.
@@ -74,7 +74,7 @@ function PostThumbnail({ post }: { post: Post }) {
 function ShareChips({ post, spokenTime }: { post: Post; spokenTime: string }) {
   const share = useSharePost();
   // Sem pontos nas regras (ou zero), o chip não promete "+N".
-  const points = post.sharePointsPerVisit ?? 0;
+  const points = useSharePoints(post);
   const author = post.artist.name;
   const likes =
     post.likeCount >= COMPACT_FROM ? formatCompact(post.likeCount) : formatNumber(post.likeCount);

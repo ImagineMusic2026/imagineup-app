@@ -1,8 +1,10 @@
 import { useMutation } from '@tanstack/react-query';
 import { AccessibilityInfo } from 'react-native';
 
+import { clearBoundInvite } from '@/domains/invites';
 import { t, type TranslationKey } from '@/i18n';
 import { haptics } from '@/services/haptics';
+import { useSessionStore } from '@/stores/session';
 
 import { deleteAccount, deleteAccountFailure, signOut, type DeleteAccountFailure } from '../api';
 
@@ -28,11 +30,17 @@ export const DELETE_ACCOUNT_ERRORS: Record<DeleteAccountFailure, TranslationKey>
  * o @ somem no servidor (`deleteUserProfile`).
  *
  * Sessão que já não existe (conta excluída em outro aparelho, token
- * revogado) sai da conta também aqui, para o guard levar à entrada.
+ * revogado) sai da conta também aqui, para o guard levar à entrada. O convite
+ * amarrado à conta excluída sai do aparelho (sair da conta não o apaga: ele
+ * volta a valer se a mesma conta entrar de novo dentro do prazo).
  */
 export function useDeleteAccount() {
   return useMutation<void, Error, DeleteAccountVariables>({
-    mutationFn: ({ password }) => deleteAccount(password),
+    mutationFn: async ({ password }) => {
+      const uid = useSessionStore.getState().user?.uid ?? null;
+      await deleteAccount(password);
+      if (uid) await clearBoundInvite(uid).catch(() => undefined);
+    },
     networkMode: 'always',
     retry: false,
     onSuccess: () => {

@@ -16,7 +16,7 @@ import { StatusBar } from 'expo-status-bar';
 import { useEffect } from 'react';
 
 import { preloadLogo } from '@/components/logo';
-import { useAuthListener } from '@/domains/auth';
+import { useAuthListener, useInviteSync } from '@/domains/auth';
 import { useSessionGate } from '@/hooks/use-session-gate';
 import { useStackScreenOptions } from '@/hooks/use-stack-screen-options';
 import { AppProviders } from '@/providers/app-providers';
@@ -30,6 +30,8 @@ if (!isRunningInExpoGo()) SplashScreen.setOptions({ duration: 300, fade: true })
 
 export default function RootLayout() {
   useAuthListener();
+  // Manda o convite amarrado à conta da sessão e a visita do link que abriu o app.
+  useInviteSync();
   const [fontsLoaded, fontError] = useFonts({
     Sora_700Bold,
     Sora_800ExtraBold,

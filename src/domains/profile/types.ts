@@ -31,11 +31,16 @@ export interface Wallet {
 
 /**
  * Convite do fã: o código que vai no `?ref=` dos links que ele compartilha e o
- * que cada pessoa trazida rende. Os valores vêm do painel admin pela API.
+ * que cada pessoa trazida rende. O código nasce no servidor, no primeiro
+ * `GET /me/invite`, e nunca muda; os valores vêm do painel admin pela API.
  */
 export interface MyInvite {
   code: string;
-  /** Por pessoa que abre o link ("+2 por pessoa que abre seu link"). */
+  /** O link do atalho Convidar (`linkBase` mais `/?ref=<code>`). Campo do bloco 5. */
+  url?: string;
+  /** Base dos links que o fã compartilha: muda com o domínio, sem build nova. Campo do bloco 5. */
+  linkBase?: string;
+  /** Por pessoa que abre o link no app ("+2 por pessoa que abre o link no app"). */
   pointsPerVisit: number;
   /** Por pessoa que se cadastra pelo link. */
   pointsPerSignup: number;

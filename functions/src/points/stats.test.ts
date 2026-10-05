@@ -3,9 +3,12 @@ import { describe, expect, it } from 'vitest';
 
 import { addMembershipCounts, type AwardPlan } from './award';
 import {
+  addInviteToShard,
   addMembershipToShard,
   emptyShardDelta,
   isEmptyShardDelta,
+  ORIGIN_NONE,
+  originKey,
   pickShard,
   SHARD_COUNT,
   shardWrite,
@@ -98,5 +101,74 @@ describe('entradas e saídas de centrais (bloco 4)', () => {
     ]);
     expect(plan.shard).toBe(shard);
     expect(shard.totals).toMatchObject({ earned: 10, joined: 2, left: 0 });
+  });
+});
+
+describe('convite e cadastros nos shards (bloco 5)', () => {
+  it('cadastro convidado: o total, o tipo e os recortes de utm_source e utm_campaign', () => {
+    const delta = emptyShardDelta();
+    addInviteToShard(delta, {
+      event: 'signup',
+      kind: 'post',
+      utmSource: 'instagram',
+      utmCampaign: 'sao-joao',
+    });
+    addInviteToShard(delta, { event: 'signup', kind: 'code' });
+    expect(shardWrite(delta, '2026-10-05', NOW)).toEqual({
+      day: '2026-10-05',
+      signups: { invited: FieldValue.increment(2) },
+      byOrigin: {
+        kind: {
+          post: { signups: FieldValue.increment(1) },
+          code: { signups: FieldValue.increment(1) },
+        },
+        utmSource: {
+          instagram: { signups: FieldValue.increment(1) },
+          _none: { signups: FieldValue.increment(1) },
+        },
+        utmCampaign: {
+          'sao-joao': { signups: FieldValue.increment(1) },
+          _none: { signups: FieldValue.increment(1) },
+        },
+      },
+      updatedAt: Timestamp.fromMillis(NOW),
+    });
+  });
+
+  it('visita e link só pelo tipo: os utm_* nunca entram (cada valor novo seria uma chave nova)', () => {
+    const delta = emptyShardDelta();
+    addInviteToShard(delta, { event: 'visit', kind: 'artist', utmSource: 'x', utmCampaign: 'y' });
+    addInviteToShard(delta, { event: 'link', kind: 'artist', utmSource: 'x', utmCampaign: 'y' });
+    expect(shardWrite(delta, '2026-10-05', NOW)).toEqual({
+      day: '2026-10-05',
+      invites: { visits: FieldValue.increment(1), links: FieldValue.increment(1) },
+      byOrigin: {
+        kind: { artist: { visits: FieldValue.increment(1), links: FieldValue.increment(1) } },
+      },
+      updatedAt: Timestamp.fromMillis(NOW),
+    });
+  });
+
+  it('a chave do recorte: o valor cortado em 40; sem valor, _none', () => {
+    expect(originKey('x'.repeat(60))).toBe('x'.repeat(40));
+    expect(originKey(null)).toBe('_none');
+    expect(originKey(undefined)).toBe('_none');
+    expect(originKey('')).toBe('_none');
+    expect(ORIGIN_NONE).toBe('_none');
+  });
+
+  it('o cadastro do dia (gatilho de cadastro): só signups.total', () => {
+    const delta = emptyShardDelta();
+    delta.signups.total = 1;
+    expect(isEmptyShardDelta(delta)).toBe(false);
+    expect(shardWrite(delta, '2026-10-05', NOW)).toEqual({
+      day: '2026-10-05',
+      signups: { total: FieldValue.increment(1) },
+      updatedAt: Timestamp.fromMillis(NOW),
+    });
+  });
+
+  it('shard vazio continua vazio com os campos novos zerados', () => {
+    expect(isEmptyShardDelta(emptyShardDelta())).toBe(true);
   });
 });

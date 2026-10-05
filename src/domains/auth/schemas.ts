@@ -1,5 +1,6 @@
 import { z } from 'zod';
 
+import { normalizeInviteCode } from '@/domains/invites';
 import { t } from '@/i18n';
 import { cleanLine, DISPLAY_NAME_MAX, isVisibleLine } from '@/utils/visible-line';
 
@@ -47,10 +48,27 @@ export const signInSchema = z.object({
 
 export type SignInForm = z.infer<typeof signInSchema>;
 
+/**
+ * "Código de convite (opcional)": vazio é "sem código"; senão, o código
+ * normalizado (sem espaços nem hífens, em maiúsculas), ou o erro quando ele
+ * não tem o formato. Quem confere se ele existe é o servidor, no claim.
+ */
+export const inviteCodeField = z
+  .string()
+  .optional()
+  .transform((value = '', ctx) => {
+    if (!value.trim()) return '';
+    const code = normalizeInviteCode(value);
+    if (code) return code;
+    ctx.addIssue({ code: 'custom', message: t('validation.inviteCodeInvalid') });
+    return z.NEVER;
+  });
+
 export const signUpSchema = z.object({
   name: nameField,
   email: emailField,
   password: passwordField,
+  inviteCode: inviteCodeField,
 });
 
 /** O que o formulário guarda (texto cru) e o que o envio recebe (já limpo). */

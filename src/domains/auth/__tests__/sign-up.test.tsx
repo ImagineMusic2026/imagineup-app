@@ -1,3 +1,4 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, renderHook, waitFor } from '@testing-library/react-native';
 import { FirebaseError } from 'firebase/app';
@@ -11,7 +12,8 @@ import {
 import { onSnapshot, updateDoc } from 'firebase/firestore';
 import type { ReactNode } from 'react';
 
-import { readPendingInvite, savePendingInvite } from '@/domains/invites';
+import { readBoundInvite, readPendingInvite, savePendingInvite } from '@/domains/invites';
+import { ApiError } from '@/services/api';
 import { haptics } from '@/services/haptics';
 import { usePreferencesStore } from '@/stores/preferences';
 import { useSessionStore } from '@/stores/session';
@@ -19,12 +21,14 @@ import { useSessionStore } from '@/stores/session';
 import {
   authErrorMessageKey,
   fillMissingProfileName,
+  sendInviteClaim,
   sendPasswordReset,
   signUpWithEmail,
   waitForProfile,
 } from '../api';
+import { INVITE_CLAIM_WAIT_MS } from '../consts';
 import { usePasswordReset } from '../hooks/use-password-reset';
-import { useSignUp } from '../hooks/use-sign-up';
+import { useFinishSignUp, useSignUp } from '../hooks/use-sign-up';
 
 // O build do Firebase que o Jest resolve é ESM; o app só precisa da classe de erro.
 jest.mock('firebase/app', () => ({
@@ -64,6 +68,12 @@ jest.mock('@/config/data-source', () => ({
   usesFixtures: () => true,
 }));
 
+// O claim do convite é o do app de verdade, menos a ida ao servidor.
+jest.mock('../api', () => ({
+  ...jest.requireActual('../api'),
+  sendInviteClaim: jest.fn(async () => ({ status: 'claimed' })),
+}));
+
 jest.mock('@/firebase', () => ({
   getFirebaseAuth: () => ({}),
   getDb: () => ({}),
@@ -81,7 +91,15 @@ const listen = jest.mocked(onSnapshot);
 const writeProfile = jest.mocked(updateDoc);
 const sendReset = jest.mocked(sendPasswordResetEmail);
 
-const form = { name: 'Beatriz Santos', email: 'beatriz@x.com', password: 'senha-123' };
+const form = {
+  name: 'Beatriz Santos',
+  email: 'beatriz@x.com',
+  password: 'senha-123',
+  inviteCode: '',
+};
+
+const claim = jest.mocked(sendInviteClaim);
+const LINK = { path: '/post/p-clipe', utm: { source: 'instagram' } };
 
 /** Registra a ordem das chamadas ao Firebase e guarda o listener do perfil. */
 function fakeFirebase() {
@@ -126,7 +144,8 @@ function wrapper({ children }: { children: ReactNode }) {
   return <QueryClientProvider client={client}>{children}</QueryClientProvider>;
 }
 
-beforeEach(() => {
+beforeEach(async () => {
+  await AsyncStorage.clear();
   jest.clearAllMocks();
   jest.spyOn(haptics, 'trigger').mockImplementation(() => undefined);
   useSessionStore.setState({ status: 'signedOut', user: null, authHolds: 0 });
@@ -167,20 +186,42 @@ describe('cadastro (useSignUp)', () => {
     expect(haptics.trigger).toHaveBeenCalledWith('success');
   });
 
-  it('manda o convite guardado depois do cadastro e o tira do aparelho', async () => {
-    await savePendingInvite('ABC123');
+  it('amarra o convite do link à conta nova antes de esperar o perfil; quem manda é a sincronização', async () => {
+    await savePendingInvite('ABC123', LINK);
+    const firebase = fakeFirebase();
+    const { result } = renderHook(() => useSignUp(), { wrapper });
+
+    // O campo do cadastro vem preenchido com o código do link.
+    act(() => result.current.mutate({ ...form, inviteCode: 'abc123' }));
+    await waitFor(() => expect(listen).toHaveBeenCalled());
+    // Amarrado ainda com o fã seguro: se o app fechar agora, ele não vai para outra conta.
+    expect(useSessionStore.getState().authHolds).toBe(1);
+    expect(await readPendingInvite()).toBeNull();
+    expect(await readBoundInvite('nova')).toMatchObject({
+      uid: 'nova',
+      code: 'ABC123',
+      via: 'link',
+      origin: LINK,
+    });
+
+    act(() => firebase.profileArrives());
+    await waitFor(() => expect(result.current.data).toEqual({ status: 'done' }));
+    expect(useSessionStore.getState().authHolds).toBe(0);
+    // O do link não é esperado no cadastro: vai pela sincronização, já sem segurar o fã.
+    expect(claim).not.toHaveBeenCalled();
+  });
+
+  it('campo vazio: o convite do link é descartado, e nada fica amarrado', async () => {
+    await savePendingInvite('ABC123', LINK);
     const firebase = fakeFirebase();
     const { result } = renderHook(() => useSignUp(), { wrapper });
 
     act(() => result.current.mutate(form));
     await waitFor(() => expect(listen).toHaveBeenCalled());
-    expect(await readPendingInvite()).toMatchObject({ code: 'ABC123' });
-
     act(() => firebase.profileArrives());
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    // O convite vai depois de soltar o fã, sem segurar a tela.
-    expect(useSessionStore.getState().authHolds).toBe(0);
-    await waitFor(async () => expect(await readPendingInvite()).toBeNull());
+    expect(await readPendingInvite()).toBeNull();
+    expect(await readBoundInvite('nova')).toBeNull();
   });
 
   it('conta nova passa pela escolha de artistas, mesmo que outra já tenha passado no aparelho', async () => {
@@ -228,6 +269,149 @@ describe('cadastro (useSignUp)', () => {
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(useSessionStore.getState().authHolds).toBe(0);
     warn.mockRestore();
+  });
+});
+
+describe('código de convite digitado no cadastro', () => {
+  afterEach(async () => {
+    // Solta o fã que um teste deixou no estágio "código recusado".
+    useSessionStore.setState({ authHolds: 0 });
+  });
+
+  it('aceito: o convite sai do aparelho e o cadastro segue', async () => {
+    const firebase = fakeFirebase();
+    const { result } = renderHook(() => useSignUp(), { wrapper });
+
+    act(() => result.current.mutate({ ...form, inviteCode: 'CAMILA12' }));
+    await waitFor(() => expect(listen).toHaveBeenCalled());
+    act(() => firebase.profileArrives());
+
+    await waitFor(() => expect(result.current.data).toEqual({ status: 'done' }));
+    expect(claim).toHaveBeenCalledWith(
+      expect.objectContaining({ uid: 'nova', code: 'CAMILA12', via: 'code', origin: null }),
+    );
+    expect(await readBoundInvite('nova')).toBeNull();
+    expect(useSessionStore.getState().authHolds).toBe(0);
+  });
+
+  it.each([
+    ['notFound', new ApiError('notFound', 'Convite não encontrado.', 404, 'invite_not_found')],
+    ['notAllowed', new ApiError('validation', 'Não vale.', 409, 'invite_not_allowed')],
+  ])(
+    'recusado (%s): o cadastro para no estágio, segurando o fã, e o convite sai',
+    async (reason, error) => {
+      claim.mockRejectedValueOnce(error);
+      const firebase = fakeFirebase();
+      const { result } = renderHook(() => useSignUp(), { wrapper });
+
+      act(() => result.current.mutate({ ...form, inviteCode: 'ERRADO12' }));
+      await waitFor(() => expect(listen).toHaveBeenCalled());
+      act(() => firebase.profileArrives());
+
+      await waitFor(() =>
+        expect(result.current.data).toEqual({ status: 'inviteRejected', reason }),
+      );
+      expect(useSessionStore.getState().authHolds).toBe(1);
+      expect(haptics.trigger).not.toHaveBeenCalledWith('success');
+      expect(await readBoundInvite('nova')).toBeNull();
+    },
+  );
+
+  it('"Continuar sem código" depois da recusa solta o fã para a escolha de artistas', async () => {
+    claim.mockRejectedValueOnce(new ApiError('notFound', 'x', 404, 'invite_not_found'));
+    const firebase = fakeFirebase();
+    const { result } = renderHook(() => ({ signUp: useSignUp(), finish: useFinishSignUp() }), {
+      wrapper,
+    });
+
+    act(() => result.current.signUp.mutate({ ...form, inviteCode: 'ERRADO12' }));
+    await waitFor(() => expect(listen).toHaveBeenCalled());
+    act(() => firebase.profileArrives());
+    await waitFor(() => expect(result.current.signUp.data?.status).toBe('inviteRejected'));
+    useSessionStore.setState({ status: 'signedIn' });
+
+    act(() => result.current.finish.mutate({ inviteCode: '' }));
+    await waitFor(() => expect(result.current.finish.data).toEqual({ status: 'done' }));
+    expect(useSessionStore.getState().authHolds).toBe(0);
+    expect(claim).toHaveBeenCalledTimes(1);
+  });
+
+  it('"Continuar" com outro código: amarra de novo, com chave nova; recusado de novo, fica', async () => {
+    claim
+      .mockRejectedValueOnce(new ApiError('notFound', 'x', 404, 'invite_not_found'))
+      .mockRejectedValueOnce(new ApiError('validation', 'x', 409, 'invite_not_allowed'));
+    const firebase = fakeFirebase();
+    const { result } = renderHook(() => ({ signUp: useSignUp(), finish: useFinishSignUp() }), {
+      wrapper,
+    });
+
+    act(() => result.current.signUp.mutate({ ...form, inviteCode: 'ERRADO12' }));
+    await waitFor(() => expect(listen).toHaveBeenCalled());
+    act(() => firebase.profileArrives());
+    await waitFor(() => expect(result.current.signUp.data?.status).toBe('inviteRejected'));
+    const firstKey = claim.mock.calls[0]![0].idempotencyKey;
+
+    act(() => result.current.finish.mutate({ inviteCode: 'outro123' }));
+    await waitFor(() =>
+      expect(result.current.finish.data).toEqual({
+        status: 'inviteRejected',
+        reason: 'notAllowed',
+      }),
+    );
+    expect(claim.mock.calls[1]![0]).toMatchObject({ code: 'OUTRO123', via: 'code' });
+    expect(claim.mock.calls[1]![0].idempotencyKey).not.toBe(firstKey);
+    expect(useSessionStore.getState().authHolds).toBe(1);
+
+    act(() => result.current.finish.mutate({ inviteCode: 'CERTO123' }));
+    await waitFor(() => expect(result.current.finish.data).toEqual({ status: 'done' }));
+    expect(useSessionStore.getState().authHolds).toBe(0);
+  });
+
+  it('falha incerta (o getIdToken que falhou antes de sair: unknown sem status): segue, e o convite fica amarrado', async () => {
+    claim.mockRejectedValueOnce(new ApiError('unknown', 'Firebase: network-request-failed'));
+    const firebase = fakeFirebase();
+    const { result } = renderHook(() => useSignUp(), { wrapper });
+
+    act(() => result.current.mutate({ ...form, inviteCode: 'CAMILA12' }));
+    await waitFor(() => expect(listen).toHaveBeenCalled());
+    act(() => firebase.profileArrives());
+
+    await waitFor(() => expect(result.current.data).toEqual({ status: 'done' }));
+    expect(useSessionStore.getState().authHolds).toBe(0);
+    expect(await readBoundInvite('nova')).toMatchObject({ code: 'CAMILA12', via: 'code' });
+  });
+
+  it('servidor que não responde: o cadastro espera até 8 s e segue, com o convite amarrado', async () => {
+    jest.useFakeTimers({ now: Date.parse('2026-10-05T15:00:00.000Z') });
+    claim.mockReturnValueOnce(new Promise(() => undefined));
+    const firebase = fakeFirebase();
+    const { result } = renderHook(() => useSignUp(), { wrapper });
+
+    act(() => result.current.mutate({ ...form, inviteCode: 'CAMILA12' }));
+    await waitFor(() => expect(listen).toHaveBeenCalled());
+    act(() => firebase.profileArrives());
+    await waitFor(() => expect(claim).toHaveBeenCalled());
+    expect(result.current.data).toBeUndefined();
+    expect(useSessionStore.getState().authHolds).toBe(1);
+
+    await act(async () => {
+      jest.advanceTimersByTime(INVITE_CLAIM_WAIT_MS);
+    });
+    await waitFor(() => expect(result.current.data).toEqual({ status: 'done' }));
+    expect(await readBoundInvite('nova')).toMatchObject({ code: 'CAMILA12' });
+  });
+
+  it('outra recusa definitiva (pedido inválido): o convite sai e o cadastro segue, sem o estágio', async () => {
+    claim.mockRejectedValueOnce(new ApiError('validation', 'x', 400, 'invalid_request'));
+    const firebase = fakeFirebase();
+    const { result } = renderHook(() => useSignUp(), { wrapper });
+
+    act(() => result.current.mutate({ ...form, inviteCode: 'CAMILA12' }));
+    await waitFor(() => expect(listen).toHaveBeenCalled());
+    act(() => firebase.profileArrives());
+
+    await waitFor(() => expect(result.current.data).toEqual({ status: 'done' }));
+    expect(await readBoundInvite('nova')).toBeNull();
   });
 });
 

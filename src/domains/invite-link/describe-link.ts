@@ -1,4 +1,4 @@
-import { buildInviteUrl } from '@/domains/invites';
+import { buildInviteUrl, inviteLinkId } from '@/domains/invites';
 import { postPath } from '@/domains/posts';
 import { t } from '@/i18n';
 
@@ -15,6 +15,18 @@ export type InviteTarget =
 
 /** A agenda não tem página de um show só: o link do show leva para ela. */
 const AGENDA_PATH = '/agenda';
+
+/** O link compartilhado no servidor ("links criados"): o post, a agenda ou o atalho Convidar. */
+export function inviteTargetLinkId(target: InviteTarget): string {
+  switch (target.kind) {
+    case 'post':
+      return inviteLinkId({ kind: 'post', postId: target.postId });
+    case 'event':
+      return inviteLinkId({ kind: 'agenda' });
+    default:
+      return inviteLinkId({ kind: 'invite' });
+  }
+}
 
 /** Caminho no app que o link abre (o `+native-intent` lê o `?ref=` dele). */
 export function inviteTargetPath(target: InviteTarget): string {
@@ -69,10 +81,15 @@ export interface InviteLinkDisplay {
 /**
  * O link do fã para o destino, com o código de convite (`?ref=`). Sem código
  * (não carregou), sai o link puro: compartilhar continua funcionando, só não
- * rende pontos, e a tela avisa.
+ * rende pontos, e a tela avisa. A base é a do servidor (`MyInvite.linkBase`)
+ * quando ela chegou.
  */
-export function describeInviteLink(target: InviteTarget, code: string | null): InviteLinkDisplay {
-  const url = buildInviteUrl(code, inviteTargetPath(target));
+export function describeInviteLink(
+  target: InviteTarget,
+  code: string | null,
+  base?: string,
+): InviteLinkDisplay {
+  const url = buildInviteUrl(code, inviteTargetPath(target), base);
   const targetText = inviteTargetText(target);
   return {
     url,

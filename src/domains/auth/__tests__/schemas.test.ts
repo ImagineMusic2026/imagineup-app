@@ -97,3 +97,30 @@ describe('nome do cadastro (mesmas regras do firestore.rules)', () => {
     expect(result.error?.issues.map((issue) => issue.path[0])).toEqual(['password']);
   });
 });
+
+describe('código de convite do cadastro (opcional)', () => {
+  const parseCode = (inviteCode: string | undefined) =>
+    signUpSchema.safeParse({ name: 'Camila', email: 'fa@x.com', password: '123456', inviteCode });
+
+  it.each([
+    ['', ''],
+    ['   ', ''],
+    [undefined, ''],
+    ['k7p3m9qx', 'K7P3M9QX'],
+    ['K7P3-M9QX', 'K7P3M9QX'],
+    [' camila12 ', 'CAMILA12'],
+  ])('%j passa como %j (vazio é sem código)', (typed, saved) => {
+    const result = parseCode(typed);
+    expect(result.success).toBe(true);
+    expect(result.data?.inviteCode).toBe(saved);
+  });
+
+  it.each(['ab', 'K7P3M9Q!', 'straße', 'código'])(
+    '%j é recusado com a mensagem do código',
+    (typed) => {
+      const result = parseCode(typed);
+      expect(result.success).toBe(false);
+      expect(result.error?.issues[0]?.message).toBe(t('validation.inviteCodeInvalid'));
+    },
+  );
+});

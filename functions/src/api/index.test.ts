@@ -3,6 +3,7 @@ import * as logger from 'firebase-functions/logger';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { CentralError } from '../centrals/model';
+import { InviteError } from '../invites/model';
 import { staticConfigSource } from '../points/config';
 import { API_ROUTES, createApiHandler } from './index';
 import type { ApiRequest, ApiRoute } from './types';
@@ -12,16 +13,25 @@ vi.mock('firebase-functions/logger', () => ({ info: vi.fn(), warn: vi.fn(), erro
 
 const NOW = Date.parse('2026-10-05T15:00:00.000Z');
 
-// Firestore falso: toda carteira lida não existe.
+// Firestore falso: toda carteira lida não existe, e toda contagem dá 0 (os
+// links e as pessoas trazidas do convite, no /me/progress).
+const zeroCount = { count: () => ({ get: async () => ({ data: () => ({ count: 0 }) }) }) };
 const emptyDb = {
   collection: () => ({
-    doc: () => ({ get: async () => ({ data: () => undefined }) }),
+    doc: () => ({
+      get: async () => ({ data: () => undefined }),
+      collection: () => zeroCount,
+    }),
+    where: () => zeroCount,
   }),
 } as unknown as Firestore;
 
 const auth = {
   verifyIdToken: vi.fn(async (token: string) => {
-    if (token === 'token-da-camila') return { uid: 'uid-camila' } as never;
+    if (token === 'token-da-camila') {
+      return { uid: 'uid-camila', email: 'camila@teste.imagineup' } as never;
+    }
+    if (token === 'token-sem-email') return { uid: 'uid-sem-email' } as never;
     throw Object.assign(new Error('Decoding Firebase ID token failed.'), {
       code: 'auth/argument-error',
     });
@@ -367,5 +377,136 @@ describe('centrais (bloco 4)', () => {
     const sent = await call(request('GET', '/me/centrals/nenho'));
     expect(sent.status).toBe(405);
     expect(sent.headers.Allow).toBe('PUT, DELETE');
+  });
+});
+
+describe('convite (bloco 5)', () => {
+  it('InviteError: 404 invite_not_found e 409 invite_not_allowed com o motivo', async () => {
+    const routes: ApiRoute[] = [
+      {
+        method: 'GET',
+        pattern: '/teste/sem-convite',
+        writes: false,
+        handle: async () => {
+          throw new InviteError('invite_not_found');
+        },
+      },
+      {
+        method: 'GET',
+        pattern: '/teste/autoconvite',
+        writes: false,
+        handle: async () => {
+          throw new InviteError('invite_not_allowed', { reason: 'self' });
+        },
+      },
+    ];
+    const missing = await call(request('GET', '/teste/sem-convite'), routes);
+    expect(missing.status).toBe(404);
+    expect(missing.body).toEqual({ code: 'invite_not_found', message: 'Convite não encontrado.' });
+    const self = await call(request('GET', '/teste/autoconvite'), routes);
+    expect(self.status).toBe(409);
+    expect(self.body).toEqual({
+      code: 'invite_not_allowed',
+      message: 'Este convite não vale para esta conta.',
+      details: { reason: 'self' },
+    });
+    expect(logger.error).not.toHaveBeenCalled();
+  });
+
+  it('linkId fora do formato: 400 com o campo, antes de abrir a transação', async () => {
+    for (const linkId of ['convite', 'artist%3A__trio__', 'post%3A']) {
+      const sent = await call(
+        request('PUT', `/me/invite/links/${linkId}`, {
+          headers: { 'Idempotency-Key': 'chave-link-0001' },
+        }),
+      );
+      expect(sent.status).toBe(400);
+      expect(sent.body).toMatchObject({ code: 'invalid_request', details: { field: 'linkId' } });
+    }
+  });
+
+  it('claim e visita com o corpo fora do formato: 400 com o campo', async () => {
+    const claim = await call(
+      request('POST', '/invites/claim', {
+        body: { code: 'K7P3M9QX', via: 'install', link: { path: '/' } },
+        headers: { 'Idempotency-Key': 'invite-K7P3M9QX-2026' },
+      }),
+    );
+    expect(claim.status).toBe(400);
+    expect(claim.body).toMatchObject({ code: 'invalid_request', details: { field: 'via' } });
+    const visit = await call(
+      request('POST', '/invites/visit', {
+        body: { code: 'K7P3M9QX' },
+        headers: { 'Idempotency-Key': 'visit-K7P3M9QX-2026' },
+      }),
+    );
+    expect(visit.status).toBe(400);
+    expect(visit.body).toMatchObject({ code: 'invalid_request', details: { field: 'link' } });
+  });
+
+  it('as três que gravam exigem a Idempotency-Key', async () => {
+    for (const [method, path] of [
+      ['POST', '/invites/claim'],
+      ['POST', '/invites/visit'],
+      ['PUT', '/me/invite/links/invite'],
+    ] as const) {
+      const sent = await call(request(method, path, { body: { code: 'K7P3M9QX' } }));
+      expect(sent.status).toBe(400);
+      expect(sent.body).toMatchObject({ code: 'idempotency_key_required' });
+    }
+  });
+
+  it('o e-mail do contexto vem do token, nunca do corpo; o segredo vem das dependências', async () => {
+    const seen: unknown[] = [];
+    const routes: ApiRoute[] = [
+      {
+        method: 'POST',
+        pattern: '/teste/quem',
+        writes: false,
+        handle: async ({ email, deps }) => {
+          seen.push({ email, key: deps.inviteKey() });
+          return { ok: true };
+        },
+      },
+    ];
+    const handler = createApiHandler(
+      {
+        db: emptyDb,
+        auth,
+        now: () => NOW,
+        config: staticConfigSource(),
+        inviteKey: () => 'segredo-fixo',
+      },
+      routes,
+    );
+    for (const token of ['token-da-camila', 'token-sem-email']) {
+      const { res } = response();
+      await handler(
+        request('POST', '/teste/quem', {
+          body: { email: 'falso@x.com' },
+          headers: { Authorization: `Bearer ${token}` },
+        }),
+        res,
+      );
+    }
+    expect(seen).toEqual([
+      { email: 'camila@teste.imagineup', key: 'segredo-fixo' },
+      { email: null, key: 'segredo-fixo' },
+    ]);
+  });
+
+  it('sem o segredo nas dependências, a rota do convite falha com 500 e as outras seguem', async () => {
+    const routes: ApiRoute[] = [
+      ...API_ROUTES,
+      {
+        method: 'GET',
+        pattern: '/teste/segredo',
+        writes: false,
+        handle: async ({ deps }) => ({ key: deps.inviteKey() }),
+      },
+    ];
+    const failed = await call(request('GET', '/teste/segredo'), routes);
+    expect(failed.status).toBe(500);
+    expect((await call(request('GET', '/me/wallet'), routes)).status).toBe(200);
   });
 });

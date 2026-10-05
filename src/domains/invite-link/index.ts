@@ -1,6 +1,7 @@
 export {
   describeInviteLink,
   inviteMessage,
+  inviteTargetLinkId,
   inviteTargetPath,
   inviteTargetText,
   type InviteLinkDisplay,

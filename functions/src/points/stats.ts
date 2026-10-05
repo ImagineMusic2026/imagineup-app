@@ -51,7 +51,29 @@ export type ShardDelta = {
   byArtist: Record<string, ArtistCount>;
   actives: { day: number; newInWeek: number; newInMonth: number };
   cohorts: Record<string, { active: number }>;
+  /** Cadastros do dia (bloco 5, docs/arquitetura-api.md, 20.7). */
+  signups: {
+    /** Contas de fã criadas no dia (gatilho de cadastro). */
+    total: number;
+    /** Claims aceitos no dia: a conta entrou por convite (o dia é o do claim). */
+    invited: number;
+  };
+  invites: {
+    /** Pessoas contadas como visitantes de um convidante (o marcador nasceu), do claim e do app. */
+    visits: number;
+    /** Links novos registrados. */
+    links: number;
+  };
+  /** A origem dos fãs: tipo de link em tudo; `utm_source` e `utm_campaign` só nos cadastros. */
+  byOrigin: {
+    kind: Record<string, OriginCount>;
+    utmSource: Record<string, { signups: number }>;
+    utmCampaign: Record<string, { signups: number }>;
+  };
 };
+
+/** Cadastros, visitas e links de um tipo de link. */
+export type OriginCount = { signups: number; visits: number; links: number };
 
 export function emptyShardDelta(): ShardDelta {
   return {
@@ -69,6 +91,9 @@ export function emptyShardDelta(): ShardDelta {
     byArtist: {},
     actives: { day: 0, newInWeek: 0, newInMonth: 0 },
     cohorts: {},
+    signups: { total: 0, invited: 0 },
+    invites: { visits: 0, links: 0 },
+    byOrigin: { kind: {}, utmSource: {}, utmCampaign: {} },
   };
 }
 
@@ -147,6 +172,61 @@ export function addMembershipToShard(
   delta.totals[kind] += 1;
   const artist = (delta.byArtist[artistId] ??= emptyArtistCount());
   artist[kind] += 1;
+}
+
+/** Tipo do link de onde veio o fã: o caminho classificado, ou `code` para o código digitado. */
+export type OriginKind = 'invite' | 'post' | 'artist' | 'agenda' | 'other' | 'code';
+
+/** Chave dos recortes de `utm_*` nos shards. */
+export const ORIGIN_KEY_MAX = 40;
+
+/** Sem valor (o link não tinha a `utm_*`). Nunca `__x__`, que o Firestore reserva. */
+export const ORIGIN_NONE = '_none';
+
+/**
+ * A chave de um valor de `utm_*` nos shards: o valor já normalizado
+ * (`normalizeUtm`, de invites/model.ts, que só deixa `[a-z0-9._~-]`) cortado
+ * em 40 caracteres; sem valor, `_none`.
+ */
+export function originKey(value: string | null | undefined): string {
+  return value ? value.slice(0, ORIGIN_KEY_MAX) : ORIGIN_NONE;
+}
+
+/** Um evento do convite para os agregados do painel (bloco 5, 20.7). */
+export type InviteShardEvent = {
+  event: 'signup' | 'visit' | 'link';
+  kind: OriginKind;
+  /** Só no cadastro. */
+  utmSource?: string | null;
+  /** Só no cadastro. */
+  utmCampaign?: string | null;
+};
+
+/**
+ * Soma um evento do convite: 1 no total (cadastro convidado, visita ou link)
+ * e no tipo do link; os recortes por `utm_source` e `utm_campaign` só no
+ * cadastro, porque quem cria o link escolhe o valor, e cada valor novo é uma
+ * chave nova no shard (um cadastro custa uma conta nova; a visita e o link,
+ * bem menos).
+ */
+export function addInviteToShard(delta: ShardDelta, change: InviteShardEvent): void {
+  const origin = (delta.byOrigin.kind[change.kind] ??= { signups: 0, visits: 0, links: 0 });
+  if (change.event === 'signup') {
+    delta.signups.invited += 1;
+    origin.signups += 1;
+    const source = (delta.byOrigin.utmSource[originKey(change.utmSource)] ??= { signups: 0 });
+    source.signups += 1;
+    const campaign = (delta.byOrigin.utmCampaign[originKey(change.utmCampaign)] ??= {
+      signups: 0,
+    });
+    campaign.signups += 1;
+  } else if (change.event === 'visit') {
+    delta.invites.visits += 1;
+    origin.visits += 1;
+  } else {
+    delta.invites.links += 1;
+    origin.links += 1;
+  }
 }
 
 type Tree = { [key: string]: number | Tree };
