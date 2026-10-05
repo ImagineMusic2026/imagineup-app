@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import { API_ROUTES } from './index';
 import { matchRoute, normalizePath } from './router';
 
 const routes = [
@@ -55,5 +56,43 @@ describe('roteador', () => {
     expect(matchRoute(routes, 'GET', '/posts/a%2Fb').kind).toBe('invalid');
     expect(matchRoute(routes, 'PUT', '/posts/a%2fb/like').kind).toBe('invalid');
     expect(matchRoute(routes, 'GET', '/posts/%E0%A4%A').kind).toBe('invalid');
+  });
+});
+
+describe('rotas das centrais (bloco 4)', () => {
+  it('/me/centrals e /me/centrals/:artistId não se confundem', () => {
+    expect(matchRoute(API_ROUTES, 'GET', '/me/centrals')).toMatchObject({
+      kind: 'match',
+      route: { method: 'GET', pattern: '/me/centrals' },
+    });
+    expect(matchRoute(API_ROUTES, 'PUT', '/me/centrals/nenho')).toMatchObject({
+      kind: 'match',
+      route: { method: 'PUT', pattern: '/me/centrals/:artistId' },
+      params: { artistId: 'nenho' },
+    });
+    expect(matchRoute(API_ROUTES, 'DELETE', '/me/centrals/nenho/')).toMatchObject({
+      kind: 'match',
+      route: { method: 'DELETE', pattern: '/me/centrals/:artistId' },
+    });
+  });
+
+  it('GET /me/centrals/nenho é 405 com PUT e DELETE', () => {
+    expect(matchRoute(API_ROUTES, 'GET', '/me/centrals/nenho')).toEqual({
+      kind: 'method_not_allowed',
+      allow: ['PUT', 'DELETE'],
+    });
+  });
+
+  it('a lista, a página e seguir', () => {
+    expect(matchRoute(API_ROUTES, 'GET', '/artists')).toMatchObject({ kind: 'match' });
+    expect(matchRoute(API_ROUTES, 'GET', '/artists/nettobrito')).toMatchObject({
+      kind: 'match',
+      params: { artistId: 'nettobrito' },
+    });
+    expect(matchRoute(API_ROUTES, 'POST', '/me/artists')).toMatchObject({ kind: 'match' });
+    expect(matchRoute(API_ROUTES, 'GET', '/me/artists')).toEqual({
+      kind: 'method_not_allowed',
+      allow: ['POST'],
+    });
   });
 });

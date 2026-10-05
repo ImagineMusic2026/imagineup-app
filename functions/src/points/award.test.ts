@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
-import { mergeFanAwards, type FanContext } from './award';
-import { emptyWallet, type AwardEntry } from './model';
+import { addDailyCount, mergeFanAwards, type AwardPlan, type FanContext } from './award';
+import { emptyWallet, type AwardEntry, type WalletState } from './model';
 
 const comment = (id: string): AwardEntry => ({ kind: 'earn', source: 'comment', eventId: id });
 const invite = (id: string): AwardEntry => ({ kind: 'earn', source: 'invite_signup', eventId: id });
@@ -77,6 +77,76 @@ describe('entradas do plano', () => {
     ).toThrow(/uma vez/);
     expect(() => mergeFanAwards([{ uid: 'uid-a', fan: context('uid-b'), entries: [] }])).toThrow(
       /outro fã/,
+    );
+  });
+});
+
+describe('contador do dia sem ponto (addDailyCount)', () => {
+  const NOW = Date.parse('2026-10-05T15:00:00.000Z');
+
+  function plan(fan: FanContext, wallet: AwardPlan['fans'][number]['wallet'] = null): AwardPlan {
+    return {
+      day: '2026-10-05',
+      results: [],
+      pointsAwarded: 0,
+      fans: [{ uid: fan.uid, wallet, ledger: [], centrals: [] }],
+      shard: null,
+      now: NOW,
+      shardIndex: 0,
+      caller: fan,
+    };
+  }
+
+  const stored = (): WalletState => ({
+    ...emptyWallet(),
+    exists: true,
+    balance: 40,
+    days: {
+      '2026-09-20': { earned: 5, count: { comment: 1 } },
+      '2026-10-05': { earned: 10, count: { central_join: 1, central_entry: 2 } },
+    },
+  });
+
+  it('sem nada a gravar no plano, grava a carteira lida, sem os dias velhos, com o contador +1', () => {
+    const fan = { ...context('uid-a'), wallet: stored() };
+    const result = plan(fan);
+    addDailyCount(result, fan, 'central_entry');
+    expect(result.fans[0]!.wallet).toEqual({
+      create: false,
+      state: {
+        ...stored(),
+        days: { '2026-10-05': { earned: 10, count: { central_join: 1, central_entry: 3 } } },
+      },
+    });
+    // A carteira lida (o retrato do pedido) fica como estava.
+    expect(fan.wallet).toEqual(stored());
+  });
+
+  it('carteira que ainda não existe nasce com o contador', () => {
+    const fan = context('uid-a');
+    const result = plan(fan);
+    addDailyCount(result, fan, 'central_entry');
+    expect(result.fans[0]!.wallet).toMatchObject({
+      create: true,
+      state: { exists: true, days: { '2026-10-05': { earned: 0, count: { central_entry: 1 } } } },
+    });
+  });
+
+  it('com a carteira já no plano (um lançamento aplicado), soma nela', () => {
+    const fan = context('uid-a');
+    const state = { ...emptyWallet(), exists: true, balance: 10, days: {} };
+    const result = plan(fan, { create: true, state });
+    addDailyCount(result, fan, 'central_entry');
+    addDailyCount(result, fan, 'central_entry');
+    expect(result.fans[0]!.wallet).toEqual({
+      create: true,
+      state: { ...state, days: { '2026-10-05': { earned: 0, count: { central_entry: 2 } } } },
+    });
+  });
+
+  it('fã fora do plano é erro de programação', () => {
+    expect(() => addDailyCount(plan(context('uid-a')), context('uid-b'), 'central_entry')).toThrow(
+      /não está no plano/,
     );
   });
 });

@@ -2,6 +2,8 @@
 // configuração versionada e os contadores agregados do painel. A API (src/api)
 // usa daqui; o seed dos emuladores carrega o build (functions/lib/points).
 export {
+  addDailyCount,
+  addMembershipCounts,
   ALREADY_EXISTS,
   applyAwards,
   centralFromDoc,
@@ -17,6 +19,7 @@ export {
   type AwardPlan,
   type FanAwards,
   type FanContext,
+  type MembershipChange,
 } from './award';
 export {
   CONFIG_TTL_MS,
@@ -40,19 +43,22 @@ export {
   EARN_SOURCES,
   levelForXp,
   ledgerId,
+  nextDayStart,
   PointsError,
+  shiftDay,
   TIME_ZONE,
   weekKey,
   type Actor,
   type AwardEntry,
   type AwardResult,
+  type DailyActionKey,
   type EarnSource,
   type Level,
   type PointsConfig,
   type SeasonInfo,
   type WalletState,
 } from './model';
-export { seedCamilaWallet, CAMILA_SEED } from './seed';
+export { seedCamilaWallet, CAMILA_SEED, noonDaysAgo, SEED_ACTOR } from './seed';
 export { pickShard, SHARD_COUNT, shardRef } from './stats';
 export {
   decodeLedgerCursor,

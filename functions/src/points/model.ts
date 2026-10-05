@@ -104,7 +104,17 @@ export type AwardStatus = 'applied' | 'duplicate' | 'capped' | 'zero' | 'skipped
 /** `points` é quanto o saldo mexeu: positivo no ganho, negativo no resgate, o delta no ajuste. */
 export type AwardResult = { uid: string; entryId: string; status: AwardStatus; points: number };
 
-export type DayStats = { earned: number; count: Partial<Record<EarnSource, number>> };
+/**
+ * Contadores do dia que não rendem ponto, ao lado das origens em
+ * `days[dia].count`: `central_entry` são os pedidos que criaram vínculo com
+ * alguma central (o teto diário do bloco 4, docs/arquitetura-api.md, 19.5).
+ */
+export type DailyActionKey = 'central_entry';
+
+export type DayStats = {
+  earned: number;
+  count: Partial<Record<EarnSource | DailyActionKey, number>>;
+};
 
 /** Última atividade do fã: conta os ativos do dia, da semana e do mês sem repetir. */
 export type ActivityState = {
@@ -225,6 +235,24 @@ function dayParts(day: string): [number, number, number] {
 export function shiftDay(day: string, delta: number): string {
   const [year, month, date] = dayParts(day);
   return new Date(Date.UTC(year, month - 1, date) + delta * DAY_MS).toISOString().slice(0, 10);
+}
+
+const HOUR_MS = 60 * 60 * 1000;
+
+/**
+ * O instante em que começa o dia de São Paulo seguinte ao de `now`. Procura a
+ * hora cheia, a partir da meia-noite UTC do dia seguinte, em que o `dayKey`
+ * vira (os fusos do Brasil são de horas cheias), sem supor o deslocamento.
+ */
+export function nextDayStart(now: number): number {
+  const next = shiftDay(dayKey(now), 1);
+  const [year, month, date] = dayParts(next);
+  const utcMidnight = Date.UTC(year, month - 1, date);
+  for (let hour = -14; hour <= 14; hour += 1) {
+    const at = utcMidnight + hour * HOUR_MS;
+    if (at > now && dayKey(at) === next) return at;
+  }
+  throw new RangeError(`Não achei o começo do dia ${next}.`);
 }
 
 /** Semana ISO do dia de calendário, `2026-W41`. */
@@ -471,7 +499,8 @@ export type ComputeOutput = {
   shard: ShardDelta | null;
 };
 
-function cloneWallet(wallet: WalletState): WalletState {
+/** Cópia da carteira que dá para mudar sem tocar na lida (os dias e a atividade inclusive). */
+export function cloneWallet(wallet: WalletState): WalletState {
   const days: Record<string, DayStats> = {};
   for (const [day, stats] of Object.entries(wallet.days)) {
     days[day] = { earned: stats.earned, count: { ...stats.count } };

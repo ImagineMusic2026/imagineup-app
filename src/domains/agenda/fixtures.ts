@@ -23,10 +23,10 @@ const INVITE_POINTS_PER_SIGNUP = 10;
 // O show marcado no painel para o topo da agenda.
 const FEATURED_ID = 'sao-joao-irara';
 
-const NETTO: AgendaArtist = { id: 'netto-brito', name: 'Netto Brito' };
+const NETTO: AgendaArtist = { id: 'nettobrito', name: 'Netto Brito' };
 const NENHO: AgendaArtist = { id: 'nenho', name: 'Nenho' };
-const JUNINHO: AgendaArtist = { id: 'juninho-moraes', name: 'Juninho Moraes' };
-const ROCK: AgendaArtist = { id: 'rock-salles', name: 'Rock Salles' };
+const JUNINHO: AgendaArtist = { id: 'juninhomoraes', name: 'Juninho Moraes' };
+const ROCK: AgendaArtist = { id: 'rocksalles', name: 'Rock Salles' };
 
 interface Sample {
   id: string;

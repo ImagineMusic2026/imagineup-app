@@ -72,7 +72,7 @@ describe('PhotoFallback', () => {
     expect(used.size).toBe(new Set(photoFallbackPairs.map((pair) => pair.join())).size);
   });
 
-  it.each(['up-1b-post1', 'up-1h-hero', 'up-1d-cover', 'rock-salles', 'juninho-moraes'])(
+  it.each(['up-1b-post1', 'up-1h-hero', 'up-1d-cover', 'rocksalles', 'juninhomoraes'])(
     'o slot "%s" cai no mesmo par que o site usa, se o do site não for o lima',
     (seed) => {
       const position = stableHash(seed) % SITE_PAIRS.length;
@@ -101,7 +101,7 @@ describe('PhotoFallback', () => {
 
   it('as listras podem trocar de jogo ou sair, para a capa desenhar as suas', () => {
     const { unmount } = render(
-      <PhotoFallback seed="netto-brito" stripes="photo" testID="fallback" />,
+      <PhotoFallback seed="nettobrito" stripes="photo" testID="fallback" />,
     );
     measure(402, 270);
     const [, stripeGradient] = nodesOf('skLinearGradient');
@@ -109,7 +109,7 @@ describe('PhotoFallback', () => {
     expect(stripeGradient?.props.positions).toEqual([0, width / period, width / period, 1]);
     unmount();
 
-    render(<PhotoFallback seed="netto-brito" stripes={null} testID="fallback" />);
+    render(<PhotoFallback seed="nettobrito" stripes={null} testID="fallback" />);
     measure(402, 270);
     // Só o gradiente do par; o brilho do canto continua.
     expect(nodesOf('skLinearGradient')).toHaveLength(1);

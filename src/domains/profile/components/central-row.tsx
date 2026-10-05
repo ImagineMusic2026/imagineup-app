@@ -28,10 +28,12 @@ export interface CentralRowProps {
  * Uma central do fã em "Suas centrais" (1e): foto do artista (iniciais na
  * cor estável dele, sem foto), nome, a posição do fã entre os fãs da central
  * e os pontos da temporada nela, em lima. São os mesmos números do ranking da
- * central (1f). A linha toda abre a página do artista na pilha do Perfil.
+ * central (1f). Sem posição (o servidor, até o bloco 8), "Sem posição ainda"
+ * e os pontos à direita sempre que passam de 0. A linha toda abre a página do
+ * artista na pilha do Perfil.
  */
 export function CentralRow({ central, testID }: CentralRowProps) {
-  const ranked = central.fanRank !== null;
+  const showPoints = central.fanRank !== null || central.seasonPoints > 0;
   return (
     <ListRow
       variant="compact"
@@ -41,7 +43,7 @@ export function CentralRow({ central, testID }: CentralRowProps) {
       title={central.name}
       meta={centralMeta(central)}
       trailing={
-        ranked ? (
+        showPoints ? (
           // Sora 800 12 no protótipo: `chip` (11,5). Sem tabular, que alarga o "1".
           <Text variant="chip" color={colors.points}>
             {formatNumber(central.seasonPoints)}

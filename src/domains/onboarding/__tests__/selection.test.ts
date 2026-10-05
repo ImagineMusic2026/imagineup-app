@@ -3,9 +3,13 @@ import { t } from '@/i18n';
 
 import { MIN_ARTISTS } from '../consts';
 import {
+  artistCardLabel,
   continueLabel,
+  fansText,
   filterArtists,
+  minimumArtists,
   missingArtists,
+  needMoreHint,
   sortByOrder,
   splitFeatured,
 } from '../selection';
@@ -72,6 +76,32 @@ describe('mínimo de artistas', () => {
     expect(continueLabel(selected)).toBe(label);
   });
 
+  it.each([
+    [6, 3],
+    [3, 3],
+    [2, 2],
+    [1, 1],
+    [0, 0],
+  ])(
+    'com %i centrais publicadas, o mínimo é %i (nunca mais do que o fã pode escolher)',
+    (available, min) => {
+      expect(minimumArtists(available)).toBe(min);
+    },
+  );
+
+  it('com o mínimo menor, o botão acompanha: 2 publicadas pedem 2, e 1 escolhida de 1 continua no singular', () => {
+    expect(continueLabel(1, 2)).toBe('Escolha mais 1 artista');
+    expect(continueLabel(2, 2)).toBe('Continuar com 2 artistas');
+    expect(continueLabel(1, 1)).toBe('Continuar com 1 artista');
+    expect(missingArtists(1, minimumArtists(1))).toBe(0);
+  });
+
+  it('a dica do botão travado acompanha o mínimo, no singular com uma central só', () => {
+    expect(needMoreHint()).toBe('Escolha pelo menos 3 artistas.');
+    expect(needMoreHint(2)).toBe('Escolha pelo menos 2 artistas.');
+    expect(needMoreHint(1)).toBe('Escolha pelo menos 1 artista.');
+  });
+
   it('os rótulos vêm das traduções', () => {
     expect(continueLabel(2)).toBe(t('onboarding.chooseArtists.needMoreOne'));
     expect(continueLabel(0)).toBe(t('onboarding.chooseArtists.needMore', { count: 3 }));
@@ -92,5 +122,17 @@ describe('busca por nome', () => {
     ['', ['rock', 'netto', 'a5', 'nenho', 'angela', 'juninho']],
   ])('"%s" encontra %j', (query, ids) => {
     expect(filterArtists(artists, query).map((item) => item.id)).toEqual(ids);
+  });
+});
+
+describe('fãs no card', () => {
+  it('"1 fã" no singular, o resto abreviado', () => {
+    expect(fansText(1)).toBe('1 fã');
+    expect(fansText(0)).toBe('0 fãs');
+    expect(fansText(412_000)).toBe('412 mil fãs');
+    expect(artistCardLabel({ name: 'Nenho', fanCount: 1 })).toBe('Nenho, 1 fã');
+    expect(artistCardLabel({ name: 'Netto Brito', fanCount: 412_000 })).toBe(
+      'Netto Brito, 412 mil fãs',
+    );
   });
 });

@@ -224,7 +224,7 @@ describe('perfil (1e)', () => {
   it('as centrais são todas as do fã, com a posição e os pontos do ranking da central', async () => {
     renderRouter(appTree, { initialUrl: '/perfil' });
 
-    for (const artistId of ['netto-brito', 'nenho']) {
+    for (const artistId of ['nettobrito', 'nenho']) {
       const { position, points } = buildMyRankFixture({ kind: 'artist', artistId });
       const row = await screen.findByTestId(`profile-central-${artistId}`);
       expect(row.props.accessibilityLabel).toContain(`${position}º lugar`);
@@ -250,10 +250,10 @@ describe('perfil (1e)', () => {
   it('a linha de central abre o artista na pilha do Perfil', async () => {
     const view = renderRouter(appTree, { initialUrl: '/perfil' });
 
-    fireEvent.press(await screen.findByTestId('profile-central-netto-brito'));
+    fireEvent.press(await screen.findByTestId('profile-central-nettobrito'));
 
     await waitFor(() => expect(screen.getByText('artist')).toBeTruthy());
-    expect(view.getPathname()).toBe('/artista/netto-brito');
+    expect(view.getPathname()).toBe('/artista/nettobrito');
     expect(view.getSegments()).toEqual(['(tabs)', '(perfil)', 'artista', '[artistaId]']);
     expect(rootRoutes(view)).toEqual(['(tabs)']);
   });
@@ -354,7 +354,7 @@ describe('perfil (1e)', () => {
     );
     // O resto da tela segue: conquistas e centrais chegaram.
     expect(await screen.findByLabelText('Top 20, conquistada')).toBeTruthy();
-    expect(await screen.findByTestId('profile-central-netto-brito')).toBeTruthy();
+    expect(await screen.findByTestId('profile-central-nettobrito')).toBeTruthy();
 
     get.mockImplementation(async (url: string) => {
       if (url === '/me/progress') return { data: buildMyProgressFixture() } as never;
@@ -394,7 +394,7 @@ describe('perfil (1e)', () => {
     expect(await screen.findByLabelText('Top 20, conquistada')).toBeTruthy();
     await waitFor(() => expect(announcements()).toContain('Conquistas carregadas.'));
     fireEvent.press(centralsRetry);
-    expect(await screen.findByTestId('profile-central-netto-brito')).toBeTruthy();
+    expect(await screen.findByTestId('profile-central-nettobrito')).toBeTruthy();
     await waitFor(() => expect(announcements()).toContain('Centrais carregadas.'));
   });
 

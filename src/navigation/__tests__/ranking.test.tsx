@@ -2,7 +2,7 @@ import { FlashList } from '@shopify/flash-list';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { router, Stack } from 'expo-router';
 import { Tabs } from 'expo-router/js-tabs';
-import { act, fireEvent, renderRouter, screen, waitFor } from 'expo-router/testing-library';
+import { act, fireEvent, renderRouter, screen, waitFor, within } from 'expo-router/testing-library';
 import { AccessibilityInfo, ScrollView, Text } from 'react-native';
 
 import RankingRoute from '@/app/(tabs)/(ranking)/ranking';
@@ -28,15 +28,17 @@ jest.mock('@/firebase', () => ({
 }));
 jest.mock('@/services/api', () => ({ api: { get: jest.fn() } }));
 
-// Sem .env no Jest: fixtures. Os testes de resposta do servidor trocam para a API.
+// Sem .env no Jest: fixtures. Os testes de resposta do servidor trocam para a API;
+// os do modo misto põem só um domínio nela (`mockDomainSources`).
 let mockDataSource: 'api' | 'fixtures' = 'fixtures';
+let mockDomainSources: Record<string, 'api' | 'fixtures'> = {};
 jest.mock('@/config/env', () => ({
   firebaseEnv: null,
   apiUrl: undefined,
   firebaseEmulatorHost: undefined,
 }));
 jest.mock('@/config/data-source', () => ({
-  sourceOf: () => mockDataSource,
+  sourceOf: (domain: string) => mockDomainSources[domain] ?? mockDataSource,
   usesFixtures: () => mockDataSource === 'fixtures',
 }));
 
@@ -240,6 +242,7 @@ beforeEach(() => {
   jest.clearAllMocks();
   setFixtureNow(NOW);
   mockDataSource = 'fixtures';
+  mockDomainSources = {};
   mockReducedMotion = false;
   fixtureWallet.reset();
   followFixture.reset();
@@ -314,7 +317,7 @@ describe('ranking (1f)', () => {
   });
 
   it('pelo parâmetro de rota, abre com o chip da central escolhido (pronto para o "Ver ranking" da 1d)', async () => {
-    renderRouter(appTree, { initialUrl: '/ranking?artista=netto-brito' });
+    renderRouter(appTree, { initialUrl: '/ranking?artista=nettobrito' });
 
     // 12º no Netto, como o "você é #12" da home.
     expect(
@@ -326,7 +329,7 @@ describe('ranking (1f)', () => {
   });
 
   it('central que o fã não segue ganha o chip no fim, e o card pede pontos', async () => {
-    renderRouter(appTree, { initialUrl: '/ranking?artista=rock-salles' });
+    renderRouter(appTree, { initialUrl: '/ranking?artista=rocksalles' });
 
     expect(await screen.findByLabelText(ME_UNRANKED)).toBeTruthy();
     await waitFor(() =>
@@ -438,6 +441,59 @@ describe('ranking (1f)', () => {
     act(() => router.back());
     await waitFor(() => expect(haptics.trigger).toHaveBeenCalledWith('rankUp'));
     expect(announced()).toEqual(['Você subiu para o 10º lugar.']);
+  });
+});
+
+describe('ranking (1f) de exemplo com as centrais no servidor (até o bloco 8)', () => {
+  beforeEach(() => {
+    mockDomainSources = { artists: 'api' };
+    get.mockImplementation(async (url) => {
+      if (url === '/me/centrals') {
+        return {
+          data: [
+            {
+              artistId: 'nettobrito',
+              name: 'Netto Brito',
+              shortName: null,
+              photoURL: null,
+              fanCount: 1,
+              fanRank: null,
+              seasonPoints: 4_120,
+            },
+          ],
+        } as never;
+      }
+      if (url === '/artists') {
+        return {
+          data: [{ id: 'nettobrito', name: 'Netto Brito', photoURL: null, fanCount: 1, order: 0 }],
+        } as never;
+      }
+      throw new Error(`rota sem resposta no teste: ${url}`);
+    });
+  });
+
+  it('no recorte da central, o aviso aparece e o card "Você" fica sem posição, com os pontos de verdade', async () => {
+    renderRouter(appTree, { initialUrl: '/ranking?artista=nettobrito' });
+
+    expect(await screen.findByTestId('ranking-example-notice')).toHaveTextContent(
+      t('ranking.exampleNotice'),
+    );
+    expect(selectedChip()).toEqual(['Netto Brito']);
+    // Os pontos são os de "Suas centrais" (1e), e não os 0 da fixture.
+    expect(
+      await screen.findByLabelText('Você, sem posição ainda, 4.120 pontos.', hidden),
+    ).toBeTruthy();
+    expect(within(meCard()).getByText('Sem posição ainda', hidden)).toBeTruthy();
+    expect(within(meCard()).getByText('4.120', hidden)).toBeTruthy();
+    // Nenhuma posição de exemplo para o fã ao lado do número de verdade.
+    expect(screen.queryByLabelText(/^Você, \d+º lugar/, hidden)).toBeNull();
+  });
+
+  it('no Geral, com a carteira ainda nas fixtures, o ranking não leva o aviso', async () => {
+    renderRouter(appTree, { initialUrl: '/ranking' });
+
+    expect(await screen.findByRole('button', { name: ME_GLOBAL })).toBeTruthy();
+    expect(screen.queryByTestId('ranking-example-notice')).toBeNull();
   });
 });
 

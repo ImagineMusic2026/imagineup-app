@@ -66,7 +66,7 @@ describe('o mesmo post em todos os caches', () => {
   function seed(): void {
     client.setQueryData(postKeys.detail('p-clipe'), findPostFixture(NOW, 'p-clipe'));
     client.setQueryData(postKeys.feed(), pagesOf(buildFeedPageFixture(NOW, null)));
-    client.setQueryData(postKeys.byArtist('netto-brito'), pagesOf(buildFeedPageFixture(NOW, null)));
+    client.setQueryData(postKeys.byArtist('nettobrito'), pagesOf(buildFeedPageFixture(NOW, null)));
     client.setQueryData(
       postKeys.comments('p-clipe'),
       pagesOf(buildCommentsPageFixture(NOW, 'p-clipe', null)),
@@ -87,7 +87,7 @@ describe('o mesmo post em todos os caches', () => {
       likeCount: 4_813,
     });
     expect(clipIn(postKeys.feed())).toMatchObject({ likedByMe: true, likeCount: 4_813 });
-    expect(clipIn(postKeys.byArtist('netto-brito'))).toMatchObject({ likedByMe: true });
+    expect(clipIn(postKeys.byArtist('nettobrito'))).toMatchObject({ likedByMe: true });
     expect(client.getQueryData(postKeys.comments('p-clipe'))).toBe(comments);
     // Os outros posts ficam como estavam.
     expect(client.getQueryData<PostPages>(postKeys.feed())?.pages[0]?.items[1]?.likedByMe).toBe(

@@ -11,7 +11,7 @@ import { MoreArtistsCard } from '../components/more-artists-card';
 import { SearchArtistsCard } from '../components/search-artists-card';
 
 const netto: Artist = {
-  id: 'netto-brito',
+  id: 'nettobrito',
   name: 'Netto Brito',
   photoURL: null,
   fanCount: 412_000,
@@ -79,7 +79,7 @@ describe('card de artista da 1l', () => {
     const onToggle = jest.fn();
     render(<ArtistSelectCard artist={netto} selected={false} onToggle={onToggle} />);
     fireEvent.press(screen.getByLabelText(cardName));
-    expect(onToggle).toHaveBeenCalledWith('netto-brito');
+    expect(onToggle).toHaveBeenCalledWith('nettobrito');
     expect(haptics.trigger).toHaveBeenCalledWith('selection');
   });
 
@@ -103,7 +103,7 @@ describe('card de artista da 1l', () => {
 
 describe('células tracejadas da 1l', () => {
   const rest: Artist[] = [5, 6, 7].map((number) => ({
-    id: `artista-${number}`,
+    id: `artista${number}`,
     name: `Artista ${number}`,
     photoURL: null,
     fanCount: 1_000,

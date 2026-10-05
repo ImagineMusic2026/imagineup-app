@@ -12,6 +12,14 @@ export interface ArtistActionsProps {
   /** `undefined` enquanto a central chega. */
   artist: ArtistDetails | undefined;
   onJoin: () => void;
+  /** O "Na central" abre a sheet "Sair da central" (provisória, UP-48). */
+  onLeave: () => void;
+  /**
+   * Há entrada desta central esperando o servidor (indo, na fila offline ou
+   * restaurada do disco): o "Na central" fica sem toque, senão o sair
+   * chegaria antes da entrada.
+   */
+  joinPending: boolean;
   /** Pontos que entrar rendeu, vindos da API: o "+N" sobe do botão. */
   award: JoinAward | null;
 }
@@ -26,14 +34,14 @@ const hiddenFromReader = {
  * O botão da central (1d), na linha inteira: o sino (notificações) e a nota
  * (playlists e streaming) do protótipo estão fora do contrato. Fora da
  * central, "Entrar na central" em rosa; dentro, "Na central" escuro com o
- * check, que é estado e não ação (sair da central fica para quando o menu
- * "mais" existir): sem toque e lido como texto. É o mesmo `Button` nos dois
- * estados, e a troca de rosa para escuro é a dele, em HSV e com o rótulo em
- * fade.
+ * check, que abre a sheet "Sair da central" (padrão provisório até o menu
+ * "mais", UP-48). Enquanto a entrada espera o servidor, o "Na central" é
+ * estado: sem toque e lido como texto. É o mesmo `Button` nos três estados, e
+ * a troca de rosa para escuro é a dele, em HSV e com o rótulo em fade.
  *
  * Sem margem embaixo: a aba de 44 logo abaixo já traz o respiro até o traço.
  */
-export function ArtistActions({ artist, onJoin, award }: ArtistActionsProps) {
+export function ArtistActions({ artist, onJoin, onLeave, joinPending, award }: ArtistActionsProps) {
   if (!artist) {
     // O leitor ouve "Carregando a central" uma vez só, na capa.
     return (
@@ -55,12 +63,13 @@ export function ArtistActions({ artist, onJoin, award }: ArtistActionsProps) {
           icon={member ? Check : undefined}
           variant={member ? 'secondary' : 'primary'}
           size="md"
-          readOnly={member}
-          haptic="confirm"
-          onPress={onJoin}
+          readOnly={member && joinPending}
+          haptic={member ? 'tap' : 'confirm'}
+          onPress={member ? onLeave : onJoin}
           accessibilityLabel={t(member ? 'artist.join.memberLabel' : 'artist.join.label', {
             name: artist.name,
           })}
+          accessibilityHint={member && !joinPending ? t('artist.join.memberHint') : undefined}
           testID="artist-join"
         />
         <PointsToast

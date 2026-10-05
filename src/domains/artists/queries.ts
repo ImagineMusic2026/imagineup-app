@@ -1,4 +1,10 @@
-import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
+import {
+  useIsMutating,
+  useMutation,
+  useQuery,
+  useQueryClient,
+  type QueryClient,
+} from '@tanstack/react-query';
 import { useEffect, useRef, useState } from 'react';
 import { AccessibilityInfo } from 'react-native';
 
@@ -10,9 +16,17 @@ import { rankingKeys } from '@/domains/ranking/queries';
 import { t } from '@/i18n';
 import { ApiError } from '@/services/api/errors';
 import { haptics } from '@/services/haptics';
+import { queryOptionsFor } from '@/services/query/client';
 import { createIdempotencyKey } from '@/utils/id';
 
-import { fetchArtist, fetchArtists, fetchFanCentrals, followArtists, joinCentral } from './api';
+import {
+  fetchArtist,
+  fetchArtists,
+  fetchFanCentrals,
+  followArtists,
+  joinCentral,
+  leaveCentral,
+} from './api';
 import type {
   ArtistDetails,
   FanCentral,
@@ -20,6 +34,8 @@ import type {
   FollowArtistsVariables,
   JoinCentralResult,
   JoinCentralVariables,
+  LeaveCentralResult,
+  LeaveCentralVariables,
 } from './types';
 
 /** A chave inclui tudo que muda o resultado. */
@@ -33,6 +49,7 @@ export const artistKeys = {
 
 export const artistMutationKeys = {
   join: ['artists', 'join'] as const,
+  leave: ['artists', 'leave'] as const,
 };
 
 /**
@@ -42,15 +59,17 @@ export const artistMutationKeys = {
  */
 export function useArtistsQuery({ enabled = true }: { enabled?: boolean } = {}) {
   return useQuery({
+    ...queryOptionsFor('artists'),
     queryKey: artistKeys.list(),
     queryFn: fetchArtists,
     enabled,
   });
 }
 
-/** Centrais que o fã segue, com a posição dele em cada uma (carrossel da 1b). */
+/** Centrais que o fã segue, com os pontos dele em cada uma (1b, 1e e os chips da 1f). */
 export function useFanCentralsQuery() {
   return useQuery({
+    ...queryOptionsFor('artists'),
     queryKey: artistKeys.centrals(),
     queryFn: fetchFanCentrals,
   });
@@ -59,6 +78,7 @@ export function useFanCentralsQuery() {
 /** A central de um artista (página 1d): capa, números e se o fã está nela. */
 export function useArtistQuery(artistId: string) {
   return useQuery({
+    ...queryOptionsFor('artists'),
     queryKey: artistKeys.detail(artistId),
     queryFn: () => fetchArtist(artistId),
     enabled: !!artistId,
@@ -89,7 +109,10 @@ function sameArtists(a: readonly string[], b: readonly string[]): boolean {
  * A lista de artistas não depende de quem o fã segue, então não é invalidada;
  * as centrais que ele segue (carrossel da 1b) e a página de cada uma (o "Na
  * central" da 1d), sim. O feed também depende, mas nasce depois da escolha de
- * artistas (nenhuma tela o busca antes dela).
+ * artistas (nenhuma tela o busca antes dela). Seguir rende os pontos de
+ * entrada no servidor (uma vez por central): com pontos, carteira, nível e
+ * ranking buscam de novo. Central que saiu do ar entre a lista e o toque
+ * (`notFound`): a lista busca de novo, e a 1l tira da escolha o que sumiu.
  */
 export function useFollowArtistsMutation({ onFollowed, onError }: FollowArtistsOptions = {}) {
   const queryClient = useQueryClient();
@@ -100,9 +123,18 @@ export function useFollowArtistsMutation({ onFollowed, onError }: FollowArtistsO
     onSuccess: async (result) => {
       void queryClient.invalidateQueries({ queryKey: artistKeys.centrals() });
       void queryClient.invalidateQueries({ queryKey: artistKeys.details() });
+      if ((result.pointsAwarded ?? 0) > 0) {
+        void queryClient.invalidateQueries({ queryKey: profileKeys.wallet() });
+        void queryClient.invalidateQueries({ queryKey: rankingKeys.all });
+      }
       await onFollowed?.(result);
     },
-    onError,
+    onError: (error) => {
+      if (error instanceof ApiError && error.kind === 'notFound') {
+        void queryClient.invalidateQueries({ queryKey: artistKeys.list() });
+      }
+      onError?.(error);
+    },
   });
 
   return {
@@ -139,9 +171,39 @@ function centralOf(artist: ArtistDetails): FanCentral {
   };
 }
 
-function setMember(client: QueryClient, artistId: string, isMember: boolean): void {
+/**
+ * Marca o fã dentro ou fora da central na página. `fanDelta` acompanha a
+ * troca no otimista da entrada (+1, e -1 no erro), para a 1d não mostrar "Na
+ * central" com "0 fãs" enquanto o pedido vai.
+ */
+function setMember(client: QueryClient, artistId: string, isMember: boolean, fanDelta = 0): void {
   client.setQueryData<ArtistDetails>(artistKeys.detail(artistId), (artist) =>
-    artist && artist.isMember !== isMember ? { ...artist, isMember } : artist,
+    artist && artist.isMember !== isMember
+      ? { ...artist, isMember, fanCount: Math.max(0, artist.fanCount + fanDelta) }
+      : artist,
+  );
+}
+
+/** O `artistId` das variáveis de uma entrada guardada, sem supor o tipo (pode vir do disco). */
+export function joinArtistIdOf(variables: unknown): string | null {
+  if (typeof variables !== 'object' || variables === null) return null;
+  const artistId = (variables as { artistId?: unknown }).artistId;
+  return typeof artistId === 'string' ? artistId : null;
+}
+
+/**
+ * Há entrada desta central esperando o servidor: indo, pausada na fila
+ * offline ou restaurada do disco (todas ficam `pending`). O `isPending` do
+ * hook da página não basta: ele é do hook, e com a página reaberta não vê a
+ * entrada da fila. O "Na central" fica sem toque enquanto isso, senão o sair
+ * chegaria antes da entrada, e a entrada recriaria o vínculo depois.
+ */
+export function useIsJoinPending(artistId: string): boolean {
+  return (
+    useIsMutating({
+      mutationKey: artistMutationKeys.join,
+      predicate: (mutation) => joinArtistIdOf(mutation.state.variables) === artistId,
+    }) > 0
   );
 }
 
@@ -161,9 +223,24 @@ function refreshAfterJoin(client: QueryClient, result: JoinCentralResult): void 
 }
 
 /**
+ * A entrada não valeu e a tela não tem o que desfazer no lugar: a página e
+ * "Suas centrais" buscam de novo, e o servidor diz o que vale. Central fora do
+ * ar (`notFound`) faz a 1d mostrar "Esta central não existe mais".
+ */
+function refreshAfterJoinFailed(client: QueryClient, artistId: string): void {
+  void client.invalidateQueries({ queryKey: artistKeys.detail(artistId) });
+  void client.invalidateQueries({ queryKey: artistKeys.centrals() });
+}
+
+const isNotFound = (error: unknown): boolean =>
+  error instanceof ApiError && error.kind === 'notFound';
+
+/**
  * Entrar numa central feito offline fica salvo e volta a rodar quando o app
  * reabre. Para isso a função precisa estar registrada aqui, fora do
- * componente, com o que ela muda nas outras telas.
+ * componente, com o que ela muda nas outras telas. Restaurada do disco, a
+ * entrada não tem o contexto do otimista para desfazer: no erro, a página e
+ * as centrais buscam de novo.
  */
 export function registerArtistMutationDefaults(client: QueryClient): void {
   client.setMutationDefaults<JoinCentralResult, Error, JoinCentralVariables>(
@@ -171,6 +248,7 @@ export function registerArtistMutationDefaults(client: QueryClient): void {
     {
       mutationFn: (variables) => joinCentral(variables),
       onSuccess: (result) => refreshAfterJoin(client, result),
+      onError: (_error, variables) => refreshAfterJoinFailed(client, variables.artistId),
     },
   );
 }
@@ -220,8 +298,9 @@ export function useJoinCentralMutation(artistId: string) {
         queryClient.cancelQueries({ queryKey: artistKeys.detail(id) }),
         queryClient.cancelQueries({ queryKey: artistKeys.centrals() }),
       ]);
+      setMember(queryClient, id, true, 1);
+      // Já com o fã contado (o setMember acima): "Suas centrais" leva o mesmo número.
       const artist = queryClient.getQueryData<ArtistDetails>(artistKeys.detail(id));
-      setMember(queryClient, id, true);
       let inserted = false;
       if (artist) {
         queryClient.setQueryData<FanCentral[]>(artistKeys.centrals(), (centrals) => {
@@ -240,16 +319,21 @@ export function useJoinCentralMutation(artistId: string) {
       awards.current += 1;
       setAward({ id: awards.current, points: result.pointsAwarded });
     },
-    onError: (_error, { artistId: id }, context) => {
-      setMember(queryClient, id, false);
+    onError: (error, { artistId: id }, context) => {
+      setMember(queryClient, id, false, -1);
       if (context?.inserted) {
         queryClient.setQueryData<FanCentral[]>(artistKeys.centrals(), (centrals) =>
           centrals?.filter((central) => central.artistId !== id),
         );
       }
+      // Central que saiu do ar com a página aberta: tentar de novo daria 404
+      // para sempre. A página busca de novo e diz que a central não existe
+      // mais (o anúncio é dela), e a central sai de "Suas centrais".
+      const gone = isNotFound(error);
+      if (gone) refreshAfterJoinFailed(queryClient, id);
       if (!mounted.current) return;
       haptics.trigger('error');
-      AccessibilityInfo.announceForAccessibility(t('artist.join.error'));
+      if (!gone) AccessibilityInfo.announceForAccessibility(t('artist.join.error'));
     },
   });
 
@@ -264,4 +348,87 @@ export function useJoinCentralMutation(artistId: string) {
   };
 
   return { join, award, isPending: mutation.isPending };
+}
+
+/**
+ * Sair da central (a sheet provisória "Sair da central" da 1d, UP-48). Não é
+ * otimista e não entra na fila offline: o fã confirma na sheet e espera o
+ * resultado, como no resgate (`networkMode: 'always'`, sem tentar de novo
+ * sozinha). A chave de idempotência é da tentativa: a mesma depois de uma
+ * falha incerta, nova depois de uma recusa. No sucesso, a página mostra
+ * "Entrar na central", a central sai de "Suas centrais" e as centrais, a
+ * página e o mural da home buscam de novo. Carteira e ranking ficam: sair não
+ * muda ponto. A página buscada logo depois pode contar o fã por uns 20 s (a
+ * cópia do fanCount no servidor); sem desconto local, que a busca desfaria.
+ *
+ * `onLeft` e `onError` são da sheet (fechar, o aviso na tela) e só rodam com
+ * ela montada: a resposta que chega com a sheet já fechada (o arrasto do
+ * Android, que não trava) não navega, senão o `router.back()` dela tiraria a
+ * 1d da pilha. Aí o hook só avisa o resultado, com o toque de erro na falha.
+ */
+export interface LeaveCentralOptions {
+  /** O servidor confirmou: a sheet fecha e avisa. */
+  onLeft?: (result: LeaveCentralResult) => void;
+  /** Recusa ou falha: a sheet fica, com o erro acima dos botões. */
+  onError?: (error: Error) => void;
+}
+
+export function useLeaveCentralMutation(
+  artistId: string,
+  { onLeft, onError }: LeaveCentralOptions = {},
+) {
+  const queryClient = useQueryClient();
+  const mounted = useRef(false);
+
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
+
+  const mutation = useMutation<LeaveCentralResult, Error, LeaveCentralVariables>({
+    mutationKey: artistMutationKeys.leave,
+    mutationFn: (variables) => leaveCentral(variables),
+    networkMode: 'always',
+    retry: false,
+    onSuccess: (result) => {
+      const id = result.artistId;
+      setMember(queryClient, id, false);
+      queryClient.setQueryData<FanCentral[]>(artistKeys.centrals(), (centrals) =>
+        centrals?.filter((central) => central.artistId !== id),
+      );
+      void queryClient.invalidateQueries({ queryKey: artistKeys.centrals() });
+      void queryClient.invalidateQueries({ queryKey: artistKeys.detail(id) });
+      void queryClient.invalidateQueries({ queryKey: postKeys.feed() });
+      if (mounted.current) onLeft?.(result);
+      else AccessibilityInfo.announceForAccessibility(t('artist.leave.left'));
+    },
+    onError: (error) => {
+      if (mounted.current) {
+        onError?.(error);
+        return;
+      }
+      haptics.trigger('error');
+      AccessibilityInfo.announceForAccessibility(t('artist.leave.error'));
+    },
+  });
+
+  const leave = (): void => {
+    if (mutation.isPending) return;
+    const failed = mutation.isError ? mutation.variables : undefined;
+    const idempotencyKey =
+      failed && failed.artistId === artistId && isUncertain(mutation.error)
+        ? failed.idempotencyKey
+        : createIdempotencyKey();
+    mutation.mutate({ artistId, idempotencyKey });
+  };
+
+  return {
+    leave,
+    isPending: mutation.isPending,
+    isError: mutation.isError,
+    isSuccess: mutation.isSuccess,
+    reset: mutation.reset,
+  };
 }

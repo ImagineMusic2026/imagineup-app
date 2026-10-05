@@ -32,7 +32,7 @@ describe('escolha estável pelo id', () => {
 
   it('devolve sempre o mesmo item para o mesmo id', () => {
     const list = ['rosa', 'ciano', 'laranja'] as const;
-    expect(pickStable('netto-brito', list)).toBe(pickStable('netto-brito', list));
+    expect(pickStable('nettobrito', list)).toBe(pickStable('nettobrito', list));
   });
 
   it('espalha ids diferentes pela lista', () => {

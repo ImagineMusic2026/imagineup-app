@@ -54,6 +54,12 @@ export interface LeaderboardEntry {
 export interface LeaderboardPage {
   items: LeaderboardEntry[];
   nextCursor: string | null;
+  /**
+   * Ranking de exemplo ao lado de dado de verdade (as centrais ou a carteira
+   * já vêm do servidor, o ranking ainda não): a tela mostra o aviso. O
+   * servidor nunca manda; o bloco 8 apaga o campo e o aviso.
+   */
+  example?: boolean;
 }
 
 /**
@@ -74,4 +80,10 @@ export interface MyRank {
   points: number;
   /** `null` no 1º lugar, sem pontos e com a temporada encerrada. */
   target: RankTarget | null;
+  /**
+   * O recorte é de exemplo ao lado de dado de verdade (`LeaderboardPage.example`).
+   * Numa central, o fã fica fora do ranking de exemplo e o card "Você" diz
+   * "Sem posição ainda", como a 1e. O servidor nunca manda.
+   */
+  example?: boolean;
 }

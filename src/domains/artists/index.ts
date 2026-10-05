@@ -12,9 +12,13 @@ export {
   useArtistQuery,
   useArtistsQuery,
   useFanCentralsQuery,
+  joinArtistIdOf,
   useFollowArtistsMutation,
+  useIsJoinPending,
   useJoinCentralMutation,
+  useLeaveCentralMutation,
   type FollowArtistsOptions,
+  type LeaveCentralOptions,
   type JoinAward,
 } from './queries';
 export type {
@@ -23,4 +27,5 @@ export type {
   FanCentral,
   FollowArtistsResult,
   JoinCentralResult,
+  LeaveCentralResult,
 } from './types';

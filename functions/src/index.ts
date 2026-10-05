@@ -1,11 +1,14 @@
 import { initializeApp } from 'firebase-admin/app';
 import { getAuth } from 'firebase-admin/auth';
 import { getFirestore } from 'firebase-admin/firestore';
+import { getFunctions } from 'firebase-admin/functions';
 import { getStorage } from 'firebase-admin/storage';
+import { onDocumentWritten } from 'firebase-functions/firestore';
 import { onCall, onRequest } from 'firebase-functions/https';
 import { onUserCreated, onUserDeleted } from 'firebase-functions/identity';
 import * as logger from 'firebase-functions/logger';
 import { setGlobalOptions } from 'firebase-functions/options';
+import { onTaskDispatched } from 'firebase-functions/tasks';
 
 import {
   addArtist,
@@ -18,6 +21,13 @@ import {
   type ArtistDeps,
 } from './artists';
 import { createApiHandler } from './api';
+import {
+  FAN_COUNT_MAX_ATTEMPTS,
+  FAN_COUNT_QUEUE,
+  queueFanCountSync,
+  runFanCountSync,
+  type FanCountQueue,
+} from './centrals';
 import { handleUserCreated, type FindUser } from './handlers';
 import {
   acceptInvite,
@@ -212,13 +222,18 @@ export const deleteArtist = onCall({ cors: PANEL_ORIGINS }, async (request) => {
 });
 
 // API HTTP do app (docs/arquitetura-api.md): carteira, progresso e extrato no
-// bloco 1; os blocos seguintes acrescentam as rotas deles em src/api. Quem
+// bloco 1, centrais no bloco 4; os blocos seguintes acrescentam as rotas deles
+// em src/api. Quem
 // protege é o ID token do Firebase em toda rota, por isso o invoker público.
 // Sem CORS: o app nativo não faz preflight, e o painel usa as callables.
 
 let apiHandler: ReturnType<typeof createApiHandler> | null = null;
 
-/** GET /me/wallet, /me/progress e /me/ledger; os pontos são sempre calculados no servidor. */
+/**
+ * Carteira, progresso e extrato (bloco 1) e as centrais (bloco 4: lista,
+ * página, "Suas centrais", seguir, entrar e sair); os pontos são sempre
+ * calculados no servidor.
+ */
 export const api = onRequest(
   {
     invoker: 'public',
@@ -231,5 +246,34 @@ export const api = onRequest(
   (req, res) => {
     apiHandler ??= createApiHandler({ db: getFirestore(), auth: getAuth() });
     return apiHandler(req, res);
+  },
+);
+
+// fanCount das centrais (bloco 4, docs/arquitetura-api.md, seção 19.6): a
+// entrada e a saída somam +1 ou -1 num shard (artistStats/{id}/fanShards), o
+// gatilho põe na fila uma tarefa por central e por janela de 10 s, e a tarefa
+// copia a soma para artists/{id}.fanCount, que o app e o painel leem.
+
+let fanCountQueue: FanCountQueue | null = null;
+
+/** Põe na fila a cópia do fanCount da central da gravação (sem ler nada). */
+export const queueArtistFanCountSync = onDocumentWritten(
+  { document: 'artistStats/{artistId}/fanShards/{shard}', retry: true },
+  async (event) => {
+    fanCountQueue ??= getFunctions().taskQueue<{ artistId: string }>(FAN_COUNT_QUEUE);
+    await queueFanCountSync(fanCountQueue, event.params.artistId, Date.parse(event.time), {
+      emulator: process.env.FUNCTIONS_EMULATOR === 'true',
+    });
+  },
+);
+
+/** Soma os shards do fanCount de uma central e copia para artists/{id}. */
+export const syncArtistFanCount = onTaskDispatched<{ artistId: string }>(
+  { retryConfig: { maxAttempts: FAN_COUNT_MAX_ATTEMPTS, minBackoffSeconds: 10 } },
+  async (request) => {
+    const result = await runFanCountSync(getFirestore(), request.data, {
+      retryCount: request.retryCount,
+    });
+    if (result) logger.info('fanCount copiado.', { artistId: request.data.artistId, ...result });
   },
 );

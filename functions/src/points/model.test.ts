@@ -9,6 +9,7 @@ import {
   emptyWallet,
   levelForXp,
   monthKey,
+  nextDayStart,
   PointsError,
   seasonsPlayed,
   shiftDay,
@@ -121,6 +122,15 @@ describe('dias de São Paulo', () => {
       null,
     );
     expect(marks).toMatchObject({ day: '2026-09-30', week: '2026-W40', month: '2026-09' });
+  });
+
+  it.each([
+    ['2026-10-05T15:00:00.000Z', '2026-10-06T03:00:00.000Z'],
+    ['2026-10-06T02:59:59.999Z', '2026-10-06T03:00:00.000Z'],
+    ['2026-10-06T03:00:00.000Z', '2026-10-07T03:00:00.000Z'],
+    ['2026-12-31T23:00:00.000Z', '2027-01-01T03:00:00.000Z'],
+  ])('o dia de São Paulo seguinte a %s começa em %s', (iso, next) => {
+    expect(new Date(nextDayStart(Date.parse(iso))).toISOString()).toBe(next);
   });
 });
 
@@ -589,6 +599,8 @@ describe('atividade e o que é gravado', () => {
         spentEvents: 0,
         adjusted: 0,
         adjustedEvents: 0,
+        joined: 0,
+        left: 0,
       },
       bySource: { comment: { points: 4, events: 2 }, mission: { points: 20, events: 1 } },
       byArtist: {
@@ -597,6 +609,8 @@ describe('atividade e o que é gravado', () => {
           earnedEvents: 2,
           spent: 0,
           spentEvents: 0,
+          joined: 0,
+          left: 0,
           bySource: { comment: { points: 2, events: 1 }, mission: { points: 20, events: 1 } },
         },
       },

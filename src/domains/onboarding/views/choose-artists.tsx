@@ -22,7 +22,13 @@ import { ARTISTS_STEP, MIN_ARTISTS, MORE_PREVIEW_COUNT } from '../consts';
 import { useArtistSelection } from '../hooks/use-artist-selection';
 import { useArtistsLoad, useFocusAfterRecovery } from '../hooks/use-artists-load';
 import { useFinishOnboarding } from '../hooks/use-finish-onboarding';
-import { continueLabel, missingArtists, splitFeatured } from '../selection';
+import {
+  continueLabel,
+  minimumArtists,
+  missingArtists,
+  needMoreHint,
+  splitFeatured,
+} from '../selection';
 
 const COLUMNS = 2;
 
@@ -99,12 +105,19 @@ export function ChooseArtistsScreen() {
   const { artists, state: gridState, retrying, retry } = useArtistsLoad();
   const selectedIds = useArtistSelection((state) => state.selectedIds);
   const clearSelection = useArtistSelection((state) => state.clear);
+  const retainSelection = useArtistSelection((state) => state.retain);
   const finish = useFinishOnboarding();
   const [barHeight, setBarHeight] = useState(0);
   const firstCardRef = useRef<View>(null);
 
   // Saiu da escolha (onboarding concluído, sessão que caiu): a próxima começa vazia.
   useEffect(() => clearSelection, [clearSelection]);
+
+  // A lista mudou (buscou de novo depois de uma central sair do ar no meio):
+  // o que sumiu dela sai da escolha.
+  useEffect(() => {
+    if (artists) retainSelection(artists.map((artist) => artist.id));
+  }, [artists, retainSelection]);
 
   // Cada falha é anunciada; a busca de novo (com o botão ocupado) não.
   const failed = gridState === 'error' && !retrying;
@@ -127,7 +140,9 @@ export function ChooseArtistsScreen() {
 
   const saving = finish.isPending;
   const count = selectedIds.length;
-  const missing = missingArtists(count);
+  // O mínimo é 3, ou todas as publicadas quando o painel publicou menos que isso.
+  const minimum = artists ? minimumArtists(artists.length) : MIN_ARTISTS;
+  const missing = missingArtists(count, minimum);
 
   return (
     <Screen padded={false} contentStyle={styles.screen}>
@@ -146,7 +161,7 @@ export function ChooseArtistsScreen() {
           {t('onboarding.chooseArtists.title')}
         </Text>
         <Text variant="body" color={colors.textMuted} style={styles.subtitle}>
-          {t('onboarding.chooseArtists.subtitle', { min: MIN_ARTISTS })}
+          {t('onboarding.chooseArtists.subtitle', { min: minimum })}
         </Text>
 
         <View style={styles.body}>
@@ -172,17 +187,13 @@ export function ChooseArtistsScreen() {
           </Text>
         ) : null}
         <Button
-          label={continueLabel(count)}
+          label={continueLabel(count, minimum)}
           onPress={() => finish.follow(selectedIds)}
           disabled={missing > 0 || gridState !== 'ready'}
           loading={saving}
           // O toque de confirmação vem quando a escolha é salva.
           haptic={null}
-          accessibilityHint={
-            missing > 0
-              ? t('onboarding.chooseArtists.needMoreHint', { min: MIN_ARTISTS })
-              : undefined
-          }
+          accessibilityHint={missing > 0 ? needMoreHint(minimum) : undefined}
         />
       </BottomActionBar>
     </Screen>

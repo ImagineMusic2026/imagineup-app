@@ -109,6 +109,8 @@ function describeTarget({ kind, position, pointsLeft }: RankTarget): MyRankStatu
 }
 
 /**
+ * - recorte de exemplo ao lado de dado de verdade, sem posição: "Sem posição
+ *   ainda" (o fã pode ter pontos de verdade ali; "Ganhe pontos" seria falso);
  * - temporada encerrada: "Terminou em 12º" (ou não pontuou);
  * - sem pontos no recorte: "Ganhe pontos para entrar no ranking";
  * - no pódio: "No pódio da temporada";
@@ -117,6 +119,7 @@ function describeTarget({ kind, position, pointsLeft }: RankTarget): MyRankStatu
  */
 export function describeMyRankStatus(myRank: MyRank, seasonOver: boolean): MyRankStatus {
   const { position, target } = myRank;
+  if (position === null && myRank.example) return same(t('ranking.me.pending'));
   if (seasonOver) {
     return same(
       position === null ? t('ranking.me.finishedUnranked') : t('ranking.me.finished', { position }),
@@ -130,10 +133,14 @@ export function describeMyRankStatus(myRank: MyRank, seasonOver: boolean): MyRan
 
 /**
  * O card "Você" num rótulo só: "Você, 12º lugar, 4.120 pontos. Faltam 840
- * pontos para entrar no top 10."
+ * pontos para entrar no top 10." No recorte de exemplo sem posição, os pontos
+ * de verdade do fã na central, que o card mostra, também vão no rótulo.
  */
 export function describeMyRank(myRank: MyRank, seasonOver: boolean): string {
   const status = describeMyRankStatus(myRank, seasonOver).spoken;
+  if (myRank.position === null && myRank.example && myRank.points > 0) {
+    return t('ranking.me.labelPending', { points: formatPointsSpoken(myRank.points) });
+  }
   if (myRank.position === null) return t('ranking.me.labelUnranked', { status });
   return t('ranking.me.label', {
     position: myRank.position,

@@ -8,7 +8,14 @@
  * 4.120, Netto 4.120 e Nenho 2.980, "+840" na semana), gravada pelo mesmo
  * lançamento de pontos das funções (functions/lib/points, do build que o
  * `npm run emulators` já faz), com o extrato. O Alan fica sem carteira: é o fã
- * novo. Rodar de novo não muda nada.
+ * novo.
+ *
+ * Antes das contas, as centrais de teste (functions/lib/centrals): Netto Brito,
+ * Nenho, Juninho Moraes, Rock Salles, Artista 5 e Artista 6 publicadas, o
+ * Artista 7 em rascunho e o Artista 8 fora do ar, que o app não mostra. Depois
+ * da carteira, a Camila vira fã de Netto, Nenho e Juninho pelo mesmo caminho
+ * das rotas da API; o Alan não segue nada e passa pela escolha de artistas.
+ * Rodar de novo não muda nada.
  *
  * Só funciona contra o emulador local (127.0.0.1:9099): estas senhas não servem
  * para o projeto de verdade. Os dados somem quando os emuladores fecham, então
@@ -68,25 +75,50 @@ async function setCity(uid, city) {
 process.env.FIRESTORE_EMULATOR_HOST = '127.0.0.1:8080';
 const PROJECT_ID = 'demo-imagine-up-app';
 
-/** A carteira da Camila pelo award das funções (o build em functions/lib). */
-async function seedWallet(uid) {
-  const pointsPath = fileURLToPath(new URL('../functions/lib/points/index.js', import.meta.url));
-  if (!existsSync(pointsPath)) {
+/** Um módulo do build das funções (functions/lib), com o firebase-admin de lá. */
+function functionsBuild(module) {
+  const path = fileURLToPath(new URL(`../functions/lib/${module}/index.js`, import.meta.url));
+  if (!existsSync(path)) {
     throw new Error('Falta o build das funções: rode npm --prefix functions run build.');
   }
   // firebase-admin e o código das funções saem do mesmo functions/node_modules.
   const require = createRequire(new URL('../functions/package.json', import.meta.url));
+  return require(path);
+}
+
+/** Roda `work` com o Firestore do emulador e fecha as conexões no fim (senão o Node espera). */
+async function withFirestore(work) {
+  const require = createRequire(new URL('../functions/package.json', import.meta.url));
   const { deleteApp, initializeApp } = require('firebase-admin/app');
   const { getFirestore } = require('firebase-admin/firestore');
-  const { seedCamilaWallet } = require(pointsPath);
-  const app = initializeApp({ projectId: PROJECT_ID }, 'seed');
+  const app = initializeApp({ projectId: PROJECT_ID }, `seed-${Date.now()}`);
   try {
-    await seedCamilaWallet(getFirestore(app), uid);
+    return await work(getFirestore(app));
   } finally {
-    // Fecha as conexões do Firestore, senão o Node fica esperando.
     await deleteApp(app);
   }
 }
+
+/** As centrais de teste, como o painel publicaria (só as que ainda não existem). */
+async function seedCentrals() {
+  const { seedCentrals: seed } = functionsBuild('centrals');
+  return withFirestore((db) => seed(db));
+}
+
+/** A carteira da Camila pelo award das funções e as centrais dela pelo caminho das rotas. */
+async function seedWallet(uid) {
+  const { seedCamilaWallet } = functionsBuild('points');
+  const { seedCamilaCentrals } = functionsBuild('centrals');
+  await withFirestore(async (db) => {
+    await seedCamilaWallet(db, uid);
+    await seedCamilaCentrals(db, uid);
+  });
+}
+
+const created = await seedCentrals();
+console.log(
+  `Centrais de teste: ${created} criadas (6 publicadas, 1 em rascunho e 1 fora do ar no total).`,
+);
 
 for (const { city, wallet, ...fan } of FANS) {
   let result = await auth('accounts:signUp', fan);
@@ -104,5 +136,6 @@ for (const { city, wallet, ...fan } of FANS) {
   if (wallet) {
     await seedWallet(result.body.localId);
     console.log(`Carteira de ${fan.displayName}: saldo 12.480, temporada 4.120, Netto e Nenho.`);
+    console.log(`Centrais de ${fan.displayName}: Netto Brito, Nenho e Juninho Moraes.`);
   }
 }

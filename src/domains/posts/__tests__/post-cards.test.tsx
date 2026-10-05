@@ -117,7 +117,7 @@ describe('CommentRow', () => {
     render(
       <CommentRow
         comment={comment({
-          authorId: 'netto-brito',
+          authorId: 'nettobrito',
           authorName: 'Netto Brito',
           authorIsArtist: true,
           createdAt: new Date(NOW.getTime() - 48 * 60_000).toISOString(),
@@ -221,7 +221,7 @@ describe('PostAuthorRow', () => {
     fireEvent.press(screen.getByRole('button'));
     // Fecha o post e abre na aba que já existe, sem empilhar outra árvore de abas.
     expect(router.dismissTo).toHaveBeenCalledWith(
-      { pathname: '/(tabs)/(inicio)/artista/[artistaId]', params: { artistaId: 'netto-brito' } },
+      { pathname: '/(tabs)/(inicio)/artista/[artistaId]', params: { artistaId: 'nettobrito' } },
       { withAnchor: true },
     );
   });

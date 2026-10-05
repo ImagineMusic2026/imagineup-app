@@ -31,7 +31,7 @@ export type DataDomain =
  * Domínios com rota no servidor. Cada bloco acrescenta o seu no commit que
  * entrega as rotas dele; os outros seguem nas fixtures mesmo com a API ligada.
  */
-export const SERVER_DOMAINS: ReadonlySet<DataDomain> = new Set<DataDomain>(['wallet']);
+export const SERVER_DOMAINS: ReadonlySet<DataDomain> = new Set<DataDomain>(['wallet', 'artists']);
 
 /**
  * A fonte de um domínio: a API quando ela está configurada (emulador em

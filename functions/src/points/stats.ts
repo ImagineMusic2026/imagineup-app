@@ -26,6 +26,10 @@ export type ArtistCount = {
   earnedEvents: number;
   spent: number;
   spentEvents: number;
+  /** Fãs que entraram na central no dia (fluxo, bloco 4). */
+  joined: number;
+  /** Fãs que saíram da central no dia (fluxo; a exclusão de conta não conta). */
+  left: number;
   bySource: Record<string, Count>;
 };
 
@@ -38,6 +42,10 @@ export type ShardDelta = {
     spentEvents: number;
     adjusted: number;
     adjustedEvents: number;
+    /** Entradas em centrais no dia, somadas de todas (bloco 4). */
+    joined: number;
+    /** Saídas de centrais no dia. `joined - left` não é o número de membros: esse é o fanCount. */
+    left: number;
   };
   bySource: Record<string, Count>;
   byArtist: Record<string, ArtistCount>;
@@ -54,12 +62,18 @@ export function emptyShardDelta(): ShardDelta {
       spentEvents: 0,
       adjusted: 0,
       adjustedEvents: 0,
+      joined: 0,
+      left: 0,
     },
     bySource: {},
     byArtist: {},
     actives: { day: 0, newInWeek: 0, newInMonth: 0 },
     cohorts: {},
   };
+}
+
+function emptyArtistCount(): ArtistCount {
+  return { earned: 0, earnedEvents: 0, spent: 0, spentEvents: 0, joined: 0, left: 0, bySource: {} };
 }
 
 function addCount(map: Record<string, Count>, key: string, points: number): void {
@@ -83,15 +97,7 @@ export function addEntryToShard(delta: ShardDelta, entry: AwardEntry, balanceDel
     return;
   }
   const points = Math.abs(balanceDelta);
-  const artist = entry.artistId
-    ? (delta.byArtist[entry.artistId] ??= {
-        earned: 0,
-        earnedEvents: 0,
-        spent: 0,
-        spentEvents: 0,
-        bySource: {},
-      })
-    : null;
+  const artist = entry.artistId ? (delta.byArtist[entry.artistId] ??= emptyArtistCount()) : null;
   if (entry.kind === 'earn') {
     delta.totals.earned += points;
     delta.totals.earnedEvents += 1;
@@ -127,6 +133,20 @@ export function addActivity(delta: ShardDelta, marks: ActivityMarks): void {
     }
   }
   if (marks.newMonth) delta.actives.newInMonth += 1;
+}
+
+/**
+ * Soma uma entrada (`joined`) ou uma saída (`left`) de central, no total e na
+ * central (bloco 4). São fluxo, como o resto do shard: o estoque é o fanCount.
+ */
+export function addMembershipToShard(
+  delta: ShardDelta,
+  artistId: string,
+  kind: 'joined' | 'left',
+): void {
+  delta.totals[kind] += 1;
+  const artist = (delta.byArtist[artistId] ??= emptyArtistCount());
+  artist[kind] += 1;
 }
 
 type Tree = { [key: string]: number | Tree };

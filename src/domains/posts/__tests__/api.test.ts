@@ -107,7 +107,7 @@ describe('mural de exemplo', () => {
 describe('compartilhar um post', () => {
   const post = {
     id: 'p-clipe',
-    artist: { id: 'netto-brito', name: 'Netto Brito', verified: true, photoURL: null },
+    artist: { id: 'nettobrito', name: 'Netto Brito', verified: true, photoURL: null },
   };
   const share = () => jest.spyOn(Share, 'share').mockResolvedValue({ action: 'sharedAction' });
   const originalOS = Platform.OS;
@@ -148,10 +148,10 @@ describe('compartilhar um post', () => {
 
 describe('posts de uma central (grade da 1d)', () => {
   it('são os do mural, só os do artista, do mais novo ao mais antigo', () => {
-    const page = buildArtistPostsPageFixture(NOW, 'netto-brito', null);
+    const page = buildArtistPostsPageFixture(NOW, 'nettobrito', null);
     expect(page.items.map((post) => post.id)).toEqual(
       buildPostsFixture(NOW)
-        .filter((post) => post.artist.id === 'netto-brito')
+        .filter((post) => post.artist.id === 'nettobrito')
         .map((post) => post.id),
     );
     expect(page.items.length).toBeLessThanOrEqual(ARTIST_POSTS_PAGE_SIZE);
@@ -159,7 +159,7 @@ describe('posts de uma central (grade da 1d)', () => {
   });
 
   it('central sem post devolve a página vazia', () => {
-    expect(buildArtistPostsPageFixture(NOW, 'rock-salles', null)).toEqual({
+    expect(buildArtistPostsPageFixture(NOW, 'rocksalles', null)).toEqual({
       items: [],
       nextCursor: null,
     });
@@ -168,7 +168,7 @@ describe('posts de uma central (grade da 1d)', () => {
   it('com a API, pede os posts do artista pelo cursor', async () => {
     mockDataSource = 'api';
     get.mockResolvedValue({ data: { items: [], nextCursor: null } });
-    await fetchArtistPosts('netto-brito', '12');
-    expect(get).toHaveBeenCalledWith('/artists/netto-brito/posts', { params: { cursor: '12' } });
+    await fetchArtistPosts('nettobrito', '12');
+    expect(get).toHaveBeenCalledWith('/artists/nettobrito/posts', { params: { cursor: '12' } });
   });
 });

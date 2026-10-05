@@ -139,22 +139,35 @@ export function achievementLabel(achievement: Achievement): string {
   );
 }
 
-/** "#12 entre 412 mil fãs" ou, sem posição, "Sem posição ainda · 141 mil fãs". */
+/**
+ * "#12 entre 412 mil fãs" ou, sem posição (o servidor, até o ranking por
+ * central do bloco 8), "Sem posição ainda · 141 mil fãs", com "1 fã" no singular.
+ */
 export function centralMeta({ fanRank, fanCount }: FanCentral): string {
   const fans = formatCompact(fanCount);
-  return fanRank === null
-    ? t('profile.centrals.metaUnranked', { fans })
-    : t('profile.centrals.meta', { rank: formatNumber(fanRank), fans });
+  if (fanRank !== null) return t('profile.centrals.meta', { rank: formatNumber(fanRank), fans });
+  return fanCount === 1
+    ? t('profile.centrals.metaUnrankedOne')
+    : t('profile.centrals.metaUnranked', { fans });
 }
 
-/** "Netto Brito, 12º lugar entre 412 mil fãs, 4.120 pontos na temporada." */
+/**
+ * "Netto Brito, 12º lugar entre 412 mil fãs, 4.120 pontos na temporada." Sem
+ * posição, diz os pontos quando o fã já pontuou na central.
+ */
 export function centralLabel({ name, fanRank, fanCount, seasonPoints }: FanCentral): string {
   const fans = formatCompact(fanCount);
-  if (fanRank === null) return t('profile.centrals.labelUnranked', { name, fans });
-  return t('profile.centrals.label', {
-    name,
-    rank: formatNumber(fanRank),
-    fans,
-    points: formatPointsSpoken(seasonPoints),
-  });
+  const points = formatPointsSpoken(seasonPoints);
+  if (fanRank !== null) {
+    return t('profile.centrals.label', { name, rank: formatNumber(fanRank), fans, points });
+  }
+  const one = fanCount === 1;
+  if (seasonPoints > 0) {
+    return one
+      ? t('profile.centrals.labelUnrankedPointsOne', { name, points })
+      : t('profile.centrals.labelUnrankedPoints', { name, fans, points });
+  }
+  return one
+    ? t('profile.centrals.labelUnrankedOne', { name })
+    : t('profile.centrals.labelUnranked', { name, fans });
 }

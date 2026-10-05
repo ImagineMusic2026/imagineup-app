@@ -4,7 +4,7 @@ import {
   type FlashListRef,
   type ListRenderItemInfo,
 } from '@shopify/flash-list';
-import { useIsFocused, useLocalSearchParams } from 'expo-router';
+import { router, useIsFocused, useLocalSearchParams } from 'expo-router';
 import {
   useEffect,
   useEffectEvent,
@@ -39,7 +39,7 @@ import { Screen } from '@/components/screen';
 import { SectionLabel } from '@/components/section-label';
 import { UnderlineTabs, type UnderlineTab } from '@/components/underline-tabs';
 import { EventRow, useArtistAgendaQuery } from '@/domains/agenda';
-import { useArtistQuery, useJoinCentralMutation } from '@/domains/artists';
+import { useArtistQuery, useIsJoinPending, useJoinCentralMutation } from '@/domains/artists';
 import {
   FeaturedMissionCard,
   MissionRow,
@@ -52,6 +52,7 @@ import {
 import { useArtistPostsQuery } from '@/domains/posts';
 import { useFanIdentity } from '@/domains/profile';
 import {
+  ExampleNotice,
   RankingRow,
   SeasonLine,
   useLeaderboardInfiniteQuery,
@@ -258,6 +259,7 @@ function ArtistPage({ artistId }: { artistId: string }) {
   const artistQuery = useArtistQuery(artistId);
   const artist = artistQuery.data;
   const { join, award } = useJoinCentralMutation(artistId);
+  const joinPending = useIsJoinPending(artistId);
   const share = useShareArtist();
   const openMission = useMissionAction();
 
@@ -310,6 +312,8 @@ function ArtistPage({ artistId }: { artistId: string }) {
   }, [tab, reducedMotion, shownTab, contentFade]);
 
   const leaderboard = board.data?.pages.flatMap((page) => page.items) ?? [];
+  // Ranking de exemplo ao lado das centrais do servidor: o aviso nos top fãs e na aba Ranking.
+  const exampleRanking = board.data?.pages[0]?.example === true;
   const topFans = leaderboard.filter((entry) => entry.position <= 3);
   const artistPosts = posts.data?.pages.flatMap((page) => page.items) ?? [];
   const artistMissions = missionsOfArtist(missions.data?.missions ?? [], artistId);
@@ -337,7 +341,9 @@ function ArtistPage({ artistId }: { artistId: string }) {
   const { refreshing, refresh } = useArtistRefresh(pageQueries);
 
   const notFound = artistQuery.error instanceof ApiError && artistQuery.error.kind === 'notFound';
-  const artistFailed = artistQuery.isError && artist === undefined;
+  // A central que saiu do ar com a página aberta (a busca de novo dá 404) some
+  // da tela: deixar a de antes, com "Tentar de novo", daria 404 para sempre.
+  const artistFailed = artistQuery.isError && (artist === undefined || notFound);
   useAnnounceWhen(
     focused && artistFailed && !artistQuery.isFetching,
     t(notFound ? 'artist.notFound' : 'artist.loadError'),
@@ -499,6 +505,7 @@ function ArtistPage({ artistId }: { artistId: string }) {
               self={self}
               onSeeRanking={seeRanking}
               titleRef={ref}
+              example={exampleRanking}
             />
           </View>
         );
@@ -549,6 +556,9 @@ function ArtistPage({ artistId }: { artistId: string }) {
             style={[styles.gutter, styles.season]}
           >
             <SeasonLine season={season.data} now={now} />
+            {exampleRanking ? (
+              <ExampleNotice style={styles.notice} testID="artist-ranking-example" />
+            ) : null}
           </View>
         );
       case 'rank':
@@ -622,7 +632,15 @@ function ArtistPage({ artistId }: { artistId: string }) {
         onHeightChange={setCoverSize}
       />
       <ArtistStats artist={artist} />
-      <ArtistActions artist={artist} onJoin={join} award={award} />
+      <ArtistActions
+        artist={artist}
+        onJoin={join}
+        onLeave={() =>
+          router.push({ pathname: '/sair-da-central/[artistaId]', params: { artistaId: artistId } })
+        }
+        joinPending={joinPending}
+        award={award}
+      />
       {/* O puxar para atualizar acontece aqui no topo: a falha aparece onde o fã puxou. */}
       {updateFailed ? (
         <EmptyState
@@ -689,12 +707,12 @@ function ArtistPage({ artistId }: { artistId: string }) {
         />
       )}
       <ArtistCompactHeader
-        name={artist?.name ?? null}
+        name={artistFailed ? null : (artist?.name ?? null)}
         height={compactHeight}
         buttonsTop={buttonsTop}
         revealAt={Math.max(cover, coverSize) - compactHeight}
         scrollY={scrollY}
-        onShare={artist ? () => share(artist) : null}
+        onShare={artist && !artistFailed ? () => share(artist) : null}
       />
     </Screen>
   );
@@ -721,6 +739,9 @@ const styles = StyleSheet.create({
   },
   status: {
     paddingTop: spacing.lg,
+  },
+  notice: {
+    marginTop: spacing.xs,
   },
   nextPage: {
     paddingVertical: spacing.lg,

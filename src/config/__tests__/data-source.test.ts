@@ -38,13 +38,20 @@ describe('fonte de cada domínio', () => {
     expect(usesFixtures()).toBe(true);
   });
 
-  it('com a API, só a carteira (bloco 1) vai para o servidor; o resto segue nas fixtures', () => {
+  it('com a API, a carteira (bloco 1) e as centrais (bloco 4) vão para o servidor; o resto segue nas fixtures', () => {
     const { sourceOf, usesFixtures, SERVER_DOMAINS } = load({
       apiUrl: 'https://southamerica-east1-imagine-up-app.cloudfunctions.net/api',
     });
-    expect([...SERVER_DOMAINS]).toEqual(['wallet']);
-    expect(DOMAINS.filter((domain) => sourceOf(domain) === 'api')).toEqual(['wallet']);
+    expect([...SERVER_DOMAINS]).toEqual(['wallet', 'artists']);
+    expect(DOMAINS.filter((domain) => sourceOf(domain) === 'api')).toEqual(['wallet', 'artists']);
     expect(usesFixtures()).toBe(true);
+  });
+
+  it('com o emulador, as centrais vêm da api dele', () => {
+    const emulatorApi = realServer().resolveApiUrl('10.0.2.2', undefined);
+    const { sourceOf } = load({ apiUrl: emulatorApi });
+    expect(sourceOf('artists')).toBe('api');
+    expect(sourceOf('posts')).toBe('fixtures');
   });
 });
 

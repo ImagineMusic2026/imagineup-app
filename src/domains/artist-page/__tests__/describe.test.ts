@@ -18,7 +18,7 @@ function post(overrides: Partial<Post> = {}): Post {
   return {
     id: 'p-1',
     kind: 'photo',
-    artist: { id: 'netto-brito', name: 'Netto Brito', verified: true, photoURL: null },
+    artist: { id: 'nettobrito', name: 'Netto Brito', verified: true, photoURL: null },
     text: 'Obrigado, Feira de Santana!',
     media: { url: null, thumbnailUrl: null, width: null, height: null },
     event: null,

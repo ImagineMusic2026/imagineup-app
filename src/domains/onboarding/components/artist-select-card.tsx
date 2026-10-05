@@ -16,13 +16,12 @@ import { Scrim } from '@/components/scrim';
 import { Text } from '@/components/text';
 import type { Artist } from '@/domains/artists';
 import { usePrefersReducedMotion } from '@/hooks/use-prefers-reduced-motion';
-import { t } from '@/i18n';
 import { borderWidths, colors, gradients, layout, motion, radii, spacing } from '@/theme';
 import { withAlpha } from '@/utils/color';
-import { formatCompact } from '@/utils/number';
 import { selectionAccessibility } from '@/utils/selection-accessibility';
 
 import { useArtistSelection, useIsArtistSelected } from '../hooks/use-artist-selection';
+import { artistCardLabel, fansText } from '../selection';
 
 export interface ArtistSelectCardProps {
   artist: Artist;
@@ -119,7 +118,6 @@ export function ArtistSelectCard({
   ref,
 }: ArtistSelectCardProps) {
   const { role, state } = selectionAccessibility('multiple', selected);
-  const fans = formatCompact(artist.fanCount);
   const { borderStyle, markStyle, checkStyle } = useSelectionMotion(artist.id, selected);
 
   return (
@@ -130,7 +128,7 @@ export function ArtistSelectCard({
       disabled={disabled}
       accessibilityRole={role}
       accessibilityState={state}
-      accessibilityLabel={t('onboarding.chooseArtists.cardLabel', { name: artist.name, fans })}
+      accessibilityLabel={artistCardLabel(artist)}
       style={[styles.card, style]}
     >
       <RemoteImage
@@ -148,7 +146,7 @@ export function ArtistSelectCard({
           {artist.name}
         </Text>
         <Text variant="micro" color={colors.textSubtle} numberOfLines={1} style={styles.fans}>
-          {t('onboarding.chooseArtists.fans', { count: fans })}
+          {fansText(artist.fanCount)}
         </Text>
       </View>
 

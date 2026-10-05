@@ -64,7 +64,7 @@ describe('agenda de exemplo', () => {
       id: 'sao-joao-irara',
       title: 'São João de Irará',
       artists: [
-        { id: 'netto-brito', name: 'Netto Brito' },
+        { id: 'nettobrito', name: 'Netto Brito' },
         { id: 'nenho', name: 'Nenho' },
       ],
       city: 'Irará',
@@ -150,7 +150,7 @@ describe('shows de uma central (aba Agenda da 1d)', () => {
   });
 
   it('central sem show devolve a página vazia', () => {
-    expect(buildArtistAgendaPageFixture(NOW, 'artista-9', null)).toEqual({
+    expect(buildArtistAgendaPageFixture(NOW, 'artista9', null)).toEqual({
       featured: null,
       items: [],
       nextCursor: null,

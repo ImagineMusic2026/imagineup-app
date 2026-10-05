@@ -1,6 +1,6 @@
 # Arquitetura da API do app
 
-Nota de arquitetura do servidor do ImagineUP. Ela diz como o app fala com as Cloud Functions, onde moram os pontos, como o ponto é lançado e como o painel lê os números. Vale para o bloco 1 (base do servidor e núcleo de pontos) e deixa a estrutura pronta para os blocos seguintes.
+Nota de arquitetura do servidor do ImagineUP. Ela diz como o app fala com as Cloud Functions, onde moram os pontos, como o ponto é lançado e como o painel lê os números. Vale para o bloco 1 (base do servidor e núcleo de pontos) e deixa a estrutura pronta para os blocos seguintes. O bloco 4 (centrais de verdade) está na seção 19.
 
 Origem: decisão do dono em 05/10/2026 (API HTTP numa função `onRequest`, pontos calculados na transação da ação) e o levantamento de 05/10/2026 (13 blocos, 26 endpoints, perguntas técnicas em aberto).
 
@@ -20,6 +20,7 @@ Quem mexe no servidor lê esta nota antes. Mudou uma decisão daqui? Mude a nota
 10. Excluir a conta apaga carteira, extrato, pontos por central e chaves de idempotência. Os agregados não descontam.
 11. No app, o `dataSource` global vira um seletor por domínio. No bloco 1, só a carteira (com o progresso) vai para a API, e só em desenvolvimento com os emuladores: `EXPO_PUBLIC_API_URL` entra nas builds da cliente depois que as ações que rendem e gastam pontos estiverem na API. Com a carteira na API, ação de fixture não rende ponto.
 12. Um projeto Firebase só (`imagine-up-app`), mais os emuladores. O ambiente de testes espera o ok da cliente (UP-15).
+13. Bloco 4 (seção 19): vínculo em `users/{uid}/centrals/{artistId}`; `fanCount` somado num shard na transação e copiado para `artists/{id}` por uma fila de tarefas, no máximo uma vez a cada 10 s por central; vínculo novo paga `central_join` uma vez na vida, também na 1l; sair não tira ponto; posição do fã por central só no bloco 8.
 
 ## 1. Formato da API
 
@@ -166,24 +167,26 @@ Corpo de erro, sempre:
 
 `details` é opcional. O `toApiError` do app lê `code` e `message`, e o `kind` sai do status. A mensagem é curta, em pt-BR, e pode aparecer como está; quando o app conhece o código, ele mostra o texto dele (`t()`).
 
-| code                       | status | kind no app  | quando                                                         |
-| -------------------------- | ------ | ------------ | -------------------------------------------------------------- |
-| `invalid_request`          | 400    | validation   | parâmetro, corpo ou cursor fora do formato                     |
-| `idempotency_key_required` | 400    | validation   | rota que grava sem `Idempotency-Key`, ou fora do formato       |
-| `unauthenticated`          | 401    | unauthorized | sem token, token inválido, vencido ou de outro projeto         |
-| `not_fan`                  | 403    | forbidden    | conta só da equipe tentando gravar                             |
-| `not_found`                | 404    | notFound     | rota que não existe                                            |
-| `method_not_allowed`       | 405    | unknown      | rota existe, método não                                        |
-| `insufficient_points`      | 409    | validation   | débito maior que o saldo (já em `API_ERROR_CODES`)             |
-| `payload_too_large`        | 413    | unknown      | corpo acima de 16 KiB                                          |
-| `idempotency_key_reused`   | 422    | validation   | mesma chave com outro pedido                                   |
-| `internal`                 | 500    | server       | erro inesperado                                                |
-| `profile_not_ready`        | 503    | server       | gravação sem `users/{uid}` (perfil nascendo ou conta excluída) |
-| `unavailable`              | 503    | server       | disputa, Firestore fora ou falha ao conferir o token           |
+| code                       | status | kind no app  | quando                                                          |
+| -------------------------- | ------ | ------------ | --------------------------------------------------------------- |
+| `invalid_request`          | 400    | validation   | parâmetro, corpo ou cursor fora do formato                      |
+| `idempotency_key_required` | 400    | validation   | rota que grava sem `Idempotency-Key`, ou fora do formato        |
+| `unauthenticated`          | 401    | unauthorized | sem token, token inválido, vencido ou de outro projeto          |
+| `not_fan`                  | 403    | forbidden    | conta só da equipe tentando gravar                              |
+| `not_found`                | 404    | notFound     | rota que não existe                                             |
+| `artist_not_found`         | 404    | notFound     | central inexistente, fora do ar ou id fora do formato (bloco 4) |
+| `method_not_allowed`       | 405    | unknown      | rota existe, método não                                         |
+| `insufficient_points`      | 409    | validation   | débito maior que o saldo (já em `API_ERROR_CODES`)              |
+| `payload_too_large`        | 413    | unknown      | corpo acima de 16 KiB                                           |
+| `idempotency_key_reused`   | 422    | validation   | mesma chave com outro pedido                                    |
+| `too_many_requests`        | 429    | unknown      | entrada em central acima do teto do dia (bloco 4, 19.5)         |
+| `internal`                 | 500    | server       | erro inesperado                                                 |
+| `profile_not_ready`        | 503    | server       | gravação sem `users/{uid}` (perfil nascendo ou conta excluída)  |
+| `unavailable`              | 503    | server       | disputa, Firestore fora ou falha ao conferir o token            |
 
-Mensagens: `invalid_request` "Pedido inválido."; `idempotency_key_required` "Falta a chave de idempotência."; `unauthenticated` "Entre na sua conta para continuar."; `not_fan` "Esta conta não é de fã."; `not_found` "Não encontrado."; `method_not_allowed` "Método não aceito nesta rota."; `insufficient_points` "Saldo insuficiente."; `payload_too_large` "Pedido grande demais."; `idempotency_key_reused` "Esta chave já foi usada em outro pedido."; `internal` "Algo deu errado. Tente de novo."; `profile_not_ready` "Seu perfil ainda está sendo criado. Tente de novo em instantes."; `unavailable` "Serviço ocupado. Tente de novo."
+Mensagens: `invalid_request` "Pedido inválido."; `idempotency_key_required` "Falta a chave de idempotência."; `unauthenticated` "Entre na sua conta para continuar."; `not_fan` "Esta conta não é de fã."; `not_found` "Não encontrado."; `artist_not_found` "Central não encontrada."; `method_not_allowed` "Método não aceito nesta rota."; `insufficient_points` "Saldo insuficiente."; `payload_too_large` "Pedido grande demais."; `idempotency_key_reused` "Esta chave já foi usada em outro pedido."; `too_many_requests` "Tentativas demais por hoje. Tente amanhã."; `internal` "Algo deu errado. Tente de novo."; `profile_not_ready` "Seu perfil ainda está sendo criado. Tente de novo em instantes."; `unavailable` "Serviço ocupado. Tente de novo."
 
-Códigos que os próximos blocos vão criar entram nesta tabela quando nascerem: `artist_not_found`, `post_not_found`, `event_not_found` e `reward_not_found` (404), `comment_invalid` (400) e `sold_out` (409, que também entra no `API_ERROR_CODES` do app no bloco 10). Não há limite de pedidos por minuto no bloco 1: o `maxInstances` segura o custo, e os limites de pontos não são erro (seção 5).
+Códigos que os próximos blocos vão criar entram nesta tabela quando nascerem: `post_not_found`, `event_not_found` e `reward_not_found` (404), `comment_invalid` (400) e `sold_out` (409, que também entra no `API_ERROR_CODES` do app no bloco 10). Não há limite de pedidos por minuto no bloco 1: o `maxInstances` segura o custo, e os limites de pontos não são erro (seção 5). A exceção, do bloco 4, é o teto diário de entradas em centrais (19.5), com 429 e `Retry-After`: sem ele, um script que entra e sai sem parar gravaria sem teto e inflaria os fluxos do painel.
 
 ## 2. Mapa dos 26 endpoints
 
@@ -220,6 +223,8 @@ Os 26 endpoints que os `api.ts` do app já chamam. Curtir e "Eu vou" contam como
 
 Fora dos 26, nova no bloco 1: `GET /me/ledger` (extrato). O app ainda não chama: a tela do extrato é do bloco 7 e precisa de desenho. Ela já serve aos testes, que conferem que carteira e extrato fecham, e ao seed.
 
+Fora dos 26, nova no bloco 4: `DELETE /me/centrals/:artistId` (sair da central, `artists/api.ts` `leaveCentral`, seção 19).
+
 O `POST /invites/claim` é endereço provisório (comentário em `auth/api.ts`). O bloco 5 decide o final; se mudar, mudam o `auth/api.ts`, esta tabela e o teste do domínio.
 
 A chave do claim (`invite-<código>-<receivedAt>`) só cabe no formato da `Idempotency-Key` quando o código é válido. Hoje a rota `/convite/[codigo]` guarda o parâmetro sem conferir (`invite-capture.tsx` chama `savePendingInvite` com o que veio); só o `+native-intent` confere o `CODE` de `invites/deep-link.ts`. Um código com caractere fora do formato gera uma chave recusada (400, que o app não repete), e o `claimPendingInvite` só esquece o código depois de sucesso: ele fica preso no aparelho. O bloco 5 confere o código com o mesmo `CODE` antes de guardar, e o app esquece o código quando o servidor recusar de vez (`invalid_request` ou convite que não existe).
@@ -251,6 +256,8 @@ Por que a API para o resto: um caminho só no app (axios, React Query e cache no
 | `statsDaily/{dia}` e `statsDaily/{dia}/statsShards/{n}` | servidor (`award`; fechamento do dia depois)    | equipe com `overview` ou `growth` | contadores agregados do painel                                              |
 | `statsMeta/close`                                       | servidor (fechamento do dia, quando ele entrar) | ninguém                           | último dia fechado                                                          |
 | `idempotency/{id}`                                      | servidor (API)                                  | ninguém                           | chaves de idempotência                                                      |
+| `users/{uid}/centrals/{artistId}`                       | servidor (API, bloco 4)                         | equipe com `fans`                 | vínculo do fã com a central (seção 19)                                      |
+| `artistStats/{artistId}/fanShards/{n}`                  | servidor (API e exclusão de conta, bloco 4)     | equipe com `artists`              | `fanCount` em shards, copiado para `artists/{id}` (seção 19)                |
 
 O fã não lê nenhuma delas direto, nem a própria carteira: tudo chega pela API.
 
@@ -275,8 +282,8 @@ wallets/{uid} {
   earnedTotal: number      // soma de todos os ganhos
   spentTotal: number       // soma de todos os resgates
   days: {                  // dias de São Paulo de 6 dias antes do pedido em diante; os anteriores saem
-    "2026-10-05": { earned: number, count: { comment: 3, mission: 1 } }
-  }
+    "2026-10-05": { earned: number, count: { comment: 3, mission: 1, central_entry: 2 } }
+  }                        // count: eventos pagos por origem e, sem ponto, as entradas em centrais (19.5)
   stats: {
     pastSeasons: number    // temporadas passadas em que o fã pontuou
   }
@@ -291,7 +298,7 @@ wallets/{uid} {
 }
 ```
 
-Gravação: só quando algo mudou, isto é, algum lançamento foi aplicado ou o fã ganhou uma marca de atividade nova (seção 5, passo 9). `tx.create` na primeira gravação; depois, `tx.update` só com os campos que o servidor cuida (`balance`, `xp`, `seasonId`, `seasonPoints`, `seasonPointsAt`, `earnedTotal`, `spentTotal`, `days`, `stats.pastSeasons`, `activity`, `updatedAt`). O `update` com `days` troca o mapa inteiro, e é assim que os dias velhos saem. Nunca `set` com `merge` no `days`: o merge junta os mapas e os dias velhos ficam. Toda gravação na carteira passa por transação que lê a carteira.
+Gravação: só quando algo mudou, isto é, algum lançamento foi aplicado, o fã ganhou uma marca de atividade nova (seção 5, passo 9) ou, desde o bloco 4, uma entrada em central somou o `central_entry` do dia (19.5). `tx.create` na primeira gravação; depois, `tx.update` só com os campos que o servidor cuida (`balance`, `xp`, `seasonId`, `seasonPoints`, `seasonPointsAt`, `earnedTotal`, `spentTotal`, `days`, `stats.pastSeasons`, `activity`, `updatedAt`). O `update` com `days` troca o mapa inteiro, e é assim que os dias velhos saem. Nunca `set` com `merge` no `days`: o merge junta os mapas e os dias velhos ficam. Toda gravação na carteira passa por transação que lê a carteira.
 
 Os números do convite (links criados e pessoas trazidas) não moram na carteira: um link que viraliza faria dela um documento disputado, e a disputa derrubaria o cadastro de quem foi convidado. O bloco 5 os guarda sem documento disputado (seção 18), e o `/me/progress` lê os dois lugares.
 
@@ -340,7 +347,7 @@ centralPoints/{artistId} {
 }
 ```
 
-O vínculo do fã com a central (seguir, `isMember`, `fanCount`) não mora aqui: é do bloco 4 (seção 17, pergunta 4).
+O vínculo do fã com a central (seguir, `isMember`, `fanCount`) não mora aqui: é do bloco 4 (seção 19). Sair da central não mexe nestes pontos.
 
 ### `config/points`, `config/season` e as versões
 
@@ -676,7 +683,7 @@ Uma função agendada (`onSchedule`, todo dia às 00:20 de `America/Sao_Paulo`) 
 - Às 00:20 todo lançamento do dia anterior já gravou: o "agora" do pedido fica fixo, mas a função tem `timeoutSeconds: 30`.
 - O dia fechado nunca muda depois, porque a exclusão de conta não desconta (seção 12).
 - A função entra no primeiro bloco que precisar dela (o 4, para os pontos da central, ou o 11, no painel). Até lá, quem lê soma os shards.
-- **"PTS DA CENTRAL":** o total de sempre por central, que a página do artista mostra, sai do mesmo fechamento, em `artistStats/{artistId}` (coleção do bloco 4, com as regras dele), e não em `artists/{id}`, que as callables do painel gravam com a regra delas de `updatedAt`. Ele soma até ontem, então fica até um dia atrasado; se o bloco 4 quiser o dia de hoje, a rota soma os shards na leitura.
+- **"PTS DA CENTRAL":** o bloco 4 decidiu somar na leitura, com `sum()` no grupo `centralPoints` (seção 19, decisão 7), sem esperar o fechamento. O total em `artistStats/{artistId}`, somado pelo fechamento, fica como o passo seguinte quando o custo da soma pedir.
 
 ### Como o painel lê
 
@@ -791,6 +798,8 @@ Só acréscimo: nenhuma regra existente muda. As regras novas entram antes do `m
     }
 ```
 
+As regras do bloco 4 (vínculo e shards do `fanCount`) estão na seção 19.
+
 Testes em `tests/points-rules.test.ts`, no molde de `tests/artists-rules.test.ts` (mesmos membros de exemplo: admin, editora, leitor, sem seção, desativada, pendente e ligada com `authValidAfter`):
 
 - Fã logado não lê (`get` e `list`) a própria carteira, a de outro, o extrato nem os pontos por central, e não grava em nenhum.
@@ -814,6 +823,8 @@ Ficam para depois: a leitura de `users/{uid}` pela seção Fãs (bloco 11, uma l
 3. Novo: `recursiveDelete(wallets/{uid})`, que leva carteira, extrato e pontos por central. Vem depois do perfil, então nada gravado no meio sobra.
 4. Novo: as chaves de `idempotency` com `uid == <uid>`, em lotes de até 500 (as respostas guardadas podem ter texto do fã; o TTL só apagaria em 30 dias).
 5. `staff/{uid}` (como hoje).
+
+O bloco 4 muda o passo 2: o documento do perfil sai sozinho primeiro, depois saem os vínculos com as centrais (descontando o `fanCount`) e só então o `recursiveDelete(users/{uid})`. Ordem completa e motivo na seção 19 (19.12).
 
 Continua idempotente e seguro de repetir (o gatilho tem `retry: true`), e o `handleUserCreated` que desfaz a conta usa a mesma função.
 
@@ -877,7 +888,7 @@ Ponto existe num lugar só. Com a carteira na API, a `fixtureWallet` para nos va
 - Comentar, curtir, "Eu vou" e entrar na central acontecem como hoje, mas devolvem `pointsAwarded: 0` (sem o "+N" do botão) e não mexem em carteira nenhuma.
 - Concluir missão também: a missão anda e conclui, a ação devolve 0, e a 1g ainda festeja a conclusão com o "+N" do card, que é a recompensa nominal da missão, sem crédito na carteira. É dado de exemplo até o bloco 7.
 - O resgate de fixture recusa com 409 e o código `points_unavailable`, porque gastaria um saldo que não é o da tela. O código mora em `services/fixtures` (não é da API), e o app mostra o erro genérico do resgate.
-- O ranking (card "Você" da 1f) e o "você é #12" da home continuam lendo a `fixtureWallet`, parada no exemplo (temporada 4.120), para qualquer fã: a Camila do seed tem 4.120 também no servidor, e o Alan, com 0 no servidor, aparece com 4.120 no ranking. São dados de exemplo até o bloco 8. Zerar a temporada do ranking nesse modo (`buildMyRankFixture` com 0) só trocaria a diferença do Alan pela da Camila. O mesmo vale para os pontos e a posição de "Suas centrais" na 1b e na 1e (`FanCentral`, do `buildMyRankFixture`: Netto 4.120 e Nenho 2.980, para qualquer fã), até os blocos 4 e 8; na conferência de 2026-10-05, a conta nova criada pelo cadastro mostrou 0 ponto e nível 1 do servidor e essas centrais de exemplo.
+- O ranking (card "Você" da 1f) e o "você é #12" da home continuam lendo a `fixtureWallet`, parada no exemplo (temporada 4.120), para qualquer fã: a Camila do seed tem 4.120 também no servidor, e o Alan, com 0 no servidor, aparece com 4.120 no ranking. São dados de exemplo até o bloco 8. Zerar a temporada do ranking nesse modo (`buildMyRankFixture` com 0) só trocaria a diferença do Alan pela da Camila. O mesmo vale para os pontos e a posição de "Suas centrais" na 1b e na 1e (`FanCentral`, do `buildMyRankFixture`: Netto 4.120 e Nenho 2.980, para qualquer fã), até os blocos 4 e 8; na conferência de 2026-10-05, a conta nova criada pelo cadastro mostrou 0 ponto e nível 1 do servidor e essas centrais de exemplo. Com o bloco 4, "Suas centrais" vêm do servidor sem posição, e o ranking de exemplo ao lado de dado de verdade leva um aviso na tela (seção 19, 19.13).
 - Quando o domínio da ação passa para a API, o servidor volta a dar os pontos.
 - Com a carteira em fixtures (builds sem API e sem emulador), tudo fica como hoje.
 
@@ -952,7 +963,7 @@ Regras: `tests/points-rules.test.ts` (seção 11). App: seção 13.
 1. **Como o app fala com o servidor.** HTTP `onRequest`, decisão do dono em 05/10/2026. O `toApiError` não precisa de ramo para erro do Firebase. As callables seguem só no painel.
 2. **O que o app lê direto.** Só `users/{uid}`; todo o resto pela API, com as regras fechadas (seção 3).
 3. **Quem calcula os pontos e quando.** O servidor, na transação da ação, com o id do lançamento pelo evento (seção 5). O progresso de missão também fica na transação, ao contrário da sugestão de gatilho do levantamento: o app espera os pontos da missão no `pointsAwarded` da própria ação. Conquista que não muda o `pointsAwarded` pode vir por gatilho (bloco 7).
-4. **Onde ficam os contadores e os pontos por central.** Em `wallets/{uid}` e `wallets/{uid}/centralPoints/{artistId}` (seção 4). O vínculo com a central é do bloco 4, separado dos pontos. Direção: `users/{uid}/centrals/{artistId}`, que some junto com o perfil (a exclusão desconta o `fanCount` antes) e permite a consulta por central pelo grupo de coleção; o bloco 4 confirma, com regras e testes. O `fanCount` não é somado em `artists/{id}` na transação do vínculo: os 4 destaques da 1l recebem quase todo cadastro, e esse documento ficaria disputado (e também é o que as callables do painel gravam). Ele é dividido em shards, sorteados como os do painel, e somado no fechamento ou na leitura (seção 18).
+4. **Onde ficam os contadores e os pontos por central.** Em `wallets/{uid}` e `wallets/{uid}/centralPoints/{artistId}` (seção 4). O vínculo com a central é do bloco 4, separado dos pontos. Direção: `users/{uid}/centrals/{artistId}`, que some junto com o perfil (a exclusão desconta o `fanCount` antes) e permite a consulta por central pelo grupo de coleção; o bloco 4 confirma, com regras e testes. O `fanCount` não é somado em `artists/{id}` na transação do vínculo: os 4 destaques da 1l recebem quase todo cadastro, e esse documento ficaria disputado (e também é o que as callables do painel gravam). Ele é dividido em shards, sorteados como os do painel, e somado no fechamento ou na leitura (seção 18). Fechado no bloco 4 (seção 19): o vínculo fica em `users/{uid}/centrals/{artistId}`, e os shards em `artistStats/{artistId}/fanShards`, somados por uma tarefa da fila `syncArtistFanCount`, que copia o total para `artists/{id}.fanCount`.
 5. **Formato dos agregados.** Documento por dia em 64 shards, na transação do ponto e só quando algo mudou, com pontos por origem e por artista, fãs ativos e coortes, mais o fechamento do dia (seção 7). Teto e saída registrados na seção 7.
 6. **Como calcular o ranking.** Consulta ordenada com índice, com desempate por `seasonPointsAt`, e posição por `count()` na mesma ordem da lista; materializar só se o custo pedir (seção 10, bloco 8).
 7. **Como guardar a régua.** `config/points`, versionado, com padrão no código e edição por callable com auditoria. Mudança de valor não vale para ação antiga (seção 9).
@@ -964,7 +975,7 @@ Regras: `tests/points-rules.test.ts` (seção 11). App: seção 13.
 
 ## 18. O que fica para os próximos blocos
 
-- **Bloco 4 (centrais):** rotas de artistas e centrais; vínculo do fã na transação da ação, com o `requireFan`; `fanCount` dividido em shards (sorteados a cada tentativa, como os do painel) e somado no fechamento ou na leitura, nunca somado direto em `artists/{id}` na transação; onde fica o total somado leva em conta o `has-fans` do `deleteArtist`, que hoje lê `artists/{id}.fanCount`; `central_join` pelo `award`; `/me/centrals` com `seasonPoints` de `centralPoints` (o `fanRank` espera o bloco 8 ou sai por `count()`); "PTS DA CENTRAL" em `artistStats/{artistId}`, pelo fechamento do dia, com as regras dela; `artists` no `SERVER_DOMAINS`.
+- **Bloco 4 (centrais):** desenhado na seção 19. O que ele deixa para os blocos seguintes está em 19.16.
 - **Bloco 5 (convite):** `/me/invite` e o claim final; a visita ao link numa função própria, sem login, com CORS só para a origem do site, e `invite_visit` pelo `award`; `invite_signup` pelo `planAwards` com dois fãs (o convidado chama, quem convidou recebe, e sai `skipped` se excluiu a conta); links criados e pessoas trazidas fora da carteira e sem documento disputado (por exemplo uma entrada por convidado, contada com `count()`; um contador único somado no claim derrubaria o cadastro dos convidados de um link que viraliza), lidos pelo `/me/progress`, e os 63 e 418 da Camila no seed; o código do convite conferido com o `CODE` de `invites/deep-link.ts` antes de guardar, e o app esquecendo o código quando o servidor recusar de vez (seção 2); `signups` e `byOrigin` nos shards e cadastros por semana, o denominador da retenção (seção 7); a carga dos cadastros antigos.
 - **Bloco 6 (mural e agenda):** rotas, coleções e regras de posts, comentários, curtidas, shows e presenças; `like`, `comment` e `rsvp` pelo `award`; contadores de engajamento; bloqueio de fã; exclusão do conteúdo do fã.
 - **Bloco 7 (missões e conquistas):** progresso de missão na transação; conquistas; tela do extrato (`/me/ledger`, com desenho); `updatePointsConfig` e a seção Missões e régua no painel.
@@ -973,6 +984,550 @@ Regras: `tests/points-rules.test.ts` (seção 11). App: seção 13.
 - **Bloco 11 (painel):** Visão geral e Crescimento lendo `statsDaily` sem escuta em tempo real (seção 7), com ativos do dia, da semana e do mês e a retenção por coorte; Fãs lendo carteira e extrato, mais a regra de `users/{uid}` para a equipe; `adjustFanPoints`; fechamento do dia, se o bloco 4 não tiver feito.
 - **Ambiente de testes:** quando a cliente aprovar (seção 15).
 - **Publicação:** deploy da `api`, das regras e dos índices, e `minInstances`, só com o ok do dono. `EXPO_PUBLIC_API_URL` nas variáveis da EAS só depois dos blocos 4, 6, 7, 8 e 10, quando nenhuma ação que rende ou gasta pontos ficar nas fixtures (seção 13); antes disso a cliente perderia a demonstração de pontos.
+
+## 19. Bloco 4: centrais de verdade
+
+O app passa a mostrar as centrais que o painel publica, e seguir, entrar e sair de uma central passam a valer no servidor. Esta seção é o contrato do bloco 4: rotas, coleções, transações, regras, efeitos no painel, exclusão de conta, mudanças no app, seed e testes. Ela segue os padrões do bloco 1 (seções 1 a 16) e só diz o que muda ou acrescenta.
+
+Origem: o levantamento de 05/10/2026 (bloco 4) e o pedido do dono de 05/10/2026. A build sem emulador continua nas fixtures até a cliente entregar os artistas reais (UP-2 e UP-48). O `EXPO_PUBLIC_API_URL` segue a regra da seção 13: só depois do bloco 10.
+
+Estado: implementado em 05/10/2026 no app e nas funções, sem deploy (ordem da publicação em 19.16). Onde o código detalhou ou desviou desta seção, o texto abaixo já diz como ficou, marcado com "(implementação)".
+
+### 19.1 Decisões
+
+Cada item traz a recomendação e o motivo. Os marcados como pergunta vão para o dono ou para a cliente, e o código já nasce com o padrão daqui, fácil de trocar.
+
+1. **Vínculo em `users/{uid}/centrals/{artistId}`.** Confirma a direção da seção 17 (pergunta 4). Um documento por fã e central, só do servidor. Motivo: a transação do fã grava só no documento dele, sem nada disputado; `isMember` é uma leitura; "Suas centrais" é a subcoleção; e a equipe acha os fãs de uma central pelo grupo de coleção. O documento sai quando o fã sai, sem marca de "saiu": o histórico de entradas e saídas fica nos agregados (19.9) e no extrato (`central_join`).
+2. **`fanCount` somado na mesma transação, num shard, e copiado para `artists/{id}` por uma fila de tarefas.** A transação do vínculo soma +1 ou -1 num de 16 shards (`artistStats/{artistId}/fanShards/{n}`), nunca em `artists/{id}`. Um gatilho nos shards põe na fila `syncArtistFanCount` uma tarefa por central e por janela de 10 s; a tarefa soma os shards e copia o total para `artists/{id}.fanCount`, que o app e o painel leem (19.6). Motivo: os 4 destaques da 1l recebem quase todo cadastro, e as transações de entrada leem `artists/{id}`. Somar direto nele, ou copiar a soma a cada mudança, o deixaria disputado com as próprias entradas (a seção 17 já tinha decidido não somar nele). Com a fila, ele recebe no máximo uma gravação a cada 10 s, e o número sempre fecha. O painel já lê `artists/{id}.fanCount`, então passa a mostrar os membros de verdade sem mudar nada lá. A soma exata, a dos shards, é a que o `deleteArtist` confere (19.11).
+3. **Seguir na 1l rende os pontos de entrada, como o "Entrar na central" da 1d.** Regra única no servidor: vínculo novo lança `central_join:<artistId>`, que paga uma vez na vida por central (seção 5), venha da 1l ou da 1d. Motivo: com a 1l sem pontos, quem escolheu a central na 1l nunca ganharia a entrada, e quem saísse e entrasse de novo ganharia; seria um prêmio por sair. Nas fixtures, a 1l continua sem pontos, para a demonstração da cliente ficar com os números do protótipo. Alternativa, se o dono preferir a 1l sem pontos: a `POST /me/artists` passa a lista vazia ao `planAwards` (uma linha), e fica o atalho de sair e entrar para ganhar os 10 uma vez. Pergunta para o dono.
+4. **"Fãs" conta os membros da central no app.** Responde a pergunta do comentário de `src/domains/artists/types.ts`. Motivo: é o único número que o servidor mantém exato, e é o que o `has-fans` protege. Seguidores nas redes, se a cliente quiser mostrar, entram depois num campo próprio do painel, com outro rótulo. Pergunta para a cliente (UP-48).
+5. **Capa em paisagem: a foto 3:4 recortada pelo topo.** O painel só guarda a foto 3:4. `coverUrl` é a `photo` (1200×1600), e a 1d a desenha com `contentPosition="top"`: aparece a faixa de cima da foto, onde fica o rosto num retrato, abaixo dos botões, e o nome fica sobre o degradê de baixo. A rota já lê um campo `cover` (paisagem, `ArtistImage`) antes da `photo`: uma capa própria no painel, se vier, não muda o app. Pergunta para a cliente: a capa pode ser a foto do perfil recortada, ou a equipe quer subir uma capa em paisagem? Sugestão para o painel, fora deste bloco: a dica do campo de foto pede o rosto no terço de cima.
+6. **"Gestão oficial": campo opcional `managedByImagine` em `artists/{id}`, falso quando não existe.** O painel ainda não grava esse campo, então a pílula some nas centrais de verdade até ele ganhar a caixa "Gestão oficial Imagine". O seed marca as 4 do protótipo. Pergunta para a cliente: quais artistas têm a carreira gerida pela Imagine?
+7. **"PTS DA CENTRAL" é a soma de `totalPoints` dos `centralPoints` daquela central, feita na leitura** (`sum()` no grupo de coleção). Troca a direção da seção 7 (`artistStats` pelo fechamento do dia). Motivo: é exato e na hora (o +10 de quem acabou de entrar aparece), não depende de função agendada (que o emulador não roda sozinho) e conta os ajustes, como a base do seed. Custo: uma leitura a cada 1.000 fãs com pontos na central, por abertura da 1d. Sinal para mexer: uma central passar de uns 20 mil fãs com pontos. Passo seguinte: o total em `artistStats/{artistId}` pelo fechamento do dia, como a seção 7 previa.
+8. **Posição do fã numa central fica sem número até o bloco 8.** O servidor manda `fanRank: null`. Sem posição, as telas mostram os pontos que o servidor manda: a 1b mostra os pontos do fã na central no lugar do "você é #N" ("novo" só sem pontos), a 1e mostra "Sem posição ainda" com os pontos à direita, e o card "Você" do ranking de exemplo de uma central diz "Sem posição ainda" (19.13). O ranking de cada central (1f, top fãs e aba Ranking da 1d) continua de exemplo, com um aviso na tela. Motivo: posição de exemplo ao lado de número de verdade é a contradição da conferência de 05/10 (conta nova com "#12" e 0 ponto), e com as centrais reais ela piora ("#12 entre 1 fã"). Esconder os pontos criaria a contradição inversa: a Camila, com 4.120 pontos no Netto, apareceria como "novo" e leria "Ganhe pontos para entrar no ranking".
+9. **Sair da central: rota `DELETE /me/centrals/:artistId` e, como padrão provisório, a sheet "Sair da central" no botão "Na central" da 1d.** O lugar definitivo depende do menu "mais" (pergunta da UP-48). Sair não tira pontos, e entrar de novo não paga a entrada outra vez.
+10. **Central fora do ar (rascunho ou `unpublished`) não aparece e não aceita entrada.** Some da 1l, da busca, de "Suas centrais", dos chips e da 1d (404). O vínculo de quem já era fã continua, conta no `fanCount` e volta a aparecer quando a central é publicada de novo. Sair sempre pode, em qualquer status.
+11. **Quem lê pelo painel:** o vínculo, que diz de quem cada fã é fã, só com a seção `fans`. Os shards do `fanCount`, ninguém pelo cliente: o painel não os usa (quem cuida das centrais vê o total em `artists/{id}`, e o `deleteArtist` soma no servidor). Motivo: menor acesso. Se o painel precisar deles, a regra abre com a seção `artists`.
+12. **Ids das fixtures no formato do @.** `netto-brito`, `juninho-moraes`, `rock-salles` e `artista-N` viram `nettobrito`, `juninhomoraes`, `rocksalles` e `artistaN`, em todas as fixtures e testes do app. Motivo: no desenvolvimento com emulador, as centrais vêm da API, e o mural, a agenda, as missões e o ranking ainda vêm das fixtures. Com os ids antigos, tocar no autor de um post de exemplo abriria "Esta central não existe mais". Os ids novos também passam no `award` (seção 14).
+13. **Quem sai continua no ranking da central com os pontos que fez nela.** O ranking da central (seção 10) consulta `centralPoints` por `artistId`, e sair não apaga esse documento (decisão 9). Padrão: o ranking conta quem pontuou na central na temporada, membro ou não. Motivo: é o que a consulta da seção 10 já faz, combina com "sair não tira pontos" e com o "PTS DA CENTRAL", que também soma quem saiu (19.7), e as fixtures já se comportam assim (o "você #12" no Netto continua depois de sair). Consequência para o bloco 8: o texto "#N entre {fanCount} fãs" da 1e (`profile.centrals.meta`) troca por um que não compare a posição com o número de membros, senão aparece "#12 entre 10 fãs". Alternativa, se o dono preferir só os membros: o bloco 8 grava `member` e `memberSince` em `wallets/{uid}/centralPoints/{artistId}` nas transações de entrar e sair (criando o documento zerado quando faltar), filtra o ranking por eles, e as fixtures tiram o fã do ranking da central de onde ele saiu. Não há carga de dados nesse caso: o app só chama a API nas builds depois do bloco 10 (seção 13), então não existe vínculo de verdade antes. Pergunta para o dono.
+
+### 19.2 Rotas
+
+| Método e caminho                | Grava | Função do app em `artists/api.ts` | Resposta                    |
+| ------------------------------- | ----- | --------------------------------- | --------------------------- |
+| `GET /artists`                  | não   | `fetchArtists`                    | `Artist[]`                  |
+| `GET /artists/:artistId`        | não   | `fetchArtist`                     | `ArtistDetails`             |
+| `GET /me/centrals`              | não   | `fetchFanCentrals`                | `FanCentral[]`              |
+| `POST /me/artists`              | sim   | `followArtists`                   | `FollowArtistsResult`       |
+| `PUT /me/centrals/:artistId`    | sim   | `joinCentral`                     | `JoinCentralResult`         |
+| `DELETE /me/centrals/:artistId` | sim   | `leaveCentral` (novo)             | `LeaveCentralResult` (novo) |
+
+Arquivos: `functions/src/api/routes/centrals.ts` (`centralRoutes`, somadas ao `API_ROUTES` depois das de `me.ts`) e o domínio em `functions/src/centrals/`, no molde de `functions/src/points`: `model.ts` (puro, com teste em tabela), `service.ts` (Firestore), `sync.ts` (o gatilho e a tarefa da fila), `seed.ts` e `index.ts`. Os tipos das respostas entram em `api/contract.ts`, espelho de `src/domains/artists/types.ts`.
+
+As duas listas respondem um array, e não `Page<T>`: é o que o app já chama (`api.get<Artist[]>`), e são poucas centrais (o painel ordena até `REORDER_MAX`, 240).
+
+Id na rota fora do formato do @ (`HANDLE_PATTERN`, fora dos ids `__.*__`) é 404 `artist_not_found` nas três rotas com `:artistId`, como o `parseArtistId` das callables: fora do formato, a central não existe. O `validate` da rota recusa.
+
+Código novo: `artist_not_found`, 404, "Central não encontrada.", kind `notFound` no app. O núcleo das centrais recusa com `CentralError` (motivo `artist_not_found`, com `details`), e o `toApiHttpError` traduz, como já faz com o `PointsError`: o seed usa o mesmo núcleo fora da API.
+
+#### `GET /artists`
+
+Consulta `artists` com `where('status', '==', 'published')`, `orderBy('order')` e `limit(240)` (índice composto, 19.10). Uma leitura por central publicada.
+
+```json
+[
+  {
+    "id": "nettobrito",
+    "name": "Netto Brito",
+    "photoURL": "https://firebasestorage.googleapis.com/v0/b/.../thumb-1759600000000-480.webp?alt=media&token=...",
+    "fanCount": 1,
+    "order": 0
+  }
+]
+```
+
+- `photoURL`: o `thumb.url`, ou `null` sem foto (o card mostra o placeholder pelo id).
+- `fanCount`: o de `artists/{id}`, inteiro e nunca negativo. Valor estranho vira 0, como o painel já lê.
+
+#### `GET /artists/:artistId`
+
+Lê em paralelo `artists/{id}`, `users/{uid}/centrals/{id}` e a soma de `totalPoints` no grupo `centralPoints` com `artistId == id` (19.7). Central que não existe ou não está publicada: 404 `artist_not_found`. Custo: 2 leituras, mais 1 a cada 1.000 fãs com pontos na central.
+
+```json
+{
+  "id": "nettobrito",
+  "name": "Netto Brito",
+  "coverUrl": "https://.../photo-1759600000000-1200.webp?alt=media&token=...",
+  "photoURL": "https://.../thumb-1759600000000-480.webp?alt=media&token=...",
+  "verified": true,
+  "managedByImagine": true,
+  "fanCount": 1,
+  "postCount": 0,
+  "centralPoints": 4120,
+  "isMember": true
+}
+```
+
+- `coverUrl`: `cover.url` se o campo existir (decisão 5), senão `photo.url`, senão `null`.
+- `photoURL`: `thumb.url` ou `null`.
+- `verified` e `managedByImagine`: `true` só quando o campo é `true`.
+- `fanCount`: o de `artists/{id}`; para quem é membro, o `memberFanCount` (abaixo).
+- `postCount`: 0 até o mural (bloco 6).
+- `centralPoints`: a soma; 0 quando ninguém pontuou na central, ou quando a soma falha por falta do índice (19.7).
+- `isMember`: o vínculo existe.
+
+**`fanCount` de quem é membro** (`memberFanCount(fanCount, fanCountAt, joinedAt)`, puro, em `centrals/model.ts`). A cópia em `artists/{id}` chega uns 10 a 20 s depois de cada mudança (19.6), e o app busca a página e as centrais logo depois de entrar (`refreshAfterJoin`): sem correção, a 1d mostraria "Na central" com "0 fãs", e a 1e "Sem posição ainda · 0 fãs". A rota já lê o vínculo: se o `fanCountAt` não existe ou é anterior ao `joinedAt`, a cópia ainda não contava o fã, e a rota soma 1; senão, usa a cópia, nunca abaixo de 1. Com o `fanCountAt` depois do `joinedAt`, a cópia já o incluía, ou, se a leitura caiu no meio da transação dele, fica 1 abaixo até a janela seguinte, e o mínimo de 1 evita o "0 fãs". Quem saiu não tem como ser descontado (o vínculo já sumiu): por até uns 20 s, a página pode contá-lo.
+
+(Implementação, limite aceito) Pelo mesmo motivo, quem sai e entra de novo antes da cópia seguinte é contado duas vezes, só para ele: a cópia de antes da saída já o contava, e o vínculo novo tem o `joinedAt` depois dela. Exemplo: a cópia diz 5 e conta a fã; ela sai e volta antes da tarefa da janela; a página e "Suas centrais" dela dizem 6 até a cópia seguinte (uns 10 a 20 s), e o cache do app guarda o 6 até a próxima busca. Os outros fãs veem a cópia, sem a soma. Não é corrigido agora porque pede guardar a passagem anterior: um marcador de saída por fã e central (o `joinedAt` e o `leftAt` antigos), gravado no sair e lido na entrada, que grava no vínculo novo a cópia que já o contava, para o `memberFanCount` não somar 1 sobre ela. São uma gravação a mais por saída e uma leitura a mais por entrada, para um número errado por segundos, só para quem fez a troca. Se a cliente estranhar, o caminho é esse.
+
+#### `GET /me/centrals`
+
+Lê `users/{uid}/centrals` (até 240) e, num `getAll`, `artists/{id}` e `wallets/{uid}/centralPoints/{id}` de cada uma. Fica de fora a central que não existe ou não está publicada (decisão 10). Ordem: `joinedAt` crescente, depois o `order` da central, depois o id. Fã sem vínculo: `[]`. Leitura não exige perfil (seção 1).
+
+```json
+[
+  {
+    "artistId": "nettobrito",
+    "name": "Netto Brito",
+    "shortName": null,
+    "photoURL": null,
+    "fanCount": 1,
+    "fanRank": null,
+    "seasonPoints": 4120
+  }
+]
+```
+
+- `shortName`: o do painel, ou `null`.
+- `fanCount`: o `memberFanCount`, com o `joinedAt` de cada vínculo (todas são centrais de que o fã é membro).
+- `fanRank`: `null` até o bloco 8 (decisão 8), que o preenche pela contagem da seção 10.
+- `seasonPoints`: o `seasonPoints` do `centralPoints` quando o `seasonId` dele é o da temporada da configuração (cache de 60 s, como no `/me/wallet`), e 0 no resto.
+
+#### `POST /me/artists`
+
+Corpo `{ "artistIds": ["nettobrito", "nenho", "juninhomoraes"] }`. Validação: lista de 1 a 50 textos (`FOLLOW_MAX`), sem repetir, cada um no formato do @. Fora disso, 400 `invalid_request` com `details: { field: 'artistIds' }`. Alguma central que não existe ou não está publicada: 404 `artist_not_found` com `details: { artistIds: [...] }`, e nada é gravado (tudo ou nada, como as fixtures).
+
+```json
+{ "followedArtistIds": ["nettobrito", "nenho", "juninhomoraes"], "pointsAwarded": 30 }
+```
+
+- `followedArtistIds`: todas as centrais publicadas que o fã segue depois da ação, na ordem do `/me/centrals`.
+- `pointsAwarded`: soma dos `central_join` pagos agora (campo novo, opcional no app). Central que o fã já seguia não paga e não conta de novo.
+
+#### `PUT /me/centrals/:artistId`
+
+Sem corpo. Responde `{ "artistId": "nenho", "pointsAwarded": 10 }`. Quem já está na central recebe `pointsAwarded: 0`, e nada muda. Central fora do ar: 404.
+
+#### `DELETE /me/centrals/:artistId`
+
+Sem corpo. Responde `{ "artistId": "nenho" }`. Sem vínculo, é sucesso sem efeito: sair duas vezes dá o mesmo resultado. Vale em qualquer status da central (decisão 10).
+
+As três que gravam exigem `Idempotency-Key`, rodam no `runIdempotent` com o `requireFan` (perfil exigido, atividade marcada) e respondem 200.
+
+### 19.3 Coleções e campos
+
+```
+users/{uid}/centrals/{artistId} {
+  uid: string
+  artistId: string
+  via: 'onboarding' | 'page' | 'seed'   // POST /me/artists, PUT /me/centrals/:id ou o seed
+  joinedAt: Timestamp                    // o "agora" do pedido
+  schemaVersion: 1
+}
+
+artistStats/{artistId}/fanShards/{0..15} {
+  count: number          // soma de +1 e -1; um shard sozinho pode ficar negativo, só a soma vale
+  updatedAt: Timestamp
+}
+```
+
+- O vínculo nasce com `tx.create` e sai com `tx.delete`. Ninguém grava pelo cliente.
+- `FAN_SHARD_COUNT = 16`. O shard é `award.shard % 16`: o mesmo sorteio do shard do painel, feito de novo a cada tentativa da transação. Gravação sem leitura: `tx.set(ref, { count: FieldValue.increment(1), updatedAt }, { merge: true })` (ou `-1`). O documento `artistStats/{artistId}` em si não é criado neste bloco; o nome fica para o total que a seção 7 previa.
+- `artists/{id}`, o que a API lê: `name`, `shortName`, `photo`, `thumb`, `order`, `status`, `verified` e `fanCount`, mais os opcionais `managedByImagine` e `cover` (decisões 5 e 6). A tarefa `syncArtistFanCount` grava `fanCount` e um campo novo, `fanCountAt` (o instante da leitura dos shards copiada, 19.6), sem tocar no `updatedAt`, que é o carimbo das edições da equipe. O tipo `Artist` de `functions/src/artists/service.ts` ganha `fanCountAt?: Timestamp | null` e `managedByImagine?: boolean`, como documentação. As callables não mexem nesses campos, e o `createArtist` continua com `fanCount: 0`.
+- Contrato, no app e no `contract.ts`: `Artist`, `ArtistDetails`, `FanCentral` e `JoinCentralResult` como estão; `FollowArtistsResult` ganha `pointsAwarded?: number`; novos `LeaveCentralVariables { artistId, idempotencyKey }` e `LeaveCentralResult { artistId }`. O comentário de `fanCount` passa a dizer "membros da central no app" (decisão 4), e o do topo de `types.ts` deixa de chamar o contrato de provisório para as centrais.
+
+### 19.4 Transações passo a passo
+
+A ordem é a de sempre (seção 5): chave e fã (`runIdempotent`), leituras do domínio, `planAwards`, gravações do domínio. Depois, o `runIdempotent` grava o plano e a chave.
+
+O núcleo da entrada fica em `centrals/service.ts`, em duas partes, usadas pelas duas rotas de entrada e pelo seed:
+
+- `readJoin(tx, db, uid, artistIds)`: um `getAll` com `artists/{id}` e `users/{uid}/centrals/{id}` de cada id. Devolve as centrais lidas e o conjunto de quem já é membro.
+- `joinCentrals(tx, db, read, { fan, award, artistIds, via })`:
+  1. Central que não existe ou não está publicada: `CentralError('artist_not_found', { artistIds })`. Nada foi gravado.
+  2. Novas: as publicadas sem vínculo. (Implementação) Com alguma nova e o fã como ator, o teto do dia: com o `central_entry` do dia na carteira lida em `CENTRAL_ENTRIES_PER_DAY` (30), recusa com `CentralError('too_many_entries')`, antes de gravar (19.5).
+  3. `planAwards(tx, db, [{ uid, fan, entries }], award)`, com uma entrada por central nova: `{ kind: 'earn', source: 'central_join', eventId: artistId, artistId, subject: { type: 'artist', id: artistId } }`. Sem novas, a lista vai vazia (fica só a atividade). O `planAwards` lê a temporada, o extrato `central_join:<id>` e o `centralPoints/<id>` de cada nova.
+  4. Para cada nova: `tx.create` do vínculo (`joinedAt` é o `award.now`); `+1` no shard `award.shard % 16`; `joined: 1` dela no shard do painel (`addMembershipCounts`, 19.9). (Implementação) Com alguma nova, `+1` no `central_entry` do dia na carteira do fã (`addDailyCount`, em `points/award.ts`, que faz o plano gravar a carteira mesmo sem lançamento).
+  5. Devolve o plano e as novas.
+
+`PUT /me/centrals/:artistId`: `readJoin` com `[artistId]` e `joinCentrals` com `via: 'page'`. Responde `{ artistId, pointsAwarded: plan.pointsAwarded }`.
+
+`POST /me/artists`: em vez do `readJoin`, lê a subcoleção inteira do fã (`tx.get` da consulta, até 240) e faz um `getAll` dos `artists/{id}` das pedidas e das já seguidas, tudo antes de gravar (`readFollow`). (Implementação) O mesmo `getAll` lê o vínculo das pedidas que a lista não trouxe: com mais de 240 vínculos, uma pedida já seguida ficaria de fora da lista, o `tx.create` do vínculo cairia com `ALREADY_EXISTS` nas duas rodadas e o pedido daria 500. Monta o mesmo retorno do `readJoin` e chama `joinCentrals` com `via: 'onboarding'`. Responde `followedArtistIds` (as de antes mais as novas, só as publicadas, na ordem do `/me/centrals`) e `pointsAwarded`.
+
+`DELETE /me/centrals/:artistId` (`leaveCentral` em `centrals/service.ts`):
+
+1. Lê `users/{uid}/centrals/{artistId}`.
+2. `planAwards` com a lista vazia: não lê nada e leva a atividade de quem chama.
+3. Com vínculo: `tx.delete` dele, `-1` no shard `award.shard % 16` e `left: 1` no shard do painel. Sem vínculo, nada.
+4. Responde `{ artistId }` com o plano.
+
+Sair não lança ponto e não mexe em `centralPoints` nem no extrato. Voltar depois cria o vínculo de novo, e o `central_join:<id>` sai `duplicate`, com 0 ponto.
+
+Custo de entrar numa central nova: as 6 leituras e 5 gravações de uma ação com ponto (seção 5), mais 2 leituras (central e vínculo) e 2 gravações (vínculo e shard do `fanCount`), e depois o gatilho e a fila (19.6). Na 1l com 3 centrais, uma transação com 3 lançamentos, 3 `centralPoints`, 3 vínculos e 3 shards, abaixo de 20 gravações. Com 50 centrais, perto de 210 gravações, abaixo do limite de 500.
+
+Concorrência: dois pedidos do mesmo fã para a mesma central (a 1l e o "Entrar" da 1d, com chaves diferentes) disputam o vínculo; um repete, acha o vínculo e não paga de novo. Muitos fãs entrando na mesma central gravam em 16 shards, e todos leem `artists/{id}` na transação. Por isso a cópia do `fanCount` vai por fila (19.6): se o documento fosse gravado a cada entrada, cada gravação disputaria com as entradas que o estão lendo, e o teto da central seria o de um documento só, perto de 1 gravação por segundo, com os shards sem ajudar. Com no máximo uma gravação a cada 10 s, a leitura não pesa, e o teto fica nos shards: perto de 16 entradas por segundo na mesma central, sustentadas. Sinal: `unavailable` nos logs da `api` nessas rotas. Primeiro passo: subir `FAN_SHARD_COUNT`, porque quem soma lista a subcoleção e nunca supõe o número.
+
+A leitura de `artists/{id}` fica dentro da transação de propósito: é ela que põe em ordem a entrada e o `deleteArtist` ou o `setArtistStatus` da mesma central, que gravam nesse documento. Central apagada ou tirada do ar no meio de uma entrada não recebe o vínculo.
+
+### 19.5 Idempotência e o evento de pontos
+
+- Pedido: a `Idempotency-Key` de sempre. O app já manda na 1l (`useFollowArtistsMutation`) e na 1d (`useJoinCentralMutation`), e o sair também manda (19.13).
+- Negócio: o lançamento `central_join:<artistId>` paga uma vez na vida por fã e central (seção 5). O vínculo é idempotente por existir ou não: entrar quem está dentro e sair quem está fora não mudam nada, nem o `fanCount`.
+- Valor e limite: `config/points.values.central_join` (padrão 10) e `dailyLimits.central_join` (padrão 10 por dia). Na 1l com mais de 10 centrais, as que passam do limite entram sem ponto, e o evento pode pagar depois, uma vez, se o fã sair e entrar (seção 5, limites diários).
+- **Teto de entradas por dia** (implementação, da revisão do bloco 4). Sem ele, um script com uma conta de fã alterna `PUT` e `DELETE` com chaves novas, sem ganhar ponto, e cada troca grava o vínculo, os shards do `fanCount` e do painel e uma chave de idempotência de 30 dias, dispara o gatilho e o Cloud Tasks, e soma `joined` e `left` nos fluxos que a Visão geral e o Crescimento vão ler (bloco 11). Regra: cada pedido que cria vínculo (o `PUT` da 1d ou o `POST` da 1l, um só com as centrais que trouxer) soma 1 em `days[dia].count.central_entry` da carteira, na mesma transação; com `CENTRAL_ENTRIES_PER_DAY` (30, em `centrals/model.ts`) no dia de São Paulo, o pedido que criaria vínculo é recusado com 429 `too_many_requests` (`details: { limit }`, `Retry-After` até a meia-noite de São Paulo), antes de gravar nada. Pedido que não cria vínculo (o fã já está em todas) não conta nem é recusado. Sair nunca é recusado nem conta: as saídas ficam presas às entradas (sair sem vínculo não grava nada). O seed (ator de sistema) não conta. Nenhum fã de verdade chega perto: são 30 entradas num dia, uma a uma. No app, o 429 é o kind `unknown` (o erro genérico de entrar, e a tentativa seguinte leva chave nova). Custo: a volta a uma central passa a gravar a carteira (antes, a entrada que não pagava não a gravava). Se o painel quiser ajustar o número, ele vai para `config/points`, ao lado dos limites diários. Os outros toques que se desfazem (curtir e descurtir, "Eu vou" e desfazer, no bloco 6) têm o mesmo risco e decidem o teto deles lá.
+
+### 19.6 `fanCount`: shards, o gatilho e a fila `syncArtistFanCount`
+
+Duas funções em `centrals/sync.ts`, exportadas em `functions/src/index.ts` depois do `setGlobalOptions` (região `southamerica-east1`). Sem dependência nova: `onDocumentWritten` (`firebase-functions/firestore`), `onTaskDispatched` (`firebase-functions/tasks`) e `getFunctions().taskQueue` (`firebase-admin/functions`) vêm dos pacotes que já estão no `functions/package.json`.
+
+**Gatilho `queueArtistFanCountSync`:** `onDocumentWritten('artistStats/{artistId}/fanShards/{shard}', { retry: true })`. Não lê nada: põe na fila a tarefa da janela da gravação.
+
+- `fanCountSyncTask(artistId, eventTime)`, puro, em `centrals/model.ts`: janela `w = floor(eventTime / 10 s)`, id `fancount-<artistId>-<w>` e `scheduleTime` 1 s depois do fim da janela (`(w + 1) × 10 s + 1 s`). O `eventTime` é o `event.time` (o instante da gravação), não o relógio da execução: uma entrega repetida do mesmo evento cai na mesma janela e no mesmo id.
+- `getFunctions().taskQueue('locations/southamerica-east1/functions/syncArtistFanCount').enqueue({ artistId }, { id, scheduleTime })`. Sem a região no nome, o firebase-admin procura a fila em `us-central1`.
+- Id repetido (`functions/task-already-exists`): a tarefa da janela já está na fila ou já rodou, e nesse caso rodou depois desta gravação (roda depois do fim da janela, e a gravação é de dentro dela). Ignora. A fila recusa o id até cerca de 1 h depois de a tarefa rodar; uma entrega mais atrasada que isso cria outra tarefa, que só recalcula.
+- Outro erro: lança, e o gatilho repete (`retry: true`). `artistId` fora do formato do @ (erro de programação): `logger.error`, sem lançar, para não repetir para sempre.
+
+Toda mudança de uma central numa janela de 10 s vira uma tarefa só, que roda no fim da janela e vê todas elas.
+
+**Tarefa `syncArtistFanCount`:** `onTaskDispatched({ retryConfig: { maxAttempts: 5, minBackoffSeconds: 10 } }, ...)`. Confere o `artistId` (fora do formato: `logger.error` e termina sem erro, para a fila não tentar de novo) e chama `syncFanCount(db, artistId)`:
+
+1. Lê a subcoleção `artistStats/{artistId}/fanShards` fora de transação, para não travar os shards que as entradas gravam. `sum` é a soma dos `count`, e `readTime` é o instante da leitura (o `readTime` do resultado da consulta). Soma abaixo de 0: `logger.error` com o id, e vale 0. Nunca grava número negativo.
+2. Numa transação, lê `artists/{artistId}`. Central que não existe (apagada; apagar os shards também dispara o gatilho): não grava nada.
+3. Copia para `artists/{id}` (`fanCount: sum`, `fanCountAt: readTime`) quando `shouldCopyFanCount(shownAt, readTime)`, puro, em `centrals/model.ts`: a leitura é mais nova que a última cópia (`fanCountAt` ausente ou anterior ao `readTime`). (Implementação) Os instantes são comparados com a precisão do Firestore, em microssegundos (`exactMillis`, em ms com fração), e o `fanCountAt` guarda o `readTime` inteiro: com o `toMillis`, duas leituras no mesmo milissegundo, a segunda já com uma entrada nova, deixariam a cópia velha. Duas execuções quase juntas (uma nova tentativa, uma entrega atrasada) podem terminar fora de ordem, e a de leitura mais nova vence. Copia mesmo com o número igual (uma entrada e uma saída na mesma janela): o `fanCountAt` precisa passar o `joinedAt` de quem entrou, senão a API somaria 1 a mais para esse fã (`memberFanCount`, 19.2).
+4. Recalcula tudo a cada vez, então repetir é seguro. Erro passageiro lança, e a fila tenta de novo. Se as 5 tentativas acabarem (`logger.error` na última), a próxima mudança da central põe outra tarefa na fila, e o fechamento do dia (bloco 11) passa a acertar o `fanCount` de todas as centrais.
+
+Resultado: o `fanCount` de `artists/{id}` fica uns 10 a 20 s atrás de cada mudança, em qualquer tamanho de central, e sempre fecha. O documento recebe no máximo uma gravação a cada 10 s por central (mais as novas tentativas). Não há diferença mínima nem intervalo mínimo para copiar.
+
+Custo por entrada ou saída: uma execução do gatilho e uma chamada ao Cloud Tasks, quase sempre recusada como repetida. Por janela de 10 s com mudança, uma tarefa com até 17 leituras e uma gravação. O Cloud Tasks só cobra acima de 1 milhão de operações por mês.
+
+Emulador: o firebase-tools 15.32 sobe o emulador do Cloud Tasks junto com o de Functions, sem mudança no `firebase.json` nem nos scripts, e liga o firebase-admin a ele (`CLOUD_TASKS_EMULATOR_HOST`). Ele ignora o `scheduleTime` (roda a tarefa na hora) e nunca libera um id usado: com o id da janela, a segunda mudança da mesma janela nunca seria copiada. Por isso, com `FUNCTIONS_EMULATOR === 'true'`, o gatilho enfileira sem id e sem `scheduleTime`, uma tarefa por gravação, na hora. Os testes nos emuladores passam pela fila de verdade; a janela e o id ficam no teste do `fanCountSyncTask`.
+
+Primeiro deploy: é o primeiro gatilho do Firestore e a primeira fila de tarefas do projeto. O deploy liga a API do Cloud Tasks e pode falhar uma vez pelas permissões do agente do Eventarc; repetir resolve, como no primeiro deploy das funções. Confira no log do gatilho que o enfileiramento passa. Com permissão negada, a conta de serviço das funções precisa criar tarefas (`roles/cloudtasks.enqueuer`) e agir como a conta que assina a chamada da tarefa (`roles/iam.serviceAccountUser`). Até o papel entrar, o gatilho repete, e as mudanças pendentes passam depois.
+
+### 19.7 "PTS DA CENTRAL"
+
+```ts
+db.collectionGroup('centralPoints')
+  .where('artistId', '==', artistId)
+  .aggregate({ total: AggregateField.sum('totalPoints') })
+  .get();
+```
+
+O `totalPoints` é o de sempre da central: entram ganho fora de temporada e ajuste, e ele não cai quando o fã sai da central. Cai quando o fã exclui a conta, porque a carteira some. Sem cache no bloco 4. Índice composto no grupo (19.10). O emulador não exige índice nenhum, então a falta dele só aparece em produção: a consulta falha com o código 9 (`FAILED_PRECONDITION`), com o link para criar o índice na mensagem, e o `toApiHttpError` responderia 500, derrubando a 1d inteira por um número auxiliar. Por isso a soma (`sumCentralPoints`, em `centrals/service.ts`) captura só o código 9: `logger.error` com o id da central e a mensagem (que traz o link), e `centralPoints: 0`. Qualquer outro erro segue para o 500 de sempre. Se a produção pedir um índice diferente do de 19.10, ele entra no `firestore.indexes.json` pelo link do log. O `GET /artists` não tem essa saída: sem o índice dele, a lista é o conteúdo da 1l, e o 500 mostra o "Tentar de novo". A ordem do deploy em 19.16 evita os dois casos.
+
+### 19.8 Efeitos no painel
+
+- **Artistas:** a coluna "Fãs" e o diálogo da central leem `artists/{id}.fanCount` e passam a mostrar os membros de verdade, uns 10 a 20 s depois de cada entrada e saída, sempre exato depois disso (19.6). Nenhuma mudança no código do painel. O painel escuta a coleção `artists` inteira em tempo real (`onSnapshot` em `imagineup-admin/src/lib/artist-data.ts`), e cada gravação de `artists/{id}` custa 1 leitura por aba aberta. Com a cópia no máximo uma vez a cada 10 s por central, são no máximo 6 leituras por minuto por central com movimento, por aba. Copiar a cada entrada custaria uma leitura por aba a cada fã que entra, o tipo de leitura que a seção 7 evita.
+- **Apagar central:** o `deleteArtist` recusa com `has-fans` pela soma dos shards (19.11), mesmo quando o número da tela ainda não chegou, e aceita quando a soma é 0, mesmo com a cópia ainda em 1. A lixeira do painel segue o `fanCount` copiado (`deleteBlockedText` em `imagineup-admin/src/lib/artists.ts`, desligada com `fanCount > 0`): depois de o último fã sair, ela liga quando a fila copiar o 0.
+- **Visão geral e Crescimento** (bloco 11): `joined` e `left` por central e no total, nos `statsShards` (19.9).
+- **Fãs** (bloco 11): as centrais de um fã (`users/{uid}/centrals`) e os fãs de uma central (grupo `centrals` por `artistId`), com a seção `fans`.
+- **Campos novos**, quando as perguntas fecharem: "Gestão oficial Imagine" (`managedByImagine`) e a capa em paisagem (`cover`). As callables `createArtist` e `updateArtist` ganham esses campos, com auditoria, no bloco do painel.
+
+### 19.9 Agregados do painel
+
+- `ShardDelta` (`points/stats.ts`) ganha `totals.joined` e `totals.left`, e cada `byArtist[id]` ganha `joined` e `left`.
+- `addMembershipToShard(delta, artistId, 'joined' | 'left')` soma 1. `addMembershipCounts(plan, changes)`, em `points/award.ts`, cria o `plan.shard` quando ele veio `null` e soma. O `applyAwards` grava no mesmo shard do dia: continua uma gravação por transação. Contador zerado não é gravado (`pruneZeros`).
+- São fluxo (o que o fã fez no dia). A exclusão de conta não conta como `left` (seção 12). O estoque é o `fanCount`.
+- (Implementação) Os fluxos contam ações, e não fãs: o mesmo fã que entra e sai duas vezes no dia soma 2 `joined` e 2 `left`. O teto de entradas (19.5) limita isso a 30 pedidos de entrada por fã e dia, e as saídas a essas entradas mais as centrais que ele já seguia. Se o bloco 11 quiser fãs únicos por dia, conta por um marcador por fã, central e dia, e não pelos fluxos.
+- `joined - left` não é o número de membros, e o painel nunca calcula membros pelos fluxos: a exclusão de conta tira o fã do `fanCount` sem fluxo nenhum. Membros de uma central, hoje ou num dia passado, são o `fanCount` (o de hoje) ou um retrato guardado pelo fechamento do dia, se o bloco 11 quiser a série. Se o bloco 11 quiser contar as exclusões por central, o `leaveAllCentrals` soma um `removed` por central no shard do dia (fluxo novo, sem uid, sem reescrever dia nenhum). Não entra agora porque ninguém lê esses fluxos antes do bloco 11, e não há dado de verdade a perder: o app só chama a API nas builds depois do bloco 10 (seção 13).
+
+### 19.10 Regras e índices
+
+Acréscimo ao `firestore.rules`. Nenhuma regra existente muda; o bloco do vínculo entra dentro do `match /users/{uid}` que já existe, e os outros antes do `match /{document=**}` final.
+
+```
+    match /users/{uid} {
+      // (regras de hoje do perfil)
+
+      // Vínculo do fã com as centrais: só o servidor grava (API). O fã não lê
+      // nem o próprio: chega pela API (/me/centrals, isMember). A equipe com a
+      // seção fans lê (seção Fãs do painel).
+      match /centrals/{artistId} {
+        allow read: if canSeeSection('fans');
+        allow write: if false;
+      }
+    }
+
+    // Os fãs de uma central, pelo grupo de coleção (seção Fãs do painel).
+    // Vale para qualquer caminho que termine em centrals/{id}, inclusive uma
+    // coleção de raiz: nenhuma outra coleção pode se chamar centrals.
+    match /{path=**}/centrals/{artistId} {
+      allow read: if canSeeSection('fans');
+    }
+
+    // Contagem de fãs de cada central, em shards. Só o servidor lê e grava.
+    // O número que o app e o painel mostram é o fanCount de artists/{id},
+    // copiado daqui pela fila syncArtistFanCount.
+    match /artistStats/{artistId} {
+      allow read, write: if false;
+
+      match /fanShards/{shard} {
+        allow read, write: if false;
+      }
+    }
+```
+
+A regra de grupo é a única que alcança a consulta `collectionGroup('centrals')` do painel, e ela vale para qualquer coleção chamada `centrals`, em qualquer profundidade. Conferir `resource.data.uid` ou `resource.data.artistId` nela não resolve: regra não é filtro, e a consulta do painel (`where('artistId', '==', id)`) não prova o `uid`, então seria recusada inteira. Fica a regra de nome: nenhuma outra coleção ou subcoleção se chama `centrals`, e o teste de regras trava o caso de uma coleção de raiz (19.15). O bloco `artistStats` fechado repete o `match /{document=**}` final de propósito, como o `statsMeta`: deixa escrito que é do servidor e onde abrir, com a seção `artists`, se o painel um dia precisar dos shards.
+
+Índices novos em `firestore.indexes.json`:
+
+```json
+{
+  "indexes": [
+    {
+      "collectionGroup": "artists",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "order", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "centralPoints",
+      "queryScope": "COLLECTION_GROUP",
+      "fields": [
+        { "fieldPath": "artistId", "order": "ASCENDING" },
+        { "fieldPath": "totalPoints", "order": "ASCENDING" }
+      ]
+    }
+  ],
+  "fieldOverrides": [
+    {
+      "collectionGroup": "centrals",
+      "fieldPath": "artistId",
+      "indexes": [
+        { "order": "ASCENDING", "queryScope": "COLLECTION" },
+        { "order": "DESCENDING", "queryScope": "COLLECTION" },
+        { "arrayConfig": "CONTAINS", "queryScope": "COLLECTION" },
+        { "order": "ASCENDING", "queryScope": "COLLECTION_GROUP" }
+      ]
+    }
+  ]
+}
+```
+
+Os de hoje ficam. O primeiro serve ao `GET /artists`; o segundo, à soma do "PTS DA CENTRAL" (e o bloco 8 acrescenta os do ranking da central no mesmo grupo); o terceiro, à lista dos fãs de uma central no painel (bloco 11). Um `fieldOverride` troca os índices padrão do campo, por isso os três de coleção vêm escritos.
+
+O emulador não exige índice, então nenhum teste pega a falta deles. Em produção, sem os dois primeiros, a consulta falha com o código 9: o `GET /artists` responde 500, e o "PTS DA CENTRAL" vira 0 com log de erro (19.7). Por isso os índices sobem antes da `api` e terminam de montar antes de ela ir ao ar (ordem em 19.16).
+
+### 19.11 `deleteArtist` coerente
+
+O `removeArtist` (`functions/src/artists/service.ts`) lê, na transação e antes de gravar, a consulta `artistStats/{id}/fanShards`. O número que decide é a soma dos shards (nunca abaixo de 0) quando há shard, e o `fanCount` de `artists/{id}` quando não há nenhum (central de antes do bloco 4, ou os testes de hoje, que gravam só o `fanCount`): `shards.empty ? fanCount : max(0, soma)`. O `deleteProblem` recebe esse número, sem mudar, e recusa com `has-fans` quando ele passa de 0. Quando apaga, apaga também cada shard, até 16 gravações a mais (o gatilho dispara, e a tarefa acha a central apagada e não grava). Para o painel, o comportamento é o mesmo: central com fãs sai do ar em vez de sumir.
+
+Por que a soma, e não `max(fanCount, soma)`: a cópia pode ficar para trás (a última tarefa da central falhou em todas as tentativas). Numa central fora do ar e sem fãs, ninguém mais entra nem sai, então nada põe outra tarefa na fila, e o `max` recusaria para sempre uma central que pode ser apagada. A lixeira do painel ainda segue a cópia (19.8); esse resto, raro, fica para o fechamento do dia do bloco 11, que acerta o `fanCount`.
+
+Os testes de hoje continuam verdes (`fanCount > 0` sem shards recusa). Testes novos: soma 1 com `fanCount` 0 (cópia atrasada) recusa; soma 0 com `fanCount` 1 (cópia atrasada ou perdida) apaga a central e os shards; soma 0 com `fanCount` 0 apaga os shards.
+
+Caso raro, registrado: o @ de uma central apagada pode ir para outra central. Os `centralPoints` e os `central_join` antigos dos fãs continuam com esse id, então a central nova herda o "PTS DA CENTRAL", e quem entrou na antiga não ganha a entrada de novo.
+
+### 19.12 Exclusão de conta
+
+`deleteUserData` (`functions/src/store.ts`), na ordem nova:
+
+1. Reservas de @, como hoje.
+2. Novo: só o documento `users/{uid}` (`delete()`, sem as subcoleções). Daqui em diante nenhuma gravação da API passa (`requireFan`). Uma entrada que já tinha lido o perfil termina antes, porque a transação dela segura a leitura, e o vínculo dela aparece no passo 3.
+3. Novo: `leaveAllCentrals(db, uid)`, em `centrals/service.ts`. Lista `users/{uid}/centrals` em páginas de 200 e, por página, abre uma transação que relê os vínculos e, para cada um que ainda existe, faz `tx.delete` e `-1` num shard sorteado. Não grava `statsShards` (seção 12).
+4. `recursiveDelete(users/{uid})`, para o resto das subcoleções.
+5. Carteira, chaves de idempotência e `staff/{uid}`, como hoje.
+
+(Implementação) `functions/src/store.test.ts` prende essa ordem com um Firestore falso que anota cada passo: nos emuladores, as entradas terminam antes da exclusão, e a ordem trocada passaria em todas as suítes.
+
+Por que o perfil sai antes: o `recursiveDelete` apaga o documento do perfil por último. Se ele continuasse no passo 2, uma entrada no meio da exclusão criaria um vínculo depois da listagem, o `recursiveDelete` o levaria sem descontar, e o `fanCount` ficaria 1 acima para sempre. Repetir é seguro (o gatilho de exclusão tem `retry: true`): a transação relê o vínculo, e o que já saiu não desconta de novo. A fila `syncArtistFanCount` acerta o `fanCount` de cada central, que nunca fica negativo (19.6). Os agregados do painel não recebem fluxo da exclusão (19.9).
+
+### 19.13 App
+
+**Seletor e leitura**
+
+- `SERVER_DOMAINS` ganha `artists`, no commit que entrega as rotas. Com o emulador, as centrais vêm da API; nas builds, das fixtures, como hoje.
+- `useArtistsQuery`, `useFanCentralsQuery` e `useArtistQuery` espalham `queryOptionsFor('artists')` (rede e disco, seção 13).
+- `api.ts` ganha `leaveCentral({ artistId, idempotencyKey })`, com `api.delete('/me/centrals/<id>', { headers: { 'Idempotency-Key': ... } })` e a fixture `followFixture.leave`.
+- No modo API, `fetchArtist` troca o `postCount` pelo número de posts de exemplo da central enquanto `sourceOf('posts') === 'fixtures'`, com `countArtistPostsFixture(fixtureNow(), artistId)`, novo em `posts/fixtures.ts` e importado direto do arquivo (o `posts/fixtures.ts` não importa `artists`, então não há ciclo). Assim o "N posts" da 1d bate com a grade do Mural, que ainda é de exemplo. O bloco 6 tira a troca.
+- Nenhuma posição de exemplo entra no `/me/centrals` (decisão 8).
+
+**Mutações e invalidação**
+
+- `useFollowArtistsMutation`: no sucesso, com `pointsAwarded > 0`, invalida também `profileKeys.wallet()` e `rankingKeys.all`. No erro `notFound` (central que saiu do ar entre a lista e o toque), invalida `artistKeys.list()`. A 1l tira da escolha os ids que sumiram da lista, com a ação nova `retain(ids)` do store `useArtistSelection`, chamada quando a lista muda, e mostra o erro de sempre.
+- `useJoinCentralMutation`: o otimista soma 1 ao `fanCount` da página junto com o `isMember: true` (e a central que entra em "Suas centrais" leva esse número, pelo `centralOf`), e o erro desfaz os dois. Sem isso, a 1d mostraria "Na central" com "0 fãs" enquanto o pedido vai. O `refreshAfterJoin` já invalida as centrais, a página, o mural da home e, com pontos, a carteira e o ranking; a página e as centrais voltam com o `memberFanCount` (19.2), que já conta o fã. (Implementação) Recusa `notFound` (a central saiu do ar com a página aberta): além de desfazer, a página e as centrais buscam de novo, e a 1d mostra "Esta central não existe mais."; o toque de erro fica, e o anúncio "Tente de novo" sai, porque tentar de novo daria 404 para sempre. A 1d trata o 404 de uma busca de novo como central que sumiu (o `artistFailed` vale também com a página na tela), e não como "Não deu para atualizar". A entrada restaurada do disco, sem o hook e sem o contexto do otimista, que falha faz a página e as centrais buscarem de novo em qualquer erro (`onError` do `registerArtistMutationDefaults`).
+- `useLeaveCentralMutation(artistId, { onLeft?, onError? })`, novo em `artists/queries.ts` e exportado pelo index (os dois retornos são da sheet: fechar e anunciar, ou o toque de erro e o anúncio). Não é otimista e não entra na fila offline (`networkMode: 'always'`, `retry: false`), como o resgate: o fã confirma numa sheet e espera o resultado. A chave de idempotência é a da tentativa: a mesma depois de falha incerta, nova depois de recusa (`isUncertain`, como no join). No sucesso: `isMember: false` na página (`setMember`), a central sai de `artistKeys.centrals()`, e as centrais, a página e `postKeys.feed()` buscam de novo. Carteira e ranking ficam, porque sair não muda ponto. A página buscada de novo pode contar o fã por até uns 20 s (19.2); sem desconto local, que a busca desfaria. (Implementação) O `onLeft` e o `onError` da sheet só rodam com o hook montado (`mounted`, como no join e no resgate): os dois são passados ao `useMutation`, e o TanStack os chama mesmo depois de a tela desmontar. A resposta que chega com a sheet já fechada só anuncia o resultado (com o toque de erro na falha), sem o `router.back()` da sheet, que tiraria a 1d da pilha.
+
+**Telas**
+
+- **1l:** lê `/artists` (só as publicadas, na ordem). O mínimo vira `min(MIN_ARTISTS, total publicado)` (`minimumArtists`), também no subtítulo e na dica; com uma central só, o botão diz "Continuar com 1 artista" (`onboarding.chooseArtists.continueOne`, implementação) e a dica "Escolha pelo menos 1 artista." (`needMoreHint`, em `onboarding/selection.ts`). Sem nenhuma publicada, o `useArtistsLoad` trata a lista vazia como erro de carregar ("Tentar de novo"); isso não acontece com o seed, e a API só vai para as builds com as centrais da cliente no ar (UP-2). O card diz "1 fã" no singular.
+- **1b e 1e ("Suas centrais"):** leem `/me/centrals`, sem posição até o bloco 8 (decisão 8). Na 1b, o card sem posição mostra os pontos da temporada do fã na central, em lima ("4.120 pts", lido como "Netto Brito, 4.120 pontos na temporada"), no lugar do "você é #N"; "novo" fica só para quem não tem ponto nela. Na 1e, "Sem posição ainda · N fãs" (com "1 fã" no singular), e os pontos à direita sempre que passam de 0, também sem posição; o rótulo de acessibilidade diz os pontos. A regra mora no `central-card.tsx` e no `central-row.tsx` (hoje o primeiro mostra "novo" e o segundo esconde os pontos quando `fanRank` é `null`).
+- **1d:** lê `/artists/<id>`. A capa passa `contentPosition="top"` ao `RemoteImage` (decisão 5). "Entrar na central" fica como está. O "Na central" deixa de ser `readOnly` e abre a sheet de sair. Ele volta a ser `readOnly` enquanto houver entrada dessa central pendente ou pausada: `useIsMutating({ mutationKey: artistMutationKeys.join, predicate: (m) => joinArtistIdOf(m.state.variables) === artistId }) > 0`, com `joinArtistIdOf` lendo o `artistId` das variáveis sem supor o tipo (implementação: o hook `useIsJoinPending(artistId)`, em `artists/queries.ts`). O `isPending` do hook da página não basta: ele é do hook, e com a página reaberta não vê a entrada pausada na fila offline nem a que voltou do disco. Sem a trava, o sair chegaria antes da entrada (sem efeito), a entrada recriaria o vínculo depois, e a tela voltaria a "Na central". O `useIsMutating` conta as mutações com `status: 'pending'`, o que inclui as pausadas e as restauradas do disco. Rótulo de acessibilidade "Você está na central de {{name}}" e dica "Abre a opção de sair da central". O comentário do `ArtistActions` e a seção Acessibilidade do `CLAUDE.md`, que citam o "Na central" como estado, mudam junto.
+- **1f:** os chips vêm de `/me/centrals` (e o do link `?artista=`, da lista `/artists`). O ranking de cada chip continua de exemplo, com o aviso abaixo.
+
+**Sheet "Sair da central" (provisória, UP-48)**
+
+- Rota `src/app/sair-da-central/[artistaId].tsx`, só com o `export default` de `LeaveCentralSheetScreen`, de `@/domains/artist-page`. Entra na pilha raiz, no guard de quem já entrou, com as opções do `convidar`: `presentation: 'formSheet'`, `sheetAllowedDetents: 'fitToContents'`, `sheetGrabberVisible: true`, `sheetCornerRadius: radii.sheet` e fundo `colors.surface`. O "Na central" faz `router.push({ pathname: '/sair-da-central/[artistaId]', params: { artistaId } })`.
+- No visual do "Gerar meu link": `SheetGrabber` no Android, o título "Sair da central?" com o fechar (`BackButton variant="close"`), o texto, e no pé dois botões `lg` em coluna: "Sair da central" (`primary`, haptic `confirm`, `loading` enquanto vai, desligado sem internet) e "Continuar na central" (`ghost`, fecha a sheet).
+- Texto: "A central sai de Suas centrais. Os pontos que você ganhou nela continuam com você, e entrar de novo não rende os pontos de entrada outra vez." Sem o nome da central, para a sheet não depender de a página ter carregado. Sem falar do mural: o mural de exemplo (`buildFeedPageFixture`, em `posts/fixtures.ts`) mostra os posts de Netto, Nenho e Juninho para qualquer fã, nas fixtures e no modo misto, e a sheet também aparece nas builds da cliente. O bloco 6, com o mural filtrado pelas centrais do fã, devolve a frase "Os posts desta central saem do seu mural".
+- Sucesso: fecha (`router.back()`), anuncia "Você saiu da central." e a 1d volta a "Entrar na central". Erro: fica na sheet, com haptic `error` e "Não deu para sair da central. Tente de novo." acima dos botões, também anunciado.
+- (Implementação) Enquanto o pedido vai, o voltar do Android e o gesto do iOS ficam presos (`useStayOnScreen(leave.isPending)`), como no resgate; o "×" e o "Continuar na central" ficam desligados. O arrasto da sheet no Android não trava (react-native-screens 4.26), e a resposta que chega depois dele não navega (a mutação confere se a sheet está montada).
+- Provisória: o lugar definitivo depende do menu "mais" (UP-48). Entra nas Pendências do `CLAUDE.md`.
+
+**Ranking de exemplo ao lado de dado de verdade**
+
+- `LeaderboardPage` ganha `example?: boolean`. O servidor nunca manda. A fixture marca `true` quando a página aparece ao lado de dado de verdade: recorte de central com `sourceOf('artists') === 'api'`, ou o geral com `sourceOf('wallet') === 'api'` (`isExampleBesideRealData`, em `ranking/fixtures.ts`). (Implementação) O `MyRank` ganha o mesmo `example?: boolean`, também só da fixture: é por ele que o card "Você" sabe que a falta de posição é a do exemplo, e não a de quem não pontuou.
+- No recorte de central marcado, o fã não entra no ranking de exemplo (o "você" das centrais de exemplo valia para qualquer fã). O card "Você" da 1f mostra "Sem posição ainda" (`ranking.me.pending`), o mesmo "sem posição" da 1e, e não o "Ganhe pontos para entrar no ranking" de hoje, que seria falso para quem tem pontos na central (a Camila tem 4.120 no Netto). (Implementação) Os pontos do card, nesse recorte, são os de verdade do fã na central, lidos de `/me/centrals` pela própria 1f, e não o 0 da fixture: assim o card e a 1e mostram o mesmo número. (Implementação) O rótulo do card diz esses pontos também: "Você, sem posição ainda, 4.120 pontos." (`ranking.me.labelPending`; sem pontos, "Você. Sem posição ainda."). O geral continua como a seção 13 decidiu, agora com o aviso.
+- Aviso: `ExampleNotice`, em `ranking/components` e exportado pelo index, uma linha `labelSmall` em `colors.textMuted`: "Ranking de exemplo: as posições de verdade chegam com o ranking do servidor." Na 1f, logo abaixo da linha da temporada; na 1d, abaixo do título do card de top fãs e abaixo da linha da temporada da aba Ranking. Aparece quando a primeira página da consulta traz `example: true`. As builds de hoje, com tudo nas fixtures, não mostram; o bloco 8 apaga o campo e o aviso.
+
+**O que é de verdade e o que é de exemplo** (desenvolvimento com emulador, do bloco 4 ao 8)
+
+| Número ou lista                         | Telas                     | Fonte no bloco 4                |
+| --------------------------------------- | ------------------------- | ------------------------------- |
+| Centrais publicadas, nome, foto e ordem | 1l, 1d, chips da 1f       | servidor                        |
+| Centrais do fã                          | 1b, 1e, chips da 1f       | servidor                        |
+| Fãs da central (`fanCount`)             | 1l, 1d, 1e                | servidor                        |
+| Estar na central (`isMember`)           | 1d                        | servidor                        |
+| "PTS DA CENTRAL"                        | 1d                        | servidor (soma)                 |
+| Pontos de seguir e de entrar            | carteira (1e, 1h)         | servidor                        |
+| Pontos do fã em cada central            | 1b, 1e                    | servidor                        |
+| Posição do fã numa central              | 1b, 1e, card "Você" da 1f | nenhuma, até o bloco 8          |
+| Ranking de cada central e top fãs       | 1f, 1d                    | exemplo, com o aviso            |
+| Ranking geral e o card "Você"           | 1f                        | exemplo, com o aviso (seção 13) |
+| Posts da central (contagem e grade)     | 1d                        | exemplo, até o bloco 6          |
+| Missões e agenda da central             | 1d                        | exemplo, até os blocos 6 e 7    |
+
+**Fixtures**
+
+- Ids no formato do @ (decisão 12), em `artists`, `ranking`, `posts`, `agenda` e `missions`, e nos testes. Os testes que usam o id como semente do placeholder (`avatar`, `remote-image`, `pick-stable`) mudam o esperado. O `QUERY_CACHE_VERSION` não sobe: com algum domínio nas fixtures, só o dado de verdade vai para o disco (`shouldPersistQuery`, em `services/query/persister.ts`), e nenhum dado de verdade salvo hoje (o perfil, a carteira e o progresso) guarda id de central. Subir jogaria fora o perfil salvo e as mutações pausadas. Uma entrada pausada com um id antigo volta com 404 (`assertKnown` das fixtures, ou a API) e desfaz sozinha. Links de central já compartilhados nos testes da cliente (`/artista/netto-brito`) param de abrir a central.
+- `followFixture.leave(artistId, key)`: tira do conjunto, guarda a resposta pela chave e não mexe em ponto.
+- `followFixture.join` paga só na primeira entrada de cada central na sessão (conjunto `joinedOnce`, que nasce com as três do protótipo), como o servidor: sair e entrar de novo não paga.
+- `followFixture.follow` continua sem pontos (decisão 3) e devolve `pointsAwarded: 0`.
+
+**Textos novos** (`translations.json`)
+
+- `artist.join.memberHint`: "Abre a opção de sair da central"
+- `artist.leave.title`: "Sair da central?"
+- `artist.leave.body`: o texto da sheet, acima.
+- `artist.leave.confirm`: "Sair da central"
+- `artist.leave.cancel`: "Continuar na central"
+- `artist.leave.left`: "Você saiu da central."
+- `artist.leave.error`: "Não deu para sair da central. Tente de novo."
+- `ranking.exampleNotice`: o aviso, acima.
+- `ranking.me.pending`: "Sem posição ainda"; `ranking.me.labelPending`: "Você, sem posição ainda, {{points}}." (implementação)
+- `onboarding.chooseArtists.needMoreHintOne`: "Escolha pelo menos 1 artista." (implementação)
+- `artist.central.points`: "{{points}} pts"; `artist.central.pointsLabel`: "{{name}}, {{points}} na temporada" (com o `formatPointsSpoken`, "4.120 pontos")
+- `onboarding.chooseArtists.fansOne`: "1 fã"; `onboarding.chooseArtists.cardLabelOne`: "{{name}}, 1 fã"
+- `profile.centrals.metaUnrankedOne`: "Sem posição ainda · 1 fã"; `profile.centrals.labelUnrankedOne`: "{{name}}, ainda sem posição, 1 fã."
+- `profile.centrals.labelUnrankedPoints`: "{{name}}, ainda sem posição, entre {{fans}} fãs, {{points}} na temporada."; `profile.centrals.labelUnrankedPointsOne`: "{{name}}, ainda sem posição, 1 fã, {{points}} na temporada."
+
+**`CLAUDE.md` e `AGENTS.md`**
+
+No mesmo commit: Dados (centrais na API com o emulador, a regra de coerência do bloco 4 e o sair), Navegação (a sheet), Acessibilidade (o "Na central" passa a abrir a sheet), Artistas e centrais (etapa 2 feita: vínculo, `fanCount`, gatilho e fila), API do app e pontos (as rotas do bloco 4) e Pendências (sair provisório, capa, gestão oficial, o que "fãs" conta). O `AGENTS.md` recebe a mesma cópia, com o cabeçalho dele.
+
+Nada disso entra no fingerprint da EAS: só JavaScript, regras e funções.
+
+### 19.14 Seed dos emuladores
+
+`functions/src/centrals/seed.ts` exporta `SEED_CENTRALS`, `seedCentrals(db, now)` e `seedCamilaCentrals(db, uid, now)`. O `scripts/seed-emulators.mjs` carrega `functions/lib/centrals/index.js` do mesmo jeito que carrega os pontos, chama `seedCentrals` antes das contas e `seedCamilaCentrals` depois da carteira da Camila, e escreve uma linha de cada.
+
+| id              | Nome           | `shortName` | `order` | Status        | Verificado | Gestão oficial |
+| --------------- | -------------- | ----------- | ------- | ------------- | ---------- | -------------- |
+| `nettobrito`    | Netto Brito    | `null`      | 0       | `published`   | sim        | sim            |
+| `nenho`         | Nenho          | `null`      | 1       | `published`   | sim        | sim            |
+| `juninhomoraes` | Juninho Moraes | Juninho M.  | 2       | `published`   | sim        | sim            |
+| `rocksalles`    | Rock Salles    | `null`      | 3       | `published`   | sim        | sim            |
+| `artista5`      | Artista 5      | `null`      | 4       | `published`   | não        | não            |
+| `artista6`      | Artista 6      | `null`      | 5       | `published`   | não        | não            |
+| `artista7`      | Artista 7      | `null`      | 6       | `draft`       | não        | não            |
+| `artista8`      | Artista 8      | `null`      | 7       | `unpublished` | não        | não            |
+
+- Cada central só é criada se não existir, numa transação; a que existe fica como o desenvolvedor deixou no painel. (Implementação) A reserva `usernames/{id}` só é criada se não existir: o @ de uma fã que chegou antes fica com ela. Grava `artists/{id}` no formato do painel (`handle`, `name`, `shortName`, `genre: null`, `city: null`, `bio: null`, `verified`, `photo: null`, `thumb: null`, `order`, `status`, `fanCount: 0`, `publishedAt` com o agora nas publicadas e na fora do ar e `null` no rascunho, `createdAt`, `updatedAt`, e `managedByImagine: true` nas 4 do protótipo), `artistPrivate/{id}` (`email`, `phone`, `managerUid` e `managerName` nulos, `imageRightsConfirmed: true`, `createdBy` e `updatedBy` `'seed'`, `updatedAt`) e a reserva `usernames/{id}` (`{ artistId, createdAt }`).
+- Sem foto: o painel exige foto para publicar, e o seed publica sem ela, como nas fixtures (placeholder pelo id). Para ver a capa recortada, suba a foto pelo painel ligado aos emuladores.
+- 4 publicadas na grade da 1l e 2 no "+2 artistas" e na busca; o rascunho e a fora do ar não aparecem em lugar nenhum do app.
+- Camila: `seedCamilaCentrals` chama `runJoinCentrals(db, uid, ['nettobrito', 'nenho', 'juninhomoraes'], options)`, o mesmo `readJoin` e `joinCentrals` das rotas, numa transação com o `requireFan` sem marca de atividade, como o `runAward`. Opções: o meio-dia de 8 dias atrás (`joinedAt`, que põe as três na ordem do protótipo), `actor` de sistema, `via: 'seed'` e a configuração padrão com `central_join: 0`.
+- Por que o valor 0 só no seed: a base do seed (seção 14) já tem os pontos do protótipo, e a entrada pagaria 30 a mais, com o Juninho pontuando, o que o protótipo não tem. Com 0, o `central_join` sai `zero` e não grava extrato; se a Camila sair e entrar de novo no app, ganha os 10, o que serve para ver o "+10".
+- Resultado: a Camila segue Netto, Nenho e Juninho, com a carteira igual (12.480, 4.120, "+840"); a fila deixa o `fanCount` em 1, 1 e 1 (as outras em 0); o `/me/centrals` dela responde Netto 4.120, Nenho 2.980 e Juninho 0, todas com `fanRank: null` e "1 fã". Na 1b, os cards mostram "4.120 pts", "2.980 pts" e "novo"; na 1e, os mesmos pontos à direita (decisão 8). O Alan não segue nada: no app, passa pela 1l com as 6 publicadas, e seguir 3 rende 30 pontos.
+- Rodar de novo não muda nada: as centrais existem, os vínculos existem e não há ponto.
+
+### 19.15 Testes
+
+Funções, testes puros (`vitest`, relógio fixo):
+
+- `centrals/model.test.ts` (tabela): as três respostas a partir do documento (foto e miniatura, `cover` antes de `photo`, sem imagem, `fanCount` negativo ou estranho vira 0, `verified` e `managedByImagine` só com `true`); a validação do corpo da `POST` (vazio, 51 ids, repetido, fora do formato, id `__x__`); a ordem de "Suas centrais" (`joinedAt`, depois `order`, depois id); `seasonPoints` só com a temporada da configuração; `shouldCopyFanCount` (sem `fanCountAt` copia, leitura mais nova copia mesmo com o número igual, leitura igual ou mais velha que o `fanCountAt` gravado não copia); a soma dos shards negativa vira 0; `memberFanCount` (sem `fanCountAt` soma 1, `fanCountAt` antes do `joinedAt` soma 1, igual ou depois usa a cópia, cópia 0 de membro vira 1); `fanCountSyncTask` (janela de 10 s, o mesmo id para dois instantes da mesma janela e outro na seguinte, `scheduleTime` 1 s depois do fim da janela, id no formato que o Cloud Tasks aceita, `^[A-Za-z0-9_-]+$`, com o @ que tem `_`); o shard do `fanCount` (`award.shard % 16`).
+- `points/stats.test.ts`: `joined` e `left` por central e no total, e o `pruneZeros` deles. `addMembershipCounts` com o `plan.shard` nulo.
+- `api/router.test.ts`: `GET /me/centrals/nenho` responde 405 com `Allow: PUT, DELETE`; `/me/centrals` e `/me/centrals/:artistId` não se confundem.
+- `api/index.test.ts`: `artist_not_found` com 404 e o corpo combinado; `CentralError` traduzido; id fora do formato do @ é 404 nas três rotas com `:artistId`.
+- `centrals/service.test.ts`: `sumCentralPoints` com a consulta injetada que falha com o código 9 devolve 0 e chama o `logger.error`; com outro código, lança.
+- `centrals/sync.test.ts`: o gatilho ignora `functions/task-already-exists`, lança nos outros erros e não lança com `artistId` fora do formato; com `FUNCTIONS_EMULATOR`, enfileira sem id e sem `scheduleTime` (fila injetada).
+- (Implementação, revisão do bloco) `centrals/model.test.ts`: o teto de entradas (`exceedsEntryLimit`, o Retry-After em segundos, a recusa com motivo e mensagem) e o limite aceito do `memberFanCount` (sair e entrar antes da cópia seguinte); `points/model.test.ts`: `nextDayStart` (o começo do dia seguinte de São Paulo); `points/award.test.ts`: `addDailyCount` (carteira lida com os dias velhos cortados, carteira nova, carteira já no plano); `api/index.test.ts`: `too_many_entries` vira 429 com `details.limit` e `Retry-After`; `store.test.ts`: a ordem do `deleteUserData` (19.12).
+
+Funções nos emuladores (`functions/test/centrals.emulator.test.ts`, com a `api` de verdade por HTTP e tokens do emulador de Auth; o gatilho roda no emulador de Functions e a tarefa no do Cloud Tasks, que sobe junto, e os testes esperam o `fanCount` mudar, até 10 s):
+
+- `GET /artists`: só as publicadas, na ordem, com a foto mapeada; rascunho e fora do ar não aparecem.
+- `GET /artists/:id`: publicada responde; rascunho, fora do ar, inexistente e id malformado dão 404; `isMember`; `centralPoints` somando dois fãs com pontos na central; `postCount` 0.
+- `PUT`: cria o vínculo, soma 1 nos shards, a fila copia `fanCount` 1 com `fanCountAt`, paga 10 (carteira, extrato `central_join:<id>`, `centralPoints`), `joined` 1 no shard do dia; o `GET /artists/:id` e o `GET /me/centrals` logo depois, antes da cópia, dão `fanCount` 1 numa central que tinha 0 (`memberFanCount`); a mesma chave devolve a resposta guardada; outra chave com o fã dentro paga 0 e não soma shard; central fora do ar dá 404; sem perfil, 503; conta só da equipe, 403.
+- `DELETE`: tira o vínculo, desconta o shard, a fila volta o `fanCount`, `left` 1, os pontos ficam; sair sem vínculo é 200 sem mexer em shard; entrar de novo cria o vínculo e paga 0 (`duplicate`).
+- `POST /me/artists`: 3 centrais criam 3 vínculos e pagam 30, com `followedArtistIds` na ordem; uma fora do ar dá 404 com `details.artistIds` e nada gravado; uma já seguida não paga; a 11ª do dia sai sem ponto (limite); 51 ids e id repetido dão 400.
+- Concorrência: 10 fãs entrando juntos na mesma central deixam a soma dos shards e o `fanCount` em 10; o mesmo fã entrando e saindo em paralelo, com chaves diferentes, termina com o vínculo e a soma coerentes.
+- Exclusão: fã em 3 centrais; depois do `deleteUserData`, nenhum vínculo, cada soma 1 abaixo e o `fanCount` de volta, nunca negativo; rodar de novo não desconta outra vez; entrada depois de o perfil sair dá 503 e não cria vínculo.
+- `deleteArtist`: `fanCount` 0 com a soma dos shards 1 (gravados direto, como cópia atrasada) recusa com `has-fans`; `fanCount` 1 com a soma 0 (cópia atrasada ou perdida) apaga a central e os shards; soma 0 e `fanCount` 0 apaga os shards. Os testes de `functions/test/artists.emulator.test.ts` continuam passando sem mudança (gravam o `fanCount` sem shards).
+- Fila: shards somando negativo deixam `fanCount` 0; central apagada não é recriada; entrada e saída de fãs diferentes na mesma central, com a soma igual, ainda avançam o `fanCountAt`.
+- Seed: centrais e vínculos da Camila como em 19.14, a carteira dela sem mudar, e rodar de novo não muda nada.
+- (Implementação, revisão do bloco) O teto do dia: entrada nova com o teto feito dá 429 com `Retry-After` e não grava vínculo nem shard, a 1l também, entrar onde já está passa, sair vale, e voltar é entrada (429); o `central_entry` sobe só com vínculo novo. Sair de uma central fora do ar desconta o shard e a fila volta o `fanCount`. Fã com mais de 240 vínculos: a pedida que ele já segue, fora da lista do `readFollow`, responde 200 sem pagar nem mexer em shard. Os shards do painel são lidos pelo dia que o servidor usou (o `day` do extrato `central_join`, ou os dias entre o antes e o depois do pedido), e não pelo relógio depois da resposta.
+
+Regras, `tests/centrals-rules.test.ts` (novo, no molde de `tests/artists-rules.test.ts`, com os mesmos membros de exemplo):
+
+- `users/{uid}/centrals/{artistId}`: o próprio fã não lê (`get` e `list`), outro fã também não; a equipe ativa com `fans` (editora e leitor) e admin leem o documento e a consulta em grupo `collectionGroup('centrals').where('artistId', '==', ...)`; equipe sem `fans` (só `artists`), desativada, pendente ou com sessão de antes do `authValidAfter` não lê; ninguém grava, nem admin.
+- `artistStats/{id}` e `fanShards`: ninguém lê nem grava pelo cliente, nem a equipe com `artists`, nem admin.
+- Coleção de raiz `centrals/{id}`: a equipe com `fans` lê (a regra de grupo alcança qualquer coleção `centrals`). O teste deixa escrito por que nenhuma outra coleção pode ter esse nome (19.10).
+- As regras de `users/{uid}` de hoje continuam iguais, e os arquivos de teste que já existem passam sem mudança.
+
+App:
+
+- `artists/__tests__/api.test.ts`: `leaveCentral` nos dois modos (`DELETE` com a chave; a fixture tira e devolve a mesma resposta pela chave); `POST` devolve `pointsAwarded`; nas fixtures, sair e entrar de novo não paga; `postCount` de exemplo no modo misto.
+- `artists/__tests__/queries.test.tsx`: sair atualiza a página e "Suas centrais" só no sucesso e mantém tudo no erro, com a mesma chave depois de falha incerta e nova depois de recusa; entrar soma 1 ao `fanCount` da página e da central inserida, e o erro desfaz; seguir com pontos invalida a carteira; seguir com `notFound` invalida a lista.
+- `artists/__tests__/central-card.test.tsx` e `profile/__tests__/profile-cards.test.tsx`: sem posição e com pontos, o card da 1b mostra os pontos (e o rótulo os diz) e a linha da 1e mostra os pontos à direita; sem posição e sem pontos, "novo" e nada à direita.
+- `src/config/__tests__/data-source.test.ts`: `artists` na API com o emulador.
+- `ranking/__tests__/fixtures.test.ts`: `example` e o fã fora do ranking de central quando as centrais estão na API; sem a marca nas fixtures puras. O card "Você" de uma central marcada diz "Sem posição ainda".
+- Navegação (`src/navigation/__tests__/artist.test.tsx`): o "Na central" abre a sheet; "Sair da central" volta a 1d para "Entrar na central"; "Continuar na central" fecha sem mudar nada; o "Na central" fica sem toque enquanto a entrada vai, e também com a página montada de novo sobre uma entrada pausada (sem rede) dessa central, feita antes de a página abrir.
+- `onboarding`: `retain` e o mínimo `min(3, n)`; `describe-profile`: o singular "1 fã". Na navegação da 1l (`src/navigation/__tests__/onboarding.test.tsx`): duas publicadas pedem 2 e o card diz "1 fã"; lista vazia é erro de carregar; central que sai do ar entre a lista e o toque sai da escolha.
+- Os testes que citam os ids antigos passam para os ids no formato do @.
+- (Implementação, revisão do bloco) `artists/__tests__/queries.test.tsx`: entrar com `notFound` faz a página e as centrais buscarem de novo, sem o "Tente de novo", e a recusa de outro tipo desfaz no lugar; a entrada restaurada do disco que falha também busca de novo; sair com o hook desmontado só avisa (sem o `onLeft` e o `onError`). Navegação: a sheet fechada com o pedido indo não tira a 1d da pilha; entrar numa central que saiu do ar mostra "Esta central não existe mais."; com as centrais na API, o aviso de exemplo nos top fãs e na aba Ranking da 1d (`artist.test.tsx`) e na 1f (`ranking.test.tsx`), com o card "Você" sem posição e com os 4.120 de "Suas centrais", e o Geral sem aviso com a carteira nas fixtures; a 1l com uma central só, com o botão e a dica no singular (`onboarding.test.tsx`).
+
+### 19.16 Fica para depois
+
+- Posição por central, ranking da central e top fãs de verdade (bloco 8): `fanRank` pela contagem da seção 10; o bloco apaga o `example` e o aviso, e segue a resposta da decisão 13 (quem saiu no ranking da central e o texto "#N entre N fãs").
+- `postCount` de verdade (bloco 6), com o contador de posts por central; sai a troca pelo número de exemplo. Com o mural filtrado pelas centrais do fã, a sheet de sair volta a dizer que os posts saem do mural.
+- Fechamento do dia (bloco 11): acerta o `fanCount` de todas as centrais (a rede de segurança da fila, 19.6) e fecha `joined` e `left`; se quiser, `removed` pela exclusão de conta (19.9).
+- Painel: os campos `managedByImagine` e `cover`; a seção Fãs com os vínculos; a Visão geral com `joined` e `left`.
+- O guard do onboarding continua local (`preferences`): quem reinstala o app passa pela 1l de novo, e seguir de novo não duplica nem paga. Pular a 1l quando o `/me/centrals` não vier vazio fica para quando o login social entrar.
+- O lugar definitivo do "Sair" (UP-48).
+- Publicação, só com o ok do dono, nesta ordem: regras e índices (`deploy --only firestore:rules,firestore:indexes`); esperar os índices novos aparecerem como prontos no console (Firestore, Índices), porque o deploy volta antes de eles terminarem de montar; depois todas as funções (`npm run functions:deploy`), que levam a `api`, o gatilho `queueArtistFanCountSync` e a fila `syncArtistFanCount` novos, o `deleteArtist` mudado e o `deleteUserData` novo, usado pela `deleteUserProfile` e pela `createUserProfile`. Com a ordem trocada, o `GET /artists` responde 500 e o "PTS DA CENTRAL" vira 0 até o índice ficar pronto (19.7).
+
+### 19.17 Armadilhas do bloco 4
+
+- O `fanCount` de `artists/{id}` é cópia: fica uns 10 a 20 s atrás de cada mudança, em qualquer central, e sempre fecha. Quem precisa do número exato (o `deleteArtist`) soma os shards na transação.
+- Logo depois de entrar, a cópia ainda não conta o fã: as rotas de leitura somam 1 para o membro cujo `joinedAt` é depois do `fanCountAt` (`memberFanCount`). Logo depois de sair, a página pode contar o fã por até uns 20 s, e não há como descontar sem o vínculo.
+- A tarefa copia mesmo com o número igual quando a leitura é mais nova: o `fanCountAt` tem de passar o `joinedAt` de quem entrou, senão o `memberFanCount` soma 1 a mais para sempre.
+- Um shard sozinho pode ficar negativo; só a soma vale, e a cópia nunca é negativa.
+- A transação de entrada lê `artists/{id}` (é o que a põe em ordem com o `deleteArtist` e o `setArtistStatus`), mas nunca grava nele. Somar o `fanCount` ali, ou copiá-lo a cada mudança, faria o documento dos destaques disputado com as próprias entradas.
+- O id da tarefa sai do `event.time` do gatilho, não do relógio: a entrega repetida cai na mesma janela.
+- `taskQueue('syncArtistFanCount')` sem a região procura a fila em `us-central1`: use `locations/southamerica-east1/functions/syncArtistFanCount`.
+- O emulador do Cloud Tasks ignora o `scheduleTime` e nunca libera um id usado: lá, a tarefa vai sem id, uma por gravação, na hora.
+- O emulador não exige índice: a falta do índice só aparece em produção, como código 9. Índices antes da `api`.
+- A regra de grupo de `centrals` vale para qualquer coleção com esse nome: não crie outra.
+- Na exclusão de conta, o perfil sai sozinho antes dos vínculos: o `recursiveDelete` apaga o documento do perfil por último.
+- Sair não tira ponto, e entrar de novo não paga a entrada outra vez.
+- Posição de exemplo nunca aparece ao lado de número de verdade, e ranking de exemplo ao lado de dado de verdade leva o aviso. Sem posição, a tela mostra os pontos do fã na central, nunca "novo" ou "Ganhe pontos" para quem já pontuou.
+- A trava do "Na central" é o `useIsMutating` das entradas da central, não o `isPending` do hook: só o primeiro vê a entrada pausada ou restaurada do disco.
+- Os ids das fixtures seguem o formato do @, e o `QUERY_CACHE_VERSION` não sobe por isso.
+- `planAwards` sem lançamentos não lê nada: a rota de sair pode chamá-lo depois de ler o vínculo.
+- Quem sai e entra de novo antes da cópia seguinte do `fanCount` é contado duas vezes, só para ele, até ela (limite aceito, 19.2).
+- O teto de entradas mora em `days[dia].count.central_entry` da carteira: a carteira é gravada em toda entrada nova. Sair nunca é recusado.
+- Callback passado ao `useMutation` roda mesmo com a tela desmontada (só os do `mutate` conferem): o que navega ou mexe na tela confere se o hook está montado.
 
 ## Armadilhas
 

@@ -14,6 +14,7 @@ import { colors } from '@/theme';
 
 import type { RankingSelf } from '../components/entry-avatar';
 import { MyRankCard } from '../components/my-rank-card';
+import { ExampleNotice } from '../components/example-notice';
 import { Podium, podiumStepHeights } from '../components/podium';
 import { RankingRow } from '../components/ranking-row';
 import { SeasonLine } from '../components/season-line';
@@ -269,7 +270,7 @@ describe('card "Você"', () => {
         seasonOver={false}
         self={SELF}
         visible
-        scopeKey="artist:juninho-moraes"
+        scopeKey="artist:juninhomoraes"
       />,
     );
     expect(screen.getByLabelText('Você. Ganhe pontos para entrar no ranking.')).toBeTruthy();
@@ -340,7 +341,7 @@ describe('card "Você"', () => {
       <MyRankCard
         {...props}
         myRank={{ ...OUTSIDE_TOP, position: 12 }}
-        scopeKey="artist:netto-brito"
+        scopeKey="artist:nettobrito"
       />,
     );
     expect(haptics.trigger).not.toHaveBeenCalledWith('rankUp');
@@ -349,7 +350,7 @@ describe('card "Você"', () => {
       <MyRankCard
         {...props}
         myRank={{ ...OUTSIDE_TOP, position: 11 }}
-        scopeKey="artist:netto-brito"
+        scopeKey="artist:nettobrito"
       />,
     );
     expect(haptics.trigger).toHaveBeenCalledWith('rankUp');
@@ -397,5 +398,15 @@ describe('linha da temporada', () => {
   it('sem temporada, diz que não há nenhuma', () => {
     render(<SeasonLine season={null} now={NOW} />);
     expect(screen.getByText('Nenhuma temporada em andamento')).toBeTruthy();
+  });
+});
+
+describe('aviso do ranking de exemplo', () => {
+  it('diz que as posições são de exemplo, em cinza, como texto', () => {
+    render(<ExampleNotice />);
+    const notice = screen.getByText(
+      'Ranking de exemplo: as posições de verdade chegam com o ranking do servidor.',
+    );
+    expect(notice).toHaveStyle({ color: colors.textMuted });
   });
 });

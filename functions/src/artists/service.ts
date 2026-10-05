@@ -7,6 +7,7 @@ import {
 } from 'firebase-admin/firestore';
 import * as logger from 'firebase-functions/logger';
 
+import { readFanCountForDelete } from '../centrals/service';
 import { artistError } from './errors';
 import { removeFiles, type ArtistFiles, type LeftoverFile } from './files';
 import {
@@ -60,7 +61,19 @@ export type Artist = {
   thumb: ArtistImage | null;
   order: number;
   status: ArtistStatus;
+  /**
+   * Membros da central no app: a cópia da soma dos shards
+   * (artistStats/{id}/fanShards), gravada pela fila syncArtistFanCount uns 10
+   * a 20 s depois de cada entrada ou saída (bloco 4). As callables não mexem.
+   */
   fanCount: number;
+  /** Instante da leitura dos shards da última cópia do fanCount (bloco 4). */
+  fanCountAt?: Timestamp | null;
+  /**
+   * "Gestão oficial Imagine" na capa da 1d. Opcional, falso quando não existe:
+   * o painel ainda não grava (pergunta para a cliente); o seed marca as 4 do protótipo.
+   */
+  managedByImagine?: boolean;
   publishedAt: Timestamp | null;
   createdAt: Timestamp;
   updatedAt: Timestamp;
@@ -586,9 +599,12 @@ export async function reorderArtistList(
 
 /**
  * deleteArtist: só admin, em qualquer status (rascunho, no ar ou fora do ar),
- * menos central com fãs (has-fans: essa sai do ar em vez de sumir). Apaga a
- * central, o artistPrivate/, a reserva do @ (se ainda é desta central) e
- * depois todos os arquivos de artists/{id}/. A auditoria guarda o status na
+ * menos central com fãs (has-fans: essa sai do ar em vez de sumir). Quem
+ * decide é a soma dos shards do fanCount, lida na transação (o fanCount de
+ * artists/ é uma cópia que pode estar atrasada); sem shard nenhum (central de
+ * antes do bloco 4), o fanCount. Apaga a central, o artistPrivate/, os shards,
+ * a reserva do @ (se ainda é desta central) e depois todos os arquivos de
+ * artists/{id}/. A auditoria guarda o status na
  * hora e se ela já foi publicada. Os arquivos saem um por um (removeFiles):
  * o que falha não impede os outros e vai para o log com o caminho, porque a
  * central já saiu e ninguém mais lista essa pasta.
@@ -607,11 +623,13 @@ export async function removeArtist(
     const current = (await tx.get(artistRef(db, artistId))).data() as Artist | undefined;
     if (!current) throw artistError('artist-not-found');
     const reservation = await tx.get(usernameRef(db, artistId));
-    const problem = deleteProblem(current);
+    const { fans, shards } = await readFanCountForDelete(tx, db, artistId, current.fanCount);
+    const problem = deleteProblem({ fanCount: fans });
     if (problem) throw artistError(problem);
     const now = Timestamp.fromMillis(clock(deps));
     tx.delete(artistRef(db, artistId));
     tx.delete(privateRef(db, artistId));
+    for (const shard of shards) tx.delete(shard);
     if (reservation.get('artistId') === artistId) tx.delete(reservation.ref);
     audit(
       tx,

@@ -71,10 +71,11 @@ function mission(eventId: string, points: number, artistId: string): AwardEntry 
   return { kind: 'earn', source: 'mission', eventId, points, artistId };
 }
 
-const SEED_ACTOR: Actor = { type: 'system', uid: null, name: null };
+/** Quem lança no seed: o sistema, que não marca atividade. */
+export const SEED_ACTOR: Actor = { type: 'system', uid: null, name: null };
 
 /** Meio-dia de São Paulo (15:00 UTC) do dia `daysAgo` antes de `now`. */
-function noonDaysAgo(now: number, daysAgo: number): number {
+export function noonDaysAgo(now: number, daysAgo: number): number {
   return Date.parse(`${shiftDay(dayKey(now), -daysAgo)}T15:00:00.000Z`);
 }
 
