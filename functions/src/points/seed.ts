@@ -38,15 +38,22 @@ export const CAMILA_SEED = {
 
 type Step = { daysAgo: number; entries: AwardEntry[] };
 
-/** Os títulos das missões do protótipo, que o extrato mostra (`subjectTitle`). */
-const CLIPE = 'Leve 5 pessoas para o clipe novo do Netto';
-const COMENTAR = 'Comente em 3 posts da central';
-const CURTIR = 'Curta 5 posts do Nenho';
+/**
+ * Títulos que o extrato mostra (`subjectTitle`). São desafios antigos, já
+ * arquivados, e não as missões do catálogo de hoje: os valores aqui são
+ * maiores que os do catálogo, e um título igual ao de uma missão de +10
+ * mostraria "+240" no extrato da demonstração.
+ */
+const DIARIO = 'Desafio diário do São João';
+const COMENTARIOS = 'Desafio: 10 comentários na central do Netto';
+const PESSOAS = 'Desafio: leve 10 pessoas para a central do Nenho';
+const AMIGOS = 'Desafio da semana: 5 amigos novos no app';
+const CURTIDAS = 'Desafio: curta 20 posts do Nenho';
 
 /** As 8 missões de antes da semana: de 17 a 10 dias atrás, uma por dia, 50 cada. */
 const EARLY_MISSIONS: Step[] = Array.from({ length: 8 }, (_, index) => ({
   daysAgo: 17 - index,
-  entries: [mission(`seed-camila-${index + 5}`, 50, null, CLIPE)],
+  entries: [mission(`seed-camila-${index + 5}`, 50, null, DIARIO)],
 }));
 
 const STEPS: Step[] = [
@@ -76,10 +83,10 @@ const STEPS: Step[] = [
       },
     ],
   },
-  { daysAgo: 6, entries: [mission('seed-camila-1', 200, 'nettobrito', COMENTAR)] },
-  { daysAgo: 4, entries: [mission('seed-camila-2', 240, 'nenho', CURTIR)] },
-  { daysAgo: 2, entries: [mission('seed-camila-3', 300, 'nettobrito', COMENTAR)] },
-  { daysAgo: 1, entries: [mission('seed-camila-4', 100, 'nenho', CURTIR)] },
+  { daysAgo: 6, entries: [mission('seed-camila-1', 200, 'nettobrito', COMENTARIOS)] },
+  { daysAgo: 4, entries: [mission('seed-camila-2', 240, 'nenho', PESSOAS)] },
+  { daysAgo: 2, entries: [mission('seed-camila-3', 300, 'nettobrito', AMIGOS)] },
+  { daysAgo: 1, entries: [mission('seed-camila-4', 100, 'nenho', CURTIDAS)] },
 ];
 
 function mission(
