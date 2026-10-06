@@ -1,6 +1,6 @@
 # Arquitetura da API do app
 
-Nota de arquitetura do servidor do ImagineUP. Ela diz como o app fala com as Cloud Functions, onde moram os pontos, como o ponto é lançado e como o painel lê os números. Vale para o bloco 1 (base do servidor e núcleo de pontos) e deixa a estrutura pronta para os blocos seguintes. O bloco 4 (centrais de verdade) está na seção 19, o bloco 5 (convite com atribuição e origem do fã), na seção 20, e o bloco 6 (mural e agenda com conteúdo real), na seção 21.
+Nota de arquitetura do servidor do ImagineUP. Ela diz como o app fala com as Cloud Functions, onde moram os pontos, como o ponto é lançado e como o painel lê os números. Vale para o bloco 1 (base do servidor e núcleo de pontos) e deixa a estrutura pronta para os blocos seguintes. O bloco 4 (centrais de verdade) está na seção 19, o bloco 5 (convite com atribuição e origem do fã), na seção 20, o bloco 6 (mural e agenda com conteúdo real), na seção 21, e o bloco 7 (missões, níveis, conquistas e extrato), na seção 22.
 
 Origem: decisão do dono em 05/10/2026 (API HTTP numa função `onRequest`, pontos calculados na transação da ação) e o levantamento de 05/10/2026 (13 blocos, 26 endpoints, perguntas técnicas em aberto).
 
@@ -23,6 +23,7 @@ Quem mexe no servidor lê esta nota antes. Mudou uma decisão daqui? Mude a nota
 13. Bloco 4 (seção 19): vínculo em `users/{uid}/centrals/{artistId}`; `fanCount` somado num shard na transação e copiado para `artists/{id}` por uma fila de tarefas, no máximo uma vez a cada 10 s por central; vínculo novo paga `central_join` uma vez na vida, também na 1l; sair não tira ponto; posição do fã por central só no bloco 8.
 14. Bloco 5 (seção 20): código de convite por fã, sorteado no servidor e criado no primeiro `GET /me/invite`; claim uma vez por conta, em `referrals/{uid}`, só para conta de até 7 dias, pagando quem convidou (visita e cadastro) com o id do evento pela chave da pessoa (o e-mail normalizado, em HMAC-SHA256 com um segredo do servidor), para a conta excluída e recriada não pagar de novo; visita só no app, de conta logada diferente do dono e de outra pessoa (a chave do dono também barra o apelido do e-mail), contada no painel uma vez por pessoa e convidante, pague ou não; origem (tipo de link, destino e `utm_source`, `utm_medium` e `utm_campaign`) no convite e nos agregados por origem e campanha; cadastros por dia no gatilho de cadastro.
 15. Bloco 6 (seção 21): a equipe publica posts e shows pelas callables do painel, com a seção `artists` (provisório até a UP-9); post em `posts/{postId}`, show em `events/{eventId}`, curtida e presença em subcoleções do fã, comentário em `posts/{postId}/postComments`; curtidas e comentários contados em shards e copiados para o post por uma fila, no máximo uma vez a cada 10 s; `postCount` por `count()`; curtir paga uma vez na vida, comentar dentro do limite do dia, "Eu vou" uma vez por show; tetos diários de ações; denunciar comentário e bloquear fã, com a fila da Moderação e a callable `moderateComment`; a exclusão de conta apaga comentários, curtidas, presenças, denúncias e bloqueios, descontando as contagens.
+16. Bloco 7 (seção 22): catálogo de missões em `config/missions`, versionado e lido pelo cache, com índice por tipo de ação; períodos do dia e da semana de São Paulo; progresso do fã na carteira, contado na transação da ação, e a conclusão paga pelo núcleo com `mission:<id>:<período>`, no mesmo `pointsAwarded`; meta da temporada por missões concluídas na temporada; conquistas do servidor (nível, primeira vez, ranking no bloco 8) guardadas na carteira; subida de nível devolvida na resposta; tetos do dia na configuração; callables da régua, das missões, das conquistas (seção `missions`) e da temporada (seção `ranking`); extrato provisório no Perfil.
 
 ## 1. Formato da API
 
@@ -231,7 +232,7 @@ Os 26 endpoints que os `api.ts` do app já chamam. Curtir e "Eu vou" contam como
 | 25  | `GET /rewards`                           | `rewards/api.ts` `fetchRewards`                     | 10    |
 | 26  | `POST /rewards/:rewardId/redeem`         | `rewards/api.ts` `redeemReward`                     | 10    |
 
-Fora dos 26, nova no bloco 1: `GET /me/ledger` (extrato). O app ainda não chama: a tela do extrato é do bloco 7 e precisa de desenho. Ela já serve aos testes, que conferem que carteira e extrato fecham, e ao seed.
+Fora dos 26, nova no bloco 1: `GET /me/ledger` (extrato). O app ainda não chama: a tela do extrato é do bloco 7 e precisa de desenho. Ela já serve aos testes, que conferem que carteira e extrato fecham, e ao seed. O bloco 7 liga o extrato a uma tela provisória e acrescenta a cada linha o nome da central e o título da missão (22.2).
 
 Fora dos 26, nova no bloco 4: `DELETE /me/centrals/:artistId` (sair da central, `artists/api.ts` `leaveCentral`, seção 19).
 
@@ -267,6 +268,7 @@ Por que a API para o resto: um caminho só no app (axios, React Query e cache no
 | `wallets/{uid}/centralPoints/{artistId}`                              | servidor (`award`)                              | equipe com `fans`                            | pontos do fã em cada central                                                |
 | `config/points` e `config/points/versions/{n}`                        | servidor (callable do painel, bloco seguinte)   | equipe ativa                                 | valores, limites diários e régua de níveis                                  |
 | `config/season` e `config/season/versions/{n}`                        | servidor (callable do painel, bloco 8)          | equipe ativa                                 | temporada atual                                                             |
+| `config/missions`, `config/achievements` e as versões                 | servidor (callables do painel, bloco 7)         | equipe com `missions`                        | catálogo de missões, meta da temporada e catálogo de conquistas (seção 22)  |
 | `statsDaily/{dia}` e `statsDaily/{dia}/statsShards/{n}`               | servidor (`award`; fechamento do dia depois)    | equipe com `overview` ou `growth`            | contadores agregados do painel                                              |
 | `statsMeta/close`                                                     | servidor (fechamento do dia, quando ele entrar) | ninguém                                      | último dia fechado                                                          |
 | `idempotency/{id}`                                                    | servidor (API)                                  | ninguém                                      | chaves de idempotência                                                      |
@@ -755,7 +757,7 @@ Callables do painel, no padrão das de artistas (bloco seguinte para valores e r
 | `updateSeason({ expectedVersion, season })`                                                                       | `canEditSection('ranking')`  | o mesmo em `config/season`, mais `season-id-locked` e `season-id-used` (seção 8), auditoria `season.updated`                                                                                                                                |
 | `adjustFanPoints({ uid, balance?, xp?, season?, central?: { artistId, season?, total? }, note, idempotencyKey })` | `canEditSection('fans')`     | `runAward` com `adjust`, auditoria `wallet.adjusted`                                                                                                                                                                                        |
 
-As ações de auditoria novas entram no `AuditAction` de `functions/src/staff/service.ts`. As callables existentes da equipe e dos artistas não mudam.
+As ações de auditoria novas entram no `AuditAction` de `functions/src/staff/service.ts`. As callables existentes da equipe e dos artistas não mudam. O bloco 7 faz o `updatePointsConfig` e antecipa o `updateSeason` (22.8); o `adjustFanPoints` fica para o bloco 11.
 
 ## 10. Ranking (direção para o bloco 8)
 
@@ -951,6 +953,7 @@ Os ids das centrais são `nettobrito` (Netto) e `nenho` (Nenho), no formato do @
 - Links criados e pessoas trazidas (63 e 418 nas fixtures) ficam 0 até o bloco 5. Com ele, a Camila tem 4 links e 3 pessoas trazidas no servidor (20.12), e os 63 e 418 ficam só nas fixtures.
 - Rodar de novo não muda nada: os lançamentos já existem e voltam `duplicate`, e transação sem nada aplicado não grava a carteira (seção 5, passo 9).
 - O Alan fica sem carteira: é o fã novo (0 pontos, nível 1).
+- O bloco 7 acrescenta 8 lançamentos de missão antes da base e diminui a base no mesmo tanto, para a meta da temporada dar 12 de 20 sem mudar os totais (22.13).
 
 Resultado na 1e: "SEUS PONTOS" 12.480; Purainha (7), anel e barra em 68,5%, faltam 2.520; "Esta semana" +840; 0 links, 0 pessoas e 3 temporadas (com o bloco 5, 4 links e 3 pessoas, 20.12).
 
@@ -1003,7 +1006,7 @@ Regras: `tests/points-rules.test.ts` (seção 11). App: seção 13.
 - **Bloco 4 (centrais):** desenhado na seção 19. O que ele deixa para os blocos seguintes está em 19.16.
 - **Bloco 5 (convite):** desenhado na seção 20. A visita conta no app, e não numa função própria para o site, como esta nota dizia antes (decisão 3 de 20.1). Os 63 e 418 da Camila ficam nas fixtures, e o seed dá a ela 4 links e 3 convidados (20.12). O que fica fora do bloco está em 20.15.
 - **Bloco 6 (mural e agenda):** desenhado na seção 21. O que ele deixa para os blocos seguintes está em 21.17.
-- **Bloco 7 (missões e conquistas):** progresso de missão na transação; conquistas; tela do extrato (`/me/ledger`, com desenho); `updatePointsConfig` e a seção Missões e régua no painel.
+- **Bloco 7 (missões e conquistas):** desenhado na seção 22. As telas da seção Missões e régua ficam para o bloco 11, e o que ele deixa para os blocos seguintes está em 22.16.
 - **Bloco 8 (ranking e temporadas):** `updateSeason` com `season-id-locked` e `season-id-used` (seção 8), histórico em `seasons/{id}`, arquivo do resultado, índices compostos, posição por `count()` com o desempate da lista (seção 10), foto semanal do `change`.
 - **Bloco 10 (loja):** rotas da loja e o resgate com o débito já pronto; `sold_out` no `API_ERROR_CODES`.
 - **Bloco 11 (painel):** Visão geral e Crescimento lendo `statsDaily` sem escuta em tempo real (seção 7), com ativos do dia, da semana e do mês e a retenção por coorte; Fãs lendo carteira e extrato, mais a regra de `users/{uid}` para a equipe; `adjustFanPoints`; fechamento do dia, se o bloco 4 não tiver feito.
@@ -3108,6 +3111,784 @@ Para o dono:
 - `blockLists` é só do servidor, nem a equipe lê.
 - O emulador não exige índice: a falta só aparece em produção, como código 9. Índices antes da `api`.
 - Callback passado ao `useMutation` roda com a tela desmontada: a sheet de opções confere se está montada antes de navegar.
+
+## 22. Bloco 7: missões, níveis, conquistas e extrato
+
+O servidor passa a decidir as missões, o progresso de cada fã, as conquistas e a subida de nível, e o app ganha a tela do extrato de pontos. Esta seção é o contrato do bloco 7: rotas, coleções e campos, transações, idempotência, conquistas, nível e meta da temporada, callables do painel, regras, efeitos no painel, exclusão de conta, mudanças no app, seed e testes. Ela segue os padrões dos blocos 1, 4, 5 e 6 (seções 1 a 21) e só diz o que muda ou acrescenta.
+
+Origem: o levantamento de 05/10/2026 (bloco 7), a cláusula 2.4 do contrato (régua de pontos e missões configuráveis no painel), a UP-21 e a UP-22 (missões e conquistas), a UP-28 (home com dados reais), a UP-34 (seção Missões e régua do painel; as telas são do bloco 11) e o pedido do dono de 05/10/2026. Missões, valores e conquistas são provisórios até a cliente responder (UP-9). A missão relâmpago fica de fora (pergunta da UP-48). A build sem emulador continua nas fixtures, e o `EXPO_PUBLIC_API_URL` segue a regra da seção 13.
+
+Estado: desenho de 05/10/2026, ainda sem código.
+
+Como era antes do bloco: as missões (1g, a missão do dia da 1b, a aba Missões da 1d) e as conquistas da 1e moravam nas fixtures (`src/domains/missions/fixtures.ts` e `buildMyAchievementsFixture`), e `GET /missions`, `GET /missions/daily` e `GET /me/achievements` não tinham quem respondesse. Com o emulador, curtir, comentar, "Eu vou", entrar numa central e os convites rendiam pontos no servidor, mas não andavam missão nenhuma (21.13). A régua só existia como padrão do código: as callables `updatePointsConfig` e `updateSeason` da seção 9 não foram feitas. O `GET /me/ledger` existia, sem tela.
+
+### 22.1 Decisões
+
+Cada item traz a recomendação e o motivo. As perguntas para a cliente e para o dono estão em 22.15, e o código já nasce com o padrão daqui, fácil de trocar.
+
+1. **Catálogo de missões num documento versionado, `config/missions`, lido pelo cache de 60 s.** O mesmo `createConfigSource` da seção 9 passa a ler `config/points`, `config/season`, `config/missions` e `config/achievements` num `getAll` só. A cada carga, o código monta em memória o índice por tipo de ação (`missionIndex`, puro). A ação consulta o índice e não lê o catálogo: zero leitura a mais por ação, e uma leitura do catálogo por instância a cada 60 s. Motivo: é o padrão da régua (versionado, `expectedVersion`, cópia em `versions/{n}`, auditoria), e o catálogo é pequeno (até 200 missões, 30 ativas). Coleção `missions/{id}` com consulta por ação foi descartada: custaria leituras em toda curtida e pediria índice. Limite aceito: missão criada, editada ou arquivada no painel vale em até 60 s, como os valores (seção 9).
+2. **Missão com id estável, que nunca volta a ser usado.** O id (`^[a-z0-9-]{3,40}$`) é a chave do evento de pontos (`mission:<id>:<período>`, 22.5). O servidor gera o id na criação (o título sem acento, em minúsculas, com hífens, até 30 caracteres, mais um hífen e 4 caracteres sorteados), e a equipe nunca o escolhe nem o muda. Não há apagar: a missão vai para `archived`, sai do app e continua no catálogo, para o extrato e o painel acharem o título dela. Motivo: id reaproveitado no mesmo período não pagaria a missão nova.
+3. **Dois períodos, o dia e a semana de São Paulo.** Diária: chave `YYYY-MM-DD` (o `dayKey`), fim no começo do dia seguinte (`nextDayStart`). Semanal: a semana ISO, de segunda a domingo (o `weekKey`, `2026-W41`), fim no começo da segunda-feira seguinte (`nextWeekStart`, novo e puro). É a semana do app (`endOfWeek` com `weekStartsOn: 1` nas fixtures) e a dos fãs ativos (seção 7). Cada missão tem também uma janela de exibição (`startsAt` e `endsAt`, este opcional). A missão aparece e conta enquanto `startsAt <= agora < fim`, com o fim no menor entre o `endsAt` e o fim do período. Esse fim é o `endsAt` que o app recebe ("termina em 4 h" às 19:30 de uma diária).
+4. **O que cada tipo de ação conta.** Uma unidade por vez (um "tick"), sempre a partir de um fato que o servidor já grava, para a mesma ação nunca contar duas vezes:
+
+   | Tipo (`action`) | Conta uma unidade quando                                                                                        | Para quem     | Alvos aceitos           |
+   | --------------- | --------------------------------------------------------------------------------------------------------------- | ------------- | ----------------------- |
+   | `like`          | a primeira curtida de um post na vida (o `postLikes` nasce, bloco 6)                                            | quem curte    | nenhum, central ou post |
+   | `comment`       | um comentário num post ainda não contado nesta missão no período                                                | quem comenta  | nenhum, central ou post |
+   | `rsvp`          | a primeira presença num show na vida (o `eventRsvps` nasce)                                                     | quem confirma | nenhum, central ou show |
+   | `join`          | um vínculo novo com uma central ainda não contada nesta missão no período (1l ou 1d)                            | quem entra    | nenhum ou central       |
+   | `share`         | uma pessoa nova contada pelo link do fã (o marcador `inviteVisitors` nasce, na visita ou no cadastro pelo link) | quem convidou | nenhum, post ou central |
+   | `invite`        | um cadastro pelo convite do fã (o `referrals` nasce com quem convidou), por link ou pelo código digitado        | quem convidou | nenhum                  |
+
+   "Comente em 3 posts" conta posts diferentes: três comentários no mesmo post contam um. As fixtures contavam cada comentário; a regra do servidor segue o título (pergunta 4 de 22.15). `share` é a "visita ou cadastro pelo link de um post ou central": a pessoa que abre o link no app e depois se cadastra conta uma vez, como no painel (20.3). `invite` é o "convidar" ("Traga 3 amigos novos pro app", "1 de 3 cadastrados").
+
+5. **Alvo é filtro.** Missão com post conta só aquele post; com show, só aquele show; com central, só ações naquela central (o post, o show ou o link dela). Sem alvo, qualquer uma. O alvo de post guarda também a central dele, gravada pelo servidor: é a central da recompensa e a aba Missões da 1d (`missionsOfArtist`). Na presença com show alvo, conta só aquele show; as fixtures de hoje contam qualquer show, e passam a contar só o alvo (`countsFor` confere o `eventId`), para os dois modos baterem. O título provisório "Confirme presença em um show" fica, com o show na linha de baixo ("São João de Irará · 21 nov"); a troca de texto é pergunta para a cliente (pergunta 5 de 22.15).
+6. **Progresso na carteira, na mesma transação da ação.** O progresso do período atual mora em `wallets/{uid}.missions` (22.3). A carteira de quem chama já chega lida no `FanContext` (`runIdempotent`), e a de quem convidou já é lida pelo `planAwards`: contar não lê nada a mais. A carteira já é gravada em toda curtida, comentário, presença e entrada novos (os tetos do dia, 21.7 e 19.5), então o progresso vai na mesma gravação. Na carteira de quem convidou, a gravação a mais só acontece quando o progresso muda, e o progresso para na meta: no máximo a meta de cada missão por período, mesmo com um link que viraliza. Motivo: nenhum documento novo disputado, nenhuma leitura nova e o progresso atômico com os pontos. Documento à parte (`wallets/{uid}/missionProgress/{período}`) foi descartado: uma leitura e uma gravação a mais em cada ação contada, pelo mesmo resultado. Só o período atual fica guardado: o histórico é o extrato (`mission:<id>:<período>`).
+7. **Conclusão paga pelo núcleo de pontos, no mesmo plano da ação.** Quando a unidade fecha a meta, o `computeAwards` acrescenta o lançamento `{ kind: 'earn', source: 'mission', eventId: '<missionId>:<chave do período>', points: <recompensa>, artistId: <central do alvo ou null>, subject: { type: 'mission', id: <missionId> } }` aos lançamentos daquele fã, depois os da ação. É a decisão do bloco 1 (seção 5, exemplo da curtida que conclui missão): o `pointsAwarded` da resposta já inclui a recompensa, e o mesmo evento nunca paga duas vezes. Missão sem limite diário (`dailyLimits.mission: null`, como hoje).
+8. **Missão do dia é a primeira diária destacada.** A equipe marca `featured` numa diária. Vale como destaque só a primeira destacada aberta de cada período, na ordem do catálogo; as outras saem com `featured: false`. `GET /missions/daily` devolve essa, aberta ou concluída no dia, ou `null`. Motivo: a 1b mostra uma missão só, e o card lima da 1g mostra uma por seção.
+9. **Meta da temporada em `config/missions.seasonGoal`, presa ao id da temporada.** A meta (título, texto, métrica e alvo) é editada pela seção Missões, e só aparece com a temporada ativa de mesmo id. Duas métricas: `missions` (missões concluídas na temporada, a proposta, que é a do protótipo: "Complete 20 missões", "12/20") e `points` (os pontos da temporada). O contador de missões é `seasonMissions`, na carteira, ao lado de `seasonPoints` e com a mesma troca preguiçosa pelo `seasonId` (seção 8). Motivo da proposta: o anel da 1g tem 48 de furo, feito para "12/20", e o texto do protótipo fala em missões. A métrica `points` existe porque custa uma linha no servidor; com ela, o app mostra os números curtos ("4,1 mil/5 mil").
+10. **Conquistas pelo servidor, na transação, guardadas na carteira.** Catálogo em `config/achievements`, com padrão no código (a lista provisória de 22.6), como a régua. Regras provisórias: nível alcançado (`level`), a primeira vez de uma ação (`first`: primeira presença é "Fã de show", primeira pessoa trazida por link é "Boca a boca") e posição no ranking (`rank`, só no bloco 8). O desbloqueio acontece na transação em que a regra fica verdadeira e grava a data em `wallets/{uid}.achievements`. Conquista não dá pontos e nunca é revogada. Motivo de ficar na carteira: zero leitura a mais, e a regra de nível precisa do XP depois do lançamento, que só existe ali.
+11. **Subida de nível detectada na transação e devolvida na resposta.** A régua continua em `config/points.levels`. O nível segue sem ser guardado (sai do XP). A rota compara o nível do XP lido com o do XP novo, pela régua do pedido, e devolve `levelUp` quando subiu. O app já tem o toque `levelUp` e a festa do selo da 1e; o anúncio passa a sair na hora da ação (22.12).
+12. **Tudo na transação, sem gatilho.** Contra a sugestão do levantamento (progresso e conquistas por gatilho no lançamento). Motivo: o app espera o `pointsAwarded` com a missão e o aviso da conquista na resposta da própria ação; na transação o resultado é determinístico, testável com relógio fixo e igual no emulador; um gatilho custaria uma execução por lançamento e chegaria depois.
+13. **Os tetos do dia ficam editáveis, em `config/points.actionCaps`.** Os tetos de ações dos blocos 4, 5 e 6 (19.5, 20.4, 21.7) saem das constantes para a configuração, com as constantes como padrão do código. O pedido de "editar a régua (valores, tetos, níveis)" pede isso, e o bloco 6 já tinha deixado o lugar indicado. `BLOCK_LIST_MAX` (tamanho da lista de bloqueios) continua constante: não é teto do dia.
+14. **Callables do painel com a seção certa.** Régua (`updatePointsConfig`), missões, meta da temporada e conquistas: seção `missions` ("Missões" nos `SECTION_IDS` do painel, `imagineup-admin/src/lib/staff.ts`). Temporada (`updateSeason`): seção `ranking` ("Ranking e temporadas"), como a seção 9 previa. O `updateSeason` sai do bloco 8 para cá, com o `season-id-locked` e o `season-id-used` da seção 8. O `adjustFanPoints` continua no bloco 11.
+15. **Extrato provisório no Perfil.** Tela nova, sem desenho, no visual das outras (aprovação de 28/09/2026 para telas sem desenho), aberta pelo card de pontos da 1e. Lê o `GET /me/ledger` do bloco 1, que ganha o nome da central e o título da missão de cada linha. Fica marcada como provisória nas Pendências, para a cliente validar.
+16. **Exclusão de conta: nada de passo novo.** Progresso e conquistas moram na carteira, que o `deleteUserData` já apaga inteira (`recursiveDelete(wallets/{uid})`). O progresso de quem convidou não guarda nada da pessoa convidada (22.11).
+17. **Seed pelas próprias ações.** O progresso da Camila sai de claims e visitas de verdade, na ordem certa, e a meta da temporada sai de lançamentos de missão no extrato dela (22.13).
+
+### 22.2 Rotas
+
+| Método e caminho                       | Grava | Função do app                             | Resposta                                   |
+| -------------------------------------- | ----- | ----------------------------------------- | ------------------------------------------ |
+| `GET /missions`                        | não   | `missions/api.ts` `fetchMissions`         | `MissionsResponse`                         |
+| `GET /missions/daily`                  | não   | `missions/api.ts` `fetchDailyMission`     | `DailyMissionResponse`                     |
+| `GET /me/achievements`                 | não   | `profile/api.ts` `fetchMyAchievements`    | `MyAchievements`                           |
+| `GET /me/ledger` (bloco 1)             | não   | `profile/api.ts` `fetchLedgerPage` (novo) | `Page<LedgerEntry>`, com dois campos novos |
+| `PUT /posts/:postId/like` (bloco 6)    | sim   | `posts/api.ts` `setPostLike`              | `PointsAward` com as recompensas           |
+| `POST /posts/:postId/comments`         | sim   | `posts/api.ts` `addComment`               | `AddCommentResult` com as recompensas      |
+| `PUT /events/:eventId/rsvp`            | sim   | `agenda/api.ts` `setEventRsvp`            | `RsvpResult` com as recompensas            |
+| `PUT /me/centrals/:artistId` (bloco 4) | sim   | `artists/api.ts` `joinCentral`            | `JoinCentralResult` com as recompensas     |
+| `POST /me/artists`                     | sim   | `artists/api.ts` `followArtists`          | `FollowArtistsResult` com as recompensas   |
+| `POST /invites/claim` e `/visit`       | sim   | `auth/api.ts`                             | como hoje (o progresso é de quem convidou) |
+
+Arquivos novos:
+
+- `functions/src/day.ts`: `TIME_ZONE`, `dayKey`, `shiftDay`, `nextDayStart`, `weekKey` e `monthKey` saem de `points/model.ts` para cá, e o `points/model.ts` os reexporta (nenhum import de hoje muda). Mais `nextWeekStart(now)`, puro. Motivo: o `points/model.ts` passa a chamar os modelos de missões e conquistas, que precisam dos dias; sem o arquivo à parte, os dois se importariam.
+- `functions/src/missions/`: `model.ts` (puro, com teste em tabela: tipos do catálogo, `parseMissionsConfig`, `validateMissionInput`, `missionIndex`, `periodOf`, `candidateMissions`, `applyMissionTicks`, `missionsView`, constantes e o `MissionsError`), `service.ts` (leituras das rotas), `panel.ts` (callables das missões e da meta), `errors.ts` (`HttpsError` com `details.reason`), `seed.ts` e `index.ts`.
+- `functions/src/achievements/`: `model.ts` (puro: catálogo, `DEFAULT_ACHIEVEMENTS_CONFIG`, `parseAchievementsConfig`, `validateAchievementInput`, `unlockAchievements`, `achievementsView`), `service.ts`, `panel.ts`, `errors.ts` e `index.ts`.
+- `functions/src/points/panel.ts`: `updatePointsConfig` e `updateSeason`.
+- `functions/src/api/routes/missions.ts` (`missionRoutes`: `/missions`, `/missions/daily` e `/me/achievements`), somadas ao `API_ROUTES` depois das do bloco 6.
+
+Os tipos novos entram em `api/contract.ts`, espelho de `src/domains/missions/types.ts` e `src/domains/profile/types.ts`. Nenhum código de erro novo na API: as rotas novas só leem.
+
+#### `GET /missions`
+
+1. Em paralelo: `wallets/{uid}` (uma leitura) e a configuração do cache (valores, temporada, catálogo).
+2. As missões visíveis: `status: 'active'` e `startsAt <= agora < fim` (decisão 3), na ordem do catálogo.
+3. Um `getAll` com os alvos citados: `posts/{postId}`, `events/{eventId}` e `artists/{artistId}` (a central do post vem no mesmo `getAll`, porque o alvo de post guarda a central). Missão aberta com alvo invisível sai da resposta: post fora do ar ou de central fora do ar (a regra do `readVisiblePost`), show fora do ar ou encerrado (`isEventOpen`), central fora do ar. Missão concluída no período fica, mesmo com o alvo fora: o fã vê o "Concluída às 14:02".
+4. O progresso de cada uma vem de `wallet.missions.daily` ou `.weekly`, só quando a chave guardada é a do período de agora; senão, 0.
+5. `season`: a meta de `config/missions.seasonGoal` quando o `seasonId` dela é o da temporada ativa (cache); senão, `null`.
+
+Custo: uma leitura da carteira e uma por alvo distinto (em geral 3 a 6). Não exige perfil: carteira que não existe responde tudo em 0.
+
+```json
+{
+  "season": {
+    "id": "temporada-sao-joao",
+    "title": "Semana do arrocha",
+    "description": "Complete 20 missões e garanta um lote de ingressos do São João.",
+    "completedCount": 12,
+    "targetCount": 20,
+    "endsAt": "2026-10-17T22:30:00.000Z"
+  },
+  "missions": [
+    {
+      "id": "m-clipe-netto",
+      "title": "Leve 5 pessoas para o clipe novo do Netto",
+      "rewardPoints": 20,
+      "progress": { "current": 3, "target": 5 },
+      "endsAt": "2026-10-06T03:00:00.000Z",
+      "status": "active",
+      "action": "share",
+      "target": { "postId": "p-clipe", "artistId": "nettobrito" },
+      "period": "daily",
+      "featured": true,
+      "pointsBreakdown": { "perVisit": 2, "perSignup": 10 },
+      "completedAt": null,
+      "unlockHint": null,
+      "event": null
+    }
+  ]
+}
+```
+
+O `Mission`, igual nas duas rotas:
+
+- `rewardPoints`: a recompensa do catálogo; na concluída, a que foi paga (`rewardPaid` do progresso), para uma troca de valor depois não mudar o que o fã viu.
+- `progress`: `{ current: min(current, meta), target: meta }`.
+- `endsAt`: o fim da decisão 3, em ISO.
+- `status`: `completed` com `completedAt` no período; senão `active`. O servidor nunca manda `expired` nem `locked` (a relâmpago fica de fora).
+- `action`: o tipo da decisão 4. `join` é novo no app (22.12).
+- `target`: só as chaves que existem (`{ postId, artistId }`, `{ artistId }`, `{ eventId }`), ou `null`.
+- `featured`: decisão 8.
+- `pointsBreakdown`: só no `share`, com `values.invite_visit` e `values.invite_signup` da configuração.
+- `completedAt`: ISO, na concluída.
+- `unlockHint`: sempre `null`.
+- `event`: só no `rsvp` com show alvo: `{ name: title, startsAt }` do show.
+
+#### `GET /missions/daily`
+
+A mesma montagem, só com as diárias. Responde `{ "mission": <Mission> }` com a primeira destacada visível (aberta ou concluída hoje), ou `{ "mission": null }`. Lê a carteira e o alvo dela.
+
+#### `GET /me/achievements`
+
+Lê a carteira e o catálogo do cache.
+
+```json
+{
+  "unlockedCount": 5,
+  "totalCount": 9,
+  "highlights": [
+    {
+      "id": "boca-a-boca",
+      "title": "Boca a boca",
+      "icon": "share",
+      "tone": "action",
+      "unlockedAt": "2026-10-05T22:30:00.000Z"
+    },
+    {
+      "id": "purainha",
+      "title": "Purainha",
+      "icon": "star",
+      "tone": "points",
+      "unlockedAt": "2026-09-27T15:00:00.000Z"
+    },
+    {
+      "id": "sanfona",
+      "title": "Sanfona",
+      "icon": "star",
+      "tone": "points",
+      "unlockedAt": "2026-09-27T15:00:00.000Z"
+    },
+    {
+      "id": "fa-de-show",
+      "title": "Fã de show",
+      "icon": "ticket",
+      "tone": "events",
+      "unlockedAt": null
+    }
+  ]
+}
+```
+
+- `totalCount`: as conquistas `active` do catálogo. `unlockedCount`: quantas delas o fã tem em `wallet.achievements`. Arquivada sai das duas contas, e o "X de N" nunca passa de N.
+- `highlights` (`achievementsView`, puro): até 3 desbloqueadas, da mais nova para a mais velha (empate pelo catálogo de trás para frente: no mesmo instante, a de nível maior vem antes), e depois as bloqueadas na ordem do catálogo, até 4 peças (`ACHIEVEMENT_HIGHLIGHTS`, as `ACHIEVEMENT_SLOTS` da 1e). Fã novo vê as 4 primeiras bloqueadas.
+
+#### `GET /me/ledger`
+
+Como na seção 6, com dois campos novos em cada linha, opcionais no app:
+
+```json
+{
+  "items": [
+    {
+      "id": "mission:m-curtir-nenho:2026-10-05",
+      "kind": "earn",
+      "source": "mission",
+      "points": 10,
+      "xpDelta": 10,
+      "seasonDelta": 10,
+      "artistId": "nenho",
+      "centralSeasonDelta": 10,
+      "centralTotalDelta": 10,
+      "subject": { "type": "mission", "id": "m-curtir-nenho" },
+      "createdAt": "2026-10-05T22:31:04.000Z",
+      "artistName": "Nenho",
+      "subjectTitle": "Curta 5 posts do Nenho"
+    }
+  ],
+  "nextCursor": null
+}
+```
+
+- `artistName`: o `name` de `artists/{artistId}`, num `getAll` das centrais distintas da página, em qualquer status; `null` sem central ou com a central apagada.
+- `subjectTitle`: o título da missão (do catálogo do cache, arquivadas inclusive) quando `subject.type` é `mission`; `null` no resto. O título do show e da recompensa ficam de fora: o "Eu vou" já leva a central, e o resgate é do bloco 10.
+- O `id` continua o do documento. O app o usa só como chave da lista, nunca mostra (o de convite leva a chave da pessoa, 20.6).
+- Custo: a página, mais uma leitura por central distinta nela (em geral 2 ou 3).
+
+#### Respostas das ações
+
+As rotas que lançam pontos para quem chama passam a mandar, além do que mandam hoje, as recompensas do plano (`rewardsOf(plan)`, em `points/award.ts`):
+
+```json
+{
+  "pointsAwarded": 10,
+  "completedMissions": [
+    {
+      "id": "m-curtir-nenho",
+      "title": "Curta 5 posts do Nenho",
+      "rewardPoints": 10,
+      "completedAt": "2026-10-05T22:31:04.000Z"
+    }
+  ],
+  "levelUp": null,
+  "unlockedAchievements": []
+}
+```
+
+- Valem para `PUT /posts/:postId/like`, `POST /posts/:postId/comments`, `PUT /events/:eventId/rsvp`, `PUT /me/centrals/:artistId` e `POST /me/artists`. Os três campos vão sempre (listas vazias e `null`), também quando a ação não rendeu nada. No app, o comentário que entra no cache da lista sai sem eles: o `commitComment` já tira o `pointsAwarded` e passa a tirar os três. Desfazer (`DELETE`), sair, denunciar, bloquear e as rotas do convite não mudam.
+- `completedMissions`: as missões de quem chama concluídas agora e pagas (lançamento aplicado), na ordem do plano.
+- `levelUp`: `{ number, name, minXp }` do nível novo quando subiu, senão `null`. Duas subidas de uma vez mandam o nível final.
+- `unlockedAchievements`: `{ id, title }` das conquistas desbloqueadas agora para quem chama.
+- O `pointsAwarded` é o de sempre: a soma dos ganhos aplicados de quem chama, com as missões. A resposta repetida pela idempotência traz o mesmo corpo (`storedBody`).
+
+### 22.3 Coleções e campos
+
+Nenhuma coleção nova. Dois documentos novos em `config/`, campos novos na carteira e nos shards do painel.
+
+```
+config/missions {
+  version: number                    // 1, 2, 3...; sem documento, a versão 0: catálogo vazio e sem meta
+  missions: [{                       // na ordem do painel (a ordem da 1g e da 1d)
+    id: string                       // ^[a-z0-9-]{3,40}$, do servidor (22.1, decisão 2)
+    title: string                    // 1 a 80, uma linha visível
+    action: 'like' | 'comment' | 'rsvp' | 'join' | 'share' | 'invite'
+    target: {
+      postId: string | null
+      artistId: string | null        // a central (no alvo de post, a dele, gravada pelo servidor)
+      eventId: string | null
+    } | null
+    goal: number                     // a meta, inteiro de 1 a 50 (MISSION_GOAL_MAX)
+    period: 'daily' | 'weekly'
+    rewardPoints: number             // inteiro de 1 a 10.000 (VALUE_MAX)
+    featured: boolean
+    startsAt: Timestamp
+    endsAt: Timestamp | null
+    status: 'draft' | 'active' | 'archived'
+    activatedAt: Timestamp | null    // a primeira vez que ficou active (a trava de 22.8)
+    createdAt: Timestamp
+    updatedAt: Timestamp
+  }]
+  seasonGoal: {
+    seasonId: string                 // o id de config/season.season
+    title: string                    // 1 a 40, uma linha visível ("Semana do arrocha")
+    description: string              // 1 a 140, uma linha visível
+    metric: 'missions' | 'points'
+    target: number                   // 1 a 1.000 em missions; 1 a 1.000.000 em points
+  } | null
+  updatedAt: Timestamp
+  updatedBy: { uid: string, name: string } | null
+}
+config/missions/versions/{version}   // cópia imutável de cada versão
+
+config/achievements {
+  version: number                    // sem documento, a versão 0: DEFAULT_ACHIEVEMENTS_CONFIG (22.6)
+  achievements: [{
+    id: string                       // ^[a-z0-9-]{3,40}$, do servidor, como a missão
+    title: string                    // 1 a 40, uma linha visível
+    icon: string                     // ^[a-z0-9-]{1,30}$; o app conhece share, trophy, ticket, star,
+                                     // users, heart, comment, calendar e flame, e cai no genérico no resto
+    tone: 'action' | 'points' | 'events'
+    rule: { type: 'level', level: number }            // 2 a 50, um degrau da régua
+        | { type: 'first', action: 'like' | 'comment' | 'rsvp' | 'join' | 'share' | 'invite' | 'mission' }
+        | { type: 'rank', top: number }               // bloco 8; até lá não pode ficar active
+    status: 'draft' | 'active' | 'archived'
+    activatedAt: Timestamp | null
+    createdAt: Timestamp
+    updatedAt: Timestamp
+  }]
+  updatedAt: Timestamp
+  updatedBy: { uid: string, name: string } | null
+}
+config/achievements/versions/{version}
+
+config/points {
+  ...                                // seção 4
+  actionCaps: {                      // tetos do dia por fã (decisão 13); padrão: as constantes de hoje
+    central_entry: 30, invite_visit_sent: 20, invite_link: 30, like_set: 300,
+    comment_sent: 100, rsvp_set: 50, comment_report: 30, fan_block: 30
+  }
+}
+
+wallets/{uid} {
+  ...                                // seção 4
+  seasonMissions: number             // missões concluídas na temporada seasonId; zera na troca de temporada
+  missions: {
+    daily: { key: string, items: { <missionId>: MissionItem } } | null    // key "2026-10-05"
+    weekly: { key: string, items: { <missionId>: MissionItem } } | null   // key "2026-W41"
+  }
+  achievements: { <achievementId>: Timestamp }   // quando desbloqueou; nunca sai
+}
+
+MissionItem {
+  current: number                    // unidades contadas no período
+  keys: string[]                     // só em comment (postIds) e join (@ das centrais): o que já contou
+  completedAt: Timestamp | null
+  rewardPaid: number                 // o que a conclusão pagou (0 enquanto aberta)
+}
+```
+
+- `config/missions` e `config/achievements` só mudam pelas callables (22.8), na transação que grava a versão nova, a cópia em `versions/{n}` e a auditoria. Ninguém grava pelo cliente.
+- Limites do catálogo de missões: até 200 missões no documento (`MISSIONS_MAX`, arquivadas inclusive) e até 30 não arquivadas (`ACTIVE_MISSIONS_MAX`). Conquistas: até 100 (`ACHIEVEMENTS_MAX`). Com isso, o documento fica abaixo de uns 150 KiB, e o progresso na carteira fica pequeno: só `comment` e `join` guardam chaves, até a meta (50), e as outras ações já chegam únicas pelo domínio (a curtida e a presença que nascem, o marcador da visita, o `referrals`).
+- Leitura tolerante, como a de `config/points` (seção 9): `parseMissionsConfig` descarta, com `logger.error`, a missão fora do formato (as outras ficam) e a meta inválida (vira `null`); documento fora do formato vale o catálogo vazio. `parseAchievementsConfig` faz o mesmo, e o documento fora do formato vale o padrão do código. O `actionCaps` entra no `parsePointsConfig`: chave desconhecida ignorada, valor inválido volta ao padrão só nele.
+- Carteira: `walletFromDoc` lê os três campos com padrão (`0`, `{ daily: null, weekly: null }`, `{}`), e `walletFields` os grava junto com o resto, no `create` e no `update`. O `missions` e o `achievements` vão inteiros a cada gravação, como o `days`.
+- `ShardDelta` (`points/stats.ts`) ganha `byMission: { <missionId>: { completed } }` e `byAchievement: { <achievementId>: { unlocked } }` (22.9).
+- Contrato, no app e no `contract.ts`: `MissionsResponse`, `Mission`, `SeasonGoal`, `DailyMissionResponse` e `MyAchievements` como estão, com `MissionAction` ganhando `join`. Novos: `ActionRewards { completedMissions: CompletedMission[]; levelUp: Level | null; unlockedAchievements: UnlockedAchievement[] }`, `CompletedMission { id, title, rewardPoints, completedAt }` e `UnlockedAchievement { id, title }`, somados a `PointsAward`, `AddCommentResult`, `RsvpResult`, `JoinCentralResult` e `FollowArtistsResult` (opcionais no app). `LedgerEntry` ganha `artistName: string | null` e `subjectTitle: string | null`. O comentário do topo de `missions/types.ts` deixa de chamar o contrato de provisório.
+
+### 22.4 Transações passo a passo
+
+A ordem é a de sempre (seção 5): chave e fã (`runIdempotent`), leituras do domínio, `planAwards`, gravações do domínio. O que muda é o núcleo: o `planAwards` passa a receber as unidades contadas de cada fã e a configuração do jogo.
+
+**Entradas novas do núcleo** (`points/award.ts` e `points/model.ts`):
+
+```ts
+type MissionAction = 'like' | 'comment' | 'rsvp' | 'join' | 'share' | 'invite';
+
+type MissionTick = {
+  action: MissionAction;
+  key: string; // o post, o show, a central ou a chave da pessoa
+  on: { postId?: string; eventId?: string; artistIds: string[] };
+  /** Lançamento do mesmo fã que não pode ter saído duplicate nem skipped (o cadastro). */
+  after?: string;
+};
+
+type GameConfig = { missions: MissionIndex; achievements: AchievementCatalog };
+
+type FanAwards = { uid: string; entries: AwardEntry[]; fan?: FanContext; ticks?: MissionTick[] };
+type AwardContext = { now; config; shard; actor; game: GameConfig };
+```
+
+- O `runIdempotent` monta o `AwardContext.game` da mesma carga do cache que já dá os valores (`deps.config.get()`). Os caminhos fora da API (`runAward`, `runAsFan`, `runJoinCentrals`, `runClaim` e o `runVisit` novo, usados pelo seed e pelo ajuste) ganham `game` nas opções, com o padrão `NO_GAME` (catálogos vazios): quem não passa nada continua como hoje.
+- O `AwardPlan` ganha `rewards: ActionRewards` (de quem chama).
+
+**Leituras** (`planAwards`, no mesmo `getAll` de hoje):
+
+1. As missões candidatas de cada fã com ticks: `candidateMissions(game.missions, ticks, now)`, puro, devolve as `active`, na janela, do tipo do tick e com o alvo que casa (decisão 5).
+2. Para quem chama, o progresso já está no `FanContext.wallet`: o núcleo calcula antes quais candidatas vão concluir e lê só `ledger/mission:<id>:<período>` delas e o `centralPoints` da central delas. Para outro fã (quem convidou), cuja carteira só chega no `getAll`, entram todas as candidatas (em geral uma ou duas).
+
+**Cálculo** (`computeAwards`, puro, depois dos lançamentos da rota, para cada fã com perfil; fã sem perfil, como quem convidou e excluiu a conta, tem os ticks ignorados, como os lançamentos `skipped`):
+
+3. `rollMissions(state.missions, now)`: o período com chave antiga vira vazio, sem gravar por isso (como a troca de temporada, passo 6 da seção 5).
+4. `applyMissionTicks` (de `missions/model.ts`), tick por tick, na ordem. Tick com `after` cujo lançamento saiu `duplicate` ou `skipped` é ignorado. Para cada candidata do tick: concluída no período, não anda; em `comment` e `join`, chave que já está em `keys`, não anda; senão `current += 1` (e a chave entra em `keys` nesses dois tipos). Chegou na meta: `completedAt = now` e o lançamento da missão (22.1, decisão 7) entra no fim da lista do fã.
+5. Os lançamentos de missão passam pelo mesmo passo 7 da seção 5: extrato que já existe é `duplicate`. Aplicado: `rewardPaid` recebe os pontos; com temporada ativa, `seasonMissions += 1`; o shard soma `byMission[id].completed`.
+6. Conquistas (`unlockAchievements`, de `achievements/model.ts`), com os gatilhos do pedido: o nível do XP depois do plano (`levelForXp` com a régua do pedido), `first:<tipo>` de cada tick que valeu (mesmo sem missão nenhuma daquele tipo) e `first:mission` quando algum lançamento `mission` foi aplicado. Cada conquista `active` cuja regra ficou verdadeira e que não está em `achievements` entra com a data `now`, e o shard soma `byAchievement[id].unlocked`. A regra de nível vale para o nível de agora, e não só para a subida: depois de a equipe baixar o `minXp` de um degrau, o fã ganha a conquista na próxima ação que grava.
+7. A carteira é gravada também quando só o progresso mudou ou só uma conquista nasceu (o critério do passo 9 da seção 5 ganha esses dois casos).
+8. Quem chama: `rewards.completedMissions` (as aplicadas dele, com o título do catálogo), `rewards.levelUp` (nível do XP novo maior que o do XP lido, pela régua do pedido) e `rewards.unlockedAchievements`.
+
+**Onde nasce cada tick** (sempre no `planAwards` que vem antes das gravações do domínio; o que é chamado depois delas, com a lista vazia, não leva ticks):
+
+- **Curtir** (`likePost`): só quando a curtida nasce (sem documento), `{ action: 'like', key: postId, on: { postId, artistIds: [artistId] } }`. Curtir de novo depois de descurtir (`liked: false` para `true`) não conta, como nas fixtures.
+- **Comentar** (`commentOnPost`): a cada comentário que nasce, `{ action: 'comment', key: postId, on: { postId, artistIds: [artistId] } }`. O comentário do seed que já existe sai sem plano e sem tick (21.4).
+- **"Eu vou"** (`rsvpEvent`): só quando a presença nasce, `{ action: 'rsvp', key: eventId, on: { eventId, artistIds: <as centrais no ar do show> } }`. Confirmar de novo depois de desfazer não conta.
+- **Entrar** (`joinCentrals`, da 1d, da 1l e do seed): um tick por vínculo novo, `{ action: 'join', key: artistId, on: { artistIds: [artistId] } }`. Sair e entrar de novo no mesmo período não conta de novo (`keys`); noutro período, conta (limite aceito: o teto de 30 entradas por dia segura, e a missão paga uma vez por período).
+- **Claim** (`claimInvite`), para quem convidou, e só no caminho que monta o plano (não na mesma pessoa noutra conta): `{ action: 'invite', key: personKey, on: { artistIds: [] }, after: 'invite_signup:<personKey>' }`, para a conta excluída e recriada com o mesmo e-mail não contar de novo; e, com o marcador ainda não existente e `via: 'link'`, `{ action: 'share', key: personKey, on: linkOn(origem) }`. O `linkOn` dá `{ postId, artistIds: [] }` no link de post, `{ artistIds: [@] }` no de central e `{ artistIds: [] }` nos outros (`invite`, `agenda`, `other`). O código digitado não é link: só `invite`.
+- **Visita** (`recordInviteVisit`), para quem convidou, depois das saídas de hoje (dono do código, teto de quem visita): com o marcador ainda não existente, `{ action: 'share', key: personKey, on: linkOn(origem) }`.
+
+O marcador nasce só quando quem convidou tem perfil, e o tick só vale quando quem convidou tem perfil: os dois acontecem juntos. A chave da pessoa não é guardada no progresso (`keys` fica vazio em `share` e `invite`), porque a unicidade já vem do marcador e do `referrals`.
+
+**Custo.** Curtida que conclui missão na mesma central: 10 leituras (as 9 de 21.4, mais o extrato da missão) e as gravações de 21.4 mais o lançamento da missão (a central e a carteira já seriam gravadas). Curtida que só anda missão: as de hoje, sem leitura a mais (a carteira já era gravada pelo teto). Claim ou visita com missão de quem convidou aberta: mais as candidatas no `getAll` (uma ou duas) e a carteira de quem convidou gravada enquanto o progresso muda.
+
+**Concorrência.** Duas ações do mesmo fã disputam a carteira, e a que repete parte do progresso gravado pela outra: a unidade não conta duas vezes e a missão não paga duas vezes. Muitas pessoas pelo link do mesmo fã disputam a carteira dele só enquanto alguma missão dele anda (até a meta) ou um lançamento de convite paga (até o limite do dia): depois disso, o claim e a visita só leem a carteira dele, como hoje (20.4).
+
+### 22.5 Idempotência e o evento de pontos
+
+- Pedido: a `Idempotency-Key` de sempre. As rotas novas só leem.
+- Negócio, em três camadas: a unidade conta uma vez (o fato do domínio que nasce, ou a chave em `keys`); a missão conclui uma vez por período (`completedAt` no progresso); e paga uma vez por missão e período (`mission:<missionId>:<chave do período>` no extrato, `eventId` como `m-clipe-netto:2026-10-05` ou `m-trazer-amigos:2026-W41`, no `EVENT_ID_PATTERN`). A mesma missão volta a valer no período seguinte, com o progresso do zero.
+- Valor: `rewardPoints` da missão, explícito no lançamento (seção 5, `points` só na `mission`), sem limite diário. Mudança de recompensa vale para a próxima conclusão; a já paga fica (`rewardPaid`).
+- Conquista não tem evento de pontos: o desbloqueio é idempotente por existir ou não em `achievements`.
+- Os lançamentos `mission:seed-camila-<n>` do seed (seção 14) seguem válidos: o `eventId` sem período não colide com o formato acima.
+
+### 22.6 Conquistas: regras e lista provisória
+
+Regras (`unlockAchievements`, puro, com teste em tabela):
+
+| Regra                         | Fica verdadeira quando                                                            |
+| ----------------------------- | --------------------------------------------------------------------------------- |
+| `{ type: 'level', level: n }` | o nível do XP depois do plano, pela régua do pedido, é `n` ou mais                |
+| `{ type: 'first', action }`   | um tick daquele tipo valeu no plano (`mission`: um lançamento de missão aplicado) |
+| `{ type: 'rank', top: n }`    | bloco 8 (posição na temporada `n` ou melhor); até lá nunca                        |
+
+A regra é avaliada para quem chama em toda rota que grava (o XP está no retrato, sem leitura) e para quem convidou quando ele está no plano. O ajuste da equipe e o seed também desbloqueiam: a regra olha o XP, e não quem lançou.
+
+Lista provisória (`DEFAULT_ACHIEVEMENTS_CONFIG`, versão 0, até a cliente responder, UP-9). Ela troca os "14 de 32" do protótipo por uma lista que o servidor sabe conferir hoje:
+
+| Ordem | id                | Título          | Ícone     | Tom      | Regra              | Status   |
+| ----- | ----------------- | --------------- | --------- | -------- | ------------------ | -------- |
+| 1     | `boca-a-boca`     | Boca a boca     | `share`   | `action` | `first`, `share`   | `active` |
+| 2     | `fa-de-show`      | Fã de show      | `ticket`  | `events` | `first`, `rsvp`    | `active` |
+| 3     | `missao-cumprida` | Missão cumprida | `flame`   | `points` | `first`, `mission` | `active` |
+| 4     | `puxa-conversa`   | Puxa conversa   | `comment` | `action` | `first`, `comment` | `active` |
+| 5     | `pe-de-serra`     | Pé de serra     | `star`    | `points` | `level`, 3         | `active` |
+| 6     | `sanfona`         | Sanfona         | `star`    | `points` | `level`, 5         | `active` |
+| 7     | `purainha`        | Purainha        | `star`    | `points` | `level`, 7         | `active` |
+| 8     | `backstage`       | Backstage       | `star`    | `points` | `level`, 8         | `active` |
+| 9     | `lenda`           | Lenda           | `star`    | `points` | `level`, 10        | `active` |
+| 10    | `top-20`          | Top 20          | `trophy`  | `points` | `rank`, 20         | `draft`  |
+
+"Boca a boca", "Fã de show", "Top 20" e "Backstage" são os nomes da 1e; "Backstage" vira o nível 8, a próxima da Camila, como na fixture. As de nível repetem os nomes dos degraus 3, 5, 7 e 10 da régua provisória. O "Top 20" fica em rascunho até o bloco 8: entra na conta "de N" só quando puder ser ganho.
+
+### 22.7 Nível e meta da temporada
+
+**Nível.** O nível de quem chama antes e depois do plano sai do `levelForXp` com a régua do mesmo pedido (cache). Subiu: `levelUp` na resposta. A régua só muda pela callable, e a mudança muda o nível mostrado de todo mundo na hora (seção 9), sem `levelUp`: o app só festeja a subida que a ação causou e a que a 1e vê ao abrir (22.12). O nível de quem convidou também pode subir num claim; ele vê a festa na 1e, como hoje.
+
+**Meta da temporada** (`SeasonGoal` do app, `missionsView`):
+
+- Existe quando `config/missions.seasonGoal` existe e o `seasonId` dela é o da temporada ativa (`startsAt <= agora < endsAt`). Senão, `season: null` e o card some.
+- `id`: o da temporada; `title`, `description`: os da meta; `targetCount`: o `target`; `endsAt`: o fim da temporada.
+- `completedCount`: com `metric: 'missions'`, `wallet.seasonMissions` quando `wallet.seasonId` é o da temporada, senão 0; com `metric: 'points'`, o `visibleSeasonPoints` do `/me/wallet`.
+- `seasonMissions` sobe no `computeAwards`, a cada lançamento `mission` aplicado com temporada ativa, e zera na troca preguiçosa de temporada, junto com o `seasonPoints` (passo 6 da seção 5). Não conta para o `pastSeasons`.
+- A meta não é guardada por fã nem paga nada: o prêmio ("um lote de ingressos") é da equipe, pela loja (bloco 10) ou fora do app. Bater a meta não muda nada no servidor.
+
+### 22.8 Callables do painel (contrato para o bloco 11)
+
+No molde de 21.9: exportadas no `src/index.ts` depois do `setGlobalOptions`, com `cors: PANEL_ORIGINS`, erro `HttpsError(código, mensagem em pt-BR, { reason })` e o acesso por `readPanelActor` (lido fora e de novo na transação). Fora da equipe ativa: `not-staff`; sem a seção, ou só leitura: `no-section`. O `SECTION_LABELS` de `staff/panel-actor.ts` ganha `missions: 'Missões'` e `ranking: 'Ranking e temporadas'`.
+
+Todas gravam um documento de `config/` do mesmo jeito: na transação, lê o documento, recusa com `config-changed` (com `details.version`, a versão de agora) quando ela não é o `expectedVersion` do pedido, valida, grava a versão `+1` com `updatedAt` e `updatedBy`, a cópia em `versions/{n}` e uma entrada em `staffAudit` (`targetEmail: ''`, `targetUid: null`, o alvo e as versões em `details`). Nada mudou: `{ ok: true, version }` sem gravar nem auditar. Campo errado: `invalid-request` com `details.field` (o caminho, como `mission.goal`), pelo `ConfigValidationError` da seção 9.
+
+**Régua e temporada:**
+
+| Callable             | Seção      | Pedido                                                                             | Resposta      | Recusas (`details.reason`)                                                |
+| -------------------- | ---------- | ---------------------------------------------------------------------------------- | ------------- | ------------------------------------------------------------------------- |
+| `updatePointsConfig` | `missions` | `{ expectedVersion, values?, dailyLimits?, actionCaps?, levels? }`                 | `{ version }` | `invalid-request`, `config-changed`, `level-in-use`                       |
+| `updateSeason`       | `ranking`  | `{ expectedVersion, season: { id, name, startsAt, endsAt, leaderTitle } \| null }` | `{ version }` | `invalid-request`, `config-changed`, `season-id-locked`, `season-id-used` |
+
+- `updatePointsConfig`: o `validatePointsConfigInput` de hoje, mais o `actionCaps` (só chaves conhecidas, inteiros de 1 a 10.000). Ausente não muda. Régua com menos degraus do que uma conquista de nível não arquivada pede é recusada (`level-in-use`, com `details.achievementIds`, lendo `config/achievements` na transação): a conquista nunca mais seria ganha. Auditoria `points.config.updated`, com os campos mudados.
+- `updateSeason`: o `validateSeasonInput` de hoje (datas em ms). `season-id-locked` quando muda o `id` de uma temporada com `startsAt` no passado; `season-id-used` quando o `id` novo já apareceu numa versão antiga (`config/season/versions` com `season.id == id`, `limit(1)`, índice automático). `season: null` encerra sem outra. Auditoria `season.updated`. A meta da temporada antiga some sozinha (decisão 9).
+
+**Missões e meta** (admin, ou editor com `missions`):
+
+| Callable           | Pedido                                                                                                                                | Resposta                 | Recusas                                                                                                          |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------- | ------------------------ | ---------------------------------------------------------------------------------------------------------------- |
+| `createMission`    | `{ expectedVersion, mission: { title, action, target, goal, period, rewardPoints, featured, startsAt, endsAt } }`                     | `{ missionId, version }` | `invalid-request`, `config-changed`, `invalid-target`, `target-not-found`, `too-many-missions`                   |
+| `updateMission`    | `{ expectedVersion, missionId, changes: { title?, action?, target?, goal?, period?, rewardPoints?, featured?, startsAt?, endsAt? } }` | `{ version }`            | `mission-not-found`, `mission-locked`, `invalid-request`, `config-changed`, `invalid-target`, `target-not-found` |
+| `setMissionStatus` | `{ expectedVersion, missionId, status: 'active' \| 'archived' }`                                                                      | `{ version }`            | `mission-not-found`, `invalid-status`, `too-many-active`, `config-changed`                                       |
+| `reorderMissions`  | `{ expectedVersion, missionIds }`                                                                                                     | `{ version }`            | `invalid-request` (a lista não é a do catálogo, sem faltar nem sobrar), `config-changed`                         |
+| `updateSeasonGoal` | `{ expectedVersion, goal: { title, description, metric, target } \| null }`                                                           | `{ version }`            | `invalid-request`, `config-changed`, `no-season`                                                                 |
+
+- Nasce `draft`; `setMissionStatus` com `active` publica (grava `activatedAt` na primeira vez) e com `archived` tira do app. A arquivada pode voltar a `active` depois, com o mesmo id e o progresso que o período ainda guardar.
+- Datas em ms. `startsAt` sem limite para trás; `endsAt` `null` ou depois do `startsAt`, até 366 dias depois.
+- `target`: os alvos aceitos por tipo (decisão 4): fora deles, `invalid-target`. O alvo precisa existir, em qualquer status (`target-not-found`), lido na transação: `posts/{id}` (e o servidor grava a central do post em `artistId`), `events/{id}` ou `artists/{id}`. Um alvo que sai do ar depois só esconde a missão aberta (22.2).
+- `mission-locked`: missão que já foi publicada e cujo `startsAt` passou não muda `action`, `target`, `goal`, `period` nem `startsAt`. Motivo: o progresso guardado mudaria de sentido no meio do período. Título, recompensa, destaque e `endsAt` mudam sempre. Para outra regra, a equipe arquiva e cria outra.
+- `too-many-missions` acima de `MISSIONS_MAX`; `too-many-active` ao publicar a 31ª não arquivada.
+- `updateSeasonGoal` grava com o `seasonId` da temporada de `config/season` lido na transação; sem temporada, `no-season`. `null` tira a meta.
+- Auditoria: `mission.created`, `mission.updated` (campos mudados), `mission.published`, `mission.archived`, `mission.reordered`, `season.goal.updated`.
+
+**Conquistas** (admin, ou editor com `missions`):
+
+| Callable               | Pedido                                                                         | Resposta                     | Recusas                                                                            |
+| ---------------------- | ------------------------------------------------------------------------------ | ---------------------------- | ---------------------------------------------------------------------------------- |
+| `createAchievement`    | `{ expectedVersion, achievement: { title, icon, tone, rule } }`                | `{ achievementId, version }` | `invalid-request`, `config-changed`, `too-many-achievements`                       |
+| `updateAchievement`    | `{ expectedVersion, achievementId, changes: { title?, icon?, tone?, rule? } }` | `{ version }`                | `achievement-not-found`, `achievement-locked`, `invalid-request`, `config-changed` |
+| `setAchievementStatus` | `{ expectedVersion, achievementId, status: 'active' \| 'archived' }`           | `{ version }`                | `achievement-not-found`, `invalid-status`, `rule-not-available`, `config-changed`  |
+| `reorderAchievements`  | `{ expectedVersion, achievementIds }`                                          | `{ version }`                | `invalid-request`, `config-changed`                                                |
+
+- O primeiro `create` ou mudança parte do padrão do código quando `config/achievements` não existe: a versão 1 nasce com a lista provisória e a mudança pedida.
+- `level` precisa de um degrau que existe na régua de agora (`invalid-request` com `details.field: 'achievement.rule.level'`). `rank` não pode ficar `active` antes do bloco 8 (`rule-not-available`).
+- `achievement-locked`: a regra não muda depois da primeira publicação (`activatedAt`). Título, ícone e tom mudam sempre.
+- Auditoria: `achievement.created`, `achievement.updated`, `achievement.published`, `achievement.archived`, `achievement.reordered`.
+
+As ações novas entram no `AuditAction` de `staff/service.ts`. As callables de hoje não mudam.
+
+**Leituras diretas do painel** (bloco 11), com as regras de 22.10: `config/missions` e `config/achievements` (e as versões) com a seção `missions`, por `getDoc` (um documento só, que muda pouco: escuta em tempo real cabe aqui, se a tela quiser); a régua e a temporada como hoje (equipe ativa). O progresso e as conquistas de um fã estão na carteira dele, que a seção Fãs já lê.
+
+### 22.9 Efeitos no painel e agregados
+
+- **Agregados** (`statsShards`, seção 7): `byMission[missionId].completed` e `byAchievement[achievementId].unlocked`, somados no mesmo shard do plano (continua uma gravação de shard por transação; contador zerado não é gravado). Os pontos das missões já entram em `bySource.mission` e em `byArtist[id].bySource.mission`. São fluxo: a exclusão de conta não desconta. Isenção de índice para os dois mapas.
+- **Missões** (bloco 11): a lista do catálogo com status, janela, destaque e ordem, as callables de 22.8, a meta da temporada e as conclusões por missão e por dia (os shards). "Ativas, agendadas e encerradas" (o subtítulo da seção no painel) sai do status e da janela: `active` com `startsAt` no futuro é agendada; `archived` ou `endsAt` no passado, encerrada.
+- **Régua** (bloco 11, na mesma seção): valores, limites, tetos e níveis por `updatePointsConfig`.
+- **Ranking e temporadas** (bloco 11): a temporada por `updateSeason`.
+- **Fãs** (bloco 11): o progresso do período e as conquistas de um fã, na carteira.
+- **Visão geral**: missões concluídas por dia, pelos shards.
+- **Nenhuma mudança no código do painel** neste bloco.
+
+### 22.10 Regras e índices
+
+Acréscimo ao `firestore.rules`, depois do `match /config/{docId}` de hoje, que não muda. Duas regras que casam o mesmo documento somam: o `match` genérico continua negando esses ids, e o novo libera a seção.
+
+```
+    // Catálogo de missões, meta da temporada e catálogo de conquistas (bloco 7).
+    // Só a equipe com a seção missions lê; muda só por callable, com auditoria.
+    // O app recebe tudo pela API.
+    match /config/missions {
+      allow read: if canSeeSection('missions');
+      allow write: if false;
+
+      match /versions/{version} {
+        allow read: if canSeeSection('missions');
+        allow write: if false;
+      }
+    }
+
+    match /config/achievements {
+      allow read: if canSeeSection('missions');
+      allow write: if false;
+
+      match /versions/{version} {
+        allow read: if canSeeSection('missions');
+        allow write: if false;
+      }
+    }
+```
+
+Nenhuma coleção nova: o progresso e as conquistas estão em `wallets/{uid}`, que só a seção `fans` lê, e o fã não lê nem a própria (seção 11). O `config/points` e o `config/season` continuam legíveis pela equipe ativa.
+
+Índices: nenhum composto novo. Isenções em `firestore.indexes.json` (ninguém consulta, e mapas com chaves soltas gerariam uma entrada por chave):
+
+```json
+{ "collectionGroup": "wallets", "fieldPath": "missions", "indexes": [] },
+{ "collectionGroup": "wallets", "fieldPath": "achievements", "indexes": [] },
+{ "collectionGroup": "wallets", "fieldPath": "seasonMissions", "indexes": [] },
+{ "collectionGroup": "statsShards", "fieldPath": "byMission", "indexes": [] },
+{ "collectionGroup": "statsShards", "fieldPath": "byAchievement", "indexes": [] },
+{ "collectionGroup": "config", "fieldPath": "missions", "indexes": [] },
+{ "collectionGroup": "config", "fieldPath": "achievements", "indexes": [] },
+{ "collectionGroup": "versions", "fieldPath": "missions", "indexes": [] },
+{ "collectionGroup": "versions", "fieldPath": "achievements", "indexes": [] }
+```
+
+A consulta do `season-id-used` (`season.id` em `config/season/versions`) usa o índice automático, que a isenção do `versions.missions` não toca.
+
+### 22.11 Exclusão de conta
+
+Nenhum passo novo no `deleteUserData`. O progresso das missões, o `seasonMissions` e as conquistas moram em `wallets/{uid}`, que o passo da carteira já apaga inteira (`recursiveDelete`), junto com os lançamentos de missão do extrato. O perfil sai antes (19.12): uma ação que já tinha lido o perfil grava antes, e a carteira leva o que ela gravou; uma depois recusa no `requireFan`.
+
+O que fica de propósito: no progresso de quem convidou, a unidade que a pessoa excluída contou (só o `current`; a chave da pessoa nunca é guardada no progresso, 22.4); nos shards, as conclusões e os desbloqueios (fluxo, seção 12). O catálogo não muda.
+
+O `functions/src/store.test.ts` não muda de ordem. O teste de emulador confere que, depois do `deleteUserData`, o `GET /missions` e o `GET /me/achievements` da mesma conta (com o token ainda válido) respondem tudo em 0.
+
+### 22.12 App
+
+**Seletor e consultas**
+
+- `SERVER_DOMAINS` ganha `missions` e `achievements`, no commit que entrega as rotas.
+- `useMissionsQuery`, `useDailyMissionQuery` e `useMissionQuery` espalham `queryOptionsFor('missions')`; `useMyAchievementsQuery`, `queryOptionsFor('achievements')`.
+- `useLedgerInfiniteQuery`, novo em `profile/queries.ts`: chave `profileKeys.ledger()`, debaixo de `profileKeys.wallet()` (quem invalida a carteira invalida o extrato), `fetchLedgerPage({ cursor })`, `getNextPageParam` pelo `nextCursor` e `queryOptionsFor('wallet')`.
+- O `QUERY_CACHE_VERSION` não sobe: os formatos salvos só ganham campos opcionais e um valor novo de `action`.
+
+**Tipos**
+
+- `MissionAction` ganha `join`. `MISSION_ICONS.join`: `UserPlus` do lucide, tom `action`. `missionHref` do `join`: a central do alvo (`/artista/[artistaId]`) ou, sem alvo, `/explorar`; `missionHint`: `missions.hint.artist` ou `missions.hint.explore` (novo). A meta é a de progresso.
+- `ActionRewards`, `CompletedMission` e `UnlockedAchievement` em `missions/types.ts`, exportados pelo index, com os campos opcionais. `PointsAward` (posts), `RsvpResult` (agenda), `JoinCentralResult` e `FollowArtistsResult` (artists) estendem `ActionRewards` por `import type`, sem ciclo em tempo de execução (o `missions` não importa nenhum domínio).
+- `LedgerEntry` em `profile/types.ts`, com `artistName?` e `subjectTitle?`.
+
+**Recompensa na hora da ação**
+
+- `describeRewards(points, rewards)`, puro, novo em `missions/describe-rewards.ts` e exportado pelo index: a frase única do anúncio e o toque. Frase: "Mais 21 pontos." mais uma frase por missão ("Missão concluída: Curta 5 posts do Nenho."), a do nível (`profile.level.up`, "Você subiu para o nível 8, Xodó.") e uma por conquista ("Conquista nova: Fã de show."). Toque: `levelUp` com subida de nível, senão `missionComplete` com missão concluída, senão `pointsEarned` (o padrão da tabela de haptics: um evento, um toque).
+- `PointsToast` ganha `haptic?: HapticEvent` (padrão `pointsEarned`). O "+N" do curtir (`PostActions`), do comentar (`comment-composer`, que já junta "Comentário enviado" ao ganho), do "Eu vou" (`rsvp-button`) e do entrar (`artist-actions`) passam a frase e o toque do `describeRewards`. O "+N" já é o `pointsAwarded`, que inclui a missão.
+- Sem pontos e com conquista (a primeira presença com o "Eu vou" valendo 0), o hook da ação anuncia só a conquista, na fila, sem toast.
+- Para a festa não sair duas vezes: `noteMissionCelebrated(missionId, completedAt)` (`missions/celebrated.ts`) e `noteLevelCelebrated(uid, number)` (`profile/level-celebrated.ts`, importado direto, fora do index, como o `profile/keys`), em memória. Quem anunciou na hora marca. O `useMissionCelebrations` da 1g, o `useCompletionPulse` da missão do dia e o `useLevelUp` da 1e continuam com o desenho deles (o check, o "+N", o selo que acende), mas pulam o toque e o anúncio do que já foi marcado. O que concluiu sem o fã ver (a missão de link de quem convidou, a subida num claim) festeja como hoje, quando ele abre a tela.
+
+**Invalidação depois de cada ação**
+
+- Curtir, comentar e "Eu vou": as missões buscam de novo sempre (como hoje); com pontos, carteira (com progresso e extrato), ranking e centrais (como hoje); com `unlockedAchievements` ou `levelUp`, também `profileKeys.achievements()`.
+- Entrar na central (`refreshAfterJoin`) e seguir na 1l (`useFollowArtistsMutation`): passam a invalidar `missionKeys.all` (importado de `@/domains/missions`), além do que já invalidam, e as conquistas na mesma regra de cima.
+- Puxar para atualizar a 1e busca também o extrato aberto, pela chave da carteira.
+
+**Telas**
+
+- **1b (missão do dia)** e **1g**: sem mudança de desenho: o servidor manda o que as fixtures mandavam. O `SeasonGoalCard` usa `formatCompact` quando o alvo passa de 999 (meta por pontos, "4,1 mil/5 mil").
+- **1d (aba Missões)**: o `missionsOfArtist` já filtra por `target.artistId`; entra o `join`.
+- **Sheet "Gerar meu link"**: missão `share` com alvo de central passa `artistId` (o `inviteHref` manda `{ missionId, artistId }` quando não há post), e a sheet monta o link da central (`artist:<id>`, o mesmo do compartilhar da 1d).
+- **1e**: as conquistas vêm do servidor ("5 de 9" na Camila do seed). O card de pontos vira tocável e abre o extrato: `Card` com `onPress` (`router.push('/extrato')`), haptic `tap`, papel de botão (sai o `progressbar`), o mesmo rótulo de hoje e a dica `profile.points.hint` ("Abre o extrato de pontos."). Nada dentro dele é tocável (regra do workspace).
+- **Extrato (`/extrato`, provisório)**, abaixo.
+
+**Tela do extrato** (sem desenho; visual da 1g)
+
+- Rota `src/app/(tabs)/(perfil)/extrato.tsx`, só com o `export default` de `LedgerScreen`, de `@/domains/profile` (`views/ledger.tsx`). Na pilha do Perfil, com a tab bar.
+- `LargeTitleHeader` com o voltar (aprovação de 29/09), título "Extrato" e subtítulo "Os pontos que entraram e saíram da sua carteira.".
+- Uma `FlashList` com dois tipos de célula (`getItemType`): a sobrelinha do dia (`SectionLabel`: "Hoje", "Ontem", ou a data, "sex., 3 out", pelo `@/utils/date`, no fuso do aparelho) e a linha do lançamento.
+- Linha (`components/ledger-row.tsx`, uma `ListRow` não tocável): `IconTile` com o ícone e o tom da origem; título pela origem; abaixo, o contexto e a hora ("Curta 5 posts do Nenho · 22:31"); à direita, o valor com `formatPointsDelta`, em lima no ganho e no texto padrão no resgate e no ajuste negativo. Um elemento só para o leitor de tela: "Missão concluída, Curta 5 posts do Nenho, mais 10 pontos, hoje às 22:31.".
+
+  | `source`        | Título                 | Contexto                     | Ícone e tom           |
+  | --------------- | ---------------------- | ---------------------------- | --------------------- |
+  | `like`          | Curtida                | a central                    | `Heart`, ação         |
+  | `comment`       | Comentário             | a central                    | `MessageCircle`, ação |
+  | `rsvp`          | Presença em show       | a central                    | `Ticket`, shows       |
+  | `central_join`  | Entrada na central     | a central                    | `UserPlus`, ação      |
+  | `mission`       | Missão concluída       | o título da missão           | `Flame`, pontos       |
+  | `invite_visit`  | Visita pelo seu link   | nenhum                       | `Users`, pontos       |
+  | `invite_signup` | Cadastro pelo seu link | nenhum                       | `Users`, pontos       |
+  | `redeem`        | Resgate                | nenhum (bloco 10)            | `Gift`, ação          |
+  | `adjustment`    | Ajuste da equipe       | nenhum (a nota fica de fora) | `Award`, pontos       |
+  | `seed`          | Ajuste                 | nenhum                       | `Award`, pontos       |
+  | outra           | Pontos                 | nenhum                       | `Award`, pontos       |
+
+- Linha com `points`, `xpDelta` e `seasonDelta` em 0 (o ajuste só de central, que só o seed e o `adjustFanPoints` fazem) não aparece. Página que não acrescenta linha visível e ainda tem `nextCursor` pede a seguinte sozinha, uma vez por página, com `cancelRefetch: false` (como os comentários com bloqueados, 21.13).
+- Fim da lista: `fetchNextPage({ cancelRefetch: false })`. Puxar para atualizar com o toque `refresh` e o indicador lima, como na 1g. Vazio: "Seus pontos aparecem aqui quando você curte, comenta, entra numa central ou conclui uma missão.". Erro sem lista: o `EmptyState` com "Tentar de novo"; com lista, o aviso no pé, anunciado com a tela em foco, como a 1g.
+- Fixtures (`buildLedgerPageFixture(now, cursor)`, em `profile/fixtures.ts`): os lançamentos do seed da Camila (22.13), com os mesmos ids, valores e dias relativos a `fixtureNow()`, em páginas de 20. O que o fã ganha na sessão das fixtures não entra (limite aceito: é exemplo).
+- Provisória: entra nas Pendências do `CLAUDE.md`, para a cliente validar o que a tela mostra.
+
+**Fixtures das missões**
+
+- `countsFor` passa a conferir o `eventId` do alvo (22.1, decisão 5): o "Eu vou" em outro show não anda a "Confirme presença em um show".
+- O resto fica: nas builds sem API, a demonstração é a de hoje.
+
+**Regra de coerência** (seção 13): com o emulador, as missões e as conquistas vêm do servidor, e toda ação de verdade anda missão. O `missionsFixture.record` continua só nos caminhos das fixtures. No commit do bloco, a frase "As missões seguem de exemplo até o bloco 7" sai do `CLAUDE.md`, e a nota de 21.13 ganha a remissão a esta seção.
+
+**O que é de verdade e o que é de exemplo** (desenvolvimento com emulador, do bloco 7 ao 8)
+
+| Número ou lista                             | Telas            | Fonte no bloco 7                    |
+| ------------------------------------------- | ---------------- | ----------------------------------- |
+| Missões, progresso e missão do dia          | 1g, 1b, 1d       | servidor                            |
+| Recompensa de missão no "+N" e nos anúncios | 1b, 1d, post, 1m | servidor                            |
+| Meta da temporada                           | 1g               | servidor                            |
+| Conquistas e "X de N"                       | 1e               | servidor (lista provisória)         |
+| Subida de nível                             | ação, 1e         | servidor                            |
+| Extrato                                     | extrato          | servidor                            |
+| Ranking e top fãs                           | 1f, 1d           | exemplo, com o aviso, até o bloco 8 |
+
+**Textos novos** (`translations.json`)
+
+- `missions.hint.explore`: "Abre o Explorar"
+- `missions.rewards.mission`: "Missão concluída: {{title}}."; `missions.rewards.achievement`: "Conquista nova: {{title}}."
+- `profile.points.hint`: "Abre o extrato de pontos."
+- `ledger.title`: "Extrato"; `ledger.subtitle`: "Os pontos que entraram e saíram da sua carteira."
+- `ledger.sources.like`: "Curtida"; `.comment`: "Comentário"; `.rsvp`: "Presença em show"; `.central_join`: "Entrada na central"; `.mission`: "Missão concluída"; `.invite_visit`: "Visita pelo seu link"; `.invite_signup`: "Cadastro pelo seu link"; `.redeem`: "Resgate"; `.adjustment`: "Ajuste da equipe"; `.seed`: "Ajuste"; `.other`: "Pontos"
+- `ledger.days.today`: "Hoje"; `ledger.days.yesterday`: "Ontem"
+- `ledger.rowMeta`: "{{context}} · {{time}}"; `ledger.rowLabel`: "{{title}}, {{context}}, {{points}}, {{when}}."; `ledger.rowLabelNoContext`: "{{title}}, {{points}}, {{when}}."
+- `ledger.empty`: o texto do vazio, acima; `ledger.loading`: "Carregando o extrato"; `ledger.loadError`: "Não deu para carregar o extrato."; `ledger.updateError`: "Não deu para atualizar o extrato."; `ledger.loaded`: "Extrato carregado."
+
+**`CLAUDE.md` e `AGENTS.md`**
+
+No mesmo commit: Estrutura (`functions/src/day.ts`, `missions`, `achievements`, `points/panel.ts`; a rota `extrato`), Dados (missões e conquistas no seletor; a regra de coerência sem a exceção das missões; as recompensas na resposta), Navegação (o extrato na pilha do Perfil), Acessibilidade (o card de pontos tocável), API do app e pontos (as rotas, os campos novos e as callables do bloco 7, e o `updateSeason` antecipado), Testes e Pendências (extrato provisório, lista provisória de conquistas e as perguntas de 22.15). O `AGENTS.md` recebe a mesma cópia, com o cabeçalho dele.
+
+Nada disso entra no fingerprint da EAS: só JavaScript, regras e funções. Nenhuma dependência nova.
+
+### 22.13 Seed dos emuladores
+
+`functions/src/missions/seed.ts` exporta `SEED_MISSIONS`, `SEED_SEASON_GOAL` e `seedMissionsCatalog(db, now)`, que grava `config/missions` (versão 1, com a cópia em `versions/1`) se ele não existir, pelo mesmo núcleo das callables, sem auditoria. As conquistas não são gravadas: valem as do padrão do código (22.6), e o seed as exercita. O `scripts/seed-emulators.mjs` carrega `functions/lib/missions` como carrega os outros.
+
+Catálogo provisório, o das fixtures de hoje sem a relâmpago, todos `active`, com `startsAt` 1 dia antes do seed e `endsAt` `null`:
+
+| id                   | Título                                    | Tipo      | Alvo                          | Meta | Período  | Recompensa | Destaque |
+| -------------------- | ----------------------------------------- | --------- | ----------------------------- | ---- | -------- | ---------- | -------- |
+| `m-clipe-netto`      | Leve 5 pessoas para o clipe novo do Netto | `share`   | post `p-clipe` (`nettobrito`) | 5    | `daily`  | 20         | sim      |
+| `m-curtir-nenho`     | Curta 5 posts do Nenho                    | `like`    | central `nenho`               | 5    | `daily`  | 10         | não      |
+| `m-comentar-central` | Comente em 3 posts da central             | `comment` | central `nettobrito`          | 3    | `daily`  | 20         | não      |
+| `m-trazer-amigos`    | Traga 3 amigos novos pro app              | `invite`  | nenhum                        | 3    | `weekly` | 30         | não      |
+| `m-presenca-show`    | Confirme presença em um show              | `rsvp`    | show `sao-joao-irara`         | 1    | `weekly` | 15         | não      |
+
+Meta: `{ seasonId: 'temporada-sao-joao', title: 'Semana do arrocha', description: 'Complete 20 missões e garanta um lote de ingressos do São João.', metric: 'missions', target: 20 }`.
+
+**Carteira da Camila** (muda a tabela da seção 14). Para a meta dar 12 de 20 pelo extrato, entram 8 lançamentos de missão antes da semana, sem central, e a base desce o mesmo tanto. Os totais não mudam:
+
+| Quando             | Lançamento                                                  | Saldo e XP | Temporada | Central                    |
+| ------------------ | ----------------------------------------------------------- | ---------- | --------- | -------------------------- |
+| 17 a 10 dias atrás | `mission:seed-camila-5` a `-12` (earn, 50 cada, um por dia) | +400       | +400      |                            |
+| 8 dias atrás       | `seed:camila-base` (adjust)                                 | +11.240    | +2.880    |                            |
+| 8 dias atrás       | `seed:camila-base-netto` e `-nenho`, como hoje              |            |           | Netto +3.620, Nenho +2.640 |
+| 6 a 1 dia atrás    | `mission:seed-camila-1` a `-4`, como hoje                   | +840       | +840      | Netto +500, Nenho +340     |
+| total              |                                                             | 12.480     | 4.120     | Netto 4.120, Nenho 2.980   |
+
+- Os 8 novos rodam antes da base, em ordem de data. Ficam fora dos 7 dias, então o "+840" não muda, e dentro da temporada (que começou 18 dias atrás): o `seasonMissions` termina em 12.
+- O `seedCamilaWallet` passa a carregar a configuração inteira (`createConfigSource(db, { ttlMs: 0 })`) e a passar o `game` ao `runAward`. Com as conquistas do padrão, a Camila ganha "Missão cumprida" 17 dias atrás (o primeiro lançamento de missão) e "Pé de serra", "Sanfona" e "Purainha" 8 dias atrás (a base leva o XP de 400 a 11.640, nível 7).
+- O extrato dela passa de 7 para 15 lançamentos.
+
+**Ordem do seed**, para o progresso sair das próprias ações (as mudanças em negrito):
+
+1. Centrais, shows e posts, como hoje.
+2. Contas: Camila (carteira, centrais, código e links), Alan, Bia, Duda, Enzo e **Gabi Souza** (`gabi@teste.imagineup`, `fa-de-teste-6`, nova, só para visitar).
+3. **Claims da Duda (link da central) e do Enzo (código digitado), antes do catálogo de missões.** Com as conquistas do padrão já valendo, o claim da Duda dá à Camila o "Boca a boca" (a primeira pessoa pelo link). Nenhuma missão anda: o catálogo ainda não existe.
+4. **`seedMissionsCatalog`.**
+5. **Claim da Bia (link do clipe, com a campanha).** Anda "Leve 5 pessoas" (1) e "Traga 3 amigos" (1).
+6. **Visitas do Alan e da Gabi ao link do clipe** (`/post/p-clipe`, código `CAMILA12`), pelo mesmo `recordInviteVisit` da rota (`runVisit`, novo em `invites/service.ts`, no molde do `runClaim`), com ator de sistema e o `SEED_INVITE_CONFIG` (convite valendo 0). Cada uma cria o marcador e anda "Leve 5 pessoas": 3 de 5.
+7. Engajamento dos fãs de teste, como hoje, com `NO_GAME`: as curtidas, os comentários e as presenças dos fãs de teste não andam missão nem desbloqueiam conquista, e o Alan continua sem carteira (21.14).
+
+Os claims e as visitas usam a configuração do jogo lida na hora (`createConfigSource` sem cache), então a ordem é o que decide. O `seedInviteClaims` passa a receber a lista de convidados de cada passo, e a contagem do bloco 5 muda pouco: 3 cadastros convidados e, agora, 5 visitas no shard do dia (3 pelo tipo `post`, da Bia, do Alan e da Gabi, 1 `artist`, da Duda, e 1 `code`, do Enzo). As visitas vão pelo `seedInviteVisits(db, visitors, now)`, novo em `invites/seed.ts`.
+
+Resultado na Camila: 1b com "Leve 5 pessoas para o clipe novo do Netto", 3/5, +20; 1g com "Semana do arrocha" 12/20, "Curta 5 posts do Nenho" 0 de 5, "Comente em 3 posts da central" 0 de 3, "Traga 3 amigos novos pro app" 1 de 3 cadastrados e "Confirme presença em um show" com o São João de Irará; 1e com a carteira de sempre (12.480, nível 7, "+840") e "5 de 9" conquistas (Boca a boca, Purainha e Sanfona, e a próxima, Fã de show, bloqueada); extrato com 15 lançamentos.
+
+Diferenças do protótipo, de propósito: "Comente em 3 posts da central" começa aberta (no protótipo, concluída às 14:02: concluir no seed pagaria +20 e mudaria a carteira); "Curta 5 posts do Nenho" começa em 0 (no exemplo, 2: o seed tem 3 posts do Nenho, e com 2 curtidas prévias ela não fecharia nunca no emulador; com 0, chega a 3 de 5). Para ver uma conclusão no emulador com a Camila: três comentários em posts diferentes do Netto (+2 cada e +20 na terceira), o "Eu vou" no São João de Irará (+15), ou duas visitas novas ao link do clipe.
+
+Rodar de novo não muda nada: o catálogo existe, os claims respondem `already_claimed`, os marcadores das visitas existem (sem tick), e os lançamentos do seed voltam `duplicate`. Depois da meia-noite, o progresso do dia volta a 0, como o de qualquer fã.
+
+### 22.14 Testes
+
+Funções, testes puros (`vitest`, relógio fixo):
+
+- `day.test.ts`: os testes de `dayKey`, `weekKey` e `nextDayStart` que hoje estão em `points/model.test.ts`, mais `nextWeekStart` (domingo 23:59 e segunda 0:00 de São Paulo; a virada do ano ISO).
+- `missions/model.test.ts` (tabela): `parseMissionsConfig` (missão fora do formato descartada, as outras ficam; meta inválida vira `null`; documento ausente é catálogo vazio); `validateMissionInput` (cada campo, os alvos aceitos por tipo, os limites); `missionIndex` e `candidateMissions` (tipo, janela, `draft` e `archived` fora, cada alvo casando e não casando); `periodOf` e o fim (o menor entre `endsAt` e o fim do período, perto da meia-noite e na virada da semana); `applyMissionTicks` (conta, conclui na meta e gera o lançamento com o `eventId` e a central certos; concluída não anda; `keys` do `comment` e do `join` barram a repetição no período; `after` com `duplicate` e `skipped` ignora; a virada de dia e de semana zera sem gravar); `missionsView` (progresso só com a chave do período de agora; a primeira destacada por período; alvo invisível esconde a aberta e não a concluída; `pointsBreakdown` só no `share`; `rewardPaid` na concluída; `event` do show).
+- `achievements/model.test.ts` (tabela): `parseAchievementsConfig` e `validateAchievementInput`; `unlockAchievements` (nível alcançado de uma vez destrava os de baixo; `first` de cada tipo; `first:mission`; o que já tem não muda de data; `rank` nunca antes do bloco 8; arquivada não desbloqueia; régua mudada destrava na próxima gravação); `achievementsView` (contagem só das ativas; 3 desbloqueadas da mais nova à mais velha, com o desempate de trás para frente; bloqueadas na ordem até 4; fã novo).
+- `points/model.test.ts`: `computeAwards` com ticks (o lançamento da missão depois dos da rota e somado no `pointsAwarded`; `seasonMissions` sobe só com temporada ativa e zera na troca; carteira gravada quando só o progresso ou só uma conquista mudou; nada mudou, nada gravado; outro fã sem perfil ignora os ticks; `rewards` de quem chama com a subida de nível pela régua do pedido, inclusive duas subidas de uma vez).
+- `points/config.test.ts`: `actionCaps` na leitura tolerante e na validação estrita; a fonte lê os quatro documentos num `getAll`.
+- `points/award.test.ts`: o `planAwards` com ticks lê o extrato e a central só das missões que vão concluir para quem chama, e de todas as candidatas para outro fã; `rewardsOf`.
+- `points/stats.test.ts`: `byMission` e `byAchievement`, e o `pruneZeros` deles.
+- `moderation/model.test.ts` e os testes das centrais e do convite: os tetos lidos da configuração, com o padrão igual às constantes de hoje.
+- `api/router.test.ts`: `/missions` e `/missions/daily` não se confundem; `POST /missions` é 405; `/me/achievements` e `/me/ledger` convivem com as rotas de `me`.
+- `api/index.test.ts`: os três campos de recompensa nas respostas das ações, também na resposta repetida; o extrato com `artistName` e `subjectTitle`.
+
+Funções nos emuladores (a `api` de verdade por HTTP, tokens do emulador de Auth, relógio fixo injetado no handler do processo do teste quando a virada importa):
+
+- `functions/test/missions.emulator.test.ts` (novo): catálogo vazio responde listas vazias e `mission: null`; com o catálogo do seed, a 1g da Camila como em 22.13; curtir 5 posts do Nenho (o teste publica 2 a mais) conclui na quinta, paga 10 na mesma resposta (`pointsAwarded` e `completedMissions`), grava `mission:m-curtir-nenho:<dia>`, e curtir de novo depois de descurtir não anda; comentar 3 vezes no mesmo post anda 1, em 3 posts conclui; o "Eu vou" em outro show não anda a de presença, no São João conclui e paga 15 com o "Eu vou" valendo 0; entrar numa central anda o `join`, sair e entrar de novo no mesmo dia não; claim e visita pelo link do clipe andam o `share` de quem convidou, e a quinta pessoa paga 20 a quem convidou sem mudar o `pointsAwarded` de quem chama; o código digitado anda só o `invite`; a conta recriada com o mesmo e-mail não anda o `invite` de novo; a mesma chave devolve a mesma resposta, sem contar de novo; duas curtidas em paralelo que fecham a meta pagam uma vez; a virada da meia-noite zera o progresso do dia e a de segunda, o da semana; missão em `draft`, arquivada ou fora da janela não conta; alvo fora do ar esconde a aberta e mantém a concluída; o `featured` só na primeira; a meta da temporada por missões e por pontos, e sem temporada ativa, `null`.
+- Conquistas, no mesmo arquivo: a primeira presença dá "Fã de show" e manda `unlockedAchievements` com o "Eu vou" valendo 0; a primeira pessoa pelo link dá "Boca a boca" a quem convidou; um lançamento que cruza o nível 8 manda `levelUp` e destrava "Backstage"; baixar o `minXp` do nível 8 na configuração destrava na ação seguinte, sem `levelUp`; `GET /me/achievements` com "X de N" e os destaques.
+- Exclusão: fã com progresso e conquistas; depois do `deleteUserData`, a carteira não existe, e as rotas de leitura respondem tudo em 0; o progresso de quem convidou não guarda a pessoa.
+- Extrato: a página com `artistName` e `subjectTitle`, com a central apagada (`null`) e com a missão arquivada (o título continua).
+- Seed: o catálogo, os 15 lançamentos e a carteira da Camila sem mudar, "Leve 5 pessoas" em 3 de 5, "Traga 3 amigos" em 1 de 3, a meta em 12 de 20, as 5 conquistas, o Alan e a Gabi sem carteira, e rodar de novo sem mudar nada. O teste de seed do bloco 5 (`invites.emulator.test.ts`) passa a esperar 5 visitas no shard do dia, e o do bloco 1 (`points.emulator.test.ts`), o extrato da Camila com 15 lançamentos.
+- `functions/test/game-panel.emulator.test.ts` (novo), com os membros de exemplo (admin, editora com `missions`, leitor, sem a seção, só com `ranking`, desativada): cada callable de 22.8 com acesso e recusa; `config-changed` com a versão velha; `mission-locked` depois do início e a mudança de título passando; `target-not-found` e `invalid-target`; `too-many-active`; `rule-not-available` no `rank`; `achievement-locked`; o primeiro `createAchievement` parte do padrão; `season-id-locked` e `season-id-used`; a cópia em `versions/{n}`; uma auditoria por mudança e nenhuma quando nada mudou; a missão criada vale na `api` depois do cache (fonte injetada sem cache).
+
+Regras (`tests/missions-rules.test.ts`, novo, no molde de `tests/points-rules.test.ts`, com os mesmos membros de exemplo):
+
+- `config/missions`, `config/achievements` e as versões: a equipe ativa com `missions` (editora e leitor) e admin leem; sem a seção (só `fans` ou só `ranking`), desativada, pendente ou com sessão de antes do `authValidAfter`, não leem; fã e sem login não leem; ninguém grava, nem admin.
+- `config/points`, `config/season` e `config/<outro id>` continuam como na seção 11, e os arquivos de teste que já existem passam sem mudança.
+
+App:
+
+- `src/config/__tests__/data-source.test.ts`: `missions` e `achievements` na API com o emulador.
+- `missions/__tests__/api.test.ts` (novo): as duas rotas no modo API; nas fixtures, como hoje.
+- `missions/__tests__/describe-rewards.test.ts` (novo, tabela): a frase com pontos, missão, nível e conquista, cada combinação, e o toque pela prioridade.
+- `missions/__tests__/describe-mission.test.ts`: `join` com e sem central (destino e dica); `share` com alvo de central leva o `artistId` à sheet.
+- `missions/__tests__/fixtures.test.ts`: a presença em outro show não anda a missão de presença.
+- `missions/__tests__/mission-cards.test.tsx` e `daily-mission-card.test.tsx`: a festa da missão já anunciada na ação mantém o check e o "+N" e não toca nem anuncia; a que concluiu longe festeja como hoje.
+- `profile/__tests__/use-level-up.test.tsx`: o nível já anunciado na ação acende o selo sem toque nem anúncio.
+- `profile/__tests__/ledger.test.tsx` (novo): as linhas por origem com o contexto, o sinal e a cor; os dias ("Hoje", "Ontem", a data, com relógio fixo); a linha zerada some e a página vazia pede a seguinte; o rótulo de cada linha; vazio, erro e "Tentar de novo"; a consulta espera a rede e vai para o disco com a API.
+- `profile/__tests__/profile-cards.test.tsx`: o card de pontos é botão, com o rótulo e a dica, e abre o extrato.
+- `posts`, `agenda` e `artists`: o "+N" com a frase e o toque do `describeRewards`; com conquista e sem pontos, só o anúncio; entrar e seguir invalidam as missões; com conquista, as conquistas; o comentário que entra no cache não leva os campos de recompensa.
+- Navegação (`src/navigation/__tests__/profile.test.tsx`): o card abre `/extrato` na pilha do Perfil, com a tab bar, e o voltar devolve à 1e. `missions.test.tsx`: a 1g com o `join` levando à central.
+
+### 22.15 Perguntas
+
+Para a cliente (UP-9, UP-21, UP-22 e UP-48):
+
+1. Missões de verdade: quais, quanto valem, metas e períodos. Proposta: as de hoje (22.13), editáveis no painel no bloco 11.
+2. Conquistas: a lista, os nomes e as regras. Proposta: as 9 de 22.6, mais o "Top 20" com o ranking (bloco 8). O protótipo fala em 32; a lista cresce pelo painel, desde que a regra seja de nível, de primeira vez ou de ranking. Regra nova (por exemplo, "10 shows") é código.
+3. Meta da temporada: contar missões (proposta, "Complete 20 missões") ou pontos da temporada; e qual é o prêmio e como ele chega (a loja do bloco 10 ou a equipe, fora do app).
+4. "Comente em 3 posts": posts diferentes (proposta) ou três comentários.
+5. Missão de presença com show escolhido: conta só aquele show (proposta). O título "Confirme presença em um show" vira "Confirme presença no São João de Irará"?
+6. Missão relâmpago: continua de fora até ela definir quem abre e quando (UP-48).
+7. Extrato: a tela provisória mostra de onde veio cada ponto e quando, sem o nome de quem visitou ou se cadastrou pelo link (proposta). Ela quer mais alguma coisa nele?
+8. Conquista rende pontos? Proposta: não (os pontos já vêm da ação e da missão).
+
+Para o dono:
+
+9. Progresso e conquistas na carteira (decisões 6 e 10), em vez de documentos à parte.
+10. Os tetos do dia editáveis no painel (`actionCaps`, decisão 13), e não só os limites de pontos.
+11. O `updateSeason` neste bloco, com a seção `ranking`, e a meta da temporada com a seção `missions`.
+12. O seed com a conta nova (Gabi), a ordem nova (dois claims antes do catálogo) e os 8 lançamentos de missão a mais na carteira da Camila, com a base menor (22.13).
+13. A curtida que só conta na primeira vez da vida em cada post, como nas fixtures: quem curtiu um post do Nenho mês passado não anda a missão de hoje com ele.
+
+### 22.16 Fora deste bloco e publicação
+
+- **Fora deste bloco (só documentado):** as telas do painel (Missões e régua, a temporada em Ranking e temporadas, o progresso e as conquistas na seção Fãs), bloco 11; a regra `rank` e o "Top 20", bloco 8; a missão relâmpago e o estado `locked`; uma tela de todas as conquistas (a 1e mostra 4); regras novas de conquista (contagens como "10 shows"), que pedem contador; o prêmio da meta da temporada, bloco 10; o `adjustFanPoints`, bloco 11.
+- **Publicação**, só com o ok do dono, nesta ordem: regras e índices (`deploy --only firestore:rules,firestore:indexes`; só isenções, sem índice composto novo, então não há o que esperar montar); depois todas as funções (`npm run functions:deploy`), que levam a `api` com as rotas e os campos novos e as 11 callables novas (`updatePointsConfig`, `updateSeason`, `createMission`, `updateMission`, `setMissionStatus`, `reorderMissions`, `updateSeasonGoal`, `createAchievement`, `updateAchievement`, `setAchievementStatus`, `reorderAchievements`). Em produção não há `config/missions`: o app mostra "sem missões" até a equipe criar as missões no painel (bloco 11) ou o dono autorizar uma carga do catálogo provisório. As conquistas valem pelo padrão do código desde o deploy. O `EXPO_PUBLIC_API_URL` segue a regra da seção 13: só depois do bloco 10.
+
+### 22.17 Armadilhas do bloco 7
+
+- O catálogo vem do cache de 60 s, também na transação: missão criada, editada ou arquivada vale em até 60 s. A temporada continua lida na transação (seção 8).
+- Ticks só no `planAwards` que vem antes das gravações do domínio. O que roda depois delas, com a lista vazia, não pode ler nada, e as candidatas são leitura.
+- O progresso é da carteira: toda gravação nela passa pelo plano (ou pelo `addDailyCount`, que parte do retrato) e leva o `missions` e o `achievements` inteiros. Um `update` que esquecesse os dois apagaria o progresso.
+- A unidade conta pelo fato que nasce (a curtida, a presença, o marcador, o `referrals`), nunca pela troca de estado: curtir de novo e confirmar de novo não andam missão.
+- `comment` e `join` precisam do `keys`; os outros tipos não guardam chave, e a chave da pessoa nunca vai para o progresso.
+- O tick de `invite` leva o `after` do `invite_signup`: sem ele, a conta excluída e recriada com o mesmo e-mail andaria a missão de novo.
+- A missão paga `mission:<id>:<período>`. Id de missão nunca muda nem volta a ser usado: arquive, não apague.
+- Missão publicada e começada não muda tipo, alvo, meta, período nem início (`mission-locked`).
+- Alvo é filtro, e o alvo de post leva a central dele, que é a da recompensa.
+- O fim de uma missão é o menor entre o `endsAt` e o fim do período; a semana é a ISO de São Paulo, de segunda a domingo.
+- `seasonMissions` zera na troca preguiçosa de temporada, junto com o `seasonPoints`.
+- Conquista nunca é revogada, e a de nível vale para o nível de agora: mudar a régua destrava na próxima gravação, sem `levelUp`.
+- `rank` não pode ficar `active` antes do bloco 8.
+- `levelUp` e `completedMissions` são só de quem chama. Quem convidou vê a festa ao abrir a tela.
+- O app anuncia a recompensa na hora e marca o que anunciou: a 1g, a 1b e a 1e não repetem o toque nem o anúncio do que já saiu na ação.
+- O seed depende da ordem: dois claims antes do catálogo de missões, o resto depois, e o engajamento com `NO_GAME`.
 
 ## Armadilhas
 
