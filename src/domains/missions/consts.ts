@@ -1,4 +1,11 @@
-import { Heart, MessageCircle, Ticket, Users, type LucideIcon } from 'lucide-react-native';
+import {
+  Heart,
+  MessageCircle,
+  Ticket,
+  UserPlus,
+  Users,
+  type LucideIcon,
+} from 'lucide-react-native';
 
 import type { GlyphName } from '@/components/glyph';
 import type { IconTileTone } from '@/components/icon-tile';
@@ -22,4 +29,6 @@ export const MISSION_ICONS: Record<MissionAction, MissionIconSpec> = {
   like: { icon: Heart, tone: 'action' },
   comment: { icon: MessageCircle, tone: 'action' },
   rsvp: { icon: Ticket, tone: 'events', strokeWidth: 1.7 },
+  // Entrar numa central (bloco 7): uma ação do fã, em rosa.
+  join: { icon: UserPlus, tone: 'action' },
 };

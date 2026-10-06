@@ -128,14 +128,55 @@ describe('para onde cada missão leva', () => {
 
 describe('missão vencida', () => {
   const later = new Date(new Date(CLIP.endsAt).getTime() + 1);
+  // A concluída traz o fim do dia (o do período, como o servidor manda).
+  const pastMidnight = new Date(new Date(COMMENT.endsAt).getTime() + 1);
 
   it.each([
     ['aberta com o prazo passado', CLIP, later, true],
     ['aberta dentro do prazo', CLIP, NOW, false],
     ['expirada pelo servidor', { ...LIKE, status: 'expired' as const }, NOW, true],
-    ['concluída, mesmo depois do prazo', { ...CLIP, status: 'completed' as const }, later, false],
+    ['concluída, até o período virar', COMMENT, NOW, false],
+    ['concluída, depois de o período virar', COMMENT, pastMidnight, true],
     ['bloqueada, até o servidor dizer', { ...FLASH, endsAt: CLIP.endsAt }, later, false],
   ])('%s', (_what, mission, now, over) => {
     expect(isMissionOver(mission, now)).toBe(over);
+  });
+});
+
+describe('entrar numa central e o link de uma central (bloco 7)', () => {
+  const JOIN: Mission = {
+    ...LIKE,
+    id: 'm-entrar',
+    title: 'Entre na central do Juninho',
+    action: 'join',
+    target: { artistId: 'juninhomoraes' },
+    progress: { current: 0, target: 1 },
+  };
+
+  it('o join leva à central do alvo, com a dica da central', () => {
+    expect(missionHref(JOIN)).toEqual({
+      pathname: '/artista/[artistaId]',
+      params: { artistaId: 'juninhomoraes' },
+    });
+    expect(missionHint(JOIN)).toBe('Abre a central do artista');
+    expect(missionMeta(JOIN)).toBe('Você tem 0 de 1');
+  });
+
+  it('sem a central (o servidor sempre manda), o join não leva a lugar nenhum', () => {
+    expect(missionHref({ ...JOIN, target: null })).toBeNull();
+    expect(missionHint({ ...JOIN, target: null })).toBeUndefined();
+  });
+
+  it('o link com alvo de central, sem post, leva a central à sheet do convite', () => {
+    const share: Mission = { ...CLIP, id: 'm-link', target: { artistId: 'nettobrito' } };
+    expect(missionHref(share)).toEqual({
+      pathname: '/convidar',
+      params: { missionId: 'm-link', artistId: 'nettobrito' },
+    });
+    // Com post, o post vence (o link leva a ele).
+    expect(missionHref(CLIP)).toEqual({
+      pathname: '/convidar',
+      params: { missionId: 'm-clipe-netto', postId: 'p-clipe' },
+    });
   });
 });

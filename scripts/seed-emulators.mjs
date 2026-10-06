@@ -38,7 +38,22 @@
  * no show, que abre a fila da Moderação. A Camila não curte, não comenta e não
  * vai a show nenhum: a primeira ação dela no app mostra os pontos do servidor.
  *
- * Rodar de novo não muda nada.
+ * Missões, conquistas e meta da temporada (functions/lib/missions, bloco 7,
+ * docs/arquitetura-api.md, 22.13): a carteira da Camila leva 12 lançamentos
+ * de missão (a meta da temporada, "Semana do arrocha", fica em 12 de 20) e as
+ * conquistas do padrão do código (Missão cumprida, Pé de serra, Sanfona e
+ * Purainha). A ordem decide o progresso dela, que sai das próprias ações: os
+ * claims da Duda (link da central, dá o "Boca a boca") e do Enzo (código)
+ * vêm antes do catálogo de missões; depois, o catálogo provisório (as missões
+ * das fixtures sem a relâmpago), o claim da Bia (anda "Leve 5 pessoas" e
+ * "Traga 3 amigos"), as visitas do Alan e da Gabi Souza (conta nova, só para
+ * visitar) ao link do clipe ("Leve 5 pessoas" em 3 de 5) e as curtidas da
+ * Camila nos posts p-nenho-4 e p-nenho-5 ("Curta 5 posts do Nenho" em 2 de 5,
+ * curtir valendo 0). O engajamento dos fãs de teste vem por último, sem o jogo.
+ *
+ * Rodar de novo não muda nada. Depois da meia-noite, o progresso do dia volta
+ * a 0, como o de qualquer fã: para ver de novo o 3 de 5 e o 2 de 5, feche os
+ * emuladores (os dados somem) e rode o seed outra vez.
  *
  * Só funciona contra o emulador local (127.0.0.1:9099): estas senhas não servem
  * para o projeto de verdade. Os dados somem quando os emuladores fecham, então
@@ -91,7 +106,17 @@ const FANS = [
     city: 'Santo Amaro, BA',
     invited: true,
   },
+  // Só visita o link do clipe da Camila (bloco 7): anda o "Leve 5 pessoas".
+  {
+    email: 'gabi@teste.imagineup',
+    password: 'fa-de-teste-6',
+    displayName: 'Gabi Souza',
+    city: 'Cruz das Almas, BA',
+  },
 ];
+
+/** Os claims que vêm antes do catálogo de missões (não andam missão nenhuma, 22.13). */
+const CLAIMS_BEFORE_CATALOG = ['duda@teste.imagineup', 'enzo@teste.imagineup'];
 
 async function auth(action, body) {
   const response = await fetch(`${AUTH_EMULATOR}/${action}?key=emulador`, {
@@ -161,6 +186,24 @@ async function seedContent() {
   }));
 }
 
+/** O catálogo provisório de missões, com a meta da temporada (só se ainda não existe). */
+async function seedMissions() {
+  const { seedMissionsCatalog } = functionsBuild('missions');
+  return withFirestore((db) => seedMissionsCatalog(db));
+}
+
+/** As visitas de teste ao link do clipe da Camila, pelo mesmo núcleo da rota. */
+async function seedVisits(visitors) {
+  const { seedInviteVisits } = functionsBuild('invites');
+  return withFirestore((db) => seedInviteVisits(db, visitors));
+}
+
+/** As curtidas da Camila nos dois posts do Nenho, com o jogo (a missão de curtida anda). */
+async function seedCamilaLikes(uid) {
+  const { seedCamilaLikes: seed } = functionsBuild('posts');
+  return withFirestore((db) => seed(db, uid));
+}
+
 /** Curtidas, comentários, presenças e a denúncia dos fãs de teste, pelos núcleos das rotas. */
 async function seedEngagement(fans) {
   const { seedEngagement: seed } = functionsBuild('posts');
@@ -200,11 +243,13 @@ console.log(
 
 const content = await seedContent();
 console.log(
-  `Agenda e mural de teste: ${content.events} shows e ${content.posts} posts criados (9 shows e 10 posts no ar no total).`,
+  `Agenda e mural de teste: ${content.events} shows e ${content.posts} posts criados (9 shows e 12 posts no ar no total).`,
 );
 
 const invitees = [];
+const visitors = [];
 const engagementFans = {};
+let camilaUid = null;
 for (const { city, wallet, invited, ...fan } of FANS) {
   let result = await auth('accounts:signUp', fan);
   if (result.ok) {
@@ -226,16 +271,46 @@ for (const { city, wallet, invited, ...fan } of FANS) {
       `Convite de ${fan.displayName}: código CAMILA12, ${links} links novos (4 no total).`,
     );
   }
+  if (wallet) camilaUid = result.body.localId;
   if (invited) invitees.push({ uid: result.body.localId, email: fan.email, name: fan.displayName });
   const key = fan.email.split('@')[0];
-  if (key !== 'camila') engagementFans[key] = result.body.localId;
+  if (key !== 'camila' && key !== 'gabi') engagementFans[key] = result.body.localId;
+  const { SEED_VISITORS } = functionsBuild('invites');
+  if (SEED_VISITORS.includes(fan.email)) {
+    visitors.push({ uid: result.body.localId, email: fan.email, name: fan.displayName });
+  }
 }
 
-const outcomes = await seedClaims(invitees);
-invitees.forEach((invitee, index) => {
-  const status = outcomes[index]?.status === 'claimed' ? 'convidado agora' : 'já era convidado';
-  console.log(`Convite da Camila: ${invitee.name} (${status}).`);
+/** Os claims de uma leva, com o que aconteceu com cada um no log. */
+async function claimAll(list) {
+  const outcomes = await seedClaims(list);
+  list.forEach((invitee, index) => {
+    const status = outcomes[index]?.status === 'claimed' ? 'convidado agora' : 'já era convidado';
+    console.log(`Convite da Camila: ${invitee.name} (${status}).`);
+  });
+}
+
+await claimAll(invitees.filter((invitee) => CLAIMS_BEFORE_CATALOG.includes(invitee.email)));
+
+const catalog = await seedMissions();
+console.log(
+  `Missões: ${catalog ? 'catálogo provisório criado' : 'catálogo já existia'} (5 no ar, meta "Semana do arrocha").`,
+);
+
+await claimAll(invitees.filter((invitee) => !CLAIMS_BEFORE_CATALOG.includes(invitee.email)));
+
+const visits = await seedVisits(visitors.map(({ uid, email }) => ({ uid, email })));
+visitors.forEach((visitor, index) => {
+  const status = visits[index]?.counted ? 'contou agora' : 'já tinha contado';
+  console.log(`Visita ao link do clipe da Camila: ${visitor.name} (${status}).`);
 });
+
+if (camilaUid) {
+  const likes = await seedCamilaLikes(camilaUid);
+  console.log(
+    `Curtidas da Camila em posts do Nenho: ${likes} agora (2 no total, "Curta 5 posts do Nenho" em 2 de 5).`,
+  );
+}
 
 const engagement = await seedEngagement(engagementFans);
 console.log(

@@ -4,6 +4,7 @@ import { AccessibilityInfo } from 'react-native';
 import { haptics } from '@/services/haptics';
 
 import { useLevelUp } from '../hooks/use-level-up';
+import { noteLevelCelebrated, resetCelebratedLevels } from '../level-celebrated';
 import type { Level } from '../types';
 
 const PURAINHA: Level = { number: 7, name: 'Purainha', minXp: 7_000 };
@@ -75,5 +76,22 @@ describe('subida de nível', () => {
 
     expect(haptics.trigger).not.toHaveBeenCalled();
     expect(result.current).toBeNull();
+  });
+});
+
+describe('nível já festejado na própria ação (bloco 7)', () => {
+  afterEach(() => resetCelebratedLevels());
+
+  it('o selo acende, sem o toque e sem o anúncio de novo', () => {
+    // O mock do anúncio guarda as chamadas dos testes de antes.
+    jest.mocked(AccessibilityInfo.announceForAccessibilityWithOptions).mockClear();
+    // O "+N" da ação que subiu o nível já tocou levelUp e anunciou.
+    noteLevelCelebrated(null, XODO.number);
+    const { result, rerender } = renderLevelUp({ level: PURAINHA, focused: true });
+    rerender({ level: XODO, focused: true });
+
+    expect(result.current).toBe(1);
+    expect(haptics.trigger).not.toHaveBeenCalled();
+    expect(announced()).toEqual([]);
   });
 });

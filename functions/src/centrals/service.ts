@@ -20,24 +20,18 @@ import {
   planAwards,
   requireFan,
   retryOnAlreadyExists,
+  runContext,
   walletRef,
   type AwardContext,
   type AwardPlan,
   type FanContext,
+  type RunOptions,
 } from '../points/award';
-import {
-  dayKey,
-  nextDayStart,
-  type Actor,
-  type AwardEntry,
-  type PointsConfig,
-} from '../points/model';
-import { pickShard } from '../points/stats';
+import { dayKey, nextDayStart, type AwardEntry } from '../points/model';
 import {
   artistDetailsView,
   artistRecord,
   artistView,
-  CENTRAL_ENTRIES_PER_DAY,
   CENTRALS_MAX,
   CentralError,
   exactMillis,
@@ -159,7 +153,8 @@ export type JoinOutcome = {
  * 1. central que não existe ou não está publicada recusa tudo (artist_not_found);
  * 2. as novas são as publicadas sem vínculo; com alguma, o fã que já fez
  *    CENTRAL_ENTRIES_PER_DAY entradas hoje é recusado (too_many_entries);
- * 3. planAwards com um central_join por nova (uma vez na vida por central);
+ * 3. planAwards com um central_join por nova (uma vez na vida por central) e
+ *    uma unidade `join` de missão por nova (bloco 7, 22.4);
  * 4. vínculo, +1 num shard do fanCount e `joined` no shard do painel de cada
  *    nova, e +1 no `central_entry` do dia na carteira do fã.
  * O runIdempotent (ou o runJoinCentrals) grava o plano depois.
@@ -179,13 +174,14 @@ export async function joinCentrals(
   // O teto do dia vale para o fã que chama; o seed (sistema) não conta.
   const countsEntry = award.actor.type === 'fan' && joined.length > 0;
   const day = dayKey(award.now);
+  const limit = award.config.actionCaps.central_entry;
   if (
     countsEntry &&
-    exceedsEntryLimit(fan.wallet.days[day]?.count.central_entry ?? 0, joined.length)
+    exceedsEntryLimit(fan.wallet.days[day]?.count.central_entry ?? 0, joined.length, limit)
   ) {
     throw new CentralError(
       'too_many_entries',
-      { limit: CENTRAL_ENTRIES_PER_DAY },
+      { limit },
       secondsUntil(nextDayStart(award.now), award.now),
     );
   }
@@ -196,7 +192,19 @@ export async function joinCentrals(
     artistId: id,
     subject: { type: 'artist', id },
   }));
-  const plan = await planAwards(tx, db, [{ uid: fan.uid, fan, entries }], award);
+  const plan = await planAwards(
+    tx,
+    db,
+    [
+      {
+        uid: fan.uid,
+        fan,
+        entries,
+        ticks: joined.map((id) => ({ action: 'join', key: id, on: { artistIds: [id] } })),
+      },
+    ],
+    award,
+  );
 
   const at = Timestamp.fromMillis(award.now);
   const shard = fanShardOf(award.shard);
@@ -310,15 +318,8 @@ export async function runJoinCentrals(
   db: Firestore,
   uid: string,
   artistIds: readonly string[],
-  options: {
-    now: number;
-    config: PointsConfig;
-    actor: Actor;
-    via: JoinVia;
-    random?: () => number;
-  },
+  options: RunOptions & { via: JoinVia },
 ): Promise<JoinOutcome> {
-  const random = options.random ?? Math.random;
   return retryOnAlreadyExists(() =>
     db.runTransaction(async (tx) => {
       const [profile, wallet] = await tx.getAll(
@@ -329,12 +330,7 @@ export async function runJoinCentrals(
         markActivity: false,
       });
       const read = await readJoin(tx, db, uid, artistIds);
-      const award: AwardContext = {
-        now: options.now,
-        config: options.config,
-        shard: pickShard(random),
-        actor: options.actor,
-      };
+      const award: AwardContext = runContext(options);
       const outcome = await joinCentrals(tx, db, read, {
         fan,
         award,

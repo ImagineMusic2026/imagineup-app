@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { planAwards, retryOnAlreadyExists } from '../points/award';
 import { DEFAULT_POINTS_CONFIG, staticConfigSource } from '../points/config';
+import { NO_GAME } from '../points/model';
 import { ApiHttpError } from './errors';
 import {
   canonicalJson,
@@ -184,6 +185,7 @@ const CALL: IdempotentCall = {
   fingerprint: 'f',
   now: NOW,
   config: DEFAULT_POINTS_CONFIG,
+  game: NO_GAME,
 };
 
 // Fã com perfil e sem carteira: a primeira ação do dia marca atividade e grava o shard.

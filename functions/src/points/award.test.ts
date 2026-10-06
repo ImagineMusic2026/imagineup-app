@@ -1,13 +1,25 @@
+import type { Firestore, Transaction } from 'firebase-admin/firestore';
 import { describe, expect, it } from 'vitest';
 
+import { missionIndex, type MissionRecord, type MissionTick } from '../missions/model';
 import {
   addDailyCount,
   addInviteCounts,
   mergeFanAwards,
+  missionsToRead,
+  planAwards,
+  rewardsOf,
   type AwardPlan,
   type FanContext,
 } from './award';
-import { emptyWallet, type AwardEntry, type WalletState } from './model';
+import { DEFAULT_POINTS_CONFIG } from './config';
+import {
+  emptyRewards,
+  emptyWallet,
+  type AwardEntry,
+  type GameConfig,
+  type WalletState,
+} from './model';
 
 const comment = (id: string): AwardEntry => ({ kind: 'earn', source: 'comment', eventId: id });
 const invite = (id: string): AwardEntry => ({ kind: 'earn', source: 'invite_signup', eventId: id });
@@ -42,8 +54,8 @@ describe('entradas do plano', () => {
     ]);
     expect(merged.caller).toBe(fan);
     expect(merged.fans).toEqual([
-      { uid: 'uid-a', fan, entries: [comment('c1'), invite('CODIGO:uid-a')] },
-      { uid: 'uid-b', fan: undefined, entries: [invite('CODIGO:uid-a')] },
+      { uid: 'uid-a', fan, entries: [comment('c1'), invite('CODIGO:uid-a')], ticks: [] },
+      { uid: 'uid-b', fan: undefined, entries: [invite('CODIGO:uid-a')], ticks: [] },
     ]);
   });
 
@@ -54,7 +66,9 @@ describe('entradas do plano', () => {
       { uid: 'uid-a', fan, entries: [] },
     ]);
     expect(merged.caller).toBe(fan);
-    expect(merged.fans).toEqual([{ uid: 'uid-a', fan, entries: [invite('CODIGO:uid-a')] }]);
+    expect(merged.fans).toEqual([
+      { uid: 'uid-a', fan, entries: [invite('CODIGO:uid-a')], ticks: [] },
+    ]);
   });
 
   it('sem retrato nenhum, caller null (o ajuste e o seed passam o deles)', () => {
@@ -102,6 +116,7 @@ describe('contador do dia sem ponto (addDailyCount)', () => {
       now: NOW,
       shardIndex: 0,
       caller: fan,
+      rewards: emptyRewards(),
     };
   }
 
@@ -221,5 +236,175 @@ describe('convite nos agregados (addInviteCounts)', () => {
     expect(shard.byOrigin.kind.invite).toEqual({ signups: 1, visits: 1, links: 0 });
     expect(shard.byOrigin.utmSource).toEqual({ instagram: { signups: 1 } });
     expect(shard.byOrigin.utmCampaign).toEqual({ _none: { signups: 1 } });
+  });
+});
+
+// --- Bloco 7: as missões no plano (22.4) ---------------------------------------------
+
+describe('missões no planAwards (bloco 7)', () => {
+  const NOW = Date.parse('2026-10-05T15:00:00.000Z');
+  const DAY_MS = 24 * 60 * 60 * 1000;
+  const base = {
+    period: 'daily' as const,
+    featured: false,
+    startsAt: NOW - DAY_MS,
+    endsAt: null,
+    status: 'active' as const,
+    activatedAt: NOW - DAY_MS,
+    createdAt: NOW - DAY_MS,
+    updatedAt: NOW - DAY_MS,
+  };
+  const curtir: MissionRecord = {
+    ...base,
+    id: 'm-curtir-nenho',
+    title: 'Curta 5 posts do Nenho',
+    action: 'like',
+    target: { postId: null, artistId: 'nenho', eventId: null },
+    goal: 2,
+    rewardPoints: 10,
+  };
+  const outra: MissionRecord = { ...curtir, id: 'm-curtir-nenho-2', goal: 5 };
+  const link: MissionRecord = {
+    ...base,
+    id: 'm-clipe-netto',
+    title: 'Leve 5 pessoas para o clipe novo do Netto',
+    action: 'share',
+    target: { postId: 'p-clipe', artistId: 'nettobrito', eventId: null },
+    goal: 5,
+    rewardPoints: 20,
+  };
+  const game: GameConfig = {
+    missions: missionIndex({ version: 1, missions: [curtir, outra, link] }),
+    achievements: [],
+    seasonGoal: null,
+  };
+
+  /** Um Firestore falso que só lê: guarda os caminhos lidos no getAll. */
+  function fakeTx(existing: Record<string, Record<string, unknown>> = {}) {
+    const reads: string[] = [];
+    const ref = (path: string): unknown => ({
+      path,
+      id: path.slice(path.lastIndexOf('/') + 1),
+      collection: (name: string) => ({ doc: (id: string) => ref(`${path}/${name}/${id}`) }),
+    });
+    const db = {
+      collection: (name: string) => ({ doc: (id: string) => ref(`${name}/${id}`) }),
+    } as unknown as Firestore;
+    const snap = (path: string) => ({
+      exists: path in existing,
+      data: () => existing[path],
+      get: (field: string) => existing[path]?.[field],
+    });
+    const tx = {
+      getAll: async (...refs: { path: string }[]) => {
+        reads.push(...refs.map((item) => item.path));
+        return refs.map((item) => snap(item.path));
+      },
+    } as unknown as Transaction;
+    return { db, tx, reads };
+  }
+
+  const award = {
+    now: NOW,
+    config: DEFAULT_POINTS_CONFIG,
+    shard: 0,
+    actor: { type: 'fan' as const, uid: 'fa', name: null },
+    game,
+  };
+
+  it('para quem chama, lê o extrato e a central só das missões que vão concluir', async () => {
+    const fan = context('fa');
+    fan.wallet = {
+      ...emptyWallet(),
+      exists: true,
+      missions: {
+        daily: {
+          key: '2026-10-05',
+          items: {
+            'm-curtir-nenho': { current: 1, keys: [], completedAt: null, rewardPaid: 0 },
+          },
+        },
+        weekly: null,
+      },
+    };
+    const { db, tx, reads } = fakeTx();
+    const plan = await planAwards(
+      tx,
+      db,
+      [
+        {
+          uid: 'fa',
+          fan,
+          entries: [],
+          ticks: [{ action: 'like', key: 'p1', on: { postId: 'p1', artistIds: ['nenho'] } }],
+        },
+      ],
+      award,
+    );
+    expect(reads).toEqual([
+      'config/season',
+      'wallets/fa/ledger/mission:m-curtir-nenho:2026-10-05',
+      'wallets/fa/centralPoints/nenho',
+    ]);
+    expect(rewardsOf(plan)).toEqual({
+      completedMissions: [
+        {
+          id: 'm-curtir-nenho',
+          title: 'Curta 5 posts do Nenho',
+          rewardPoints: 10,
+          completedAt: new Date(NOW).toISOString(),
+        },
+      ],
+      levelUp: null,
+      unlockedAchievements: [],
+      missionsChanged: true,
+    });
+  });
+
+  it('para outro fã (quem convidou), lê todas as candidatas', async () => {
+    const { db, tx, reads } = fakeTx({ 'users/quem-convidou': { displayName: 'Camila' } });
+    await planAwards(
+      tx,
+      db,
+      [
+        { uid: 'fa', fan: context('fa'), entries: [] },
+        {
+          uid: 'quem-convidou',
+          entries: [],
+          ticks: [{ action: 'share', key: 'e1', on: { postId: 'p-clipe', artistIds: [] } }],
+        },
+      ],
+      award,
+    );
+    expect(reads).toEqual([
+      'config/season',
+      'users/quem-convidou',
+      'wallets/quem-convidou',
+      'wallets/quem-convidou/ledger/mission:m-clipe-netto:2026-10-05',
+    ]);
+  });
+
+  it('sem lançamento nem unidade, não lê nada', async () => {
+    const { db, tx, reads } = fakeTx();
+    const plan = await planAwards(tx, db, [{ uid: 'fa', fan: context('fa'), entries: [] }], award);
+    expect(reads).toEqual([]);
+    expect(rewardsOf(plan)).toEqual({
+      completedMissions: [],
+      levelUp: null,
+      unlockedAchievements: [],
+      missionsChanged: false,
+    });
+  });
+
+  it('as missões que vão ler: as que concluem para quem chama, as candidatas para os outros', () => {
+    const ticks: MissionTick[] = [
+      { action: 'like', key: 'p1', on: { postId: 'p1', artistIds: ['nenho'] } },
+    ];
+    expect(
+      missionsToRead({ uid: 'fa', fan: context('fa'), entries: [], ticks }, game, NOW),
+    ).toEqual([]);
+    expect(
+      missionsToRead({ uid: 'x', entries: [], ticks }, game, NOW).map((item) => item.mission.id),
+    ).toEqual(['m-curtir-nenho', 'm-curtir-nenho-2']);
   });
 });

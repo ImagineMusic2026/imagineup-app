@@ -9,6 +9,7 @@ import { agendaRoutes } from './routes/agenda';
 import { centralRoutes } from './routes/centrals';
 import { inviteRoutes } from './routes/invites';
 import { meRoutes } from './routes/me';
+import { missionRoutes } from './routes/missions';
 import { moderationRoutes } from './routes/moderation';
 import { postRoutes } from './routes/posts';
 import type { ApiDeps, ApiRequest, ApiResponse, ApiRoute, ResolvedDeps, RouteInput } from './types';
@@ -37,6 +38,7 @@ export const API_ROUTES: readonly ApiRoute[] = [
   ...postRoutes,
   ...agendaRoutes,
   ...moderationRoutes,
+  ...missionRoutes,
 ];
 
 /** Sem o segredo do convite nas dependências, só as rotas do convite falham (500). */
@@ -113,7 +115,7 @@ export function createApiHandler(deps: ApiDeps, routes: readonly ApiRoute[] = AP
         return;
       }
 
-      const { points } = await resolved.config.get();
+      const { points, game } = await resolved.config.get();
       const callerUid = uid;
       const result = await runIdempotent(
         resolved,
@@ -124,6 +126,7 @@ export function createApiHandler(deps: ApiDeps, routes: readonly ApiRoute[] = AP
           fingerprint: requestFingerprint(method, normalizePath(req.path), req.body),
           now,
           config: points,
+          game,
         },
         ({ tx, fan, award }) => target.handle({ ...base, uid: callerUid, tx, fan, award }),
       );

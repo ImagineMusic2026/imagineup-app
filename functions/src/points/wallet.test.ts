@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { DEFAULT_POINTS_CONFIG } from './config';
+import { buildLoadedConfig, DEFAULT_POINTS_CONFIG } from './config';
 import { emptyWallet, type WalletState } from './model';
 import { decodeLedgerCursor, encodeLedgerCursor, progressView, walletView } from './wallet';
 
@@ -13,10 +13,11 @@ const season = {
   endsAt: NOW + 12 * DAY_MS,
   leaderTitle: null,
 };
-const config = (withSeason = true) => ({
-  points: DEFAULT_POINTS_CONFIG,
-  season: { version: 1, season: withSeason ? season : null },
-});
+const config = (withSeason = true) =>
+  buildLoadedConfig({
+    points: DEFAULT_POINTS_CONFIG,
+    season: { version: 1, season: withSeason ? season : null },
+  });
 
 const camila: WalletState = {
   ...emptyWallet(),
@@ -49,10 +50,10 @@ describe('carteira e progresso', () => {
   });
 
   it('temporada que acabou e continua na configuração mostra os pontos dela, congelados', () => {
-    const ended = {
+    const ended = buildLoadedConfig({
       points: DEFAULT_POINTS_CONFIG,
       season: { version: 1, season: { ...season, endsAt: NOW - DAY_MS } },
-    };
+    });
     expect(walletView(camila, ended).seasonPoints).toBe(4_120);
   });
 

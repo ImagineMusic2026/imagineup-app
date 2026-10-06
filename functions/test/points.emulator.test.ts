@@ -183,21 +183,28 @@ describe('a função api no emulador', () => {
       all.push(...items);
       cursor = page.body.nextCursor as string | null;
     } while (cursor && pages.length < 10);
+    // Desde o bloco 7, as 8 missões de antes da semana (22.13), uma por dia.
     expect(pages).toEqual([
       ['mission:seed-camila-4', 'mission:seed-camila-3'],
       ['mission:seed-camila-2', 'mission:seed-camila-1'],
       ['seed:camila-base-netto', 'seed:camila-base-nenho'],
-      ['seed:camila-base'],
+      ['seed:camila-base', 'mission:seed-camila-12'],
+      ['mission:seed-camila-11', 'mission:seed-camila-10'],
+      ['mission:seed-camila-9', 'mission:seed-camila-8'],
+      ['mission:seed-camila-7', 'mission:seed-camila-6'],
+      ['mission:seed-camila-5'],
     ]);
     // Uma página de 5 corta entre o Netto e o Nenho, do mesmo milissegundo.
     const five = await http('/me/ledger?limit=5', { token: camila.token });
     const after = await http(`/me/ledger?limit=50&cursor=${String(five.body.nextCursor)}`, {
       token: camila.token,
     });
-    expect((after.body.items as Item[]).map((item) => item.id)).toEqual([
+    expect((after.body.items as Item[]).map((item) => item.id).slice(0, 3)).toEqual([
       'seed:camila-base-nenho',
       'seed:camila-base',
+      'mission:seed-camila-12',
     ]);
+    expect(after.body.items as Item[]).toHaveLength(10);
     expect(after.body.nextCursor).toBeNull();
     // Carteira e extrato fecham.
     expect(all.reduce((sum, item) => sum + item.points, 0)).toBe(12_480);
@@ -859,7 +866,9 @@ describe('seed da Camila', () => {
       xp: 12_480,
       seasonId: 'temporada-sao-joao',
       seasonPoints: 4_120,
-      earnedTotal: 840,
+      // Os +840 da semana e as 8 missões de 50 de antes dela (22.13).
+      earnedTotal: 1_240,
+      seasonMissions: 12,
       stats: { pastSeasons: 2 },
     });
     expect(await read(`wallets/${camila.uid}/centralPoints/nettobrito`)).toMatchObject({
@@ -881,6 +890,6 @@ describe('seed da Camila', () => {
     await seedCamilaWallet(db, camila.uid, { now: NOW });
     const again = await db.doc(`wallets/${camila.uid}`).get();
     expect(again.data()).toEqual(wallet.data());
-    expect((await db.collection(`wallets/${camila.uid}/ledger`).get()).size).toBe(7);
+    expect((await db.collection(`wallets/${camila.uid}/ledger`).get()).size).toBe(15);
   });
 });

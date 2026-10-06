@@ -2,11 +2,13 @@ import { Timestamp, type Firestore } from 'firebase-admin/firestore';
 import { describe, expect, it, vi } from 'vitest';
 
 import {
+  buildLoadedConfig,
   ConfigValidationError,
   createConfigSource,
   DEFAULT_POINTS_CONFIG,
   parsePointsConfig,
   parseSeasonConfig,
+  staticConfigSource,
   validatePointsConfigInput,
   validateSeasonInput,
 } from './config';
@@ -293,5 +295,109 @@ describe('cache da configuração', () => {
     await expect(source.get()).rejects.toThrow('fora do ar');
     await expect(source.get()).resolves.toMatchObject({ points: { version: 0 } });
     expect(getAll).toHaveBeenCalledTimes(2);
+  });
+});
+
+// --- Bloco 7: tetos do dia, limite da missão e o jogo na mesma carga (22.3) ---------
+
+describe('tetos do dia e o limite da missão (bloco 7)', () => {
+  it('o padrão dos tetos é o das constantes de hoje', () => {
+    expect(DEFAULT_POINTS_CONFIG.actionCaps).toEqual({
+      central_entry: 30,
+      invite_visit_sent: 20,
+      invite_link: 30,
+      like_set: 300,
+      comment_sent: 100,
+      rsvp_set: 50,
+      comment_report: 30,
+      fan_block: 30,
+    });
+  });
+
+  it('leitura tolerante: teto desconhecido ignorado, inválido volta ao padrão só nele', () => {
+    const log = spyLog();
+    const config = parsePointsConfig(
+      { version: 2, actionCaps: { like_set: 10, comment_sent: 0, outro: 5 } },
+      log,
+    );
+    expect(config.actionCaps.like_set).toBe(10);
+    expect(config.actionCaps.comment_sent).toBe(100);
+    expect(log.warn).toHaveBeenCalledOnce();
+    expect(log.error).toHaveBeenCalledOnce();
+  });
+
+  it('o limite diário da missão é sempre null na leitura', () => {
+    const log = spyLog();
+    expect(
+      parsePointsConfig({ version: 1, dailyLimits: { mission: 5 } }, log).dailyLimits.mission,
+    ).toBeNull();
+    expect(log.error).toHaveBeenCalledOnce();
+  });
+
+  it('validação estrita: tetos de 1 a 10.000 e só chaves conhecidas; a missão só aceita null', () => {
+    expect(validatePointsConfigInput({ actionCaps: { like_set: 500 } })).toEqual({
+      actionCaps: { like_set: 500 },
+    });
+    expect(fieldOf(() => validatePointsConfigInput({ actionCaps: { like_set: 0 } }))).toBe(
+      'actionCaps.like_set',
+    );
+    expect(fieldOf(() => validatePointsConfigInput({ actionCaps: { outro: 1 } }))).toBe(
+      'actionCaps.outro',
+    );
+    expect(fieldOf(() => validatePointsConfigInput({ dailyLimits: { mission: 10 } }))).toBe(
+      'dailyLimits.mission',
+    );
+  });
+});
+
+describe('a carga com o jogo (bloco 7)', () => {
+  const doc = (id: string) => ({ id });
+  const snap = (data: unknown) => ({ data: () => data });
+
+  it('lê os quatro documentos num getAll só e monta o índice das missões', async () => {
+    const getAll = vi.fn((...refs: { id: string }[]) => {
+      expect(refs.map((ref) => ref.id)).toEqual(['points', 'season', 'missions', 'achievements']);
+      return Promise.resolve([
+        snap(undefined),
+        snap(undefined),
+        snap({
+          version: 4,
+          missions: [
+            {
+              id: 'm-curtir-nenho',
+              title: 'Curta 5 posts do Nenho',
+              action: 'like',
+              target: { postId: null, artistId: 'nenho', eventId: null },
+              goal: 5,
+              period: 'daily',
+              rewardPoints: 10,
+              featured: false,
+              startsAt: Timestamp.fromMillis(NOW),
+              endsAt: null,
+              status: 'active',
+              activatedAt: Timestamp.fromMillis(NOW),
+            },
+          ],
+          seasonGoal: null,
+        }),
+        snap(undefined),
+      ]);
+    });
+    const db = { getAll, collection: () => ({ doc }) } as unknown as Firestore;
+    const loaded = await createConfigSource(db, { now: () => NOW, log: spyLog() }).get();
+    expect(getAll).toHaveBeenCalledOnce();
+    expect(loaded.missions.version).toBe(4);
+    expect(loaded.game.missions.byAction.get('like')!.map((item) => item.id)).toEqual([
+      'm-curtir-nenho',
+    ]);
+    expect(loaded.achievements.version).toBe(0);
+    expect(loaded.game.achievements).toHaveLength(10);
+  });
+
+  it('a fonte fixa monta o jogo do que vier, e o padrão sem nada', async () => {
+    const loaded = await staticConfigSource().get();
+    expect(loaded.game.missions.byAction.size).toBe(0);
+    expect(loaded.game.seasonGoal).toBeNull();
+    expect(buildLoadedConfig().achievements.achievements).toHaveLength(10);
   });
 });

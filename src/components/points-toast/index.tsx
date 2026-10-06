@@ -11,6 +11,7 @@ import Animated, {
 
 import { Pill } from '@/components/pill';
 import { useHaptics } from '@/hooks/use-haptics';
+import type { HapticEvent } from '@/services/haptics';
 import { usePrefersReducedMotion } from '@/hooks/use-prefers-reduced-motion';
 import { t } from '@/i18n';
 import { motion, spacing } from '@/theme';
@@ -37,6 +38,11 @@ export interface PointsToastProps {
    * pode nem estar montada.
    */
   silent?: boolean;
+  /**
+   * O toque do ganho (bloco 7): `levelUp` com subida de nível, `missionComplete`
+   * com missão concluída, e o padrão, `pointsEarned` (`describeRewards`).
+   */
+  haptic?: HapticEvent;
   /** Por padrão nasce centralizado na borda de cima do pai. */
   style?: StyleProp<ViewStyle>;
   testID?: string;
@@ -48,6 +54,7 @@ interface Toast {
   points: number;
   /** `null`: sem toque e sem anúncio. */
   announcement: string | null;
+  haptic: HapticEvent;
 }
 
 // Sobe 12 e some no tempo do contador: aparece rápido, fica e apaga.
@@ -73,6 +80,7 @@ export function PointsToast({
   trigger,
   announcement,
   silent = false,
+  haptic = 'pointsEarned',
   style,
   testID,
 }: PointsToastProps) {
@@ -95,6 +103,7 @@ export function PointsToast({
         id: gains + 1,
         points,
         announcement: silent ? null : (announcement ?? pointsToastAnnouncement(points)),
+        haptic,
       });
     }
   }
@@ -103,7 +112,7 @@ export function PointsToast({
   useEffect(() => {
     if (!toast || toast.announcement === null || announced.current === toast.id) return;
     announced.current = toast.id;
-    playHaptic('pointsEarned');
+    playHaptic(toast.haptic);
     // Na fila, no iOS: os pontos chegam com a resposta, logo depois do anúncio
     // da ação ("Presença confirmada"), e o anúncio simples cortaria o anterior.
     AccessibilityInfo.announceForAccessibilityWithOptions(toast.announcement, { queue: true });

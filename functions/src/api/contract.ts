@@ -46,6 +46,110 @@ export type LedgerEntry = {
   subject: { type: string; id: string } | null;
   /** ISO 8601 UTC. */
   createdAt: string;
+  /** O `name` da central, em qualquer status; null sem central ou com ela apagada (bloco 7). */
+  artistName: string | null;
+  /** Só na missão: o título dela quando concluiu, guardado no lançamento (bloco 7). */
+  subjectTitle: string | null;
+};
+
+// --- Missões e conquistas (bloco 7), espelho de src/domains/missions/types.ts e
+// de src/domains/profile/types.ts ------------------------------------------------
+
+/** `MissionAction` do app: `join` é novo no bloco 7. */
+export type MissionAction = 'like' | 'comment' | 'rsvp' | 'join' | 'share' | 'invite';
+
+/** `MissionTarget` do app: só as chaves que existem. */
+export type MissionTarget = { postId?: string; artistId?: string; eventId?: string };
+
+/** `Mission` do app (`GET /missions` e `GET /missions/daily`, 22.2). */
+export type Mission = {
+  id: string;
+  title: string;
+  /** A do catálogo; na concluída que pagou, a paga. */
+  rewardPoints: number;
+  progress: { current: number; target: number };
+  /** ISO: o menor entre o `endsAt` da missão e o fim do período. */
+  endsAt: string;
+  /** O servidor nunca manda `expired` nem `locked` (a relâmpago fica de fora). */
+  status: 'active' | 'completed';
+  action: MissionAction;
+  target: MissionTarget | null;
+  period: 'daily' | 'weekly';
+  /** A primeira destacada visível de cada período. */
+  featured: boolean;
+  /** Só no `share`: os valores do convite da configuração. */
+  pointsBreakdown: { perVisit: number; perSignup: number } | null;
+  /** ISO, na concluída. */
+  completedAt: string | null;
+  /** Sempre null (a relâmpago fica de fora). */
+  unlockHint: null;
+  /** Só no `rsvp` com show alvo. */
+  event: { name: string; startsAt: string } | null;
+};
+
+/** `SeasonGoal` do app: a meta da temporada da 1g. `metric` é novo (opcional no app). */
+export type SeasonGoal = {
+  id: string;
+  title: string;
+  description: string;
+  completedCount: number;
+  targetCount: number;
+  /** ISO: o fim da temporada. */
+  endsAt: string;
+  metric: 'missions' | 'points';
+};
+
+/** `MissionsResponse` do app. */
+export type MissionsResponse = { season: SeasonGoal | null; missions: Mission[] };
+
+/** `DailyMissionResponse` do app. */
+export type DailyMissionResponse = { mission: Mission | null };
+
+/** `Achievement` do app. */
+export type Achievement = {
+  id: string;
+  title: string;
+  icon: string;
+  tone: 'action' | 'points' | 'events';
+  /** ISO; null bloqueada. */
+  unlockedAt: string | null;
+};
+
+/** `MyAchievements` do app (`GET /me/achievements`). */
+export type MyAchievements = {
+  unlockedCount: number;
+  totalCount: number;
+  highlights: Achievement[];
+};
+
+/** Uma missão concluída e paga agora, na resposta da ação. */
+export type CompletedMission = {
+  id: string;
+  title: string;
+  rewardPoints: number;
+  /** ISO. */
+  completedAt: string;
+};
+
+/** Uma conquista desbloqueada agora, na resposta da ação. */
+export type UnlockedAchievement = { id: string; title: string };
+
+/**
+ * As recompensas da ação para quem chama (22.2), nas respostas das rotas que
+ * gravam curtir, comentar, "Eu vou", entrar e seguir: os quatro campos vão
+ * sempre. Opcionais no app.
+ */
+export type ActionRewards = {
+  completedMissions: CompletedMission[];
+  /** O nível novo quando subiu (duas subidas de uma vez mandam o final), senão null. */
+  levelUp: Level | null;
+  unlockedAchievements: UnlockedAchievement[];
+  /**
+   * Alguma unidade contou no progresso de quem chama, ou a meta da temporada
+   * mudou para ele (os pontos da temporada, na meta por pontos, ou a meta
+   * cumprida agora): o app busca as missões de novo.
+   */
+  missionsChanged: boolean;
 };
 
 // --- Centrais (bloco 4), espelho de src/domains/artists/types.ts ---------------

@@ -67,6 +67,11 @@ describe('tetos do dia', () => {
     expect(problem).toMatchObject({ action: 'like', limit: 300, retryAfter: 12 * 60 * 60 });
   });
 
+  it('o teto da configuração (actionCaps, bloco 7) vale no lugar do padrão', () => {
+    expect(dailyCapProblem('like', 299, NOW, 10)).toMatchObject({ action: 'like', limit: 10 });
+    expect(dailyCapProblem('like', 9, NOW, 10)).toBeNull();
+  });
+
   it('a contagem é a do dia de São Paulo na carteira', () => {
     const days = {
       '2026-10-05': { earned: 0, count: { like_set: 7 } },

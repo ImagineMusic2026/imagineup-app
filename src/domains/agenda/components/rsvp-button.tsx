@@ -268,7 +268,7 @@ export function RsvpButton({
   }));
 
   const status = t(going ? 'agenda.rsvp.going' : 'agenda.rsvp.go');
-  const awarded = rsvp.data?.eventId === eventId ? rsvp.data.pointsAwarded : 0;
+  const { award } = rsvp;
   // Com a largura medida, cada rótulo fica com a dele: o botão mais estreito
   // recorta o texto em vez de quebrá-lo em duas linhas no meio da troca.
   const restFixed = widths && { width: widths.rest };
@@ -313,8 +313,10 @@ export function RsvpButton({
         </View>
       </View>
       <PointsToast
-        points={awarded}
-        trigger={rsvp.isSuccess ? rsvp.submittedAt : null}
+        points={award?.points ?? 0}
+        trigger={award?.id ?? null}
+        announcement={award?.announcement}
+        haptic={award?.haptic}
         style={{ bottom: toastBottom }}
       />
     </View>

@@ -678,3 +678,28 @@ describe('mural, agenda e moderação (bloco 6)', () => {
     }
   });
 });
+
+describe('missões e conquistas (bloco 7)', () => {
+  it('fã sem carteira e catálogo vazio: sem meta, sem missões e sem missão do dia', async () => {
+    const list = await call(request('GET', '/missions'));
+    expect(list).toMatchObject({ status: 200, body: { season: null, missions: [] } });
+    const daily = await call(request('GET', '/missions/daily'));
+    expect(daily).toMatchObject({ status: 200, body: { mission: null } });
+  });
+
+  it('as conquistas do fã novo: 0 de 9, com a de nível seguinte primeiro', async () => {
+    const sent = await call(request('GET', '/me/achievements'));
+    expect(sent.status).toBe(200);
+    expect(sent.body).toMatchObject({ unlockedCount: 0, totalCount: 9 });
+    expect(
+      (sent.body as { highlights: { id: string }[] }).highlights.map((item) => item.id),
+    ).toEqual(['pe-de-serra', 'boca-a-boca', 'fa-de-show', 'missao-cumprida']);
+  });
+
+  it('as rotas novas só leem: sem Idempotency-Key e sem perfil', async () => {
+    const sent = await call(
+      request('GET', '/missions', { headers: { Authorization: 'Bearer token-sem-email' } }),
+    );
+    expect(sent.status).toBe(200);
+  });
+});

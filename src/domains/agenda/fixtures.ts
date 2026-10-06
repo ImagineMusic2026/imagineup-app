@@ -206,9 +206,11 @@ let answered = new Map<string, RsvpResult>();
  * quando o app reabre ou a sessão termina. Só aceita os shows da agenda, como
  * a API.
  *
- * Confirmar presença conta na missão "Confirme presença em um show" (1g): o
- * servidor das missões diz quantos pontos a confirmação rendeu (os da missão,
- * quando ela conclui; zero depois disso) e já os põe na carteira.
+ * Confirmar presença conta na missão "Confirme presença em um show" (1g) do
+ * show alvo dela (o São João de Irará): o servidor das missões diz quantos
+ * pontos a confirmação rendeu (os da missão, quando ela conclui; zero depois
+ * disso) e já os põe na carteira. Só a troca para "Eu vou" conta, como no
+ * servidor (22.4).
  */
 export const rsvpFixture = {
   /** Confirma ou desfaz; a mesma chave de novo devolve a resposta da primeira vez. */
@@ -222,8 +224,9 @@ export const rsvpFixture = {
 
     let pointsAwarded = 0;
     if (confirm) {
+      const already = going.has(eventId);
       going.add(eventId);
-      pointsAwarded = missionsFixture.record('rsvp');
+      if (!already) pointsAwarded = missionsFixture.record('rsvp', fixtureNow(), { eventId });
     } else {
       going.delete(eventId);
     }

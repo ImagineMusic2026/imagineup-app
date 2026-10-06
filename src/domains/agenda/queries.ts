@@ -7,18 +7,21 @@ import {
   type InfiniteData,
   type QueryClient,
 } from '@tanstack/react-query';
+import { useEffect, useRef, useState } from 'react';
 import { AccessibilityInfo } from 'react-native';
 
 // As centrais e as chaves dos posts pelos arquivos, fora dos index, como os
 // posts fazem (pelo index seria um ciclo).
 import { artistKeys } from '@/domains/artists/queries';
-import { missionKeys } from '@/domains/missions';
+import { missionKeys, rewardsRefresh } from '@/domains/missions';
 import { postKeys } from '@/domains/posts/keys';
 import { profileKeys } from '@/domains/profile';
+// O "+N" das recompensas, pelo arquivo (fora do index), como o do curtir.
+import { rewardsToast } from '@/domains/profile/action-rewards';
 import { rankingKeys } from '@/domains/ranking';
 import { t } from '@/i18n';
 import { ApiError } from '@/services/api/errors';
-import { haptics } from '@/services/haptics';
+import { haptics, type HapticEvent } from '@/services/haptics';
 import { queryOptionsFor } from '@/services/query/client';
 import { createIdempotencyKey } from '@/utils/id';
 
@@ -39,15 +42,22 @@ export const agendaMutationKeys = {
 };
 
 /**
- * Toda presença confirmada ou desfeita pode andar (ou voltar) uma missão de
- * presença, mesmo sem concluí-la e sem render pontos: as missões buscam de
- * novo sempre. O saldo (1e, 1h), o ranking (1f, pontos da temporada), a
+ * A presença confirmada pode andar uma missão de presença, mesmo sem concluí-la
+ * e sem render pontos: as missões buscam de novo quando a resposta diz que
+ * alguma andou (`missionsChanged`, bloco 7), e sempre quando o campo não vem
+ * (as fixtures e o desfazer, que pode esconder de novo a missão de um show).
+ * As conquistas da 1e buscam de novo com conquista nova (a primeira presença
+ * dá "Fã de show"). O saldo (1e, 1h), o ranking (1f, pontos da temporada), a
  * posição e os pontos nas centrais (1b, 1e) e o "PTS DA CENTRAL" da 1d (os
  * pontos vão para uma central do show) só mudam quando a presença rendeu
  * pontos.
  */
 function refreshPointsAfterRsvp(client: QueryClient, result: RsvpResult): void {
-  void client.invalidateQueries({ queryKey: missionKeys.all });
+  const refresh = rewardsRefresh(result);
+  if (refresh.missions) void client.invalidateQueries({ queryKey: missionKeys.all });
+  if (refresh.achievements) {
+    void client.invalidateQueries({ queryKey: profileKeys.achievements() });
+  }
   if (result.pointsAwarded <= 0) return;
   void client.invalidateQueries({ queryKey: profileKeys.wallet() });
   void client.invalidateQueries({ queryKey: rankingKeys.all });
@@ -175,8 +185,35 @@ function withRsvp(rsvps: MyRsvps | undefined, eventId: string, going: boolean): 
  * shows diferentes não esperam um pelo outro. Show que saiu do ar ou encerrou
  * (404): além de desfazer, a agenda e o mural buscam de novo.
  */
+/** Os pontos de uma presença, para o "+N" do botão, com a frase e o toque. */
+export interface RsvpAward {
+  /** Muda a cada ganho: dispara o "+N". */
+  id: number;
+  points: number;
+  announcement?: string;
+  haptic?: HapticEvent;
+}
+
 export function useRsvpMutation(eventId: string) {
   const queryClient = useQueryClient();
+  const [award, setAward] = useState<RsvpAward | null>(null);
+  const awards = useRef(0);
+  const mounted = useRef(false);
+  // O show que o botão mostra agora: a FlashList reaproveita a célula de um
+  // show para outro, com o hook montado, e o "+N" que chega depois iria para o
+  // botão do outro show.
+  const shownEvent = useRef(eventId);
+
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    shownEvent.current = eventId;
+  }, [eventId]);
 
   const mutation = useMutation({
     mutationKey: agendaMutationKeys.rsvp,
@@ -194,7 +231,17 @@ export function useRsvpMutation(eventId: string) {
       );
       return { wasGoing };
     },
-    onSuccess: (result) => refreshPointsAfterRsvp(queryClient, result),
+    onSuccess: (result) => {
+      refreshPointsAfterRsvp(queryClient, result);
+      // Chegou com o botão fora da tela (a rede voltou depois) ou mostrando
+      // outro show (célula reaproveitada): sem o "+N", e nada fica marcado como
+      // festejado, para a 1g festejar quando o fã voltar a ela.
+      if (!mounted.current || !result.going || result.eventId !== shownEvent.current) return;
+      const toast = rewardsToast(result.pointsAwarded, result);
+      if (!toast) return;
+      awards.current += 1;
+      setAward({ id: awards.current, points: result.pointsAwarded, ...toast });
+    },
     onError: (error, { eventId: id }, context) => {
       if (isNotFound(error)) refreshAfterGoneEvent(queryClient);
       // Volta só este show: a lista pode ter mudado em outro no meio.
@@ -216,6 +263,7 @@ export function useRsvpMutation(eventId: string) {
 
   return {
     ...mutation,
+    award,
     setGoing: (going: boolean) =>
       mutation.mutate({ eventId, going, idempotencyKey: createIdempotencyKey() }),
   };

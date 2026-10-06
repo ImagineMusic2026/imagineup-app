@@ -1,6 +1,8 @@
 import { createHmac } from 'node:crypto';
 
 import { isHandleFormat } from '../artists/model';
+import type { MissionTick } from '../missions/model';
+import { isContentId } from '../page-cursor';
 import type { AwardStatus } from '../points/model';
 import type { OriginKind } from '../points/stats';
 
@@ -199,9 +201,6 @@ export type InviteLinkKind = 'invite' | 'post' | 'artist' | 'agenda' | 'other';
 /** O tipo do link e o id do post ou da central (null no resto). */
 export type InviteLinkOrigin = { kind: InviteLinkKind; targetId: string | null };
 
-/** Id de post nos links (o mural ainda é de exemplo; o bloco 6 pode conferir o post). */
-export const POST_ID_PATTERN = /^[A-Za-z0-9_-]{1,128}$/;
-
 function decodeSegment(segment: string): string | null {
   try {
     return decodeURIComponent(segment);
@@ -213,9 +212,11 @@ function decodeSegment(segment: string): string | null {
 /**
  * Classifica o caminho que o link abria: `/` e `/c/<código>` são `invite`;
  * `/post/<id>`, `post`; `/artista/<id>`, `artist` (id no formato do @);
- * `/agenda`, `agenda`; o resto, e id fora do formato, `other`. A busca é
- * ignorada, e o caminho em si não é guardado: um `other` pode levar qualquer
- * texto.
+ * `/agenda`, `agenda`; o resto, e id fora do formato, `other`. O id de post
+ * segue o `isContentId` (fora os `__.*__`, que o Firestore reserva: o claim e
+ * a visita leem o post para a missão de link, e a leitura de um id reservado
+ * seria recusada). A busca é ignorada, e o caminho em si não é guardado: um
+ * `other` pode levar qualquer texto.
  */
 export function classifyInvitePath(path: string): InviteLinkOrigin {
   const clean = path.split(/[?#]/, 1)[0]!.replace(/\/+$/, '') || '/';
@@ -227,7 +228,7 @@ export function classifyInvitePath(path: string): InviteLinkOrigin {
   if (head === 'agenda' && id === undefined) return { kind: 'agenda', targetId: null };
   if ((head === 'post' || head === 'artista') && id !== undefined) {
     const decoded = decodeSegment(id);
-    if (head === 'post' && decoded !== null && POST_ID_PATTERN.test(decoded)) {
+    if (head === 'post' && isContentId(decoded)) {
       return { kind: 'post', targetId: decoded };
     }
     if (head === 'artista' && isHandleFormat(decoded)) {
@@ -377,6 +378,20 @@ export function parseVisitBody(body: unknown, now: number): Parsed<VisitInput> {
   const openedAt = parseOpenedAt(body.openedAt, now);
   if (!openedAt.ok) return openedAt;
   return { ok: true, value: { code, link, utm: utm.value, openedAt: openedAt.value } };
+}
+
+/**
+ * Onde a pessoa chegou pelo link, para o alvo das missões de link (bloco 7,
+ * 22.4): o link de post leva o post e, quando lida, a central dele (o link de
+ * um post do Netto anda a missão de link da central do Netto); o de central,
+ * a central; os outros, nada.
+ */
+export function linkOn(link: InviteLinkOrigin, postArtistId: string | null): MissionTick['on'] {
+  if (link.kind === 'post' && link.targetId) {
+    return { postId: link.targetId, artistIds: postArtistId ? [postArtistId] : [] };
+  }
+  if (link.kind === 'artist' && link.targetId) return { artistIds: [link.targetId] };
+  return { artistIds: [] };
 }
 
 /** O tipo de origem nos shards: o do link, ou `code` para o código digitado. */

@@ -1,3 +1,5 @@
+import type { ActionRewards } from '@/domains/missions';
+
 /**
  * Contrato com a API das centrais (bloco 4, docs/arquitetura-api.md, seção
  * 19), espelho de `functions/src/api/contract.ts`: mudou um, mude o outro.
@@ -22,7 +24,7 @@ export interface FollowArtistsVariables {
 }
 
 /** Centrais que o fã segue depois da ação. */
-export interface FollowArtistsResult {
+export interface FollowArtistsResult extends ActionRewards {
   followedArtistIds: string[];
   /**
    * Pontos de entrada pagos agora pelo servidor (uma vez na vida por central).
@@ -95,7 +97,11 @@ export interface JoinCentralVariables {
  * quando o fã já estava nela (a API é idempotente) ou quando a regra não dá
  * ponto por entrar.
  */
-export interface JoinCentralResult {
+/**
+ * A resposta do "Entrar na central". Traz também as recompensas da ação (bloco
+ * 7: a missão de entrada concluída, o nível novo, as conquistas), opcionais.
+ */
+export interface JoinCentralResult extends ActionRewards {
   artistId: string;
   pointsAwarded: number;
 }

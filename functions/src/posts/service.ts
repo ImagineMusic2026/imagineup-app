@@ -33,8 +33,8 @@ import {
   type AwardContext,
   type AwardPlan,
   type FanContext,
+  type RunOptions,
 } from '../points/award';
-import { type Actor, type PointsConfig } from '../points/model';
 import {
   chunk,
   COMMENT_FALLBACK_NAME,
@@ -368,9 +368,10 @@ export type LikeOutcome = { plan: AwardPlan };
 /**
  * Curtir (`PUT /posts/:postId/like`): post invisível é 404; já curtido, nada
  * além da atividade; o teto do dia (300 trocas para curtido); `like:<postId>`
- * pelo núcleo, que paga no máximo uma vez na vida; a curtida nasce (ou volta a
- * `liked: true`, com o `firstLikedAt` da primeira), +1 num shard do post, o
- * fluxo `likes` e o contador do teto.
+ * pelo núcleo, que paga no máximo uma vez na vida, e a unidade `like` das
+ * missões na troca para curtido (o post conta uma vez por missão e período,
+ * bloco 7); a curtida nasce (ou volta a `liked: true`, com o `firstLikedAt` da
+ * primeira), +1 num shard do post, o fluxo `likes` e o contador do teto.
  */
 export async function likePost(
   tx: Transaction,
@@ -403,6 +404,7 @@ export async function likePost(
             subject: { type: 'post', id: postId },
           },
         ],
+        ticks: [{ action: 'like', key: postId, on: { postId, artistIds: [artistId] } }],
       },
     ],
     award,
@@ -461,7 +463,8 @@ export type CommentOutcome = { plan: AwardPlan; comment: AddCommentResult | null
 /**
  * Comentar (`POST /posts/:postId/comments`), com o texto já limpo pela rota:
  * post invisível é 404; o teto do dia (100 comentários); `comment:<id>` pelo
- * núcleo, dentro do limite diário de `comment`; o comentário nasce com o nome
+ * núcleo, dentro do limite diário de `comment`, e a unidade `comment` das
+ * missões (o post conta uma vez por missão e período); o comentário nasce com o nome
  * e a foto do perfil lido na transação (nunca do corpo), +1 num shard, o
  * fluxo `comments` e o contador do teto. O seed passa um id fixo, lido junto
  * com o post: se ele já existe, sai sem efeito (`comment: null`).
@@ -506,6 +509,7 @@ export async function commentOnPost(
             subject: { type: 'comment', id: ref.id },
           },
         ],
+        ticks: [{ action: 'comment', key: postId, on: { postId, artistIds: [artistId] } }],
       },
     ],
     award,
@@ -543,8 +547,6 @@ export async function commentOnPost(
 }
 
 // --- Fora da API: o seed dos emuladores -------------------------------------------
-
-type RunOptions = { now: number; config: PointsConfig; actor: Actor; random?: () => number };
 
 /** Curtir fora da API (seed). */
 export function runLikePost(

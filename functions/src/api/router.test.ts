@@ -198,3 +198,29 @@ describe('rotas do mural, da agenda e da moderação (bloco 6)', () => {
     expect(matchRoute(API_ROUTES, 'GET', '/feed')).toMatchObject({ kind: 'match' });
   });
 });
+
+describe('rotas das missões e das conquistas (bloco 7)', () => {
+  it('/missions e /missions/daily não se confundem; POST /missions é 405', () => {
+    expect(matchRoute(API_ROUTES, 'GET', '/missions')).toMatchObject({
+      kind: 'match',
+      route: { pattern: '/missions' },
+    });
+    expect(matchRoute(API_ROUTES, 'GET', '/missions/daily')).toMatchObject({
+      kind: 'match',
+      route: { pattern: '/missions/daily' },
+    });
+    expect(matchRoute(API_ROUTES, 'POST', '/missions')).toEqual({
+      kind: 'method_not_allowed',
+      allow: ['GET'],
+    });
+  });
+
+  it('/me/achievements e /me/ledger convivem com as rotas de me', () => {
+    for (const path of ['/me/achievements', '/me/ledger', '/me/wallet', '/me/progress']) {
+      expect(matchRoute(API_ROUTES, 'GET', path)).toMatchObject({
+        kind: 'match',
+        route: { pattern: path },
+      });
+    }
+  });
+});

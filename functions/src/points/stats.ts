@@ -93,6 +93,10 @@ export type ShardDelta = {
     utmSource: Record<string, { signups: number }>;
     utmCampaign: Record<string, { signups: number }>;
   };
+  /** Missões concluídas e pagas no dia, por missão (bloco 7, 22.9). */
+  byMission: Record<string, { completed: number }>;
+  /** Conquistas desbloqueadas no dia, por conquista (bloco 7, 22.9). */
+  byAchievement: Record<string, { unlocked: number }>;
 };
 
 /** Cadastros, visitas e links de um tipo de link. */
@@ -124,6 +128,8 @@ export function emptyShardDelta(): ShardDelta {
     signups: { total: 0, invited: 0 },
     invites: { visits: 0, links: 0 },
     byOrigin: { kind: {}, utmSource: {}, utmCampaign: {} },
+    byMission: {},
+    byAchievement: {},
   };
 }
 
@@ -289,6 +295,22 @@ export function addInviteToShard(delta: ShardDelta, change: InviteShardEvent): v
     delta.invites.links += 1;
     origin.links += 1;
   }
+}
+
+/**
+ * Soma uma missão concluída e paga (bloco 7, 22.9). Os pontos dela já entram em
+ * `bySource.mission` pelo lançamento; aqui é a contagem por missão, para a
+ * seção Missões e a Visão geral.
+ */
+export function addMissionToShard(delta: ShardDelta, missionId: string): void {
+  const mission = (delta.byMission[missionId] ??= { completed: 0 });
+  mission.completed += 1;
+}
+
+/** Soma uma conquista desbloqueada (bloco 7, 22.9). */
+export function addAchievementToShard(delta: ShardDelta, achievementId: string): void {
+  const achievement = (delta.byAchievement[achievementId] ??= { unlocked: 0 });
+  achievement.unlocked += 1;
 }
 
 type Tree = { [key: string]: number | Tree };

@@ -10,6 +10,7 @@ import { AccessibilityInfo } from 'react-native';
 
 import { artistKeys } from '@/domains/artists';
 import { missionKeys, missionsFixture } from '@/domains/missions';
+import { wasMissionCelebrated } from '@/domains/missions/celebrated';
 import { RSVP_MISSION_POINTS as FIRST_RSVP_POINTS } from '@/domains/missions/fixtures';
 import { profileKeys } from '@/domains/profile';
 import { GLOBAL_SCOPE, rankingKeys } from '@/domains/ranking';
@@ -60,6 +61,13 @@ const hidden = { includeHiddenElements: true } as const;
 const EVENT = { id: 'arrocha-na-praia', title: 'Arrocha na Praia' };
 const goLabel = t('agenda.rsvp.label', { status: t('agenda.rsvp.go'), show: EVENT.title });
 const goingLabel = t('agenda.rsvp.label', { status: t('agenda.rsvp.going'), show: EVENT.title });
+// O show alvo da missão de presença (bloco 7): só a presença nele rende os pontos dela.
+const TARGET = { id: 'sao-joao-irara', title: 'São João de Irará' };
+const targetGoLabel = t('agenda.rsvp.label', { status: t('agenda.rsvp.go'), show: TARGET.title });
+const targetGoingLabel = t('agenda.rsvp.label', {
+  status: t('agenda.rsvp.going'),
+  show: TARGET.title,
+});
 
 let client: QueryClient;
 let announce: jest.SpyInstance;
@@ -157,22 +165,103 @@ describe('presença na API', () => {
   });
 });
 
+describe('"Eu vou" com o servidor (bloco 7)', () => {
+  it('a primeira presença que destrava uma conquista sem pontos só anuncia, sem "+N"', async () => {
+    mockDataSource = 'api';
+    get.mockResolvedValue({ data: { eventIds: [] } });
+    request.mockResolvedValue({
+      data: {
+        eventId: EVENT.id,
+        going: true,
+        pointsAwarded: 0,
+        completedMissions: [],
+        levelUp: null,
+        unlockedAchievements: [{ id: 'fa-de-show', title: 'Fã de show' }],
+        missionsChanged: false,
+      },
+    });
+    client.setQueryData(missionKeys.list(), { season: null, missions: [] });
+    client.setQueryData(profileKeys.achievements(), {
+      unlockedCount: 0,
+      totalCount: 10,
+      highlights: [],
+    });
+    client.setQueryData(profileKeys.wallet(), { balance: 0, xp: 0, seasonPoints: 0 });
+    render(<RsvpChip eventId={EVENT.id} eventTitle={EVENT.title} />, { wrapper });
+
+    fireEvent.press(await screen.findByRole('button', { name: goLabel }));
+
+    await waitFor(() =>
+      expect(AccessibilityInfo.announceForAccessibilityWithOptions).toHaveBeenCalledWith(
+        'Conquista nova: Fã de show.',
+        { queue: true },
+      ),
+    );
+    expect(screen.queryByText(/^\+\d/, hidden)).toBeNull();
+    expect(client.getQueryState(profileKeys.achievements())?.isInvalidated).toBe(true);
+    // Nenhuma missão andou: a 1g não busca de novo, e o saldo fica.
+    expect(client.getQueryState(missionKeys.list())?.isInvalidated).toBe(false);
+    expect(client.getQueryState(profileKeys.wallet())?.isInvalidated).toBe(false);
+  });
+
+  it('com a célula reaproveitada para outro show antes da resposta, o "+N" não sobe no botão dele', async () => {
+    mockDataSource = 'api';
+    get.mockResolvedValue({ data: { eventIds: [] } });
+    let answer: (value: unknown) => void = () => undefined;
+    request.mockReturnValue(
+      new Promise((resolve) => {
+        answer = resolve;
+      }),
+    );
+    const completedAt = '2026-10-05T22:31:04.000Z';
+    const { rerender } = render(<RsvpChip eventId={EVENT.id} eventTitle={EVENT.title} />, {
+      wrapper,
+    });
+    fireEvent.press(await screen.findByRole('button', { name: goLabel }));
+
+    // A FlashList passa a célula para outro show com o pedido ainda indo.
+    rerender(<RsvpChip eventId={TARGET.id} eventTitle={TARGET.title} />);
+    await act(async () => {
+      answer({
+        data: {
+          eventId: EVENT.id,
+          going: true,
+          pointsAwarded: 15,
+          completedMissions: [
+            { id: 'm-presenca', title: 'Confirme presença', rewardPoints: 15, completedAt },
+          ],
+          levelUp: null,
+          unlockedAchievements: [],
+          missionsChanged: true,
+        },
+      });
+    });
+
+    await waitFor(() => expect(client.isMutating()).toBe(0));
+    expect(screen.queryByText(/^\+\d/, hidden)).toBeNull();
+    expect(haptics.trigger).not.toHaveBeenCalledWith('missionComplete');
+    // Nada ficou marcado: a 1g festeja a missão quando o fã voltar a ela.
+    expect(wasMissionCelebrated('m-presenca', completedAt)).toBe(false);
+    expect(screen.getByRole('button', { name: targetGoLabel })).toBeTruthy();
+  });
+});
+
 describe('"Eu vou" do post de show', () => {
   it('diz a que show se refere e confirma na hora, com os pontos subindo do chip', async () => {
-    render(<RsvpChip eventId={EVENT.id} eventTitle={EVENT.title} />, { wrapper });
-    const chip = await screen.findByRole('button', { name: goLabel });
+    render(<RsvpChip eventId={TARGET.id} eventTitle={TARGET.title} />, { wrapper });
+    const chip = await screen.findByRole('button', { name: targetGoLabel });
     expect(chip).not.toBeSelected();
 
     fireEvent.press(chip);
 
     // Otimista: "Confirmado" antes da resposta, e o leitor ouve.
-    const confirmed = await screen.findByRole('button', { name: goingLabel });
+    const confirmed = await screen.findByRole('button', { name: targetGoingLabel });
     expect(confirmed).toBeSelected();
     expect(confirmed).toHaveProp('accessibilityHint', t('agenda.rsvp.cancelHint'));
     expect(announce).toHaveBeenCalledWith(t('agenda.rsvp.confirmed'));
 
     expect(await screen.findByText(`+${FIRST_RSVP_POINTS}`, hidden)).toBeTruthy();
-    expect(rsvpFixture.mine().eventIds).toEqual([EVENT.id]);
+    expect(rsvpFixture.mine().eventIds).toEqual([TARGET.id]);
   });
 
   it('a presença que rende pontos faz o saldo, o ranking, as centrais e as missões (1b e 1g) buscarem de novo', async () => {
@@ -186,9 +275,9 @@ describe('"Eu vou" do post de show', () => {
     });
     client.setQueryData(missionKeys.daily(), null);
     client.setQueryData(missionKeys.list(), { season: null, missions: [] });
-    render(<RsvpChip eventId={EVENT.id} eventTitle={EVENT.title} />, { wrapper });
+    render(<RsvpChip eventId={TARGET.id} eventTitle={TARGET.title} />, { wrapper });
 
-    fireEvent.press(await screen.findByRole('button', { name: goLabel }));
+    fireEvent.press(await screen.findByRole('button', { name: targetGoLabel }));
 
     await waitFor(() =>
       expect(client.getQueryState(profileKeys.wallet())?.isInvalidated).toBe(true),
@@ -237,7 +326,7 @@ describe('"Eu vou" do post de show', () => {
     await client
       .getMutationCache()
       .build(client, { mutationKey: agendaMutationKeys.rsvp })
-      .execute({ eventId: EVENT.id, going: true, idempotencyKey: 'da-fila' });
+      .execute({ eventId: TARGET.id, going: true, idempotencyKey: 'da-fila' });
 
     expect(client.getQueryState(profileKeys.wallet())?.isInvalidated).toBe(true);
   });

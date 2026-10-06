@@ -10,6 +10,7 @@ import { setFixtureNow } from '@/services/fixtures';
 import { haptics } from '@/services/haptics';
 
 import { fetchDailyMission } from '../api';
+import { noteMissionCelebrated, resetCelebratedMissions } from '../celebrated';
 import { DailyMissionCard, DailyMissionSection } from '../components/daily-mission-card';
 import { buildDailyMissionFixture } from '../fixtures';
 import type { DailyMission } from '../types';
@@ -202,6 +203,35 @@ describe('missão do dia na home', () => {
     );
   });
 
+  it('concluída ontem, some depois da meia-noite e busca a de hoje', async () => {
+    // 0:05 de 30/09: a de ontem foi concluída, e o período dela (o endsAt que o
+    // servidor manda na concluída) acabou à meia-noite.
+    jest.useFakeTimers({
+      now: new Date(2026, 8, 30, 0, 5),
+      doNotFake: ['nextTick', 'setImmediate', 'queueMicrotask'],
+    });
+    mockDataSource = 'api';
+    const yesterday: DailyMission = {
+      ...completed(MISSION),
+      completedAt: new Date(2026, 8, 29, 14, 2).toISOString(),
+      endsAt: new Date(2026, 8, 30, 0, 0).toISOString(),
+    };
+    const today: DailyMission = {
+      ...MISSION,
+      id: 'm-hoje',
+      title: 'Curta 5 posts do Nenho',
+      endsAt: new Date(2026, 9, 1, 0, 0).toISOString(),
+    };
+    get
+      .mockResolvedValueOnce({ data: { mission: yesterday } })
+      .mockResolvedValue({ data: { mission: today } });
+    render(<DailyMissionSection />, { wrapper });
+
+    expect(await screen.findByText(today.title)).toBeTruthy();
+    expect(get).toHaveBeenCalledTimes(2);
+    expect(screen.queryByText(MISSION.title)).toBeNull();
+  });
+
   it('expirada pelo servidor, também some e busca a próxima', async () => {
     mockDataSource = 'api';
     get.mockResolvedValue({ data: { mission: { ...MISSION, status: 'expired' } } });
@@ -231,5 +261,22 @@ describe('missão do dia na home', () => {
     expect(await screen.findByLabelText(t('missions.daily.loadError'))).toBeTruthy();
     fireEvent.press(screen.getByRole('button', { name: t('common.retry') }));
     expect(await screen.findByText(MISSION.title)).toBeTruthy();
+  });
+});
+
+describe('missão já festejada na própria ação (bloco 7)', () => {
+  afterEach(() => resetCelebratedMissions());
+
+  it('pulsa o "+20" e fica com o check, sem o toque e sem o anúncio de novo', () => {
+    const announce = jest.mocked(AccessibilityInfo.announceForAccessibilityWithOptions);
+    const done = { ...completed(MISSION), completedAt: NOW.toISOString() };
+    // O "+N" da curtida que concluiu a missão já tocou e anunciou.
+    noteMissionCelebrated(done.id, done.completedAt!);
+    const { rerender } = render(<DailyMissionCard mission={MISSION} now={NOW} />);
+    rerender(<DailyMissionCard mission={done} now={NOW} />);
+
+    expect(haptics.trigger).not.toHaveBeenCalled();
+    expect(announce).not.toHaveBeenCalled();
+    expect(screen.getByLabelText('Missão de hoje concluída, valeu 20 pontos')).toBeTruthy();
   });
 });

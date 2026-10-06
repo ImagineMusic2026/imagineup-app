@@ -7,6 +7,7 @@ import {
   type Transaction,
 } from 'firebase-admin/firestore';
 
+import type { MissionTick } from '../missions/model';
 import {
   addDailyCount,
   addInviteCounts,
@@ -15,33 +16,27 @@ import {
   requireFan,
   requireProfile,
   retryOnAlreadyExists,
+  runContext,
   walletRef,
   type AwardContext,
   type AwardPlan,
   type FanContext,
+  type RunOptions,
 } from '../points/award';
-import {
-  dayKey,
-  ledgerId,
-  type Actor,
-  type AwardEntry,
-  type AwardStatus,
-  type PointsConfig,
-} from '../points/model';
-import { pickShard } from '../points/stats';
-import { readVisiblePost } from '../posts/store';
+import { dayKey, ledgerId, type AwardEntry, type AwardStatus } from '../points/model';
+import { postRef, readVisiblePost } from '../posts/store';
 import {
   drawInviteCode,
   INVITE_CODE_DRAWS,
-  INVITE_LINKS_PER_DAY,
-  INVITE_VISITS_SENT_PER_DAY,
   InviteError,
   inviteOwnership,
   isInviteOwner,
   isWithinClaimWindow,
+  linkOn,
   originKind,
   personKey,
   type ClaimInput,
+  type InviteLinkOrigin,
   type ReferralAwardStatus,
   type SharedLink,
   type VisitInput,
@@ -120,6 +115,35 @@ function statusOf(plan: AwardPlan, uid: string, entryId: string): AwardStatus {
 
 /** Quem chama o convite: o uid, o e-mail do ID token (nunca o do corpo) e o segredo do HMAC. */
 export type InviteCaller = { uid: string; email: string | null };
+
+/**
+ * O marcador da pessoa e, quando o link é de um post e há missão de link com
+ * alvo de central no ar (22.4, `linkOn`), o post, para a central dele, num
+ * getAll só. Sem essa missão, nada a mais é lido.
+ */
+async function readMarker(
+  tx: Transaction,
+  db: Firestore,
+  markerRef: DocumentReference,
+  link: InviteLinkOrigin | null,
+  award: AwardContext,
+): Promise<{ marker: DocumentSnapshot; postArtistId: string | null }> {
+  const postId = link?.kind === 'post' ? link.targetId : null;
+  const readPost = postId !== null && award.game.missions.shareWithCentral;
+  const [marker, post] = await tx.getAll(markerRef, ...(readPost ? [postRef(db, postId)] : []));
+  const artistId = post?.exists ? post.get('artistId') : null;
+  return { marker: marker!, postArtistId: typeof artistId === 'string' ? artistId : null };
+}
+
+/**
+ * O marcador já guarda o cadastro da pessoa: nasceu num claim (o de antes do
+ * bloco 7 com `via: 'claim'` também vale) ou ganhou o `signupAt` depois de
+ * uma visita. A conta excluída e recriada com o mesmo e-mail não anda o
+ * `invite` de novo, também quando o cadastro não pagou (22.4).
+ */
+function markerHasSignup(marker: DocumentSnapshot): boolean {
+  return marker.exists && (marker.get('via') !== 'visit' || Boolean(marker.get('signupAt')));
+}
 
 // --- Código do fã ------------------------------------------------------------------
 
@@ -243,11 +267,15 @@ function referralDoc(
  *    qualquer outro claim impede que alguém descubra de quem é um código
  *    criando uma conta com o apelido de um e-mail (o Firebase não confere o
  *    e-mail), e a conta gasta o claim único (20.6);
- * 6. o marcador de visita da pessoa nesse convidante;
+ * 6. o marcador de visita da pessoa nesse convidante (e o post do link, para
+ *    as missões de link com alvo de central, 22.4);
  * 7. planAwards com a visita e o cadastro de quem convidou, pela chave da
- *    pessoa (sem perfil, saem `skipped`);
+ *    pessoa (sem perfil, saem `skipped`), e as unidades das missões dele: o
+ *    `invite` quando o marcador ainda não guarda um cadastro, e o `share` no
+ *    link, quando o marcador ainda não existe (bloco 7);
  * 8. referrals/{uid}, com a origem e o `award`; o marcador, se quem convidou
- *    existe e a pessoa ainda não tinha contado; o cadastro convidado (e a
+ *    existe e a pessoa ainda não tinha contado (já com o `signupAt`), ou o
+ *    `signupAt` no marcador que veio de uma visita; o cadastro convidado (e a
  *    visita, se o marcador nasceu) nos agregados.
  * Os pontos vão sem central (decisão 11): o convite é do fã.
  */
@@ -287,7 +315,12 @@ export async function claimInvite(
 
   // Fora do primeiro getAll: o caminho depende do dono, que só se sabe agora.
   const markerRef = inviteVisitorRef(db, invite.uid, key);
-  const marker = await tx.get(markerRef);
+  const { marker, postArtistId } = await readMarker(tx, db, markerRef, input.link, award);
+  const ticks: MissionTick[] = [];
+  if (!markerHasSignup(marker)) ticks.push({ action: 'invite', key, on: { artistIds: [] } });
+  if (!marker.exists && input.via === 'link' && input.link) {
+    ticks.push({ action: 'share', key, on: linkOn(input.link, postArtistId) });
+  }
   const plan = await planAwards(
     tx,
     db,
@@ -296,6 +329,7 @@ export async function claimInvite(
       {
         uid: invite.uid,
         entries: inviteEntries(invite.code, key, ['invite_visit', 'invite_signup']),
+        ticks,
       },
     ],
     award,
@@ -324,8 +358,10 @@ export async function claimInvite(
     utmCampaign: input.utm.campaign,
   });
   if (inviterActive && !marker.exists) {
-    tx.create(markerRef, { via: 'claim', day: plan.day, createdAt: at });
+    tx.create(markerRef, { via: 'claim', day: plan.day, createdAt: at, signupAt: at });
     addInviteCounts(plan, { event: 'visit', kind });
+  } else if (inviterActive && !markerHasSignup(marker)) {
+    tx.update(markerRef, { signupAt: at });
   }
   return { status: 'claimed', plan };
 }
@@ -338,15 +374,8 @@ export async function runClaim(
   db: Firestore,
   caller: InviteCaller,
   input: ClaimInput,
-  options: {
-    now: number;
-    config: PointsConfig;
-    actor: Actor;
-    inviteKey: string;
-    random?: () => number;
-  },
+  options: RunOptions & { inviteKey: string },
 ): Promise<ClaimOutcome> {
-  const random = options.random ?? Math.random;
   return retryOnAlreadyExists(() =>
     db.runTransaction(async (tx) => {
       const [profile, wallet] = await tx.getAll(
@@ -356,12 +385,7 @@ export async function runClaim(
       const fan = await requireFan(tx, db, caller.uid, profile!, wallet!, options.now, {
         markActivity: false,
       });
-      const award: AwardContext = {
-        now: options.now,
-        config: options.config,
-        shard: pickShard(random),
-        actor: options.actor,
-      };
+      const award = runContext(options);
       const outcome = await claimInvite(tx, db, {
         fan,
         award,
@@ -384,10 +408,12 @@ export type VisitOutcome = { counted: boolean; plan?: AwardPlan };
  * 1. o código; que não existe é 404;
  * 2. o dono do código (pelo uid ou pela chave do e-mail): `counted: false`;
  * 3. quem visita já mandou 20 visitas hoje: `counted: false`;
- * 4. o marcador de visita da pessoa nesse convidante;
+ * 4. o marcador de visita da pessoa nesse convidante (e o post do link, para
+ *    as missões de link com alvo de central, 22.4);
  * 5. planAwards com a visita de quem convidou, pela chave da pessoa: roda
  *    também com o marcador já criado (a visita que antes saiu `capped` ou
- *    `zero` paga agora, a que já pagou sai `duplicate`);
+ *    `zero` paga agora, a que já pagou sai `duplicate`), e a unidade `share`
+ *    das missões dele, com o marcador ainda não existente (bloco 7);
  * 6. +1 nas visitas mandadas do dia de quem chama; o marcador, se quem
  *    convidou existe e a pessoa ainda não tinha contado, com a visita nos
  *    agregados. `counted` é o marcador ter nascido aqui.
@@ -409,16 +435,24 @@ export async function recordInviteVisit(
   // O teto vale para o fã que chama; o sistema (seed, testes) não conta.
   const countsSent = award.actor.type === 'fan';
   const sentToday = fan.wallet.days[dayKey(award.now)]?.count.invite_visit_sent ?? 0;
-  if (countsSent && sentToday >= INVITE_VISITS_SENT_PER_DAY) return { counted: false };
+  if (countsSent && sentToday >= award.config.actionCaps.invite_visit_sent) {
+    return { counted: false };
+  }
 
   const markerRef = inviteVisitorRef(db, invite.uid, key);
-  const marker = await tx.get(markerRef);
+  const { marker, postArtistId } = await readMarker(tx, db, markerRef, input.link, award);
   const plan = await planAwards(
     tx,
     db,
     [
       { uid: fan.uid, entries: [], fan },
-      { uid: invite.uid, entries: inviteEntries(invite.code, key, ['invite_visit']) },
+      {
+        uid: invite.uid,
+        entries: inviteEntries(invite.code, key, ['invite_visit']),
+        ticks: marker.exists
+          ? []
+          : [{ action: 'share', key, on: linkOn(input.link, postArtistId) }],
+      },
     ],
     award,
   );
@@ -432,6 +466,39 @@ export async function recordInviteVisit(
   });
   addInviteCounts(plan, { event: 'visit', kind: input.link.kind });
   return { counted: true, plan };
+}
+
+/**
+ * Visita fora da API: o seed dos emuladores (bloco 7, 22.13), no molde do
+ * runClaim. Abre a transação, exige o perfil de quem visita (sem marcar
+ * atividade), faz o mesmo recordInviteVisit da rota e grava o plano.
+ */
+export async function runVisit(
+  db: Firestore,
+  caller: InviteCaller,
+  input: VisitInput,
+  options: RunOptions & { inviteKey: string },
+): Promise<VisitOutcome> {
+  return retryOnAlreadyExists(() =>
+    db.runTransaction(async (tx) => {
+      const [profile, wallet] = await tx.getAll(
+        db.collection('users').doc(caller.uid),
+        walletRef(db, caller.uid),
+      );
+      const fan = await requireFan(tx, db, caller.uid, profile!, wallet!, options.now, {
+        markActivity: false,
+      });
+      const outcome = await recordInviteVisit(tx, db, {
+        fan,
+        award: runContext(options),
+        email: caller.email,
+        inviteKey: options.inviteKey,
+        input,
+      });
+      if (outcome.plan) applyAwards(tx, db, outcome.plan);
+      return outcome;
+    }),
+  );
 }
 
 // --- Links compartilhados -----------------------------------------------------------
@@ -469,7 +536,7 @@ export async function recordInviteLink(
   if (isPost && !visible) return { created: false };
   const countsDaily = award.actor.type === 'fan';
   const today = fan.wallet.days[dayKey(award.now)]?.count.invite_link ?? 0;
-  if (countsDaily && today >= INVITE_LINKS_PER_DAY) return { created: false };
+  if (countsDaily && today >= award.config.actionCaps.invite_link) return { created: false };
 
   const plan = await planAwards(tx, db, [{ uid: fan.uid, entries: [], fan }], award);
   tx.create(inviteLinkRef(db, fan.uid, link.linkId), {
@@ -492,9 +559,8 @@ export async function runInviteLinks(
   db: Firestore,
   uid: string,
   links: readonly SharedLink[],
-  options: { now: number; config: PointsConfig; actor: Actor; random?: () => number },
+  options: RunOptions,
 ): Promise<number> {
-  const random = options.random ?? Math.random;
   let created = 0;
   for (const link of links) {
     const outcome = await retryOnAlreadyExists(() =>
@@ -506,13 +572,7 @@ export async function runInviteLinks(
         const fan = await requireFan(tx, db, uid, profile!, wallet!, options.now, {
           markActivity: false,
         });
-        const award: AwardContext = {
-          now: options.now,
-          config: options.config,
-          shard: pickShard(random),
-          actor: options.actor,
-        };
-        const result = await recordInviteLink(tx, db, { fan, award, link });
+        const result = await recordInviteLink(tx, db, { fan, award: runContext(options), link });
         if (result.plan) applyAwards(tx, db, result.plan);
         return result;
       }),

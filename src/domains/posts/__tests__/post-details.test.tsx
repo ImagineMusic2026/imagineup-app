@@ -364,7 +364,7 @@ describe('post com comentários', () => {
     expect(commentMutations()).toHaveLength(0);
     expect(haptics.trigger).toHaveBeenCalledWith('commentSent');
     await waitFor(() =>
-      expect(announcements()).toEqual([`Comentário enviado. Mais ${COMMENT_POINTS} pontos`]),
+      expect(announcements()).toEqual([`Comentário enviado. Mais ${COMMENT_POINTS} pontos.`]),
     );
     expect(haptics.trigger).toHaveBeenCalledWith('pointsEarned');
     expect(screen.getByText(`+${COMMENT_POINTS}`, hidden)).toBeTruthy();

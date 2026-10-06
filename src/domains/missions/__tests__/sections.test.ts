@@ -35,14 +35,14 @@ describe('seções da 1g', () => {
     ]);
   });
 
-  it('missão aberta com o prazo vencido sai na hora; seção vazia some com a sobrelinha', () => {
+  it('missão com o prazo vencido sai na hora; seção vazia some com a sobrelinha', () => {
     // A destacada vence 0h30 (4 h e meia depois das 20 h) e a de curtir, à meia-noite.
     const tomorrow = new Date(2026, 8, 30, 1, 0);
-    // Amanhã, as de hoje que estavam abertas saem; a concluída e a bloqueada ficam
-    // até o servidor tirá-las, e "Esta semana" segue.
+    // Amanhã, as de hoje que estavam abertas saem, e a concluída também (o
+    // período dela acabou à meia-noite); a bloqueada fica até o servidor
+    // tirá-la, e "Esta semana" segue.
     expect(shape(buildMissionItems(missions, tomorrow))).toEqual([
       'label:today',
-      'mission:m-comentar-central',
       'mission:m-relampago-show',
       'label:week',
       'mission:m-trazer-amigos',

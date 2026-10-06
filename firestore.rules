@@ -260,14 +260,52 @@ service cloud.firestore {
       }
     }
 
-    // Contadores agregados do painel (Visão geral e Crescimento), lidos direto
-    // com getDocs, nunca com escuta em tempo real (docs/arquitetura-api.md).
+    // Catálogo de missões, meta da temporada, missões arquivadas e catálogo de
+    // conquistas (bloco 7). A seção missions lê tudo; a Visão geral lê o
+    // catálogo e o arquivo das missões, pelos títulos das conclusões; a seção
+    // Fãs lê os catálogos de agora e o arquivo (não as versões), para dar nome
+    // aos ids do progresso e das conquistas na carteira de um fã. Nenhum deles
+    // guarda dado de fã. Muda só por callable, com auditoria. O app recebe
+    // tudo pela API.
+    match /config/missions {
+      allow read: if canSeeSection('missions') || canSeeSection('overview')
+        || canSeeSection('fans');
+      allow write: if false;
+
+      match /versions/{version} {
+        allow read: if canSeeSection('missions') || canSeeSection('overview');
+        allow write: if false;
+      }
+    }
+
+    match /missionArchive/{missionId} {
+      allow read: if canSeeSection('missions') || canSeeSection('overview')
+        || canSeeSection('fans');
+      allow write: if false;
+    }
+
+    match /config/achievements {
+      allow read: if canSeeSection('missions') || canSeeSection('fans');
+      allow write: if false;
+
+      match /versions/{version} {
+        allow read: if canSeeSection('missions');
+        allow write: if false;
+      }
+    }
+
+    // Contadores agregados do painel (Visão geral, Crescimento e, desde o
+    // bloco 7, as conclusões por missão e por dia da seção Missões), lidos
+    // direto com getDocs, nunca com escuta em tempo real
+    // (docs/arquitetura-api.md).
     match /statsDaily/{day} {
-      allow read: if canSeeSection('overview') || canSeeSection('growth');
+      allow read: if canSeeSection('overview') || canSeeSection('growth')
+        || canSeeSection('missions');
       allow write: if false;
 
       match /statsShards/{shard} {
-        allow read: if canSeeSection('overview') || canSeeSection('growth');
+        allow read: if canSeeSection('overview') || canSeeSection('growth')
+          || canSeeSection('missions');
         allow write: if false;
       }
     }

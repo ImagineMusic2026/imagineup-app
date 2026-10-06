@@ -7,7 +7,8 @@ import {
 } from '../../agenda';
 import { isArtistId } from '../../centrals';
 import { isContentId } from '../../page-cursor';
-import type { AgendaPage, MyRsvps, RsvpResult } from '../contract';
+import { rewardsOf } from '../../points/award';
+import type { ActionRewards, AgendaPage, MyRsvps, RsvpResult } from '../contract';
 import { apiError } from '../errors';
 import type { ApiRoute, RouteInput } from '../types';
 import { pageQuery, queryText } from './paging';
@@ -68,7 +69,12 @@ export const agendaRoutes: ApiRoute[] = [
         award: ctx.award,
         eventId,
       });
-      const body: RsvpResult = { eventId, going: true, pointsAwarded: plan.pointsAwarded };
+      const body: RsvpResult & ActionRewards = {
+        eventId,
+        going: true,
+        pointsAwarded: plan.pointsAwarded,
+        ...rewardsOf(plan),
+      };
       return { body, plan };
     },
   },

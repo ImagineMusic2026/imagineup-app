@@ -7,6 +7,20 @@ import {
   type Transaction,
 } from 'firebase-admin/firestore';
 
+import {
+  applyMissionTicks,
+  candidateMissions,
+  emptyMissionsState,
+  MISSION_PERIODS,
+  missionArtistId,
+  missionEventId,
+  rollMissions,
+  type MissionItem,
+  type MissionPeriodState,
+  type MissionRecord,
+  type MissionsState,
+  type MissionTick,
+} from '../missions/model';
 import { parseSeasonConfig, seasonConfigRef } from './config';
 import {
   activityMarks,
@@ -16,8 +30,10 @@ import {
   emptyWallet,
   entryArtistId,
   ledgerId,
+  NO_GAME,
   PointsError,
   trimDays,
+  type ActionRewards,
   type ActivityMarks,
   type Actor,
   type AwardEntry,
@@ -26,6 +42,7 @@ import {
   type DailyActionKey,
   type DayStats,
   type FanInput,
+  type GameConfig,
   type PointsConfig,
   type WalletState,
 } from './model';
@@ -68,6 +85,11 @@ export type FanAwards = {
   entries: AwardEntry[];
   /** O retrato de quem chama. Sem ele, o planAwards lê o perfil e a carteira do fã. */
   fan?: FanContext;
+  /**
+   * As unidades das missões deste fã (bloco 7, 22.4), sempre no planAwards que
+   * vem antes das gravações do domínio. Fã sem perfil: ignoradas.
+   */
+  ticks?: MissionTick[];
 };
 
 export type AwardContext = {
@@ -77,11 +99,19 @@ export type AwardContext = {
   /** De 0 até SHARD_COUNT menos 1, sorteado de novo a cada tentativa. */
   shard: number;
   actor: Actor;
+  /**
+   * Missões, conquistas e meta da temporada (bloco 7), da mesma carga do cache
+   * dos valores. Os caminhos fora da API que não passam nada usam o `NO_GAME`:
+   * sem andar missão, sem desbloquear conquista e sem marcar a meta.
+   */
+  game: GameConfig;
 };
 
 export type AwardPlan = ComputeOutput & {
   now: number;
   shardIndex: number;
+  /** As recompensas de quem chama (22.2): vão na resposta da ação (`rewardsOf`). */
+  rewards: ActionRewards;
   /**
    * O retrato que o plano usou (o `fan` de uma das entradas), ou null. O
    * runIdempotent exige que seja o do pedido: sem ele, a atividade de quem
@@ -109,6 +139,60 @@ const text = (value: unknown): string | null => (typeof value === 'string' ? val
 
 function millis(value: unknown): number | null {
   return value instanceof Timestamp ? value.toMillis() : null;
+}
+
+function parseMissionItem(value: unknown): MissionItem | null {
+  if (typeof value !== 'object' || value === null) return null;
+  const raw = value as Record<string, unknown>;
+  return {
+    current: num(raw.current),
+    keys: Array.isArray(raw.keys)
+      ? raw.keys.filter((key): key is string => typeof key === 'string')
+      : [],
+    completedAt: millis(raw.completedAt),
+    rewardPaid: num(raw.rewardPaid),
+  };
+}
+
+function parsePeriod(value: unknown): MissionPeriodState | null {
+  if (typeof value !== 'object' || value === null) return null;
+  const raw = value as { key?: unknown; items?: unknown };
+  if (typeof raw.key !== 'string') return null;
+  const items: Record<string, MissionItem> = {};
+  if (typeof raw.items === 'object' && raw.items !== null) {
+    for (const [id, item] of Object.entries(raw.items as Record<string, unknown>)) {
+      const parsed = parseMissionItem(item);
+      if (parsed) items[id] = parsed;
+    }
+  }
+  return { key: raw.key, items };
+}
+
+/** `wallets/{uid}.missions` lido; campo estranho vale vazio (22.3). */
+function parseMissions(value: unknown): MissionsState {
+  const state = emptyMissionsState();
+  if (typeof value !== 'object' || value === null) return state;
+  for (const period of MISSION_PERIODS) {
+    state[period] = parsePeriod((value as Record<string, unknown>)[period]);
+  }
+  return state;
+}
+
+function parseAchievements(value: unknown): Record<string, number> {
+  const out: Record<string, number> = {};
+  if (typeof value !== 'object' || value === null) return out;
+  for (const [id, at] of Object.entries(value as Record<string, unknown>)) {
+    const ms = millis(at);
+    if (ms !== null) out[id] = ms;
+  }
+  return out;
+}
+
+function parseGoalReached(value: unknown): WalletState['goalReached'] {
+  if (typeof value !== 'object' || value === null) return null;
+  const raw = value as { seasonId?: unknown; at?: unknown };
+  const at = millis(raw.at);
+  return typeof raw.seasonId === 'string' && at !== null ? { seasonId: raw.seasonId, at } : null;
 }
 
 function parseDays(value: unknown): Record<string, DayStats> {
@@ -148,6 +232,11 @@ export function walletFromDoc(data: DocumentData | undefined): WalletState {
       lastWeek: text(activity.lastWeek),
       lastMonth: text(activity.lastMonth),
     },
+    seasonMissions: num(data.seasonMissions),
+    goalReached: parseGoalReached(data.goalReached),
+    missions: parseMissions(data.missions),
+    achievements: parseAchievements(data.achievements),
+    updatedAt: millis(data.updatedAt),
   };
 }
 
@@ -237,21 +326,49 @@ export function mergeFanAwards(fans: readonly FanAwards[]): {
     }
     const merged = byUid.get(fan.uid);
     if (!merged) {
-      byUid.set(fan.uid, { uid: fan.uid, entries: [...fan.entries], fan: fan.fan });
+      byUid.set(fan.uid, {
+        uid: fan.uid,
+        entries: [...fan.entries],
+        fan: fan.fan,
+        ticks: [...(fan.ticks ?? [])],
+      });
       continue;
     }
     merged.entries.push(...fan.entries);
+    merged.ticks!.push(...(fan.ticks ?? []));
     merged.fan ??= fan.fan;
   }
   return { fans: [...byUid.values()], caller };
 }
 
 /**
+ * As missões que a gravação pode concluir para o fã (22.4, leitura 2): para
+ * quem chama, cujo progresso já está no retrato, só as que vão concluir;
+ * para outro fã (quem convidou), cuja carteira só chega no getAll, todas as
+ * candidatas (em geral uma ou duas). O planAwards lê o extrato e a central só
+ * delas.
+ */
+export function missionsToRead(
+  fan: FanAwards,
+  game: GameConfig,
+  now: number,
+): { mission: MissionRecord; periodKey: string }[] {
+  const ticks = fan.ticks ?? [];
+  if (ticks.length === 0) return [];
+  const candidates = candidateMissions(game.missions, ticks, now);
+  if (candidates.length === 0) return [];
+  const rolled = rollMissions(fan.fan ? fan.fan.wallet.missions : emptyMissionsState(), now);
+  if (fan.fan) return applyMissionTicks(rolled, candidates, ticks, now).completions;
+  return candidates.map((mission) => ({ mission, periodKey: rolled.state[mission.period]!.key }));
+}
+
+/**
  * Fase 1: lê o que falta (a temporada na transação, o extrato de cada
- * lançamento, as centrais citadas e o perfil e a carteira dos outros fãs) e
- * calcula. Sem lançamentos, não lê nada: dá para chamar depois das gravações
- * do domínio (só a atividade de quem chama). O mesmo uid repetido vira uma
- * entrada só (mergeFanAwards).
+ * lançamento e das missões que podem concluir, as centrais citadas e o perfil
+ * e a carteira dos outros fãs) e calcula. Sem lançamentos e sem unidades de
+ * missão, não lê nada: dá para chamar depois das gravações do domínio (só a
+ * atividade de quem chama). O mesmo uid repetido vira uma entrada só
+ * (mergeFanAwards).
  */
 export async function planAwards(
   tx: Transaction,
@@ -260,15 +377,29 @@ export async function planAwards(
   ctx: AwardContext,
 ): Promise<AwardPlan> {
   const { fans, caller } = mergeFanAwards(input);
-  const hasEntries = fans.some((fan) => fan.entries.length > 0);
+  const game = ctx.game ?? NO_GAME;
+  const hasEntries = fans.some((fan) => fan.entries.length > 0 || (fan.ticks?.length ?? 0) > 0);
   const refs: DocumentReference[] = [];
   const at = (ref: DocumentReference) => refs.push(ref) - 1;
 
   const seasonAt = hasEntries ? at(seasonConfigRef(db)) : -1;
   const layout = fans.map((fan) => {
-    const ledgerIds = [...new Set(fan.entries.map(ledgerId))];
+    const missions = missionsToRead(fan, game, ctx.now);
+    const ledgerIds = [
+      ...new Set([
+        ...fan.entries.map(ledgerId),
+        ...missions.map(({ mission, periodKey }) =>
+          ledgerId({ source: 'mission', eventId: missionEventId(mission.id, periodKey) }),
+        ),
+      ]),
+    ];
     const artistIds = [
-      ...new Set(fan.entries.map(entryArtistId).filter((id): id is string => id !== null)),
+      ...new Set(
+        [
+          ...fan.entries.map(entryArtistId),
+          ...missions.map(({ mission }) => missionArtistId(mission)),
+        ].filter((id): id is string => id !== null),
+      ),
     ];
     return {
       fan,
@@ -287,6 +418,7 @@ export async function planAwards(
     hasProfile: fan.fan ? true : snaps[profileAt]!.exists,
     wallet: fan.fan ? fan.fan.wallet : walletFromDoc(snaps[walletAt]!.data()),
     entries: fan.entries,
+    ticks: fan.ticks ?? [],
     existingLedger: new Set(ledger.filter(({ index }) => snaps[index]!.exists).map(({ id }) => id)),
     centrals: new Map(
       centrals.map(({ id, index }) => [id, centralFromDoc(id, snaps[index]!.data())]),
@@ -302,13 +434,52 @@ export async function planAwards(
     actor: ctx.actor,
     callerUid,
     fans: inputs,
+    game,
   });
   return { ...result, now: ctx.now, shardIndex: ctx.shard, caller };
 }
 
+/**
+ * As recompensas do plano para a resposta da ação (22.2): os quatro campos,
+ * sempre (listas vazias, null e false quando nada aconteceu). Valem para
+ * curtir, comentar, "Eu vou", entrar e seguir; desfazer, sair, denunciar,
+ * bloquear e o convite não mandam.
+ */
+export function rewardsOf(plan: Pick<AwardPlan, 'rewards'>): ActionRewards {
+  return {
+    completedMissions: plan.rewards.completedMissions.map((item) => ({ ...item })),
+    levelUp: plan.rewards.levelUp ? { ...plan.rewards.levelUp } : null,
+    unlockedAchievements: plan.rewards.unlockedAchievements.map((item) => ({ ...item })),
+    missionsChanged: plan.rewards.missionsChanged,
+  };
+}
+
 const tsOrNull = (ms: number | null) => (ms === null ? null : Timestamp.fromMillis(ms));
 
+function periodFields(state: MissionPeriodState | null): DocumentData | null {
+  if (!state) return null;
+  const items: DocumentData = {};
+  for (const [id, item] of Object.entries(state.items)) {
+    items[id] = {
+      current: item.current,
+      keys: item.keys,
+      completedAt: tsOrNull(item.completedAt),
+      rewardPaid: item.rewardPaid,
+    };
+  }
+  return { key: state.key, items };
+}
+
+/**
+ * Os campos da carteira, inteiros a cada gravação: o `missions`, o
+ * `achievements` e o `goalReached` vão sempre juntos com o resto (22.17), e
+ * um `update` que esquecesse um deles apagaria o progresso.
+ */
 function walletFields(state: WalletState, now: Timestamp): DocumentData {
+  const achievements: DocumentData = {};
+  for (const [id, at] of Object.entries(state.achievements)) {
+    achievements[id] = Timestamp.fromMillis(at);
+  }
   return {
     balance: state.balance,
     xp: state.xp,
@@ -319,6 +490,15 @@ function walletFields(state: WalletState, now: Timestamp): DocumentData {
     spentTotal: state.spentTotal,
     days: state.days,
     activity: state.activity,
+    seasonMissions: state.seasonMissions,
+    goalReached: state.goalReached
+      ? { seasonId: state.goalReached.seasonId, at: Timestamp.fromMillis(state.goalReached.at) }
+      : null,
+    missions: {
+      daily: periodFields(state.missions.daily),
+      weekly: periodFields(state.missions.weekly),
+    },
+    achievements,
     updatedAt: now,
   };
 }
@@ -461,10 +641,30 @@ export async function retryOnAlreadyExists<T>(run: () => Promise<T>): Promise<T>
  * exige o perfil (sem marcar atividade), roda o núcleo da ação com o ator e a
  * configuração dados e grava o plano que ele devolve.
  */
+/** Opções dos caminhos fora da API (seed e ajuste): sem `game`, o `NO_GAME`. */
+export type RunOptions = {
+  now: number;
+  config: PointsConfig;
+  actor: Actor;
+  random?: () => number;
+  game?: GameConfig;
+};
+
+/** O contexto do lançamento de um caminho fora da API. */
+export function runContext(options: RunOptions): AwardContext {
+  return {
+    now: options.now,
+    config: options.config,
+    shard: pickShard(options.random ?? Math.random),
+    actor: options.actor,
+    game: options.game ?? NO_GAME,
+  };
+}
+
 export function runAsFan<T extends { plan: AwardPlan }>(
   db: Firestore,
   uid: string,
-  options: { now: number; config: PointsConfig; actor: Actor; random?: () => number },
+  options: RunOptions,
   work: (tx: Transaction, fan: FanContext, award: AwardContext) => Promise<T>,
 ): Promise<T> {
   const random = options.random ?? Math.random;
@@ -477,13 +677,7 @@ export function runAsFan<T extends { plan: AwardPlan }>(
       const fan = await requireFan(tx, db, uid, profile!, wallet!, options.now, {
         markActivity: false,
       });
-      const award: AwardContext = {
-        now: options.now,
-        config: options.config,
-        shard: pickShard(random),
-        actor: options.actor,
-      };
-      const outcome = await work(tx, fan, award);
+      const outcome = await work(tx, fan, runContext({ ...options, random }));
       applyAwards(tx, db, outcome.plan);
       return outcome;
     }),
@@ -499,7 +693,7 @@ export async function runAward(
   db: Firestore,
   uid: string,
   entries: AwardEntry[],
-  options: { now: number; config: PointsConfig; actor: Actor; random?: () => number },
+  options: RunOptions,
 ): Promise<AwardPlan> {
   const random = options.random ?? Math.random;
   return retryOnAlreadyExists(() =>
@@ -511,12 +705,12 @@ export async function runAward(
       const fan = await requireFan(tx, db, uid, profile!, wallet!, options.now, {
         markActivity: false,
       });
-      const plan = await planAwards(tx, db, [{ uid, entries, fan }], {
-        now: options.now,
-        config: options.config,
-        shard: pickShard(random),
-        actor: options.actor,
-      });
+      const plan = await planAwards(
+        tx,
+        db,
+        [{ uid, entries, fan }],
+        runContext({ ...options, random }),
+      );
       applyAwards(tx, db, plan);
       return plan;
     }),

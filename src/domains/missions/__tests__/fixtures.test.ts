@@ -63,9 +63,12 @@ describe('missões de exemplo', () => {
   });
 });
 
+// O show alvo da missão de presença (o São João de Irará da agenda).
+const SAO_JOAO = { eventId: 'sao-joao-irara' };
+
 describe('servidor das missões nas fixtures', () => {
   it('a ação que conclui a missão rende os pontos dela, na carteira e na resposta', () => {
-    expect(missionsFixture.record('rsvp')).toBe(RSVP_MISSION_POINTS);
+    expect(missionsFixture.record('rsvp', NOW, SAO_JOAO)).toBe(RSVP_MISSION_POINTS);
     expect(fixtureWallet.get().balance).toBe(12_480 + RSVP_MISSION_POINTS);
 
     const { season, missions } = buildMissionsFixture(NOW);
@@ -79,8 +82,8 @@ describe('servidor das missões nas fixtures', () => {
   });
 
   it('missão já concluída não rende de novo', () => {
-    missionsFixture.record('rsvp');
-    expect(missionsFixture.record('rsvp')).toBe(0);
+    missionsFixture.record('rsvp', NOW, SAO_JOAO);
+    expect(missionsFixture.record('rsvp', NOW, SAO_JOAO)).toBe(0);
     expect(fixtureWallet.get().balance).toBe(12_480 + RSVP_MISSION_POINTS);
   });
 
@@ -98,8 +101,34 @@ describe('servidor das missões nas fixtures', () => {
     expect(flash).toMatchObject({ status: 'locked', progress: { current: 0 } });
   });
 
+  it('a presença em outro show não anda a missão de presença (o alvo é o show)', () => {
+    expect(missionsFixture.record('rsvp', NOW, { eventId: 'arrocha-na-praia' })).toBe(0);
+    const rsvp = buildMissionsFixture(NOW).missions.find((item) => item.id === 'm-presenca-show');
+    expect(rsvp).toMatchObject({ status: 'active', progress: { current: 0 } });
+  });
+
+  it('curtir, descurtir e curtir de novo o mesmo post conta um no período', () => {
+    const on = { postId: 'p-nenho-2', artistId: 'nenho' };
+    missionsFixture.record('like', NOW, on);
+    missionsFixture.record('like', NOW, on);
+    const like = buildMissionsFixture(NOW).missions.find((item) => item.id === 'm-curtir-nenho');
+    expect(like?.progress.current).toBe(3);
+  });
+
+  it('as duas curtidas do "2 de 5" são os posts p-nenho-4 e p-nenho-5: curtir de novo não anda', () => {
+    missionsFixture.record('like', NOW, { postId: 'p-nenho-4', artistId: 'nenho' });
+    const like = buildMissionsFixture(NOW).missions.find((item) => item.id === 'm-curtir-nenho');
+    expect(like?.progress.current).toBe(2);
+  });
+
+  it('curtida em post de outra central não anda a missão da central do Nenho', () => {
+    missionsFixture.record('like', NOW, { postId: 'p-g1', artistId: 'nettobrito' });
+    const like = buildMissionsFixture(NOW).missions.find((item) => item.id === 'm-curtir-nenho');
+    expect(like?.progress.current).toBe(2);
+  });
+
   it('volta ao início', () => {
-    missionsFixture.record('rsvp');
+    missionsFixture.record('rsvp', NOW, SAO_JOAO);
     missionsFixture.reset();
     const rsvp = buildMissionsFixture(NOW).missions.find((item) => item.id === 'm-presenca-show');
     expect(rsvp?.status).toBe('active');

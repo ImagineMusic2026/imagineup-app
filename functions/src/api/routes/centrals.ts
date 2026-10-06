@@ -11,8 +11,10 @@ import {
   readJoin,
   readPublishedArtists,
 } from '../../centrals';
+import { rewardsOf } from '../../points/award';
 import { countArtistPosts } from '../../posts';
 import type {
+  ActionRewards,
   Artist,
   ArtistDetails,
   FanCentral,
@@ -91,9 +93,10 @@ export const centralRoutes: ApiRoute[] = [
         artistIds,
         via: 'onboarding',
       });
-      const body: FollowArtistsResult = {
+      const body: FollowArtistsResult & ActionRewards = {
         followedArtistIds: followedAfter(read, joined, ctx.award.now),
         pointsAwarded: plan.pointsAwarded,
+        ...rewardsOf(plan),
       };
       return { body, plan };
     },
@@ -113,7 +116,11 @@ export const centralRoutes: ApiRoute[] = [
         artistIds: [artistId],
         via: 'page',
       });
-      const body: JoinCentralResult = { artistId, pointsAwarded: plan.pointsAwarded };
+      const body: JoinCentralResult & ActionRewards = {
+        artistId,
+        pointsAwarded: plan.pointsAwarded,
+        ...rewardsOf(plan),
+      };
       return { body, plan };
     },
   },

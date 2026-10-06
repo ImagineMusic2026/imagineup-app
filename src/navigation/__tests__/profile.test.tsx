@@ -194,7 +194,7 @@ describe('perfil (1e)', () => {
     expect(await screen.findByLabelText(HERO)).toBeTruthy();
     expect(getDocMock).toHaveBeenCalled();
     expect(
-      await screen.findByRole('progressbar', { name: pointsCard('12.480', '840', '2.520') }),
+      await screen.findByRole('button', { name: pointsCard('12.480', '840', '2.520') }),
     ).toBeTruthy();
     expect(screen.getByLabelText('63 links criados')).toBeTruthy();
     expect(screen.getByLabelText('418 pessoas trazidas')).toBeTruthy();
@@ -303,27 +303,28 @@ describe('perfil (1e)', () => {
 
   it('o resgate da loja desconta o saldo grande; a barra e o "Faltam" seguem no XP', async () => {
     renderRouter(appTree, { initialUrl: '/perfil' });
-    await screen.findByRole('progressbar', { name: pointsCard('12.480', '840', '2.520') });
+    await screen.findByRole('button', { name: pointsCard('12.480', '840', '2.520') });
 
     // O que o resgate da 1h faz: desconta no servidor e invalida o perfil.
     fixtureWallet.spend(6_000);
     await act(() => client.invalidateQueries({ queryKey: profileKeys.all }));
 
-    const card = await screen.findByRole('progressbar', {
+    const card = await screen.findByRole('button', {
       name: pointsCard('6.480', '840', '2.520'),
     });
-    expect(card).toHaveProp('accessibilityValue', { min: 0, max: 100, now: 69 });
+    // O card é o botão do extrato (bloco 7): a barra fica no rótulo, sem o papel de progresso.
+    expect(card).toHaveProp('accessibilityHint', 'Abre o extrato de pontos.');
   });
 
   it('ganho que invalida só a carteira (o "Eu vou") também atualiza a semana e o nível', async () => {
     renderRouter(appTree, { initialUrl: '/perfil' });
-    await screen.findByRole('progressbar', { name: pointsCard('12.480', '840', '2.520') });
+    await screen.findByRole('button', { name: pointsCard('12.480', '840', '2.520') });
 
     fixtureWallet.earn(15);
     await act(() => client.invalidateQueries({ queryKey: profileKeys.wallet() }));
 
     expect(
-      await screen.findByRole('progressbar', { name: pointsCard('12.495', '855', '2.505') }),
+      await screen.findByRole('button', { name: pointsCard('12.495', '855', '2.505') }),
     ).toBeTruthy();
     expect(haptics.trigger).not.toHaveBeenCalledWith('levelUp');
   });
@@ -363,7 +364,7 @@ describe('perfil (1e)', () => {
     });
     fireEvent.press(screen.getByRole('button', { name: 'Tentar de novo' }));
     expect(
-      await screen.findByRole('progressbar', { name: pointsCard('12.480', '840', '2.520') }),
+      await screen.findByRole('button', { name: pointsCard('12.480', '840', '2.520') }),
     ).toBeTruthy();
     // O botão que tinha o foco sumiu com o erro: o fã ouve que os pontos chegaram.
     await waitFor(() => expect(announcements()).toContain('Pontos carregados.'));

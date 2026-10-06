@@ -1,20 +1,74 @@
 import type { DocumentSnapshot, Firestore } from 'firebase-admin/firestore';
 import * as logger from 'firebase-functions/logger';
 
+import {
+  DEFAULT_ACHIEVEMENTS_CONFIG,
+  parseAchievementsConfig,
+  type AchievementsConfig,
+} from '../achievements/model';
+import { CENTRAL_ENTRIES_PER_DAY } from '../centrals/model';
+import { ConfigValidationError } from '../config-validation';
+import { INVITE_LINKS_PER_DAY, INVITE_VISITS_SENT_PER_DAY } from '../invites/model';
+import {
+  EMPTY_MISSIONS_CONFIG,
+  missionIndex,
+  parseMissionsConfig,
+  type MissionsConfig,
+} from '../missions/model';
+import {
+  BLOCKS_PER_DAY,
+  COMMENTS_PER_DAY,
+  LIKES_PER_DAY,
+  REPORTS_PER_DAY,
+  RSVPS_PER_DAY,
+} from '../moderation/model';
 import { isVisibleLine } from '../visible-line';
 import {
   EARN_SOURCES,
   VALUE_SOURCES,
+  type DailyActionKey,
   type EarnSource,
+  type GameConfig,
   type Level,
   type PointsConfig,
   type SeasonInfo,
   type ValueSource,
 } from './model';
 
-// Valores, limites diários e régua (config/points) e a temporada
-// (config/season). Versionados, com padrão no código para quando o documento
-// não existe. Contrato em docs/arquitetura-api.md, seção 9.
+// Valores, limites diários, tetos do dia e régua (config/points), a temporada
+// (config/season) e, desde o bloco 7, o catálogo de missões com a meta da
+// temporada (config/missions) e o de conquistas (config/achievements).
+// Versionados, com padrão no código para quando o documento não existe.
+// Contrato em docs/arquitetura-api.md, seções 9 e 22.
+
+export { ConfigValidationError };
+
+/** As chaves dos tetos do dia, na ordem da nota (22.3). */
+export const ACTION_CAP_KEYS = [
+  'central_entry',
+  'invite_visit_sent',
+  'invite_link',
+  'like_set',
+  'comment_sent',
+  'rsvp_set',
+  'comment_report',
+  'fan_block',
+] as const satisfies readonly DailyActionKey[];
+
+/** Os tetos do dia de hoje (blocos 4, 5 e 6) como padrão do código (22.1, decisão 13). */
+export const DEFAULT_ACTION_CAPS: Record<DailyActionKey, number> = {
+  central_entry: CENTRAL_ENTRIES_PER_DAY,
+  invite_visit_sent: INVITE_VISITS_SENT_PER_DAY,
+  invite_link: INVITE_LINKS_PER_DAY,
+  like_set: LIKES_PER_DAY,
+  comment_sent: COMMENTS_PER_DAY,
+  rsvp_set: RSVPS_PER_DAY,
+  comment_report: REPORTS_PER_DAY,
+  fan_block: BLOCKS_PER_DAY,
+};
+
+/** Teto do dia: de 1 a 10.000. */
+export const ACTION_CAP_MAX = 10_000;
 
 /**
  * Padrão do código (versão 0). A régua é a FIXTURE_LEVELS do app; os valores
@@ -45,6 +99,7 @@ export const DEFAULT_POINTS_CONFIG: PointsConfig = {
     { number: 9, name: 'Coração do palco', minXp: 25_000 },
     { number: 10, name: 'Lenda', minXp: 40_000 },
   ],
+  actionCaps: { ...DEFAULT_ACTION_CAPS },
 };
 
 export const VALUE_MAX = 10_000;
@@ -77,6 +132,9 @@ const validValue = (value: unknown): value is number =>
 
 const validLimit = (value: unknown): value is number | null =>
   value === null || (isInt(value) && value >= 1 && value <= LIMIT_MAX);
+
+const validCap = (value: unknown): value is number =>
+  isInt(value) && value >= 1 && value <= ACTION_CAP_MAX;
 
 const validLabel = (value: unknown): value is string =>
   typeof value === 'string' &&
@@ -114,6 +172,7 @@ export function parsePointsConfig(data: unknown, log: ConfigLog = defaultLog): P
     values: { ...DEFAULT_POINTS_CONFIG.values },
     dailyLimits: { ...DEFAULT_POINTS_CONFIG.dailyLimits },
     levels: DEFAULT_POINTS_CONFIG.levels.map((level) => ({ ...level })),
+    actionCaps: { ...DEFAULT_POINTS_CONFIG.actionCaps },
   };
   if (data === undefined || data === null) return config;
   if (!isRecord(data)) {
@@ -146,10 +205,28 @@ export function parsePointsConfig(data: unknown, log: ConfigLog = defaultLog): P
       for (const [source, limit] of Object.entries(data.dailyLimits)) {
         if (!(EARN_SOURCES as readonly string[]).includes(source)) {
           log.warn('config/points.dailyLimits com origem desconhecida.', { source });
+        } else if (source === 'mission') {
+          // Sempre sem limite: uma conclusão `capped` não pagaria mais no período (22.1, decisão 7).
+          if (limit !== null) log.error('config/points.dailyLimits.mission precisa ser null.');
         } else if (!validLimit(limit)) {
           log.error('config/points.dailyLimits inválido: valendo o padrão.', { source, limit });
         } else {
           config.dailyLimits[source as EarnSource] = limit;
+        }
+      }
+    }
+  }
+
+  if (data.actionCaps !== undefined) {
+    if (!isRecord(data.actionCaps)) log.error('config/points.actionCaps fora do formato.');
+    else {
+      for (const [key, cap] of Object.entries(data.actionCaps)) {
+        if (!(ACTION_CAP_KEYS as readonly string[]).includes(key)) {
+          log.warn('config/points.actionCaps com teto desconhecido.', { key });
+        } else if (!validCap(cap)) {
+          log.error('config/points.actionCaps inválido: valendo o padrão.', { key, cap });
+        } else {
+          config.actionCaps[key as DailyActionKey] = cap;
         }
       }
     }
@@ -227,21 +304,11 @@ export function parseSeasonConfig(data: unknown, log: ConfigLog = defaultLog): S
   };
 }
 
-/** Campo errado na gravação estrita, com o caminho dele (`values.like`, `levels.3.minXp`). */
-export class ConfigValidationError extends Error {
-  readonly field: string;
-
-  constructor(field: string) {
-    super(`Configuração inválida em ${field}.`);
-    this.name = 'ConfigValidationError';
-    this.field = field;
-  }
-}
-
 export type PointsConfigInput = {
   values?: Partial<Record<ValueSource, number>>;
   dailyLimits?: Partial<Record<EarnSource, number | null>>;
   levels?: Level[];
+  actionCaps?: Partial<Record<DailyActionKey, number>>;
 };
 
 /**
@@ -253,7 +320,9 @@ export function validatePointsConfigInput(input: unknown): PointsConfigInput {
   if (!isRecord(input)) throw new ConfigValidationError('');
   const out: PointsConfigInput = {};
   for (const key of Object.keys(input)) {
-    if (!['values', 'dailyLimits', 'levels'].includes(key)) throw new ConfigValidationError(key);
+    if (!['values', 'dailyLimits', 'levels', 'actionCaps'].includes(key)) {
+      throw new ConfigValidationError(key);
+    }
   }
   if (input.values !== undefined) {
     if (!isRecord(input.values)) throw new ConfigValidationError('values');
@@ -270,12 +339,25 @@ export function validatePointsConfigInput(input: unknown): PointsConfigInput {
     if (!isRecord(input.dailyLimits)) throw new ConfigValidationError('dailyLimits');
     const limits: Partial<Record<EarnSource, number | null>> = {};
     for (const [source, limit] of Object.entries(input.dailyLimits)) {
-      if (!(EARN_SOURCES as readonly string[]).includes(source) || !validLimit(limit)) {
+      // A missão só aceita null (22.1, decisão 7); as outras, de 1 a 1.000 ou null.
+      const valid = source === 'mission' ? limit === null : validLimit(limit);
+      if (!(EARN_SOURCES as readonly string[]).includes(source) || !valid) {
         throw new ConfigValidationError(`dailyLimits.${source}`);
       }
-      limits[source as EarnSource] = limit;
+      limits[source as EarnSource] = limit as number | null;
     }
     out.dailyLimits = limits;
+  }
+  if (input.actionCaps !== undefined) {
+    if (!isRecord(input.actionCaps)) throw new ConfigValidationError('actionCaps');
+    const caps: Partial<Record<DailyActionKey, number>> = {};
+    for (const [key, cap] of Object.entries(input.actionCaps)) {
+      if (!(ACTION_CAP_KEYS as readonly string[]).includes(key) || !validCap(cap)) {
+        throw new ConfigValidationError(`actionCaps.${key}`);
+      }
+      caps[key as DailyActionKey] = cap;
+    }
+    out.actionCaps = caps;
   }
   if (input.levels !== undefined) {
     if (!validLevels(input.levels)) throw new ConfigValidationError('levels');
@@ -313,9 +395,21 @@ export function validateSeasonInput(input: unknown): SeasonInput {
   return season as SeasonInput;
 }
 
-export type LoadedConfig = { points: PointsConfig; season: SeasonConfig };
+/**
+ * A configuração de uma carga do cache: valores, limites e régua, a
+ * temporada, o catálogo de missões (com a meta da temporada), o de conquistas
+ * e o jogo montado deles (o índice das missões por tipo de ação, 22.1,
+ * decisão 1).
+ */
+export type LoadedConfig = {
+  points: PointsConfig;
+  season: SeasonConfig;
+  missions: MissionsConfig;
+  achievements: AchievementsConfig;
+  game: GameConfig;
+};
 
-/** Valores, limites, régua e temporada, com cache. A temporada do lançamento vem da transação. */
+/** Valores, limites, régua, temporada e o jogo, com cache. A temporada do lançamento vem da transação. */
 export interface ConfigSource {
   get(): Promise<LoadedConfig>;
 }
@@ -330,21 +424,56 @@ export function seasonConfigRef(db: Firestore) {
   return db.collection('config').doc('season');
 }
 
-export function loadedConfig(
-  points: DocumentSnapshot | undefined,
-  season: DocumentSnapshot | undefined,
-  log?: ConfigLog,
-): LoadedConfig {
+export function missionsConfigRef(db: Firestore) {
+  return db.collection('config').doc('missions');
+}
+
+export function achievementsConfigRef(db: Firestore) {
+  return db.collection('config').doc('achievements');
+}
+
+/** O jogo de uma carga: o índice das missões no ar, o catálogo de conquistas e a meta. */
+export function gameOf(missions: MissionsConfig, achievements: AchievementsConfig): GameConfig {
   return {
-    points: parsePointsConfig(points?.data(), log),
-    season: parseSeasonConfig(season?.data(), log),
+    missions: missionIndex(missions),
+    achievements: achievements.achievements,
+    seasonGoal: missions.seasonGoal,
   };
 }
 
+/** A carga com o que veio de cada documento (o que falta vale o padrão do código). */
+export function buildLoadedConfig(parts: Partial<Omit<LoadedConfig, 'game'>> = {}): LoadedConfig {
+  const missions = parts.missions ?? { ...EMPTY_MISSIONS_CONFIG, missions: [] };
+  const achievements = parts.achievements ?? DEFAULT_ACHIEVEMENTS_CONFIG;
+  return {
+    points: parts.points ?? parsePointsConfig(undefined),
+    season: parts.season ?? { ...DEFAULT_SEASON_CONFIG },
+    missions,
+    achievements,
+    game: gameOf(missions, achievements),
+  };
+}
+
+export function loadedConfig(
+  points: DocumentSnapshot | undefined,
+  season: DocumentSnapshot | undefined,
+  log: ConfigLog = defaultLog,
+  missions?: DocumentSnapshot,
+  achievements?: DocumentSnapshot,
+): LoadedConfig {
+  return buildLoadedConfig({
+    points: parsePointsConfig(points?.data(), log),
+    season: parseSeasonConfig(season?.data(), log),
+    missions: parseMissionsConfig(missions?.data(), log),
+    achievements: parseAchievementsConfig(achievements?.data(), log),
+  });
+}
+
 /**
- * Lê config/points e config/season juntos (`getAll`) e guarda em memória por
- * instância. Mudança feita no painel vale em até 60 s. Leitura que falha não
- * fica no cache: a próxima tenta de novo.
+ * Lê config/points, config/season, config/missions e config/achievements
+ * juntos (`getAll`) e guarda em memória por instância. Mudança feita no
+ * painel vale em até 60 s (também o catálogo de missões, 22.17). Leitura que
+ * falha não fica no cache: a próxima tenta de novo.
  */
 export function createConfigSource(
   db: Firestore,
@@ -357,8 +486,15 @@ export function createConfigSource(
     get() {
       if (cached && now() - cached.at < ttlMs) return cached.value;
       const value = db
-        .getAll(pointsConfigRef(db), seasonConfigRef(db))
-        .then(([points, season]) => loadedConfig(points, season, options.log));
+        .getAll(
+          pointsConfigRef(db),
+          seasonConfigRef(db),
+          missionsConfigRef(db),
+          achievementsConfigRef(db),
+        )
+        .then(([points, season, missions, achievements]) =>
+          loadedConfig(points, season, options.log, missions, achievements),
+        );
       const entry = { at: now(), value };
       cached = entry;
       value.catch(() => {
@@ -370,10 +506,7 @@ export function createConfigSource(
 }
 
 /** Fonte fixa (testes e seed): sempre a mesma configuração, sem ler nada. */
-export function staticConfigSource(config: Partial<LoadedConfig> = {}): ConfigSource {
-  const value: LoadedConfig = {
-    points: config.points ?? parsePointsConfig(undefined),
-    season: config.season ?? { ...DEFAULT_SEASON_CONFIG },
-  };
+export function staticConfigSource(config: Partial<Omit<LoadedConfig, 'game'>> = {}): ConfigSource {
+  const value = buildLoadedConfig(config);
   return { get: () => Promise.resolve(value) };
 }

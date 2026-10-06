@@ -16,5 +16,10 @@ export const profileKeys = {
    */
   progress: () => [...profileKeys.wallet(), 'progress'] as const,
   achievements: () => [...profileKeys.all, 'achievements'] as const,
+  /**
+   * O extrato (bloco 7), debaixo da carteira: quem invalida a carteira depois
+   * de ganhar ou gastar pontos invalida o extrato junto.
+   */
+  ledger: () => [...profileKeys.wallet(), 'ledger'] as const,
   invite: () => [...profileKeys.all, 'invite'] as const,
 };

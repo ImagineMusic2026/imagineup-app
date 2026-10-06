@@ -325,7 +325,7 @@ describe('página do artista (1d)', () => {
     );
     await waitFor(() =>
       expect(AccessibilityInfo.announceForAccessibilityWithOptions).toHaveBeenCalledWith(
-        `Mais ${JOIN_CENTRAL_POINTS} pontos`,
+        `Mais ${JOIN_CENTRAL_POINTS} pontos.`,
         { queue: true },
       ),
     );

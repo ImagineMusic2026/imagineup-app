@@ -84,6 +84,8 @@ interface Sample {
   hoursAgo: number;
   likeCount: number;
   commentCount: number;
+  /** O fã já curtiu (as duas curtidas do "2 de 5" do Nenho). */
+  likedByMe?: boolean;
 }
 
 const SAMPLES: readonly Sample[] = [
@@ -152,7 +154,8 @@ const SAMPLES: readonly Sample[] = [
   },
   {
     // O terceiro post do Nenho: a missão de exemplo "Curta 5 posts do Nenho"
-    // (2 de 5) dá para concluir curtindo os três.
+    // (2 de 5) dá para concluir curtindo os três que o fã ainda não curtiu
+    // (este, o p-nenho-2 e o post de show).
     id: 'p-nenho-3',
     kind: 'text',
     artist: NENHO,
@@ -160,6 +163,29 @@ const SAMPLES: readonly Sample[] = [
     hoursAgo: 13 * 24,
     likeCount: 980,
     commentCount: 75,
+  },
+  {
+    // As duas curtidas do "2 de 5" da "Curta 5 posts do Nenho" (bloco 7): os
+    // mesmos posts do seed dos emuladores (functions/src/posts/seed.ts), já
+    // curtidos pelo fã.
+    id: 'p-nenho-4',
+    kind: 'photo',
+    artist: NENHO,
+    text: 'Ensaio aberto em Aracaju. Obrigado a quem foi!',
+    hoursAgo: 15 * 24,
+    likeCount: 1_312,
+    commentCount: 64,
+    likedByMe: true,
+  },
+  {
+    id: 'p-nenho-5',
+    kind: 'text',
+    artist: NENHO,
+    text: 'Gravando coisa nova no estúdio. Em breve!',
+    hoursAgo: 16 * 24,
+    likeCount: 1_045,
+    commentCount: 58,
+    likedByMe: true,
   },
 ];
 
@@ -200,13 +226,13 @@ function buildBasePosts(now: Date): Post[] {
     sharePointsPerVisit: SHARE_POINTS,
   };
 
-  const rest = SAMPLES.map(({ hoursAgo, kind, ...sample }): Post => ({
+  const rest = SAMPLES.map(({ hoursAgo, kind, likedByMe = false, ...sample }): Post => ({
     ...sample,
     kind,
     media: mediaOf(kind),
     event: null,
     createdAt: ago(hoursAgo * HOUR_MS),
-    likedByMe: false,
+    likedByMe,
     sharePointsPerVisit: SHARE_POINTS,
   }));
 
@@ -215,8 +241,6 @@ function buildBasePosts(now: Date): Post[] {
 
 // "Servidor" das fixtures: o que o fã fez nesta abertura do app.
 let likes = new Map<string, boolean>();
-/** Posts cuja primeira curtida já contou nas missões: descurtir e curtir de novo não conta. */
-let likesCounted = new Set<string>();
 /** Comentários do fã por post, do mais novo ao mais antigo. */
 let fanComments = new Map<string, PostComment[]>();
 /** Resposta de cada chave de idempotência: a mesma chave de novo não conta outra vez. */
@@ -439,20 +463,24 @@ export interface FixtureCommentInput {
 /**
  * O servidor dos posts nas fixtures: curtir e comentar, com a chave de
  * idempotência e as recusas que a API faria. Comentar rende pontos (exemplo)
- * e conta nas missões de comentário. A primeira curtida de um post conta nas
- * missões de curtida da central dele ("Curta 5 posts do Nenho"), e só rende
- * pontos quando conclui uma.
+ * e conta nas missões de comentário. A troca para curtido conta nas missões
+ * de curtida que casam com o post ("Curta 5 posts do Nenho"), com o post uma
+ * vez por missão e período, como o servidor (22.12), e só rende pontos quando
+ * conclui uma.
  */
 export const postsFixture = {
   setLike(postId: string, liked: boolean, idempotencyKey: string, now: Date): PointsAward {
     const previous = answered.get(idempotencyKey);
     if (previous) return { pointsAwarded: previous.pointsAwarded };
     const post = findBasePost(now, postId);
+    const wasLiked = likes.get(postId) ?? post.likedByMe;
     likes.set(postId, liked);
     let pointsAwarded = 0;
-    if (liked && !post.likedByMe && !likesCounted.has(postId)) {
-      likesCounted.add(postId);
-      pointsAwarded = missionsFixture.record('like', now, { artistId: post.artist.id });
+    if (liked && !wasLiked) {
+      pointsAwarded = missionsFixture.record('like', now, {
+        artistId: post.artist.id,
+        postId,
+      });
     }
     const result: PointsAward = { pointsAwarded };
     answered.set(idempotencyKey, result);
@@ -484,7 +512,7 @@ export const postsFixture = {
     // Com a carteira na API, o comentário de exemplo não rende ponto (earnFixturePoints).
     const pointsAwarded =
       earnFixturePoints(COMMENT_POINTS) +
-      missionsFixture.record('comment', now, { artistId: post.artist.id });
+      missionsFixture.record('comment', now, { artistId: post.artist.id, postId: input.postId });
     const result = { ...comment, pointsAwarded };
     answered.set(input.idempotencyKey, result);
     return { ...result };
@@ -493,7 +521,6 @@ export const postsFixture = {
   /** Volta ao início (fim da sessão e testes). As missões voltam com `missionsFixture.reset()`. */
   reset(): void {
     likes = new Map();
-    likesCounted = new Set();
     fanComments = new Map();
     answered = new Map();
     fanCommentSeq = 0;

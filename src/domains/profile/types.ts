@@ -107,3 +107,48 @@ export interface MyAchievements {
   /** Na ordem do servidor: as últimas desbloqueadas e a próxima bloqueada. */
   highlights: Achievement[];
 }
+
+/** De onde veio um lançamento do extrato (o `source` do servidor). */
+export type LedgerSource =
+  | 'like'
+  | 'comment'
+  | 'rsvp'
+  | 'central_join'
+  | 'mission'
+  | 'invite_visit'
+  | 'invite_signup'
+  | 'redeem'
+  | 'adjustment'
+  | 'seed';
+
+/**
+ * Uma linha do extrato de pontos (`GET /me/ledger`, blocos 1 e 7). O app mostra
+ * de onde veio, o contexto (a central ou o título da missão), o valor e a data.
+ * O `id` é só a chave da lista: nunca aparece.
+ */
+export interface LedgerEntry {
+  id: string;
+  kind: 'earn' | 'spend' | 'adjust';
+  /** Origem conhecida ou outra que o app ainda não conhece (cai em "Pontos"). */
+  source: LedgerSource | (string & {});
+  /** Quanto o saldo mexeu: positivo no ganho, negativo no resgate. */
+  points: number;
+  xpDelta: number;
+  seasonDelta: number;
+  artistId: string | null;
+  centralSeasonDelta: number;
+  centralTotalDelta: number;
+  subject: { type: string; id: string } | null;
+  /** ISO. */
+  createdAt: string;
+  /** O nome da central (bloco 7); `null` sem central ou com ela apagada. */
+  artistName?: string | null;
+  /** Só na missão: o título dela quando concluiu (bloco 7). */
+  subjectTitle?: string | null;
+}
+
+/** Uma página do extrato: `nextCursor` null na última. */
+export interface LedgerPage {
+  items: LedgerEntry[];
+  nextCursor: string | null;
+}

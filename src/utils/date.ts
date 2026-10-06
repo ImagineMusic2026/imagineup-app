@@ -45,6 +45,18 @@ export function formatDayMonth(input: DateInput): string {
   return date ? format(date, 'd MMM', { locale: ptBR }).replace('.', '') : '';
 }
 
+/**
+ * "sex., 3 out": a sobrelinha de um dia do extrato. O dia da semana curto são
+ * as três primeiras letras do nome: no pt-BR do date-fns 4, o `EEE` sai por
+ * extenso ("sábado") e o `EEEEEE` perde o acento ("sab").
+ */
+export function formatWeekdayDayMonth(input: DateInput): string {
+  const date = safe(input);
+  if (!date) return '';
+  const weekday = format(date, 'EEE', { locale: ptBR }).slice(0, 3);
+  return `${weekday}., ${formatDayMonth(date)}`;
+}
+
 /** Selo de data da agenda: { day: "21", month: "JUN" }. */
 export function formatDateBadge(input: DateInput): { day: string; month: string } {
   const date = safe(input);
