@@ -9,13 +9,17 @@ import {
 } from '@tanstack/react-query';
 import { AccessibilityInfo } from 'react-native';
 
-// As centrais pelo arquivo, fora do index, como os posts fazem.
+// As centrais e as chaves dos posts pelos arquivos, fora dos index, como os
+// posts fazem (pelo index seria um ciclo).
 import { artistKeys } from '@/domains/artists/queries';
 import { missionKeys } from '@/domains/missions';
+import { postKeys } from '@/domains/posts/keys';
 import { profileKeys } from '@/domains/profile';
 import { rankingKeys } from '@/domains/ranking';
 import { t } from '@/i18n';
+import { ApiError } from '@/services/api/errors';
 import { haptics } from '@/services/haptics';
+import { queryOptionsFor } from '@/services/query/client';
 import { createIdempotencyKey } from '@/utils/id';
 
 import { fetchAgenda, fetchArtistAgenda, fetchMyRsvps, setEventRsvp } from './api';
@@ -37,8 +41,9 @@ export const agendaMutationKeys = {
 /**
  * Toda presença confirmada ou desfeita pode andar (ou voltar) uma missão de
  * presença, mesmo sem concluí-la e sem render pontos: as missões buscam de
- * novo sempre. O saldo (1e, 1h), o ranking (1f, pontos da temporada) e a
- * posição e os pontos nas centrais (1b, 1e) só mudam quando a presença rendeu
+ * novo sempre. O saldo (1e, 1h), o ranking (1f, pontos da temporada), a
+ * posição e os pontos nas centrais (1b, 1e) e o "PTS DA CENTRAL" da 1d (os
+ * pontos vão para uma central do show) só mudam quando a presença rendeu
  * pontos.
  */
 function refreshPointsAfterRsvp(client: QueryClient, result: RsvpResult): void {
@@ -47,6 +52,20 @@ function refreshPointsAfterRsvp(client: QueryClient, result: RsvpResult): void {
   void client.invalidateQueries({ queryKey: profileKeys.wallet() });
   void client.invalidateQueries({ queryKey: rankingKeys.all });
   void client.invalidateQueries({ queryKey: artistKeys.centrals() });
+  void client.invalidateQueries({ queryKey: artistKeys.details() });
+}
+
+const isNotFound = (error: unknown): boolean =>
+  error instanceof ApiError && error.kind === 'notFound';
+
+/**
+ * O show saiu do ar ou encerrou entre a lista e o toque (o servidor recusa o
+ * "Eu vou" com 404): a agenda e o mural buscam de novo, e o show some da
+ * agenda e da linha do post de show.
+ */
+function refreshAfterGoneEvent(client: QueryClient): void {
+  void client.invalidateQueries({ queryKey: agendaKeys.events() });
+  void client.invalidateQueries({ queryKey: postKeys.all });
 }
 
 /**
@@ -58,6 +77,9 @@ export function registerAgendaMutationDefaults(client: QueryClient): void {
   client.setMutationDefaults(agendaMutationKeys.rsvp, {
     mutationFn: (variables: RsvpVariables) => setEventRsvp(variables),
     onSuccess: (result: RsvpResult) => refreshPointsAfterRsvp(client, result),
+    onError: (error: unknown) => {
+      if (isNotFound(error)) refreshAfterGoneEvent(client);
+    },
   });
 }
 
@@ -72,6 +94,7 @@ export function useAgendaQuery() {
 
 function agendaQueryOptions() {
   return infiniteQueryOptions({
+    ...queryOptionsFor('agenda'),
     queryKey: agendaKeys.events(),
     queryFn: ({ pageParam }) => fetchAgenda(pageParam),
     initialPageParam: null as string | null,
@@ -108,6 +131,7 @@ export function useAgendaEvent(eventId: string | null): AgendaEvent | null {
  */
 export function useArtistAgendaQuery(artistId: string) {
   return useInfiniteQuery({
+    ...queryOptionsFor('agenda'),
     queryKey: agendaKeys.byArtist(artistId),
     queryFn: ({ pageParam }) => fetchArtistAgenda(artistId, pageParam),
     initialPageParam: null as string | null,
@@ -119,6 +143,7 @@ export function useArtistAgendaQuery(artistId: string) {
 /** Shows em que o fã confirmou presença. O feed e a agenda leem daqui. */
 export function useMyRsvpsQuery() {
   return useQuery({
+    ...queryOptionsFor('agenda'),
     queryKey: agendaKeys.rsvps(),
     queryFn: fetchMyRsvps,
   });
@@ -127,6 +152,7 @@ export function useMyRsvpsQuery() {
 /** O fã vai a este show? `undefined` enquanto a lista não chegou. */
 export function useIsGoing(eventId: string): boolean | undefined {
   const { data } = useQuery({
+    ...queryOptionsFor('agenda'),
     queryKey: agendaKeys.rsvps(),
     queryFn: fetchMyRsvps,
     select: (rsvps) => rsvps.eventIds.includes(eventId),
@@ -146,7 +172,8 @@ function withRsvp(rsvps: MyRsvps | undefined, eventId: string, going: boolean): 
  * Sem rede, a presença espera na fila e sobrevive ao app fechado
  * (`mutationKey` registrada no `AppProviders`). O `scope` é por show:
  * confirmar e desfazer o mesmo show chegam ao servidor na ordem do toque, e
- * shows diferentes não esperam um pelo outro.
+ * shows diferentes não esperam um pelo outro. Show que saiu do ar ou encerrou
+ * (404): além de desfazer, a agenda e o mural buscam de novo.
  */
 export function useRsvpMutation(eventId: string) {
   const queryClient = useQueryClient();
@@ -168,7 +195,8 @@ export function useRsvpMutation(eventId: string) {
       return { wasGoing };
     },
     onSuccess: (result) => refreshPointsAfterRsvp(queryClient, result),
-    onError: (_error, { eventId: id }, context) => {
+    onError: (error, { eventId: id }, context) => {
+      if (isNotFound(error)) refreshAfterGoneEvent(queryClient);
       // Volta só este show: a lista pode ter mudado em outro no meio.
       if (context) {
         queryClient.setQueryData<MyRsvps>(agendaKeys.rsvps(), (current) =>

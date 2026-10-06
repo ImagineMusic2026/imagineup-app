@@ -116,7 +116,10 @@ export function PostRow({ post }: PostRowProps) {
     ? t('post.author', { name: post.artist.name })
     : post.artist.name;
   const spokenTime = formatRelativeAgoSpoken(post.createdAt, now);
-  const blockLabel = t('post.blockLabel', { author, time: spokenTime, text: post.text });
+  // Foto e vídeo podem vir sem legenda (bloco 6): o rótulo sai sem o texto.
+  const blockLabel = post.text
+    ? t('post.blockLabel', { author, time: spokenTime, text: post.text })
+    : t('post.blockLabelNoText', { author, time: spokenTime });
   const withThumbnail = post.media !== null || post.event !== null;
 
   return (
@@ -145,14 +148,16 @@ export function PostRow({ post }: PostRowProps) {
               {t('post.meta', { time: formatRelativeShort(post.createdAt, now) })}
             </Text>
           </View>
-          <Text
-            variant="bodySmall"
-            color={colors.textBody}
-            numberOfLines={TEXT_LINES}
-            style={styles.text}
-          >
-            {post.text}
-          </Text>
+          {post.text ? (
+            <Text
+              variant="bodySmall"
+              color={colors.textBody}
+              numberOfLines={TEXT_LINES}
+              style={styles.text}
+            >
+              {post.text}
+            </Text>
+          ) : null}
         </PressableScale>
         <View style={styles.chips}>
           {post.event ? (

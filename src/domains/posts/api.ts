@@ -7,9 +7,19 @@ import {
   buildCommentsPageFixture,
   buildFeedPageFixture,
   findPostFixture,
+  moderationFixture,
   postsFixture,
 } from './fixtures';
-import type { CommentAuthor, Page, PointsAward, Post, PostComment } from './types';
+import type {
+  BlockFanResult,
+  CommentAuthor,
+  CommentReportReason,
+  Page,
+  PointsAward,
+  Post,
+  PostComment,
+  ReportCommentResult,
+} from './types';
 
 /** Chamadas cruas à API. Sem React: quem cacheia é o queries.ts. */
 
@@ -88,7 +98,7 @@ export async function setPostLike({
 
 export interface AddCommentVariables {
   postId: string;
-  /** Já validado e sem espaço nas pontas (`commentSchema`). */
+  /** Já limpo e validado como o servidor (`commentSchema`). */
   text: string;
   idempotencyKey: string;
   /** Id da linha no app enquanto o comentário vai; o mesmo nas novas tentativas. */
@@ -117,6 +127,62 @@ export async function addComment({
   const { data } = await api.post<AddCommentResult>(
     `${postUrl(postId)}/comments`,
     { text },
+    { headers: { 'Idempotency-Key': idempotencyKey } },
+  );
+  return data;
+}
+
+export interface ReportCommentVariables {
+  postId: string;
+  commentId: string;
+  /** Sem motivo, `null`. */
+  reason: CommentReportReason | null;
+  idempotencyKey: string;
+}
+
+/**
+ * Denuncia o comentário de outro fã (moderação provisória, UP-48). A
+ * denúncia não esconde nada: vai para a fila da equipe.
+ */
+export async function reportComment({
+  postId,
+  commentId,
+  reason,
+  idempotencyKey,
+}: ReportCommentVariables): Promise<ReportCommentResult> {
+  if (sourceOf('posts') === 'fixtures') {
+    await fixtureDelay();
+    return moderationFixture.report(postId, commentId, reason, idempotencyKey, fixtureNow());
+  }
+  const { data } = await api.post<ReportCommentResult>(
+    `${postUrl(postId)}/comments/${encodeURIComponent(commentId)}/report`,
+    { reason },
+    { headers: { 'Idempotency-Key': idempotencyKey } },
+  );
+  return data;
+}
+
+export interface BlockFanVariables {
+  /** O uid do autor do comentário (`PostComment.authorId`). */
+  fanId: string;
+  idempotencyKey: string;
+}
+
+/**
+ * Bloqueia um fã: os comentários dele somem para quem bloqueou, em todos os
+ * posts, e ele não fica sabendo. Desbloquear (`DELETE`) ainda não tem tela.
+ */
+export async function blockFan({
+  fanId,
+  idempotencyKey,
+}: BlockFanVariables): Promise<BlockFanResult> {
+  if (sourceOf('posts') === 'fixtures') {
+    await fixtureDelay();
+    return moderationFixture.block(fanId, idempotencyKey);
+  }
+  const { data } = await api.put<BlockFanResult>(
+    `/me/blocks/${encodeURIComponent(fanId)}`,
+    undefined,
     { headers: { 'Idempotency-Key': idempotencyKey } },
   );
   return data;

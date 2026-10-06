@@ -185,4 +185,24 @@ describe('PostRow', () => {
     const block = screen.getByRole('button', { name: /Curto\.$/ });
     expect(block).toHaveStyle({ minHeight: 44 });
   });
+
+  it('foto sem legenda (bloco 6): a miniatura fica, e o rótulo sai sem o texto', () => {
+    const photo = buildPostsFixture(NOW).find((post) => post.kind === 'photo')!;
+    render(<PostRow post={{ ...photo, text: '' }} />, { wrapper });
+    expect(
+      screen.getByRole('button', { name: /^Netto Brito, artista verificado, há [^.]+\.$/ }),
+    ).toBeTruthy();
+    // A miniatura, o bloco e o compartilhar.
+    expect(screen.UNSAFE_getAllByType(PressableScale)).toHaveLength(3);
+  });
+
+  it('vídeo com a mídia de URLs nulas (o seed do servidor): a miniatura com a marca de vídeo', () => {
+    render(
+      <PostRow
+        post={{ ...CLIP, media: { url: null, thumbnailUrl: null, width: 1920, height: 1080 } }}
+      />,
+      { wrapper },
+    );
+    expect(screen.UNSAFE_getAllByType(PressableScale)).toHaveLength(3);
+  });
 });

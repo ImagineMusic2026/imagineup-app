@@ -1,5 +1,5 @@
 import { FlashList, type FlashListRef } from '@shopify/flash-list';
-import { useLocalSearchParams } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { MessageCircle } from 'lucide-react-native';
 import { useEffect, useEffectEvent, useRef, useState } from 'react';
 import {
@@ -132,6 +132,13 @@ type CommentsState = 'loading' | 'error' | 'ready';
  * offline) deixava o compositor meio coberto pelo teclado no Android. Os
  * comentários vão do mais novo ao mais antigo: o que o fã manda entra no
  * topo, logo abaixo do post, e a lista rola até ele se ele estiver fora da vista.
+ *
+ * No comentário de outro fã, o botão de opções abre a sheet "Opções do
+ * comentário" (denunciar e bloquear, provisória até a UP-48). Bloquear tira os
+ * comentários do autor da lista; se a página que chega fica vazia e o servidor
+ * ainda tem mais (comentários seguidos de bloqueados), a tela pede a seguinte
+ * sozinha, uma vez por página: a lista não cresceu, e o fim dela não dispara
+ * de novo.
  */
 export function PostDetailsScreen() {
   const { postId = '' } = useLocalSearchParams<{ postId: string }>();
@@ -164,11 +171,15 @@ export function PostDetailsScreen() {
       ? 'error'
       : 'ready';
 
+  // O post saiu do ar: vale também com o detalhe no cache (aberto antes, ou do
+  // disco), porque a busca que falha deixa o dado antigo no lugar. O 404 fica
+  // enquanto a tela busca de novo (a curtida recusada com 404 invalida o
+  // post), e o aviso não pisca nem se repete.
   const postMissing = post.error instanceof ApiError && post.error.kind === 'notFound';
   // Buscando de novo, o erro fica na tela com o botão ocupado; o anúncio sai uma vez.
   const postFailed = post.data === undefined && post.isError;
   const postSettledFailed = postFailed && !post.isFetching;
-  useAnnounceWhen(postSettledFailed && postMissing, t('post.details.notFound'));
+  useAnnounceWhen(postMissing, t('post.details.notFound'));
   useAnnounceWhen(postSettledFailed && !postMissing, t('post.details.loadError'));
   useAnnounceWhen(
     commentsState === 'error' && !comments.isFetching && post.data !== undefined,
@@ -208,6 +219,27 @@ export function PostDetailsScreen() {
     setSentKeys((keys) => new Set(keys).add(localId));
   };
 
+  // A última página chegou vazia (os comentários dela eram de bloqueados) e
+  // ainda há mais: pede a seguinte, uma vez por página.
+  const pages = comments.data?.pages;
+  const lastPage = pages?.at(-1);
+  const emptyWithMore = !!lastPage && lastPage.items.length === 0 && lastPage.nextCursor !== null;
+  const autoLoaded = useRef(0);
+  const pageCount = pages?.length ?? 0;
+  useEffect(() => {
+    if (!emptyWithMore || autoLoaded.current >= pageCount) return;
+    if (comments.isFetchingNextPage || comments.isFetchNextPageError) return;
+    autoLoaded.current = pageCount;
+    void comments.fetchNextPage({ cancelRefetch: false });
+  }, [emptyWithMore, pageCount, comments]);
+
+  const openOptions = (comment: PostComment): void => {
+    router.push({
+      pathname: '/comentario/[comentarioId]',
+      params: { comentarioId: comment.id, post: postId },
+    });
+  };
+
   // A página seguinte espera a busca a caminho em vez de cancelá-la.
   const loadMore = (): void => {
     if (!comments.hasNextPage || comments.isFetchingNextPage || comments.isFetchNextPageError) {
@@ -226,22 +258,20 @@ export function PostDetailsScreen() {
     </View>
   );
 
-  if (!post.data) {
+  if (!post.data || postMissing) {
     return (
       <Screen padded={false} contentStyle={styles.screen}>
         {header}
-        {postFailed ? (
-          postMissing ? (
-            // O voltar é o do título: um segundo "Voltar" só repetiria para o leitor.
-            <EmptyState message={t('post.details.notFound')} />
-          ) : (
-            <EmptyState
-              tone="error"
-              message={t('post.details.loadError')}
-              onAction={() => void post.refetch()}
-              actionLoading={post.isFetching}
-            />
-          )
+        {postMissing ? (
+          // O voltar é o do título: um segundo "Voltar" só repetiria para o leitor.
+          <EmptyState message={t('post.details.notFound')} />
+        ) : postFailed ? (
+          <EmptyState
+            tone="error"
+            message={t('post.details.loadError')}
+            onAction={() => void post.refetch()}
+            actionLoading={post.isFetching}
+          />
         ) : (
           <PostSkeleton accessibilityLabel={t('post.details.loading')} />
         )}
@@ -311,6 +341,7 @@ export function PostDetailsScreen() {
               mine={uid !== null && item.authorId === uid}
               animateIn={item.status === 'pending' && sentKeys.has(commentKey(item))}
               onRetry={() => commenting.retry(item.id)}
+              onOptions={() => openOptions(item)}
             />
           )}
           extraData={now.getTime()}

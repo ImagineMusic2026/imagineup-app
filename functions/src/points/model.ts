@@ -109,9 +109,20 @@ export type AwardResult = { uid: string; entryId: string; status: AwardStatus; p
  * `days[dia].count`: `central_entry` são os pedidos que criaram vínculo com
  * alguma central (o teto diário do bloco 4, docs/arquitetura-api.md, 19.5);
  * `invite_visit_sent` são as visitas a links de convite que a conta mandou, e
- * `invite_link` os links novos que ela registrou (os tetos do bloco 5, 20.4).
+ * `invite_link` os links novos que ela registrou (os tetos do bloco 5, 20.4);
+ * `like_set`, `comment_sent`, `rsvp_set`, `comment_report` e `fan_block` são
+ * as trocas para curtido, os comentários, as trocas para "Eu vou", as
+ * denúncias e os bloqueios (os tetos do bloco 6, 21.7).
  */
-export type DailyActionKey = 'central_entry' | 'invite_visit_sent' | 'invite_link';
+export type DailyActionKey =
+  | 'central_entry'
+  | 'invite_visit_sent'
+  | 'invite_link'
+  | 'like_set'
+  | 'comment_sent'
+  | 'rsvp_set'
+  | 'comment_report'
+  | 'fan_block';
 
 export type DayStats = {
   earned: number;

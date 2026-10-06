@@ -2,6 +2,7 @@ import { Timestamp } from 'firebase-admin/firestore';
 
 import { isHandleFormat } from '../artists/model';
 import type { Artist, ArtistDetails, FanCentral } from '../api/contract';
+import { SYNC_WINDOW_MS, windowTask } from '../window-task';
 
 // Centrais de verdade (bloco 4), puro: nada aqui lê ou grava o Firestore. O
 // service.ts lê, chama daqui e grava. Contrato em docs/arquitetura-api.md,
@@ -21,10 +22,7 @@ export const CENTRALS_MAX = 240;
 export const FAN_SHARD_COUNT = 16;
 
 /** Janela da fila `syncArtistFanCount`: no máximo uma cópia por central a cada 10 s. */
-export const FAN_COUNT_WINDOW_MS = 10_000;
-
-/** A tarefa da janela roda 1 s depois do fim dela. */
-const FAN_COUNT_DELAY_MS = 1_000;
+export const FAN_COUNT_WINDOW_MS = SYNC_WINDOW_MS;
 
 /** De onde veio o vínculo: a 1l (`POST /me/artists`), a 1d (`PUT /me/centrals/:id`) ou o seed. */
 export type JoinVia = 'onboarding' | 'page' | 'seed';
@@ -188,11 +186,15 @@ export function coverOf(artist: ArtistRecord): string | null {
   return artist.coverUrl ?? artist.photoUrl ?? null;
 }
 
-/** A página da central (`GET /artists/:id`). `joinedAt` é o do vínculo, ou null sem vínculo. */
+/**
+ * A página da central (`GET /artists/:id`). `joinedAt` é o do vínculo, ou null
+ * sem vínculo; `postCount` é o `count()` dos posts no ar da central (bloco 6).
+ */
 export function artistDetailsView(
   artist: ArtistRecord,
   member: { joinedAt: number | null } | null,
   centralPoints: number,
+  postCount = 0,
 ): ArtistDetails {
   return {
     id: artist.id,
@@ -204,8 +206,7 @@ export function artistDetailsView(
     fanCount: member
       ? memberFanCount(artist.fanCount, artist.fanCountAt, member.joinedAt)
       : artist.fanCount,
-    // O mural é do bloco 6.
-    postCount: 0,
+    postCount: safeCount(postCount),
     centralPoints: safeCount(centralPoints),
     isMember: member !== null,
   };
@@ -310,9 +311,5 @@ export function fanCountSyncTask(
   artistId: string,
   eventTime: number,
 ): { id: string; scheduleTime: Date } {
-  const window = Math.floor(eventTime / FAN_COUNT_WINDOW_MS);
-  return {
-    id: `fancount-${artistId}-${window}`,
-    scheduleTime: new Date((window + 1) * FAN_COUNT_WINDOW_MS + FAN_COUNT_DELAY_MS),
-  };
+  return windowTask('fancount', artistId, eventTime);
 }

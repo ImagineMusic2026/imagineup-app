@@ -2,9 +2,12 @@ import type { Firestore } from 'firebase-admin/firestore';
 import * as logger from 'firebase-functions/logger';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { AgendaError } from '../agenda/model';
 import { CentralError } from '../centrals/model';
 import { InviteError } from '../invites/model';
+import { DailyCapError, ModerationError } from '../moderation/model';
 import { staticConfigSource } from '../points/config';
+import { PostError } from '../posts/model';
 import { API_ROUTES, createApiHandler } from './index';
 import type { ApiRequest, ApiRoute } from './types';
 
@@ -508,5 +511,170 @@ describe('convite (bloco 5)', () => {
     const failed = await call(request('GET', '/teste/segredo'), routes);
     expect(failed.status).toBe(500);
     expect((await call(request('GET', '/me/wallet'), routes)).status).toBe(200);
+  });
+});
+
+describe('mural, agenda e moderação (bloco 6)', () => {
+  const thrower = (error: unknown): ApiRoute[] => [
+    {
+      method: 'GET',
+      pattern: '/teste/bloco6',
+      writes: false,
+      handle: async () => {
+        throw error;
+      },
+    },
+  ];
+
+  it.each([
+    [
+      new PostError('post_not_found'),
+      404,
+      { code: 'post_not_found', message: 'Post não encontrado.' },
+    ],
+    [
+      new PostError('comment_invalid', { reason: 'invisible' }),
+      400,
+      {
+        code: 'comment_invalid',
+        message: 'Comentário vazio, longo demais ou com caracteres invisíveis.',
+        details: { reason: 'invisible' },
+      },
+    ],
+    [
+      new AgendaError('event_not_found', { reason: 'ended' }),
+      404,
+      { code: 'event_not_found', message: 'Show não encontrado.', details: { reason: 'ended' } },
+    ],
+    [
+      new ModerationError('comment_not_found'),
+      404,
+      { code: 'comment_not_found', message: 'Comentário não encontrado.' },
+    ],
+    [
+      new ModerationError('fan_not_found'),
+      404,
+      { code: 'fan_not_found', message: 'Fã não encontrado.' },
+    ],
+    [
+      new ModerationError('block_list_full'),
+      409,
+      { code: 'block_list_full', message: 'Você chegou ao limite de fãs bloqueados.' },
+    ],
+    [
+      new ModerationError('own_comment'),
+      400,
+      { code: 'invalid_request', message: 'Pedido inválido.', details: { reason: 'own_comment' } },
+    ],
+    [
+      new ModerationError('self'),
+      400,
+      { code: 'invalid_request', message: 'Pedido inválido.', details: { reason: 'self' } },
+    ],
+  ])('%s vira o código combinado', async (error, status, body) => {
+    const sent = await call(request('GET', '/teste/bloco6'), thrower(error));
+    expect(sent.status).toBe(status);
+    expect(sent.body).toEqual(body);
+    expect(logger.error).not.toHaveBeenCalled();
+  });
+
+  it('teto do dia: 429 too_many_requests com o teto, a ação e o Retry-After', async () => {
+    const sent = await call(
+      request('GET', '/teste/bloco6'),
+      thrower(new DailyCapError('like', 300, 1800)),
+    );
+    expect(sent.status).toBe(429);
+    expect(sent.body).toEqual({
+      code: 'too_many_requests',
+      message: 'Tentativas demais por hoje. Tente amanhã.',
+      details: { limit: 300, action: 'like' },
+    });
+    expect(sent.headers['Retry-After']).toBe('1800');
+  });
+
+  it.each([
+    ['GET', '/posts/__x__', 'post_not_found'],
+    ['GET', '/posts/p.clipe/comments', 'post_not_found'],
+    ['PUT', '/posts/p%20clipe/like', 'post_not_found'],
+    ['POST', '/posts/p-clipe/comments/c.1/report', 'comment_not_found'],
+    ['PUT', '/events/sao.joao/rsvp', 'event_not_found'],
+    ['PUT', '/me/blocks/uid-com-hifen', 'fan_not_found'],
+    ['GET', '/artists/Netto/posts', 'artist_not_found'],
+  ])('id fora do formato em %s %s: o 404 do recurso', async (method, path, code) => {
+    const sent = await call(
+      request(method, path, { headers: { 'Idempotency-Key': 'chave-bloco-6-1' }, body: {} }),
+    );
+    expect(sent.status).toBe(404);
+    expect(sent.body).toMatchObject({ code });
+  });
+
+  it('limite e cursor fora do formato: 400 com o campo', async () => {
+    for (const [query, field] of [
+      [{ limit: '0' }, 'limit'],
+      [{ limit: '51' }, 'limit'],
+      [{ limit: 'dez' }, 'limit'],
+      [{ cursor: 'não é cursor' }, 'cursor'],
+      [{ cursor: Buffer.from('[1,"a/b"]').toString('base64url') }, 'cursor'],
+      [{ cursor: Buffer.from('[253402300800000,"p-1"]').toString('base64url') }, 'cursor'],
+    ] as const) {
+      const sent = await call(request('GET', '/feed', { query }));
+      expect(sent.status).toBe(400);
+      expect(sent.body).toMatchObject({ code: 'invalid_request', details: { field } });
+    }
+    const agenda = await call(request('GET', '/agenda', { query: { artistId: 'Netto' } }));
+    expect(agenda.status).toBe(404);
+    expect(agenda.body).toMatchObject({ code: 'artist_not_found' });
+  });
+
+  it('comentário inválido: 400 comment_invalid com o motivo, antes de abrir a transação', async () => {
+    for (const [text, reason] of [
+      ['   \n  ', 'empty'],
+      ['a'.repeat(501), 'too_long'],
+      ['oi\nㅤ', 'invisible'],
+    ] as const) {
+      const sent = await call(
+        request('POST', '/posts/p-clipe/comments', {
+          body: { text },
+          headers: { 'Idempotency-Key': 'chave-comentario-1' },
+        }),
+      );
+      expect(sent.status).toBe(400);
+      expect(sent.body).toMatchObject({ code: 'comment_invalid', details: { reason } });
+    }
+    const notText = await call(
+      request('POST', '/posts/p-clipe/comments', {
+        body: { text: 42 },
+        headers: { 'Idempotency-Key': 'chave-comentario-2' },
+      }),
+    );
+    expect(notText.body).toMatchObject({ code: 'invalid_request', details: { field: 'text' } });
+  });
+
+  it('denúncia com motivo fora da lista: 400 com o campo', async () => {
+    const sent = await call(
+      request('POST', '/posts/p-clipe/comments/seed-c-1/report', {
+        body: { reason: 'chato' },
+        headers: { 'Idempotency-Key': 'chave-denuncia-1' },
+      }),
+    );
+    expect(sent.status).toBe(400);
+    expect(sent.body).toMatchObject({ code: 'invalid_request', details: { field: 'reason' } });
+  });
+
+  it('as que gravam exigem a Idempotency-Key', async () => {
+    for (const [method, path] of [
+      ['POST', '/posts/p-clipe/comments'],
+      ['PUT', '/posts/p-clipe/like'],
+      ['DELETE', '/posts/p-clipe/like'],
+      ['POST', '/posts/p-clipe/comments/c1/report'],
+      ['PUT', '/me/blocks/uidEnzo'],
+      ['DELETE', '/me/blocks/uidEnzo'],
+      ['PUT', '/events/sao-joao-irara/rsvp'],
+      ['DELETE', '/events/sao-joao-irara/rsvp'],
+    ] as const) {
+      const sent = await call(request(method, path, { body: { text: 'oi' } }));
+      expect(sent.status).toBe(400);
+      expect(sent.body).toMatchObject({ code: 'idempotency_key_required' });
+    }
   });
 });

@@ -120,3 +120,39 @@ export function insertComment(
   });
   return placed;
 }
+
+const holdsComments = (query: Query): boolean =>
+  query.queryKey[0] === POSTS_ROOT && query.queryKey[1] === COMMENTS_SEGMENT;
+
+/**
+ * O fã bloqueou um autor: os comentários dele saem de todo cache de
+ * comentários na hora (a lista buscada de novo já vem sem eles do servidor).
+ */
+export function removeAuthorComments(client: QueryClient, authorId: string): void {
+  client.setQueriesData<InfiniteData<Page<PostComment>>>({ predicate: holdsComments }, (data) => {
+    if (!data?.pages) return data;
+    const found = data.pages.some((page) => page.items.some((item) => item.authorId === authorId));
+    if (!found) return data;
+    return {
+      ...data,
+      pages: data.pages.map((page) => ({
+        ...page,
+        items: page.items.filter((item) => item.authorId !== authorId),
+      })),
+    };
+  });
+}
+
+/** Um comentário que já está no cache da lista do post (a sheet de opções lê daqui). */
+export function findCachedComment(
+  client: QueryClient,
+  key: readonly unknown[],
+  commentId: string,
+): PostComment | undefined {
+  const data = client.getQueryData<InfiniteData<Page<PostComment>>>(key);
+  for (const page of data?.pages ?? []) {
+    const found = page.items.find((item) => item.id === commentId);
+    if (found) return found;
+  }
+  return undefined;
+}

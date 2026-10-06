@@ -30,12 +30,14 @@ import {
   type WalletState,
 } from './model';
 import {
+  addEngagementToShard,
   addInviteToShard,
   addMembershipToShard,
   emptyShardDelta,
   pickShard,
   shardRef,
   shardWrite,
+  type EngagementKind,
   type InviteShardEvent,
 } from './stats';
 
@@ -50,6 +52,12 @@ export type FanContext = {
   uid: string;
   /** createdAt de users/{uid}, em ms (a coorte do painel). */
   profileCreatedAt: number | null;
+  /**
+   * Nome e foto do perfil lido na transação, ou null: o comentário (bloco 6)
+   * copia os dois sem ler o perfil de novo.
+   */
+  displayName: string | null;
+  photoURL: string | null;
   wallet: WalletState;
   /** Marcas de atividade do pedido; null no ajuste e no seed, que não marcam. */
   activity: ActivityMarks | null;
@@ -197,6 +205,8 @@ export async function requireFan(
   return {
     uid,
     profileCreatedAt,
+    displayName: text(profile.get('displayName')),
+    photoURL: text(profile.get('photoURL')),
     wallet: state,
     activity: options.markActivity ? activityMarks(state.activity, now, profileCreatedAt) : null,
   };
@@ -392,6 +402,21 @@ export function addInviteCounts(plan: AwardPlan, change: InviteShardEvent): void
   addInviteToShard(plan.shard, change);
 }
 
+/** Um fluxo de engajamento do bloco 6 e as centrais no ar da ação (nenhuma no bloqueio). */
+export type EngagementChange = { kind: EngagementKind; artistIds: readonly string[] };
+
+/**
+ * Soma curtidas, descurtidas, comentários, presenças, denúncias e bloqueios no
+ * shard do dia do plano (bloco 6, 21.10), como o addMembershipCounts: continua
+ * uma gravação de shard por transação, e o shard nasce quando o plano não
+ * tinha o que somar. Chame antes de o runIdempotent gravar o plano.
+ */
+export function addEngagementCounts(plan: AwardPlan, changes: readonly EngagementChange[]): void {
+  if (changes.length === 0) return;
+  plan.shard ??= emptyShardDelta();
+  for (const change of changes) addEngagementToShard(plan.shard, change.kind, change.artistIds);
+}
+
 /**
  * Soma 1 a um contador do dia que não rende ponto (`days[dia].count[key]`) na
  * carteira de quem chama, no dia do plano. Sem lançamento nem marca de
@@ -428,6 +453,41 @@ export async function retryOnAlreadyExists<T>(run: () => Promise<T>): Promise<T>
     if ((error as { code?: unknown }).code !== ALREADY_EXISTS) throw error;
     return run();
   }
+}
+
+/**
+ * Uma ação de fã fora da API (o seed dos emuladores do bloco 6: curtir,
+ * comentar, "Eu vou" e denunciar), como o runJoinCentrals: abre a transação,
+ * exige o perfil (sem marcar atividade), roda o núcleo da ação com o ator e a
+ * configuração dados e grava o plano que ele devolve.
+ */
+export function runAsFan<T extends { plan: AwardPlan }>(
+  db: Firestore,
+  uid: string,
+  options: { now: number; config: PointsConfig; actor: Actor; random?: () => number },
+  work: (tx: Transaction, fan: FanContext, award: AwardContext) => Promise<T>,
+): Promise<T> {
+  const random = options.random ?? Math.random;
+  return retryOnAlreadyExists(() =>
+    db.runTransaction(async (tx) => {
+      const [profile, wallet] = await tx.getAll(
+        db.collection('users').doc(uid),
+        walletRef(db, uid),
+      );
+      const fan = await requireFan(tx, db, uid, profile!, wallet!, options.now, {
+        markActivity: false,
+      });
+      const award: AwardContext = {
+        now: options.now,
+        config: options.config,
+        shard: pickShard(random),
+        actor: options.actor,
+      };
+      const outcome = await work(tx, fan, award);
+      applyAwards(tx, db, outcome.plan);
+      return outcome;
+    }),
+  );
 }
 
 /**

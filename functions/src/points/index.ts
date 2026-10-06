@@ -3,6 +3,7 @@
 // usa daqui; o seed dos emuladores carrega o build (functions/lib/points).
 export {
   addDailyCount,
+  addEngagementCounts,
   addInviteCounts,
   addMembershipCounts,
   ALREADY_EXISTS,
@@ -14,11 +15,13 @@ export {
   requireFan,
   requireProfile,
   retryOnAlreadyExists,
+  runAsFan,
   runAward,
   walletFromDoc,
   walletRef,
   type AwardContext,
   type AwardPlan,
+  type EngagementChange,
   type FanAwards,
   type FanContext,
   type MembershipChange,
@@ -62,6 +65,7 @@ export {
 } from './model';
 export { seedCamilaWallet, CAMILA_SEED, noonDaysAgo, SEED_ACTOR } from './seed';
 export {
+  addEngagementToShard,
   addInviteToShard,
   emptyShardDelta,
   ORIGIN_NONE,
@@ -70,6 +74,7 @@ export {
   SHARD_COUNT,
   shardRef,
   shardWrite,
+  type EngagementKind,
   type InviteShardEvent,
   type OriginKind,
   type ShardDelta,

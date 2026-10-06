@@ -1,6 +1,9 @@
+import { AgendaError } from '../agenda/model';
 import { CentralError } from '../centrals/model';
 import { InviteError } from '../invites/model';
+import { DailyCapError, ModerationError } from '../moderation/model';
 import { PointsError } from '../points/model';
+import { PostError } from '../posts/model';
 
 // Erros da API, no formato que o toApiError do app lê: corpo
 // { code, message, details? } e o status HTTP de onde sai o `kind`.
@@ -9,14 +12,20 @@ import { PointsError } from '../points/model';
 export type ApiErrorCode =
   | 'invalid_request'
   | 'idempotency_key_required'
+  | 'comment_invalid'
   | 'unauthenticated'
   | 'not_fan'
   | 'not_found'
   | 'artist_not_found'
   | 'invite_not_found'
+  | 'post_not_found'
+  | 'event_not_found'
+  | 'comment_not_found'
+  | 'fan_not_found'
   | 'method_not_allowed'
   | 'insufficient_points'
   | 'invite_not_allowed'
+  | 'block_list_full'
   | 'payload_too_large'
   | 'idempotency_key_reused'
   | 'too_many_requests'
@@ -27,14 +36,23 @@ export type ApiErrorCode =
 export const API_ERRORS: Record<ApiErrorCode, { status: number; message: string }> = {
   invalid_request: { status: 400, message: 'Pedido inválido.' },
   idempotency_key_required: { status: 400, message: 'Falta a chave de idempotência.' },
+  comment_invalid: {
+    status: 400,
+    message: 'Comentário vazio, longo demais ou com caracteres invisíveis.',
+  },
   unauthenticated: { status: 401, message: 'Entre na sua conta para continuar.' },
   not_fan: { status: 403, message: 'Esta conta não é de fã.' },
   not_found: { status: 404, message: 'Não encontrado.' },
   artist_not_found: { status: 404, message: 'Central não encontrada.' },
   invite_not_found: { status: 404, message: 'Convite não encontrado.' },
+  post_not_found: { status: 404, message: 'Post não encontrado.' },
+  event_not_found: { status: 404, message: 'Show não encontrado.' },
+  comment_not_found: { status: 404, message: 'Comentário não encontrado.' },
+  fan_not_found: { status: 404, message: 'Fã não encontrado.' },
   method_not_allowed: { status: 405, message: 'Método não aceito nesta rota.' },
   insufficient_points: { status: 409, message: 'Saldo insuficiente.' },
   invite_not_allowed: { status: 409, message: 'Este convite não vale para esta conta.' },
+  block_list_full: { status: 409, message: 'Você chegou ao limite de fãs bloqueados.' },
   payload_too_large: { status: 413, message: 'Pedido grande demais.' },
   idempotency_key_reused: { status: 422, message: 'Esta chave já foi usada em outro pedido.' },
   too_many_requests: { status: 429, message: 'Tentativas demais por hoje. Tente amanhã.' },
@@ -87,8 +105,9 @@ export function apiError(code: ApiErrorCode, details?: Record<string, unknown>):
 const BUSY_CODES = new Set([4, 8, 10, 14]);
 
 /**
- * Qualquer erro para o erro da API. Recusa do núcleo de pontos, das centrais
- * ou do convite vira o código combinado; disputa que sobrou das 5 tentativas vira 503 com Retry-After;
+ * Qualquer erro para o erro da API. Recusa do núcleo de pontos, das centrais,
+ * do convite, do mural, da agenda ou da moderação vira o código combinado (e
+ * os tetos do dia, o 429 com Retry-After); disputa que sobrou das 5 tentativas vira 503 com Retry-After;
  * o resto é 500 (e vai para o log de erro).
  */
 export function toApiHttpError(error: unknown): { error: ApiHttpError; unexpected: boolean } {
@@ -106,6 +125,25 @@ export function toApiHttpError(error: unknown): { error: ApiHttpError; unexpecte
     return { error: apiError('artist_not_found', error.details), unexpected: false };
   }
   if (error instanceof InviteError) {
+    return { error: apiError(error.reason, error.details), unexpected: false };
+  }
+  if (error instanceof DailyCapError) {
+    return {
+      error: new ApiHttpError(
+        'too_many_requests',
+        { limit: error.limit, action: error.action },
+        { 'Retry-After': String(error.retryAfter) },
+      ),
+      unexpected: false,
+    };
+  }
+  if (error instanceof PostError || error instanceof AgendaError) {
+    return { error: apiError(error.reason, error.details), unexpected: false };
+  }
+  if (error instanceof ModerationError) {
+    if (error.reason === 'own_comment' || error.reason === 'self') {
+      return { error: apiError('invalid_request', { reason: error.reason }), unexpected: false };
+    }
     return { error: apiError(error.reason, error.details), unexpected: false };
   }
   if (error instanceof PointsError) {

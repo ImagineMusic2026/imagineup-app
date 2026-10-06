@@ -130,3 +130,71 @@ describe('rotas do convite (bloco 5)', () => {
     expect(matchRoute(API_ROUTES, 'POST', '/invites')).toEqual({ kind: 'not_found' });
   });
 });
+
+describe('rotas do mural, da agenda e da moderação (bloco 6)', () => {
+  it('o post, os comentários, a curtida e a denúncia não se confundem', () => {
+    expect(matchRoute(API_ROUTES, 'GET', '/posts/p-clipe')).toMatchObject({
+      kind: 'match',
+      route: { method: 'GET', pattern: '/posts/:postId' },
+      params: { postId: 'p-clipe' },
+    });
+    expect(matchRoute(API_ROUTES, 'GET', '/posts/p-clipe/comments')).toMatchObject({
+      kind: 'match',
+      route: { method: 'GET', pattern: '/posts/:postId/comments' },
+    });
+    expect(matchRoute(API_ROUTES, 'POST', '/posts/p-clipe/comments')).toMatchObject({
+      kind: 'match',
+      route: { method: 'POST', pattern: '/posts/:postId/comments' },
+    });
+    expect(matchRoute(API_ROUTES, 'PUT', '/posts/p-clipe/like')).toMatchObject({
+      kind: 'match',
+      route: { method: 'PUT', pattern: '/posts/:postId/like' },
+    });
+    expect(
+      matchRoute(API_ROUTES, 'POST', '/posts/p-clipe/comments/seed-c-clipe-bia/report'),
+    ).toMatchObject({
+      kind: 'match',
+      route: { pattern: '/posts/:postId/comments/:commentId/report' },
+      params: { postId: 'p-clipe', commentId: 'seed-c-clipe-bia' },
+    });
+  });
+
+  it('GET /posts/x/like é 405 com PUT e DELETE; GET /me/blocks/x é 405', () => {
+    expect(matchRoute(API_ROUTES, 'GET', '/posts/p-clipe/like')).toEqual({
+      kind: 'method_not_allowed',
+      allow: ['PUT', 'DELETE'],
+    });
+    expect(matchRoute(API_ROUTES, 'GET', '/me/blocks/uid-enzo')).toEqual({
+      kind: 'method_not_allowed',
+      allow: ['PUT', 'DELETE'],
+    });
+    expect(matchRoute(API_ROUTES, 'DELETE', '/posts/p-clipe/comments')).toEqual({
+      kind: 'method_not_allowed',
+      allow: ['GET', 'POST'],
+    });
+  });
+
+  it('/artists/:artistId e /artists/:artistId/posts não se confundem', () => {
+    expect(matchRoute(API_ROUTES, 'GET', '/artists/nettobrito')).toMatchObject({
+      route: { pattern: '/artists/:artistId' },
+    });
+    expect(matchRoute(API_ROUTES, 'GET', '/artists/nettobrito/posts')).toMatchObject({
+      route: { pattern: '/artists/:artistId/posts' },
+      params: { artistId: 'nettobrito' },
+    });
+  });
+
+  it('a agenda, as presenças e o "Eu vou"', () => {
+    expect(matchRoute(API_ROUTES, 'GET', '/agenda')).toMatchObject({ kind: 'match' });
+    expect(matchRoute(API_ROUTES, 'GET', '/me/rsvps')).toMatchObject({ kind: 'match' });
+    expect(matchRoute(API_ROUTES, 'PUT', '/events/sao-joao-irara/rsvp')).toMatchObject({
+      kind: 'match',
+      params: { eventId: 'sao-joao-irara' },
+    });
+    expect(matchRoute(API_ROUTES, 'GET', '/events/sao-joao-irara/rsvp')).toEqual({
+      kind: 'method_not_allowed',
+      allow: ['PUT', 'DELETE'],
+    });
+    expect(matchRoute(API_ROUTES, 'GET', '/feed')).toMatchObject({ kind: 'match' });
+  });
+});

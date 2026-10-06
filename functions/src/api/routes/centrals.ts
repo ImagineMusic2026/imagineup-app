@@ -1,4 +1,5 @@
 import {
+  centralPointsAggregate,
   followedAfter,
   isArtistId,
   joinCentrals,
@@ -10,6 +11,7 @@ import {
   readJoin,
   readPublishedArtists,
 } from '../../centrals';
+import { countArtistPosts } from '../../posts';
 import type {
   Artist,
   ArtistDetails,
@@ -56,7 +58,13 @@ export const centralRoutes: ApiRoute[] = [
     writes: false,
     validate: artistParam,
     async handle({ deps, uid, params }): Promise<ArtistDetails> {
-      return readArtistDetails(deps.db, uid, params.artistId!);
+      return readArtistDetails(
+        deps.db,
+        uid,
+        params.artistId!,
+        centralPointsAggregate(deps.db),
+        (artistId) => countArtistPosts(deps.db, artistId),
+      );
     },
   },
   {

@@ -35,6 +35,8 @@ export const SERVER_DOMAINS: ReadonlySet<DataDomain> = new Set<DataDomain>([
   'wallet',
   'artists',
   'invite',
+  'posts',
+  'agenda',
 ]);
 
 /**

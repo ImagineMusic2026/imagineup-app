@@ -25,6 +25,19 @@
  * 1e da Camila mostra 4 links e 3 pessoas trazidas; o Alan ganha o código na
  * primeira vez que abrir "Gerar meu link".
  *
+ * Mural e agenda (functions/lib/agenda e functions/lib/posts, bloco 6): antes
+ * das contas, os shows da agenda de exemplo do app (os mesmos ids e datas, na
+ * hora local do lugar, com o São João de Irará em destaque e um rascunho) e os
+ * 10 posts de exemplo (o clipe do Netto, o post de show do Nenho, que aponta
+ * para o Arrocha na Praia, e os outros, mais um rascunho); os posts vêm antes
+ * das contas porque o link post:p-clipe da Camila exige o post no ar. Por
+ * último, o engajamento dos fãs de teste pelos mesmos núcleos das rotas, com
+ * curtir, comentar e "Eu vou" valendo 0 (nenhuma carteira muda): curtidas no
+ * clipe, no show e em outros posts, 7 comentários (4 no clipe, 2 no show, 1 no
+ * texto), presenças da Bia e da Duda e a denúncia do Alan ao comentário do Enzo
+ * no show, que abre a fila da Moderação. A Camila não curte, não comenta e não
+ * vai a show nenhum: a primeira ação dela no app mostra os pontos do servidor.
+ *
  * Rodar de novo não muda nada.
  *
  * Só funciona contra o emulador local (127.0.0.1:9099): estas senhas não servem
@@ -138,6 +151,22 @@ async function seedCentrals() {
   return withFirestore((db) => seed(db));
 }
 
+/** Os shows e os posts de teste, como o painel publicaria (só os que ainda não existem). */
+async function seedContent() {
+  const { seedEvents } = functionsBuild('agenda');
+  const { seedPosts } = functionsBuild('posts');
+  return withFirestore(async (db) => ({
+    events: await seedEvents(db),
+    posts: await seedPosts(db),
+  }));
+}
+
+/** Curtidas, comentários, presenças e a denúncia dos fãs de teste, pelos núcleos das rotas. */
+async function seedEngagement(fans) {
+  const { seedEngagement: seed } = functionsBuild('posts');
+  return withFirestore((db) => seed(db, fans));
+}
+
 /**
  * A carteira da Camila pelo award das funções, as centrais dela pelo caminho
  * das rotas e o convite dela (o código CAMILA12 e os links).
@@ -169,7 +198,13 @@ console.log(
   `Centrais de teste: ${created} criadas (6 publicadas, 1 em rascunho e 1 fora do ar no total).`,
 );
 
+const content = await seedContent();
+console.log(
+  `Agenda e mural de teste: ${content.events} shows e ${content.posts} posts criados (9 shows e 10 posts no ar no total).`,
+);
+
 const invitees = [];
+const engagementFans = {};
 for (const { city, wallet, invited, ...fan } of FANS) {
   let result = await auth('accounts:signUp', fan);
   if (result.ok) {
@@ -192,6 +227,8 @@ for (const { city, wallet, invited, ...fan } of FANS) {
     );
   }
   if (invited) invitees.push({ uid: result.body.localId, email: fan.email, name: fan.displayName });
+  const key = fan.email.split('@')[0];
+  if (key !== 'camila') engagementFans[key] = result.body.localId;
 }
 
 const outcomes = await seedClaims(invitees);
@@ -199,3 +236,8 @@ invitees.forEach((invitee, index) => {
   const status = outcomes[index]?.status === 'claimed' ? 'convidado agora' : 'já era convidado';
   console.log(`Convite da Camila: ${invitee.name} (${status}).`);
 });
+
+const engagement = await seedEngagement(engagementFans);
+console.log(
+  `Engajamento dos fãs de teste, entrando agora: curtidas ${engagement.likes}, comentários ${engagement.comments}, presenças ${engagement.rsvps}, denúncias ${engagement.reports} (7, 7, 2 e 1 no total).`,
+);

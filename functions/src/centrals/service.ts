@@ -441,20 +441,28 @@ export async function sumCentralPoints(
   }
 }
 
+/** Quantos posts no ar a central tem (bloco 6: o `countArtistPosts` do mural). */
+export type ArtistPostCounter = (artistId: string) => Promise<number>;
+
 /**
- * A página da central (`GET /artists/:id`): a central, o vínculo do fã e a
- * soma, em paralelo. Central que não existe ou não está publicada: 404.
+ * A página da central (`GET /artists/:id`): a central, o vínculo do fã, a
+ * soma do "PTS DA CENTRAL" e, desde o bloco 6, o `count()` dos posts no ar,
+ * em paralelo. Central que não existe ou não está publicada: 404. O contador
+ * dos posts vem de fora (a rota passa o do mural), para este arquivo não
+ * importar o mural, que importa daqui.
  */
 export async function readArtistDetails(
   db: Firestore,
   uid: string,
   artistId: string,
   aggregate: CentralPointsAggregate = centralPointsAggregate(db),
+  countPosts: ArtistPostCounter = async () => 0,
 ): Promise<ArtistDetails> {
-  const [artist, membership, points] = await Promise.all([
+  const [artist, membership, points, posts] = await Promise.all([
     artistRef(db, artistId).get(),
     membershipRef(db, uid, artistId).get(),
     sumCentralPoints(artistId, aggregate),
+    countPosts(artistId),
   ]);
   const record = recordOf(artist);
   if (!isPublished(record)) throw new CentralError('artist_not_found', { artistId });
@@ -462,6 +470,7 @@ export async function readArtistDetails(
     record,
     membership.exists ? { joinedAt: membershipOf(membership).joinedAt } : null,
     points,
+    posts,
   );
 }
 

@@ -85,7 +85,7 @@ export type ArtistDetails = {
   verified: boolean;
   managedByImagine: boolean;
   fanCount: number;
-  /** 0 até o mural (bloco 6). */
+  /** Posts no ar da central, pelo `count()` (bloco 6). */
   postCount: number;
   /** Soma do total de pontos dos fãs na central ("PTS DA CENTRAL"). */
   centralPoints: number;
@@ -155,3 +155,126 @@ export type InviteVisitResult = { status: 'received' };
 
 /** `InviteLinkResult` do app (`PUT /me/invite/links/:linkId`). */
 export type InviteLinkResult = { linkId: string; created: boolean };
+
+// --- Mural e agenda (bloco 6), espelho de src/domains/posts/types.ts e
+// src/domains/agenda/types.ts -------------------------------------------------
+
+/** `PostKind` do app. */
+export type PostKind = 'photo' | 'video' | 'text' | 'event';
+
+/** `PostArtist` do app: a central do post. */
+export type PostArtist = {
+  id: string;
+  name: string;
+  verified: boolean;
+  /** Miniatura da foto da central (`thumb.url`); null sem foto. */
+  photoURL: string | null;
+};
+
+/**
+ * `PostMedia` do app. Foto e vídeo sempre trazem a mídia, mesmo sem arquivo
+ * (as URLs nulas e as medidas padrão): o app decide a miniatura por ela.
+ */
+export type PostMedia = {
+  /** A foto inteira, ou o mp4 do vídeo; null sem arquivo. */
+  url: string | null;
+  /** A miniatura (da foto ou da capa do vídeo); null sem arquivo. */
+  thumbnailUrl: string | null;
+  width: number | null;
+  height: number | null;
+};
+
+/** `PostEvent` do app: o show do post de show, no ar e não encerrado. */
+export type PostEvent = {
+  id: string;
+  title: string;
+  /** ISO 8601 UTC. */
+  startsAt: string;
+  /** "Aracaju, SE". */
+  city: string;
+};
+
+/** `Post` do app (`GET /feed`, `GET /artists/:id/posts`, `GET /posts/:id`). */
+export type Post = {
+  id: string;
+  kind: PostKind;
+  artist: PostArtist;
+  text: string;
+  media: PostMedia | null;
+  event: PostEvent | null;
+  /** A primeira publicação (o "há 2 h" do mural), ISO. */
+  createdAt: string;
+  /** A cópia das curtidas, com a de quem chama que a cópia ainda não viu (21.6). */
+  likeCount: number;
+  /** A cópia dos comentários visíveis (no detalhe, com os de quem chama mais novos que ela). */
+  commentCount: number;
+  likedByMe: boolean;
+  /** `values.invite_visit` da configuração; null quando é 0. */
+  sharePointsPerVisit: number | null;
+};
+
+/** `PostComment` do app, sem `status` e `localId`, que só existem no app. */
+export type PostComment = {
+  id: string;
+  postId: string;
+  /** O uid de quem escreveu ("Você", a semente do avatar e o bloqueio). */
+  authorId: string;
+  authorName: string;
+  authorAvatarUrl: string | null;
+  /** Sempre false neste bloco (a resposta do artista é pergunta, 21.16). */
+  authorIsArtist: boolean;
+  text: string;
+  /** ISO. */
+  createdAt: string;
+};
+
+/** `PointsAward` do app: o que curtir rendeu. */
+export type PointsAward = { pointsAwarded: number };
+
+/** `AddCommentResult` do app: o comentário gravado e o que ele rendeu. */
+export type AddCommentResult = PostComment & PointsAward;
+
+/** Motivo da denúncia de um comentário (lista fechada, provisória até a UP-48). */
+export type CommentReportReason = 'spam' | 'offensive' | 'harassment' | 'other';
+
+/** Corpo de `POST /posts/:postId/comments/:commentId/report`. */
+export type ReportCommentBody = { reason: CommentReportReason | null };
+
+/** Resposta da denúncia: a segunda do mesmo fã não muda nada. */
+export type ReportCommentResult = {
+  commentId: string;
+  status: 'reported' | 'already_reported';
+};
+
+/** Resposta de `PUT` e `DELETE /me/blocks/:fanId`. */
+export type BlockFanResult = { fanId: string; blocked: boolean };
+
+/** `AgendaArtist` do app. */
+export type AgendaArtist = { id: string; name: string };
+
+/** `AgendaEvent` do app: um show da agenda. */
+export type AgendaEvent = {
+  id: string;
+  title: string;
+  /** Só as centrais no ar, na ordem do show. */
+  artists: AgendaArtist[];
+  city: string;
+  /** UF. */
+  state: string;
+  /** ISO 8601 UTC. */
+  startsAt: string;
+  imageUrl: string | null;
+  /** `values.invite_signup` da configuração; null quando é 0. */
+  invitePointsPerSignup: number | null;
+  /** O local (campo novo, opcional no app; guardado, ainda não mostrado). */
+  venue: string | null;
+};
+
+/** `AgendaPage` do app: o destaque só na primeira página da agenda geral. */
+export type AgendaPage = Page<AgendaEvent> & { featured: AgendaEvent | null };
+
+/** `MyRsvps` do app: os shows abertos em que o fã confirmou presença. */
+export type MyRsvps = { eventIds: string[] };
+
+/** `RsvpResult` do app. */
+export type RsvpResult = { eventId: string; going: boolean; pointsAwarded: number };

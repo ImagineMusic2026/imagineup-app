@@ -1,4 +1,11 @@
-import { cleanLine, DISPLAY_NAME_MAX, displayNameOrNull, isVisibleLine } from '../visible-line';
+import {
+  cleanLine,
+  cleanMultiline,
+  DISPLAY_NAME_MAX,
+  displayNameOrNull,
+  isVisibleLine,
+  isVisibleMultiline,
+} from '../visible-line';
 
 // Os mesmos casos de functions/src/visible-line.test.ts e de
 // tests/firestore-rules.test.ts: as três validações precisam concordar.
@@ -119,5 +126,28 @@ describe('nome que as regras deixam gravar no perfil', () => {
     ['só de caracteres em branco', 'ㅤㅤ'],
   ])('%s fica null', (_, name) => {
     expect(displayNameOrNull(name)).toBeNull();
+  });
+});
+
+// A mesma tabela de functions/src/visible-line.test.ts: o comentário é limpo
+// e validado igual no app e no servidor (docs/arquitetura-api.md, 21.1, decisão 20).
+describe('texto de várias linhas (cleanMultiline e isVisibleMultiline)', () => {
+  it.each([
+    ['texto simples', 'Que música boa!', 'Que música boa!', true],
+    ['espaços nas pontas de cada linha', '  oi  \n  tudo bem?  ', 'oi\ntudo bem?', true],
+    ['linhas vazias seguidas viram uma', 'a\n\n\n\nb', 'a\n\nb', true],
+    ['linhas vazias nas pontas saem', '\n\n  a  \n\n', 'a', true],
+    ['isolantes bidi colados saem', '⁦Camila⁩ arrasou', 'Camila arrasou', true],
+    ['acento decomposto vira NFC', 'Irará', 'Irará', true],
+    ['\\r\\n vira \\n', 'a\r\nb', 'a\nb', true],
+    ['\\r sozinho vira \\n e não é invisível', 'a\rb', 'a\nb', true],
+    ['emoji com ZWJ', 'Arrasou \u{1F469}‍\u{1F3A4}', 'Arrasou \u{1F469}‍\u{1F3A4}', true],
+    ['só espaços fica vazio', ' \n \t ', '', true],
+    ['invisível no meio de uma linha', 'oi ​ tchau', 'oi ​ tchau', false],
+    ['linha só de invisível', 'oi\nㅤ\ntchau', 'oi\nㅤ\ntchau', false],
+    ['controle no meio', 'a\u0007b', 'a\u0007b', false],
+  ])('%s', (_, input, cleaned, visible) => {
+    expect(cleanMultiline(input)).toBe(cleaned);
+    expect(isVisibleMultiline(cleanMultiline(input))).toBe(visible);
   });
 });

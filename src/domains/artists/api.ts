@@ -1,9 +1,6 @@
 import { sourceOf } from '@/config/data-source';
-// O número de posts de exemplo da central, pelo arquivo (fora do index): o
-// posts/fixtures.ts não importa artists, então não há ciclo. Sai no bloco 6.
-import { countArtistPostsFixture } from '@/domains/posts/fixtures';
 import { api } from '@/services/api';
-import { fixtureDelay, fixtureNow } from '@/services/fixtures';
+import { fixtureDelay } from '@/services/fixtures';
 
 import {
   buildArtistDetailsFixture,
@@ -70,9 +67,9 @@ export async function fetchFanCentrals(): Promise<FanCentral[]> {
 }
 
 /**
- * A central de um artista (página 1d), com o fã dentro ou fora dela. Com as
- * centrais na API e o mural ainda nas fixtures (até o bloco 6), o "N posts"
- * conta os posts de exemplo da central, para bater com a grade do Mural.
+ * A central de um artista (página 1d), com o fã dentro ou fora dela. Com a
+ * API, o "N posts" é o `count()` dos posts no ar da central (bloco 6): o
+ * mural vem do servidor junto com as centrais.
  */
 export async function fetchArtist(artistId: string): Promise<ArtistDetails> {
   if (sourceOf('artists') === 'fixtures') {
@@ -80,9 +77,6 @@ export async function fetchArtist(artistId: string): Promise<ArtistDetails> {
     return buildArtistDetailsFixture(artistId);
   }
   const { data } = await api.get<ArtistDetails>(artistUrl(artistId));
-  if (sourceOf('posts') === 'fixtures') {
-    return { ...data, postCount: countArtistPostsFixture(fixtureNow(), artistId) };
-  }
   return data;
 }
 

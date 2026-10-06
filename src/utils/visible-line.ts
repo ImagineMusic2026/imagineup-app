@@ -63,3 +63,28 @@ export function displayNameOrNull(name: string | null | undefined): string | nul
   const trimmed = name.normalize('NFC').trim();
   return trimmed.length <= DISPLAY_NAME_MAX && isVisibleLine(trimmed) ? trimmed : null;
 }
+
+/**
+ * Prepara um texto de várias linhas digitado pelo fã (o comentário), nesta
+ * ordem: tira os isolantes bidi colados; junta os acentos (NFC); troca `\r\n`
+ * e `\r` por `\n`; tira os espaços das pontas de cada linha; junta as linhas
+ * vazias seguidas numa e tira as das pontas. Espelho do `cleanMultiline` de
+ * `functions/src/visible-line.ts`: mudou um, mude o outro e a tabela dos dois
+ * testes (docs/arquitetura-api.md, 21.1, decisão 20).
+ */
+export function cleanMultiline(text: string): string {
+  const lines: string[] = [];
+  const normalized = text.replace(BIDI_ISOLATES, '').normalize('NFC').replace(/\r\n?/g, '\n');
+  for (const raw of normalized.split('\n')) {
+    const line = raw.trim();
+    if (line === '' && (lines.length === 0 || lines.at(-1) === '')) continue;
+    lines.push(line);
+  }
+  while (lines.at(-1) === '') lines.pop();
+  return lines.join('\n');
+}
+
+/** Toda linha não vazia de um texto já limpo (`cleanMultiline`) é visível. */
+export function isVisibleMultiline(text: string): boolean {
+  return text.split('\n').every((line) => line === '' || isVisibleLine(line));
+}

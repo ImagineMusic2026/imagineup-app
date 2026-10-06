@@ -2,7 +2,9 @@ rules_version = '2';
 
 // Regras do Cloud Storage do app ImagineUP (bucket imagine-up-app.firebasestorage.app).
 //
-// Tudo fechado por padrão. As fotos das centrais sobem do painel admin direto
+// Tudo fechado por padrão. Desde o bloco 6, a mídia dos posts do mural e a
+// foto dos shows da agenda seguem o mesmo molde, em posts/{postId}/ e
+// events/{eventId}/. As fotos das centrais sobem do painel admin direto
 // para artists/{artistId}/, com um nome novo a cada envio; a Cloud Function
 // confere o arquivo e grava a URL em artists/{artistId}. Qualquer um baixa uma
 // foto pelo caminho exato (o app mostra a URL), ninguém lista a pasta, e só o
@@ -48,8 +50,29 @@ service firebase.storage {
         && request.resource.contentType.matches('image/(webp|jpeg|png)');
     }
 
+    // Vídeo dos posts de vídeo (bloco 6): mp4 de 1 byte a 50 MB.
+    function validVideo() {
+      return request.resource.size > 0
+        && request.resource.size <= 50 * 1024 * 1024
+        && request.resource.contentType == 'video/mp4';
+    }
+
+    function docExists(collection, id) {
+      return firestore.exists(/databases/(default)/documents/$(collection)/$(id));
+    }
+
     function artistExists(artistId) {
-      return firestore.exists(/databases/(default)/documents/artists/$(artistId));
+      return docExists('artists', artistId);
+    }
+
+    // O tipo do post decide o que entra: foto, só imagem; vídeo, imagem (a
+    // capa e a miniatura) ou mp4; texto e show, nada. O get de um post que não
+    // existe dá erro, e erro nega: vale como a conferência de existência, com
+    // a mesma leitura.
+    function postAcceptsFile(postId) {
+      let kind = firestore.get(/databases/(default)/documents/posts/$(postId)).data.get('kind', '');
+      return (kind == 'photo' && validImage())
+        || (kind == 'video' && (validImage() || validVideo()));
     }
 
     match /artists/{artistId}/{fileName} {
@@ -68,6 +91,34 @@ service firebase.storage {
       // Metadados e exclusão: só o servidor (Admin SDK), que apaga a pasta de
       // uma central apagada e as versões antigas depois de trocar ou tirar a
       // foto.
+      allow update, delete: if false;
+    }
+
+    // Mídia dos posts do mural (bloco 6): foto, miniatura, capa do vídeo e o
+    // mp4, do painel, de quem edita artists (a seção que publica no mural,
+    // provisória até a UP-9), só para um post que já existe. Nome novo a cada
+    // envio; só o servidor troca metadados e apaga.
+    match /posts/{postId}/{fileName} {
+      allow get: if true;
+      allow list: if false;
+      allow create: if resource == null
+        && postId.matches('[A-Za-z0-9_-]{1,128}')
+        && !postId.matches('__.*__')
+        && canEditSection('artists')
+        && postAcceptsFile(postId);
+      allow update, delete: if false;
+    }
+
+    // Foto dos shows da agenda (bloco 6), só para um show que já existe.
+    match /events/{eventId}/{fileName} {
+      allow get: if true;
+      allow list: if false;
+      allow create: if resource == null
+        && eventId.matches('[A-Za-z0-9_-]{1,128}')
+        && !eventId.matches('__.*__')
+        && validImage()
+        && canEditSection('artists')
+        && docExists('events', eventId);
       allow update, delete: if false;
     }
 

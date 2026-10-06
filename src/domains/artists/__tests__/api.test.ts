@@ -1,7 +1,6 @@
-import { countArtistPostsFixture } from '@/domains/posts/fixtures';
 import { api } from '@/services/api';
 import { ApiError } from '@/services/api/errors';
-import { fixtureNow, fixtureWallet } from '@/services/fixtures';
+import { fixtureWallet } from '@/services/fixtures';
 
 import {
   fetchArtist,
@@ -233,19 +232,14 @@ describe('página da central', () => {
     expect(get).toHaveBeenCalledWith('/artists/nenho');
   });
 
-  it('com as centrais na API e o mural nas fixtures, o "N posts" conta os posts de exemplo da central', async () => {
-    mockDomainSources = { artists: 'api', posts: 'fixtures' };
-    get.mockResolvedValue({ data: { id: 'nenho', postCount: 0, fanCount: 1 } });
-    const count = countArtistPostsFixture(fixtureNow(), 'nenho');
-    expect(count).toBeGreaterThan(0);
+  it('com a API, o "N posts" é o do servidor (o count dos posts no ar), sem troca pelo de exemplo', async () => {
+    mockDomainSources = { artists: 'api', posts: 'api' };
+    get.mockResolvedValue({ data: { id: 'nenho', postCount: 2, fanCount: 1 } });
     await expect(fetchArtist('nenho')).resolves.toEqual({
       id: 'nenho',
-      postCount: count,
+      postCount: 2,
       fanCount: 1,
     });
-    // Central sem post de exemplo: 0.
-    get.mockResolvedValue({ data: { id: 'artista5', postCount: 0 } });
-    await expect(fetchArtist('artista5')).resolves.toMatchObject({ postCount: 0 });
   });
 });
 
