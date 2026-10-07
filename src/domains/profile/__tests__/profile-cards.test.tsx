@@ -213,6 +213,30 @@ describe('ProfileHero', () => {
     expect(hero).toHaveProp('accessibilityLabel', 'Carregando seu perfil');
     expect(hero).toBeBusy();
   });
+
+  it('com onPress (bloco 9), é um botão só: o rótulo de sempre, a dica e nada tocável dentro', () => {
+    const onPress = jest.fn();
+    render(
+      <ProfileHero
+        testID="hero"
+        uid="uid-camila"
+        name="Camila Ribeiro"
+        photoURL={null}
+        username="camilarib"
+        city="Feira de Santana, BA"
+        level={PURAINHA}
+        levelFraction={0.685}
+        onPress={onPress}
+      />,
+    );
+    const button = screen.getByRole('button', {
+      name: 'Camila Ribeiro, @camilarib, Feira de Santana, BA. Nível 7, Purainha.',
+    });
+    expect(button).toHaveProp('accessibilityHint', 'Abre a edição do perfil');
+    expect(screen.getAllByRole('button')).toHaveLength(1);
+    fireEvent.press(button);
+    expect(onPress).toHaveBeenCalledTimes(1);
+  });
 });
 
 /** Opacidade de cada barra da marca no selo: a fixa, ou a do primeiro quadro quando acende. */

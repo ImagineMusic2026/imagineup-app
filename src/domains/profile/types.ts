@@ -1,7 +1,8 @@
 /**
  * Perfil básico do fã, lido de `users/{uid}` no Firestore. Nasce no servidor
  * (função `createUserProfile`) alguns segundos depois do cadastro; o celular só
- * lê o próprio e, quando a edição entrar, muda `displayName` e `city`.
+ * lê o próprio e muda `displayName` e `city` direto (a tela "Editar perfil",
+ * bloco 9). O @ e a foto mudam pela API.
  */
 export interface FanProfile {
   uid: string;
@@ -14,6 +15,44 @@ export interface FanProfile {
   photoURL: string | null;
   /** ISO. O `Timestamp` do Firestore vira texto antes do cache, que vai para o disco em JSON. */
   createdAt: string | null;
+  /**
+   * ISO: a partir de quando o fã troca o @ de novo (a troca mais 30 dias, do
+   * servidor); `null` sem prazo. Opcional: o perfil salvo no disco antes do
+   * bloco 9 não tem o campo.
+   */
+  usernameChangeableAt?: string | null;
+}
+
+/** O que a tela "Editar perfil" grava direto no perfil: só o que mudou. */
+export interface ProfileChanges {
+  displayName?: string;
+  /** `null` limpa a cidade. */
+  city?: string | null;
+}
+
+/**
+ * O @ que o fã digita, como o servidor vê (`GET /me/username/availability`):
+ * livre, o de agora, de outro fã ou de uma central, fora do formato, ou
+ * reservado (inclusive o padrão do automático, que só o servidor cria).
+ */
+export type UsernameStatus = 'available' | 'current' | 'taken' | 'invalid' | 'reserved';
+
+/** Espelho do `UsernameAvailability` do `functions/src/api/contract.ts`: o @ normalizado. */
+export interface UsernameAvailability {
+  username: string;
+  status: UsernameStatus;
+}
+
+/** `PUT /me/username`: as datas em ISO, `null` se o fã nunca trocou. */
+export interface UsernameChange {
+  username: string;
+  changedAt: string | null;
+  changeableAt: string | null;
+}
+
+/** `PUT` e `DELETE /me/photo`: a URL de download com token, ou `null`. */
+export interface PhotoChange {
+  photoURL: string | null;
 }
 
 /**

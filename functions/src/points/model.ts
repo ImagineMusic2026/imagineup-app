@@ -171,7 +171,8 @@ export type AwardResult = { uid: string; entryId: string; status: AwardStatus; p
  * `invite_link` os links novos que ela registrou (os tetos do bloco 5, 20.4);
  * `like_set`, `comment_sent`, `rsvp_set`, `comment_report` e `fan_block` são
  * as trocas para curtido, os comentários, as trocas para "Eu vou", as
- * denúncias e os bloqueios (os tetos do bloco 6, 21.7).
+ * denúncias e os bloqueios (os tetos do bloco 6, 21.7); `photo_set`, as trocas
+ * de foto do perfil (o teto do bloco 9, 24.1, decisão 11).
  */
 export type DailyActionKey =
   | 'central_entry'
@@ -181,7 +182,8 @@ export type DailyActionKey =
   | 'comment_sent'
   | 'rsvp_set'
   | 'comment_report'
-  | 'fan_block';
+  | 'fan_block'
+  | 'photo_set';
 
 export type DayStats = {
   earned: number;

@@ -1,4 +1,5 @@
 import { secondsUntil } from '../centrals/model';
+import { PHOTO_CHANGES_PER_DAY } from '../fan-profile/model';
 import { dayKey, nextDayStart, type DailyActionKey, type DayStats } from '../points/model';
 
 // Moderação mínima do bloco 6 e os tetos do dia das ações que gravam, puro:
@@ -33,8 +34,11 @@ export const REPORTS_PER_DAY = 30;
 /** Bloqueios por dia. */
 export const BLOCKS_PER_DAY = 30;
 
-/** A ação que o teto conta, como vai no `details.action` do 429. */
-export type CapAction = 'like' | 'comment' | 'rsvp' | 'report' | 'block';
+/**
+ * A ação que o teto conta, como vai no `details.action` do 429. `photo` é a
+ * troca de foto do perfil (bloco 9, 24.1, decisão 11), no mesmo molde.
+ */
+export type CapAction = 'like' | 'comment' | 'rsvp' | 'report' | 'block' | 'photo';
 
 export const DAILY_CAPS: Record<CapAction, { key: DailyActionKey; limit: number }> = {
   like: { key: 'like_set', limit: LIKES_PER_DAY },
@@ -42,6 +46,7 @@ export const DAILY_CAPS: Record<CapAction, { key: DailyActionKey; limit: number 
   rsvp: { key: 'rsvp_set', limit: RSVPS_PER_DAY },
   report: { key: 'comment_report', limit: REPORTS_PER_DAY },
   block: { key: 'fan_block', limit: BLOCKS_PER_DAY },
+  photo: { key: 'photo_set', limit: PHOTO_CHANGES_PER_DAY },
 };
 
 /**

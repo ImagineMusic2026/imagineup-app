@@ -1,7 +1,14 @@
-import { doc, getDoc, onSnapshot, type DocumentData } from 'firebase/firestore';
+import {
+  doc,
+  getDoc,
+  onSnapshot,
+  serverTimestamp,
+  updateDoc,
+  type DocumentData,
+} from 'firebase/firestore';
 
 import { sourceOf } from '@/config/data-source';
-import { getDb } from '@/firebase';
+import { getDb, storageFileExists, uploadLocalFile } from '@/firebase';
 import { api } from '@/services/api';
 import type { InviteLinkResult } from '@/domains/invites';
 import { fixtureDelay, fixtureNow } from '@/services/fixtures';
@@ -13,7 +20,18 @@ import {
   buildMyProgressFixture,
   buildWalletFixture,
 } from './fixtures';
-import type { FanProfile, LedgerPage, MyAchievements, MyInvite, MyProgress, Wallet } from './types';
+import type {
+  FanProfile,
+  LedgerPage,
+  MyAchievements,
+  MyInvite,
+  MyProgress,
+  PhotoChange,
+  ProfileChanges,
+  UsernameAvailability,
+  UsernameChange,
+  Wallet,
+} from './types';
 
 // Chamadas cruas ao Firestore e à API. Sem React: quem cacheia é o queries.ts.
 
@@ -57,6 +75,7 @@ export function toFanProfile(uid: string, data: DocumentData): FanProfile {
     city: textOrNull(data.city),
     photoURL: textOrNull(data.photoURL),
     createdAt: isoOrNull(data.createdAt),
+    usernameChangeableAt: isoOrNull(data.usernameChangeableAt),
   };
 }
 
@@ -167,5 +186,90 @@ export async function registerInviteLink(
     undefined,
     { headers: { 'Idempotency-Key': idempotencyKey } },
   );
+  return data;
+}
+
+// --- Perfil editável (bloco 9, docs/arquitetura-api.md, 24.12) ---------------------
+
+/**
+ * Nome e cidade, direto no Firestore pelas regras (como o
+ * `fillMissingProfileName` do cadastro): só os campos que mudaram e o
+ * `updatedAt` do servidor. O `updateDoc` do SDK JS só resolve com a resposta
+ * do servidor; sem rede, fica na fila em memória (a tela conta o prazo). A
+ * regra recusa com `permission-denied` o valor inválido e a segunda edição em
+ * menos de 10 s.
+ */
+export async function updateMyProfile(uid: string, changes: ProfileChanges): Promise<void> {
+  await updateDoc(profileRef(uid), { ...changes, updatedAt: serverTimestamp() });
+}
+
+/**
+ * O @ e a foto só existem com a API (`sourceOf('profile')`): nas fixtures, a
+ * tela não chama estas funções; se chamar, é erro, e não uma imitação (o
+ * perfil é dado de verdade, 24.1, decisão 12).
+ */
+function requireProfileApi(): void {
+  if (sourceOf('profile') === 'fixtures') {
+    throw new Error('O @ e a foto do perfil só mudam com a API do servidor.');
+  }
+}
+
+/** O @ está livre? Enquanto o fã digita (só lê, sem chave). */
+export async function fetchUsernameAvailability(username: string): Promise<UsernameAvailability> {
+  requireProfileApi();
+  const { data } = await api.get<UsernameAvailability>('/me/username/availability', {
+    params: { username },
+  });
+  return data;
+}
+
+/** Troca o @ (`PUT /me/username`), com a chave da tentativa. */
+export async function changeUsername(
+  username: string,
+  idempotencyKey: string,
+): Promise<UsernameChange> {
+  requireProfileApi();
+  const { data } = await api.put<UsernameChange>(
+    '/me/username',
+    { username },
+    { headers: { 'Idempotency-Key': idempotencyKey } },
+  );
+  return data;
+}
+
+/** O caminho da foto no Storage: a pasta do fã e o id da tentativa. */
+export const fanPhotoPath = (uid: string, id: string): string => `fans/${uid}/photo-${id}.jpg`;
+
+/** Envia a foto preparada (JPEG) para a pasta do fã e devolve o caminho. */
+export async function uploadFanPhoto(uid: string, localUri: string, id: string): Promise<string> {
+  requireProfileApi();
+  const path = fanPhotoPath(uid, id);
+  await uploadLocalFile(path, localUri, 'image/jpeg');
+  return path;
+}
+
+/** O envio desta tentativa já chegou ao Storage? (Os metadados, que a regra deixa o dono ler.) */
+export function photoUploaded(path: string): Promise<boolean> {
+  requireProfileApi();
+  return storageFileExists(path);
+}
+
+/** A API confere o arquivo enviado e grava a foto (`PUT /me/photo`). */
+export async function setMyPhoto(path: string, idempotencyKey: string): Promise<PhotoChange> {
+  requireProfileApi();
+  const { data } = await api.put<PhotoChange>(
+    '/me/photo',
+    { path },
+    { headers: { 'Idempotency-Key': idempotencyKey } },
+  );
+  return data;
+}
+
+/** Tira a foto do perfil (`DELETE /me/photo`). */
+export async function removeMyPhoto(idempotencyKey: string): Promise<PhotoChange> {
+  requireProfileApi();
+  const { data } = await api.delete<PhotoChange>('/me/photo', {
+    headers: { 'Idempotency-Key': idempotencyKey },
+  });
   return data;
 }

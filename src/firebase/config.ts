@@ -10,6 +10,9 @@ export const isFirebaseConfigured = firebaseEnv !== null;
  */
 export { EMULATOR_PROJECT_ID };
 
+/** O bucket do Storage no emulador (projeto demo). */
+export const EMULATOR_STORAGE_BUCKET = `${EMULATOR_PROJECT_ID}.appspot.com`;
+
 /**
  * SDK JS do Firebase (não o @react-native-firebase): funciona no Expo Go, que é
  * como o iPhone vai ser testado até existir conta Apple. Inicialização
@@ -24,7 +27,11 @@ export function getFirebaseApp(): FirebaseApp {
     apiKey: firebaseEnv.firebaseApiKey,
     authDomain: firebaseEnv.firebaseAuthDomain,
     projectId: firebaseEmulatorHost ? EMULATOR_PROJECT_ID : firebaseEnv.firebaseProjectId,
-    storageBucket: firebaseEnv.firebaseStorageBucket,
+    // Com os emuladores, o bucket do projeto demo (o mesmo das funções e do
+    // painel, EMULATOR_STORAGE_BUCKET no imagineup-admin), e não o do .env.
+    storageBucket: firebaseEmulatorHost
+      ? EMULATOR_STORAGE_BUCKET
+      : firebaseEnv.firebaseStorageBucket,
     messagingSenderId: firebaseEnv.firebaseMessagingSenderId,
     appId: firebaseEnv.firebaseAppId,
   });

@@ -252,3 +252,36 @@ describe('rotas do ranking (bloco 8)', () => {
     });
   });
 });
+
+describe('rotas do perfil editável (bloco 9)', () => {
+  it('/me/username e /me/username/availability não se confundem', () => {
+    expect(matchRoute(API_ROUTES, 'GET', '/me/username/availability')).toMatchObject({
+      kind: 'match',
+      route: { method: 'GET', pattern: '/me/username/availability' },
+    });
+    expect(matchRoute(API_ROUTES, 'PUT', '/me/username')).toMatchObject({
+      kind: 'match',
+      route: { method: 'PUT', pattern: '/me/username' },
+    });
+    expect(matchRoute(API_ROUTES, 'PUT', '/me/username/availability')).toEqual({
+      kind: 'method_not_allowed',
+      allow: ['GET'],
+    });
+  });
+
+  it('GET /me/username, GET /me/photo e POST /me/photo são 405', () => {
+    expect(matchRoute(API_ROUTES, 'GET', '/me/username')).toEqual({
+      kind: 'method_not_allowed',
+      allow: ['PUT'],
+    });
+    expect(matchRoute(API_ROUTES, 'GET', '/me/photo')).toEqual({
+      kind: 'method_not_allowed',
+      allow: ['PUT', 'DELETE'],
+    });
+    expect(matchRoute(API_ROUTES, 'POST', '/me/photo')).toEqual({
+      kind: 'method_not_allowed',
+      allow: ['PUT', 'DELETE'],
+    });
+    expect(matchRoute(API_ROUTES, 'DELETE', '/me/photo')).toMatchObject({ kind: 'match' });
+  });
+});

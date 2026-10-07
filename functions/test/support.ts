@@ -11,6 +11,7 @@ import { setTimeout as sleep } from 'node:timers/promises';
 import { afterAll, beforeAll, beforeEach } from 'vitest';
 
 import { createApiHandler, type ApiRequest } from '../src/api';
+import { fanPhotoFiles } from '../src/fan-profile';
 import { EMULATOR_INVITE_KEY } from '../src/invites';
 import { dayKey, staticConfigSource, type ConfigSource } from '../src/points';
 import { SECTION_IDS } from '../src/staff/model';
@@ -211,7 +212,8 @@ export type LocalResult = { status: number; body: Record<string, unknown> };
 
 /**
  * O handler da API no processo do teste, com o relógio e a configuração
- * fixos (para o corte da meia-noite, os limites e os valores injetados).
+ * fixos (para o corte da meia-noite, os limites e os valores injetados). As
+ * rotas da foto (bloco 9) usam o bucket do emulador.
  */
 export function localApi(
   env: Emulators,
@@ -224,6 +226,7 @@ export function localApi(
     now: options.now ?? (() => startedAt),
     config: options.config ?? staticConfigSource(),
     inviteKey: () => EMULATOR_INVITE_KEY,
+    files: fanPhotoFiles(() => env.bucket),
   });
   return async (
     method: string,

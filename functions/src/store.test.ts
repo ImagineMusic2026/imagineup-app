@@ -2,13 +2,16 @@ import { FieldValue, type Firestore } from 'firebase-admin/firestore';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { leaveAllCentrals } from './centrals/service';
+import type { FanPhotoFiles } from './fan-profile/files';
 import { detachReferrals, removeInviteData } from './invites/service';
 import { removeFanEngagement } from './posts/service';
 import { createProfile, deleteUserData } from './store';
 
 // A ordem da exclusão de conta é o que impede o fanCount 1 acima para sempre
-// (docs/arquitetura-api.md, 19.12) e o marcador de visita debaixo de um
-// convidante excluído (20.10): o perfil sai sozinho antes de tudo, o código do
+// (docs/arquitetura-api.md, 19.12), o marcador de visita debaixo de um
+// convidante excluído (20.10) e, desde o bloco 9 (24.11), a reserva nova de
+// uma troca de @ presa a uma conta morta e a foto órfã no Storage: o perfil
+// sai sozinho antes de tudo, as reservas de @ logo depois, o código do
 // convite logo depois, os vínculos e o engajamento do mural (21.12) antes do
 // recursiveDelete, e os convidados
 // do fã são desligados depois. A linha do fã no arquivo das temporadas (bloco
@@ -84,7 +87,7 @@ describe('exclusão de conta (deleteUserData)', () => {
     vi.mocked(removeFanEngagement).mockReset();
   });
 
-  it('o perfil sai sozinho primeiro, o convite logo depois e os convidados depois do perfil', async () => {
+  it('o perfil sai sozinho primeiro, as reservas e o convite logo depois e os convidados depois do perfil', async () => {
     const steps: string[] = [];
     vi.mocked(leaveAllCentrals).mockImplementation(async (_db, uid) => {
       steps.push(`leaveAllCentrals ${uid}`);
@@ -105,8 +108,8 @@ describe('exclusão de conta (deleteUserData)', () => {
     await deleteUserData(fakeDb(steps), UID);
 
     expect(steps).toEqual([
-      'delete usernames/camilarib',
       `delete users/${UID}`,
+      'delete usernames/camilarib',
       `removeInviteData ${UID}`,
       `leaveAllCentrals ${UID}`,
       `removeFanEngagement ${UID}`,
@@ -117,6 +120,55 @@ describe('exclusão de conta (deleteUserData)', () => {
       `batch seasons/temporada-verao/standings/${UID}, seasons/temporada-carnaval/standings/${UID}`,
       `delete staff/${UID}`,
     ]);
+  });
+
+  it('com o Storage, a pasta da foto sai por último, arquivo por arquivo (bloco 9)', async () => {
+    const steps: string[] = [];
+    const files = {
+      list: vi.fn(async (prefix: string) => {
+        steps.push(`list ${prefix}`);
+        return [`${prefix}photo-agora0001.jpg`, `${prefix}photo-falhou01.jpg`];
+      }),
+      remove: vi.fn(async (path: string) => {
+        steps.push(`remove ${path}`);
+      }),
+    } as unknown as FanPhotoFiles;
+
+    await deleteUserData(fakeDb(steps), UID, { files });
+
+    expect(steps.slice(-4)).toEqual([
+      `delete staff/${UID}`,
+      `list fans/${UID}/`,
+      `remove fans/${UID}/photo-agora0001.jpg`,
+      `remove fans/${UID}/photo-falhou01.jpg`,
+    ]);
+    expect(steps[0]).toBe(`delete users/${UID}`);
+  });
+
+  it('arquivo que fica na pasta faz a exclusão lançar (o gatilho tenta de novo); bucket ausente conta como vazio', async () => {
+    const failing = {
+      list: async (prefix: string) => [`${prefix}photo-agora0001.jpg`],
+      remove: async () => {
+        throw new Error('503');
+      },
+    } as unknown as FanPhotoFiles;
+    await expect(deleteUserData(fakeDb([]), UID, { files: failing })).rejects.toThrow(
+      /Ficaram 1 arquivo/,
+    );
+    const noBucket = {
+      list: async () => {
+        throw Object.assign(new Error('The specified bucket does not exist.'), { code: 404 });
+      },
+      remove: vi.fn(),
+    } as unknown as FanPhotoFiles;
+    await expect(deleteUserData(fakeDb([]), UID, { files: noBucket })).resolves.toBeUndefined();
+  });
+
+  it('sem files (o desfazer do cadastro), nenhuma chamada ao Storage', async () => {
+    const steps: string[] = [];
+    await deleteUserData(fakeDb(steps), UID);
+    expect(steps.some((step) => step.startsWith('list') || step.startsWith('remove'))).toBe(false);
+    expect(steps.at(-1)).toBe(`delete staff/${UID}`);
   });
 
   it('a saída das centrais termina antes de o recursiveDelete começar', async () => {

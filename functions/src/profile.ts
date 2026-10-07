@@ -12,6 +12,11 @@ export const USERNAME_PATTERN = /^[a-z0-9]{3,20}$/;
 // Prefixo do @ de quem não tem nome utilizável ("fa" de fã).
 const FALLBACK_BASE = 'fa';
 const BASE_MAX = 15;
+// Base tirada de um nome que já tem o formato do @ automático ("Fa 12" daria
+// "fa12", e "fa12" com 4 dígitos, um "fa" com 6, igual ao sorteio): vira a
+// base do automático. Assim todo @ `^fa[0-9]+$` é sorteio (bloco 9, 24.1,
+// decisão 3), e o fã nunca escolhe um.
+const AUTOMATIC_LIKE_BASE = /^fa[0-9]*$/;
 // Nada de @ que se passe pela marca ou pela equipe.
 const RESERVED =
   /imagine|admin|suporte|support|oficial|official|moderad|moderat|moderac|verific|verified|atendimento|staff|equipe/;
@@ -23,10 +28,14 @@ const LOOKALIKE_DIGITS: Record<string, string> = {
   '5': 's',
 };
 
-// Número no lugar de letra ("adm1n", "1magine") e "rn" no lugar de "m" não driblam a lista.
-// Os @ reservados das centrais (RESERVED_HANDLES, como "ajuda" e "contato")
-// valem só exatos: os @ dos fãs e das centrais dividem usernames/.
-function looksReserved(base: string): boolean {
+/**
+ * O @ (ou a base dele) parece a marca ou a equipe. Número no lugar de letra
+ * ("adm1n", "1magine") e "rn" no lugar de "m" não driblam a lista. Os @
+ * reservados das centrais (RESERVED_HANDLES, como "ajuda" e "contato") valem
+ * só exatos: os @ dos fãs e das centrais dividem usernames/. O gerador e, desde
+ * o bloco 9, a troca do @ pelo fã (fan-profile/model.ts) usam a mesma conta.
+ */
+export function isReservedUsername(base: string): boolean {
   const letters = base
     .replace(/rn/g, 'm')
     .replace(/[01345]/g, (digit) => LOOKALIKE_DIGITS[digit] ?? digit);
@@ -68,7 +77,8 @@ function dropWordsToFit(name: string): string | null {
 /**
  * Base do @: primeiro nome mais as 3 primeiras letras do último, sem acento
  * ("Camila Ribeiro" vira "camilarib", como no protótipo). Sem letras latinas,
- * curto demais ou parecido com a marca, a base é "fa".
+ * curto demais, parecido com a marca ou no formato do @ automático ("Fa 12"),
+ * a base é "fa".
  */
 export function usernameBase(displayName: string | null): string {
   if (!displayName) return FALLBACK_BASE;
@@ -82,7 +92,9 @@ export function usernameBase(displayName: string | null): string {
   if (!first) return FALLBACK_BASE;
   const last = rest.at(-1);
   const base = (first + (last ? last.slice(0, 3) : '')).slice(0, BASE_MAX);
-  return base.length >= 3 && !looksReserved(base) ? base : FALLBACK_BASE;
+  return base.length >= 3 && !isReservedUsername(base) && !AUTOMATIC_LIKE_BASE.test(base)
+    ? base
+    : FALLBACK_BASE;
 }
 
 /**

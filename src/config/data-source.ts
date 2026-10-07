@@ -24,6 +24,8 @@ export type DataDomain =
   | 'missions'
   /** Temporada e ranking (bloco 8). */
   | 'ranking'
+  /** /me/username e /me/photo (bloco 9): o @ escolhido e a foto do perfil. */
+  | 'profile'
   /** Loja e resgate (bloco 10). */
   | 'rewards';
 
@@ -40,6 +42,7 @@ export const SERVER_DOMAINS: ReadonlySet<DataDomain> = new Set<DataDomain>([
   'missions',
   'achievements',
   'ranking',
+  'profile',
 ]);
 
 /**
@@ -62,6 +65,7 @@ const ALL_DOMAINS: readonly DataDomain[] = [
   'agenda',
   'missions',
   'ranking',
+  'profile',
   'rewards',
 ];
 

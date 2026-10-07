@@ -143,7 +143,9 @@ type CommentsState = 'loading' | 'error' | 'ready';
 export function PostDetailsScreen() {
   const { postId = '' } = useLocalSearchParams<{ postId: string }>();
   useWatchMyProfile();
-  const { uid } = useFanIdentity();
+  const { uid, name: myName, photoURL: myPhotoURL } = useFanIdentity();
+  // As linhas "Você" usam o nome e a foto de agora, e não a cópia do comentário.
+  const me = { name: myName, photoURL: myPhotoURL };
   const keyboardVisible = useKeyboardVisible();
   const clock = useNow();
   const reducedMotion = usePrefersReducedMotion();
@@ -339,6 +341,7 @@ export function PostDetailsScreen() {
               comment={item}
               now={now}
               mine={uid !== null && item.authorId === uid}
+              me={me}
               animateIn={item.status === 'pending' && sentKeys.has(commentKey(item))}
               onRetry={() => commenting.retry(item.id)}
               onOptions={() => openOptions(item)}

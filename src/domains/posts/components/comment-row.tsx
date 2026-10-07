@@ -35,6 +35,12 @@ export interface CommentRowProps {
   animateIn?: boolean;
   /** Comentário do próprio fã: "Você" no lugar do nome, como o card "Você" da 1f. */
   mine?: boolean;
+  /**
+   * O nome e a foto de agora do fã (o perfil, `useFanIdentity`), para o avatar
+   * das linhas com `mine`: valem no lugar da cópia do comentário, que a fila do
+   * servidor só acerta depois (bloco 9, 24.6) e que nas fixtures nunca muda.
+   */
+  me?: { name: string | null; photoURL: string | null };
   /** Toque na linha que não foi enviada. */
   onRetry?: () => void;
   /**
@@ -94,6 +100,7 @@ export function CommentRow({
   now,
   animateIn = false,
   mine = false,
+  me,
   onRetry,
   onOptions,
 }: CommentRowProps) {
@@ -107,9 +114,9 @@ export function CommentRow({
     <>
       <View style={pending && styles.pendingAvatar}>
         <Avatar
-          name={comment.authorName}
+          name={mine && me ? (me.name ?? comment.authorName) : comment.authorName}
           id={comment.authorId}
-          photoUrl={comment.authorAvatarUrl}
+          photoUrl={mine && me ? me.photoURL : comment.authorAvatarUrl}
           size="sm"
         />
       </View>

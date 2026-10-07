@@ -1,16 +1,25 @@
-import { doc, getDoc, onSnapshot } from 'firebase/firestore';
+import { doc, getDoc, onSnapshot, serverTimestamp, updateDoc } from 'firebase/firestore';
+
+import { storageFileExists, uploadLocalFile } from '@/firebase';
 
 import { api } from '@/services/api';
 import { fixtureWallet } from '@/services/fixtures';
 
 import {
+  changeUsername,
   fetchMyAchievements,
   fetchMyInvite,
   fetchMyProfile,
   fetchMyProgress,
+  fetchUsernameAvailability,
   fetchWallet,
+  photoUploaded,
   registerInviteLink,
+  removeMyPhoto,
+  setMyPhoto,
   toFanProfile,
+  updateMyProfile,
+  uploadFanPhoto,
   watchMyProfile,
 } from '../api';
 
@@ -19,9 +28,17 @@ jest.mock('firebase/firestore', () => ({
   doc: jest.fn((_db: unknown, ...path: string[]) => path.join('/')),
   getDoc: jest.fn(),
   onSnapshot: jest.fn(),
+  serverTimestamp: jest.fn(() => 'agora-do-servidor'),
+  updateDoc: jest.fn(),
 }));
-jest.mock('@/firebase', () => ({ getDb: () => ({}) }));
-jest.mock('@/services/api', () => ({ api: { get: jest.fn(), put: jest.fn() } }));
+jest.mock('@/firebase', () => ({
+  getDb: () => ({}),
+  storageFileExists: jest.fn(),
+  uploadLocalFile: jest.fn(),
+}));
+jest.mock('@/services/api', () => ({
+  api: { get: jest.fn(), put: jest.fn(), delete: jest.fn() },
+}));
 
 // Lido na hora da chamada: cada teste escolhe a fonte.
 let mockDataSource: 'api' | 'fixtures' = 'fixtures';
@@ -65,7 +82,18 @@ describe('perfil do Firestore', () => {
       city: null,
       photoURL: null,
       createdAt: '2026-09-29T11:17:40.910Z',
+      usernameChangeableAt: null,
     });
+  });
+
+  it('o prazo do @ (bloco 9) vira ISO; sem ele, null', () => {
+    expect(
+      toFanProfile('uid-camila', {
+        ...CAMILA,
+        usernameChangeableAt: timestamp('2026-11-06T15:00:00.000Z'),
+      }).usernameChangeableAt,
+    ).toBe('2026-11-06T15:00:00.000Z');
+    expect(toFanProfile('uid-camila', CAMILA).usernameChangeableAt).toBeNull();
   });
 
   it('campo fora do formato vira null em vez de quebrar a tela', () => {
@@ -78,6 +106,7 @@ describe('perfil do Firestore', () => {
       city: null,
       photoURL: null,
       createdAt: null,
+      usernameChangeableAt: null,
     });
   });
 
@@ -224,5 +253,84 @@ describe('convite do fã', () => {
       created: false,
     });
     expect(api.put).not.toHaveBeenCalled();
+  });
+});
+
+describe('perfil editável (bloco 9)', () => {
+  it('nome e cidade: updateDoc só com o que mudou e o updatedAt do servidor', async () => {
+    jest.mocked(updateDoc).mockResolvedValue(undefined);
+    await updateMyProfile('uid-camila', { city: null });
+    expect(doc).toHaveBeenCalledWith({}, 'users', 'uid-camila');
+    expect(updateDoc).toHaveBeenCalledWith('users/uid-camila', {
+      city: null,
+      updatedAt: 'agora-do-servidor',
+    });
+    expect(serverTimestamp).toHaveBeenCalled();
+  });
+
+  it('a disponibilidade do @ vai com o parâmetro', async () => {
+    mockDataSource = 'api';
+    get.mockResolvedValue({ data: { username: 'camilaribeiro', status: 'available' } });
+    await expect(fetchUsernameAvailability('camilaribeiro')).resolves.toEqual({
+      username: 'camilaribeiro',
+      status: 'available',
+    });
+    expect(get).toHaveBeenCalledWith('/me/username/availability', {
+      params: { username: 'camilaribeiro' },
+    });
+  });
+
+  it('trocar o @, gravar e tirar a foto vão com a chave da tentativa', async () => {
+    mockDataSource = 'api';
+    const put = jest.mocked(api.put);
+    const remove = jest.mocked(api.delete);
+    put.mockResolvedValueOnce({
+      data: { username: 'camilaribeiro', changedAt: 'x', changeableAt: 'y' },
+    });
+    await changeUsername('camilaribeiro', 'username-chave-0001');
+    expect(put).toHaveBeenLastCalledWith(
+      '/me/username',
+      { username: 'camilaribeiro' },
+      { headers: { 'Idempotency-Key': 'username-chave-0001' } },
+    );
+    put.mockResolvedValueOnce({ data: { photoURL: 'https://fotos/nova.jpg' } });
+    await expect(
+      setMyPhoto('fans/uid-camila/photo-abcdefgh.jpg', 'photo-abcdefgh'),
+    ).resolves.toEqual({ photoURL: 'https://fotos/nova.jpg' });
+    expect(put).toHaveBeenLastCalledWith(
+      '/me/photo',
+      { path: 'fans/uid-camila/photo-abcdefgh.jpg' },
+      { headers: { 'Idempotency-Key': 'photo-abcdefgh' } },
+    );
+    remove.mockResolvedValueOnce({ data: { photoURL: null } });
+    await expect(removeMyPhoto('photo-remove-0001')).resolves.toEqual({ photoURL: null });
+    expect(remove).toHaveBeenCalledWith('/me/photo', {
+      headers: { 'Idempotency-Key': 'photo-remove-0001' },
+    });
+  });
+
+  it('o envio da foto vai para a pasta do fã, com o id da tentativa e o tipo JPEG', async () => {
+    mockDataSource = 'api';
+    jest.mocked(uploadLocalFile).mockResolvedValue(undefined);
+    await expect(uploadFanPhoto('uid-camila', 'file:///pronta.jpg', 'abcdefgh')).resolves.toBe(
+      'fans/uid-camila/photo-abcdefgh.jpg',
+    );
+    expect(uploadLocalFile).toHaveBeenCalledWith(
+      'fans/uid-camila/photo-abcdefgh.jpg',
+      'file:///pronta.jpg',
+      'image/jpeg',
+    );
+    jest.mocked(storageFileExists).mockResolvedValue(true);
+    await expect(photoUploaded('fans/uid-camila/photo-abcdefgh.jpg')).resolves.toBe(true);
+  });
+
+  it('nas fixtures, o @ e a foto não imitam: lançam sem chamar nada', async () => {
+    await expect(fetchUsernameAvailability('camilaribeiro')).rejects.toThrow();
+    await expect(changeUsername('camilaribeiro', 'chave-0001')).rejects.toThrow();
+    await expect(setMyPhoto('fans/u/photo-abcdefgh.jpg', 'chave-0001')).rejects.toThrow();
+    await expect(uploadFanPhoto('u', 'file:///x.jpg', 'abcdefgh')).rejects.toThrow();
+    expect(api.get).not.toHaveBeenCalled();
+    expect(api.put).not.toHaveBeenCalled();
+    expect(uploadLocalFile).not.toHaveBeenCalled();
   });
 });

@@ -707,7 +707,13 @@ export function runAsFan<T extends { plan: AwardPlan }>(
   db: Firestore,
   uid: string,
   options: RunOptions,
-  work: (tx: Transaction, fan: FanContext, award: AwardContext) => Promise<T>,
+  work: (
+    tx: Transaction,
+    fan: FanContext,
+    award: AwardContext,
+    /** O retrato de users/{uid} lido na transação (o seed da foto do bloco 9 usa). */
+    profile: DocumentSnapshot,
+  ) => Promise<T>,
 ): Promise<T> {
   const random = options.random ?? Math.random;
   return retryOnAlreadyExists(() =>
@@ -719,7 +725,7 @@ export function runAsFan<T extends { plan: AwardPlan }>(
       const fan = await requireFan(tx, db, uid, profile!, wallet!, options.now, {
         markActivity: false,
       });
-      const outcome = await work(tx, fan, runContext({ ...options, random }));
+      const outcome = await work(tx, fan, runContext({ ...options, random }), profile!);
       applyAwards(tx, db, outcome.plan);
       return outcome;
     }),

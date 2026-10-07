@@ -74,8 +74,11 @@ service cloud.firestore {
         || canSeeSection('fans');
     }
 
-    // Campos que o próprio fã pode editar. A foto fica fora: o servidor grava a
-    // URL depois de validar o upload, para ninguém apontar para um endereço de fora.
+    // Campos que o próprio fã pode editar. O @, a foto (photoURL, photoPath,
+    // photoUpdatedAt) e o prazo do @ (usernameChangedAt, usernameChangeableAt)
+    // são do servidor (API, bloco 9): a foto é gravada depois de validar o
+    // upload, para ninguém apontar para um endereço de fora, e o @ troca junto
+    // com as reservas em usernames/.
     function editableProfileFields() {
       return ['displayName', 'city', 'updatedAt'];
     }
@@ -136,6 +139,9 @@ service cloud.firestore {
         && (!('city' in changed) || validCity(request.resource.data));
     }
 
+    // O @, a foto e o prazo do @ são do servidor (API, bloco 9); o orçamento da
+    // fila das cópias do perfil (users/{uid}/profileSync) também, e fica fechado
+    // pelo match /{document=**} do fim, para o fã e para a equipe.
     match /users/{uid} {
       allow get: if isSelf(uid);
 

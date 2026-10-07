@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <!-- Foto de teste do seed dos emuladores (bloco 9): o degradê rosa para roxo
+       da marca com as listras diagonais e um brilho no canto, sem rosto e sem
+       texto. O foto-teste.jpg ao lado é este SVG em JPEG (24.13). -->
+  <defs>
+    <linearGradient id="fundo" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#FF2D6F"/>
+      <stop offset="1" stop-color="#6A1B9A"/>
+    </linearGradient>
+    <radialGradient id="brilho" cx="0.18" cy="0.12" r="0.7">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.35"/>
+      <stop offset="0.5" stop-color="#FFFFFF" stop-opacity="0"/>
+    </radialGradient>
+    <pattern id="listras" width="28" height="28" patternUnits="userSpaceOnUse" patternTransform="rotate(-35)">
+      <rect width="9" height="28" fill="#FFFFFF" fill-opacity="0.12"/>
+    </pattern>
+  </defs>
+  <rect width="512" height="512" fill="url(#fundo)"/>
+  <rect width="512" height="512" fill="url(#listras)"/>
+  <rect width="512" height="512" fill="url(#brilho)"/>
+</svg>

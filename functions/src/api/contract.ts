@@ -432,3 +432,25 @@ export type MyRank = {
   /** Só no recorte de central da temporada lida ao vivo: o fã é membro? (campo novo, opcional no app). */
   member?: boolean;
 };
+
+// --- Perfil editável (bloco 9), espelho de src/domains/profile/types.ts ---
+
+/**
+ * `UsernameStatus` do app: livre, o @ de agora (também o automático), de outro
+ * fã ou de uma central, fora do formato, ou reservado (inclusive o padrão do
+ * automático, que só o gerador cria).
+ */
+export type UsernameStatus = 'available' | 'current' | 'taken' | 'invalid' | 'reserved';
+
+/** `UsernameAvailability` do app (`GET /me/username/availability`): o @ normalizado. */
+export type UsernameAvailability = { username: string; status: UsernameStatus };
+
+/** `UsernameChange` do app (`PUT /me/username`): datas ISO, null se o fã nunca trocou. */
+export type UsernameChange = {
+  username: string;
+  changedAt: string | null;
+  changeableAt: string | null;
+};
+
+/** `PhotoChange` do app (`PUT` e `DELETE /me/photo`): a URL de download com token, ou null. */
+export type PhotoChange = { photoURL: string | null };

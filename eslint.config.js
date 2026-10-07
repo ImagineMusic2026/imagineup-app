@@ -38,6 +38,17 @@ const restrictedImports = {
   ],
 };
 
+// O SDK do Storage só em src/firebase (bloco 9): importado por um api.ts, o
+// build ESM dele quebraria no Jest quase toda suíte, que só mocka o @/firebase.
+const storageImport = {
+  name: 'firebase/storage',
+  message: 'Use @/firebase: fora dele, o Jest quebra.',
+};
+const restrictedWithStorage = {
+  ...restrictedImports,
+  paths: [...restrictedImports.paths, storageImport],
+};
+
 module.exports = defineConfig([
   expoConfig,
   prettierConfig,
@@ -47,12 +58,17 @@ module.exports = defineConfig([
   },
   {
     rules: {
-      'no-restricted-imports': ['error', restrictedImports],
+      'no-restricted-imports': ['error', restrictedWithStorage],
       '@typescript-eslint/no-unused-vars': [
         'error',
         { argsIgnorePattern: '^_', varsIgnorePattern: '^_', ignoreRestSiblings: true },
       ],
     },
+  },
+  {
+    // O único lugar do app que importa o SDK do Storage.
+    files: ['src/firebase/**'],
+    rules: { 'no-restricted-imports': ['error', restrictedImports] },
   },
   {
     // Os únicos lugares que podem tocar nas APIs cruas que a regra acima bloqueia.

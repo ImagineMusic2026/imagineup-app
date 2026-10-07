@@ -1,6 +1,7 @@
 import type { DocumentData, Firestore } from 'firebase-admin/firestore';
 import { describe, expect, it, vi } from 'vitest';
 
+import { MISSING_FAN_PHOTO_FILES } from '../fan-profile/files';
 import { planAwards, retryOnAlreadyExists } from '../points/award';
 import { DEFAULT_POINTS_CONFIG, staticConfigSource } from '../points/config';
 import { NO_GAME } from '../points/model';
@@ -143,6 +144,7 @@ function fakeDb(existing: Record<string, DocumentData>, attempts = 1) {
     get: (field: string) => existing[path]?.[field],
   });
   const tries: Write[][] = [];
+  const reads: string[] = [];
   const db = {
     collection: (name: string) => ({ doc: (id: string) => ref(`${name}/${id}`) }),
     async runTransaction<T>(fn: (tx: unknown) => Promise<T>): Promise<T> {
@@ -154,8 +156,15 @@ function fakeDb(existing: Record<string, DocumentData>, attempts = 1) {
           writes.push({ op, path: target.path, data });
         };
         result = await fn({
-          getAll: async (...refs: FakeRef[]) => refs.map((target) => snap(target.path)),
-          get: async (target: FakeRef) => snap(target.path),
+          getAll: async (...refs: FakeRef[]) =>
+            refs.map((target) => {
+              reads.push(target.path);
+              return snap(target.path);
+            }),
+          get: async (target: FakeRef) => {
+            reads.push(target.path);
+            return snap(target.path);
+          },
           create: record('create'),
           set: record('set'),
           update: record('update'),
@@ -164,7 +173,7 @@ function fakeDb(existing: Record<string, DocumentData>, attempts = 1) {
       return result as T;
     },
   };
-  return { db: db as unknown as Firestore, tries };
+  return { db: db as unknown as Firestore, tries, reads };
 }
 
 function deps(db: Firestore, random: () => number): ResolvedDeps {
@@ -175,6 +184,7 @@ function deps(db: Firestore, random: () => number): ResolvedDeps {
     random,
     config: staticConfigSource(),
     inviteKey: () => 'segredo-de-teste',
+    files: MISSING_FAN_PHOTO_FILES,
   };
 }
 
@@ -195,6 +205,22 @@ const shardWrites = (writes: Write[]) =>
   writes.filter((write) => write.path.startsWith('statsDaily/')).map((write) => write.path);
 
 describe('runIdempotent', () => {
+  it('o trabalho recebe o retrato do perfil lido no getAll da chave, sem leitura a mais (bloco 9)', async () => {
+    const { db, reads } = fakeDb(PROFILE);
+    let seen: string | undefined;
+    const work: IdempotentWork = async ({ profile }) => {
+      seen = profile.get('displayName');
+      return { body: { ok: true } };
+    };
+    await runIdempotent(
+      deps(db, () => 0),
+      CALL,
+      work,
+    );
+    expect(seen).toBe('Camila Ribeiro');
+    expect(reads.filter((path) => path === `users/${UID}`)).toHaveLength(1);
+  });
+
   it('sorteia o shard de novo a cada tentativa da transação e grava o da última', async () => {
     const { db, tries } = fakeDb(PROFILE, 2);
     const random = vi.fn().mockReturnValueOnce(0).mockReturnValueOnce(0.5);

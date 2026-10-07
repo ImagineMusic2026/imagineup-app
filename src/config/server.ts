@@ -52,3 +52,29 @@ export const apiUrl = resolveApiUrl(
   firebaseEmulatorHost,
   optionalText(process.env.EXPO_PUBLIC_API_URL),
 );
+
+/** Porta do emulador do Storage (`firebase.json`). */
+const STORAGE_EMULATOR_PORT = 9199;
+
+// O host com que as funções no emulador montam a URL de download: o computador
+// visto dele mesmo, na porta do emulador do Storage.
+const LOCAL_STORAGE_ORIGIN = /^http:\/\/(?:127\.0\.0\.1|localhost):9199\//;
+
+/**
+ * A URL de uma imagem como o aparelho alcança. Com o emulador, a URL que as
+ * funções devolvem (a foto do fã, bloco 9) tem o host do emulador do Storage
+ * visto do computador (`http://127.0.0.1:9199/...`), que o emulador Android
+ * não alcança (lá o computador é `10.0.2.2`): troca pelo host do
+ * `EXPO_PUBLIC_FIREBASE_EMULATOR_HOST`. Sem emulador, ou com outra URL (a de
+ * produção, outra porta), passa como veio (docs/arquitetura-api.md, 24.1,
+ * decisão 14).
+ */
+export function resolveMediaUrl(url: string, emulatorHost: string | undefined): string {
+  if (!emulatorHost) return url;
+  return url.replace(LOCAL_STORAGE_ORIGIN, `http://${emulatorHost}:${STORAGE_EMULATOR_PORT}/`);
+}
+
+/** `resolveMediaUrl` com o host dos emuladores deste build (o `Avatar` e o `RemoteImage` usam). */
+export function mediaUrl(url: string): string {
+  return resolveMediaUrl(url, firebaseEmulatorHost);
+}

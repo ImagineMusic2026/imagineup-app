@@ -61,6 +61,16 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
         imageWidth: 96,
       },
     ],
+    // Foto do perfil (bloco 9): galeria ou câmera, sem microfone (sem RECORD_AUDIO
+    // no Android). Na primeira build, conferir o manifesto final (24.12 da nota).
+    [
+      'expo-image-picker',
+      {
+        photosPermission: 'O ImagineUP usa suas fotos para a foto do seu perfil.',
+        cameraPermission: 'O ImagineUP usa a câmera para a foto do seu perfil.',
+        microphonePermission: false,
+      },
+    ],
   ],
   experiments: {
     typedRoutes: true,

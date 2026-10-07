@@ -5,6 +5,7 @@ import type { ReactNode } from 'react';
 import { StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 
 import { Icon } from '@/components/icon';
+import { mediaUrl } from '@/config/server';
 import { useImageFade } from '@/components/remote-image';
 import { Text } from '@/components/text';
 import {
@@ -82,7 +83,8 @@ export function Avatar({
   const { size: outer, initials: initialsSize } = layout.avatar[size];
   const inner = ring === 'none' ? outer : outer - layout.avatarRing[ring] * 2;
   const initials = name ? initialsOf(name) : '';
-  const photo = photoUrl || null;
+  // Com os emuladores, a URL do Storage troca para o host que o aparelho alcança.
+  const photo = photoUrl ? mediaUrl(photoUrl) : null;
 
   const face = (
     <View

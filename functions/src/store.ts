@@ -1,6 +1,8 @@
 import { FieldValue, type Firestore } from 'firebase-admin/firestore';
 
 import { leaveAllCentrals } from './centrals/service';
+import type { FanPhotoFiles } from './fan-profile/files';
+import { purgeFanPhotos } from './fan-profile/service';
 import { detachReferrals, referralRef, removeInviteData } from './invites/service';
 import { dayKey } from './points/model';
 import { removeFanEngagement } from './posts/service';
@@ -132,7 +134,7 @@ export async function removeSeasonStandings(db: Firestore, uid: string): Promise
 }
 
 /**
- * Apaga tudo do fã: as reservas de @, o perfil, o convite dele (o código, os
+ * Apaga tudo do fã: o perfil, as reservas de @, o convite dele (o código, os
  * links e os marcadores de visita), os vínculos com as centrais (descontando o
  * fanCount de cada uma), as subcoleções do perfil, quem o trouxe
  * (referrals/{uid}), o `inviterUid` dos convidados dele (que ficam, com null),
@@ -144,12 +146,18 @@ export async function removeSeasonStandings(db: Firestore, uid: string): Promise
  * presenças. Desde o bloco 8, a linha dele no arquivo de cada temporada
  * (removeSeasonStandings), depois da carteira: uma página da virada que
  * entrou antes deixa a linha, que este passo apaga, e as que vêm depois já
- * não acham a carteira nem o `centralPoints` (23.13). Pode rodar mais de uma vez. Dado novo do fã fora de users/{uid}
- * precisa entrar aqui.
+ * não acham a carteira nem o `centralPoints` (23.13). Desde o bloco 9, a pasta
+ * da foto no Storage (`fans/{uid}/`, com `files`), no fim (24.11). Pode rodar
+ * mais de uma vez. Dado novo do fã fora de users/{uid} precisa entrar aqui.
  *
  * A ordem importa: toda gravação da API lê users/{uid} na transação
  * (requireFan), então depois que o documento do perfil some nenhuma gravação
- * nova do fã passa. Por isso ele sai sozinho primeiro, antes dos vínculos: o
+ * nova do fã passa, e nenhum envio de foto começa (a regra do Storage exige o
+ * perfil). Por isso ele sai sozinho primeiro (desde o bloco 9, antes também
+ * das reservas de @: uma troca do @ que leu o perfil antes termina antes, e a
+ * reserva nova dela aparece na listagem; na ordem antiga, a troca entre a
+ * listagem e a saída do perfil deixava a reserva nova presa a uma conta
+ * morta), antes dos vínculos: o
  * recursiveDelete apaga o documento por último, e uma entrada no meio da
  * exclusão criaria um vínculo depois da listagem, que ele levaria sem
  * descontar o fanCount. Os agregados do painel (statsDaily) não descontam:
@@ -157,9 +165,19 @@ export async function removeSeasonStandings(db: Firestore, uid: string): Promise
  * seções 12 e 19.12). O código do convite sai logo depois do perfil: um claim
  * ou uma visita que leu o código antes grava o marcador antes (e o
  * recursiveDelete o leva) ou repete e responde 404. Os pontos que o fã rendeu a
- * quem o convidou ficam com quem convidou (20.10).
+ * quem o convidou ficam com quem convidou (20.10). A pasta da foto sai por
+ * último, arquivo por arquivo: sobrou arquivo, lança, e o gatilho tenta de
+ * novo (os passos de antes são seguros de repetir); o bucket que não existe
+ * conta como pasta vazia. Sem `files` (o desfazer do cadastro), nenhuma
+ * chamada ao Storage: a conta que nasce e some no mesmo segundo nunca tem foto.
  */
-export async function deleteUserData(db: Firestore, uid: string): Promise<void> {
+export async function deleteUserData(
+  db: Firestore,
+  uid: string,
+  options: { files?: FanPhotoFiles } = {},
+): Promise<void> {
+  const profile = db.collection('users').doc(uid);
+  await profile.delete();
   const reservations = await db.collection('usernames').where('uid', '==', uid).get();
   await Promise.all(
     reservations.docs.map(async (reservation) => {
@@ -173,8 +191,6 @@ export async function deleteUserData(db: Firestore, uid: string): Promise<void> 
       }
     }),
   );
-  const profile = db.collection('users').doc(uid);
-  await profile.delete();
   await removeInviteData(db, uid);
   await leaveAllCentrals(db, uid);
   await removeFanEngagement(db, uid);
@@ -185,4 +201,5 @@ export async function deleteUserData(db: Firestore, uid: string): Promise<void> 
   await removeSeasonStandings(db, uid);
   await deleteIdempotencyKeys(db, uid);
   await db.collection('staff').doc(uid).delete();
+  if (options.files) await purgeFanPhotos(options.files, uid);
 }
