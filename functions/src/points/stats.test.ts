@@ -1,13 +1,19 @@
 import { FieldValue, Timestamp } from 'firebase-admin/firestore';
 import { describe, expect, it } from 'vitest';
 
-import { addEngagementCounts, addMembershipCounts, type AwardPlan } from './award';
+import {
+  addEngagementCounts,
+  addMembershipCounts,
+  addRedemptionCounts,
+  type AwardPlan,
+} from './award';
 import {
   addAchievementToShard,
   addEngagementToShard,
   addInviteToShard,
   addMissionToShard,
   addMembershipToShard,
+  addRedemptionToShard,
   emptyShardDelta,
   isEmptyShardDelta,
   ORIGIN_NONE,
@@ -236,5 +242,65 @@ describe('missões e conquistas nos shards (bloco 7)', () => {
     const delta = emptyShardDelta();
     expect(isEmptyShardDelta(delta)).toBe(true);
     expect(shardWrite(delta, '2026-10-05', 0)).not.toHaveProperty('byMission');
+  });
+});
+
+describe('loja nos shards (bloco 10, 25.9)', () => {
+  it('cada passo do pedido no total e na recompensa; os pontos gastos e devolvidos por recompensa', () => {
+    const delta = emptyShardDelta();
+    addRedemptionToShard(delta, 'ingressos', 'requested', 6_000);
+    addRedemptionToShard(delta, 'ingressos', 'approved');
+    addRedemptionToShard(delta, 'ingressos', 'delivered');
+    addRedemptionToShard(delta, 'videochamada', 'requested', 8_500);
+    addRedemptionToShard(delta, 'videochamada', 'refused', 8_500);
+    addRedemptionToShard(delta, 'camisa', 'canceled');
+    expect(shardWrite(delta, '2026-10-05', NOW)).toEqual({
+      day: '2026-10-05',
+      totals: {
+        redeemRequested: FieldValue.increment(2),
+        redeemApproved: FieldValue.increment(1),
+        redeemDelivered: FieldValue.increment(1),
+        redeemRefused: FieldValue.increment(1),
+        redeemCanceled: FieldValue.increment(1),
+      },
+      byReward: {
+        ingressos: {
+          requested: FieldValue.increment(1),
+          spent: FieldValue.increment(6_000),
+          approved: FieldValue.increment(1),
+          delivered: FieldValue.increment(1),
+        },
+        videochamada: {
+          requested: FieldValue.increment(1),
+          spent: FieldValue.increment(8_500),
+          refused: FieldValue.increment(1),
+          refunded: FieldValue.increment(8_500),
+        },
+        camisa: { canceled: FieldValue.increment(1) },
+      },
+      updatedAt: Timestamp.fromMillis(NOW),
+    });
+  });
+
+  it('a recusa sem pontos de volta (fã sem perfil) conta a recusa, sem os pontos', () => {
+    const delta = emptyShardDelta();
+    addRedemptionToShard(delta, 'videochamada', 'refused', 0);
+    expect(delta.byReward.videochamada).toMatchObject({ refused: 1, refunded: 0 });
+    expect(shardWrite(delta, '2026-10-05', NOW).byReward).toEqual({
+      videochamada: { refused: FieldValue.increment(1) },
+    });
+  });
+
+  it('addRedemptionCounts cria o shard do plano sem fã (aprovar e entregar), e não cria sem mudança', () => {
+    const empty = { shard: null } as unknown as AwardPlan;
+    addRedemptionCounts(empty, []);
+    expect(empty.shard).toBeNull();
+    addRedemptionCounts(empty, [{ rewardId: 'ingressos', kind: 'approved' }]);
+    expect(empty.shard?.totals.redeemApproved).toBe(1);
+    expect(empty.shard?.byReward.ingressos?.approved).toBe(1);
+  });
+
+  it('sem pedido, o mapa da loja não é gravado (pruneZeros)', () => {
+    expect(shardWrite(emptyShardDelta(), '2026-10-05', 0)).not.toHaveProperty('byReward');
   });
 });

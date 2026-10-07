@@ -285,3 +285,30 @@ describe('rotas do perfil editável (bloco 9)', () => {
     expect(matchRoute(API_ROUTES, 'DELETE', '/me/photo')).toMatchObject({ kind: 'match' });
   });
 });
+
+describe('rotas da loja (bloco 10)', () => {
+  it('/rewards e /rewards/:rewardId/redeem não se confundem', () => {
+    expect(matchRoute(API_ROUTES, 'GET', '/rewards')).toMatchObject({
+      kind: 'match',
+      route: { method: 'GET', pattern: '/rewards' },
+      params: {},
+    });
+    expect(matchRoute(API_ROUTES, 'POST', '/rewards/meet-netto/redeem')).toMatchObject({
+      kind: 'match',
+      route: { method: 'POST', pattern: '/rewards/:rewardId/redeem' },
+      params: { rewardId: 'meet-netto' },
+    });
+  });
+
+  it('GET /rewards/x/redeem é 405 com POST; POST /rewards é 405 com GET', () => {
+    expect(matchRoute(API_ROUTES, 'GET', '/rewards/camisa/redeem')).toEqual({
+      kind: 'method_not_allowed',
+      allow: ['POST'],
+    });
+    expect(matchRoute(API_ROUTES, 'POST', '/rewards')).toEqual({
+      kind: 'method_not_allowed',
+      allow: ['GET'],
+    });
+    expect(matchRoute(API_ROUTES, 'GET', '/rewards/camisa').kind).toBe('not_found');
+  });
+});

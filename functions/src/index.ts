@@ -55,7 +55,13 @@ import {
   reorderMissionList,
 } from './missions';
 import { moderate } from './moderation';
-import { changePointsConfig, changeSeason, type ConfigPanelDeps } from './points';
+import {
+  changePointsConfig,
+  changeSeason,
+  createConfigSource,
+  type ConfigPanelDeps,
+  type ConfigSource,
+} from './points';
 import { closeNow, endCurrent, runRankingTick, scheduleNext } from './ranking';
 import {
   addPost,
@@ -69,6 +75,17 @@ import {
   type ContentDeps,
   type PostCountsQueue,
 } from './posts';
+import {
+  addReward,
+  changeRedemptionStatus,
+  changeRewardStatus,
+  changeRewardStock,
+  editReward,
+  readRedemptionContacts,
+  removeReward,
+  reorderRewardList,
+  type RewardsPanelDeps,
+} from './rewards';
 import {
   acceptInvite,
   cancelInvite,
@@ -504,10 +521,91 @@ export const reorderAchievements = onCall({ cors: PANEL_ORIGINS }, async (reques
   return result;
 });
 
+// Loja e resgate (bloco 10, docs/arquitetura-api.md, 25.8), com a seção
+// rewards: a equipe cadastra as recompensas (com a foto, que sobe do
+// navegador para rewards/{rewardId}/ e a função confere), cuida do estoque e
+// da ordem e acompanha os pedidos (aprovar, marcar entregue, recusar com
+// motivo, que devolve os pontos e, por padrão, a vaga). O e-mail de quem
+// resgatou só sai pelo getRedemptionContacts, dos pedidos abertos. Mesmo molde
+// das de conteúdo: o acesso lido de staff/{uid} a cada chamada e de novo na
+// transação, e a auditoria em staffAudit. As telas são do bloco 11.
+
+let rewardsConfig: ConfigSource | null = null;
+
+const rewardsDeps = (): RewardsPanelDeps => ({
+  db: getFirestore(),
+  files: bucketFiles(() => getStorage().bucket()),
+  auth: getAuth(),
+  config: (rewardsConfig ??= createConfigSource(getFirestore())),
+});
+
+/** Cria a recompensa como rascunho, no fim da ordem (o id pode vir do painel). */
+export const createReward = onCall({ cors: PANEL_ORIGINS }, async (request) => {
+  const result = await addReward(rewardsDeps(), request.auth, request.data);
+  logger.info('Recompensa criada.', { actorUid: request.auth?.uid, rewardId: result.rewardId });
+  return result;
+});
+
+/** Edita os textos, o custo, o limite, o show, o destaque e a foto já enviada. */
+export const updateReward = onCall({ cors: PANEL_ORIGINS }, async (request) => {
+  const result = await editReward(rewardsDeps(), request.auth, request.data);
+  logger.info('Recompensa alterada.', { actorUid: request.auth?.uid });
+  return result;
+});
+
+/** Publica (ou reabre, no fim da ordem) ou encerra uma recompensa. */
+export const setRewardStatus = onCall({ cors: PANEL_ORIGINS }, async (request) => {
+  const result = await changeRewardStatus(rewardsDeps(), request.auth, request.data);
+  logger.info('Status da recompensa alterado.', { actorUid: request.auth?.uid });
+  return result;
+});
+
+/** Muda o total oferecido, nunca abaixo do já resgatado. */
+export const setRewardStock = onCall({ cors: PANEL_ORIGINS }, async (request) => {
+  const result = await changeRewardStock(rewardsDeps(), request.auth, request.data);
+  logger.info('Estoque da recompensa alterado.', { actorUid: request.auth?.uid });
+  return result;
+});
+
+/** Nova ordem dos rascunhos e das recompensas no ar (a da loja). */
+export const reorderRewards = onCall({ cors: PANEL_ORIGINS }, async (request) => {
+  const result = await reorderRewardList(rewardsDeps(), request.auth, request.data);
+  logger.info('Ordem das recompensas alterada.', { actorUid: request.auth?.uid });
+  return result;
+});
+
+/** Apaga o rascunho que nunca foi ao ar e não tem pedido, com a foto. */
+export const deleteReward = onCall({ cors: PANEL_ORIGINS }, async (request) => {
+  const result = await removeReward(rewardsDeps(), request.auth, request.data);
+  logger.info('Recompensa apagada.', { actorUid: request.auth?.uid });
+  return result;
+});
+
+/** Aprova, marca entregue ou recusa um pedido (a recusa devolve os pontos). */
+export const setRedemptionStatus = onCall({ cors: PANEL_ORIGINS }, async (request) => {
+  const result = await changeRedemptionStatus(rewardsDeps(), request.auth, request.data);
+  logger.info('Status do pedido alterado.', {
+    actorUid: request.auth?.uid,
+    status: result.status,
+  });
+  return result;
+});
+
+/** O nome, o @ e o e-mail de quem fez os pedidos abertos, para a entrega. */
+export const getRedemptionContacts = onCall({ cors: PANEL_ORIGINS }, async (request) => {
+  const result = await readRedemptionContacts(rewardsDeps(), request.auth, request.data);
+  logger.info('Contatos de pedidos consultados.', {
+    actorUid: request.auth?.uid,
+    count: result.contacts.length,
+  });
+  return result;
+});
+
 // API HTTP do app (docs/arquitetura-api.md): carteira, progresso e extrato no
 // bloco 1, centrais no bloco 4, convite no bloco 5, mural e agenda no bloco 6,
-// missões e conquistas no bloco 7, ranking e temporada no bloco 8; os blocos
-// seguintes acrescentam as rotas deles em src/api. Quem protege é o ID token do Firebase
+// missões e conquistas no bloco 7, ranking e temporada no bloco 8, o perfil
+// editável no bloco 9 e a loja no bloco 10; os blocos seguintes acrescentam
+// as rotas deles em src/api. Quem protege é o ID token do Firebase
 // em toda rota, por isso o invoker público. Sem CORS: o app nativo não faz
 // preflight, e o painel usa as callables. A visita ao link de convite conta
 // no app, de conta logada, por esta mesma função (20.1, decisão 3).
@@ -522,8 +620,10 @@ let apiHandler: ReturnType<typeof createApiHandler> | null = null;
  * missões e conquistas (bloco 7: a 1g, a missão do dia e as conquistas da
  * 1e), o ranking (bloco 8: a temporada, o ranking geral e das centrais e a
  * posição do fã) e o perfil editável (bloco 9: o @ escolhido pelo fã e a foto
- * do perfil, conferida no Storage); os pontos, as missões, os níveis e as posições são sempre
- * calculados no servidor. O segredo do HMAC da chave da pessoa (INVITE_KEY_SECRET) só
+ * do perfil, conferida no Storage) e a loja (bloco 10: as recompensas e o
+ * resgate, com o débito, o estoque e o pedido numa transação só); os pontos,
+ * as missões, os níveis, as posições e os resgates são sempre calculados no
+ * servidor. O segredo do HMAC da chave da pessoa (INVITE_KEY_SECRET) só
  * chega a esta função, lido a cada pedido.
  */
 export const api = onRequest(

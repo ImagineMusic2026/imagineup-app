@@ -70,6 +70,23 @@
  * temporadas fechadas ficam sem a foto (o arquivo é da hora da virada). Os
  * outros fãs ficam sem foto.
  *
+ * Loja e resgate (functions/lib/rewards, bloco 10, 25.13): depois dos shows,
+ * o catálogo das fixtures do app (o meet & greet do São João de Irará em
+ * destaque, com escassez e 20 vagas; os ingressos com limite de 2; a
+ * videochamada; a camisa sem limite; o telão; a passagem de som do Arrocha na
+ * Praia com 1 vaga; e um rascunho), todas no ar e sem foto. Depois da carteira,
+ * os pedidos antigos da Camila pelos mesmos núcleos da rota e das callables,
+ * às 18:00 de cada dia: o ajuste seed:camila-loja (+24.000 só no saldo, 8 dias
+ * atrás), os ingressos entregues (UP-4KD9TM), a videochamada recusada com o
+ * motivo e os 8.500 de volta (UP-9FJT6V), a passagem de som aprovada, que
+ * esgota (UP-7QXH2R), e a camisa solicitada (UP-C3NWPB). O saldo termina em
+ * 12.480, e o extrato dela ganha 6 lançamentos (23 ao todo).
+ *
+ * Equipe do painel: a conta equipe@teste.imagineup (admin, todas as seções),
+ * gravada como o aceite do convite deixaria (staff/{uid} antes da conta, sem
+ * perfil de fã), para aprovar, entregar e recusar os pedidos pelas callables
+ * no emulador e para o painel local.
+ *
  * Rodar de novo não muda nada. Depois da meia-noite, o progresso do dia volta
  * a 0, como o de qualquer fã: para ver de novo o 3 de 5 e o 2 de 5, feche os
  * emuladores (os dados somem) e rode o seed outra vez.
@@ -134,6 +151,14 @@ const FANS = [
   },
 ];
 
+/** A conta da equipe do painel no emulador (admin, todas as seções). */
+const STAFF = {
+  uid: 'seed-equipe',
+  email: 'equipe@teste.imagineup',
+  password: 'equipe-de-teste-1',
+  displayName: 'Equipe de Teste',
+};
+
 /** A senha das 48 contas de ranking (só o emulador). */
 const RANKING_PASSWORD = 'fa-do-ranking';
 
@@ -176,6 +201,7 @@ async function setCity(uid, city) {
 
 // Só o emulador: o firebase-admin daqui nunca grava fora dele.
 process.env.FIRESTORE_EMULATOR_HOST = '127.0.0.1:8080';
+process.env.FIREBASE_AUTH_EMULATOR_HOST = '127.0.0.1:9099';
 process.env.FIREBASE_STORAGE_EMULATOR_HOST = '127.0.0.1:9199';
 const PROJECT_ID = 'demo-imagine-up-app';
 // O bucket do projeto demo, o mesmo das funções, do painel e do app no emulador.
@@ -251,6 +277,75 @@ async function seedContent() {
     events: await seedEvents(db),
     posts: await seedPosts(db),
   }));
+}
+
+/** O catálogo da loja, como o painel cadastraria e publicaria (só as que faltam). */
+async function seedShop() {
+  const { seedRewards } = functionsBuild('rewards');
+  return withFirestore((db) => seedRewards(db));
+}
+
+/** Os pedidos antigos da Camila, pelos núcleos da rota e das callables (rodar de novo não muda nada). */
+async function seedCamilaShop(uid) {
+  const { seedCamilaRedemptions } = functionsBuild('rewards');
+  return withFirestore((db) => seedCamilaRedemptions(db, uid));
+}
+
+/**
+ * A conta da equipe do painel: staff/{uid} antes da conta (como o aceite do
+ * convite), para o gatilho de cadastro não criar perfil de fã. Já existe: nada muda.
+ */
+async function seedStaff() {
+  const require = createRequire(new URL('../functions/package.json', import.meta.url));
+  const { deleteApp, initializeApp } = require('firebase-admin/app');
+  const { getAuth } = require('firebase-admin/auth');
+  const { getFirestore, Timestamp } = require('firebase-admin/firestore');
+  const { SECTION_IDS } = require(
+    fileURLToPath(new URL('../functions/lib/staff/model.js', import.meta.url)),
+  );
+  const app = initializeApp({ projectId: PROJECT_ID }, `seed-staff-${Date.now()}`);
+  try {
+    const db = getFirestore(app);
+    const ref = db.collection('staff').doc(STAFF.uid);
+    const created = !(await ref.get()).exists;
+    if (created) {
+      const now = Timestamp.now();
+      await ref.set({
+        uid: STAFF.uid,
+        email: STAFF.email,
+        displayName: STAFF.displayName,
+        role: 'admin',
+        sections: [...SECTION_IDS],
+        status: 'active',
+        accountCreatedByInvite: true,
+        inviteId: 'seed',
+        invitedBy: null,
+        createdAt: now,
+        updatedAt: now,
+        updatedBy: null,
+      });
+    }
+    try {
+      await getAuth(app).createUser({
+        uid: STAFF.uid,
+        email: STAFF.email,
+        password: STAFF.password,
+        displayName: STAFF.displayName,
+        emailVerified: true,
+      });
+      return 'created';
+    } catch (error) {
+      if (
+        error?.code === 'auth/uid-already-exists' ||
+        error?.code === 'auth/email-already-exists'
+      ) {
+        return 'exists';
+      }
+      throw error;
+    }
+  } finally {
+    await deleteApp(app);
+  }
 }
 
 /** O catálogo provisório de missões, com a meta da temporada (só se ainda não existe). */
@@ -350,6 +445,16 @@ console.log(
   `Agenda e mural de teste: ${content.events} shows e ${content.posts} posts criados (9 shows e 12 posts no ar no total).`,
 );
 
+const shopCreated = await seedShop();
+console.log(
+  `Loja de teste: ${shopCreated} recompensas criadas (6 no ar e 1 em rascunho no total).`,
+);
+
+const staff = await seedStaff();
+console.log(
+  `Equipe do painel: ${STAFF.email} (admin, ${staff === 'created' ? 'criada agora' : 'já existia'}).`,
+);
+
 const invitees = [];
 const visitors = [];
 const engagementFans = {};
@@ -440,6 +545,13 @@ const engagement = await seedEngagement(engagementFans);
 console.log(
   `Engajamento dos fãs de teste, entrando agora: curtidas ${engagement.likes}, comentários ${engagement.comments}, presenças ${engagement.rsvps}, denúncias ${engagement.reports} (7, 7, 2 e 1 no total).`,
 );
+
+if (camilaUid) {
+  const shop = await seedCamilaShop(camilaUid);
+  console.log(
+    `Pedidos da Camila na loja: ${shop.redeemed} novos e ${shop.transitions} mudanças de status agora (4 pedidos no total: entregue, recusado, aprovado e solicitado).`,
+  );
+}
 
 if (camilaUid) {
   const photo = await seedCamilaPhoto(camilaUid);

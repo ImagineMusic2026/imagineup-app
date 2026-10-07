@@ -132,13 +132,25 @@ export type AuditAction =
   | 'achievement.updated'
   | 'achievement.published'
   | 'achievement.archived'
-  | 'achievement.reordered';
+  | 'achievement.reordered'
+  | 'reward.created'
+  | 'reward.updated'
+  | 'reward.published'
+  | 'reward.closed'
+  | 'reward.stock.updated'
+  | 'reward.reordered'
+  | 'reward.deleted'
+  | 'redemption.approved'
+  | 'redemption.delivered'
+  | 'redemption.refused'
+  | 'redemption.contacts.viewed';
 
 /**
  * staffAudit/{autoId}: uma entrada por mudança feita pelo painel. Nas ações
- * de outras seções (artistas, posts, shows e moderação), targetEmail fica ''
- * e targetUid null, e o alvo vai em details. A auditoria nunca leva o texto de
- * um comentário.
+ * de outras seções (artistas, posts, shows, moderação e, desde o bloco 10, a
+ * loja), targetEmail fica '' e targetUid null, e o alvo vai em details. A
+ * auditoria nunca leva o texto de um comentário, nem o uid, o nome, o @ ou o
+ * e-mail de quem resgatou (25.8).
  */
 export type AuditEntry = {
   action: AuditAction;

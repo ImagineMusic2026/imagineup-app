@@ -69,6 +69,15 @@ export type ShardDelta = {
     rsvpsUndone: number;
     reports: number;
     blocks: number;
+    /** Pontos devolvidos ao saldo pela recusa de pedidos da loja (bloco 10), e quantas devoluções. */
+    refunded: number;
+    refundedEvents: number;
+    /** Fluxos dos pedidos da loja no dia (bloco 10, 25.9): pedidos, aprovados, entregues, recusados, cancelados. */
+    redeemRequested: number;
+    redeemApproved: number;
+    redeemDelivered: number;
+    redeemRefused: number;
+    redeemCanceled: number;
   };
   bySource: Record<string, Count>;
   byArtist: Record<string, ArtistCount>;
@@ -97,6 +106,23 @@ export type ShardDelta = {
   byMission: Record<string, { completed: number }>;
   /** Conquistas desbloqueadas no dia, por conquista (bloco 7, 22.9). */
   byAchievement: Record<string, { unlocked: number }>;
+  /** Os pedidos da loja no dia, por recompensa (bloco 10, 25.9). */
+  byReward: Record<string, RewardCount>;
+};
+
+/**
+ * Os fluxos do dia de uma recompensa (bloco 10, 25.9): pedidos e os pontos
+ * gastos neles, aprovados, entregues, recusados (com os pontos devolvidos) e
+ * cancelados pela exclusão de conta.
+ */
+export type RewardCount = {
+  requested: number;
+  spent: number;
+  approved: number;
+  delivered: number;
+  refused: number;
+  canceled: number;
+  refunded: number;
 };
 
 /** Cadastros, visitas e links de um tipo de link. */
@@ -120,6 +146,13 @@ export function emptyShardDelta(): ShardDelta {
       rsvpsUndone: 0,
       reports: 0,
       blocks: 0,
+      refunded: 0,
+      refundedEvents: 0,
+      redeemRequested: 0,
+      redeemApproved: 0,
+      redeemDelivered: 0,
+      redeemRefused: 0,
+      redeemCanceled: 0,
     },
     bySource: {},
     byArtist: {},
@@ -130,6 +163,7 @@ export function emptyShardDelta(): ShardDelta {
     byOrigin: { kind: {}, utmSource: {}, utmCampaign: {} },
     byMission: {},
     byAchievement: {},
+    byReward: {},
   };
 }
 
@@ -160,14 +194,22 @@ function addCount(map: Record<string, Count>, key: string, points: number): void
 
 /**
  * Soma um lançamento aplicado. `balanceDelta` é quanto o saldo mexeu
- * (positivo no ganho, negativo no resgate, o delta no ajuste). Ganho e
- * resgate contam por origem e, com central, por artista; ajuste e seed contam
- * só no total de ajustes e por origem, nunca por artista.
+ * (positivo no ganho e na devolução, negativo no resgate, o delta no ajuste).
+ * Ganho e resgate contam por origem e, com central, por artista; ajuste e
+ * seed contam só no total de ajustes e por origem, nunca por artista; a
+ * devolução do resgate recusado (bloco 10), no total de devoluções e por
+ * origem (`redeem_refund`), sem central.
  */
 export function addEntryToShard(delta: ShardDelta, entry: AwardEntry, balanceDelta: number): void {
   if (entry.kind === 'adjust') {
     delta.totals.adjusted += balanceDelta;
     delta.totals.adjustedEvents += 1;
+    addCount(delta.bySource, entry.source, balanceDelta);
+    return;
+  }
+  if (entry.kind === 'refund') {
+    delta.totals.refunded += balanceDelta;
+    delta.totals.refundedEvents += 1;
     addCount(delta.bySource, entry.source, balanceDelta);
     return;
   }
@@ -311,6 +353,50 @@ export function addMissionToShard(delta: ShardDelta, missionId: string): void {
 export function addAchievementToShard(delta: ShardDelta, achievementId: string): void {
   const achievement = (delta.byAchievement[achievementId] ??= { unlocked: 0 });
   achievement.unlocked += 1;
+}
+
+/** Um passo de um pedido da loja, para os agregados (bloco 10, 25.9). */
+export type RedemptionShardKind = 'requested' | 'approved' | 'delivered' | 'refused' | 'canceled';
+
+const REDEMPTION_TOTALS = {
+  requested: 'redeemRequested',
+  approved: 'redeemApproved',
+  delivered: 'redeemDelivered',
+  refused: 'redeemRefused',
+  canceled: 'redeemCanceled',
+} as const satisfies Record<RedemptionShardKind, keyof ShardDelta['totals']>;
+
+function emptyRewardCount(): RewardCount {
+  return {
+    requested: 0,
+    spent: 0,
+    approved: 0,
+    delivered: 0,
+    refused: 0,
+    canceled: 0,
+    refunded: 0,
+  };
+}
+
+/**
+ * Soma um passo de um pedido da loja (bloco 10, 25.9), no total e na
+ * recompensa: o pedido com os pontos gastos (`points`), a aprovação, a
+ * entrega, a recusa com os pontos que voltaram de fato (`points`) e o
+ * cancelamento da exclusão de conta. Os pontos em si já entram pelo
+ * lançamento (`spent` e `refunded` nos totais); aqui é o recorte por
+ * recompensa. São fluxo, como o resto do shard.
+ */
+export function addRedemptionToShard(
+  delta: ShardDelta,
+  rewardId: string,
+  kind: RedemptionShardKind,
+  points = 0,
+): void {
+  delta.totals[REDEMPTION_TOTALS[kind]] += 1;
+  const reward = (delta.byReward[rewardId] ??= emptyRewardCount());
+  reward[kind] += 1;
+  if (kind === 'requested') reward.spent += points;
+  if (kind === 'refused') reward.refunded += points;
 }
 
 type Tree = { [key: string]: number | Tree };

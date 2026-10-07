@@ -124,87 +124,163 @@ const CURTIR = 'Curta 5 posts do Nenho';
 type LedgerSample = {
   id: string;
   daysAgo: number;
+  /** A hora do lançamento no dia (12 h; a loja, 18 h, como no seed). */
+  hour: number;
   kind: LedgerEntry['kind'];
   source: LedgerEntry['source'];
   points: number;
+  /** O XP: o mesmo dos pontos no ganho e na base; 0 no resgate, na devolução e no ajuste da loja. */
+  xp: number;
   season: number;
   artistId: string | null;
   artistName: string | null;
   central: number;
+  subject: LedgerEntry['subject'];
   title: string | null;
 };
 
+const NOON = 12;
+const EVENING = 18;
+
+/** Uma missão concluída do seed (o título no extrato), ao meio-dia. */
+const missionSample = (
+  n: number,
+  daysAgo: number,
+  points: number,
+  artistId: string,
+  title: string,
+): LedgerSample => ({
+  id: `mission:seed-camila-${n}`,
+  daysAgo,
+  hour: NOON,
+  kind: 'earn',
+  source: 'mission',
+  points,
+  xp: points,
+  season: points,
+  artistId,
+  artistName: artistId === 'nenho' ? 'Nenho' : 'Netto Brito',
+  central: points,
+  subject: null,
+  title,
+});
+
+/** Um lançamento da loja da Camila (bloco 10, 25.13): só o saldo, às 18 h, com a recompensa. */
+const shopSample = (
+  id: string,
+  daysAgo: number,
+  points: number,
+  rewardId: string,
+  title: string,
+): LedgerSample => ({
+  id,
+  daysAgo,
+  hour: EVENING,
+  kind: points < 0 ? 'spend' : 'refund',
+  source: points < 0 ? 'redeem' : 'redeem_refund',
+  points,
+  xp: 0,
+  season: 0,
+  artistId: null,
+  artistName: null,
+  central: 0,
+  subject: { type: 'reward', id: rewardId },
+  title,
+});
+
 /**
- * O extrato da Camila do seed dos emuladores (22.13 e, com as temporadas
- * passadas, 23.15): os mesmos 17 ids, valores, títulos e dias, do mais novo ao
- * mais antigo. Os dois ajustes só de central (o Netto e o Nenho) vêm com
- * saldo, XP e temporada em 0: a tela os esconde. Os das temporadas passadas
- * só mexem na temporada e aparecem.
+ * O extrato da Camila do seed dos emuladores (22.13, com as temporadas
+ * passadas, 23.15, e com a loja, 25.13): os mesmos 23 ids, valores, títulos e
+ * dias, do mais novo ao mais antigo. Os dois ajustes só de central (o Netto e
+ * o Nenho) vêm com saldo, XP e temporada em 0: a tela os esconde. Os das
+ * temporadas passadas só mexem na temporada e aparecem. Os da loja (os
+ * resgates, a devolução da videochamada recusada e o ajuste que paga os
+ * pedidos antigos) só mexem no saldo, às 18 h.
  */
 const LEDGER_SAMPLES: readonly LedgerSample[] = [
-  ...[
-    { n: 4, daysAgo: 1, points: 100, artistId: 'nenho', title: CURTIR },
-    { n: 3, daysAgo: 2, points: 300, artistId: 'nettobrito', title: COMENTAR },
-    { n: 2, daysAgo: 4, points: 240, artistId: 'nenho', title: CURTIR },
-    { n: 1, daysAgo: 6, points: 200, artistId: 'nettobrito', title: COMENTAR },
-  ].map(({ n, daysAgo, points, artistId, title }): LedgerSample => ({
-    id: `mission:seed-camila-${n}`,
-    daysAgo,
-    kind: 'earn',
-    source: 'mission',
-    points,
-    season: points,
-    artistId,
-    artistName: artistId === 'nenho' ? 'Nenho' : 'Netto Brito',
-    central: points,
-    title,
-  })),
+  missionSample(4, 1, 100, 'nenho', CURTIR),
+  shopSample('redeem:UP-C3NWPB', 2, -15_000, 'camisa', 'Camisa oficial'),
+  missionSample(3, 2, 300, 'nettobrito', COMENTAR),
+  shopSample('redeem:UP-7QXH2R', 4, -3_000, 'passagem-de-som', 'Passagem de som'),
+  missionSample(2, 4, 240, 'nenho', CURTIR),
+  shopSample('redeem_refund:UP-9FJT6V', 5, 8_500, 'videochamada', 'Videochamada'),
+  shopSample('redeem:UP-9FJT6V', 6, -8_500, 'videochamada', 'Videochamada'),
+  missionSample(1, 6, 200, 'nettobrito', COMENTAR),
+  shopSample('redeem:UP-4KD9TM', 7, -6_000, 'ingressos', 'Par de ingressos'),
+  {
+    // O ajuste que paga os pedidos antigos da loja (só o saldo, 25.13).
+    id: 'seed:camila-loja',
+    daysAgo: 8,
+    hour: EVENING,
+    kind: 'adjust',
+    source: 'seed',
+    points: 24_000,
+    xp: 0,
+    season: 0,
+    artistId: null,
+    artistName: null,
+    central: 0,
+    subject: null,
+    title: null,
+  },
   {
     id: 'seed:camila-base-netto',
     daysAgo: 8,
+    hour: NOON,
     kind: 'adjust',
     source: 'seed',
     points: 0,
+    xp: 0,
     season: 0,
     artistId: 'nettobrito',
     artistName: 'Netto Brito',
     central: 3_620,
+    subject: null,
     title: null,
   },
   {
     id: 'seed:camila-base-nenho',
     daysAgo: 8,
+    hour: NOON,
     kind: 'adjust',
     source: 'seed',
     points: 0,
+    xp: 0,
     season: 0,
     artistId: 'nenho',
     artistName: 'Nenho',
     central: 2_640,
+    subject: null,
     title: null,
   },
   {
     id: 'seed:camila-base',
     daysAgo: 8,
+    hour: NOON,
     kind: 'adjust',
     source: 'seed',
     points: 11_240,
+    xp: 11_240,
     season: 2_880,
     artistId: null,
     artistName: null,
     central: 0,
+    subject: null,
     title: null,
   },
   ...Array.from({ length: 8 }, (_, index): LedgerSample => ({
     id: `mission:seed-camila-${12 - index}`,
     daysAgo: 10 + index,
+    hour: NOON,
     kind: 'earn',
     source: 'mission',
     points: 50,
+    xp: 50,
     season: 50,
     artistId: null,
     artistName: null,
     central: 0,
+    subject: null,
     title: CLIPE,
   })),
   // As temporadas passadas do seed (bloco 8, 23.15): ajustes só de temporada,
@@ -215,21 +291,24 @@ const LEDGER_SAMPLES: readonly LedgerSample[] = [
   ].map(({ id, daysAgo, season }): LedgerSample => ({
     id,
     daysAgo,
+    hour: NOON,
     kind: 'adjust',
     source: 'seed',
     points: 0,
+    xp: 0,
     season,
     artistId: null,
     artistName: null,
     central: 0,
+    subject: null,
     title: null,
   })),
 ];
 
 /**
  * Uma página do extrato de exemplo, com as datas relativas a `now` (meio-dia
- * de cada dia). O que o fã ganha na sessão das fixtures não entra: é exemplo.
- * O cursor é a posição da primeira linha da página.
+ * de cada dia; a loja, 18 h). O que o fã ganha na sessão das fixtures não
+ * entra: é exemplo. O cursor é a posição da primeira linha da página.
  */
 export function buildLedgerPageFixture(now: Date, cursor: string | null): LedgerPage {
   const start = cursor ? Number(cursor) : 0;
@@ -239,14 +318,14 @@ export function buildLedgerPageFixture(now: Date, cursor: string | null): Ledger
       kind: sample.kind,
       source: sample.source,
       points: sample.points,
-      xpDelta: sample.points,
+      xpDelta: sample.xp,
       seasonDelta: sample.season,
       artistId: sample.artistId,
       centralSeasonDelta: sample.central,
       centralTotalDelta: sample.central,
-      subject: null,
+      subject: sample.subject,
       createdAt: set(subDays(now, sample.daysAgo), {
-        hours: 12,
+        hours: sample.hour,
         minutes: 0,
         seconds: 0,
         milliseconds: 0,

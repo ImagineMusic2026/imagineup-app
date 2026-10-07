@@ -58,6 +58,8 @@ describe('tetos do dia', () => {
       block: { key: 'fan_block', limit: 30 },
       // Bloco 9: as trocas de foto do perfil.
       photo: { key: 'photo_set', limit: 10 },
+      // Bloco 10: os resgates da loja (25.7).
+      redeem: { key: 'reward_redeem', limit: 10 },
     });
     expect(BLOCK_LIST_MAX).toBe(1_000);
   });

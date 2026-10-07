@@ -126,7 +126,14 @@ const TICKETS = 'Par de ingressos. Pra Encher e Derramar. 6.000 pontos.';
 const VIDEO = 'Videochamada. 5 min com o artista. 8.500 pontos.';
 const SHIRT = 'Camisa oficial. Coleção São João. Faltam 2.520 pontos.';
 const SCREEN = 'Foto no telão. Durante o show. Faltam 7.520 pontos.';
+// A passagem de som do Arrocha na Praia: esgotada pelo pedido da Camila, no fim da grade.
+const SOUNDCHECK = 'Passagem de som. Arrocha na Praia. Esgotado.';
 const REDEEM_VIDEO = 'Resgatar por 8.500 pontos';
+/** O código sorteado das fixtures (o mesmo padrão do servidor), com o status do pedido novo. */
+const NEW_CODE =
+  /^Código do resgate: (UP-[23456789BCDFGHJKMNPQRSTVWXYZ]{6})\. Solicitado em \d+ de \p{L}+\.$/u;
+/** O código da resposta da API nos testes, com o status solicitado (no sucesso e no detalhe). */
+const VIDEO_CODE = /^Código do resgate: UP-2001\. Solicitado em \d+ de \p{L}+\.$/u;
 const CONFIRM = t('rewards.confirm.action');
 
 const announcements = () =>
@@ -159,7 +166,11 @@ function mockApi({
   get.mockImplementation(async (url: string) => {
     if (url === '/rewards') return { data: rewards() } as never;
     if (url === '/me/wallet') {
-      return { data: { balance, xp: 12_480, seasonPoints: 4_120 } } as never;
+      // Gravada agora: a recusa antiga das fixtures (a videochamada) não faz
+      // a carteira buscar de novo (syncRefunds).
+      return {
+        data: { balance, xp: 12_480, seasonPoints: 4_120, updatedAt: new Date().toISOString() },
+      } as never;
     }
     throw new Error(`rota sem resposta no teste: ${url}`);
   });
@@ -172,6 +183,7 @@ const videoResult: RedeemResult = {
   balance: 3_980,
   instructions: 'A equipe fala com você pelo e-mail da sua conta.',
   redeemedAt: new Date(2026, 8, 29, 20, 0).toISOString(),
+  status: 'requested',
 };
 
 /** A loja da API com a videochamada já resgatada (o que o servidor devolve depois). */
@@ -180,13 +192,20 @@ const withVideoRedeemed = (): RewardsResponse => ({
     reward.id === 'videochamada'
       ? {
           ...reward,
+          limitReached: true,
           redemptions: [
             {
-              id: videoResult.redemptionId,
+              id: videoResult.code,
               code: videoResult.code,
+              status: 'requested',
+              statusAt: videoResult.redeemedAt,
+              points: 8_500,
+              refundedPoints: 0,
               instructions: videoResult.instructions,
+              refusalReason: null,
               redeemedAt: videoResult.redeemedAt,
             },
+            ...reward.redemptions,
           ],
         }
       : reward,
@@ -289,7 +308,44 @@ describe('loja de recompensas (1h)', () => {
       .map((node) => node.props.accessibilityLabel as string | undefined)
       .filter((name) => name?.endsWith('.'));
     expect(cards[0]).toMatch(featuredLabel('10.000 pontos'));
-    expect(cards.slice(1)).toEqual([TICKETS, VIDEO, SHIRT, SCREEN]);
+    // A grade do protótipo, com a passagem de som esgotada no fim.
+    expect(cards.slice(1)).toEqual([TICKETS, VIDEO, SHIRT, SCREEN, SOUNDCHECK]);
+    // O aviso da regra 5.3 da Apple no pé; sem o endereço do regulamento, sem o link.
+    expect(screen.getByText(t('rewards.legal.notice'))).toBeTruthy();
+    expect(screen.queryByText(t('rewards.legal.rules'))).toBeNull();
+  });
+
+  it('o detalhe dos ingressos mostra o pedido entregue e o botão ligado (1 de 2)', async () => {
+    renderRouter(appTree, { initialUrl: '/recompensa/ingressos' });
+
+    expect(await screen.findByRole('header', { name: 'Par de ingressos' })).toBeTruthy();
+    expect(screen.getByRole('header', { name: t('rewards.redeemed.title') })).toBeTruthy();
+    expect(
+      screen.getByLabelText(/^Código do resgate: UP-4KD9TM\. Entregue em \d+ de \p{L}+\.$/u),
+    ).toBeTruthy();
+    expect(screen.getByText(/^Entregue em \d+ \p{L}+$/u)).toBeTruthy();
+    // No entregue, só o código e o status: sem as instruções.
+    expect(screen.queryByText(/bilheteria/)).toBeNull();
+    expect(screen.getByRole('button', { name: 'Resgatar por 6.000 pontos' })).toBeEnabled();
+  });
+
+  it('o recusado mostra o motivo e os pontos que voltaram; o aprovado, as instruções', async () => {
+    renderRouter(appTree, { initialUrl: '/recompensa/videochamada' });
+    expect(await screen.findByText(/^Recusado em /)).toBeTruthy();
+    expect(
+      screen.getByText(
+        'Motivo: A agenda de videochamadas deste mês fechou antes do seu pedido.\nOs 8.500 pontos voltaram para o seu saldo.',
+      ),
+    ).toBeTruthy();
+    // O recusado não conta no limite: dá para resgatar de novo.
+    expect(screen.getByRole('button', { name: REDEEM_VIDEO })).toBeEnabled();
+  });
+
+  it('a esgotada abre só para leitura, com o pedido aprovado e as instruções', async () => {
+    renderRouter(appTree, { initialUrl: '/recompensa/passagem-de-som' });
+    expect(await screen.findByText(/^Aprovado em /)).toBeTruthy();
+    expect(screen.getByText(/entrada do palco às 17 h/)).toBeTruthy();
+    expect(screen.getByRole('button', { name: t('rewards.soldOut') })).toBeDisabled();
   });
 
   it('o voltar vem na linha do título e volta para o Ranking', async () => {
@@ -338,15 +394,23 @@ describe('loja de recompensas (1h)', () => {
     expect(screen.getByText('Resgate confirmado')).toBeTruthy();
     await waitFor(() => expect(focused()).toContain(done.props.accessibilityLabel));
     expect(announcements()).toEqual([]);
-    expect(screen.getByLabelText('Código do resgate: UP-1001')).toBeTruthy();
+    const code = screen.getByLabelText(NEW_CODE);
+    const codeText = NEW_CODE.exec(code.props.accessibilityLabel as string)![1]!;
+    // O status do pedido novo, no card do código: "Solicitado em 7 out".
+    expect(
+      screen.getByText(/^Solicitado em \d+ \p{L}+$/u, { includeHiddenElements: true }),
+    ).toBeTruthy();
     expect(screen.getByText(/e-mail da sua conta em até 5 dias úteis/)).toBeTruthy();
+    expect(screen.getByText(t('rewards.success.tracking'))).toBeTruthy();
     expect(haptics.trigger).toHaveBeenCalledWith('redeem');
     expect(haptics.trigger).not.toHaveBeenCalledWith('insufficientPoints');
     // Só o saldo cai: o nível e a temporada ficam.
     expect(fixtureWallet.get()).toEqual({ balance: 3_980, xp: 12_480, seasonPoints: 4_120 });
-    // A carteira e o resto do perfil (1e) e a loja (estoque) buscam de novo.
-    expect(invalidate).toHaveBeenCalledWith({ queryKey: profileKeys.all });
+    // A carteira (com o progresso e o extrato) e a loja buscam de novo; o resto
+    // do perfil (conquistas, convite, @) não.
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: profileKeys.wallet() });
     expect(invalidate).toHaveBeenCalledWith({ queryKey: rewardKeys.all });
+    expect(invalidate).not.toHaveBeenCalledWith({ queryKey: profileKeys.all });
 
     fireEvent.press(screen.getByRole('button', { name: t('rewards.success.done') }));
     await waitFor(() => expect(view.getPathname()).toBe('/recompensas'));
@@ -355,16 +419,24 @@ describe('loja de recompensas (1h)', () => {
         name: 'Par de ingressos. Pra Encher e Derramar. Faltam 2.020 pontos.',
       }),
     ).toBeTruthy();
+    // No limite (1 por fã), o card diz "Resgatado" e vai para o fim da grade.
     const video = screen.getByRole('button', {
-      name: 'Videochamada. 5 min com o artista. Faltam 4.520 pontos.',
+      name: 'Videochamada. 5 min com o artista. Limite de resgates atingido.',
     });
     expect(screen.getByLabelText('Seu saldo: 3.980 pontos')).toBeTruthy();
 
-    // Reaberta, a recompensa mostra o código e as instruções de novo.
+    // Reaberta, a recompensa mostra o código, o status solicitado e as instruções de novo.
     fireEvent.press(video);
-    expect(await screen.findByRole('header', { name: 'Você já resgatou' })).toBeTruthy();
-    expect(screen.getByLabelText(/^Código do resgate: UP-1001\. Resgatado em .+\.$/)).toBeTruthy();
+    expect(await screen.findByRole('header', { name: t('rewards.redeemed.title') })).toBeTruthy();
+    expect(
+      screen.getByLabelText(
+        new RegExp(`^Código do resgate: ${codeText}\\. Solicitado em \\d+ de \\p{L}+\\.$`, 'u'),
+      ),
+    ).toBeTruthy();
     expect(screen.getByText(/e-mail da sua conta em até 5 dias úteis/)).toBeTruthy();
+    expect(
+      screen.getByRole('button', { name: t('rewards.details.limitReachedOne') }),
+    ).toBeDisabled();
   });
 
   it('resgatar o meet & greet baixa as vagas do destaque: "Só 19 vagas"', async () => {
@@ -377,12 +449,19 @@ describe('loja de recompensas (1h)', () => {
 
     fireEvent.press(screen.getByRole('button', { name: t('rewards.success.done') }));
     await waitFor(() => expect(view.getPathname()).toBe('/recompensas'));
+    // Uma vaga a menos, e o fã no limite (1 por fã): o selo diz "Resgatado".
+    const featured = await screen.findByRole('button', {
+      name: /^Meet & greet com o Netto\. Só 19 vagas\. .* Limite de resgates atingido\.$/u,
+    });
+    expect(screen.getByText(t('rewards.redeemedShort'))).toBeTruthy();
+
+    // De volta ao detalhe: o pedido solicitado e o "Você já resgatou".
+    fireEvent.press(featured);
+    expect(await screen.findByText(/^Solicitado em /)).toBeTruthy();
+    expect(screen.getByText(/entrada do camarim/)).toBeTruthy();
     expect(
-      await screen.findByRole('button', {
-        name: /^Meet & greet com o Netto\. Só 19 vagas\. .* Faltam 7\.520 pontos\.$/,
-      }),
-    ).toBeTruthy();
-    expect(screen.getByText('Só 19 vagas')).toBeTruthy();
+      screen.getByRole('button', { name: t('rewards.details.limitReachedOne') }),
+    ).toBeDisabled();
   });
 
   it('sem saldo: o botão diz quanto falta, e "Ver missões" abre as missões por cima da loja', async () => {
@@ -479,7 +558,7 @@ describe('resgate pela API', () => {
 
     fireEvent.press(screen.getByRole('button', { name: CONFIRM }));
     expect(await screen.findByRole('header', { name: 'Resgate confirmado' })).toBeTruthy();
-    expect(screen.getByLabelText('Código do resgate: UP-2001')).toBeTruthy();
+    expect(screen.getByLabelText(VIDEO_CODE)).toBeTruthy();
 
     expect(request).toHaveBeenCalledTimes(2);
     const [first, second] = request.mock.calls.map(([config]) => config);
@@ -487,8 +566,10 @@ describe('resgate pela API', () => {
       method: 'POST',
       url: '/rewards/videochamada/redeem',
       headers: { 'Idempotency-Key': expect.any(String) },
+      data: { expectedCost: 8_500 },
     });
     expect(second?.headers).toEqual(first?.headers);
+    expect(second?.data).toEqual(first?.data);
   });
 
   it('falha de rede, fechar a sheet e reabrir: a nova tentativa leva a mesma chave', async () => {
@@ -510,10 +591,100 @@ describe('resgate pela API', () => {
     fireEvent.press(await screen.findByRole('button', { name: VIDEO }));
     fireEvent.press(await screen.findByRole('button', { name: REDEEM_VIDEO }));
     fireEvent.press(await screen.findByRole('button', { name: CONFIRM }));
-    expect(await screen.findByLabelText('Código do resgate: UP-2001')).toBeTruthy();
+    expect(await screen.findByLabelText(VIDEO_CODE)).toBeTruthy();
 
     const [first, second] = request.mock.calls.map(([config]) => config);
     expect(second?.headers).toEqual(first?.headers);
+  });
+
+  it('falha incerta que gravou: a loja mostra o pedido, o detalhe avisa, e o resgate seguinte é pedido novo', async () => {
+    // A videochamada sem limite e um saldo que cobre dois pedidos.
+    let recorded = false;
+    mockApi({
+      balance: 30_000,
+      rewards: () => {
+        const response = recorded ? withVideoRedeemed() : buildRewardsFixture(new Date());
+        return {
+          rewards: response.rewards.map((reward) =>
+            reward.id === 'videochamada'
+              ? { ...reward, perFanLimit: null, limitReached: false }
+              : reward,
+          ),
+        };
+      },
+    });
+    request
+      .mockImplementationOnce(async () => {
+        // O servidor grava, e a resposta se perde no caminho.
+        recorded = true;
+        throw new ApiError('network', 'sem rede');
+      })
+      .mockResolvedValueOnce({ data: { ...videoResult, code: 'UP-2002' } } as never);
+    await openVideoConfirmation();
+
+    fireEvent.press(screen.getByRole('button', { name: CONFIRM }));
+    // A loja que busca de novo já traz o pedido: o detalhe volta com o aviso e o pedido à vista.
+    const notice = await screen.findByLabelText(t('rewards.errors.alreadyRedeemed'));
+    await waitFor(() => expect(focused()).toContain(notice.props.accessibilityLabel));
+    expect(screen.getByLabelText(VIDEO_CODE)).toBeTruthy();
+    expect(screen.queryByRole('button', { name: CONFIRM })).toBeNull();
+
+    // O fã escolhe um resgate novo com o pedido à vista: chave nova, pedido novo.
+    fireEvent.press(screen.getByRole('button', { name: REDEEM_VIDEO }));
+    fireEvent.press(await screen.findByRole('button', { name: CONFIRM }));
+    expect(
+      await screen.findByLabelText(/^Código do resgate: UP-2002\. Solicitado em /u),
+    ).toBeTruthy();
+    const [first, second] = request.mock.calls.map(([config]) => config);
+    expect(second?.headers).not.toEqual(first?.headers);
+  });
+
+  it('falha incerta que gravou com a sheet fechada: reaberto, o detalhe já avisa, e o resgate seguinte é pedido novo', async () => {
+    let recorded = false;
+    mockApi({
+      balance: 30_000,
+      rewards: () => {
+        const response = recorded ? withVideoRedeemed() : buildRewardsFixture(new Date());
+        return {
+          rewards: response.rewards.map((reward) =>
+            reward.id === 'videochamada'
+              ? { ...reward, perFanLimit: null, limitReached: false }
+              : reward,
+          ),
+        };
+      },
+    });
+    let lose: (error: Error) => void = () => undefined;
+    request
+      .mockReturnValueOnce(
+        new Promise((_resolve, reject) => {
+          lose = reject;
+        }) as never,
+      )
+      .mockResolvedValueOnce({ data: { ...videoResult, code: 'UP-2002' } } as never);
+    const view = await openVideoConfirmation();
+
+    fireEvent.press(screen.getByRole('button', { name: CONFIRM }));
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: t('common.close') })).toBeDisabled(),
+    );
+    // O arrasto da sheet no Android fecha no meio; o servidor grava, e a resposta se perde.
+    act(() => testRouter.back());
+    await waitFor(() => expect(view.getPathname()).toBe('/recompensas'));
+    recorded = true;
+    await act(async () => lose(new ApiError('network', 'sem rede')));
+
+    fireEvent.press(await screen.findByRole('button', { name: VIDEO }));
+    expect(await screen.findByLabelText(t('rewards.errors.alreadyRedeemed'))).toBeTruthy();
+    expect(screen.getByLabelText(VIDEO_CODE)).toBeTruthy();
+
+    fireEvent.press(screen.getByRole('button', { name: REDEEM_VIDEO }));
+    fireEvent.press(await screen.findByRole('button', { name: CONFIRM }));
+    expect(
+      await screen.findByLabelText(/^Código do resgate: UP-2002\. Solicitado em /u),
+    ).toBeTruthy();
+    const [first, second] = request.mock.calls.map(([config]) => config);
+    expect(second?.headers).not.toEqual(first?.headers);
   });
 
   it('dois toques no mesmo quadro na confirmação fazem um resgate só', async () => {
@@ -526,7 +697,7 @@ describe('resgate pela API', () => {
       fireEvent.press(confirmButton);
       fireEvent.press(confirmButton);
     });
-    expect(await screen.findByLabelText('Código do resgate: UP-2001')).toBeTruthy();
+    expect(await screen.findByLabelText(VIDEO_CODE)).toBeTruthy();
     expect(request).toHaveBeenCalledTimes(1);
   });
 
@@ -580,11 +751,11 @@ describe('resgate pela API', () => {
 
     fireEvent.press(
       await screen.findByRole('button', {
-        name: 'Videochamada. 5 min com o artista. Faltam 4.520 pontos.',
+        name: 'Videochamada. 5 min com o artista. Limite de resgates atingido.',
       }),
     );
-    expect(await screen.findByRole('header', { name: 'Você já resgatou' })).toBeTruthy();
-    expect(screen.getByLabelText(/^Código do resgate: UP-2001\. Resgatado em .+\.$/)).toBeTruthy();
+    expect(await screen.findByRole('header', { name: t('rewards.redeemed.title') })).toBeTruthy();
+    expect(screen.getByLabelText(VIDEO_CODE)).toBeTruthy();
     expect(screen.getByText(videoResult.instructions)).toBeTruthy();
   });
 
@@ -657,6 +828,123 @@ describe('resgate pela API', () => {
     expect(await screen.findByLabelText(t('rewards.errors.soldOut'))).toBeTruthy();
     expect(haptics.trigger).toHaveBeenCalledWith('warning');
     expect(await screen.findByRole('button', { name: t('rewards.soldOut') })).toBeDisabled();
+  });
+
+  it('a confirmação mostra e manda o custo congelado; a loja com outro custo volta ao detalhe com o aviso', async () => {
+    let cost = 8_500;
+    mockApi({
+      rewards: () => {
+        const response = buildRewardsFixture(new Date());
+        return {
+          rewards: response.rewards.map((reward) =>
+            reward.id === 'videochamada' ? { ...reward, cost } : reward,
+          ),
+        };
+      },
+    });
+    await openVideoConfirmation();
+    expect(screen.getByText('Você troca 8.500 pontos do seu saldo por Videochamada.')).toBeTruthy();
+
+    // A equipe muda o custo, e a loja busca de novo com a confirmação aberta e nada indo.
+    cost = 9_000;
+    await act(() => client.invalidateQueries({ queryKey: rewardKeys.all }));
+
+    const notice = await screen.findByLabelText(t('rewards.errors.changed'));
+    await waitFor(() => expect(focused()).toContain(notice.props.accessibilityLabel));
+    expect(screen.getByRole('button', { name: 'Resgatar por 9.000 pontos' })).toBeEnabled();
+    expect(screen.queryByRole('button', { name: CONFIRM })).toBeNull();
+
+    // A nova confirmação congela o custo novo e manda ele.
+    request.mockResolvedValueOnce({ data: { ...videoResult, balance: 3_480 } } as never);
+    fireEvent.press(screen.getByRole('button', { name: 'Resgatar por 9.000 pontos' }));
+    expect(
+      await screen.findByText('Você troca 9.000 pontos do seu saldo por Videochamada.'),
+    ).toBeTruthy();
+    fireEvent.press(screen.getByRole('button', { name: CONFIRM }));
+    await screen.findByRole('header', { name: /^Resgate confirmado/ });
+    expect(request.mock.calls[0]![0]).toMatchObject({ data: { expectedCost: 9_000 } });
+  });
+
+  it('com o resgate indo, a loja com outro custo não tira o fã da confirmação', async () => {
+    let cost = 8_500;
+    mockApi({
+      rewards: () => ({
+        rewards: buildRewardsFixture(new Date()).rewards.map((reward) =>
+          reward.id === 'videochamada' ? { ...reward, cost } : reward,
+        ),
+      }),
+    });
+    const answer = deferred<{ data: RedeemResult }>();
+    request.mockReturnValueOnce(answer.promise as never);
+    await openVideoConfirmation();
+
+    fireEvent.press(screen.getByRole('button', { name: CONFIRM }));
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: t('common.close') })).toBeDisabled(),
+    );
+    cost = 9_000;
+    await act(() => client.invalidateQueries({ queryKey: rewardKeys.all }));
+    expect(screen.getByRole('header', { name: 'Confirmar resgate?' })).toBeTruthy();
+    expect(screen.queryByLabelText(t('rewards.errors.changed'))).toBeNull();
+
+    await act(async () => answer.resolve({ data: videoResult }));
+    expect(await screen.findByRole('header', { name: /^Resgate confirmado/ })).toBeTruthy();
+    expect(request.mock.calls[0]![0]).toMatchObject({ data: { expectedCost: 8_500 } });
+  });
+
+  it('o limite atingido no servidor: avisa, busca a loja e o detalhe diz "Você já resgatou"', async () => {
+    let reached = false;
+    mockApi({
+      rewards: () => ({
+        rewards: buildRewardsFixture(new Date()).rewards.map((reward) =>
+          reward.id === 'videochamada' && reached ? { ...reward, limitReached: true } : reward,
+        ),
+      }),
+    });
+    request.mockImplementationOnce(async () => {
+      reached = true;
+      throw new ApiError('validation', 'limite', 409, REDEEM_ERROR_CODES.limitReached);
+    });
+    await openVideoConfirmation();
+
+    fireEvent.press(screen.getByRole('button', { name: CONFIRM }));
+    expect(await screen.findByLabelText(t('rewards.errors.limitReached'))).toBeTruthy();
+    expect(haptics.trigger).toHaveBeenCalledWith('warning');
+    expect(
+      await screen.findByRole('button', { name: t('rewards.details.limitReachedOne') }),
+    ).toBeDisabled();
+  });
+
+  it('o teto do dia só avisa, com o toque de erro; a próxima tentativa leva chave nova', async () => {
+    mockApi();
+    request
+      .mockRejectedValueOnce(new ApiError('unknown', 'teto', 429, REDEEM_ERROR_CODES.dailyLimit))
+      .mockResolvedValueOnce({ data: videoResult } as never);
+    await openVideoConfirmation();
+
+    fireEvent.press(screen.getByRole('button', { name: CONFIRM }));
+    expect(await screen.findByLabelText(t('rewards.errors.dailyLimit'))).toBeTruthy();
+    expect(haptics.trigger).toHaveBeenCalledWith('error');
+    fireEvent.press(await screen.findByRole('button', { name: REDEEM_VIDEO }));
+    fireEvent.press(await screen.findByRole('button', { name: CONFIRM }));
+    await screen.findByRole('header', { name: /^Resgate confirmado/ });
+    const [first, second] = request.mock.calls.map(([config]) => config);
+    expect(second?.headers).not.toEqual(first?.headers);
+  });
+
+  it('o 422 da chave já usada vira "seu resgate anterior já foi registrado", e a loja e a carteira buscam de novo', async () => {
+    mockApi();
+    request.mockRejectedValueOnce(
+      new ApiError('validation', 'chave', 422, REDEEM_ERROR_CODES.alreadyRedeemed),
+    );
+    await openVideoConfirmation();
+    const invalidate = jest.spyOn(client, 'invalidateQueries');
+
+    fireEvent.press(screen.getByRole('button', { name: CONFIRM }));
+    expect(await screen.findByLabelText(t('rewards.errors.alreadyRedeemed'))).toBeTruthy();
+    expect(haptics.trigger).toHaveBeenCalledWith('warning');
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: rewardKeys.all });
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: profileKeys.wallet() });
   });
 });
 

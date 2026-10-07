@@ -15,6 +15,7 @@ import { colors, spacing } from '@/theme';
 
 import { FeaturedRewardCard } from '../components/featured-reward-card';
 import { RewardCard } from '../components/reward-card';
+import { RewardsLegal } from '../components/rewards-legal';
 import { RewardsSkeleton } from '../components/rewards-skeleton';
 import { buildRewardGrid, rewardAvailability, type RewardRow } from '../describe-reward';
 import { useRewardsRefresh } from '../hooks/use-rewards-refresh';
@@ -97,7 +98,9 @@ function ListPlaceholder({
  * não cai), o destaque e a grade "Ao seu alcance", do menor custo para o
  * maior, com o que falta em cada uma que o saldo não cobre. Tocar abre o
  * detalhe do resgate numa sheet. Recompensas, custos e estoque vêm da API e do
- * painel; o "faltam N" é só para mostrar, quem decide é o servidor.
+ * painel; o "faltam N" é só para mostrar, quem decide é o servidor. No pé, o
+ * aviso da regra 5.3 da Apple e o link do regulamento, quando a loja manda o
+ * endereço (bloco 10).
  */
 export function RewardsScreen() {
   const bottomInset = useTabBarInset();
@@ -194,14 +197,19 @@ export function RewardsScreen() {
           />
         }
         ListFooterComponent={
-          footerError ? (
-            <EmptyState
-              tone="error"
-              message={footerError}
-              onAction={() => void retry()}
-              actionLoading={query.isFetching || wallet.isFetching}
-            />
-          ) : null
+          listState === 'loading' ? null : (
+            <View>
+              {footerError ? (
+                <EmptyState
+                  tone="error"
+                  message={footerError}
+                  onAction={() => void retry()}
+                  actionLoading={query.isFetching || wallet.isFetching}
+                />
+              ) : null}
+              <RewardsLegal rulesUrl={query.data?.rulesUrl ?? null} style={styles.legal} />
+            </View>
+          )
         }
         refreshControl={
           <RefreshControl
@@ -233,5 +241,9 @@ const styles = StyleSheet.create({
   },
   gap: {
     height: spacing.gridGap,
+  },
+  legal: {
+    marginTop: spacing.blockGap,
+    paddingHorizontal: spacing.lg,
   },
 });

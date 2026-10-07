@@ -90,7 +90,7 @@ describe('carteira nas fixtures (builds de hoje)', () => {
   });
 
   it('o resgate desconta só o saldo', () => {
-    expect(rewardsFixture.redeem('videochamada', 'resgate-1', NOW).balance).toBe(3_980);
+    expect(rewardsFixture.redeem('videochamada', 'resgate-1', 8_500, NOW).balance).toBe(3_980);
   });
 });
 
@@ -129,11 +129,13 @@ describe('carteira na API (emuladores no bloco 1)', () => {
     expect(fixtureWallet.get()).toEqual(INITIAL);
   });
 
+  // Desde o bloco 10, a loja anda com a carteira (as duas no SERVER_DOMAINS): nenhum
+  // caminho do app chega aqui. Fica como guarda, se um dia as duas se separarem.
   it('o resgate de exemplo recusa com points_unavailable, sem baixar o estoque', () => {
     const before = buildRewardsFixture(NOW).rewards.find((item) => item.id === 'ingressos');
-    expect(() => rewardsFixture.redeem('ingressos', 'resgate-1', NOW)).toThrow(ApiError);
+    expect(() => rewardsFixture.redeem('ingressos', 'resgate-1', 6_000, NOW)).toThrow(ApiError);
     try {
-      rewardsFixture.redeem('ingressos', 'resgate-2', NOW);
+      rewardsFixture.redeem('ingressos', 'resgate-2', 6_000, NOW);
     } catch (error) {
       expect(error).toMatchObject({
         kind: 'validation',

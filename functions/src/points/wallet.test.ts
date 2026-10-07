@@ -43,6 +43,20 @@ describe('carteira e progresso', () => {
       balance: 12_480,
       xp: 12_480,
       seasonPoints: 4_120,
+      updatedAt: null,
+    });
+  });
+
+  it('o updatedAt da carteira em ISO (bloco 10, 25.2), e null sem ela', () => {
+    const at = Date.parse('2026-10-05T21:00:00.000Z');
+    expect(walletView({ ...camila, updatedAt: at }, config(), NOW).updatedAt).toBe(
+      '2026-10-05T21:00:00.000Z',
+    );
+    expect(walletView(emptyWallet(), config(), NOW)).toEqual({
+      balance: 0,
+      xp: 0,
+      seasonPoints: 0,
+      updatedAt: null,
     });
   });
 

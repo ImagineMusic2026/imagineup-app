@@ -146,7 +146,17 @@ describe('a função api no emulador', () => {
       await sleep(1_000);
     }
     expect(wallet.status).toBe(200);
-    expect(wallet.body).toEqual({ balance: 12_480, xp: 12_480, seasonPoints: 4_120 });
+    // Bloco 10 (25.2): o instante ISO da última gravação da carteira.
+    expect(wallet.body).toEqual({
+      balance: 12_480,
+      xp: 12_480,
+      seasonPoints: 4_120,
+      updatedAt: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/),
+    });
+    const stored = await db.doc(`wallets/${camila.uid}`).get();
+    expect(wallet.body.updatedAt).toBe(
+      (stored.get('updatedAt') as Timestamp).toDate().toISOString(),
+    );
     expect(wallet.headers.get('cache-control')).toBe('no-store');
 
     const progress = await http('/me/progress/', { token: camila.token });
@@ -229,6 +239,7 @@ describe('a função api no emulador', () => {
       balance: 0,
       xp: 0,
       seasonPoints: 0,
+      updatedAt: null,
     });
     expect((await http('/me/progress', { token: fan.token })).body).toEqual({
       xp: 0,

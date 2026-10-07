@@ -10,7 +10,7 @@ import { getStorage } from 'firebase-admin/storage';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { afterAll, beforeAll, beforeEach } from 'vitest';
 
-import { createApiHandler, type ApiRequest } from '../src/api';
+import { API_ROUTES, createApiHandler, type ApiRequest, type ApiRoute } from '../src/api';
 import { fanPhotoFiles } from '../src/fan-profile';
 import { EMULATOR_INVITE_KEY } from '../src/invites';
 import { dayKey, staticConfigSource, type ConfigSource } from '../src/points';
@@ -213,21 +213,25 @@ export type LocalResult = { status: number; body: Record<string, unknown> };
 /**
  * O handler da API no processo do teste, com o relógio e a configuração
  * fixos (para o corte da meia-noite, os limites e os valores injetados). As
- * rotas da foto (bloco 9) usam o bucket do emulador.
+ * rotas da foto (bloco 9) usam o bucket do emulador. `routes` acrescenta rotas
+ * só do teste (a colisão do código do resgate, bloco 10).
  */
 export function localApi(
   env: Emulators,
-  options: { now?: () => number; config?: ConfigSource } = {},
+  options: { now?: () => number; config?: ConfigSource; routes?: readonly ApiRoute[] } = {},
 ) {
   const startedAt = Date.now();
-  const handler = createApiHandler({
-    db: env.db,
-    auth: env.auth,
-    now: options.now ?? (() => startedAt),
-    config: options.config ?? staticConfigSource(),
-    inviteKey: () => EMULATOR_INVITE_KEY,
-    files: fanPhotoFiles(() => env.bucket),
-  });
+  const handler = createApiHandler(
+    {
+      db: env.db,
+      auth: env.auth,
+      now: options.now ?? (() => startedAt),
+      config: options.config ?? staticConfigSource(),
+      inviteKey: () => EMULATOR_INVITE_KEY,
+      files: fanPhotoFiles(() => env.bucket),
+    },
+    [...API_ROUTES, ...(options.routes ?? [])],
+  );
   return async (
     method: string,
     path: string,

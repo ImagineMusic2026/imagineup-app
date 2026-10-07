@@ -43,6 +43,7 @@ export const SERVER_DOMAINS: ReadonlySet<DataDomain> = new Set<DataDomain>([
   'achievements',
   'ranking',
   'profile',
+  'rewards',
 ]);
 
 /**

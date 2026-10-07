@@ -12,7 +12,8 @@ rules_version = '2';
 // A equipe do painel admin entra pelo mesmo Authentication dos fãs, mas estar
 // logado nunca basta: só um staff/{uid} com status 'active' (gravado pelo
 // servidor, no aceite do convite) dá acesso, e o papel e as seções saem dele.
-// O storage.rules repete canEditSection('artists') para o envio das fotos:
+// O storage.rules repete canEditSection('artists') para o envio das fotos e,
+// desde o bloco 10, canEditSection('rewards') para a foto das recompensas:
 // mudou a regra da equipe aqui, mude lá também.
 //
 // Mudou algo aqui? Rode `npm run test:rules` antes de publicar.
@@ -153,7 +154,8 @@ service cloud.firestore {
       allow update: if isSelf(uid)
         && validProfileUpdate(request.resource.data.diff(resource.data).affectedKeys());
 
-      // Excluir a conta apaga perfil, pontos e resgates juntos: é o servidor.
+      // Excluir a conta apaga o perfil e os pontos e cancela os resgates
+      // abertos: é o servidor.
       allow delete: if false;
 
       // Vínculo do fã com as centrais: só o servidor grava (API). O fã não lê
@@ -300,18 +302,19 @@ service cloud.firestore {
       }
     }
 
-    // Contadores agregados do painel (Visão geral, Crescimento e, desde o
-    // bloco 7, as conclusões por missão e por dia da seção Missões), lidos
-    // direto com getDocs, nunca com escuta em tempo real
+    // Contadores agregados do painel (Visão geral, Crescimento, desde o
+    // bloco 7 as conclusões por missão e por dia da seção Missões e, desde o
+    // bloco 10, os pedidos por recompensa da seção Recompensas e resgates),
+    // lidos direto com getDocs, nunca com escuta em tempo real
     // (docs/arquitetura-api.md).
     match /statsDaily/{day} {
       allow read: if canSeeSection('overview') || canSeeSection('growth')
-        || canSeeSection('missions');
+        || canSeeSection('missions') || canSeeSection('rewards');
       allow write: if false;
 
       match /statsShards/{shard} {
         allow read: if canSeeSection('overview') || canSeeSection('growth')
-          || canSeeSection('missions');
+          || canSeeSection('missions') || canSeeSection('rewards');
         allow write: if false;
       }
     }
@@ -393,9 +396,11 @@ service cloud.firestore {
       }
     }
 
-    // Agenda (bloco 6): os shows, pelas callables, com a seção artists.
+    // Agenda (bloco 6): os shows, pelas callables, com a seção artists. A
+    // seção rewards também lê (bloco 10): escolhe o show da recompensa e
+    // mostra o nome dele. O show não guarda dado que ela não deva ver.
     match /events/{eventId} {
-      allow read: if canSeeContent();
+      allow read: if canSeeContent() || canSeeSection('rewards');
       allow write: if false;
     }
 
@@ -435,6 +440,22 @@ service cloud.firestore {
     // Andamento da virada e do retrato semanal: só o servidor.
     match /rankingJobs/{jobId} {
       allow read, write: if false;
+    }
+
+    // Loja (bloco 10): o catálogo de recompensas e os pedidos de resgate. Só
+    // o servidor grava (callables do painel, API e exclusão de conta). O fã
+    // não lê nada disso direto, nem os próprios pedidos: chega pela API
+    // (GET /rewards). A seção rewards lê (Recompensas e resgates). O pedido
+    // guarda a cópia do nome e do @ do fã; o e-mail não mora aqui (callable
+    // getRedemptionContacts, docs/arquitetura-api.md, 25.8).
+    match /rewards/{rewardId} {
+      allow read: if canSeeSection('rewards');
+      allow write: if false;
+    }
+
+    match /redemptions/{redemptionId} {
+      allow read: if canSeeSection('rewards');
+      allow write: if false;
     }
 
     match /{document=**} {

@@ -5,6 +5,7 @@ import { leaveAllCentrals } from './centrals/service';
 import type { FanPhotoFiles } from './fan-profile/files';
 import { detachReferrals, removeInviteData } from './invites/service';
 import { removeFanEngagement } from './posts/service';
+import { cancelFanRedemptions } from './rewards/service';
 import { createProfile, deleteUserData } from './store';
 
 // A ordem da exclusão de conta é o que impede o fanCount 1 acima para sempre
@@ -15,11 +16,14 @@ import { createProfile, deleteUserData } from './store';
 // convite logo depois, os vínculos e o engajamento do mural (21.12) antes do
 // recursiveDelete, e os convidados
 // do fã são desligados depois. A linha do fã no arquivo das temporadas (bloco
-// 8, 23.13) sai depois da carteira. Nos emuladores, as entradas terminam antes da
+// 8, 23.13) sai depois da carteira. Os pedidos da loja (bloco 10, 25.11) são
+// cancelados e anonimizados depois do engajamento do mural e antes do
+// recursiveDelete. Nos emuladores, as entradas terminam antes da
 // exclusão, e a ordem trocada passaria; aqui um Firestore falso anota cada
 // passo.
 vi.mock('./centrals/service', () => ({ leaveAllCentrals: vi.fn() }));
 vi.mock('./posts/service', () => ({ removeFanEngagement: vi.fn() }));
+vi.mock('./rewards/service', () => ({ cancelFanRedemptions: vi.fn() }));
 vi.mock('./invites/service', () => ({
   removeInviteData: vi.fn(),
   detachReferrals: vi.fn(),
@@ -85,6 +89,7 @@ describe('exclusão de conta (deleteUserData)', () => {
     vi.mocked(removeInviteData).mockReset();
     vi.mocked(detachReferrals).mockReset();
     vi.mocked(removeFanEngagement).mockReset();
+    vi.mocked(cancelFanRedemptions).mockReset();
   });
 
   it('o perfil sai sozinho primeiro, as reservas e o convite logo depois e os convidados depois do perfil', async () => {
@@ -104,6 +109,10 @@ describe('exclusão de conta (deleteUserData)', () => {
       steps.push(`removeFanEngagement ${uid}`);
       return { likes: 0, comments: 0, reports: 0, blocks: 0 };
     });
+    vi.mocked(cancelFanRedemptions).mockImplementation(async (_db, uid) => {
+      steps.push(`cancelFanRedemptions ${uid}`);
+      return { canceled: 0, anonymized: 0 };
+    });
 
     await deleteUserData(fakeDb(steps), UID);
 
@@ -113,6 +122,7 @@ describe('exclusão de conta (deleteUserData)', () => {
       `removeInviteData ${UID}`,
       `leaveAllCentrals ${UID}`,
       `removeFanEngagement ${UID}`,
+      `cancelFanRedemptions ${UID}`,
       `recursiveDelete users/${UID}`,
       `delete referrals/${UID}`,
       `detachReferrals ${UID}`,
@@ -200,6 +210,28 @@ describe('exclusão de conta (deleteUserData)', () => {
       steps.indexOf('removeFanEngagement terminou'),
     );
     expect(steps.indexOf('removeFanEngagement terminou')).toBeLessThan(
+      steps.indexOf(`recursiveDelete users/${UID}`),
+    );
+  });
+
+  it('os pedidos da loja são cancelados depois do engajamento e antes do recursiveDelete (25.11)', async () => {
+    const steps: string[] = [];
+    vi.mocked(removeFanEngagement).mockImplementation(async () => {
+      steps.push('removeFanEngagement');
+      return { likes: 0, comments: 0, reports: 0, blocks: 0 };
+    });
+    vi.mocked(cancelFanRedemptions).mockImplementation(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      steps.push('cancelFanRedemptions terminou');
+      return { canceled: 1, anonymized: 2 };
+    });
+
+    await deleteUserData(fakeDb(steps), UID);
+
+    expect(steps.indexOf('removeFanEngagement')).toBeLessThan(
+      steps.indexOf('cancelFanRedemptions terminou'),
+    );
+    expect(steps.indexOf('cancelFanRedemptions terminou')).toBeLessThan(
       steps.indexOf(`recursiveDelete users/${UID}`),
     );
   });

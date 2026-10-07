@@ -4,12 +4,16 @@ import { REDEEM_ERROR_CODES } from '../consts';
 import {
   buildRewardGrid,
   featuredRewardLabel,
+  isOpenRedemption,
   isSoldOut,
+  limitReachedText,
   missingSpoken,
   missingText,
   outcomeUnknown,
   priceText,
   redeemFailure,
+  redemptionStatusSpoken,
+  redemptionStatusText,
   rewardAvailability,
   rewardCardLabel,
   rewardMeta,
@@ -17,7 +21,24 @@ import {
   scarcityText,
 } from '../describe-reward';
 import { buildRewardsFixture } from '../fixtures';
-import type { Reward } from '../types';
+import type { Reward, RewardRedemption } from '../types';
+
+// As fixtures da loja leem os shows da agenda de exemplo, que chegam ao
+// domínio das missões (com o axios e o Firebase): o build ESM do Firebase não
+// roda no Jest.
+jest.mock('firebase/app', () => ({ FirebaseError: class FirebaseError extends Error {} }));
+jest.mock('firebase/auth', () => ({}));
+jest.mock('firebase/firestore', () => ({}));
+jest.mock('@/firebase', () => ({
+  getFirebaseAuth: () => ({}),
+  getDb: () => ({}),
+  isFirebaseConfigured: true,
+}));
+jest.mock('@/config/env', () => ({
+  firebaseEnv: null,
+  apiUrl: undefined,
+  firebaseEmulatorHost: undefined,
+}));
 
 // Terça, 29 de setembro de 2026, 20 h: o São João de Irará cai em 21 de outubro.
 const NOW = new Date(2026, 8, 29, 20, 0);
@@ -51,6 +72,47 @@ describe('o que o saldo cobre', () => {
     expect(rewardAvailability(noStock, null)).toEqual({ state: 'soldOut' });
     expect(isSoldOut(noStock)).toBe(true);
     expect(isSoldOut(MEET)).toBe(false);
+  });
+
+  it('o limite do fã vem depois do esgotado e antes do saldo (bloco 10)', () => {
+    const reached: Reward = { ...TICKETS, limitReached: true };
+    expect(rewardAvailability(reached, 50_000)).toEqual({ state: 'limitReached' });
+    expect(rewardAvailability(reached, 0)).toEqual({ state: 'limitReached' });
+    expect(rewardAvailability(reached, null)).toEqual({ state: 'limitReached' });
+    expect(rewardAvailability({ ...reached, status: 'soldOut' }, 50_000)).toEqual({
+      state: 'soldOut',
+    });
+  });
+
+  it('o botão do limite: "Você já resgatou" com limite 1; "Limite de N resgates atingido" com mais', () => {
+    expect(limitReachedText({ ...TICKETS, perFanLimit: 1 })).toBe('Você já resgatou');
+    expect(limitReachedText({ ...TICKETS, perFanLimit: 2 })).toBe('Limite de 2 resgates atingido');
+    expect(limitReachedText({ ...TICKETS, perFanLimit: null })).toBe('Você já resgatou');
+  });
+});
+
+describe('status do pedido (bloco 10)', () => {
+  const redemption = (status: RewardRedemption['status']): RewardRedemption => ({
+    id: 'UP-4KD9TM',
+    code: 'UP-4KD9TM',
+    status,
+    statusAt: new Date(2026, 9, 2, 18, 0).toISOString(),
+    points: 6_000,
+    refundedPoints: 0,
+    instructions: 'Retire na bilheteria.',
+    refusalReason: null,
+    redeemedAt: new Date(2026, 8, 30, 18, 0).toISOString(),
+  });
+
+  it.each([
+    ['requested', 'Solicitado em 2 out', 'Solicitado em 2 de outubro', true],
+    ['approved', 'Aprovado em 2 out', 'Aprovado em 2 de outubro', true],
+    ['delivered', 'Entregue em 2 out', 'Entregue em 2 de outubro', false],
+    ['refused', 'Recusado em 2 out', 'Recusado em 2 de outubro', false],
+  ] as const)('%s: "%s"', (status, text, spoken, open) => {
+    expect(redemptionStatusText(redemption(status))).toBe(text);
+    expect(redemptionStatusSpoken(redemption(status))).toBe(spoken);
+    expect(isOpenRedemption(redemption(status))).toBe(open);
   });
 });
 
@@ -115,6 +177,12 @@ describe('rótulos para o leitor de tela', () => {
       { state: 'unknown' } as const,
       'Par de ingressos. Pra Encher e Derramar. 6.000 pontos.',
     ],
+    [
+      'no limite do fã',
+      TICKETS,
+      { state: 'limitReached' } as const,
+      'Par de ingressos. Pra Encher e Derramar. Limite de resgates atingido.',
+    ],
   ])('card %s', (_what, reward, availability, label) => {
     expect(rewardCardLabel(reward, availability)).toBe(label);
   });
@@ -142,9 +210,11 @@ describe('grade "Ao seu alcance"', () => {
   it('o destaque sai da grade, que vai do menor custo para o maior, dois por linha', () => {
     const { featured, rows } = buildRewardGrid(rewards);
     expect(featured?.id).toBe('meet-netto');
+    // A passagem de som, esgotada, fica no fim, mesmo sendo a mais barata.
     expect(rows.map((row) => row.rewards.map((reward) => reward.id))).toEqual([
       ['ingressos', 'videochamada'],
       ['camisa', 'telao'],
+      ['passagem-de-som'],
     ]);
   });
 
@@ -158,15 +228,25 @@ describe('grade "Ao seu alcance"', () => {
       'videochamada',
       'camisa',
       'telao',
+      'passagem-de-som',
       'ingressos-esgotados',
     ]);
   });
 
+  it('a recompensa no limite do fã vai para o fim, junto das esgotadas', () => {
+    const reached = rewards.map((reward) =>
+      reward.id === 'ingressos' ? { ...reward, limitReached: true } : reward,
+    );
+    expect(
+      buildRewardGrid(reached).rows.flatMap((row) => row.rewards.map((reward) => reward.id)),
+    ).toEqual(['videochamada', 'camisa', 'telao', 'passagem-de-som', 'ingressos']);
+  });
+
   it('número ímpar deixa a última recompensa sozinha na linha', () => {
-    const { rows } = buildRewardGrid(rewards.filter((reward) => reward.id !== 'telao'));
+    const { rows } = buildRewardGrid(rewards);
     expect(rows.at(-1)).toEqual({
-      key: 'camisa',
-      rewards: [expect.objectContaining({ id: 'camisa' })],
+      key: 'passagem-de-som',
+      rewards: [expect.objectContaining({ id: 'passagem-de-som' })],
     });
   });
 
@@ -175,7 +255,7 @@ describe('grade "Ao seu alcance"', () => {
       rewards.map((reward) => ({ ...reward, featured: false })),
     );
     expect(featured).toBeNull();
-    expect(rows.flatMap((row) => row.rewards)).toHaveLength(5);
+    expect(rows.flatMap((row) => row.rewards)).toHaveLength(6);
   });
 
   it('loja vazia não tem destaque nem linha', () => {
@@ -204,6 +284,30 @@ describe('recusa do resgate', () => {
       'recompensa que saiu da loja',
       new ApiError('notFound', 'x', 404, REDEEM_ERROR_CODES.notFound),
       'notFound',
+      false,
+    ],
+    [
+      'limite por fã',
+      new ApiError('validation', 'x', 409, REDEEM_ERROR_CODES.limitReached),
+      'limitReached',
+      false,
+    ],
+    [
+      'custo mudado',
+      new ApiError('validation', 'x', 409, REDEEM_ERROR_CODES.changed),
+      'changed',
+      false,
+    ],
+    [
+      'teto do dia (429)',
+      new ApiError('unknown', 'x', 429, REDEEM_ERROR_CODES.dailyLimit),
+      'dailyLimit',
+      false,
+    ],
+    [
+      'chave já usada com outro corpo (422)',
+      new ApiError('validation', 'x', 422, REDEEM_ERROR_CODES.alreadyRedeemed),
+      'alreadyRedeemed',
       false,
     ],
   ])('%s', (_what, error, failure, unknown) => {

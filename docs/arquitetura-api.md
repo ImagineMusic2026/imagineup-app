@@ -1,6 +1,6 @@
 # Arquitetura da API do app
 
-Nota de arquitetura do servidor do ImagineUP. Ela diz como o app fala com as Cloud Functions, onde moram os pontos, como o ponto é lançado e como o painel lê os números. Vale para o bloco 1 (base do servidor e núcleo de pontos) e deixa a estrutura pronta para os blocos seguintes. O bloco 4 (centrais de verdade) está na seção 19, o bloco 5 (convite com atribuição e origem do fã), na seção 20, o bloco 6 (mural e agenda com conteúdo real), na seção 21, o bloco 7 (missões, níveis, conquistas e extrato), na seção 22, o bloco 8 (ranking e temporadas), na seção 23, e o bloco 9 (perfil editável), na seção 24.
+Nota de arquitetura do servidor do ImagineUP. Ela diz como o app fala com as Cloud Functions, onde moram os pontos, como o ponto é lançado e como o painel lê os números. Vale para o bloco 1 (base do servidor e núcleo de pontos) e deixa a estrutura pronta para os blocos seguintes. O bloco 4 (centrais de verdade) está na seção 19, o bloco 5 (convite com atribuição e origem do fã), na seção 20, o bloco 6 (mural e agenda com conteúdo real), na seção 21, o bloco 7 (missões, níveis, conquistas e extrato), na seção 22, o bloco 8 (ranking e temporadas), na seção 23, o bloco 9 (perfil editável), na seção 24, e o bloco 10 (loja e resgate), na seção 25.
 
 Origem: decisão do dono em 05/10/2026 (API HTTP numa função `onRequest`, pontos calculados na transação da ação) e o levantamento de 05/10/2026 (13 blocos, 26 endpoints, perguntas técnicas em aberto).
 
@@ -26,6 +26,7 @@ Quem mexe no servidor lê esta nota antes. Mudou uma decisão daqui? Mude a nota
 16. Bloco 7 (seção 22): catálogo de missões em `config/missions`, versionado e lido pelo cache, com índice por tipo de ação, e as arquivadas em `missionArchive`; períodos do dia e da semana de São Paulo; progresso do fã na carteira, contado na transação da ação (a troca para curtido ou "Eu vou", o comentário e a entrada contam o alvo uma vez por missão e período; o link e o convite contam a pessoa pelo marcador), e a conclusão paga pelo núcleo com `mission:<id>:<período>`, no mesmo `pointsAwarded`; meta da temporada por missões concluídas ou pelos pontos da temporada, com a marca de quem a bateu; conquistas do servidor (nível, primeira vez, ranking no bloco 8) guardadas na carteira; subida de nível devolvida na resposta; tetos do dia na configuração; callables da régua, das missões, das conquistas (seção `missions`) e da temporada (seção `ranking`); extrato provisório no Perfil.
 17. Bloco 8 (seção 23): ranking por consulta ordenada com índice e posição por três `count()` na ordem da lista (pontos, chegada, id), lidas com a página numa transação só de leitura, sem materializar; ranking da central só com membros (`member` no `centralPoints`); uma temporada mostrada para todas as telas (a em andamento, a encerrada esperando a virada ou a última fechada, esta lida do arquivo); seta da semana pelo retrato gravado na carteira e no `centralPoints` toda segunda-feira; virada e retrato pela função agendada `rankingTick`, em páginas com o andamento na mesma transação, com o arquivo em `seasons/{id}/standings`, as temporadas do fã somadas pela virada (e não mais pela troca preguiçosa) e a próxima temporada promovida só no fim; Top 20 no retrato e na virada; callables `scheduleNextSeason`, `endSeason` e `closeSeasonNow`, e o `updateSeason` mais estrito; o aviso de ranking de exemplo sai do app.
 18. Bloco 9 (seção 24): a tela "Editar perfil", aberta pelos Ajustes e pelo hero da 1e; nome e cidade continuam direto no Firestore, pelas regras de hoje; o @ muda por `PUT /me/username`, com as regras do gerador, o padrão do automático (`fa` com números) só para o gerador, a troca atômica das reservas em `usernames/` e uma troca a cada 30 dias, com a disponibilidade em `GET /me/username/availability`; o @ automático não vira o do nome sozinho; a foto é escolhida, recortada e reduzida no app, enviada para `fans/{uid}/` no Storage (só o próprio fã, só JPEG de até 1 MiB, nome controlado, com o perfil existindo) e conferida e gravada por `PUT /me/photo`, com `DELETE /me/photo` para tirar, teto de 10 trocas por dia, a foto antiga apagada pelo gatilho do perfil e os envios que não viraram a foto apagados pela tarefa; as cópias do nome e da foto nos comentários são regravadas por uma fila, uma vez a cada 5 min por fã, com orçamento por dia, e no aparelho do fã as linhas "Você" leem o perfil; o ranking segue lendo o perfil e a temporada fechada segue congelada; a exclusão de conta tira o perfil antes das reservas e apaga a pasta da foto no fim e de novo 1 h depois; até o bloco 11, um script libera o @ de um fã para uma central; sem a API, a tela edita só nome e cidade.
+19. Bloco 10 (seção 25): catálogo em `rewards/{rewardId}` e pedidos em `redemptions/{código}`, com o código de retirada (`UP-` mais 6 caracteres sorteados com `crypto.randomInt`) como id; o resgate numa transação só, que confere o teto do dia (10), a recompensa no ar, o estoque, o show aberto (quando ela tem show), o custo que o fã viu (`expectedCost`) e o limite por fã (padrão 1, configurável), baixa o estoque e desconta só o saldo pelo núcleo (`redeem:<código>`); a disputa pelo estoque fica num documento só, a recompensa; status solicitado, aprovado, entregue e recusado (o entregue pode pular o aprovado, e o aprovado pode ser recusado), com a recusa devolvendo os pontos por um tipo novo do núcleo (`refund`, `redeem_refund:<código>`) e, por padrão, a vaga, uma vez; 8 callables do painel na seção `rewards`, com o e-mail do fã só por callable auditada e só dos pedidos abertos; contadores por recompensa nos shards do dia; a exclusão de conta cancela os pedidos abertos (status `canceled`, só no servidor) e tira o dado pessoal do resto; no app, a loja e o resgate do servidor (a tentativa guarda a chave com o custo, e a confirmação congela o custo), o status de cada pedido no detalhe da recompensa, o limite atingido, a devolução no extrato e o aviso da regra 5.3 da Apple, com o regulamento pelo `rulesUrl` da loja.
 
 ## 1. Formato da API
 
@@ -189,22 +190,26 @@ Corpo de erro, sempre:
 | `comment_not_found`        | 404    | notFound     | comentário que não existe ou oculto (bloco 6)                                         |
 | `fan_not_found`            | 404    | notFound     | fã que não existe, no bloqueio (bloco 6)                                              |
 | `photo_not_found`          | 404    | notFound     | arquivo da foto que não existe, velho ou de antes da última troca (bloco 9)           |
+| `reward_not_found`         | 404    | notFound     | recompensa que não existe, em rascunho ou com id fora do formato (bloco 10)           |
 | `method_not_allowed`       | 405    | unknown      | rota existe, método não                                                               |
 | `insufficient_points`      | 409    | validation   | débito maior que o saldo (já em `API_ERROR_CODES`)                                    |
+| `sold_out`                 | 409    | validation   | recompensa sem vaga, encerrada ou com show fechado (bloco 10; no `API_ERROR_CODES`)   |
+| `redeem_limit_reached`     | 409    | validation   | o fã chegou ao limite de pedidos da recompensa (bloco 10)                             |
+| `reward_changed`           | 409    | validation   | o custo que o fã viu não é o de agora (bloco 10)                                      |
 | `invite_not_allowed`       | 409    | validation   | autoconvite ou conta fora da janela do claim (bloco 5)                                |
 | `block_list_full`          | 409    | validation   | lista de bloqueios cheia (bloco 6)                                                    |
 | `username_taken`           | 409    | validation   | @ de outro fã ou de uma central (bloco 9)                                             |
 | `username_change_too_soon` | 409    | validation   | troca do @ antes do prazo de 30 dias (bloco 9)                                        |
 | `payload_too_large`        | 413    | unknown      | corpo acima de 16 KiB                                                                 |
 | `idempotency_key_reused`   | 422    | validation   | mesma chave com outro pedido                                                          |
-| `too_many_requests`        | 429    | unknown      | ação acima do teto do dia (bloco 4, 19.5; bloco 6, 21.7; bloco 9, 24.8)               |
+| `too_many_requests`        | 429    | unknown      | ação acima do teto do dia (blocos 4, 6, 9 e 10: 19.5, 21.7, 24.8 e 25.7)              |
 | `internal`                 | 500    | server       | erro inesperado                                                                       |
 | `profile_not_ready`        | 503    | server       | gravação sem `users/{uid}` (perfil nascendo ou conta excluída)                        |
 | `unavailable`              | 503    | server       | disputa, Firestore fora ou falha ao conferir o token                                  |
 
-Mensagens: `invalid_request` "Pedido inválido."; `idempotency_key_required` "Falta a chave de idempotência."; `unauthenticated` "Entre na sua conta para continuar."; `not_fan` "Esta conta não é de fã."; `not_found` "Não encontrado."; `artist_not_found` "Central não encontrada."; `invite_not_found` "Convite não encontrado."; `invite_not_allowed` "Este convite não vale para esta conta."; `method_not_allowed` "Método não aceito nesta rota."; `insufficient_points` "Saldo insuficiente."; `payload_too_large` "Pedido grande demais."; `idempotency_key_reused` "Esta chave já foi usada em outro pedido."; `too_many_requests` "Tentativas demais por hoje. Tente amanhã."; `internal` "Algo deu errado. Tente de novo."; `profile_not_ready` "Seu perfil ainda está sendo criado. Tente de novo em instantes."; `unavailable` "Serviço ocupado. Tente de novo."; do bloco 6, `post_not_found` "Post não encontrado.", `event_not_found` "Show não encontrado.", `comment_not_found` "Comentário não encontrado.", `fan_not_found` "Fã não encontrado.", `comment_invalid` "Comentário vazio, longo demais ou com caracteres invisíveis." e `block_list_full` "Você chegou ao limite de fãs bloqueados."; do bloco 9 (24.2), `username_invalid` "Este @ não vale. Use de 3 a 20 letras minúsculas e números.", `photo_invalid` "Foto fora do formato. Escolha outra.", `photo_not_found` "Foto não encontrada. Envie de novo.", `username_taken` "Este @ já tem dono." e `username_change_too_soon` "Você trocou o @ há pouco. Tente de novo mais tarde.".
+Mensagens: `invalid_request` "Pedido inválido."; `idempotency_key_required` "Falta a chave de idempotência."; `unauthenticated` "Entre na sua conta para continuar."; `not_fan` "Esta conta não é de fã."; `not_found` "Não encontrado."; `artist_not_found` "Central não encontrada."; `invite_not_found` "Convite não encontrado."; `invite_not_allowed` "Este convite não vale para esta conta."; `method_not_allowed` "Método não aceito nesta rota."; `insufficient_points` "Saldo insuficiente."; `payload_too_large` "Pedido grande demais."; `idempotency_key_reused` "Esta chave já foi usada em outro pedido."; `too_many_requests` "Tentativas demais por hoje. Tente amanhã."; `internal` "Algo deu errado. Tente de novo."; `profile_not_ready` "Seu perfil ainda está sendo criado. Tente de novo em instantes."; `unavailable` "Serviço ocupado. Tente de novo."; do bloco 6, `post_not_found` "Post não encontrado.", `event_not_found` "Show não encontrado.", `comment_not_found` "Comentário não encontrado.", `fan_not_found` "Fã não encontrado.", `comment_invalid` "Comentário vazio, longo demais ou com caracteres invisíveis." e `block_list_full` "Você chegou ao limite de fãs bloqueados."; do bloco 9 (24.2), `username_invalid` "Este @ não vale. Use de 3 a 20 letras minúsculas e números.", `photo_invalid` "Foto fora do formato. Escolha outra.", `photo_not_found` "Foto não encontrada. Envie de novo.", `username_taken` "Este @ já tem dono." e `username_change_too_soon` "Você trocou o @ há pouco. Tente de novo mais tarde."; do bloco 10 (25.2), `reward_not_found` "Recompensa não encontrada.", `sold_out` "Recompensa esgotada.", `redeem_limit_reached` "Você chegou ao limite de resgates desta recompensa." e `reward_changed` "O custo desta recompensa mudou. Confira antes de resgatar.".
 
-Códigos que os próximos blocos vão criar entram nesta tabela quando nascerem: `reward_not_found` (404) e `sold_out` (409, que também entra no `API_ERROR_CODES` do app no bloco 10). Não há limite de pedidos por minuto no bloco 1: o `maxInstances` segura o custo, e os limites de pontos não são erro (seção 5). A exceção, do bloco 4, é o teto diário de entradas em centrais (19.5), com 429 e `Retry-After`: sem ele, um script que entra e sai sem parar gravaria sem teto e inflaria os fluxos do painel. O bloco 6 faz o mesmo com curtidas, comentários, presenças, denúncias e bloqueios (21.7), e o bloco 9, com as trocas de foto (24.8).
+Códigos que os próximos blocos vão criar entram nesta tabela quando nascerem. Não há limite de pedidos por minuto no bloco 1: o `maxInstances` segura o custo, e os limites de pontos não são erro (seção 5). A exceção, do bloco 4, é o teto diário de entradas em centrais (19.5), com 429 e `Retry-After`: sem ele, um script que entra e sai sem parar gravaria sem teto e inflaria os fluxos do painel. O bloco 6 faz o mesmo com curtidas, comentários, presenças, denúncias e bloqueios (21.7), o bloco 9, com as trocas de foto (24.8), e o bloco 10, com os resgates (25.7).
 
 ## 2. Mapa dos 26 endpoints
 
@@ -249,6 +254,8 @@ Fora dos 26, novas no bloco 6: `POST /posts/:postId/comments/:commentId/report` 
 
 Fora dos 26, novas no bloco 9: `GET /me/username/availability` (o @ livre enquanto o fã digita, `profile/api.ts` `fetchUsernameAvailability`), `PUT /me/username` (trocar o @, `changeUsername`) e `PUT` e `DELETE /me/photo` (gravar e tirar a foto, `setMyPhoto` e `removeMyPhoto`), seção 24. O nome e a cidade continuam direto no Firestore, e o arquivo da foto vai direto ao Storage.
 
+Os endpoints 25 e 26 são os do bloco 10 (seção 25). O 26 passa a mandar o corpo `{ expectedCost }`, e a resposta dos dois ganha o status de cada pedido.
+
 O `POST /invites/claim` era endereço provisório (comentário em `auth/api.ts`). O bloco 5 o mantém como final, com o corpo novo (seção 20).
 
 A chave do claim (`invite-<código>-<receivedAt>`) só cabe no formato da `Idempotency-Key` quando o código é válido. Até o bloco 5, a rota `/convite/[codigo]` guardava o parâmetro sem conferir, e o `claimPendingInvite` só esquecia o código depois de sucesso: um código fora do formato gerava uma chave recusada (400, que o app não repete) e ficava preso no aparelho. Hoje a captura normaliza o código (`normalizeInviteCode`) e descarta o que fica fora do formato, a chave do claim usa o código normalizado, e o app esquece o convite só pelas recusas definitivas de `isFinalInviteRejection` (20.11).
@@ -278,7 +285,7 @@ Por que a API para o resto: um caminho só no app (axios, React Query e cache no
 | `config/points` e `config/points/versions/{n}`                               | servidor (callable do painel, bloco seguinte)   | equipe ativa                                             | valores, limites diários e régua de níveis                                                     |
 | `config/season` e `config/season/versions/{n}`                               | servidor (callable do painel, bloco 8)          | equipe ativa                                             | temporada atual                                                                                |
 | `config/missions`, `config/achievements`, as versões e `missionArchive/{id}` | servidor (callables do painel, bloco 7)         | equipe com `missions` (as missões também com `overview`) | catálogo de missões, meta da temporada, missões arquivadas e catálogo de conquistas (seção 22) |
-| `statsDaily/{dia}` e `statsDaily/{dia}/statsShards/{n}`                      | servidor (`award`; fechamento do dia depois)    | equipe com `overview` ou `growth`                        | contadores agregados do painel                                                                 |
+| `statsDaily/{dia}` e `statsDaily/{dia}/statsShards/{n}`                      | servidor (`award`; fechamento do dia depois)    | equipe com `overview`, `growth`, `missions` ou `rewards` | contadores agregados do painel                                                                 |
 | `statsMeta/close`                                                            | servidor (fechamento do dia, quando ele entrar) | ninguém                                                  | último dia fechado                                                                             |
 | `idempotency/{id}`                                                           | servidor (API)                                  | ninguém                                                  | chaves de idempotência                                                                         |
 | `users/{uid}/centrals/{artistId}`                                            | servidor (API, bloco 4)                         | equipe com `fans`                                        | vínculo do fã com a central (seção 19)                                                         |
@@ -290,12 +297,14 @@ Por que a API para o resto: um caminho só no app (axios, React Query e cache no
 | `posts/{postId}`                                                             | servidor (callables do painel, API, bloco 6)    | equipe com `artists`, `moderation` ou `fans`             | mural (seção 21)                                                                               |
 | `posts/{postId}/postComments/{commentId}`                                    | servidor (API e callable, bloco 6)              | equipe com `artists` ou `moderation`                     | comentários (seção 21)                                                                         |
 | `postStats/{postId}/countShards/{n}`                                         | servidor (API e exclusão de conta, bloco 6)     | ninguém                                                  | curtidas e comentários em shards, copiados para o post (seção 21)                              |
-| `events/{eventId}`                                                           | servidor (callables do painel, bloco 6)         | equipe com `artists`, `moderation` ou `fans`             | shows da agenda (seção 21)                                                                     |
+| `events/{eventId}`                                                           | servidor (callables do painel, bloco 6)         | equipe com `artists`, `moderation`, `fans` ou `rewards`  | shows da agenda (seção 21; `rewards` desde o bloco 10, 25.10)                                  |
 | `users/{uid}/postLikes/{postId}` e `users/{uid}/eventRsvps/{eventId}`        | servidor (API, bloco 6)                         | equipe com `fans`                                        | curtidas e presenças do fã, com o estado (seção 21)                                            |
 | `commentReports/{id}` e `moderationQueue/{commentId}`                        | servidor (API e callable, bloco 6)              | equipe com `moderation`                                  | denúncias e fila da Moderação (seção 21)                                                       |
 | `blockLists/{uid}`                                                           | servidor (API e exclusão de conta, bloco 6)     | ninguém                                                  | quem cada fã bloqueou (seção 21)                                                               |
 | `seasons/{id}` e `seasons/{id}/standings/{uid}`                              | servidor (virada e exclusão de conta, bloco 8)  | equipe com `ranking`                                     | resultado congelado de cada temporada e a posição final de cada fã (seção 23)                  |
 | `rankingJobs/{id}`                                                           | servidor (virada e retrato semanal, bloco 8)    | ninguém                                                  | andamento da virada e do retrato semanal (seção 23)                                            |
+| `rewards/{rewardId}`                                                         | servidor (painel, API e exclusão, bloco 10)     | equipe com `rewards`                                     | catálogo da loja, com o estoque (seção 25)                                                     |
+| `redemptions/{código}`                                                       | servidor (API, painel e exclusão, bloco 10)     | equipe com `rewards`                                     | pedidos de resgate, com o status (seção 25)                                                    |
 
 O fã não lê nenhuma delas direto, nem a própria carteira: tudo chega pela API.
 
@@ -347,7 +356,7 @@ O id é `<source>:<eventId>`: o evento que o lançamento paga (seção 5). `even
 ```
 ledger/{entryId} {
   uid: string
-  kind: 'earn' | 'spend' | 'adjust'
+  kind: 'earn' | 'spend' | 'adjust' | 'refund'   // refund: a devolução do resgate recusado (bloco 10)
   source: string           // origem do ponto (tabela da seção 5)
   eventId: string
   points: number           // quanto o saldo mexeu: positivo no ganho, negativo no resgate, o delta no ajuste
@@ -485,7 +494,8 @@ O `requireFan` mora em `award.ts`, porque o `runAward` também o usa, e recusa c
 | `mission`       | earn   | `<missionId>:<período>` | o da missão (`points` explícito) | sem limite           |
 | `invite_visit`  | earn   | chave da pessoa (20.5)  | 2                                | 50                   |
 | `invite_signup` | earn   | chave da pessoa (20.5)  | 10                               | 20                   |
-| `redeem`        | spend  | id do resgate           | o custo da recompensa            | não se aplica        |
+| `redeem`        | spend  | código do pedido (25.3) | o custo da recompensa            | não se aplica        |
+| `redeem_refund` | refund | código do pedido (25.3) | o que o pedido gastou            | não se aplica        |
 | `adjustment`    | adjust | id do ajuste da equipe  | explícito por contador           | não se aplica        |
 | `seed`          | adjust | nome fixo do seed       | explícito por contador           | não se aplica        |
 
@@ -574,7 +584,7 @@ Concorrência: dois pedidos do mesmo fã disputam a carteira e um repete; nada s
 
 ### Débito do resgate
 
-Já existe no bloco 1, testado, sem rota (a loja é do bloco 10). A rota do resgate, dentro do `runIdempotent`, chama `planAwards` com o lançamento `{ kind: 'spend', source: 'redeem', eventId: <redemptionId>, points: <custo> }` do fã, na mesma transação que baixa o estoque e grava o resgate. Desconta só o saldo. Saldo curto recusa tudo com 409 `insufficient_points`, sem gravar nada, nem a chave de idempotência.
+Já existe no bloco 1, testado, sem rota (a loja é do bloco 10). A rota do resgate, dentro do `runIdempotent`, chama `planAwards` com o lançamento `{ kind: 'spend', source: 'redeem', eventId: <redemptionId>, points: <custo> }` do fã, na mesma transação que baixa o estoque e grava o resgate. Desconta só o saldo. Saldo curto recusa tudo com 409 `insufficient_points`, sem gravar nada, nem a chave de idempotência. (Bloco 10, 25.4: o `eventId` é o código do pedido, o lançamento leva o título da recompensa em `subjectTitle`, e a recusa da equipe devolve por um tipo novo, `refund`, com a origem `redeem_refund`.)
 
 ### Ajuste
 
@@ -600,7 +610,7 @@ O `Wallet` do app.
 { "balance": 12480, "xp": 12480, "seasonPoints": 4120 }
 ```
 
-`seasonPoints` é `wallet.seasonPoints` quando `wallet.seasonId` é o id de `config/season.season`, e 0 no resto. Temporada que já acabou e continua na configuração mostra os pontos dela, congelados, como o ranking mostra a última temporada encerrada. Carteira que não existe: tudo 0. A leitura usa a temporada do cache (seção 9): logo depois de a equipe trocar a temporada, a tela pode mostrar a anterior por até 60 s. Só a tela; o lançamento lê a temporada na transação. (Bloco 8, 23.2: os pontos passam a ser os da temporada mostrada, e não os de `config/season.season`, que depois da virada pode ser a próxima, ainda sem começar.)
+`seasonPoints` é `wallet.seasonPoints` quando `wallet.seasonId` é o id de `config/season.season`, e 0 no resto. Temporada que já acabou e continua na configuração mostra os pontos dela, congelados, como o ranking mostra a última temporada encerrada. Carteira que não existe: tudo 0. A leitura usa a temporada do cache (seção 9): logo depois de a equipe trocar a temporada, a tela pode mostrar a anterior por até 60 s. Só a tela; o lançamento lê a temporada na transação. (Bloco 8, 23.2: os pontos passam a ser os da temporada mostrada, e não os de `config/season.season`, que depois da virada pode ser a próxima, ainda sem começar.) (Bloco 10, 25.2: ganha `updatedAt`, o instante ISO da última gravação da carteira, ou `null` sem carteira; o app compara com o `statusAt` de uma recusa, os dois do relógio do servidor.)
 
 ### `GET /me/progress`
 
@@ -694,6 +704,7 @@ statsMeta/close { lastClosedDay: string, updatedAt: Timestamp }
 - O dia é o de São Paulo, o mesmo do `days` da carteira e do limite diário. A semana é a ISO (`2026-W41`) e o mês é `2026-10`, contados no mesmo fuso.
 - Ajuste e seed contam só em `totals.adjusted` e em `bySource`, nunca em `byArtist`.
 - A origem do fã (link, campanha, UTM) não é isto: o bloco 5 acrescenta `signups`, `invites` e `byOrigin` nos mesmos shards (20.7). Cadastros por dia também são do bloco 5, somados no gatilho de cadastro; os anteriores saem do `createdAt` de `users/` numa carga única (20.7).
+- A loja (bloco 10, 25.3 e 25.9) acrescenta em `totals` a devolução do resgate (`refunded`, `refundedEvents`, com o lançamento `refund`) e os fluxos dos pedidos (`redeemRequested`, `redeemApproved`, `redeemDelivered`, `redeemRefused`, `redeemCanceled`), e o mapa `byReward: { <rewardId>: { requested, spent, approved, delivered, refused, canceled, refunded } }`. São fluxos do dia: os pedidos abertos de agora saem do `count()` por status, e não destes números.
 - Gravação: `tx.set(shardRef, objetoComIncrements, { merge: true })`. Chaves de mapa vão como objeto aninhado, não como caminho com ponto.
 - Contador zerado não é gravado (`pruneZeros`, em `points/stats.ts`): um shard que só viu atividade não tem `totals`, e um sem resgate não tem `spent`. Quem lê (o fechamento do dia, o painel) trata campo ausente como 0.
 
@@ -708,7 +719,7 @@ A Crescimento do painel promete "cadastros, ativos e retenção" (`imagineup-adm
 
 ### Custo e limite de escrita
 
-- Uma gravação de shard por transação que lançou ponto, marcou atividade nova ou somou um fluxo sem ponto, qualquer que seja o número de lançamentos e de fãs nela. Os fluxos sem ponto vieram nos blocos seguintes: entrar e sair de central (bloco 4, 19.9), cadastro, convite, visita e link (bloco 5, 20.7) e, no bloco 6, toda curtida, descurtida, comentário, presença, desfazer, denúncia e bloqueio (21.10), pontue ou não. Transação sem nada aplicado, sem marca nova e sem fluxo não grava shard (nem carteira).
+- Uma gravação de shard por transação que lançou ponto, marcou atividade nova ou somou um fluxo sem ponto, qualquer que seja o número de lançamentos e de fãs nela. Os fluxos sem ponto vieram nos blocos seguintes: entrar e sair de central (bloco 4, 19.9), cadastro, convite, visita e link (bloco 5, 20.7) e, no bloco 6, toda curtida, descurtida, comentário, presença, desfazer, denúncia e bloqueio (21.10), pontue ou não; no bloco 10, cada resgate, mudança de status do pedido e cancelamento pela exclusão de conta (25.9). Transação sem nada aplicado, sem marca nova e sem fluxo não grava shard (nem carteira).
 - **Teto:** o Firestore aguenta perto de 1 gravação por segundo por documento de forma sustentada (rajadas curtas passam). Com 64 shards, o dia aguenta perto de 64 transações que gravam shard por segundo no país todo, cerca de 230 mil por hora, sustentadas, divididas entre os pontos, a atividade, as centrais, o convite e todo o engajamento do bloco 6 (as curtidas e os comentários são o grosso). Cada fã, pela carteira, já fica perto de 1 por segundo.
 - **Disputa:** a disputa num shard faz a transação do fã repetir. Como o shard é sorteado de novo a cada tentativa, a repetição cai em outro documento; as 5 tentativas acabarem em shards disputados (o 503 `unavailable`) só acontece bem acima do teto. Sorteado uma vez por pedido, a repetição bateria no mesmo documento disputado.
 - **Sinal para mexer:** `unavailable` ou transações repetidas nos logs da `api`. Primeiro passo: subir o `SHARD_COUNT`, porque quem lê lista a subcoleção e nunca supõe o número.
@@ -727,7 +738,7 @@ Uma função agendada (`onSchedule`, todo dia às 00:20 de `America/Sao_Paulo`) 
 
 ### Como o painel lê
 
-Direto do Firestore, com regras: `canSeeSection('overview') || canSeeSection('growth')` lê `statsDaily/{dia}` e os shards. É o mesmo padrão da seção Artistas (leitura direta com `canSeeSection`, gravação por callable), sem partida a frio de função e com custo de poucos documentos. Os comparativos (UP-39) ficam na Crescimento; se virarem seção própria, a regra ganha a seção nova.
+Direto do Firestore, com regras: `canSeeSection('overview') || canSeeSection('growth')` lê `statsDaily/{dia}` e os shards (o bloco 7 soma `missions`, e o bloco 10, `rewards`: 25.10). É o mesmo padrão da seção Artistas (leitura direta com `canSeeSection`, gravação por callable), sem partida a frio de função e com custo de poucos documentos. Os comparativos (UP-39) ficam na Crescimento; se virarem seção própria, a regra ganha a seção nova.
 
 Regras do painel para não estourar a cota:
 
@@ -865,7 +876,7 @@ Ficam para depois: a leitura de `users/{uid}` pela seção Fãs (bloco 11, uma l
 4. Novo: as chaves de `idempotency` com `uid == <uid>`, em lotes de até 500 (as respostas guardadas podem ter texto do fã; o TTL só apagaria em 30 dias).
 5. `staff/{uid}` (como hoje).
 
-O bloco 4 muda o passo 2: o documento do perfil sai sozinho primeiro, depois saem os vínculos com as centrais (descontando o `fanCount`) e só então o `recursiveDelete(users/{uid})`. Ordem completa e motivo na seção 19 (19.12). O bloco 5 acrescenta o código, os links e os convites (20.10). O bloco 6 acrescenta as curtidas, os comentários, as denúncias e os bloqueios (21.12). O bloco 8 acrescenta a linha do fã no arquivo de cada temporada (23.13). O bloco 9 passa as reservas de @ para depois do perfil e acrescenta a pasta da foto no fim (24.11).
+O bloco 4 muda o passo 2: o documento do perfil sai sozinho primeiro, depois saem os vínculos com as centrais (descontando o `fanCount`) e só então o `recursiveDelete(users/{uid})`. Ordem completa e motivo na seção 19 (19.12). O bloco 5 acrescenta o código, os links e os convites (20.10). O bloco 6 acrescenta as curtidas, os comentários, as denúncias e os bloqueios (21.12). O bloco 8 acrescenta a linha do fã no arquivo de cada temporada (23.13). O bloco 9 passa as reservas de @ para depois do perfil e acrescenta a pasta da foto no fim (24.11). O bloco 10 cancela os pedidos de resgate abertos e tira o dado pessoal de todos os pedidos do fã, depois do engajamento do mural (25.11).
 
 Continua idempotente e seguro de repetir (o gatilho tem `retry: true`), e o `handleUserCreated` que desfaz a conta usa a mesma função.
 
@@ -1013,7 +1024,7 @@ Regras: `tests/points-rules.test.ts` (seção 11). App: seção 13.
 9. **Antifraude.** Limites diários por origem no servidor, sem App Check por enquanto (seção 5).
 10. **Ambiente de testes.** Documentado; espera o ok da cliente (seção 15).
 11. **Onde o mural e a agenda entram no painel.** Bloco 6. Não muda nada no bloco 1. Fechado no bloco 6 (21.1, decisão 1): dentro da seção `artists`, sem seção nova; as telas são do bloco 11.
-12. **Exclusão de conta.** Agregados não descontam (seção 12). Direção para os outros blocos: comentários do fã excluído são apagados, com a contagem do post descontada (bloco 6, 21.12, ainda pergunta para a cliente e a revisão jurídica); resgate em aberto continua para a equipe entregar ou cancelar, sem o uid e com o status de conta excluída (bloco 10).
+12. **Exclusão de conta.** Agregados não descontam (seção 12). Direção para os outros blocos: comentários do fã excluído são apagados, com a contagem do post descontada (bloco 6, 21.12, ainda pergunta para a cliente e a revisão jurídica); resgate em aberto continua para a equipe entregar ou cancelar, sem o uid e com o status de conta excluída (bloco 10). Fechado no bloco 10 de outro jeito (25.1, decisão 14): o pedido aberto é cancelado na exclusão, com o estoque de volta e sem devolver pontos, porque sem a conta a equipe não tem como falar com o fã nem conferir quem retira.
 
 ## 18. O que fica para os próximos blocos
 
@@ -1023,7 +1034,7 @@ Regras: `tests/points-rules.test.ts` (seção 11). App: seção 13.
 - **Bloco 7 (missões e conquistas):** desenhado na seção 22. As telas da seção Missões e régua ficam para o bloco 11, e o que ele deixa para os blocos seguintes está em 22.16.
 - **Bloco 8 (ranking e temporadas):** desenhado na seção 23. O `updateSeason` saiu no bloco 7 (22.8) e fica mais estrito no 8 (23.10). O que ele deixa para os blocos seguintes está em 23.18.
 - **Bloco 9 (perfil editável):** desenhado na seção 24. As callables do painel para trocar o @ e tirar a foto de um fã ficam para o bloco 11; o que ele deixa para os blocos seguintes está em 24.16.
-- **Bloco 10 (loja):** rotas da loja e o resgate com o débito já pronto; `sold_out` no `API_ERROR_CODES`.
+- **Bloco 10 (loja):** desenhado na seção 25. As telas da seção Recompensas e resgates ficam para o bloco 11, e o que ele deixa para os blocos seguintes está em 25.16.
 - **Bloco 11 (painel):** Visão geral e Crescimento lendo `statsDaily` sem escuta em tempo real (seção 7), com ativos do dia, da semana e do mês e a retenção por coorte; Fãs lendo carteira e extrato, mais a regra de `users/{uid}` para a equipe; `adjustFanPoints`; fechamento do dia, se o bloco 4 não tiver feito.
 - **Ambiente de testes:** quando a cliente aprovar (seção 15).
 - **Publicação:** deploy da `api`, das regras e dos índices, e `minInstances`, só com o ok do dono. `EXPO_PUBLIC_API_URL` nas variáveis da EAS só depois dos blocos 4, 6, 7, 8 e 10, quando nenhuma ação que rende ou gasta pontos ficar nas fixtures (seção 13); antes disso a cliente perderia a demonstração de pontos.
@@ -5370,6 +5381,749 @@ Implementado em 07/10/2026 na branch `perfil-editavel`. O contrato acima vale; e
 - **App, @:** a data do prazo sai por extenso ("Você troca o @ de novo em 6 de novembro.", `formatLongDate`). O status do campo vale para o @ já assentado (400 ms depois da última tecla): antes disso, "Conferindo..."; o fora do formato também espera os 400 ms, para o erro não piscar a cada tecla.
 - **Revisão do bloco (07/10):** a tarefa acerta as cópias antes de varrer a pasta, e a listagem que falha não as segura (antes, um Storage fora do ar ou ainda não ligado deixava o nome antigo nos comentários em todas as tentativas); a página dos comentários é lida na transação, uma leitura por comentário (antes, o comentário com a cópia velha era lido duas vezes, e o custo de 24.6 dobrava); o `storage/invalid-argument` do bucket sem nome conta como Storage não ligado, como o 404; a limpeza da pasta apaga em lotes de 100, e o log das sobras leva a contagem e só os 20 primeiros caminhos. No app: o estado de erro da consulta do @, a recusa definitiva no retrato da disponibilidade e segurando o "Trocar @", o `username_change_too_soon` com a data, o "Tentar de novo" da foto pela mesma regra do hook (`isUncertainFailure`), o aviso da tela sem o perfil e os 10 s guardados por fã.
 - **Testes:** o `localApi` de `functions/test/support.ts` recebe o `fanPhotoFiles` do bucket do emulador. No `profile-edit.emulator.test.ts`, o teto do dia roda com `photo_set` 2 na configuração (o padrão de 10 fica nos testes puros), e a segunda limpeza da exclusão é a tarefa chamada no processo (no emulador ela roda na hora, antes de o envio atrasado chegar).
+
+## 25. Bloco 10: loja e resgate
+
+A loja (1h) e o resgate em 3 passos passam a vir do servidor. O fã troca pontos do saldo por uma recompensa numa transação só, que confere o saldo, o estoque e o limite por fã, desconta só o saldo e grava o pedido com um código de retirada. A equipe cadastra as recompensas e cuida dos pedidos pelo painel (aprovar, marcar entregue, recusar com motivo), e o fã acompanha o status no detalhe da recompensa. Esta seção é o contrato do bloco 10: decisões, rotas, coleções e campos, transações, idempotência, a disputa pelo estoque, antifraude, callables do painel, efeitos no painel, regras, exclusão de conta, mudanças no app, seed e testes. Ela segue os padrões dos blocos 1 e 4 a 9 (seções 1 a 24) e só diz o que muda ou acrescenta.
+
+Origem: o levantamento de 05/10/2026 (bloco "Loja e resgate"), a UP-24 (o resgate desconta pontos e estoque numa operação só, sem resgate duplo nem estoque negativo; o fã acompanha o status; a equipe controla pelo painel), a UP-35 (cadastrar recompensas com estoque e acompanhar os pedidos: aprovar, marcar entregue ou recusar), a aprovação de 29/09/2026 (o resgate não pede endereço; a entrega fica com a equipe), a de 28/09/2026 (tela sem desenho segue o visual das outras) e o pedido do dono de 07/10/2026. As recompensas, as fotos, as instruções e o regulamento de verdade vêm da cliente (UP-9 e UP-45); o código nasce com o padrão daqui, fácil de trocar. A passada com leitor de tela e fonte a 200% foi dispensada pelo dono; as regras de acessibilidade do código continuam valendo.
+
+Estado: desenho final de 07/10/2026, conferido contra o código de `2cef79d` (branch `loja-resgate`, com os blocos 1 e 4 a 9), com a revisão adversarial aplicada (a chave do resgate com o custo guardado, o custo congelado na confirmação, o show que passou, a recusa sem repor a vaga, o seed que roda de novo), e implementado no mesmo dia nessa branch: funções, regras, índices, app, seed e testes. Sem deploy: a publicação espera o ok do dono (25.16). O que o código fez diferente do desenho está em 25.18.
+
+Como era antes do bloco:
+
+- A 1h e o detalhe `/recompensa/[recompensaId]` leem das fixtures (`src/domains/rewards/fixtures.ts`): as 5 recompensas do protótipo, sem pedido antigo, com o estoque e os códigos sequenciais (`UP-1001`, `UP-1002`...) em memória. `rewards` não está no `SERVER_DOMAINS`.
+- Com a carteira na API (o emulador), o resgate de exemplo recusa com `points_unavailable` (seção 13), e a 1h mostra o erro genérico.
+- O contrato do app já existe (`rewards/types.ts` e `api.ts`): `GET /rewards` e `POST /rewards/:rewardId/redeem` com `Idempotency-Key`. As fixtures já recusam com `insufficient_points` e `sold_out` (`REDEEM_ERROR_CODES`), e o `sold_out` ainda não está no `API_ERROR_CODES`.
+- O núcleo de pontos já tem o débito (`spend`, origem `redeem`, só o saldo, seção 5), testado e sem rota. O extrato já conhece a origem `redeem`, sem contexto na linha.
+- A seção `rewards` já existe (`SECTION_IDS` em `functions/src/staff/model.ts`; "Recompensas e resgates" no `imagineup-admin`, com a página vazia). Nenhuma regra, callable ou coleção usa a seção.
+- A tela "Excluir conta" já diz que as recompensas resgatadas vão embora com a conta.
+
+### 25.1 Decisões
+
+Cada item traz a recomendação e o motivo. As perguntas para a cliente e para o dono estão em 25.15.
+
+1. **Catálogo em `rewards/{rewardId}` e pedidos em `redemptions/{código}`, os dois na raiz.** A recompensa guarda o que o app mostra e o que só o servidor usa (rascunho, no ar ou encerrada, limite por fã, instruções de retirada). O pedido é um documento por resgate, com o status. Motivo: o painel lista os pedidos de uma recompensa e por status, e a loja lista os do fã; na raiz, as três consultas dispensam o grupo de coleção. Pedido dentro de `users/{uid}` sumiria na exclusão de conta, e o painel perderia o histórico (decisão 14).
+2. **O id do pedido é o código de retirada: `UP-` mais 6 caracteres sorteados** do alfabeto do convite (`INVITE_CODE_ALPHABET`: sem vogal, sem 0, 1, I, L e O), com `crypto.randomInt` (de `node:crypto`, sem dependência nova). São 28^6, perto de 4,8 × 10^8 códigos. A transação sorteia 1 código, sem ler, e grava com `tx.create`, que garante que ele é único: a colisão (perto de 10^-5 com alguns milhares de pedidos) derruba o commit com `ALREADY_EXISTS`, e o `retryOnAlreadyExists` que já envolve o `runIdempotent` roda tudo de novo uma vez, com outro sorteio. Motivo de não ler: o convite lê 5 sorteados (`INVITE_CODE_DRAWS`), mas o resgate é a rota mais disputada, e cada leitura na transação é mais uma trava. Motivo do sorteio: o `UP-1001` das fixtures é sequencial, e quem tem um código adivinharia o do vizinho. Com o código como id, o painel acha o pedido com um `getDoc`, sem índice nem reserva à parte. O `Math.random` não serve: a sequência dele se reconstrói a partir de poucas saídas. O código não é segredo forte: a retirada pede documento com foto (as instruções dizem isso), e só a equipe com `rewards` lê os pedidos.
+3. **Status do pedido: `requested` (solicitado), `approved` (aprovado), `delivered` (entregue), `refused` (recusado) e, só no servidor, `canceled` (cancelado pela exclusão de conta).** Transições válidas: de solicitado para aprovado, entregue ou recusado; de aprovado para entregue ou recusado. Entregue, recusado e cancelado não mudam mais. O mesmo status de novo é sucesso sem efeito.
+4. **O entregue pode pular o aprovado.** Motivo: a retirada no show (ingresso na bilheteria, meet & greet no camarim) é o caso comum, e a equipe na porta confere o código e marca entregue de uma vez; um passo de aprovação ali só atrasaria a fila. O aprovado fica para o que pede combinação antes (videochamada, camisa) e diz ao fã que a equipe confirmou. A auditoria registra quem fez cada passo.
+5. **A equipe pode recusar um aprovado.** Motivo: show cancelado ou artista sem agenda acontecem depois da aprovação, e a saída sem isso seria o ajuste manual de pontos (`adjustFanPoints`, bloco 11), sem o estoque de volta e sem o motivo para o fã. Recusar devolve os pontos ao saldo (lançamento próprio no extrato, decisão 7) e, por padrão, a vaga. Quando a vaga não deve voltar (o show cancelado, ou o "Esgotado para todos" da decisão 10), a equipe recusa com `restock: false`: a mesma transação tira 1 do `redeemedCount` e, com total, 1 do `stockTotal`, e o que sobra não muda (25.4). Para o show cancelado, o contrato do bloco 11 diz: encerrar a recompensa antes de recusar os pedidos em lote (o show fora do ar já esgota a recompensa, decisão 18). O entregue não volta: a peça já saiu, e um "entregue" errado se resolve com o fã (e, se preciso, com o ajuste).
+6. **Limite por fã: padrão 1 por recompensa, configurável de 1 a 100 ou sem limite (`null`).** Contam os pedidos solicitados, aprovados e entregues; recusado e cancelado não (os pontos voltaram, ou a conta acabou). O limite vale pela vida da recompensa, sem janela de tempo: para uma nova rodada (o meet & greet do próximo show), a equipe cria outra recompensa, e por isso as encerradas se acumulam (o `reorderRewards` as deixa de fora, 25.8). Motivo: as recompensas do protótipo são experiências com poucas vagas (meet & greet, videochamada, ingresso), e sem limite um fã com muitos pontos levaria o estoque todo; produto como a camisa sai sem limite. É pergunta para a cliente (25.15). No app, o limite atingido tem código novo (`redeem_limit_reached`, 409) e estado próprio, sem desenho: o botão desligado diz "Você já resgatou" (ou "Limite de N resgates atingido") e o card da 1h mostra "Resgatado" no lugar do preço, com o contorno do esgotado (25.12).
+7. **Débito pelo núcleo de pontos; devolução com tipo próprio.** O resgate lança `{ kind: 'spend', source: 'redeem', eventId: <código> }` no `planAwards`, na transação que baixa o estoque e grava o pedido: só o saldo cai (XP, nível, pontos da temporada e das centrais ficam), o extrato ganha `redeem:<código>`, e a idempotência do negócio vem do id do lançamento. A recusa lança um tipo novo, `{ kind: 'refund', source: 'redeem_refund', eventId: <código> }`: o saldo sobe o que o pedido gastou, o `spentTotal` desce o mesmo tanto (nunca abaixo de 0), e o extrato ganha `redeem_refund:<código>`, que nunca paga duas vezes. Motivo do tipo novo: o ajuste (`adjust`) é da equipe, conta em `totals.adjusted` e apareceria no extrato como "Ajuste da equipe"; a devolução é parte do resgate, e o fã lê "Resgate devolvido". Os dois lançamentos levam o título da recompensa em `subjectTitle`, e o extrato mostra "Resgate" com "Par de ingressos" no contexto.
+8. **O fã confirma o custo que viu.** O `POST` leva `{ "expectedCost": 6000 }`, e o servidor recusa com 409 `reward_changed` quando o custo de agora é outro. Motivo: a equipe pode mudar o custo de uma recompensa no ar (decisão 9), e sem isso o fã com a confirmação aberta pagaria um preço que não viu. No app, o custo fica congelado ao entrar na confirmação (`confirmedCost`), e a tentativa guarda a chave junto com o custo que mandou: a nova tentativa depois de uma falha incerta repete o mesmo corpo, e o servidor devolve o resultado guardado ou, se nada gravou, o `reward_changed` (25.5 e 25.12). A recusa é definitiva no app: a loja busca de novo e o detalhe mostra o custo novo com o aviso.
+9. **Ciclo da recompensa: rascunho, no ar e encerrada.** Nasce rascunho (`draft`), vai ao ar (`published`, com `publishedAt` na primeira vez) e é encerrada (`closed`): sai da loja e não aceita resgate. A encerrada pode voltar ao ar, no fim da ordem. Recompensa com show só vai ao ar com o show aberto (decisão 18). Só o rascunho que nunca foi ao ar e não tem pedido se apaga. Custo, textos, foto, limite e show mudam a qualquer hora (o resgate confere o custo, decisão 8); o estoque muda por callable própria (decisão 11).
+10. **O que a loja mostra (`GET /rewards`): as recompensas no ar, na ordem do painel, com os pedidos do próprio fã.** A encerrada só aparece para quem tem pedido nela, como esgotada (`status: 'soldOut'`), para o fã continuar vendo o código, as instruções e o status. A no ar sem estoque, ou com o show que já passou ou saiu do ar (decisão 18), aparece para todos como esgotada. Motivo: o fã acompanha o pedido no detalhe da recompensa (não há tela de pedidos), e uma encerrada que sumisse levaria o código junto; mostrar todas as encerradas a todos encheria a loja de "Esgotado" com o tempo. A equipe que quer o "Esgotado" para todos baixa o estoque até o já resgatado (decisão 11) e recusa os pedidos dela com `restock: false` (decisão 5); a recusa padrão e o cancelamento da exclusão de conta devolvem a vaga e desfazem esse "Esgotado".
+11. **Estoque como total oferecido e pedidos que o seguram.** A recompensa guarda `stockTotal` (o total oferecido, ou `null` sem limite) e `redeemedCount` (os pedidos solicitados, aprovados e entregues); o que sobra é a diferença. O resgate soma 1; a recusa e o cancelamento tiram 1; sempre na mesma transação do pedido. A recusa com `restock: false` tira 1 também do total (decisão 5). A equipe repõe mudando o total (`setRewardStock`), nunca abaixo do já resgatado (`stock-below-redeemed`). Motivo: repor nunca apaga o que foi resgatado, e o pedido do fã não corre com a callable, porque um grava a contagem e o outro o total. `redeemedCount` é mantido também sem estoque, para o painel e para a troca de "sem limite" para um total.
+12. **Disputa pelo estoque num documento só, a recompensa** (25.6). A transação lê a recompensa e grava a contagem; os pedidos da mesma recompensa entram um de cada vez. Motivo: estoque pequeno (20 vagas) acaba em segundos, e depois disso nenhum pedido grava a recompensa, então a disputa só dura enquanto há vaga; nunca vender a mais vem da própria transação. As alternativas (lotes de estoque em shards, vagas pré-criadas, fila com resposta depois) pedem mais leitura, ou mudam o contrato do app, que espera o `RedeemResult` na resposta. Sinal e passo seguinte em 25.6.
+13. **Quem resgatou, para a equipe entregar: o pedido guarda o uid e a cópia do nome e do @; o e-mail só sai por callable.** A cópia (`fanName`, `fanUsername`) é a da hora do resgate, tirada do perfil que a transação já leu. A callable `getRedemptionContacts` (25.8) devolve o nome, o @ e o e-mail de agora (do perfil e do Auth) de até 50 pedidos abertos (solicitados e aprovados, os que ainda pedem contato para a entrega), só para admin ou editor com `rewards`, com uma entrada em `staffAudit` sem os e-mails. Pedido fechado não devolve contato: minimização de dados (LGPD), porque o entregue, o recusado e o cancelado não pedem mais conversa; se a cliente quiser o e-mail dos entregues por alguns dias (troca de tamanho, reclamação), a janela entra depois (pergunta 8 de 25.15). Motivo: o e-mail mora no Auth e é o canal de contato (as instruções dizem "a equipe fala com você pelo e-mail da sua conta"); copiado no pedido, ele ficaria legível a todo leitor da seção, envelheceria quando o fã trocasse de e-mail e seria mais um dado a apagar. O leitor (`viewer`) com `rewards` vê os pedidos e a cópia do nome e do @, nunca o e-mail; quem não tem a seção não vê nada. A cópia é de exibição, com a data do pedido (24.16): o fã que troca o @ continua achado pelo uid.
+14. **Exclusão de conta: os pedidos abertos são cancelados, e o histórico fica sem dado pessoal.** Avaliação da proposta: adotada, com um status próprio. Solicitados e aprovados viram `canceled`, o estoque volta e os pontos não (a carteira sai junto). Todo pedido do fã perde o uid, a cópia do nome e do @ e o motivo da recusa, e ganha `accountDeleted: true`. Os agregados contam o cancelamento como fluxo do dia (`canceled`), e nenhum contador desconta. Motivo do status próprio: "recusado" é decisão da equipe, com motivo para o fã; misturar os dois distorceria os números da seção. Motivo de cancelar: sem conta, a equipe não tem como falar com o fã (o e-mail some com o Auth) nem conferir quem retira, e o estoque ficaria preso. Troca a direção da seção 17 (pergunta 12), que deixava o pedido aberto para a equipe entregar. A tela "Excluir conta" passa a dizer isso (25.12). Detalhes em 25.11.
+15. **Teto do dia: 10 resgates por fã** (`reward_redeem` nos `actionCaps`, padrão `REDEEMS_PER_DAY` em `moderation/model.ts`, com os outros tetos, editável pelo `updatePointsConfig` como eles): o 11º do dia de São Paulo é 429 `too_many_requests` com `Retry-After` até a meia-noite. É a primeira conferência do resgate, antes de ler a recompensa: a carteira já foi lida pelo `runIdempotent`, então custa 0 leitura, e o script no teto não lê nem trava a recompensa disputada. Conta só o resgate que gravou (a recusa desfaz a transação). Motivo: o saldo já segura quem não tem pontos; o teto segura o fã (ou o script com o token dele) que tem saldo e esvaziaria várias recompensas pequenas num dia. Nenhum fã de verdade resgata 10 vezes num dia.
+16. **Contadores do painel por recompensa e no total, nos shards do dia** (25.9): pedidos, pontos gastos, aprovados, entregues, recusados, cancelados e pontos devolvidos, somados na transação de cada passo. São fluxos do dia; os pedidos abertos de agora saem do `count()` por status. A seção `rewards` passa a ler `statsDaily` (pergunta 16 de 25.15).
+17. **Foto da recompensa no Storage, em `rewards/{rewardId}/`**, no molde da foto dos shows: sobe do navegador, de quem edita `rewards`, só para recompensa que existe, e a função confere e grava a URL. Uma foto só, em paisagem (o `REWARD_PHOTO_ASPECT` do app é 366 por 196; sugestão 1200 × 643). Sem foto, o app usa o placeholder de marca e o ícone do tipo, como hoje.
+18. **Show opcional ligado a `events/{eventId}`** (bloco 6), que também decide até quando a recompensa vende. A recompensa guarda o `eventId`, e a loja monta o `event` (`{ name, startsAt }`) do show na hora quando ele está aberto (`isEventOpen`, 21.1, decisão 14: no ar e de hoje em diante, no dia de São Paulo). Com o show fechado (já passou, saiu do ar, em rascunho ou apagado), o `event` vai `null` (o app mostra o subtítulo), a recompensa vai como esgotada para todos e o resgate recusa com `sold_out` e `reason: 'event'` (25.4). Motivo: o meet & greet do São João não pode seguir à venda no dia seguinte, nem o de um show cancelado, à espera de a equipe encerrar; o nome e a data mudam no painel do show, e a loja acompanha, sem cópia. Custa uma leitura a mais no resgate, só nas recompensas com show. Do lado do painel: publicar (ou reabrir) recompensa com show fechado é recusado (`event-not-open`), e o `deleteEvent` recusa o show citado por alguma recompensa (`event-has-rewards`, 25.9), para nenhuma ficar com o `eventId` solto.
+19. **Aviso da regra 5.3 da Apple e o regulamento.** O pé da 1h mostra, discreto, o texto provisório "As recompensas são oferecidas pela Imagine Music. A Apple não patrocina nem participa delas de nenhuma forma." nas duas plataformas (o texto não diz nada de errado no Android, e um texto por plataforma só complicaria), e o link "Regulamento", que abre o `rulesUrl` do `GET /rewards` e fica escondido enquanto ele vier `null`, até a cliente entregar o texto (UP-45). O endereço é a constante `REWARDS_RULES_URL` de `functions/src/rewards/model.ts` (vazia, que a rota manda como `null`), no molde do `linkBase` do convite (`INVITE_LINK_BASE`, 20.2); nas fixtures, o `REWARDS_RULES_URL` de `rewards/consts.ts` do app, também vazio. Motivo do endereço no servidor: recompensa e regulamento são regras que chegam pela API (`CLAUDE.md`), e a troca de domínio (UP-46) muda o link de todas as versões do app com um deploy das funções, sem EAS Update; um documento de configuração editável pelo painel fica para o bloco 11, se a equipe precisar trocar o endereço sozinha. O texto do aviso fica nas traduções, como pede o bloco, até a cliente entregar o definitivo.
+20. **Nada de ponto, missão nem conquista pelo resgate.** Resgatar não rende ponto, não anda missão e não desbloqueia conquista (uma conquista "primeiro resgate" fica para quando a cliente pedir, 25.16). O resgate marca o fã ativo do dia, como toda rota que grava.
+
+### 25.2 Rotas
+
+| Método e caminho                 | Grava | Função do app                   | Resposta          |
+| -------------------------------- | ----- | ------------------------------- | ----------------- |
+| `GET /rewards`                   | não   | `rewards/api.ts` `fetchRewards` | `RewardsResponse` |
+| `POST /rewards/:rewardId/redeem` | sim   | `rewards/api.ts` `redeemReward` | `RedeemResult`    |
+
+Arquivos novos e mudados nas funções:
+
+- `functions/src/rewards/`, no molde de `functions/src/posts`: `model.ts` (puro, com teste em tabela: tipos e limites dos campos, `parseRewardInput`, `drawRedemptionCode`, `REDEMPTION_CODE_PATTERN`, `REDEMPTION_TRANSITIONS` e `transitionProblem`, `redeemProblem` (a ordem das recusas), `rewardView`, `redemptionView`, `isVisibleToFan`, as constantes de 25.3 e o erro `RewardError`), `store.ts` (os caminhos e a leitura dos documentos), `service.ts` (`readRewardsForFan`; o núcleo do resgate, `redeemReward`; o das transições, `applyRedemptionStatus`; o `cancelFanRedemptions` da exclusão; e `runRedeemReward` e `runRedemptionStatus`, que abrem a transação fora da API, para o seed), `panel.ts` (as callables de 25.8), `errors.ts` (`HttpsError` com `details.reason`), `seed.ts` e `index.ts`.
+- `functions/src/api/routes/rewards.ts` (`rewardRoutes`), somadas ao `API_ROUTES` depois de `profileRoutes`. `/rewards` e `/rewards/:rewardId/redeem` têm números de segmentos diferentes e não se confundem; `GET /rewards/x/redeem` é 405 com `Allow: POST`, e `POST /rewards` é 405.
+- `points/model.ts`, `points/award.ts`, `points/stats.ts`, `points/config.ts` e `moderation/model.ts`: o `refund`, o título no `spend`, os contadores novos e o teto (25.3).
+- `points/wallet.ts` (`walletView`) e `api/routes/me.ts`: o `GET /me/wallet` ganha `updatedAt` (ISO, ou `null` sem carteira), um campo a mais que o app de hoje ignora (25.12, devolução vista pelo fã).
+- `agenda/panel.ts` e `agenda/errors.ts`: o `deleteEvent` recusa o show citado por uma recompensa (`event-has-rewards`, 25.9).
+- `staff/panel-actor.ts`: o `SECTION_LABELS` ganha `rewards: 'Recompensas e resgates'`, o rótulo do painel.
+
+Ids na rota: `rewardId` segue `^[A-Za-z0-9_-]{1,128}$`, fora dos ids `__.*__` (`isContentId`, como os posts). Fora disso, 404 `reward_not_found`.
+
+**Códigos novos** (entram na tabela da seção 1):
+
+| code                   | status | kind no app | quando                                                                                      |
+| ---------------------- | ------ | ----------- | ------------------------------------------------------------------------------------------- |
+| `reward_not_found`     | 404    | notFound    | recompensa que não existe, em rascunho ou com id fora do formato                            |
+| `sold_out`             | 409    | validation  | encerrada (`details.reason: 'closed'`), sem estoque (`'stock'`) ou show fechado (`'event'`) |
+| `redeem_limit_reached` | 409    | validation  | o fã já tem o máximo de pedidos que contam nesta recompensa (`details.limit`)               |
+| `reward_changed`       | 409    | validation  | o `expectedCost` não é o custo de agora (`details.cost`)                                    |
+
+Mensagens: `reward_not_found` "Recompensa não encontrada."; `sold_out` "Recompensa esgotada."; `redeem_limit_reached` "Você chegou ao limite de resgates desta recompensa."; `reward_changed` "O custo desta recompensa mudou. Confira antes de resgatar.". As duas primeiras são as das fixtures de hoje. O 429 `too_many_requests` vale para o teto de 25.7, com `details: { limit, action: 'redeem' }`. O `insufficient_points` é o de sempre (409, `details: { balance, cost }`). O `toApiHttpError` traduz o `RewardError` como traduz o `PostError`.
+
+Tipos no `api/contract.ts`, espelho de `src/domains/rewards/types.ts`: `RewardKind`, `RewardStatus`, `RewardStock`, `RewardEvent`, `RedemptionStatus`, `RewardRedemption`, `Reward`, `RewardsResponse` e `RedeemResult`. O comentário de contrato provisório no topo do `types.ts` do app sai.
+
+#### `GET /rewards`
+
+Sem parâmetro. Só lê: não exige o perfil e não cria nada (seção 1).
+
+1. `rewards` com `status == 'published'`, `orderBy('order')`, `orderBy(FieldPath.documentId())` e `limit(REWARDS_LIST_MAX)` (100).
+2. Em paralelo, os pedidos do fã: `redemptions` com `uid == uid`, `orderBy('requestedAt', 'desc')` e `limit(FAN_REDEMPTIONS_READ_MAX)` (200).
+3. Num `getAll`, as recompensas dos pedidos que não vieram no passo 1. Entram só as encerradas (decisão 10); rascunho nunca tem pedido.
+4. Num `getAll`, os shows (`events/{eventId}`) das recompensas da resposta.
+5. A lista sai na ordem do painel (`order`, depois o id), com as encerradas no lugar delas, e o `rulesUrl` (decisão 19).
+
+```json
+{
+  "rulesUrl": null,
+  "rewards": [
+    {
+      "id": "ingressos",
+      "kind": "ticket",
+      "title": "Par de ingressos",
+      "subtitle": "Pra Encher e Derramar",
+      "description": "Dois ingressos de pista para o Pra Encher e Derramar, em Feira de Santana.",
+      "cost": 6000,
+      "imageUrl": null,
+      "featured": false,
+      "scarcity": false,
+      "stock": null,
+      "event": null,
+      "status": "available",
+      "perFanLimit": 2,
+      "limitReached": false,
+      "redemptions": [
+        {
+          "id": "UP-4KD9TM",
+          "code": "UP-4KD9TM",
+          "status": "delivered",
+          "statusAt": "2026-10-02T21:00:00.000Z",
+          "points": 6000,
+          "refundedPoints": 0,
+          "instructions": "Retire o par de ingressos na bilheteria do show com este código e um documento com foto.",
+          "refusalReason": null,
+          "redeemedAt": "2026-09-30T21:00:00.000Z"
+        }
+      ]
+    }
+  ]
+}
+```
+
+- `rulesUrl`: o `REWARDS_RULES_URL` do servidor, ou `null` enquanto ele estiver vazio (decisão 19). Campo novo, opcional no tipo do app.
+- `imageUrl`: o `photo.url`, ou `null`.
+- `featured`: o da recompensa enquanto ela está no ar, esgotada ou não; a encerrada vai com `false`, porque só quem tem pedido a vê. A no ar esgotada continua destaque, com o selo "Esgotado" que o card do destaque já desenha, até a equipe desmarcar. O app usa a primeira marcada como destaque, como hoje: mais de uma marcada não é erro.
+- `stock`: `null` sem total; senão `{ total: stockTotal, remaining: max(0, stockTotal - redeemedCount) }`.
+- `event`: o show aberto, ou `null` (decisão 18).
+- `status`: `soldOut` na encerrada, na que tem show fechado (decisão 18) e na no ar sem vaga (`remaining` 0); `available` no resto.
+- `perFanLimit`: o limite (decisão 6), ou `null`. `limitReached`: entre os pedidos lidos no passo 2, o fã tem nesta recompensa pelo menos `perFanLimit` pedidos que contam. É só para mostrar: quem decide é o resgate, que conta na transação (o fã com mais de 200 pedidos pode ver `false` e receber a recusa).
+- `redemptions`: os pedidos do fã nesta recompensa, do mais novo ao mais antigo. `status` nunca é `canceled` (o pedido cancelado não tem mais uid). `statusAt` é o instante do status de agora. `points` é o que o pedido gastou, e `refundedPoints` o que a recusa devolveu de fato (0 fora do recusado, e também no recusado cuja devolução saiu `skipped` ou `duplicate`). `instructions` são as da recompensa de agora enquanto o pedido está solicitado ou aprovado, e a cópia da hora do resgate depois que ele fecha. `refusalReason` só vem no recusado: o texto da equipe, ou `null`. `id` e `code` têm o mesmo valor; o `id` é a chave da lista no app.
+
+Custo: as recompensas no ar (perto de 10), os pedidos do fã (1 leitura quando não há nenhum), as encerradas com pedido (raro) e os shows (1 ou 2): perto de 15 leituras por abertura da 1h.
+
+#### `POST /rewards/:rewardId/redeem`
+
+Corpo `{ "expectedCost": 6000 }`, com `Idempotency-Key`. O `validate` confere o corpo: um objeto com `expectedCost` inteiro de 1 a `COST_MAX`; fora disso, 400 `invalid_request` com `details.field: 'expectedCost'`. O resto, na transação (25.4).
+
+```json
+{
+  "redemptionId": "UP-C3NWPB",
+  "rewardId": "camisa",
+  "code": "UP-C3NWPB",
+  "balance": 12480,
+  "instructions": "A equipe da Imagine Music fala com você pelo e-mail da sua conta para combinar o tamanho e a entrega da camisa.",
+  "redeemedAt": "2026-10-05T21:00:00.000Z",
+  "status": "requested"
+}
+```
+
+`status` é campo novo no `RedeemResult` e sai sempre `requested`. Recusas, na ordem em que acontecem: as do roteador e do `runIdempotent`, de sempre (401 do token, 400 `idempotency_key_required` e 400 `invalid_request` do corpo; depois, na transação, a chave já guardada: a mesma resposta, ou 422 `idempotency_key_reused` com outro corpo; 503 `profile_not_ready`; 403 `not_fan`); depois as do resgate (25.4): 429 `too_many_requests`; 404 `reward_not_found`; 409 `sold_out` (`closed`, `stock`, `event`); 409 `reward_changed`; 409 `redeem_limit_reached`; 409 `insufficient_points`. A transação que esgota as tentativas é 503 `unavailable`, em qualquer ponto. As fixtures copiam a ordem das recusas do resgate, fora o teto (25.12). Nenhuma recusa grava nada, nem a chave.
+
+### 25.3 Coleções e campos
+
+```
+rewards/{rewardId} {
+  kind: 'ticket' | 'videocall' | 'merch' | 'screen' | 'meet'   // o RewardKind do app
+  title: string                      // 1 a 60, uma linha visível
+  subtitle: string                   // 1 a 60, uma linha visível
+  description: string | null         // 1 a 1.000, várias linhas visíveis (cleanMultiline), ou null
+  cost: number                       // pontos do saldo, inteiro de 1 a 1.000.000
+  photo: { url, path, width, height } | null
+  featured: boolean
+  scarcity: boolean                  // o selo "Só N vagas" (o app só mostra com estoque)
+  stockTotal: number | null          // total oferecido, inteiro de 0 a 100.000; null é sem limite
+  redeemedCount: number              // pedidos solicitados, aprovados e entregues (decisão 11)
+  perFanLimit: number | null         // de 1 a 100, ou null sem limite; padrão 1 (decisão 6)
+  eventId: string | null             // events/{id} do bloco 6
+  instructions: string               // 1 a 1.000, várias linhas visíveis: retirada ou contato
+  status: 'draft' | 'published' | 'closed'
+  order: number                      // menor vem primeiro
+  publishedAt: Timestamp | null      // primeira publicação; nulo: nunca foi ao ar (só esse se apaga)
+  closedAt: Timestamp | null         // o último encerramento
+  createdAt, updatedAt: Timestamp    // updatedAt só nas mudanças da equipe; o resgate não mexe
+  createdBy, updatedBy: string       // uid da equipe; o fã nunca lê este documento
+  schemaVersion: 1
+}
+
+redemptions/{code} {                 // o id é o código de retirada, "UP-7QXH2R"
+  code: string                       // o mesmo id
+  rewardId: string
+  rewardTitle: string                // cópias da hora do resgate: o painel lista sem ler a recompensa
+  rewardKind: string
+  eventId: string | null
+  points: number                     // o custo pago
+  uid: string | null                 // null depois da exclusão de conta
+  fanName: string | null             // cópias do perfil na hora (decisão 13); null sem nome no
+  fanUsername: string | null         //   perfil e depois da exclusão
+  status: 'requested' | 'approved' | 'delivered' | 'refused' | 'canceled'
+  instructions: string               // cópia da recompensa na hora
+  refusalReason: string | null       // só no recusado: o texto que o fã vê, ou null
+  refundedPoints: number             // o que voltou ao saldo na recusa; 0 nos outros e sem conta
+  restocked: boolean | null          // só no recusado: a vaga voltou (o restock da decisão 5)
+  requestedAt: Timestamp             // o "agora" do pedido
+  approvedAt, deliveredAt, refusedAt, canceledAt: Timestamp | null
+  statusAt: Timestamp                // a última troca de status (no começo, o requestedAt)
+  updatedBy: { uid: string, name: string } | null   // quem da equipe mudou por último; null no
+                                     //   pedido novo, nas transições do seed e no cancelamento
+  accountDeleted: boolean
+  schemaVersion: 1
+}
+```
+
+- Ninguém grava nada disso pelo cliente: a recompensa muda pelas callables (25.8), e o pedido nasce na API e muda pelas callables e pela exclusão de conta.
+- Nenhum dos dois guarda texto livre do fã. O `refusalReason` é texto da equipe.
+- Carteira: `days[dia].count` ganha `reward_redeem` (o teto de 25.7). O `spentTotal` (seção 4) continua somando os resgates e passa a descer na devolução: `balance` segue igual a `earnedTotal - spentTotal` mais os ajustes de saldo.
+- Extrato: `kind` ganha `refund`, e a origem `redeem_refund` entra na tabela da seção 5. O `subjectTitle` deixa de ser só da missão: o `redeem` e o `redeem_refund` levam o título da recompensa da hora (o `title` da entrada, de 1 a 80, uma linha visível, conferido como o da missão). `subject` é `{ type: 'reward', id: rewardId }`, tipo que o núcleo já aceita. O `LedgerItem` de `points/wallet.ts` e o `contract.ts` ganham o `refund` no `kind`.
+- Agregados (25.9): `ShardDelta.totals` ganha `refunded`, `refundedEvents`, `redeemRequested`, `redeemApproved`, `redeemDelivered`, `redeemRefused` e `redeemCanceled`, e o shard ganha `byReward: { <rewardId>: { requested, spent, approved, delivered, refused, canceled, refunded } }`.
+- Teto: `DailyActionKey` ganha `reward_redeem`; o `ACTION_CAP_KEYS` e o `DEFAULT_ACTION_CAPS` também; o `DAILY_CAPS` de `moderation/model.ts` ganha `redeem: { key: 'reward_redeem', limit: REDEEMS_PER_DAY }`.
+
+Constantes em `rewards/model.ts` (tamanhos em unidades de UTF-16, como os outros limites):
+
+| Constante                              | Valor     | Para quê                                                                                            |
+| -------------------------------------- | --------- | --------------------------------------------------------------------------------------------------- |
+| `DEFAULT_PER_FAN_LIMIT`                | 1         | limite por fã de uma recompensa nova                                                                |
+| `PER_FAN_LIMIT_MAX`                    | 100       | maior limite por fã aceito                                                                          |
+| `COST_MAX`                             | 1.000.000 | maior custo                                                                                         |
+| `STOCK_MAX`                            | 100.000   | maior total de estoque                                                                              |
+| `TITLE_MAX` e `SUBTITLE_MAX`           | 60        | título e subtítulo                                                                                  |
+| `DESCRIPTION_MAX` e `INSTRUCTIONS_MAX` | 1.000     | descrição e instruções                                                                              |
+| `REFUSAL_REASON_MAX`                   | 200       | motivo da recusa                                                                                    |
+| `REDEMPTION_CODE_LENGTH`               | 6         | caracteres depois do `UP-`; 1 código sorteado por tentativa (decisão 2)                             |
+| `REWARDS_LIST_MAX`                     | 100       | recompensas no ar lidas pela loja                                                                   |
+| `FAN_REDEMPTIONS_READ_MAX`             | 200       | pedidos do fã lidos pela loja                                                                       |
+| `REDEMPTION_DELETE_PAGE`               | 100       | pedidos por transação na exclusão de conta                                                          |
+| `CONTACTS_MAX`                         | 50        | pedidos por chamada do `getRedemptionContacts` (um `getUsers` só)                                   |
+| `REWARDS_REORDER_MAX`                  | 240       | rascunhos e no ar no `reorderRewards` (as encerradas ficam fora), como o `REORDER_MAX` das centrais |
+| `REWARDS_RULES_URL`                    | `''`      | endereço do regulamento; vazio vai como `rulesUrl: null` (decisão 19)                               |
+
+`REDEMPTION_CODE_PATTERN` é `^UP-[23456789BCDFGHJKMNPQRSTVWXYZ]{6}$`, e o app tem o mesmo padrão nos testes das fixtures. O padrão do teto do dia, `REDEEMS_PER_DAY` (10), mora em `moderation/model.ts`, com os outros tetos (`LIKES_PER_DAY` e os demais), e não aqui.
+
+### 25.4 Transações passo a passo
+
+**Resgate** (`redeemReward`, em `rewards/service.ts`, no `runIdempotent`, depois do `requireFan`):
+
+1. `enforceDailyCap(fan, award, 'redeem')`: no teto, 429. É a primeira conferência, antes de qualquer leitura da rota: a carteira veio do `getAll` do `runIdempotent` (0 leitura a mais), e o fã ou o script no teto não lê nem trava a recompensa disputada.
+2. `tx.get(rewards/{rewardId})`. Não existe ou em rascunho: `RewardError('reward_not_found')`. Encerrada: `sold_out` com `reason: 'closed'`. Com `stockTotal` e `redeemedCount >= stockTotal`: `sold_out` com `reason: 'stock'`. Depois do esgotado, a rota para aqui.
+3. Em paralelo, só o que a recompensa pede (as duas leituras dependem dela e vêm antes de qualquer gravação): com `eventId`, `tx.get(events/{eventId})`; com `perFanLimit`, `tx.get` da consulta `redemptions` com `uid == uid` e `rewardId == rewardId` (só igualdades: o Firestore junta os índices simples, sem composto).
+4. Show fechado (`isEventOpen(event, award.now)` falso: já passou, fora do ar, em rascunho ou apagado): `sold_out` com `reason: 'event'` (decisão 18).
+5. `expectedCost` diferente do `cost`: `reward_changed` com `details.cost`.
+6. Pedidos `requested`, `approved` ou `delivered` da consulta do passo 3 em número igual ou maior que o limite: `redeem_limit_reached` com `details.limit`.
+7. O código: 1 sorteado com `crypto.randomInt`, sem ler (decisão 2). O `tx.create` do passo 9 garante que ele é único; a colisão derruba o commit com `ALREADY_EXISTS`, e o `retryOnAlreadyExists` roda o pedido de novo uma vez, com outro sorteio (a chave não foi guardada, então não há repetição de resposta). O seed passa um código fixo (25.13) e o lê antes, uma leitura só nele: se o pedido com ele já existe, sai sem efeito e sem plano, como o comentário do seed (21.4).
+8. `planAwards(tx, db, [{ uid, fan, entries: [{ kind: 'spend', source: 'redeem', eventId: code, points: cost, subject: { type: 'reward', id: rewardId }, title }] }], award)`. Saldo curto: `insufficient_points` com `details: { balance, cost }`, do núcleo (seção 5).
+9. Grava: `tx.create(redemptions/{code})` com `status: 'requested'`, `updatedBy: null`, as cópias da recompensa e do perfil (o nome e o @ do `profile` do contexto, 24.2), `requestedAt` e `statusAt` com o `award.now`; `tx.update(rewards/{rewardId}, { redeemedCount: lido + 1 })`; `addRedemptionCounts(plan, [{ rewardId, kind: 'requested', points: cost }])`; `countDailyAction(plan, fan, award, 'redeem')`.
+10. Responde o `RedeemResult`, com o `balance` da carteira do plano. O `runIdempotent` grava o plano (carteira, extrato e shard) e a chave.
+
+Custo: 3 leituras do `runIdempotent` (chave, perfil, carteira), 1 da recompensa, 1 do show (só com show), 1 da consulta do limite (só com limite; a consulta vazia também cobra 1) e 2 do `planAwards` (a temporada e o extrato): de 6 a 8 leituras, 8 no meet & greet. No teto, 3; depois do esgotado, 4. Gravações: o pedido, a recompensa, a carteira, o extrato, o shard e a chave, 6.
+
+**Mudar o status do pedido** (`applyRedemptionStatus`, o núcleo do `setRedemptionStatus` e do seed), numa transação:
+
+1. Na callable, o `readPanelActor` de novo, dentro da transação. Depois, `redemptions/{code}`; não existe: `redemption-not-found`.
+2. O status pedido é o de agora: responde `{ ok: true, status, refundedPoints }` sem gravar nem auditar, com o `refundedPoints` guardado no pedido (no recusado, o que voltou na primeira chamada, para o painel que perdeu a resposta não mostrar "0 devolvidos"; nos outros, 0). O `restock` é ignorado na repetição.
+3. `transitionProblem(from, to)`, a tabela da decisão 3: fora dela, `invalid-transition` com `details: { from, to }`. `reason` e `restock` só com `refused` (`reason-not-allowed` nos outros).
+4. `approved` e `delivered`: `tx.update` do pedido (`status`, `approvedAt` ou `deliveredAt`, `statusAt` e `updatedBy`); a contagem `approved` ou `delivered` no shard; a auditoria. Sem ponto e sem estoque.
+5. `refused`: lê `rewards/{rewardId}`. Com `uid`, `planAwards(tx, db, [{ uid, entries: [{ kind: 'refund', source: 'redeem_refund', eventId: code, points, subject: { type: 'reward', id: rewardId }, title: rewardTitle }] }], contexto)`, com o ator da equipe (`{ type: 'staff', uid, name }`), a configuração do `createConfigSource` (só o `version` entra no lançamento) e o shard sorteado. Fã sem perfil (conta sendo excluída): o lançamento sai `skipped`, e nada volta. Extrato que já tem `redeem_refund:<código>`: `duplicate`. Depois: `tx.update` do pedido (`status: 'refused'`, `refusedAt`, `statusAt`, `refusalReason`, `refundedPoints` com o que o plano aplicou, `restocked`, `updatedBy`); `tx.update` da recompensa com o `redeemedCount` menos 1, nunca abaixo de 0, e, com `restock: false` e `stockTotal` não nulo, o `stockTotal` menos 1 também (o que sobra não muda; o total nunca fica abaixo do `redeemedCount` novo); a contagem `refused` com os pontos devolvidos no shard; o `applyAwards`; a auditoria, com `restocked`. Responde `{ ok: true, status: 'refused', refundedPoints }`.
+6. Sem fã no plano (aprovar e entregar), as contagens vão num plano sem fã: o `planAwards` com a lista vazia não lê nada e devolve o plano, o `addRedemptionCounts` cria o shard e o `applyAwards` o grava. Uma gravação de shard por transação, como sempre.
+7. No seed (`runRedemptionStatus`), o ator é o `SEED_ACTOR` (`{ type: 'system', uid: null, name: null }`, de `points/seed.ts`): sem `readPanelActor`, sem auditoria e com `updatedBy: null`, porque o `updatedBy` e a auditoria pedem um membro da equipe com uid. A transição só roda quando o status de agora é o `from` dela (`expectFrom`); com outro status, sai sem efeito. Assim o seed roda de novo sem cair no `invalid-transition` (o `UP-4KD9TM` já entregue pula o "aprovar") e termina certo também depois de uma rodada que parou no meio.
+
+Custo da recusa: o membro da equipe, o pedido, a recompensa, o perfil, a carteira, a temporada e o extrato do fã: 7 leituras. Gravações: o pedido, a recompensa, a carteira, o extrato, o shard e a auditoria, 6.
+
+**Callables da recompensa** (25.8): na transação, o `readPanelActor` de novo, a recompensa e o que cada uma pede (o show no `setRewardStatus` que publica; o fim da ordem no `createReward` e na reabertura; as recompensas fora das encerradas no `reorderRewards`), as gravações e a auditoria. Nenhuma toca em pedido, fora o `deleteReward` (o `limit(1)` dos pedidos da recompensa).
+
+**Exclusão de conta:** 25.11.
+
+### 25.5 Idempotência e o evento de pontos
+
+- Pedido: a `Idempotency-Key` de sempre, da tentativa. O app já faz assim (`openAttempts` em `rewards/queries.ts`): a mesma chave depois de falha incerta, nova depois de recusa definitiva. A repetição devolve o `RedeemResult` guardado, com o mesmo código, sem gastar de novo. A mesma chave com outro `expectedCost` é 422, porque o corpo entra na impressão (`fingerprint`).
+- **A tentativa guarda o corpo junto com a chave.** O 422 só existe quando a primeira chamada gravou, e o app trata 422 como recusa de validação: se a nova tentativa mandasse o custo novo (a equipe mudou o custo no meio, e a loja buscou de novo depois da falha incerta), o app apagaria a chave, e o toque seguinte, com chave nova, faria um segundo pedido com débito em dobro (na recompensa sem limite, como a camisa; com limite, uma recusa enganosa). Por isso o `openAttempts` guarda `{ key, expectedCost }`, e a nova tentativa repete o mesmo corpo: o servidor devolve o resultado guardado, se a primeira gravou, ou recusa com `reward_changed`, se nada gravou (o custo de agora não é o da tentativa), e aí a chave fecha e o detalhe mostra o custo novo. O 422 `idempotency_key_reused` no resgate, que com isso não deveria acontecer, vira um desfecho próprio (`alreadyRedeemed`, 25.12), e nunca o caminho de uma chave nova às cegas.
+- Negócio: `redeem:<código>` e `redeem_refund:<código>`. O código é novo a cada pedido, então dois resgates do mesmo fã com chaves diferentes são dois pedidos, cada um com o seu débito, dentro do limite por fã. A devolução de um pedido acontece uma vez: o recusado não muda mais, e o id do lançamento barra a segunda.
+- Callables: idempotentes pelo estado. O mesmo status (com o `refundedPoints` guardado, 25.4), o mesmo estoque, a mesma ordem e os mesmos campos respondem sem gravar nem auditar. O `createReward` aceita o `rewardId` gerado pelo painel (`doc(collection(db, 'rewards')).id`, no navegador): o mesmo id de novo responde `{ rewardId }` sem gravar, e a nova tentativa depois de uma falha de rede não cria um segundo rascunho. Sem o id, o servidor gera um, como no `createPost`. O `deleteReward` de uma recompensa que já saiu responde `reward-not-found`, que o painel trata como feito.
+- Valores: o resgate não usa os valores de `config/points` (o custo é da recompensa). O lançamento guarda o `configVersion`, como sempre.
+
+### 25.6 Disputa pelo estoque
+
+- **Onde ela acontece.** Todo resgate de uma recompensa lê o documento dela e grava o `redeemedCount` na mesma transação. As funções usam o SDK de servidor, com trava pessimista: a leitura na transação trava o documento até o commit, e duas transações que gravam o mesmo documento entram uma de cada vez. A que perde a vez volta com `ABORTED`, e o SDK repete (até 5 tentativas no `runIdempotent`); depois disso, 503 `unavailable` com `Retry-After: 1`, que o app trata como falha incerta: a mesma chave, e o fã toca de novo (e recebe `sold_out` se as vagas acabaram).
+- **Quanto dura.** Só enquanto há vaga. Depois do último pedido, toda transação da recompensa só lê e desiste com `sold_out`, e leitura não trava leitura: a fila some. Num lançamento de 20 vagas, no máximo 20 transações gravam a recompensa.
+- **Quanto aguenta.** Um documento aguenta perto de 1 gravação por segundo sustentada, com rajadas de algumas dezenas. É o ritmo de uma recompensa disputada: as 20 vagas saem em segundos, com novas tentativas. A recompensa sem estoque também grava a contagem; ela só sofreria com mais de 1 resgate por segundo, sustentado, da mesma recompensa, o que a loja de uma gravadora regional não tem.
+- **O mesmo fã.** Dois pedidos do mesmo fã (duas chaves, dois aparelhos) gravam a mesma carteira e entram um de cada vez; o segundo relê a consulta do limite e já vê o pedido do primeiro.
+- **Custo.** Cada tentativa custa as 6 a 8 leituras de 25.4 (8 no meet & greet, com show e limite). Pior caso realista, 500 fãs no lançamento de 20 vagas, cada um com 5 tentativas: perto de 20 mil leituras, centavos. Depois do esgotado, cada pedido custa 4 leituras e nenhuma gravação, e o fã no teto do dia, 3, sem tocar na recompensa. Nada na rota lê o código do pedido (decisão 2), então a única trava disputada é a da recompensa. O `maxInstances: 10` com `concurrency: 80` já limita os pedidos ao mesmo tempo.
+- **Alternativas descartadas.** Lotes de estoque em shards (`rewards/{id}/stockLots/{n}`, cada um com parte das vagas): espalham a gravação, mas o esgotado só se sabe lendo todos os lotes, e a devolução precisa saber de qual lote o pedido saiu. Vagas pré-criadas (um documento por unidade): o mesmo problema, com uma consulta a mais para achar a vaga livre. Fila com resposta depois: muda o contrato do app, que espera o código na resposta, e o fã ficaria sem saber se conseguiu.
+- **Sinal para mexer:** `unavailable` ou transações repetidas nos logs da `api` na rota do resgate, ou uma recompensa com centenas de vagas abertas de uma vez. Passo seguinte: os lotes acima, com o resgate sorteando um lote com vaga (uma leitura) e a recompensa marcando `soldOutAt` uma vez, quando o último lote zera.
+- **Registrado e não implementado:** recusar o esgotado antes da transação (lendo a recompensa fora dela) pouparia as leituras depois do esgotado, mas a repetição de uma chave que deu certo precisa da resposta guardada, e o `runIdempotent` lê a chave primeiro. Seria uma etapa a mais no roteador para um ganho de centavos.
+
+### 25.7 Antifraude e tetos
+
+| Risco                                         | Barreira                                                                               |
+| --------------------------------------------- | -------------------------------------------------------------------------------------- |
+| Resgate duplo pelo mesmo toque                | a `Idempotency-Key` da tentativa e a trava síncrona do app                             |
+| Resgate repetido pelo mesmo fã com chave nova | o limite por fã, contado na transação (padrão 1)                                       |
+| Estoque negativo                              | o estoque conferido e a contagem gravada na mesma transação                            |
+| Saldo negativo                                | o débito do núcleo recusa com `insufficient_points`                                    |
+| Preço que o fã não viu                        | o `expectedCost` (`reward_changed`)                                                    |
+| Esvaziar várias recompensas num dia           | o teto de 10 resgates por dia (`reward_redeem`), conferido antes de ler a recompensa   |
+| Resgate de show que passou ou foi cancelado   | o show fechado esgota a recompensa (`sold_out`, `reason: 'event'`)                     |
+| Resgate em dobro depois de falha incerta      | a tentativa guarda a chave e o `expectedCost`, e repete o mesmo corpo (25.5)           |
+| Devolução repetida                            | o recusado não muda mais, e `redeem_refund:<código>` paga uma vez                      |
+| Código adivinhado                             | sorteado com `crypto.randomInt` entre 4,8 × 10^8; a retirada pede documento com foto   |
+| Conta excluída que ainda tem token            | o `requireFan` em toda gravação (seção 1)                                              |
+| E-mail do fã à vista de qualquer um da equipe | só pela callable, só dos pedidos abertos, com edição na seção e auditoria (decisão 13) |
+
+Sem App Check, como no bloco 1. No app, o 429 do teto vira um aviso próprio no detalhe (25.12).
+
+### 25.8 Callables do painel (contrato para o bloco 11)
+
+No molde de 21.9: exportadas no `src/index.ts` depois do `setGlobalOptions`, com `cors: PANEL_ORIGINS`, erro `HttpsError(código, mensagem em pt-BR, { reason })`, o acesso lido de `staff/{uid}` a cada chamada e de novo na transação (`readPanelActor` com a seção `rewards` e `edit`: admin, ou editor com `rewards`), e uma entrada em `staffAudit` por mudança (`targetEmail: ''`, `targetUid: null`, o alvo em `details`). Fora da equipe ativa: `not-staff`; sem a seção, ou só leitura: `no-section`. Nada mudou: `{ ok: true }` sem gravar nem auditar. Campo errado: `invalid-request` com `details.field`.
+
+As ações novas entram no `AuditAction` de `staff/service.ts`: `reward.created`, `reward.updated` (os campos mudados, sem os textos), `reward.published` (com `reopened: true` quando volta do encerrado), `reward.closed`, `reward.stock.updated` (o total antes e depois e o já resgatado), `reward.reordered`, `reward.deleted`, `redemption.approved`, `redemption.delivered`, `redemption.refused` (com `refundedPoints`, `restocked` e `hasReason`, sem o texto) e `redemption.contacts.viewed` (os códigos, sem nome, @ nem e-mail). A auditoria dos pedidos leva o código, a recompensa e os status, nunca o uid do fã.
+
+Dependências (`RewardsPanelDeps`): `db`, `files` (o `ArtistFiles` de `artists/files.ts`, para a foto), `auth` (`Pick<Auth, 'getUsers'>`, para os contatos, numa chamada só), `config` (`createConfigSource`, para a devolução), e `now` e `random` opcionais, que os testes fixam.
+
+**Recompensas:**
+
+| Callable          | Pedido                                                                                                                              | Resposta                  | Recusas (`details.reason`)                                                                   |
+| ----------------- | ----------------------------------------------------------------------------------------------------------------------------------- | ------------------------- | -------------------------------------------------------------------------------------------- |
+| `createReward`    | `{ rewardId?, kind, title, subtitle, description?, cost, featured?, scarcity?, stockTotal?, perFanLimit?, eventId?, instructions }` | `{ rewardId }`            | `invalid-request`, `event-not-found`                                                         |
+| `updateReward`    | `{ rewardId, kind?, title?, subtitle?, description?, cost?, featured?, scarcity?, perFanLimit?, eventId?, instructions?, photo? }`  | `{ ok: true }`            | `reward-not-found`, `invalid-request`, `event-not-found`, `invalid-photo`, `photo-not-found` |
+| `setRewardStatus` | `{ rewardId, status: 'published' \| 'closed' }`                                                                                     | `{ ok: true }`            | `reward-not-found`, `invalid-status`, `not-published`, `event-not-open`                      |
+| `setRewardStock`  | `{ rewardId, stockTotal: number \| null }`                                                                                          | `{ ok: true, remaining }` | `reward-not-found`, `invalid-request`, `stock-below-redeemed`                                |
+| `reorderRewards`  | `{ rewardIds }`                                                                                                                     | `{ ok: true }`            | `invalid-request`                                                                            |
+| `deleteReward`    | `{ rewardId }`                                                                                                                      | `{ ok: true }`            | `reward-not-found`, `was-published`, `has-redemptions`                                       |
+
+- `createReward` cria o rascunho, no fim da ordem (o maior `order` mais 1, lido na transação com `orderBy('order', 'desc')` e `limit(1)`), com `redeemedCount` 0, sem foto, `publishedAt` e `closedAt` nulos. Obrigatórios: `kind` (um dos 5 tipos), `title`, `subtitle`, `cost` e `instructions`, nos limites de 25.3. Ausentes: `description` `null`, `featured` e `scarcity` falsos, `stockTotal` `null` (sem limite), `perFanLimit` 1 (`null` explícito é sem limite), `eventId` `null`. O `eventId` precisa de um show que existe, em qualquer status (`event-not-found`). O `rewardId` do painel segue o formato da rota; já existe: responde `{ rewardId }` sem gravar (25.5).
+- `updateReward`: ausente não muda; `null` limpa o que aceita `null`. Muda em qualquer status, também o custo (o resgate confere, decisão 8). `photo`: `{ photoPath }`, um arquivo direto em `rewards/{rewardId}/`; `null` tira. A função confere no bucket, antes da transação: existe (`photo-not-found`), é `image/(webp|jpeg|png)` (`invalid-photo`); grava `{ url, path, width, height }` com a URL do `getDownloadURL` e as medidas do metadado `width` e `height` (sem eles, 1200 × 643). Depois da transação, limpa a pasta como o `updateEvent` (`removeFiles`, sem travar a resposta).
+- `setRewardStatus`: `published` vale para o rascunho (grava `publishedAt` na primeira vez) e para a encerrada (reabre, no fim da ordem: o maior `order` mais 1, como no `createReward`, porque a encerrada ficou fora do `reorderRewards`; `publishedAt` fica). Com `eventId`, só publica com o show aberto (`isEventOpen`, lido na transação); senão, `event-not-open`: publicada, ela já nasceria esgotada para todos (decisão 18). `closed` vale só para a no ar (grava `closedAt`); rascunho é `not-published` (rascunho sai pelo `deleteReward`). Encerrar não mexe em pedido nenhum: os abertos seguem para a equipe entregar ou recusar. A recompensa cujo show passou fica no ar e esgotada até a equipe encerrar.
+- `setRewardStock`: `stockTotal` inteiro de 0 a `STOCK_MAX` ou `null`. Abaixo do `redeemedCount` lido na transação: `stock-below-redeemed` com `details.redeemed`. Igual ao resgatado esgota para todos (decisão 10). Responde o `remaining` (`null` sem limite).
+- `reorderRewards`: a lista é a das recompensas em rascunho e no ar (`status in ['draft', 'published']`, lidas na transação), sem faltar, sobrar nem repetir, até `REWARDS_REORDER_MAX` (`invalid-request`). As encerradas ficam fora e mantêm o `order` delas: o limite por fã vale pela vida da recompensa (decisão 6), cada rodada vira uma recompensa nova, e uma lista com as encerradas chegaria às 240 em pouco tempo. Cada uma que muda de lugar grava o `order`. Onde a encerrada cai entre as outras não importa: a loja só a mostra a quem tem pedido nela, e ela volta no fim da ordem se reabrir.
+- `deleteReward`: só a que nunca foi ao ar (`publishedAt` nulo; senão `was-published`) e sem pedido (`redemptions` com `rewardId == id`, `limit(1)`; senão `has-redemptions`). Apaga o documento e, depois da transação, a pasta `rewards/{rewardId}/` (`removeFiles`). Auditoria `reward.deleted` com o tipo e o título.
+
+**Pedidos:**
+
+| Callable                | Pedido                                                                                | Resposta                                                  | Recusas                                                                               |
+| ----------------------- | ------------------------------------------------------------------------------------- | --------------------------------------------------------- | ------------------------------------------------------------------------------------- |
+| `setRedemptionStatus`   | `{ redemptionId, status: 'approved' \| 'delivered' \| 'refused', reason?, restock? }` | `{ ok: true, status, refundedPoints }`                    | `invalid-request`, `redemption-not-found`, `invalid-transition`, `reason-not-allowed` |
+| `getRedemptionContacts` | `{ redemptionIds }`                                                                   | `{ contacts: [{ redemptionId, name, username, email }] }` | `invalid-request`                                                                     |
+
+- `setRedemptionStatus`: as transições da decisão 3 e o passo a passo de 25.4. `redemptionId` no `REDEMPTION_CODE_PATTERN`, com o painel mandando o código normalizado (maiúsculas, sem espaços). `reason` só com `refused`: ausente ou `null` grava `null`; texto de 1 a `REFUSAL_REASON_MAX`, uma linha visível (`isVisibleLine`), senão `invalid-request` com `details.field: 'reason'`. `restock` só com `refused`: booleano, padrão `true` (a vaga volta); `false` mantém o que sobra do estoque (decisão 5; fora do booleano, `invalid-request` com `details.field: 'restock'`). Show cancelado: encerre a recompensa (`setRewardStatus`) antes de recusar os pedidos em lote, e recuse com `restock: false` se ela puder voltar ao ar. `canceled` não é pedido aceito (é só da exclusão de conta).
+- `getRedemptionContacts`: de 1 a `CONTACTS_MAX` códigos, sem repetir. Lê os pedidos num `getAll`; dos abertos (solicitado e aprovado), os perfis `users/{uid}` (o nome e o @ de agora) num `getAll` e as contas num `auth.getUsers` só (até 100 por chamada; o `getUsers` devolve em `notFound` quem não existe). Pedido que não existe ou que já fechou (entregue, recusado, cancelado) fica fora da resposta, por minimização de dados (decisão 13); pedido aberto de conta que não existe mais volta com tudo `null`. Uma auditoria por chamada, com os códigos e a quantidade, sem nome, @ nem e-mail. Só admin ou editor com `rewards`: o leitor da seção vê a cópia do nome e do @ no pedido, nunca o e-mail (decisão 13).
+
+**Storage** (regras em 25.10): `rewards/{rewardId}/{arquivo}`, nome novo a cada envio (sugestão: `photo-{ts}-1200.webp`), com `cacheControl` de um ano e `width` e `height` no metadado, como o `uploadArtistPhoto` do painel. Imagem até 5 MB. A recompensa precisa existir antes do envio.
+
+**Leituras diretas do painel** (bloco 11), com as regras de 25.10, por `getDocs` e sem escuta em tempo real (o resgate grava o `redeemedCount` a cada pedido):
+
+- O catálogo: `rewards` com `orderBy('order')`.
+- A ordem, decidida agora porque cada direção pede o próprio índice composto (o Firestore não lê o índice ao contrário): os abertos (solicitado e aprovado) do mais antigo para o mais novo, `orderBy('requestedAt', 'asc')`, porque é a fila de entrega e quem pediu primeiro é atendido primeiro; os fechados (entregue, recusado, cancelado) e a lista de todos os status do mais novo para o mais antigo, `orderBy('requestedAt', 'desc')`, porque é histórico.
+- Os pedidos de uma recompensa: `redemptions` com `rewardId == id` e `orderBy('requestedAt', 'desc')`, e com `status == s` na aba de cada status, na ordem acima.
+- A fila de cada status, de todas as recompensas: `status == s`, na ordem acima.
+- Um pedido pelo código: `getDoc(redemptions/{código})`, com o código normalizado (maiúsculas, sem espaços, com o `UP-`).
+- Quantos em cada status: `count()` com os mesmos filtros. Os pedidos abertos de agora saem só daqui: os contadores do dia são fluxos, e o entregue que pulou o aprovado nunca passou por `approved` (decisão 4), então `approved` menos `delivered` não dá os abertos.
+- Os contadores por dia: `statsDaily` e os shards (`byReward` e os totais de 25.3).
+- Os shows, para escolher o da recompensa e mostrar o nome dele: `events`, que a seção `rewards` passa a ler (25.10).
+
+### 25.9 Efeitos no painel e agregados
+
+- **Agregados** (`statsShards`, seção 7): `addRedemptionCounts(plan, changes)`, em `points/award.ts`, no molde do `addEngagementCounts`: cria o `plan.shard` quando ele veio `null` e soma, por recompensa (`byReward[id]`) e no total. O resgate soma `requested` e `spent` (e `totals.redeemRequested`); aprovar, `approved`; entregar, `delivered`; recusar, `refused` e os pontos devolvidos em `refunded`; a exclusão, `canceled`. O núcleo soma, como já faz com todo lançamento, o débito em `totals.spent`, `spentEvents` e `bySource.redeem`, e a devolução em `totals.refunded`, `refundedEvents` e `bySource.redeem_refund`. O resgate não tem central: nada entra em `byArtist`. São fluxo: a exclusão de conta não desconta, e o cancelamento entra no dia da exclusão. Os pedidos abertos de agora não saem daqui (o entregue pode pular o aprovado, decisão 4), e sim do `count()` por status (25.8). Continua uma gravação de shard por transação, e contador zerado não é gravado (`pruneZeros`).
+- **Teto dos shards do dia:** resgates e mudanças de status são poucos perto do engajamento do bloco 6; nada muda no `SHARD_COUNT`.
+- **Recompensas e resgates** (bloco 11): o catálogo com as callables de 25.8, os pedidos por recompensa e por status (abertos do mais antigo, fechados do mais novo), a busca pelo código, os contatos dos pedidos abertos para a entrega, a recusa com ou sem a vaga de volta e os contadores por dia. A recompensa no ar com show fechado aparece como esgotada, com o motivo, para a equipe encerrar.
+- **Visão geral** (bloco 11): pontos gastos e devolvidos por dia, pelos totais.
+- **Fãs** (bloco 11): o extrato de um fã já mostra os resgates e as devoluções, com o título da recompensa.
+- **Mudanças em callables que já existem:**
+  - O `updatePointsConfig` passa a aceitar `actionCaps.reward_redeem` (a chave entra no `ACTION_CAP_KEYS`, como o `photo_set` do bloco 9): um acréscimo, com o mesmo formato e o mesmo limite das outras chaves. Os testes do `game-panel.emulator.test.ts` e do `points/config.test.ts` continuam verdes; o que enumera as chaves ganha a nova.
+  - O `deleteEvent` (bloco 6, 21.9) passa a recusar o show citado por alguma recompensa (rascunho, no ar ou encerrada): `event-has-rewards`, com `details.rewardIds` (`rewards` com `eventId == id`, `limit(20)`, na transação; índice automático), no molde do `event-has-posts`. Motivo: o show em rascunho se apaga, e a recompensa ficaria com o `eventId` solto, esgotada para todos (decisão 18) sem a equipe saber por quê. A equipe tira o show da recompensa (`updateReward` com `eventId: null`) ou apaga o rascunho dela antes. Só acrescenta uma recusa: os testes do `content-panel.emulator.test.ts` continuam verdes (eles não criam recompensas), e um caso novo prende a recusa e a passagem depois de tirar o show.
+  - As outras callables não mudam. O `setEventStatus` que tira um show do ar esgota as recompensas dele na loja, sem mexer nelas (decisão 18).
+- **Nenhuma mudança no código do painel** neste bloco. Nada no repositório `imagineup-admin`.
+
+### 25.10 Regras do Firestore e do Storage, índices
+
+Acréscimo ao `firestore.rules`, antes do `match /{document=**}` final:
+
+```
+    // Loja (bloco 10): o catálogo de recompensas e os pedidos de resgate. Só
+    // o servidor grava (callables do painel, API e exclusão de conta). O fã
+    // não lê nada disso direto, nem os próprios pedidos: chega pela API
+    // (GET /rewards). A seção rewards lê (Recompensas e resgates). O pedido
+    // guarda a cópia do nome e do @ do fã; o e-mail não mora aqui (callable
+    // getRedemptionContacts, docs/arquitetura-api.md, 25.8).
+    match /rewards/{rewardId} {
+      allow read: if canSeeSection('rewards');
+      allow write: if false;
+    }
+
+    match /redemptions/{redemptionId} {
+      allow read: if canSeeSection('rewards');
+      allow write: if false;
+    }
+```
+
+Mudanças em regras que existem:
+
+- Os dois `allow read` de `statsDaily` e de `statsShards` ganham `|| canSeeSection('rewards')`, para a seção ler os contadores dela (o bloco 7 fez o mesmo com `missions`). A seção passa a ver todos os agregados do dia, e não só os da loja (pergunta 16 de 25.15).
+- O `allow read` de `events/{eventId}` passa a `canSeeContent() || canSeeSection('rewards')`: a equipe só com `rewards` precisa listar os shows para escolher o da recompensa (`createReward` e `updateReward` pedem um `eventId` que existe) e mostrar o nome dele. O show não guarda dado que a seção não deva ver (da equipe, só o uid de quem criou e editou, como a própria recompensa), e não tem subcoleção; os posts continuam com `canSeeContent()`.
+
+O cabeçalho do arquivo passa a dizer que o `storage.rules` repete também o `canEditSection('rewards')`, e a linha "Excluir a conta apaga perfil, pontos e resgates juntos" do `match /users/{uid}` passa a "Excluir a conta apaga o perfil e os pontos e cancela os resgates abertos: é o servidor".
+
+Acréscimo ao `storage.rules`, antes do `match /{allPaths=**}`, com o `canEditSection`, o `validImage` e o `docExists` que já existem:
+
+```
+    // Foto das recompensas da loja (bloco 10): do painel, de quem edita
+    // rewards, só para uma recompensa que já existe. Nome novo a cada envio;
+    // só o servidor troca metadados e apaga (a foto trocada e a pasta da
+    // recompensa apagada).
+    match /rewards/{rewardId}/{fileName} {
+      allow get: if true;
+      allow list: if false;
+      allow create: if resource == null
+        && rewardId.matches('[A-Za-z0-9_-]{1,128}')
+        && !rewardId.matches('__.*__')
+        && validImage()
+        && canEditSection('rewards')
+        && docExists('rewards', rewardId);
+      allow update, delete: if false;
+    }
+```
+
+O cabeçalho do `storage.rules` ganha uma frase sobre a pasta das recompensas. O papel `roles/firebaserules.firestoreServiceAgent` da conta de serviço do Storage, que as fotos das centrais já pedem, serve aqui.
+
+Índices novos em `firestore.indexes.json` (os de hoje ficam):
+
+```json
+{
+  "indexes": [
+    {
+      "collectionGroup": "rewards",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "order", "order": "ASCENDING" },
+        { "fieldPath": "__name__", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "redemptions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "uid", "order": "ASCENDING" },
+        { "fieldPath": "requestedAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "redemptions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "rewardId", "order": "ASCENDING" },
+        { "fieldPath": "requestedAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "redemptions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "rewardId", "order": "ASCENDING" },
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "requestedAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "redemptions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "rewardId", "order": "ASCENDING" },
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "requestedAt", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "redemptions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "requestedAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "redemptions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "requestedAt", "order": "ASCENDING" }
+      ]
+    }
+  ],
+  "fieldOverrides": [
+    { "collectionGroup": "rewards", "fieldPath": "description", "indexes": [] },
+    { "collectionGroup": "rewards", "fieldPath": "instructions", "indexes": [] },
+    { "collectionGroup": "rewards", "fieldPath": "photo", "indexes": [] },
+    { "collectionGroup": "redemptions", "fieldPath": "instructions", "indexes": [] },
+    { "collectionGroup": "redemptions", "fieldPath": "refusalReason", "indexes": [] },
+    { "collectionGroup": "statsShards", "fieldPath": "byReward", "indexes": [] }
+  ]
+}
+```
+
+Para que serve cada um: o de `rewards`, à loja; o primeiro de `redemptions`, aos pedidos do fã na loja; os outros cinco, às listas do painel (25.8): todos os pedidos de uma recompensa, do mais novo; os de um status numa recompensa e no geral, nas duas direções (os abertos do mais antigo, os fechados do mais novo). Usam os índices automáticos: a consulta do limite (`uid` e `rewardId` iguais, junção dos índices simples), a da exclusão (`uid ==`), a do `deleteReward` (`rewardId ==`, `limit(1)`), a do `deleteEvent` (`eventId ==` em `rewards`), a do `reorderRewards` (`status in`), a do fim da ordem no `createReward` e na reabertura (`orderBy('order', 'desc')`) e o catálogo do painel (`orderBy('order')`). Os textos, a foto e o mapa `byReward` ficam sem índice: ninguém consulta por eles. Um teste prende cada consulta ao índice dela (`rewards/indexes.test.ts`, no molde do `ranking/indexes.test.ts`), porque o emulador não cobra índice: a falta só aparece em produção, como o código 9, e a loja responderia 500.
+
+**Testes de regras:**
+
+- `tests/rewards-rules.test.ts` (novo, no molde de `tests/posts-rules.test.ts`, com os mesmos membros de exemplo): `rewards` e `redemptions`: o fã logado não lê (`get` e `list`) nem um pedido com o uid dele, e sem login também não; a equipe com `rewards` (editora e leitor) e o admin leem; sem a seção, desativada, pendente ou com sessão de antes do `authValidAfter`, não leem; ninguém grava, nem admin. `statsDaily` e os shards: quem vê `rewards` lê; quem só vê `fans` continua sem ler. `events`: quem vê só `rewards` lê (`get` e `list`); o fã continua sem ler direto, e ninguém grava.
+- `tests/storage-rules.test.ts`, `describe` novo "foto das recompensas (rewards/{id}/)": a editora com `rewards` sobe uma imagem de até 5 MB para recompensa que existe; o leitor com `rewards`, a editora só com `artists`, o fã e sem login não sobem; recompensa que não existe, tipo fora, acima de 5 MB, vazio e o mesmo nome duas vezes não sobem; qualquer um baixa pelo caminho; ninguém lista, troca nem apaga.
+- Os arquivos de teste que já existem passam sem mudança, fora o de `statsDaily` que lista as seções que leem (ganha `rewards`). O `tests/agenda-rules.test.ts` não muda (o membro sem a seção de conteúdo dele é de `growth`).
+
+### 25.11 Exclusão de conta
+
+`deleteUserData` (`functions/src/store.ts`) ganha um passo, `cancelFanRedemptions(db, uid, now)` (em `rewards/service.ts`), depois do `removeFanEngagement` e antes do `recursiveDelete(users/{uid})`:
+
+1. Consulta `redemptions` com `uid == uid` e `limit(REDEMPTION_DELETE_PAGE)` (100), até voltar vazia. O que é tratado perde o uid e não volta na consulta seguinte, como no `deleteIdempotencyKeys`.
+2. Cada página numa transação: relê os pedidos da página e, dos abertos, as recompensas, num `getAll`. Pedido que já não tem o uid fica como está (outra entrega da exclusão passou antes).
+3. Solicitado e aprovado: `status: 'canceled'`, `canceledAt` e `statusAt` com o agora, `updatedBy: null`. As recompensas da página recebem o `redeemedCount` menos o número de cancelados de cada uma, numa gravação por recompensa, nunca abaixo de 0. Nenhum ponto volta: a carteira sai num passo seguinte.
+4. Todo pedido da página: `uid: null`, `fanName: null`, `fanUsername: null`, `refusalReason: null` e `accountDeleted: true`. O código, a recompensa, os pontos, as datas e o status ficam: é o histórico do painel, sem nada que ligue à pessoa.
+5. Um shard por transação, com `canceled` por recompensa e `redeemCanceled` no total.
+
+Por que aí: depois do perfil (passo 1 da seção 24.11), nenhum resgate novo passa (`requireFan`), e um resgate que já tinha lido o perfil grava antes e aparece na consulta. O lugar entre o engajamento do mural e o `recursiveDelete` é só para a leitura do código: o cancelamento não depende da carteira nem das subcoleções do perfil. Uma página grava até 100 pedidos, as recompensas deles e um shard: abaixo do teto de 500 gravações por transação.
+
+Continua idempotente: rodar de novo não acha pedido com o uid. Uma recusa da equipe no meio é posta em ordem pela transação, que decide pelo que relê e nunca pela página consultada: o pedido que já ficou recusado é só anonimizado (com o motivo apagado), e o estoque não volta duas vezes. Um teste encaixa a recusa entre a consulta e a transação pelo `onPage` (o gancho dos trabalhos do ranking, 23.20). A recusa de um fã cujo perfil já saiu não devolve pontos (`skipped`, 25.4). O `handleUserCreated` que desfaz a conta chama a mesma função: a conta nova não tem pedido (uma consulta vazia). As chaves de idempotência (com o `RedeemResult` guardado) e o extrato (com `redeem:<código>`) saem nos passos de hoje. A auditoria dos pedidos não guarda o uid (25.8). O `functions/src/store.test.ts` prende a ordem nova.
+
+No app, a linha das recompensas da tela "Excluir conta" troca de texto: "Seus resgates: os que ainda não foram entregues são cancelados, e os pontos não voltam." (`deleteAccount.losses.rewards`).
+
+### 25.12 App
+
+**Seletor e consultas**
+
+- `SERVER_DOMAINS` ganha `rewards`, no commit que entrega as rotas. Com o emulador, nenhum domínio fica nas fixtures: `usesFixtures()` passa a ser falso, todo o cache vai para o disco (`shouldPersistQuery`), o padrão do `networkMode` passa a `online` e o `resetFixtureSession` deixa de rodar. Nas builds sem API, nada muda.
+- `useRewardsQuery` e `useRewardQuery` espalham `queryOptionsFor('rewards')`.
+- O `QUERY_CACHE_VERSION` não sobe. A loja nunca foi para o disco: com o emulador, até aqui ela era o domínio nas fixtures e ficava de fora; sem a API, só o perfil vai. O extrato ganha só valores novos (`refund`, `redeem_refund`) no mesmo formato, e a carteira, o campo opcional `updatedAt`: a carteira salva antes dele chega sem o campo, e o `syncRefunds` trata a falta como carteira antiga (busca de novo uma vez). Se a implementação achar uma consulta da loja salva por outro caminho, sobe para 2.
+
+**Contrato e chamadas**
+
+- `rewards/types.ts`: `RedemptionStatus = 'requested' | 'approved' | 'delivered' | 'refused'` (o `canceled` nunca chega ao fã); `RewardRedemption` ganha `status`, `statusAt`, `points`, `refundedPoints` e `refusalReason`; `Reward` ganha `perFanLimit: number | null` e `limitReached: boolean`; `RedeemVariables` ganha `expectedCost`; `RedeemResult` ganha `status`. `RewardsResponse` ganha `rulesUrl?: string | null` (opcional: as fixtures mandam o do app). `profile/types.ts`: o `Wallet` ganha `updatedAt?: string | null` (o `GET /me/wallet` de 25.2).
+- `rewards/api.ts`: o `redeemReward` manda `{ expectedCost }` no corpo.
+- `services/api/errors.ts`: o `API_ERROR_CODES` ganha `soldOut: 'sold_out'`. `rewards/consts.ts`: o `REDEEM_ERROR_CODES.soldOut` passa a vir dele, e entram `limitReached: 'redeem_limit_reached'`, `changed: 'reward_changed'`, `dailyLimit: 'too_many_requests'` e `alreadyRedeemed: 'idempotency_key_reused'`; e o `REWARDS_RULES_URL = ''`, só para as fixtures (com a API, vale o `rulesUrl` da loja, decisão 19).
+
+**Mutação e invalidação**
+
+- `useRedeemRewardMutation(rewardId).redeem(confirmedCost, callbacks)`: a confirmação passa o custo que congelou ao abrir (abaixo, Telas). A tentativa (`openAttempts`) passa a guardar `{ key, expectedCost }`: aberta, a nova tentativa manda a mesma chave e o mesmo `expectedCost` dela, mesmo que a confirmação mostre outro custo; fechada, nasce com a chave nova e o `confirmedCost` (25.5). A tentativa fecha no sucesso e em toda resposta definitiva, e também quando a loja mostra o pedido dela (abaixo, Telas: a tentativa que a loja mostra gravada).
+- Sucesso: o saldo da resposta entra na carteira (`setQueryData`, como hoje), e passam a buscar de novo `profileKeys.wallet()` (que leva o progresso e o extrato, debaixo dela) e `rewardKeys.all`, no lugar de `profileKeys.all`, que buscava também as conquistas, o convite e o @ sem motivo. O resgate não mexe em XP, temporada, centrais, missões nem conquistas: ranking, missões e centrais não buscam de novo.
+- `redeemFailure` ganha `limitReached`, `changed`, `dailyLimit` e `alreadyRedeemed`. `limitReached` e `changed` fazem a loja buscar de novo (o detalhe passa a mostrar o limite ou o custo novo), com o toque `warning`, e o `limitReached` também a carteira (25.18); `dailyLimit` só avisa, com o toque `error`. As três são definitivas (`outcomeUnknown` falso: 409 e 429 não são `isRetryable`), a próxima tentativa nasce com chave nova, e o detalhe volta ao primeiro passo com o aviso em cima do botão, como o `soldOut`.
+- `alreadyRedeemed` (422 `idempotency_key_reused` no resgate): a chave já gravou um pedido com outro corpo, ou seja, a primeira tentativa deu certo. Com o corpo guardado na tentativa, não deveria acontecer; se acontecer, nunca vira uma chave nova às cegas: a tentativa fecha, a loja e a carteira buscam de novo, e o detalhe volta ao primeiro passo com o aviso "Seu resgate anterior já foi registrado. Confira em Seus resgates." e o pedido na lista, com o toque `warning`. Um toque depois disso é um resgate novo, que o fã escolheu com o pedido à vista.
+- Devolução vista pelo fã: a recusa acontece no painel, longe do app. A loja que chega com um pedido recusado com `refundedPoints` maior que 0 e `statusAt` mais novo que o `updatedAt` da carteira em cache (ou com a carteira sem o campo) faz a carteira buscar de novo (`syncRefunds`, no `queryFn` da loja em `queries.ts`, só com a API: nas fixtures, a carteira de exemplo já conta a devolução): a pílula do saldo bate com "Os 8.500 pontos voltaram para o seu saldo". Os dois instantes são do relógio do servidor (a devolução grava a carteira com o mesmo "agora" do `statusAt`, 25.4); o `dataUpdatedAt` do React Query é do aparelho, e com ele adiantado a devolução não atualizaria a pílula, e atrasado cada busca da loja buscaria a carteira de novo. O puxar para atualizar da 1h já busca os dois.
+
+**Telas** (sem desenho; aprovação de 28/09, no visual das outras; nenhuma tela nova)
+
+- **Confirmação com o custo congelado:** ao entrar na confirmação, o detalhe guarda `confirmedCost` (o `reward.cost` daquela hora), o `ConfirmBody` mostra esse número e o botão manda esse número, e não a recompensa ao vivo, que uma busca de fundo (a invalidação depois de uma falha incerta, o foco de volta ao app) troca em silêncio. Com a confirmação aberta e nada indo, `reward.cost !== confirmedCost` volta ao detalhe com o aviso `changed`, como já volta com `short` e `soldOut` (o `if` do topo de `reward-details.tsx` ganha o terceiro caso).
+
+- **Detalhe, "Seus resgates"** (a sobrelinha que hoje diz "Você já resgatou"): cada card de pedido continua com o código, selecionável, e troca o "Resgatado em" pela linha do status com a data dele: "Solicitado em 5 out", "Aprovado em 4 out", "Entregue em 2 out" ou "Recusado em 2 out" (`caption`, `textSecondary`, sem cor nova). As instruções aparecem no solicitado e no aprovado. No recusado, no lugar delas, "Motivo: <texto da equipe>" (quando há) e "Os 8.500 pontos voltaram para o seu saldo.", só com `refundedPoints` maior que 0 e com esse número (o que voltou de fato, e não o `points`). No entregue, só o código e a linha do status. O card continua com dois focos: o código com o status ("Código do resgate: UP-4KD9TM. Entregue em 2 de outubro.") e o texto de baixo.
+- **Limite atingido:** o `rewardAvailability` ganha o estado `limitReached`, depois do `soldOut` e antes do saldo. No detalhe, o botão lima desligado diz "Você já resgatou" (limite 1) ou "Limite de N resgates atingido", sem o "Ver missões". No card da grade e no destaque, o contorno diz "Resgatado", no desenho do "Esgotado", e o rótulo do leitor de tela diz "Limite de resgates atingido". Na grade, a recompensa no limite vai para o fim, junto das esgotadas (`buildRewardGrid` ordena por `isSoldOut || limitReached`). Com a confirmação aberta, a loja que chega com o limite atingido volta ao detalhe com o aviso, como o saldo que deixou de cobrir.
+- **Sucesso:** o card do código ganha a linha do status do pedido novo, com o mesmo helper e o mesmo visual do card de "Seus resgates" ("Solicitado em 7 out", `caption`, `textSecondary`), a partir do `status` do `RedeemResult` (sem ele, solicitado) e do `redeemedAt`; o rótulo do card é o mesmo dos pedidos ("Código do resgate: UP-C3NWPB. Solicitado em 7 de outubro."), um foco só. Embaixo das instruções, "Você acompanha o pedido nesta recompensa, na loja." (`bodyXs`, `textTertiary`, como a nota da confirmação).
+- **A tentativa que a loja mostra gravada:** a tentativa guarda também os códigos dos pedidos que a recompensa já tinha quando ela abriu (`knownCodes`) e se ela está indo. Depois de uma falha incerta em que o servidor gravou, a loja que busca de novo traz um pedido fora desses códigos: com nada indo, a tentativa gravou (`attemptRecorded`). A confirmação aberta volta ao detalhe com o aviso `alreadyRedeemed` ("Seu resgate anterior já foi registrado. Confira em Seus resgates."), antes dos outros motivos, e o pedido à vista; a sheet fechada no meio e reaberta abre o detalhe já com o mesmo aviso; o toque em "Resgatar" depois disso abre uma confirmação nova, que fecha a tentativa (`closeRecordedAttempt`), e o resgate seguinte é um pedido novo, com chave nova. Sem isso, um resgate novo e deliberado da mesma recompensa, na mesma execução do app, repetia a chave antiga, e o servidor devolvia o `RedeemResult` guardado (até 30 dias): "Resgate confirmado" com o código do pedido anterior, sem pedido novo. A confirmação que já estava aberta não fecha a tentativa: o toque nela repete a chave (e a resposta guardada), como pede a falha incerta; com o pedido indo, a loja não fecha nada.
+- **Pé da 1h:** o aviso da decisão 19 embaixo da grade (e do aviso de erro, quando há), em `bodyXs` e `textTertiary`, e o `TextLink` "Regulamento" (dica "Abre o regulamento das recompensas") só quando o `rulesUrl` da loja vem preenchido (nas fixtures, o `REWARDS_RULES_URL` do app), aberto como os termos do cadastro (`auth/components/terms-notice.tsx`). Texto, e não botão: lido como uma frase só.
+- **Extrato:** o `redeem` passa a mostrar o título da recompensa no contexto (`subjectTitle`, como a missão: "Par de ingressos · 18:00"); a origem nova `redeem_refund` ("Resgate devolvido", ícone `Undo2`, tom `points`, com o título no contexto) aparece em lima, como ganho. O contexto `mission` do `describe-ledger.ts` vira `subject`, que lê o `subjectTitle` nas três origens. `LedgerEntry.kind` ganha `refund`, e `LedgerSource` ganha `redeem_refund`.
+- **Excluir conta:** a linha das recompensas troca de texto (25.11).
+- Nada nativo e nenhuma rota nova: o fingerprint da EAS não muda.
+
+**Fixtures** (`rewards/fixtures.ts`)
+
+- O catálogo é a tabela de 25.13 (as 5 do protótipo e a "Passagem de som", esgotada), com o `perFanLimit`, o `stockTotal`, o `redeemedCount` da tabela e as instruções de cada recompensa (hoje são por tipo). O show do meet & greet e o da passagem de som saem de `buildAgendaEventsFixture` (`sao-joao-irara` e `arrocha-na-praia`), importado direto de `@/domains/agenda/fixtures` (a agenda não importa a loja, então não há ciclo); o `nextShow` copiado sai.
+- Os 4 pedidos da Camila de 25.13, com os mesmos códigos, status, datas (às 18:00, relativas a `fixtureNow()`), pontos e motivo.
+- `rewardsFixture.redeem(rewardId, idempotencyKey, expectedCost, now)` recusa como a API, na ordem das recusas do resgate (25.2), sem o teto do dia (nenhuma fixture imita os tetos): `reward_not_found`, `sold_out` (encerrada, sem vaga, show fechado pelo `isEventOpen` das fixtures da agenda), `reward_changed`, `redeem_limit_reached` e, pela `fixtureWallet.spend`, `insufficient_points`. A mesma chave com outro `expectedCost` recusa com `idempotency_key_reused`, como o servidor. A loja das fixtures manda `rulesUrl` com o `REWARDS_RULES_URL` do app (ou `null`, vazio), e cada pedido com o `refundedPoints`. O código novo é sorteado do mesmo alfabeto (`UP-` mais 6), e o pedido nasce `requested`. A carteira de exemplo continua com 12.480, e o estado volta ao início com a sessão (`onFixtureSessionEnd`).
+- Extrato (`profile/fixtures.ts`): os 6 lançamentos novos de 25.13. O `LedgerSample` ganha o XP (0 no débito, na devolução e no ajuste da loja), o `subject` e a hora. A Camila passa de 17 para 23 lançamentos (duas páginas de 20).
+
+**Regra de coerência** (seção 13 e `CLAUDE.md`)
+
+- A loja anda com a carteira: com a API, as duas vêm do servidor, e o resgate é do servidor. O resgate de exemplo continua só nas fixtures. O `points_unavailable` da `fixtureWallet.spend` fica como guarda, sem caminho que chegue nele enquanto `wallet` e `rewards` estiverem juntos no `SERVER_DOMAINS`.
+- Com este bloco, toda ação que rende ou gasta pontos está na API (blocos 4, 6, 7, 8 e 10): o pré-requisito de código para o `EXPO_PUBLIC_API_URL` entrar nas builds (seção 13) fica cumprido. A variável só entra depois do deploy, com o ok do dono (25.16).
+
+**Textos novos** (`translations.json`)
+
+- `rewards.redeemed.title`: "Seus resgates" (no lugar de "Você já resgatou")
+- `rewards.redeemed.status.requested`: "Solicitado em {{date}}"; `.approved`: "Aprovado em {{date}}"; `.delivered`: "Entregue em {{date}}"; `.refused`: "Recusado em {{date}}" (o `rewards.redeemed.date` sai)
+- `rewards.redeemed.codeLabel`: "Código do resgate: {{code}}. {{status}}." (a data por extenso dentro do status)
+- `rewards.redeemed.reason`: "Motivo: {{reason}}"; `rewards.redeemed.refunded`: "Os {{points}} pontos voltaram para o seu saldo."
+- `rewards.redeemedShort`: "Resgatado"; `rewards.spoken.limitReached`: "Limite de resgates atingido"
+- `rewards.details.limitReachedOne`: "Você já resgatou"; `rewards.details.limitReached`: "Limite de {{count}} resgates atingido"
+- `rewards.errors.limitReached`: "Você chegou ao limite de resgates desta recompensa."; `rewards.errors.changed`: "O custo desta recompensa mudou. Confira antes de resgatar."; `rewards.errors.dailyLimit`: "Você fez resgates demais hoje. Tente de novo amanhã."; `rewards.errors.alreadyRedeemed`: "Seu resgate anterior já foi registrado. Confira em Seus resgates."
+- `rewards.success.tracking`: "Você acompanha o pedido nesta recompensa, na loja."
+- `rewards.legal.notice`: o texto da decisão 19; `rewards.legal.rules`: "Regulamento"; `rewards.legal.rulesHint`: "Abre o regulamento das recompensas"
+- `ledger.sources.redeem_refund`: "Resgate devolvido"
+- `deleteAccount.losses.rewards`: o texto de 25.11
+
+**`CLAUDE.md` e `AGENTS.md`**
+
+No mesmo commit: Estrutura (`functions/src/rewards`), Navegação (o resgate da 1h com os status no detalhe, o limite e o custo congelado na confirmação), Dados (`rewards` no seletor e `usesFixtures()` falso com o emulador; a regra de coerência da loja; as fixtures da loja com os pedidos de exemplo e a "Passagem de som"; a invalidação estreita e a devolução que busca a carteira pelo `updatedAt` do servidor), Offline (a tentativa do resgate guarda a chave e o `expectedCost`, no lugar de "a chave é da tentativa"), Regras do Firestore (`rewards`, `redemptions`, `statsDaily` e `events` com `rewards`, a pasta `rewards/` no Storage), Cloud Functions (o `deleteUserProfile` cancelando os pedidos abertos), Emuladores no app (a loja vem do servidor; os pedidos da Camila no seed; 23 lançamentos no extrato), Equipe do painel e API do app e pontos (as rotas, as callables e os contadores do bloco 10, o `updatedAt` do `GET /me/wallet` e o `event-has-rewards` do `deleteEvent`), Pendências (as perguntas de 25.15) e Publicar (25.16). O `AGENTS.md` recebe a mesma cópia, com o cabeçalho dele.
+
+### 25.13 Seed dos emuladores
+
+`functions/src/rewards/seed.ts` exporta `SEED_REWARDS`, `SEED_REDEMPTIONS`, `seedRewards(db, now)` e `seedCamilaRedemptions(db, uid, now)`. O `scripts/seed-emulators.mjs` carrega `functions/lib/rewards` como os outros: o catálogo depois dos shows e dos posts (a recompensa confere o show), e os pedidos da Camila depois da carteira dela (`steps: 'week'`) e antes da foto. O catálogo usa o núcleo das callables, sem a conferência de foto e sem auditoria; os pedidos usam o núcleo da rota (`runRedeemReward`, com o código fixo) e o das transições (`runRedemptionStatus`), com o ator do sistema (`SEED_ACTOR`, `uid: null`), que não conta no teto do dia nem marca atividade; as transições do seed saem sem auditoria e com `updatedBy: null` (25.4, passo 7). Os dois shows ligados são futuros no seed (o São João de Irará no mês que vem, o Arrocha na Praia no próximo sábado), então o show aberto (decisão 18) não barra nada; a passagem de som esgota pelo estoque.
+
+Catálogo, igual ao de `rewards/fixtures.ts`, todas no ar e sem foto:
+
+| Ordem | id                | Tipo        | Título                   | Subtítulo                    | Custo  | Estoque | Limite por fã | Show               | Destaque | Escassez |
+| ----- | ----------------- | ----------- | ------------------------ | ---------------------------- | ------ | ------- | ------------- | ------------------ | -------- | -------- |
+| 1     | `meet-netto`      | `meet`      | Meet & greet com o Netto | Camarim do São João de Irará | 10.000 | 20      | 1             | `sao-joao-irara`   | sim      | sim      |
+| 2     | `ingressos`       | `ticket`    | Par de ingressos         | Pra Encher e Derramar        | 6.000  | sem     | 2             | nenhum             | não      | não      |
+| 3     | `videochamada`    | `videocall` | Videochamada             | 5 min com o artista          | 8.500  | sem     | 1             | nenhum             | não      | não      |
+| 4     | `camisa`          | `merch`     | Camisa oficial           | Coleção São João             | 15.000 | sem     | sem limite    | nenhum             | não      | não      |
+| 5     | `telao`           | `screen`    | Foto no telão            | Durante o show               | 20.000 | sem     | 1             | nenhum             | não      | não      |
+| 6     | `passagem-de-som` | `ticket`    | Passagem de som          | Arrocha na Praia             | 3.000  | 1       | 1             | `arrocha-na-praia` | não      | não      |
+
+Mais um rascunho, `recompensa-rascunho` ("Camisa autografada", `merch`, 30.000, subtítulo "Coleção São João", com as instruções da camisa), que o app não mostra. Descrições e instruções: as de `rewards/fixtures.ts`, com as da passagem de som novas ("Acompanhe a passagem de som do Nenho antes do Arrocha na Praia, em Aracaju." e "Mostre este código na entrada do palco às 17 h do dia do show, com um documento com foto."). A "Passagem de som" é a esgotada, a camisa é a sem limite, o meet & greet é o destaque com escassez ("Só 20 vagas").
+
+Pedidos da Camila, às 18:00 de São Paulo (21:00 UTC) de cada dia, longe do meio-dia das missões e da base, para o extrato não ter empate de instante:
+
+| Código      | Recompensa        | Pontos | Pedido       | Depois                                                                                          | Status de agora              |
+| ----------- | ----------------- | ------ | ------------ | ----------------------------------------------------------------------------------------------- | ---------------------------- |
+| `UP-4KD9TM` | `ingressos`       | 6.000  | 7 dias atrás | aprovado 6 dias atrás, entregue 5 dias atrás                                                    | entregue                     |
+| `UP-9FJT6V` | `videochamada`    | 8.500  | 6 dias atrás | recusado 5 dias atrás, motivo "A agenda de videochamadas deste mês fechou antes do seu pedido." | recusado, 8.500 devolvidos   |
+| `UP-7QXH2R` | `passagem-de-som` | 3.000  | 4 dias atrás | aprovado 3 dias atrás                                                                           | aprovado (e a vaga esgotada) |
+| `UP-C3NWPB` | `camisa`          | 15.000 | 2 dias atrás | nenhum                                                                                          | solicitado                   |
+
+Antes deles, o ajuste `seed:camila-loja`, 8 dias atrás às 18:00, só no saldo (+24.000): o que os pedidos gastam no fim (6.000, 3.000 e 15.000; a videochamada volta). A carteira termina como antes (12.480 de saldo, 12.480 de XP, 4.120 na temporada, as centrais iguais), e a 1e não muda. Limite aceito: entre 8 e 2 dias atrás, o saldo da Camila passa o XP em até 24.000, o que nunca acontece com um fã de verdade (o saldo é o que ele ganhou menos o que gastou). É o preço de manter os números do protótipo com pedidos antigos; o ajuste aparece no extrato como "Ajuste +24.000" (pergunta 21 de 25.15). O seed roda em ordem de data: o ajuste, depois cada pedido e as transições dele.
+
+Extrato da Camila, 6 lançamentos a mais (23 ao todo), do mais novo ao mais antigo:
+
+| id                        | Dia          | Saldo   | Contexto no app  |
+| ------------------------- | ------------ | ------- | ---------------- |
+| `redeem:UP-C3NWPB`        | 2 dias atrás | -15.000 | Camisa oficial   |
+| `redeem:UP-7QXH2R`        | 4 dias atrás | -3.000  | Passagem de som  |
+| `redeem_refund:UP-9FJT6V` | 5 dias atrás | +8.500  | Videochamada     |
+| `redeem:UP-9FJT6V`        | 6 dias atrás | -8.500  | Videochamada     |
+| `redeem:UP-4KD9TM`        | 7 dias atrás | -6.000  | Par de ingressos |
+| `seed:camila-loja`        | 8 dias atrás | +24.000 | nenhum           |
+
+Resultado na 1h da Camila: o meet & greet no destaque, com "Só 20 vagas" e o preço em lima (12.480 cobre 10.000); na grade "Ao seu alcance", os ingressos (6.000, 1 de 2 pedidos) e a videochamada (8.500, o recusado não conta) em lima, a camisa com "faltam 2.520", o telão com "faltam 7.520" e, no fim, a passagem de som "Esgotado". É a grade do protótipo com um card a mais no fim. O detalhe dos ingressos mostra o `UP-4KD9TM` entregue; o da videochamada, o `UP-9FJT6V` recusado com o motivo e os pontos de volta; o da passagem de som, o `UP-7QXH2R` aprovado com as instruções e o botão "Esgotado"; o da camisa, o `UP-C3NWPB` solicitado. O Alan vê o mesmo catálogo, sem pedido, com a passagem de som esgotada.
+
+Estoque no fim: meet & greet 0 de 20 resgatadas; passagem de som 1 de 1. Contagens (`redeemedCount`): ingressos 1, videochamada 0, camisa 1, passagem de som 1, o resto 0. Os shards dos dias recebem os fluxos (4 pedidos, 32.500 pontos gastos, 2 aprovados, 1 entregue, 1 recusado, 8.500 devolvidos).
+
+Rodar de novo não muda nada: o catálogo (ids fixos, criado só quando falta), os pedidos (códigos fixos, lidos antes de gravar, 25.4), as transições (cada uma só roda quando o status de agora é o `from` dela: o `UP-4KD9TM` já entregue pula o "aprovar" e o "entregar", sem `invalid-transition`; uma rodada que parou no meio termina na seguinte) e o ajuste (o id do lançamento). O `rewards.emulator.test.ts` roda o seed duas vezes e confere que nada muda.
+
+Coerência: a tabela acima é a mesma nos dois lados. O teste do app (`rewards/__tests__/fixtures.test.ts`) confere as fixtures contra ela (o catálogo, os pedidos e a visão da Camila), o de `profile` confere os 23 lançamentos do extrato de exemplo, e o `functions/test/rewards.emulator.test.ts` confere o seed contra ela pela `GET /rewards` e pela `GET /me/ledger` da Camila. Mudou um lado, mude o outro e a tabela.
+
+### 25.14 Testes
+
+Funções, testes puros (`vitest`, relógio fixo):
+
+- `rewards/model.test.ts` (tabela): `parseRewardInput` com cada campo nas pontas (título com 60 e 61, custo 0, 1 e 1.000.001, estoque 0, `null` e 100.001, limite 0, 1, 100, 101 e `null`, tipo fora da lista, instruções vazias, descrição com invisível, `eventId` fora do formato); `drawRedemptionCode` (formato e só o alfabeto, com o sorteio injetado nas pontas); `transitionProblem` com as 25 combinações de 5 status (só as 5 válidas passam; o mesmo status é sem efeito); `redeemProblem` na ordem das recusas (rascunho, encerrada, sem vaga, show fechado pelo `isEventOpen` nas pontas da meia-noite de São Paulo, show apagado, custo mudado, limite com cada status contando ou não); `rewardView` (`soldOut` pela encerrada, pela vaga e pelo show fechado, estoque `null`, `remaining` nunca negativo, `featured` falso na encerrada e mantido na no ar esgotada, `event` só com o show no ar e aberto, `refundedPoints` do pedido, `rulesUrl` `null` com a constante vazia, `limitReached` contando só solicitado, aprovado e entregue, instruções de agora no pedido aberto e a cópia no fechado, pedidos do mais novo ao mais antigo, `canceled` nunca na resposta); `isVisibleToFan` (rascunho nunca, no ar sempre, encerrada só com pedido).
+- `points/model.test.ts`: o `spend` com título grava o `subjectTitle`; o `refund` sobe o saldo e desce o `spentTotal` (nunca abaixo de 0), sem mexer em XP, temporada, central e `days`; `redeem_refund` repetido sai `duplicate`; o fã sem perfil sai `skipped`; `refund` fora do formato é erro de programação.
+- `points/stats.test.ts` e `award.test.ts`: o `refund` no shard (`refunded`, `refundedEvents`, `bySource.redeem_refund`); `addRedemptionCounts` com o `plan.shard` nulo e cada tipo; o `pruneZeros` dos campos novos; a chave `reward_redeem` no `addDailyCount`; o plano sem fã grava só o shard.
+- `points/config.test.ts`: `actionCaps.reward_redeem` com o padrão 10, aceito pela validação estrita.
+- `api/router.test.ts`: `/rewards` e `/rewards/:rewardId/redeem`; `GET /rewards/x/redeem` é 405 com `Allow: POST`; `POST /rewards` é 405.
+- `api/index.test.ts`: os quatro códigos novos com o status e o corpo (o `sold_out` com os três `reason`); o `RewardError` traduzido; o 429 do teto com `action: 'redeem'` e `Retry-After`; corpo sem `expectedCost` é 400 com `field`; id fora do formato é 404 `reward_not_found`; o `GET /me/wallet` com o `updatedAt` (e `null` sem carteira).
+- `store.test.ts`: a ordem nova do `deleteUserData`, com o `cancelFanRedemptions` depois do `removeFanEngagement` e antes do `recursiveDelete`.
+- `rewards/indexes.test.ts`: cada consulta de 25.10 tem o índice no `firestore.indexes.json`, com as filas de status nas duas direções (os abertos do mais antigo, os fechados do mais novo), e a do limite não pede composto.
+- `rewards/seed.test.ts` (novo): o catálogo e os pedidos do seed contra a tabela de 25.13 (a mesma do `fixtures.test.ts` do app), os códigos no formato, o ajuste que paga o que os pedidos gastam no fim (a carteira de sempre) e as 18:00 de São Paulo de cada dia.
+- `points/wallet.test.ts`: o `walletView` com o `updatedAt` da carteira, e `null` sem ela.
+
+Funções nos emuladores, dois arquivos novos, cada um com o `useCleanEmulators()` de `functions/test/support.ts` (antes de cada teste e no fim do arquivo), a `api` de verdade por HTTP com os tokens do emulador de Auth e as callables como o painel chama:
+
+- `functions/test/rewards.emulator.test.ts`:
+  - Loja: a ordem do painel; o rascunho fora; a encerrada só para quem tem pedido, como `soldOut`; a esgotada pelo estoque para todos; o `event` do show, e `null` com `soldOut` com o show fora do ar ou que já passou; só os pedidos de quem chama, com o `refundedPoints`; o `limitReached`; o `rulesUrl`.
+  - Resgate: o pedido com o código no formato, o estoque, a carteira (só o saldo cai; XP, temporada e `centralPoints` iguais), o extrato `redeem:<código>` com o título, o shard (`spent`, `redeemRequested`, `byReward`) e a resposta com o saldo. A mesma chave repetida devolve a mesma resposta (`Idempotency-Replayed: true`) e um pedido só, também em paralelo. A mesma chave com outro `expectedCost` é 422. O mesmo fã com duas chaves faz dois pedidos sem limite, e recebe `redeem_limit_reached` com limite 1, também com as duas em paralelo (um pedido só). Saldo curto é 409 com `details`, sem pedido, sem estoque, sem lançamento e sem a chave. Sem vaga, encerrada e show fechado (o show de ontem, o tirado do ar) dão `sold_out` com o `reason` de cada um; rascunho e id que não existe, 404; custo mudado, 409 `reward_changed`. O teto (com `reward_redeem` 2 na configuração) é 429 com `Retry-After`, sem gravar, e vem antes de tudo do resgate (no teto, uma recompensa que não existe dá 429, e não 404). A colisão do código: com o sorteio injetado (`drawCode` do serviço, que por padrão é o `crypto.randomInt` e não o `random` do shard) devolvendo primeiro o código de um pedido que existe, o pedido roda de novo uma vez e grava com o código seguinte, um débito só. Perfil ausente é 503; conta só da equipe, 403.
+  - Disputa: dois fãs pelo último item ao mesmo tempo dão um 200 e um `sold_out` (ou um 503 e, na nova tentativa com a mesma chave, `sold_out`), o `redeemedCount` igual ao total e um débito só. Dez fãs por 3 vagas dão 3 pedidos, nunca 4, e o `redeemedCount` igual à contagem dos pedidos que contam.
+  - Recusa pelo `setRedemptionStatus`: o saldo volta uma vez (chamar de novo é sem efeito e responde o mesmo `refundedPoints` da primeira; duas recusas em paralelo devolvem uma vez), o estoque volta uma vez, o extrato ganha `redeem_refund:<código>`, a carteira fica com o `updatedAt` igual ao `statusAt` do pedido, e a loja mostra o recusado com o motivo. Com `restock: false`, o `redeemedCount` e o `stockTotal` descem 1 e o que sobra não muda (a recompensa esgotada continua esgotada); sem total, só o `redeemedCount`. O fã sem perfil não recebe nada, e o pedido fica recusado com `refundedPoints: 0`.
+  - Exclusão: um fã com um pedido em cada status. Depois do `deleteUserData`, o solicitado e o aprovado ficam `canceled`, com o estoque de volta; os quatro ficam sem uid, sem a cópia do nome e do @, sem o motivo e com `accountDeleted`; o shard conta os cancelados; nenhum pedido sobra com o uid; rodar de novo não muda nada; resgatar depois de o perfil sair dá 503. A recusa da equipe entre a consulta e a transação do `cancelFanRedemptions` (pelo `onPage`, com o perfil já fora): o pedido fica recusado e anonimizado, sem `canceled` e sem devolução; a recusa e o cancelamento devolvem uma vaga cada (o pedido de outro fã segura a dele, para o desconto em dobro não sumir no 0); o shard conta 1 recusado e 1 cancelado.
+  - Seed: o catálogo, os pedidos e o extrato da Camila como em 25.13; a loja da Camila e a do Alan; rodar de novo (o seed inteiro duas vezes) não muda nada e não lança, e nenhuma transição do seed grava auditoria; o seed que parou depois de criar um pedido termina as transições dele na rodada seguinte.
+- `functions/test/rewards-panel.emulator.test.ts`:
+  - As callables de recompensa com os membros de exemplo (admin, editora com `rewards`, leitor com `rewards`, editora sem a seção, desativada): criar com e sem `rewardId` (o mesmo id de novo não cria outro); editar cada campo; a foto conferida no Storage do emulador, com a pasta limpa depois da troca; publicar, encerrar e reabrir (a reaberta vai para o fim da ordem); publicar com o show em rascunho, fora do ar ou que já passou recusa com `event-not-open`; o estoque abaixo do resgatado recusado, e o `null`; a ordem só com rascunhos e no ar (a lista com uma encerrada, ou sem um rascunho, é `invalid-request`); apagar o rascunho (com a pasta) e recusar o publicado e o com pedido. Nada mudou não grava nem audita. O `deleteEvent` do show citado por uma recompensa recusa com `event-has-rewards` e passa depois do `updateReward` com `eventId: null`.
+  - Cada transição válida (solicitado para aprovado, entregue e recusado; aprovado para entregue e recusado), com o saldo e o `redeemedCount` de cada caminho (as duas recusas, do solicitado e do aprovado, devolvem os 100 pontos e a vaga, com o `redeem_refund:<código>` e a auditoria do próprio pedido, achada pelo código), e inválida (entregue, recusado e cancelado para qualquer um; aprovado para solicitado), com `invalid-transition`; motivo e `restock` só na recusa; o mesmo status sem efeito e sem auditoria; cada mudança grava uma auditoria sem uid de fã e sem e-mail, e a recusa com o `restocked`.
+  - `getRedemptionContacts`: a editora com `rewards` recebe o nome, o @ e o e-mail de agora dos pedidos solicitados e aprovados (o fã que trocou o @ depois do pedido vem com o novo); os entregues, recusados e cancelados ficam fora da resposta; o leitor e quem não tem a seção recebem `no-section`; mais de 50 é `invalid-request`; o pedido aberto de uma conta que sumiu do Auth volta com tudo `null`; a auditoria tem os códigos e não tem e-mail.
+  - O `updatePointsConfig` aceita `actionCaps.reward_redeem`, e os testes do `game-panel.emulator.test.ts` continuam verdes.
+
+Regras: `tests/rewards-rules.test.ts` e `tests/storage-rules.test.ts` (25.10).
+
+App (relógio fixo com `jest.useFakeTimers({ now })` nos testes com data, como o resto):
+
+- `src/config/__tests__/data-source.test.ts`: `rewards` na API com o emulador, e `usesFixtures()` falso.
+- `rewards/__tests__/api.test.ts` (novo): `GET /rewards` e o `POST` com o corpo `{ expectedCost }` e a `Idempotency-Key`, no modo API (axios mockado).
+- `rewards/__tests__/queries.test.tsx` (novo): a loja espera a rede e vai para o disco com a API, e roda sem rede e fora do disco nas fixtures; o sucesso busca `profileKeys.wallet()` (com o progresso e o extrato) e a loja, e não as conquistas nem o convite; `limitReached`, `changed` e `dailyLimit` são definitivas (chave nova depois); o `limitReached` faz a loja e a carteira buscarem de novo; depois de uma falha incerta, a nova tentativa leva a mesma chave e o mesmo `expectedCost`, mesmo com o custo da loja mudado no meio, e o `reward_changed` que volta fecha a tentativa; o 422 `idempotency_key_reused` vira `alreadyRedeemed`, fecha a tentativa e faz a loja e a carteira buscarem de novo; depois de uma falha incerta, a loja com um pedido novo fecha a tentativa na confirmação nova (chave nova), sem pedido novo não fecha (a mesma chave), o toque na confirmação que ficou aberta repete a chave, e com o pedido indo nada fecha; cada toque espera o fim de verdade (os callbacks e o `setTimeout` do `notifyManager` dentro do `act`), sem aviso de `act`; a loja com um recusado de `statusAt` mais novo que o `updatedAt` da carteira faz a carteira buscar de novo, com um recusado antigo ou de `refundedPoints` 0, não, e com a carteira sem `updatedAt` (cache antigo), uma vez; o relógio do aparelho adiantado ou atrasado não muda nada disso.
+- `rewards/__tests__/describe-reward.test.ts`: `rewardAvailability` com `limitReached` (depois do esgotado, antes do saldo); `redeemFailure` com os códigos novos; `buildRewardGrid` com o limite no fim; os textos do status.
+- `rewards/__tests__/fixtures.test.ts`: o catálogo e os pedidos da tabela de 25.13 (a trava da coerência com o seed); as recusas na ordem da API (o show fechado incluído); a mesma chave com outro `expectedCost` recusada; o código sorteado no formato; a passagem de som esgotada; a camisa sem limite; os ingressos com 1 de 2.
+- `rewards/__tests__/reward-cards.test.tsx`: o card de pedido em cada status (as instruções só no aberto; o motivo e os pontos no recusado, com o `refundedPoints`, e sem a frase dos pontos com 0); o botão do limite; o "Resgatado" da grade e do destaque; o aviso da Apple sempre, e o link do regulamento só com o `rulesUrl`.
+- Os testes do extrato em `profile/__tests__`: o resgate com o título da recompensa, a devolução em lima, os 23 lançamentos de exemplo.
+- `rewards/__tests__/reward-details.test.tsx` (novo, ou no de navegação): a confirmação mostra e manda o custo congelado; a loja que chega com outro custo e a confirmação aberta volta ao detalhe com o aviso `changed`; com o resgate indo, não volta.
+- Navegação (`src/navigation/__tests__/rewards.test.tsx`): o detalhe dos ingressos com o entregue e o botão ligado; resgatar o meet & greet nas fixtures e voltar ao detalhe com o solicitado e o "Você já resgatou"; o sucesso com o código e o "Solicitado em"; a falha incerta que gravou (a loja traz o pedido, o detalhe volta com o aviso `alreadyRedeemed` e o pedido à vista, e o resgate seguinte é pedido novo, com chave nova), também com a sheet fechada no meio e reaberta (o detalhe abre com o aviso); a grade do protótipo com a passagem de som no fim.
+
+### 25.15 Perguntas
+
+Para a cliente (UP-9, UP-24, UP-35 e UP-45):
+
+1. Limite por fã: padrão 1 por recompensa, configurável no painel (sem limite para produto como a camisa), pela vida da recompensa (a rodada seguinte é uma recompensa nova); o pedido recusado não conta (decisão 6).
+2. As recompensas de verdade: lista, custos, estoque, fotos, instruções de retirada e os shows de cada uma (UP-9).
+3. A equipe pode recusar um pedido já aprovado (proposta: sim, com os pontos de volta e, se ela escolher, sem devolver a vaga, para o show cancelado) e marcar entregue sem aprovar antes (proposta: sim, na retirada no show) (decisões 4 e 5).
+4. Conta excluída: os pedidos ainda não entregues são cancelados, e os pontos não voltam, porque a conta e o saldo deixam de existir (decisão 14).
+5. O regulamento das recompensas, o endereço dele no site e o texto do aviso de que a Apple não patrocina as recompensas (UP-45; hoje, texto provisório e link escondido).
+6. Recompensa encerrada: some da loja para quem não tem pedido nela (proposta) ou fica como "Esgotado" para todos (decisão 10).
+7. O fã só vê a mudança de status quando abre a recompensa (notificação é fora do contrato); a equipe fala com ele pelo e-mail quando precisa.
+8. O e-mail do fã só aparece no painel para pedidos ainda não entregues (proposta); se a equipe precisar dele depois da entrega (troca de tamanho, reclamação), por quantos dias (decisão 13).
+9. Recompensa ligada a um show sai de venda sozinha quando o show passa ou sai do ar, e aparece como esgotada até a equipe encerrar (decisão 18).
+
+Para o dono:
+
+10. O código de retirada como id do pedido, com `crypto.randomInt` e 6 caracteres do alfabeto do convite, 1 sorteado por tentativa sem leitura e a colisão pelo `retryOnAlreadyExists` (decisão 2).
+11. A disputa pelo estoque num documento só, com o custo, o sinal e o passo seguinte de 25.6, e o teto do dia conferido antes de ler a recompensa.
+12. O `refund` como tipo novo do núcleo de pontos, o `spentTotal` descendo na devolução e o `subjectTitle` no resgate (decisão 7).
+13. O `expectedCost` no corpo do resgate, o `reward_changed`, a tentativa do app guardando a chave com o custo e o custo congelado na confirmação (decisão 8 e 25.5).
+14. O e-mail só pela callable `getRedemptionContacts`, só dos pedidos abertos, com edição na seção e auditoria, e a cópia do nome e do @ no pedido (decisão 13).
+15. O status `canceled` só no servidor, para a exclusão de conta, no lugar da direção da seção 17 (decisão 14).
+16. A seção `rewards` lendo `statsDaily`: uma seção a mais numa regra que existe, como o `missions` do bloco 7, mas a seção passa a ver todos os agregados do dia (cadastros por origem e campanha, coortes, centrais), e não só os da loja. Um membro só com `rewards`, mesmo leitor (quem só cuida das entregas), lê os números da Visão geral e da Crescimento, incluindo o `byOrigin` com `utmSource` e `utmCampaign`; a revisão do fechamento levantou o mesmo ponto, e a decisão continua com o dono. Proposta: aceitar agora, porque são números somados, sem dado pessoal, e a seção é da mesma equipe; se o dono não quiser, a saída é uma callable de leitura que devolve só o `byReward` e os totais da loja dos dias pedidos, sem mudar a gravação (os contadores continuam nos shards do dia, como pede o bloco). O `updatePointsConfig` aceitando a chave `reward_redeem` (25.9 e 25.10).
+17. A seção `rewards` lendo `events`, para escolher o show da recompensa (25.10).
+18. O `deleteEvent` recusando o show citado por uma recompensa (`event-has-rewards`), uma recusa a mais numa callable do bloco 6, e a recompensa com show esgotando quando o show fecha (decisão 18 e 25.9).
+19. A recusa com `restock: false` (a vaga não volta) e a reabertura de uma encerrada no fim da ordem, com o `reorderRewards` sem as encerradas (decisões 5 e 9, 25.8).
+20. O endereço do regulamento no servidor (`rulesUrl` do `GET /rewards`, constante nas funções, no molde do `linkBase`), e não no app (decisão 19).
+21. O seed com o ajuste `seed:camila-loja` (+24.000 só no saldo), que aparece no extrato de exemplo das builds como "Ajuste +24.000", para manter os números do protótipo com pedidos antigos (25.13).
+22. A invalidação mais estreita depois do resgate (`profileKeys.wallet()` no lugar de `profileKeys.all`) e a carteira buscada de novo quando a loja traz uma recusa nova, pelo `updatedAt` que o `GET /me/wallet` passa a mandar (25.12).
+
+### 25.16 Fora deste bloco e publicação
+
+- **Fora deste bloco (só documentado):** as telas do painel (Recompensas e resgates, os rótulos das ações novas na auditoria), bloco 11; notificação da mudança de status (push e in-app ficam fora do contrato); uma conquista de primeiro resgate; encerrar sozinho a recompensa cujo show passou (ela já sai de venda, esgotada, decisão 18; mudar o status no painel continua com a equipe); um documento de configuração da loja editável pelo painel (o endereço do regulamento é constante nas funções, decisão 19); o e-mail dos entregues por alguns dias, se a cliente pedir (pergunta 8); endereço de entrega no app (decisão de 29/09: o app não pede); resgate pago (fora do contrato); exportar os pedidos em planilha (o painel monta com o `getRedemptionContacts`); os lotes de estoque (25.6), se o sinal pedir; uma tela "Meus resgates" (o detalhe da recompensa basta).
+- **Em produção, sem cadastro, a loja fica vazia:** a 1h mostra "As recompensas aparecem aqui quando a loja abrir." até a equipe cadastrar pelo painel (bloco 11) ou o dono autorizar uma carga do catálogo, no molde do `seedMissionsCatalog`.
+- **Publicação**, só com o ok do dono, nesta ordem: regras e índices (`deploy --only firestore:rules,firestore:indexes`); esperar os sete compostos novos ficarem prontos no console (sem o de `rewards`, a loja responde 500; sem os de `redemptions`, a loja e as listas do painel); as regras do Storage (`npm run rules:deploy` já leva; o papel IAM das centrais serve); depois todas as funções (`npm run functions:deploy`): a `api` com as rotas novas, as 8 callables novas (`createReward`, `updateReward`, `setRewardStatus`, `setRewardStock`, `reorderRewards`, `deleteReward`, `setRedemptionStatus` e `getRedemptionContacts`), o `updatePointsConfig` com a chave nova, o `deleteEvent` com o `event-has-rewards` e o `deleteUserData` novo, usado pela `deleteUserProfile` e pela `createUserProfile`. As regras levam também a leitura de `events` pela seção `rewards`. Nenhum gatilho e nenhuma fila nova.
+- **Depois do deploy:** com este bloco, nenhuma ação que rende ou gasta pontos fica nas fixtures. O `EXPO_PUBLIC_API_URL` pode entrar nas variáveis da EAS com o ok do dono, numa build ou num EAS Update futuro, quando as contas das lojas permitirem. Nada disso acontece neste bloco.
+
+### 25.17 Armadilhas do bloco 10
+
+- O id do pedido é o código: nunca o `doc()` automático. O sorteio é do `crypto.randomInt` (pelo `drawCode` do serviço, que só o teste da colisão troca), e não do `deps.random`: os testes fixam o `random` do shard, e um sorteio fixo daria o mesmo código no segundo pedido. A rota não lê o código: a unicidade é do `tx.create`, e a colisão volta pelo `retryOnAlreadyExists`.
+- O teto do dia é a primeira conferência do resgate, antes de ler a recompensa. Todas as leituras antes das gravações: o show e a consulta do limite vêm depois da recompensa (dependem do `eventId` e do `perFanLimit`), mas antes do `planAwards` e de qualquer gravação.
+- A consulta do limite (`uid` e `rewardId` iguais) usa a junção dos índices simples. Acrescentar `orderBy` nela pede um composto, que o emulador não cobra.
+- `redeemedCount` conta solicitado, aprovado e entregue. Só o resgate soma; só a recusa e o cancelamento tiram, na mesma transação, nunca abaixo de 0. Mudar o estoque mexe só no `stockTotal`, e a recusa com `restock: false` tira 1 dos dois.
+- O resgate não grava `updatedAt` na recompensa: o campo é das mudanças da equipe.
+- A devolução é `refund`, e não `adjust`: não conta em `totals.adjusted` nem aparece como "Ajuste da equipe". O `spentTotal` desce nela e nunca fica negativo.
+- O cancelamento da exclusão não devolve ponto (a carteira sai junto) e não é `refused`. O `canceled` nunca chega ao app, porque o pedido cancelado não tem uid.
+- A encerrada só aparece para quem tem pedido nela. O "Esgotado" para todos é o estoque igual ao resgatado, e a recusa padrão e o cancelamento o desfazem (uma vaga cada): para manter, `restock: false`.
+- Recompensa com show vende só com o show aberto (`isEventOpen`): o show de ontem, o fora do ar, o rascunho e o apagado esgotam a recompensa. O `deleteEvent` recusa o show de uma recompensa (`event-has-rewards`).
+- O e-mail do fã não mora no Firestore: não copie no pedido. A cópia do nome e do @ é da hora do pedido; procure o fã pelo uid.
+- O `expectedCost` entra na impressão da chave: a mesma chave com outro custo é 422, e o 422 só existe quando a primeira gravou. Por isso a tentativa do app guarda a chave com o `expectedCost` e repete o mesmo corpo, e o 422 no resgate nunca abre chave nova às cegas (`alreadyRedeemed`). A confirmação manda o custo congelado ao abrir, nunca o da recompensa ao vivo. No app, a recusa `reward_changed` encerra a tentativa.
+- O `syncRefunds` compara o `statusAt` da recusa com o `updatedAt` da carteira, os dois do servidor; nunca com o `dataUpdatedAt` do React Query, que é do relógio do aparelho.
+- `limitReached` na loja é só para mostrar; a recusa de verdade é a contagem na transação.
+- Na callable, o `readPanelActor` de novo dentro da transação: quem perde a seção no meio não grava. No seed, o ator é o `SEED_ACTOR`, sem uid: nada de auditoria nem de `updatedBy` com ele, e cada transição só roda a partir do `from` dela.
+- A repetição do mesmo status responde o `refundedPoints` guardado no pedido, nunca 0 fixo.
+- O `getRedemptionContacts` só devolve contato de pedido aberto, com um `getUsers` só; o `getUser` por pedido seriam 50 chamadas ao Auth.
+- O emulador não exige índice: os compostos de 25.10 sobem antes da `api`. A fila em ordem crescente e a lista em ordem decrescente são índices diferentes.
+- Pedidos e ajuste do seed às 18:00 de São Paulo: no mesmo instante de um lançamento de missão, o extrato ordenaria pelo id, e as fixtures teriam de repetir esse desempate.
+
+### 25.18 O que o código fez diferente do desenho
+
+O desenho de 25.1 a 25.17 vale como está; estas são as diferenças do código de 07/10/2026, cada uma com o motivo.
+
+- **A conta da equipe no seed.** O `scripts/seed-emulators.mjs` cria `equipe@teste.imagineup` (admin, todas as seções), gravada como o aceite do convite deixaria: `staff/{uid}` antes da conta, com o uid fixo `seed-equipe`, então o gatilho de cadastro não cria perfil de fã. Motivo: a conferência de ponta a ponta do bloco chama as callables do painel no emulador (aprovar, entregar, recusar), e o painel local (`imagineup-admin`) precisa de uma conta da equipe. Rodar de novo não muda nada.
+- **O show fechado nas fixtures.** A nota pedia o `isEventOpen` das fixtures da agenda, que não existe no app; o `rewards/fixtures.ts` usa o `isUpcoming` de `agenda/group-by-month.ts`, o mesmo corte do começo do dia (no fuso do aparelho, como o resto das fixtures). Com as datas relativas a `fixtureNow()`, os shows de exemplo nunca passam: o teste das fixtures troca o `buildAgendaEventsFixture` por um show de dois dias atrás para provar a recusa.
+- **Os testes que importam as fixtures da loja mocam o Firebase.** O `agenda/fixtures.ts` importa o `missionsFixture` pelo index das missões, que chega ao axios e ao Firebase (ESM no Jest). Os quatro arquivos de teste da loja (`describe-reward`, `fixtures`, `reward-cards`, `api`) fazem o `jest.mock` de sempre, e o do `@/config/env`, em vez de mudar o import da agenda.
+- **Os pedidos fora da tabela no painel.** O `setRedemptionStatus` com `status: 'requested'` ou `'canceled'` responde `invalid-request` com `details.field: 'status'` (o pedido só aceita aprovado, entregue e recusado), e não `invalid-transition`; o `updateReward` com `stockTotal` responde `invalid-request` com o campo (o estoque muda pelo `setRewardStock`); o `createReward` com o `rewardId` fora do formato, `invalid-request` com `field: 'rewardId'`.
+- **A auditoria dos contatos.** O `getRedemptionContacts` lê os pedidos, os perfis e as contas fora de transação e grava a auditoria numa transação curta no fim, que relê quem chama (`readPanelActor` de novo): a entrada só existe se a resposta sai, e quem perdeu a seção no meio recebe `no-section` sem os contatos.
+- **O destaque no limite do fã.** Com o `limitReached`, o card do destaque troca o selo de escassez pelo "Resgatado" (no desenho do "Esgotado") e tira o custo; o rótulo do leitor de tela continua com as vagas. A loja do fã que já resgatou não precisa das vagas à vista.
+- **O pé da 1h.** O aviso da Apple e o link do regulamento moram no componente `RewardsLegal`, no rodapé da lista, que aparece fora do esqueleto (com a loja, vazia ou com erro).
+- **O teste da colisão do código.** O `localApi` de `functions/test/support.ts` aceita rotas só do teste (`routes`): a colisão usa uma rota que chama o `redeemReward` com o `drawCode` injetado (primeiro o código de um pedido que existe, depois um novo), sem mudar a `api`.
+- **O limite atingido busca também a carteira.** O desenho fazia o `redeem_limit_reached` buscar só a loja. Na conferência no emulador, a Camila com a confirmação da videochamada aberta resgatou a mesma recompensa por fora (outra sessão, direto na API): o toque em confirmar recebeu o limite, a loja trouxe o pedido novo, e a pílula ficou com o saldo de antes, 8.500 pontos a mais. O pedido que fecha o limite é sempre do próprio fã, e gastou saldo; então o `limitReached` busca a loja e a carteira, como o `alreadyRedeemed`.
+- **A loja e o detalhe dividem o `queryFn`.** O `useRewardQuery` (o detalhe) usa as mesmas opções do `useRewardsQuery`, com o `syncRefunds` dentro do `queryFn`, para a devolução vista pelo fã valer aberta pela 1h ou por link.
+- **A tentativa que a loja mostra gravada.** O desenho fechava a tentativa do resgate só com uma resposta clara. A revisão do fechamento achou o furo: depois de uma falha incerta em que o servidor gravou, a tentativa ficava aberta mesmo com a loja já mostrando o pedido, e um resgate novo e deliberado da mesma recompensa (a camisa sem limite, os ingressos com limite 2, ou a de limite 1 depois de a equipe recusar o pedido), na mesma execução do app, repetia a chave antiga: o servidor devolvia o `RedeemResult` guardado, e o app mostrava "Resgate confirmado" com o código do pedido anterior, sem pedido novo. Agora a tentativa guarda os códigos que a recompensa já tinha e se está indo; a loja que mostra um pedido novo com nada indo leva a confirmação aberta de volta ao detalhe com o aviso `alreadyRedeemed` (e o detalhe reaberto já abre com ele), e a confirmação seguinte fecha a tentativa (25.12). O fechamento mora na confirmação nova, e não no `queryFn` da loja: fechar na busca abriria uma janela entre a loja nova e a tela nova em que o toque na confirmação antiga sairia com chave nova, um segundo pedido.
+- **O status no sucesso.** O desenho deixava no passo de sucesso só a frase de acompanhar o pedido, e o `status` do `RedeemResult` não aparecia em lugar nenhum. O card do código ganha a linha "Solicitado em" e o rótulo dos pedidos de "Seus resgates" (25.12); o texto `rewards.success.codeLabel` sai.
 
 ## Armadilhas
 

@@ -6,6 +6,7 @@ import {
   Heart,
   MessageCircle,
   Ticket,
+  Undo2,
   UserPlus,
   Users,
   type LucideIcon,
@@ -18,8 +19,12 @@ import { formatPointsDelta, formatPointsSpoken } from '@/utils/number';
 
 import type { LedgerEntry } from './types';
 
-/** O contexto da linha: a central, o título da missão ou nada. */
-type LedgerContext = 'artist' | 'mission' | 'none';
+/**
+ * O contexto da linha: a central, o título guardado no lançamento (o da
+ * missão e, desde o bloco 10, o da recompensa no resgate e na devolução) ou
+ * nada.
+ */
+type LedgerContext = 'artist' | 'subject' | 'none';
 
 interface SourceSpec {
   title: TranslationKey;
@@ -48,7 +53,7 @@ const SOURCES: Readonly<Record<string, SourceSpec>> = {
     tone: 'action',
     context: 'artist',
   },
-  mission: { title: 'ledger.sources.mission', icon: Flame, tone: 'points', context: 'mission' },
+  mission: { title: 'ledger.sources.mission', icon: Flame, tone: 'points', context: 'subject' },
   invite_visit: {
     title: 'ledger.sources.invite_visit',
     icon: Users,
@@ -61,7 +66,14 @@ const SOURCES: Readonly<Record<string, SourceSpec>> = {
     tone: 'points',
     context: 'none',
   },
-  redeem: { title: 'ledger.sources.redeem', icon: Gift, tone: 'action', context: 'none' },
+  redeem: { title: 'ledger.sources.redeem', icon: Gift, tone: 'action', context: 'subject' },
+  // A devolução do resgate recusado (bloco 10): volta ao saldo, em lima.
+  redeem_refund: {
+    title: 'ledger.sources.redeem_refund',
+    icon: Undo2,
+    tone: 'points',
+    context: 'subject',
+  },
   adjustment: {
     title: 'ledger.sources.adjustment',
     icon: Award,
@@ -95,11 +107,14 @@ export function ledgerValue(entry: LedgerEntry): number {
   return entry.points || entry.xpDelta || entry.seasonDelta;
 }
 
-/** O contexto: a central (curtida, comentário, presença, entrada) ou o título da missão. */
+/**
+ * O contexto: a central (curtida, comentário, presença, entrada) ou o título
+ * guardado no lançamento (a missão, a recompensa do resgate e da devolução).
+ */
 export function ledgerContext(entry: LedgerEntry): string | null {
   const { context } = ledgerSource(entry);
   if (context === 'artist') return entry.artistName ?? null;
-  if (context === 'mission') return entry.subjectTitle ?? null;
+  if (context === 'subject') return entry.subjectTitle ?? null;
   return null;
 }
 

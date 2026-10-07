@@ -9,6 +9,7 @@ import { ProfileEditError } from '../fan-profile/model';
 import { DailyCapError, ModerationError } from '../moderation/model';
 import { staticConfigSource } from '../points/config';
 import { PostError } from '../posts/model';
+import { RewardError } from '../rewards/model';
 import { API_ROUTES, createApiHandler } from './index';
 import type { ApiRequest, ApiRoute } from './types';
 
@@ -103,7 +104,7 @@ describe('formato da resposta e dos erros', () => {
     expect(sent).toEqual({
       status: 200,
       headers: { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' },
-      body: { balance: 0, xp: 0, seasonPoints: 0 },
+      body: { balance: 0, xp: 0, seasonPoints: 0, updatedAt: null },
     });
     expect(logger.info).toHaveBeenCalledWith('api', {
       method: 'GET',
@@ -945,5 +946,115 @@ describe('perfil editável (bloco 9)', () => {
       body: { photoURL: null },
     });
     expect((await send('GET', '/me/wallet')).status).toBe(200);
+  });
+});
+
+describe('loja e resgate (bloco 10)', () => {
+  const thrower = (error: unknown): ApiRoute[] => [
+    {
+      method: 'GET',
+      pattern: '/teste/bloco10',
+      writes: false,
+      handle: async () => {
+        throw error;
+      },
+    },
+  ];
+
+  const cases: [RewardError, number, Record<string, unknown>][] = [
+    [
+      new RewardError('reward_not_found'),
+      404,
+      { code: 'reward_not_found', message: 'Recompensa não encontrada.' },
+    ],
+    ...(['closed', 'stock', 'event'] as const).map(
+      (reason): [RewardError, number, Record<string, unknown>] => [
+        new RewardError('sold_out', { reason }),
+        409,
+        { code: 'sold_out', message: 'Recompensa esgotada.', details: { reason } },
+      ],
+    ),
+    [
+      new RewardError('redeem_limit_reached', { limit: 1 }),
+      409,
+      {
+        code: 'redeem_limit_reached',
+        message: 'Você chegou ao limite de resgates desta recompensa.',
+        details: { limit: 1 },
+      },
+    ],
+    [
+      new RewardError('reward_changed', { cost: 7_000 }),
+      409,
+      {
+        code: 'reward_changed',
+        message: 'O custo desta recompensa mudou. Confira antes de resgatar.',
+        details: { cost: 7_000 },
+      },
+    ],
+  ];
+
+  it.each(cases)('%s vira o código combinado', async (error, status, body) => {
+    const sent = await call(request('GET', '/teste/bloco10'), thrower(error));
+    expect(sent.status).toBe(status);
+    expect(sent.body).toEqual(body);
+    expect(logger.error).not.toHaveBeenCalled();
+  });
+
+  it('teto dos resgates: 429 com a ação redeem e o Retry-After', async () => {
+    const sent = await call(
+      request('GET', '/teste/bloco10'),
+      thrower(new DailyCapError('redeem', 10, 3600)),
+    );
+    expect(sent.status).toBe(429);
+    expect(sent.body).toEqual({
+      code: 'too_many_requests',
+      message: 'Tentativas demais por hoje. Tente amanhã.',
+      details: { limit: 10, action: 'redeem' },
+    });
+    expect(sent.headers['Retry-After']).toBe('3600');
+  });
+
+  it('corpo sem expectedCost, ou fora do formato: 400 com o campo, antes de abrir a transação', async () => {
+    for (const body of [undefined, {}, { expectedCost: 0 }, { expectedCost: '6000' }, [6_000]]) {
+      const sent = await call(
+        request('POST', '/rewards/camisa/redeem', {
+          headers: { 'Idempotency-Key': 'chave-resgate-1' },
+          body,
+        }),
+      );
+      expect(sent.status).toBe(400);
+      expect(sent.body).toMatchObject({
+        code: 'invalid_request',
+        details: { field: 'expectedCost' },
+      });
+    }
+  });
+
+  it('id fora do formato: 404 reward_not_found, sem ler nada', async () => {
+    for (const path of ['/rewards/__x__/redeem', '/rewards/meet.netto/redeem']) {
+      const sent = await call(
+        request('POST', path, {
+          headers: { 'Idempotency-Key': 'chave-resgate-1' },
+          body: { expectedCost: 10_000 },
+        }),
+      );
+      expect(sent.status).toBe(404);
+      expect(sent.body).toEqual({
+        code: 'reward_not_found',
+        message: 'Recompensa não encontrada.',
+      });
+    }
+  });
+
+  it('o resgate exige a Idempotency-Key; a loja só lê', async () => {
+    const redeem = await call(
+      request('POST', '/rewards/camisa/redeem', { body: { expectedCost: 15_000 } }),
+    );
+    expect(redeem.status).toBe(400);
+    expect(redeem.body).toMatchObject({ code: 'idempotency_key_required' });
+    const wrong = await call(request('GET', '/rewards/camisa/redeem'));
+    expect(wrong.status).toBe(405);
+    expect(wrong.headers.Allow).toBe('POST');
   });
 });

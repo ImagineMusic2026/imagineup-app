@@ -10,6 +10,11 @@ export type Wallet = {
   xp: number;
   /** Pontos da temporada, que contam no ranking. */
   seasonPoints: number;
+  /**
+   * ISO da última gravação da carteira, ou null sem carteira (bloco 10, 25.2):
+   * o app compara com o `statusAt` de uma recusa da loja. Opcional no app.
+   */
+  updatedAt: string | null;
 };
 
 /** `Level` de src/domains/profile/types.ts. */
@@ -35,7 +40,8 @@ export type Page<T> = { items: T[]; nextCursor: string | null };
 /** Uma linha do extrato (/me/ledger). O app monta o texto a partir de `source` e `subject` (bloco 7). */
 export type LedgerEntry = {
   id: string;
-  kind: 'earn' | 'spend' | 'adjust';
+  /** `refund` é a devolução do resgate recusado (bloco 10). */
+  kind: 'earn' | 'spend' | 'adjust' | 'refund';
   source: string;
   points: number;
   xpDelta: number;
@@ -48,7 +54,10 @@ export type LedgerEntry = {
   createdAt: string;
   /** O `name` da central, em qualquer status; null sem central ou com ela apagada (bloco 7). */
   artistName: string | null;
-  /** Só na missão: o título dela quando concluiu, guardado no lançamento (bloco 7). */
+  /**
+   * O título da missão quando concluiu (bloco 7) ou o da recompensa no resgate
+   * e na devolução (bloco 10), guardado no lançamento.
+   */
   subjectTitle: string | null;
 };
 
@@ -454,3 +463,77 @@ export type UsernameChange = {
 
 /** `PhotoChange` do app (`PUT` e `DELETE /me/photo`): a URL de download com token, ou null. */
 export type PhotoChange = { photoURL: string | null };
+
+// --- Loja e resgate (bloco 10), espelho de src/domains/rewards/types.ts ---
+
+/** `RewardKind` do app: decide o ícone e a cor do quadro. */
+export type RewardKind = 'ticket' | 'videocall' | 'merch' | 'screen' | 'meet';
+
+/** `RewardStatus` do app: `soldOut` na encerrada, sem vaga ou com o show fechado. */
+export type RewardStatus = 'available' | 'soldOut';
+
+/** `RewardStock` do app: o total oferecido e o que sobra (nunca negativo). */
+export type RewardStock = { remaining: number; total: number };
+
+/** `RewardEvent` do app: o show aberto da recompensa, montado na hora. */
+export type RewardEvent = { name: string; startsAt: string };
+
+/** `RedemptionStatus` do app: o `canceled` nunca chega ao fã (o pedido cancelado não tem uid). */
+export type RedemptionStatus = 'requested' | 'approved' | 'delivered' | 'refused';
+
+/** `RewardRedemption` do app: um pedido do fã nesta recompensa (25.2). */
+export type RewardRedemption = {
+  /** O mesmo valor do `code`: a chave da lista no app. */
+  id: string;
+  code: string;
+  status: RedemptionStatus;
+  /** ISO: o instante do status de agora. */
+  statusAt: string;
+  /** O que o pedido gastou. */
+  points: number;
+  /** O que a recusa devolveu de fato; 0 fora do recusado. */
+  refundedPoints: number;
+  /** As da recompensa de agora no pedido aberto; a cópia da hora do resgate no fechado. */
+  instructions: string;
+  /** Só no recusado: o texto da equipe, ou null. */
+  refusalReason: string | null;
+  /** ISO. */
+  redeemedAt: string;
+};
+
+/** `Reward` do app (`GET /rewards`, 25.2). */
+export type Reward = {
+  id: string;
+  kind: RewardKind;
+  title: string;
+  subtitle: string;
+  description: string | null;
+  cost: number;
+  imageUrl: string | null;
+  featured: boolean;
+  scarcity: boolean;
+  stock: RewardStock | null;
+  event: RewardEvent | null;
+  status: RewardStatus;
+  /** O limite de pedidos por fã, ou null sem limite (campo novo, opcional no app). */
+  perFanLimit: number | null;
+  /** O fã já tem o limite de pedidos que contam (só para mostrar; campo novo). */
+  limitReached: boolean;
+  /** Os pedidos do fã, do mais novo ao mais antigo. */
+  redemptions: RewardRedemption[];
+};
+
+/** `RewardsResponse` do app: a loja na ordem do painel e o endereço do regulamento. */
+export type RewardsResponse = { rulesUrl: string | null; rewards: Reward[] };
+
+/** `RedeemResult` do app (`POST /rewards/:rewardId/redeem`): o pedido nasce `requested`. */
+export type RedeemResult = {
+  redemptionId: string;
+  rewardId: string;
+  code: string;
+  balance: number;
+  instructions: string;
+  /** ISO. */
+  redeemedAt: string;
+  status: 'requested';
+};

@@ -483,7 +483,8 @@
     "spoken": {
       "event": "{{name}}, {{date}}",
       "missing": "Faltam {{points}}",
-      "missingOne": "Falta 1 ponto"
+      "missingOne": "Falta 1 ponto",
+      "limitReached": "Limite de resgates atingido"
     },
     "label": {
       "card": "{{title}}. {{meta}}. {{value}}.",
@@ -505,7 +506,9 @@
       "redeemHint": "Pede confirmação antes de gastar os pontos",
       "seeMissions": "Ver missões",
       "seeMissionsHint": "Abre as missões, para ganhar pontos",
-      "offline": "Sem internet. Conecte-se para resgatar."
+      "offline": "Sem internet. Conecte-se para resgatar.",
+      "limitReachedOne": "Você já resgatou",
+      "limitReached": "Limite de {{count}} resgates atingido"
     },
     "confirm": {
       "title": "Confirmar resgate?",
@@ -517,21 +520,38 @@
     "success": {
       "title": "Resgate confirmado",
       "code": "Código do resgate",
-      "codeLabel": "Código do resgate: {{code}}",
       "nextSteps": "Próximos passos",
       "done": "Pronto",
-      "announcement": "Resgate confirmado. Seu saldo agora é {{balance}}."
+      "announcement": "Resgate confirmado. Seu saldo agora é {{balance}}.",
+      "tracking": "Você acompanha o pedido nesta recompensa, na loja."
     },
     "redeemed": {
-      "title": "Você já resgatou",
-      "date": "Resgatado em {{date}}",
-      "codeLabel": "Código do resgate: {{code}}. Resgatado em {{date}}."
+      "title": "Seus resgates",
+      "status": {
+        "requested": "Solicitado em {{date}}",
+        "approved": "Aprovado em {{date}}",
+        "delivered": "Entregue em {{date}}",
+        "refused": "Recusado em {{date}}"
+      },
+      "codeLabel": "Código do resgate: {{code}}. {{status}}.",
+      "reason": "Motivo: {{reason}}",
+      "refunded": "Os {{points}} pontos voltaram para o seu saldo."
     },
     "errors": {
       "insufficientPoints": "Seu saldo mudou e não cobre mais este resgate.",
       "soldOut": "Esta recompensa esgotou.",
       "notFound": "Esta recompensa saiu da loja.",
-      "failed": "Não deu para confirmar o resgate. Tente de novo."
+      "failed": "Não deu para confirmar o resgate. Tente de novo.",
+      "limitReached": "Você chegou ao limite de resgates desta recompensa.",
+      "changed": "O custo desta recompensa mudou. Confira antes de resgatar.",
+      "dailyLimit": "Você fez resgates demais hoje. Tente de novo amanhã.",
+      "alreadyRedeemed": "Seu resgate anterior já foi registrado. Confira em Seus resgates."
+    },
+    "redeemedShort": "Resgatado",
+    "legal": {
+      "notice": "As recompensas são oferecidas pela Imagine Music. A Apple não patrocina nem participa delas de nenhuma forma.",
+      "rules": "Regulamento",
+      "rulesHint": "Abre o regulamento das recompensas"
     }
   },
   "agenda": {
@@ -660,7 +680,8 @@
       "redeem": "Resgate",
       "adjustment": "Ajuste da equipe",
       "seed": "Ajuste",
-      "other": "Pontos"
+      "other": "Pontos",
+      "redeem_refund": "Resgate devolvido"
     },
     "days": {
       "today": "Hoje",
@@ -763,7 +784,7 @@
       "profile": "Seu perfil: nome, foto, cidade e o seu @, que fica livre para outra pessoa.",
       "points": "Seus pontos: o saldo, o nível e as conquistas.",
       "ranking": "Sua posição no ranking e as centrais que você segue.",
-      "rewards": "As recompensas resgatadas com os seus pontos."
+      "rewards": "Seus resgates: os que ainda não foram entregues são cancelados, e os pontos não voltam."
     },
     "fresh": "Dá para criar uma conta nova depois, mas ela começa do zero.",
     "submit": "Excluir minha conta",

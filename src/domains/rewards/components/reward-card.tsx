@@ -31,6 +31,8 @@ function outlineLabelOf(reward: Reward, availability: RewardAvailability): strin
       return missingText(availability.missing);
     case 'soldOut':
       return t('rewards.soldOut');
+    case 'limitReached':
+      return t('rewards.redeemedShort');
     default:
       return priceText(reward.cost);
   }
@@ -39,12 +41,16 @@ function outlineLabelOf(reward: Reward, availability: RewardAvailability): strin
 /**
  * Card da grade da 1h, nos dois estados do protótipo: dá para resgatar
  * (quadro na cor do tipo e preço lima) e ainda não dá (vidro e "faltam N" em
- * contorno), mais esgotado. O card inteiro é um botão só, com o rótulo
- * completo; o preço é só visual. Cresce com a linha da grade: o preço fica
- * sempre no pé, na mesma altura do vizinho, mesmo com a fonte grande.
+ * contorno), mais esgotado e, desde o bloco 10, o limite de pedidos do fã
+ * ("Resgatado", no desenho do esgotado). O card inteiro é um botão só, com o
+ * rótulo completo; o preço é só visual. Cresce com a linha da grade: o preço
+ * fica sempre no pé, na mesma altura do vizinho, mesmo com a fonte grande.
  */
 export function RewardCard({ reward, availability, onPress, style, testID }: RewardCardProps) {
-  const outOfReach = availability.state === 'short' || availability.state === 'soldOut';
+  const outOfReach =
+    availability.state === 'short' ||
+    availability.state === 'soldOut' ||
+    availability.state === 'limitReached';
   const tileProgress = useMutedProgress(reward.id, outOfReach);
   const outlined = availability.state !== 'redeemable';
   const priceProgress = useMutedProgress(reward.id, outlined);

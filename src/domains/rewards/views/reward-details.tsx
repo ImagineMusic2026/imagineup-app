@@ -89,6 +89,14 @@ function useFocusOnChange(key: string, target: RefObject<View | null>): void {
  * Quando o passo muda por uma resposta do servidor, o foco vai para quem diz
  * o resultado: o título do sucesso (com o saldo novo) ou o aviso da recusa, no
  * pé, junto do botão. Um anúncio à parte seria cortado por esse foco.
+ *
+ * Bloco 10: a confirmação congela o custo ao abrir (`confirmedCost`) e manda
+ * esse número, e não o da recompensa ao vivo, que uma busca de fundo troca em
+ * silêncio; com a confirmação aberta e nada indo, o pedido da tentativa que
+ * falhou sem resposta (o servidor gravou), o custo novo, o limite atingido, o
+ * saldo que não cobre ou o esgotado voltam ao detalhe com o aviso.
+ * Os pedidos do fã aparecem no detalhe com o status (solicitado, aprovado,
+ * entregue ou recusado, com o motivo e os pontos de volta).
  */
 export function RewardDetailsScreen() {
   const { recompensaId } = useLocalSearchParams<{ recompensaId?: string }>();
@@ -105,6 +113,8 @@ export function RewardDetailsScreen() {
   const redeem = useRedeemRewardMutation(rewardId);
   const [step, setStep] = useState<RedeemStep>('details');
   const [failure, setFailure] = useState<RedeemFailure | null>(null);
+  // O custo que a confirmação mostra e manda, congelado ao entrar nela (25.12).
+  const [confirmedCost, setConfirmedCost] = useState<number | null>(null);
   // A recompensa como estava no resgate: a loja busca de novo depois dele.
   const [redeemed, setRedeemed] = useState<Reward | null>(null);
   // "Tentar de novo" buscando: sem dado, a busca tira a consulta do erro, e o
@@ -118,16 +128,39 @@ export function RewardDetailsScreen() {
   const availability = reward ? rewardAvailability(reward, balance) : null;
   const refusal = failure === 'failed' ? null : failure;
 
-  // A carteira buscou de novo com a confirmação aberta e o saldo (ou o
-  // estoque) não cobre mais: volta ao detalhe, que diz o que falta, com o
-  // mesmo aviso da recusa do servidor.
-  if (
-    step === 'confirm' &&
-    !pending &&
-    (availability?.state === 'short' || availability?.state === 'soldOut')
-  ) {
-    setFailure(availability.state === 'soldOut' ? 'soldOut' : 'insufficientPoints');
+  // A loja ou a carteira buscou de novo com a confirmação aberta e nada indo:
+  // a tentativa que falhou sem resposta gravou (a loja mostra o pedido dela),
+  // esgotou, o fã chegou ao limite, o saldo não cobre mais ou o custo mudou.
+  // Volta ao detalhe, que diz o que mudou, com o mesmo aviso da recusa do
+  // servidor. A tentativa é lida aqui, no passo e no aviso de agora, e não numa
+  // constante à parte: ela muda fora do React (`closeRecordedAttempt`).
+  const outdated =
+    step === 'confirm' && !pending && reward && availability
+      ? redeem.attemptRecorded(reward)
+        ? 'alreadyRedeemed'
+        : availability.state === 'soldOut'
+          ? 'soldOut'
+          : availability.state === 'limitReached'
+            ? 'limitReached'
+            : availability.state === 'short'
+              ? 'insufficientPoints'
+              : confirmedCost !== null && reward.cost !== confirmedCost
+                ? 'changed'
+                : null
+      : null;
+  if (outdated) {
+    setFailure(outdated);
     setStep('details');
+  } else if (
+    step === 'details' &&
+    failure === null &&
+    !pending &&
+    reward &&
+    redeem.attemptRecorded(reward)
+  ) {
+    // A sheet reaberta depois da falha: o detalhe já diz que o pedido foi
+    // registrado, e um toque em "Resgatar" é um resgate novo, com ele à vista.
+    setFailure('alreadyRedeemed');
   }
 
   useStayOnScreen(pending);
@@ -146,9 +179,16 @@ export function RewardDetailsScreen() {
     setStep(next);
   };
 
-  const confirm = (item: Reward): void => {
+  const openConfirm = (item: Reward): void => {
+    // O pedido da tentativa anterior já está à vista: este é um resgate novo.
+    redeem.closeRecordedAttempt(item);
+    setConfirmedCost(item.cost);
+    goTo('confirm');
+  };
+
+  const confirm = (item: Reward, cost: number): void => {
     setFailure(null);
-    redeem.redeem({
+    redeem.redeem(cost, {
       onSuccess: () => {
         setRedeemed(item);
         setStep('success');
@@ -188,13 +228,14 @@ export function RewardDetailsScreen() {
     actions = <SuccessActions onDone={closeSheet} />;
   } else if (reward && availability) {
     if (step === 'confirm') {
-      body = <ConfirmBody reward={reward} balance={balance} headingRef={heading} />;
+      const cost = confirmedCost ?? reward.cost;
+      body = <ConfirmBody reward={reward} cost={cost} balance={balance} headingRef={heading} />;
       actions = (
         <ConfirmActions
           online={online}
           pending={pending}
           failed={failure === 'failed'}
-          onConfirm={() => confirm(reward)}
+          onConfirm={() => confirm(reward, cost)}
           onBack={() => goTo('details')}
         />
       );
@@ -214,7 +255,7 @@ export function RewardDetailsScreen() {
           online={online}
           notice={refusal}
           noticeRef={notice}
-          onRedeem={() => goTo('confirm')}
+          onRedeem={() => openConfirm(reward)}
           onSeeMissions={goToMissions}
         />
       );

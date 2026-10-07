@@ -152,6 +152,65 @@
         { "fieldPath": "seasonPoints", "order": "ASCENDING" },
         { "fieldPath": "seasonPointsAt", "order": "ASCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "rewards",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "order", "order": "ASCENDING" },
+        { "fieldPath": "__name__", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "redemptions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "uid", "order": "ASCENDING" },
+        { "fieldPath": "requestedAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "redemptions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "rewardId", "order": "ASCENDING" },
+        { "fieldPath": "requestedAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "redemptions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "rewardId", "order": "ASCENDING" },
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "requestedAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "redemptions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "rewardId", "order": "ASCENDING" },
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "requestedAt", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "redemptions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "requestedAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "redemptions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "requestedAt", "order": "ASCENDING" }
+      ]
     }
   ],
   "fieldOverrides": [
@@ -212,6 +271,12 @@
     { "collectionGroup": "seasons", "fieldPath": "centrals", "indexes": [] },
     { "collectionGroup": "standings", "fieldPath": "displayName", "indexes": [] },
     { "collectionGroup": "standings", "fieldPath": "photoURL", "indexes": [] },
-    { "collectionGroup": "standings", "fieldPath": "city", "indexes": [] }
+    { "collectionGroup": "standings", "fieldPath": "city", "indexes": [] },
+    { "collectionGroup": "rewards", "fieldPath": "description", "indexes": [] },
+    { "collectionGroup": "rewards", "fieldPath": "instructions", "indexes": [] },
+    { "collectionGroup": "rewards", "fieldPath": "photo", "indexes": [] },
+    { "collectionGroup": "redemptions", "fieldPath": "instructions", "indexes": [] },
+    { "collectionGroup": "redemptions", "fieldPath": "refusalReason", "indexes": [] },
+    { "collectionGroup": "statsShards", "fieldPath": "byReward", "indexes": [] }
   ]
 }
