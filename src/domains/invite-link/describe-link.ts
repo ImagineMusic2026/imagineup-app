@@ -11,10 +11,14 @@ import { t } from '@/i18n';
 export type InviteTarget =
   | { kind: 'post'; postId: string; artistName: string | null }
   | { kind: 'event'; showTitle: string | null }
+  | { kind: 'artist'; artistId: string; artistName: string | null }
   | { kind: 'app' };
 
 /** A agenda não tem página de um show só: o link do show leva para ela. */
 const AGENDA_PATH = '/agenda';
+
+/** A central no app, o mesmo caminho do compartilhar da 1d (`artistPath`). */
+const centralPath = (artistId: string) => `/artista/${encodeURIComponent(artistId)}`;
 
 /** O link compartilhado no servidor ("links criados"): o post, a agenda ou o atalho Convidar. */
 export function inviteTargetLinkId(target: InviteTarget): string {
@@ -23,6 +27,8 @@ export function inviteTargetLinkId(target: InviteTarget): string {
       return inviteLinkId({ kind: 'post', postId: target.postId });
     case 'event':
       return inviteLinkId({ kind: 'agenda' });
+    case 'artist':
+      return inviteLinkId({ kind: 'artist', artistId: target.artistId });
     default:
       return inviteLinkId({ kind: 'invite' });
   }
@@ -35,6 +41,8 @@ export function inviteTargetPath(target: InviteTarget): string {
       return postPath(target.postId);
     case 'event':
       return AGENDA_PATH;
+    case 'artist':
+      return centralPath(target.artistId);
     default:
       return '/';
   }
@@ -51,6 +59,10 @@ export function inviteTargetText(target: InviteTarget): string {
       return target.showTitle
         ? t('invite.target.event', { show: target.showTitle })
         : t('invite.target.eventPlain');
+    case 'artist':
+      return target.artistName
+        ? t('invite.target.artist', { artist: target.artistName })
+        : t('invite.target.artistPlain');
     default:
       return t('invite.target.app');
   }
@@ -63,6 +75,9 @@ export function inviteMessage(target: InviteTarget): string {
   }
   if (target.kind === 'event' && target.showTitle) {
     return t('invite.message.event', { show: target.showTitle });
+  }
+  if (target.kind === 'artist' && target.artistName) {
+    return t('artist.shareMessage', { name: target.artistName });
   }
   return t('invite.message.app');
 }

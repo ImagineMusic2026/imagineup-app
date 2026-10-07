@@ -3,8 +3,10 @@ import { describe, expect, it } from 'vitest';
 
 import { addEngagementCounts, addMembershipCounts, type AwardPlan } from './award';
 import {
+  addAchievementToShard,
   addEngagementToShard,
   addInviteToShard,
+  addMissionToShard,
   addMembershipToShard,
   emptyShardDelta,
   isEmptyShardDelta,
@@ -214,5 +216,25 @@ describe('engajamento nos shards (bloco 6)', () => {
     addEngagementCounts(empty, [{ kind: 'unlikes', artistIds: ['nenho'] }]);
     expect(empty.shard?.totals.unlikes).toBe(1);
     expect(empty.shard?.byArtist.nenho?.unlikes).toBe(1);
+  });
+});
+
+describe('missões e conquistas nos shards (bloco 7)', () => {
+  it('as conclusões por missão e os desbloqueios por conquista, como increments', () => {
+    const delta = emptyShardDelta();
+    addMissionToShard(delta, 'm-clipe-netto');
+    addMissionToShard(delta, 'm-clipe-netto');
+    addAchievementToShard(delta, 'fa-de-show');
+    expect(delta.byMission).toEqual({ 'm-clipe-netto': { completed: 2 } });
+    expect(delta.byAchievement).toEqual({ 'fa-de-show': { unlocked: 1 } });
+    const write = shardWrite(delta, '2026-10-05', Date.parse('2026-10-05T15:00:00.000Z'));
+    expect(write.byMission).toEqual({ 'm-clipe-netto': { completed: FieldValue.increment(2) } });
+    expect(write.byAchievement).toEqual({ 'fa-de-show': { unlocked: FieldValue.increment(1) } });
+  });
+
+  it('sem conclusão nem desbloqueio, os mapas não são gravados (pruneZeros)', () => {
+    const delta = emptyShardDelta();
+    expect(isEmptyShardDelta(delta)).toBe(true);
+    expect(shardWrite(delta, '2026-10-05', 0)).not.toHaveProperty('byMission');
   });
 });

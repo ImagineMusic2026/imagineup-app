@@ -10,7 +10,7 @@ import {
   staticConfigSource,
   type PointsConfig,
 } from '../src/points';
-import { seedEngagement, seedPosts } from '../src/posts';
+import { seedCamilaLikes, seedEngagement, seedPosts } from '../src/posts';
 import { deleteUserData } from '../src/store';
 import {
   central,
@@ -572,7 +572,8 @@ describe('seed do mural e da agenda (21.14)', () => {
   it('shows, posts e o engajamento dos fãs de teste, sem mudar carteira; rodar de novo não muda nada', async () => {
     await seedCentrals(db);
     expect(await seedEvents(db)).toBe(10);
-    expect(await seedPosts(db)).toBe(11);
+    // Os 10 do bloco 6, os dois posts do Nenho do bloco 7 (22.13) e o rascunho.
+    expect(await seedPosts(db)).toBe(13);
     const fans = {
       alan: (await signUpFan(db, 'Alan Ferreira')).uid,
       bia: (await signUpFan(db, 'Bia Santos')).uid,
@@ -625,6 +626,12 @@ describe('seed do mural e da agenda (21.14)', () => {
     expect((await http(env, '/artists/nettobrito', { token: camila.token })).body).toMatchObject({
       postCount: 6,
     });
+
+    // As curtidas da Camila nos dois posts novos do Nenho (bloco 7, curtir em 0).
+    expect(await seedCamilaLikes(db, camila.uid)).toBe(2);
+    await waitForCounts(db, 'p-nenho-4', { likeCount: 1 });
+    await waitForCounts(db, 'p-nenho-5', { likeCount: 1 });
+    expect(await seedCamilaLikes(db, camila.uid)).toBe(0);
 
     // Rodar de novo não muda nada.
     expect(await seedEvents(db)).toBe(0);

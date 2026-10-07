@@ -18,8 +18,8 @@ import {
   type AwardContext,
   type AwardPlan,
   type FanContext,
+  type RunOptions,
 } from '../points/award';
-import type { Actor, PointsConfig } from '../points/model';
 import {
   AgendaError,
   agendaCutoff,
@@ -146,7 +146,8 @@ export type RsvpOutcome = { plan: AwardPlan; going: boolean };
  * é 404 (`missing`), encerrado também (`ended`); já confirmado, nada além da
  * atividade; o teto do dia (50 trocas para "Eu vou"); `rsvp:<eventId>` pelo
  * núcleo, uma vez por show, pago na primeira central do show que está no ar
- * (sem nenhuma, sem central); a presença nasce (ou volta a `going: true`, com
+ * (sem nenhuma, sem central), e a unidade `rsvp` das missões na troca para
+ * "Eu vou" (o show conta uma vez por missão e período, bloco 7); a presença nasce (ou volta a `going: true`, com
  * o `firstGoingAt` da primeira) com as centrais no ar copiadas, o fluxo
  * `rsvps` em cada uma delas e o contador do teto.
  */
@@ -200,6 +201,7 @@ export async function rsvpEvent(
             subject: { type: 'event', id: eventId },
           },
         ],
+        ticks: [{ action: 'rsvp', key: eventId, on: { eventId, artistIds: live } }],
       },
     ],
     award,
@@ -257,7 +259,7 @@ export function runRsvp(
   db: Firestore,
   uid: string,
   eventId: string,
-  options: { now: number; config: PointsConfig; actor: Actor; random?: () => number },
+  options: RunOptions,
 ): Promise<RsvpOutcome> {
   return runAsFan(db, uid, options, (tx, fan, award) => rsvpEvent(tx, db, { fan, award, eventId }));
 }

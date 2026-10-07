@@ -1,13 +1,13 @@
 import { router } from 'expo-router';
 import { Check } from 'lucide-react-native';
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, type ReactNode } from 'react';
 import { AccessibilityInfo, StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 import Animated, {
-  FadeIn,
   useAnimatedStyle,
   useSharedValue,
   withSequence,
   withSpring,
+  withTiming,
 } from 'react-native-reanimated';
 
 import { Button } from '@/components/button';
@@ -25,6 +25,7 @@ import { withAlpha } from '@/utils/color';
 import { formatTimeLeft, formatTimeLeftSpoken } from '@/utils/date';
 import { formatPointsDelta, formatPointsSpoken } from '@/utils/number';
 
+import { wasMissionCelebrated } from '../celebrated';
 import { inviteHref } from '../describe-mission';
 import { useDailyMission } from '../hooks/use-daily-mission';
 import type { DailyMission } from '../types';
@@ -71,8 +72,16 @@ const hiddenFromReader = {
  * A tela fora de foco pode só ver o dado novo quando volta a ele (a lista da
  * aba escondida não redesenha na hora): conclusão que chega junto com a volta
  * do foco também aconteceu longe da home, e não festeja.
+ *
+ * `quiet`: a missão já festejou na própria ação (o "+N" do curtir, bloco 7):
+ * o "+20" pulsa, sem o toque e sem o anúncio de novo.
  */
-function useCompletionPulse(completed: boolean, rewardPoints: number, celebrate: boolean) {
+function useCompletionPulse(
+  completed: boolean,
+  rewardPoints: number,
+  celebrate: boolean,
+  quiet: boolean,
+) {
   const reducedMotion = usePrefersReducedMotion();
   const scale = useSharedValue(1);
   const wasCompleted = useRef(completed);
@@ -84,11 +93,13 @@ function useCompletionPulse(completed: boolean, rewardPoints: number, celebrate:
     wasCompleted.current = completed;
     wasCelebrating.current = celebrate;
     if (!justCompleted || !celebrate || cameBack) return;
-    haptics.trigger('missionComplete');
-    AccessibilityInfo.announceForAccessibilityWithOptions(
-      t('missions.daily.completedAnnouncement', { points: formatPointsSpoken(rewardPoints) }),
-      { queue: true },
-    );
+    if (!quiet) {
+      haptics.trigger('missionComplete');
+      AccessibilityInfo.announceForAccessibilityWithOptions(
+        t('missions.daily.completedAnnouncement', { points: formatPointsSpoken(rewardPoints) }),
+        { queue: true },
+      );
+    }
     if (reducedMotion) return;
     scale.set(
       withSequence(
@@ -96,9 +107,31 @@ function useCompletionPulse(completed: boolean, rewardPoints: number, celebrate:
         withSpring(1, motion.spring.gentle),
       ),
     );
-  }, [completed, rewardPoints, celebrate, reducedMotion, scale]);
+  }, [completed, rewardPoints, celebrate, quiet, reducedMotion, scale]);
 
   return useAnimatedStyle(() => ({ transform: [{ scale: scale.get() }] }));
+}
+
+/**
+ * O card entra em fade quando a missão chega. Por um valor animado, e não pelo
+ * `entering` do Reanimated: com a missão vindo do servidor depois de a home
+ * aparecer (bloco 7), o `FadeIn` de layout apagava a tela inteira no Android
+ * (Expo Go, emulador), com a árvore montada e só o fundo escuro à vista. Com
+ * reduzir movimento, nasce inteiro.
+ */
+function useEnterFade() {
+  const reducedMotion = usePrefersReducedMotion();
+  const opacity = useSharedValue(reducedMotion ? 1 : 0);
+
+  useEffect(() => {
+    opacity.set(
+      reducedMotion
+        ? 1
+        : withTiming(1, { duration: motion.duration.base, easing: motion.easing.out }),
+    );
+  }, [opacity, reducedMotion]);
+
+  return useAnimatedStyle(() => ({ opacity: opacity.get() }));
 }
 
 /** Link de convite e compartilhamento saem do "Gerar meu link"; as outras ações, da 1g. */
@@ -137,7 +170,12 @@ export function DailyMissionCard({ mission, now, celebrate = true, style }: Dail
   const summary = completed
     ? t('missions.daily.summaryCompleted', { points })
     : t('missions.daily.summary', { time: formatTimeLeftSpoken(mission.endsAt, now), points });
-  const rewardStyle = useCompletionPulse(completed, mission.rewardPoints, celebrate);
+  const rewardStyle = useCompletionPulse(
+    completed,
+    mission.rewardPoints,
+    celebrate,
+    wasMissionCelebrated(mission.id, mission.completedAt),
+  );
   const withLink = !completed && sharesLink(mission);
 
   return (
@@ -249,10 +287,16 @@ export function DailyMissionSection({ celebrate = true, style }: DailyMissionSec
   }
   if (!mission) return null;
   return (
-    <Animated.View entering={FadeIn.duration(motion.duration.base)} style={style}>
+    <EnteringCard style={style}>
       <DailyMissionCard mission={mission} now={now} celebrate={celebrate} />
-    </Animated.View>
+    </EnteringCard>
   );
+}
+
+/** O card que entra em fade ao montar (`useEnterFade`). */
+function EnteringCard({ style, children }: { style?: StyleProp<ViewStyle>; children: ReactNode }) {
+  const fade = useEnterFade();
+  return <Animated.View style={[style, fade]}>{children}</Animated.View>;
 }
 
 const styles = StyleSheet.create({

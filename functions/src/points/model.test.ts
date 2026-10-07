@@ -1,26 +1,30 @@
 import { describe, expect, it } from 'vitest';
 
+import { DEFAULT_ACHIEVEMENTS_CONFIG } from '../achievements/model';
+import {
+  keyDigest,
+  missionIndex,
+  type MissionRecord,
+  type MissionTick,
+  type SeasonGoalConfig,
+} from '../missions/model';
 import { DEFAULT_POINTS_CONFIG } from './config';
 import {
   activityMarks,
   computeAwards,
-  dayKey,
   emptyCentral,
   emptyWallet,
   levelForXp,
-  monthKey,
-  nextDayStart,
   PointsError,
   seasonsPlayed,
-  shiftDay,
   trimDays,
   weekEarned,
-  weekKey,
   type ActivityMarks,
   type AwardEntry,
   type CentralState,
   type ComputeInput,
   type FanInput,
+  type GameConfig,
   type PointsConfig,
   type SeasonInfo,
   type WalletState,
@@ -87,34 +91,9 @@ const noActivity: ActivityMarks = {
   cohort: null,
 };
 
-describe('dias de São Paulo', () => {
-  it.each([
-    ['2026-10-05T02:59:59.999Z', '2026-10-04'],
-    ['2026-10-05T03:00:00.000Z', '2026-10-05'],
-    ['2026-10-01T02:59:00.000Z', '2026-09-30'],
-    ['2027-01-01T02:00:00.000Z', '2026-12-31'],
-  ])('%s é o dia %s em São Paulo', (iso, day) => {
-    expect(dayKey(Date.parse(iso))).toBe(day);
-  });
-
-  it.each([
-    ['2026-10-04', '2026-W40'],
-    ['2026-10-05', '2026-W41'],
-    ['2026-12-31', '2026-W53'],
-    ['2027-01-01', '2026-W53'],
-    ['2027-01-04', '2027-W01'],
-    ['2026-01-01', '2026-W01'],
-  ])('semana ISO de %s é %s', (day, week) => {
-    expect(weekKey(day)).toBe(week);
-  });
-
-  it('mês e a conta de dias atravessam o fim do mês e do ano', () => {
-    expect(monthKey('2026-09-30')).toBe('2026-09');
-    expect(shiftDay('2026-10-01', -1)).toBe('2026-09-30');
-    expect(shiftDay('2026-12-31', 1)).toBe('2027-01-01');
-    expect(shiftDay('2026-03-01', -1)).toBe('2026-02-28');
-  });
-
+// Os testes de dayKey, weekKey, shiftDay e nextDayStart moraram aqui até o
+// bloco 7; agora estão em src/day.test.ts, com o nextWeekStart.
+describe('marcas de atividade nos dias de São Paulo', () => {
   it('perto da meia-noite, o mesmo instante dá o dia, a semana e o mês de São Paulo', () => {
     const marks = activityMarks(
       { lastDay: null, lastWeek: null, lastMonth: null },
@@ -122,15 +101,6 @@ describe('dias de São Paulo', () => {
       null,
     );
     expect(marks).toMatchObject({ day: '2026-09-30', week: '2026-W40', month: '2026-09' });
-  });
-
-  it.each([
-    ['2026-10-05T15:00:00.000Z', '2026-10-06T03:00:00.000Z'],
-    ['2026-10-06T02:59:59.999Z', '2026-10-06T03:00:00.000Z'],
-    ['2026-10-06T03:00:00.000Z', '2026-10-07T03:00:00.000Z'],
-    ['2026-12-31T23:00:00.000Z', '2027-01-01T03:00:00.000Z'],
-  ])('o dia de São Paulo seguinte a %s começa em %s', (iso, next) => {
-    expect(new Date(nextDayStart(Date.parse(iso))).toISOString()).toBe(next);
   });
 });
 
@@ -262,7 +232,15 @@ describe('ganho', () => {
   it('missão leva os pontos dela e não tem limite por padrão', () => {
     const out = compute([
       fan({
-        entries: [{ kind: 'earn', source: 'mission', eventId: 'm:2026-W41', points: 20 }],
+        entries: [
+          {
+            kind: 'earn',
+            source: 'mission',
+            eventId: 'm:2026-W41',
+            points: 20,
+            title: 'Traga 3 amigos novos pro app',
+          },
+        ],
         wallet: wallet({ days: { '2026-10-05': { earned: 0, count: { mission: 900 } } } }),
       }),
     ]);
@@ -586,7 +564,14 @@ describe('atividade e o que é gravado', () => {
         activity: marks,
         entries: [
           comment('c1', 'nenho'),
-          { kind: 'earn', source: 'mission', eventId: 'm1', points: 20, artistId: 'nenho' },
+          {
+            kind: 'earn',
+            source: 'mission',
+            eventId: 'm1',
+            points: 20,
+            artistId: 'nenho',
+            title: 'Curta 5 posts do Nenho',
+          },
           comment('c2'),
         ],
       }),
@@ -634,6 +619,372 @@ describe('atividade e o que é gravado', () => {
       signups: { total: 0, invited: 0 },
       invites: { visits: 0, links: 0 },
       byOrigin: { kind: {}, utmSource: {}, utmCampaign: {} },
+      // Das missões e conquistas (bloco 7): o lançamento direto não conta como
+      // conclusão de missão (só a conclusão pelo progresso), e sem o jogo nada desbloqueia.
+      byMission: {},
+      byAchievement: {},
     });
+  });
+});
+
+// --- Bloco 7: missões, meta da temporada, conquistas e nível (22.4) -----------------
+
+describe('missões, meta e conquistas no cálculo', () => {
+  const MISSION_BASE = {
+    goal: 5,
+    period: 'daily' as const,
+    featured: false,
+    startsAt: NOW - DAY_MS,
+    endsAt: null,
+    status: 'active' as const,
+    activatedAt: NOW - DAY_MS,
+    createdAt: NOW - DAY_MS,
+    updatedAt: NOW - DAY_MS,
+  };
+  const CURTIR: MissionRecord = {
+    ...MISSION_BASE,
+    id: 'm-curtir-nenho',
+    title: 'Curta 5 posts do Nenho',
+    action: 'like',
+    target: { postId: null, artistId: 'nenho', eventId: null },
+    rewardPoints: 10,
+  };
+  const AMIGOS: MissionRecord = {
+    ...MISSION_BASE,
+    id: 'm-trazer-amigos',
+    title: 'Traga 3 amigos novos pro app',
+    action: 'invite',
+    target: null,
+    goal: 3,
+    period: 'weekly',
+    rewardPoints: 30,
+  };
+  const goal = (metric: 'missions' | 'points', target: number): SeasonGoalConfig => ({
+    seasonId: SEASON.id,
+    title: 'Semana do arrocha',
+    description: 'Complete 20 missões.',
+    reachedDescription: null,
+    metric,
+    target,
+  });
+  const game = (extra: Partial<GameConfig> = {}): GameConfig => ({
+    missions: missionIndex({ version: 1, missions: [CURTIR, AMIGOS] }),
+    achievements: DEFAULT_ACHIEVEMENTS_CONFIG.achievements,
+    seasonGoal: null,
+    ...extra,
+  });
+  const like = (postId: string): MissionTick => ({
+    action: 'like',
+    key: postId,
+    on: { postId, artistIds: ['nenho'] },
+  });
+  const likeEntry = (postId: string): AwardEntry => ({
+    kind: 'earn',
+    source: 'like',
+    eventId: postId,
+    artistId: 'nenho',
+  });
+  const likeOne: PointsConfig = {
+    ...DEFAULT_POINTS_CONFIG,
+    values: { ...DEFAULT_POINTS_CONFIG.values, like: 1 },
+  };
+  /** A carteira com a "Curta 5 posts do Nenho" em `current` de 5 hoje. */
+  const withProgress = (current: number, extra: Partial<WalletState> = {}): WalletState =>
+    wallet({
+      seasonId: SEASON.id,
+      missions: {
+        daily: {
+          key: '2026-10-05',
+          items: {
+            'm-curtir-nenho': {
+              current,
+              keys: Array.from({ length: current }, (_, i) => keyDigest(`old${i}`)),
+              completedAt: null,
+              rewardPaid: 0,
+            },
+          },
+        },
+        weekly: null,
+      },
+      ...extra,
+    });
+
+  it('a curtida que fecha a meta paga a missão depois da curtida, no mesmo pointsAwarded', () => {
+    const out = compute(
+      [fan({ wallet: withProgress(4), entries: [likeEntry('p5')], ticks: [like('p5')] })],
+      { game: game(), config: likeOne },
+    );
+    expect(out.results.map((result) => [result.entryId, result.status, result.points])).toEqual([
+      ['like:p5', 'applied', 1],
+      ['mission:m-curtir-nenho:2026-10-05', 'applied', 10],
+    ]);
+    expect(out.pointsAwarded).toBe(11);
+    const plan = out.fans[0]!;
+    expect(plan.ledger[1]!.data).toMatchObject({
+      source: 'mission',
+      eventId: 'm-curtir-nenho:2026-10-05',
+      artistId: 'nenho',
+      subject: { type: 'mission', id: 'm-curtir-nenho' },
+      subjectTitle: 'Curta 5 posts do Nenho',
+      points: 10,
+    });
+    expect(plan.ledger[0]!.data.subjectTitle).toBeNull();
+    const item = plan.wallet!.state.missions.daily!.items['m-curtir-nenho']!;
+    expect(item).toMatchObject({ current: 5, completedAt: NOW, rewardPaid: 10 });
+    expect(plan.wallet!.state.seasonMissions).toBe(1);
+    expect(out.rewards).toEqual({
+      completedMissions: [
+        {
+          id: 'm-curtir-nenho',
+          title: 'Curta 5 posts do Nenho',
+          rewardPoints: 10,
+          completedAt: new Date(NOW).toISOString(),
+        },
+      ],
+      levelUp: null,
+      unlockedAchievements: [{ id: 'missao-cumprida', title: 'Missão cumprida' }],
+      missionsChanged: true,
+    });
+    expect(out.shard!.byMission).toEqual({ 'm-curtir-nenho': { completed: 1 } });
+    expect(out.shard!.byAchievement).toEqual({ 'missao-cumprida': { unlocked: 1 } });
+  });
+
+  it('só o progresso mudou: a carteira é gravada, sem lançamento', () => {
+    const out = compute(
+      [fan({ wallet: withProgress(1), entries: [likeEntry('p2')], ticks: [like('p2')] })],
+      { game: game({ achievements: [] }) },
+    );
+    expect(out.results[0]!.status).toBe('zero');
+    expect(out.fans[0]!.ledger).toEqual([]);
+    expect(out.fans[0]!.wallet!.state.missions.daily!.items['m-curtir-nenho']!.current).toBe(2);
+    expect(out.rewards.missionsChanged).toBe(true);
+  });
+
+  it('o mesmo post no período não conta de novo: nada mudou, nada gravado', () => {
+    const state = withProgress(1);
+    state.missions.daily!.items['m-curtir-nenho']!.keys = [keyDigest('p1')];
+    const out = compute([fan({ wallet: state, ticks: [like('p1')] })], {
+      game: game({ achievements: [] }),
+    });
+    expect(out.fans[0]!.wallet).toBeNull();
+    expect(out.rewards.missionsChanged).toBe(false);
+  });
+
+  it('a conclusão que já está no extrato sai duplicate: completedAt fica e rewardPaid 0', () => {
+    const out = compute(
+      [
+        fan({
+          wallet: withProgress(4),
+          ticks: [like('p5')],
+          existingLedger: new Set(['mission:m-curtir-nenho:2026-10-05']),
+        }),
+      ],
+      { game: game({ achievements: [] }) },
+    );
+    expect(out.results[0]!.status).toBe('duplicate');
+    expect(out.fans[0]!.wallet!.state.missions.daily!.items['m-curtir-nenho']).toMatchObject({
+      completedAt: NOW,
+      rewardPaid: 0,
+    });
+    expect(out.rewards.completedMissions).toEqual([]);
+    expect(out.pointsAwarded).toBe(0);
+  });
+
+  it('seasonMissions sobe só com temporada ativa e zera na troca de temporada', () => {
+    const outside = compute([fan({ wallet: withProgress(4), ticks: [like('p5')] })], {
+      game: game({ achievements: [] }),
+      season: null,
+    });
+    expect(outside.fans[0]!.wallet!.state.seasonMissions).toBe(0);
+    const switched = compute(
+      [
+        fan({
+          wallet: withProgress(0, { seasonId: 'carnaval', seasonMissions: 9 }),
+          ticks: [like('p1')],
+        }),
+      ],
+      { game: game({ achievements: [] }) },
+    );
+    expect(switched.fans[0]!.wallet!.state).toMatchObject({
+      seasonId: SEASON.id,
+      seasonMissions: 0,
+    });
+  });
+
+  it.each([
+    ['missões', 'missions', 1, withProgress(4, { seasonMissions: 0 })],
+    ['pontos', 'points', 4_100, withProgress(4, { seasonPoints: 4_090 })],
+  ] as const)(
+    'meta por %s marcada ao chegar no alvo, uma vez só',
+    (_name, metric, target, state) => {
+      const config = metric === 'points' ? likeOne : DEFAULT_POINTS_CONFIG;
+      const g = game({ achievements: [], seasonGoal: goal(metric, target) });
+      const out = compute(
+        [
+          fan({
+            wallet: state,
+            entries: metric === 'points' ? [likeEntry('p5')] : [],
+            ticks: [like('p5')],
+          }),
+        ],
+        { game: g, config },
+      );
+      expect(out.fans[0]!.wallet!.state.goalReached).toEqual({ seasonId: SEASON.id, at: NOW });
+      const again = compute(
+        [fan({ wallet: { ...out.fans[0]!.wallet!.state, seasonPoints: 0, seasonMissions: 0 } })],
+        { game: g, now: NOW + 1 },
+      );
+      // A marca fica com a conta caindo, e nada novo é gravado.
+      expect(again.fans[0]!.wallet).toBeNull();
+    },
+  );
+
+  it('a meta marca na primeira gravação depois de a equipe baixar o alvo', () => {
+    const out = compute(
+      [fan({ wallet: withProgress(0, { seasonMissions: 12 }), ticks: [like('p1')] })],
+      { game: game({ achievements: [], seasonGoal: goal('missions', 12) }) },
+    );
+    expect(out.fans[0]!.wallet!.state.goalReached).toEqual({ seasonId: SEASON.id, at: NOW });
+  });
+
+  it('meta por pontos: os pontos da temporada que mudam, sem unidade contada, mudam as missões de quem chama', () => {
+    // Um comentário (2, o padrão) num post fora de qualquer missão.
+    const byPoints = game({ achievements: [], seasonGoal: goal('points', 5_000) });
+    const points = compute([fan({ wallet: withProgress(0), entries: [comment('c1', 'nenho')] })], {
+      game: byPoints,
+    });
+    expect(points.pointsAwarded).toBe(2);
+    expect(points.rewards.missionsChanged).toBe(true);
+
+    // Por missões, o mesmo comentário não muda o anel.
+    const byMissions = game({ achievements: [], seasonGoal: goal('missions', 20) });
+    const missions = compute(
+      [fan({ wallet: withProgress(0), entries: [comment('c1', 'nenho')] })],
+      {
+        game: byMissions,
+      },
+    );
+    expect(missions.rewards.missionsChanged).toBe(false);
+
+    // Sem pontos (curtir vale 0), nada muda nem na meta por pontos.
+    const zero = compute([fan({ wallet: withProgress(0), entries: [likeEntry('p9')] })], {
+      game: byPoints,
+    });
+    expect(zero.rewards.missionsChanged).toBe(false);
+
+    // A meta de outra temporada não conta.
+    const stale = compute([fan({ wallet: withProgress(0), entries: [comment('c1', 'nenho')] })], {
+      game: game({
+        achievements: [],
+        seasonGoal: { ...goal('points', 5_000), seasonId: 'carnaval' },
+      }),
+    });
+    expect(stale.rewards.missionsChanged).toBe(false);
+  });
+
+  it('a meta cumprida agora muda as missões de quem chama, mesmo sem unidade contada', () => {
+    // O post já contou no período: o tick não anda nada, mas a gravação marca a
+    // meta que a equipe baixou para 12.
+    const state = withProgress(1, { seasonMissions: 12 });
+    state.missions.daily!.items['m-curtir-nenho']!.keys = [keyDigest('p1')];
+    const out = compute([fan({ wallet: state, ticks: [like('p1')] })], {
+      game: game({ achievements: [], seasonGoal: goal('missions', 12) }),
+    });
+    expect(out.fans[0]!.wallet!.state.missions.daily!.items['m-curtir-nenho']!.current).toBe(1);
+    expect(out.rewards.missionsChanged).toBe(true);
+    expect(out.fans[0]!.wallet!.state.goalReached).toEqual({ seasonId: SEASON.id, at: NOW });
+  });
+
+  it('outro fã sem perfil: os ticks são ignorados', () => {
+    const out = compute(
+      [
+        fan(),
+        fan({
+          uid: 'quem-convidou',
+          hasProfile: false,
+          ticks: [{ action: 'invite', key: 'e1', on: { artistIds: [] } }],
+        }),
+      ],
+      { game: game() },
+    );
+    expect(out.fans.map((item) => item.uid)).toEqual(['fa']);
+  });
+
+  it('o tick do período velho é descartado (o pedido de 23:59 gravando depois do de 0:00)', () => {
+    const future = wallet({
+      missions: {
+        daily: {
+          key: '2026-10-06',
+          items: {
+            'm-curtir-nenho': { current: 1, keys: [], completedAt: null, rewardPaid: 0 },
+          },
+        },
+        weekly: null,
+      },
+    });
+    const out = compute([fan({ wallet: future, ticks: [like('p1')] })], {
+      game: game({ achievements: [] }),
+    });
+    expect(out.fans[0]!.wallet).toBeNull();
+  });
+
+  it('subida de nível pela régua do pedido, duas de uma vez mandam o nível final', () => {
+    const out = compute(
+      [
+        fan({
+          wallet: wallet({ xp: 500 }),
+          entries: [{ kind: 'adjust', source: 'seed', eventId: 'base', xp: 1_100 }],
+        }),
+      ],
+      { game: game() },
+    );
+    expect(out.rewards.levelUp).toEqual({ number: 3, name: 'Pé de serra', minXp: 1_500 });
+    expect(out.rewards.unlockedAchievements).toEqual([{ id: 'pe-de-serra', title: 'Pé de serra' }]);
+    expect(out.fans[0]!.wallet!.state.achievements).toEqual({ 'pe-de-serra': NOW });
+  });
+
+  it('a de nível que o XP lido já alcançava entra com o updatedAt lido, sem anúncio', () => {
+    const readAt = NOW - 3 * DAY_MS;
+    const out = compute([fan({ wallet: wallet({ xp: 1_600, updatedAt: readAt }) })], {
+      game: game(),
+    });
+    expect(out.fans[0]!.wallet!.state.achievements).toEqual({ 'pe-de-serra': readAt });
+    expect(out.rewards.unlockedAchievements).toEqual([]);
+    expect(out.rewards.levelUp).toBeNull();
+  });
+
+  it('a primeira presença dá "Fã de show" mesmo com o "Eu vou" valendo 0', () => {
+    const out = compute(
+      [
+        fan({
+          entries: [{ kind: 'earn', source: 'rsvp', eventId: 's1' }],
+          ticks: [{ action: 'rsvp', key: 's1', on: { eventId: 's1', artistIds: [] } }],
+        }),
+      ],
+      { game: game() },
+    );
+    expect(out.results[0]!.status).toBe('zero');
+    expect(out.rewards.unlockedAchievements).toEqual([{ id: 'fa-de-show', title: 'Fã de show' }]);
+    expect(out.fans[0]!.wallet!.create).toBe(true);
+  });
+
+  it('sem o jogo (NO_GAME), nada anda nem desbloqueia', () => {
+    const out = compute([fan({ wallet: withProgress(4), ticks: [like('p5')] })]);
+    expect(out.fans[0]!.wallet).toBeNull();
+    expect(out.rewards).toEqual({
+      completedMissions: [],
+      levelUp: null,
+      unlockedAchievements: [],
+      missionsChanged: false,
+    });
+  });
+
+  it('o lançamento de missão leva o título; as outras origens, não', () => {
+    expect(() =>
+      compute([fan({ entries: [{ kind: 'earn', source: 'mission', eventId: 'm', points: 5 }] })]),
+    ).toThrow(PointsError);
+    expect(() =>
+      compute([fan({ entries: [{ ...comment('c1'), title: 'x' }] as AwardEntry[] })]),
+    ).toThrow(/título/);
   });
 });

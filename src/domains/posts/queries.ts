@@ -14,12 +14,15 @@ import { AccessibilityInfo } from 'react-native';
 // As centrais pelo arquivo, fora do index: o `artists/queries` lê as chaves dos
 // posts, e pelo index seria um ciclo.
 import { artistKeys } from '@/domains/artists/queries';
-import { missionKeys } from '@/domains/missions';
+import { describeRewards, missionKeys, rewardsRefresh } from '@/domains/missions';
 import { profileKeys, useFanIdentity } from '@/domains/profile';
+// O "+N" das recompensas e o festejo das ações pelos arquivos, fora do index.
+import { rewardsToast } from '@/domains/profile/action-rewards';
+import { noteActionCelebrated } from '@/domains/profile/level-celebrated';
 import { rankingKeys } from '@/domains/ranking';
 import { t } from '@/i18n';
 import { ApiError } from '@/services/api/errors';
-import { haptics } from '@/services/haptics';
+import { haptics, type HapticEvent } from '@/services/haptics';
 import { queryOptionsFor } from '@/services/query/client';
 import { createIdempotencyKey } from '@/utils/id';
 
@@ -115,14 +118,21 @@ function refetchComments(client: QueryClient, postId: string): void {
 
 /**
  * Comentar e curtir podem andar uma missão (de comentário, de curtida), mesmo
- * sem render pontos: as missões buscam de novo sempre. O saldo (1e, 1h), o
- * ranking (1f), a posição e os pontos nas centrais ("você é #12" da 1b,
- * "Suas centrais" da 1e) e o "PTS DA CENTRAL" da 1d (os pontos vão para a
- * central do post) só mudam quando rendeu.
+ * sem render pontos: as missões buscam de novo quando a resposta diz que
+ * alguma andou (`missionsChanged`, bloco 7), e sempre quando o campo não vem
+ * (as fixtures). As conquistas da 1e buscam de novo com conquista nova ou
+ * subida de nível. O saldo (1e, 1h), o extrato, o ranking (1f), a posição e
+ * os pontos nas centrais ("você é #12" da 1b, "Suas centrais" da 1e) e o "PTS
+ * DA CENTRAL" da 1d (os pontos vão para a central do post) só mudam quando
+ * rendeu.
  */
-function refreshAfterPoints(client: QueryClient, pointsAwarded: number): void {
-  void client.invalidateQueries({ queryKey: missionKeys.all });
-  if (pointsAwarded <= 0) return;
+function refreshAfterPoints(client: QueryClient, result: PointsAward): void {
+  const refresh = rewardsRefresh(result);
+  if (refresh.missions) void client.invalidateQueries({ queryKey: missionKeys.all });
+  if (refresh.achievements) {
+    void client.invalidateQueries({ queryKey: profileKeys.achievements() });
+  }
+  if (result.pointsAwarded <= 0) return;
   void client.invalidateQueries({ queryKey: profileKeys.wallet() });
   void client.invalidateQueries({ queryKey: rankingKeys.all });
   void client.invalidateQueries({ queryKey: artistKeys.centrals() });
@@ -158,7 +168,15 @@ function commitComment(
   variables: AddCommentVariables,
   result: AddCommentResult,
 ): void {
-  const { pointsAwarded: _points, ...comment } = result;
+  // A lista guarda só o comentário: os pontos e as recompensas ficam fora do cache.
+  const {
+    pointsAwarded: _points,
+    completedMissions: _missions,
+    levelUp: _level,
+    unlockedAchievements: _achievements,
+    missionsChanged: _changed,
+    ...comment
+  } = result;
   const { postId } = variables;
   notifyManager.batch(() => {
     const placed = insertComment(client, postKeys.comments(postId), {
@@ -173,7 +191,7 @@ function commitComment(
       refetchComments(client, postId);
     }
   });
-  refreshAfterPoints(client, result.pointsAwarded);
+  refreshAfterPoints(client, result);
 }
 
 /**
@@ -201,7 +219,7 @@ function refreshPostAfterComment(client: QueryClient, variables: AddCommentVaria
 export function registerPostMutationDefaults(client: QueryClient): void {
   client.setMutationDefaults(postMutationKeys.like, {
     mutationFn: (variables: SetLikeVariables) => setPostLike(variables),
-    onSuccess: (result: PointsAward) => refreshAfterPoints(client, result.pointsAwarded),
+    onSuccess: (result: PointsAward) => refreshAfterPoints(client, result),
     onError: (error: unknown) => {
       if (isNotFound(error)) refreshAfterGonePost(client);
     },
@@ -269,10 +287,15 @@ export function useCommentsQuery(postId: string) {
   });
 }
 
-/** Os pontos de uma curtida, para o "+N" do botão. Muda a cada ganho. */
+/**
+ * Os pontos de uma curtida, para o "+N" do botão, com a frase e o toque do
+ * que ela rendeu (`describeRewards`). Muda a cada ganho.
+ */
 export interface LikeAward {
   id: string;
   points: number;
+  announcement?: string;
+  haptic?: HapticEvent;
 }
 
 /**
@@ -310,11 +333,11 @@ export function useToggleLikeMutation() {
       if (liked) haptics.trigger('like');
     },
     onSuccess: (result, { idempotencyKey }) => {
-      refreshAfterPoints(queryClient, result.pointsAwarded);
+      refreshAfterPoints(queryClient, result);
       // Chegou com a tela fechada (a rede voltou depois): sem o "+N".
-      if (mounted.current && result.pointsAwarded > 0) {
-        setAward({ id: idempotencyKey, points: result.pointsAwarded });
-      }
+      if (!mounted.current) return;
+      const toast = rewardsToast(result.pointsAwarded, result);
+      if (toast) setAward({ id: idempotencyKey, points: result.pointsAwarded, ...toast });
     },
     onError: (error, { postId, liked }) => {
       // Volta só se nada mudou depois: com curtir e descurtir em fila, o toque
@@ -395,6 +418,9 @@ export interface CommentAward {
   /** Muda a cada ganho: dispara o "+N". */
   id: string;
   points: number;
+  /** A frase do que o comentário rendeu além dos pontos (missões, nível, conquistas). */
+  rewards?: string;
+  haptic?: HapticEvent;
 }
 
 export interface AddCommentOptions {
@@ -461,9 +487,21 @@ export function useAddCommentMutation(postId: string, { restoreDraft }: AddComme
       // Chegou com a tela fechada (a rede voltou depois): nada de toque nem anúncio.
       if (!mounted.current) return;
       haptics.trigger('commentSent');
-      // Com pontos, o "+N" anuncia tudo numa frase só ("Comentário enviado. Mais 2 pontos").
-      if (result.pointsAwarded > 0) setAward({ id: result.id, points: result.pointsAwarded });
-      else AccessibilityInfo.announceForAccessibility(t('post.composer.sent'));
+      // Com pontos, o "+N" anuncia tudo numa frase só ("Comentário enviado. Mais 2 pontos.").
+      const { announcement, haptic } = describeRewards(result.pointsAwarded, result);
+      noteActionCelebrated(result, identity.uid);
+      if (result.pointsAwarded > 0) {
+        setAward({
+          id: result.id,
+          points: result.pointsAwarded,
+          rewards: announcement ?? undefined,
+          haptic,
+        });
+      } else {
+        AccessibilityInfo.announceForAccessibility(
+          announcement ? `${t('post.composer.sent')} ${announcement}` : t('post.composer.sent'),
+        );
+      }
     },
     onError: (error, variables) => {
       if (isNotFound(error)) refreshAfterGonePost(queryClient);

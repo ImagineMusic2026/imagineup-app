@@ -81,7 +81,9 @@ describe('carteira nas fixtures (builds de hoje)', () => {
   it('comentar, entrar na central e concluir missão rendem como hoje', () => {
     expect(comment('c-1').pointsAwarded).toBe(2);
     expect(followFixture.join('rocksalles', 'join-1').pointsAwarded).toBe(JOIN_CENTRAL_POINTS);
-    expect(missionsFixture.record('rsvp', NOW)).toBe(RSVP_MISSION_POINTS);
+    expect(missionsFixture.record('rsvp', NOW, { eventId: 'sao-joao-irara' })).toBe(
+      RSVP_MISSION_POINTS,
+    );
     expect(fixtureWallet.get().balance).toBe(
       12_480 + 2 + JOIN_CENTRAL_POINTS + RSVP_MISSION_POINTS,
     );
@@ -119,7 +121,7 @@ describe('carteira na API (emuladores no bloco 1)', () => {
   });
 
   it('a missão anda e conclui, mas a ação devolve 0 e a carteira não muda', () => {
-    expect(missionsFixture.record('rsvp', NOW)).toBe(0);
+    expect(missionsFixture.record('rsvp', NOW, { eventId: 'sao-joao-irara' })).toBe(0);
     const mission = buildMissionsFixture(NOW).missions.find(
       (item) => item.id === 'm-presenca-show',
     );

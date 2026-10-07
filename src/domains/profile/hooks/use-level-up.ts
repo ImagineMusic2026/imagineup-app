@@ -3,7 +3,9 @@ import { AccessibilityInfo } from 'react-native';
 
 import { t } from '@/i18n';
 import { haptics } from '@/services/haptics';
+import { useSessionStore } from '@/stores/session';
 
+import { wasLevelCelebrated } from '../level-celebrated';
 import type { Level } from '../types';
 
 interface Celebration {
@@ -20,9 +22,12 @@ interface Celebration {
  *
  * Fora de foco nada acontece e o nível visto não muda: a 1e segue montada
  * quando o fã troca de aba, e o nível pode subir por lá (o "Eu vou" da
- * agenda). A festa sai uma vez, quando ele volta ao perfil.
+ * agenda). A festa sai uma vez, quando ele volta ao perfil. O nível que já
+ * festejou na própria ação (o "+N" que anunciou "Você subiu para o nível 8",
+ * bloco 7) acende o selo aqui, sem o toque e sem o anúncio de novo.
  */
 export function useLevelUp(level: Level | undefined, focused: boolean): number | null {
+  const uid = useSessionStore((state) => state.user?.uid ?? null);
   const [seen, setSeen] = useState<number | null>(null);
   const [celebration, setCelebration] = useState<Celebration | null>(null);
   const played = useRef(0);
@@ -39,12 +44,13 @@ export function useLevelUp(level: Level | undefined, focused: boolean): number |
   useEffect(() => {
     if (!celebration || played.current === celebration.id) return;
     played.current = celebration.id;
+    if (wasLevelCelebrated(uid, celebration.level.number)) return;
     haptics.trigger('levelUp');
     AccessibilityInfo.announceForAccessibilityWithOptions(
       t('profile.level.up', { number: celebration.level.number, name: celebration.level.name }),
       { queue: true },
     );
-  }, [celebration]);
+  }, [celebration, uid]);
 
   return celebration?.id ?? null;
 }

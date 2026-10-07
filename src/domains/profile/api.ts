@@ -7,12 +7,13 @@ import type { InviteLinkResult } from '@/domains/invites';
 import { fixtureDelay, fixtureNow } from '@/services/fixtures';
 
 import {
+  buildLedgerPageFixture,
   buildMyAchievementsFixture,
   buildMyInviteFixture,
   buildMyProgressFixture,
   buildWalletFixture,
 } from './fixtures';
-import type { FanProfile, MyAchievements, MyInvite, MyProgress, Wallet } from './types';
+import type { FanProfile, LedgerPage, MyAchievements, MyInvite, MyProgress, Wallet } from './types';
 
 // Chamadas cruas ao Firestore e à API. Sem React: quem cacheia é o queries.ts.
 
@@ -109,6 +110,21 @@ export async function fetchMyProgress(): Promise<MyProgress> {
     return buildMyProgressFixture();
   }
   const { data } = await api.get<MyProgress>('/me/progress');
+  return data;
+}
+
+/**
+ * Uma página do extrato de pontos (`GET /me/ledger`, do bloco 1, com o nome da
+ * central e o título da missão desde o bloco 7), da mesma fonte da carteira.
+ */
+export async function fetchLedgerPage({ cursor }: { cursor: string | null }): Promise<LedgerPage> {
+  if (sourceOf('wallet') === 'fixtures') {
+    await fixtureDelay();
+    return buildLedgerPageFixture(fixtureNow(), cursor);
+  }
+  const { data } = await api.get<LedgerPage>('/me/ledger', {
+    params: cursor ? { cursor } : undefined,
+  });
   return data;
 }
 

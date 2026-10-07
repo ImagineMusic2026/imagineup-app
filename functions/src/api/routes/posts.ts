@@ -13,7 +13,15 @@ import {
   readPostDetails,
   unlikePost,
 } from '../../posts';
-import type { AddCommentResult, Page, PointsAward, Post, PostComment } from '../contract';
+import { rewardsOf } from '../../points/award';
+import type {
+  ActionRewards,
+  AddCommentResult,
+  Page,
+  PointsAward,
+  Post,
+  PostComment,
+} from '../contract';
 import { apiError } from '../errors';
 import type { ApiRoute, RouteInput } from '../types';
 import { pageQuery } from './paging';
@@ -117,13 +125,15 @@ export const postRoutes: ApiRoute[] = [
         postId: ctx.params.postId!,
         text: commentText(ctx),
       });
-      // Sem id fixo (só o seed passa), o comentário sempre nasce.
-      const body: AddCommentResult = comment!;
+      // Sem id fixo (só o seed passa), o comentário sempre nasce. As recompensas
+      // vão junto (bloco 7, 22.2); o app tira as quatro antes do cache da lista.
+      const body: AddCommentResult & ActionRewards = { ...comment!, ...rewardsOf(plan) };
       return { body, plan };
     },
   },
   {
-    // Curtir: paga no máximo uma vez na vida; já curtido, sem efeito.
+    // Curtir: paga no máximo uma vez na vida; já curtido, sem efeito. A troca
+    // para curtido anda as missões de curtida (bloco 7), com as recompensas na resposta.
     method: 'PUT',
     pattern: '/posts/:postId/like',
     writes: true,
@@ -134,7 +144,10 @@ export const postRoutes: ApiRoute[] = [
         award: ctx.award,
         postId: ctx.params.postId!,
       });
-      const body: PointsAward = { pointsAwarded: plan.pointsAwarded };
+      const body: PointsAward & ActionRewards = {
+        pointsAwarded: plan.pointsAwarded,
+        ...rewardsOf(plan),
+      };
       return { body, plan };
     },
   },

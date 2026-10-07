@@ -29,9 +29,11 @@ export {
   type ContentDeps,
 } from './panel';
 export {
+  CAMILA_SEED_LIKES,
   SEED_ENGAGEMENT,
   SEED_ENGAGEMENT_CONFIG,
   SEED_POSTS,
+  seedCamilaLikes,
   seedEngagement,
   seedPosts,
   type SeedEngagementResult,

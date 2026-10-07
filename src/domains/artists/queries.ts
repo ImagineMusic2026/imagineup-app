@@ -10,12 +10,15 @@ import { AccessibilityInfo } from 'react-native';
 
 // Chaves de outros domínios pelo arquivo, fora do index: o perfil, os posts e
 // o ranking leem as centrais daqui (ou o perfil, que lê), e pelo index seria um ciclo.
+import { missionKeys, rewardsRefresh, type ActionRewards } from '@/domains/missions';
 import { postKeys } from '@/domains/posts/keys';
+// O "+N" das recompensas, pelo arquivo (fora do index), como o do curtir.
+import { rewardsToast } from '@/domains/profile/action-rewards';
 import { profileKeys } from '@/domains/profile/keys';
 import { rankingKeys } from '@/domains/ranking/queries';
 import { t } from '@/i18n';
 import { ApiError } from '@/services/api/errors';
-import { haptics } from '@/services/haptics';
+import { haptics, type HapticEvent } from '@/services/haptics';
 import { queryOptionsFor } from '@/services/query/client';
 import { createIdempotencyKey } from '@/utils/id';
 
@@ -111,7 +114,8 @@ function sameArtists(a: readonly string[], b: readonly string[]): boolean {
  * central" da 1d), sim. O feed também depende, mas nasce depois da escolha de
  * artistas (nenhuma tela o busca antes dela). Seguir rende os pontos de
  * entrada no servidor (uma vez por central): com pontos, carteira, nível e
- * ranking buscam de novo. Central que saiu do ar entre a lista e o toque
+ * ranking buscam de novo; as missões e as conquistas, pela regra das
+ * recompensas (`refreshRewards`, bloco 7). Central que saiu do ar entre a lista e o toque
  * (`notFound`): a lista busca de novo, e a 1l tira da escolha o que sumiu.
  */
 export function useFollowArtistsMutation({ onFollowed, onError }: FollowArtistsOptions = {}) {
@@ -123,6 +127,7 @@ export function useFollowArtistsMutation({ onFollowed, onError }: FollowArtistsO
     onSuccess: async (result) => {
       void queryClient.invalidateQueries({ queryKey: artistKeys.centrals() });
       void queryClient.invalidateQueries({ queryKey: artistKeys.details() });
+      refreshRewards(queryClient, result);
       if ((result.pointsAwarded ?? 0) > 0) {
         void queryClient.invalidateQueries({ queryKey: profileKeys.wallet() });
         void queryClient.invalidateQueries({ queryKey: rankingKeys.all });
@@ -208,6 +213,19 @@ export function useIsJoinPending(artistId: string): boolean {
 }
 
 /**
+ * Entrar e seguir podem andar uma missão de entrada (bloco 7): as missões
+ * buscam de novo com `missionsChanged: true` e sem o campo (as fixtures), e
+ * as conquistas da 1e, com conquista nova ou subida de nível.
+ */
+function refreshRewards(client: QueryClient, result: ActionRewards): void {
+  const refresh = rewardsRefresh(result);
+  if (refresh.missions) void client.invalidateQueries({ queryKey: missionKeys.all });
+  if (refresh.achievements) {
+    void client.invalidateQueries({ queryKey: profileKeys.achievements() });
+  }
+}
+
+/**
  * O servidor confirmou: a página e as centrais buscam de novo (a posição do
  * fã na central nova vem de lá), e o mural da home também, que mostra os
  * posts das centrais do fã. Com pontos, o saldo, o nível e o ranking também
@@ -217,6 +235,7 @@ function refreshAfterJoin(client: QueryClient, result: JoinCentralResult): void 
   void client.invalidateQueries({ queryKey: artistKeys.centrals() });
   void client.invalidateQueries({ queryKey: artistKeys.detail(result.artistId) });
   void client.invalidateQueries({ queryKey: postKeys.feed() });
+  refreshRewards(client, result);
   if (result.pointsAwarded <= 0) return;
   void client.invalidateQueries({ queryKey: profileKeys.wallet() });
   void client.invalidateQueries({ queryKey: rankingKeys.all });
@@ -257,6 +276,9 @@ export interface JoinAward {
   /** Muda a cada ganho: dispara o "+N". */
   id: number;
   points: number;
+  /** A frase do que a entrada rendeu (pontos, missão, nível, conquistas). */
+  announcement?: string;
+  haptic?: HapticEvent;
 }
 
 interface JoinContext {
@@ -315,9 +337,11 @@ export function useJoinCentralMutation(artistId: string) {
     onSuccess: (result) => {
       refreshAfterJoin(queryClient, result);
       // Chegou com a página fechada (a rede voltou depois): nada de "+N".
-      if (!mounted.current || result.pointsAwarded <= 0) return;
+      if (!mounted.current) return;
+      const toast = rewardsToast(result.pointsAwarded, result);
+      if (!toast) return;
       awards.current += 1;
-      setAward({ id: awards.current, points: result.pointsAwarded });
+      setAward({ id: awards.current, points: result.pointsAwarded, ...toast });
     },
     onError: (error, { artistId: id }, context) => {
       setMember(queryClient, id, false, -1);
@@ -401,6 +425,9 @@ export function useLeaveCentralMutation(
       void queryClient.invalidateQueries({ queryKey: artistKeys.centrals() });
       void queryClient.invalidateQueries({ queryKey: artistKeys.detail(id) });
       void queryClient.invalidateQueries({ queryKey: postKeys.feed() });
+      // A missão de entrar nesta central some para quem é membro (alvo único,
+      // 22.2): fora dela, volta na 1g e na aba Missões da 1d.
+      void queryClient.invalidateQueries({ queryKey: missionKeys.all });
       if (mounted.current) onLeft?.(result);
       else AccessibilityInfo.announceForAccessibility(t('artist.leave.left'));
     },

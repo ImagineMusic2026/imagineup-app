@@ -301,9 +301,12 @@ export function CommentComposer({
         trigger={award?.id ?? null}
         announcement={
           award
-            ? t('post.composer.sentWithPoints', { points: pointsToastAnnouncement(award.points) })
+            ? t('post.composer.sentWithPoints', {
+                points: award.rewards ?? pointsToastAnnouncement(award.points),
+              })
             : undefined
         }
+        haptic={award?.haptic}
         style={{ bottom: height + TOAST_GAP }}
       />
     </View>

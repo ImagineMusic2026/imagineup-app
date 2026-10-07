@@ -188,12 +188,70 @@ describe('entrar na central', () => {
     act(() => result.current.join());
 
     await waitFor(() =>
-      expect(result.current.award).toEqual({ id: 1, points: JOIN_CENTRAL_POINTS }),
+      expect(result.current.award).toEqual({
+        id: 1,
+        points: JOIN_CENTRAL_POINTS,
+        announcement: 'Mais 10 pontos.',
+        haptic: 'pointsEarned',
+      }),
     );
     expect(client.getQueryState(['profile', 'wallet'])?.isInvalidated).toBe(true);
     expect(client.getQueryState(['ranking', 'season'])?.isInvalidated).toBe(true);
     // O mural mostra os posts das centrais do fã: a nova entra nele.
     expect(client.getQueryState(['posts', 'feed'])?.isInvalidated).toBe(true);
+  });
+
+  it('a missão de entrada concluída e o nível novo entram na frase e no toque do "+N"; as missões buscam de novo', async () => {
+    client.setQueryData(['missions', 'list'], { season: null, missions: [] });
+    client.setQueryData(['profile', 'achievements'], null);
+    const response = holdJoin();
+    const { result } = renderHook(() => useJoinCentralMutation('rocksalles'), { wrapper });
+    act(() => result.current.join());
+    await waitFor(() => expect(joinCentral).toHaveBeenCalled());
+    await response.resolve({
+      artistId: 'rocksalles',
+      pointsAwarded: 15,
+      completedMissions: [
+        {
+          id: 'm-entrar',
+          title: 'Entre na central do Rock Salles',
+          rewardPoints: 5,
+          completedAt: '2026-10-05T15:00:00.000Z',
+        },
+      ],
+      levelUp: { number: 8, name: 'Xodó', minXp: 15_000 },
+      unlockedAchievements: [],
+      missionsChanged: true,
+    });
+    await waitFor(() =>
+      expect(result.current.award).toEqual({
+        id: 1,
+        points: 15,
+        announcement:
+          'Mais 15 pontos. Missão concluída: Entre na central do Rock Salles. Você subiu para o nível 8, Xodó.',
+        haptic: 'levelUp',
+      }),
+    );
+    expect(client.getQueryState(['missions', 'list'])?.isInvalidated).toBe(true);
+    expect(client.getQueryState(['profile', 'achievements'])?.isInvalidated).toBe(true);
+  });
+
+  it('sem missão que andou (missionsChanged: false), as missões não buscam de novo', async () => {
+    client.setQueryData(['missions', 'list'], { season: null, missions: [] });
+    const response = holdJoin();
+    const { result } = renderHook(() => useJoinCentralMutation('rocksalles'), { wrapper });
+    act(() => result.current.join());
+    await waitFor(() => expect(joinCentral).toHaveBeenCalled());
+    await response.resolve({
+      artistId: 'rocksalles',
+      pointsAwarded: 10,
+      completedMissions: [],
+      levelUp: null,
+      unlockedAchievements: [],
+      missionsChanged: false,
+    });
+    await waitFor(() => expect(result.current.award?.points).toBe(10));
+    expect(client.getQueryState(['missions', 'list'])?.isInvalidated).toBe(false);
   });
 
   it('recusada pela API, o "Na central" e a central em "Suas centrais", já na tela, voltam atrás, com aviso', async () => {
@@ -303,6 +361,7 @@ describe('sair da central', () => {
     client.setQueryData(['profile', 'wallet'], { balance: 0 });
     client.setQueryData(['ranking', 'season'], null);
     client.setQueryData(['posts', 'feed'], { pages: [], pageParams: [] });
+    client.setQueryData(['missions', 'list'], { season: null, missions: [] });
   });
 
   it('não é otimista: a página e "Suas centrais" só mudam quando o servidor confirma', async () => {
@@ -322,6 +381,8 @@ describe('sair da central', () => {
     expect(client.getQueryState(artistKeys.centrals())?.isInvalidated).toBe(true);
     expect(client.getQueryState(artistKeys.detail('nenho'))?.isInvalidated).toBe(true);
     expect(client.getQueryState(['posts', 'feed'])?.isInvalidated).toBe(true);
+    // A missão de entrar nesta central, escondida de quem é membro, volta (1g, 1d).
+    expect(client.getQueryState(['missions', 'list'])?.isInvalidated).toBe(true);
     // Sair não muda ponto: carteira e ranking ficam.
     expect(client.getQueryState(['profile', 'wallet'])?.isInvalidated).toBe(false);
     expect(client.getQueryState(['ranking', 'season'])?.isInvalidated).toBe(false);

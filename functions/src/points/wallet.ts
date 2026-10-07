@@ -38,6 +38,10 @@ export type LedgerItem = {
   centralTotalDelta: number;
   subject: Subject | null;
   createdAt: string;
+  /** O nome da central (bloco 7); null sem central ou com ela apagada. */
+  artistName: string | null;
+  /** Só na missão: o título dela quando concluiu (bloco 7). */
+  subjectTitle: string | null;
 };
 
 export type LedgerPage = { items: LedgerItem[]; nextCursor: string | null };
@@ -131,7 +135,12 @@ export function decodeLedgerCursor(value: string): LedgerCursor | null {
   return null;
 }
 
-/** Extrato do mais novo ao mais antigo, com o id do documento desempatando. */
+/**
+ * Extrato do mais novo ao mais antigo, com o id do documento desempatando.
+ * Desde o bloco 7, cada linha leva o nome da central (um getAll das centrais
+ * distintas da página, em qualquer status) e o título que o lançamento de
+ * missão guardou (22.2).
+ */
 export async function readLedgerPage(
   db: Firestore,
   uid: string,
@@ -161,8 +170,24 @@ export async function readLedgerPage(
       centralTotalDelta: data.centralTotalDelta ?? 0,
       subject: data.subject ?? null,
       createdAt: new Date(createdAt).toISOString(),
+      artistName: null,
+      subjectTitle: typeof data.subjectTitle === 'string' ? data.subjectTitle : null,
     };
   });
+  const artistIds = [
+    ...new Set(items.map((item) => item.artistId).filter((id): id is string => !!id)),
+  ];
+  if (artistIds.length > 0) {
+    const artists = await db.getAll(...artistIds.map((id) => db.collection('artists').doc(id)));
+    const names = new Map(
+      artistIds.map((id, index) => {
+        const name = artists[index]?.exists ? artists[index]!.get('name') : null;
+        return [id, typeof name === 'string' ? name : null] as const;
+      }),
+    );
+    for (const item of items)
+      item.artistName = item.artistId ? (names.get(item.artistId) ?? null) : null;
+  }
   const last = docs.at(-1);
   const nextCursor =
     snapshot.docs.length > options.limit && last

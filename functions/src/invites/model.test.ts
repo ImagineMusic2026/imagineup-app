@@ -186,6 +186,8 @@ describe('tipo do link (classifyInvitePath)', () => {
     ['/ranking', 'other', null],
     ['/post/id%20com%20espaco', 'other', null],
     ['/post/a/b', 'other', null],
+    ['/post/__x__', 'other', null],
+    ['/post/__p-clipe', 'post', '__p-clipe'],
     ['/artista/Netto-Brito', 'other', null],
     ['/artista/__trio__', 'other', null],
     ['/agenda/123', 'other', null],

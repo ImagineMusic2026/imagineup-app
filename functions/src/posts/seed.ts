@@ -2,8 +2,8 @@ import { Timestamp, type Firestore } from 'firebase-admin/firestore';
 
 import { runRsvp } from '../agenda/service';
 import { runReport } from '../moderation/service';
-import { DEFAULT_POINTS_CONFIG } from '../points/config';
-import type { PointsConfig } from '../points/model';
+import { createConfigSource, DEFAULT_POINTS_CONFIG } from '../points/config';
+import { NO_GAME, type PointsConfig } from '../points/model';
 import { SEED_ACTOR } from '../points/seed';
 import type { PostKind } from './model';
 import { runComment, runLikePost } from './service';
@@ -117,6 +117,26 @@ export const SEED_POSTS: readonly SeedPost[] = [
     artistId: 'nenho',
     text: 'Valeu por cada mensagem desta semana. Tô lendo tudo.',
     hoursAgo: 13 * 24,
+    eventId: null,
+    status: 'published',
+  },
+  {
+    // Os dois posts do Nenho que a Camila já curtiu (bloco 7, 22.13): o "2 de
+    // 5" da "Curta 5 posts do Nenho". Os mesmos das fixtures do app.
+    id: 'p-nenho-4',
+    kind: 'photo',
+    artistId: 'nenho',
+    text: 'Ensaio aberto em Aracaju. Obrigado a quem foi!',
+    hoursAgo: 15 * 24,
+    eventId: null,
+    status: 'published',
+  },
+  {
+    id: 'p-nenho-5',
+    kind: 'text',
+    artistId: 'nenho',
+    text: 'Gravando coisa nova no estúdio. Em breve!',
+    hoursAgo: 16 * 24,
     eventId: null,
     status: 'published',
   },
@@ -288,7 +308,9 @@ export async function seedEngagement(
   fans: Partial<Record<SeedFanKey, string>>,
   now: number = Date.now(),
 ): Promise<SeedEngagementResult> {
-  const options = { now, config: SEED_ENGAGEMENT_CONFIG, actor: SEED_ACTOR };
+  // Sem o jogo (22.13): o engajamento dos fãs de teste não anda missão nem
+  // desbloqueia conquista, e o Alan continua sem carteira.
+  const options = { now, config: SEED_ENGAGEMENT_CONFIG, actor: SEED_ACTOR, game: NO_GAME };
   const result: SeedEngagementResult = { likes: 0, comments: 0, rsvps: 0, reports: 0 };
   for (const like of SEED_ENGAGEMENT.likes) {
     const uid = fans[like.fan];
@@ -337,4 +359,34 @@ export async function seedEngagement(
     if (outcome.status === 'reported') result.reports += 1;
   }
   return result;
+}
+
+/** Os posts do Nenho que a Camila curte no seed (bloco 7, 22.13). */
+export const CAMILA_SEED_LIKES: readonly string[] = ['p-nenho-4', 'p-nenho-5'];
+
+/**
+ * As curtidas da Camila em `p-nenho-4` e `p-nenho-5`, pelo mesmo núcleo da
+ * rota (runLikePost), com ator de sistema, curtir valendo 0 (nenhum
+ * lançamento) e o jogo lido agora: a "Curta 5 posts do Nenho" fica em 2 de 5,
+ * como no protótipo, e a carteira só ganha o progresso. Rodar de novo não
+ * conta: os posts já estão curtidos. Devolve quantas curtidas entraram agora.
+ */
+export async function seedCamilaLikes(
+  db: Firestore,
+  uid: string,
+  now: number = Date.now(),
+): Promise<number> {
+  const { game } = await createConfigSource(db, { ttlMs: 0 }).get();
+  let liked = 0;
+  for (const postId of CAMILA_SEED_LIKES) {
+    const before = await db.collection('users').doc(uid).collection('postLikes').doc(postId).get();
+    await runLikePost(db, uid, postId, {
+      now,
+      config: SEED_ENGAGEMENT_CONFIG,
+      actor: SEED_ACTOR,
+      game,
+    });
+    if (before.get('liked') !== true) liked += 1;
+  }
+  return liked;
 }

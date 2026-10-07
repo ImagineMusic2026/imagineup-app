@@ -75,6 +75,8 @@ export function ArtistActions({ artist, onJoin, onLeave, joinPending, award }: A
         <PointsToast
           points={award?.points ?? 0}
           trigger={award?.id ?? null}
+          announcement={award?.announcement}
+          haptic={award?.haptic}
           testID="artist-join-points"
         />
       </View>

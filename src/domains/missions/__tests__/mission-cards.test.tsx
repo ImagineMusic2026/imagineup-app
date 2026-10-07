@@ -275,3 +275,36 @@ describe('meta da temporada', () => {
     );
   });
 });
+
+describe('meta da temporada por pontos (bloco 7)', () => {
+  if (!season) throw new Error('as fixtures têm temporada');
+  const points = {
+    ...season,
+    description: 'Some 5 mil pontos na temporada.',
+    completedCount: 4_120,
+    targetCount: 5_000,
+    metric: 'points' as const,
+  };
+
+  it('com alvo acima de 999, a porcentagem no furo e a linha dos pontos abaixo do título', () => {
+    render(<SeasonGoalCard season={points} />);
+    expect(screen.getByText('82%', hidden)).toBeTruthy();
+    expect(screen.getByText('4,1 mil de 5 mil pontos', hidden)).toBeTruthy();
+    expect(screen.queryByText('/5.000', hidden)).toBeNull();
+  });
+
+  it('o leitor de tela ouve os números inteiros', () => {
+    render(<SeasonGoalCard season={points} />);
+    expect(
+      screen.getByRole('progressbar', {
+        name: 'Semana do arrocha. 4.120 de 5.000 pontos. Some 5 mil pontos na temporada.',
+      }),
+    ).toHaveProp('accessibilityValue', { min: 0, max: 5_000, now: 4_120 });
+  });
+
+  it('com alvo pequeno, o furo fica como na de missões', () => {
+    render(<SeasonGoalCard season={{ ...points, completedCount: 120, targetCount: 500 }} />);
+    expect(screen.getByText('/500', hidden)).toBeTruthy();
+    expect(screen.queryByText(/%$/, hidden)).toBeNull();
+  });
+});

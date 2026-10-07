@@ -73,6 +73,21 @@ describe('PointsCard', () => {
     expect(screen.getAllByRole('progressbar')).toEqual([card]);
   });
 
+  it('com onPress (o extrato, bloco 7), é um botão só, com o mesmo rótulo e a dica', () => {
+    const onPress = jest.fn();
+    render(<PointsCard testID="card" balance={12_480} progress={PROGRESS} onPress={onPress} />);
+    const card = screen.getByRole('button', {
+      name: 'Seus pontos: 12.480. Esta semana: mais 840. Faltam 2.520 pontos para o nível 8, Xodó.',
+    });
+    expect(card).toHaveProp('accessibilityHint', 'Abre o extrato de pontos.');
+    // Nada dentro é outro foco: nem a barra, nem outro botão.
+    expect(screen.queryByRole('progressbar')).toBeNull();
+    expect(screen.getAllByRole('button')).toEqual([card]);
+
+    fireEvent.press(card);
+    expect(onPress).toHaveBeenCalledTimes(1);
+  });
+
   it('no nível máximo, a barra enche e a legenda diz que chegou lá', () => {
     render(
       <PointsCard

@@ -85,8 +85,14 @@ describe('mural de exemplo', () => {
 
     const second = await fetchFeed(first.nextCursor);
     expect(second.items.map((post) => post.id)).not.toContain('p-clipe');
-    expect(second.nextCursor).toBeNull();
-    expect(first.items.length + second.items.length).toBe(buildPostsFixture(NOW).length);
+    expect(second.nextCursor).toBe('10');
+    // Os dois posts do Nenho do bloco 7 (as curtidas do "2 de 5") fecham a terceira página.
+    const third = await fetchFeed(second.nextCursor);
+    expect(third.items.map((post) => post.id)).toEqual(['p-nenho-4', 'p-nenho-5']);
+    expect(third.nextCursor).toBeNull();
+    expect(first.items.length + second.items.length + third.items.length).toBe(
+      buildPostsFixture(NOW).length,
+    );
   });
 
   it('o detalhe acha o post pelo id, e post que não existe dá 404 como a API', async () => {

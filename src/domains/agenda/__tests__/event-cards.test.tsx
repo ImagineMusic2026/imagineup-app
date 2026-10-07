@@ -132,25 +132,26 @@ describe('linha de show', () => {
     expect(button).toHaveStyle({ minHeight: 44, minWidth: 44 });
   });
 
-  it('"Eu vou" confirma na hora, e a primeira presença sobe "+15" uma vez só', async () => {
-    render(<EventRow event={PRAIA} now={NOW} />, { wrapper });
+  it('"Eu vou" confirma na hora, e a presença no show da missão sobe "+15" uma vez só', async () => {
+    // O alvo da missão de presença é o São João de Irará (bloco 7): só ele rende.
+    render(<EventRow event={IRARA} now={NOW} />, { wrapper });
 
-    fireEvent.press(screen.getByRole('button', { name: 'Eu vou, Arrocha na Praia' }));
+    fireEvent.press(screen.getByRole('button', { name: 'Eu vou, São João de Irará' }));
 
-    const confirmed = await screen.findByRole('button', { name: 'Confirmado, Arrocha na Praia' });
+    const confirmed = await screen.findByRole('button', { name: 'Confirmado, São João de Irará' });
     expect(confirmed).toBeSelected();
     expect(AccessibilityInfo.announceForAccessibility).toHaveBeenCalledWith('Presença confirmada');
     expect(await screen.findByText(`+${RSVP_MISSION_POINTS}`, hidden)).toBeTruthy();
     expect(haptics.trigger).toHaveBeenCalledWith('pointsEarned');
     const earned = jest
       .mocked(AccessibilityInfo.announceForAccessibilityWithOptions)
-      .mock.calls.filter(([text]) => text === `Mais ${RSVP_MISSION_POINTS} pontos`);
+      .mock.calls.filter(([text]) => text === `Mais ${RSVP_MISSION_POINTS} pontos.`);
     expect(earned).toHaveLength(1);
 
-    // A segunda presença não rende: nada de "+N" de novo.
-    render(<EventRow event={IRARA} now={NOW} />, { wrapper });
-    fireEvent.press(screen.getByRole('button', { name: 'Eu vou, São João de Irará' }));
-    await waitFor(() => expect(rsvpFixture.mine().eventIds).toContain(IRARA.id));
+    // Outro show não rende: nada de "+N" de novo.
+    render(<EventRow event={PRAIA} now={NOW} />, { wrapper });
+    fireEvent.press(screen.getByRole('button', { name: 'Eu vou, Arrocha na Praia' }));
+    await waitFor(() => expect(rsvpFixture.mine().eventIds).toContain(PRAIA.id));
     await waitFor(() => expect(client.isMutating()).toBe(0));
     expect(
       jest

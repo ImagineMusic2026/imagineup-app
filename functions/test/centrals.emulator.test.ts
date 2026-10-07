@@ -539,7 +539,15 @@ describe('seguir na escolha de artistas (POST /me/artists)', () => {
     const b = await central({ order: 1 });
     await join(fan, a);
     const result = await follow(fan, [a, b]);
-    expect(result.body).toEqual({ followedArtistIds: [a, b], pointsAwarded: 10 });
+    // As recompensas da ação vão sempre (bloco 7, 22.2), também sem missão nenhuma.
+    expect(result.body).toEqual({
+      followedArtistIds: [a, b],
+      pointsAwarded: 10,
+      completedMissions: [],
+      levelUp: null,
+      unlockedAchievements: [],
+      missionsChanged: false,
+    });
     expect(await shardSum(a)).toBe(1);
   });
 

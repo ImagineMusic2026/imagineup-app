@@ -14,6 +14,7 @@ import {
   formatTime,
   formatTimeLeft,
   formatTimeLeftSpoken,
+  formatWeekdayDayMonth,
 } from '../date';
 
 const JUNE_21 = new Date(2026, 5, 21, 22, 5);
@@ -26,6 +27,16 @@ describe('datas em pt-BR', () => {
     expect(formatDayMonth(JUNE_21)).toBe('21 jun');
     expect(formatDateBadge(JUNE_21)).toEqual({ day: '21', month: 'JUN' });
     expect(formatMonthName(JUNE_21)).toBe('Junho');
+  });
+
+  it.each([
+    [new Date(2026, 8, 27, 12), 'dom., 27 set'],
+    [new Date(2026, 9, 2, 9), 'sex., 2 out'],
+    [new Date(2026, 9, 3, 23, 59), 'sáb., 3 out'],
+    [new Date(2026, 8, 28, 0, 0), 'seg., 28 set'],
+    [new Date(2026, 8, 29, 8), 'ter., 29 set'],
+  ])('a sobrelinha do dia no extrato tem o dia da semana curto (%s)', (date, expected) => {
+    expect(formatWeekdayDayMonth(date)).toBe(expected);
   });
 
   it('aceita ISO e Timestamp do Firestore', () => {

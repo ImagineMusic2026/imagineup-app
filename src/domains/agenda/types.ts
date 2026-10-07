@@ -1,3 +1,5 @@
+import type { ActionRewards } from '@/domains/missions';
+
 /**
  * Contrato com a API da agenda (bloco 6, docs/arquitetura-api.md, seção 21),
  * espelho de `functions/src/api/contract.ts`: mudou um, mude o outro.
@@ -20,7 +22,12 @@ export interface RsvpVariables {
   idempotencyKey: string;
 }
 
-export interface RsvpResult {
+/**
+ * A resposta do "Eu vou". Confirmar traz também as recompensas da ação (bloco
+ * 7: a missão de presença concluída, o "Fã de show"), opcionais aqui; desfazer
+ * não traz.
+ */
+export interface RsvpResult extends ActionRewards {
   eventId: string;
   going: boolean;
   /**

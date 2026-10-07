@@ -10,6 +10,12 @@ import * as logger from 'firebase-functions/logger';
 import { setGlobalOptions } from 'firebase-functions/options';
 import { onTaskDispatched } from 'firebase-functions/tasks';
 
+import {
+  addAchievement,
+  changeAchievementStatus,
+  editAchievement,
+  reorderAchievementList,
+} from './achievements';
 import { addEvent, changeEventStatus, editEvent, removeEvent } from './agenda';
 import {
   addArtist,
@@ -31,7 +37,15 @@ import {
 } from './centrals';
 import { handleUserCreated, type FindUser } from './handlers';
 import { INVITE_KEY_SECRET } from './invites';
+import {
+  addMission,
+  changeMissionStatus,
+  changeSeasonGoal,
+  editMission,
+  reorderMissionList,
+} from './missions';
 import { moderate } from './moderation';
+import { changePointsConfig, changeSeason, type ConfigPanelDeps } from './points';
 import {
   addPost,
   changePostStatus,
@@ -311,9 +325,99 @@ export const moderateComment = onCall({ cors: PANEL_ORIGINS }, async (request) =
   return result;
 });
 
+// Régua, temporada, missões e conquistas (bloco 7, docs/arquitetura-api.md,
+// 22.8): a equipe edita pelo painel os documentos versionados de config/, com
+// a seção missions (régua, missões, meta da temporada e conquistas) ou
+// ranking (temporada). Mesmo molde das de conteúdo: o acesso lido de
+// staff/{uid} a cada chamada, a versão conferida (`config-changed`) e a
+// auditoria em staffAudit. A mudança vale na API em até 60 s (o cache da
+// configuração). As telas são do bloco 11 (imagineup-admin).
+
+const gameDeps = (): ConfigPanelDeps => ({ db: getFirestore() });
+
+/** Valores, limites, tetos do dia e níveis (a régua). */
+export const updatePointsConfig = onCall({ cors: PANEL_ORIGINS }, async (request) => {
+  const result = await changePointsConfig(gameDeps(), request.auth, request.data);
+  logger.info('Régua alterada.', { actorUid: request.auth?.uid, version: result.version });
+  return result;
+});
+
+/** A temporada (o id não muda depois que ela começa), ou null para encerrar. */
+export const updateSeason = onCall({ cors: PANEL_ORIGINS }, async (request) => {
+  const result = await changeSeason(gameDeps(), request.auth, request.data);
+  logger.info('Temporada alterada.', { actorUid: request.auth?.uid, version: result.version });
+  return result;
+});
+
+/** Cria uma missão como rascunho no catálogo, com o id gerado pelo servidor. */
+export const createMission = onCall({ cors: PANEL_ORIGINS }, async (request) => {
+  const result = await addMission(gameDeps(), request.auth, request.data);
+  logger.info('Missão criada.', { actorUid: request.auth?.uid, missionId: result.missionId });
+  return result;
+});
+
+/** Edita uma missão (depois do início, só título, recompensa, destaque e fim). */
+export const updateMission = onCall({ cors: PANEL_ORIGINS }, async (request) => {
+  const result = await editMission(gameDeps(), request.auth, request.data);
+  logger.info('Missão alterada.', { actorUid: request.auth?.uid, version: result.version });
+  return result;
+});
+
+/** Publica, arquiva ou traz de volta do arquivo uma missão. */
+export const setMissionStatus = onCall({ cors: PANEL_ORIGINS }, async (request) => {
+  const result = await changeMissionStatus(gameDeps(), request.auth, request.data);
+  logger.info('Status da missão alterado.', { actorUid: request.auth?.uid });
+  return result;
+});
+
+/** Nova ordem das missões (a da 1g e da aba Missões da 1d). */
+export const reorderMissions = onCall({ cors: PANEL_ORIGINS }, async (request) => {
+  const result = await reorderMissionList(gameDeps(), request.auth, request.data);
+  logger.info('Ordem das missões alterada.', { actorUid: request.auth?.uid });
+  return result;
+});
+
+/** A meta da temporada (missões concluídas ou pontos da temporada), ou null para tirar. */
+export const updateSeasonGoal = onCall({ cors: PANEL_ORIGINS }, async (request) => {
+  const result = await changeSeasonGoal(gameDeps(), request.auth, request.data);
+  logger.info('Meta da temporada alterada.', { actorUid: request.auth?.uid });
+  return result;
+});
+
+/** Cria uma conquista como rascunho (regra de nível, de primeira vez ou de ranking). */
+export const createAchievement = onCall({ cors: PANEL_ORIGINS }, async (request) => {
+  const result = await addAchievement(gameDeps(), request.auth, request.data);
+  logger.info('Conquista criada.', {
+    actorUid: request.auth?.uid,
+    achievementId: result.achievementId,
+  });
+  return result;
+});
+
+/** Edita uma conquista (a regra não muda depois de publicada). */
+export const updateAchievement = onCall({ cors: PANEL_ORIGINS }, async (request) => {
+  const result = await editAchievement(gameDeps(), request.auth, request.data);
+  logger.info('Conquista alterada.', { actorUid: request.auth?.uid });
+  return result;
+});
+
+/** Publica ou arquiva uma conquista. */
+export const setAchievementStatus = onCall({ cors: PANEL_ORIGINS }, async (request) => {
+  const result = await changeAchievementStatus(gameDeps(), request.auth, request.data);
+  logger.info('Status da conquista alterado.', { actorUid: request.auth?.uid });
+  return result;
+});
+
+/** Nova ordem das conquistas. */
+export const reorderAchievements = onCall({ cors: PANEL_ORIGINS }, async (request) => {
+  const result = await reorderAchievementList(gameDeps(), request.auth, request.data);
+  logger.info('Ordem das conquistas alterada.', { actorUid: request.auth?.uid });
+  return result;
+});
+
 // API HTTP do app (docs/arquitetura-api.md): carteira, progresso e extrato no
-// bloco 1, centrais no bloco 4, convite no bloco 5, mural e agenda no bloco 6;
-// os blocos seguintes acrescentam as rotas deles em src/api. Quem protege é o ID token do Firebase
+// bloco 1, centrais no bloco 4, convite no bloco 5, mural e agenda no bloco 6,
+// missões e conquistas no bloco 7; os blocos seguintes acrescentam as rotas deles em src/api. Quem protege é o ID token do Firebase
 // em toda rota, por isso o invoker público. Sem CORS: o app nativo não faz
 // preflight, e o painel usa as callables. A visita ao link de convite conta
 // no app, de conta logada, por esta mesma função (20.1, decisão 3).
@@ -324,8 +428,9 @@ let apiHandler: ReturnType<typeof createApiHandler> | null = null;
  * Carteira, progresso e extrato (bloco 1), as centrais (bloco 4: lista,
  * página, "Suas centrais", seguir, entrar e sair), o convite (bloco 5: o
  * código do fã, o claim, a visita e os links) e o mural e a agenda (bloco 6:
- * posts, comentários, curtidas, shows, "Eu vou", denúncias e bloqueios); os
- * pontos são sempre calculados no servidor. O segredo do HMAC da chave da pessoa (INVITE_KEY_SECRET) só
+ * posts, comentários, curtidas, shows, "Eu vou", denúncias e bloqueios) e as
+ * missões e conquistas (bloco 7: a 1g, a missão do dia e as conquistas da
+ * 1e); os pontos, as missões e os níveis são sempre calculados no servidor. O segredo do HMAC da chave da pessoa (INVITE_KEY_SECRET) só
  * chega a esta função, lido a cada pedido.
  */
 export const api = onRequest(

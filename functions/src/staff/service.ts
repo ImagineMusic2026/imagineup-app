@@ -115,7 +115,20 @@ export type AuditAction =
   | 'event.deleted'
   | 'comment.hidden'
   | 'comment.kept'
-  | 'comment.restored';
+  | 'comment.restored'
+  | 'points.config.updated'
+  | 'season.updated'
+  | 'mission.created'
+  | 'mission.updated'
+  | 'mission.published'
+  | 'mission.archived'
+  | 'mission.reordered'
+  | 'season.goal.updated'
+  | 'achievement.created'
+  | 'achievement.updated'
+  | 'achievement.published'
+  | 'achievement.archived'
+  | 'achievement.reordered';
 
 /**
  * staffAudit/{autoId}: uma entrada por mudança feita pelo painel. Nas ações

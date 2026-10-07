@@ -1,4 +1,10 @@
-import { skipToken, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import {
+  skipToken,
+  useInfiniteQuery,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from '@tanstack/react-query';
 import { useEffect } from 'react';
 
 import { queryOptionsFor } from '@/services/query/client';
@@ -6,6 +12,7 @@ import { usePreferencesStore } from '@/stores/preferences';
 import { useSessionStore } from '@/stores/session';
 
 import {
+  fetchLedgerPage,
   fetchMyAchievements,
   fetchMyInvite,
   fetchMyProfile,
@@ -89,11 +96,31 @@ export function useMyProgressQuery() {
   });
 }
 
-/** Conquistas do fã: a contagem e as que o perfil mostra (1e). */
+/**
+ * Conquistas do fã: a contagem e as que o perfil mostra (1e). Do servidor com
+ * o emulador (bloco 7), com rede e disco; das fixtures no resto.
+ */
 export function useMyAchievementsQuery() {
   return useQuery({
+    ...queryOptionsFor('achievements'),
     queryKey: profileKeys.achievements(),
     queryFn: fetchMyAchievements,
+  });
+}
+
+/**
+ * O extrato de pontos (a tela provisória do bloco 7), uma página por vez, da
+ * mesma fonte da carteira. A chave fica debaixo da dela: quem invalida a
+ * carteira depois de ganhar ou gastar pontos (e o puxar para atualizar da 1e)
+ * busca o extrato de novo.
+ */
+export function useLedgerInfiniteQuery() {
+  return useInfiniteQuery({
+    ...queryOptionsFor('wallet'),
+    queryKey: profileKeys.ledger(),
+    queryFn: ({ pageParam }) => fetchLedgerPage({ cursor: pageParam }),
+    initialPageParam: null as string | null,
+    getNextPageParam: (lastPage) => lastPage.nextCursor,
   });
 }
 

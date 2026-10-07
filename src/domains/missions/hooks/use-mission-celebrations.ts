@@ -6,6 +6,7 @@ import { haptics } from '@/services/haptics';
 import { motion } from '@/theme';
 import { formatPointsSpoken } from '@/utils/number';
 
+import { wasMissionCelebrated } from '../celebrated';
 import type { Mission, MissionStatus } from '../types';
 
 // A festa dura o "+N" e mais um pouco; depois a chave sai, e a célula que a
@@ -44,6 +45,9 @@ function changed(seen: ReadonlyMap<string, MissionStatus>, missions: readonly Mi
  * O toque `missionComplete` (um por volta) e o anúncio de cada missão saem
  * daqui, da tela, e não da célula: a linha concluída pode estar fora da janela
  * que a lista desenha (fonte grande, lista rolada), e aí não há célula montada.
+ * A missão que já festejou na própria ação (o "+N" de curtir, comentar, "Eu
+ * vou" ou entrar, bloco 7) ganha o check e o "+N" aqui, sem o toque e sem o
+ * anúncio de novo.
  */
 export function useMissionCelebrations(
   missions: readonly Mission[] | undefined,
@@ -79,10 +83,14 @@ export function useMissionCelebrations(
   useEffect(() => {
     if (!batch || played.current === batch.id) return;
     played.current = batch.id;
+    const fresh = batch.missions.filter(
+      (mission) => !wasMissionCelebrated(mission.id, mission.completedAt),
+    );
+    if (fresh.length === 0) return;
     haptics.trigger('missionComplete');
     // Na fila, uma frase por missão. "Rendeu", e não "Mais": os pontos já
     // entraram quando o fã agiu (o "Eu vou" anunciou "Mais 15 pontos" lá).
-    batch.missions.forEach((mission) =>
+    fresh.forEach((mission) =>
       AccessibilityInfo.announceForAccessibilityWithOptions(
         t('missions.completedAnnouncement', {
           title: mission.title,

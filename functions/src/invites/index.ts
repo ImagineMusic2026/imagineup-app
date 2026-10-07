@@ -44,8 +44,12 @@ export {
   EMULATOR_INVITE_KEY,
   SEED_INVITEES,
   seedCamilaInvite,
+  SEED_VISIT_PATH,
+  SEED_VISITORS,
   seedClaimInput,
   seedInviteClaims,
+  seedInviteVisits,
+  seedVisitInput,
   type SeedInviteOrigin,
 } from './seed';
 export {
@@ -65,6 +69,7 @@ export {
   removeInviteData,
   runClaim,
   runInviteLinks,
+  runVisit,
   type ClaimOutcome,
   type InviteCaller,
   type InviteWork,

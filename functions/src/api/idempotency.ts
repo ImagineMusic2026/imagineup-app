@@ -11,7 +11,7 @@ import {
   type AwardContext,
   type FanContext,
 } from '../points/award';
-import type { PointsConfig } from '../points/model';
+import type { GameConfig, PointsConfig } from '../points/model';
 import { pickShard } from '../points/stats';
 import { apiError } from './errors';
 import type { ResolvedDeps, WorkResult } from './types';
@@ -67,6 +67,8 @@ export type IdempotentCall = {
   fingerprint: string;
   now: number;
   config: PointsConfig;
+  /** Missões, conquistas e meta da temporada, da mesma carga do cache dos valores (bloco 7). */
+  game: GameConfig;
 };
 
 export type IdempotentWork = (ctx: {
@@ -127,6 +129,7 @@ export function runIdempotent(
         config: call.config,
         shard: pickShard(deps.random),
         actor: { type: 'fan', uid: call.uid, name: null },
+        game: call.game,
       };
       const result = await work({ tx, fan, award });
       const plan =

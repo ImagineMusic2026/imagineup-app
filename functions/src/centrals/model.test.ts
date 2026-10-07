@@ -183,6 +183,11 @@ describe('teto de entradas por dia', () => {
     expect(exceedsEntryLimit(CENTRAL_ENTRIES_PER_DAY + 4, 3)).toBe(true);
   });
 
+  it('o teto da configuração (actionCaps.central_entry, bloco 7) vale no lugar do padrão', () => {
+    expect(exceedsEntryLimit(5, 1, 5)).toBe(true);
+    expect(exceedsEntryLimit(4, 1, 5)).toBe(false);
+  });
+
   it('pedido que não cria vínculo (o fã já está em todas) nunca é recusado', () => {
     expect(exceedsEntryLimit(CENTRAL_ENTRIES_PER_DAY + 10, 0)).toBe(false);
   });

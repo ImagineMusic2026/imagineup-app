@@ -7,13 +7,17 @@ import { formatNumber, formatPointsDelta, formatPointsSpoken } from '@/utils/num
 import type { Mission } from './types';
 
 /**
- * A missão aberta cujo prazo passou (ou que o servidor já expirou) sai da tela
- * na hora, sem esperar a próxima busca. Concluída fica até o período virar, e a
- * bloqueada, até o servidor dizer.
+ * A missão cujo prazo passou (ou que o servidor já expirou) sai da tela na
+ * hora, sem esperar a próxima busca. A aberta vence no `endsAt`; a concluída
+ * fica até o período virar, que é o `endsAt` dela (o servidor manda o fim do
+ * período, 22.2): passado ele, a de ontem não fica na home nem em "Hoje",
+ * também com o app aberto na virada ou aberto do cache sem rede. A bloqueada
+ * fica até o servidor dizer.
  */
 export function isMissionOver(mission: Mission, now: Date): boolean {
   if (mission.status === 'expired') return true;
-  return mission.status === 'active' && new Date(mission.endsAt).getTime() <= now.getTime();
+  if (mission.status === 'locked') return false;
+  return new Date(mission.endsAt).getTime() <= now.getTime();
 }
 
 function progressCounts(mission: Mission) {
@@ -94,14 +98,18 @@ export function missionLabel(mission: Mission): string {
 /**
  * A sheet "Gerar meu link" com a missão e, se houver, o post alvo: o link sai
  * com o código do fã (atribuição). É o destino do "Gerar meu link" da 1b e do
- * card lima da 1g, para a mesma missão levar ao mesmo lugar nas duas.
+ * card lima da 1g, para a mesma missão levar ao mesmo lugar nas duas. A
+ * missão de link com alvo de central (sem post) leva a central: a sheet monta
+ * o link dela, o mesmo do compartilhar da 1d (bloco 7).
  */
 export function inviteHref(mission: Mission): Href {
   const postId = mission.target?.postId;
-  return {
-    pathname: '/convidar',
-    params: postId ? { missionId: mission.id, postId } : { missionId: mission.id },
-  };
+  const artistId = mission.target?.artistId;
+  if (postId) return { pathname: '/convidar', params: { missionId: mission.id, postId } };
+  if (mission.action === 'share' && artistId) {
+    return { pathname: '/convidar', params: { missionId: mission.id, artistId } };
+  }
+  return { pathname: '/convidar', params: { missionId: mission.id } };
 }
 
 /**
@@ -109,7 +117,8 @@ export function inviteHref(mission: Mission): Href {
  * cria missões novas, então nada disso é fixo por missão):
  * - convidar e compartilhar: a sheet do link de convite (com o post, quando há);
  * - presença em show: a agenda;
- * - curtir e comentar: o post, a central do artista ou o início.
+ * - curtir e comentar: o post, a central do artista ou o início;
+ * - entrar numa central: a central do alvo, que o servidor sempre manda.
  * Concluída e bloqueada não levam a lugar nenhum.
  *
  * Agenda e artista são rotas compartilhadas com a aba Ranking e vão sem o
@@ -132,6 +141,10 @@ export function missionHref(mission: Mission): Href | null {
       if (postId) return { pathname: '/post/[postId]', params: { postId } };
       if (artistId) return { pathname: '/artista/[artistaId]', params: { artistaId: artistId } };
       return '/';
+    case 'join':
+      return artistId
+        ? { pathname: '/artista/[artistaId]', params: { artistaId: artistId } }
+        : null;
   }
 }
 
@@ -149,5 +162,7 @@ export function missionHint(mission: Mission): string | undefined {
     case 'comment':
       if (postId) return t('missions.hint.post');
       return mission.target?.artistId ? t('missions.hint.artist') : t('missions.hint.home');
+    case 'join':
+      return mission.target?.artistId ? t('missions.hint.artist') : undefined;
   }
 }

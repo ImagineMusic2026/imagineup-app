@@ -1,6 +1,17 @@
+import { set, subDays } from 'date-fns';
+
 import { fixtureWallet } from '@/services/fixtures';
 
-import type { Achievement, Level, MyAchievements, MyInvite, MyProgress, Wallet } from './types';
+import type {
+  Achievement,
+  LedgerEntry,
+  LedgerPage,
+  Level,
+  MyAchievements,
+  MyInvite,
+  MyProgress,
+  Wallet,
+} from './types';
 
 /**
  * Carteira de exemplo, lida da carteira das fixtures (`fixtureWallet`), que o
@@ -101,4 +112,130 @@ export function buildMyAchievementsFixture(now: Date): MyAchievements {
     { id: 'backstage', title: 'Backstage', icon: 'star', tone: 'points', unlockedAt: null },
   ];
   return { unlockedCount: 14, totalCount: 32, highlights } satisfies MyAchievements;
+}
+
+/** Linhas por página no extrato de exemplo (o padrão da API). */
+export const LEDGER_PAGE_SIZE = 20;
+
+const CLIPE = 'Leve 5 pessoas para o clipe novo do Netto';
+const COMENTAR = 'Comente em 3 posts da central';
+const CURTIR = 'Curta 5 posts do Nenho';
+
+type LedgerSample = {
+  id: string;
+  daysAgo: number;
+  kind: LedgerEntry['kind'];
+  source: LedgerEntry['source'];
+  points: number;
+  season: number;
+  artistId: string | null;
+  artistName: string | null;
+  central: number;
+  title: string | null;
+};
+
+/**
+ * O extrato da Camila do seed dos emuladores (22.13): os mesmos ids, valores,
+ * títulos e dias, do mais novo ao mais antigo. Os dois ajustes só de central
+ * (o Netto e o Nenho) vêm com saldo, XP e temporada em 0: a tela os esconde.
+ */
+const LEDGER_SAMPLES: readonly LedgerSample[] = [
+  ...[
+    { n: 4, daysAgo: 1, points: 100, artistId: 'nenho', title: CURTIR },
+    { n: 3, daysAgo: 2, points: 300, artistId: 'nettobrito', title: COMENTAR },
+    { n: 2, daysAgo: 4, points: 240, artistId: 'nenho', title: CURTIR },
+    { n: 1, daysAgo: 6, points: 200, artistId: 'nettobrito', title: COMENTAR },
+  ].map(({ n, daysAgo, points, artistId, title }): LedgerSample => ({
+    id: `mission:seed-camila-${n}`,
+    daysAgo,
+    kind: 'earn',
+    source: 'mission',
+    points,
+    season: points,
+    artistId,
+    artistName: artistId === 'nenho' ? 'Nenho' : 'Netto Brito',
+    central: points,
+    title,
+  })),
+  {
+    id: 'seed:camila-base-netto',
+    daysAgo: 8,
+    kind: 'adjust',
+    source: 'seed',
+    points: 0,
+    season: 0,
+    artistId: 'nettobrito',
+    artistName: 'Netto Brito',
+    central: 3_620,
+    title: null,
+  },
+  {
+    id: 'seed:camila-base-nenho',
+    daysAgo: 8,
+    kind: 'adjust',
+    source: 'seed',
+    points: 0,
+    season: 0,
+    artistId: 'nenho',
+    artistName: 'Nenho',
+    central: 2_640,
+    title: null,
+  },
+  {
+    id: 'seed:camila-base',
+    daysAgo: 8,
+    kind: 'adjust',
+    source: 'seed',
+    points: 11_240,
+    season: 2_880,
+    artistId: null,
+    artistName: null,
+    central: 0,
+    title: null,
+  },
+  ...Array.from({ length: 8 }, (_, index): LedgerSample => ({
+    id: `mission:seed-camila-${12 - index}`,
+    daysAgo: 10 + index,
+    kind: 'earn',
+    source: 'mission',
+    points: 50,
+    season: 50,
+    artistId: null,
+    artistName: null,
+    central: 0,
+    title: CLIPE,
+  })),
+];
+
+/**
+ * Uma página do extrato de exemplo, com as datas relativas a `now` (meio-dia
+ * de cada dia). O que o fã ganha na sessão das fixtures não entra: é exemplo.
+ * O cursor é a posição da primeira linha da página.
+ */
+export function buildLedgerPageFixture(now: Date, cursor: string | null): LedgerPage {
+  const start = cursor ? Number(cursor) : 0;
+  const items = LEDGER_SAMPLES.slice(start, start + LEDGER_PAGE_SIZE).map(
+    (sample): LedgerEntry => ({
+      id: sample.id,
+      kind: sample.kind,
+      source: sample.source,
+      points: sample.points,
+      xpDelta: sample.points,
+      seasonDelta: sample.season,
+      artistId: sample.artistId,
+      centralSeasonDelta: sample.central,
+      centralTotalDelta: sample.central,
+      subject: null,
+      createdAt: set(subDays(now, sample.daysAgo), {
+        hours: 12,
+        minutes: 0,
+        seconds: 0,
+        milliseconds: 0,
+      }).toISOString(),
+      artistName: sample.artistName,
+      subjectTitle: sample.title,
+    }),
+  );
+  const next = start + LEDGER_PAGE_SIZE;
+  return { items, nextCursor: next < LEDGER_SAMPLES.length ? String(next) : null };
 }

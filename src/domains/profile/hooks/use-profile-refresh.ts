@@ -1,8 +1,10 @@
+import { useQueryClient } from '@tanstack/react-query';
 import { useRef, useState } from 'react';
 
 import { useFanCentralsQuery } from '@/domains/artists';
 import { haptics } from '@/services/haptics';
 
+import { profileKeys } from '../keys';
 import { useMyAchievementsQuery, useMyProgressQuery, useWalletQuery } from '../queries';
 
 /**
@@ -16,6 +18,7 @@ export function useProfileRefresh() {
   const progress = useMyProgressQuery();
   const achievements = useMyAchievementsQuery();
   const centrals = useFanCentralsQuery();
+  const queryClient = useQueryClient();
   // Puxão em andamento; cada um tem o seu número, para o fim de um antigo não
   // apagar o indicador de um novo.
   const [pull, setPull] = useState<number | null>(null);
@@ -30,6 +33,8 @@ export function useProfileRefresh() {
     pulls.current += 1;
     const id = pulls.current;
     setPull(id);
+    // O extrato mora debaixo da carteira: invalidar leva junto o aberto (bloco 7).
+    void queryClient.invalidateQueries({ queryKey: profileKeys.ledger() });
     await Promise.allSettled(queries.map((query) => query.refetch()));
     setPull((current) => (current === id ? null : current));
   };

@@ -15,8 +15,11 @@ import {
   personKey,
   seedCamilaInvite,
   seedInviteClaims,
+  seedInviteVisits,
   SEED_INVITEES,
+  SEED_VISITORS,
 } from '../src/invites';
+import { seedMissionsCatalog } from '../src/missions';
 import {
   dayKey,
   DEFAULT_POINTS_CONFIG,
@@ -820,7 +823,12 @@ describe('visita (POST /invites/visit)', () => {
       expect(await exists(`fanInvites/${inviter.uid}/inviteVisitors/${keyOf(fan)}`)).toBe(true);
       expect(await statsSum([dayKey(clock)], (d) => d.invites?.visits ?? 0)).toBe(1);
     }
-    expect(await exists(`wallets/${inviter.uid}`)).toBe(false);
+    // Sem ponto nenhum: a carteira de quem convidou só nasce com o "Boca a boca"
+    // (a primeira pessoa pelo link, bloco 7, 22.6), uma vez.
+    const wallet = await read(`wallets/${inviter.uid}`);
+    expect(wallet).toMatchObject({ balance: 0, xp: 0 });
+    expect(Object.keys(wallet?.achievements ?? {})).toEqual(['boca-a-boca']);
+    expect((await db.collection(`wallets/${inviter.uid}/ledger`).get()).size).toBe(0);
   });
 });
 
@@ -1021,19 +1029,41 @@ describe('seed do convite', () => {
     await seedPosts(db);
     const camila = await signUpFan('camila@teste.imagineup', 'Camila Ribeiro');
     await seedCamilaWallet(db, camila.uid);
-    const wallet = await read(`wallets/${camila.uid}`);
+    // Os números da carteira (as missões e as conquistas do bloco 7 mudam o resto).
+    const numbers = async () => {
+      const data = await read(`wallets/${camila.uid}`);
+      return [data?.balance, data?.xp, data?.seasonPoints, data?.earnedTotal];
+    };
+    const wallet = await numbers();
     const invitees: Fan[] = [];
     for (const { email } of SEED_INVITEES) invitees.push(await signUpFan(email));
+    const visitors: Fan[] = [];
+    for (const email of SEED_VISITORS) visitors.push(await signUpFan(email));
 
+    // A ordem do scripts/seed-emulators.mjs (22.13): a Duda e o Enzo antes do
+    // catálogo de missões, a Bia depois, e as visitas do Alan e da Gabi.
     const seed = async () => {
       const links = await seedCamilaInvite(db, { uid: camila.uid, email: camila.email });
-      const outcomes = await seedInviteClaims(
-        db,
-        invitees.map((fan, index) => ({ ...fan, origin: SEED_INVITEES[index]!.origin })),
-      );
-      return { links, statuses: outcomes.map((outcome) => outcome.status) };
+      const origin = (fan: Fan) => ({
+        ...fan,
+        origin: SEED_INVITEES.find((item) => item.email === fan.email)!.origin,
+      });
+      const [bia, duda, enzo] = invitees as [Fan, Fan, Fan];
+      const first = await seedInviteClaims(db, [origin(duda), origin(enzo)]);
+      await seedMissionsCatalog(db);
+      const second = await seedInviteClaims(db, [origin(bia)]);
+      const visits = await seedInviteVisits(db, visitors);
+      return {
+        links,
+        statuses: [...second, ...first].map((outcome) => outcome.status),
+        visits: visits.map((outcome) => outcome.counted),
+      };
     };
-    expect(await seed()).toEqual({ links: 4, statuses: ['claimed', 'claimed', 'claimed'] });
+    expect(await seed()).toEqual({
+      links: 4,
+      statuses: ['claimed', 'claimed', 'claimed'],
+      visits: [true, true],
+    });
 
     expect(await read(`inviteCodes/${CAMILA_INVITE_CODE}`)).toMatchObject({
       uid: camila.uid,
@@ -1059,13 +1089,16 @@ describe('seed do convite', () => {
       utm: { source: null, medium: null, campaign: null },
     });
     expect(await read(`referrals/${enzo.uid}`)).toMatchObject({ via: 'code', link: null });
-    expect(await size(`fanInvites/${camila.uid}/inviteVisitors`)).toBe(3);
+    // Os três cadastros e as duas visitas (bloco 7): um marcador por pessoa.
+    expect(await size(`fanInvites/${camila.uid}/inviteVisitors`)).toBe(5);
     // A carteira da Camila fica a do protótipo: o convite vale 0 no seed.
-    expect(await read(`wallets/${camila.uid}`)).toEqual(wallet);
+    expect(await numbers()).toEqual(wallet);
 
     const day = await claimDay(bia.uid);
     expect(await statsSum([day], (d) => d.signups?.invited ?? 0)).toBe(3);
-    expect(await statsSum([day], (d) => d.invites?.visits ?? 0)).toBe(3);
+    // 3 pelo tipo post (Bia, Alan e Gabi), 1 artist (Duda) e 1 code (Enzo).
+    expect(await statsSum([day], (d) => d.invites?.visits ?? 0)).toBe(5);
+    expect(await statsSum([day], (d) => d.byOrigin?.kind?.post?.visits ?? 0)).toBe(3);
     for (const kind of ['post', 'artist', 'code']) {
       expect(await statsSum([day], (d) => d.byOrigin?.kind?.[kind]?.signups ?? 0)).toBe(1);
     }
@@ -1076,13 +1109,16 @@ describe('seed do convite', () => {
     );
 
     // Rodar de novo não muda nada.
+    const settled = await read(`wallets/${camila.uid}`);
     expect(await seed()).toEqual({
       links: 0,
       statuses: ['already_claimed', 'already_claimed', 'already_claimed'],
+      visits: [false, false],
     });
     expect(await size(`fanInvites/${camila.uid}/inviteLinks`)).toBe(4);
     expect(await statsSum([day], (d) => d.signups?.invited ?? 0)).toBe(3);
-    expect(await read(`wallets/${camila.uid}`)).toEqual(wallet);
+    expect(await statsSum([day], (d) => d.invites?.visits ?? 0)).toBe(5);
+    expect(await read(`wallets/${camila.uid}`)).toEqual(settled);
     expect((await http('/me/progress', { token: camila.token })).body.stats).toMatchObject({
       linksCreated: 4,
       peopleBrought: 3,
@@ -1098,10 +1134,10 @@ describe('seed do convite', () => {
       status: 200,
       body: { status: 'claimed' },
     });
-    expect(await size(`fanInvites/${camila.uid}/inviteVisitors`)).toBe(3);
+    expect(await size(`fanInvites/${camila.uid}/inviteVisitors`)).toBe(5);
     expect(keyOf(again)).toBe(keyOf(bia));
     expect(await statsSum([await claimDay(again.uid)], (d) => d.invites?.visits ?? 0)).toBe(
-      (await claimDay(again.uid)) === day ? 3 : 0,
+      (await claimDay(again.uid)) === day ? 5 : 0,
     );
   });
 });

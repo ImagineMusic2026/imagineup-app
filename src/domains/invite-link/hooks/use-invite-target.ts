@@ -1,4 +1,5 @@
 import { useAgendaEvent } from '@/domains/agenda';
+import { useArtistQuery } from '@/domains/artists';
 import { useMissionQuery, type Mission } from '@/domains/missions';
 import { usePostQuery } from '@/domains/posts';
 
@@ -12,6 +13,8 @@ export type InviteParams = {
   postId?: string;
   /** O show do "Chamar amigos" (1m): o link leva à agenda. */
   eventId?: string;
+  /** A central alvo da missão de link sem post (bloco 7): o link leva a ela. */
+  artistId?: string;
 };
 
 /**
@@ -25,8 +28,10 @@ export function useInviteTarget(params: InviteParams): {
 } {
   const postId = params.postId || null;
   const eventId = postId ? null : params.eventId || null;
+  const artistId = postId || eventId ? null : params.artistId || null;
   const post = usePostQuery(postId ?? '');
   const event = useAgendaEvent(eventId);
+  const artist = useArtistQuery(artistId ?? '');
   const mission = useMissionQuery(params.missionId || null);
 
   let target: InviteTarget = { kind: 'app' };
@@ -34,6 +39,8 @@ export function useInviteTarget(params: InviteParams): {
     target = { kind: 'post', postId, artistName: post.data?.artist.name ?? null };
   } else if (eventId) {
     target = { kind: 'event', showTitle: event?.title ?? null };
+  } else if (artistId) {
+    target = { kind: 'artist', artistId, artistName: artist.data?.name ?? null };
   }
   return { target, mission: mission.data ?? null };
 }

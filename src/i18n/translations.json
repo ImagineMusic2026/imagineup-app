@@ -409,7 +409,9 @@
       "week": "Esta semana"
     },
     "season": {
-      "label": "{{title}}. {{progress}}. {{description}}"
+      "label": "{{title}}. {{progress}}. {{description}}",
+      "pointsMeta": "{{done}} de {{total}} pontos",
+      "percent": "{{percent}}%"
     },
     "meta": {
       "breakdown": "{{visit}} por visita · {{signup}} por cadastro",
@@ -451,6 +453,10 @@
       "loading": "Carregando a missão de hoje",
       "loadError": "Não foi possível carregar a missão de hoje.",
       "completedAnnouncement": "Missão de hoje concluída. Mais {{points}}"
+    },
+    "rewards": {
+      "mission": "Missão concluída: {{title}}.",
+      "achievement": "Conquista nova: {{title}}."
     }
   },
   "rewards": {
@@ -596,7 +602,8 @@
         "weekGain": "mais {{points}}",
         "toNext": "Faltam {{points}} pontos para o nível {{number}}, {{name}}",
         "toNextOne": "Falta 1 ponto para o nível {{number}}, {{name}}"
-      }
+      },
+      "hint": "Abre o extrato de pontos."
     },
     "stats": {
       "label": "{{value}} {{label}}",
@@ -635,6 +642,44 @@
       "empty": "Você ainda não entrou em nenhuma central.",
       "explore": "Explorar artistas"
     }
+  },
+  "ledger": {
+    "title": "Extrato",
+    "subtitle": "Os pontos que entraram e saíram da sua carteira.",
+    "sources": {
+      "like": "Curtida",
+      "comment": "Comentário",
+      "rsvp": "Presença em show",
+      "central_join": "Entrada na central",
+      "mission": "Missão concluída",
+      "invite_visit": "Visita pelo seu link",
+      "invite_signup": "Cadastro pelo seu link",
+      "redeem": "Resgate",
+      "adjustment": "Ajuste da equipe",
+      "seed": "Ajuste",
+      "other": "Pontos"
+    },
+    "days": {
+      "today": "Hoje",
+      "yesterday": "Ontem"
+    },
+    "when": {
+      "today": "hoje às {{time}}",
+      "yesterday": "ontem às {{time}}",
+      "other": "em {{date}} às {{time}}"
+    },
+    "rowMeta": "{{context}} · {{time}}",
+    "rowLabel": "{{title}}, {{context}}, {{points}}, {{when}}.",
+    "rowLabelNoContext": "{{title}}, {{points}}, {{when}}.",
+    "pointsGain": "mais {{points}}",
+    "pointsLoss": "menos {{points}}",
+    "empty": "Seus pontos aparecem aqui quando você curte, comenta, entra numa central ou conclui uma missão.",
+    "loading": "Carregando o extrato",
+    "loadError": "Não deu para carregar o extrato.",
+    "updateError": "Não deu para atualizar o extrato.",
+    "moreError": "Não deu para carregar mais lançamentos.",
+    "loaded": "Extrato carregado.",
+    "moreLoaded": "Mais lançamentos carregados."
   },
   "settings": {
     "title": "Ajustes",
@@ -686,7 +731,9 @@
       "postPlain": "Leva para o post.",
       "event": "Leva para a agenda de shows: {{show}}.",
       "eventPlain": "Leva para a agenda de shows.",
-      "app": "Leva para o ImagineUP."
+      "app": "Leva para o ImagineUP.",
+      "artist": "Leva para a central de {{artist}}.",
+      "artistPlain": "Leva para a central."
     },
     "linkA11y": "Seu link, com o seu código de convite, {{code}}. {{target}}",
     "linkA11yNoCode": "Seu link, ainda sem o seu código de convite. {{target}}",

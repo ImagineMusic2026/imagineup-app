@@ -19,7 +19,8 @@ export const BLOCK_LIST_MAX = 1_000;
 
 // Tetos do dia por fã, em dias de São Paulo (21.7). Contam ações, pagas ou
 // não, e recusam com 429 antes de gravar; desfazer nunca é recusado. Nenhum
-// fã de verdade chega perto. Se o painel quiser ajustar, vão para config/points.
+// fã de verdade chega perto. Desde o bloco 7, o painel ajusta em
+// config/points.actionCaps (22.1, decisão 13): estes são o padrão do código.
 
 /** Trocas para curtido por dia (também a de quem curte de novo depois de descurtir). */
 export const LIKES_PER_DAY = 300;
@@ -67,13 +68,13 @@ export function capCount(days: Record<string, DayStats>, action: CapAction, now:
   return days[dayKey(now)]?.count[DAILY_CAPS[action].key] ?? 0;
 }
 
-/** A recusa do teto quando a ação já chegou nele hoje, ou null. */
+/** A recusa do teto quando a ação já chegou nele hoje, ou null. `limit` vem da configuração. */
 export function dailyCapProblem(
   action: CapAction,
   countToday: number,
   now: number,
+  limit: number = DAILY_CAPS[action].limit,
 ): DailyCapError | null {
-  const { limit } = DAILY_CAPS[action];
   if (countToday < limit) return null;
   return new DailyCapError(action, limit, secondsUntil(nextDayStart(now), now));
 }

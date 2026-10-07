@@ -149,6 +149,8 @@ export function PostActions({ post, onToggleLike, likeAward = null, onComment }:
         <PointsToast
           points={likeAward?.points ?? 0}
           trigger={likeAward?.id ?? null}
+          announcement={likeAward?.announcement}
+          haptic={likeAward?.haptic}
           style={{ bottom: LIKE_TOAST_BOTTOM }}
           testID="post-like-points"
         />

@@ -7,8 +7,8 @@ import {
   type AwardContext,
   type AwardPlan,
   type FanContext,
+  type RunOptions,
 } from '../points/award';
-import type { Actor, PointsConfig } from '../points/model';
 import { commentRecord } from '../posts/model';
 import { commentRef, readVisiblePost } from '../posts/store';
 import { countDailyAction, enforceDailyCap } from './caps';
@@ -193,7 +193,7 @@ export function runReport(
   db: Firestore,
   uid: string,
   input: { postId: string; commentId: string; reason: ReportReason | null },
-  options: { now: number; config: PointsConfig; actor: Actor; random?: () => number },
+  options: RunOptions,
 ): Promise<ReportOutcome> {
   return runAsFan(db, uid, options, (tx, fan, award) =>
     reportComment(tx, db, { fan, award, ...input }),

@@ -237,7 +237,9 @@ describe('missões (1g)', () => {
     fireEvent.press(await screen.findByRole('button', { name: INVITE }));
     await waitFor(() => expect(view.getPathname()).toBe('/convidar'));
     await act(async () => {
-      expect(missionsFixture.record('rsvp')).toBe(RSVP_MISSION_POINTS);
+      expect(missionsFixture.record('rsvp', new Date(), { eventId: 'sao-joao-irara' })).toBe(
+        RSVP_MISSION_POINTS,
+      );
       await client.invalidateQueries({ queryKey: missionKeys.all });
     });
     expect(haptics.trigger).not.toHaveBeenCalledWith('missionComplete');
@@ -268,7 +270,7 @@ describe('missões (1g)', () => {
     fireEvent.press(await screen.findByRole('button', { name: FEATURED }));
     await waitFor(() => expect(view.getPathname()).toBe('/convidar'));
     await act(async () => {
-      missionsFixture.record('rsvp');
+      missionsFixture.record('rsvp', new Date(), { eventId: 'sao-joao-irara' });
       await client.invalidateQueries({ queryKey: missionKeys.all });
     });
     act(() => testRouter.back());
@@ -281,7 +283,7 @@ describe('missões (1g)', () => {
   });
 
   it('a primeira carga, com missões já concluídas, não festeja', async () => {
-    missionsFixture.record('rsvp');
+    missionsFixture.record('rsvp', new Date(), { eventId: 'sao-joao-irara' });
     renderRouter(appTree, { initialUrl: '/missoes' });
     await screen.findByRole('button', { name: FEATURED });
 

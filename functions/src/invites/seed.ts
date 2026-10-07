@@ -1,15 +1,24 @@
 import { Timestamp, type Firestore } from 'firebase-admin/firestore';
 
-import { DEFAULT_POINTS_CONFIG } from '../points/config';
+import { createConfigSource, DEFAULT_POINTS_CONFIG } from '../points/config';
 import { SEED_ACTOR } from '../points/seed';
-import { classifyInvitePath, NO_UTM, parseLinkId, personKey, type ClaimInput } from './model';
+import {
+  classifyInvitePath,
+  NO_UTM,
+  parseLinkId,
+  personKey,
+  type ClaimInput,
+  type VisitInput,
+} from './model';
 import {
   fanInviteRef,
   inviteCodeRef,
   runClaim,
   runInviteLinks,
+  runVisit,
   type ClaimOutcome,
   type InviteCaller,
+  type VisitOutcome,
 } from './service';
 
 // Convite da Camila no seed dos emuladores (scripts/seed-emulators.mjs, que
@@ -139,15 +148,19 @@ export async function seedCamilaInvite(
 
 /**
  * Os convidados de teste da Camila, cada um pelo mesmo claimInvite da rota
- * (runClaim), com o e-mail da conta e os valores do convite em 0. O claim cria
- * o marcador de visita e soma o cadastro convidado e a visita nos agregados do
- * dia. Rodar de novo responde `already_claimed`.
+ * (runClaim), com o e-mail da conta, os valores do convite em 0 e o jogo da
+ * configuração lida agora (bloco 7: o claim anda as missões de link e de
+ * convite da Camila e dá o "Boca a boca"; a ordem do seed decide o que já
+ * existe, 22.13). O claim cria o marcador de visita e soma o cadastro
+ * convidado e a visita nos agregados do dia. Rodar de novo responde
+ * `already_claimed`.
  */
 export async function seedInviteClaims(
   db: Firestore,
   invitees: readonly (InviteCaller & { origin: SeedInviteOrigin })[],
   now: number = Date.now(),
 ): Promise<ClaimOutcome[]> {
+  const { game } = await createConfigSource(db, { ttlMs: 0 }).get();
   const outcomes: ClaimOutcome[] = [];
   for (const invitee of invitees) {
     outcomes.push(
@@ -155,8 +168,57 @@ export async function seedInviteClaims(
         db,
         { uid: invitee.uid, email: invitee.email },
         seedClaimInput(invitee.origin, now),
-        { now, config: SEED_INVITE_CONFIG, actor: SEED_ACTOR, inviteKey: EMULATOR_INVITE_KEY },
+        {
+          now,
+          config: SEED_INVITE_CONFIG,
+          actor: SEED_ACTOR,
+          inviteKey: EMULATOR_INVITE_KEY,
+          game,
+        },
       ),
+    );
+  }
+  return outcomes;
+}
+
+/** O link que o Alan e a Gabi abrem no seed: o do clipe, com o código da Camila. */
+export const SEED_VISIT_PATH = '/post/p-clipe';
+
+/** Quem visita o link do clipe no seed (só visita, sem cadastro pelo convite). */
+export const SEED_VISITORS: readonly string[] = ['alan@teste.imagineup', 'gabi@teste.imagineup'];
+
+/** O corpo da visita de teste, como o app mandaria (já normalizado). */
+export function seedVisitInput(now: number): VisitInput {
+  return {
+    code: CAMILA_INVITE_CODE,
+    link: classifyInvitePath(SEED_VISIT_PATH),
+    utm: { ...NO_UTM },
+    openedAt: now - OPENED_BEFORE_MS,
+  };
+}
+
+/**
+ * As visitas de teste ao link do clipe (bloco 7, 22.13), pelo mesmo
+ * recordInviteVisit da rota (runVisit), com ator de sistema, o convite em 0 e
+ * o jogo lido agora: cada uma cria o marcador e anda o "Leve 5 pessoas" da
+ * Camila. Rodar de novo não conta: o marcador já existe.
+ */
+export async function seedInviteVisits(
+  db: Firestore,
+  visitors: readonly InviteCaller[],
+  now: number = Date.now(),
+): Promise<VisitOutcome[]> {
+  const { game } = await createConfigSource(db, { ttlMs: 0 }).get();
+  const outcomes: VisitOutcome[] = [];
+  for (const visitor of visitors) {
+    outcomes.push(
+      await runVisit(db, visitor, seedVisitInput(now), {
+        now,
+        config: SEED_INVITE_CONFIG,
+        actor: SEED_ACTOR,
+        inviteKey: EMULATOR_INVITE_KEY,
+        game,
+      }),
     );
   }
   return outcomes;

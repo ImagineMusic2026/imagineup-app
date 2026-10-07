@@ -103,6 +103,7 @@ function PointsSection() {
         <PointsCard
           balance={wallet.data.balance}
           progress={progress.data}
+          onPress={() => router.push('/extrato')}
           testID="profile-points"
           style={styles.points}
         />

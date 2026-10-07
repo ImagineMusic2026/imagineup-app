@@ -1,7 +1,32 @@
-import { HANDLE_PATTERN } from '../artists/model';
 import {
+  unlockAchievements,
+  type AchievementRecord,
+  type FirstAction,
+} from '../achievements/model';
+import { HANDLE_PATTERN } from '../artists/model';
+import { dayKey, monthKey, shiftDay, weekKey } from '../day';
+import {
+  applyMissionTicks,
+  candidateMissions,
+  cloneMissionsState,
+  emptyMissionsState,
+  EMPTY_MISSION_INDEX,
+  MISSION_TITLE_MAX,
+  missionArtistId,
+  missionEventId,
+  rollMissions,
+  type MissionIndex,
+  type MissionRecord,
+  type MissionsState,
+  type MissionTick,
+  type SeasonGoalConfig,
+} from '../missions/model';
+import { isVisibleLine } from '../visible-line';
+import {
+  addAchievementToShard,
   addActivity,
   addEntryToShard,
+  addMissionToShard,
   emptyShardDelta,
   isEmptyShardDelta,
   type ShardDelta,
@@ -9,12 +34,10 @@ import {
 
 // Núcleo de pontos, puro: nada aqui lê ou grava o Firestore. O award.ts lê,
 // chama computeAwards e grava o resultado. Contrato em docs/arquitetura-api.md
-// (seções 4, 5 e 7).
+// (seções 4, 5 e 7; missões, conquistas e nível do bloco 7 na seção 22).
 
-/** Fuso dos dias de pontos: o limite diário, o `days` da carteira, o extrato e os agregados. */
-export const TIME_ZONE = 'America/Sao_Paulo';
-
-const DAY_MS = 24 * 60 * 60 * 1000;
+// Os dias de São Paulo moram em day.ts desde o bloco 7; daqui saem como antes.
+export { dayKey, monthKey, nextDayStart, shiftDay, TIME_ZONE, weekKey } from '../day';
 
 /** Origens que rendem pontos. Origem nova é mudança de código: tipo, padrão e a tabela da nota. */
 export const EARN_SOURCES = [
@@ -49,9 +72,32 @@ export type PointsConfig = {
   /** 0 é o padrão do código; o painel grava 1, 2, 3... */
   version: number;
   values: Record<ValueSource, number>;
-  /** Eventos pagos por dia de São Paulo; null é sem limite. */
+  /** Eventos pagos por dia de São Paulo; null é sem limite. A missão é sempre null (22.1, decisão 7). */
   dailyLimits: Record<EarnSource, number | null>;
   levels: Level[];
+  /**
+   * Tetos do dia das ações, por fã (os dos blocos 4, 5 e 6), editáveis pelo
+   * painel desde o bloco 7 (22.1, decisão 13). Contam ações, pagas ou não.
+   */
+  actionCaps: Record<DailyActionKey, number>;
+};
+
+/**
+ * O jogo da configuração (bloco 7): o índice das missões no ar por tipo de
+ * ação, o catálogo de conquistas e a meta da temporada. Vem da mesma carga do
+ * cache que dá os valores; os caminhos fora da API que não passam nada usam o
+ * `NO_GAME` (catálogos vazios e sem meta): sem missão, sem conquista, sem meta.
+ */
+export type GameConfig = {
+  missions: MissionIndex;
+  achievements: readonly AchievementRecord[];
+  seasonGoal: SeasonGoalConfig | null;
+};
+
+export const NO_GAME: GameConfig = {
+  missions: EMPTY_MISSION_INDEX,
+  achievements: [],
+  seasonGoal: null,
 };
 
 /** A temporada de config/season, com as datas em ms. */
@@ -77,6 +123,8 @@ export type AwardEntry =
       subject?: Subject | null;
       /** Só na missão: os pontos dela. */
       points?: number;
+      /** Só na missão, obrigatório: o título dela agora (o `subjectTitle` do extrato). */
+      title?: string;
     }
   | {
       kind: 'spend';
@@ -149,6 +197,16 @@ export type WalletState = {
   days: Record<string, DayStats>;
   pastSeasons: number;
   activity: ActivityState;
+  /** Missões concluídas na temporada `seasonId`; zera na troca de temporada (bloco 7). */
+  seasonMissions: number;
+  /** Quem bateu a meta da temporada; nunca sai (bloco 7). */
+  goalReached: { seasonId: string; at: number } | null;
+  /** O progresso do período atual de cada tipo (bloco 7). */
+  missions: MissionsState;
+  /** Conquistas desbloqueadas, com a data em ms; nunca saem (bloco 7). */
+  achievements: Record<string, number>;
+  /** O `updatedAt` da carteira lida, em ms: a data da conquista de nível que já valia (22.6). */
+  updatedAt: number | null;
 };
 
 /** wallets/{uid}/centralPoints/{artistId} lido. */
@@ -186,6 +244,11 @@ export function emptyWallet(): WalletState {
     days: {},
     pastSeasons: 0,
     activity: { lastDay: null, lastWeek: null, lastMonth: null },
+    seasonMissions: 0,
+    goalReached: null,
+    missions: emptyMissionsState(),
+    achievements: {},
+    updatedAt: null,
   };
 }
 
@@ -223,65 +286,6 @@ export class PointsError extends Error {
     this.reason = reason;
     this.details = details;
   }
-}
-
-// --- Datas de São Paulo ------------------------------------------------------
-
-const dayFormatter = new Intl.DateTimeFormat('en-CA', {
-  timeZone: TIME_ZONE,
-  year: 'numeric',
-  month: '2-digit',
-  day: '2-digit',
-});
-
-/** O dia de São Paulo de um instante, `YYYY-MM-DD`. */
-export function dayKey(ms: number): string {
-  return dayFormatter.format(new Date(ms));
-}
-
-function dayParts(day: string): [number, number, number] {
-  const [year, month, date] = day.split('-').map(Number);
-  return [year!, month!, date!];
-}
-
-/** `day` andando `delta` dias no calendário (conta de calendário, sem fuso). */
-export function shiftDay(day: string, delta: number): string {
-  const [year, month, date] = dayParts(day);
-  return new Date(Date.UTC(year, month - 1, date) + delta * DAY_MS).toISOString().slice(0, 10);
-}
-
-const HOUR_MS = 60 * 60 * 1000;
-
-/**
- * O instante em que começa o dia de São Paulo seguinte ao de `now`. Procura a
- * hora cheia, a partir da meia-noite UTC do dia seguinte, em que o `dayKey`
- * vira (os fusos do Brasil são de horas cheias), sem supor o deslocamento.
- */
-export function nextDayStart(now: number): number {
-  const next = shiftDay(dayKey(now), 1);
-  const [year, month, date] = dayParts(next);
-  const utcMidnight = Date.UTC(year, month - 1, date);
-  for (let hour = -14; hour <= 14; hour += 1) {
-    const at = utcMidnight + hour * HOUR_MS;
-    if (at > now && dayKey(at) === next) return at;
-  }
-  throw new RangeError(`Não achei o começo do dia ${next}.`);
-}
-
-/** Semana ISO do dia de calendário, `2026-W41`. */
-export function weekKey(day: string): string {
-  const [year, month, date] = dayParts(day);
-  const thursday = new Date(Date.UTC(year, month - 1, date));
-  const weekday = thursday.getUTCDay() || 7;
-  thursday.setUTCDate(thursday.getUTCDate() + 4 - weekday);
-  const isoYear = thursday.getUTCFullYear();
-  const week = Math.ceil(((thursday.getTime() - Date.UTC(isoYear, 0, 1)) / DAY_MS + 1) / 7);
-  return `${isoYear}-W${String(week).padStart(2, '0')}`;
-}
-
-/** Mês do dia de calendário, `2026-10`. */
-export function monthKey(day: string): string {
-  return day.slice(0, 7);
 }
 
 // --- Níveis e leituras --------------------------------------------------------
@@ -406,6 +410,19 @@ export function assertValidEntry(entry: AwardEntry): void {
     if (entry.source === 'mission' ? !isPositiveInt(entry.points) : entry.points !== undefined) {
       throw invalid('Só a missão leva pontos explícitos, inteiros maiores que 0.');
     }
+    if (entry.source === 'mission') {
+      const { title } = entry;
+      if (
+        typeof title !== 'string' ||
+        title.length < 1 ||
+        title.length > MISSION_TITLE_MAX ||
+        !isVisibleLine(title)
+      ) {
+        throw invalid('A missão leva o título dela, de 1 a 80, numa linha visível.');
+      }
+    } else if (entry.title !== undefined) {
+      throw invalid('Só a missão leva título.');
+    }
   } else if (entry.kind === 'spend') {
     if (entry.source !== 'redeem' || !isPositiveInt(entry.points)) {
       throw invalid('Resgate precisa de pontos inteiros maiores que 0.');
@@ -460,6 +477,8 @@ export type LedgerData = {
   centralTotalDelta: number;
   seasonId: string | null;
   subject: Subject | null;
+  /** Só na missão: o título dela quando concluiu (bloco 7); null no resto. */
+  subjectTitle: string | null;
   balanceAfter: number;
   xpAfter: number;
   seasonPointsAfter: number;
@@ -476,9 +495,11 @@ export type FanInput = {
   hasProfile: boolean;
   wallet: WalletState;
   entries: readonly AwardEntry[];
-  /** Ids de lançamento que já estão no extrato. */
+  /** As unidades das missões (bloco 7), na ordem; sem perfil, ignoradas. */
+  ticks?: readonly MissionTick[];
+  /** Ids de lançamento que já estão no extrato (os das missões que podem concluir inclusive). */
   existingLedger: ReadonlySet<string>;
-  /** Cada central citada nas entradas, lida (ou vazia). */
+  /** Cada central citada nas entradas (e nas missões que podem concluir), lida (ou vazia). */
   centrals: ReadonlyMap<string, CentralState>;
   /** Marcas de atividade de quem chama; null para os outros fãs. */
   activity: ActivityMarks | null;
@@ -493,6 +514,8 @@ export type ComputeInput = {
   /** Quem chama: o pointsAwarded é a soma dos ganhos aplicados dele. */
   callerUid: string | null;
   fans: readonly FanInput[];
+  /** Missões, conquistas e meta da temporada; sem ele, o `NO_GAME`. */
+  game?: GameConfig;
 };
 
 export type FanPlan = {
@@ -503,6 +526,33 @@ export type FanPlan = {
   centrals: { create: boolean; state: CentralState }[];
 };
 
+/** Uma missão concluída e paga agora, para a resposta de quem chama. */
+export type CompletedMissionResult = {
+  id: string;
+  title: string;
+  rewardPoints: number;
+  /** ISO. */
+  completedAt: string;
+};
+
+/**
+ * As recompensas da ação para quem chama (22.2): as missões concluídas e
+ * pagas agora, a subida de nível, as conquistas desbloqueadas agora e se as
+ * missões mudaram para ele (alguma unidade contou, a meta da temporada foi
+ * cumprida agora ou, na meta por pontos, os pontos da temporada mudaram). Vão
+ * na resposta das rotas das ações.
+ */
+export type ActionRewards = {
+  completedMissions: CompletedMissionResult[];
+  levelUp: Level | null;
+  unlockedAchievements: { id: string; title: string }[];
+  missionsChanged: boolean;
+};
+
+export function emptyRewards(): ActionRewards {
+  return { completedMissions: [], levelUp: null, unlockedAchievements: [], missionsChanged: false };
+}
+
 export type ComputeOutput = {
   day: string;
   results: AwardResult[];
@@ -510,15 +560,24 @@ export type ComputeOutput = {
   fans: FanPlan[];
   /** O que somar no shard do dia; null quando não há o que somar. */
   shard: ShardDelta | null;
+  /** As recompensas de quem chama. */
+  rewards: ActionRewards;
 };
 
-/** Cópia da carteira que dá para mudar sem tocar na lida (os dias e a atividade inclusive). */
+/** Cópia da carteira que dá para mudar sem tocar na lida (os dias, a atividade e as missões inclusive). */
 export function cloneWallet(wallet: WalletState): WalletState {
   const days: Record<string, DayStats> = {};
   for (const [day, stats] of Object.entries(wallet.days)) {
     days[day] = { earned: stats.earned, count: { ...stats.count } };
   }
-  return { ...wallet, days, activity: { ...wallet.activity } };
+  return {
+    ...wallet,
+    days,
+    activity: { ...wallet.activity },
+    goalReached: wallet.goalReached ? { ...wallet.goalReached } : null,
+    missions: cloneMissionsState(wallet.missions),
+    achievements: { ...wallet.achievements },
+  };
 }
 
 /** Tira de `days` só os dias anteriores a `day` menos 6. Um dia depois do "agora" fica. */
@@ -538,19 +597,45 @@ function switchSeason<
 }
 
 /**
+ * O lançamento da conclusão de uma missão (22.1, decisão 7): os pontos dela,
+ * o título do catálogo e o evento `mission:<id>:<período>`, que nunca paga
+ * duas vezes.
+ */
+export function missionEntry(mission: MissionRecord, periodKey: string): AwardEntry {
+  return {
+    kind: 'earn',
+    source: 'mission',
+    eventId: missionEventId(mission.id, periodKey),
+    points: mission.rewardPoints,
+    artistId: missionArtistId(mission),
+    subject: { type: 'mission', id: mission.id },
+    title: mission.title,
+  };
+}
+
+/**
  * Calcula o efeito dos lançamentos de cada fã, em ordem: cada um parte do
  * resultado do anterior. Não grava nada; o award.ts grava o que voltar.
  * Recusa a transação inteira (PointsError) com resgate maior que o saldo ou
  * ajuste que deixaria um contador negativo.
+ *
+ * Bloco 7 (22.4): depois dos lançamentos da rota, as unidades das missões
+ * andam o progresso (a troca preguiçosa de período, os alvos em `keys`), e
+ * cada conclusão vira um lançamento `mission` no fim da lista do fã, pelo
+ * mesmo caminho (o que já está no extrato sai `duplicate`). Depois, a meta da
+ * temporada e as conquistas. A carteira é gravada também quando só o
+ * progresso mudou, só uma conquista nasceu ou só a meta foi marcada.
  */
 export function computeAwards(input: ComputeInput): ComputeOutput {
   const { now, config, actor } = input;
+  const game = input.game ?? NO_GAME;
   const day = dayKey(now);
   const season = activeSeason(input.season, now);
   const results: AwardResult[] = [];
   const fans: FanPlan[] = [];
   const shard = emptyShardDelta();
   let pointsAwarded = 0;
+  const rewards = emptyRewards();
   const uids = new Set<string>();
 
   for (const fan of input.fans) {
@@ -566,13 +651,17 @@ export function computeAwards(input: ComputeInput): ComputeOutput {
       continue;
     }
 
+    const isCaller = fan.uid === input.callerUid;
     let wallet = cloneWallet(fan.wallet);
     wallet.days = trimDays(wallet.days, day);
     if (season) {
       const switched = switchSeason(wallet, season.id);
+      // A troca de temporada zera também as missões concluídas nela (22.7).
+      if (switched.state !== wallet) switched.state.seasonMissions = 0;
       wallet = switched.state;
       if (switched.hadPoints) wallet.pastSeasons += 1;
     }
+    const seasonPointsBefore = wallet.seasonPoints;
 
     const centrals = new Map<string, CentralState>();
     const touched = new Set<string>();
@@ -589,15 +678,16 @@ export function computeAwards(input: ComputeInput): ComputeOutput {
     const seen = new Set(fan.existingLedger);
     const ledger: FanPlan['ledger'] = [];
     let changed = false;
+    let missionApplied = false;
 
-    for (const entry of fan.entries) {
+    /** Aplica uma entrada e devolve o status e os pontos dela. */
+    const apply = (entry: AwardEntry): { status: AwardStatus; points: number } => {
       const id = ledgerId(entry);
-      const result = (status: AwardStatus, points = 0) =>
+      const result = (status: AwardStatus, points = 0) => {
         results.push({ uid: fan.uid, entryId: id, status, points });
-      if (seen.has(id)) {
-        result('duplicate');
-        continue;
-      }
+        return { status, points };
+      };
+      if (seen.has(id)) return result('duplicate');
 
       const artistId = entryArtistId(entry);
       let points = 0;
@@ -610,16 +700,10 @@ export function computeAwards(input: ComputeInput): ComputeOutput {
         const value =
           entry.source === 'mission' ? entry.points : config.values[entry.source as ValueSource];
         const p = typeof value === 'number' && Number.isFinite(value) ? Math.trunc(value) : 0;
-        if (p <= 0) {
-          result('zero');
-          continue;
-        }
+        if (p <= 0) return result('zero');
         const limit = config.dailyLimits[entry.source] ?? null;
         const count = wallet.days[day]?.count[entry.source] ?? 0;
-        if (limit !== null && count >= limit) {
-          result('capped');
-          continue;
-        }
+        if (limit !== null && count >= limit) return result('capped');
         points = p;
         xpDelta = p;
         wallet.balance += p;
@@ -645,7 +729,11 @@ export function computeAwards(input: ComputeInput): ComputeOutput {
         today.earned += p;
         today.count[entry.source] = (today.count[entry.source] ?? 0) + 1;
         wallet.days[day] = today;
-        if (fan.uid === input.callerUid) pointsAwarded += p;
+        if (isCaller) pointsAwarded += p;
+        if (entry.source === 'mission') {
+          missionApplied = true;
+          if (season) wallet.seasonMissions += 1;
+        }
       } else if (entry.kind === 'spend') {
         if (wallet.balance < entry.points) {
           throw new PointsError('insufficient_points', 'Saldo insuficiente.', {
@@ -712,6 +800,8 @@ export function computeAwards(input: ComputeInput): ComputeOutput {
           centralTotalDelta,
           seasonId: season?.id ?? null,
           subject: entry.kind === 'adjust' ? null : (entry.subject ?? null),
+          subjectTitle:
+            entry.kind === 'earn' && entry.source === 'mission' ? (entry.title ?? null) : null,
           balanceAfter: wallet.balance,
           xpAfter: wallet.xp,
           seasonPointsAfter: wallet.seasonPoints,
@@ -723,8 +813,78 @@ export function computeAwards(input: ComputeInput): ComputeOutput {
         },
       });
       addEntryToShard(shard, entry, points);
-      result('applied', points);
+      return result('applied', points);
+    };
+
+    for (const entry of fan.entries) apply(entry);
+
+    // Missões (22.4, passos 3 a 5): a troca de período, as unidades e as conclusões.
+    const ticks = fan.ticks ?? [];
+    if (ticks.length > 0) {
+      const candidates = candidateMissions(game.missions, ticks, now);
+      const applied = applyMissionTicks(rollMissions(wallet.missions, now), candidates, ticks, now);
+      if (applied.counted) {
+        wallet.missions = applied.state;
+        changed = true;
+        if (isCaller) rewards.missionsChanged = true;
+      }
+      for (const { mission, periodKey } of applied.completions) {
+        const outcome = apply(missionEntry(mission, periodKey));
+        const item = wallet.missions[mission.period]!.items[mission.id]!;
+        item.rewardPaid = outcome.status === 'applied' ? outcome.points : 0;
+        if (outcome.status !== 'applied') continue;
+        addMissionToShard(shard, mission.id);
+        if (isCaller) {
+          rewards.completedMissions.push({
+            id: mission.id,
+            title: mission.title,
+            rewardPoints: outcome.points,
+            completedAt: new Date(now).toISOString(),
+          });
+        }
+      }
     }
+
+    // Meta da temporada (passo 6): marcada uma vez, na gravação em que a conta chega ao alvo.
+    const goal = game.seasonGoal;
+    const goalLive = season !== null && goal !== null && goal.seasonId === season.id;
+    if (goalLive && wallet.goalReached?.seasonId !== season.id) {
+      const count = goal.metric === 'missions' ? wallet.seasonMissions : wallet.seasonPoints;
+      if (count >= goal.target) {
+        wallet.goalReached = { seasonId: season.id, at: now };
+        changed = true;
+        if (isCaller) rewards.missionsChanged = true;
+      }
+    }
+    // Com a meta por pontos, o anel da 1g é o `seasonPoints`: o app busca as
+    // missões de novo também quando ele mudou, sem unidade contada (22.2).
+    if (goalLive && goal.metric === 'points' && wallet.seasonPoints !== seasonPointsBefore) {
+      if (isCaller) rewards.missionsChanged = true;
+    }
+
+    // Nível e conquistas (passo 7), pela régua do pedido.
+    const levelBefore = levelForXp(fan.wallet.xp, config.levels).level;
+    const levelAfter = levelForXp(wallet.xp, config.levels).level;
+    if (game.achievements.length > 0) {
+      const firsts = new Set<FirstAction>(ticks.map((tick) => tick.action));
+      if (missionApplied) firsts.add('mission');
+      const unlocked = unlockAchievements({
+        catalog: game.achievements,
+        owned: wallet.achievements,
+        levelBefore: levelBefore.number,
+        levelAfter: levelAfter.number,
+        firsts,
+        now,
+        readAt: fan.wallet.updatedAt,
+      });
+      if (unlocked.added.length > 0) {
+        wallet.achievements = unlocked.owned;
+        changed = true;
+        for (const item of unlocked.added) addAchievementToShard(shard, item.id);
+        if (isCaller) rewards.unlockedAchievements.push(...unlocked.announced);
+      }
+    }
+    if (isCaller && levelAfter.number > levelBefore.number) rewards.levelUp = { ...levelAfter };
 
     if (actor.type === 'fan' && fan.activity && hasNewActivity(fan.activity)) {
       wallet.activity = nextActivity(wallet.activity, fan.activity);
@@ -749,5 +909,6 @@ export function computeAwards(input: ComputeInput): ComputeOutput {
     pointsAwarded,
     fans,
     shard: isEmptyShardDelta(shard) ? null : shard,
+    rewards,
   };
 }

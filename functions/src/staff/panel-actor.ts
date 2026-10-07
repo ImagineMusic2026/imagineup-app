@@ -35,6 +35,8 @@ const SECTION_LABELS: Partial<Record<SectionId, string>> = {
   artists: 'Artistas e centrais',
   moderation: 'Moderação',
   fans: 'Fãs',
+  missions: 'Missões',
+  ranking: 'Ranking e temporadas',
 };
 
 /** Motivos de recusa de acesso, iguais aos das funções de artistas. */

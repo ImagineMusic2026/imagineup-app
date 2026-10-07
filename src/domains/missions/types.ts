@@ -1,7 +1,8 @@
 /**
- * Contrato provisório com a API. Muda quando o backend (M2) for desenhado.
- * Missões, valores e prazos são decididos no servidor e ajustáveis pelo painel
- * admin: o app só mostra.
+ * Contrato com a API das missões (bloco 7, docs/arquitetura-api.md, seção 22),
+ * espelho de `functions/src/api/contract.ts`: mudou um, mude o outro. Campo
+ * novo na resposta é sempre opcional aqui. Missões, valores e prazos são
+ * decididos no servidor e ajustáveis pelo painel admin: o app só mostra.
  */
 
 /**
@@ -9,7 +10,7 @@
  * missão de playlist (montador de playlist fora do contrato) nem de clipe no
  * YouTube: "levar gente ao clipe" é o link de um post do app com o código do fã.
  */
-export type MissionAction = 'share' | 'invite' | 'like' | 'comment' | 'rsvp';
+export type MissionAction = 'share' | 'invite' | 'like' | 'comment' | 'rsvp' | 'join';
 
 /**
  * - `active`: aberta (disponível ou em andamento, pelo progresso);
@@ -96,6 +97,11 @@ export interface SeasonGoal {
   targetCount: number;
   /** ISO. */
   endsAt: string;
+  /**
+   * O que a meta conta: missões concluídas na temporada ou os pontos da
+   * temporada (campo do bloco 7; sem ele, missões).
+   */
+  metric?: 'missions' | 'points';
 }
 
 /** O painel decide se há meta: sem temporada ativa, `season: null` e o card some. */
@@ -103,4 +109,40 @@ export interface MissionsResponse {
   season: SeasonGoal | null;
   /** Na ordem do painel. */
   missions: Mission[];
+}
+
+/** Uma missão concluída e paga na própria ação (bloco 7). */
+export interface CompletedMission {
+  id: string;
+  title: string;
+  rewardPoints: number;
+  /** ISO. */
+  completedAt: string;
+}
+
+/** Uma conquista desbloqueada na própria ação (bloco 7). */
+export interface UnlockedAchievement {
+  id: string;
+  title: string;
+}
+
+/** O nível novo que a ação alcançou (o `Level` do perfil, sem importar o domínio). */
+export interface ReachedLevel {
+  number: number;
+  name: string;
+  minXp: number;
+}
+
+/**
+ * O que a ação rendeu além dos pontos (bloco 7, 22.2): as missões concluídas
+ * e pagas agora, o nível novo, as conquistas novas e se o progresso de alguma
+ * missão andou. Vem na resposta de curtir, comentar, "Eu vou", entrar e
+ * seguir; opcional, porque as fixtures e um servidor antigo não mandam.
+ */
+export interface ActionRewards {
+  completedMissions?: CompletedMission[];
+  levelUp?: ReachedLevel | null;
+  unlockedAchievements?: UnlockedAchievement[];
+  /** Alguma missão andou: o app busca as missões de novo (sem o campo, também). */
+  missionsChanged?: boolean;
 }

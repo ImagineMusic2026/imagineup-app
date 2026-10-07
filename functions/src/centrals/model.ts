@@ -66,10 +66,16 @@ export class CentralError extends Error {
 
 /**
  * A entrada passa do teto do dia? `entriesToday` é o `central_entry` do dia na
- * carteira lida. Sem vínculo novo, nada a recusar.
+ * carteira lida, e `limit`, o teto da configuração (`actionCaps.central_entry`,
+ * editável pelo painel desde o bloco 7; padrão, as 30 de sempre). Sem vínculo
+ * novo, nada a recusar.
  */
-export function exceedsEntryLimit(entriesToday: number, newMemberships: number): boolean {
-  return newMemberships > 0 && entriesToday >= CENTRAL_ENTRIES_PER_DAY;
+export function exceedsEntryLimit(
+  entriesToday: number,
+  newMemberships: number,
+  limit: number = CENTRAL_ENTRIES_PER_DAY,
+): boolean {
+  return newMemberships > 0 && entriesToday >= limit;
 }
 
 /** Segundos até o dia seguinte de São Paulo (o Retry-After do 429), pelo menos 1. */

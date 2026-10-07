@@ -26,6 +26,11 @@ export interface PointsCardProps {
   balance: number;
   /** Nível e XP de nível (a barra e o "Faltam ...") e os ganhos da semana. */
   progress: MyProgress;
+  /**
+   * O card inteiro abre o extrato (bloco 7): vira um botão só, com o mesmo
+   * rótulo e a dica; nada dentro dele é tocável.
+   */
+  onPress?: () => void;
   style?: StyleProp<ViewStyle>;
   testID?: string;
 }
@@ -41,19 +46,33 @@ export interface PointsCardProps {
  *
  * Algarismos tabulares só enquanto o saldo conta: parado, o "1" tabular da
  * Sora tem pé e alarga o número.
+ *
+ * Com `onPress` (o extrato, bloco 7), o card é um botão: o mesmo rótulo, a
+ * dica "Abre o extrato de pontos." e o toque `tap`; sem o papel de progresso,
+ * que um botão não leva junto.
  */
-export function PointsCard({ balance, progress, style, testID }: PointsCardProps) {
+export function PointsCard({ balance, progress, onPress, style, testID }: PointsCardProps) {
   const counted = useCountedNumber(balance);
   const fraction = levelFraction(progress);
   const caption = nextLevelCaption(progress);
+  const a11y = onPress
+    ? {
+        onPress,
+        haptic: 'tap' as const,
+        accessibilityRole: 'button' as const,
+        accessibilityHint: t('profile.points.hint'),
+      }
+    : {
+        accessible: true,
+        accessibilityRole: 'progressbar' as const,
+        accessibilityValue: { min: 0, max: 100, now: Math.round(fraction * 100) },
+      };
 
   return (
     <Card
       variant="large"
-      accessible
-      accessibilityRole="progressbar"
+      {...a11y}
       accessibilityLabel={pointsCardLabel(balance, progress)}
-      accessibilityValue={{ min: 0, max: 100, now: Math.round(fraction * 100) }}
       testID={testID}
       style={[styles.card, style]}
     >

@@ -1,3 +1,5 @@
+import type { ActionRewards } from '@/domains/missions';
+
 /**
  * Contrato com a API do mural (bloco 6, docs/arquitetura-api.md, seção 21),
  * espelho de `functions/src/api/contract.ts`: mudou um, mude o outro. Campo
@@ -100,8 +102,13 @@ export interface Page<T> {
   nextCursor: string | null;
 }
 
-/** Toda ação que vale ponto devolve quantos pontos rendeu, para a animação de "+N". */
-export interface PointsAward {
+/**
+ * Toda ação que vale ponto devolve quantos pontos rendeu, para a animação de
+ * "+N". Curtir e comentar trazem também as recompensas da ação (bloco 7: as
+ * missões concluídas, o nível novo, as conquistas e se alguma missão andou),
+ * opcionais aqui.
+ */
+export interface PointsAward extends ActionRewards {
   pointsAwarded: number;
 }
 
