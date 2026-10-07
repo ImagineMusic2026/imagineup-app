@@ -14,7 +14,6 @@ import { colors } from '@/theme';
 
 import type { RankingSelf } from '../components/entry-avatar';
 import { MyRankCard } from '../components/my-rank-card';
-import { ExampleNotice } from '../components/example-notice';
 import { Podium, podiumStepHeights } from '../components/podium';
 import { RankingRow } from '../components/ranking-row';
 import { SeasonLine } from '../components/season-line';
@@ -263,6 +262,22 @@ describe('card "Você"', () => {
     expect(haptics.trigger).toHaveBeenCalledWith('tap');
   });
 
+  it('numa central de que o fã não é membro: chama para entrar, com os pontos de lá, sem botão', () => {
+    render(
+      <MyRankCard
+        myRank={{ position: null, points: 750, target: null, member: false }}
+        seasonOver={false}
+        self={SELF}
+        visible
+        scopeKey="artist:nenho"
+      />,
+    );
+    expect(screen.getByLabelText('Você. Entre na central para aparecer no ranking.')).toBeTruthy();
+    expect(screen.getByText('Entre na central para aparecer no ranking', hidden)).toBeTruthy();
+    expect(screen.getByText('750', hidden)).toBeTruthy();
+    expect(screen.queryByRole('button')).toBeNull();
+  });
+
   it('sem pontos: só informa, sem botão', () => {
     render(
       <MyRankCard
@@ -398,15 +413,5 @@ describe('linha da temporada', () => {
   it('sem temporada, diz que não há nenhuma', () => {
     render(<SeasonLine season={null} now={NOW} />);
     expect(screen.getByText('Nenhuma temporada em andamento')).toBeTruthy();
-  });
-});
-
-describe('aviso do ranking de exemplo', () => {
-  it('diz que as posições são de exemplo, em cinza, como texto', () => {
-    render(<ExampleNotice />);
-    const notice = screen.getByText(
-      'Ranking de exemplo: as posições de verdade chegam com o ranking do servidor.',
-    );
-    expect(notice).toHaveStyle({ color: colors.textMuted });
   });
 });

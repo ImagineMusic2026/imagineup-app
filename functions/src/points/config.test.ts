@@ -121,15 +121,18 @@ describe('leitura de config/season', () => {
     leaderTitle: null,
   };
 
+  const empty = { next: null, lastClosed: null };
+
   it('sem documento ou com season null, não há temporada', () => {
-    expect(parseSeasonConfig(undefined, spyLog())).toEqual({ version: 0, season: null });
+    expect(parseSeasonConfig(undefined, spyLog())).toEqual({ version: 0, season: null, ...empty });
     expect(parseSeasonConfig({ version: 2, season: null }, spyLog())).toEqual({
       version: 2,
       season: null,
+      ...empty,
     });
   });
 
-  it('a temporada vem com as datas em ms', () => {
+  it('a temporada vem com as datas em ms, o top 10 padrão e sem encerramento antes da hora', () => {
     expect(parseSeasonConfig({ version: 1, season }, spyLog())).toEqual({
       version: 1,
       season: {
@@ -138,8 +141,77 @@ describe('leitura de config/season', () => {
         startsAt: NOW - 18 * DAY_MS,
         endsAt: NOW + 12 * DAY_MS,
         leaderTitle: null,
+        topTarget: 10,
+        endedEarly: null,
+      },
+      ...empty,
+    });
+  });
+
+  it('a próxima, a última fechada, o topTarget e o endedEarly (bloco 8, 23.3)', () => {
+    const next = {
+      ...season,
+      id: 'temporada-verao',
+      startsAt: Timestamp.fromMillis(NOW + 20 * DAY_MS),
+      endsAt: Timestamp.fromMillis(NOW + 50 * DAY_MS),
+      topTarget: 5,
+    };
+    const lastClosed = {
+      ...season,
+      id: 'temporada-carnaval',
+      startsAt: Timestamp.fromMillis(NOW - 70 * DAY_MS),
+      endsAt: Timestamp.fromMillis(NOW - 40 * DAY_MS),
+      closedAt: Timestamp.fromMillis(NOW - 40 * DAY_MS + 120_000),
+    };
+    const endedEarly = {
+      plannedEndsAt: Timestamp.fromMillis(NOW + 12 * DAY_MS),
+      at: Timestamp.fromMillis(NOW),
+      by: { uid: 'admin', name: 'Admin' },
+    };
+    const config = parseSeasonConfig(
+      {
+        version: 3,
+        season: { ...season, endsAt: Timestamp.fromMillis(NOW), endedEarly },
+        next,
+        lastClosed,
+      },
+      spyLog(),
+    );
+    expect(config.season).toMatchObject({
+      endsAt: NOW,
+      endedEarly: {
+        plannedEndsAt: NOW + 12 * DAY_MS,
+        at: NOW,
+        by: { uid: 'admin', name: 'Admin' },
       },
     });
+    expect(config.next).toMatchObject({ id: 'temporada-verao', topTarget: 5, endedEarly: null });
+    expect(config.lastClosed).toMatchObject({
+      id: 'temporada-carnaval',
+      closedAt: NOW - 40 * DAY_MS + 120_000,
+    });
+  });
+
+  it('próxima e última fechada fora do formato viram null sem derrubar a atual; topTarget e endedEarly inválidos valem o padrão', () => {
+    const log = spyLog();
+    const config = parseSeasonConfig(
+      {
+        version: 3,
+        season: { ...season, topTarget: 99, endedEarly: { at: 'ontem' } },
+        next: { ...season, id: 'Com Espaço' },
+        lastClosed: { ...season, id: 'temporada-carnaval' },
+      },
+      log,
+    );
+    expect(config.season).toMatchObject({
+      id: 'temporada-sao-joao',
+      topTarget: 10,
+      endedEarly: null,
+    });
+    expect(config.next).toBeNull();
+    // A última fechada sem o closedAt também vira null.
+    expect(config.lastClosed).toBeNull();
+    expect(log.error).toHaveBeenCalledTimes(2);
   });
 
   it('temporada inválida vira sem temporada, com erro no log', () => {
@@ -255,8 +327,17 @@ describe('gravação estrita (callable do painel)', () => {
     [{ leaderTitle: 'x'.repeat(41) }, 'season.leaderTitle'],
     [{ endsAt: NOW }, 'season.endsAt'],
     [{ endsAt: NOW + 367 * DAY_MS }, 'season.endsAt'],
+    [{ topTarget: 0 }, 'season.topTarget'],
+    [{ topTarget: 51 }, 'season.topTarget'],
+    [{ topTarget: 2.5 }, 'season.topTarget'],
   ])('recusa a temporada com %j', (change, field) => {
     expect(fieldOf(() => validateSeasonInput({ ...season, ...change }))).toBe(field);
+  });
+
+  it('o topTarget é opcional, de 1 a 50; a próxima recusa com o campo next (bloco 8)', () => {
+    expect(validateSeasonInput({ ...season, topTarget: 50 }).topTarget).toBe(50);
+    expect('topTarget' in validateSeasonInput(season)).toBe(false);
+    expect(fieldOf(() => validateSeasonInput({ ...season, id: 'SJ' }, 'next'))).toBe('next.id');
   });
 });
 

@@ -100,6 +100,13 @@ export const NO_GAME: GameConfig = {
   seasonGoal: null,
 };
 
+/** O encerramento antes da hora (`endSeason`, bloco 8): o fim combinado, quando e quem. */
+export type EndedEarly = {
+  plannedEndsAt: number;
+  at: number;
+  by: { uid: string; name: string };
+};
+
 /** A temporada de config/season, com as datas em ms. */
 export type SeasonInfo = {
   id: string;
@@ -107,6 +114,10 @@ export type SeasonInfo = {
   startsAt: number;
   endsAt: number;
   leaderTitle: string | null;
+  /** O N do "top N" do card "Você" (bloco 8, 23.3), de 1 a 50; 10 sem o campo. */
+  topTarget: number;
+  /** Gravado pelo `endSeason`: o `endsAt` passou a ser o `at` (bloco 8). */
+  endedEarly: EndedEarly | null;
 };
 
 export type Subject = {
@@ -195,7 +206,10 @@ export type WalletState = {
   earnedTotal: number;
   spentTotal: number;
   days: Record<string, DayStats>;
+  /** Temporadas fechadas em que o fã pontuou no geral; só a virada soma (bloco 8, 23.3). */
   pastSeasons: number;
+  /** A última temporada que a virada contou para o fã (`stats.closedSeasonId`, bloco 8). */
+  closedSeasonId: string | null;
   activity: ActivityState;
   /** Missões concluídas na temporada `seasonId`; zera na troca de temporada (bloco 7). */
   seasonMissions: number;
@@ -217,6 +231,11 @@ export type CentralState = {
   seasonPoints: number;
   seasonPointsAt: number | null;
   totalPoints: number;
+  /**
+   * O fã é membro da central (bloco 8, decisão 3 de 23.1): entrar grava true e
+   * sair, false, na transação do vínculo. O ranking da central filtra por ele.
+   */
+  member: boolean;
 };
 
 /** Marcas de atividade de um pedido, calculadas pelo requireFan. */
@@ -243,6 +262,7 @@ export function emptyWallet(): WalletState {
     spentTotal: 0,
     days: {},
     pastSeasons: 0,
+    closedSeasonId: null,
     activity: { lastDay: null, lastWeek: null, lastMonth: null },
     seasonMissions: 0,
     goalReached: null,
@@ -260,6 +280,7 @@ export function emptyCentral(artistId: string): CentralState {
     seasonPoints: 0,
     seasonPointsAt: null,
     totalPoints: 0,
+    member: false,
   };
 }
 
@@ -312,9 +333,17 @@ export function weekEarned(days: Record<string, DayStats>, now: number): number 
   );
 }
 
-/** Temporadas em que o fã pontuou: as passadas e a dos pontos guardados, se tem ponto. */
-export function seasonsPlayed(wallet: Pick<WalletState, 'pastSeasons' | 'seasonPoints'>): number {
-  return wallet.pastSeasons + (wallet.seasonPoints > 0 ? 1 : 0);
+/**
+ * Temporadas em que o fã pontuou: as que a virada já contou (`pastSeasons`) e
+ * a dos pontos guardados, se tem ponto e a virada ainda não a contou
+ * (`closedSeasonId`). Conta certo antes da virada, entre a virada e a primeira
+ * ação na temporada nova e depois dela (bloco 8, decisão 8 de 23.1).
+ */
+export function seasonsPlayed(
+  wallet: Pick<WalletState, 'pastSeasons' | 'seasonPoints' | 'seasonId' | 'closedSeasonId'>,
+): number {
+  const current = wallet.seasonPoints > 0 && wallet.seasonId !== wallet.closedSeasonId ? 1 : 0;
+  return wallet.pastSeasons + current;
 }
 
 /** A temporada que está valendo agora (`startsAt <= now < endsAt`), ou null. */
@@ -562,6 +591,8 @@ export type ComputeOutput = {
   shard: ShardDelta | null;
   /** As recompensas de quem chama. */
   rewards: ActionRewards;
+  /** A temporada ativa no "agora" do cálculo, ou null (a central nova do `member`, bloco 8). */
+  activeSeasonId: string | null;
 };
 
 /** Cópia da carteira que dá para mudar sem tocar na lida (os dias, a atividade e as missões inclusive). */
@@ -588,12 +619,9 @@ export function trimDays(days: Record<string, DayStats>, day: string): Record<st
 
 function switchSeason<
   T extends { seasonId: string | null; seasonPoints: number; seasonPointsAt: number | null },
->(state: T, seasonId: string): { state: T; hadPoints: boolean } {
-  if (state.seasonId === seasonId) return { state, hadPoints: false };
-  return {
-    state: { ...state, seasonId, seasonPoints: 0, seasonPointsAt: null },
-    hadPoints: state.seasonPoints > 0,
-  };
+>(state: T, seasonId: string): { state: T } {
+  if (state.seasonId === seasonId) return { state };
+  return { state: { ...state, seasonId, seasonPoints: 0, seasonPointsAt: null } };
 }
 
 /**
@@ -656,10 +684,10 @@ export function computeAwards(input: ComputeInput): ComputeOutput {
     wallet.days = trimDays(wallet.days, day);
     if (season) {
       const switched = switchSeason(wallet, season.id);
-      // A troca de temporada zera também as missões concluídas nela (22.7).
+      // A troca de temporada zera também as missões concluídas nela (22.7). As
+      // temporadas do fã não somam aqui: quem conta é a virada (bloco 8, 23.7).
       if (switched.state !== wallet) switched.state.seasonMissions = 0;
       wallet = switched.state;
-      if (switched.hadPoints) wallet.pastSeasons += 1;
     }
     const seasonPointsBefore = wallet.seasonPoints;
 
@@ -910,5 +938,6 @@ export function computeAwards(input: ComputeInput): ComputeOutput {
     fans,
     shard: isEmptyShardDelta(shard) ? null : shard,
     rewards,
+    activeSeasonId: season?.id ?? null,
   };
 }

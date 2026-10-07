@@ -54,8 +54,9 @@ export async function followArtists({
 }
 
 /**
- * Centrais que o fã segue, com os pontos dele em cada uma (carrossel da 1b,
- * "Suas centrais" da 1e). Do servidor, sem posição até o bloco 8.
+ * Centrais que o fã segue, com os pontos e a posição dele em cada uma
+ * (carrossel da 1b, "Suas centrais" da 1e). Do servidor, com a posição do
+ * ranking da central desde o bloco 8.
  */
 export async function fetchFanCentrals(): Promise<FanCentral[]> {
   if (sourceOf('artists') === 'fixtures') {

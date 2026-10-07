@@ -1,7 +1,8 @@
-import { Timestamp } from 'firebase-admin/firestore';
+import type { Firestore, Transaction } from 'firebase-admin/firestore';
 
 import { levelsInUse, parseAchievementsConfig } from '../achievements/model';
 import { gamePanelError } from '../missions/errors';
+import { closeJobId, hasStarted, updateSeasonRefusal } from '../ranking/model';
 import { requestFields } from '../staff/model';
 import type { CallerAuth } from '../staff/service';
 import {
@@ -9,7 +10,10 @@ import {
   parsePointsConfig,
   parseSeasonConfig,
   pointsConfigRef,
+  seasonConfigFields,
   seasonConfigRef,
+  seasonDefDoc,
+  TOP_TARGET_DEFAULT,
   validatePointsConfigInput,
   validateSeasonInput,
   type SeasonInput,
@@ -20,7 +24,8 @@ import type { PointsConfig, SeasonInfo } from './model';
 // As callables da régua e da temporada (bloco 7, docs/arquitetura-api.md,
 // 22.8): `updatePointsConfig` (valores, limites, tetos do dia e níveis), com a
 // seção missions, e `updateSeason`, antecipado do bloco 8, com a seção
-// ranking. As telas são do bloco 11 (imagineup-admin).
+// ranking, mais estrito no bloco 8 (23.10). As telas são do bloco 11
+// (imagineup-admin).
 
 const POINTS_FIELDS = ['values', 'dailyLimits', 'levels', 'actionCaps'] as const;
 
@@ -91,24 +96,80 @@ export async function changePointsConfig(
   );
 }
 
-function seasonDoc(season: SeasonInput | SeasonInfo | null) {
-  if (!season) return null;
+const quiet = { warn: () => undefined, error: () => undefined };
+
+/**
+ * A temporada pedida pelo painel com o que ele não manda: o `topTarget` da
+ * temporada de agora (mesmo id) ou 10, e o `endedEarly` dela (bloco 8, 23.3).
+ */
+export function resolveSeason(input: SeasonInput, keep: SeasonInfo | null): SeasonInfo {
+  const same = keep && keep.id === input.id ? keep : null;
   return {
-    id: season.id,
-    name: season.name,
-    startsAt: Timestamp.fromMillis(season.startsAt),
-    endsAt: Timestamp.fromMillis(season.endsAt),
-    leaderTitle: season.leaderTitle,
+    id: input.id,
+    name: input.name,
+    startsAt: input.startsAt,
+    endsAt: input.endsAt,
+    leaderTitle: input.leaderTitle,
+    topTarget: input.topTarget ?? same?.topTarget ?? TOP_TARGET_DEFAULT,
+    endedEarly: same?.endedEarly ?? null,
   };
 }
 
+/** A temporada pedida (`field` no corpo), conferida, ou null; fora do formato, `invalid-request`. */
+export function seasonInputOf(input: Record<string, unknown>, field: string): SeasonInput | null {
+  if (!(field in input)) throw gamePanelError('invalid-request', { field });
+  if (input[field] === null) return null;
+  try {
+    return validateSeasonInput(input[field], field);
+  } catch (error) {
+    throw gamePanelError('invalid-request', {
+      field: (error as { field?: string }).field ?? field,
+    });
+  }
+}
+
+/** A virada da temporada `seasonId` está em andamento (o trabalho existe e não terminou)? */
+export async function seasonClosing(
+  tx: Transaction,
+  db: Firestore,
+  seasonId: string,
+): Promise<boolean> {
+  const job = await tx.get(db.collection('rankingJobs').doc(closeJobId(seasonId)));
+  return job.exists && job.get('status') !== 'done';
+}
+
 /**
- * updateSeason (seção 8 e 22.8): a temporada nova (datas em ms) ou null, que
- * encerra sem outra. O id de uma temporada que já começou não muda
- * (`season-id-locked`: nome, fim e título continuam editáveis; para trocar de
- * temporada, encerre e crie a outra), e o id novo não pode ter aparecido numa
- * versão antiga (`season-id-used`). A meta da temporada antiga some sozinha
- * (22.1, decisão 9). Auditoria `season.updated`.
+ * O id já foi usado (23.10): o da próxima ou o da atual (`taken`), um que
+ * apareceu como `season.id` numa versão antiga ou que tem `seasons/{id}` (uma
+ * temporada fechada). As carteiras guardam o id dos pontos: voltar a um id
+ * usado zeraria de novo quem já trocou de temporada.
+ */
+export async function seasonIdUsed(
+  tx: Transaction,
+  db: Firestore,
+  id: string,
+  taken: readonly (string | undefined)[],
+): Promise<boolean> {
+  if (taken.includes(id)) return true;
+  const [versions, archive] = await Promise.all([
+    tx.get(seasonConfigRef(db).collection('versions').where('season.id', '==', id).limit(1)),
+    tx.get(db.collection('seasons').doc(id)),
+  ]);
+  return !versions.empty || archive.exists;
+}
+
+/**
+ * updateSeason (seção 8, 22.8 e, no bloco 8, 23.10): mexe só na `season` de
+ * config/season (a próxima e a última fechada ficam). Recusas, nesta ordem:
+ * a virada em andamento (`season-closing`); na temporada começada, sair ou
+ * mudar o início (`season-started`), trocar o id (`season-id-locked`), mudar
+ * o fim da encerrada (`season-ended`), o fim no passado (`season-end-in-past`,
+ * para encerrar há o `endSeason`) e o fim depois do início da próxima
+ * (`season-overlap`); sem temporada ou com a atual ainda sem começar, ela é
+ * livre, mas não sai com a próxima cadastrada (`has-next`), o id novo não pode
+ * ter sido usado (`season-id-used`), o fim não pode ter passado e as datas não
+ * cruzam a última fechada nem a próxima. A meta da temporada antiga some
+ * sozinha (22.1, decisão 9). Auditoria `season.updated`.
  */
 export async function changeSeason(
   deps: ConfigPanelDeps,
@@ -117,17 +178,7 @@ export async function changeSeason(
 ): Promise<{ ok: true; version: number }> {
   const input = requestFields(data);
   const expectedVersion = expectedVersionOf(input);
-  if (!('season' in input)) throw gamePanelError('invalid-request', { field: 'season' });
-  let season: SeasonInput | null = null;
-  if (input.season !== null) {
-    try {
-      season = validateSeasonInput(input.season);
-    } catch (error) {
-      throw gamePanelError('invalid-request', {
-        field: (error as { field?: string }).field ?? 'season',
-      });
-    }
-  }
+  const requested = seasonInputOf(input, 'season');
   const ref = seasonConfigRef(deps.db);
   return runConfigChange(
     deps,
@@ -136,22 +187,26 @@ export async function changeSeason(
     ref,
     expectedVersion,
     async ({ tx, snap, now }) => {
-      const current = parseSeasonConfig(snap.data(), {
-        warn: () => undefined,
-        error: () => undefined,
-      }).season;
-      if (same(seasonDoc(current), seasonDoc(season))) return { doc: null };
-      if (season && current && season.id !== current.id) {
-        if (current.startsAt <= now) throw gamePanelError('season-id-locked');
+      const config = parseSeasonConfig(snap.data(), quiet);
+      const current = config.season;
+      const season = requested ? resolveSeason(requested, current) : null;
+      if (same(seasonDefDoc(current), seasonDefDoc(season))) return { doc: null };
+      if (current && (await seasonClosing(tx, deps.db, current.id))) {
+        throw gamePanelError('season-closing');
       }
-      if (season && season.id !== current?.id) {
-        const used = await tx.get(
-          ref.collection('versions').where('season.id', '==', season.id).limit(1),
-        );
-        if (!used.empty) throw gamePanelError('season-id-used');
-      }
+      const checkId = season !== null && season.id !== current?.id && !hasStarted(current, now);
+      const idUsed = checkId
+        ? await seasonIdUsed(tx, deps.db, season.id, [config.next?.id])
+        : false;
+      const refusal = updateSeasonRefusal(
+        { current, next: config.next, lastClosed: config.lastClosed },
+        season,
+        now,
+        idUsed,
+      );
+      if (refusal) throw gamePanelError(refusal);
       return {
-        doc: { season: seasonDoc(season) },
+        doc: seasonConfigFields({ season, next: config.next, lastClosed: config.lastClosed }),
         audit: {
           action: 'season.updated',
           details: { seasonId: season?.id ?? null, previousSeasonId: current?.id ?? null },

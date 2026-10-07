@@ -8,7 +8,7 @@ import {
 } from 'firebase-admin/firestore';
 import { getStorage } from 'firebase-admin/storage';
 import { setTimeout as sleep } from 'node:timers/promises';
-import { beforeAll, beforeEach } from 'vitest';
+import { afterAll, beforeAll, beforeEach } from 'vitest';
 
 import { createApiHandler, type ApiRequest } from '../src/api';
 import { EMULATOR_INVITE_KEY } from '../src/invites';
@@ -36,9 +36,64 @@ export type Emulators = {
 };
 
 /**
+ * Prazo da limpeza dos emuladores: as tarefas que um teste deixa na fila podem
+ * segurar travas do Firestore por mais de um minuto (ver `resetEmulators`).
+ */
+export const RESET_TIMEOUT_MS = 180_000;
+
+/**
+ * Apaga todos os documentos do Firestore e todas as contas do Auth do
+ * emulador, e confere que apagou. O emulador do Firestore recusa a limpeza
+ * inteira (409, "Transaction lock timeout", sem apagar nada) enquanto alguma
+ * transação segura uma trava, como as tarefas syncArtistFanCount que o seed do
+ * ranking deixa na fila (no emulador, uma por gravação, todas disputando as
+ * mesmas centrais). Sem conferir, o teste seguinte, e até o arquivo seguinte,
+ * rodava sobre os dados do anterior, e o resultado dependia da ordem dos
+ * arquivos. O 409 tenta de novo até o prazo; outro erro falha na hora.
+ */
+export async function resetEmulators(): Promise<void> {
+  const authHost = process.env.FIREBASE_AUTH_EMULATOR_HOST;
+  const firestoreHost = process.env.FIRESTORE_EMULATOR_HOST;
+  if (!authHost || !firestoreHost) throw new Error('Rode com npm run test:functions.');
+  const deadline = Date.now() + RESET_TIMEOUT_MS - 10_000;
+  await clearEmulator(
+    'o Firestore',
+    `http://${firestoreHost}/emulator/v1/projects/${PROJECT_ID}/databases/(default)/documents`,
+    deadline,
+  );
+  await clearEmulator(
+    'o Auth',
+    `http://${authHost}/emulator/v1/projects/${PROJECT_ID}/accounts`,
+    deadline,
+  );
+}
+
+async function clearEmulator(what: string, url: string, deadline: number): Promise<void> {
+  for (;;) {
+    const response = await fetch(url, { method: 'DELETE' });
+    if (response.ok) return;
+    const body = await response.text();
+    if (response.status !== 409 || Date.now() > deadline) {
+      throw new Error(`O emulador não limpou ${what}: ${response.status} ${body}`);
+    }
+    await sleep(250);
+  }
+}
+
+/**
+ * Limpa os emuladores antes de cada teste e no fim do arquivo. A do fim faz
+ * das tarefas que ficaram na fila tarefas sem efeito (a central já não existe)
+ * antes de o arquivo seguinte começar.
+ */
+export function useCleanEmulators(): void {
+  beforeEach(resetEmulators, RESET_TIMEOUT_MS);
+  afterAll(resetEmulators, RESET_TIMEOUT_MS);
+}
+
+/**
  * Liga o arquivo de teste aos emuladores: confere que as funções carregaram
  * (sem elas, os testes esperariam até o tempo esgotar) e limpa o Firestore e o
- * Auth antes de cada teste.
+ * Auth antes de cada teste e no fim do arquivo (`useCleanEmulators`).
  */
 export function useEmulators(name: string, functions: readonly string[]): Emulators {
   const app = initializeApp({ projectId: PROJECT_ID, storageBucket: BUCKET }, name);
@@ -62,18 +117,7 @@ export function useEmulators(name: string, functions: readonly string[]): Emulat
       );
     }
   });
-  beforeEach(async () => {
-    const authHost = process.env.FIREBASE_AUTH_EMULATOR_HOST;
-    const firestoreHost = process.env.FIRESTORE_EMULATOR_HOST;
-    if (!authHost || !firestoreHost) throw new Error('Rode com npm run test:functions.');
-    await fetch(
-      `http://${firestoreHost}/emulator/v1/projects/${PROJECT_ID}/databases/(default)/documents`,
-      { method: 'DELETE' },
-    );
-    await fetch(`http://${authHost}/emulator/v1/projects/${PROJECT_ID}/accounts`, {
-      method: 'DELETE',
-    });
-  });
+  useCleanEmulators();
   return {
     app,
     auth: getAuth(app),

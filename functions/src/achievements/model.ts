@@ -5,7 +5,8 @@ import { isVisibleLine } from '../visible-line';
 
 // Conquistas do bloco 7, puro: nada aqui lê ou grava o Firestore. O catálogo
 // (config/achievements, com a lista provisória como padrão do código), as
-// regras de desbloqueio (nível, primeira vez, ranking no bloco 8) e a montagem
+// regras de desbloqueio (nível e primeira vez aqui; a de posição no ranking,
+// no retrato semanal e na virada do bloco 8, ranking/jobs.ts) e a montagem
 // da 1e. Do núcleo de pontos, nada: o nível chega pronto (o número do degrau,
 // calculado por quem chama). docs/arquitetura-api.md, 22.6.
 
@@ -37,8 +38,13 @@ export const ACHIEVEMENTS_MAX = 100;
 /** Degraus da régua que uma conquista de nível pode pedir (o primeiro é o nível 1). */
 export const ACHIEVEMENT_LEVEL_MIN = 2;
 export const ACHIEVEMENT_LEVEL_MAX = 50;
-/** Posição no ranking (bloco 8). */
-export const ACHIEVEMENT_RANK_MAX = 1_000;
+/**
+ * Posição no ranking (bloco 8): até 200, o tamanho da página do retrato e da
+ * virada (`RANKING_JOB_PAGE`). Assim a conquista sai sempre da primeira página
+ * do geral, lida numa consulta só: as páginas seguintes do retrato são lidas
+ * em instantes diferentes, e as posições delas podem andar um pouco (23.5).
+ */
+export const ACHIEVEMENT_RANK_MAX = 200;
 /** As peças da linha de conquistas da 1e (`ACHIEVEMENT_SLOTS` do app). */
 export const ACHIEVEMENT_HIGHLIGHTS = 4;
 /** Desbloqueadas entre os destaques: as 3 mais novas, e depois as bloqueadas. */
@@ -63,8 +69,9 @@ type Seed = Pick<AchievementRecord, 'id' | 'title' | 'icon' | 'tone' | 'rule' | 
 
 /**
  * A lista provisória (22.6), até a cliente responder (UP-9): só regras que o
- * servidor sabe conferir hoje. Conta como publicada (cada `active` com
- * `activatedAt`), e o "Top 20" fica em rascunho até o ranking (bloco 8).
+ * servidor sabe conferir. Conta como publicada (cada `active` com
+ * `activatedAt`); o "Top 20" saiu do rascunho no bloco 8 (23.9), desbloqueado
+ * no retrato semanal e na virada.
  */
 const DEFAULT_LIST: readonly Seed[] = [
   {
@@ -145,7 +152,7 @@ const DEFAULT_LIST: readonly Seed[] = [
     icon: 'trophy',
     tone: 'points',
     rule: { type: 'rank', top: 20 },
-    status: 'draft',
+    status: 'active',
   },
 ];
 
@@ -418,7 +425,8 @@ export function unlockAchievements(input: {
       added.push(entry);
       announced.push(entry);
     }
-    // `rank`: só no bloco 8 (até lá nunca).
+    // `rank`: nunca na ação (a posição custaria três contagens): o retrato
+    // semanal e a virada do bloco 8 dão (ranking/jobs.ts, 23.9).
   }
   return { owned: added.length > 0 ? owned : { ...input.owned }, added, announced };
 }

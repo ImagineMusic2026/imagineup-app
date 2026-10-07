@@ -7,11 +7,7 @@ import { HttpsError, type FunctionsErrorCode } from 'firebase-functions/https';
  * dos de acesso do `readPanelActor`.
  */
 export type AchievementPanelErrorReason =
-  | 'too-many-achievements'
-  | 'achievement-not-found'
-  | 'achievement-locked'
-  | 'invalid-status'
-  | 'rule-not-available';
+  'too-many-achievements' | 'achievement-not-found' | 'achievement-locked' | 'invalid-status';
 
 const ERRORS: Record<AchievementPanelErrorReason, [FunctionsErrorCode, string]> = {
   'too-many-achievements': ['resource-exhausted', 'O catálogo chegou ao limite de conquistas.'],
@@ -21,10 +17,6 @@ const ERRORS: Record<AchievementPanelErrorReason, [FunctionsErrorCode, string]> 
     'A conquista já foi publicada: a regra não muda. Título, ícone e cor continuam editáveis.',
   ],
   'invalid-status': ['invalid-argument', 'Status inválido: publicar ou arquivar.'],
-  'rule-not-available': [
-    'failed-precondition',
-    'Essa regra ainda não vale: a conquista por posição no ranking chega com o ranking.',
-  ],
 };
 
 export function achievementPanelError(

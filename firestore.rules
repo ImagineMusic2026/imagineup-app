@@ -411,6 +411,26 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    // Resultado congelado das temporadas (bloco 8): o cabeçalho e a posição
+    // final de cada fã que pontuou, com o nome, a foto e a cidade da virada.
+    // Só o servidor grava (a virada e a exclusão de conta). A seção ranking
+    // lê (Ranking e temporadas). O fã não lê: o app recebe a temporada e o
+    // ranking pela API.
+    match /seasons/{seasonId} {
+      allow read: if canSeeSection('ranking');
+      allow write: if false;
+
+      match /standings/{uid} {
+        allow read: if canSeeSection('ranking');
+        allow write: if false;
+      }
+    }
+
+    // Andamento da virada e do retrato semanal: só o servidor.
+    match /rankingJobs/{jobId} {
+      allow read, write: if false;
+    }
+
     match /{document=**} {
       allow read, write: if false;
     }

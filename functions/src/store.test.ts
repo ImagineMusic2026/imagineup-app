@@ -11,7 +11,8 @@ import { createProfile, deleteUserData } from './store';
 // convidante excluído (20.10): o perfil sai sozinho antes de tudo, o código do
 // convite logo depois, os vínculos e o engajamento do mural (21.12) antes do
 // recursiveDelete, e os convidados
-// do fã são desligados depois. Nos emuladores, as entradas terminam antes da
+// do fã são desligados depois. A linha do fã no arquivo das temporadas (bloco
+// 8, 23.13) sai depois da carteira. Nos emuladores, as entradas terminam antes da
 // exclusão, e a ordem trocada passaria; aqui um Firestore falso anota cada
 // passo.
 vi.mock('./centrals/service', () => ({ leaveAllCentrals: vi.fn() }));
@@ -40,6 +41,12 @@ function fakeDb(steps: string[]): Firestore {
     },
     updateTime: 'lido',
   };
+  const season = (id: string) => ({
+    ref: {
+      collection: (name: string) => ({ doc: (uid: string) => doc(`seasons/${id}/${name}/${uid}`) }),
+    },
+  });
+  const seasons = [season('temporada-verao'), season('temporada-carnaval')];
   const collection = (name: string) => ({
     doc: (id: string) => doc(`${name}/${id}`),
     where: () => ({
@@ -47,9 +54,22 @@ function fakeDb(steps: string[]): Firestore {
         name === 'usernames' ? { docs: [reservation], empty: false, size: 1 } : empty,
       limit: () => ({ get: async () => empty }),
     }),
+    select: () => ({
+      get: async () =>
+        name === 'seasons' ? { docs: seasons, empty: false, size: seasons.length } : empty,
+    }),
   });
   return {
     collection,
+    batch: () => {
+      const deletes: string[] = [];
+      return {
+        delete: (ref: { path: string }) => deletes.push(ref.path),
+        commit: async () => {
+          steps.push(`batch ${deletes.join(', ')}`);
+        },
+      };
+    },
     recursiveDelete: async (ref: { path: string }) => {
       steps.push(`recursiveDelete ${ref.path}`);
     },
@@ -94,6 +114,7 @@ describe('exclusão de conta (deleteUserData)', () => {
       `delete referrals/${UID}`,
       `detachReferrals ${UID}`,
       `recursiveDelete wallets/${UID}`,
+      `batch seasons/temporada-verao/standings/${UID}, seasons/temporada-carnaval/standings/${UID}`,
       `delete staff/${UID}`,
     ]);
   });

@@ -218,27 +218,15 @@ export function artistDetailsView(
   };
 }
 
-/** Os pontos do fã numa central (`centralPoints/{id}`), como a API lê. */
-export type CentralPointsRecord = { seasonId: string | null; seasonPoints: number };
-
 /**
- * Pontos da temporada da configuração na central. Pontos guardados de outra
- * temporada (o documento ainda não trocou) mostram 0, como o `/me/wallet`.
+ * Uma central de "Suas centrais" (`GET /me/centrals`), com a posição do fã no
+ * ranking dela (bloco 8, 23.2), ou null.
  */
-export function visibleCentralSeasonPoints(
-  central: CentralPointsRecord | null,
-  seasonId: string | null,
-): number {
-  return central && seasonId !== null && central.seasonId === seasonId
-    ? safeCount(central.seasonPoints)
-    : 0;
-}
-
-/** Uma central de "Suas centrais" (`GET /me/centrals`). Posição só no bloco 8 (decisão 8). */
 export function fanCentralView(
   artist: ArtistRecord,
   joinedAt: number | null,
   seasonPoints: number,
+  fanRank: number | null = null,
 ): FanCentral {
   return {
     artistId: artist.id,
@@ -246,7 +234,7 @@ export function fanCentralView(
     shortName: artist.shortName,
     photoURL: artist.thumbUrl,
     fanCount: memberFanCount(artist.fanCount, artist.fanCountAt, joinedAt),
-    fanRank: null,
+    fanRank,
     seasonPoints,
   };
 }

@@ -80,7 +80,7 @@ describe('seguir centrais', () => {
     expect(client.getQueryState(artistKeys.list())?.isInvalidated).toBe(false);
   });
 
-  it('com pontos de entrada (o servidor), carteira e ranking buscam de novo; sem pontos, não', async () => {
+  it('o ranking busca de novo sempre (o fã entra no ranking das centrais com os pontos de lá); a carteira, só com pontos', async () => {
     client.setQueryData(['profile', 'wallet'], { balance: 0 });
     client.setQueryData(['ranking', 'season'], null);
     const onFollowed = jest.fn();
@@ -96,6 +96,8 @@ describe('seguir centrais', () => {
     act(() => result.current.follow(['nenho']));
     await waitFor(() => expect(onFollowed).toHaveBeenCalledTimes(1));
     expect(client.getQueryState(['profile', 'wallet'])?.isInvalidated).toBe(false);
+    expect(client.getQueryState(['ranking', 'season'])?.isInvalidated).toBe(true);
+    client.setQueryData(['ranking', 'season'], null);
 
     act(() => result.current.follow(['nenho', 'rocksalles']));
     await waitFor(() => expect(onFollowed).toHaveBeenCalledTimes(2));
@@ -178,6 +180,19 @@ describe('entrar na central', () => {
     await response.resolve({ artistId: 'rocksalles', pointsAwarded: 0 });
     await waitFor(() => expect(result.current.isPending).toBe(false));
     expect(member()).toBe(true);
+  });
+
+  it('entrar sem pontos (a entrada já paga) também faz o ranking buscar de novo; a carteira, não', async () => {
+    client.setQueryData(['profile', 'wallet'], { balance: 0 });
+    client.setQueryData(['ranking', 'season'], null);
+    const response = holdJoin();
+    const { result } = renderHook(() => useJoinCentralMutation('rocksalles'), { wrapper });
+    act(() => result.current.join());
+    await waitFor(() => expect(joinCentral).toHaveBeenCalled());
+    await response.resolve({ artistId: 'rocksalles', pointsAwarded: 0 });
+    await waitFor(() => expect(result.current.isPending).toBe(false));
+    expect(client.getQueryState(['ranking', 'season'])?.isInvalidated).toBe(true);
+    expect(client.getQueryState(['profile', 'wallet'])?.isInvalidated).toBe(false);
   });
 
   it('os pontos da resposta viram o "+N"; saldo, ranking e o mural da home buscam de novo', async () => {
@@ -383,9 +398,9 @@ describe('sair da central', () => {
     expect(client.getQueryState(['posts', 'feed'])?.isInvalidated).toBe(true);
     // A missão de entrar nesta central, escondida de quem é membro, volta (1g, 1d).
     expect(client.getQueryState(['missions', 'list'])?.isInvalidated).toBe(true);
-    // Sair não muda ponto: carteira e ranking ficam.
+    // Sair não muda ponto (a carteira fica), mas tira o fã do ranking da central (bloco 8).
     expect(client.getQueryState(['profile', 'wallet'])?.isInvalidated).toBe(false);
-    expect(client.getQueryState(['ranking', 'season'])?.isInvalidated).toBe(false);
+    expect(client.getQueryState(['ranking', 'season'])?.isInvalidated).toBe(true);
   });
 
   it('no erro, tudo fica como estava, e o erro chega à sheet', async () => {

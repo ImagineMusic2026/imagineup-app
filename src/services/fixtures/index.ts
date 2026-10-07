@@ -137,6 +137,37 @@ export function earnFixturePoints(points: number): number {
   return points;
 }
 
+/** As centrais de que o fã de exemplo (a Camila do protótipo) é membro no começo. */
+const INITIAL_MEMBERSHIP: readonly string[] = ['nettobrito', 'nenho', 'juninhomoraes'];
+
+let members = new Set<string>(INITIAL_MEMBERSHIP);
+
+/**
+ * De quais centrais o fã de exemplo é membro, para o ranking de exemplo de
+ * cada central, que é só de membros, como o do servidor (bloco 8): quem sai
+ * de uma central sai do ranking dela. O `followFixture` das centrais atualiza
+ * ao entrar, seguir e sair; o ranking lê daqui, sem importar as centrais (o
+ * `artists/fixtures.ts` já importa o ranking, e o contrário fecharia um ciclo).
+ */
+export const fixtureMembership = {
+  isMember(artistId: string): boolean {
+    return members.has(artistId);
+  },
+
+  join(artistId: string): void {
+    members.add(artistId);
+  },
+
+  leave(artistId: string): void {
+    members.delete(artistId);
+  },
+
+  /** Volta ao início (fim da sessão e testes). */
+  reset(): void {
+    members = new Set(INITIAL_MEMBERSHIP);
+  },
+};
+
 // O `reset` do estado em memória de cada domínio (presenças, resgates,
 // centrais seguidas, missões).
 const sessionResets = new Set<() => void>();
@@ -155,5 +186,6 @@ export function onFixtureSessionEnd(reset: () => void): void {
 /** Volta a carteira e o estado de cada domínio ao início (fim da sessão). */
 export function resetFixtureSession(): void {
   fixtureWallet.reset();
+  fixtureMembership.reset();
   for (const reset of sessionResets) reset();
 }

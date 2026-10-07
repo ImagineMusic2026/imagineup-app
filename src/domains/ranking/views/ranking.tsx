@@ -33,7 +33,6 @@ import { EmptyState } from '@/components/empty-state';
 import { LargeTitleHeader } from '@/components/header';
 import { PageGlow } from '@/components/page-glow';
 import { Screen } from '@/components/screen';
-import { useFanCentralsQuery } from '@/domains/artists';
 import { useFanIdentity } from '@/domains/profile';
 import { useAnnounceWhen } from '@/hooks/use-announce-when';
 import { useNow } from '@/hooks/use-now';
@@ -43,18 +42,17 @@ import { t } from '@/i18n';
 import { colors, motion, spacing } from '@/theme';
 
 import type { RankingSelf } from '../components/entry-avatar';
-import { ExampleNotice } from '../components/example-notice';
 import { MyRankCard } from '../components/my-rank-card';
 import { Podium } from '../components/podium';
 import { RankingRow } from '../components/ranking-row';
 import { RankingScopeChips } from '../components/ranking-scope-chips';
 import { RankingSkeleton } from '../components/ranking-skeleton';
 import { SeasonLine } from '../components/season-line';
-import { isSeasonOver } from '../describe-rank';
 import { useRankingRefresh } from '../hooks/use-ranking-refresh';
 import { useRankingScope } from '../hooks/use-ranking-scope';
+import { useSeasonOver } from '../hooks/use-season-over';
 import { useLeaderboardInfiniteQuery, useMyRankQuery, useSeasonQuery } from '../queries';
-import { artistIdOf, scopeKey, type ScopeKey } from '../scope';
+import { scopeKey, type ScopeKey } from '../scope';
 import type { LeaderboardEntry, LeaderboardPage } from '../types';
 
 // O título até a linha de chips é 15 no protótipo, contado até o chip
@@ -65,6 +63,12 @@ const CHIPS_OVERLAP = spacing.blockGap - spacing.titleToChips + CHIP_SLACK;
 const SEASON_TOP = spacing.lg - CHIP_SLACK;
 // Altura do card "Você" até ele medir a dele (60 no protótipo).
 const CARD_HEIGHT_ESTIMATE = 60;
+/**
+ * Até onde o toque no card "Você" busca a linha do fã: a posição 200 (10
+ * páginas de 20). Abaixo disso, o card só informa: um fã em 5.000º pediria
+ * 250 páginas (bloco 8, 23.14).
+ */
+export const RANK_SEEK_MAX = 200;
 
 /** Onde fica a linha (ou o pódio) do fã, no conteúdo da lista. */
 interface Box {
@@ -103,11 +107,13 @@ type ListState = 'loading' | 'error' | 'empty' | 'none';
 function ListPlaceholder({
   state,
   hasSeason,
+  seasonOver,
   retrying,
   onRetry,
 }: {
   state: ListState;
   hasSeason: boolean;
+  seasonOver: boolean;
   retrying: boolean;
   onRetry: () => void;
 }) {
@@ -125,6 +131,9 @@ function ListPlaceholder({
       );
     case 'empty':
       // Sem ninguém no ranking, o caminho para pontuar são as missões (1g).
+      // Na temporada encerrada, o resultado já fechou: nada de "ainda" nem de
+      // convite a pontuar (sem temporada em andamento, missão não rende nela).
+      if (hasSeason && seasonOver) return <EmptyState message={t('ranking.emptyEnded')} />;
       return hasSeason ? (
         <EmptyState
           message={t('ranking.empty')}
@@ -149,9 +158,13 @@ function ListPlaceholder({
  * O recorte vem do parâmetro `?artista=<id>`, que o chip muda: o link a frio
  * `/ranking?artista=<id>` já abre com o chip da central escolhido (o "Ver
  * ranking" da página do artista, 1d, escolhe a aba interna de lá, proposta
- * padrão da pergunta 7.1.6). Posições, pontos e metas vêm da API; os pontos são os da
- * temporada. Missões (1g) e Resgatar (1h) moram na pilha desta aba, e o fã
- * chega a elas pelo "+" do meio da tab bar.
+ * padrão da pergunta 7.1.6). Posições, pontos, metas e a seta da semana vêm
+ * da API (bloco 8); os pontos são os da temporada. Na temporada encerrada, a
+ * lista é o resultado congelado, sem setas, e o card diz "Terminou em 12º";
+ * quando o `endsAt` passa com a tela aberta, as setas somem na hora e o
+ * ranking busca de novo (`useSeasonOver`).
+ * Missões (1g) e Resgatar (1h) moram na pilha desta aba, e o fã chega a elas
+ * pelo "+" do meio da tab bar.
  */
 export function RankingScreen() {
   const bottomInset = useTabBarInset();
@@ -164,7 +177,6 @@ export function RankingScreen() {
   const season = useSeasonQuery();
   const board = useLeaderboardInfiniteQuery(scope);
   const myRank = useMyRankQuery(scope);
-  const centrals = useFanCentralsQuery();
   const { refreshing, refresh } = useRankingRefresh(scope);
   const listRef = useRef<FlashListRef<LeaderboardEntry>>(null);
   // A linha (ou a coluna do pódio) do próprio fã, para o foco do leitor de tela.
@@ -183,19 +195,6 @@ export function RankingScreen() {
   const [meSeen, setMeSeen] = useState({ key, visible: false });
 
   const entries = entriesOf(board.data);
-  // Ranking de exemplo ao lado de dado de verdade: o aviso abaixo da temporada.
-  const example = board.data?.pages[0]?.example === true;
-  // No recorte de central de exemplo, o fã fica sem posição, e o card mostra
-  // os pontos de verdade dele na central (os mesmos de "Suas centrais").
-  const scopeArtistId = artistIdOf(scope);
-  const myRankShown =
-    myRank.data?.example && scopeArtistId !== undefined
-      ? {
-          ...myRank.data,
-          points:
-            centrals.data?.find((central) => central.artistId === scopeArtistId)?.seasonPoints ?? 0,
-        }
-      : myRank.data;
   const podium = entries.filter((entry) => entry.position <= 3);
   const rows = listRowsOf(entries);
   const loaded = board.data !== undefined;
@@ -206,7 +205,8 @@ export function RankingScreen() {
       : entries.length === 0
         ? 'empty'
         : 'none';
-  const seasonOver = season.data ? isSeasonOver(season.data, now) : false;
+  // Acabou com a tela aberta: o ranking busca de novo (sem setas, encerrado).
+  const seasonOver = useSeasonOver(season.data, now);
   const hasSeason = season.data !== null;
   const self: RankingSelf = {
     id: identity.uid ?? 'me',
@@ -221,7 +221,9 @@ export function RankingScreen() {
   if (meSeen.key !== key) setMeSeen({ key, visible: false });
   const meInView = meSeen.key === key && meSeen.visible;
   const cardVisible = hasSeason && (myRank.data ? !meInView : myRank.isPending);
-  const hasPosition = myRank.data?.position !== null && myRank.data?.position !== undefined;
+  const myPosition = myRank.data?.position ?? null;
+  // Rola até a linha do fã só até a posição 200; abaixo, o card só informa.
+  const canSeekMe = myPosition !== null && myPosition <= RANK_SEEK_MAX;
 
   // Troca de chip: as linhas somem na hora e voltam em fade quando o recorte
   // novo chega (na hora, se ele já estava no cache). O pódio sobe de novo
@@ -415,7 +417,6 @@ export function RankingScreen() {
       {season.isError && season.data === undefined ? null : (
         <SeasonLine season={season.data} now={now} style={[styles.gutter, styles.season]} />
       )}
-      {example ? <ExampleNotice style={[styles.gutter, styles.notice]} /> : null}
       {/* O puxar para atualizar acontece aqui no topo: a falha aparece onde o fã puxou. */}
       {loaded && board.isRefetchError ? (
         <EmptyState
@@ -445,6 +446,7 @@ export function RankingScreen() {
       <RankingRow
         entry={item}
         self={self}
+        seasonOver={seasonOver}
         ref={item.isMe && target === 'Cell' ? meRef : undefined}
         testID={target === 'Cell' ? `ranking-row-${item.position}` : undefined}
       />
@@ -474,12 +476,13 @@ export function RankingScreen() {
         keyExtractor={(entry) => `${key}:${entry.userId}`}
         getItemType={(entry) => (entry.isMe ? 'me' : 'row')}
         renderItem={renderItem}
-        extraData={self}
+        extraData={{ self, seasonOver }}
         ListHeaderComponent={header}
         ListEmptyComponent={
           <ListPlaceholder
             state={listState}
             hasSeason={hasSeason}
+            seasonOver={seasonOver}
             retrying={board.isFetching}
             onRetry={() => void retry()}
           />
@@ -503,12 +506,12 @@ export function RankingScreen() {
       />
       {hasSeason ? (
         <MyRankCard
-          myRank={myRankShown}
+          myRank={myRank.data}
           seasonOver={seasonOver}
           self={self}
           visible={cardVisible}
           // Só com a lista na tela há para onde rolar; carregando ou com erro, o card só informa.
-          onPress={hasPosition && listState === 'none' ? () => void goToMe() : undefined}
+          onPress={canSeekMe && listState === 'none' ? () => void goToMe() : undefined}
           busy={seeking === key}
           screenFocused={focused}
           accessibilityHint={t(meOnPodium ? 'ranking.me.podiumHint' : 'ranking.me.hint')}
@@ -536,9 +539,6 @@ const styles = StyleSheet.create({
   },
   season: {
     marginTop: SEASON_TOP,
-  },
-  notice: {
-    marginTop: spacing.xs,
   },
   // 18 da temporada ao pódio e 8 do pódio à primeira linha.
   podium: {

@@ -1,22 +1,28 @@
-import type { Firestore, Transaction } from 'firebase-admin/firestore';
+import { Timestamp, type Firestore, type Transaction } from 'firebase-admin/firestore';
 import { describe, expect, it } from 'vitest';
 
 import { missionIndex, type MissionRecord, type MissionTick } from '../missions/model';
 import {
   addDailyCount,
   addInviteCounts,
+  applyAwards,
+  centralFromDoc,
   mergeFanAwards,
   missionsToRead,
   planAwards,
   rewardsOf,
+  setCentralMember,
+  walletFromDoc,
   type AwardPlan,
   type FanContext,
 } from './award';
 import { DEFAULT_POINTS_CONFIG } from './config';
 import {
+  emptyCentral,
   emptyRewards,
   emptyWallet,
   type AwardEntry,
+  type CentralState,
   type GameConfig,
   type WalletState,
 } from './model';
@@ -117,6 +123,8 @@ describe('contador do dia sem ponto (addDailyCount)', () => {
       shardIndex: 0,
       caller: fan,
       rewards: emptyRewards(),
+      activeSeasonId: null,
+      centralsRead: new Map(),
     };
   }
 
@@ -406,5 +414,144 @@ describe('missões no planAwards (bloco 7)', () => {
     expect(
       missionsToRead({ uid: 'x', entries: [], ticks }, game, NOW).map((item) => item.mission.id),
     ).toEqual(['m-curtir-nenho', 'm-curtir-nenho-2']);
+  });
+});
+
+describe('membro da central no plano (setCentralMember, bloco 8)', () => {
+  const NOW = Date.parse('2026-10-05T15:00:00.000Z');
+
+  function plan(
+    centrals: AwardPlan['fans'][number]['centrals'] = [],
+    read: Map<string, CentralState> = new Map(),
+  ): AwardPlan {
+    return {
+      day: '2026-10-05',
+      results: [],
+      pointsAwarded: 0,
+      fans: [{ uid: 'uid-a', wallet: null, ledger: [], centrals }],
+      shard: null,
+      now: NOW,
+      shardIndex: 0,
+      caller: null,
+      rewards: emptyRewards(),
+      activeSeasonId: 'temporada-sao-joao',
+      centralsRead: new Map([['uid-a', read]]),
+    };
+  }
+
+  const stored = (extra: Partial<CentralState> = {}): CentralState => ({
+    ...emptyCentral('nenho'),
+    exists: true,
+    seasonId: 'temporada-sao-joao',
+    seasonPoints: 2_980,
+    seasonPointsAt: NOW - 1_000,
+    totalPoints: 2_980,
+    ...extra,
+  });
+
+  it('sem o documento, nasce zerado com a temporada ativa', () => {
+    const result = plan();
+    setCentralMember(result, 'uid-a', 'nenho', true);
+    expect(result.fans[0]!.centrals).toEqual([
+      {
+        create: true,
+        state: {
+          ...emptyCentral('nenho'),
+          exists: true,
+          seasonId: 'temporada-sao-joao',
+          member: true,
+        },
+      },
+    ]);
+  });
+
+  it('o lido pelo plano muda só o member, com os pontos que já tinha', () => {
+    const result = plan([], new Map([['nenho', stored()]]));
+    setCentralMember(result, 'uid-a', 'nenho', true);
+    expect(result.fans[0]!.centrals).toEqual([
+      { create: false, state: { ...stored(), member: true } },
+    ]);
+  });
+
+  it('a central que um lançamento já mexe sai numa gravação só, com o member', () => {
+    const touched = { create: false, state: { ...stored(), seasonPoints: 2_990 } };
+    const result = plan([touched]);
+    setCentralMember(result, 'uid-a', 'nenho', true);
+    expect(result.fans[0]!.centrals).toEqual([
+      { create: false, state: { ...stored(), seasonPoints: 2_990, member: true } },
+    ]);
+  });
+
+  it('a lida pela rota (a saída) grava false; o mesmo valor não grava nada', () => {
+    const result = plan();
+    setCentralMember(result, 'uid-a', 'nenho', false, stored({ member: true }));
+    expect(result.fans[0]!.centrals).toEqual([{ create: false, state: stored({ member: false }) }]);
+    const same = plan();
+    setCentralMember(same, 'uid-a', 'nenho', false, stored({ member: false }));
+    expect(same.fans[0]!.centrals).toEqual([]);
+  });
+
+  it('fã fora do plano é erro de programação', () => {
+    expect(() => setCentralMember(plan(), 'uid-b', 'nenho', true)).toThrow(/não está no plano/);
+  });
+});
+
+describe('leitura e gravação dos campos do bloco 8', () => {
+  const NOW = Date.parse('2026-10-05T15:00:00.000Z');
+
+  it('a carteira lê as temporadas fechadas e a última contada; a central lê o member', () => {
+    expect(
+      walletFromDoc({ stats: { pastSeasons: 2, closedSeasonId: 'temporada-carnaval' } }),
+    ).toMatchObject({ pastSeasons: 2, closedSeasonId: 'temporada-carnaval' });
+    expect(walletFromDoc({ stats: { pastSeasons: 2 } }).closedSeasonId).toBeNull();
+    expect(centralFromDoc('nenho', { member: true }).member).toBe(true);
+    expect(centralFromDoc('nenho', { member: 'sim' }).member).toBe(false);
+    expect(centralFromDoc('nenho', {}).member).toBe(false);
+  });
+
+  it('o núcleo cria as temporadas zeradas e nunca mais grava o stats; a central leva o member', () => {
+    const writes: { op: string; path: string; data: Record<string, unknown> }[] = [];
+    const ref = (path: string): unknown => ({
+      path,
+      collection: (name: string) => ({ doc: (id: string) => ref(`${path}/${name}/${id}`) }),
+    });
+    const db = { collection: (name: string) => ({ doc: (id: string) => ref(`${name}/${id}`) }) };
+    const tx = {
+      create: (r: { path: string }, data: Record<string, unknown>) =>
+        writes.push({ op: 'create', path: r.path, data }),
+      update: (r: { path: string }, data: Record<string, unknown>) =>
+        writes.push({ op: 'update', path: r.path, data }),
+      set: () => undefined,
+    };
+    const state = { ...emptyWallet(), exists: true, pastSeasons: 3, closedSeasonId: 'carnaval' };
+    const central: CentralState = { ...emptyCentral('nenho'), exists: true, member: true };
+    const plan: AwardPlan = {
+      day: '2026-10-05',
+      results: [],
+      pointsAwarded: 0,
+      fans: [
+        {
+          uid: 'uid-a',
+          wallet: { create: false, state },
+          ledger: [],
+          centrals: [{ create: false, state: central }],
+        },
+        { uid: 'uid-b', wallet: { create: true, state }, ledger: [], centrals: [] },
+      ],
+      shard: null,
+      now: NOW,
+      shardIndex: 0,
+      caller: null,
+      rewards: emptyRewards(),
+      activeSeasonId: null,
+      centralsRead: new Map(),
+    };
+    applyAwards(tx as unknown as Transaction, db as unknown as Firestore, plan);
+    const update = writes.find((w) => w.op === 'update' && w.path === 'wallets/uid-a')!;
+    expect(Object.keys(update.data).some((key) => key.startsWith('stats'))).toBe(false);
+    const create = writes.find((w) => w.op === 'create' && w.path === 'wallets/uid-b')!;
+    expect(create.data.stats).toEqual({ pastSeasons: 0, closedSeasonId: null });
+    const centralWrite = writes.find((w) => w.path === 'wallets/uid-a/centralPoints/nenho')!;
+    expect(centralWrite.data).toMatchObject({ member: true, updatedAt: Timestamp.fromMillis(NOW) });
   });
 });

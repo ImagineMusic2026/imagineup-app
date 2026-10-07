@@ -224,3 +224,31 @@ describe('rotas das missões e das conquistas (bloco 7)', () => {
     }
   });
 });
+
+describe('rotas do ranking (bloco 8)', () => {
+  it('/ranking/season e /ranking não se confundem; /me/rank convive com as rotas de me', () => {
+    expect(matchRoute(API_ROUTES, 'GET', '/ranking/season')).toMatchObject({
+      kind: 'match',
+      route: { pattern: '/ranking/season' },
+    });
+    expect(matchRoute(API_ROUTES, 'GET', '/ranking')).toMatchObject({
+      kind: 'match',
+      route: { pattern: '/ranking' },
+    });
+    expect(matchRoute(API_ROUTES, 'GET', '/me/rank')).toMatchObject({
+      kind: 'match',
+      route: { pattern: '/me/rank' },
+    });
+  });
+
+  it('as três só leem: POST /ranking e PUT /me/rank são 405 com GET', () => {
+    expect(matchRoute(API_ROUTES, 'POST', '/ranking')).toEqual({
+      kind: 'method_not_allowed',
+      allow: ['GET'],
+    });
+    expect(matchRoute(API_ROUTES, 'PUT', '/me/rank')).toEqual({
+      kind: 'method_not_allowed',
+      allow: ['GET'],
+    });
+  });
+});

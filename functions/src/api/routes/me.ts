@@ -50,9 +50,9 @@ export const meRoutes: ReadRoute[] = [
     method: 'GET',
     pattern: '/me/wallet',
     writes: false,
-    async handle({ uid, deps }): Promise<Wallet> {
+    async handle({ uid, now, deps }): Promise<Wallet> {
       const [wallet, config] = await Promise.all([readWallet(deps.db, uid), deps.config.get()]);
-      return walletView(wallet, config);
+      return walletView(wallet, config, now);
     },
   },
   {

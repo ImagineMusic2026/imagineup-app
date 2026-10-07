@@ -12,15 +12,18 @@ import {
 import * as logger from 'firebase-functions/logger';
 
 import type { Artist, ArtistDetails, FanCentral } from '../api/contract';
+import type { SeasonConfig } from '../points/config';
 import {
   addDailyCount,
   addMembershipCounts,
   applyAwards,
+  centralFromDoc,
   centralPointsRef,
   planAwards,
   requireFan,
   retryOnAlreadyExists,
   runContext,
+  setCentralMember,
   walletRef,
   type AwardContext,
   type AwardPlan,
@@ -28,6 +31,8 @@ import {
   type RunOptions,
 } from '../points/award';
 import { dayKey, nextDayStart, type AwardEntry } from '../points/model';
+import { shownPoints, shownSeason } from '../ranking/model';
+import { archivedCentralRanks, liveCentralRank } from '../ranking/service';
 import {
   artistDetailsView,
   artistRecord,
@@ -45,7 +50,6 @@ import {
   shouldCopyFanCount,
   sortFanCentrals,
   sumFanShards,
-  visibleCentralSeasonPoints,
   type ArtistRecord,
   type JoinVia,
 } from './model';
@@ -156,7 +160,11 @@ export type JoinOutcome = {
  * 3. planAwards com um central_join por nova (uma vez na vida por central) e
  *    uma unidade `join` de missão por nova (bloco 7, 22.4);
  * 4. vínculo, +1 num shard do fanCount e `joined` no shard do painel de cada
- *    nova, e +1 no `central_entry` do dia na carteira do fã.
+ *    nova, e +1 no `central_entry` do dia na carteira do fã;
+ * 5. `member: true` no `centralPoints` de cada nova (bloco 8, 23.7), a partir
+ *    do que o planAwards já leu para o central_join (sem o documento, ele
+ *    nasce zerado): o fã entra no ranking da central com os pontos que já
+ *    tinha nela.
  * O runIdempotent (ou o runJoinCentrals) grava o plano depois.
  */
 export async function joinCentrals(
@@ -223,6 +231,7 @@ export async function joinCentrals(
     joined.map((artistId) => ({ artistId, kind: 'joined' as const })),
   );
   if (countsEntry) addDailyCount(plan, fan, 'central_entry');
+  for (const id of joined) setCentralMember(plan, fan.uid, id, true);
   return { plan, joined };
 }
 
@@ -288,11 +297,14 @@ export function followedAfter(read: FollowRead, joined: readonly string[], now: 
 }
 
 /**
- * Saída da central (`DELETE /me/centrals/:artistId`): lê o vínculo, planeja
- * sem lançamentos (só a atividade de quem chama) e, com vínculo, apaga, tira
- * 1 de um shard do fanCount e soma `left` no shard do painel. Sem vínculo,
- * nada. Não mexe em ponto: sair não tira os pontos, e entrar de novo não paga
- * a entrada outra vez. Vale em qualquer status da central.
+ * Saída da central (`DELETE /me/centrals/:artistId`): lê o vínculo e os pontos
+ * do fã na central, planeja sem lançamentos (só a atividade de quem chama) e,
+ * com vínculo, apaga, tira 1 de um shard do fanCount, soma `left` no shard do
+ * painel e grava `member: false` no `centralPoints` (bloco 8, 23.7: o fã sai
+ * do ranking da central; sem o documento, nada, porque ele nunca pontuou
+ * nela). Sem vínculo, nada. Não mexe em ponto: sair não tira os pontos, e
+ * entrar de novo não paga a entrada outra vez. Vale em qualquer status da
+ * central.
  */
 export async function leaveCentral(
   tx: Transaction,
@@ -301,12 +313,15 @@ export async function leaveCentral(
 ): Promise<{ plan: AwardPlan; left: boolean }> {
   const { fan, award, artistId } = options;
   const ref = membershipRef(db, fan.uid, artistId);
-  const membership = await tx.get(ref);
+  const [membership, points] = await tx.getAll(ref, centralPointsRef(db, fan.uid, artistId));
   const plan = await planAwards(tx, db, [{ uid: fan.uid, fan, entries: [] }], award);
-  if (!membership.exists) return { plan, left: false };
+  if (!membership!.exists) return { plan, left: false };
   tx.delete(ref);
   bumpFanShard(tx, db, artistId, fanShardOf(award.shard), -1, Timestamp.fromMillis(award.now));
   addMembershipCounts(plan, [{ artistId, kind: 'left' }]);
+  if (points!.exists) {
+    setCentralMember(plan, fan.uid, artistId, false, centralFromDoc(artistId, points!.data()));
+  }
   return { plan, left: true };
 }
 
@@ -472,42 +487,62 @@ export async function readArtistDetails(
 
 /**
  * "Suas centrais" (`GET /me/centrals`): os vínculos do fã e, num getAll, a
- * central e os pontos dele em cada uma. Central que não existe ou não está
- * publicada fica de fora (o vínculo continua e volta quando ela voltar ao ar).
+ * central e os pontos dele em cada uma, os da temporada mostrada (bloco 8,
+ * decisão 4 de 23.1). Central que não existe ou não está publicada fica de
+ * fora (o vínculo continua e volta quando ela voltar ao ar). A posição
+ * (`fanRank`, 23.2) é a do `/me/rank` da central: ao vivo, a mesma conta
+ * (`liveCentralRank`), só onde o fã é membro e pontuou; na temporada fechada,
+ * a linha dele no arquivo (uma leitura para todas).
  */
 export async function readFanCentrals(
   db: Firestore,
   uid: string,
-  seasonId: string | null,
+  config: SeasonConfig,
+  now: number,
 ): Promise<FanCentral[]> {
   const list = await membershipsRef(db, uid).limit(CENTRALS_MAX).get();
   if (list.empty) return [];
+  const shown = shownSeason(config, now);
   const memberships = list.docs.map(membershipOf);
-  const snaps = await db.getAll(
-    ...memberships.map(({ artistId }) => artistRef(db, artistId)),
-    ...memberships.map(({ artistId }) => centralPointsRef(db, uid, artistId)),
-  );
-  const items = memberships.flatMap((membership, index) => {
+  const [snaps, archived] = await Promise.all([
+    db.getAll(
+      ...memberships.map(({ artistId }) => artistRef(db, artistId)),
+      ...memberships.map(({ artistId }) => centralPointsRef(db, uid, artistId)),
+    ),
+    shown?.source === 'archive'
+      ? archivedCentralRanks(db, uid, shown.season.id)
+      : Promise.resolve(new Map<string, number>()),
+  ]);
+  const visible = memberships.flatMap((membership, index) => {
     const artist = recordOf(snaps[index]);
     if (!isPublished(artist)) return [];
     const points = snaps[memberships.length + index]!;
-    const seasonPoints = visibleCentralSeasonPoints(
-      points.exists
-        ? {
+    const seasonPoints = points.exists
+      ? shownPoints(
+          {
             seasonId: typeof points.get('seasonId') === 'string' ? points.get('seasonId') : null,
             seasonPoints: safeCount(points.get('seasonPoints')),
-          }
-        : null,
-      seasonId,
-    );
-    return [
-      {
-        ...membership,
-        order: artist.order,
-        view: fanCentralView(artist, membership.joinedAt, seasonPoints),
-      },
-    ];
+          },
+          shown,
+        )
+      : 0;
+    const member = points.exists && points.get('member') === true;
+    return [{ membership, artist, seasonPoints, member }];
   });
+  const ranks = await Promise.all(
+    visible.map(({ membership, seasonPoints, member }) => {
+      if (!shown) return null;
+      if (shown.source === 'archive') return archived.get(membership.artistId) ?? null;
+      return member && seasonPoints > 0
+        ? liveCentralRank(db, uid, shown, membership.artistId)
+        : null;
+    }),
+  );
+  const items = visible.map(({ membership, artist, seasonPoints }, index) => ({
+    ...membership,
+    order: artist.order,
+    view: fanCentralView(artist, membership.joinedAt, seasonPoints, ranks[index] ?? null),
+  }));
   return sortFanCentrals(items).map((item) => item.view);
 }
 

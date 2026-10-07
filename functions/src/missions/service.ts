@@ -149,7 +149,7 @@ export async function readMissions(
       goal: config.missions.seasonGoal,
       season,
       seasonMissions: season && wallet.seasonId === season.id ? wallet.seasonMissions : 0,
-      seasonPoints: visibleSeasonPoints(wallet, config),
+      seasonPoints: visibleSeasonPoints(wallet, config, now),
       goalReachedSeasonId: wallet.goalReached?.seasonId ?? null,
     }),
     missions,

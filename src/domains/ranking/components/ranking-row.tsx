@@ -30,6 +30,11 @@ const CHANGE_ICON_STROKE = 2.4;
 export interface RankingRowProps {
   entry: LeaderboardEntry;
   self: RankingSelf;
+  /**
+   * A temporada já acabou pelo relógio: a seta some na hora (o resultado
+   * congelado não tem seta), também antes de o servidor responder e sem rede.
+   */
+  seasonOver?: boolean;
   /** A linha do próprio fã (o card "Você" leva o foco até ela). */
   ref?: Ref<View>;
   style?: StyleProp<ViewStyle>;
@@ -67,7 +72,15 @@ function RankChange({ change }: { change: number }) {
  * fã informou, pontos da temporada e a variação. Um elemento só para o leitor, e não tocável: não existe perfil
  * público de outro fã. A linha do próprio fã diz "Você" e ganha um fundo rosa.
  */
-export function RankingRow({ entry, self, ref, style, testID }: RankingRowProps) {
+export function RankingRow({
+  entry: received,
+  self,
+  seasonOver,
+  ref,
+  style,
+  testID,
+}: RankingRowProps) {
+  const entry = seasonOver && received.change !== 0 ? { ...received, change: 0 } : received;
   const name = entry.isMe ? t('ranking.you') : entryName(entry);
   const largeText = useWindowDimensions().fontScale >= LARGE_TEXT_SCALE;
 

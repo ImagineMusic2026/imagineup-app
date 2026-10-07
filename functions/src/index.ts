@@ -8,6 +8,7 @@ import { onCall, onRequest } from 'firebase-functions/https';
 import { onUserCreated, onUserDeleted } from 'firebase-functions/identity';
 import * as logger from 'firebase-functions/logger';
 import { setGlobalOptions } from 'firebase-functions/options';
+import { onSchedule } from 'firebase-functions/scheduler';
 import { onTaskDispatched } from 'firebase-functions/tasks';
 
 import {
@@ -46,6 +47,7 @@ import {
 } from './missions';
 import { moderate } from './moderation';
 import { changePointsConfig, changeSeason, type ConfigPanelDeps } from './points';
+import { closeNow, endCurrent, runRankingTick, scheduleNext } from './ranking';
 import {
   addPost,
   changePostStatus,
@@ -342,12 +344,74 @@ export const updatePointsConfig = onCall({ cors: PANEL_ORIGINS }, async (request
   return result;
 });
 
-/** A temporada (o id não muda depois que ela começa), ou null para encerrar. */
+/**
+ * A temporada atual: o id não muda depois que ela começa, e a começada não
+ * sai nem muda de início (bloco 8: sai pela virada, no fim ou pelo endSeason).
+ */
 export const updateSeason = onCall({ cors: PANEL_ORIGINS }, async (request) => {
   const result = await changeSeason(gameDeps(), request.auth, request.data);
   logger.info('Temporada alterada.', { actorUid: request.auth?.uid, version: result.version });
   return result;
 });
+
+// Ranking e temporadas (bloco 8, docs/arquitetura-api.md, 23.10), com a
+// seção ranking: a próxima temporada, o encerramento antes da hora e a virada
+// na hora, quando a função agendada não roda. As telas são do bloco 11.
+
+/** Cadastra (ou tira, com null) a próxima temporada, que a virada promove. */
+export const scheduleNextSeason = onCall({ cors: PANEL_ORIGINS }, async (request) => {
+  const result = await scheduleNext(gameDeps(), request.auth, request.data);
+  logger.info('Próxima temporada alterada.', {
+    actorUid: request.auth?.uid,
+    version: result.version,
+  });
+  return result;
+});
+
+/** Encerra agora a temporada em andamento; a virada fecha na rodada seguinte. */
+export const endSeason = onCall({ cors: PANEL_ORIGINS }, async (request) => {
+  const result = await endCurrent(gameDeps(), request.auth, request.data);
+  logger.info('Temporada encerrada antes da hora.', {
+    actorUid: request.auth?.uid,
+    version: result.version,
+  });
+  return result;
+});
+
+/** Roda na hora a virada que já venceu (a saída da equipe se a função agendada parar). */
+export const closeSeasonNow = onCall(
+  { cors: PANEL_ORIGINS, timeoutSeconds: 120 },
+  async (request) => {
+    const result = await closeNow(gameDeps(), request.auth, request.data);
+    logger.info('Virada pedida pelo painel.', {
+      actorUid: request.auth?.uid,
+      status: result.status,
+      pages: result.pages,
+    });
+    return result;
+  },
+);
+
+/**
+ * A virada de temporada e o retrato semanal do ranking (bloco 8, 23.6): a
+ * cada 10 min, fecha a temporada cujo fim (mais a folga) passou e, com tempo
+ * sobrando, tira o retrato da semana. Os dois andam em páginas com o
+ * andamento em rankingJobs, então a rodada seguinte continua de onde esta
+ * parou. Sem nova tentativa: uma falha espera a próxima rodada. O emulador
+ * não roda função agendada: os testes e o seed chamam o handler.
+ */
+export const rankingTick = onSchedule(
+  {
+    schedule: 'every 10 minutes',
+    timeZone: 'America/Sao_Paulo',
+    timeoutSeconds: 540,
+    memory: '512MiB',
+    retryCount: 0,
+  },
+  async () => {
+    await runRankingTick({ db: getFirestore(), now: Date.now, budgetMs: 7 * 60_000 });
+  },
+);
 
 /** Cria uma missão como rascunho no catálogo, com o id gerado pelo servidor. */
 export const createMission = onCall({ cors: PANEL_ORIGINS }, async (request) => {
@@ -417,7 +481,8 @@ export const reorderAchievements = onCall({ cors: PANEL_ORIGINS }, async (reques
 
 // API HTTP do app (docs/arquitetura-api.md): carteira, progresso e extrato no
 // bloco 1, centrais no bloco 4, convite no bloco 5, mural e agenda no bloco 6,
-// missões e conquistas no bloco 7; os blocos seguintes acrescentam as rotas deles em src/api. Quem protege é o ID token do Firebase
+// missões e conquistas no bloco 7, ranking e temporada no bloco 8; os blocos
+// seguintes acrescentam as rotas deles em src/api. Quem protege é o ID token do Firebase
 // em toda rota, por isso o invoker público. Sem CORS: o app nativo não faz
 // preflight, e o painel usa as callables. A visita ao link de convite conta
 // no app, de conta logada, por esta mesma função (20.1, decisão 3).
@@ -428,9 +493,11 @@ let apiHandler: ReturnType<typeof createApiHandler> | null = null;
  * Carteira, progresso e extrato (bloco 1), as centrais (bloco 4: lista,
  * página, "Suas centrais", seguir, entrar e sair), o convite (bloco 5: o
  * código do fã, o claim, a visita e os links) e o mural e a agenda (bloco 6:
- * posts, comentários, curtidas, shows, "Eu vou", denúncias e bloqueios) e as
+ * posts, comentários, curtidas, shows, "Eu vou", denúncias e bloqueios), as
  * missões e conquistas (bloco 7: a 1g, a missão do dia e as conquistas da
- * 1e); os pontos, as missões e os níveis são sempre calculados no servidor. O segredo do HMAC da chave da pessoa (INVITE_KEY_SECRET) só
+ * 1e) e o ranking (bloco 8: a temporada, o ranking geral e das centrais e a
+ * posição do fã); os pontos, as missões, os níveis e as posições são sempre
+ * calculados no servidor. O segredo do HMAC da chave da pessoa (INVITE_KEY_SECRET) só
  * chega a esta função, lido a cada pedido.
  */
 export const api = onRequest(

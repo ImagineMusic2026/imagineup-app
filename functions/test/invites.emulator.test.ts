@@ -5,7 +5,7 @@ import { execFile } from 'node:child_process';
 import { resolve } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { promisify } from 'node:util';
-import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 
 import { createApiHandler, idempotencyDocId, type ApiRequest } from '../src/api';
 import { seedCentrals } from '../src/centrals';
@@ -30,6 +30,7 @@ import {
 } from '../src/points';
 import { seedPosts } from '../src/posts';
 import { deleteUserData } from '../src/store';
+import { useCleanEmulators } from './support';
 
 /**
  * Convite com atribuição e origem do fã (bloco 5) nos emuladores. Rode com
@@ -47,7 +48,6 @@ const auth = getAuth(app);
 const db = getFirestore(app);
 
 const authHost = process.env.FIREBASE_AUTH_EMULATOR_HOST;
-const firestoreHost = process.env.FIRESTORE_EMULATOR_HOST;
 let apiBase = '';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -75,16 +75,7 @@ beforeAll(async () => {
   }
 });
 
-beforeEach(async () => {
-  if (!authHost || !firestoreHost) throw new Error('Rode com npm run test:functions.');
-  await fetch(
-    `http://${firestoreHost}/emulator/v1/projects/${PROJECT_ID}/databases/(default)/documents`,
-    { method: 'DELETE' },
-  );
-  await fetch(`http://${authHost}/emulator/v1/projects/${PROJECT_ID}/accounts`, {
-    method: 'DELETE',
-  });
-});
+useCleanEmulators();
 
 let counter = 0;
 const unique = (prefix: string) => `${prefix}${++counter}`;

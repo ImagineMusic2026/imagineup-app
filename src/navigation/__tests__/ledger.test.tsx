@@ -285,6 +285,16 @@ describe('extrato de pontos (bloco 7, provisório)', () => {
     // Os ajustes só de central (saldo, XP e temporada em 0) ficam de fora.
     expect(screen.queryByTestId('ledger-seed:camila-base-netto')).toBeNull();
     expect(screen.queryByTestId('ledger-seed:camila-base-nenho')).toBeNull();
+    // As temporadas passadas do seed (bloco 8): ajustes só de temporada, que aparecem,
+    // e o extrato fica com os 17 lançamentos do servidor.
+    expect(screen.getByTestId('ledger-seed:camila-carnaval')).toHaveProp(
+      'accessibilityLabel',
+      expect.stringMatching(/^Ajuste, mais 290 pontos, em 5 de agosto às 12:00\.$/),
+    );
+    expect(screen.getByTestId('ledger-seed:camila-verao')).toHaveProp(
+      'accessibilityLabel',
+      expect.stringMatching(/^Ajuste, mais 510 pontos, em 26 de junho às 12:00\.$/),
+    );
   });
 
   it('com a API, a página sem linha visível pede a seguinte sozinha, uma vez cada', async () => {

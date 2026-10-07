@@ -110,6 +110,27 @@ async function deleteIdempotencyKeys(db: Firestore, uid: string): Promise<void> 
   }
 }
 
+/** Linhas apagadas por lote no arquivo das temporadas (o limite de um lote é 500). */
+const STANDINGS_DELETE_BATCH = 500;
+
+/**
+ * A linha do fã no arquivo de cada temporada fechada (bloco 8, 23.13), com o
+ * nome, a foto e a cidade guardados nela: lista as temporadas (só os ids) e
+ * apaga `seasons/{id}/standings/{uid}` de cada uma, em lotes. Apagar o que não
+ * existe não falha; as posições dos outros ficam como foram (o resultado
+ * oficial mostra o buraco).
+ */
+export async function removeSeasonStandings(db: Firestore, uid: string): Promise<void> {
+  const seasons = await db.collection('seasons').select().get();
+  for (let start = 0; start < seasons.size; start += STANDINGS_DELETE_BATCH) {
+    const batch = db.batch();
+    for (const season of seasons.docs.slice(start, start + STANDINGS_DELETE_BATCH)) {
+      batch.delete(season.ref.collection('standings').doc(uid));
+    }
+    await batch.commit();
+  }
+}
+
 /**
  * Apaga tudo do fã: as reservas de @, o perfil, o convite dele (o código, os
  * links e os marcadores de visita), os vínculos com as centrais (descontando o
@@ -120,7 +141,10 @@ async function deleteIdempotencyKeys(db: Firestore, uid: string): Promise<void> 
  * Desde o bloco 6, também as curtidas e os comentários (descontando as
  * contagens dos posts), as denúncias que ele fez (descontadas da fila) e os
  * bloqueios (removeFanEngagement), antes do recursiveDelete, que leva as
- * presenças. Pode rodar mais de uma vez. Dado novo do fã fora de users/{uid}
+ * presenças. Desde o bloco 8, a linha dele no arquivo de cada temporada
+ * (removeSeasonStandings), depois da carteira: uma página da virada que
+ * entrou antes deixa a linha, que este passo apaga, e as que vêm depois já
+ * não acham a carteira nem o `centralPoints` (23.13). Pode rodar mais de uma vez. Dado novo do fã fora de users/{uid}
  * precisa entrar aqui.
  *
  * A ordem importa: toda gravação da API lê users/{uid} na transação
@@ -158,6 +182,7 @@ export async function deleteUserData(db: Firestore, uid: string): Promise<void> 
   await referralRef(db, uid).delete();
   await detachReferrals(db, uid);
   await db.recursiveDelete(db.collection('wallets').doc(uid));
+  await removeSeasonStandings(db, uid);
   await deleteIdempotencyKeys(db, uid);
   await db.collection('staff').doc(uid).delete();
 }

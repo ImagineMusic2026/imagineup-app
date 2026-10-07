@@ -2,7 +2,7 @@ import { initializeApp } from 'firebase-admin/app';
 import { getAuth } from 'firebase-admin/auth';
 import { FieldPath, getFirestore, Timestamp, type DocumentData } from 'firebase-admin/firestore';
 import { setTimeout as sleep } from 'node:timers/promises';
-import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 
 import { createApiHandler, type ApiRequest } from '../src/api';
 import {
@@ -23,6 +23,7 @@ import {
 } from '../src/points';
 import { SECTION_IDS } from '../src/staff/model';
 import { deleteUserData } from '../src/store';
+import { useCleanEmulators } from './support';
 
 /**
  * Centrais de verdade (bloco 4) nos emuladores. Rode com `npm run
@@ -39,7 +40,6 @@ const auth = getAuth(app);
 const db = getFirestore(app);
 
 const authHost = process.env.FIREBASE_AUTH_EMULATOR_HOST;
-const firestoreHost = process.env.FIRESTORE_EMULATOR_HOST;
 let functionsOrigin = '';
 let apiBase = '';
 
@@ -72,16 +72,7 @@ beforeAll(async () => {
   }
 });
 
-beforeEach(async () => {
-  if (!authHost || !firestoreHost) throw new Error('Rode com npm run test:functions.');
-  await fetch(
-    `http://${firestoreHost}/emulator/v1/projects/${PROJECT_ID}/databases/(default)/documents`,
-    { method: 'DELETE' },
-  );
-  await fetch(`http://${authHost}/emulator/v1/projects/${PROJECT_ID}/accounts`, {
-    method: 'DELETE',
-  });
-});
+useCleanEmulators();
 
 // Ids únicos na execução inteira: uma tarefa atrasada de um teste nunca acerta
 // a central do teste seguinte.
@@ -360,7 +351,11 @@ describe('entrar na central (PUT /me/centrals/:artistId)', () => {
       artistId: id,
       subject: { type: 'artist', id },
     });
-    expect(await read(`wallets/${fan.uid}/centralPoints/${id}`)).toMatchObject({ totalPoints: 10 });
+    // Membro da central (bloco 8, 23.7): entra no ranking dela.
+    expect(await read(`wallets/${fan.uid}/centralPoints/${id}`)).toMatchObject({
+      totalPoints: 10,
+      member: true,
+    });
     const day = await joinDay(fan.uid, id);
     expect(await statsSum([day], (d) => d.totals?.joined ?? 0)).toBe(1);
     expect(await statsSum([day], (d) => d.byArtist?.[id]?.joined ?? 0)).toBe(1);
@@ -468,7 +463,11 @@ describe('sair da central (DELETE /me/centrals/:artistId)', () => {
     await waitForFanCount(id, 0);
     expect(await statsSum(leftDays, (d) => d.byArtist?.[id]?.left ?? 0)).toBe(1);
     expect(await read(`wallets/${fan.uid}`)).toMatchObject({ balance: 10, xp: 10 });
-    expect(await read(`wallets/${fan.uid}/centralPoints/${id}`)).toMatchObject({ totalPoints: 10 });
+    // Sai do ranking da central (member: false) e os pontos ficam (bloco 8, 23.7).
+    expect(await read(`wallets/${fan.uid}/centralPoints/${id}`)).toMatchObject({
+      totalPoints: 10,
+      member: false,
+    });
     expect((await http(`/artists/${id}`, { token: fan.token })).body).toMatchObject({
       isMember: false,
     });
@@ -478,9 +477,13 @@ describe('sair da central (DELETE /me/centrals/:artistId)', () => {
     expect(await leave(fan, id)).toMatchObject({ status: 200, body: { artistId: id } });
     expect(await shardSum(id)).toBe(0);
 
-    // Entrar de novo cria o vínculo e não paga a entrada outra vez.
+    // Entrar de novo cria o vínculo, volta ao ranking com os pontos e não paga a entrada outra vez.
     expect(await join(fan, id)).toMatchObject({ status: 200, body: { pointsAwarded: 0 } });
     expect(await exists(`users/${fan.uid}/centrals/${id}`)).toBe(true);
+    expect(await read(`wallets/${fan.uid}/centralPoints/${id}`)).toMatchObject({
+      totalPoints: 10,
+      member: true,
+    });
     expect((await read(`wallets/${fan.uid}`))?.balance).toBe(10);
     await waitForFanCount(id, 1);
   });
@@ -512,6 +515,7 @@ describe('seguir na escolha de artistas (POST /me/artists)', () => {
     });
     for (const id of [a, b, c]) {
       expect(await read(`users/${fan.uid}/centrals/${id}`)).toMatchObject({ via: 'onboarding' });
+      expect(await read(`wallets/${fan.uid}/centralPoints/${id}`)).toMatchObject({ member: true });
     }
     expect((await read(`wallets/${fan.uid}`))?.balance).toBe(30);
     const mine = (await http('/me/centrals', { token: fan.token })).body as unknown as {
@@ -857,6 +861,10 @@ describe('seed das centrais', () => {
 
     for (const id of CAMILA_CENTRALS) {
       expect(await read(`users/${camila.uid}/centrals/${id}`)).toMatchObject({ via: 'seed' });
+      // Membro: no Juninho, sem pontos, o documento nasce zerado (bloco 8, 23.7).
+      expect(await read(`wallets/${camila.uid}/centralPoints/${id}`)).toMatchObject({
+        member: true,
+      });
     }
     // A entrada vale 0 no seed: a carteira fica a do protótipo, sem extrato novo.
     expect(await read(`wallets/${camila.uid}`)).toEqual(wallet);
@@ -880,7 +888,8 @@ describe('seed das centrais', () => {
         shortName: null,
         photoURL: null,
         fanCount: 1,
-        fanRank: null,
+        // A única no ranking das duas centrais (bloco 8); no Juninho, sem pontos, sem posição.
+        fanRank: 1,
         seasonPoints: CAMILA_SEED.centrals.nettobrito,
       },
       {
@@ -889,7 +898,7 @@ describe('seed das centrais', () => {
         shortName: null,
         photoURL: null,
         fanCount: 1,
-        fanRank: null,
+        fanRank: 1,
         seasonPoints: CAMILA_SEED.centrals.nenho,
       },
       {

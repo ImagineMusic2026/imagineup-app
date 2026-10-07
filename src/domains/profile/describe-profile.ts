@@ -140,12 +140,17 @@ export function achievementLabel(achievement: Achievement): string {
 }
 
 /**
- * "#12 entre 412 mil fãs" ou, sem posição (o servidor, até o ranking por
- * central do bloco 8), "Sem posição ainda · 141 mil fãs", com "1 fã" no singular.
+ * "#12 entre 412 mil fãs" ou, sem posição (sem pontos na central nesta
+ * temporada), "Sem posição ainda · 141 mil fãs", com "1 fã" no singular
+ * ("#1 entre 1 fã").
  */
 export function centralMeta({ fanRank, fanCount }: FanCentral): string {
   const fans = formatCompact(fanCount);
-  if (fanRank !== null) return t('profile.centrals.meta', { rank: formatNumber(fanRank), fans });
+  if (fanRank !== null) {
+    return fanCount === 1
+      ? t('profile.centrals.metaOne', { rank: formatNumber(fanRank) })
+      : t('profile.centrals.meta', { rank: formatNumber(fanRank), fans });
+  }
   return fanCount === 1
     ? t('profile.centrals.metaUnrankedOne')
     : t('profile.centrals.metaUnranked', { fans });
@@ -159,7 +164,9 @@ export function centralLabel({ name, fanRank, fanCount, seasonPoints }: FanCentr
   const fans = formatCompact(fanCount);
   const points = formatPointsSpoken(seasonPoints);
   if (fanRank !== null) {
-    return t('profile.centrals.label', { name, rank: formatNumber(fanRank), fans, points });
+    return fanCount === 1
+      ? t('profile.centrals.labelOne', { name, rank: formatNumber(fanRank), points })
+      : t('profile.centrals.label', { name, rank: formatNumber(fanRank), fans, points });
   }
   const one = fanCount === 1;
   if (seasonPoints > 0) {

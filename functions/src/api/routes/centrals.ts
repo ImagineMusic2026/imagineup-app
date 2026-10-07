@@ -73,9 +73,9 @@ export const centralRoutes: ApiRoute[] = [
     method: 'GET',
     pattern: '/me/centrals',
     writes: false,
-    async handle({ deps, uid }): Promise<FanCentral[]> {
+    async handle({ deps, uid, now }): Promise<FanCentral[]> {
       const config = await deps.config.get();
-      return readFanCentrals(deps.db, uid, config.season.season?.id ?? null);
+      return readFanCentrals(deps.db, uid, config.season, now);
     },
   },
   {

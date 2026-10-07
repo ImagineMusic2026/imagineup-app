@@ -62,9 +62,28 @@ jest.mock('@shopify/flash-list/dist/recyclerview/utils/measureLayout', () => {
 });
 
 // Relógio fixo, nas fixtures e na tela: terça, 29 de setembro de 2026, 20 h.
+// O teste pode andar com ele com a tela aberta (`tickClockTo`), como o
+// `useNow` de verdade anda a cada minuto.
 const NOW = new Date(2026, 8, 29, 20, 0);
-const mockNow = NOW;
-jest.mock('@/hooks/use-now', () => ({ useNow: () => mockNow }));
+let mockNow = NOW;
+const mockNowListeners = new Set<() => void>();
+jest.mock('@/hooks/use-now', () => {
+  const { useSyncExternalStore } = jest.requireActual<typeof import('react')>('react');
+  const subscribe = (listener: () => void) => {
+    mockNowListeners.add(listener);
+    return () => {
+      mockNowListeners.delete(listener);
+    };
+  };
+  return { useNow: () => useSyncExternalStore(subscribe, () => mockNow) };
+});
+
+function tickClockTo(next: Date): void {
+  act(() => {
+    mockNow = next;
+    mockNowListeners.forEach((listener) => listener());
+  });
+}
 
 const get = jest.mocked(api.get);
 const hidden = { includeHiddenElements: true } as const;
@@ -114,6 +133,7 @@ const PODIUM = [
 const ME_GLOBAL = 'Você, 12º lugar, 4.120 pontos. Faltam 840 pontos para entrar no top 10.';
 const ME_NENHO = /^Você, 41º lugar, 2\.980 pontos\. Faltam [\d.]+ pontos para entrar no top 10\.$/;
 const ME_UNRANKED = 'Você. Ganhe pontos para entrar no ranking.';
+const ME_NOT_MEMBER = 'Você. Entre na central para aparecer no ranking.';
 
 const announced = () =>
   jest
@@ -240,6 +260,7 @@ const THIRTY_FOUR = Array.from({ length: 34 }, (_, index) => entry(index + 1));
 
 beforeEach(() => {
   jest.clearAllMocks();
+  mockNow = NOW;
   setFixtureNow(NOW);
   mockDataSource = 'fixtures';
   mockDomainSources = {};
@@ -328,10 +349,11 @@ describe('ranking (1f)', () => {
     expect(selectedChip()).toEqual(['Netto Brito']);
   });
 
-  it('central que o fã não segue ganha o chip no fim, e o card pede pontos', async () => {
+  it('central que o fã não segue ganha o chip no fim, e o card chama para entrar nela', async () => {
     renderRouter(appTree, { initialUrl: '/ranking?artista=rocksalles' });
 
-    expect(await screen.findByLabelText(ME_UNRANKED)).toBeTruthy();
+    // O ranking da central é só dos membros (bloco 8).
+    expect(await screen.findByLabelText(ME_NOT_MEMBER)).toBeTruthy();
     await waitFor(() =>
       expect(chips().map((chip) => chip.props.accessibilityLabel)).toEqual([
         'Geral',
@@ -343,6 +365,13 @@ describe('ranking (1f)', () => {
     );
     expect(selectedChip()).toEqual(['Rock Salles']);
     // Sem posição, o card só informa: não há linha para onde rolar.
+    expect(screen.queryByRole('button', { name: ME_NOT_MEMBER })).toBeNull();
+  });
+
+  it('membro sem pontos na central (o Juninho): o card pede pontos', async () => {
+    renderRouter(appTree, { initialUrl: '/ranking?artista=juninhomoraes' });
+
+    expect(await screen.findByLabelText(ME_UNRANKED)).toBeTruthy();
     expect(screen.queryByRole('button', { name: ME_UNRANKED })).toBeNull();
   });
 
@@ -358,19 +387,19 @@ describe('ranking (1f)', () => {
 
     fireEvent.press(await screen.findByRole('button', { name: ME_NENHO }));
 
-    // 41º, com 10 por página: a quinta página. O fã ouve que a busca começou.
+    // 41º, com 20 por página: a terceira página. O fã ouve que a busca começou.
     expect(announced()).toEqual([t('ranking.me.seeking')]);
     await waitFor(() => expect(scrolledTo()).toHaveLength(1));
     const scope = { kind: 'artist', artistId: 'nenho' } as const;
     expect(
       client.getQueryData<{ pages: unknown[] }>(rankingKeys.leaderboard(scope))?.pages,
-    ).toHaveLength(5);
+    ).toHaveLength(3);
     const [destination] = scrolledTo();
     expect(destination?.y).toBeGreaterThan(0);
 
     // A lista chega lá: a linha aparece, recebe o foco, e o card sai.
     act(() => scrollListTo(destination?.y ?? 0));
-    const mine = await screen.findByLabelText('41º, Você, 2.980 pontos, caiu 2 posições');
+    const mine = await screen.findByLabelText('41º, Você, 2.980 pontos');
     await waitFor(() => expect(focused()).toEqual([mine.props.accessibilityLabel]));
     expect(meCard().props.accessibilityElementsHidden).toBe(true);
 
@@ -392,11 +421,11 @@ describe('ranking (1f)', () => {
     // rolagem volta), e o tempo do foco sem animação já passou.
     // (O `renderRouter` liga os relógios falsos do Jest.)
     act(() => jest.advanceTimersByTime(motion.duration.fast));
-    expect(screen.queryByLabelText('41º, Você, 2.980 pontos, caiu 2 posições')).toBeNull();
+    expect(screen.queryByLabelText('41º, Você, 2.980 pontos')).toBeNull();
     expect(focused()).toEqual([]);
 
     act(() => scrollListTo(destination?.y ?? 0));
-    const mine = await screen.findByLabelText('41º, Você, 2.980 pontos, caiu 2 posições');
+    const mine = await screen.findByLabelText('41º, Você, 2.980 pontos');
     await waitFor(() => expect(focused()).toEqual([mine.props.accessibilityLabel]));
   });
 
@@ -409,9 +438,10 @@ describe('ranking (1f)', () => {
       await client.invalidateQueries({ queryKey: rankingKeys.all });
     });
 
+    // A meta é a diferença mais 1: no empate, quem chegou primeiro fica na frente.
     expect(
       await screen.findByRole('button', {
-        name: 'Você, 10º lugar, 5.020 pontos. Faltam 18 pontos para o 9º lugar.',
+        name: 'Você, 10º lugar, 5.020 pontos. Faltam 19 pontos para o 9º lugar.',
       }),
     ).toBeTruthy();
     // Subiu com a tela aberta, no mesmo recorte.
@@ -431,7 +461,7 @@ describe('ranking (1f)', () => {
     // O ranking buscou de novo e o card mudou embaixo das missões, sem vibrar nem falar.
     expect(
       await screen.findByLabelText(
-        'Você, 10º lugar, 5.020 pontos. Faltam 18 pontos para o 9º lugar.',
+        'Você, 10º lugar, 5.020 pontos. Faltam 19 pontos para o 9º lugar.',
         hidden,
       ),
     ).toBeTruthy();
@@ -444,56 +474,62 @@ describe('ranking (1f)', () => {
   });
 });
 
-describe('ranking (1f) de exemplo com as centrais no servidor (até o bloco 8)', () => {
-  beforeEach(() => {
-    mockDomainSources = { artists: 'api' };
-    get.mockImplementation(async (url) => {
-      if (url === '/me/centrals') {
-        return {
-          data: [
-            {
-              artistId: 'nettobrito',
-              name: 'Netto Brito',
-              shortName: null,
-              photoURL: null,
-              fanCount: 1,
-              fanRank: null,
-              seasonPoints: 4_120,
-            },
-          ],
-        } as never;
-      }
-      if (url === '/artists') {
-        return {
-          data: [{ id: 'nettobrito', name: 'Netto Brito', photoURL: null, fanCount: 1, order: 0 }],
-        } as never;
-      }
-      throw new Error(`rota sem resposta no teste: ${url}`);
-    });
-  });
+describe('ranking (1f) do servidor (bloco 8)', () => {
+  const season = buildSeasonFixture(NOW);
 
-  it('no recorte da central, o aviso aparece e o card "Você" fica sem posição, com os pontos de verdade', async () => {
+  it('o ranking do servidor não leva aviso de exemplo; o card fora do membro chama para entrar na central', async () => {
+    mockApi({
+      season,
+      items: [entry(1), entry(2), entry(3), entry(4)],
+      myRank: { position: null, points: 750, target: null, member: false },
+    });
     renderRouter(appTree, { initialUrl: '/ranking?artista=nettobrito' });
 
-    expect(await screen.findByTestId('ranking-example-notice')).toHaveTextContent(
-      t('ranking.exampleNotice'),
-    );
-    expect(selectedChip()).toEqual(['Netto Brito']);
-    // Os pontos são os de "Suas centrais" (1e), e não os 0 da fixture.
+    expect(await screen.findByLabelText(ME_NOT_MEMBER)).toBeTruthy();
     expect(
-      await screen.findByLabelText('Você, sem posição ainda, 4.120 pontos.', hidden),
+      within(meCard()).getByText('Entre na central para aparecer no ranking', hidden),
     ).toBeTruthy();
-    expect(within(meCard()).getByText('Sem posição ainda', hidden)).toBeTruthy();
-    expect(within(meCard()).getByText('4.120', hidden)).toBeTruthy();
-    // Nenhuma posição de exemplo para o fã ao lado do número de verdade.
-    expect(screen.queryByLabelText(/^Você, \d+º lugar/, hidden)).toBeNull();
+    // Os pontos de antes, que voltam a contar se ele entrar de novo.
+    expect(within(meCard()).getByText('750', hidden)).toBeTruthy();
+    expect(screen.queryByTestId('ranking-example-notice')).toBeNull();
+    expect(screen.queryByText(/Ranking de exemplo/, hidden)).toBeNull();
   });
 
-  it('no Geral, com a carteira ainda nas fixtures, o ranking não leva o aviso', async () => {
+  it('abaixo da posição 200, o card só informa: sem toque e sem dica (buscaria páginas demais)', async () => {
+    mockApi({
+      season,
+      items: [entry(1), entry(2), entry(3), entry(4)],
+      myRank: {
+        position: 201,
+        points: 900,
+        target: { kind: 'top', position: 10, pointsLeft: 9_000 },
+      },
+    });
     renderRouter(appTree, { initialUrl: '/ranking' });
 
-    expect(await screen.findByRole('button', { name: ME_GLOBAL })).toBeTruthy();
-    expect(screen.queryByTestId('ranking-example-notice')).toBeNull();
+    const card = await screen.findByLabelText(
+      'Você, 201º lugar, 900 pontos. Faltam 9.000 pontos para entrar no top 10.',
+    );
+    expect(screen.queryByRole('button', { name: /^Você, 201º lugar/ })).toBeNull();
+    expect(card.props.accessibilityHint).toBeUndefined();
+  });
+
+  it('na posição 200, o card ainda rola até a linha', async () => {
+    mockApi({
+      season,
+      items: [entry(1), entry(2), entry(3), entry(4)],
+      myRank: {
+        position: 200,
+        points: 900,
+        target: { kind: 'top', position: 10, pointsLeft: 9_000 },
+      },
+    });
+    renderRouter(appTree, { initialUrl: '/ranking' });
+
+    expect(await screen.findByRole('button', { name: /^Você, 200º lugar/ })).toHaveProp(
+      'accessibilityHint',
+      t('ranking.me.hint'),
+    );
   });
 });
 
@@ -606,23 +642,22 @@ describe('ranking (1f) com a resposta do servidor', () => {
     expect(screen.queryByLabelText(t('ranking.moreError'))).toBeNull();
   });
 
-  it('puxar para atualizar vibra e busca de novo a temporada, o ranking e a posição do fã', async () => {
+  it('puxar para atualizar vibra e busca de novo a temporada, o ranking, a posição do fã e "Suas centrais"', async () => {
     mockApi({ season, items: [entry(1), entry(2), entry(3), entry(4)] });
     renderRouter(appTree, { initialUrl: '/ranking' });
     expect(await screen.findByLabelText('4º, Duda Reis, 9.600 pontos')).toBeTruthy();
     await waitFor(() => expect(callsTo('/me/rank')).toBe(1));
-    const before = ['/ranking/season', '/ranking', '/me/rank'].map(callsTo);
+    await waitFor(() => expect(callsTo('/me/centrals')).toBe(1));
+    // "Suas centrais" (o "você é #12" da 1b e da 1e) sai da mesma conta do card.
+    const routes = ['/ranking/season', '/ranking', '/me/rank', '/me/centrals'];
+    const before = routes.map(callsTo);
 
     await act(async () => {
       screen.UNSAFE_getByType(FlashList).props.refreshControl.props.onRefresh();
     });
 
     expect(haptics.trigger).toHaveBeenCalledWith('refresh');
-    await waitFor(() =>
-      expect(['/ranking/season', '/ranking', '/me/rank'].map(callsTo)).toEqual(
-        before.map((count) => count + 1),
-      ),
-    );
+    await waitFor(() => expect(routes.map(callsTo)).toEqual(before.map((count) => count + 1)));
   });
 
   it('a atualização que falha aparece no topo, acima do pódio, onde o fã puxou', async () => {
@@ -756,6 +791,47 @@ describe('ranking (1f) com a resposta do servidor', () => {
         name: 'Você, 12º lugar, 4.120 pontos. Terminou em 12º.',
       }),
     ).toBeTruthy();
+  });
+
+  it('temporada encerrada sem ninguém no recorte: o resultado fechado, sem "ainda" e sem "Ver missões"', async () => {
+    mockApi({ season: { ...season, status: 'ended' } });
+    renderRouter(appTree, { initialUrl: '/ranking' });
+
+    expect(await screen.findByLabelText(t('ranking.emptyEnded'))).toBeTruthy();
+    expect(screen.queryByLabelText(t('ranking.empty'))).toBeNull();
+    expect(screen.queryByRole('button', { name: t('ranking.seeMissions') })).toBeNull();
+  });
+
+  it('a temporada que acaba com a tela aberta: as setas somem na hora e o ranking busca de novo', async () => {
+    const endsAt = new Date(NOW.getTime() + 60_000);
+    const items = [entry(1), entry(2), entry(3), entry(4, { change: 2 })];
+    mockApi({ season: { ...season, endsAt: endsAt.toISOString() }, items });
+    renderRouter(appTree, { initialUrl: '/ranking' });
+    expect(
+      await screen.findByLabelText('4º, Duda Reis, 9.600 pontos, subiu 2 posições'),
+    ).toBeTruthy();
+    await waitFor(() => expect(callsTo('/me/rank')).toBe(1));
+    const before = ['/ranking/season', '/ranking', '/me/rank'].map(callsTo);
+
+    // O servidor já responde a temporada encerrada, e o resultado sem setas.
+    mockApi({
+      season: { ...season, endsAt: endsAt.toISOString(), status: 'ended' },
+      items: items.map((item) => ({ ...item, change: 0 })),
+    });
+    tickClockTo(new Date(endsAt.getTime() + 60_000));
+
+    // Na hora, pelo relógio, sem esperar a resposta.
+    expect(screen.getByText('Temporada de São João encerrada')).toBeTruthy();
+    expect(screen.getByLabelText('4º, Duda Reis, 9.600 pontos')).toBeTruthy();
+    await waitFor(() =>
+      expect(['/ranking/season', '/ranking', '/me/rank'].map(callsTo)).toEqual(
+        before.map((count) => count + 1),
+      ),
+    );
+    // Com a encerrada do servidor no cache, não busca de novo a cada minuto.
+    tickClockTo(new Date(endsAt.getTime() + 2 * 60_000));
+    await act(async () => undefined);
+    expect(callsTo('/ranking/season')).toBe(before[0]! + 1);
   });
 
   it('ranking que não carregou mostra "Tentar de novo", anuncia uma vez e busca de novo', async () => {

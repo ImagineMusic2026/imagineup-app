@@ -6,7 +6,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { promisify } from 'node:util';
-import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 
 import { expiresLabel, type InviteEmailParams } from '../src/staff/email';
 import { SECTION_IDS } from '../src/staff/model';
@@ -19,6 +19,7 @@ import {
   type StaffDeps,
 } from '../src/staff/service';
 import { hashInviteToken } from '../src/staff/token';
+import { useCleanEmulators } from './support';
 
 /**
  * Equipe do painel nos emuladores: as callables de verdade, chamadas como o
@@ -33,7 +34,6 @@ const auth = getAuth(app);
 const db = getFirestore(app);
 
 const authHost = process.env.FIREBASE_AUTH_EMULATOR_HOST;
-const firestoreHost = process.env.FIRESTORE_EMULATOR_HOST;
 let functionsOrigin = '';
 
 const STAFF_FUNCTIONS = [
@@ -95,16 +95,7 @@ beforeAll(async () => {
   }
 });
 
-beforeEach(async () => {
-  if (!authHost || !firestoreHost) throw new Error('Rode com npm run test:functions.');
-  await fetch(
-    `http://${firestoreHost}/emulator/v1/projects/${PROJECT_ID}/databases/(default)/documents`,
-    { method: 'DELETE' },
-  );
-  await fetch(`http://${authHost}/emulator/v1/projects/${PROJECT_ID}/accounts`, {
-    method: 'DELETE',
-  });
-});
+useCleanEmulators();
 
 // uids e e-mails únicos na execução inteira: um gatilho atrasado de um teste
 // anterior nunca acerta os dados do teste seguinte.

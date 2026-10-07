@@ -6,12 +6,7 @@ import { Card } from '@/components/card';
 import { Skeleton, SkeletonGroup } from '@/components/skeleton';
 import { Text, type TextInstance } from '@/components/text';
 import { TextLink } from '@/components/text-link';
-import {
-  entryName,
-  ExampleNotice,
-  type LeaderboardEntry,
-  type RankingSelf,
-} from '@/domains/ranking';
+import { entryName, type LeaderboardEntry, type RankingSelf } from '@/domains/ranking';
 import { t } from '@/i18n';
 import { colors, layout, radii, spacing, typography } from '@/theme';
 import { formatNumber, formatPointsSpoken } from '@/utils/number';
@@ -35,11 +30,6 @@ export interface TopFansCardProps {
   onSeeRanking: () => void;
   /** O título, para levar o foco do leitor de tela até ele (o Mural escolhido pela barra grudada). */
   titleRef?: Ref<TextInstance>;
-  /**
-   * O ranking é de exemplo ao lado das centrais do servidor
-   * (`LeaderboardPage.example`): o aviso logo abaixo do título.
-   */
-  example?: boolean;
 }
 
 function placeLabel(position: number): string {
@@ -145,14 +135,7 @@ function LoadingCells() {
  * acompanha). O 1º em lima. Cada lugar é um elemento só para o leitor. Com
  * erro, quem chama não mostra o card; o resto da página continua.
  */
-export function TopFansCard({
-  entries,
-  state,
-  self,
-  onSeeRanking,
-  titleRef,
-  example = false,
-}: TopFansCardProps) {
+export function TopFansCard({ entries, state, self, onSeeRanking, titleRef }: TopFansCardProps) {
   const byPlace = new Map(entries.map((entry) => [entry.position, entry]));
 
   return (
@@ -179,7 +162,6 @@ export function TopFansCard({
           testID="artist-see-ranking"
         />
       </View>
-      {example ? <ExampleNotice style={styles.notice} testID="artist-top-fans-example" /> : null}
       {state === 'loading' ? (
         <LoadingCells />
       ) : (
@@ -209,11 +191,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: spacing.sm,
-    marginBottom: spacing.md,
-  },
-  // Entre o título e os lugares, sem somar ao respiro do título.
-  notice: {
-    marginTop: -spacing.xs,
     marginBottom: spacing.md,
   },
   // Com flexShrink, o Android media o título mais estreito do que desenha e cortava a última palavra.

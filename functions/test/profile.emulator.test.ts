@@ -2,11 +2,12 @@ import { initializeApp } from 'firebase-admin/app';
 import { getAuth } from 'firebase-admin/auth';
 import { getFirestore, Timestamp } from 'firebase-admin/firestore';
 import { setTimeout as sleep } from 'node:timers/promises';
-import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 
 import { handleUserCreated, NAME_WAIT_MS, type FindUser } from '../src/handlers';
 import { dayKey } from '../src/points';
 import { createProfile, deleteUserData } from '../src/store';
+import { useCleanEmulators } from './support';
 
 /**
  * Roda com `npm run test:functions`, na raiz do app: sobe os emuladores de
@@ -19,7 +20,6 @@ const auth = getAuth(app);
 const db = getFirestore(app);
 
 const authHost = process.env.FIREBASE_AUTH_EMULATOR_HOST;
-const firestoreHost = process.env.FIRESTORE_EMULATOR_HOST;
 
 // Se a descoberta das funções estourar o prazo, o emulators:exec só avisa no log
 // e roda os testes assim mesmo, sem gatilho nenhum: falha logo, com a causa.
@@ -45,16 +45,7 @@ beforeAll(async () => {
   }
 });
 
-beforeEach(async () => {
-  if (!authHost || !firestoreHost) throw new Error('Rode com npm run test:functions.');
-  await fetch(
-    `http://${firestoreHost}/emulator/v1/projects/${PROJECT_ID}/databases/(default)/documents`,
-    { method: 'DELETE' },
-  );
-  await fetch(`http://${authHost}/emulator/v1/projects/${PROJECT_ID}/accounts`, {
-    method: 'DELETE',
-  });
-});
+useCleanEmulators();
 
 let accounts = 0;
 const newEmail = () => `fa${++accounts}@teste.dev`;

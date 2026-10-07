@@ -1,14 +1,15 @@
 export type { RankingSelf } from './components/entry-avatar';
-export { ExampleNotice, type ExampleNoticeProps } from './components/example-notice';
 export { RankingRow, type RankingRowProps } from './components/ranking-row';
 export { SeasonLine } from './components/season-line';
 export { entryName } from './describe-rank';
 export {
   rankingKeys,
+  refreshRanking,
   useLeaderboardInfiniteQuery,
   useMyRankQuery,
   useSeasonQuery,
 } from './queries';
+export { useSeasonOver } from './hooks/use-season-over';
 export { GLOBAL_SCOPE } from './scope';
 export type {
   LeaderboardEntry,

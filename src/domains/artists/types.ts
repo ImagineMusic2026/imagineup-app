@@ -48,9 +48,10 @@ export interface FanCentral {
   /** Membros da central no app ("#12 entre 412 mil fãs"). */
   fanCount: number;
   /**
-   * Posição do fã na central; `null` quando ele ainda não tem posição. O
-   * servidor manda sempre `null` até o ranking por central (bloco 8): sem
-   * posição, a 1b e a 1e mostram os pontos do fã na central.
+   * Posição do fã na central, do servidor (bloco 8): a mesma conta do
+   * `/me/rank` da central, na temporada mostrada. `null` sem pontos nela ou
+   * fora dos membros; sem posição, a 1b e a 1e mostram os pontos do fã na
+   * central.
    */
   fanRank: number | null;
   /** Pontos da temporada do fã nesta central; 0 enquanto ele não pontuou nela. */

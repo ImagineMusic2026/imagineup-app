@@ -1,6 +1,15 @@
 import { describe, expect, it } from 'vitest';
 
-import { dayKey, monthKey, nextDayStart, nextWeekStart, shiftDay, weekKey } from './day';
+import {
+  dayKey,
+  monthKey,
+  nextDayStart,
+  nextWeekStart,
+  previousWeekKey,
+  shiftDay,
+  weekKey,
+  weekStart,
+} from './day';
 import * as model from './points/model';
 
 describe('dias de São Paulo', () => {
@@ -55,6 +64,34 @@ describe('dias de São Paulo', () => {
     expect(new Date(start).toISOString()).toBe(next);
     expect(weekKey(dayKey(start))).not.toBe(weekKey(dayKey(now)));
     expect(weekKey(dayKey(start - 1))).toBe(weekKey(dayKey(now)));
+  });
+
+  it.each([
+    // Domingo 23:59 de São Paulo: ainda a semana que começou na segunda anterior.
+    ['2026-10-12T02:59:00.000Z', '2026-10-05T03:00:00.000Z'],
+    // Segunda 0:00 de São Paulo: a semana começa ali mesmo.
+    ['2026-10-12T03:00:00.000Z', '2026-10-12T03:00:00.000Z'],
+    // Quarta à tarde.
+    ['2026-10-07T18:00:00.000Z', '2026-10-05T03:00:00.000Z'],
+    // A virada do ano ISO: a 2026-W53 começa na segunda, 28 de dezembro.
+    ['2027-01-01T15:00:00.000Z', '2026-12-28T03:00:00.000Z'],
+    ['2027-01-04T03:00:00.000Z', '2027-01-04T03:00:00.000Z'],
+  ])('a semana de São Paulo de %s começou em %s', (iso, start) => {
+    const now = Date.parse(iso);
+    expect(new Date(weekStart(now)).toISOString()).toBe(start);
+    expect(weekKey(dayKey(weekStart(now)))).toBe(weekKey(dayKey(now)));
+    expect(weekKey(dayKey(weekStart(now) - 1))).not.toBe(weekKey(dayKey(now)));
+  });
+
+  it.each([
+    // Segunda 0:00: a anterior é a que acabou de terminar.
+    ['2026-10-12T03:00:00.000Z', '2026-W41'],
+    ['2026-10-12T02:59:00.000Z', '2026-W40'],
+    // A virada do ano ISO, para os dois lados.
+    ['2027-01-04T15:00:00.000Z', '2026-W53'],
+    ['2027-01-01T15:00:00.000Z', '2026-W52'],
+  ])('a semana anterior à de %s é %s', (iso, week) => {
+    expect(previousWeekKey(Date.parse(iso))).toBe(week);
   });
 
   it('o points/model.ts reexporta os dias (nenhum import de antes muda)', () => {

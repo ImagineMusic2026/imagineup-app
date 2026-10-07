@@ -173,9 +173,12 @@ export type FanCentral = {
   shortName: string | null;
   photoURL: string | null;
   fanCount: number;
-  /** null até o bloco 8 (posição por central). */
+  /**
+   * A posição do fã no ranking da central (bloco 8): a do `/me/rank` da
+   * central; null sem pontos na temporada mostrada ou fora dos membros.
+   */
   fanRank: number | null;
-  /** Pontos do fã na central, na temporada da configuração. */
+  /** Pontos do fã na central, na temporada mostrada (bloco 8, 23.2). */
   seasonPoints: number;
 };
 
@@ -382,3 +385,50 @@ export type MyRsvps = { eventIds: string[] };
 
 /** `RsvpResult` do app. */
 export type RsvpResult = { eventId: string; going: boolean; pointsAwarded: number };
+
+// --- Ranking e temporadas (bloco 8), espelho de src/domains/ranking/types.ts ---
+
+/** `Season` do app: a temporada mostrada (`GET /ranking/season`, 23.2). */
+export type Season = {
+  id: string;
+  /** "São João", lido como "Temporada de São João". */
+  name: string;
+  /** ISO. */
+  startsAt: string;
+  /** ISO: o fim de verdade (depois do `endSeason`, o instante do encerramento). */
+  endsAt: string;
+  status: 'active' | 'ended';
+  /** O título do 1º lugar; null usa o "Líder da temporada" do app. */
+  leaderTitle: string | null;
+};
+
+/** `LeaderboardEntry` do app: uma linha do ranking. */
+export type LeaderboardEntry = {
+  position: number;
+  userId: string;
+  displayName: string | null;
+  photoURL: string | null;
+  city: string | null;
+  /** Os pontos da temporada no recorte. */
+  points: number;
+  /** Posições ganhas (positivo) ou perdidas desde o retrato da semana; 0 sem retrato. */
+  change: number;
+  isMe: boolean;
+};
+
+/** `LeaderboardPage` do app (`GET /ranking`). */
+export type LeaderboardPage = Page<LeaderboardEntry>;
+
+/** `RankTarget` do app: a próxima meta do fã. */
+export type RankTarget = { kind: 'top' | 'position'; position: number; pointsLeft: number };
+
+/** `MyRank` do app (`GET /me/rank`). */
+export type MyRank = {
+  /** null sem pontos no recorte (ou fora dos membros, na central). */
+  position: number | null;
+  points: number;
+  /** null sem posição, no 1º lugar e na temporada encerrada. */
+  target: RankTarget | null;
+  /** Só no recorte de central da temporada lida ao vivo: o fã é membro? (campo novo, opcional no app). */
+  member?: boolean;
+};
