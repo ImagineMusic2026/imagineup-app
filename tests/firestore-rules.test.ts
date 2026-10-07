@@ -173,9 +173,88 @@ describe('perfil do fã (users/{uid})', () => {
       { role: 'admin' },
       { photoURL: 'https://evil.example/pixel.gif' },
       { createdAt: serverTimestamp() },
+      // Bloco 9: o caminho e a data da foto e o prazo do @ são do servidor.
+      { photoPath: 'fans/fa/photo-mg5k2x1a-4f9z0abc.jpg' },
+      { photoUpdatedAt: serverTimestamp() },
+      { usernameChangedAt: serverTimestamp() },
+      { usernameChangeableAt: null },
+      { usernameChangeableAt: Timestamp.fromMillis(0) },
     ]) {
       await assertFails(edit(change));
     }
+  });
+
+  it('o perfil com a foto e o prazo do @ gravados pelo servidor continua aceitando nome e cidade (bloco 9)', async () => {
+    await seedProfile({
+      photoPath: 'fans/fa/photo-mg5k2x1a-4f9z0abc.jpg',
+      photoUpdatedAt: MINUTE_AGO(),
+      usernameChangedAt: MINUTE_AGO(),
+      usernameChangeableAt: Timestamp.fromMillis(Date.now() + 30 * 24 * 60 * 60 * 1000),
+    });
+    await assertSucceeds(edit({ displayName: 'Camila Ribeiro', city: 'Irará, BA' }));
+    await env.clearFirestore();
+    await seedProfile({
+      photoURL: null,
+      photoPath: null,
+      photoUpdatedAt: null,
+      usernameChangedAt: null,
+      usernameChangeableAt: null,
+    });
+    await assertSucceeds(edit({ city: null }));
+  });
+
+  it('as reservas de @ (usernames/) são só do servidor: nem a própria, nem a de outro, nem a de uma central', async () => {
+    await env.withSecurityRulesDisabled(async (context) => {
+      const db = context.firestore();
+      await setDoc(doc(db, 'usernames/camilarib'), { uid: 'fa', createdAt: Timestamp.now() });
+      await setDoc(doc(db, 'usernames/alanzin'), { uid: 'outro', createdAt: Timestamp.now() });
+      await setDoc(doc(db, 'usernames/nenho'), { artistId: 'nenho', createdAt: Timestamp.now() });
+    });
+    for (const id of ['camilarib', 'alanzin', 'nenho', 'livre123']) {
+      await assertFails(getDoc(doc(fan(), `usernames/${id}`)));
+      await assertFails(setDoc(doc(fan(), `usernames/${id}`), { uid: 'fa' }));
+      await assertFails(deleteDoc(doc(fan(), `usernames/${id}`)));
+    }
+    await assertFails(getDocs(collection(fan(), 'usernames')));
+  });
+
+  it('o orçamento da fila das cópias (users/{uid}/profileSync) é só do servidor, nem o próprio fã', async () => {
+    await seedProfile();
+    await env.withSecurityRulesDisabled(async (context) => {
+      await setDoc(doc(context.firestore(), 'users/fa/profileSync/budget'), {
+        day: '2026-10-07',
+        windows: 1,
+        lastWindow: 1,
+      });
+    });
+    await assertFails(getDoc(doc(fan(), 'users/fa/profileSync/budget')));
+    await assertFails(getDocs(collection(fan(), 'users/fa/profileSync')));
+    await assertFails(
+      setDoc(doc(fan(), 'users/fa/profileSync/budget'), { day: '2026-10-07', windows: 0 }),
+    );
+    await assertFails(getDoc(doc(otherFan(), 'users/fa/profileSync/budget')));
+    // Nem a equipe: admin ativa, com todas as seções (inclusive fans).
+    await env.withSecurityRulesDisabled(async (context) => {
+      await setDoc(doc(context.firestore(), 'staff/admin'), {
+        uid: 'admin',
+        role: 'admin',
+        status: 'active',
+        sections: [
+          'overview',
+          'growth',
+          'ranking',
+          'fans',
+          'artists',
+          'missions',
+          'rewards',
+          'moderation',
+          'audit',
+        ],
+        accountCreatedByInvite: true,
+      });
+    });
+    const admin = env.authenticatedContext('admin').firestore();
+    await assertFails(getDoc(doc(admin, 'users/fa/profileSync/budget')));
   });
 
   it('não apaga campos do servidor', async () => {

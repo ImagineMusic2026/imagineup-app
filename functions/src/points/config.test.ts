@@ -392,6 +392,7 @@ describe('tetos do dia e o limite da missão (bloco 7)', () => {
       rsvp_set: 50,
       comment_report: 30,
       fan_block: 30,
+      photo_set: 10,
     });
   });
 
@@ -419,6 +420,13 @@ describe('tetos do dia e o limite da missão (bloco 7)', () => {
     expect(validatePointsConfigInput({ actionCaps: { like_set: 500 } })).toEqual({
       actionCaps: { like_set: 500 },
     });
+    // O teto das trocas de foto (bloco 9) entra como os outros.
+    expect(validatePointsConfigInput({ actionCaps: { photo_set: 3 } })).toEqual({
+      actionCaps: { photo_set: 3 },
+    });
+    expect(fieldOf(() => validatePointsConfigInput({ actionCaps: { photo_set: 0 } }))).toBe(
+      'actionCaps.photo_set',
+    );
     expect(fieldOf(() => validatePointsConfigInput({ actionCaps: { like_set: 0 } }))).toBe(
       'actionCaps.like_set',
     );

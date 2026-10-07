@@ -122,6 +122,7 @@ const appTree = {
   '(tabs)/(perfil)/perfil': label('profile'),
   '(tabs)/(perfil)/ajustes': SettingsRoute,
   '(tabs)/(perfil)/excluir-conta': DeleteAccountRoute,
+  '(tabs)/(perfil)/editar-perfil': label('editar perfil'),
   '(tabs)/(inicio,explorar,ranking,perfil)/artista/[artistaId]': label('artist'),
 };
 
@@ -196,6 +197,20 @@ describe('Ajustes', () => {
     // Só o que abre outra tela leva a seta: Sair sai na hora.
     expect(screen.queryByTestId('settings-sign-out-trailing', hidden)).toBeNull();
     expect(screen.getByTestId('settings-delete-account-trailing', hidden)).toBeTruthy();
+  });
+
+  it('a seção Perfil traz "Editar perfil", que abre a tela; nas fixtures, a meta "Nome e cidade"', async () => {
+    const view = renderRouter(appTree, { initialUrl: '/ajustes' });
+
+    expect(screen.getByRole('header', { name: 'Perfil' })).toBeTruthy();
+    const row = screen.getByRole('button', { name: 'Editar perfil. Nome e cidade' });
+    expect(row).toHaveProp('accessibilityHint', 'Abre a edição do perfil');
+    expect(screen.getByTestId('settings-edit-profile-trailing', hidden)).toBeTruthy();
+
+    fireEvent.press(row);
+    await waitFor(() => expect(view.getPathname()).toBe('/editar-perfil'));
+    expect(view.getSegments()).toEqual(['(tabs)', '(perfil)', 'editar-perfil']);
+    expect(screen.getByText('editar perfil')).toBeTruthy();
   });
 
   it('Sair: sai no Firebase, o cache do aparelho vai embora e o guard leva à entrada', async () => {

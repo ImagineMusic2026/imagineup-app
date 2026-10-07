@@ -10,6 +10,11 @@ export type StoredFile = {
   customMetadata: Record<string, string>;
   /** Tamanho em bytes, quando o bucket diz (o mp4 dos posts de vídeo guarda). */
   size?: number;
+  /**
+   * Quando o Storage gravou o arquivo, em ms (o `timeCreated` dos metadados).
+   * Só a foto do fã (bloco 9) lê: o arquivo velho não vira a foto.
+   */
+  timeCreated?: number;
 };
 
 /**
@@ -44,10 +49,12 @@ export function bucketFiles(getBucket: () => Bucket): ArtistFiles {
           if (value !== null) customMetadata[key] = String(value);
         }
         const size = Number(metadata.size);
+        const timeCreated = Date.parse(String(metadata.timeCreated ?? ''));
         return {
           contentType: metadata.contentType ?? null,
           customMetadata,
           ...(Number.isFinite(size) ? { size } : {}),
+          ...(Number.isFinite(timeCreated) ? { timeCreated } : {}),
         };
       } catch (error) {
         if ((error as { code?: unknown }).code === 404) return null;

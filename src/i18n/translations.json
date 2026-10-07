@@ -643,7 +643,8 @@
       "loaded": "Centrais carregadas.",
       "empty": "Você ainda não entrou em nenhuma central.",
       "explore": "Explorar artistas"
-    }
+    },
+    "heroHint": "Abre a edição do perfil"
   },
   "ledger": {
     "title": "Extrato",
@@ -693,7 +694,67 @@
     "signOutError": "Não deu para sair agora. Tente de novo.",
     "deleteAccount": "Excluir conta",
     "deleteAccountMeta": "Apaga seu perfil, seus pontos e seu @",
-    "deleteAccountHint": "Mostra o que se perde antes de confirmar"
+    "deleteAccountHint": "Mostra o que se perde antes de confirmar",
+    "profile": "Perfil",
+    "editProfile": "Editar perfil",
+    "editProfileMeta": "Nome, @, cidade e foto",
+    "editProfileMetaBasic": "Nome e cidade",
+    "editProfileMetaAutomatic": "Seu @ ainda é automático",
+    "editProfileHint": "Abre a edição do perfil"
+  },
+  "editProfile": {
+    "title": "Editar perfil",
+    "notReady": "Seu perfil ainda não está pronto. Espere alguns segundos.",
+    "loadError": "Não deu para carregar seu perfil.",
+    "photo": {
+      "section": "Foto",
+      "gallery": "Galeria",
+      "galleryLabel": "Escolher foto da galeria",
+      "camera": "Câmera",
+      "cameraLabel": "Tirar foto com a câmera",
+      "remove": "Remover foto",
+      "busy": "Enviando a foto",
+      "updated": "Foto atualizada.",
+      "removed": "Foto removida.",
+      "error": "Não deu para trocar a foto. Tente de novo.",
+      "invalid": "Não deu para usar essa foto. Escolha outra.",
+      "tooBig": "Foto grande demais. Escolha outra.",
+      "tooMany": "Você trocou a foto muitas vezes hoje. Tente amanhã.",
+      "cameraDenied": "Sem acesso à câmera. Libere nos ajustes do aparelho.",
+      "openSettings": "Abrir ajustes",
+      "noCamera": "Câmera indisponível neste aparelho."
+    },
+    "info": {
+      "section": "Nome e cidade",
+      "name": "Nome",
+      "city": "Cidade (opcional)",
+      "cityHint": "Ex.: Feira de Santana, BA",
+      "save": "Salvar",
+      "saved": "Perfil salvo.",
+      "tooSoon": "Você salvou há pouco. Espere alguns segundos e tente de novo.",
+      "timeout": "Ainda salvando. Confira a internet.",
+      "error": "Não deu para salvar. Tente de novo."
+    },
+    "username": {
+      "section": "Seu @",
+      "label": "@",
+      "automatic": "Automático",
+      "automaticHint": "Este @ foi criado sozinho. Escolha um com a sua cara.",
+      "rule": "De 3 a 20 letras minúsculas e números. Depois de trocar, só de novo em 30 dias.",
+      "checking": "Conferindo...",
+      "checkError": "Não deu para conferir o @.",
+      "recheck": "Conferir o @ de novo",
+      "available": "Disponível",
+      "current": "É o seu @ de agora",
+      "taken": "Este @ já tem dono.",
+      "reserved": "Este @ não está disponível.",
+      "invalid": "Use de 3 a 20 letras minúsculas e números.",
+      "lockedUntil": "Você troca o @ de novo em {{date}}.",
+      "tooSoon": "Você trocou o @ há menos de 30 dias.",
+      "submit": "Trocar @",
+      "changed": "Seu @ agora é @{{username}}.",
+      "error": "Não deu para trocar o @. Tente de novo."
+    }
   },
   "deleteAccount": {
     "title": "Excluir conta",
@@ -764,7 +825,9 @@
     "inviteCodeInvalid": "Use só as letras e os números do código.",
     "commentEmpty": "Escreva algo antes de enviar.",
     "commentMax": "O comentário pode ter até {{max}} caracteres.",
-    "commentInvisible": "Tire os caracteres invisíveis do comentário."
+    "commentInvisible": "Tire os caracteres invisíveis do comentário.",
+    "cityMax": "Use até {{max}} caracteres.",
+    "cityInvalid": "Use só uma linha, sem caracteres invisíveis."
   },
   "points": {
     "balance": "{{points}} pontos",

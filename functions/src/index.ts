@@ -3,7 +3,7 @@ import { getAuth } from 'firebase-admin/auth';
 import { getFirestore } from 'firebase-admin/firestore';
 import { getFunctions } from 'firebase-admin/functions';
 import { getStorage } from 'firebase-admin/storage';
-import { onDocumentWritten } from 'firebase-functions/firestore';
+import { onDocumentUpdated, onDocumentWritten } from 'firebase-functions/firestore';
 import { onCall, onRequest } from 'firebase-functions/https';
 import { onUserCreated, onUserDeleted } from 'firebase-functions/identity';
 import * as logger from 'firebase-functions/logger';
@@ -36,6 +36,15 @@ import {
   runFanCountSync,
   type FanCountQueue,
 } from './centrals';
+import {
+  FAN_PROFILE_MAX_ATTEMPTS,
+  FAN_PROFILE_QUEUE,
+  fanPhotoFiles,
+  queueFanPhotoPurge,
+  queueFanProfileSync as enqueueFanProfileSync,
+  runFanProfileSync,
+  type FanProfileQueue,
+} from './fan-profile';
 import { handleUserCreated, type FindUser } from './handlers';
 import { INVITE_KEY_SECRET } from './invites';
 import {
@@ -97,11 +106,27 @@ export const createUserProfile = onUserCreated({ retry: true }, async (event) =>
   logger.info('Perfil do fã.', { uid: event.data.uid, ...result });
 });
 
-/** Excluir a conta apaga o perfil, as subcoleções, libera o @ e tira o acesso ao painel. */
+/**
+ * Excluir a conta apaga o perfil, as subcoleções, libera o @, tira o acesso ao
+ * painel e, desde o bloco 9, esvazia a pasta da foto no Storage, com a segunda
+ * limpeza da pasta na fila 1 h depois (24.11).
+ */
 export const deleteUserProfile = onUserDeleted({ retry: true }, async (event) => {
-  await deleteUserData(getFirestore(), event.data.uid);
-  logger.info('Dados do fã apagados.', { uid: event.data.uid });
+  const uid = event.data.uid;
+  await deleteUserData(getFirestore(), uid, { files: fanFiles() });
+  await queueFanPhotoPurge(fanProfileQueue(), uid, { now: Date.now(), emulator: isEmulator() });
+  logger.info('Dados do fã apagados.', { uid });
 });
+
+const isEmulator = () => process.env.FUNCTIONS_EMULATOR === 'true';
+
+// Bucket padrão do projeto (imagine-up-app.firebasestorage.app; no emulador,
+// demo-imagine-up-app.appspot.com), resolvido só quando alguém mexe em arquivo.
+const fanFiles = () => fanPhotoFiles(() => getStorage().bucket());
+
+let profileQueue: FanProfileQueue | null = null;
+const fanProfileQueue = (): FanProfileQueue =>
+  (profileQueue ??= getFunctions().taskQueue<{ uid: string }>(FAN_PROFILE_QUEUE));
 
 const findUser: FindUser = async (uid) => {
   try {
@@ -495,8 +520,9 @@ let apiHandler: ReturnType<typeof createApiHandler> | null = null;
  * código do fã, o claim, a visita e os links) e o mural e a agenda (bloco 6:
  * posts, comentários, curtidas, shows, "Eu vou", denúncias e bloqueios), as
  * missões e conquistas (bloco 7: a 1g, a missão do dia e as conquistas da
- * 1e) e o ranking (bloco 8: a temporada, o ranking geral e das centrais e a
- * posição do fã); os pontos, as missões, os níveis e as posições são sempre
+ * 1e), o ranking (bloco 8: a temporada, o ranking geral e das centrais e a
+ * posição do fã) e o perfil editável (bloco 9: o @ escolhido pelo fã e a foto
+ * do perfil, conferida no Storage); os pontos, as missões, os níveis e as posições são sempre
  * calculados no servidor. O segredo do HMAC da chave da pessoa (INVITE_KEY_SECRET) só
  * chega a esta função, lido a cada pedido.
  */
@@ -515,6 +541,7 @@ export const api = onRequest(
       db: getFirestore(),
       auth: getAuth(),
       inviteKey: () => INVITE_KEY_SECRET.value(),
+      files: fanFiles(),
     });
     return apiHandler(req, res);
   },
@@ -576,5 +603,47 @@ export const syncPostCounts = onTaskDispatched<{ postId: string }>(
     });
     if (result)
       logger.info('Contagens do post copiadas.', { postId: request.data.postId, ...result });
+  },
+);
+
+// Perfil editável (bloco 9, docs/arquitetura-api.md, 24.7): o fã troca o nome
+// direto no Firestore e a foto pela API. O gatilho do perfil apaga a foto
+// trocada e, quando o nome ou a foto mudam, põe na fila uma tarefa por fã e
+// janela (5 min; passado o orçamento do dia, 1 h), que regrava as cópias do
+// nome e da foto nos comentários do fã e varre a pasta da foto.
+
+/** Apaga a foto trocada e põe na fila as cópias do nome e da foto (sem ler os comentários). */
+export const queueFanProfileSync = onDocumentUpdated(
+  { document: 'users/{uid}', retry: true },
+  async (event) => {
+    if (!event.data) return;
+    const result = await enqueueFanProfileSync(
+      getFirestore(),
+      fanProfileQueue(),
+      fanFiles(),
+      {
+        uid: event.params.uid,
+        before: event.data.before.data(),
+        after: event.data.after.data(),
+        eventTime: Date.parse(event.time),
+      },
+      { emulator: isEmulator() },
+    );
+    if (result.photo || result.task === 'queued') {
+      logger.info('Perfil do fã alterado.', { uid: event.params.uid, ...result });
+    }
+  },
+);
+
+/** Acerta as cópias do nome e da foto nos comentários do fã e varre a pasta da foto dele. */
+export const syncFanProfile = onTaskDispatched<{ uid: string }>(
+  {
+    retryConfig: { maxAttempts: FAN_PROFILE_MAX_ATTEMPTS, minBackoffSeconds: 10 },
+    timeoutSeconds: 300,
+  },
+  async (request) => {
+    await runFanProfileSync(getFirestore(), fanFiles(), request.data, {
+      retryCount: request.retryCount,
+    });
   },
 );

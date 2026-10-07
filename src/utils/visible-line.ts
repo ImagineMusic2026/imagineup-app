@@ -53,6 +53,9 @@ export function cleanLine(text: string): string {
 /** Limite do nome no `firestore.rules` e na função de cadastro, em unidades de UTF-16. */
 export const DISPLAY_NAME_MAX = 60;
 
+/** Limite da cidade no `firestore.rules` (`validCity()`), em unidades de UTF-16. */
+export const CITY_MAX = 80;
+
 /**
  * O nome como as regras deixam gravar no perfil (`validDisplayName()`): uma
  * linha visível de 1 a 60, em NFC e sem espaço nas pontas. O que não passa

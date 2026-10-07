@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AgendaError } from '../agenda/model';
 import { CentralError } from '../centrals/model';
 import { InviteError } from '../invites/model';
+import { ProfileEditError } from '../fan-profile/model';
 import { DailyCapError, ModerationError } from '../moderation/model';
 import { staticConfigSource } from '../points/config';
 import { PostError } from '../posts/model';
@@ -750,5 +751,199 @@ describe('ranking (bloco 8)', () => {
       points: 0,
       target: null,
     });
+  });
+});
+
+describe('perfil editável (bloco 9)', () => {
+  const thrower = (error: unknown): ApiRoute[] => [
+    {
+      method: 'GET',
+      pattern: '/teste/bloco9',
+      writes: false,
+      handle: async () => {
+        throw error;
+      },
+    },
+  ];
+
+  it.each([
+    [
+      new ProfileEditError('username_invalid', { reason: 'reserved' }),
+      400,
+      {
+        code: 'username_invalid',
+        message: 'Este @ não vale. Use de 3 a 20 letras minúsculas e números.',
+        details: { reason: 'reserved' },
+      },
+    ],
+    [
+      new ProfileEditError('photo_invalid', { reason: 'dimensions' }),
+      400,
+      {
+        code: 'photo_invalid',
+        message: 'Foto fora do formato. Escolha outra.',
+        details: { reason: 'dimensions' },
+      },
+    ],
+    [
+      new ProfileEditError('photo_not_found'),
+      404,
+      { code: 'photo_not_found', message: 'Foto não encontrada. Envie de novo.' },
+    ],
+    [
+      new ProfileEditError('username_taken'),
+      409,
+      { code: 'username_taken', message: 'Este @ já tem dono.' },
+    ],
+    [
+      new ProfileEditError('username_change_too_soon', {
+        changeableAt: '2026-11-06T15:00:00.000Z',
+      }),
+      409,
+      {
+        code: 'username_change_too_soon',
+        message: 'Você trocou o @ há pouco. Tente de novo mais tarde.',
+        details: { changeableAt: '2026-11-06T15:00:00.000Z' },
+      },
+    ],
+  ])('%s vira o código combinado', async (error, status, body) => {
+    const sent = await call(request('GET', '/teste/bloco9'), thrower(error));
+    expect(sent.status).toBe(status);
+    expect(sent.body).toEqual(body);
+    expect(logger.error).not.toHaveBeenCalled();
+  });
+
+  it('teto das trocas de foto: 429 com a ação photo', async () => {
+    const sent = await call(
+      request('GET', '/teste/bloco9'),
+      thrower(new DailyCapError('photo', 10, 600)),
+    );
+    expect(sent.status).toBe(429);
+    expect(sent.body).toMatchObject({ details: { limit: 10, action: 'photo' } });
+    expect(sent.headers['Retry-After']).toBe('600');
+  });
+
+  it('disponibilidade: o username é obrigatório, texto de até 64; fora do formato é invalid sem ler', async () => {
+    for (const query of [{}, { username: ['a', 'b'] }, { username: 'a'.repeat(65) }]) {
+      const sent = await call(request('GET', '/me/username/availability', { query }));
+      expect(sent.status).toBe(400);
+      expect(sent.body).toMatchObject({ code: 'invalid_request', details: { field: 'username' } });
+    }
+    const sent = await call(
+      request('GET', '/me/username/availability', { query: { username: ' @Camila_Rib ' } }),
+    );
+    expect(sent).toMatchObject({
+      status: 200,
+      body: { username: 'camila_rib', status: 'invalid' },
+    });
+  });
+
+  it('PUT /me/username e PUT /me/photo conferem o corpo antes de abrir a transação', async () => {
+    const key = { 'Idempotency-Key': 'chave-0001' };
+    const cases: [string, unknown, number, Record<string, unknown>][] = [
+      [
+        '/me/username',
+        { username: 'ab' },
+        400,
+        { code: 'username_invalid', details: { reason: 'format' } },
+      ],
+      ['/me/username', { username: 'camila.rib' }, 400, { code: 'username_invalid' }],
+      [
+        '/me/username',
+        'camilarib',
+        400,
+        { code: 'invalid_request', details: { field: 'username' } },
+      ],
+      ['/me/username', { username: 7 }, 400, { code: 'invalid_request' }],
+      [
+        '/me/photo',
+        { path: 'fans/uid/avatar.jpg' },
+        400,
+        { code: 'photo_invalid', details: { reason: 'path' } },
+      ],
+      ['/me/photo', { path: 'artists/nenho/photo-abcdefgh.jpg' }, 400, { code: 'photo_invalid' }],
+      ['/me/photo', {}, 400, { code: 'invalid_request', details: { field: 'path' } }],
+    ];
+    for (const [path, body, status, expected] of cases) {
+      const sent = await call(request('PUT', path, { body, headers: key }));
+      expect(sent.status).toBe(status);
+      expect(sent.body).toMatchObject(expected);
+    }
+  });
+
+  it('as três que gravam exigem a Idempotency-Key', async () => {
+    for (const [method, path, body] of [
+      ['PUT', '/me/username', { username: 'camilaribeiro' }],
+      ['PUT', '/me/photo', { path: 'fans/uidCamila/photo-abcdefgh.jpg' }],
+      ['DELETE', '/me/photo', undefined],
+    ] as const) {
+      const sent = await call(request(method, path, { body }));
+      expect(sent.status).toBe(400);
+      expect(sent.body).toMatchObject({ code: 'idempotency_key_required' });
+    }
+  });
+
+  it('sem files nas dependências, só as rotas da foto falham com 500', async () => {
+    // Firestore falso com transação: o perfil existe, sem foto, e nada mais.
+    const profileOnly = {
+      collection: (name: string) => ({
+        doc: (id: string) => ({
+          path: `${name}/${id}`,
+          id,
+          collection: (sub: string) => ({
+            doc: (other: string) => ({ path: `${name}/${id}/${sub}/${other}` }),
+          }),
+          get: async () => ({ data: () => undefined }),
+        }),
+      }),
+      runTransaction: async <T>(fn: (tx: unknown) => Promise<T>) =>
+        fn({
+          getAll: async (...refs: { path: string }[]) =>
+            refs.map((ref) => {
+              const exists = ref.path === 'users/uidCamila';
+              return {
+                exists,
+                data: () => (exists ? { displayName: 'Camila' } : undefined),
+                get: (field: string) => (exists && field === 'displayName' ? 'Camila' : undefined),
+              };
+            }),
+          get: async () => ({ exists: false, data: () => undefined, get: () => undefined }),
+          create: vi.fn(),
+          set: vi.fn(),
+          update: vi.fn(),
+          delete: vi.fn(),
+        }),
+    } as unknown as Firestore;
+    const camila = { verifyIdToken: vi.fn(async () => ({ uid: 'uidCamila' }) as never) };
+    const handler = createApiHandler({
+      db: profileOnly,
+      auth: camila,
+      now: () => NOW,
+      random: () => 0,
+      config: staticConfigSource(),
+    });
+    const send = async (method: string, path: string, body?: unknown) => {
+      const { res, sent } = response();
+      await handler(
+        request(method, path, { body, headers: { 'Idempotency-Key': `chave-${method}-0001` } }),
+        res,
+      );
+      return sent;
+    };
+    // O caminho é de outro uid: recusa antes de olhar o Storage.
+    const other = await send('PUT', '/me/photo', { path: 'fans/uidOutro/photo-abcdefgh.jpg' });
+    expect(other.status).toBe(400);
+    expect(other.body).toMatchObject({ code: 'photo_invalid', details: { reason: 'path' } });
+    expect(logger.error).not.toHaveBeenCalled();
+    // O da pasta dela chega ao Storage, que falta: 500, com o log.
+    const own = await send('PUT', '/me/photo', { path: 'fans/uidCamila/photo-abcdefgh.jpg' });
+    expect(own.status).toBe(500);
+    expect(logger.error).toHaveBeenCalledOnce();
+    // Sem foto, remover responde sem tocar no Storage; as leituras seguem.
+    expect(await send('DELETE', '/me/photo')).toMatchObject({
+      status: 200,
+      body: { photoURL: null },
+    });
+    expect((await send('GET', '/me/wallet')).status).toBe(200);
   });
 });

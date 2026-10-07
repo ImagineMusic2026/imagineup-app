@@ -56,6 +56,8 @@ describe('tetos do dia', () => {
       rsvp: { key: 'rsvp_set', limit: 50 },
       report: { key: 'comment_report', limit: 30 },
       block: { key: 'fan_block', limit: 30 },
+      // Bloco 9: as trocas de foto do perfil.
+      photo: { key: 'photo_set', limit: 10 },
     });
     expect(BLOCK_LIST_MAX).toBe(1_000);
   });

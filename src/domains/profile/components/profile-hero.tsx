@@ -7,6 +7,7 @@ import {
 } from 'react-native';
 
 import { Avatar } from '@/components/avatar';
+import { PressableScale } from '@/components/pressable-scale';
 import { ProgressRing } from '@/components/progress-ring';
 import { Skeleton } from '@/components/skeleton';
 import { Text } from '@/components/text';
@@ -43,6 +44,11 @@ export interface ProfileHeroProps {
   levelFraction: number;
   /** Muda a cada subida de nível que o fã vê (`useLevelUp`). */
   celebration?: number | null;
+  /**
+   * Abre a edição do perfil (bloco 9): o hero vira um botão só, com o mesmo
+   * rótulo, a dica e nada tocável dentro (o avatar já fica fora do leitor).
+   */
+  onPress?: () => void;
   style?: StyleProp<ViewStyle>;
   testID?: string;
 }
@@ -59,6 +65,9 @@ export interface ProfileHeroProps {
  * também: os dois recomeçam juntos.
  *
  * O nome não é cortado com a fonte maior do sistema: o hero cresce na altura.
+ *
+ * Com `onPress` (bloco 9), o hero é um botão só que abre "Editar perfil": o
+ * mesmo rótulo e a dica, pela regra dos pressáveis aninhados.
  */
 export function ProfileHero({
   uid,
@@ -70,6 +79,7 @@ export function ProfileHero({
   level,
   levelFraction,
   celebration = null,
+  onPress,
   style,
   testID,
 }: ProfileHeroProps) {
@@ -80,14 +90,8 @@ export function ProfileHero({
     ? t('profile.loading')
     : heroLabel({ name: shownName, username, city, level });
 
-  return (
-    <View
-      testID={testID}
-      accessible
-      accessibilityLabel={label}
-      accessibilityState={loading ? { busy: true } : undefined}
-      style={[styles.hero, style]}
-    >
+  const content = (
+    <>
       <ProgressRing
         restartKey={level?.number ?? null}
         progress={level ? levelFraction : 0}
@@ -127,6 +131,35 @@ export function ProfileHero({
           style={styles.badge}
         />
       )}
+    </>
+  );
+
+  if (onPress) {
+    return (
+      <PressableScale
+        testID={testID}
+        onPress={onPress}
+        haptic="tap"
+        accessibilityRole="button"
+        accessibilityLabel={label}
+        accessibilityHint={t('profile.heroHint')}
+        accessibilityState={loading ? { busy: true } : undefined}
+        style={[styles.hero, style]}
+      >
+        {content}
+      </PressableScale>
+    );
+  }
+
+  return (
+    <View
+      testID={testID}
+      accessible
+      accessibilityLabel={label}
+      accessibilityState={loading ? { busy: true } : undefined}
+      style={[styles.hero, style]}
+    >
+      {content}
     </View>
   );
 }

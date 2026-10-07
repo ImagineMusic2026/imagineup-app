@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 
-import { Timestamp, type Transaction } from 'firebase-admin/firestore';
+import { Timestamp, type DocumentSnapshot, type Transaction } from 'firebase-admin/firestore';
 
 import {
   applyAwards,
@@ -75,6 +75,12 @@ export type IdempotentWork = (ctx: {
   tx: Transaction;
   fan: FanContext;
   award: AwardContext;
+  /**
+   * O retrato de users/{uid} que o getAll da chave já leu (e travou) nesta
+   * transação: as rotas do perfil (bloco 9) leem o @, o prazo e a foto dele
+   * sem uma leitura a mais. O `FanContext` não traz esses campos.
+   */
+  profile: DocumentSnapshot;
 }) => Promise<WorkResult>;
 
 export type IdempotentResult = { status: number; body: unknown; replayed: boolean };
@@ -131,7 +137,7 @@ export function runIdempotent(
         actor: { type: 'fan', uid: call.uid, name: null },
         game: call.game,
       };
-      const result = await work({ tx, fan, award });
+      const result = await work({ tx, fan, award, profile: profile! });
       const plan =
         result.plan ?? (await planAwards(tx, db, [{ uid: call.uid, entries: [], fan }], award));
       // Plano sem o retrato deste pedido perderia a atividade de quem chama (o

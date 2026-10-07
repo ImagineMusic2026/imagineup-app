@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { RESERVED_HANDLES } from './artists/model';
 import {
   DISPLAY_NAME_MAX,
+  isReservedUsername,
   profileDisplayName,
   USERNAME_PATTERN,
   usernameBase,
@@ -92,6 +93,48 @@ describe('usernameBase', () => {
 
   it('corta a base em 15 caracteres', () => {
     expect(usernameBase('Bartholomeuzinho Souza')).toBe('bartholomeuzinh');
+  });
+
+  it('nome que daria o formato do automático vira a base do automático (bloco 9)', () => {
+    // "fa12" com 4 dígitos daria um "fa" com 6, igual ao sorteio: todo @
+    // ^fa[0-9]+$ é sorteio, e o fã nunca escolhe um (24.1, decisão 3).
+    expect(usernameBase('Fa 12')).toBe('fa');
+    expect(usernameBase('Fa123456')).toBe('fa');
+    expect(usernameBase('Fa')).toBe('fa');
+    expect(usernameBase('Fabio Lima')).toBe('fabiolim');
+    expect(usernameBase('Fa Bio')).toBe('fabio');
+  });
+});
+
+describe('isReservedUsername (o gerador e a troca do @ pelo fã)', () => {
+  it.each([
+    'admin',
+    'adm1n',
+    'imagine',
+    '1magine',
+    'imagineup',
+    'irnagineup',
+    'suporte',
+    'equipeup',
+    'moderador',
+    'atendimento',
+    'staff',
+    'ajuda',
+    'contato',
+    'c0ntat0',
+  ])('%s é reservado', (username) => {
+    expect(isReservedUsername(username)).toBe(true);
+  });
+
+  it.each(['camilarib', 'ajudante', 'contatosil', 'fabio', 'modestolim', 'bernardosou'])(
+    '%s não é reservado',
+    (username) => {
+      expect(isReservedUsername(username)).toBe(false);
+    },
+  );
+
+  it('os reservados das centrais valem exatos', () => {
+    for (const handle of RESERVED_HANDLES) expect(isReservedUsername(handle)).toBe(true);
   });
 });
 

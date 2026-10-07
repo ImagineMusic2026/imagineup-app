@@ -371,3 +371,104 @@ describe('foto dos shows (events/{id}/)', () => {
     await assertFails(as('admin').ref(path).delete());
   });
 });
+
+describe('foto do fã (fans/{uid}/)', () => {
+  // A fã com perfil (users/camila, como o servidor cria) e o fã sem perfil.
+  beforeEach(async () => {
+    await env.withSecurityRulesDisabled(async (context) => {
+      await setDoc(doc(context.firestore(), 'users/camila'), {
+        displayName: 'Camila Ribeiro',
+        username: 'camilarib',
+        city: null,
+        photoURL: null,
+        createdAt: Timestamp.now(),
+      });
+      await setDoc(doc(context.firestore(), 'users/alan'), {
+        displayName: 'Alan',
+        username: 'alan',
+        city: null,
+        photoURL: null,
+        createdAt: Timestamp.now(),
+      });
+    });
+  });
+
+  // Nome no formato do app (photo-<createIdempotencyKey()>.jpg), novo a cada envio.
+  const photoPath = (uid = 'camila') =>
+    `fans/${uid}/photo-mg5k2x1a-${(++counter).toString(36).padStart(8, '0')}.jpg`;
+  const jpeg = { contentType: 'image/jpeg' };
+
+  it('a fã com perfil sobe um JPEG pequeno com o nome no formato', async () => {
+    await assertSucceeds(upload(as('camila'), photoPath(), jpeg));
+  });
+
+  it('outro fã, sem login, a equipe e a conta só da equipe não sobem na pasta dela', async () => {
+    await assertFails(upload(as('alan'), photoPath(), jpeg));
+    await assertFails(upload(anonymous(), photoPath(), jpeg));
+    await assertFails(upload(as('admin'), photoPath(), jpeg));
+    // A conta só da equipe (staff/editora, sem users/editora) na própria pasta.
+    await assertFails(upload(as('editora'), photoPath('editora'), jpeg));
+  });
+
+  it('sem users/{uid} (conta excluída, token ainda válido), não sobe', async () => {
+    await env.withSecurityRulesDisabled(async (context) => {
+      await deleteDoc(doc(context.firestore(), 'users/camila'));
+    });
+    await assertFails(upload(as('camila'), photoPath(), jpeg));
+  });
+
+  it('png, webp e image/jpeg com parâmetro não sobem', async () => {
+    for (const contentType of [
+      'image/png',
+      'image/webp',
+      'image/jpeg; charset=utf-8',
+      'image/jpg',
+    ]) {
+      await assertFails(upload(as('camila'), photoPath(), { contentType }));
+    }
+  });
+
+  it('até 1 MiB passa; acima, não; vazio, não', async () => {
+    await assertSucceeds(upload(as('camila'), photoPath(), { ...jpeg, size: MB }));
+    await assertFails(upload(as('camila'), photoPath(), { ...jpeg, size: MB + 1 }));
+    await assertFails(upload(as('camila'), photoPath(), { ...jpeg, size: 0 }));
+  });
+
+  it('nome fora do formato e subpasta não sobem', async () => {
+    for (const name of [
+      'avatar.jpg',
+      'photo-ABCDEFGH.jpg',
+      'photo-a.jpg',
+      'photo-mg5k2x1a-4f9z0abc.jpeg',
+      `photo-${'a'.repeat(41)}.jpg`,
+    ]) {
+      await assertFails(upload(as('camila'), `fans/camila/${name}`, jpeg));
+    }
+    await assertFails(upload(as('camila'), 'fans/camila/sub/photo-mg5k2x1a-0001.jpg', jpeg));
+  });
+
+  it('o mesmo nome duas vezes não sobe (sem sobrescrever)', async () => {
+    const path = photoPath();
+    await assertSucceeds(upload(as('camila'), path, jpeg));
+    await assertFails(upload(as('camila'), path, jpeg));
+  });
+
+  it('a dona baixa e lê os metadados pelo caminho; outro fã e sem login, não', async () => {
+    const path = photoPath();
+    await assertSucceeds(upload(as('camila'), path, jpeg));
+    await assertSucceeds(as('camila').ref(path).getMetadata());
+    await assertSucceeds(as('camila').ref(path).getDownloadURL());
+    await assertFails(as('alan').ref(path).getMetadata());
+    await assertFails(anonymous().ref(path).getMetadata());
+  });
+
+  it('ninguém lista, troca metadados nem apaga, nem a dona nem a admin', async () => {
+    const path = photoPath();
+    await assertSucceeds(upload(as('camila'), path, jpeg));
+    for (const storage of [as('camila'), as('admin')]) {
+      await assertFails(storage.ref('fans/camila').listAll());
+      await assertFails(storage.ref(path).delete());
+      await assertFails(storage.ref(path).updateMetadata({ contentType: 'image/png' }));
+    }
+  });
+});

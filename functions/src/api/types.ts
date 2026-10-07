@@ -1,4 +1,6 @@
-import type { Firestore, Transaction } from 'firebase-admin/firestore';
+import type { DocumentSnapshot, Firestore, Transaction } from 'firebase-admin/firestore';
+
+import type { FanPhotoFiles } from '../fan-profile/files';
 
 import type { AwardContext, AwardPlan, FanContext } from '../points/award';
 import type { ConfigSource } from '../points/config';
@@ -37,6 +39,11 @@ export type ApiDeps = {
    * convite falham.
    */
   inviteKey?: () => string;
+  /**
+   * O Storage das fotos dos fãs (bloco 9): a função api recebe o bucket
+   * padrão; os testes, o do emulador. Sem ele, só as rotas da foto falham.
+   */
+  files?: FanPhotoFiles;
 };
 
 export type ResolvedDeps = Required<ApiDeps>;
@@ -61,6 +68,8 @@ export type WriteContext = ReadContext & {
   fan: FanContext;
   /** O contexto do planAwards: agora, valores, shard sorteado nesta tentativa e o fã como ator. */
   award: AwardContext;
+  /** users/{uid} lido na transação pelo runIdempotent (o @, o prazo e a foto, bloco 9). */
+  profile: DocumentSnapshot;
 };
 
 /** O que a rota que grava devolve: a resposta e, se lançou pontos, o plano (com quem chama). */

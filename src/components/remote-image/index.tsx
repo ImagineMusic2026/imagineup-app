@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 
 import { Text } from '@/components/text';
+import { mediaUrl } from '@/config/server';
 import { usePrefersReducedMotion } from '@/hooks/use-prefers-reduced-motion';
 import {
   avatarFallbacks,
@@ -141,7 +142,8 @@ export function RemoteImage({
     return () => clearTimeout(timer);
   }, [loadedUri, fade]);
 
-  const photo = uri || null;
+  // Com os emuladores, a URL do Storage troca para o host que o aparelho alcança.
+  const photo = uri ? mediaUrl(uri) : null;
   const showFallback = photo === null || coveredUri !== photo;
   const described = !!accessibilityLabel;
 

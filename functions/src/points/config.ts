@@ -14,6 +14,7 @@ import {
 } from '../achievements/model';
 import { CENTRAL_ENTRIES_PER_DAY } from '../centrals/model';
 import { ConfigValidationError } from '../config-validation';
+import { PHOTO_CHANGES_PER_DAY } from '../fan-profile/model';
 import { INVITE_LINKS_PER_DAY, INVITE_VISITS_SENT_PER_DAY } from '../invites/model';
 import {
   EMPTY_MISSIONS_CONFIG,
@@ -60,9 +61,13 @@ export const ACTION_CAP_KEYS = [
   'rsvp_set',
   'comment_report',
   'fan_block',
+  'photo_set',
 ] as const satisfies readonly DailyActionKey[];
 
-/** Os tetos do dia de hoje (blocos 4, 5 e 6) como padrão do código (22.1, decisão 13). */
+/**
+ * Os tetos do dia (blocos 4, 5, 6 e, desde o bloco 9, as trocas de foto) como
+ * padrão do código (22.1, decisão 13; 24.1, decisão 11).
+ */
 export const DEFAULT_ACTION_CAPS: Record<DailyActionKey, number> = {
   central_entry: CENTRAL_ENTRIES_PER_DAY,
   invite_visit_sent: INVITE_VISITS_SENT_PER_DAY,
@@ -72,6 +77,7 @@ export const DEFAULT_ACTION_CAPS: Record<DailyActionKey, number> = {
   rsvp_set: RSVPS_PER_DAY,
   comment_report: REPORTS_PER_DAY,
   fan_block: BLOCKS_PER_DAY,
+  photo_set: PHOTO_CHANGES_PER_DAY,
 };
 
 /** Teto do dia: de 1 a 10.000. */

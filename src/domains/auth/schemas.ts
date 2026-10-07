@@ -26,9 +26,10 @@ const passwordField = z
  * recusa) e os espaços das pontas, e os acentos são juntados (NFC). O tamanho
  * conta unidades de UTF-16, como a função: nunca menos que a conta das regras,
  * e o nome chega ao perfil sem perder palavras. O `.max()` do zod 4 conta
- * pontos de código (um emoji vale 1), por isso a conta é feita à mão.
+ * pontos de código (um emoji vale 1), por isso a conta é feita à mão. A
+ * tela "Editar perfil" (bloco 9) usa o mesmo campo.
  */
-const nameField = z
+export const nameField = z
   .string()
   .transform(cleanLine)
   .pipe(

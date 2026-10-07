@@ -10,6 +10,10 @@ rules_version = '2';
 // foto pelo caminho exato (o app mostra a URL), ninguém lista a pasta, e só o
 // servidor apaga ou troca arquivos.
 //
+// Desde o bloco 9, a foto do fã sobe do app para fans/{uid}/, só do próprio
+// fã, só JPEG de até 1 MiB, com o nome que o app gera e só com o perfil
+// existindo; a função api confere o arquivo e grava a URL no perfil.
+//
 // Quem sobe é quem altera Artistas e centrais no painel: a mesma conta de
 // canEditSection('artists') e staffSessionAllowed() do firestore.rules, lendo
 // staff/{uid} no Firestore. E só para uma central que já existe em
@@ -119,6 +123,29 @@ service firebase.storage {
         && validImage()
         && canEditSection('artists')
         && docExists('events', eventId);
+      allow update, delete: if false;
+    }
+
+    // Foto do fã (bloco 9): o próprio fã sobe para a pasta dele um JPEG de até
+    // 1 MiB, com o nome que o app gera (photo-<id>.jpg), sem sobrescrever, e só
+    // com o perfil existindo: conta só da equipe e conta já excluída (o token
+    // ainda vale até 1 h) não sobem. A função api confere o arquivo e grava a
+    // URL no perfil; os outros fãs veem a foto pela URL com token. O dono lê
+    // pelo caminho: o app confere os metadados, antes de enviar de novo, para
+    // saber se o envio de uma tentativa já chegou. Só o servidor apaga (a foto
+    // trocada, os envios que não viraram a foto e a pasta da conta excluída).
+    match /fans/{uid}/{fileName} {
+      allow get: if request.auth != null && request.auth.uid == uid;
+      allow list: if false;
+      allow create: if request.auth != null
+        && request.auth.uid == uid
+        && resource == null
+        && uid.matches('[A-Za-z0-9]{1,128}')
+        && fileName.matches('photo-[a-z0-9-]{8,40}[.]jpg')
+        && request.resource.size > 0
+        && request.resource.size <= 1024 * 1024
+        && request.resource.contentType == 'image/jpeg'
+        && docExists('users', uid);
       allow update, delete: if false;
     }
 

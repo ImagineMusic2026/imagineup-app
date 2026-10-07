@@ -1,5 +1,6 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, fireEvent, render, screen } from '@testing-library/react-native';
+import { Image } from 'expo-image';
 import { router } from 'expo-router';
 import type { ReactNode } from 'react';
 import { Dimensions, Share } from 'react-native';
@@ -371,6 +372,52 @@ describe('PostActions', () => {
     renderActions(CLIP);
     expect(nestedPressables()).toEqual([]);
     expect(screen.getAllByRole('button')).toHaveLength(3);
+  });
+});
+
+describe('CommentRow: as linhas "Você" com o perfil de agora (bloco 9)', () => {
+  const stale = comment({
+    authorName: 'Nome Antigo',
+    authorAvatarUrl: 'https://fotos.exemplo/antiga.jpg',
+  });
+
+  it('com mine e me, "Você" com as iniciais e a foto de me, mesmo com a cópia velha', () => {
+    render(
+      <CommentRow
+        comment={stale}
+        now={NOW}
+        mine
+        me={{ name: 'Camila Ribeiro', photoURL: 'https://fotos.exemplo/nova.jpg' }}
+      />,
+    );
+    expect(screen.getByText('Você', hidden)).toBeTruthy();
+    expect(screen.getByText('CR', hidden)).toBeTruthy();
+    expect(screen.UNSAFE_getByType(Image).props.source).toEqual({
+      uri: 'https://fotos.exemplo/nova.jpg',
+    });
+  });
+
+  it('com mine e me sem foto, as iniciais do nome de agora (a foto tirada não volta)', () => {
+    render(
+      <CommentRow comment={stale} now={NOW} mine me={{ name: 'Camila Ribeiro', photoURL: null }} />,
+    );
+    expect(screen.getByText('CR', hidden)).toBeTruthy();
+    expect(screen.UNSAFE_queryAllByType(Image)).toHaveLength(0);
+  });
+
+  it('sem mine, a cópia do comentário', () => {
+    render(
+      <CommentRow
+        comment={stale}
+        now={NOW}
+        me={{ name: 'Camila Ribeiro', photoURL: 'https://fotos.exemplo/nova.jpg' }}
+      />,
+    );
+    expect(screen.getByText('Nome Antigo', hidden)).toBeTruthy();
+    expect(screen.getByText('NA', hidden)).toBeTruthy();
+    expect(screen.UNSAFE_getByType(Image).props.source).toEqual({
+      uri: 'https://fotos.exemplo/antiga.jpg',
+    });
   });
 });
 

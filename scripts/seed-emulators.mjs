@@ -62,6 +62,14 @@
  * pódio é Thalita, Davi e Jean. Numa semana nova, o retrato sai com o estado
  * de agora e as setas ficam em 0: feche os emuladores e rode o seed outra vez.
  *
+ * Perfil editável (functions/lib/fan-profile, bloco 9, 24.13): no fim, a
+ * Camila ganha a foto de teste (scripts/seed-assets/foto-teste.jpg, o degradê
+ * rosa para roxo da marca com as listras, sem rosto e sem texto), enviada ao
+ * emulador do Storage e gravada pelo mesmo núcleo da rota PUT /me/photo. Ela
+ * aparece na 1b, na 1e, no card "Você" e nas linhas dela no ranking; as
+ * temporadas fechadas ficam sem a foto (o arquivo é da hora da virada). Os
+ * outros fãs ficam sem foto.
+ *
  * Rodar de novo não muda nada. Depois da meia-noite, o progresso do dia volta
  * a 0, como o de qualquer fã: para ver de novo o 3 de 5 e o 2 de 5, feche os
  * emuladores (os dados somem) e rode o seed outra vez.
@@ -70,7 +78,7 @@
  * para o projeto de verdade. Os dados somem quando os emuladores fecham, então
  * rode de novo a cada sessão.
  */
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 
@@ -168,7 +176,10 @@ async function setCity(uid, city) {
 
 // Só o emulador: o firebase-admin daqui nunca grava fora dele.
 process.env.FIRESTORE_EMULATOR_HOST = '127.0.0.1:8080';
+process.env.FIREBASE_STORAGE_EMULATOR_HOST = '127.0.0.1:9199';
 const PROJECT_ID = 'demo-imagine-up-app';
+// O bucket do projeto demo, o mesmo das funções, do painel e do app no emulador.
+const STORAGE_BUCKET = `${PROJECT_ID}.appspot.com`;
 
 /** Um módulo do build das funções (functions/lib), com o firebase-admin de lá. */
 function functionsBuild(module) {
@@ -192,6 +203,38 @@ async function withFirestore(work) {
   } finally {
     await deleteApp(app);
   }
+}
+
+/** Roda `work` com o Firestore e o bucket do Storage do emulador, e fecha no fim. */
+async function withStorage(work) {
+  const require = createRequire(new URL('../functions/package.json', import.meta.url));
+  const { deleteApp, initializeApp } = require('firebase-admin/app');
+  const { getFirestore } = require('firebase-admin/firestore');
+  const { getStorage } = require('firebase-admin/storage');
+  const app = initializeApp(
+    { projectId: PROJECT_ID, storageBucket: STORAGE_BUCKET },
+    `seed-storage-${Date.now()}`,
+  );
+  try {
+    return await work(getFirestore(app), getStorage(app).bucket(STORAGE_BUCKET));
+  } finally {
+    await deleteApp(app);
+  }
+}
+
+/** A foto de teste da Camila, pelo mesmo núcleo da rota (só se ela ainda não tem foto). */
+async function seedCamilaPhoto(uid) {
+  const { fanPhotoFiles, seedFanPhoto } = functionsBuild('fan-profile');
+  const bytes = readFileSync(new URL('./seed-assets/foto-teste.jpg', import.meta.url));
+  return withStorage((db, bucket) =>
+    seedFanPhoto(
+      db,
+      fanPhotoFiles(() => bucket),
+      (path, data) => bucket.file(path).save(Buffer.from(data), { contentType: 'image/jpeg' }),
+      uid,
+      new Uint8Array(bytes),
+    ),
+  );
 }
 
 /** As centrais de teste, como o painel publicaria (só as que ainda não existem). */
@@ -397,3 +440,8 @@ const engagement = await seedEngagement(engagementFans);
 console.log(
   `Engajamento dos fãs de teste, entrando agora: curtidas ${engagement.likes}, comentários ${engagement.comments}, presenças ${engagement.rsvps}, denúncias ${engagement.reports} (7, 7, 2 e 1 no total).`,
 );
+
+if (camilaUid) {
+  const photo = await seedCamilaPhoto(camilaUid);
+  console.log(`Foto de teste da Camila: ${photo === 'created' ? 'enviada' : 'já existia'}.`);
+}

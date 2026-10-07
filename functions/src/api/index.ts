@@ -1,5 +1,6 @@
 import * as logger from 'firebase-functions/logger';
 
+import { MISSING_FAN_PHOTO_FILES } from '../fan-profile/files';
 import { createConfigSource } from '../points/config';
 import { authenticate } from './auth';
 import { ApiHttpError, apiError, toApiHttpError } from './errors';
@@ -12,6 +13,7 @@ import { meRoutes } from './routes/me';
 import { missionRoutes } from './routes/missions';
 import { moderationRoutes } from './routes/moderation';
 import { postRoutes } from './routes/posts';
+import { profileRoutes } from './routes/profile';
 import { rankingRoutes } from './routes/ranking';
 import type { ApiDeps, ApiRequest, ApiResponse, ApiRoute, ResolvedDeps, RouteInput } from './types';
 
@@ -41,6 +43,7 @@ export const API_ROUTES: readonly ApiRoute[] = [
   ...moderationRoutes,
   ...missionRoutes,
   ...rankingRoutes,
+  ...profileRoutes,
 ];
 
 /** Sem o segredo do convite nas dependências, só as rotas do convite falham (500). */
@@ -81,6 +84,7 @@ export function createApiHandler(deps: ApiDeps, routes: readonly ApiRoute[] = AP
     random: deps.random ?? Math.random,
     config: deps.config ?? createConfigSource(deps.db),
     inviteKey: deps.inviteKey ?? missingInviteKey,
+    files: deps.files ?? MISSING_FAN_PHOTO_FILES,
   };
 
   return async (req: ApiRequest, res: ApiResponse): Promise<void> => {
@@ -130,7 +134,8 @@ export function createApiHandler(deps: ApiDeps, routes: readonly ApiRoute[] = AP
           config: points,
           game,
         },
-        ({ tx, fan, award }) => target.handle({ ...base, uid: callerUid, tx, fan, award }),
+        ({ tx, fan, award, profile }) =>
+          target.handle({ ...base, uid: callerUid, tx, fan, award, profile }),
       );
       status = result.status;
       replayed = result.replayed;

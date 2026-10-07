@@ -95,6 +95,7 @@ const appTree = {
   '(tabs)/(ranking)/ranking': label('ranking'),
   '(tabs)/(perfil)/perfil': ProfileRoute,
   '(tabs)/(perfil)/ajustes': SettingsRoute,
+  '(tabs)/(perfil)/editar-perfil': label('editar perfil'),
   '(tabs)/(inicio,explorar,ranking,perfil)/artista/[artistaId]': label('artist'),
 };
 
@@ -255,6 +256,18 @@ describe('perfil (1e)', () => {
     await waitFor(() => expect(screen.getByText('artist')).toBeTruthy());
     expect(view.getPathname()).toBe('/artista/nettobrito');
     expect(view.getSegments()).toEqual(['(tabs)', '(perfil)', 'artista', '[artistaId]']);
+    expect(rootRoutes(view)).toEqual(['(tabs)']);
+  });
+
+  it('o hero é um botão (bloco 9): o rótulo de sempre, a dica, e abre "Editar perfil" na pilha do Perfil', async () => {
+    const view = renderRouter(appTree, { initialUrl: '/perfil' });
+
+    const hero = await screen.findByRole('button', { name: HERO });
+    expect(hero).toHaveProp('accessibilityHint', 'Abre a edição do perfil');
+    fireEvent.press(hero);
+
+    await waitFor(() => expect(view.getPathname()).toBe('/editar-perfil'));
+    expect(view.getSegments()).toEqual(['(tabs)', '(perfil)', 'editar-perfil']);
     expect(rootRoutes(view)).toEqual(['(tabs)']);
   });
 

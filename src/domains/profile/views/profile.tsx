@@ -326,6 +326,7 @@ export function ProfileScreen() {
           level={progress.data?.level ?? null}
           levelFraction={progress.data ? levelFraction(progress.data) : 0}
           celebration={celebration}
+          onPress={() => router.push('/editar-perfil')}
           testID="profile-hero"
           style={styles.hero}
         />
