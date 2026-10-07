@@ -2,7 +2,7 @@ import { initializeApp } from 'firebase-admin/app';
 import { getAuth } from 'firebase-admin/auth';
 import { getFirestore, Timestamp, type DocumentData } from 'firebase-admin/firestore';
 import { setTimeout as sleep } from 'node:timers/promises';
-import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 
 import { API_ROUTES, createApiHandler, type ApiRequest, type ApiRoute } from '../src/api';
 import {
@@ -18,6 +18,7 @@ import {
   type PointsConfig,
 } from '../src/points';
 import { deleteUserData } from '../src/store';
+import { useCleanEmulators } from './support';
 
 /**
  * API do app e núcleo de pontos nos emuladores. Rode com `npm run
@@ -35,7 +36,6 @@ const auth = getAuth(app);
 const db = getFirestore(app);
 
 const authHost = process.env.FIREBASE_AUTH_EMULATOR_HOST;
-const firestoreHost = process.env.FIRESTORE_EMULATOR_HOST;
 let apiBase = '';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -74,16 +74,7 @@ beforeAll(async () => {
   }
 });
 
-beforeEach(async () => {
-  if (!authHost || !firestoreHost) throw new Error('Rode com npm run test:functions.');
-  await fetch(
-    `http://${firestoreHost}/emulator/v1/projects/${PROJECT_ID}/databases/(default)/documents`,
-    { method: 'DELETE' },
-  );
-  await fetch(`http://${authHost}/emulator/v1/projects/${PROJECT_ID}/accounts`, {
-    method: 'DELETE',
-  });
-});
+useCleanEmulators();
 
 let counter = 0;
 const unique = (prefix: string) => `${prefix}${++counter}`;

@@ -3,10 +3,11 @@ import { getAuth } from 'firebase-admin/auth';
 import { FieldValue, getFirestore, Timestamp, type DocumentData } from 'firebase-admin/firestore';
 import { getStorage } from 'firebase-admin/storage';
 import { setTimeout as sleep } from 'node:timers/promises';
-import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 
 import { SECTION_IDS } from '../src/staff/model';
 import { createProfile } from '../src/store';
+import { useCleanEmulators } from './support';
 
 /**
  * Artistas e centrais nos emuladores: as callables de verdade, chamadas como
@@ -61,16 +62,7 @@ beforeAll(async () => {
   }
 });
 
-beforeEach(async () => {
-  if (!authHost || !firestoreHost) throw new Error('Rode com npm run test:functions.');
-  await fetch(
-    `http://${firestoreHost}/emulator/v1/projects/${PROJECT_ID}/databases/(default)/documents`,
-    { method: 'DELETE' },
-  );
-  await fetch(`http://${authHost}/emulator/v1/projects/${PROJECT_ID}/accounts`, {
-    method: 'DELETE',
-  });
-});
+useCleanEmulators();
 
 // Ids, @ e e-mails únicos na execução inteira: o Storage não é limpo entre os
 // testes, e um gatilho atrasado nunca acerta os dados do teste seguinte.
