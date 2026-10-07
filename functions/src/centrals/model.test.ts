@@ -22,7 +22,6 @@ import {
   shouldCopyFanCount,
   sortFanCentrals,
   sumFanShards,
-  visibleCentralSeasonPoints,
 } from './model';
 
 const NOW = Date.parse('2026-10-05T15:00:00.000Z');
@@ -232,14 +231,6 @@ describe('"Suas centrais"', () => {
       { artistId: 'a', joinedAt: 10, order: 1 },
     ];
     expect(sortFanCentrals(items).map((item) => item.artistId)).toEqual(['a', 'c', 'z', 'b']);
-  });
-
-  it('pontos da temporada só com a temporada da configuração', () => {
-    const points = { seasonId: 'temporada-sao-joao', seasonPoints: 4_120 };
-    expect(visibleCentralSeasonPoints(points, 'temporada-sao-joao')).toBe(4_120);
-    expect(visibleCentralSeasonPoints(points, 'outra')).toBe(0);
-    expect(visibleCentralSeasonPoints(points, null)).toBe(0);
-    expect(visibleCentralSeasonPoints(null, 'temporada-sao-joao')).toBe(0);
   });
 });
 

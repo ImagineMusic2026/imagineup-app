@@ -18,7 +18,7 @@ import { postKeys } from '@/domains/posts/keys';
 import { profileKeys } from '@/domains/profile';
 // O "+N" das recompensas, pelo arquivo (fora do index), como o do curtir.
 import { rewardsToast } from '@/domains/profile/action-rewards';
-import { rankingKeys } from '@/domains/ranking';
+import { refreshRanking } from '@/domains/ranking';
 import { t } from '@/i18n';
 import { ApiError } from '@/services/api/errors';
 import { haptics, type HapticEvent } from '@/services/haptics';
@@ -60,7 +60,7 @@ function refreshPointsAfterRsvp(client: QueryClient, result: RsvpResult): void {
   }
   if (result.pointsAwarded <= 0) return;
   void client.invalidateQueries({ queryKey: profileKeys.wallet() });
-  void client.invalidateQueries({ queryKey: rankingKeys.all });
+  refreshRanking(client);
   void client.invalidateQueries({ queryKey: artistKeys.centrals() });
   void client.invalidateQueries({ queryKey: artistKeys.details() });
 }

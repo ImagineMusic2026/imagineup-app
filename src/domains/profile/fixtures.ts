@@ -135,9 +135,11 @@ type LedgerSample = {
 };
 
 /**
- * O extrato da Camila do seed dos emuladores (22.13): os mesmos ids, valores,
- * títulos e dias, do mais novo ao mais antigo. Os dois ajustes só de central
- * (o Netto e o Nenho) vêm com saldo, XP e temporada em 0: a tela os esconde.
+ * O extrato da Camila do seed dos emuladores (22.13 e, com as temporadas
+ * passadas, 23.15): os mesmos 17 ids, valores, títulos e dias, do mais novo ao
+ * mais antigo. Os dois ajustes só de central (o Netto e o Nenho) vêm com
+ * saldo, XP e temporada em 0: a tela os esconde. Os das temporadas passadas
+ * só mexem na temporada e aparecem.
  */
 const LEDGER_SAMPLES: readonly LedgerSample[] = [
   ...[
@@ -204,6 +206,23 @@ const LEDGER_SAMPLES: readonly LedgerSample[] = [
     artistName: null,
     central: 0,
     title: CLIPE,
+  })),
+  // As temporadas passadas do seed (bloco 8, 23.15): ajustes só de temporada,
+  // fechados pela virada (o saldo, o XP e a central ficam em 0).
+  ...[
+    { id: 'seed:camila-carnaval', daysAgo: 55, season: 290 },
+    { id: 'seed:camila-verao', daysAgo: 95, season: 510 },
+  ].map(({ id, daysAgo, season }): LedgerSample => ({
+    id,
+    daysAgo,
+    kind: 'adjust',
+    source: 'seed',
+    points: 0,
+    season,
+    artistId: null,
+    artistName: null,
+    central: 0,
+    title: null,
   })),
 ];
 

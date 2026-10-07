@@ -24,7 +24,6 @@ export {
   shouldCopyFanCount,
   sortFanCentrals,
   sumFanShards,
-  visibleCentralSeasonPoints,
   type ArtistRecord,
   type CentralErrorReason,
   type JoinVia,

@@ -78,8 +78,8 @@ function standingOf({ name, fanRank, seasonPoints }: FanCentral): {
       points: true,
     };
   }
-  // Sem posição (o servidor, até o ranking por central do bloco 8): os pontos
-  // do fã na central, em lima; "novo" só para quem ainda não pontuou nela.
+  // Sem posição (sem pontos na temporada mostrada, ou fora dos membros): os
+  // pontos do fã na central, em lima; "novo" só para quem ainda não pontuou nela.
   if (seasonPoints > 0) {
     return {
       text: t('artist.central.points', { points: formatNumber(seasonPoints) }),
@@ -97,9 +97,8 @@ function standingOf({ name, fanRank, seasonPoints }: FanCentral): {
 /**
  * Card de uma central que o fã segue, no carrossel da home (1b): foto do
  * artista (iniciais sobre a cor estável dele, sem foto), nome e a posição do
- * fã, em lima. Sem posição (até o bloco 8), os pontos dele na central, também
- * em lima, e "novo" quando ainda não pontuou nela: posição de exemplo nunca
- * aparece ao lado de número de verdade. O card inteiro é um alvo só, lido
+ * fã, em lima. Sem posição, os pontos dele na central, também em lima, e
+ * "novo" quando ainda não pontuou nela. O card inteiro é um alvo só, lido
  * como "Netto Brito, você é o 12º" ou "Netto Brito, 4.120 pontos na
  * temporada"; tocar abre o artista dentro da aba de onde veio.
  */

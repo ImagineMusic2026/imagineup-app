@@ -15,7 +15,7 @@ import { postKeys } from '@/domains/posts/keys';
 // O "+N" das recompensas, pelo arquivo (fora do index), como o do curtir.
 import { rewardsToast } from '@/domains/profile/action-rewards';
 import { profileKeys } from '@/domains/profile/keys';
-import { rankingKeys } from '@/domains/ranking/queries';
+import { refreshRanking } from '@/domains/ranking/queries';
 import { t } from '@/i18n';
 import { ApiError } from '@/services/api/errors';
 import { haptics, type HapticEvent } from '@/services/haptics';
@@ -127,10 +127,12 @@ export function useFollowArtistsMutation({ onFollowed, onError }: FollowArtistsO
     onSuccess: async (result) => {
       void queryClient.invalidateQueries({ queryKey: artistKeys.centrals() });
       void queryClient.invalidateQueries({ queryKey: artistKeys.details() });
+      // O fã entra no ranking de cada central com os pontos que já tinha nela
+      // (bloco 8): o ranking busca de novo também sem pontos.
+      refreshRanking(queryClient);
       refreshRewards(queryClient, result);
       if ((result.pointsAwarded ?? 0) > 0) {
         void queryClient.invalidateQueries({ queryKey: profileKeys.wallet() });
-        void queryClient.invalidateQueries({ queryKey: rankingKeys.all });
       }
       await onFollowed?.(result);
     },
@@ -227,18 +229,19 @@ function refreshRewards(client: QueryClient, result: ActionRewards): void {
 
 /**
  * O servidor confirmou: a página e as centrais buscam de novo (a posição do
- * fã na central nova vem de lá), e o mural da home também, que mostra os
- * posts das centrais do fã. Com pontos, o saldo, o nível e o ranking também
- * mudaram.
+ * fã na central nova vem de lá), o mural da home também, que mostra os posts
+ * das centrais do fã, e o ranking, sempre: o fã entra no ranking da central
+ * com os pontos que já tinha nela (bloco 8). Com pontos, o saldo e o nível
+ * também mudaram.
  */
 function refreshAfterJoin(client: QueryClient, result: JoinCentralResult): void {
   void client.invalidateQueries({ queryKey: artistKeys.centrals() });
   void client.invalidateQueries({ queryKey: artistKeys.detail(result.artistId) });
   void client.invalidateQueries({ queryKey: postKeys.feed() });
+  refreshRanking(client);
   refreshRewards(client, result);
   if (result.pointsAwarded <= 0) return;
   void client.invalidateQueries({ queryKey: profileKeys.wallet() });
-  void client.invalidateQueries({ queryKey: rankingKeys.all });
 }
 
 /**
@@ -425,6 +428,8 @@ export function useLeaveCentralMutation(
       void queryClient.invalidateQueries({ queryKey: artistKeys.centrals() });
       void queryClient.invalidateQueries({ queryKey: artistKeys.detail(id) });
       void queryClient.invalidateQueries({ queryKey: postKeys.feed() });
+      // Quem sai sai do ranking da central (bloco 8): os pontos ficam, a posição não.
+      refreshRanking(queryClient);
       // A missão de entrar nesta central some para quem é membro (alvo único,
       // 22.2): fora dela, volta na 1g e na aba Missões da 1d.
       void queryClient.invalidateQueries({ queryKey: missionKeys.all });

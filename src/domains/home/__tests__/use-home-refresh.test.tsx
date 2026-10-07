@@ -5,6 +5,7 @@ import type { ReactNode } from 'react';
 import { buildFanCentralsFixture } from '@/domains/artists/fixtures';
 import { buildDailyMissionFixture } from '@/domains/missions/fixtures';
 import { buildFeedPageFixture } from '@/domains/posts/fixtures';
+import { GLOBAL_SCOPE, rankingKeys } from '@/domains/ranking';
 import { api } from '@/services/api';
 import { haptics } from '@/services/haptics';
 
@@ -81,6 +82,29 @@ describe('puxar para atualizar a home', () => {
     await act(() => done);
     expect(result.current.refreshing).toBe(false);
     ROUTES.forEach((url) => expect(callsTo(url)).toBe(2));
+  });
+
+  it('o ranking (1f e 1d, nas outras abas) busca de novo junto, só a primeira página: o "você é #12" e o card não discordam', async () => {
+    const { result } = await renderLoaded();
+    const page = { items: [], nextCursor: 'c20' };
+    client.setQueryData(rankingKeys.leaderboard(GLOBAL_SCOPE), {
+      pages: [page, { items: [], nextCursor: null }],
+      pageParams: [null, 'c20'],
+    });
+    client.setQueryData(rankingKeys.myRank(GLOBAL_SCOPE), {
+      position: 12,
+      points: 4_120,
+      target: null,
+    });
+
+    await act(() => result.current.refresh());
+
+    expect(client.getQueryState(rankingKeys.myRank(GLOBAL_SCOPE))?.isInvalidated).toBe(true);
+    expect(client.getQueryState(rankingKeys.leaderboard(GLOBAL_SCOPE))?.isInvalidated).toBe(true);
+    expect(client.getQueryData(rankingKeys.leaderboard(GLOBAL_SCOPE))).toEqual({
+      pages: [page],
+      pageParams: [null],
+    });
   });
 
   it('sem internet, o indicador não fica girando: as buscas esperam a rede e voltam sozinhas', async () => {

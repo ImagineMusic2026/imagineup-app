@@ -20,7 +20,7 @@ const silent = { error: () => undefined };
 const CATALOG = DEFAULT_ACHIEVEMENTS_CONFIG.achievements;
 
 describe('lista provisória (22.6)', () => {
-  it('9 ativas e o "Top 20" em rascunho até o ranking', () => {
+  it('10 ativas: o "Top 20" saiu do rascunho no bloco 8 (23.9)', () => {
     expect(CATALOG.map((item) => [item.id, item.status])).toEqual([
       ['boca-a-boca', 'active'],
       ['fa-de-show', 'active'],
@@ -31,16 +31,14 @@ describe('lista provisória (22.6)', () => {
       ['purainha', 'active'],
       ['backstage', 'active'],
       ['lenda', 'active'],
-      ['top-20', 'draft'],
+      ['top-20', 'active'],
     ]);
   });
 
-  it('conta como publicada: as ativas com activatedAt, o rascunho sem', () => {
+  it('conta como publicada: todas com activatedAt, o Top 20 inclusive', () => {
     const list = defaultAchievements(NOW);
-    expect(
-      list.filter((item) => item.status === 'active').every((item) => item.activatedAt === NOW),
-    ).toBe(true);
-    expect(list.find((item) => item.id === 'top-20')!.activatedAt).toBeNull();
+    expect(list.every((item) => item.status === 'active' && item.activatedAt === NOW)).toBe(true);
+    expect(list.find((item) => item.id === 'top-20')!.rule).toEqual({ type: 'rank', top: 20 });
   });
 });
 
@@ -179,8 +177,31 @@ describe('desbloqueio', () => {
   });
 });
 
+describe('conquista de posição (bloco 8, 23.9)', () => {
+  it('a ação nunca desbloqueia o Top 20: só o retrato semanal e a virada', () => {
+    const outcome = unlockAchievements({
+      catalog: CATALOG,
+      owned: {},
+      levelBefore: 7,
+      levelAfter: 10,
+      firsts: new Set<FirstAction>([
+        'like',
+        'comment',
+        'rsvp',
+        'join',
+        'share',
+        'invite',
+        'mission',
+      ]),
+      now: NOW,
+      readAt: NOW,
+    });
+    expect(outcome.added.map((item) => item.id)).not.toContain('top-20');
+  });
+});
+
 describe('a 1e (achievementsView)', () => {
-  it('a Camila do seed: 5 de 9, Boca a boca, Purainha, Sanfona e a próxima, Backstage', () => {
+  it('a Camila do seed: 6 de 10, Boca a boca, Top 20, Purainha e a próxima, Backstage (23.15)', () => {
     const view = achievementsView({
       catalog: CATALOG,
       owned: {
@@ -188,17 +209,19 @@ describe('a 1e (achievementsView)', () => {
         'pe-de-serra': NOW - 8 * DAY_MS,
         sanfona: NOW - 8 * DAY_MS,
         purainha: NOW - 8 * DAY_MS,
+        // O retrato da segunda-feira, 0:00 de São Paulo.
+        'top-20': NOW - 12 * 60 * 60 * 1000,
         'boca-a-boca': NOW,
       },
       level: 7,
       updatedAt: NOW,
     });
-    expect(view.unlockedCount).toBe(5);
-    expect(view.totalCount).toBe(9);
+    expect(view.unlockedCount).toBe(6);
+    expect(view.totalCount).toBe(10);
     expect(view.highlights.map((item) => [item.id, item.unlockedAt !== null])).toEqual([
       ['boca-a-boca', true],
+      ['top-20', true],
       ['purainha', true],
-      ['sanfona', true],
       ['backstage', false],
     ]);
     expect(view.highlights[0]).toEqual({
@@ -212,7 +235,7 @@ describe('a 1e (achievementsView)', () => {
 
   it('o fã novo: Pé de serra primeiro, depois a ordem do catálogo', () => {
     const view = achievementsView({ catalog: CATALOG, owned: {}, level: 1, updatedAt: null });
-    expect(view).toMatchObject({ unlockedCount: 0, totalCount: 9 });
+    expect(view).toMatchObject({ unlockedCount: 0, totalCount: 10 });
     expect(view.highlights.map((item) => item.id)).toEqual([
       'pe-de-serra',
       'boca-a-boca',
@@ -231,7 +254,7 @@ describe('a 1e (achievementsView)', () => {
       level: 8,
       updatedAt: NOW - 2 * DAY_MS,
     });
-    expect(view).toMatchObject({ unlockedCount: 4, totalCount: 8 });
+    expect(view).toMatchObject({ unlockedCount: 4, totalCount: 9 });
     expect(view.highlights.slice(0, 3).map((item) => item.id)).toEqual([
       'backstage',
       'purainha',

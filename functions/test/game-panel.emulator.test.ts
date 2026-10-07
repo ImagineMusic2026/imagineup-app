@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 
 import { addMission, catalogDoc, type MissionRecord } from '../src/missions';
 import { createConfigSource, DEFAULT_POINTS_CONFIG } from '../src/points';
+import { CLOSE_GRACE_MS, runSeasonClose } from '../src/ranking';
 import {
   callable,
   central,
@@ -23,6 +24,7 @@ import {
 const GAME_FUNCTIONS = [
   'updatePointsConfig',
   'updateSeason',
+  'endSeason',
   'createMission',
   'updateMission',
   'setMissionStatus',
@@ -165,7 +167,7 @@ describe('régua (updatePointsConfig)', () => {
 });
 
 describe('temporada (updateSeason)', () => {
-  it('o id da temporada que já começou não muda; id usado numa versão antiga é recusado', async () => {
+  it('o id da temporada que já começou não muda; id usado numa versão antiga é recusado (bloco 8: encerra pelo endSeason e pela virada)', async () => {
     const ranking = await seedMember(env, 'Ranking', 'editor', ['ranking']);
     const now = Date.now();
     const s1 = {
@@ -191,21 +193,37 @@ describe('temporada (updateSeason)', () => {
       { expectedVersion: 1, season: { ...s1, name: 'Temporada 1' } },
       ranking,
     );
-    // Encerrar e voltar ao id antigo: season-id-used.
-    await ok('updateSeason', { expectedVersion: 2, season: null }, ranking);
+    // A começada não sai pelo updateSeason (bloco 8, 23.10): encerra pelo
+    // endSeason, a virada fecha (o handler, com o relógio depois da folga) e
+    // voltar ao id antigo é season-id-used.
+    expect(
+      (await failure('updateSeason', { expectedVersion: 2, season: null }, ranking)).reason,
+    ).toBe('season-started');
+    const ended = await ok<{ version: number; endsAt: number }>(
+      'endSeason',
+      { expectedVersion: 2, seasonId: 'temporada-1' },
+      ranking,
+    );
+    expect(ended.version).toBe(3);
+    const closed = await runSeasonClose(db, {
+      now: ended.endsAt + CLOSE_GRACE_MS,
+      budgetMs: 60_000,
+    });
+    expect(closed.status).toBe('closed');
     expect(
       (
         await failure(
           'updateSeason',
           {
-            expectedVersion: 3,
+            expectedVersion: 4,
             season: { ...s1, startsAt: now + DAY_MS, endsAt: now + 2 * DAY_MS },
           },
           ranking,
         )
       ).reason,
     ).toBe('season-id-used');
-    expect(await audits('season.updated')).toHaveLength(3);
+    expect(await audits('season.updated')).toHaveLength(2);
+    expect(await audits('season.ended')).toHaveLength(1);
   });
 });
 
@@ -537,15 +555,14 @@ describe('conquistas', () => {
       { expectedVersion: 1, achievementId: 'boca-a-boca', changes: { title: 'Boca a boca!' } },
       editor,
     );
+    // O Top 20 já está no ar (bloco 8): publicar de novo não muda nada.
     expect(
-      (
-        await failure(
-          'setAchievementStatus',
-          { expectedVersion: 2, achievementId: 'top-20', status: 'active' },
-          editor,
-        )
-      ).reason,
-    ).toBe('rule-not-available');
+      await ok(
+        'setAchievementStatus',
+        { expectedVersion: 2, achievementId: 'top-20', status: 'active' },
+        editor,
+      ),
+    ).toEqual({ ok: true, version: 2 });
     expect(
       (
         await failure(
@@ -572,6 +589,35 @@ describe('conquistas', () => {
     expect(await read('config/achievements/versions/3')).toMatchObject({ version: 3 });
   });
 
+  it('a conquista de posição pode ser criada e publicada (bloco 8, 23.9)', async () => {
+    const editor = await seedMember(env, 'Editora', 'editor', ['missions']);
+    const created = await ok<{ achievementId: string }>(
+      'createAchievement',
+      {
+        expectedVersion: 0,
+        achievement: {
+          title: 'Top 3',
+          icon: 'trophy',
+          tone: 'points',
+          rule: { type: 'rank', top: 3 },
+        },
+      },
+      editor,
+    );
+    expect(
+      await ok(
+        'setAchievementStatus',
+        { expectedVersion: 1, achievementId: created.achievementId, status: 'active' },
+        editor,
+      ),
+    ).toEqual({ ok: true, version: 2 });
+    expect(
+      (await read('config/achievements'))!.achievements.find(
+        (item: { id: string }) => item.id === created.achievementId,
+      ),
+    ).toMatchObject({ status: 'active', rule: { type: 'rank', top: 3 } });
+  });
+
   it('a conquista nova no ar entra no "de N" do fã', async () => {
     const editor = await seedMember(env, 'Editora', 'editor', ['missions']);
     await ok(
@@ -584,8 +630,9 @@ describe('conquistas', () => {
       now: () => Date.now(),
       config: createConfigSource(db, { ttlMs: 0 }),
     });
+    // As 10 da lista padrão (o Top 20 no ar desde o bloco 8) sem a arquivada.
     expect((await api('GET', '/me/achievements', { token: fan.token })).body).toMatchObject({
-      totalCount: 8,
+      totalCount: 9,
     });
   });
 });

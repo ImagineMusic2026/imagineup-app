@@ -68,6 +68,23 @@ export function nextWeekStart(now: number): number {
   return dayStartAfter(shiftDay(today, 8 - isoWeekday(today)), now);
 }
 
+/**
+ * O instante em que começa a semana ISO de São Paulo de `now`: a meia-noite
+ * da segunda-feira do calendário (o retrato semanal do ranking, bloco 8). Sai
+ * do calendário e do `dayStartAfter`, sem supor o deslocamento do fuso.
+ */
+export function weekStart(now: number): number {
+  const today = dayKey(now);
+  const monday = shiftDay(today, 1 - isoWeekday(today));
+  // O começo do dia de segunda vem depois de um instante dentro do dia anterior.
+  return dayStartAfter(monday, Date.parse(`${shiftDay(monday, -1)}T12:00:00.000Z`));
+}
+
+/** A semana ISO de São Paulo anterior à de `now`, `2026-W40` (a seta do ranking, bloco 8). */
+export function previousWeekKey(now: number): string {
+  return weekKey(shiftDay(dayKey(now), -7));
+}
+
 /** Semana ISO do dia de calendário, `2026-W41`. */
 export function weekKey(day: string): string {
   const [year, month, date] = dayParts(day);

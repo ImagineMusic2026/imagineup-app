@@ -161,8 +161,8 @@ export async function editAchievement(
 
 /**
  * setAchievementStatus: `active` publica (grava `activatedAt` na primeira
- * vez; a de nível confere o degrau na régua de agora; `rank` não fica no ar
- * antes do bloco 8, `rule-not-available`); `archived` arquiva (a arquivada
+ * vez; a de nível confere o degrau na régua de agora; a `rank` vale desde o
+ * bloco 8, no retrato semanal e na virada); `archived` arquiva (a arquivada
  * sai do "de N" e fica na carteira de quem ganhou).
  */
 export async function changeAchievementStatus(
@@ -184,10 +184,7 @@ export async function changeAchievementStatus(
     if (index < 0) throw achievementPanelError('achievement-not-found');
     const current = catalog[index]!;
     if (current.status === status) return { doc: null };
-    if (status === 'active') {
-      if (current.rule.type === 'rank') throw achievementPanelError('rule-not-available');
-      await checkLevel(ctx.tx, deps.db, current.rule);
-    }
+    if (status === 'active') await checkLevel(ctx.tx, deps.db, current.rule);
     const next = [...catalog];
     next[index] = {
       ...current,

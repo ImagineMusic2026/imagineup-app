@@ -1,6 +1,6 @@
 # Arquitetura da API do app
 
-Nota de arquitetura do servidor do ImagineUP. Ela diz como o app fala com as Cloud Functions, onde moram os pontos, como o ponto é lançado e como o painel lê os números. Vale para o bloco 1 (base do servidor e núcleo de pontos) e deixa a estrutura pronta para os blocos seguintes. O bloco 4 (centrais de verdade) está na seção 19, o bloco 5 (convite com atribuição e origem do fã), na seção 20, o bloco 6 (mural e agenda com conteúdo real), na seção 21, e o bloco 7 (missões, níveis, conquistas e extrato), na seção 22.
+Nota de arquitetura do servidor do ImagineUP. Ela diz como o app fala com as Cloud Functions, onde moram os pontos, como o ponto é lançado e como o painel lê os números. Vale para o bloco 1 (base do servidor e núcleo de pontos) e deixa a estrutura pronta para os blocos seguintes. O bloco 4 (centrais de verdade) está na seção 19, o bloco 5 (convite com atribuição e origem do fã), na seção 20, o bloco 6 (mural e agenda com conteúdo real), na seção 21, o bloco 7 (missões, níveis, conquistas e extrato), na seção 22, e o bloco 8 (ranking e temporadas), na seção 23.
 
 Origem: decisão do dono em 05/10/2026 (API HTTP numa função `onRequest`, pontos calculados na transação da ação) e o levantamento de 05/10/2026 (13 blocos, 26 endpoints, perguntas técnicas em aberto).
 
@@ -24,6 +24,7 @@ Quem mexe no servidor lê esta nota antes. Mudou uma decisão daqui? Mude a nota
 14. Bloco 5 (seção 20): código de convite por fã, sorteado no servidor e criado no primeiro `GET /me/invite`; claim uma vez por conta, em `referrals/{uid}`, só para conta de até 7 dias, pagando quem convidou (visita e cadastro) com o id do evento pela chave da pessoa (o e-mail normalizado, em HMAC-SHA256 com um segredo do servidor), para a conta excluída e recriada não pagar de novo; visita só no app, de conta logada diferente do dono e de outra pessoa (a chave do dono também barra o apelido do e-mail), contada no painel uma vez por pessoa e convidante, pague ou não; origem (tipo de link, destino e `utm_source`, `utm_medium` e `utm_campaign`) no convite e nos agregados por origem e campanha; cadastros por dia no gatilho de cadastro.
 15. Bloco 6 (seção 21): a equipe publica posts e shows pelas callables do painel, com a seção `artists` (provisório até a UP-9); post em `posts/{postId}`, show em `events/{eventId}`, curtida e presença em subcoleções do fã, comentário em `posts/{postId}/postComments`; curtidas e comentários contados em shards e copiados para o post por uma fila, no máximo uma vez a cada 10 s; `postCount` por `count()`; curtir paga uma vez na vida, comentar dentro do limite do dia, "Eu vou" uma vez por show; tetos diários de ações; denunciar comentário e bloquear fã, com a fila da Moderação e a callable `moderateComment`; a exclusão de conta apaga comentários, curtidas, presenças, denúncias e bloqueios, descontando as contagens.
 16. Bloco 7 (seção 22): catálogo de missões em `config/missions`, versionado e lido pelo cache, com índice por tipo de ação, e as arquivadas em `missionArchive`; períodos do dia e da semana de São Paulo; progresso do fã na carteira, contado na transação da ação (a troca para curtido ou "Eu vou", o comentário e a entrada contam o alvo uma vez por missão e período; o link e o convite contam a pessoa pelo marcador), e a conclusão paga pelo núcleo com `mission:<id>:<período>`, no mesmo `pointsAwarded`; meta da temporada por missões concluídas ou pelos pontos da temporada, com a marca de quem a bateu; conquistas do servidor (nível, primeira vez, ranking no bloco 8) guardadas na carteira; subida de nível devolvida na resposta; tetos do dia na configuração; callables da régua, das missões, das conquistas (seção `missions`) e da temporada (seção `ranking`); extrato provisório no Perfil.
+17. Bloco 8 (seção 23): ranking por consulta ordenada com índice e posição por três `count()` na ordem da lista (pontos, chegada, id), lidas com a página numa transação só de leitura, sem materializar; ranking da central só com membros (`member` no `centralPoints`); uma temporada mostrada para todas as telas (a em andamento, a encerrada esperando a virada ou a última fechada, esta lida do arquivo); seta da semana pelo retrato gravado na carteira e no `centralPoints` toda segunda-feira; virada e retrato pela função agendada `rankingTick`, em páginas com o andamento na mesma transação, com o arquivo em `seasons/{id}/standings`, as temporadas do fã somadas pela virada (e não mais pela troca preguiçosa) e a próxima temporada promovida só no fim; Top 20 no retrato e na virada; callables `scheduleNextSeason`, `endSeason` e `closeSeasonNow`, e o `updateSeason` mais estrito; o aviso de ranking de exemplo sai do app.
 
 ## 1. Formato da API
 
@@ -285,6 +286,8 @@ Por que a API para o resto: um caminho só no app (axios, React Query e cache no
 | `users/{uid}/postLikes/{postId}` e `users/{uid}/eventRsvps/{eventId}`        | servidor (API, bloco 6)                         | equipe com `fans`                                        | curtidas e presenças do fã, com o estado (seção 21)                                            |
 | `commentReports/{id}` e `moderationQueue/{commentId}`                        | servidor (API e callable, bloco 6)              | equipe com `moderation`                                  | denúncias e fila da Moderação (seção 21)                                                       |
 | `blockLists/{uid}`                                                           | servidor (API e exclusão de conta, bloco 6)     | ninguém                                                  | quem cada fã bloqueou (seção 21)                                                               |
+| `seasons/{id}` e `seasons/{id}/standings/{uid}`                              | servidor (virada e exclusão de conta, bloco 8)  | equipe com `ranking`                                     | resultado congelado de cada temporada e a posição final de cada fã (seção 23)                  |
+| `rankingJobs/{id}`                                                           | servidor (virada e retrato semanal, bloco 8)    | ninguém                                                  | andamento da virada e do retrato semanal (seção 23)                                            |
 
 O fã não lê nenhuma delas direto, nem a própria carteira: tudo chega pela API.
 
@@ -312,7 +315,7 @@ wallets/{uid} {
     "2026-10-05": { earned: number, count: { comment: 3, mission: 1, central_entry: 2 } }
   }                        // count: eventos pagos por origem e, sem ponto, as entradas em centrais (19.5)
   stats: {
-    pastSeasons: number    // temporadas passadas em que o fã pontuou
+    pastSeasons: number    // temporadas passadas em que o fã pontuou (desde o bloco 8, só a virada soma, 23.3)
   }
   activity: {              // última atividade do fã (seção 7), para contar ativos sem repetir
     lastDay: string | null     // "2026-10-05"
@@ -325,7 +328,7 @@ wallets/{uid} {
 }
 ```
 
-Gravação: só quando algo mudou, isto é, algum lançamento foi aplicado, o fã ganhou uma marca de atividade nova (seção 5, passo 9) ou, desde o bloco 4, uma entrada em central somou o `central_entry` do dia (19.5). `tx.create` na primeira gravação; depois, `tx.update` só com os campos que o servidor cuida (`balance`, `xp`, `seasonId`, `seasonPoints`, `seasonPointsAt`, `earnedTotal`, `spentTotal`, `days`, `stats.pastSeasons`, `activity`, `updatedAt`). O `update` com `days` troca o mapa inteiro, e é assim que os dias velhos saem. Nunca `set` com `merge` no `days`: o merge junta os mapas e os dias velhos ficam. Toda gravação na carteira passa por transação que lê a carteira.
+Gravação: só quando algo mudou, isto é, algum lançamento foi aplicado, o fã ganhou uma marca de atividade nova (seção 5, passo 9) ou, desde o bloco 4, uma entrada em central somou o `central_entry` do dia (19.5). `tx.create` na primeira gravação; depois, `tx.update` só com os campos que o servidor cuida (`balance`, `xp`, `seasonId`, `seasonPoints`, `seasonPointsAt`, `earnedTotal`, `spentTotal`, `days`, `stats.pastSeasons`, `activity`, `updatedAt`; o bloco 8 tira o `stats.pastSeasons` desta lista, porque só a virada grava o campo, 23.3). O `update` com `days` troca o mapa inteiro, e é assim que os dias velhos saem. Nunca `set` com `merge` no `days`: o merge junta os mapas e os dias velhos ficam. Toda gravação na carteira passa por transação que lê a carteira.
 
 Os números do convite (links criados e pessoas trazidas) não moram na carteira: um link que viraliza faria dela um documento disputado, e a disputa derrubaria o cadastro de quem foi convidado. O bloco 5 os guarda sem documento disputado (seção 20), e o `/me/progress` lê os dois lugares.
 
@@ -403,6 +406,8 @@ config/season {
 }
 config/season/versions/{version}
 ```
+
+Bloco 8 (23.3): `config/season` ganha `next` (a próxima) e `lastClosed` (a última fechada pela virada), e a `season` ganha `topTarget` e `endedEarly`.
 
 Padrão do código (`DEFAULT_POINTS_CONFIG` em `functions/src/points/config.ts`), usado quando `config/points` não existe:
 
@@ -538,7 +543,7 @@ Cálculo (`computeAwards` em `model.ts`, puro, com teste em tabela e relógio fi
 
 4. `day = dayKey(now)`, o dia em `America/Sao_Paulo` (`Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo' })`), no formato `YYYY-MM-DD`.
 5. Saem de `days` só as chaves anteriores a `day` menos 6 dias. Um dia depois de `day` fica: perto da meia-noite, um pedido com o "agora" de 23:59:59,950 (fixo nas novas tentativas) pode gravar depois de outro de 00:00:00,010, e cortar o dia seguinte zeraria o limite dele e baixaria o `weekEarned`.
-6. Temporada ativa: a de `config/season` lida na transação, com `startsAt <= now < endsAt`; fora disso, nenhuma. Com temporada ativa e `wallet.seasonId` diferente do id dela, a carteira troca de temporada: se `seasonPoints > 0`, `stats.pastSeasons += 1`; depois `seasonId` vira o novo, `seasonPoints = 0` e `seasonPointsAt = null`. O mesmo vale para cada `centralPoints` lido, sem o `pastSeasons`. Sem temporada ativa, os campos de temporada ficam como estão.
+6. Temporada ativa: a de `config/season` lida na transação, com `startsAt <= now < endsAt`; fora disso, nenhuma. Com temporada ativa e `wallet.seasonId` diferente do id dela, a carteira troca de temporada: se `seasonPoints > 0`, `stats.pastSeasons += 1`; depois `seasonId` vira o novo, `seasonPoints = 0` e `seasonPointsAt = null`. O mesmo vale para cada `centralPoints` lido, sem o `pastSeasons`. Sem temporada ativa, os campos de temporada ficam como estão. (Bloco 8, 23.7: a troca deixa de somar `pastSeasons`, que passa a ser contado pela virada.)
 7. Cada lançamento, na ordem:
    - Já existe no extrato: `duplicate`, 0 ponto, nada muda.
    - `earn`: `p = entry.points` na `mission`, `config.values[source] ?? 0` nas outras. `p <= 0`: `zero`. Se `config.dailyLimits[source]` não é `null` e `days[day].count[source]` já chegou nele: `capped`. Senão, `applied`: `balance += p`, `xp += p`, `earnedTotal += p`; com temporada ativa, `seasonPoints += p` e `seasonPointsAt = now`; com `artistId`, a central soma `totalPoints += p` (`centralTotalDelta = p`) e, com temporada, `seasonPoints += p` e `seasonPointsAt = now` (`centralSeasonDelta = p`); `days[day].earned += p` e `days[day].count[source] += 1`.
@@ -587,7 +592,7 @@ O `Wallet` do app.
 { "balance": 12480, "xp": 12480, "seasonPoints": 4120 }
 ```
 
-`seasonPoints` é `wallet.seasonPoints` quando `wallet.seasonId` é o id de `config/season.season`, e 0 no resto. Temporada que já acabou e continua na configuração mostra os pontos dela, congelados, como o ranking mostra a última temporada encerrada. Carteira que não existe: tudo 0. A leitura usa a temporada do cache (seção 9): logo depois de a equipe trocar a temporada, a tela pode mostrar a anterior por até 60 s. Só a tela; o lançamento lê a temporada na transação.
+`seasonPoints` é `wallet.seasonPoints` quando `wallet.seasonId` é o id de `config/season.season`, e 0 no resto. Temporada que já acabou e continua na configuração mostra os pontos dela, congelados, como o ranking mostra a última temporada encerrada. Carteira que não existe: tudo 0. A leitura usa a temporada do cache (seção 9): logo depois de a equipe trocar a temporada, a tela pode mostrar a anterior por até 60 s. Só a tela; o lançamento lê a temporada na transação. (Bloco 8, 23.2: os pontos passam a ser os da temporada mostrada, e não os de `config/season.season`, que depois da virada pode ser a próxima, ainda sem começar.)
 
 ### `GET /me/progress`
 
@@ -606,7 +611,7 @@ O `MyProgress` do app.
 - `level` e `nextLevel`: `levelForXp(xp, config.levels)`, a mesma conta do `levelForXp` do app (o degrau mais alto com `minXp <= xp`; `nextLevel: null` no último). O nível não é guardado: sai do XP a cada leitura.
 - `weekEarned`: soma de `days[d].earned` para hoje e os 6 dias anteriores, em dias de São Paulo. Resgate e ajuste não contam.
 - `stats.linksCreated` e `stats.peopleBrought`: 0 no bloco 1. Desde o bloco 5, os `count()` dos links que o fã compartilhou e dos convidados dele, fora da carteira (seção 4 e 20.2).
-- `stats.seasons`: `pastSeasons + (seasonPoints > 0 ? 1 : 0)`. Isso conta certo antes e depois da troca preguiçosa de temporada.
+- `stats.seasons`: `pastSeasons + (seasonPoints > 0 ? 1 : 0)`. Isso conta certo antes e depois da troca preguiçosa de temporada. (Bloco 8, decisão 8 de 23.1: a virada soma o `pastSeasons`, e a conta não soma a temporada que ela já contou, `closedSeasonId`.)
 - Carteira que não existe: XP 0, nível 1, `nextLevel` 2, semana 0, números 0.
 
 ### `GET /me/ledger`
@@ -725,12 +730,12 @@ Regras do painel para não estourar a cota:
 
 ## 8. Temporada
 
-- A temporada atual mora em `config/season.season`. O histórico (`seasons/{id}` com o resultado congelado) é do bloco 8.
+- A temporada atual mora em `config/season.season`. O histórico (`seasons/{id}` com o resultado congelado) é do bloco 8. (Desenhado na seção 23: a próxima em `config/season.next`, a última fechada em `lastClosed`, a virada pela função agendada `rankingTick` e o arquivo em `seasons/{id}/standings`.)
 - O `award` só soma em temporada com `startsAt <= now < endsAt`. Ponto ganho fora da janela entra no saldo e no XP, não na temporada.
 - Virada sem varrer carteiras: cada carteira e cada `centralPoints` guardam o `seasonId` dos pontos. No primeiro lançamento aplicado da temporada nova, o `award` zera e troca o id (seção 5, passo 6). A leitura mostra 0 para quem ainda não pontuou nela. Arquivar o resultado e criar a próxima temporada são do bloco 8.
 - **O lançamento lê `config/season` dentro da transação**, nunca do cache (1 leitura a mais por ação). Com o cache de 60 s por instância, logo depois de a equipe encerrar a S1 antes do fim e criar a S2, uma instância ainda veria a S1 e outra já a S2. Um pedido do fã numa instância trocaria a carteira para a S2, o seguinte, na outra, voltaria para a S1: os pontos da S2 sumiriam e o `pastSeasons` contaria em dobro, e o mesmo em cada `centralPoints`. Na transação, todo lançamento vê a temporada que está gravada. As leituras (`GET`) seguem com o cache, porque só mostram.
 - **O id da temporada não muda depois que ela começa.** O id é a chave dos pontos: trocá-lo (para corrigir um erro de digitação, por exemplo) zeraria todo mundo na ação seguinte. O `updateSeason` (bloco 8) recusa mudar o `id` de uma temporada com `startsAt` no passado (`season-id-locked`; nome, fim e título continuam editáveis) e recusa voltar a um id que já foi usado (`season-id-used`, conferido nas versões), porque as carteiras que já trocaram para a temporada seguinte zerariam de novo.
-- `pastSeasons` conta as temporadas passadas em que o fã pontuou, na troca preguiçosa.
+- `pastSeasons` conta as temporadas passadas em que o fã pontuou, na troca preguiçosa. (Bloco 8, decisão 8 de 23.1: quem soma é a virada, e a troca preguiçosa deixa de somar.)
 - O status da temporada (`active` ou `ended`, o `Season.status` do app) é calculado na leitura, pelo `endsAt`.
 
 ## 9. Configuração versionada
@@ -767,6 +772,7 @@ As ações de auditoria novas entram no `AuditAction` de `functions/src/staff/se
 - "Posições desde a semana anterior" (`change`) pede uma foto semanal, feita por função agendada.
 - Materializar o ranking por função agendada só se o custo pedir.
 - Os campos que o ranking precisa (`seasonId`, `seasonPoints`, `seasonPointsAt`) já nascem no bloco 1, para não haver carga de dados depois.
+- Fechado no bloco 8 (seção 23): a consulta com índice e a posição por contagem ficam, com três contagens na ordem da lista (23.4); o ranking da central passa a filtrar os membros (`member`, decisão 3 de 23.1); a foto semanal é o `rankWeek` gravado na carteira e no `centralPoints` (23.5); materializar continua só se o custo pedir, com o sinal em 23.1.
 
 ## 11. Regras do Firestore
 
@@ -851,11 +857,11 @@ Ficam para depois: a leitura de `users/{uid}` pela seção Fãs (bloco 11, uma l
 4. Novo: as chaves de `idempotency` com `uid == <uid>`, em lotes de até 500 (as respostas guardadas podem ter texto do fã; o TTL só apagaria em 30 dias).
 5. `staff/{uid}` (como hoje).
 
-O bloco 4 muda o passo 2: o documento do perfil sai sozinho primeiro, depois saem os vínculos com as centrais (descontando o `fanCount`) e só então o `recursiveDelete(users/{uid})`. Ordem completa e motivo na seção 19 (19.12). O bloco 5 acrescenta o código, os links e os convites (20.10). O bloco 6 acrescenta as curtidas, os comentários, as denúncias e os bloqueios (21.12).
+O bloco 4 muda o passo 2: o documento do perfil sai sozinho primeiro, depois saem os vínculos com as centrais (descontando o `fanCount`) e só então o `recursiveDelete(users/{uid})`. Ordem completa e motivo na seção 19 (19.12). O bloco 5 acrescenta o código, os links e os convites (20.10). O bloco 6 acrescenta as curtidas, os comentários, as denúncias e os bloqueios (21.12). O bloco 8 acrescenta a linha do fã no arquivo de cada temporada (23.13).
 
 Continua idempotente e seguro de repetir (o gatilho tem `retry: true`), e o `handleUserCreated` que desfaz a conta usa a mesma função.
 
-Os agregados não descontam. Eles contam o que aconteceu em cada dia (pontos dados, eventos, fãs ativos, atividade por coorte), sem uid e sem dado pessoal, e a LGPD não pede que mudem. Descontar reescreveria dias fechados e mudaria comparativos já vistos, e exigiria ler o extrato inteiro do fã. Não ficam inconsistentes porque o bloco 1 só guarda fluxo (o que aconteceu no dia), nunca estoque (quanto existe agora). Quem guardar estoque desconta na exclusão: o `fanCount` das centrais (bloco 4). O resultado congelado das temporadas (bloco 8) guarda o uid e busca o nome na leitura, para o fã excluído sumir dele.
+Os agregados não descontam. Eles contam o que aconteceu em cada dia (pontos dados, eventos, fãs ativos, atividade por coorte), sem uid e sem dado pessoal, e a LGPD não pede que mudem. Descontar reescreveria dias fechados e mudaria comparativos já vistos, e exigiria ler o extrato inteiro do fã. Não ficam inconsistentes porque o bloco 1 só guarda fluxo (o que aconteceu no dia), nunca estoque (quanto existe agora). Quem guardar estoque desconta na exclusão: o `fanCount` das centrais (bloco 4). O resultado congelado das temporadas (bloco 8) guarda o uid e o nome, a foto e a cidade da hora da virada, e a exclusão de conta apaga a linha do fã (23.13): é assim que o fã excluído some dele.
 
 ## 13. App: seletor por domínio e coerência com as fixtures
 
@@ -949,7 +955,7 @@ Lançamentos, em ordem, cada um com o relógio do `AwardContext` na data indicad
 Os ids das centrais são `nettobrito` (Netto) e `nenho` (Nenho), no formato do @ das centrais (`HANDLE_PATTERN`; o `netto-brito` das fixtures do app não passaria na validação do `award`). O bloco 4 cria as centrais de teste do emulador com esses mesmos @. Os 840 da semana dão o "+840" da 1e. Os ajustes de central dizem `season` e `total` (seção 5): a temporada de cada central fecha em 4.120 e 2.980, e o total de sempre também.
 
 - O seed usa o `runAward` com `actor.type: 'system'`: não marca atividade.
-- `stats.pastSeasons` não é ponto e ainda não tem caminho de servidor (temporadas passadas são do bloco 8): o seed grava direto `wallets/{uid}.stats.pastSeasons = 2`, e a 1e mostra 3 temporadas.
+- `stats.pastSeasons` não é ponto e ainda não tem caminho de servidor (temporadas passadas são do bloco 8): o seed grava direto `wallets/{uid}.stats.pastSeasons = 2`, e a 1e mostra 3 temporadas. (Bloco 8, 23.15: o seed deixa de gravar o campo; as duas temporadas passadas são fechadas pela virada, chamada pelo handler.)
 - Links criados e pessoas trazidas (63 e 418 nas fixtures) ficam 0 até o bloco 5. Com ele, a Camila tem 4 links e 3 pessoas trazidas no servidor (20.12), e os 63 e 418 ficam só nas fixtures.
 - Rodar de novo não muda nada: os lançamentos já existem e voltam `duplicate`, e transação sem nada aplicado não grava a carteira (seção 5, passo 9).
 - O Alan fica sem carteira: é o fã novo (0 pontos, nível 1).
@@ -1007,7 +1013,7 @@ Regras: `tests/points-rules.test.ts` (seção 11). App: seção 13.
 - **Bloco 5 (convite):** desenhado na seção 20. A visita conta no app, e não numa função própria para o site, como esta nota dizia antes (decisão 3 de 20.1). Os 63 e 418 da Camila ficam nas fixtures, e o seed dá a ela 4 links e 3 convidados (20.12). O que fica fora do bloco está em 20.15.
 - **Bloco 6 (mural e agenda):** desenhado na seção 21. O que ele deixa para os blocos seguintes está em 21.17.
 - **Bloco 7 (missões e conquistas):** desenhado na seção 22. As telas da seção Missões e régua ficam para o bloco 11, e o que ele deixa para os blocos seguintes está em 22.16.
-- **Bloco 8 (ranking e temporadas):** `updateSeason` com `season-id-locked` e `season-id-used` (seção 8), histórico em `seasons/{id}`, arquivo do resultado, índices compostos, posição por `count()` com o desempate da lista (seção 10), foto semanal do `change`.
+- **Bloco 8 (ranking e temporadas):** desenhado na seção 23. O `updateSeason` saiu no bloco 7 (22.8) e fica mais estrito no 8 (23.10). O que ele deixa para os blocos seguintes está em 23.18.
 - **Bloco 10 (loja):** rotas da loja e o resgate com o débito já pronto; `sold_out` no `API_ERROR_CODES`.
 - **Bloco 11 (painel):** Visão geral e Crescimento lendo `statsDaily` sem escuta em tempo real (seção 7), com ativos do dia, da semana e do mês e a retenção por coorte; Fãs lendo carteira e extrato, mais a regra de `users/{uid}` para a equipe; `adjustFanPoints`; fechamento do dia, se o bloco 4 não tiver feito.
 - **Ambiente de testes:** quando a cliente aprovar (seção 15).
@@ -1037,7 +1043,7 @@ Cada item traz a recomendação e o motivo. Os marcados como pergunta vão para 
 10. **Central fora do ar (rascunho ou `unpublished`) não aparece e não aceita entrada.** Some da 1l, da busca, de "Suas centrais", dos chips e da 1d (404). O vínculo de quem já era fã continua, conta no `fanCount` e volta a aparecer quando a central é publicada de novo. Sair sempre pode, em qualquer status.
 11. **Quem lê pelo painel:** o vínculo, que diz de quem cada fã é fã, só com a seção `fans`. Os shards do `fanCount`, ninguém pelo cliente: o painel não os usa (quem cuida das centrais vê o total em `artists/{id}`, e o `deleteArtist` soma no servidor). Motivo: menor acesso. Se o painel precisar deles, a regra abre com a seção `artists`.
 12. **Ids das fixtures no formato do @.** `netto-brito`, `juninho-moraes`, `rock-salles` e `artista-N` viram `nettobrito`, `juninhomoraes`, `rocksalles` e `artistaN`, em todas as fixtures e testes do app. Motivo: no desenvolvimento com emulador, as centrais vêm da API, e o mural, a agenda, as missões e o ranking ainda vêm das fixtures. Com os ids antigos, tocar no autor de um post de exemplo abriria "Esta central não existe mais". Os ids novos também passam no `award` (seção 14).
-13. **Quem sai continua no ranking da central com os pontos que fez nela.** O ranking da central (seção 10) consulta `centralPoints` por `artistId`, e sair não apaga esse documento (decisão 9). Padrão: o ranking conta quem pontuou na central na temporada, membro ou não. Motivo: é o que a consulta da seção 10 já faz, combina com "sair não tira pontos" e com o "PTS DA CENTRAL", que também soma quem saiu (19.7), e as fixtures já se comportam assim (o "você #12" no Netto continua depois de sair). Consequência para o bloco 8: o texto "#N entre {fanCount} fãs" da 1e (`profile.centrals.meta`) troca por um que não compare a posição com o número de membros, senão aparece "#12 entre 10 fãs". Alternativa, se o dono preferir só os membros: o bloco 8 grava `member` e `memberSince` em `wallets/{uid}/centralPoints/{artistId}` nas transações de entrar e sair (criando o documento zerado quando faltar), filtra o ranking por eles, e as fixtures tiram o fã do ranking da central de onde ele saiu. Não há carga de dados nesse caso: o app só chama a API nas builds depois do bloco 10 (seção 13), então não existe vínculo de verdade antes. Pergunta para o dono.
+13. **Quem sai continua no ranking da central com os pontos que fez nela.** O ranking da central (seção 10) consulta `centralPoints` por `artistId`, e sair não apaga esse documento (decisão 9). Padrão: o ranking conta quem pontuou na central na temporada, membro ou não. Motivo: é o que a consulta da seção 10 já faz, combina com "sair não tira pontos" e com o "PTS DA CENTRAL", que também soma quem saiu (19.7), e as fixtures já se comportam assim (o "você #12" no Netto continua depois de sair). Consequência para o bloco 8: o texto "#N entre {fanCount} fãs" da 1e (`profile.centrals.meta`) troca por um que não compare a posição com o número de membros, senão aparece "#12 entre 10 fãs". Alternativa, se o dono preferir só os membros: o bloco 8 grava `member` e `memberSince` em `wallets/{uid}/centralPoints/{artistId}` nas transações de entrar e sair (criando o documento zerado quando faltar), filtra o ranking por eles, e as fixtures tiram o fã do ranking da central de onde ele saiu. Não há carga de dados nesse caso: o app só chama a API nas builds depois do bloco 10 (seção 13), então não existe vínculo de verdade antes. Pergunta para o dono. (Bloco 8, decisão 3 de 23.1: a recomendação passa a ser a alternativa, só membros, e o texto "#N entre N fãs" fica.)
 
 ### 19.2 Rotas
 
@@ -3558,7 +3564,7 @@ Lista provisória (`DEFAULT_ACHIEVEMENTS_CONFIG`, versão 0, até a cliente resp
 | 9     | `lenda`           | Lenda           | `star`    | `points` | `level`, 10        | `active` |
 | 10    | `top-20`          | Top 20          | `trophy`  | `points` | `rank`, 20         | `draft`  |
 
-"Boca a boca", "Fã de show", "Top 20" e "Backstage" são os nomes da 1e; "Backstage" vira o nível 8. As de nível repetem os nomes dos degraus 3, 5, 7 e 10 da régua provisória. O "Top 20" fica em rascunho até o bloco 8: entra na conta "de N" só quando puder ser ganho. Nos destaques, a primeira bloqueada é a de nível seguinte ao do fã (22.2): a Camila (nível 7) vê Boca a boca, Purainha, Sanfona e Backstage, perto da fixture (Boca a boca, Top 20, Fã de show e Backstage).
+"Boca a boca", "Fã de show", "Top 20" e "Backstage" são os nomes da 1e; "Backstage" vira o nível 8. As de nível repetem os nomes dos degraus 3, 5, 7 e 10 da régua provisória. O "Top 20" fica em rascunho até o bloco 8: entra na conta "de N" só quando puder ser ganho. (Bloco 8, 23.9: passa a `active`, desbloqueado no retrato semanal e na virada.) Nos destaques, a primeira bloqueada é a de nível seguinte ao do fã (22.2): a Camila (nível 7) vê Boca a boca, Purainha, Sanfona e Backstage, perto da fixture (Boca a boca, Top 20, Fã de show e Backstage).
 
 ### 22.7 Nível e meta da temporada
 
@@ -3588,7 +3594,7 @@ Todas gravam um documento de `config/` do mesmo jeito: na transação, lê o doc
 | `updateSeason`       | `ranking`  | `{ expectedVersion, season: { id, name, startsAt, endsAt, leaderTitle } \| null }` | `{ version }` | `invalid-request`, `config-changed`, `season-id-locked`, `season-id-used` |
 
 - `updatePointsConfig`: o `validatePointsConfigInput` de hoje, mais o `actionCaps` (só chaves conhecidas, inteiros de 1 a 10.000) e com `dailyLimits.mission` só `null` (outro valor: `invalid-request` com `details.field: 'dailyLimits.mission'`; hoje ele aceita de 1 a 1.000, 22.1, decisão 7). Ausente não muda. Régua com menos degraus do que uma conquista de nível não arquivada pede é recusada (`level-in-use`, com `details.achievementIds`, lendo `config/achievements` na transação; sem o documento, vale a lista padrão, `DEFAULT_ACHIEVEMENTS_CONFIG`): a conquista nunca mais seria ganha. Auditoria `points.config.updated`, com os campos mudados.
-- `updateSeason`: o `validateSeasonInput` de hoje (datas em ms). `season-id-locked` quando muda o `id` de uma temporada com `startsAt` no passado; `season-id-used` quando o `id` novo já apareceu numa versão antiga (`config/season/versions` com `season.id == id`, `limit(1)`, índice automático). `season: null` encerra sem outra. Auditoria `season.updated`. A meta da temporada antiga some sozinha (decisão 9).
+- `updateSeason`: o `validateSeasonInput` de hoje (datas em ms). `season-id-locked` quando muda o `id` de uma temporada com `startsAt` no passado; `season-id-used` quando o `id` novo já apareceu numa versão antiga (`config/season/versions` com `season.id == id`, `limit(1)`, índice automático). `season: null` encerra sem outra. Auditoria `season.updated`. A meta da temporada antiga some sozinha (decisão 9). (Bloco 8, 23.10: `season: null` só vale para a temporada que ainda não começou e sem próxima cadastrada; a começada sai pelo `endSeason` e pela virada.)
 
 **Missões e meta** (admin, ou editor com `missions`):
 
@@ -3984,7 +3990,7 @@ O desenho de 22.1 a 22.17 vale como está; estas são as diferenças do código 
 - **`functions/src/config-validation.ts`**, novo, com o `ConfigValidationError`, que o `points/config.ts` reexporta. Os modelos das missões e das conquistas lançam o mesmo erro, e importá-lo do núcleo fecharia o ciclo de 22.17. O teste de carga (`missions/load.test.ts`) carrega os dois modelos com o núcleo e a configuração quebrados.
 - **`functions/src/points/config-change.ts`**, novo, com o `runConfigChange`: o molde de 22.8 (o acesso lido fora e de novo na transação, o `config-changed` com a versão de agora, a versão `+1` com `updatedAt` e `updatedBy`, a cópia em `versions/{n}`, a auditoria e o `ConfigValidationError` virando `invalid-request`) num lugar só, usado pelas 11 callables, em vez de repetido em cada `panel.ts`.
 - **Os erros da régua e da temporada** (`level-in-use`, `season-id-locked`, `season-id-used`, `no-season`) saem do `gamePanelError` de `missions/errors.ts`, com os das missões; as conquistas têm o `achievements/errors.ts`.
-- **`season-id-locked` ao pé da letra.** Com a temporada de agora já começada, nenhum pedido troca o id dela, nem depois do fim. Para começar outra, a equipe encerra (`season: null`) e grava a nova num segundo pedido. Nome, fim e título do líder continuam editáveis.
+- **`season-id-locked` ao pé da letra.** Com a temporada de agora já começada, nenhum pedido troca o id dela, nem depois do fim. Para começar outra, a equipe encerra (`season: null`) e grava a nova num segundo pedido. Nome, fim e título do líder continuam editáveis. (Bloco 8, 23.10: a começada não sai mais com `season: null`; a equipe cadastra a outra com o `scheduleNextSeason`, encerra com o `endSeason` se for antes da hora, e a virada fecha e promove a próxima.)
 - **`profile/action-rewards.ts`** (app), novo, com o `rewardsToast`: a regra de 22.12 (com pontos, o "+N" com a frase e o toque; sem pontos e com conquista, só o anúncio na fila; e a marca do que já festejou). O `artists/queries.ts` e o `posts/queries.ts` usam os dois, e pôr a regra num deles fechava um ciclo entre eles.
 - **Textos a mais** além dos de 22.12: `ledger.when.today`, `.yesterday` e `.other` ("hoje às 22:31", "em 27 de setembro às 12:00", no rótulo do leitor de tela), `ledger.pointsGain` e `ledger.pointsLoss` ("mais 10 pontos", "menos 1.000 pontos") e `invite.target.artist` e `.artistPlain` (a sheet "Gerar meu link" com o link de uma central, para a missão de link com alvo de central).
 - **A data da sobrelinha do extrato** sai do `formatWeekdayDayMonth`, novo em `@/utils/date`: as três primeiras letras do dia da semana ("sáb., 3 out"), porque no pt-BR do date-fns 4 o `EEE` sai por extenso ("sábado") e o `EEEEEE` perde o acento ("sab").
@@ -4000,6 +4006,842 @@ O desenho de 22.1 a 22.17 vale como está; estas são as diferenças do código 
 - **O "+N" do "Eu vou" na célula reaproveitada**, **sair da central busca as missões**, **a página seguinte do extrato** e **a concluída que vence no fim do período** (22.12). Para a última, o servidor passou a mandar na concluída o fim do período como `endsAt` (antes, o menor entre o `endsAt` do catálogo e o fim do período): com o valor antigo, o app não conseguia tirar a de ontem sem também tirar a concluída cujo `endsAt` de catálogo venceu no meio do dia, que a decisão 3 manda manter.
 
 Ficou de fora: a versão 0 de `config/achievements` e de `config/points` para o painel (22.8, "Falta para as telas do bloco 11"), porque pede uma carga em produção ou uma callable nova, com o ok do dono.
+
+## 23. Bloco 8: ranking e temporadas
+
+O ranking da temporada deixa de ser de exemplo. O geral, o de cada central, a posição do fã, a seta da semana e o resultado de cada temporada passam a vir do servidor, e a virada de temporada fica automática. Esta seção é o contrato do bloco 8: decisões, rotas, coleções e campos, consultas e custo, retrato semanal, virada, transações, idempotência, conquista Top 20, callables do painel, regras e índices, exclusão de conta, mudanças no app, seed e testes. Ela segue os padrões dos blocos 1, 4, 5, 6 e 7 (seções 1 a 22) e só diz o que muda ou acrescenta.
+
+Origem: o levantamento de 05/10/2026 (bloco 8 e pergunta 6), a direção da seção 10, a decisão 8 e a pergunta 13 de 19.1, o `updateSeason` e a regra `rank` do bloco 7 (22.6 e 22.8) e o pedido do dono de 06/10/2026. A duração das temporadas, o título do 1º lugar e o tamanho do "top 10" do card "Você" vêm da cliente (UP-9 e UP-48), com padrão no código. As telas do painel (Ranking e temporadas) são do bloco 11. A build sem emulador continua nas fixtures, e o `EXPO_PUBLIC_API_URL` segue a regra da seção 13.
+
+Estado: desenho de 06/10/2026, revisado no mesmo dia contra o código dos blocos 1 a 7 (a revisão trouxe a temporada fechada lida do arquivo, as contagens numa transação só de leitura, a página de central que relê o `centralPoints`, as recusas novas do `config/season`, a callable `closeSeasonNow` e o nome guardado no arquivo); feito em 06/10/2026 no app e nas funções, sem deploy (as funções, as regras e os índices esperam o ok do dono, 23.18). O que o código fez diferente do desenho, e por quê, está em 23.20.
+
+Como era antes do bloco:
+
+- `GET /ranking/season`, `GET /ranking` e `GET /me/rank` não tinham quem respondesse. A 1f, os top fãs e a aba Ranking da 1d e o card "Você" liam `ranking/fixtures.ts`, com o aviso "Ranking de exemplo" ao lado de dado de verdade (19.13).
+- `GET /me/centrals` mandava `fanRank: null` (decisão 8 de 19.1).
+- Os campos do ranking já existiam: `seasonId`, `seasonPoints` e `seasonPointsAt` na carteira e em cada `centralPoints` (seção 4).
+- A temporada morava em `config/season`, editada pelo `updateSeason` (22.8). A troca preguiçosa somava `stats.pastSeasons` quando a carteira trocava de temporada com pontos (seção 5, passo 6), e o seed gravava `stats.pastSeasons = 2` direto (seção 14).
+- O "Top 20" estava em rascunho, e o `setAchievementStatus` recusava publicar regra `rank` (`rule-not-available`, 22.8).
+
+### 23.1 Decisões
+
+Cada item traz a recomendação e o motivo. As perguntas para a cliente e para o dono estão em 23.17, e o código nasce com o padrão daqui, fácil de trocar.
+
+1. **Ranking por consulta ordenada com índice, posição por `count()`, sem materializar.** Confirma a direção da seção 10 (pergunta 6 do levantamento). A lista é uma consulta em `wallets` (geral) ou no grupo `centralPoints` (central), com o `seasonId` da temporada mostrada, `seasonPoints > 0` e a ordem de 23.4. A posição é 1 mais quem vem antes na mesma ordem, em três contagens, lidas com a página e o documento do fã numa transação só de leitura (o mesmo instante, sem trava e sem leitura a mais). Na temporada já fechada, a lista e as posições saem do arquivo (decisão 12). Motivo pelo custo de leitura: abrir a 1f custa umas 60 leituras (uma página e o card "Você") e nenhuma gravação a mais por ação; 10 mil aberturas por dia são umas 600 mil leituras. Cada ação que rende pontos faz o card e só a primeira página de cada ranking montado buscarem de novo (as páginas seguintes saem do cache antes, 23.14): umas 60 leituras com a 1f montada, umas 100 com a 1f e a 1d. Materializar por função agendada a cada 15 min, com 10 mil fãs pontuando, leria o ranking inteiro 96 vezes por dia (perto de 1 milhão de leituras) e regravaria as posições que mudaram (até 1 milhão de gravações, e a gravação custa cerca de 3 vezes a leitura), crescendo com o número de fãs e não com o uso. Motivo pela atualidade: a consulta mostra a ordem da última transação; a materializada fica até 15 min atrás, e o card "Você", que precisa da posição na hora, contradiria a lista. Sinal para mexer: as leituras das rotas do ranking passarem de uns 2 milhões por dia. Passo seguinte, antes de materializar: um cache em memória de 30 s da primeira página de cada recorte (o pódio e o começo da lista são iguais para todo mundo; o `isMe` sai na hora).
+2. **Desempate único: quem chegou primeiro, depois o id.** `seasonPointsAt` crescente e, no mesmo milissegundo, o id do documento (o uid na carteira, o caminho no `centralPoints`). A mesma ordem vale na lista, na posição, no retrato semanal e na virada: o card "Você", a linha do fã, "Suas centrais" e o resultado arquivado nunca dão posições diferentes para o mesmo momento.
+3. **Ranking da central só com membros.** Responde a pergunta 13 de 19.1 e troca o padrão de lá. O `centralPoints` ganha `member`, gravado nas transações de entrar e sair (na entrada, o documento nasce zerado quando falta), e o ranking da central filtra `member == true`. Motivo: "Top fãs da central" e "#12 entre 412 mil fãs" (1e, do protótipo) falam dos fãs da central, que são os membros. Com quem saiu, ou com quem nunca entrou e curtiu um post pela grade da 1d, a posição passaria do número de fãs ("#12 entre 10 fãs"), e o texto do protótipo teria de mudar. Custo: uma gravação a mais na entrada que não paga (a que paga já grava o `centralPoints`) e uma leitura e uma gravação a mais na saída. Sair tira o fã do ranking da central e não tira ponto: entrando de novo, ele volta com os pontos que tinha. O "PTS DA CENTRAL" (19.7) continua somando todo mundo. Não há carga de dados: nenhuma build chama a API antes do bloco 10 (seção 13), e o deploy confere isso antes, com a carga de 23.18 de reserva. O `member` repete o vínculo: todo caminho que cria ou apaga um vínculo grava o `member` na mesma transação (23.19).
+4. **Uma temporada mostrada para todas as telas.** A rota da temporada, o ranking, o card "Você", "Suas centrais" e a carteira usam a mesma (`shownSeason`, puro): a de `config/season.season` quando ela já começou (em andamento, ou encerrada e esperando a virada); senão, a última fechada (`config/season.lastClosed`), como encerrada, enquanto a próxima não começa; senão, nenhuma. A `shownSeason` diz também de onde ler: a da `season` é lida ao vivo (a consulta de 23.4), e a `lastClosed`, do arquivo (`seasons/{id}/standings`, decisão 12), que só existe inteiro depois do fim da virada. Motivo: depois do `endsAt` nenhum ponto muda (a troca preguiçosa só acontece com uma temporada ativa), mas o ranking da central filtra `member`, e entrar ou sair de uma central, e a exclusão de conta, mexeriam na lista e nas posições ao vivo de uma temporada já fechada; o app diria outra coisa que o resultado do painel e do Top 20, e "Entre na central para aparecer no ranking" devolveria o fã a um resultado fechado. Entre o `endsAt` e o fim da virada (minutos) a leitura continua ao vivo, com esse limite aceito. O app não lê o arquivo direto: a API lê para ele.
+5. **Seta da semana por retrato gravado no próprio documento do ranking.** No começo de cada semana ISO de São Paulo (segunda 00:00), a função agendada grava em cada carteira e em cada `centralPoints` do ranking a posição daquele momento (`rankWeek`). A lista já lê esses documentos, então a seta sai sem leitura a mais: `change` é a posição do retrato menos a de agora. Custo: por semana, uma leitura e uma gravação por fã em cada recorte em que ele pontuou (10 mil fãs no geral e em 2 centrais cada: 30 mil leituras e 30 mil gravações por semana). É mais barato que guardar o retrato à parte, que custaria uma leitura por linha em cada página. Sem retrato válido (primeira semana da temporada, fã que entrou no ranking nesta semana), a seta é 0. Na temporada encerrada, também 0.
+6. **Virada e retrato pela mesma função agendada, em páginas.** `rankingTick` (`onSchedule`, a cada 10 min, `America/Sao_Paulo`) fecha a temporada cujo `endsAt` passou e tira o retrato da semana quando ele vence. Os dois trabalhos andam em páginas de 200 fãs, e cada página entra numa transação que confere e avança o andamento guardado em `rankingJobs/{id}`: retomar depois de falha, de prazo estourado ou de duas rodadas ao mesmo tempo nunca grava a mesma página duas vezes. O emulador não roda função agendada: os testes e o seed chamam o handler, com relógio fixo.
+7. **A próxima temporada só passa a valer no fim da virada.** A virada arquiva a temporada S e só então troca, numa transação, `config/season.season` pela próxima (`next`). Motivo: a troca preguiçosa zera o `seasonPoints` da carteira na primeira ação da temporada nova; se a nova valesse antes do arquivo, a virada leria carteiras já zeradas. Preço aceito: entre o `endsAt` de S e o fim da virada (a folga de 1 min, até 10 min da rodada e o tempo de fechar), o ponto ganho entra no saldo e no XP e em nenhuma temporada. Se a cliente quiser emendar sem intervalo, o passo seguinte é uma tarefa do Cloud Tasks marcada para o `endsAt` (como a fila do `fanCount`, 19.6), no lugar de esperar a rodada.
+8. **As temporadas do fã são contadas pela virada.** Ela soma 1 em `stats.pastSeasons` de cada fã com pontos no geral de S, na mesma transação que grava a linha dele no arquivo, e marca `stats.closedSeasonId = S`. A troca preguiçosa deixa de somar (sai o `pastSeasons += 1` do passo 6 da seção 5). `seasonsPlayed` passa a ser `pastSeasons`, mais 1 quando `seasonPoints > 0` e `seasonId` é diferente de `closedSeasonId`: conta certo antes da virada, entre a virada e a primeira ação na temporada nova, e depois dela. Motivo: o número fica certo na hora para o painel, que lê a carteira direto, bate com as linhas do fã no arquivo, e o seed deixa de gravar o campo direto.
+9. **Top 20 no retrato semanal e na virada.** A conquista `top-20` (e qualquer outra `rank` do catálogo) é desbloqueada quando o fã está no top N do geral num retrato de segunda-feira ou no resultado final. Nunca na leitura (o `GET` não grava) nem na transação da ação (a posição custaria três contagens em toda ação). Preço aceito: quem passa pelo top 20 no meio da semana e cai antes da segunda não ganha. A regra `rank` vale só para o geral.
+10. **Próxima temporada e encerrar antes da hora pelo painel, com a seção `ranking`.** `config/season` ganha `next` (a próxima, cadastrada pela callable `scheduleNextSeason`) e `lastClosed` (a última fechada, gravada pela virada). `endSeason` encerra a temporada em andamento agora (o `endsAt` vira o agora), e a virada fecha na rodada seguinte. O `updateSeason` do bloco 7 fica mais estrito: temporada começada não sai nem muda de início (`season-started`), a encerrada só muda nome, título e `topTarget`, e fim no passado vira `endSeason` (23.10). `closeSeasonNow` roda na hora a virada que já venceu: a saída da equipe se a função agendada parar. Todas com auditoria.
+11. **A meta do card "Você".** Fora do top N: "840 pts para entrar no top 10", com N no `topTarget` da temporada (padrão 10, de 1 a 50: fora do top, o `/me/rank` lê as N primeiras linhas a cada busca, 23.2). Dentro dele: "312 pts para o 6º lugar". O que falta é a diferença mais 1, porque o empate fica com quem chegou primeiro: com a mesma pontuação, o fã continuaria atrás. Para o "840" do protótipo continuar certo, a 10ª (Júlia) fica com 4.959 no seed e nas fixtures.
+12. **Resultado congelado em `seasons/{id}` e `seasons/{id}/standings/{uid}`.** O cabeçalho guarda a temporada, o fim de verdade e quantos pontuaram; cada fã com pontos tem a linha dele, com a posição final no geral e em cada central de que era membro, e o nome, a foto e a cidade do perfil na hora da virada (a linha como a lista a mostrava). O top N de qualquer recorte é uma consulta por posição. A API lê o arquivo para a temporada fechada (decisão 4), e o painel lê direto, com os nomes, sem precisar dos perfis. A exclusão de conta apaga a linha do fã, e as posições dos outros ficam como foram, porque são o resultado oficial: a lista da temporada fechada mostra o buraco (o 3º seguido do 5º).
+13. **App: o domínio `ranking` entra no seletor.** As três rotas vêm do servidor com o emulador. O `example` e o aviso "Ranking de exemplo" saem do código: com o `ranking` no `SERVER_DOMAINS`, o ranking, a carteira e as centrais nunca mais ficam em fontes diferentes. As fixtures continuam nas builds sem API e passam a montar o ranking pela mesma tabela do seed.
+14. **Seed com um ranking de verdade.** 48 contas de ranking criadas pelo seed, com os pontos lançados pelo núcleo, duas temporadas passadas fechadas pela própria virada (as 3 temporadas da 1e) e o retrato da semana tirado pela própria função (a seta). Pódio Thalita, Davi e Jean; Camila em 12º no geral com 4.120, 12ª no Netto e 41ª no Nenho, como hoje (23.15).
+
+### 23.2 Rotas
+
+| Método e caminho                                            | Grava | Função do app                       | Resposta                                           |
+| ----------------------------------------------------------- | ----- | ----------------------------------- | -------------------------------------------------- |
+| `GET /ranking/season`                                       | não   | `ranking/api.ts` `fetchSeason`      | `{ season: Season \| null }`                       |
+| `GET /ranking` (`artistId` e `cursor` opcionais)            | não   | `ranking/api.ts` `fetchLeaderboard` | `LeaderboardPage`                                  |
+| `GET /me/rank` (`artistId` opcional)                        | não   | `ranking/api.ts` `fetchMyRank`      | `MyRank`                                           |
+| `GET /me/centrals` (bloco 4)                                | não   | `artists/api.ts` `fetchFanCentrals` | `FanCentral[]`, agora com `fanRank`                |
+| `GET /me/wallet` e `GET /me/progress` (bloco 1)             | não   | `profile/api.ts`                    | como hoje, com a temporada mostrada e a conta nova |
+| `PUT` e `DELETE /me/centrals/:artistId`, `POST /me/artists` | sim   | `artists/api.ts`                    | como hoje; gravam `member` no `centralPoints`      |
+
+Arquivos novos:
+
+- `functions/src/ranking/`: `model.ts` (puro, com teste em tabela: `shownSeason`, `RankScope`, `encodeRankCursor` e `decodeRankCursor`, `rankChange`, `rankTarget`, `rankUnlocks`, `closeDue`, `snapshotDue`, as regras das callables (`updateSeasonRefusal`, `nextSeasonRefusal`, `endSeasonRefusal` e `closeNowRefusal`), as constantes e os formatos de consulta, `RANKING_QUERY_SHAPES`), `queries.ts` (a lista e as contagens de 23.4, um lugar só para as rotas, o retrato e a virada), `service.ts` (as leituras das rotas e o `liveCentralRank` do `fanRank`), `jobs.ts` (`runSeasonClose`, `runRankSnapshot` e `runRankingTick`), `panel.ts` (`scheduleNextSeason`, `endSeason` e `closeSeasonNow`), `seed.ts` e `index.ts`.
+- `functions/src/api/routes/ranking.ts` (`rankingRoutes`: `/ranking/season`, `/ranking` e `/me/rank`), somadas ao `API_ROUTES` depois das do bloco 7.
+- `functions/src/day.ts` ganha dois, puros, no molde do `nextWeekStart` (sem supor o deslocamento do fuso): `weekStart(now)`, a meia-noite de São Paulo da segunda-feira da semana de `now` (a segunda do calendário, `shiftDay(hoje, 1 - isoWeekday(hoje))`, e o começo dela pelo `dayStartAfter`); e `previousWeekKey(now)`, a semana ISO anterior (`weekKey(shiftDay(dayKey(now), -7))`). O `weekKey` recebe o dia em texto, não o instante: a semana de um instante é `weekKey(dayKey(now))`.
+
+Tipos no `api/contract.ts`, espelho de `src/domains/ranking/types.ts`: `Season`, `LeaderboardEntry`, `LeaderboardPage` (sem `example`), `RankTarget` e `MyRank` (sem `example`, com `member?`). Nenhum código de erro novo na API: central fora do formato, inexistente ou fora do ar é o `artist_not_found` (404) do bloco 4, e cursor fora do formato é `invalid_request` (400).
+
+As três rotas novas só leem: sem `Idempotency-Key` e sem exigir o perfil. Fã sem carteira recebe o ranking normal, com `position: null`.
+
+Duas fontes, pela `shownSeason` (decisão 4): a temporada da `season` (em andamento, ou encerrada esperando a virada) é lida ao vivo, com a consulta, as contagens e o documento do fã numa transação só de leitura (`db.runTransaction(fn, { readOnly: true })`, com `tx.get` da consulta, das agregações e dos documentos: tudo no mesmo instante, sem trava e sem leitura a mais); a `lastClosed` é lida do arquivo (`seasons/{id}/standings`), sem contagem.
+
+#### `GET /ranking/season`
+
+Lê só a configuração do cache (60 s), sem documento nenhum.
+
+```json
+{
+  "season": {
+    "id": "temporada-sao-joao",
+    "name": "São João",
+    "startsAt": "2026-09-18T20:00:00.000Z",
+    "endsAt": "2026-10-18T20:00:00.000Z",
+    "status": "active",
+    "leaderTitle": null
+  }
+}
+```
+
+- A temporada é a `shownSeason` (decisão 4). `status`: `active` com `startsAt <= agora < endsAt`; `ended` com `agora >= endsAt`, o que inclui a `lastClosed`. Sem temporada mostrada: `{ "season": null }`.
+- `endsAt` é o fim de verdade: depois do `endSeason`, o instante em que a equipe encerrou.
+- O app já conta os dias e troca para "encerrada" sozinho no `endsAt` (`isSeasonOver`), também com a resposta no cache.
+
+#### `GET /ranking`
+
+Sem `artistId`, o geral; com ele, a central, só com membros. `cursor` opcional. Página de 20 (`RANKING_PAGE_SIZE`); o `limit` é ignorado.
+
+1. A temporada mostrada, pelo cache. Sem ela: `{ "items": [], "nextCursor": null }`.
+2. Com `artistId`: fora do `HANDLE_PATTERN` (ou um id `__.*__`), 404 `artist_not_found` sem ler nada. Senão, lê `artists/{id}` em paralelo com os passos 3 e 4, e central que não existe ou não está publicada é 404, como nas rotas do bloco 4.
+3. A página: a consulta de 23.4 com `startAfter` do cursor e `limit(21)`, na transação só de leitura. A 21ª linha só diz que há página seguinte.
+4. Na mesma transação, só na página que tem cursor: as três contagens de 23.4 com os valores do cursor e `<=` no id, que dizem quantos vêm até ele. A posição da primeira linha é esse número mais 1; na primeira página, 1. As outras seguem de 1 em 1.
+5. Um `getAll` com o `users/{uid}` de cada linha, fora da transação: `displayName`, `photoURL` e `city`. Perfil que não existe (conta sendo excluída, nos segundos antes de a carteira sumir) mantém a linha, com os três em `null` ("Fã" no app).
+6. `change` de cada linha pela regra de 23.5. `isMe`: o uid é o de quem chama.
+7. `nextCursor`: o cursor da 20ª linha quando veio a 21ª; senão `null`.
+
+Temporada fechada (a `lastClosed`), do arquivo, no lugar dos passos 3 a 6: `seasons/{id}/standings` com `orderBy('position')` no geral ou `orderBy('centrals.<artistId>.position')` na central (só as linhas com posição naquele recorte entram), `startAfter` da posição do cursor e `limit(21)`. Cada linha sai como está no arquivo: a posição, os pontos (`points` ou `centrals.<id>.points`), o nome, a foto e a cidade da virada, `change: 0` e o `isMe`. Nenhuma contagem e nenhum perfil. A conta excluída deixa o buraco na posição (decisão 12). A central continua passando pelo 404 do passo 2.
+
+```json
+{
+  "items": [
+    {
+      "position": 1,
+      "userId": "Kq3vZ8wQb1TnUe0aRk5pL2mXy7Fd",
+      "displayName": "Thalita Santos",
+      "photoURL": null,
+      "city": "Irará, BA",
+      "points": 9140,
+      "change": 1,
+      "isMe": false
+    }
+  ],
+  "nextCursor": "WzM4NzIsMTc1OTY3NjQwMDAwMCwiWnA0THc5VHEyVmI3TmMxSHg2UmozS3M4TWE1RSIsMjBd"
+}
+```
+
+- Cursor: o base64url de `[seasonPoints, seasonPointsAtEmMs, uid, position]` da última linha (`encodeRankCursor`). Ao vivo valem os três primeiros (a posição da página seguinte sai das contagens, que acompanham a ordem de agora); no arquivo, só a posição. Assim, a página seguinte pedida logo depois de a virada terminar continua do mesmo lugar. No recorte de central, o id do `startAfter` ao vivo é o caminho `wallets/{uid}/centralPoints/{artistId}`, que o servidor monta. Fora do formato (pontos inteiros de 1 em diante, instante entre 0 e o maior `Timestamp` do Firestore ou `null`, uid em `^[A-Za-z0-9]{1,128}$`, posição inteira de 1 em diante): 400 `invalid_request`. O cursor não leva a temporada nem o recorte: o app não mistura (o recorte está na chave do React Query), e um cursor de outro recorte ou de outra temporada só começa a lista num lugar estranho, sem erro.
+- Custo ao vivo: 21 documentos do ranking, 20 perfis, a central (1) e, nas páginas depois da primeira, as contagens (3 leituras, mais 1 a cada mil fãs à frente). Uns 45. No arquivo: 21 linhas e a central, uns 22.
+
+#### `GET /me/rank`
+
+```json
+{ "position": 12, "points": 4120, "target": { "kind": "top", "position": 10, "pointsLeft": 840 } }
+```
+
+1. A temporada mostrada, pelo cache. Sem ela: `{ "position": null, "points": 0, "target": null }`.
+2. Geral: lê `wallets/{uid}`. Os pontos são os da temporada mostrada (`seasonId` igual), senão 0.
+3. Central: lê `artists/{id}` (o 404 de `/ranking`) em paralelo com `wallets/{uid}/centralPoints/{id}`. Os pontos são os da temporada mostrada nesse documento. Ao vivo, a resposta leva `member`. Quem não é membro: `{ "position": null, "points": <os dele na central>, "target": null, "member": false }`, e o app diz "Entre na central para aparecer no ranking".
+4. Ao vivo, com pontos (e membro, na central): `position` é 1 mais as três contagens de 23.4 com os valores do próprio documento e `<` no id. Sem pontos: `position: null`.
+5. `target` (`rankTarget`, puro): `null` sem posição, na temporada encerrada e no 1º lugar. Fora do top (`position > topTarget`): lê a consulta do recorte com `limit(topTarget)` e devolve `{ kind: 'top', position: topTarget, pointsLeft }`, com os pontos do último dessa leitura. Dentro (de 2 a `topTarget`): lê o começo da lista até quem vem logo antes do fã (`limit(position - 1)`, no máximo `topTarget - 1` linhas, pelo índice da lista) e devolve `{ kind: 'position', position: position - 1, pointsLeft }`, com os pontos da última dessa leitura; sem essa linha, `target: null`. Não use `endBefore` com `limitToLast(1)`, que leria uma linha só: o SDK manda a consulta com todas as direções invertidas, que pediria outro índice composto (23.19). `pointsLeft` é a diferença mais 1, nunca abaixo de 1. No pódio, o app mostra "No pódio da temporada" e não usa o `target`.
+6. Os passos 2 a 5 ao vivo correm na mesma transação só de leitura: a posição, o alvo e a linha do fã na lista saem do mesmo instante.
+7. Temporada fechada: os pontos como nos passos 2 e 3 (os documentos não mudam depois do `endsAt`) e a posição da linha do fã no arquivo, `seasons/{id}/standings/{uid}` (`position` no geral, `centrals.<id>.position` na central; sem a linha ou sem o recorte, `null`), lida em paralelo. Sem `target` e sem `member`: o resultado é o da virada, e entrar na central agora não muda nada nele.
+8. Custo ao vivo: o documento do fã (1), as contagens (3 ou mais), o alvo (`position - 1` dentro do top, até 9 com o padrão; `topTarget` fora dele, 10 por padrão) e, na central, a central (1). De 5 a uns 15, dentro ou fora do top. Na temporada fechada: 2, mais a central.
+
+#### `GET /me/centrals` (bloco 4)
+
+- `fanRank`: ao vivo, com `member` no `centralPoints` e pontos na temporada mostrada, a posição pela mesma conta do `/me/rank` da central (`liveCentralRank`, com o mesmo `livePosition` do `/me/rank`, cada um na sua transação só de leitura). Senão, `null`. Custo: 3 leituras ou mais por central com pontos. Na temporada fechada, a `centrals.<id>.position` da linha do fã no arquivo (uma leitura para todas as centrais), ou `null`.
+- Contagem que falha com o código 9 (`FAILED_PRECONDITION`, o índice que falta ou ainda monta): aquela central sai com `fanRank: null` e `logger.error`, como o `sumCentralPoints` do "PTS DA CENTRAL" (19.7). Sem isso, a 1b e a 1e responderiam 500 por causa do ranking. Outro erro sobe, como hoje.
+- `seasonPoints`: os da temporada mostrada (antes, os da temporada da configuração).
+- Assim, o "você é #12" da 1b, o "#12 entre 30 fãs" da 1e, o card "Você" no chip da central e a linha do fã na lista saem da mesma conta, ao vivo ou do arquivo.
+
+#### `GET /me/wallet` e `GET /me/progress` (bloco 1)
+
+- `seasonPoints` da carteira: os da temporada mostrada, e não mais os de `config/season.season`, que depois da virada pode ser a próxima, ainda sem começar. Quem terminou em 12º continua vendo os pontos da temporada encerrada até a próxima começar.
+- `stats.seasons`: o `seasonsPlayed` da decisão 8.
+
+#### As rotas que gravam
+
+`PUT /me/centrals/:artistId` e `POST /me/artists`: cada vínculo novo grava `member: true` no `centralPoints` da central (23.7). `DELETE /me/centrals/:artistId`: com o vínculo, `member: false`. As respostas não mudam.
+
+### 23.3 Coleções e campos
+
+```
+config/season {
+  version: number
+  season: SeasonDef | null      // a atual: em andamento, encerrada esperando a virada ou agendada
+                                // (depois de uma virada que promoveu a próxima)
+  next: SeasonDef | null        // novo: a próxima, cadastrada pelo painel; a virada a promove
+  lastClosed: (SeasonDef & { closedAt: Timestamp }) | null   // novo: a última fechada pela virada
+  updatedAt: Timestamp
+  updatedBy: { uid: string, name: string } | null            // null na virada e no seed
+}
+
+SeasonDef {
+  id, name, startsAt, endsAt, leaderTitle                    // como hoje (seção 4)
+  topTarget: number             // novo: o N do "top N" do card "Você", de 1 a 50; ausente vale 10
+  endedEarly: {                 // novo: gravado pelo endSeason; o endsAt passa a ser o "at"
+    plannedEndsAt: Timestamp, at: Timestamp, by: { uid: string, name: string }
+  } | null
+}
+
+wallets/{uid} {
+  ...                           // seções 4 e 22.3
+  stats: {
+    pastSeasons: number         // temporadas fechadas em que o fã pontuou no geral; só a virada soma
+    closedSeasonId: string | null   // novo: a última temporada que a virada contou para este fã
+  }
+  rankWeek: { seasonId: string, week: string, position: number } | null
+                                // novo: o retrato semanal no geral ("2026-W41"), gravado pela função
+}
+
+wallets/{uid}/centralPoints/{artistId} {
+  ...                           // seção 4
+  member: boolean               // novo: o fã é membro da central (entrar grava true, sair false)
+  rankWeek: { seasonId: string, week: string, position: number } | null   // novo: o retrato na central
+}
+
+seasons/{seasonId} {            // novo: o resultado congelado de uma temporada
+  id, name, startsAt, endsAt, leaderTitle, topTarget, endedEarly   // como estavam no começo da virada
+  status: 'closing' | 'closed'
+  closingAt: Timestamp          // quando a virada começou
+  closedAt: Timestamp | null
+  rankedFans: number            // fãs com pontos no geral
+  centrals: { <artistId>: { rankedFans: number } }   // membros com pontos em cada central
+  schemaVersion: 1
+}
+
+seasons/{seasonId}/standings/{uid} {   // novo: uma por fã que pontuou, no geral ou numa central
+  uid: string
+  seasonId: string
+  displayName: string | null    // o perfil na hora da virada: a linha como a lista mostrava
+  photoURL: string | null
+  city: string | null
+  position?: number             // a posição final no geral; ausente sem pontos no geral
+  points?: number               // os pontos da temporada no geral; ausente (vale 0) sem pontos no geral
+  pointsAt?: Timestamp | null
+  centrals: { <artistId>: { position: number, points: number } }   // só onde era membro com pontos
+}
+
+rankingJobs/{jobId} {           // novo: o andamento da virada e do retrato; só o servidor
+                                // jobId: "close-<seasonId>" ou "snapshot-<seasonId>-<semana>"
+  kind: 'close' | 'snapshot'
+  seasonId: string
+  week: string | null           // só no retrato
+  status: 'running' | 'done'
+  scopes: string[]              // 'global' e 'artist:<id>', na ordem, fixados no começo
+  scopeIndex: number            // o recorte em andamento
+  cursor: { points: number, atMs: number | null, uid: string } | null   // a última linha gravada nele
+  position: number              // a última posição gravada nele
+  counts: { <scope>: number }   // quantos fãs cada recorte terminado teve
+  startedAt: Timestamp
+  updatedAt: Timestamp
+  finishedAt: Timestamp | null
+}
+```
+
+- `config/season`: as callables e a virada gravam o documento inteiro (o `runConfigChange` faz `tx.set` sem merge), então toda gravação leva `season`, `next` e `lastClosed` juntos. A leitura tolerante (`parseSeasonConfig`) lê os três: `next` ou `lastClosed` fora do formato viram `null`, com `logger.error`, sem derrubar a `season`; `topTarget` ausente ou inválido vale 10; `endedEarly` inválido vale `null`. O `SeasonInfo` do núcleo ganha `topTarget` e `endedEarly`. O lançamento continua usando só a `season` (seção 8).
+- Carteira: o `walletFromDoc` lê `stats.closedSeasonId` (`WalletState.closedSeasonId`). O `applyAwards` deixa de gravar `stats.pastSeasons` no `update` (a virada é a única que muda o campo); o `create` continua com `stats: { pastSeasons: 0 }`. O núcleo não lê nem grava o `rankWeek`, e o `update` dele, só com os campos dele, não o toca.
+- `centralPoints`: o `centralFromDoc` lê `member` (`true` só quando é `true`), e o `applyAwards` grava o `member` do estado no `create` e no `update`. O `rankWeek` também fica fora do núcleo.
+- `seasons/{id}` nasce no começo da virada (`closing`) e fecha no fim (`closed`). As `standings` nascem página a página. Depois da virada, nada disso muda, a não ser pela exclusão de conta (23.13).
+- `standings`: o geral grava a linha inteira (`tx.set` sem merge, com `centrals: {}`); cada central grava por cima, com `tx.set(ref, { uid, seasonId, displayName, photoURL, city, centrals: { [artistId]: { position, points } } }, { merge: true })`, o mapa aninhado. O merge junta só as folhas que vieram, então não toca no geral nem nas outras centrais. Nunca a chave `'centrals.<id>'` num `set`: o ponto só vira caminho no `update`, e no `set` com merge vira um campo com ponto no nome. Quem só tem pontos de central fica sem `position`, `points` e `pointsAt`, e o leitor trata a falta como 0 e sem posição no geral.
+- `rankingJobs`: o `cursor` vira `null` quando o trabalho termina, porque ele guarda um uid.
+
+### 23.4 Consultas, posições e custo
+
+`ranking/queries.ts`, um lugar só para a lista, a posição, o retrato e a virada:
+
+```ts
+type RankScope = { kind: 'global' } | { kind: 'artist'; artistId: string };
+type RankKey = { points: number; atMs: number | null; uid: string };
+
+// A lista, na ordem do ranking.
+// geral:   db.collection('wallets')
+// central: db.collectionGroup('centralPoints')
+//            .where('artistId', '==', artistId).where('member', '==', true)
+// os dois: .where('seasonId', '==', seasonId).where('seasonPoints', '>', 0)
+//          .orderBy('seasonPoints', 'desc').orderBy('seasonPointsAt', 'asc')
+//          .orderBy(FieldPath.documentId(), 'asc')
+function rankingQuery(db: Firestore, seasonId: string, scope: RankScope): Query;
+
+// Quantos vêm antes de `key` na mesma ordem (com `inclusive`, também ele): A + B + C.
+// A: seasonPoints > key.points
+// B: seasonPoints == key.points e seasonPointsAt < key.atMs
+// C: seasonPoints == key.points e seasonPointsAt == key.atMs e documentId < id (<= com inclusive)
+// Cada uma com os mesmos filtros de temporada (e de central e membro), em paralelo, por count().
+function countAhead(
+  db: Firestore,
+  seasonId: string,
+  scope: RankScope,
+  key: RankKey,
+  inclusive: boolean,
+): Promise<number>;
+```
+
+- A soma das três contagens é exata para a ordem da lista. Contar só "quem tem mais pontos" daria a mesma posição a todos os empatados (seção 10).
+- Nas rotas, as três contagens, a página e o documento do fã vão numa transação só de leitura (`{ readOnly: true }`, `tx.get` de cada consulta e de cada `count()`): leituras separadas podiam contar duas vezes um fã que ganhou ponto entre a contagem B e a A, e o card ficaria uma posição diferente da linha. A transação só de leitura não trava nada, não repete e não cobra leitura a mais. O retrato e a virada não contam: eles andam pela lista.
+- O id no recorte de central é o caminho completo do documento (`wallets/{uid}/centralPoints/{artistId}`), no `startAfter` e no filtro C.
+- Não use cursor dentro de `count()`: a doc do Firestore não promete cursor em agregação, e os filtros das três contagens fazem o papel dele.
+- `seasonPointsAt` nulo com pontos não acontece pelo núcleo (todo ganho e todo ajuste que sobe a temporada grava o instante). Se aparecer, ele vem antes dos instantes na ordem (o Firestore põe `null` primeiro) e o cursor o guarda como `null`. Com o instante nulo na chave, nada vem antes dela pela chegada: a contagem B sai, e a C compara os nulos (`seasonPointsAt == null` com o id antes). Com o instante na chave, a B conta só os instantes anteriores: um nulo de mesmos pontos ficaria fora dela (implementação, 23.20).
+- O `count()` cobra 1 leitura a cada mil entradas do índice, no mínimo 1 por contagem. Um fã em 12º gasta 3 leituras na posição; um em 50.000º, umas 52.
+
+Custo por tela, com a temporada do cache:
+
+| Tela                                | Leituras                                   |
+| ----------------------------------- | ------------------------------------------ |
+| 1f, primeira abertura de um recorte | uns 60 (a primeira página e o card "Você") |
+| 1f, cada página seguinte            | uns 45                                     |
+| 1d, top fãs e aba Ranking           | uns 42 (a primeira página da central)      |
+| 1b e 1e, "Suas centrais"            | as de hoje, mais 3 por central com pontos  |
+| 1f, temporada fechada               | uns 25 (21 linhas do arquivo e o card)     |
+| 1b e 1e, temporada fechada          | as de hoje, mais 1 (a linha do arquivo)    |
+| Depois de uma ação que rende        | uns 60 com a 1f montada; uns 100 com a 1d  |
+
+Depois de uma ação que rende pontos (e de entrar ou sair de uma central, e do puxar para atualizar da 1b, da 1e e da 1f), o app busca de novo o card e só a primeira página de cada ranking montado (`refreshRanking`, 23.14). Sem o corte, o React Query buscaria de novo, uma depois da outra, todas as páginas já carregadas de cada consulta infinita: depois do toque no card "Você" (até 10 páginas), umas 450 leituras por comentário, e com o teto de 100 comentários por dia, umas 45 mil por fã. A volta do app ao primeiro plano ainda busca de novo as páginas carregadas de um ranking montado e vencido (o `staleTime` de 60 s), o padrão do React Query: é uma busca por volta, e não por ação.
+
+### 23.5 Retrato semanal e a seta
+
+`runRankSnapshot(db, { now, budgetMs })`, chamado pelo `rankingTick` (23.6) depois da virada:
+
+1. A temporada ativa no `now`, pela configuração lida sem cache. Sem ela, nada. `week = weekKey(dayKey(now))` (o `weekKey` recebe o dia em texto).
+2. Vence quando a temporada começou antes da segunda-feira desta semana (`startsAt < weekStart(now)`; na primeira semana não há com o que comparar) e `rankingJobs/snapshot-<S>-<week>` não está `done`.
+3. Começo, numa transação: lê o trabalho e, sem ele, cria com `scopes` igual a `['global']` mais um `artist:<id>` por documento de `artists` (qualquer status, por id), `scopeIndex: 0`, `cursor: null`, `position: 0`.
+4. Páginas de 200 (`RANKING_JOB_PAGE`): a consulta de 23.4 do recorte em andamento, com `startAfter(cursor)` e `limit(200)`, fora de transação. Depois, uma transação: relê o trabalho e confere que ele não está `done` e que `scopeIndex`, `cursor` e `position` são os que a rodada leu (senão outra rodada passou na frente, ou a virada encerrou o retrato, e esta para); grava `rankWeek: { seasonId, week, position }` em cada documento da página (`tx.update`, só esse campo); no geral, as conquistas de posição (23.9); e o trabalho, com o cursor da última linha e a última posição. Página com menos de 200: o recorte acabou (`counts`, `scopeIndex + 1`, `cursor: null`, `position: 0`).
+5. Documento que sumiu entre a consulta e a transação (exclusão de conta): o `update` cai com `NOT_FOUND`, e a rodada lê a página de novo, já sem ele. Três quedas seguidas na mesma página encerram a rodada com `logger.error`, e a próxima continua.
+6. Acabou o último recorte: `status: 'done'`, `cursor: null`, `finishedAt`.
+7. Sem tempo (`budgetMs`), a rodada para entre páginas, e a seguinte continua do cursor.
+
+A seta (`rankChange`, puro), na lista: com a temporada mostrada em andamento, `rankWeek.seasonId` igual ao dela e `rankWeek.week` igual a `weekKey(dayKey(agora))` ou a `previousWeekKey(agora)`, `change = rankWeek.position - position`; senão 0. Aceitar a semana anterior cobre a segunda-feira entre 00:00 e a rodada do retrato, e um retrato que falhou (a seta passa a contar desde duas semanas, até ele sair). Na temporada encerrada, sempre 0.
+
+O retrato não mexe em ponto. A gravação de `rankWeek` é por campo e não apaga nada do núcleo, e a transação de um fã que leu a carteira antes dela repete com o valor novo (o Firestore põe as duas em ordem).
+
+Deriva aceita: o retrato roda com a temporada aberta, e cada página é lida num instante diferente (fora da transação e, quando o tempo da rodada acaba, 10 minutos depois). A posição gravada é a última do trabalho mais a ordem na página. Quem passa o cursor entre duas páginas não ganha o `rankWeek` da semana (a seta dele mede desde a semana anterior, ou fica em 0), e as posições das páginas seguintes podem andar algumas casas. Ler todas as páginas no mesmo instante (`readTime` numa transação só de leitura) pediria recomeçar o trabalho depois de 1 hora (sem PITR, o Firestore guarda as versões por 1 hora), e a seta é um enfeite da semana. O que não pode andar é a conquista de posição, que nunca é revogada: por isso o `top` da regra `rank` vai até 200 (`ACHIEVEMENT_RANK_MAX`, igual ao `RANKING_JOB_PAGE`), e ela sai sempre da primeira página do geral, lida numa consulta só (23.9). Na virada não há deriva no geral: depois do `endsAt` nenhum ponto da temporada muda.
+
+### 23.6 Virada de temporada
+
+`rankingTick`, em `functions/src/index.ts`, depois do `setGlobalOptions`:
+
+```ts
+export const rankingTick = onSchedule(
+  {
+    schedule: 'every 10 minutes',
+    timeZone: 'America/Sao_Paulo',
+    timeoutSeconds: 540,
+    memory: '512MiB',
+    retryCount: 0,
+  },
+  () => runRankingTick({ db: getFirestore(), now: Date.now, budgetMs: 7 * 60_000 }),
+);
+```
+
+- `onSchedule` vem de `firebase-functions/scheduler`: sem dependência nova. Confira na doc do firebase-functions 7 o máximo de `timeoutSeconds` do `onSchedule`; 540 basta, porque o trabalho continua na rodada seguinte. Com `retryCount: 0`, uma falha espera a próxima rodada.
+- `runRankingTick` roda a virada e, com tempo sobrando, o retrato, e registra uma linha: `logger.info('rankingTick', { closed, snapshot, pages, ms })`.
+- Alerta: com a `season` encerrada há mais de 30 min (`CLOSE_LATE_MS`) e o `close-<S>` ainda sem `done` no fim da rodada, `logger.error('rankingTick: virada atrasada', { seasonId, endsAt, job })` a cada rodada. Pega o erro que se repete e a virada que não anda; a função agendada parada não roda e não avisa, e por isso o deploy confere o job no console (23.18).
+
+`runSeasonClose(db, { now, budgetMs })`, chamado pelo `rankingTick` e pela callable `closeSeasonNow` (23.10):
+
+1. Lê `config/season` sem cache. Vence quando `season` existe e `now >= season.endsAt + CLOSE_GRACE_MS` (`closeDue`). A folga cobre o pedido que leu a temporada ainda aberta, com o "agora" de antes do fim, e grava pontos de S depois dele: ela é o maior `timeoutSeconds` das funções que lançam pontos, mais uma margem. Hoje só a `api` lança (30 s), e a folga é de 60 s. Função nova que lance pontos (o `adjustFanPoints` do bloco 11, por exemplo, que teria os 60 s padrão do `onCall`) baixa o próprio `timeoutSeconds` para caber, ou sobe a folga junto (23.19).
+2. Começo, numa transação: relê `config/season` (a mesma temporada, ainda encerrada) e `rankingJobs/close-<S>`. Sem o trabalho, cria-o (os `scopes` como no retrato) e cria `seasons/{S}` com os campos da temporada, `status: 'closing'` e `closingAt: now`. Na mesma transação, o retrato de S que ficou `running` (a temporada acabou no meio dele; consulta em `rankingJobs` por `seasonId`, `kind: 'snapshot'` e `status: 'running'`) vira `done`, com `cursor: null` (o uid sai) e `finishedAt`, e um `logger.warn`; uma rodada dele que ainda estivesse no meio para na página seguinte, porque a transação de cada página confere que o trabalho não está `done` (23.5, passo 4). Com o `close-<S>` já `done`, nada.
+3. Páginas de 200, como no retrato (23.5, passos 4 e 5). A consulta da página roda fora da transação, com um `getAll` dos `users/{uid}` dela (o nome, a foto e a cidade da linha; perfil que sumiu, os três `null`), e cada página grava numa transação:
+   - Geral, para cada linha na posição `p`: `standings/{uid}` com `tx.set` (`uid`, `seasonId`, `displayName`, `photoURL`, `city`, `position: p`, `points`, `pointsAt`, `centrals: {}`); na carteira, `tx.update` com `stats.pastSeasons: FieldValue.increment(1)`, `stats.closedSeasonId: S` e as conquistas de posição (23.9). Carteira que sumiu faz o `update` cair com `NOT_FOUND`, e a página é lida de novo, sem ela (23.5, passo 5).
+   - Central X, membros com pontos: primeiro, `tx.getAll` dos `centralPoints` da página, que trava cada um até o fim da transação. Algum sumiu (exclusão de conta no meio): a transação para e a página é lida de novo, sem ele, como o `NOT_FOUND` do geral. Sem essa leitura, a página que entrasse depois do passo de `standings` da exclusão recriaria a linha, órfã e com o uid. Depois, `standings/{uid}` com o mapa aninhado e merge (23.3): `uid`, `seasonId`, `displayName`, `photoURL`, `city` e `centrals: { X: { position, points } }`. O geral roda antes, então a linha de quem pontuou nele já existe; quem só tem pontos de central (só por ajuste) ganha a linha sem `position`, `points` e `pointsAt`.
+   - O trabalho, na mesma transação. É ele que garante o "uma vez só": a página entra inteira, com o cursor novo, ou nada entra, e duas rodadas ao mesmo tempo nunca gravam a mesma página. Uma página do geral tem até 402 gravações (200 linhas, 200 carteiras, o trabalho e um shard), e a de central, 201, abaixo de 500.
+4. Fim, numa transação: relê o trabalho (todos os recortes feitos) e `config/season` (ainda S). Grava `seasons/{S}` com `status: 'closed'`, `closedAt: now`, `rankedFans` e `centrals.<id>.rankedFans` (dos `counts`); grava `config/season` com `version + 1`, `lastClosed = { ...S, closedAt: now }`, `season = next` (ou `null`), `next = null`, `updatedAt: now` e `updatedBy: null`, mais a cópia em `versions/{n}` (`writeSeasonConfig`, que o seed também usa); uma entrada em `staffAudit` (`season.closed`, `actorUid: null`, `actorName: 'Virada automática'`, `targetEmail: ''`, `details: { seasonId, rankedFans, nextSeasonId, expiredNextSeasonId }`); e o trabalho `done`, com `cursor: null` e `finishedAt`. Uma `next` já vencida (`next.endsAt <= now`, uma virada atrasada) não é promovida: `season = null`, `next = null`, `logger.error` e o id dela em `expiredNextSeasonId`. Promovida, ela fecharia vazia na rodada seguinte (ninguém pontuou nela, porque não valia) e tomaria o lugar da `lastClosed`. A `next` com `startsAt` já passado e `endsAt` adiante é promovida e vale na hora.
+5. Se no fim o `config/season` não tiver mais S (não deveria: as callables recusam mexer na temporada durante a virada, 23.10), `logger.error`, nada é promovido e o trabalho fica sem `done`: cada rodada tenta o fim de novo e registra o erro de novo, que é o alarme. Quem resolve é o desenvolvimento, pelo log; não há caminho do painel para isso.
+
+Durante a virada, a temporada já acabou: nenhum lançamento muda o `seasonPoints` de S e ninguém troca de temporada, porque não há outra ativa. Quem entra ou sai de uma central nesses minutos pode ficar dentro ou fora do resultado dela; o geral não muda. Até o fim da virada, as rotas leem a temporada ao vivo, com esse limite; depois, do arquivo (decisão 4). A exclusão de conta no meio sai como em 23.13.
+
+Virada travada: o alerta acima avisa o desenvolvimento. A equipe tem o `closeSeasonNow` (23.10), que roda o mesmo `runSeasonClose` na hora, para quando a função agendada estiver parada (pausada, apagada num deploy, a API do Cloud Scheduler desligada); o desenvolvimento também pode usar o "Forçar execução" do job no console do Cloud Scheduler. Um erro que se repete no código não sai por nenhum dos dois: precisa de conserto e deploy.
+
+Custo: por fã com pontos, no geral, duas leituras (a linha e o perfil) e duas gravações (a linha e a carteira); por central em que pontuou como membro, três leituras (a linha, o perfil e o `centralPoints` na transação) e uma gravação; mais um documento por recorte. Uma vez por temporada.
+
+A meta da temporada (22.7) da temporada fechada some sozinha: ela só aparece com a temporada ativa de mesmo id. A da próxima só pode ser gravada pelo `updateSeasonGoal` depois que a próxima estiver em `season` (depois da virada), porque ele prende a meta à `season` de agora (`missions/panel.ts`). Com temporadas emendadas, a nova começa sem meta até a equipe gravá-la, minutos depois da virada; nada se perde, porque o `seasonMissions` e o `seasonPoints` contam desde o começo da temporada, com meta ou sem, e a meta cumprida é marcada no lançamento seguinte. Uma `nextSeasonGoal` promovida pela virada fica para o bloco 11, se a cliente quiser a meta pronta no primeiro minuto (23.18).
+
+### 23.7 Transações passo a passo (núcleo e centrais)
+
+O que muda no núcleo (`functions/src/points`):
+
+1. `computeAwards`, passo 6 da seção 5: a troca de temporada continua zerando `seasonPoints`, `seasonPointsAt` e `seasonMissions`, mas não soma mais `pastSeasons` (decisão 8). No `centralPoints`, como hoje.
+2. `seasonsPlayed(wallet)`: `wallet.pastSeasons + (wallet.seasonPoints > 0 && wallet.seasonId !== wallet.closedSeasonId ? 1 : 0)`.
+3. `CentralState` ganha `member`. `setCentralMember(plan, uid, artistId, member, read?)`, novo em `points/award.ts`, no molde do `addDailyCount`: põe o `member` no estado da central dentro do plano e a marca para gravar. Sem o documento, ela nasce zerada (`uid`, `artistId`, o `seasonId` da temporada ativa ou `null`, `seasonPoints: 0`, `seasonPointsAt: null`, `totalPoints: 0`, `member`, `updatedAt`). Se um lançamento também mexe na central, sai uma gravação só, com tudo.
+
+Entrar (`joinCentrals`, 19.4): depois do `planAwards`, que já leu o `centralPoints` de cada central nova para o `central_join`, `setCentralMember(..., true)` em cada uma. Nenhuma leitura a mais; uma gravação a mais quando a entrada não paga. A 1l com 50 centrais fica perto de 260 gravações, abaixo de 500.
+
+Sair (`leaveCentral`, 19.4): o `getAll` do vínculo passa a ler também `wallets/{uid}/centralPoints/{artistId}`. Com o vínculo e o documento: `setCentralMember(..., false, lido)`. Sem o documento, nada: quem nunca pontuou na central não está no ranking dela. Uma leitura a mais e, com o documento, uma gravação a mais.
+
+O seed das centrais (`runJoinCentrals`) passa pelo mesmo caminho e grava `member`.
+
+### 23.8 Idempotência e o evento de pontos
+
+- O bloco 8 não lança ponto, e as rotas novas só leem.
+- A virada e o retrato são idempotentes pelo trabalho em `rankingJobs`: cada página entra uma vez, com o cursor na mesma transação, e o trabalho `done` não roda de novo. O `+1` em `stats.pastSeasons` acontece uma vez por fã e temporada, porque está na transação da linha do arquivo e do cursor. A promoção da próxima temporada acontece uma vez, na transação do fim.
+- Conquista de posição: idempotente por existir ou não em `achievements` (22.5).
+- Callables: `expectedVersion`, como as do bloco 7. O `closeSeasonNow` não grava a configuração por conta própria (quem grava é o fim da virada) e é idempotente pelo trabalho, como a função agendada: chamado de novo, ou junto com uma rodada dela, continua do cursor.
+- `member`: idempotente por valor; entrar quem está dentro e sair quem está fora não mudam nada (19.5).
+
+### 23.9 Conquista Top 20
+
+- O `top-20` da lista padrão (22.6) passa a `active`, com o `activatedAt` das outras do padrão. O "X de N" passa a contar 10.
+- A regra `{ type: 'rank', top: n }` fica verdadeira quando o fã está na posição `n` ou melhor do geral num retrato semanal ou na virada. `rankUnlocks(catalog, position, owned)`, puro, em `ranking/model.ts`, devolve as `rank` ativas que a posição alcança e o fã ainda não tem.
+- Onde: na transação de cada página do geral, no retrato (23.5) e na virada (23.6), com `tx.update` de `achievements.<id>` (só o campo, sem apagar as outras). A data: o `now` da rodada no retrato; o `endsAt` da temporada na virada. O shard do dia soma `byAchievement.<id>.unlocked`, uma gravação por página. O catálogo vem da configuração lida sem cache no começo da rodada; quem já tem a conquista sai pela própria página lida.
+- O `unlockAchievements` do núcleo continua sem avaliar `rank`, porque a posição não existe na transação da ação. O fã vê a conquista na próxima vez que a 1e buscar o `GET /me/achievements`, sem anúncio, como o que acontece longe dele (22.12).
+- Painel: o `setAchievementStatus` deixa de recusar `rank` (o motivo `rule-not-available` sai), e o `createAchievement` aceita `rank` com `top` de 1 a `ACHIEVEMENT_RANK_MAX`, que desce de 1.000 (o valor do bloco 7, quando a regra ficava em rascunho) para 200, o tamanho da página do retrato e da virada: a conquista sai da primeira página do geral, lida num instante só (deriva do retrato, 23.5). Nenhuma conquista com `top` acima de 200 existe (o bloco 7 não publicou regra `rank`), e o painel ainda não tem a tela das conquistas (bloco 11).
+
+### 23.10 Callables do painel (contrato para o bloco 11)
+
+As três primeiras no molde de 22.8 (`runConfigChange`: acesso lido fora e de novo na transação, `config-changed`, versão `+1`, cópia em `versions/{n}`, auditoria), com a seção `ranking`, e gravam o `config/season` inteiro (`season`, `next` e `lastClosed`). O `closeSeasonNow` usa o mesmo acesso, sem `expectedVersion`, porque não grava a configuração por conta própria. Os motivos novos entram no `gamePanelError` de `missions/errors.ts`, ao lado dos da temporada.
+
+| Callable                       | Pedido                                                                                         | Resposta                                   | Recusas (`details.reason`)                                                                                                                                                        |
+| ------------------------------ | ---------------------------------------------------------------------------------------------- | ------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `updateSeason` (bloco 7, muda) | `{ expectedVersion, season: { id, name, startsAt, endsAt, leaderTitle, topTarget? } \| null }` | `{ version }`                              | `invalid-request`, `config-changed`, `season-id-locked`, `season-id-used`, `season-started`, `season-ended`, `season-end-in-past`, `season-overlap`, `season-closing`, `has-next` |
+| `scheduleNextSeason` (nova)    | `{ expectedVersion, next: { id, name, startsAt, endsAt, leaderTitle, topTarget? } \| null }`   | `{ version }`                              | `invalid-request`, `config-changed`, `no-season`, `season-id-used`, `season-end-in-past`, `season-overlap`                                                                        |
+| `endSeason` (nova)             | `{ expectedVersion, seasonId }`                                                                | `{ version, endsAt }`                      | `config-changed`, `season-not-active`, `season-closing`                                                                                                                           |
+| `closeSeasonNow` (nova)        | `{ seasonId }`                                                                                 | `{ status: 'running' \| 'closed', pages }` | `no-season`, `season-not-due`                                                                                                                                                     |
+
+Regras, conferidas na transação com o `now` do pedido:
+
+- **`updateSeason`** mexe só em `season`:
+  - O de hoje: `validateSeasonInput` (com `topTarget` opcional, inteiro de 1 a 50), `season-id-locked` (id novo numa temporada começada) e `season-id-used` (id que já apareceu como `season.id` numa versão, que tem `seasons/{id}` ou que é o da `next`). Sem conferir a `next`, a atual ainda sem começar podia ganhar o id dela: a virada promoveria o mesmo id, as carteiras ficariam com os pontos antigos e o `close-<id>`, já `done`, nunca mais fecharia.
+  - `season-closing`: existe `rankingJobs/close-<id da atual>` ainda não `done` (uma leitura). Nada muda durante a virada.
+  - `season-started`: `season: null`, ou outro `startsAt`, numa temporada já começada. Ela sai pela virada (no `endsAt` ou pelo `endSeason`), nunca apagada; senão não haveria arquivo, temporadas do fã nem Top 20.
+  - `season-ended`: numa temporada já encerrada, esperando a virada, só `name`, `leaderTitle` e `topTarget` mudam.
+  - `season-end-in-past`: `endsAt` no passado numa temporada em andamento. Para encerrar agora, `endSeason`.
+  - `season-overlap`: `endsAt` depois do `startsAt` da `next`, ou `startsAt` antes do `endsAt` da `lastClosed`.
+  - `has-next`: `season: null` com uma `next` cadastrada. Sem atual, nada promoveria a próxima, e o `scheduleNextSeason` não a veria. A equipe tira a próxima antes (`scheduleNextSeason` com `next: null`).
+  - Sem temporada atual (`null`, depois de uma virada sem próxima) ou com a atual ainda sem começar, ela é livre: nasce, troca de id ou sai (sem próxima), como hoje.
+  - Auditoria `season.updated`, como hoje.
+- **`scheduleNextSeason`** mexe só em `next`:
+  - `no-season`: `next` nova sem `season` atual. A temporada que vale agora entra pelo `updateSeason`; a próxima é sempre a de depois dela. `next: null` vale também sem temporada atual.
+  - `validateSeasonInput` com o `topTarget`. `season-id-used`: o id é o da atual, já apareceu como `season.id` numa versão ou tem `seasons/{id}`. `season-end-in-past`: `endsAt` no passado (promovida, ela fecharia vazia e tomaria o lugar da `lastClosed`; o fim da virada também não promove uma vencida, 23.6). `season-overlap`: `startsAt` antes do `endsAt` da atual.
+  - `next: null` tira a próxima. Ela pode mudar durante a virada, porque o fim da virada lê a `next` na própria transação.
+  - Auditoria `season.next.updated`, com `details: { seasonId, previousSeasonId }`.
+- **`endSeason`**:
+  - `season-not-active`: sem temporada atual, `seasonId` diferente do dela (a tela estava velha), ainda sem começar ou já encerrada. `season-closing`, como acima.
+  - Grava `season.endsAt = now` e `season.endedEarly = { plannedEndsAt, at: now, by: { uid, name } }`. O app mostra "encerrada" em até 60 s (cache), e a virada fecha depois da folga, numa das rodadas seguintes (até uns 11 min).
+  - A próxima, se houver, continua com o `startsAt` dela: o intervalo até ela fica sem temporada.
+  - Auditoria `season.ended`, com `details: { seasonId, plannedEndsAt, endedAt }`.
+- **`closeSeasonNow`**: a saída manual quando a virada não roda sozinha (23.6).
+  - `no-season`: sem temporada atual, ou `seasonId` diferente do dela. `season-not-due`: antes do `endsAt` mais a folga (`closeDue`); para encerrar antes da hora, `endSeason`.
+  - Roda o `runSeasonClose` com `budgetMs: 90_000` (`timeoutSeconds: 120`) e responde `closed` quando o trabalho terminou (com a próxima promovida) ou `running` quando o tempo acabou; o painel chama de novo enquanto vier `running`. Idempotente pelo trabalho (23.8).
+  - Auditoria `season.close.requested`, com `details: { seasonId, status, pages }`, a cada chamada que rodou.
+
+Ações novas no `AuditAction` de `staff/service.ts`: `season.next.updated`, `season.ended`, `season.close.requested` e `season.closed` (esta da virada, com `actorUid: null`). As callables das outras seções não mudam.
+
+**Teste do bloco 7 que muda.** O `game-panel.emulator.test.ts` encerrava uma temporada começada com `season: null` antes de conferir o `season-id-used`. Agora isso é `season-started`: o teste passa a encerrar com o `endSeason`, rodar a virada pelo handler (relógio depois da folga) e só então tentar o id antigo (`season-id-used`). O resto dele fica igual.
+
+**Leituras diretas do painel** (bloco 11): o `config/season` (equipe ativa, como hoje: a atual, a próxima e a última fechada); `seasons` e `standings` com a seção `ranking` (23.12), por `getDocs`: as temporadas por `startsAt`, o top N de um recorte por `orderBy('position')` ou `orderBy('centrals.<id>.position')` com `limit` (índices automáticos), com o nome, a foto e a cidade de cada linha (a seção `ranking` não lê `users/{uid}`, e não precisa). O ranking ao vivo não tem leitura direta com a seção `ranking`, porque as carteiras são da seção `fans`; se a tela quiser, o bloco 11 escolhe entre a seção `fans` e uma callable de leitura.
+
+### 23.11 Efeitos no painel e agregados
+
+- **Ranking e temporadas** (bloco 11): a temporada atual, a próxima e a última fechada; editar, cadastrar a próxima e encerrar antes da hora (`updateSeason`, `scheduleNextSeason` e `endSeason`); o histórico em `seasons`, com o pódio e o top N de cada recorte, com os nomes guardados nas linhas; o estado da virada (`seasons/{id}.status`) e, com a virada atrasada (`season.endsAt` passado e o `status` ainda `closing` ou sem `seasons/{id}`), o botão que chama o `closeSeasonNow`.
+- **Fãs** (bloco 11): na carteira, `stats.pastSeasons`, o `rankWeek` e as conquistas de posição. A posição final de um fã numa temporada está em `standings`, que a seção `fans` não lê (23.12); se a tela de um fã quiser mostrá-la, o bloco 11 abre a leitura.
+- **Visão geral**: `byAchievement.top-20.unlocked` nos shards, pelo retrato e pela virada.
+- **Auditoria**: `season.next.updated`, `season.ended`, `season.close.requested` e `season.closed`.
+- **Artistas**: nada muda; o `fanCount` continua sendo dos membros.
+- **Nenhuma mudança no código do painel** neste bloco.
+
+### 23.12 Regras e índices
+
+Acréscimo ao `firestore.rules`, antes do `match /{document=**}` final. Nenhuma regra existente muda: o `config/season` continua legível pela equipe ativa, agora com `next` e `lastClosed`, e a carteira e o `centralPoints` (com `rankWeek` e `member`) continuam só da seção `fans`.
+
+```
+    // Resultado congelado das temporadas (bloco 8): o cabeçalho e a posição
+    // final de cada fã que pontuou, com o nome, a foto e a cidade da virada.
+    // Só o servidor grava (a virada e a exclusão de conta). A seção ranking
+    // lê (Ranking e temporadas). O fã não lê: o app recebe a temporada e o
+    // ranking pela API.
+    match /seasons/{seasonId} {
+      allow read: if canSeeSection('ranking');
+      allow write: if false;
+
+      match /standings/{uid} {
+        allow read: if canSeeSection('ranking');
+        allow write: if false;
+      }
+    }
+
+    // Andamento da virada e do retrato semanal: só o servidor.
+    match /rankingJobs/{jobId} {
+      allow read, write: if false;
+    }
+```
+
+Índices compostos novos em `firestore.indexes.json` (os de hoje ficam):
+
+```json
+[
+  {
+    "collectionGroup": "wallets",
+    "queryScope": "COLLECTION",
+    "fields": [
+      { "fieldPath": "seasonId", "order": "ASCENDING" },
+      { "fieldPath": "seasonPoints", "order": "DESCENDING" },
+      { "fieldPath": "seasonPointsAt", "order": "ASCENDING" }
+    ]
+  },
+  {
+    "collectionGroup": "wallets",
+    "queryScope": "COLLECTION",
+    "fields": [
+      { "fieldPath": "seasonId", "order": "ASCENDING" },
+      { "fieldPath": "seasonPoints", "order": "ASCENDING" }
+    ]
+  },
+  {
+    "collectionGroup": "wallets",
+    "queryScope": "COLLECTION",
+    "fields": [
+      { "fieldPath": "seasonId", "order": "ASCENDING" },
+      { "fieldPath": "seasonPoints", "order": "ASCENDING" },
+      { "fieldPath": "seasonPointsAt", "order": "ASCENDING" }
+    ]
+  },
+  {
+    "collectionGroup": "centralPoints",
+    "queryScope": "COLLECTION_GROUP",
+    "fields": [
+      { "fieldPath": "artistId", "order": "ASCENDING" },
+      { "fieldPath": "member", "order": "ASCENDING" },
+      { "fieldPath": "seasonId", "order": "ASCENDING" },
+      { "fieldPath": "seasonPoints", "order": "DESCENDING" },
+      { "fieldPath": "seasonPointsAt", "order": "ASCENDING" }
+    ]
+  },
+  {
+    "collectionGroup": "centralPoints",
+    "queryScope": "COLLECTION_GROUP",
+    "fields": [
+      { "fieldPath": "artistId", "order": "ASCENDING" },
+      { "fieldPath": "member", "order": "ASCENDING" },
+      { "fieldPath": "seasonId", "order": "ASCENDING" },
+      { "fieldPath": "seasonPoints", "order": "ASCENDING" }
+    ]
+  },
+  {
+    "collectionGroup": "centralPoints",
+    "queryScope": "COLLECTION_GROUP",
+    "fields": [
+      { "fieldPath": "artistId", "order": "ASCENDING" },
+      { "fieldPath": "member", "order": "ASCENDING" },
+      { "fieldPath": "seasonId", "order": "ASCENDING" },
+      { "fieldPath": "seasonPoints", "order": "ASCENDING" },
+      { "fieldPath": "seasonPointsAt", "order": "ASCENDING" }
+    ]
+  }
+]
+```
+
+| Índice                                                                                       | Serve a                                        |
+| -------------------------------------------------------------------------------------------- | ---------------------------------------------- |
+| `wallets` (seasonId, seasonPoints decrescente, seasonPointsAt)                               | a lista do geral, o retrato, a virada, o top   |
+| `wallets` (seasonId, seasonPoints)                                                           | a contagem A do geral                          |
+| `wallets` (seasonId, seasonPoints, seasonPointsAt)                                           | as contagens B e C do geral                    |
+| grupo `centralPoints` (artistId, member, seasonId, seasonPoints decrescente, seasonPointsAt) | a lista da central, o retrato, a virada, o top |
+| grupo `centralPoints` (artistId, member, seasonId, seasonPoints)                             | a contagem A da central                        |
+| grupo `centralPoints` (artistId, member, seasonId, seasonPoints, seasonPointsAt)             | as contagens B e C da central                  |
+
+O id do documento entra no fim de cada índice sozinho, na direção do último campo (crescente), que é a da ordem e a do filtro C. A isenção de hoje de `wallets.seasonPointsAt` (seção 4) tira só o índice simples, e os compostos valem. O `goalReached` e o índice do `season.id` nas versões ficam como estão.
+
+Isenções novas no `fieldOverrides` (ninguém consulta esses campos; mapas com chaves soltas e datas que só crescem):
+
+```json
+[
+  { "collectionGroup": "wallets", "fieldPath": "rankWeek", "indexes": [] },
+  { "collectionGroup": "wallets", "fieldPath": "stats", "indexes": [] },
+  { "collectionGroup": "centralPoints", "fieldPath": "rankWeek", "indexes": [] },
+  { "collectionGroup": "centralPoints", "fieldPath": "updatedAt", "indexes": [] },
+  { "collectionGroup": "centralPoints", "fieldPath": "seasonPointsAt", "indexes": [] },
+  { "collectionGroup": "seasons", "fieldPath": "centrals", "indexes": [] },
+  { "collectionGroup": "standings", "fieldPath": "displayName", "indexes": [] },
+  { "collectionGroup": "standings", "fieldPath": "photoURL", "indexes": [] },
+  { "collectionGroup": "standings", "fieldPath": "city", "indexes": [] }
+]
+```
+
+O `standings.position` e o `standings.centrals` ficam com o índice automático: a API (a temporada fechada) e o painel ordenam por `position` e por `centrals.<id>.position`. A consulta da virada pelo retrato que ficou `running` (`rankingJobs` por `seasonId`, `kind` e `status`, só igualdades) também usa os automáticos.
+
+O emulador não exige índice nenhum: os testes de emulador provam que as consultas rodam e devolvem a ordem certa, mas não que o índice existe. Para isso, um teste puro, `ranking/indexes.test.ts`, lê o `firestore.indexes.json` e confere que cada formato de `RANKING_QUERY_SHAPES` (a lista e as três contagens, nos dois recortes) tem o índice composto com os mesmos campos e direções. Em produção, sem o índice, a consulta falha com o código 9 e a rota responde 500 (a 1f mostra "Tentar de novo"); o `/me/centrals` é a exceção, e responde com `fanRank: null` e o `logger.error` (23.2), para a 1b e a 1e não caírem pelo ranking. Por isso os índices sobem e terminam de montar antes da `api` (23.18). Se a produção pedir um índice diferente, ele entra pelo link do log, e o `RANKING_QUERY_SHAPES` muda junto.
+
+Testes de regras, `tests/ranking-rules.test.ts` (novo, no molde de `tests/points-rules.test.ts`, com os mesmos membros de exemplo mais um só com `ranking`):
+
+- `seasons/{id}` e `standings`: a equipe ativa com `ranking` (editor e leitor) e admin leem (`get` e `list`); sem a seção (só `fans`, só `missions`), desativada, pendente ou com sessão de antes do `authValidAfter`, não; fã e sem login, não; ninguém grava, nem admin.
+- `rankingJobs`: ninguém lê nem grava.
+- `config/season` continua legível pela equipe ativa, com os campos novos; `wallets` e `centralPoints` continuam só com `fans`. Os arquivos de teste de hoje passam sem mudança.
+
+### 23.13 Exclusão de conta
+
+Um passo novo no `deleteUserData`, depois da carteira (19.12, passo 5): lista `seasons` (`select()`, uma leitura por temporada, que são poucas) e apaga `seasons/{id}/standings/{uid}` de cada uma, num lote. Apagar o que não existe não falha. Com a linha saem o nome, a foto e a cidade guardados nela.
+
+O resto já cobre o bloco. A carteira (com o `rankWeek`, o `stats` e as conquistas de posição) e os `centralPoints` (com `member` e `rankWeek`) saem no `recursiveDelete(wallets/{uid})`, e o fã sai do ranking ao vivo assim que a carteira some. Entre o perfil sair e a carteira sair (segundos), a linha dele aparece sem nome ("Fã"). Na temporada fechada, a lista do arquivo fica com o buraco na posição dele (decisão 12).
+
+Durante uma virada, nada dele sobra no arquivo depois do passo novo:
+
+- Página do geral: a transação que ainda tem a carteira dele cai com `NOT_FOUND` (o `update` da carteira), e a página é lida de novo, sem ele.
+- Página de central: a transação relê os `centralPoints` da página (`tx.getAll`, 23.6) e para quando um sumiu, e a página é lida de novo, sem ele. A leitura trava o documento: a exclusão espera a transação terminar, ou a transação vê o documento já apagado. Sem ela, a página que entrasse depois do passo novo recriaria a linha, órfã.
+- A página que entrou antes deixa a linha em `standings`, que o passo novo apaga (o `seasons/{id}` existe desde o começo da virada, e o passo vem depois da carteira).
+
+O `rankedFans` do cabeçalho não desconta (é o número do fechamento, como os agregados da seção 12), e as posições dos outros ficam como foram (decisão 12). O `rankingJobs` pode guardar o uid dele no cursor até o trabalho terminar, quando o cursor vira `null`; o retrato cortado pelo fim da temporada também termina, na virada (23.6, passo 2).
+
+O `functions/src/store.test.ts` ganha o passo na ordem.
+
+### 23.14 App
+
+**Seletor e consultas**
+
+- `SERVER_DOMAINS` ganha `ranking`, no commit que entrega as rotas.
+- `useSeasonQuery`, `useLeaderboardInfiniteQuery` e `useMyRankQuery` espalham `queryOptionsFor('ranking')` (rede e disco, seção 13).
+- O `QUERY_CACHE_VERSION` não sobe: os formatos salvos perdem `example` e ganham `member`, opcionais.
+
+**Tipos**
+
+- `LeaderboardPage.example` e `MyRank.example` saem. `MyRank` ganha `member?: boolean`, só no recorte de central da temporada lida ao vivo (`false` quando o fã não é membro); a temporada fechada não manda o campo. O comentário do topo de `ranking/types.ts` deixa de chamar o contrato de provisório, e o de `FanCentral.fanRank` passa a dizer que vem do servidor.
+
+**O exemplo sai**
+
+- Saem o `ExampleNotice` (componente, export do index e o texto `ranking.exampleNotice`), o `isExampleBesideRealData`, o `myRankShown` da 1f (os pontos de "Suas centrais" no card), o `exampleRanking` da 1d e a prop `example` do `TopFansCard`. Saem também `ranking.me.pending` e `ranking.me.labelPending`: o "Sem posição ainda" do card era só do exemplo; o da 1e fica.
+- Com o `ranking` no `SERVER_DOMAINS`, a carteira, as centrais e o ranking vêm da mesma fonte: com a API, todos do servidor; sem ela, todos das fixtures.
+
+**Card "Você" e telas**
+
+- `describeMyRankStatus`: a temporada encerrada vem primeiro, como hoje ("Terminou em 12º", ou o `finishedUnranked` sem posição); só depois, com `member === false`, "Entre na central para aparecer no ranking" (`ranking.me.notMember`; o rótulo usa o `ranking.me.labelUnranked` de hoje). Nessa ordem, a temporada fechada nunca chama o fã para um resultado que já acabou, também com um `member` velho no cache. O resto como hoje: "No pódio da temporada", "840 pts para entrar no top 10", "312 pts para o 6º lugar".
+- Tocar no card rola até a linha do fã, buscando as páginas que faltam, só até a posição 200 (`RANK_SEEK_MAX`, 10 páginas de 20). Abaixo disso, o card só informa (sem `onPress` e sem a dica). Sem o limite, um fã em 5.000º pediria 250 páginas.
+- 1f: o resto não muda. Temporada encerrada: "Temporada de São João encerrada", a lista é o resultado congelado, sem setas (depois da virada, o arquivo: com os nomes da virada e o buraco de uma conta excluída, decisão 12), e o card diz "Terminou em 12º".
+- 1d: top fãs e aba Ranking pela mesma consulta, só com membros, sem o aviso.
+- 1b e 1e: o "você é #12" e o "#12 entre 30 fãs" vêm do `fanRank` do servidor. Com "1 fã": "#1 entre 1 fã" (`profile.centrals.metaOne`, e o `profile.centrals.labelOne` no rótulo), que hoje sairia no plural.
+- Sheet "Sair da central" (19.13): o texto ganha a saída do ranking (`artist.leave.body`, abaixo).
+
+**Invalidação**
+
+- Toda invalidação do ranking passa por `refreshRanking` (`ranking/queries.ts`): corta cada ranking carregado na primeira página e só então invalida `rankingKeys.all`. A 1f e a 1d ficam montadas nas abas, e o React Query busca de novo, uma depois da outra, toda página carregada de uma consulta infinita invalidada: sem o corte, cada ação depois do toque no card "Você" buscaria até 10 páginas (23.4). Quem estava longe na lista recarrega ao rolar; o card segue com o `/me/rank`.
+- Entrar e seguir na 1l (`refreshAfterJoin` e `useFollowArtistsMutation`): buscam o ranking de novo sempre, e não só com pontos, porque o fã entra no ranking da central com os pontos que já tinha.
+- Sair (`useLeaveCentralMutation`): passa a buscar o ranking de novo (antes ficava, porque sair não mexia em ponto), além das centrais, como hoje.
+- Ações que rendem pontos: como hoje (ranking e centrais buscam de novo), pelo `refreshRanking`.
+- Puxar para atualizar: o da 1f busca de novo também "Suas centrais" (`artistKeys.centrals()`), e o da 1b e o da 1e, o ranking (`refreshRanking`). A posição sai da mesma conta nas três telas, mas cada uma tem o seu cache, e as abas ficam montadas: sem isso, o puxão numa deixava a outra com a posição velha até o app ir para o fundo e voltar.
+- A virada não avisa o app: a temporada no cache vira "encerrada" sozinha no `endsAt`. Com a 1f ou a 1d aberta nessa hora (`useSeasonOver`, no molde da 1g que busca de novo quando uma missão vence), as setas somem na hora (`RankingRow` com `seasonOver`) e o ranking busca de novo uma vez, que traz o "encerrada" do servidor e, depois da virada, o resultado do arquivo e a temporada nova.
+- Vazio na temporada encerrada: a 1f diz "Ninguém pontuou nesta temporada." sem o "Ver missões", e a aba Ranking da 1d, "Ninguém pontuou nesta central na temporada." (um chip de central em que nenhum membro pontuou, entre a virada e a próxima temporada).
+
+**Fixtures** (as builds sem API; a regra de coerência pede que mostrem o que o seed mostra)
+
+- `ranking/fixtures.ts` monta o geral, o Netto, o Nenho e o Juninho pela mesma tabela do seed (23.15), copiada (`RANKING_SEED`), como o extrato do bloco 7 copia o seed da Camila: os 11 do topo com os nomes, cidades, pontos e setas do seed (a 5ª passa de "Alan Ferreira" a "Aline Ferreira", a Júlia a 4.959, o Rafael a -1 e o Pedro a 0), os 37 genéricos pelas fórmulas, o fã com os pontos da `fixtureWallet` no geral, o Netto com 4.120 (12º, seta 0) e o Nenho com 2.980 (41º, seta 0). As outras centrais ficam vazias. Página de 20, como o servidor.
+- O `pointsLeft` ganha o mais 1 (decisão 11); o "840 pts para entrar no top 10" continua.
+- Numa central de onde o fã saiu, ele sai do ranking de exemplo dela, e o `buildMyRankFixture` manda `member: false`. Quem diz se ele é membro é um registro em `services/fixtures` (`fixtureMembership`), que o `followFixture` atualiza: o `ranking/fixtures.ts` não importa `artists` (o `artists/fixtures.ts` já importa o ranking, e o contrário fecharia um ciclo).
+- `ranking/__tests__/fixtures.test.ts` trava os números-âncora: Camila 12ª no geral a 840 do top 10, 12ª no Netto, 41ª no Nenho, o pódio Thalita, Davi e Jean com as setas +1, -1 e 0, e a seta +2 da Camila.
+- Extrato (`buildLedgerPageFixture`, em `profile/fixtures.ts`): ganha as duas linhas antigas do seed (23.15), `seed:camila-carnaval` (55 dias atrás) e `seed:camila-verao` (95 dias atrás), ajustes só de temporada (saldo, XP e central em 0, temporada 290 e 510), e fica com os 17 lançamentos do servidor. As duas aparecem na tela (o que se esconde é o ajuste só de central).
+- Exceção registrada à coerência: as conquistas das fixtures (`buildMyAchievementsFixture`) continuam as do protótipo, "14 de 32" com Boca a boca, Top 20, Fã de show e Backstage, como desde o bloco 7, enquanto o servidor tem a lista provisória (22.6) e a Camila do seed fica com "6 de 10". A lista de verdade vem da cliente (UP-9); quando vier, as fixtures passam a copiá-la.
+
+**Textos** (`translations.json`)
+
+- Novos: `ranking.me.notMember`: "Entre na central para aparecer no ranking"; `profile.centrals.metaOne`: "#{{rank}} entre 1 fã"; `profile.centrals.labelOne`: "{{name}}, {{rank}}º lugar entre 1 fã, {{points}} na temporada."; `ranking.emptyEnded`: "Ninguém pontuou nesta temporada."; `artist.ranking.emptyEnded`: "Ninguém pontuou nesta central na temporada.".
+- Muda: `artist.leave.body`: "A central sai de Suas centrais, e você sai do ranking dela. Os pontos que você ganhou nela continuam com você e voltam a contar se você entrar de novo, mas a entrada não rende pontos outra vez."
+- Saem: `ranking.exampleNotice`, `ranking.me.pending` e `ranking.me.labelPending`.
+
+**`CLAUDE.md` e `AGENTS.md`**
+
+No mesmo commit: Dados (o ranking no seletor e sem o exemplo; a regra de coerência sem a exceção do ranking, com a das conquistas registrada; quem sai da central sai do ranking dela; a temporada fechada lida do arquivo; o limite de busca do card "Você"; o extrato das fixtures com os 17 lançamentos do seed), API do app e pontos (as rotas do bloco 8, o `rankingTick`, as callables, `seasons`, `standings`, `rankingJobs` e o `member`; e o `updateSeason`, que hoje manda encerrar a começada com `null` e criar a outra: passa a dizer que a começada sai pelo `endSeason` e pela virada, e a próxima entra pelo `scheduleNextSeason`), Testes e Pendências (as perguntas de 23.17; sai a pendência do ranking de exemplo). O `AGENTS.md` recebe a mesma cópia, com o cabeçalho dele.
+
+Nada disso entra no fingerprint da EAS: só JavaScript, regras e funções. Nenhuma dependência nova.
+
+### 23.15 Seed dos emuladores
+
+`functions/src/ranking/seed.ts` exporta `RANKING_SEED` (as 48 contas: e-mail, nome, cidade e números), `SEED_PAST_SEASONS`, `seedPastSeasons`, `seedRankingBase`, `seedRankingSnapshot` e `seedRankingWeek`. O `scripts/seed-emulators.mjs` carrega `functions/lib/ranking` como carrega os outros.
+
+**Contas.** 48 contas de ranking, `rank-01@teste.imagineup` a `rank-48@teste.imagineup`, senha `fa-do-ranking`, com o nome no cadastro (o `createUserProfile` não espera) e a cidade gravada como nas outras (`setCity`). As sem cidade (a Júlia e os genéricos com cidade `null`) também esperam o perfil (`waitForProfile`, novo no script: o laço do `setCity`, até 60 s, sem gravar nada). Nenhum lançamento sai antes de `users/{uid}` existir para todas: o `runAward` exige o perfil (`profile_not_ready`), e no emulador frio a função de cadastro leva segundos. Criadas em levas de 8 em paralelo. As 11 primeiras são as do protótipo; as 37 seguintes, os genéricos.
+
+**Temporada atual (São João).** Cada conta recebe, pelo `runAward` com ator de sistema e `NO_GAME`:
+
+- Base, ao meio-dia de 8 dias atrás: `seed:rank-NN-base` (`balance`, `xp` e `season` iguais a B) e `seed:rank-NN-base-<central>` (`central: { artistId, season, total }`) para cada central em que ela tem pontos no retrato.
+- Semana, ao meio-dia de 1 dia atrás: `seed:rank-NN-week` (`balance`, `xp` e `season` iguais a N menos B) e `seed:rank-NN-week-<central>` quando a central sobe na semana. Delta 0 não lança (o ajuste exige valor diferente de 0).
+- Entrada em cada central em que tem pontos, pelo `runJoinCentrals` (`via: 'seed'`, `central_join` valendo 0, `joinedAt` ao meio-dia de 8 dias atrás, depois da base): vira membro e entra no `fanCount`.
+
+Os 11 do protótipo (B: a temporada no retrato; N: a de agora; as centrais deles não mudam na semana):
+
+| Conta   | Nome                 | Cidade               | B     | N     | Retrato e agora | Seta | Netto | Nenho |
+| ------- | -------------------- | -------------------- | ----- | ----- | --------------- | ---- | ----- | ----- |
+| rank-01 | Thalita Santos       | Irará, BA            | 6.100 | 9.140 | 2º e 1º         | +1   | 4.800 | 4.300 |
+| rank-02 | Davi Lima            | Salvador, BA         | 6.500 | 7.902 | 1º e 2º         | -1   | 4.500 | 3.360 |
+| rank-03 | Jean Pereira         | Aracaju, SE          | 5.200 | 7.318 | 3º e 3º         | 0    | 4.200 | 3.050 |
+| rank-04 | Maria Clara Souza    | Salvador, BA         | 3.810 | 6.844 | 7º e 4º         | +3   | 6.500 | 300   |
+| rank-05 | Aline Ferreira       | Irará, BA            | 3.890 | 6.201 | 6º e 5º         | +1   | 6.050 | 120   |
+| rank-06 | Bruna Andrade        | Recife, PE           | 3.340 | 5.930 | 13º e 6º        | +7   | 5.700 | 200   |
+| rank-07 | Igor Nascimento      | Aracaju, SE          | 3.640 | 5.412 | 9º e 7º         | +2   | 5.250 | 140   |
+| rank-08 | Leila Matos          | Feira de Santana, BA | 3.410 | 5.106 | 12º e 8º        | +4   | 4.950 | 130   |
+| rank-09 | Rafael Costa         | Alagoinhas, BA       | 3.720 | 5.038 | 8º e 9º         | -1   | 4.880 | 150   |
+| rank-10 | Júlia Ramos          | (sem cidade)         | 3.560 | 4.959 | 10º e 10º       | 0    | 4.700 | 250   |
+| rank-11 | Pedro Henrique Alves | Serrinha, BA         | 3.480 | 4.402 | 11º e 11º       | 0    | 4.300 | 90    |
+
+A Camila entra no retrato com 3.280 (os 8 lançamentos de missão de 17 a 10 dias atrás e a base, 22.13) e fica com 4.120: 14º e 12º, seta +2. No Netto, 3.620 e 4.120 (12º nos dois, seta 0); no Nenho, 2.640 e 2.980 (41º nos dois, seta 0).
+
+Os 37 genéricos (i de 1 a 37, conta `rank-(11 + i)`):
+
+- Nome e cidade: os de `GENERIC_PEOPLE[i - 1]` das fixtures do ranking, pela mesma regra (`FIRST_NAMES`, `LAST_NAMES` e `CITIES` copiados; a cidade `null` fica sem cidade).
+- N (agora): 4.061 menos 27 × (i - 1), de 4.061 (i = 1) a 3.089 (i = 37).
+- B (retrato): 4.050 no 1 e 3.970 no 2 (eles eram 4º e 5º no retrato e caem para 13º e 14º, seta -9); nos outros, N menos 800 (abaixo da Camila no retrato e agora, seta 0).
+- Nenho, agora: N menos 90 (de 3.971 a 2.999, todos acima dos 2.980 da Camila). No retrato, os ímpares a partir do 3 têm 30 a menos (a semana sobe 30); os outros, o mesmo.
+- Netto, só do 1 ao 18: agora, 80 menos i (de 79 a 62). No retrato, os ímpares a partir do 3 têm 2 a menos.
+- Juninho, só do 19 ao 24: 90 menos 10 × (i - 19) (de 90 a 40), sem mudança na semana.
+
+Nenhum valor se repete no mesmo recorte e no mesmo momento (a tabela foi montada assim, e o teste do seed confere), então a ordem nunca depende do uid sorteado. Em toda conta de ranking, a temporada de agora é pelo menos a soma das centrais de agora; a Camila é a exceção que já vem da seção 14 (os números do protótipo não fecham entre si).
+
+Resultado, agora:
+
+- Geral: 49 fãs, em três páginas (20, 20 e 9). Pódio Thalita (9.140), Davi (7.902) e Jean (7.318); do 4º ao 11º, como o protótipo; Camila em 12º com 4.120 e "840 pts para entrar no top 10" (a Júlia tem 4.959); os genéricos do 13º ao 49º.
+- Netto: 30 (os 11 do protótipo, de Maria Clara com 6.500 a Jean com 4.200; a Camila em 12º; os genéricos 1 a 18). Os genéricos ímpares a partir do 3 sobem 1, e o par seguinte cai 1. Top fãs da 1d: Maria Clara, Aline e Bruna.
+- Nenho: 49 (Thalita, Davi, Jean e os 37 genéricos acima; a Camila em 41º; os outros 8 do protótipo abaixo). Os genéricos ímpares a partir do 3 sobem, e os vizinhos mudam junto.
+- Juninho: 6 (genéricos 19 a 24). A Camila, membro sem pontos, fica fora: "Ganhe pontos para entrar no ranking".
+- `fanCount`, pela fila: Netto 30, Nenho 49, Juninho 7.
+- Top 20 no retrato: os 20 primeiros dele (os 13 acima da Camila, ela em 14º e os genéricos 3 a 8), com a data da segunda-feira.
+
+**Temporadas passadas** (`seedPastSeasons`, antes de qualquer lançamento do São João):
+
+| id                   | Nome     | Começo                     | Fim                       | Lançamentos               | Camila      |
+| -------------------- | -------- | -------------------------- | ------------------------- | ------------------------- | ----------- |
+| `temporada-verao`    | Verão    | meio-dia de 110 dias atrás | meio-dia de 80 dias atrás | meio-dia de 95 dias atrás | 510, em 25º |
+| `temporada-carnaval` | Carnaval | meio-dia de 70 dias atrás  | meio-dia de 40 dias atrás | meio-dia de 55 dias atrás | 290, em 36º |
+
+1. Só roda sem `config/season` (a primeira vez). Grava `config/season` (versão 1, com a cópia) com `season` igual ao Verão e `next` igual ao Carnaval, pelo `writeSeasonConfig` da virada (sem auditoria).
+2. Verão: `seed:rank-NN-verao`, ajuste só de `season`, para as 48 contas, com 1.000 menos 20 × j (j de 1 a 48, na ordem da tabela: de 980 a 40), e `seed:camila-verao` com 510.
+3. Virada pelo handler, `runSeasonClose(db, { now: fim do Verão mais 2 min })`, até `done`: arquiva o Verão, soma 1 nas temporadas de todos, dá o Top 20 aos 20 primeiros (data: o fim do Verão) e promove o Carnaval.
+4. Grava `next` igual ao São João (as datas do `SEED_SEASON`, seção 14), pelo mesmo `writeSeasonConfig`.
+5. Carnaval: `seed:rank-NN-carnaval` com 20 × j mais 20 (de 40 a 980) e `seed:camila-carnaval` com 290.
+6. Virada do Carnaval (`now`: o fim do Carnaval mais 2 min). Promove o São João, e o Carnaval vira a `lastClosed`.
+
+Por que ajuste só de temporada: as temporadas passadas não mexem no saldo, no XP nem nos níveis, e a carteira da Camila continua a das seções 14 e 22.13 (12.480, nível 7, as conquistas nas datas de lá). O extrato dela ganha duas linhas antigas de "Ajuste" (+510 e +290, pelo valor da temporada, 22.12) e fica com 17 lançamentos; as fixtures do extrato ganham as mesmas duas (23.14). Por que a Camila fora do top 20 nas passadas: o Top 20 dela sai do retrato desta semana, com data recente, e aparece nos destaques da 1e como no protótipo.
+
+**Ordem do seed** (as mudanças em negrito):
+
+1. Centrais, shows e posts, como hoje.
+2. **Contas: as 6 de hoje (Camila, Alan, Bia, Duda, Enzo e Gabi), sem a carteira dentro do laço, e depois as 48 de ranking, cada uma esperando o próprio perfil (com a cidade ou só a espera).**
+3. **`seedPastSeasons`** (Camila e as 48).
+4. **A Camila até 8 dias atrás**: `seedCamilaWallet(db, uid, { steps: 'early' })` (os lançamentos de 8 dias atrás para trás), depois as centrais e o convite dela, como hoje.
+5. **`seedRankingBase`**: a base e as entradas das 48.
+6. **`seedRankingSnapshot`**: `runRankSnapshot(db, { now: weekStart(agora) })`, até `done`. O retrato sai com o estado de 8 dias atrás e a marca desta semana, e dá o Top 20 a quem está até o 20º nele.
+7. **A semana**: `seedCamilaWallet(db, uid, { steps: 'week' })` (de 6 a 1 dia atrás) e `seedRankingWeek`.
+8. O resto como hoje: claims da Duda e do Enzo, catálogo de missões, claim da Bia, visitas, curtidas da Camila e o engajamento.
+
+O `seedCamilaWallet` ganha `steps: 'early' | 'week' | 'all'` (padrão `'all'`, para os testes que o chamam sozinho) e deixa de gravar `stats.pastSeasons` (sai o `CAMILA_SEED.pastSeasons`). O `ensureSeedSeason` fica para quem chama sem as temporadas passadas; com elas, o `config/season` já existe.
+
+Resultado na Camila: 1f com o pódio Thalita, Davi e Jean, ela em 12º com 4.120 e seta +2, e o card "840 pts para entrar no top 10"; chips Netto (12º), Nenho (41º) e Juninho ("Ganhe pontos para entrar no ranking"); 1b com "você é #12", "você é #41" e "novo"; 1e com "#12 entre 30 fãs", "#41 entre 49 fãs" e "Sem posição ainda · 7 fãs", "3 temporadas" (Verão e Carnaval fechados e o São João com pontos) e "6 de 10" conquistas, com os destaques Boca a boca, Top 20 e Purainha e a próxima, Backstage (o protótipo mostra Boca a boca, Top 20, Fã de show e Backstage).
+
+Rodar de novo não muda nada: as temporadas passadas não rodam (o `config/season` existe), os ajustes voltam `duplicate`, as entradas já existem e o retrato da semana está `done`. Numa semana nova, o retrato sai com o estado de agora e as setas ficam em 0: feche os emuladores e rode o seed outra vez, como o progresso do dia (22.13). As 48 contas e os lançamentos somam algumas dezenas de segundos ao seed.
+
+### 23.16 Testes
+
+Funções, testes puros (vitest, relógio fixo):
+
+- `ranking/model.test.ts` (tabela): `shownSeason` (em andamento, encerrada esperando a virada e lida ao vivo, agendada com e sem `lastClosed`, a `lastClosed` lida do arquivo, nenhuma); o cursor (ida e volta, pontos 0, instante acima do maior `Timestamp`, uid fora do formato, posição 0 ou fracionária, texto que não decodifica); `rankChange` (desta semana, da anterior, de duas semanas atrás, de outra temporada, temporada encerrada); `rankTarget` (sem posição, 1º, 2º a 10º, 11º em diante, `topTarget` da temporada, o mais 1, nunca abaixo de 1, a linha que falta); `rankUnlocks` (alcança, não alcança, já tem, arquivada); `closeDue` (antes do fim, dentro da folga, depois) e `snapshotDue` (segunda-feira, temporada que começou nesta semana, trabalho `done`); as regras do `updateSeason`, do `scheduleNextSeason`, do `endSeason` e do `closeSeasonNow` de 23.10, com o `has-next`, o id da `next` no `season-id-used` e o `season-end-in-past` da próxima; a `next` vencida que o fim da virada não promove.
+- `ranking/service.test.ts`: o `liveCentralRank` do `/me/centrals` com a contagem que falha com o código 9 devolve `null` e registra o erro, e outro erro sobe (como o teste do `sumCentralPoints`).
+- `day.test.ts`: `weekStart` (domingo 23:59 e segunda 00:00 de São Paulo, a virada do ano ISO) e `previousWeekKey` (segunda 00:00, a virada do ano ISO).
+- `points/model.test.ts`: a troca de temporada sem somar `pastSeasons`; `seasonsPlayed` (antes da virada, depois dela, depois da troca, pontuando na nova); `setCentralMember` (cria zerado, muda só o `member`, sai uma gravação junto com o lançamento).
+- `points/config.test.ts`: `parseSeasonConfig` com `next`, `lastClosed`, `topTarget` e `endedEarly`, válidos e inválidos (viram `null` ou o padrão, sem derrubar a `season`); `validateSeasonInput` com o `topTarget`.
+- `points/award.test.ts`: `walletFromDoc` e `centralFromDoc` com os campos novos; o `update` da carteira sem `stats.pastSeasons`.
+- `achievements/model.test.ts`: o `top-20` ativo no padrão ("de 10"); o `unlockAchievements` nunca desbloqueia `rank`.
+- `ranking/indexes.test.ts`: cada formato de `RANKING_QUERY_SHAPES` tem o índice composto no `firestore.indexes.json`, e nenhum arquivo do `ranking/` usa `limitToLast` (a consulta invertida pediria outro índice, 23.19).
+- `ranking/model.test.ts`, também: o `top` de uma conquista `rank` vai até o `RANKING_JOB_PAGE` (200) e não passa dele (23.5).
+- `api/router.test.ts`: `/ranking/season` e `/ranking` não se confundem; `POST /ranking` e `PUT /me/rank` são 405.
+- `api/index.test.ts`: cursor inválido é 400; `artistId` fora do formato é 404 sem ler nada; as conquistas do fã novo passam de "0 de 9" a "0 de 10" (o teste do bloco 7 muda).
+- `store.test.ts`: o passo novo na ordem da exclusão.
+
+Funções nos emuladores (a `api` de verdade por HTTP, tokens do emulador de Auth, relógio fixo no handler do processo do teste quando importa):
+
+- `functions/test/ranking.emulator.test.ts` (novo; os fãs nascem no próprio teste, com ajustes, e só o teste do seed roda o seed inteiro):
+  - Lista: a ordem por pontos, o empate pelo instante e, no mesmo milissegundo, pelo uid; páginas de 20 com cursor, a posição da primeira linha de cada página pela contagem e a última com `nextCursor: null`; nome, foto e cidade do perfil; a linha de um perfil apagado com a carteira ainda lá, com `null`; `isMe`; só quem tem pontos na temporada mostrada (carteira com 0, de outra temporada ou sem carteira fica de fora); o recorte de central só com membros; central fora do ar e inexistente dão 404; cursor montado à mão dá 400.
+  - Posição: o `/me/rank` igual à `position` da linha do fã, em qualquer página e com empates; o `target` (top, posição pela linha de cima no 2º e no meio do top, pódio, sem pontos, encerrada, `topTarget` da temporada); `member: false` fora da central; o `fanRank` do `/me/centrals` igual ao `/me/rank` da central. A transação só de leitura com as agregações roda no emulador.
+  - Membros: entrar grava `member: true` (pagando e sem pagar, com o documento zerado quando falta); sair grava `false` e tira do ranking da central com os pontos guardados; entrar de novo devolve.
+  - Retrato: o handler com o relógio na segunda-feira grava `rankWeek` em todo o geral e em cada central; a seta depois de mudanças; rodar de novo na mesma semana não grava nada; a primeira semana da temporada não tira retrato; o retrato de duas semanas atrás não vale; temporada encerrada sem seta; o Top 20 a quem está até o 20º, com a data da rodada, e não a quem já tinha; a rodada com `budgetMs` mínimo para entre páginas, e a seguinte termina igual; a exclusão de conta no meio (o `NOT_FOUND` e a página lida de novo).
+  - Virada: antes do fim mais a folga, nada; depois, as `standings` com as posições do geral e de cada central (só membros), o cabeçalho `closed` com as contagens, `stats.pastSeasons` mais 1 e `closedSeasonId` só em quem pontuou no geral, o Top 20 com a data do `endsAt`, a próxima promovida, a `lastClosed` e a auditoria `season.closed`; duas rodadas em paralelo, e uma rodada repetida, somam 1 uma vez só; a rodada interrompida pelo prazo continua do cursor; o ranking e o `/me/rank` da temporada fechada antes de a próxima começar, lidos do arquivo (encerrada, sem seta, a posição para o "Terminou em 12º", os nomes da virada, sem `member`, o cursor de uma página ao vivo continuando no arquivo, e nada muda quando um fã entra ou sai de uma central depois da virada); as `standings` de quem só pontuou numa central, sem `position` e sem `points`, e o mapa `centrals` aninhado, sem campo com ponto no nome; a `next` vencida não promovida; o retrato que ficou `running` encerrado pela virada, com `cursor: null`; o `closeSeasonNow` fechando no lugar da função agendada; o ponto ganho entre o `endsAt` e o fim da virada entra no saldo e em nenhuma temporada, e depois da promoção entra na nova; a primeira ação na nova troca a carteira sem somar temporada, e o `/me/progress` conta certo antes da virada, entre ela e a ação e depois; o `endSeason` seguido do handler fecha com o fim de verdade e guarda o `endedEarly`.
+  - Exclusão: depois do `deleteUserData`, o fã sai do ranking ao vivo e da linha de cada temporada fechada, e as posições dos outros no arquivo ficam (a lista da temporada fechada mostra o buraco). A exclusão no meio de uma página de central da virada (o `centralPoints` apagado entre a consulta e a transação) não deixa linha órfã. A exclusão no meio de uma página do geral da virada: a carteira não renasce (o `tx.update` cai com `NOT_FOUND` e leva a página inteira), nenhuma linha fica no arquivo e as posições dos outros seguem de 1 em 1, porque a página é lida de novo.
+  - Seed: o seed inteiro, com o relógio fixo numa quarta-feira, dá os números de 23.15 (Camila 12ª com 4.120, seta +2, 840 do top 10, Netto 12º, Nenho 41º, Juninho sem posição, o pódio, 3 temporadas, "6 de 10" com o Top 20 na segunda-feira, Verão e Carnaval fechados com a Camila em 25º e 36º, nenhum valor repetido num recorte), e rodar de novo não muda nada.
+- `functions/test/season-panel.emulator.test.ts` (novo, com os membros de exemplo do `game-panel` mais um só com `ranking`): cada recusa de 23.10 nas quatro callables; o acesso (`no-section` sem `ranking`, `not-staff`); `config-changed`; o `updateSeason` com `has-next` e com o id da `next` (`season-id-used`); o `scheduleNextSeason` com `no-season`, `season-end-in-past`, `season-overlap` e `season-id-used` (o id da atual e o de uma temporada fechada), e o `next: null` sem temporada atual; o `endSeason` grava o fim e o `endedEarly`, e a virada fecha depois; o `closeSeasonNow` antes da folga (`season-not-due`), com `running` e depois `closed`; nada muda durante a virada (`season-closing`); uma auditoria por mudança e nenhuma quando nada mudou.
+- Testes de outros blocos que mudam:
+  - `game-panel.emulator.test.ts`: o encerramento pelo `endSeason` e pela virada (23.10); o `setAchievementStatus` do `top-20` deixa de recusar com `rule-not-available` (perto da linha 548, e as versões esperadas depois dele sobem 1); o "de N" do fã com a `lenda` arquivada passa de 8 a 9 (perto da linha 588).
+  - `points.emulator.test.ts`: a troca preguiçosa de temporada deixa de somar (perto das linhas 682 a 689, `stats.pastSeasons` fica 0); o seed da Camila sozinho responde 1 temporada, e as 3 ficam no teste do seed inteiro (perto da linha 872).
+  - `missions.emulator.test.ts`: as conquistas da Camila "de 10".
+  - `centrals.emulator.test.ts`: o `member` no `centralPoints` depois de entrar e de sair.
+  - `api/index.test.ts`, acima.
+
+Regras: `tests/ranking-rules.test.ts` (23.12).
+
+App:
+
+- `src/config/__tests__/data-source.test.ts`: `ranking` na API com o emulador.
+- `ranking/__tests__/api.test.ts` (novo): as três rotas no modo API (caminho, parâmetros e o `season` desembrulhado); nas fixtures, como hoje.
+- `ranking/__tests__/fixtures.test.ts`: os números-âncora de 23.14; o fã fora de uma central sai do ranking dela, com `member: false`; sem `example`.
+- `ranking/__tests__/describe-rank.test.ts`: o `notMember`, sem os casos do exemplo; com a temporada encerrada e `member: false`, "Terminou..." e não o `notMember`.
+- `src/navigation/__tests__/ledger.test.tsx`: as duas linhas antigas de ajuste das fixtures (17 lançamentos).
+- `ranking/__tests__/ranking-cards.test.tsx` e a navegação (`src/navigation/__tests__/ranking.test.tsx` e `artist.test.tsx`): sem o aviso; o card abaixo do 200º não rola e não tem dica; o card de uma central sem ser membro; o puxão da 1f também busca "Suas centrais"; a temporada que acaba com a 1f aberta (relógio fixo que anda): as setas somem na hora e o ranking busca de novo uma vez; o vazio da temporada encerrada, na 1f e na aba Ranking da 1d, sem "ainda" e sem "Ver missões".
+- `ranking/__tests__/queries.test.ts` (novo): o `refreshRanking` corta cada ranking na primeira página e invalida o ranking inteiro. `home/__tests__/use-home-refresh.test.tsx`: o puxão da 1b busca o ranking de novo, só a primeira página.
+- `profile/__tests__/describe-profile.test.ts`: "#1 entre 1 fã".
+- `artists/__tests__/queries.test.tsx`: entrar e seguir invalidam o ranking também sem pontos; sair invalida o ranking.
+
+### 23.17 Perguntas
+
+Para a cliente (UP-9 e UP-48):
+
+1. A duração das temporadas e o calendário. Proposta: a equipe cadastra cada uma no painel, com a próxima já marcada.
+2. O título do 1º lugar. Proposta: um por temporada, opcional (`leaderTitle`); sem ele, "Líder da temporada".
+3. O "top 10" do card "Você". Proposta: 10, ajustável por temporada (`topTarget`, de 1 a 50).
+4. O Top 20: quem passa pelo top 20 a qualquer momento, ou quem está nele na segunda-feira e no fim. Proposta: o segundo (decisão 9).
+5. O prêmio da temporada (1º lugar, top N) e como ele chega: a loja do bloco 10 ou a equipe, fora do app. O arquivo já diz quem foi quem.
+6. O ranking da central só com membros: quem sai da central sai do ranking dela (decisão 3).
+7. Temporadas emendadas: a nova começa sem a meta da temporada por alguns minutos, até a equipe gravá-la depois da virada (23.6). Proposta: aceitar agora; se a cliente quiser a meta pronta no primeiro minuto, a meta da próxima entra no bloco 11.
+
+Para o dono:
+
+8. Consulta com índice e posição por contagem, sem materializar, com o sinal e o passo seguinte (decisão 1).
+9. O intervalo sem temporada entre o fim de uma e o fim da virada, ou a virada marcada no `endsAt` por tarefa (decisão 7).
+10. As temporadas do fã contadas pela virada, e a troca preguiçosa sem contar (decisão 8).
+11. O `updateSeason` mais estrito, com o `has-next`, e o teste do bloco 7 que muda (23.10).
+12. O seed com 48 contas e duas temporadas passadas, o retrato tirado com o estado de 8 dias atrás, a 5ª do protótipo renomeada (Aline, porque o Alan do seed é o fã novo e fica sem carteira) e a Júlia com 4.959 (23.15).
+13. As fixtures do ranking copiando o seed: os genéricos, alguns nomes e algumas setas mudam (23.14); as do extrato com as duas linhas antigas; as das conquistas com o protótipo, como exceção registrada.
+14. A exclusão de conta apagando a linha do arquivo e deixando o buraco na posição (decisão 12).
+15. A temporada fechada lida do arquivo, com o nome, a foto e a cidade da hora da virada guardados na linha (decisões 4 e 12): o fã que troca de nome depois continua com o antigo naquele resultado.
+16. O `closeSeasonNow` como saída da equipe para a virada travada, com a seção `ranking` (e não só admin), porque só antecipa o que a função agendada faria (23.10).
+
+### 23.18 Fora deste bloco e publicação
+
+- **Fora deste bloco (só documentado):** as telas do painel (Ranking e temporadas), bloco 11, com o contrato de 23.10; o ranking ao vivo no painel (seção `fans` ou callable de leitura) e a posição final de um fã na seção Fãs (abrir `standings` para `fans`), bloco 11; uma tela de temporadas passadas no app, que o protótipo não tem; o cache da primeira página (decisão 1) e a virada por tarefa no `endsAt` (decisão 7), quando os sinais pedirem; o prêmio da temporada, bloco 10; o fechamento do dia (seção 7), que pode entrar no mesmo `rankingTick` quando o bloco 11 o fizer; a meta da próxima temporada promovida pela virada (`nextSeasonGoal`), se a cliente pedir (pergunta 7 de 23.17); o `adjustFanPoints` do bloco 11 com o `timeoutSeconds` dentro da folga da virada (23.6, passo 1).
+- **Antes do deploy, conferir os vínculos de produção.** O `member` nasce nas rotas de entrar e sair do bloco 8; um vínculo criado antes, pela `api` dos blocos 4 a 7 já publicada, ficaria fora do ranking da central. Nenhuma build chama a API antes do bloco 10 (seção 13), então o esperado é nenhum: um `count()` no grupo `centrals` em produção, feito pelo dono, confirma. Se der mais que 0, uma carga idempotente (`scripts/backfill-central-members.mjs`, no molde do `backfill-signups.mjs`) grava, em transação por fã, `member` igual a "existe o vínculo" em cada `centralPoints` do fã, e cria o documento zerado para o vínculo que não tem, antes de as rotas do ranking entrarem no ar.
+- **Publicação**, só com o ok do dono, nesta ordem: regras e índices (`deploy --only firestore:rules,firestore:indexes`); esperar os seis índices compostos novos ficarem prontos no console (sem eles, as rotas do ranking respondem 500, e "Suas centrais" sai sem posição); depois todas as funções (`npm run functions:deploy`), que levam a `api` com as rotas novas, o `updateSeason` mudado, as callables novas (`scheduleNextSeason`, `endSeason` e `closeSeasonNow`), o `setAchievementStatus` e o `createAchievement` aceitando `rank`, o `deleteUserData` com o passo novo e a primeira função agendada do projeto (`rankingTick`). O primeiro deploy dela liga a API do Cloud Scheduler e cria o job; confira no console que ele aparece e roda a cada 10 min (a função parada não avisa sozinha, 23.6). Em produção, sem `config/season`, nada roda até a equipe cadastrar a primeira temporada. O `EXPO_PUBLIC_API_URL` segue a regra da seção 13: só depois do bloco 10.
+
+### 23.19 Armadilhas do bloco 8
+
+- A ordem do ranking é uma só (pontos, chegada, id): na lista, nas três contagens, no retrato e na virada. Mudou uma, mudam todas, e o índice também.
+- A posição é 1 mais três contagens. Só "mais pontos" erra todos os empatados.
+- As contagens, a página e o documento do fã vão na mesma transação só de leitura. Separadas, um fã que ganha ponto no meio entra em duas contagens.
+- Nada de cursor dentro de `count()`: os filtros das contagens fazem o papel dele.
+- No recorte de central, o id é o caminho do documento, no cursor e no filtro C.
+- O emulador não exige índice: o teste puro confere o `firestore.indexes.json`, e os índices sobem antes da `api`.
+- `limitToLast` e `orderBy` com as direções invertidas precisam de índice próprio: o SDK manda o `limitToLast` invertendo todas as ordens, e o Firestore não percorre índice composto ao contrário. A meta do card "Você" lê o começo da lista com `limit`, pelo índice dela. O emulador aceita a consulta invertida sem índice, e só a produção responderia 500.
+- O app nunca invalida o ranking direto: `refreshRanking` corta as consultas infinitas na primeira página antes. Invalidar uma consulta infinita montada busca de novo todas as páginas carregadas, uma depois da outra.
+- A próxima temporada só vale depois da virada. Antes, a troca preguiçosa zeraria as carteiras que a virada ainda vai ler.
+- A virada espera a folga depois do `endsAt` (`CLOSE_GRACE_MS`, 1 min): o pedido que leu a temporada aberta ainda pode gravar. A folga é o maior `timeoutSeconds` das funções que lançam pontos, mais uma margem. Função nova que lança pontos (a `api` tem 30 s; uma callable tem 60 s por padrão) cabe nela, ou a folga sobe junto.
+- A virada e o retrato andam em páginas, com o cursor na mesma transação da página. Nunca grave uma página fora dela.
+- A página de central da virada relê os `centralPoints` na transação antes de gravar `standings`. Sem isso, a exclusão de conta no meio deixa uma linha órfã.
+- `standings` de central é `set` com merge e o mapa aninhado (`{ centrals: { [id]: ... } }`). A chave `'centrals.<id>'` no `set` vira um campo com ponto no nome, e gravar `points` ali apagaria o do geral.
+- A temporada fechada (a `lastClosed`) é lida do arquivo, e não ao vivo: ao vivo, entrar ou sair de uma central e excluir a conta mexeriam num resultado que já acabou. O app confere a temporada encerrada antes do `member`.
+- Só a virada soma `stats.pastSeasons`. A troca preguiçosa não soma mais, e o núcleo não grava o campo no `update`.
+- `rankWeek`, `stats.closedSeasonId`, `member` e as conquistas de posição são gravados por campo, fora do núcleo ou com o estado dele. O núcleo grava a carteira e o `centralPoints` com a lista de campos dele: nunca `set` sem merge neles.
+- O `config/season` é gravado inteiro: toda callable e a virada levam `season`, `next` e `lastClosed` juntos.
+- A `next` é intocável por outro caminho: o id dela conta no `season-id-used` do `updateSeason`, a atual não sai com ela cadastrada (`has-next`), a vencida não entra (`season-end-in-past`) e o fim da virada não promove uma que venceu enquanto esperava.
+- A temporada mostrada pode ser a última fechada, com outra já em `season`, agendada. O `seasonPoints` da carteira e de "Suas centrais" é o da mostrada.
+- Temporada começada não sai pelo `updateSeason`: só pela virada, no fim ou pelo `endSeason`.
+- O ranking da central é só de membros; o "PTS DA CENTRAL" é de todo mundo.
+- O `member` repete o vínculo (`users/{uid}/centrals/{artistId}`) sem conferência: todo caminho que cria ou apaga um vínculo grava o `member` na mesma transação (hoje, entrar, seguir na 1l, sair e o seed). Vínculo criado sem ele fica fora do ranking da central; a carga de 23.18 conserta.
+- Contagem do ranking sem índice derruba a rota com 500, menos no `/me/centrals`, que devolve `fanRank: null`: "Suas centrais" não cai pelo ranking.
+- Seta só com retrato da mesma temporada, desta semana ou da anterior. Temporada encerrada não tem seta.
+- O `weekKey` recebe o dia em texto: a semana de um instante é `weekKey(dayKey(now))`. O começo da semana sai do calendário e do `dayStartAfter`, sem supor o deslocamento do fuso.
+- O Top 20 nasce no retrato e na virada, nunca na leitura nem na ação.
+- O emulador não roda função agendada: a virada e o retrato rodam pelo handler, no seed e nos testes. Em produção, a função parada não avisa: o alerta de virada atrasada só sai quando a rodada roda, e a saída da equipe é o `closeSeasonNow`.
+- O seed depende da ordem: as temporadas passadas antes de qualquer ponto do São João, e o retrato entre a base e a semana. E nenhum lançamento antes de o perfil de cada conta existir, também das contas sem cidade.
+
+### 23.20 O que o código fez diferente do desenho
+
+O desenho de 23.1 a 23.19 vale como está; estas são as diferenças do código, e por quê:
+
+- **A contagem B com o instante nulo** (23.4): com o instante nulo na chave, a B sai e a C compara os nulos; com o instante na chave, a B conta só os anteriores (o `<` do Firestore não pega o nulo, e uma quarta contagem custaria uma leitura a mais em toda posição para um caso que o núcleo não produz).
+- **`AwardPlan.centralsRead` e `ComputeOutput.activeSeasonId`**, novos no núcleo: o `setCentralMember` grava o `member` a partir da central que o `planAwards` já leu (quando nenhum lançamento mexeu nela, como a entrada que vale 0 ou que já foi paga) e cria o documento zerado com a temporada ativa do cálculo. Com o mesmo valor que o lido, ele não grava.
+- **`walletView` e `visibleSeasonPoints` recebem o agora**: a temporada mostrada depende dele (23.2). O `visibleCentralSeasonPoints` das centrais saiu: o `shownPoints` de `ranking/model.ts` faz o mesmo para a carteira e para o `centralPoints`.
+- **As recusas das callables** (23.10): a temporada nova numa atual livre (sem temporada ou agendada) com o fim já passado também é `season-end-in-past` (fecharia vazia na virada seguinte e tomaria o lugar da última fechada); o `endSeason` exige o início antes do agora (estrito), para o fim novo nunca ficar igual ao início; e o `scheduleNextSeason` confere, nesta ordem, `no-season`, `season-id-used` (as leituras só com id novo), `season-end-in-past` e `season-overlap`. A mensagem do `no-season` passou a valer para a meta e para a temporada ("Não há temporada atual configurada.").
+- **O alarme da virada sem a temporada na configuração** (23.6, passo 5): a rodada que não acha a temporada na `season` não veria o trabalho preso. O `runRankingTick` consulta os trabalhos de virada ainda `running` (`kind == 'close'` e `status == 'running'`, só igualdades) e registra o erro de cada um cuja temporada não é a atual, a cada rodada.
+- **O resultado do `runSeasonClose`**: `idle` (nada venceu, ou outra rodada já tinha fechado entre a leitura e o começo), `running` e `closed`. O `closeSeasonNow` responde `closed` também no `idle` depois da conferência (a virada que outra rodada terminou no meio).
+- **Opções para os testes nos trabalhos** (`JobOptions`): `pageSize` (páginas menores que 200), `clock` (o tempo da rodada, separado do "agora" fixo) e `onPage` (chamado entre a consulta de cada página e a transação dela, para os testes excluírem uma conta ali). As callables recebem `closeBudgetMs` e `closePageSize` nas dependências, só nos testes.
+- **A ordem dos recortes do trabalho**: o geral primeiro e as centrais pelo id, todas as de `artists` (qualquer status), lidas antes da transação que cria o trabalho.
+- **O shard das conquistas de posição** soma no dia da data da conquista: o fim da temporada na virada, o agora da rodada no retrato.
+- **O cursor da página do arquivo** leva os pontos da última linha (pelo menos 1), o instante nulo e o uid dela: no arquivo vale só a posição, e o formato fica o mesmo da página ao vivo.
+- **O texto da sheet "Sair da central"** (23.14) mantém a frase do mural: "A central sai de Suas centrais, e você sai do ranking dela. Os pontos que você ganhou nela continuam com você e voltam a contar se você entrar de novo, mas a entrada não rende pontos outra vez. Os posts desta central saem do seu mural."
+- **As fixtures do ranking** usam os ids `fa-rank-NN` (os do seed são uids sorteados) e a linha do fã com o id `me`; os testes das três rotas no modo API ficaram em `ranking/__tests__/api.test.ts`, e o `fixtures.test.ts` roda só com as fixtures. O registro de membro das fixtures (`fixtureMembership`) volta ao início também no `resetFixtureSession`.
+- **No seed**, o `RANKING_SEED` traz as 48 contas na ordem, e o script cria as contas em levas de 8; as contas sem cidade esperam o perfil (`waitForProfile`). No teste de emulador, as carteiras dos outros fãs do ranking são gravadas direto, no formato do núcleo, sem conta no Auth: só quem chama a API se cadastra.
+- **A meta do lugar de cima** (23.2, passo 5) lê o começo da lista até a linha logo acima do fã (`limit(position - 1)`, até `topTarget - 1` leituras), e não uma linha só com `endBefore` e `limitToLast(1)`, como o desenho dizia: a consulta invertida pediria dois índices compostos a mais (geral e central), cada um com o custo de gravação em toda carteira, para economizar no máximo 49 leituras numa rota que já lê o top N fora dele.
+- **O `ACHIEVEMENT_RANK_MAX` desce de 1.000 para 200** (23.9): a deriva do retrato entre páginas (23.5) é aceita para a seta, e a conquista, que não é revogada, sai sempre da primeira página do geral.
+- **O corte do ranking antes de invalidar** (`refreshRanking`, 23.14) e o puxar para atualizar que atravessa a 1f, a 1b e a 1e não estavam no desenho: o desenho dizia "como hoje" para a invalidação, e o "como hoje" buscava todas as páginas carregadas a cada ação.
 
 ## Armadilhas
 

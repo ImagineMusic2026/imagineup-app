@@ -749,7 +749,8 @@ describe('conquistas e nível', () => {
       ],
     });
     const achievements = await api('GET', '/me/achievements', { token: fan.token });
-    expect(achievements.body).toMatchObject({ unlockedCount: 5, totalCount: 9 });
+    // De 10: o Top 20 está no ar desde o bloco 8 (23.9).
+    expect(achievements.body).toMatchObject({ unlockedCount: 5, totalCount: 10 });
     // As de nível que já valiam entram com a data da carteira lida (o seed, ontem).
     expect(((await wallet(fan))?.achievements['pe-de-serra'] as Timestamp).toMillis()).toBe(
       T0 - DAY_MS,
@@ -849,7 +850,7 @@ describe('exclusão de conta', () => {
 });
 
 describe('seed das missões (22.13)', () => {
-  it('a Camila do protótipo: 3 de 5, 2 de 5, 1 de 3, a meta em 12 de 20 e 5 de 9 conquistas; rodar de novo não muda nada', async () => {
+  it('a Camila do protótipo: 3 de 5, 2 de 5, 1 de 3, a meta em 12 de 20 e 5 de 10 conquistas; rodar de novo não muda nada', async () => {
     await seedCentrals(db);
     await seedEvents(db);
     await seedPosts(db);
@@ -904,8 +905,9 @@ describe('seed das missões (22.13)', () => {
       totalCount: number;
       highlights: { id: string }[];
     };
+    // O Top 20 dela vem do retrato da semana, no seed inteiro (23.15); aqui, 5 de 10.
     expect(achievements.unlockedCount).toBe(5);
-    expect(achievements.totalCount).toBe(9);
+    expect(achievements.totalCount).toBe(10);
     expect(achievements.highlights.map((item) => item.id)).toEqual([
       'boca-a-boca',
       'purainha',

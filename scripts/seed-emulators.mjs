@@ -51,6 +51,17 @@
  * Camila nos posts p-nenho-4 e p-nenho-5 ("Curta 5 posts do Nenho" em 2 de 5,
  * curtir valendo 0). O engajamento dos fãs de teste vem por último, sem o jogo.
  *
+ * Ranking e temporadas (functions/lib/ranking, bloco 8, docs/arquitetura-api.md,
+ * 23.15): 48 contas de ranking (rank-01@teste.imagineup a rank-48@teste.imagineup,
+ * com nome e cidade), as duas temporadas passadas (Verão e Carnaval) lançadas
+ * e fechadas pela própria virada, antes de qualquer ponto do São João (as 3
+ * temporadas da 1e), a base de 8 dias atrás (da Camila e das 48, com a entrada
+ * nas centrais), o retrato desta semana tirado pela própria função (a seta) e,
+ * depois dele, a semana (os +840 da Camila). A Camila fica em 12º no geral com
+ * 4.120 e a seta +2, a 840 do top 10, em 12º no Netto e em 41º no Nenho; o
+ * pódio é Thalita, Davi e Jean. Numa semana nova, o retrato sai com o estado
+ * de agora e as setas ficam em 0: feche os emuladores e rode o seed outra vez.
+ *
  * Rodar de novo não muda nada. Depois da meia-noite, o progresso do dia volta
  * a 0, como o de qualquer fã: para ver de novo o 3 de 5 e o 2 de 5, feche os
  * emuladores (os dados somem) e rode o seed outra vez.
@@ -115,6 +126,9 @@ const FANS = [
   },
 ];
 
+/** A senha das 48 contas de ranking (só o emulador). */
+const RANKING_PASSWORD = 'fa-do-ranking';
+
 /** Os claims que vêm antes do catálogo de missões (não andam missão nenhuma, 22.13). */
 const CLAIMS_BEFORE_CATALOG = ['duda@teste.imagineup', 'enzo@teste.imagineup'];
 
@@ -125,6 +139,16 @@ async function auth(action, body) {
     body: JSON.stringify({ ...body, returnSecureToken: true }),
   });
   return { ok: response.ok, status: response.status, body: await response.json() };
+}
+
+/** Espera a função criar users/{uid} (até 60 s, a primeira chamada é lenta), sem gravar nada. */
+async function waitForProfile(uid) {
+  for (let attempt = 0; attempt < 60; attempt += 1) {
+    const response = await fetch(`${USERS}/${uid}`, { headers: OWNER });
+    if (response.ok) return;
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+  }
+  throw new Error(`O perfil ${uid} não apareceu: a função de cadastro está no ar?`);
 }
 
 /** Espera a função criar users/{uid} (até 60 s, a primeira chamada é lenta) e grava a cidade. */
@@ -211,18 +235,55 @@ async function seedEngagement(fans) {
 }
 
 /**
- * A carteira da Camila pelo award das funções, as centrais dela pelo caminho
- * das rotas e o convite dela (o código CAMILA12 e os links).
+ * A carteira da Camila até 8 dias atrás (as missões antigas e a base) pelo
+ * award das funções, as centrais dela pelo caminho das rotas e o convite dela
+ * (o código CAMILA12 e os links). A semana entra depois do retrato.
  */
 async function seedWallet(uid, email) {
   const { seedCamilaWallet } = functionsBuild('points');
   const { seedCamilaCentrals } = functionsBuild('centrals');
   const { seedCamilaInvite } = functionsBuild('invites');
   return withFirestore(async (db) => {
-    await seedCamilaWallet(db, uid);
+    await seedCamilaWallet(db, uid, { steps: 'early' });
     await seedCamilaCentrals(db, uid);
     return seedCamilaInvite(db, { uid, email });
   });
+}
+
+/** Cria a conta pelo emulador de Auth (ou entra nela, se já existe) e devolve o uid. */
+async function account({ email, password, displayName }) {
+  let result = await auth('accounts:signUp', { email, password, displayName });
+  if (result.ok) {
+    console.log(`Conta criada: ${email} (${displayName}).`);
+  } else if (result.body.error?.message === 'EMAIL_EXISTS') {
+    console.log(`Já existe: ${email}.`);
+    result = await auth('accounts:signInWithPassword', { email, password });
+  }
+  if (!result.ok) {
+    throw new Error(`Não criou ${email}: ${result.body.error?.message ?? result.status}`);
+  }
+  return result.body.localId;
+}
+
+/** As 48 contas de ranking, em levas de 8, cada uma esperando o próprio perfil. */
+async function rankingAccounts() {
+  const { RANKING_SEED } = functionsBuild('ranking');
+  const uids = new Map();
+  for (let start = 0; start < RANKING_SEED.length; start += 8) {
+    await Promise.all(
+      RANKING_SEED.slice(start, start + 8).map(async (item) => {
+        const uid = await account({
+          email: item.email,
+          password: RANKING_PASSWORD,
+          displayName: item.name,
+        });
+        if (item.city) await setCity(uid, item.city);
+        else await waitForProfile(uid);
+        uids.set(item.email, uid);
+      }),
+    );
+  }
+  return uids;
 }
 
 /** Os convidados da Camila pelo mesmo claim da API, cada um com a origem do SEED_INVITEES. */
@@ -250,36 +311,56 @@ const invitees = [];
 const visitors = [];
 const engagementFans = {};
 let camilaUid = null;
+let camilaEmail = null;
 for (const { city, wallet, invited, ...fan } of FANS) {
-  let result = await auth('accounts:signUp', fan);
-  if (result.ok) {
-    console.log(`Conta criada: ${fan.email} (${fan.displayName}).`);
-  } else if (result.body.error?.message === 'EMAIL_EXISTS') {
-    console.log(`Já existe: ${fan.email}.`);
-    result = await auth('accounts:signInWithPassword', fan);
-  }
-  if (!result.ok) {
-    throw new Error(`Não criou ${fan.email}: ${result.body.error?.message ?? result.status}`);
-  }
-  await setCity(result.body.localId, city);
+  const uid = await account(fan);
+  await setCity(uid, city);
   console.log(`Cidade de ${fan.displayName}: ${city}.`);
   if (wallet) {
-    const links = await seedWallet(result.body.localId, fan.email);
-    console.log(`Carteira de ${fan.displayName}: saldo 12.480, temporada 4.120, Netto e Nenho.`);
-    console.log(`Centrais de ${fan.displayName}: Netto Brito, Nenho e Juninho Moraes.`);
-    console.log(
-      `Convite de ${fan.displayName}: código CAMILA12, ${links} links novos (4 no total).`,
-    );
+    camilaUid = uid;
+    camilaEmail = fan.email;
   }
-  if (wallet) camilaUid = result.body.localId;
-  if (invited) invitees.push({ uid: result.body.localId, email: fan.email, name: fan.displayName });
+  if (invited) invitees.push({ uid, email: fan.email, name: fan.displayName });
   const key = fan.email.split('@')[0];
-  if (key !== 'camila' && key !== 'gabi') engagementFans[key] = result.body.localId;
+  if (key !== 'camila' && key !== 'gabi') engagementFans[key] = uid;
   const { SEED_VISITORS } = functionsBuild('invites');
   if (SEED_VISITORS.includes(fan.email)) {
-    visitors.push({ uid: result.body.localId, email: fan.email, name: fan.displayName });
+    visitors.push({ uid, email: fan.email, name: fan.displayName });
   }
 }
+
+const rankingUids = await rankingAccounts();
+console.log(`Contas de ranking: ${rankingUids.size} (rank-01 a rank-48@teste.imagineup).`);
+
+// As temporadas passadas antes de qualquer ponto do São João (23.15).
+const { seedPastSeasons, seedRankingBase, seedRankingSnapshot, seedRankingWeek } =
+  functionsBuild('ranking');
+const pastSeasons = await withFirestore((db) => seedPastSeasons(db, rankingUids, camilaUid));
+console.log(
+  `Temporadas passadas: ${pastSeasons ? 'Verão e Carnaval lançados e fechados pela virada' : 'já existiam'} (a Camila em 25º e 36º).`,
+);
+
+if (camilaUid) {
+  const links = await seedWallet(camilaUid, camilaEmail);
+  console.log('Carteira da Camila até 8 dias atrás: as missões antigas e a base.');
+  console.log('Centrais da Camila: Netto Brito, Nenho e Juninho Moraes.');
+  console.log(`Convite da Camila: código CAMILA12, ${links} links novos (4 no total).`);
+}
+
+await withFirestore((db) => seedRankingBase(db, rankingUids));
+console.log('Ranking: a base de 8 dias atrás das 48 contas, membros das centrais em que pontuam.');
+await withFirestore((db) => seedRankingSnapshot(db));
+console.log('Ranking: o retrato desta semana (a seta) e o Top 20 de quem estava até o 20º.');
+
+if (camilaUid) {
+  const { seedCamilaWallet } = functionsBuild('points');
+  await withFirestore((db) => seedCamilaWallet(db, camilaUid, { steps: 'week' }));
+  console.log('Carteira da Camila: saldo 12.480, temporada 4.120, Netto e Nenho, +840 na semana.');
+}
+await withFirestore((db) => seedRankingWeek(db, rankingUids));
+console.log(
+  'Ranking: a semana das 48 contas. Camila em 12º no geral com 4.120 (+2), 12º no Netto e 41º no Nenho.',
+);
 
 /** Os claims de uma leva, com o que aconteceu com cada um no log. */
 async function claimAll(list) {

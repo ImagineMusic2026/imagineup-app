@@ -104,27 +104,6 @@ describe('TopFansCard', () => {
     expect(screen.getByLabelText('Carregando os top fãs')).toBeTruthy();
   });
 
-  it('ranking de exemplo ao lado das centrais do servidor: o aviso abaixo do título', () => {
-    const view = render(
-      <TopFansCard entries={[entry(1)]} state="ready" self={self} onSeeRanking={jest.fn()} />,
-    );
-    expect(screen.queryByTestId('artist-top-fans-example')).toBeNull();
-    view.rerender(
-      <TopFansCard
-        entries={[entry(1)]}
-        state="ready"
-        self={self}
-        onSeeRanking={jest.fn()}
-        example
-      />,
-    );
-    expect(
-      screen.getByText(
-        'Ranking de exemplo: as posições de verdade chegam com o ranking do servidor.',
-      ),
-    ).toBeTruthy();
-  });
-
   it('"Ver ranking" tem alvo de 44 e diz o que faz', () => {
     const onSeeRanking = jest.fn();
     render(

@@ -1,15 +1,20 @@
 /**
- * Contrato provisório com a API. Muda quando o backend (M2) for desenhado.
+ * Contrato com a API do ranking (bloco 8, docs/arquitetura-api.md, 23.2;
+ * espelho em functions/src/api/contract.ts).
  *
  * O ranking conta os pontos da temporada, o terceiro contador aprovado em
- * 2026-09-28 (o saldo e o nível ficam de fora). Posição, pontos e metas são
- * calculados no servidor; o app só lê.
+ * 2026-09-28 (o saldo e o nível ficam de fora). Posição, pontos, metas e a
+ * seta da semana são calculados no servidor; o app só lê.
  */
 
 /** Recorte do ranking: o geral da temporada ou o da central de um artista. */
 export type RankingScope = { kind: 'global' } | { kind: 'artist'; artistId: string };
 
-/** A temporada em andamento, ou a última, com o resultado congelado (`ended`). */
+/**
+ * A temporada mostrada: a em andamento, a encerrada esperando a virada ou,
+ * antes de a próxima começar, a última fechada, com o resultado congelado
+ * (`ended`).
+ */
 export interface Season {
   id: string;
   /** "São João", lido como "Temporada de São João". */
@@ -42,24 +47,18 @@ export interface LeaderboardEntry {
   /** Pontos da temporada no recorte. */
   points: number;
   /**
-   * Posições ganhas (positivo) ou perdidas (negativo) desde a semana
-   * anterior; 0 quando não mudou.
+   * Posições ganhas (positivo) ou perdidas (negativo) desde o retrato da
+   * semana; 0 quando não mudou, sem retrato e na temporada encerrada.
    */
   change: number;
   /** A linha do fã que pede, marcada pelo servidor. */
   isMe: boolean;
 }
 
-/** Uma página do ranking, em ordem de posição. */
+/** Uma página do ranking (20 linhas), em ordem de posição. */
 export interface LeaderboardPage {
   items: LeaderboardEntry[];
   nextCursor: string | null;
-  /**
-   * Ranking de exemplo ao lado de dado de verdade (as centrais ou a carteira
-   * já vêm do servidor, o ranking ainda não): a tela mostra o aviso. O
-   * servidor nunca manda; o bloco 8 apaga o campo e o aviso.
-   */
-  example?: boolean;
 }
 
 /**
@@ -75,15 +74,18 @@ export interface RankTarget {
 
 /** O fã no recorte pedido (card "Você"). */
 export interface MyRank {
-  /** `null` sem pontos no recorte: ele ainda não entrou no ranking. */
+  /**
+   * `null` sem pontos no recorte (ele ainda não entrou no ranking) ou, numa
+   * central, fora dos membros.
+   */
   position: number | null;
   points: number;
   /** `null` no 1º lugar, sem pontos e com a temporada encerrada. */
   target: RankTarget | null;
   /**
-   * O recorte é de exemplo ao lado de dado de verdade (`LeaderboardPage.example`).
-   * Numa central, o fã fica fora do ranking de exemplo e o card "Você" diz
-   * "Sem posição ainda", como a 1e. O servidor nunca manda.
+   * Só no recorte de central da temporada lida ao vivo: `false` quando o fã
+   * não é membro (o ranking da central é só dos membros), e o card diz "Entre
+   * na central para aparecer no ranking". A temporada fechada não manda.
    */
-  example?: boolean;
+  member?: boolean;
 }

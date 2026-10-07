@@ -39,6 +39,8 @@ const SEASON: SeasonInfo = {
   startsAt: NOW - 18 * DAY_MS,
   endsAt: NOW + 12 * DAY_MS,
   leaderTitle: null,
+  topTarget: 10,
+  endedEarly: null,
 };
 const FAN = { type: 'fan', uid: 'fa', name: null } as const;
 
@@ -137,9 +139,42 @@ describe('semana e temporadas', () => {
     expect(weekEarned(days, NOW)).toBe(840);
   });
 
-  it('temporadas jogadas: as passadas e a dos pontos guardados, se tem ponto', () => {
-    expect(seasonsPlayed({ pastSeasons: 2, seasonPoints: 4_120 })).toBe(3);
-    expect(seasonsPlayed({ pastSeasons: 2, seasonPoints: 0 })).toBe(2);
+  it.each([
+    // Antes da virada: as fechadas e a de agora, com ponto.
+    [
+      'antes da virada',
+      { pastSeasons: 2, seasonPoints: 4_120, seasonId: 'sj', closedSeasonId: 'carnaval' },
+      3,
+    ],
+    [
+      'sem ponto na de agora',
+      { pastSeasons: 2, seasonPoints: 0, seasonId: 'sj', closedSeasonId: 'carnaval' },
+      2,
+    ],
+    // Depois da virada e antes da primeira ação na nova: a virada já contou a guardada.
+    [
+      'depois da virada',
+      { pastSeasons: 3, seasonPoints: 4_120, seasonId: 'sj', closedSeasonId: 'sj' },
+      3,
+    ],
+    // A primeira ação na nova trocou a carteira (sem somar), e ainda sem ponto nela.
+    [
+      'depois da troca',
+      { pastSeasons: 3, seasonPoints: 0, seasonId: 'nova', closedSeasonId: 'sj' },
+      3,
+    ],
+    [
+      'pontuando na nova',
+      { pastSeasons: 3, seasonPoints: 10, seasonId: 'nova', closedSeasonId: 'sj' },
+      4,
+    ],
+    [
+      'fã que nunca passou por virada',
+      { pastSeasons: 0, seasonPoints: 5, seasonId: 'sj', closedSeasonId: null },
+      1,
+    ],
+  ] as const)('temporadas jogadas: %s', (_name, wallet, expected) => {
+    expect(seasonsPlayed(wallet)).toBe(expected);
   });
 
   it('o corte dos dias tira só os anteriores a hoje menos 6; o dia seguinte fica', () => {
@@ -182,6 +217,7 @@ describe('ganho', () => {
           seasonPoints: 2,
           seasonPointsAt: NOW,
           totalPoints: 2,
+          member: false,
         },
       },
     ]);
@@ -296,10 +332,11 @@ describe('ganho', () => {
         centrals: new Map([['nenho', central]]),
       }),
     ]);
+    // A troca preguiçosa não soma temporada: quem conta é a virada (bloco 8, 23.7).
     expect(out.fans[0]!.wallet!.state).toMatchObject({
       seasonId: SEASON.id,
       seasonPoints: 2,
-      pastSeasons: 1,
+      pastSeasons: 0,
     });
     expect(out.fans[0]!.centrals[0]).toMatchObject({
       create: false,

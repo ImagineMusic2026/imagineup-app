@@ -12,11 +12,13 @@ const season = {
   startsAt: NOW - 18 * DAY_MS,
   endsAt: NOW + 12 * DAY_MS,
   leaderTitle: null,
+  topTarget: 10,
+  endedEarly: null,
 };
 const config = (withSeason = true) =>
   buildLoadedConfig({
     points: DEFAULT_POINTS_CONFIG,
-    season: { version: 1, season: withSeason ? season : null },
+    season: { version: 1, season: withSeason ? season : null, next: null, lastClosed: null },
   });
 
 const camila: WalletState = {
@@ -37,7 +39,7 @@ const camila: WalletState = {
 
 describe('carteira e progresso', () => {
   it('a carteira da Camila, como o perfil mostra hoje', () => {
-    expect(walletView(camila, config())).toEqual({
+    expect(walletView(camila, config(), NOW)).toEqual({
       balance: 12_480,
       xp: 12_480,
       seasonPoints: 4_120,
@@ -45,16 +47,41 @@ describe('carteira e progresso', () => {
   });
 
   it('pontos de outra temporada (a carteira ainda não trocou) ou sem temporada mostram 0', () => {
-    expect(walletView({ ...camila, seasonId: 'carnaval' }, config()).seasonPoints).toBe(0);
-    expect(walletView(camila, config(false)).seasonPoints).toBe(0);
+    expect(walletView({ ...camila, seasonId: 'carnaval' }, config(), NOW).seasonPoints).toBe(0);
+    expect(walletView(camila, config(false), NOW).seasonPoints).toBe(0);
   });
 
   it('temporada que acabou e continua na configuração mostra os pontos dela, congelados', () => {
     const ended = buildLoadedConfig({
       points: DEFAULT_POINTS_CONFIG,
-      season: { version: 1, season: { ...season, endsAt: NOW - DAY_MS } },
+      season: {
+        version: 1,
+        season: { ...season, endsAt: NOW - DAY_MS },
+        next: null,
+        lastClosed: null,
+      },
     });
-    expect(walletView(camila, ended).seasonPoints).toBe(4_120);
+    expect(walletView(camila, ended, NOW).seasonPoints).toBe(4_120);
+  });
+
+  it('depois da virada, com a próxima ainda sem começar, mostra os pontos da última fechada (bloco 8)', () => {
+    const closed = buildLoadedConfig({
+      points: DEFAULT_POINTS_CONFIG,
+      season: {
+        version: 2,
+        season: {
+          ...season,
+          id: 'temporada-verao',
+          startsAt: NOW + DAY_MS,
+          endsAt: NOW + 30 * DAY_MS,
+        },
+        next: null,
+        lastClosed: { ...season, endsAt: NOW - DAY_MS, closedAt: NOW - DAY_MS + 60_000 },
+      },
+    });
+    expect(walletView(camila, closed, NOW).seasonPoints).toBe(4_120);
+    // A próxima começou: os pontos guardados são de outra temporada até a primeira ação nela.
+    expect(walletView(camila, closed, NOW + 2 * DAY_MS).seasonPoints).toBe(0);
   });
 
   it('o progresso da Camila: Purainha, Xodó a seguir, +840 na semana e 3 temporadas', () => {

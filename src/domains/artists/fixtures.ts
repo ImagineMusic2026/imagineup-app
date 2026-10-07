@@ -5,7 +5,7 @@
 // API entrar.
 import { buildMyRankFixture } from '@/domains/ranking/fixtures';
 import { ApiError } from '@/services/api/errors';
-import { earnFixturePoints, onFixtureSessionEnd } from '@/services/fixtures';
+import { earnFixturePoints, fixtureMembership, onFixtureSessionEnd } from '@/services/fixtures';
 
 import type {
   Artist,
@@ -95,6 +95,7 @@ export const followFixture = {
     for (const id of artistIds) {
       followed.add(id);
       joinedOnce.add(id);
+      fixtureMembership.join(id);
     }
     const result = snapshot();
     answered.set(idempotencyKey, result);
@@ -117,21 +118,23 @@ export const followFixture = {
     const pointsAwarded = joinedOnce.has(artistId) ? 0 : earnFixturePoints(JOIN_CENTRAL_POINTS);
     followed.add(artistId);
     joinedOnce.add(artistId);
+    fixtureMembership.join(artistId);
     const result: JoinCentralResult = { artistId, pointsAwarded };
     joinAnswers.set(idempotencyKey, result);
     return { ...result };
   },
 
   /**
-   * Sair da central: tira das centrais seguidas e não mexe em ponto. Sem
-   * estar nela, é sucesso sem efeito, como o servidor. A mesma chave de novo
-   * devolve a resposta da primeira vez.
+   * Sair da central: tira das centrais seguidas e do ranking dela (bloco 8) e
+   * não mexe em ponto. Sem estar nela, é sucesso sem efeito, como o servidor.
+   * A mesma chave de novo devolve a resposta da primeira vez.
    */
   leave(artistId: string, idempotencyKey: string): LeaveCentralResult {
     const previous = leaveAnswers.get(idempotencyKey);
     if (previous) return { ...previous };
 
     followed.delete(artistId);
+    fixtureMembership.leave(artistId);
     const result: LeaveCentralResult = { artistId };
     leaveAnswers.set(idempotencyKey, result);
     return { ...result };
@@ -148,6 +151,7 @@ export const followFixture = {
     answered = new Map();
     joinAnswers = new Map();
     leaveAnswers = new Map();
+    fixtureMembership.reset();
   },
 };
 
@@ -160,8 +164,8 @@ const SHORT_NAMES: Readonly<Record<string, string>> = { juninhomoraes: 'Juninho 
  * Centrais que o fã segue, na ordem em que ele entrou nelas: as três do
  * protótipo e as que a escolha de artistas (1l) somou, que ainda não têm
  * posição. A posição e os pontos da temporada são os do ranking de exemplo
- * da central (#12 e 4.120 no Netto, #41 e 2.980 no Nenho, sem posição no
- * Juninho). Lista nova a cada chamada.
+ * da central, a mesma tabela do seed (#12 e 4.120 no Netto, #41 e 2.980 no
+ * Nenho, sem posição no Juninho). Lista nova a cada chamada.
  */
 export function buildFanCentralsFixture(): FanCentral[] {
   const artists = new Map(buildArtistsFixture().map((artist) => [artist.id, artist]));

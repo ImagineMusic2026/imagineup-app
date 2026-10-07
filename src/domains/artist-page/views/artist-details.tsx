@@ -52,10 +52,10 @@ import {
 import { useArtistPostsQuery } from '@/domains/posts';
 import { useFanIdentity } from '@/domains/profile';
 import {
-  ExampleNotice,
   RankingRow,
   SeasonLine,
   useLeaderboardInfiniteQuery,
+  useSeasonOver,
   useSeasonQuery,
   type RankingScope,
   type RankingSelf,
@@ -266,6 +266,8 @@ function ArtistPage({ artistId }: { artistId: string }) {
   const scope: RankingScope = { kind: 'artist', artistId };
   const board = useLeaderboardInfiniteQuery(scope);
   const season = useSeasonQuery();
+  // Acabou com a página aberta: o ranking busca de novo (sem setas, encerrado).
+  const seasonOver = useSeasonOver(season.data, now);
   const posts = useArtistPostsQuery(artistId);
   const missions = useMissionsQuery();
   const agenda = useArtistAgendaQuery(artistId);
@@ -312,8 +314,6 @@ function ArtistPage({ artistId }: { artistId: string }) {
   }, [tab, reducedMotion, shownTab, contentFade]);
 
   const leaderboard = board.data?.pages.flatMap((page) => page.items) ?? [];
-  // Ranking de exemplo ao lado das centrais do servidor: o aviso nos top fãs e na aba Ranking.
-  const exampleRanking = board.data?.pages[0]?.example === true;
   const topFans = leaderboard.filter((entry) => entry.position <= 3);
   const artistPosts = posts.data?.pages.flatMap((page) => page.items) ?? [];
   const artistMissions = missionsOfArtist(missions.data?.missions ?? [], artistId);
@@ -486,7 +486,9 @@ function ArtistPage({ artistId }: { artistId: string }) {
         />
       );
     }
-    return <EmptyState ref={ref} message={t(text.empty)} style={styles.status} />;
+    // Na temporada encerrada, o ranking vazio é um resultado fechado, sem "ainda".
+    const empty = item.tab === 'ranking' && seasonOver ? 'artist.ranking.emptyEnded' : text.empty;
+    return <EmptyState ref={ref} message={t(empty)} style={styles.status} />;
   };
 
   const renderContent = (item: ArtistListItem, target: string): ReactNode => {
@@ -505,7 +507,6 @@ function ArtistPage({ artistId }: { artistId: string }) {
               self={self}
               onSeeRanking={seeRanking}
               titleRef={ref}
-              example={exampleRanking}
             />
           </View>
         );
@@ -556,9 +557,6 @@ function ArtistPage({ artistId }: { artistId: string }) {
             style={[styles.gutter, styles.season]}
           >
             <SeasonLine season={season.data} now={now} />
-            {exampleRanking ? (
-              <ExampleNotice style={styles.notice} testID="artist-ranking-example" />
-            ) : null}
           </View>
         );
       case 'rank':
@@ -567,6 +565,7 @@ function ArtistPage({ artistId }: { artistId: string }) {
             <RankingRow
               entry={item.entry}
               self={self}
+              seasonOver={seasonOver}
               testID={target === 'Cell' ? `artist-rank-${item.entry.position}` : undefined}
             />
           </View>
@@ -739,9 +738,6 @@ const styles = StyleSheet.create({
   },
   status: {
     paddingTop: spacing.lg,
-  },
-  notice: {
-    marginTop: spacing.xs,
   },
   nextPage: {
     paddingVertical: spacing.lg,

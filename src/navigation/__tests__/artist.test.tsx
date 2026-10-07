@@ -22,6 +22,7 @@ import {
 } from '@/domains/artists/fixtures';
 import { missionKeys, missionsFixture } from '@/domains/missions';
 import { buildMissionsFixture } from '@/domains/missions/fixtures';
+import { t } from '@/i18n';
 import { api } from '@/services/api';
 import { ApiError } from '@/services/api/errors';
 import { fixtureWallet, setFixtureNow } from '@/services/fixtures';
@@ -194,11 +195,10 @@ describe('página do artista (1d)', () => {
   it('os top fãs são os três primeiros do ranking da temporada na central, e "Ver ranking" abre a aba Ranking', async () => {
     await openArtist('nettobrito');
 
-    expect(await screen.findByLabelText('1º lugar, Alan F., 7.467 pontos')).toBeTruthy();
-    expect(screen.getByLabelText('2º lugar, Davi L., 7.150 pontos')).toBeTruthy();
-    expect(screen.getByLabelText('3º lugar, Igor N., 6.819 pontos')).toBeTruthy();
-    // Tudo nas fixtures (as builds de hoje): o ranking de exemplo não leva aviso.
-    expect(screen.queryByTestId('artist-top-fans-example')).toBeNull();
+    // A tabela do seed (23.15): Maria Clara, Aline e Bruna no topo do Netto.
+    expect(await screen.findByLabelText('1º lugar, Maria S., 6.500 pontos')).toBeTruthy();
+    expect(screen.getByLabelText('2º lugar, Aline F., 6.050 pontos')).toBeTruthy();
+    expect(screen.getByLabelText('3º lugar, Bruna A., 5.700 pontos')).toBeTruthy();
 
     fireEvent.press(screen.getByLabelText('Ver o ranking da central'));
 
@@ -206,29 +206,80 @@ describe('página do artista (1d)', () => {
     // A aba mostra as mesmas posições, a partir do 1º.
     expect(await screen.findByTestId('artist-rank-1')).toBeTruthy();
     expect(screen.getByTestId('artist-rank-1').props.accessibilityLabel).toMatch(
-      /^1º, Alan Ferreira, .*7\.467 pontos/,
+      /^1º, Maria Clara Souza, .*6\.500 pontos/,
     );
     // O leitor de tela vai à temporada, o começo da aba.
     afterScroll();
     expect(focused()).toEqual(['artist-season']);
   });
 
-  it('com as centrais no servidor, os top fãs e a aba Ranking avisam que o ranking é de exemplo', async () => {
-    mockDomainSources = { artists: 'api' };
+  it('com o ranking no servidor (bloco 8), os top fãs e a aba Ranking vêm dele, sem aviso de exemplo', async () => {
+    mockDomainSources = { artists: 'api', ranking: 'api' };
+    const fan = (position: number, displayName: string, points: number) => ({
+      position,
+      userId: `fa-${position}`,
+      displayName,
+      photoURL: null,
+      city: null,
+      points,
+      change: 0,
+      isMe: false,
+    });
     jest.mocked(api.get).mockImplementation(async (url: string) => {
       if (url === '/artists/nettobrito') {
-        return { data: { ...buildArtistDetailsFixture('nettobrito'), fanCount: 1 } };
+        return { data: { ...buildArtistDetailsFixture('nettobrito'), fanCount: 3 } };
       }
       if (url === '/me/centrals') return { data: [] };
+      if (url === '/ranking/season') return { data: { season: null } };
+      if (url === '/ranking') {
+        return {
+          data: {
+            items: [
+              fan(1, 'Thalita Santos', 900),
+              fan(2, 'Davi Lima', 800),
+              fan(3, 'Jean Pereira', 700),
+            ],
+            nextCursor: null,
+          },
+        };
+      }
       throw new Error(`rota sem resposta no teste: ${url}`);
     });
     await openArtist('nettobrito');
 
-    expect(await screen.findByTestId('artist-top-fans-example')).toHaveTextContent(
-      'Ranking de exemplo: as posições de verdade chegam com o ranking do servidor.',
-    );
+    expect(await screen.findByLabelText('1º lugar, Thalita S., 900 pontos')).toBeTruthy();
+    expect(screen.queryByTestId('artist-top-fans-example')).toBeNull();
+    expect(jest.mocked(api.get)).toHaveBeenCalledWith('/ranking', {
+      params: { artistId: 'nettobrito', cursor: null },
+    });
     fireEvent.press(tab('Ranking'));
-    expect(await screen.findByTestId('artist-ranking-example')).toBeTruthy();
+    expect(await screen.findByTestId('artist-rank-1')).toBeTruthy();
+    expect(screen.queryByTestId('artist-ranking-example')).toBeNull();
+  });
+
+  it('temporada encerrada sem ninguém na central: a aba Ranking diz o resultado, sem "ainda"', async () => {
+    mockDomainSources = { artists: 'api', ranking: 'api' };
+    const day = 24 * 60 * 60 * 1000;
+    const season = {
+      id: 'temporada-sao-joao',
+      name: 'São João',
+      startsAt: new Date(NOW.getTime() - 30 * day).toISOString(),
+      endsAt: new Date(NOW.getTime() - day).toISOString(),
+      status: 'ended',
+      leaderTitle: null,
+    };
+    jest.mocked(api.get).mockImplementation(async (url: string) => {
+      if (url === '/artists/nettobrito') return { data: buildArtistDetailsFixture('nettobrito') };
+      if (url === '/me/centrals') return { data: [] };
+      if (url === '/ranking/season') return { data: { season } };
+      if (url === '/ranking') return { data: { items: [], nextCursor: null } };
+      throw new Error(`rota sem resposta no teste: ${url}`);
+    });
+    await openArtist('nettobrito');
+
+    fireEvent.press(tab('Ranking'));
+    expect(await screen.findByLabelText(t('artist.ranking.emptyEnded'))).toBeTruthy();
+    expect(screen.queryByLabelText(t('artist.ranking.empty'))).toBeNull();
   });
 
   it('trocar de aba pela barra grudada leva o foco do leitor ao começo do conteúdo novo; pela da lista, não', async () => {
@@ -352,7 +403,7 @@ describe('página do artista (1d)', () => {
     expect(await screen.findByText('Sair da central?')).toBeTruthy();
     expect(
       screen.getByText(
-        'A central sai de Suas centrais. Os pontos que você ganhou nela continuam com você, e entrar de novo não rende os pontos de entrada outra vez. Os posts desta central saem do seu mural.',
+        'A central sai de Suas centrais, e você sai do ranking dela. Os pontos que você ganhou nela continuam com você e voltam a contar se você entrar de novo, mas a entrada não rende pontos outra vez. Os posts desta central saem do seu mural.',
       ),
     ).toBeTruthy();
 

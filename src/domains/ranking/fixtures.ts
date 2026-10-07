@@ -1,33 +1,34 @@
-import { sourceOf } from '@/config/data-source';
-import { fixtureWallet, type FixtureWalletState } from '@/services/fixtures';
-import { stableHash } from '@/utils/pick-stable';
+import { fixtureMembership, fixtureWallet, type FixtureWalletState } from '@/services/fixtures';
 
 import type { LeaderboardEntry, LeaderboardPage, MyRank, RankingScope, Season } from './types';
 
 /**
- * Ranking de exemplo da 1f enquanto a API (M2) não existe.
+ * Ranking de exemplo das builds sem API (a 1f, os top fãs e a aba Ranking da
+ * 1d, o card "Você" e as posições de "Suas centrais"). Com a API, tudo vem do
+ * servidor (bloco 8); a regra de coerência pede que as fixtures mostrem o que
+ * o seed dos emuladores mostra, então elas montam o ranking pela mesma tabela
+ * do seed (`RANKING_SEED`, copiada de functions/src/ranking/seed.ts, 23.15):
  *
- * - Geral: o pódio e as linhas 4 a 8 do protótipo (`renderVals()`), mais
- *   gente de exemplo. Os pontos do fã são os da temporada na carteira das
- *   fixtures (`fixtureWallet`, 4.120 no começo), e a posição sai da conta:
- *   12º, a 840 do 10º (4.960), como o card "Você" do protótipo. Ganhou
- *   pontos (a missão de presença da agenda), sobe junto.
- * - Centrais: a mesma gente em outra ordem, com menos pontos. O fã é 12º no
- *   Netto e 41º no Nenho, como o "você é #12" da home e o perfil (1e); nas
- *   outras centrais ele ainda não pontuou. As centrais da home e do perfil
- *   (`buildFanCentralsFixture`, em artists) leem posição e pontos daqui, de
- *   `buildMyRankFixture`. `__tests__/fixtures.test.ts` trava as duas coisas.
+ * - Geral: o pódio Thalita, Davi e Jean e as linhas 4 a 11 do protótipo, com
+ *   os nomes, as cidades, os pontos e as setas do seed, e os 37 genéricos. O
+ *   fã tem os pontos da temporada da carteira das fixtures (`fixtureWallet`,
+ *   4.120 no começo): 12º, a 840 do top 10, com a seta +2. Ganhou pontos (a
+ *   missão de presença da agenda), sobe junto.
+ * - Centrais: o Netto (30, o fã em 12º com 4.120), o Nenho (49, o fã em 41º
+ *   com 2.980) e o Juninho (6, o fã membro sem pontos). As outras ficam vazias.
+ *   Só membros: numa central de onde o fã saiu (`fixtureMembership`, que o
+ *   `followFixture` das centrais atualiza), ele sai do ranking dela.
+ * - A seta compara a posição de agora com a do retrato da semana (os pontos
+ *   da base do seed), como o servidor (23.5).
  *
- * Nomes, cidades e pontos são exemplo; os de verdade vêm da API.
- *
- * Ao lado de dado de verdade (as centrais na API, desde o bloco 4, ou a
- * carteira, desde o bloco 1), o ranking de exemplo vem marcado (`example`), e
- * a tela mostra o aviso. Num recorte de central marcado, o fã fica de fora: a
- * posição dele ("você é #12") valia para qualquer fã, e os pontos de verdade
- * dele na central estão em "Suas centrais". O bloco 8 troca tudo pelo servidor.
+ * As centrais da home e do perfil (`buildFanCentralsFixture`, em artists) leem
+ * a posição e os pontos daqui, de `buildMyRankFixture`.
+ * `__tests__/fixtures.test.ts` trava os números-âncora. Mudou a tabela do seed,
+ * mude aqui.
  */
 
-export const LEADERBOARD_PAGE_SIZE = 10;
+/** Linhas por página, como o servidor (`RANKING_PAGE_SIZE`). */
+export const LEADERBOARD_PAGE_SIZE = 20;
 
 // A meta de quem está fora dele: "840 pts para entrar no top 10" (vem do painel).
 const TOP_TARGET = 10;
@@ -39,72 +40,111 @@ const SEASON_STARTED_MS_AGO = 18 * DAY_MS;
 /** O fã que pede. O nome e a foto da linha dele vêm do perfil, no app. */
 const ME_ID = 'me';
 
-interface Person {
+type SeedCentralId = 'nettobrito' | 'nenho' | 'juninhomoraes';
+
+/** Os pontos do retrato da semana (`base`) e de agora (`now`). */
+interface Points {
+  base: number;
+  now: number;
+}
+
+interface SeedPerson extends Points {
   userId: string;
   displayName: string;
   city: string | null;
+  centrals: Partial<Record<SeedCentralId, Points>>;
 }
 
-interface Scored extends Person {
-  points: number;
-  change: number;
+interface Prototype extends Points {
+  displayName: string;
+  city: string | null;
+  netto: number;
+  nenho: number;
 }
 
-/** O pódio e a lista do protótipo, e os três seguintes até o fã (exemplo). */
-const PROTOTYPE_TOP: readonly Scored[] = [
+/** Os 11 do protótipo, como no seed: a 5ª é a Aline, e a Júlia tem 4.959. */
+const PROTOTYPE: readonly Prototype[] = [
   {
-    userId: 'fa-thalita',
     displayName: 'Thalita Santos',
     city: 'Irará, BA',
-    points: 9_140,
-    change: 1,
+    base: 6_100,
+    now: 9_140,
+    netto: 4_800,
+    nenho: 4_300,
   },
-  { userId: 'fa-davi', displayName: 'Davi Lima', city: 'Salvador, BA', points: 7_902, change: -1 },
-  { userId: 'fa-jean', displayName: 'Jean Pereira', city: 'Aracaju, SE', points: 7_318, change: 0 },
   {
-    userId: 'fa-maria-clara',
+    displayName: 'Davi Lima',
+    city: 'Salvador, BA',
+    base: 6_500,
+    now: 7_902,
+    netto: 4_500,
+    nenho: 3_360,
+  },
+  {
+    displayName: 'Jean Pereira',
+    city: 'Aracaju, SE',
+    base: 5_200,
+    now: 7_318,
+    netto: 4_200,
+    nenho: 3_050,
+  },
+  {
     displayName: 'Maria Clara Souza',
     city: 'Salvador, BA',
-    points: 6_844,
-    change: 3,
+    base: 3_810,
+    now: 6_844,
+    netto: 6_500,
+    nenho: 300,
   },
-  { userId: 'fa-alan', displayName: 'Alan Ferreira', city: 'Irará, BA', points: 6_201, change: 1 },
   {
-    userId: 'fa-bruna',
+    displayName: 'Aline Ferreira',
+    city: 'Irará, BA',
+    base: 3_890,
+    now: 6_201,
+    netto: 6_050,
+    nenho: 120,
+  },
+  {
     displayName: 'Bruna Andrade',
     city: 'Recife, PE',
-    points: 5_930,
-    change: 7,
+    base: 3_340,
+    now: 5_930,
+    netto: 5_700,
+    nenho: 200,
   },
   {
-    userId: 'fa-igor',
     displayName: 'Igor Nascimento',
     city: 'Aracaju, SE',
-    points: 5_412,
-    change: 2,
+    base: 3_640,
+    now: 5_412,
+    netto: 5_250,
+    nenho: 140,
   },
   {
-    userId: 'fa-leila',
     displayName: 'Leila Matos',
     city: 'Feira de Santana, BA',
-    points: 5_106,
-    change: 4,
+    base: 3_410,
+    now: 5_106,
+    netto: 4_950,
+    nenho: 130,
   },
   {
-    userId: 'fa-rafael',
     displayName: 'Rafael Costa',
     city: 'Alagoinhas, BA',
-    points: 5_038,
-    change: -2,
+    base: 3_720,
+    now: 5_038,
+    netto: 4_880,
+    nenho: 150,
   },
   // Sem cidade no perfil: a linha mostra só o nome.
-  { userId: 'fa-julia', displayName: 'Júlia Ramos', city: null, points: 4_960, change: 0 },
+  { displayName: 'Júlia Ramos', city: null, base: 3_560, now: 4_959, netto: 4_700, nenho: 250 },
   {
-    userId: 'fa-pedro',
     displayName: 'Pedro Henrique Alves',
     city: 'Serrinha, BA',
-    points: 4_402,
-    change: -3,
+    base: 3_480,
+    now: 4_402,
+    netto: 4_300,
+    nenho: 90,
   },
 ];
 
@@ -160,165 +200,130 @@ const CITIES = [
   'Juazeiro, BA',
 ] as const;
 
-const GENERIC_COUNT = 40;
+/** Os genéricos, abaixo do fã no geral (i de 1 a 37). */
+const GENERIC_COUNT = 37;
 
-/** Gente de exemplo, sem nome repetido: cada nome com dois sobrenomes diferentes. */
-const GENERIC_PEOPLE: readonly Person[] = Array.from({ length: GENERIC_COUNT }, (_, index) => {
+const isOddFrom3 = (i: number) => i >= 3 && i % 2 === 1;
+
+/** O genérico i, pelas fórmulas do seed (23.15). */
+function generic(i: number): SeedPerson {
+  const index = i - 1;
   const first = FIRST_NAMES[index % FIRST_NAMES.length] ?? FIRST_NAMES[0];
   const round = Math.floor(index / FIRST_NAMES.length);
   const last = LAST_NAMES[(index + round * 5) % LAST_NAMES.length] ?? LAST_NAMES[0];
+  const now = 4_061 - 27 * index;
+  const centrals: SeedPerson['centrals'] = {
+    nenho: { now: now - 90, base: now - 90 - (isOddFrom3(i) ? 30 : 0) },
+  };
+  if (i <= 18) centrals.nettobrito = { now: 80 - i, base: 80 - i - (isOddFrom3(i) ? 2 : 0) };
+  if (i >= 19 && i <= 24) {
+    const points = 90 - 10 * (i - 19);
+    centrals.juninhomoraes = { now: points, base: points };
+  }
   return {
-    userId: `fa-exemplo-${index + 1}`,
+    userId: `fa-rank-${String(PROTOTYPE.length + i).padStart(2, '0')}`,
     displayName: `${first} ${last}`,
     city: CITIES[index % CITIES.length] ?? null,
+    base: i === 1 ? 4_050 : i === 2 ? 3_970 : now - 800,
+    now,
+    centrals,
   };
-});
-
-const EVERYONE: readonly Person[] = [...PROTOTYPE_TOP, ...GENERIC_PEOPLE];
-
-// Abaixo do fã no geral: 22 pessoas, de 4.061 para baixo.
-const GLOBAL_BELOW = 22;
-const GLOBAL_BELOW_FROM = 4_061;
-// Passo entre duas posições abaixo do fã e o tremor, que nunca inverte a ordem.
-const STEP_BELOW = 83;
-const JITTER = 29;
-// O de cima do fã fica pelo menos isto acima dele.
-const MIN_LEAD = 37;
-
-/** Uma central de exemplo: quantos ficam acima e abaixo do fã e os pontos do 1º. */
-interface CentralSample {
-  myPoints: number;
-  myChange: number;
-  above: number;
-  below: number;
-  top: number;
 }
 
-/** O fã no Netto (12º) e no Nenho (41º), como a home e o perfil mostram. */
-const FAN_CENTRALS: Readonly<Record<string, CentralSample>> = {
-  nettobrito: { myPoints: 4_120, myChange: 1, above: 11, below: 18, top: 7_480 },
-  nenho: { myPoints: 2_980, myChange: -2, above: 40, below: 8, top: 5_860 },
-};
-
-/** Central em que o fã ainda não pontuou ("novo" na home). */
-const OTHER_CENTRAL = { count: 24, top: 3_150, step: 110 } as const;
-
-const MY_GLOBAL_CHANGE = 2;
-
-/** De -3 a +5, estável por pessoa e recorte; 0 é "não mudou". */
-function sampleChange(seed: string): number {
-  return (stableHash(seed) % 9) - 3;
-}
-
-function jitter(seed: string): number {
-  return stableHash(`tremor:${seed}`) % JITTER;
-}
-
-/** A gente da central em outra ordem, estável pelo id do artista. */
-function peopleFor(artistId: string, count: number): Person[] {
-  return [...EVERYONE]
-    .sort((a, b) => stableHash(`${artistId}:${a.userId}`) - stableHash(`${artistId}:${b.userId}`))
-    .slice(0, count);
-}
-
-function descending(from: number, to: number, count: number, index: number): number {
-  if (count <= 1) return from;
-  return Math.round(from - (index * (from - to)) / (count - 1));
-}
-
-function globalOthers(): Scored[] {
-  const below = GENERIC_PEOPLE.slice(0, GLOBAL_BELOW).map((person, index) => ({
-    ...person,
-    points: GLOBAL_BELOW_FROM - index * STEP_BELOW - jitter(person.userId),
-    change: sampleChange(`global:${person.userId}`),
-  }));
-  return [...PROTOTYPE_TOP, ...below];
-}
-
-function centralOthers(artistId: string): Scored[] {
-  const sample = FAN_CENTRALS[artistId];
-  if (!sample) {
-    return peopleFor(artistId, OTHER_CENTRAL.count).map((person, index) => {
-      const seed = `${artistId}:${person.userId}`;
-      return {
-        ...person,
-        points: OTHER_CENTRAL.top - index * OTHER_CENTRAL.step - jitter(seed),
-        change: sampleChange(seed),
-      };
-    });
-  }
-  const lowestAbove = sample.myPoints + MIN_LEAD + JITTER;
-  return peopleFor(artistId, sample.above + sample.below).map((person, index) => {
-    const seed = `${artistId}:${person.userId}`;
-    const points =
-      index < sample.above
-        ? descending(sample.top, lowestAbove, sample.above, index) - jitter(seed)
-        : sample.myPoints - (index - sample.above + 1) * STEP_BELOW - jitter(seed);
-    return { ...person, points, change: sampleChange(seed) };
-  });
-}
-
-interface BoardSample {
-  others: Scored[];
-  /** Zero quando o fã não pontuou no recorte. */
-  myPoints: number;
-  myChange: number;
-}
+/** A tabela do seed: as 48 contas de ranking, na ordem (`rank-01` a `rank-48`). */
+export const RANKING_SEED: readonly SeedPerson[] = [
+  ...PROTOTYPE.map((person, index): SeedPerson => ({
+    userId: `fa-rank-${String(index + 1).padStart(2, '0')}`,
+    displayName: person.displayName,
+    city: person.city,
+    base: person.base,
+    now: person.now,
+    centrals: {
+      nettobrito: { base: person.netto, now: person.netto },
+      nenho: { base: person.nenho, now: person.nenho },
+    },
+  })),
+  ...Array.from({ length: GENERIC_COUNT }, (_, index) => generic(index + 1)),
+];
 
 /**
- * O ranking de exemplo aparece ao lado de dado de verdade: o de uma central
- * com as centrais na API, e o geral com a carteira na API.
+ * O fã (a Camila do seed): no retrato, 3.280 no geral (agora, os da carteira),
+ * e nas centrais o retrato e agora. No Juninho, membro sem pontos.
  */
-export function isExampleBesideRealData(scope: RankingScope): boolean {
-  return sourceOf(scope.kind === 'artist' ? 'artists' : 'wallet') === 'api';
+const ME_BASE = 3_280;
+const ME_CENTRALS: Partial<Record<string, Points>> = {
+  nettobrito: { base: 3_620, now: 4_120 },
+  nenho: { base: 2_640, now: 2_980 },
+};
+
+interface Row {
+  userId: string;
+  displayName: string | null;
+  city: string | null;
+  points: number;
+  isMe: boolean;
 }
 
-/** Recorte de central ao lado das centrais do servidor: o fã não entra no ranking de exemplo. */
-function leavesFanOut(scope: RankingScope): boolean {
-  return scope.kind === 'artist' && isExampleBesideRealData(scope);
+/** As posições na ordem do ranking: mais pontos na frente; no empate, quem já estava. */
+function ranked(rows: Row[]): Row[] {
+  return rows
+    .map((row, order) => ({ row, order }))
+    .sort((a, b) => b.row.points - a.row.points || a.order - b.order)
+    .map(({ row }) => row);
 }
 
-function boardSample(scope: RankingScope, wallet: FixtureWalletState): BoardSample {
-  if (scope.kind === 'global') {
-    return { others: globalOthers(), myPoints: wallet.seasonPoints, myChange: MY_GLOBAL_CHANGE };
-  }
-  const sample = FAN_CENTRALS[scope.artistId];
-  return {
-    others: centralOthers(scope.artistId),
-    myPoints: leavesFanOut(scope) ? 0 : (sample?.myPoints ?? 0),
-    myChange: sample?.myChange ?? 0,
-  };
+/** Os pontos do fã no recorte, no retrato e agora; null fora dele. */
+function myPoints(scope: RankingScope, wallet: FixtureWalletState): Points | null {
+  if (scope.kind === 'global') return { base: ME_BASE, now: wallet.seasonPoints };
+  if (!fixtureMembership.isMember(scope.artistId)) return null;
+  return ME_CENTRALS[scope.artistId] ?? null;
 }
 
-/** O ranking inteiro do recorte, em ordem de posição. Objetos novos a cada chamada. */
+/** As linhas de um momento (o retrato ou agora), só com quem tem pontos nele. */
+function rowsAt(scope: RankingScope, wallet: FixtureWalletState, moment: keyof Points): Row[] {
+  const people = RANKING_SEED.flatMap((person): Row[] => {
+    const points =
+      scope.kind === 'global'
+        ? person[moment]
+        : (person.centrals[scope.artistId as SeedCentralId]?.[moment] ?? 0);
+    return points > 0
+      ? [
+          {
+            userId: person.userId,
+            displayName: person.displayName,
+            city: person.city,
+            points,
+            isMe: false,
+          },
+        ]
+      : [];
+  });
+  const mine = myPoints(scope, wallet)?.[moment] ?? 0;
+  // O fã entra depois de quem já estava: no empate, chegou por último.
+  if (mine > 0)
+    people.push({ userId: ME_ID, displayName: null, city: null, points: mine, isMe: true });
+  return ranked(people);
+}
+
+/** O ranking inteiro do recorte, em ordem de posição, com a seta da semana. */
 function buildBoard(scope: RankingScope, wallet: FixtureWalletState): LeaderboardEntry[] {
-  const { others, myPoints, myChange } = boardSample(scope, wallet);
-  const entries: Omit<LeaderboardEntry, 'position'>[] = others.map((person) => ({
-    userId: person.userId,
-    displayName: person.displayName,
-    photoURL: null,
-    city: person.city,
-    points: person.points,
-    change: person.change,
-    isMe: false,
-  }));
-  // Sem pontos no recorte, o fã ainda não entrou no ranking.
-  if (myPoints > 0) {
-    entries.push({
-      userId: ME_ID,
-      displayName: null,
+  const before = new Map(
+    rowsAt(scope, wallet, 'base').map((row, index) => [row.userId, index + 1]),
+  );
+  return rowsAt(scope, wallet, 'now').map((row, index) => {
+    const position = index + 1;
+    const was = before.get(row.userId);
+    return {
+      position,
+      userId: row.userId,
+      displayName: row.displayName,
       photoURL: null,
-      city: null,
-      points: myPoints,
-      change: myChange,
-      isMe: true,
-    });
-  }
-  // No empate, quem já estava fica na frente.
-  return entries
-    .map((entry, order) => ({ entry, order }))
-    .sort((a, b) => b.entry.points - a.entry.points || a.order - b.order)
-    .map(({ entry }, index) => ({ ...entry, position: index + 1 }));
+      city: row.city,
+      points: row.points,
+      change: was === undefined ? 0 : was - position,
+      isMe: row.isMe,
+    } satisfies LeaderboardEntry;
+  });
 }
 
 /** Uma página do ranking do recorte; o cursor é a posição de onde ela começa. */
@@ -333,37 +338,51 @@ export function buildLeaderboardPageFixture(
   return {
     items: board.slice(start, end),
     nextCursor: end < board.length ? String(end) : null,
-    ...(isExampleBesideRealData(scope) ? { example: true } : {}),
   } satisfies LeaderboardPage;
 }
 
 /**
- * O fã no recorte: posição, pontos e a próxima meta, que é entrar no top 10
- * e, dentro dele, passar a posição de cima.
+ * O fã no recorte: posição, pontos e a próxima meta, que é entrar no top 10 e,
+ * dentro dele, passar a posição de cima, com a diferença mais 1 (o empate fica
+ * com quem chegou primeiro, decisão 11 de 23.1). Na central, o `member`, como
+ * o servidor: fora dela, sem posição e com os pontos que ele fez lá.
  */
 export function buildMyRankFixture(
   scope: RankingScope,
   wallet: FixtureWalletState = fixtureWallet.get(),
 ): MyRank {
+  const member =
+    scope.kind === 'artist' ? { member: fixtureMembership.isMember(scope.artistId) } : {};
+  if (scope.kind === 'artist' && !member.member) {
+    return {
+      position: null,
+      points: ME_CENTRALS[scope.artistId]?.now ?? 0,
+      target: null,
+      member: false,
+    } satisfies MyRank;
+  }
   const board = buildBoard(scope, wallet);
-  const example = isExampleBesideRealData(scope) ? { example: true } : {};
   const index = board.findIndex((entry) => entry.isMe);
   const me = board[index];
-  if (!me) return { position: null, points: 0, target: null, ...example } satisfies MyRank;
+  if (!me) return { position: null, points: 0, target: null, ...member } satisfies MyRank;
 
   const topEntry = board[TOP_TARGET - 1];
   const above = board[index - 1];
   const target =
     me.position > TOP_TARGET && topEntry
-      ? { kind: 'top' as const, position: TOP_TARGET, pointsLeft: topEntry.points - me.points }
+      ? {
+          kind: 'top' as const,
+          position: TOP_TARGET,
+          pointsLeft: Math.max(1, topEntry.points - me.points + 1),
+        }
       : above
         ? {
             kind: 'position' as const,
             position: above.position,
-            pointsLeft: above.points - me.points,
+            pointsLeft: Math.max(1, above.points - me.points + 1),
           }
         : null;
-  return { position: me.position, points: me.points, target, ...example } satisfies MyRank;
+  return { position: me.position, points: me.points, target, ...member } satisfies MyRank;
 }
 
 /** A temporada de São João, em andamento: encerra em 12 dias, como a meta das missões. */

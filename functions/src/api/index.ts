@@ -12,6 +12,7 @@ import { meRoutes } from './routes/me';
 import { missionRoutes } from './routes/missions';
 import { moderationRoutes } from './routes/moderation';
 import { postRoutes } from './routes/posts';
+import { rankingRoutes } from './routes/ranking';
 import type { ApiDeps, ApiRequest, ApiResponse, ApiRoute, ResolvedDeps, RouteInput } from './types';
 
 // API HTTP do app: uma função onRequest com roteador próprio, ID token do
@@ -39,6 +40,7 @@ export const API_ROUTES: readonly ApiRoute[] = [
   ...agendaRoutes,
   ...moderationRoutes,
   ...missionRoutes,
+  ...rankingRoutes,
 ];
 
 /** Sem o segredo do convite nas dependências, só as rotas do convite falham (500). */

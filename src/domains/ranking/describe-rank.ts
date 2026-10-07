@@ -109,9 +109,11 @@ function describeTarget({ kind, position, pointsLeft }: RankTarget): MyRankStatu
 }
 
 /**
- * - recorte de exemplo ao lado de dado de verdade, sem posição: "Sem posição
- *   ainda" (o fã pode ter pontos de verdade ali; "Ganhe pontos" seria falso);
- * - temporada encerrada: "Terminou em 12º" (ou não pontuou);
+ * - temporada encerrada: "Terminou em 12º" (ou não pontuou), antes de tudo: a
+ *   temporada fechada nunca chama o fã para um resultado que já acabou,
+ *   também com um `member` velho no cache;
+ * - numa central de que o fã não é membro: "Entre na central para aparecer
+ *   no ranking" (o ranking da central é só dos membros, bloco 8);
  * - sem pontos no recorte: "Ganhe pontos para entrar no ranking";
  * - no pódio: "No pódio da temporada";
  * - fora do top: "840 pts para entrar no top 10";
@@ -119,12 +121,12 @@ function describeTarget({ kind, position, pointsLeft }: RankTarget): MyRankStatu
  */
 export function describeMyRankStatus(myRank: MyRank, seasonOver: boolean): MyRankStatus {
   const { position, target } = myRank;
-  if (position === null && myRank.example) return same(t('ranking.me.pending'));
   if (seasonOver) {
     return same(
       position === null ? t('ranking.me.finishedUnranked') : t('ranking.me.finished', { position }),
     );
   }
+  if (myRank.member === false) return same(t('ranking.me.notMember'));
   if (position === null) return same(t('ranking.me.unranked'));
   if (position <= 3) return same(t('ranking.me.podium'));
   if (!target) return same(t('ranking.me.ranked'));
@@ -133,14 +135,12 @@ export function describeMyRankStatus(myRank: MyRank, seasonOver: boolean): MyRan
 
 /**
  * O card "Você" num rótulo só: "Você, 12º lugar, 4.120 pontos. Faltam 840
- * pontos para entrar no top 10." No recorte de exemplo sem posição, os pontos
- * de verdade do fã na central, que o card mostra, também vão no rótulo.
+ * pontos para entrar no top 10." Sem posição (sem pontos, ou fora dos
+ * membros da central), só o que o card diz: "Você. Entre na central para
+ * aparecer no ranking."
  */
 export function describeMyRank(myRank: MyRank, seasonOver: boolean): string {
   const status = describeMyRankStatus(myRank, seasonOver).spoken;
-  if (myRank.position === null && myRank.example && myRank.points > 0) {
-    return t('ranking.me.labelPending', { points: formatPointsSpoken(myRank.points) });
-  }
   if (myRank.position === null) return t('ranking.me.labelUnranked', { status });
   return t('ranking.me.label', {
     position: myRank.position,

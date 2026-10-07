@@ -1,6 +1,13 @@
 import { API_ERROR_CODES, ApiError } from '@/services/api/errors';
 
-import { fixtureDelay, fixtureNow, fixtureWallet, setFixtureNow } from '..';
+import {
+  fixtureDelay,
+  fixtureMembership,
+  fixtureNow,
+  fixtureWallet,
+  resetFixtureSession,
+  setFixtureNow,
+} from '..';
 
 describe('ajudantes das fixtures', () => {
   afterEach(() => {
@@ -93,5 +100,25 @@ describe('carteira das fixtures', () => {
     const snapshot = fixtureWallet.get();
     snapshot.balance = 0;
     expect(fixtureWallet.get().balance).toBe(12_480);
+  });
+});
+
+describe('membro das centrais nas fixtures (bloco 8)', () => {
+  afterEach(() => fixtureMembership.reset());
+
+  it('começa membro das três centrais do protótipo; sair e entrar mudam; o fim da sessão volta ao início', () => {
+    expect(['nettobrito', 'nenho', 'juninhomoraes'].map(fixtureMembership.isMember)).toEqual([
+      true,
+      true,
+      true,
+    ]);
+    expect(fixtureMembership.isMember('rocksalles')).toBe(false);
+    fixtureMembership.leave('nenho');
+    fixtureMembership.join('rocksalles');
+    expect(fixtureMembership.isMember('nenho')).toBe(false);
+    expect(fixtureMembership.isMember('rocksalles')).toBe(true);
+    resetFixtureSession();
+    expect(fixtureMembership.isMember('nenho')).toBe(true);
+    expect(fixtureMembership.isMember('rocksalles')).toBe(false);
   });
 });

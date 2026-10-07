@@ -110,6 +110,12 @@ export type AwardContext = {
 export type AwardPlan = ComputeOutput & {
   now: number;
   shardIndex: number;
+  /**
+   * As centrais que o plano leu, por fã (lidas ou vazias): o `setCentralMember`
+   * (bloco 8) grava o `member` a partir delas quando nenhum lançamento mexeu
+   * na central.
+   */
+  centralsRead: Map<string, Map<string, CentralState>>;
   /** As recompensas de quem chama (22.2): vão na resposta da ação (`rewardsOf`). */
   rewards: ActionRewards;
   /**
@@ -227,6 +233,7 @@ export function walletFromDoc(data: DocumentData | undefined): WalletState {
     spentTotal: num(data.spentTotal),
     days: parseDays(data.days),
     pastSeasons: num((data.stats as Record<string, unknown> | undefined)?.pastSeasons),
+    closedSeasonId: text((data.stats as Record<string, unknown> | undefined)?.closedSeasonId),
     activity: {
       lastDay: text(activity.lastDay),
       lastWeek: text(activity.lastWeek),
@@ -249,6 +256,7 @@ export function centralFromDoc(artistId: string, data: DocumentData | undefined)
     seasonPoints: num(data.seasonPoints),
     seasonPointsAt: millis(data.seasonPointsAt),
     totalPoints: num(data.totalPoints),
+    member: data.member === true,
   };
 }
 
@@ -436,7 +444,38 @@ export async function planAwards(
     fans: inputs,
     game,
   });
-  return { ...result, now: ctx.now, shardIndex: ctx.shard, caller };
+  const centralsRead = new Map(inputs.map((input) => [input.uid, new Map(input.centrals)]));
+  return { ...result, now: ctx.now, shardIndex: ctx.shard, caller, centralsRead };
+}
+
+/**
+ * Grava o `member` de uma central do fã no plano (bloco 8, 23.7), no molde do
+ * `addDailyCount`: a central que um lançamento já mexe recebe o campo e sai
+ * numa gravação só; a que o plano só leu (`centralsRead`) ou a lida pela rota
+ * (`read`, na saída) é gravada como estava, com o `member`; sem o documento,
+ * ele nasce zerado, com a temporada ativa do plano. Mesmo valor que o lido:
+ * nada a gravar. Chame depois do planAwards e antes de o plano ser gravado.
+ */
+export function setCentralMember(
+  plan: AwardPlan,
+  uid: string,
+  artistId: string,
+  member: boolean,
+  read?: CentralState,
+): void {
+  const fan = plan.fans.find((item) => item.uid === uid);
+  if (!fan) throw new Error('O fã não está no plano.');
+  const touched = fan.centrals.find((item) => item.state.artistId === artistId);
+  if (touched) {
+    touched.state.member = member;
+    return;
+  }
+  const base = read ?? plan.centralsRead.get(uid)?.get(artistId) ?? emptyCentral(artistId);
+  if (base.exists && base.member === member) return;
+  const state: CentralState = base.exists
+    ? { ...base, member }
+    : { ...emptyCentral(artistId), seasonId: plan.activeSeasonId, member };
+  fan.centrals.push({ create: !base.exists, state: { ...state, exists: true } });
 }
 
 /**
@@ -516,15 +555,17 @@ export function applyAwards(tx: Transaction, db: Firestore, plan: AwardPlan): vo
       const ref = walletRef(db, fan.uid);
       const fields = walletFields(fan.wallet.state, now);
       if (fan.wallet.create) {
+        // As temporadas do fã só a virada soma (bloco 8, 23.3): o núcleo cria
+        // o campo zerado e nunca mais o grava.
         tx.create(ref, {
           uid: fan.uid,
           ...fields,
-          stats: { pastSeasons: fan.wallet.state.pastSeasons },
+          stats: { pastSeasons: 0, closedSeasonId: null },
           schemaVersion: 1,
           createdAt: now,
         });
       } else {
-        tx.update(ref, { ...fields, 'stats.pastSeasons': fan.wallet.state.pastSeasons });
+        tx.update(ref, fields);
       }
     }
     for (const { id, data } of fan.ledger) {
@@ -541,6 +582,7 @@ export function applyAwards(tx: Transaction, db: Firestore, plan: AwardPlan): vo
         seasonPoints: state.seasonPoints,
         seasonPointsAt: tsOrNull(state.seasonPointsAt),
         totalPoints: state.totalPoints,
+        member: state.member,
         updatedAt: now,
       };
       const ref = centralPointsRef(db, fan.uid, state.artistId);

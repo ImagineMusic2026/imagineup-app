@@ -1,14 +1,15 @@
 import { Timestamp, type Firestore } from 'firebase-admin/firestore';
 
-import { runAward, walletRef } from './award';
-import { createConfigSource, seasonConfigRef } from './config';
+import { runAward } from './award';
+import { createConfigSource, seasonConfigRef, TOP_TARGET_DEFAULT } from './config';
 import { dayKey, shiftDay, type Actor, type AwardEntry } from './model';
 
 // Carteira da Camila no seed dos emuladores (scripts/seed-emulators.mjs, que
 // carrega este build): gravada pelo mesmo award das funções, para o perfil (1e)
 // mostrar os números do servidor iguais aos do protótipo. Nunca roda em
-// produção: o script fixa o emulador. docs/arquitetura-api.md, seções 14 e
-// 22.13 (os 12 lançamentos de missão da meta da temporada, com o título).
+// produção: o script fixa o emulador. docs/arquitetura-api.md, seções 14,
+// 22.13 (os 12 lançamentos de missão da meta da temporada, com o título) e
+// 23.15 (as temporadas passadas, pela virada, e o retrato no meio).
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -33,10 +34,19 @@ export const CAMILA_SEED = {
   seasonPoints: 4_120,
   centrals: { nettobrito: 4_120, nenho: 2_980 },
   weekEarned: 840,
-  pastSeasons: 2,
 } as const;
 
 type Step = { daysAgo: number; entries: AwardEntry[] };
+
+/**
+ * Que parte da carteira lançar (23.15): `early`, de 8 dias atrás para trás
+ * (as missões antigas e a base, antes do retrato da semana); `week`, de 6 a 1
+ * dia atrás (os +840); `all`, tudo (os testes que chamam sozinho).
+ */
+export type CamilaSteps = 'early' | 'week' | 'all';
+
+/** O último dia da parte `early` (a base, 8 dias atrás). */
+const EARLY_UNTIL_DAYS_AGO = 8;
 
 /**
  * Títulos que o extrato mostra (`subjectTitle`). São desafios antigos, já
@@ -126,7 +136,11 @@ async function ensureSeedSeason(db: Firestore, now: number): Promise<void> {
         startsAt: Timestamp.fromMillis(now - SEED_SEASON.startedDaysAgo * DAY_MS),
         endsAt: Timestamp.fromMillis(now + SEED_SEASON.endsInDays * DAY_MS),
         leaderTitle: null,
+        topTarget: TOP_TARGET_DEFAULT,
+        endedEarly: null,
       },
+      next: null,
+      lastClosed: null,
       updatedAt: Timestamp.fromMillis(now),
       updatedBy: null,
     };
@@ -140,28 +154,29 @@ async function ensureSeedSeason(db: Firestore, now: number): Promise<void> {
  * atividade), com o jogo da configuração (bloco 7): a primeira missão dá o
  * "Missão cumprida" e a base, que leva o XP de 400 a 11.640 (nível 7), dá o
  * "Pé de serra", o "Sanfona" e o "Purainha". Rodar de novo não muda nada: os
- * lançamentos voltam duplicate e nada é gravado. `stats.pastSeasons` ainda
- * não tem caminho de servidor (temporadas passadas são do bloco 8): vai
- * direto, 2 (a 1e mostra 3).
+ * lançamentos voltam duplicate e nada é gravado. As temporadas passadas dela
+ * (a 1e mostra 3) saem da virada das temporadas passadas do seed (bloco 8,
+ * 23.15), e não mais de um `stats.pastSeasons` gravado direto: sozinho, o
+ * seed dela dá 1 temporada. Com as temporadas passadas, o config/season já
+ * existe e o `ensureSeedSeason` não grava nada.
  */
 export async function seedCamilaWallet(
   db: Firestore,
   uid: string,
-  options: { now?: number } = {},
+  options: { now?: number; steps?: CamilaSteps } = {},
 ): Promise<void> {
   const now = options.now ?? Date.now();
+  const steps = options.steps ?? 'all';
   await ensureSeedSeason(db, now);
   const { points, game } = await createConfigSource(db, { ttlMs: 0 }).get();
   for (const step of STEPS) {
+    const early = step.daysAgo >= EARLY_UNTIL_DAYS_AGO;
+    if ((steps === 'early' && !early) || (steps === 'week' && early)) continue;
     await runAward(db, uid, step.entries, {
       now: noonDaysAgo(now, step.daysAgo),
       config: points,
       actor: SEED_ACTOR,
       game,
     });
-  }
-  const wallet = await walletRef(db, uid).get();
-  if (wallet.get('stats.pastSeasons') !== CAMILA_SEED.pastSeasons) {
-    await wallet.ref.update({ 'stats.pastSeasons': CAMILA_SEED.pastSeasons });
   }
 }

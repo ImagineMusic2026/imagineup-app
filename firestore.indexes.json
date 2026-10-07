@@ -94,6 +94,64 @@
         { "fieldPath": "eventId", "order": "ASCENDING" },
         { "fieldPath": "going", "order": "ASCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "wallets",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "seasonId", "order": "ASCENDING" },
+        { "fieldPath": "seasonPoints", "order": "DESCENDING" },
+        { "fieldPath": "seasonPointsAt", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "wallets",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "seasonId", "order": "ASCENDING" },
+        { "fieldPath": "seasonPoints", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "wallets",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "seasonId", "order": "ASCENDING" },
+        { "fieldPath": "seasonPoints", "order": "ASCENDING" },
+        { "fieldPath": "seasonPointsAt", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "centralPoints",
+      "queryScope": "COLLECTION_GROUP",
+      "fields": [
+        { "fieldPath": "artistId", "order": "ASCENDING" },
+        { "fieldPath": "member", "order": "ASCENDING" },
+        { "fieldPath": "seasonId", "order": "ASCENDING" },
+        { "fieldPath": "seasonPoints", "order": "DESCENDING" },
+        { "fieldPath": "seasonPointsAt", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "centralPoints",
+      "queryScope": "COLLECTION_GROUP",
+      "fields": [
+        { "fieldPath": "artistId", "order": "ASCENDING" },
+        { "fieldPath": "member", "order": "ASCENDING" },
+        { "fieldPath": "seasonId", "order": "ASCENDING" },
+        { "fieldPath": "seasonPoints", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "centralPoints",
+      "queryScope": "COLLECTION_GROUP",
+      "fields": [
+        { "fieldPath": "artistId", "order": "ASCENDING" },
+        { "fieldPath": "member", "order": "ASCENDING" },
+        { "fieldPath": "seasonId", "order": "ASCENDING" },
+        { "fieldPath": "seasonPoints", "order": "ASCENDING" },
+        { "fieldPath": "seasonPointsAt", "order": "ASCENDING" }
+      ]
     }
   ],
   "fieldOverrides": [
@@ -145,6 +203,15 @@
     { "collectionGroup": "postComments", "fieldPath": "text", "indexes": [] },
     { "collectionGroup": "moderationQueue", "fieldPath": "commentText", "indexes": [] },
     { "collectionGroup": "moderationQueue", "fieldPath": "reasons", "indexes": [] },
-    { "collectionGroup": "events", "fieldPath": "photo", "indexes": [] }
+    { "collectionGroup": "events", "fieldPath": "photo", "indexes": [] },
+    { "collectionGroup": "wallets", "fieldPath": "rankWeek", "indexes": [] },
+    { "collectionGroup": "wallets", "fieldPath": "stats", "indexes": [] },
+    { "collectionGroup": "centralPoints", "fieldPath": "rankWeek", "indexes": [] },
+    { "collectionGroup": "centralPoints", "fieldPath": "updatedAt", "indexes": [] },
+    { "collectionGroup": "centralPoints", "fieldPath": "seasonPointsAt", "indexes": [] },
+    { "collectionGroup": "seasons", "fieldPath": "centrals", "indexes": [] },
+    { "collectionGroup": "standings", "fieldPath": "displayName", "indexes": [] },
+    { "collectionGroup": "standings", "fieldPath": "photoURL", "indexes": [] },
+    { "collectionGroup": "standings", "fieldPath": "city", "indexes": [] }
   ]
 }

@@ -19,7 +19,7 @@ import { profileKeys, useFanIdentity } from '@/domains/profile';
 // O "+N" das recompensas e o festejo das ações pelos arquivos, fora do index.
 import { rewardsToast } from '@/domains/profile/action-rewards';
 import { noteActionCelebrated } from '@/domains/profile/level-celebrated';
-import { rankingKeys } from '@/domains/ranking';
+import { refreshRanking } from '@/domains/ranking';
 import { t } from '@/i18n';
 import { ApiError } from '@/services/api/errors';
 import { haptics, type HapticEvent } from '@/services/haptics';
@@ -134,7 +134,7 @@ function refreshAfterPoints(client: QueryClient, result: PointsAward): void {
   }
   if (result.pointsAwarded <= 0) return;
   void client.invalidateQueries({ queryKey: profileKeys.wallet() });
-  void client.invalidateQueries({ queryKey: rankingKeys.all });
+  refreshRanking(client);
   void client.invalidateQueries({ queryKey: artistKeys.centrals() });
   void client.invalidateQueries({ queryKey: artistKeys.details() });
 }

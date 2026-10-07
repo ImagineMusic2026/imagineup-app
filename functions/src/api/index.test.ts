@@ -687,10 +687,10 @@ describe('missões e conquistas (bloco 7)', () => {
     expect(daily).toMatchObject({ status: 200, body: { mission: null } });
   });
 
-  it('as conquistas do fã novo: 0 de 9, com a de nível seguinte primeiro', async () => {
+  it('as conquistas do fã novo: 0 de 10 (o Top 20 no ar, bloco 8), com a de nível seguinte primeiro', async () => {
     const sent = await call(request('GET', '/me/achievements'));
     expect(sent.status).toBe(200);
-    expect(sent.body).toMatchObject({ unlockedCount: 0, totalCount: 9 });
+    expect(sent.body).toMatchObject({ unlockedCount: 0, totalCount: 10 });
     expect(
       (sent.body as { highlights: { id: string }[] }).highlights.map((item) => item.id),
     ).toEqual(['pe-de-serra', 'boca-a-boca', 'fa-de-show', 'missao-cumprida']);
@@ -701,5 +701,54 @@ describe('missões e conquistas (bloco 7)', () => {
       request('GET', '/missions', { headers: { Authorization: 'Bearer token-sem-email' } }),
     );
     expect(sent.status).toBe(200);
+  });
+});
+
+describe('ranking (bloco 8)', () => {
+  it('cursor fora do formato: 400 com o campo; central fora do formato: 404 sem ler nada', async () => {
+    const reads = vi.fn();
+    const watchingDb = new Proxy(emptyDb, {
+      get(target, prop, receiver) {
+        reads(prop);
+        return Reflect.get(target, prop, receiver);
+      },
+    });
+    const handler = createApiHandler({
+      db: watchingDb,
+      auth,
+      now: () => NOW,
+      random: () => 0,
+      config: staticConfigSource(),
+    });
+    for (const cursor of [
+      'não é cursor',
+      Buffer.from('[0,1,"uid",1]').toString('base64url'),
+      Buffer.from('[10,1,"uid/x",1]').toString('base64url'),
+      Buffer.from('[10,1,"uid",0]').toString('base64url'),
+    ]) {
+      const { res, sent } = response();
+      await handler(request('GET', '/ranking', { query: { cursor } }), res);
+      expect(sent.status).toBe(400);
+      expect(sent.body).toMatchObject({ code: 'invalid_request', details: { field: 'cursor' } });
+    }
+    for (const path of ['/ranking', '/me/rank']) {
+      for (const artistId of ['Netto', '__nenho__', 'a']) {
+        const { res, sent } = response();
+        await handler(request('GET', path, { query: { artistId } }), res);
+        expect(sent.status).toBe(404);
+        expect(sent.body).toMatchObject({ code: 'artist_not_found' });
+      }
+    }
+    expect(reads).not.toHaveBeenCalled();
+  });
+
+  it('sem temporada: a temporada é null, o ranking vazio e o fã sem posição', async () => {
+    expect((await call(request('GET', '/ranking/season'))).body).toEqual({ season: null });
+    expect((await call(request('GET', '/ranking'))).body).toEqual({ items: [], nextCursor: null });
+    expect((await call(request('GET', '/me/rank'))).body).toEqual({
+      position: null,
+      points: 0,
+      target: null,
+    });
   });
 });

@@ -197,4 +197,10 @@ describe('centrais do fã', () => {
       'Netto Brito, ainda sem posição, entre 2 fãs, 4.120 pontos na temporada.',
     );
   });
+
+  it('com posição e 1 fã, o singular: "#1 entre 1 fã" (bloco 8)', () => {
+    const only: FanCentral = { ...NETTO, fanCount: 1, fanRank: 1, seasonPoints: 4_120 };
+    expect(centralMeta(only)).toBe('#1 entre 1 fã');
+    expect(centralLabel(only)).toBe('Netto Brito, 1º lugar entre 1 fã, 4.120 pontos na temporada.');
+  });
 });

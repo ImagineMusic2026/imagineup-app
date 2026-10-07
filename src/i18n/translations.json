@@ -188,7 +188,7 @@
     },
     "leave": {
       "title": "Sair da central?",
-      "body": "A central sai de Suas centrais. Os pontos que você ganhou nela continuam com você, e entrar de novo não rende os pontos de entrada outra vez. Os posts desta central saem do seu mural.",
+      "body": "A central sai de Suas centrais, e você sai do ranking dela. Os pontos que você ganhou nela continuam com você e voltam a contar se você entrar de novo, mas a entrada não rende pontos outra vez. Os posts desta central saem do seu mural.",
       "confirm": "Sair da central",
       "cancel": "Continuar na central",
       "left": "Você saiu da central.",
@@ -238,6 +238,7 @@
     "ranking": {
       "loading": "Carregando o ranking da central",
       "empty": "Ninguém pontuou nesta central ainda.",
+      "emptyEnded": "Ninguém pontuou nesta central na temporada.",
       "loadError": "Não deu para carregar o ranking da central.",
       "moreError": "Não deu para carregar mais posições."
     }
@@ -338,8 +339,8 @@
     "loaded": "Ranking carregado.",
     "moreLoaded": "Mais posições carregadas.",
     "empty": "Ninguém pontuou ainda nesta temporada.",
+    "emptyEnded": "Ninguém pontuou nesta temporada.",
     "emptyNoSeason": "O ranking volta com a próxima temporada.",
-    "exampleNotice": "Ranking de exemplo: as posições de verdade chegam com o ranking do servidor.",
     "seeMissions": "Ver missões",
     "fallbackName": "Fã",
     "you": "Você",
@@ -375,7 +376,7 @@
       "toPositionOne": "1 pt para o {{position}}º lugar",
       "podium": "No pódio da temporada",
       "unranked": "Ganhe pontos para entrar no ranking",
-      "pending": "Sem posição ainda",
+      "notMember": "Entre na central para aparecer no ranking",
       "ranked": "Sua posição nesta temporada",
       "finished": "Terminou em {{position}}º",
       "finishedUnranked": "Não pontuou nesta temporada",
@@ -386,7 +387,6 @@
       "podiumHint": "Mostra o pódio",
       "label": "Você, {{position}}º lugar, {{points}}. {{status}}.",
       "labelUnranked": "Você. {{status}}.",
-      "labelPending": "Você, sem posição ainda, {{points}}.",
       "spoken": {
         "toTop": "Faltam {{points}} para entrar no top {{top}}",
         "toTopOne": "Falta 1 ponto para entrar no top {{top}}",
@@ -628,9 +628,11 @@
     "centrals": {
       "title": "Suas centrais",
       "meta": "#{{rank}} entre {{fans}} fãs",
+      "metaOne": "#{{rank}} entre 1 fã",
       "metaUnranked": "Sem posição ainda · {{fans}} fãs",
       "metaUnrankedOne": "Sem posição ainda · 1 fã",
       "label": "{{name}}, {{rank}}º lugar entre {{fans}} fãs, {{points}} na temporada.",
+      "labelOne": "{{name}}, {{rank}}º lugar entre 1 fã, {{points}} na temporada.",
       "labelUnranked": "{{name}}, ainda sem posição, entre {{fans}} fãs.",
       "labelUnrankedOne": "{{name}}, ainda sem posição, 1 fã.",
       "labelUnrankedPoints": "{{name}}, ainda sem posição, entre {{fans}} fãs, {{points}} na temporada.",

@@ -1,4 +1,10 @@
-import type { DocumentSnapshot, Firestore } from 'firebase-admin/firestore';
+import {
+  Timestamp,
+  type DocumentData,
+  type DocumentSnapshot,
+  type Firestore,
+  type Transaction,
+} from 'firebase-admin/firestore';
 import * as logger from 'firebase-functions/logger';
 
 import {
@@ -28,6 +34,7 @@ import {
   VALUE_SOURCES,
   type DailyActionKey,
   type EarnSource,
+  type EndedEarly,
   type GameConfig,
   type Level,
   type PointsConfig,
@@ -110,9 +117,33 @@ export const LABEL_MAX = 40;
 export const SEASON_ID_PATTERN = /^[a-z0-9-]{3,40}$/;
 export const SEASON_MAX_DAYS = 366;
 
-export type SeasonConfig = { version: number; season: SeasonInfo | null };
+/** O "top N" do card "Você" sem o campo na temporada (bloco 8, decisão 11 de 23.1). */
+export const TOP_TARGET_DEFAULT = 10;
+/** Fora do top, o `/me/rank` lê as N primeiras linhas a cada busca: até 50. */
+export const TOP_TARGET_MAX = 50;
 
-export const DEFAULT_SEASON_CONFIG: SeasonConfig = { version: 0, season: null };
+/** A última temporada fechada pela virada (bloco 8), com o instante do fechamento. */
+export type ClosedSeason = SeasonInfo & { closedAt: number };
+
+/**
+ * config/season (seção 4 e, no bloco 8, 23.3): a temporada atual (em
+ * andamento, encerrada esperando a virada ou agendada, depois de uma virada
+ * que promoveu a próxima), a próxima, cadastrada pelo painel, e a última
+ * fechada pela virada. O lançamento usa só a `season` (seção 8).
+ */
+export type SeasonConfig = {
+  version: number;
+  season: SeasonInfo | null;
+  next: SeasonInfo | null;
+  lastClosed: ClosedSeason | null;
+};
+
+export const DEFAULT_SEASON_CONFIG: SeasonConfig = {
+  version: 0,
+  season: null,
+  next: null,
+  lastClosed: null,
+};
 
 export type ConfigLog = {
   warn: (message: string, data?: Record<string, unknown>) => void;
@@ -271,16 +302,26 @@ export function validSeason(season: {
   );
 }
 
-/** Leitura de config/season. Temporada inválida vira null (sem temporada), com erro no log. */
-export function parseSeasonConfig(data: unknown, log: ConfigLog = defaultLog): SeasonConfig {
-  if (data === undefined || data === null) return { ...DEFAULT_SEASON_CONFIG };
-  if (!isRecord(data)) {
-    log.error('config/season fora do formato: sem temporada.');
-    return { ...DEFAULT_SEASON_CONFIG };
-  }
-  const version = versionOf(data.version) ?? 0;
-  if (data.season === null || data.season === undefined) return { version, season: null };
-  const raw = isRecord(data.season) ? data.season : {};
+const validTopTarget = (value: unknown): value is number =>
+  isInt(value) && value >= 1 && value <= TOP_TARGET_MAX;
+
+/** `endedEarly` lido; fora do formato vale null. */
+function parseEndedEarly(value: unknown): EndedEarly | null {
+  if (!isRecord(value)) return null;
+  const plannedEndsAt = millisOf(value.plannedEndsAt);
+  const at = millisOf(value.at);
+  const by = isRecord(value.by) ? value.by : null;
+  if (plannedEndsAt === null || at === null || !by) return null;
+  if (typeof by.uid !== 'string' || typeof by.name !== 'string') return null;
+  return { plannedEndsAt, at, by: { uid: by.uid, name: by.name } };
+}
+
+/**
+ * Uma temporada de config/season (`season`, `next` ou `lastClosed`), ou null
+ * quando está fora do formato. `topTarget` ausente ou inválido vale 10, e
+ * `endedEarly` inválido vale null, sem derrubar a temporada (bloco 8, 23.3).
+ */
+function parseSeasonDef(raw: Record<string, unknown>): SeasonInfo | null {
   const season = {
     id: raw.id,
     name: raw.name,
@@ -288,20 +329,110 @@ export function parseSeasonConfig(data: unknown, log: ConfigLog = defaultLog): S
     endsAt: millisOf(raw.endsAt),
     leaderTitle: raw.leaderTitle ?? null,
   };
-  if (!validSeason(season)) {
-    log.error('config/season.season inválida: sem temporada.', { id: raw.id });
-    return { version, season: null };
-  }
+  if (!validSeason(season)) return null;
   return {
-    version,
-    season: {
-      id: season.id as string,
-      name: season.name as string,
-      startsAt: season.startsAt!,
-      endsAt: season.endsAt!,
-      leaderTitle: season.leaderTitle as string | null,
-    },
+    id: season.id as string,
+    name: season.name as string,
+    startsAt: season.startsAt!,
+    endsAt: season.endsAt!,
+    leaderTitle: season.leaderTitle as string | null,
+    topTarget: validTopTarget(raw.topTarget) ? raw.topTarget : TOP_TARGET_DEFAULT,
+    endedEarly: parseEndedEarly(raw.endedEarly),
   };
+}
+
+/**
+ * Leitura de config/season. Temporada inválida vira null (sem temporada), com
+ * erro no log; a próxima e a última fechada fora do formato também viram null,
+ * sem derrubar a atual (bloco 8, 23.3).
+ */
+export function parseSeasonConfig(data: unknown, log: ConfigLog = defaultLog): SeasonConfig {
+  if (data === undefined || data === null) return { ...DEFAULT_SEASON_CONFIG };
+  if (!isRecord(data)) {
+    log.error('config/season fora do formato: sem temporada.');
+    return { ...DEFAULT_SEASON_CONFIG };
+  }
+  const version = versionOf(data.version) ?? 0;
+  const config: SeasonConfig = { version, season: null, next: null, lastClosed: null };
+  if (data.season !== null && data.season !== undefined) {
+    const raw = isRecord(data.season) ? data.season : {};
+    config.season = parseSeasonDef(raw);
+    if (!config.season) log.error('config/season.season inválida: sem temporada.', { id: raw.id });
+  }
+  if (data.next !== null && data.next !== undefined) {
+    const raw = isRecord(data.next) ? data.next : {};
+    config.next = parseSeasonDef(raw);
+    if (!config.next) log.error('config/season.next inválida: sem próxima.', { id: raw.id });
+  }
+  if (data.lastClosed !== null && data.lastClosed !== undefined) {
+    const raw = isRecord(data.lastClosed) ? data.lastClosed : {};
+    const season = parseSeasonDef(raw);
+    const closedAt = millisOf(raw.closedAt);
+    config.lastClosed = season && closedAt !== null ? { ...season, closedAt } : null;
+    if (!config.lastClosed) {
+      log.error('config/season.lastClosed inválida: sem a última fechada.', { id: raw.id });
+    }
+  }
+  return config;
+}
+
+/** Uma temporada como fica em config/season (datas em Timestamp). */
+export function seasonDefDoc(season: SeasonInfo | null): DocumentData | null {
+  if (!season) return null;
+  return {
+    id: season.id,
+    name: season.name,
+    startsAt: Timestamp.fromMillis(season.startsAt),
+    endsAt: Timestamp.fromMillis(season.endsAt),
+    leaderTitle: season.leaderTitle,
+    topTarget: season.topTarget,
+    endedEarly: season.endedEarly
+      ? {
+          plannedEndsAt: Timestamp.fromMillis(season.endedEarly.plannedEndsAt),
+          at: Timestamp.fromMillis(season.endedEarly.at),
+          by: { ...season.endedEarly.by },
+        }
+      : null,
+  };
+}
+
+/**
+ * Os três campos de config/season, sempre juntos: as callables e a virada
+ * gravam o documento inteiro (`tx.set` sem merge), e um campo esquecido
+ * apagaria a próxima ou a última fechada (23.3).
+ */
+export function seasonConfigFields(config: Omit<SeasonConfig, 'version'>): DocumentData {
+  const lastClosed = seasonDefDoc(config.lastClosed);
+  return {
+    season: seasonDefDoc(config.season),
+    next: seasonDefDoc(config.next),
+    lastClosed:
+      lastClosed && config.lastClosed
+        ? { ...lastClosed, closedAt: Timestamp.fromMillis(config.lastClosed.closedAt) }
+        : null,
+  };
+}
+
+/**
+ * Grava config/season inteiro com a versão dada e a cópia em `versions/{n}`,
+ * como o `runConfigChange` das callables: a virada (sem quem fez, `updatedBy:
+ * null`) e o seed das temporadas passadas usam (bloco 8, 23.6).
+ */
+export function writeSeasonConfig(
+  tx: Transaction,
+  db: Firestore,
+  config: SeasonConfig,
+  options: { now: number; updatedBy: { uid: string; name: string } | null },
+): void {
+  const ref = seasonConfigRef(db);
+  const doc = {
+    ...seasonConfigFields(config),
+    version: config.version,
+    updatedAt: Timestamp.fromMillis(options.now),
+    updatedBy: options.updatedBy,
+  };
+  tx.set(ref, doc);
+  tx.set(ref.collection('versions').doc(String(config.version)), doc);
 }
 
 export type PointsConfigInput = {
@@ -372,11 +503,17 @@ export type SeasonInput = {
   startsAt: number;
   endsAt: number;
   leaderTitle: string | null;
+  /** Opcional no pedido: sem ele, o da temporada de agora (mesmo id) ou 10 (bloco 8). */
+  topTarget?: number;
 };
 
-/** Validação estrita da temporada pedida pelo painel (bloco 8). Datas em ms. */
-export function validateSeasonInput(input: unknown): SeasonInput {
-  if (!isRecord(input)) throw new ConfigValidationError('season');
+/**
+ * Validação estrita da temporada pedida pelo painel (`updateSeason` e, no
+ * bloco 8, `scheduleNextSeason`, com o campo `next`). Datas em ms; o
+ * `topTarget` opcional, inteiro de 1 a 50.
+ */
+export function validateSeasonInput(input: unknown, field = 'season'): SeasonInput {
+  if (!isRecord(input)) throw new ConfigValidationError(field);
   const season = {
     id: input.id,
     name: input.name,
@@ -385,14 +522,20 @@ export function validateSeasonInput(input: unknown): SeasonInput {
     leaderTitle: input.leaderTitle ?? null,
   };
   if (typeof season.id !== 'string' || !SEASON_ID_PATTERN.test(season.id)) {
-    throw new ConfigValidationError('season.id');
+    throw new ConfigValidationError(`${field}.id`);
   }
-  if (!validLabel(season.name)) throw new ConfigValidationError('season.name');
+  if (!validLabel(season.name)) throw new ConfigValidationError(`${field}.name`);
   if (season.leaderTitle !== null && !validLabel(season.leaderTitle)) {
-    throw new ConfigValidationError('season.leaderTitle');
+    throw new ConfigValidationError(`${field}.leaderTitle`);
   }
-  if (!validSeason(season)) throw new ConfigValidationError('season.endsAt');
-  return season as SeasonInput;
+  if (input.topTarget !== undefined && !validTopTarget(input.topTarget)) {
+    throw new ConfigValidationError(`${field}.topTarget`);
+  }
+  if (!validSeason(season)) throw new ConfigValidationError(`${field}.endsAt`);
+  return {
+    ...(season as Omit<SeasonInput, 'topTarget'>),
+    ...(input.topTarget !== undefined ? { topTarget: input.topTarget as number } : {}),
+  };
 }
 
 /**

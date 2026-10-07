@@ -1,5 +1,6 @@
 import { FieldPath, Timestamp, type Firestore } from 'firebase-admin/firestore';
 
+import { shownPoints, shownSeason } from '../ranking/model';
 import { walletFromDoc, walletRef } from './award';
 import type { LoadedConfig } from './config';
 import {
@@ -51,20 +52,24 @@ export async function readWallet(db: Firestore, uid: string): Promise<WalletStat
 }
 
 /**
- * Os pontos da temporada da configuração. Pontos guardados de outra temporada
- * (a carteira ainda não trocou) mostram 0; temporada que já acabou e continua
- * na configuração mostra os pontos dela, congelados.
+ * Os pontos da temporada mostrada (bloco 8, decisão 4 de 23.1): a que já
+ * começou na configuração ou, antes de a próxima começar, a última fechada.
+ * Pontos guardados de outra temporada (a carteira ainda não trocou) mostram
+ * 0; temporada que já acabou mostra os pontos dela, congelados.
  */
-export function visibleSeasonPoints(wallet: WalletState, config: LoadedConfig): number {
-  const season = config.season.season;
-  return season && wallet.seasonId === season.id ? wallet.seasonPoints : 0;
+export function visibleSeasonPoints(
+  wallet: WalletState,
+  config: LoadedConfig,
+  now: number,
+): number {
+  return shownPoints(wallet, shownSeason(config.season, now));
 }
 
-export function walletView(wallet: WalletState, config: LoadedConfig): WalletView {
+export function walletView(wallet: WalletState, config: LoadedConfig, now: number): WalletView {
   return {
     balance: wallet.balance,
     xp: wallet.xp,
-    seasonPoints: visibleSeasonPoints(wallet, config),
+    seasonPoints: visibleSeasonPoints(wallet, config, now),
   };
 }
 

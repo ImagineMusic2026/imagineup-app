@@ -164,7 +164,9 @@ describe('a função api no emulador', () => {
       level: { number: 7, name: 'Purainha', minXp: 7_000 },
       nextLevel: { number: 8, name: 'Xodó', minXp: 15_000 },
       weekEarned: 840,
-      stats: { linksCreated: 0, peopleBrought: 0, seasons: 3 },
+      // Sozinho, o seed da Camila dá a temporada de agora; as 3 da 1e vêm das
+      // temporadas passadas do seed inteiro, fechadas pela virada (bloco 8).
+      stats: { linksCreated: 0, peopleBrought: 0, seasons: 1 },
     });
 
     // De 2 em 2 até o fim. Os três ajustes do seed têm o mesmo createdAt, e a
@@ -665,7 +667,7 @@ describe('award pela API', () => {
     expect((await read(`wallets/${fan.uid}`))?.balance).toBe(6);
   });
 
-  it('a temporada trocada em config/season vale no lançamento seguinte, sem esperar o cache, e não volta', async () => {
+  it('a temporada trocada em config/season vale no lançamento seguinte, sem esperar o cache, e não volta; a troca não soma temporada (bloco 8)', async () => {
     await seasonDoc(SEASON_A);
     const fan = await signUpFan();
     // Duas instâncias com o cache de 60 s: a segunda leu a configuração antes da troca.
@@ -676,17 +678,18 @@ describe('award pela API', () => {
 
     await seasonDoc({ ...SEASON_A, id: 'temporada-de-verao' });
     await first('POST', '/teste/comentarios/c2', { token: fan.token, key: 'temporada-2' });
+    // Só a virada soma as temporadas do fã (23.7): a troca preguiçosa zera e não conta.
     expect(await read(`wallets/${fan.uid}`)).toMatchObject({
       seasonId: 'temporada-de-verao',
       seasonPoints: 2,
-      stats: { pastSeasons: 1 },
+      stats: { pastSeasons: 0 },
     });
 
     await stale('POST', '/teste/comentarios/c3', { token: fan.token, key: 'temporada-3' });
     expect(await read(`wallets/${fan.uid}`)).toMatchObject({
       seasonId: 'temporada-de-verao',
       seasonPoints: 4,
-      stats: { pastSeasons: 1 },
+      stats: { pastSeasons: 0 },
     });
   });
 
@@ -869,7 +872,8 @@ describe('seed da Camila', () => {
       // Os +840 da semana e as 8 missões de 50 de antes dela (22.13).
       earnedTotal: 1_240,
       seasonMissions: 12,
-      stats: { pastSeasons: 2 },
+      // As temporadas passadas vêm da virada no seed inteiro (23.15), não daqui.
+      stats: { pastSeasons: 0, closedSeasonId: null },
     });
     expect(await read(`wallets/${camila.uid}/centralPoints/nettobrito`)).toMatchObject({
       seasonPoints: 4_120,
@@ -885,7 +889,7 @@ describe('seed da Camila', () => {
     const progress = await localApi({ config: createConfigSource(db) })('GET', '/me/progress', {
       token: camila.token,
     });
-    expect(progress.body).toMatchObject({ xp: 12_480, weekEarned: 840, stats: { seasons: 3 } });
+    expect(progress.body).toMatchObject({ xp: 12_480, weekEarned: 840, stats: { seasons: 1 } });
 
     await seedCamilaWallet(db, camila.uid, { now: NOW });
     const again = await db.doc(`wallets/${camila.uid}`).get();
