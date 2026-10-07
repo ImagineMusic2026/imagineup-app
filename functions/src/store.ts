@@ -6,6 +6,7 @@ import { purgeFanPhotos } from './fan-profile/service';
 import { detachReferrals, referralRef, removeInviteData } from './invites/service';
 import { dayKey } from './points/model';
 import { removeFanEngagement } from './posts/service';
+import { cancelFanRedemptions } from './rewards/service';
 import { emptyShardDelta, pickShard, shardRef, shardWrite } from './points/stats';
 import {
   profileDisplayName,
@@ -147,7 +148,11 @@ export async function removeSeasonStandings(db: Firestore, uid: string): Promise
  * (removeSeasonStandings), depois da carteira: uma página da virada que
  * entrou antes deixa a linha, que este passo apaga, e as que vêm depois já
  * não acham a carteira nem o `centralPoints` (23.13). Desde o bloco 9, a pasta
- * da foto no Storage (`fans/{uid}/`, com `files`), no fim (24.11). Pode rodar
+ * da foto no Storage (`fans/{uid}/`, com `files`), no fim (24.11). Desde o
+ * bloco 10, os pedidos da loja (cancelFanRedemptions, 25.11), depois do
+ * engajamento do mural e antes do recursiveDelete: os solicitados e aprovados
+ * viram `canceled`, com a vaga de volta e sem devolver pontos, e todo pedido
+ * do fã perde o uid, a cópia do nome e do @ e o motivo da recusa. Pode rodar
  * mais de uma vez. Dado novo do fã fora de users/{uid} precisa entrar aqui.
  *
  * A ordem importa: toda gravação da API lê users/{uid} na transação
@@ -194,6 +199,7 @@ export async function deleteUserData(
   await removeInviteData(db, uid);
   await leaveAllCentrals(db, uid);
   await removeFanEngagement(db, uid);
+  await cancelFanRedemptions(db, uid);
   await db.recursiveDelete(profile);
   await referralRef(db, uid).delete();
   await detachReferrals(db, uid);

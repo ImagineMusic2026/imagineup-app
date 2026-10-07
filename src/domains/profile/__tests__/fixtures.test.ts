@@ -1,10 +1,12 @@
 import { fixtureWallet } from '@/services/fixtures';
 
 import {
+  buildLedgerPageFixture,
   buildMyAchievementsFixture,
   buildMyProgressFixture,
   buildWalletFixture,
   FIXTURE_LEVELS,
+  LEDGER_PAGE_SIZE,
   levelForXp,
 } from '../fixtures';
 
@@ -98,5 +100,47 @@ describe('conquistas de exemplo', () => {
       if (unlockedAt) expect(new Date(unlockedAt).getTime()).toBeLessThan(NOW.getTime());
     }
     expect(highlights[0]?.unlockedAt).toBe(new Date(2026, 8, 27, 20, 0).toISOString());
+  });
+});
+
+describe('extrato de exemplo, igual ao seed da Camila', () => {
+  const all = () => {
+    const first = buildLedgerPageFixture(NOW, null);
+    const second = buildLedgerPageFixture(NOW, first.nextCursor);
+    return { first, second, items: [...first.items, ...second.items] };
+  };
+
+  it('os 23 lançamentos em duas páginas de 20, do mais novo ao mais antigo', () => {
+    const { first, second, items } = all();
+    expect(first.items).toHaveLength(LEDGER_PAGE_SIZE);
+    expect(second.items).toHaveLength(3);
+    expect(second.nextCursor).toBeNull();
+    expect(items).toHaveLength(23);
+    const times = items.map((item) => Date.parse(item.createdAt));
+    expect([...times].sort((a, b) => b - a)).toEqual(times);
+  });
+
+  it('os 6 da loja (bloco 10, 25.13): só o saldo, às 18 h, com a recompensa no título', () => {
+    const shop = all().items.filter(
+      (item) =>
+        item.source === 'redeem' ||
+        item.source === 'redeem_refund' ||
+        item.id === 'seed:camila-loja',
+    );
+    expect(shop.map((item) => [item.id, item.kind, item.points, item.subjectTitle])).toEqual([
+      ['redeem:UP-C3NWPB', 'spend', -15_000, 'Camisa oficial'],
+      ['redeem:UP-7QXH2R', 'spend', -3_000, 'Passagem de som'],
+      ['redeem_refund:UP-9FJT6V', 'refund', 8_500, 'Videochamada'],
+      ['redeem:UP-9FJT6V', 'spend', -8_500, 'Videochamada'],
+      ['redeem:UP-4KD9TM', 'spend', -6_000, 'Par de ingressos'],
+      ['seed:camila-loja', 'adjust', 24_000, null],
+    ]);
+    for (const item of shop) {
+      expect(item).toMatchObject({ xpDelta: 0, seasonDelta: 0, artistId: null });
+      expect(new Date(item.createdAt).getHours()).toBe(18);
+    }
+    expect(shop[0]!.subject).toEqual({ type: 'reward', id: 'camisa' });
+    // O que a loja gasta e devolve fecha com o ajuste: o saldo fica o do protótipo.
+    expect(shop.reduce((sum, item) => sum + item.points, 0)).toBe(0);
   });
 });

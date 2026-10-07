@@ -33,12 +33,19 @@ export const RSVPS_PER_DAY = 50;
 export const REPORTS_PER_DAY = 30;
 /** Bloqueios por dia. */
 export const BLOCKS_PER_DAY = 30;
+/**
+ * Resgates da loja por dia (bloco 10, 25.1, decisão 15): o saldo já segura
+ * quem não tem pontos; o teto segura quem tem e esvaziaria várias recompensas
+ * pequenas num dia. Conta só o resgate que gravou.
+ */
+export const REDEEMS_PER_DAY = 10;
 
 /**
  * A ação que o teto conta, como vai no `details.action` do 429. `photo` é a
- * troca de foto do perfil (bloco 9, 24.1, decisão 11), no mesmo molde.
+ * troca de foto do perfil (bloco 9, 24.1, decisão 11) e `redeem`, o resgate
+ * da loja (bloco 10, 25.7), no mesmo molde.
  */
-export type CapAction = 'like' | 'comment' | 'rsvp' | 'report' | 'block' | 'photo';
+export type CapAction = 'like' | 'comment' | 'rsvp' | 'report' | 'block' | 'photo' | 'redeem';
 
 export const DAILY_CAPS: Record<CapAction, { key: DailyActionKey; limit: number }> = {
   like: { key: 'like_set', limit: LIKES_PER_DAY },
@@ -47,6 +54,7 @@ export const DAILY_CAPS: Record<CapAction, { key: DailyActionKey; limit: number 
   report: { key: 'comment_report', limit: REPORTS_PER_DAY },
   block: { key: 'fan_block', limit: BLOCKS_PER_DAY },
   photo: { key: 'photo_set', limit: PHOTO_CHANGES_PER_DAY },
+  redeem: { key: 'reward_redeem', limit: REDEEMS_PER_DAY },
 };
 
 /**

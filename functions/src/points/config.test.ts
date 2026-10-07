@@ -393,6 +393,7 @@ describe('tetos do dia e o limite da missão (bloco 7)', () => {
       comment_report: 30,
       fan_block: 30,
       photo_set: 10,
+      reward_redeem: 10,
     });
   });
 

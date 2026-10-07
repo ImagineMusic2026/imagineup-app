@@ -62,7 +62,12 @@ export const VALUE_SOURCES = [
 ] as const satisfies readonly EarnSource[];
 export type ValueSource = (typeof VALUE_SOURCES)[number];
 
-export type PointsSource = EarnSource | 'redeem' | 'adjustment' | 'seed';
+/**
+ * Todas as origens do extrato. `redeem` é o débito do resgate e
+ * `redeem_refund`, a devolução do resgate recusado pela equipe (bloco 10,
+ * docs/arquitetura-api.md, 25.1, decisão 7).
+ */
+export type PointsSource = EarnSource | 'redeem' | 'redeem_refund' | 'adjustment' | 'seed';
 
 /** Um degrau da régua de níveis (o `Level` do app). */
 export type Level = { number: number; name: string; minXp: number };
@@ -144,6 +149,22 @@ export type AwardEntry =
       points: number;
       artistId?: string | null;
       subject?: Subject | null;
+      /** O título da recompensa na hora (o `subjectTitle` do extrato, bloco 10). */
+      title?: string;
+    }
+  | {
+      /**
+       * A devolução do resgate recusado (bloco 10, 25.1, decisão 7): o saldo
+       * sobe o que o pedido gastou e o `spentTotal` desce o mesmo tanto (nunca
+       * abaixo de 0). XP, temporada, centrais e os dias não mexem.
+       */
+      kind: 'refund';
+      source: 'redeem_refund';
+      eventId: string;
+      points: number;
+      subject?: Subject | null;
+      /** O título da recompensa (o `subjectTitle` do extrato). */
+      title?: string;
     }
   | {
       kind: 'adjust';
@@ -160,7 +181,10 @@ export type Actor = { type: 'fan' | 'system' | 'staff'; uid: string | null; name
 
 export type AwardStatus = 'applied' | 'duplicate' | 'capped' | 'zero' | 'skipped';
 
-/** `points` é quanto o saldo mexeu: positivo no ganho, negativo no resgate, o delta no ajuste. */
+/**
+ * `points` é quanto o saldo mexeu: positivo no ganho e na devolução, negativo
+ * no resgate, o delta no ajuste.
+ */
 export type AwardResult = { uid: string; entryId: string; status: AwardStatus; points: number };
 
 /**
@@ -172,7 +196,8 @@ export type AwardResult = { uid: string; entryId: string; status: AwardStatus; p
  * `like_set`, `comment_sent`, `rsvp_set`, `comment_report` e `fan_block` são
  * as trocas para curtido, os comentários, as trocas para "Eu vou", as
  * denúncias e os bloqueios (os tetos do bloco 6, 21.7); `photo_set`, as trocas
- * de foto do perfil (o teto do bloco 9, 24.1, decisão 11).
+ * de foto do perfil (o teto do bloco 9, 24.1, decisão 11); `reward_redeem`,
+ * os resgates da loja (o teto do bloco 10, 25.1, decisão 15).
  */
 export type DailyActionKey =
   | 'central_entry'
@@ -183,7 +208,8 @@ export type DailyActionKey =
   | 'rsvp_set'
   | 'comment_report'
   | 'fan_block'
-  | 'photo_set';
+  | 'photo_set'
+  | 'reward_redeem';
 
 export type DayStats = {
   earned: number;
@@ -422,6 +448,16 @@ const isPositiveInt = (value: unknown): value is number =>
 const isNonZeroInt = (value: unknown): value is number =>
   typeof value === 'number' && Number.isInteger(value) && value !== 0;
 
+/** O título guardado no extrato: de 1 a 80, numa linha visível (missão e, no bloco 10, a loja). */
+function isEntryTitle(title: unknown): title is string {
+  return (
+    typeof title === 'string' &&
+    title.length >= 1 &&
+    title.length <= MISSION_TITLE_MAX &&
+    isVisibleLine(title)
+  );
+}
+
 function assertArtistId(artistId: unknown): void {
   if (artistId === undefined || artistId === null) return;
   if (typeof artistId !== 'string' || !HANDLE_PATTERN.test(artistId)) {
@@ -442,13 +478,7 @@ export function assertValidEntry(entry: AwardEntry): void {
       throw invalid('Só a missão leva pontos explícitos, inteiros maiores que 0.');
     }
     if (entry.source === 'mission') {
-      const { title } = entry;
-      if (
-        typeof title !== 'string' ||
-        title.length < 1 ||
-        title.length > MISSION_TITLE_MAX ||
-        !isVisibleLine(title)
-      ) {
+      if (!isEntryTitle(entry.title)) {
         throw invalid('A missão leva o título dela, de 1 a 80, numa linha visível.');
       }
     } else if (entry.title !== undefined) {
@@ -457,6 +487,18 @@ export function assertValidEntry(entry: AwardEntry): void {
   } else if (entry.kind === 'spend') {
     if (entry.source !== 'redeem' || !isPositiveInt(entry.points)) {
       throw invalid('Resgate precisa de pontos inteiros maiores que 0.');
+    }
+    if (entry.title !== undefined && !isEntryTitle(entry.title)) {
+      throw invalid('O título do resgate vai de 1 a 80, numa linha visível.');
+    }
+  } else if (entry.kind === 'refund') {
+    if (entry.source !== 'redeem_refund' || !isPositiveInt(entry.points)) {
+      throw invalid(
+        'Devolução precisa da origem redeem_refund e de pontos inteiros maiores que 0.',
+      );
+    }
+    if (entry.title !== undefined && !isEntryTitle(entry.title)) {
+      throw invalid('O título da devolução vai de 1 a 80, numa linha visível.');
     }
   } else if (entry.kind === 'adjust') {
     if (entry.source !== 'adjustment' && entry.source !== 'seed') {
@@ -489,6 +531,8 @@ export function assertValidEntry(entry: AwardEntry): void {
 /** artistId da central que a entrada mexe (o ajuste, pela central dele). */
 export function entryArtistId(entry: AwardEntry): string | null {
   if (entry.kind === 'adjust') return entry.central?.artistId ?? null;
+  // A devolução do resgate nunca é de uma central (bloco 10).
+  if (entry.kind === 'refund') return null;
   return entry.artistId ?? null;
 }
 
@@ -508,7 +552,10 @@ export type LedgerData = {
   centralTotalDelta: number;
   seasonId: string | null;
   subject: Subject | null;
-  /** Só na missão: o título dela quando concluiu (bloco 7); null no resto. */
+  /**
+   * O título da missão quando concluiu (bloco 7) ou da recompensa no resgate e
+   * na devolução (bloco 10); null no resto.
+   */
   subjectTitle: string | null;
   balanceAfter: number;
   xpAfter: number;
@@ -774,6 +821,12 @@ export function computeAwards(input: ComputeInput): ComputeOutput {
         points = -entry.points;
         wallet.balance -= entry.points;
         wallet.spentTotal += entry.points;
+      } else if (entry.kind === 'refund') {
+        // A devolução do resgate recusado (bloco 10, 25.1, decisão 7): só o
+        // saldo sobe; o gasto desce o mesmo tanto, nunca abaixo de 0.
+        points = entry.points;
+        wallet.balance += entry.points;
+        wallet.spentTotal = Math.max(0, wallet.spentTotal - entry.points);
       } else {
         const needsSeason = entry.season !== undefined || entry.central?.season !== undefined;
         if (needsSeason && !season) {
@@ -830,8 +883,7 @@ export function computeAwards(input: ComputeInput): ComputeOutput {
           centralTotalDelta,
           seasonId: season?.id ?? null,
           subject: entry.kind === 'adjust' ? null : (entry.subject ?? null),
-          subjectTitle:
-            entry.kind === 'earn' && entry.source === 'mission' ? (entry.title ?? null) : null,
+          subjectTitle: entry.kind === 'adjust' ? null : (entry.title ?? null),
           balanceAfter: wallet.balance,
           xpAfter: wallet.xp,
           seasonPointsAfter: wallet.seasonPoints,

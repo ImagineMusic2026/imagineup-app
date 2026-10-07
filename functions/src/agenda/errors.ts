@@ -20,6 +20,7 @@ export type EventPanelErrorReason =
   | 'invalid-photo'
   | 'photo-not-found'
   | 'event-has-posts'
+  | 'event-has-rewards'
   | 'invalid-status'
   | 'was-published';
 
@@ -46,6 +47,10 @@ const ERRORS: Record<EventPanelErrorReason, [FunctionsErrorCode, string]> = {
   'event-has-posts': [
     'failed-precondition',
     'Há posts de show apontando para este show. Troque o show desses posts antes.',
+  ],
+  'event-has-rewards': [
+    'failed-precondition',
+    'Há recompensas da loja ligadas a este show. Tire o show delas ou apague o rascunho antes.',
   ],
   'invalid-status': ['invalid-argument', 'Status inválido.'],
   'was-published': [

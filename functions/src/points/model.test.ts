@@ -440,6 +440,157 @@ describe('resgate', () => {
       });
     }
   });
+
+  it('com o título da recompensa, o extrato guarda o subjectTitle (bloco 10)', () => {
+    const out = compute([
+      fan({
+        wallet: rich(),
+        entries: [
+          {
+            kind: 'spend',
+            source: 'redeem',
+            eventId: 'UP-4KD9TM',
+            points: 600,
+            subject: { type: 'reward', id: 'ingressos' },
+            title: 'Par de ingressos',
+          },
+        ],
+      }),
+    ]);
+    expect(out.fans[0]!.ledger[0]).toMatchObject({
+      id: 'redeem:UP-4KD9TM',
+      data: {
+        kind: 'spend',
+        points: -600,
+        subject: { type: 'reward', id: 'ingressos' },
+        subjectTitle: 'Par de ingressos',
+      },
+    });
+  });
+
+  it('título do resgate fora do formato é erro de programação', () => {
+    for (const title of ['', ' Par', 'x'.repeat(81), 'Par\nde ingressos']) {
+      expect(() =>
+        compute([
+          fan({
+            wallet: rich(),
+            entries: [{ kind: 'spend', source: 'redeem', eventId: 'r1', points: 1, title }],
+          }),
+        ]),
+      ).toThrow(PointsError);
+    }
+  });
+});
+
+// --- Bloco 10: a devolução do resgate recusado (25.1, decisão 7) ------------------------
+
+describe('devolução do resgate (refund)', () => {
+  const STAFF = { type: 'staff', uid: 'equipe', name: 'Equipe' } as const;
+  const refund = (extra: Partial<Extract<AwardEntry, { kind: 'refund' }>> = {}): AwardEntry => ({
+    kind: 'refund',
+    source: 'redeem_refund',
+    eventId: 'UP-9FJT6V',
+    points: 8_500,
+    subject: { type: 'reward', id: 'videochamada' },
+    title: 'Videochamada',
+    ...extra,
+  });
+  const spent = () =>
+    wallet({
+      balance: 3_980,
+      xp: 12_480,
+      seasonId: SEASON.id,
+      seasonPoints: 4_120,
+      seasonPointsAt: NOW - DAY_MS,
+      earnedTotal: 12_480,
+      spentTotal: 8_500,
+      days: { '2026-10-05': { earned: 10, count: { comment: 5 } } },
+    });
+
+  it('sobe o saldo e desce o spentTotal, sem mexer em XP, temporada, central e dias', () => {
+    const out = compute([fan({ wallet: spent(), entries: [refund()] })], { actor: STAFF });
+    expect(out.results).toEqual([
+      { uid: 'fa', entryId: 'redeem_refund:UP-9FJT6V', status: 'applied', points: 8_500 },
+    ]);
+    expect(out.pointsAwarded).toBe(0);
+    const state = out.fans[0]!.wallet!.state;
+    expect(state).toMatchObject({
+      balance: 12_480,
+      xp: 12_480,
+      seasonPoints: 4_120,
+      seasonPointsAt: NOW - DAY_MS,
+      earnedTotal: 12_480,
+      spentTotal: 0,
+    });
+    expect(state.days).toEqual({ '2026-10-05': { earned: 10, count: { comment: 5 } } });
+    expect(out.fans[0]!.centrals).toEqual([]);
+    expect(out.fans[0]!.ledger[0]).toMatchObject({
+      id: 'redeem_refund:UP-9FJT6V',
+      data: {
+        kind: 'refund',
+        source: 'redeem_refund',
+        points: 8_500,
+        xpDelta: 0,
+        seasonDelta: 0,
+        artistId: null,
+        subjectTitle: 'Videochamada',
+        balanceAfter: 12_480,
+        actor: STAFF,
+      },
+    });
+    expect(out.shard).toMatchObject({
+      totals: { refunded: 8_500, refundedEvents: 1, spent: 0, earned: 0, adjusted: 0 },
+      bySource: { redeem_refund: { points: 8_500, events: 1 } },
+      byArtist: {},
+    });
+  });
+
+  it('o spentTotal nunca fica negativo', () => {
+    const out = compute(
+      [fan({ wallet: wallet({ balance: 0, spentTotal: 100 }), entries: [refund()] })],
+      { actor: STAFF },
+    );
+    expect(out.fans[0]!.wallet!.state).toMatchObject({ balance: 8_500, spentTotal: 0 });
+  });
+
+  it('a mesma devolução de novo sai duplicate, sem gravar', () => {
+    const out = compute(
+      [
+        fan({
+          wallet: spent(),
+          entries: [refund()],
+          existingLedger: new Set(['redeem_refund:UP-9FJT6V']),
+        }),
+      ],
+      { actor: STAFF },
+    );
+    expect(out.results[0]).toMatchObject({ status: 'duplicate', points: 0 });
+    expect(out.fans[0]!.wallet).toBeNull();
+    expect(out.shard).toBeNull();
+  });
+
+  it('o fã sem perfil (conta sendo excluída) sai skipped', () => {
+    const out = compute([fan({ hasProfile: false, wallet: spent(), entries: [refund()] })], {
+      actor: STAFF,
+    });
+    expect(out.results[0]).toMatchObject({ status: 'skipped', points: 0 });
+    expect(out.fans).toEqual([]);
+  });
+
+  it('fora do formato é erro de programação', () => {
+    const bad: AwardEntry[] = [
+      refund({ points: 0 }),
+      refund({ points: 1.5 }),
+      refund({ source: 'redeem' as 'redeem_refund' }),
+      refund({ title: '' }),
+      refund({ eventId: 'com espaço' }),
+    ];
+    for (const entry of bad) {
+      expect(() => compute([fan({ wallet: spent(), entries: [entry] })], { actor: STAFF })).toThrow(
+        PointsError,
+      );
+    }
+  });
 });
 
 describe('ajuste', () => {
@@ -631,6 +782,14 @@ describe('atividade e o que é gravado', () => {
         rsvpsUndone: 0,
         reports: 0,
         blocks: 0,
+        // Da loja (bloco 10): nada aqui, e o pruneZeros não grava os zerados.
+        refunded: 0,
+        refundedEvents: 0,
+        redeemRequested: 0,
+        redeemApproved: 0,
+        redeemDelivered: 0,
+        redeemRefused: 0,
+        redeemCanceled: 0,
       },
       bySource: { comment: { points: 4, events: 2 }, mission: { points: 20, events: 1 } },
       byArtist: {
@@ -660,6 +819,7 @@ describe('atividade e o que é gravado', () => {
       // conclusão de missão (só a conclusão pelo progresso), e sem o jogo nada desbloqueia.
       byMission: {},
       byAchievement: {},
+      byReward: {},
     });
   });
 });

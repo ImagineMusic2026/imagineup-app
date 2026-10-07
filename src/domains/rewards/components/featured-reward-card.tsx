@@ -34,10 +34,11 @@ export interface FeaturedRewardCardProps {
   testID?: string;
 }
 
-/** Custo em lima, o que falta apagado, ou nada quando esgotou (o selo já diz). */
+/** Custo em lima, o que falta apagado, ou nada quando esgotou ou chegou no limite (o selo já diz). */
 function Price({ reward, availability }: Pick<FeaturedRewardCardProps, 'reward' | 'availability'>) {
   switch (availability.state) {
     case 'soldOut':
+    case 'limitReached':
       return null;
     case 'short':
       return (
@@ -77,6 +78,9 @@ export function FeaturedRewardCard({
   const badge =
     availability.state === 'soldOut' ? (
       <Pill label={t('rewards.soldOut')} tone="neutral" size="xs" caps style={styles.badge} />
+    ) : availability.state === 'limitReached' ? (
+      // O limite de pedidos do fã (bloco 10), no desenho do esgotado.
+      <Pill label={t('rewards.redeemedShort')} tone="neutral" size="xs" caps style={styles.badge} />
     ) : scarcity ? (
       <Pill label={scarcity} tone="accentStrong" size="xs" caps style={styles.badge} />
     ) : null;

@@ -5,6 +5,7 @@ import { InviteError } from '../invites/model';
 import { DailyCapError, ModerationError } from '../moderation/model';
 import { PointsError } from '../points/model';
 import { PostError } from '../posts/model';
+import { RewardError } from '../rewards/model';
 
 // Erros da API, no formato que o toApiError do app lê: corpo
 // { code, message, details? } e o status HTTP de onde sai o `kind`.
@@ -26,8 +27,12 @@ export type ApiErrorCode =
   | 'comment_not_found'
   | 'fan_not_found'
   | 'photo_not_found'
+  | 'reward_not_found'
   | 'method_not_allowed'
   | 'insufficient_points'
+  | 'sold_out'
+  | 'redeem_limit_reached'
+  | 'reward_changed'
   | 'invite_not_allowed'
   | 'block_list_full'
   | 'username_taken'
@@ -61,8 +66,18 @@ export const API_ERRORS: Record<ApiErrorCode, { status: number; message: string 
   comment_not_found: { status: 404, message: 'Comentário não encontrado.' },
   fan_not_found: { status: 404, message: 'Fã não encontrado.' },
   photo_not_found: { status: 404, message: 'Foto não encontrada. Envie de novo.' },
+  reward_not_found: { status: 404, message: 'Recompensa não encontrada.' },
   method_not_allowed: { status: 405, message: 'Método não aceito nesta rota.' },
   insufficient_points: { status: 409, message: 'Saldo insuficiente.' },
+  sold_out: { status: 409, message: 'Recompensa esgotada.' },
+  redeem_limit_reached: {
+    status: 409,
+    message: 'Você chegou ao limite de resgates desta recompensa.',
+  },
+  reward_changed: {
+    status: 409,
+    message: 'O custo desta recompensa mudou. Confira antes de resgatar.',
+  },
   invite_not_allowed: { status: 409, message: 'Este convite não vale para esta conta.' },
   block_list_full: { status: 409, message: 'Você chegou ao limite de fãs bloqueados.' },
   username_taken: { status: 409, message: 'Este @ já tem dono.' },
@@ -123,8 +138,8 @@ const BUSY_CODES = new Set([4, 8, 10, 14]);
 
 /**
  * Qualquer erro para o erro da API. Recusa do núcleo de pontos, das centrais,
- * do convite, do mural, da agenda, da moderação ou da edição do perfil (bloco
- * 9) vira o código combinado (e
+ * do convite, do mural, da agenda, da moderação, da edição do perfil (bloco
+ * 9) ou da loja (bloco 10) vira o código combinado (e
  * os tetos do dia, o 429 com Retry-After); disputa que sobrou das 5 tentativas vira 503 com Retry-After;
  * o resto é 500 (e vai para o log de erro).
  */
@@ -158,7 +173,8 @@ export function toApiHttpError(error: unknown): { error: ApiHttpError; unexpecte
   if (
     error instanceof PostError ||
     error instanceof AgendaError ||
-    error instanceof ProfileEditError
+    error instanceof ProfileEditError ||
+    error instanceof RewardError
   ) {
     return { error: apiError(error.reason, error.details), unexpected: false };
   }

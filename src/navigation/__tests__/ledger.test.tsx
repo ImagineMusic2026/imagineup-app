@@ -1,7 +1,8 @@
+import { FlashList } from '@shopify/flash-list';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Stack } from 'expo-router';
 import { Tabs } from 'expo-router/js-tabs';
-import { fireEvent, renderRouter, screen, waitFor, within } from 'expo-router/testing-library';
+import { act, fireEvent, renderRouter, screen, waitFor, within } from 'expo-router/testing-library';
 import { getDoc, onSnapshot } from 'firebase/firestore';
 import { AccessibilityInfo, Text } from 'react-native';
 
@@ -281,13 +282,29 @@ describe('extrato de pontos (bloco 7, provisório)', () => {
     expect(screen.getByText('Ontem', hidden)).toBeTruthy();
     expect(screen.getByText('dom., 27 set', hidden)).toBeTruthy();
     expect(screen.getByText('seg., 21 set', hidden)).toBeTruthy();
-    expect(screen.getAllByText(/^\p{L}+\., \d+ set$/u, hidden)).toHaveLength(12);
+    // A primeira página (20): os dias de 2 a 16 de setembro com lançamento, já com a loja (bloco 10).
+    expect(screen.getAllByText(/^\p{L}+\., \d+ set$/u, hidden)).toHaveLength(13);
+    // A loja da Camila (bloco 10, 25.13): o resgate com o título da recompensa, às 18 h,
+    // e a devolução da videochamada recusada, em lima.
+    expect(screen.getByTestId('ledger-redeem:UP-C3NWPB')).toHaveProp(
+      'accessibilityLabel',
+      'Resgate, Camisa oficial, menos 15.000 pontos, em 27 de setembro às 18:00.',
+    );
+    expect(screen.getByTestId('ledger-redeem_refund:UP-9FJT6V')).toHaveProp(
+      'accessibilityLabel',
+      'Resgate devolvido, Videochamada, mais 8.500 pontos, em 24 de setembro às 18:00.',
+    );
+    expect(screen.getByTestId('ledger-seed:camila-loja')).toHaveProp(
+      'accessibilityLabel',
+      'Ajuste, mais 24.000 pontos, em 21 de setembro às 18:00.',
+    );
     // Os ajustes só de central (saldo, XP e temporada em 0) ficam de fora.
     expect(screen.queryByTestId('ledger-seed:camila-base-netto')).toBeNull();
     expect(screen.queryByTestId('ledger-seed:camila-base-nenho')).toBeNull();
     // As temporadas passadas do seed (bloco 8): ajustes só de temporada, que aparecem,
-    // e o extrato fica com os 17 lançamentos do servidor.
-    expect(screen.getByTestId('ledger-seed:camila-carnaval')).toHaveProp(
+    // e o extrato fica com os 23 lançamentos do servidor (na segunda página).
+    act(() => screen.UNSAFE_getByType(FlashList).props.onEndReached());
+    expect(await screen.findByTestId('ledger-seed:camila-carnaval')).toHaveProp(
       'accessibilityLabel',
       expect.stringMatching(/^Ajuste, mais 290 pontos, em 5 de agosto às 12:00\.$/),
     );

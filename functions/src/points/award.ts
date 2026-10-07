@@ -50,12 +50,14 @@ import {
   addEngagementToShard,
   addInviteToShard,
   addMembershipToShard,
+  addRedemptionToShard,
   emptyShardDelta,
   pickShard,
   shardRef,
   shardWrite,
   type EngagementKind,
   type InviteShardEvent,
+  type RedemptionShardKind,
 } from './stats';
 
 // Lançamento de pontos no Firestore, em duas fases, porque a transação exige
@@ -637,6 +639,27 @@ export function addEngagementCounts(plan: AwardPlan, changes: readonly Engagemen
   if (changes.length === 0) return;
   plan.shard ??= emptyShardDelta();
   for (const change of changes) addEngagementToShard(plan.shard, change.kind, change.artistIds);
+}
+
+/**
+ * Um passo de um pedido da loja (bloco 10, 25.9): o pedido (com o custo em
+ * `points`), a aprovação, a entrega, a recusa (com os pontos que voltaram de
+ * fato em `points`) e o cancelamento da exclusão de conta.
+ */
+export type RedemptionChange = { rewardId: string; kind: RedemptionShardKind; points?: number };
+
+/**
+ * Soma os passos dos pedidos da loja no shard do dia do plano, no molde do
+ * addEngagementCounts: continua uma gravação de shard por transação, e o shard
+ * nasce quando o plano não tinha o que somar (aprovar e entregar, que não
+ * lançam ponto). Chame antes de o plano ser gravado.
+ */
+export function addRedemptionCounts(plan: AwardPlan, changes: readonly RedemptionChange[]): void {
+  if (changes.length === 0) return;
+  plan.shard ??= emptyShardDelta();
+  for (const change of changes) {
+    addRedemptionToShard(plan.shard, change.rewardId, change.kind, change.points ?? 0);
+  }
 }
 
 /**

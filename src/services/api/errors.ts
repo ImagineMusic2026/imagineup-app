@@ -18,6 +18,8 @@ export type ApiErrorKind =
 export const API_ERROR_CODES = {
   /** O saldo não cobre o gasto (resgate da 1h). */
   insufficientPoints: 'insufficient_points',
+  /** A recompensa esgotou, foi encerrada ou o show dela fechou (resgate da 1h, bloco 10). */
+  soldOut: 'sold_out',
 } as const;
 
 /** Erro único que telas e hooks tratam, venha de onde vier. */

@@ -17,7 +17,17 @@ import {
 // Leituras da carteira para as rotas (GET), fora de transação: uma leitura da
 // carteira e a configuração do cache. docs/arquitetura-api.md, seção 6.
 
-export type WalletView = { balance: number; xp: number; seasonPoints: number };
+/**
+ * A carteira do `GET /me/wallet`. `updatedAt` (bloco 10, 25.2) é o instante
+ * ISO da última gravação da carteira, ou null sem carteira: o app compara com
+ * o `statusAt` de uma recusa da loja, os dois do relógio do servidor.
+ */
+export type WalletView = {
+  balance: number;
+  xp: number;
+  seasonPoints: number;
+  updatedAt: string | null;
+};
 
 export type ProgressView = {
   xp: number;
@@ -29,7 +39,7 @@ export type ProgressView = {
 
 export type LedgerItem = {
   id: string;
-  kind: 'earn' | 'spend' | 'adjust';
+  kind: 'earn' | 'spend' | 'adjust' | 'refund';
   source: PointsSource;
   points: number;
   xpDelta: number;
@@ -41,7 +51,10 @@ export type LedgerItem = {
   createdAt: string;
   /** O nome da central (bloco 7); null sem central ou com ela apagada. */
   artistName: string | null;
-  /** Só na missão: o título dela quando concluiu (bloco 7). */
+  /**
+   * O título da missão quando concluiu (bloco 7) ou o da recompensa no resgate
+   * e na devolução (bloco 10).
+   */
   subjectTitle: string | null;
 };
 
@@ -70,6 +83,7 @@ export function walletView(wallet: WalletState, config: LoadedConfig, now: numbe
     balance: wallet.balance,
     xp: wallet.xp,
     seasonPoints: visibleSeasonPoints(wallet, config, now),
+    updatedAt: wallet.updatedAt === null ? null : new Date(wallet.updatedAt).toISOString(),
   };
 }
 

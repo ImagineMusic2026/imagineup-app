@@ -12,11 +12,14 @@ import { Text } from '@/components/text';
 import { TextLink } from '@/components/text-link';
 import { t } from '@/i18n';
 import { colors, layout, radii, spacing, typography } from '@/theme';
-import { formatDayMonth, formatLongDate } from '@/utils/date';
 import { formatNumber, formatPointsSpoken } from '@/utils/number';
 
 import {
+  isOpenRedemption,
+  limitReachedText,
   missingSpoken,
+  redemptionStatusSpoken,
+  redemptionStatusText,
   rewardMeta,
   rewardMetaSpoken,
   scarcityText,
@@ -94,17 +97,38 @@ function OfflineNotice() {
 }
 
 /**
- * Um resgate que o fã já fez: o código para mostrar na retirada, quando foi e
- * o que fazer. O código e a data são um foco só; as instruções, outro.
+ * O texto de baixo do pedido: as instruções no solicitado e no aprovado; no
+ * recusado, o motivo da equipe (quando há) e os pontos que voltaram de fato
+ * (só com `refundedPoints` maior que 0); no entregue, nada.
+ */
+function redemptionDetails(redemption: RewardRedemption): string[] {
+  if (isOpenRedemption(redemption)) return [redemption.instructions];
+  if (redemption.status !== 'refused') return [];
+  const lines: string[] = [];
+  if (redemption.refusalReason) {
+    lines.push(t('rewards.redeemed.reason', { reason: redemption.refusalReason }));
+  }
+  if (redemption.refundedPoints > 0) {
+    lines.push(t('rewards.redeemed.refunded', { points: formatNumber(redemption.refundedPoints) }));
+  }
+  return lines;
+}
+
+/**
+ * Um pedido que o fã já fez (bloco 10, sem desenho, no visual das outras
+ * telas): o código para mostrar na retirada, o status com a data dele e o que
+ * fazer, ou por que foi recusado. O código com o status é um foco só; o texto
+ * de baixo, outro.
  */
 function RedemptionCard({ redemption }: { redemption: RewardRedemption }) {
+  const details = redemptionDetails(redemption);
   return (
     <Card>
       <View
         accessible
         accessibilityLabel={t('rewards.redeemed.codeLabel', {
           code: redemption.code,
-          date: formatLongDate(redemption.redeemedAt),
+          status: redemptionStatusSpoken(redemption),
         })}
       >
         <Text variant="overline" color={colors.textMuted}>
@@ -114,12 +138,14 @@ function RedemptionCard({ redemption }: { redemption: RewardRedemption }) {
           {redemption.code}
         </Text>
         <Text variant="caption" color={colors.textSecondary} style={styles.meta}>
-          {t('rewards.redeemed.date', { date: formatDayMonth(redemption.redeemedAt) })}
+          {redemptionStatusText(redemption)}
         </Text>
       </View>
-      <Text variant="bodySmall" color={colors.textBody} style={styles.instructions}>
-        {redemption.instructions}
-      </Text>
+      {details.length > 0 ? (
+        <Text variant="bodySmall" color={colors.textBody} style={styles.instructions}>
+          {details.join('\n')}
+        </Text>
+      ) : null}
     </Card>
   );
 }
@@ -138,7 +164,10 @@ export interface DetailsBodyProps {
  * ele não cobre).
  */
 export function DetailsBody({ reward, availability, balance, headingRef }: DetailsBodyProps) {
-  const outOfReach = availability.state === 'short' || availability.state === 'soldOut';
+  const outOfReach =
+    availability.state === 'short' ||
+    availability.state === 'soldOut' ||
+    availability.state === 'limitReached';
   const scarcity = scarcityText(reward);
   const lines: SummaryLine[] = [
     { label: t('rewards.summary.cost'), points: reward.cost, highlight: true },
@@ -202,8 +231,10 @@ export interface DetailsActionsProps {
 
 /**
  * O botão lima do resgate (o assunto é ponto), que leva à confirmação. Sem
- * saldo, desligado com o que falta e "Ver missões"; esgotado, desligado; sem
- * internet, desligado com o aviso. A recusa do servidor vem em cima do botão.
+ * saldo, desligado com o que falta e "Ver missões"; esgotado, desligado; no
+ * limite de pedidos do fã, desligado com "Você já resgatou" (ou "Limite de N
+ * resgates atingido"); sem internet, desligado com o aviso. A recusa do
+ * servidor vem em cima do botão.
  */
 export function DetailsActions({ notice, noticeRef, ...buttons }: DetailsActionsProps) {
   return (
@@ -226,6 +257,8 @@ function DetailsButtons({
   switch (availability.state) {
     case 'soldOut':
       return <Button variant="points" label={t('rewards.soldOut')} disabled onPress={noop} />;
+    case 'limitReached':
+      return <Button variant="points" label={limitReachedText(reward)} disabled onPress={noop} />;
     case 'short':
       return (
         <>
@@ -264,6 +297,12 @@ function DetailsButtons({
 
 export interface ConfirmBodyProps {
   reward: Reward;
+  /**
+   * O custo congelado ao entrar na confirmação (`confirmedCost`), e não o da
+   * recompensa ao vivo, que uma busca de fundo troca em silêncio: é o que o
+   * botão manda ao servidor (25.12).
+   */
+  cost: number;
   balance: number | null;
   headingRef: HeadingRef;
 }
@@ -273,20 +312,25 @@ export interface ConfirmBodyProps {
  * equipe. O "depois" só aparece quando o saldo cobre (se ele deixar de cobrir,
  * a tela volta ao detalhe).
  */
-export function ConfirmBody({ reward, balance, headingRef }: ConfirmBodyProps) {
+export function ConfirmBody({
+  reward,
+  cost: confirmedCost,
+  balance,
+  headingRef,
+}: ConfirmBodyProps) {
   const cost: SummaryLine = {
     label: t('rewards.summary.cost'),
-    points: reward.cost,
+    points: confirmedCost,
     highlight: true,
   };
   const lines: SummaryLine[] =
     balance === null
       ? [cost]
-      : balance >= reward.cost
+      : balance >= confirmedCost
         ? [
             { label: t('rewards.summary.balanceNow'), points: balance },
             cost,
-            { label: t('rewards.summary.balanceAfter'), points: balance - reward.cost },
+            { label: t('rewards.summary.balanceAfter'), points: balance - confirmedCost },
           ]
         : [{ label: t('rewards.summary.balanceNow'), points: balance }, cost];
 
@@ -295,7 +339,7 @@ export function ConfirmBody({ reward, balance, headingRef }: ConfirmBodyProps) {
       <StepHeading text={t('rewards.confirm.title')} headingRef={headingRef} />
       <Text variant="body" color={colors.textSecondary} style={styles.lead}>
         {t('rewards.confirm.body', {
-          points: formatPointsSpoken(reward.cost),
+          points: formatPointsSpoken(confirmedCost),
           title: reward.title,
         })}
       </Text>
@@ -366,11 +410,17 @@ export interface SuccessBodyProps {
 }
 
 /**
- * Resgate confirmado: o código para mostrar na retirada e as instruções do
- * servidor. O título leva o saldo novo para o leitor de tela, que chega nele
- * pelo foco (um anúncio à parte seria cortado por esse foco).
+ * Resgate confirmado: o código para mostrar na retirada, com o status do
+ * pedido (o "Solicitado em" do card de "Seus resgates", um foco só), e as
+ * instruções do servidor. O título leva o saldo novo para o leitor de tela,
+ * que chega nele pelo foco (um anúncio à parte seria cortado por esse foco).
  */
 export function SuccessBody({ reward, result, headingRef }: SuccessBodyProps) {
+  // O pedido nasce solicitado, no instante do resgate (25.2).
+  const status: Pick<RewardRedemption, 'status' | 'statusAt'> = {
+    status: result.status ?? 'requested',
+    statusAt: result.redeemedAt,
+  };
   return (
     <View>
       <View
@@ -398,7 +448,10 @@ export function SuccessBody({ reward, result, headingRef }: SuccessBodyProps) {
       </Text>
       <Card
         accessible
-        accessibilityLabel={t('rewards.success.codeLabel', { code: result.code })}
+        accessibilityLabel={t('rewards.redeemed.codeLabel', {
+          code: result.code,
+          status: redemptionStatusSpoken(status),
+        })}
         style={styles.block}
       >
         <Text variant="overline" color={colors.textMuted}>
@@ -407,10 +460,16 @@ export function SuccessBody({ reward, result, headingRef }: SuccessBodyProps) {
         <Text variant="titleEvent" selectable style={styles.code}>
           {result.code}
         </Text>
+        <Text variant="caption" color={colors.textSecondary} style={styles.meta}>
+          {redemptionStatusText(status)}
+        </Text>
       </Card>
       <SectionLabel spacing="tight">{t('rewards.success.nextSteps')}</SectionLabel>
       <Text variant="body" color={colors.textBody}>
         {result.instructions}
+      </Text>
+      <Text variant="bodyXs" color={colors.textTertiary} style={styles.paragraph}>
+        {t('rewards.success.tracking')}
       </Text>
     </View>
   );

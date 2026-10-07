@@ -68,6 +68,9 @@ const MEMBERS: Record<string, Member> = {
   adminDesativado: { role: 'admin', status: 'disabled' },
   pendente: { role: 'admin', status: 'pending' },
   ligada: { role: 'editor', status: 'active', sections: ['artists'], authValidAfter: LINKED_AT },
+  // Bloco 10: quem edita e quem só vê Recompensas e resgates.
+  editoraLoja: { role: 'editor', status: 'active', sections: ['rewards'] },
+  leitoraLoja: { role: 'viewer', status: 'active', sections: ['rewards'] },
 };
 
 /** Membros gravados como o servidor grava. */
@@ -467,6 +470,66 @@ describe('foto do fã (fans/{uid}/)', () => {
     await assertSucceeds(upload(as('camila'), path, jpeg));
     for (const storage of [as('camila'), as('admin')]) {
       await assertFails(storage.ref('fans/camila').listAll());
+      await assertFails(storage.ref(path).delete());
+      await assertFails(storage.ref(path).updateMetadata({ contentType: 'image/png' }));
+    }
+  });
+});
+
+// --- Foto das recompensas da loja (bloco 10, 25.10) -------------------------------------
+
+/** Recompensa gravada como o createReward grava (o que importa às regras é existir). */
+async function seedReward(rewardId: string): Promise<void> {
+  await env.withSecurityRulesDisabled(async (context) => {
+    await setDoc(doc(context.firestore(), `rewards/${rewardId}`), {
+      kind: 'ticket',
+      title: 'Par de ingressos',
+      status: 'draft',
+      photo: null,
+    });
+  });
+}
+
+const rewardPath = (rewardId = 'ingressos') =>
+  `rewards/${rewardId}/photo-${Date.now()}-${++counter}-1200.webp`;
+
+describe('foto das recompensas (rewards/{id}/)', () => {
+  beforeEach(() => seedReward('ingressos'));
+
+  it('a editora com rewards e a admin sobem uma imagem de até 5 MB para uma recompensa que existe', async () => {
+    await assertSucceeds(upload(as('editoraLoja'), rewardPath(), { size: 5 * MB }));
+    await assertSucceeds(upload(as('admin'), rewardPath()));
+    await assertSucceeds(upload(as('editoraLoja'), rewardPath(), { contentType: 'image/jpeg' }));
+  });
+
+  it('a leitora com rewards, a editora só com artists, o fã e sem login não sobem', async () => {
+    for (const uid of ['leitoraLoja', 'editora', 'editorSemSecao', 'desativada', 'fa']) {
+      await assertFails(upload(as(uid), rewardPath()));
+    }
+    await assertFails(upload(anonymous(), rewardPath()));
+  });
+
+  it('recompensa que não existe, tipo fora, acima de 5 MB, vazio e o mesmo nome duas vezes não sobem', async () => {
+    await assertFails(upload(as('editoraLoja'), rewardPath('nao-existe')));
+    await assertFails(upload(as('editoraLoja'), rewardPath('__x__')));
+    await assertFails(upload(as('editoraLoja'), rewardPath(), { contentType: 'image/gif' }));
+    await assertFails(upload(as('editoraLoja'), rewardPath(), { contentType: 'video/mp4' }));
+    await assertFails(upload(as('editoraLoja'), rewardPath(), { size: 5 * MB + 1 }));
+    await assertFails(upload(as('editoraLoja'), rewardPath(), { size: 0 }));
+    await assertFails(upload(as('editoraLoja'), `rewards/ingressos/sub/photo-${++counter}.webp`));
+    const path = rewardPath();
+    await assertSucceeds(upload(as('editoraLoja'), path));
+    await assertFails(upload(as('editoraLoja'), path));
+  });
+
+  it('qualquer um baixa pelo caminho; ninguém lista, troca nem apaga', async () => {
+    const path = rewardPath();
+    await assertSucceeds(upload(as('editoraLoja'), path));
+    for (const storage of [anonymous(), as('fa'), as('admin')]) {
+      await assertSucceeds(storage.ref(path).getMetadata());
+    }
+    for (const storage of [as('fa'), as('editoraLoja'), as('admin')]) {
+      await assertFails(storage.ref('rewards/ingressos').listAll());
       await assertFails(storage.ref(path).delete());
       await assertFails(storage.ref(path).updateMetadata({ contentType: 'image/png' }));
     }

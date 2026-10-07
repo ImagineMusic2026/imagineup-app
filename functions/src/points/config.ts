@@ -26,6 +26,7 @@ import {
   BLOCKS_PER_DAY,
   COMMENTS_PER_DAY,
   LIKES_PER_DAY,
+  REDEEMS_PER_DAY,
   REPORTS_PER_DAY,
   RSVPS_PER_DAY,
 } from '../moderation/model';
@@ -62,11 +63,13 @@ export const ACTION_CAP_KEYS = [
   'comment_report',
   'fan_block',
   'photo_set',
+  'reward_redeem',
 ] as const satisfies readonly DailyActionKey[];
 
 /**
- * Os tetos do dia (blocos 4, 5, 6 e, desde o bloco 9, as trocas de foto) como
- * padrão do código (22.1, decisão 13; 24.1, decisão 11).
+ * Os tetos do dia (blocos 4, 5, 6, desde o bloco 9 as trocas de foto e desde o
+ * bloco 10 os resgates da loja) como padrão do código (22.1, decisão 13; 24.1,
+ * decisão 11; 25.1, decisão 15).
  */
 export const DEFAULT_ACTION_CAPS: Record<DailyActionKey, number> = {
   central_entry: CENTRAL_ENTRIES_PER_DAY,
@@ -78,6 +81,7 @@ export const DEFAULT_ACTION_CAPS: Record<DailyActionKey, number> = {
   comment_report: REPORTS_PER_DAY,
   fan_block: BLOCKS_PER_DAY,
   photo_set: PHOTO_CHANGES_PER_DAY,
+  reward_redeem: REDEEMS_PER_DAY,
 };
 
 /** Teto do dia: de 1 a 10.000. */

@@ -5,6 +5,7 @@ import { missionIndex, type MissionRecord, type MissionTick } from '../missions/
 import {
   addDailyCount,
   addInviteCounts,
+  addRedemptionCounts,
   applyAwards,
   centralFromDoc,
   mergeFanAwards,
@@ -217,6 +218,16 @@ describe('contador do dia sem ponto (addDailyCount)', () => {
         comment_report: 1,
         fan_block: 1,
       },
+    });
+  });
+
+  it('a chave do teto dos resgates (bloco 10), ao lado das outras', () => {
+    const fan = { ...context('uid-a'), wallet: stored() };
+    const result = plan(fan);
+    addDailyCount(result, fan, 'reward_redeem');
+    expect(result.fans[0]!.wallet!.state.days['2026-10-05']).toEqual({
+      earned: 10,
+      count: { central_join: 1, central_entry: 2, reward_redeem: 1 },
     });
   });
 });
@@ -553,5 +564,48 @@ describe('leitura e gravação dos campos do bloco 8', () => {
     expect(create.data.stats).toEqual({ pastSeasons: 0, closedSeasonId: null });
     const centralWrite = writes.find((w) => w.path === 'wallets/uid-a/centralPoints/nenho')!;
     expect(centralWrite.data).toMatchObject({ member: true, updatedAt: Timestamp.fromMillis(NOW) });
+  });
+});
+
+// --- Bloco 10: o plano sem fã das transições do pedido (25.4, passo 6) -----------------
+
+describe('plano sem fã (aprovar e entregar um pedido)', () => {
+  const NOW = Date.parse('2026-10-05T21:00:00.000Z');
+
+  it('o planAwards com a lista vazia não lê nada, e o applyAwards grava só o shard', async () => {
+    const reads: string[] = [];
+    const writes: { op: string; path: string }[] = [];
+    const ref = (path: string): unknown => ({
+      path,
+      collection: (name: string) => ({ doc: (id: string) => ref(`${path}/${name}/${id}`) }),
+    });
+    const db = {
+      collection: (name: string) => ({ doc: (id: string) => ref(`${name}/${id}`) }),
+    } as unknown as Firestore;
+    const tx = {
+      getAll: async (...refs: { path: string }[]) => {
+        reads.push(...refs.map((item) => item.path));
+        return [];
+      },
+      create: (r: { path: string }) => writes.push({ op: 'create', path: r.path }),
+      update: (r: { path: string }) => writes.push({ op: 'update', path: r.path }),
+      set: (r: { path: string }) => writes.push({ op: 'set', path: r.path }),
+    } as unknown as Transaction;
+    const plan = await planAwards(tx, db, [], {
+      now: NOW,
+      config: DEFAULT_POINTS_CONFIG,
+      shard: 7,
+      actor: { type: 'staff', uid: 'equipe', name: 'Equipe' },
+      game: {
+        missions: missionIndex({ version: 0, missions: [] }),
+        achievements: [],
+        seasonGoal: null,
+      },
+    });
+    expect(reads).toEqual([]);
+    expect(plan.shard).toBeNull();
+    addRedemptionCounts(plan, [{ rewardId: 'ingressos', kind: 'delivered' }]);
+    applyAwards(tx, db, plan);
+    expect(writes).toEqual([{ op: 'set', path: 'statsDaily/2026-10-05/statsShards/7' }]);
   });
 });

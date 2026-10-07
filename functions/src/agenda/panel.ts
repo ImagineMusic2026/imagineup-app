@@ -39,6 +39,9 @@ const EVENT_PHOTO_SIZE = { width: 1200, height: 675 } as const;
 /** Posts lidos ao conferir quem aponta para o show (o `details.postIds` da recusa). */
 const EVENT_POSTS_READ = 20;
 
+/** Recompensas lidas ao conferir quem cita o show (o `details.rewardIds`, bloco 10, 25.9). */
+const EVENT_REWARDS_READ = 20;
+
 const clock = (deps: { now?: () => number }) => (deps.now ?? Date.now)();
 
 function audit(
@@ -92,6 +95,19 @@ async function postsOfEvent(
   // Até 6 centrais por show (parseEventArtistIds): cabem no `in`.
   if (artistIds) query = query.where('artistId', 'in', [...artistIds]);
   const snap = await tx.get(query.limit(EVENT_POSTS_READ));
+  return snap.docs.map((doc) => doc.id);
+}
+
+/**
+ * As recompensas da loja que citam o show, em qualquer status (até
+ * `EVENT_REWARDS_READ`; índice automático de `eventId`). Bloco 10, 25.9: o
+ * show apagado deixaria a recompensa com o `eventId` solto, esgotada para
+ * todos sem a equipe saber por quê.
+ */
+async function rewardsOfEvent(tx: Transaction, db: Firestore, eventId: string): Promise<string[]> {
+  const snap = await tx.get(
+    db.collection('rewards').where('eventId', '==', eventId).limit(EVENT_REWARDS_READ),
+  );
   return snap.docs.map((doc) => doc.id);
 }
 
@@ -339,9 +355,11 @@ export async function changeEventStatus(
 }
 
 /**
- * deleteEvent: só o show que nunca foi ao ar (`was-published`) e para o qual
- * nenhum post aponta (`event-has-posts`, com os ids). Solta as centrais do
- * show (o `has-content` do deleteArtist). A pasta da foto sai depois.
+ * deleteEvent: só o show que nunca foi ao ar (`was-published`), para o qual
+ * nenhum post aponta (`event-has-posts`, com os ids) e que nenhuma recompensa
+ * da loja cita (`event-has-rewards`, com os ids, desde o bloco 10). Solta as
+ * centrais do show (o `has-content` do deleteArtist). A pasta da foto sai
+ * depois.
  */
 export async function removeEvent(
   deps: ContentDeps,
@@ -356,9 +374,13 @@ export async function removeEvent(
     const actor = await editorIn(tx, deps, caller);
     const snap = await tx.get(eventRef(db, eventId));
     if (!snap.exists) throw eventPanelError('event-not-found');
-    const posts = await postsOfEvent(tx, db, eventId);
+    const [posts, rewards] = await Promise.all([
+      postsOfEvent(tx, db, eventId),
+      rewardsOfEvent(tx, db, eventId),
+    ]);
     if (snap.get('publishedAt')) throw eventPanelError('was-published');
     if (posts.length > 0) throw eventPanelError('event-has-posts', { postIds: posts });
+    if (rewards.length > 0) throw eventPanelError('event-has-rewards', { rewardIds: rewards });
     const now = Timestamp.fromMillis(clock(deps));
     tx.delete(snap.ref);
     audit(

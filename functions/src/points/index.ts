@@ -6,6 +6,7 @@ export {
   addEngagementCounts,
   addInviteCounts,
   addMembershipCounts,
+  addRedemptionCounts,
   ALREADY_EXISTS,
   applyAwards,
   centralFromDoc,
@@ -27,6 +28,7 @@ export {
   type FanAwards,
   type FanContext,
   type MembershipChange,
+  type RedemptionChange,
   type RunOptions,
 } from './award';
 export {
@@ -86,6 +88,7 @@ export { seedCamilaWallet, CAMILA_SEED, noonDaysAgo, SEED_ACTOR } from './seed';
 export {
   addEngagementToShard,
   addInviteToShard,
+  addRedemptionToShard,
   emptyShardDelta,
   ORIGIN_NONE,
   originKey,
@@ -96,6 +99,8 @@ export {
   type EngagementKind,
   type InviteShardEvent,
   type OriginKind,
+  type RedemptionShardKind,
+  type RewardCount,
   type ShardDelta,
 } from './stats';
 export {

@@ -14,6 +14,11 @@ rules_version = '2';
 // fã, só JPEG de até 1 MiB, com o nome que o app gera e só com o perfil
 // existindo; a função api confere o arquivo e grava a URL no perfil.
 //
+// Desde o bloco 10, a foto das recompensas da loja sobe do painel para
+// rewards/{rewardId}/, de quem altera Recompensas e resgates
+// (canEditSection('rewards')), só para uma recompensa que já existe, no
+// molde da foto dos shows; a callable updateReward confere o arquivo.
+//
 // Quem sobe é quem altera Artistas e centrais no painel: a mesma conta de
 // canEditSection('artists') e staffSessionAllowed() do firestore.rules, lendo
 // staff/{uid} no Firestore. E só para uma central que já existe em
@@ -146,6 +151,22 @@ service firebase.storage {
         && request.resource.size <= 1024 * 1024
         && request.resource.contentType == 'image/jpeg'
         && docExists('users', uid);
+      allow update, delete: if false;
+    }
+
+    // Foto das recompensas da loja (bloco 10): do painel, de quem edita
+    // rewards, só para uma recompensa que já existe. Nome novo a cada envio;
+    // só o servidor troca metadados e apaga (a foto trocada e a pasta da
+    // recompensa apagada).
+    match /rewards/{rewardId}/{fileName} {
+      allow get: if true;
+      allow list: if false;
+      allow create: if resource == null
+        && rewardId.matches('[A-Za-z0-9_-]{1,128}')
+        && !rewardId.matches('__.*__')
+        && validImage()
+        && canEditSection('rewards')
+        && docExists('rewards', rewardId);
       allow update, delete: if false;
     }
 

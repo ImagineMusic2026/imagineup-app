@@ -66,6 +66,12 @@ export interface Wallet {
   xp: number;
   /** Pontos da temporada, que contam no ranking. */
   seasonPoints: number;
+  /**
+   * ISO da última gravação da carteira no servidor, ou `null` sem carteira
+   * (bloco 10). A loja compara com o instante de uma recusa para buscar o
+   * saldo de novo. Opcional: as fixtures e a carteira salva antes não têm.
+   */
+  updatedAt?: string | null;
 }
 
 /**
@@ -157,17 +163,19 @@ export type LedgerSource =
   | 'invite_visit'
   | 'invite_signup'
   | 'redeem'
+  | 'redeem_refund'
   | 'adjustment'
   | 'seed';
 
 /**
- * Uma linha do extrato de pontos (`GET /me/ledger`, blocos 1 e 7). O app mostra
- * de onde veio, o contexto (a central ou o título da missão), o valor e a data.
- * O `id` é só a chave da lista: nunca aparece.
+ * Uma linha do extrato de pontos (`GET /me/ledger`, blocos 1, 7 e 10). O app
+ * mostra de onde veio, o contexto (a central, o título da missão ou o da
+ * recompensa), o valor e a data. O `id` é só a chave da lista: nunca aparece.
  */
 export interface LedgerEntry {
   id: string;
-  kind: 'earn' | 'spend' | 'adjust';
+  /** `refund` é a devolução do resgate recusado pela equipe (bloco 10). */
+  kind: 'earn' | 'spend' | 'adjust' | 'refund';
   /** Origem conhecida ou outra que o app ainda não conhece (cai em "Pontos"). */
   source: LedgerSource | (string & {});
   /** Quanto o saldo mexeu: positivo no ganho, negativo no resgate. */
@@ -182,7 +190,10 @@ export interface LedgerEntry {
   createdAt: string;
   /** O nome da central (bloco 7); `null` sem central ou com ela apagada. */
   artistName?: string | null;
-  /** Só na missão: o título dela quando concluiu (bloco 7). */
+  /**
+   * O título da missão quando concluiu (bloco 7) ou o da recompensa no resgate
+   * e na devolução (bloco 10).
+   */
   subjectTitle?: string | null;
 }
 

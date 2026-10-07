@@ -7,10 +7,29 @@ import { haptics } from '@/services/haptics';
 import { motion } from '@/theme';
 
 import { FeaturedRewardCard } from '../components/featured-reward-card';
+import { DetailsActions, DetailsBody, SuccessBody } from '../components/redeem-steps';
 import { RewardCard } from '../components/reward-card';
 import { RewardSummary } from '../components/reward-summary';
+import { RewardsLegal } from '../components/rewards-legal';
 import { buildRewardsFixture } from '../fixtures';
-import type { Reward } from '../types';
+import type { Reward, RewardRedemption } from '../types';
+
+// As fixtures da loja leem os shows da agenda de exemplo, que chegam ao
+// domínio das missões (com o axios e o Firebase): o build ESM do Firebase não
+// roda no Jest.
+jest.mock('firebase/app', () => ({ FirebaseError: class FirebaseError extends Error {} }));
+jest.mock('firebase/auth', () => ({}));
+jest.mock('firebase/firestore', () => ({}));
+jest.mock('@/firebase', () => ({
+  getFirebaseAuth: () => ({}),
+  getDb: () => ({}),
+  isFirebaseConfigured: true,
+}));
+jest.mock('@/config/env', () => ({
+  firebaseEnv: null,
+  apiUrl: undefined,
+  firebaseEmulatorHost: undefined,
+}));
 
 const NOW = new Date(2026, 8, 29, 20, 0);
 const { rewards } = buildRewardsFixture(NOW);
@@ -194,5 +213,174 @@ describe('quadro de pontos do resgate', () => {
       screen.getByLabelText('Custo: 8.500 pontos. Seu saldo depois: 3.980 pontos.'),
     ).toBeTruthy();
     expect(screen.getByText('8.500 pts', hidden)).toBeTruthy();
+  });
+});
+
+// --- Bloco 10: o status do pedido, o limite e o aviso da Apple -------------------------
+
+describe('pedido no detalhe da recompensa', () => {
+  const redemption = (extra: Partial<RewardRedemption>): RewardRedemption => ({
+    id: 'UP-4KD9TM',
+    code: 'UP-4KD9TM',
+    status: 'requested',
+    statusAt: new Date(2026, 9, 2, 18, 0).toISOString(),
+    points: 6_000,
+    refundedPoints: 0,
+    instructions: 'Retire na bilheteria com este código.',
+    refusalReason: null,
+    redeemedAt: new Date(2026, 8, 30, 18, 0).toISOString(),
+    ...extra,
+  });
+
+  function renderDetails(redemptions: RewardRedemption[]) {
+    render(
+      <DetailsBody
+        reward={{ ...TICKETS, redemptions }}
+        availability={{ state: 'redeemable' }}
+        balance={12_480}
+        headingRef={{ current: null }}
+      />,
+    );
+  }
+
+  it.each([
+    ['requested', 'Solicitado em 2 out', 'Solicitado em 2 de outubro'],
+    ['approved', 'Aprovado em 2 out', 'Aprovado em 2 de outubro'],
+  ] as const)('%s: o código com o status, e as instruções', (status, text, spoken) => {
+    renderDetails([redemption({ status })]);
+    expect(screen.getByRole('header', { name: 'Seus resgates' })).toBeTruthy();
+    expect(screen.getByLabelText(`Código do resgate: UP-4KD9TM. ${spoken}.`)).toBeTruthy();
+    expect(screen.getByText(text, hidden)).toBeTruthy();
+    expect(screen.getByText('Retire na bilheteria com este código.')).toBeTruthy();
+  });
+
+  it('entregue: só o código e o status, sem as instruções', () => {
+    renderDetails([redemption({ status: 'delivered' })]);
+    expect(
+      screen.getByLabelText('Código do resgate: UP-4KD9TM. Entregue em 2 de outubro.'),
+    ).toBeTruthy();
+    expect(screen.queryByText(/bilheteria/)).toBeNull();
+  });
+
+  it('recusado: o motivo e os pontos que voltaram de fato, sem as instruções', () => {
+    renderDetails([
+      redemption({ status: 'refused', refusalReason: 'Show cancelado.', refundedPoints: 6_000 }),
+    ]);
+    expect(
+      screen.getByLabelText('Código do resgate: UP-4KD9TM. Recusado em 2 de outubro.'),
+    ).toBeTruthy();
+    expect(
+      screen.getByText('Motivo: Show cancelado.\nOs 6.000 pontos voltaram para o seu saldo.'),
+    ).toBeTruthy();
+    expect(screen.queryByText(/bilheteria/)).toBeNull();
+  });
+
+  it('recusado sem motivo e sem pontos de volta (0): nem o motivo nem a frase dos pontos', () => {
+    renderDetails([redemption({ status: 'refused', refundedPoints: 0 })]);
+    expect(screen.queryByText(/Motivo/)).toBeNull();
+    expect(screen.queryByText(/voltaram/)).toBeNull();
+  });
+
+  it('o limite atingido: o botão desligado diz "Você já resgatou", ou o número com limite maior', () => {
+    const view = render(
+      <DetailsActions
+        reward={{ ...TICKETS, perFanLimit: 1, limitReached: true }}
+        availability={{ state: 'limitReached' }}
+        online
+        notice={null}
+        noticeRef={{ current: null }}
+        onRedeem={jest.fn()}
+        onSeeMissions={jest.fn()}
+      />,
+    );
+    expect(screen.getByRole('button', { name: 'Você já resgatou' })).toBeDisabled();
+    expect(screen.queryByText('Ver missões')).toBeNull();
+    view.rerender(
+      <DetailsActions
+        reward={{ ...TICKETS, perFanLimit: 2, limitReached: true }}
+        availability={{ state: 'limitReached' }}
+        online
+        notice="limitReached"
+        noticeRef={{ current: null }}
+        onRedeem={jest.fn()}
+        onSeeMissions={jest.fn()}
+      />,
+    );
+    expect(screen.getByRole('button', { name: 'Limite de 2 resgates atingido' })).toBeDisabled();
+    expect(
+      screen.getByLabelText('Você chegou ao limite de resgates desta recompensa.'),
+    ).toBeTruthy();
+  });
+
+  it('o sucesso diz onde acompanhar o pedido', () => {
+    render(
+      <SuccessBody
+        reward={VIDEO}
+        result={{
+          redemptionId: 'UP-C3NWPB',
+          rewardId: 'videochamada',
+          code: 'UP-C3NWPB',
+          balance: 3_980,
+          instructions: 'A equipe fala com você.',
+          redeemedAt: new Date(2026, 8, 29, 20).toISOString(),
+          status: 'requested',
+        }}
+        headingRef={{ current: null }}
+      />,
+    );
+    expect(screen.getByText('Você acompanha o pedido nesta recompensa, na loja.')).toBeTruthy();
+  });
+});
+
+describe('o limite do fã nos cards', () => {
+  it('na grade: "Resgatado" no lugar do preço, no desenho do esgotado', () => {
+    render(
+      <RewardCard
+        reward={{ ...TICKETS, limitReached: true }}
+        availability={{ state: 'limitReached' }}
+        onPress={jest.fn()}
+      />,
+    );
+    expect(
+      screen.getByRole('button', {
+        name: 'Par de ingressos. Pra Encher e Derramar. Limite de resgates atingido.',
+      }),
+    ).toBeTruthy();
+    expect(screen.getByText('Resgatado', hidden)).toBeTruthy();
+  });
+
+  it('no destaque: o selo "Resgatado", sem o custo', () => {
+    render(
+      <FeaturedRewardCard
+        reward={{ ...MEET, limitReached: true }}
+        availability={{ state: 'limitReached' }}
+        onPress={jest.fn()}
+      />,
+    );
+    expect(screen.getByText('Resgatado', hidden)).toBeTruthy();
+    expect(screen.queryByText('10.000 pts', hidden)).toBeNull();
+    expect(
+      screen.getByRole('button', {
+        name: 'Meet & greet com o Netto. Só 20 vagas. São João de Irará, 21 de outubro. Limite de resgates atingido.',
+      }),
+    ).toBeTruthy();
+  });
+});
+
+describe('aviso da Apple e regulamento no pé da loja', () => {
+  const NOTICE =
+    'As recompensas são oferecidas pela Imagine Music. A Apple não patrocina nem participa delas de nenhuma forma.';
+
+  it('o aviso aparece sempre; sem o endereço, sem o link', () => {
+    render(<RewardsLegal rulesUrl={null} />);
+    expect(screen.getByText(NOTICE)).toBeTruthy();
+    expect(screen.queryByText('Regulamento')).toBeNull();
+  });
+
+  it('com o endereço, o link "Regulamento" dentro do texto, com a dica', () => {
+    render(<RewardsLegal rulesUrl="https://imagineup.com.br/regulamento/" />);
+    const link = screen.getByRole('link', { name: 'Regulamento' });
+    expect(link).toHaveProp('accessibilityHint', 'Abre o regulamento das recompensas');
+    expect(screen.getByText(/^As recompensas são oferecidas pela Imagine Music\./)).toBeTruthy();
   });
 });
