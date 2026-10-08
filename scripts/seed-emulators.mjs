@@ -82,10 +82,26 @@
  * esgota (UP-7QXH2R), e a camisa solicitada (UP-C3NWPB). O saldo termina em
  * 12.480, e o extrato dela ganha 6 lançamentos (23 ao todo).
  *
- * Equipe do painel: a conta equipe@teste.imagineup (admin, todas as seções),
- * gravada como o aceite do convite deixaria (staff/{uid} antes da conta, sem
- * perfil de fã), para aprovar, entregar e recusar os pedidos pelas callables
- * no emulador e para o painel local.
+ * Equipe do painel (functions/lib/staff/seed.js): equipe@teste.imagineup
+ * (admin, todas as seções), editora@teste.imagineup (editor com Fãs, Missões,
+ * Recompensas e Moderação, sem Artistas) e leitor@teste.imagineup (leitor de
+ * todas as seções), gravadas como o aceite do convite deixaria (staff/{uid}
+ * antes da conta, sem perfil de fã), para as callables no emulador e para o
+ * painel local.
+ *
+ * Telas do painel (bloco 11, docs/arquitetura-api.md, 26.13): a versão 1 de
+ * config/points e config/achievements (a mesma carga de produção, antes do
+ * catálogo de missões, com as auditorias config.seeded); o fã de propaganda
+ * (Promo Seguidores, spam@teste.imagineup) com a foto de teste e três
+ * comentários no clipe do Netto, denunciados pela Bia e pela Duda, um deles
+ * ocultado pela equipe (a fila da Moderação fica com três itens abertos e um
+ * resolvido); o rank-48 suspenso pela equipe (a api responde 403 a ele); os
+ * ingressos pedidos pelos rank-01 a rank-04 (quatro pedidos solicitados de
+ * outros fãs); a meta da São João batida pelo rank-02; umas 20 entradas de
+ * auditoria de exemplo nos últimos 10 dias; e, por último, os números de 60
+ * dias até ontem (um shard `seed` por dia), fechados pelo mesmo fechamento de
+ * produção com o retrato do seed. Hoje fica aberto. No fim, o script mostra
+ * os totais fechados de 7 e 30 dias que a Visão geral tem de mostrar.
  *
  * Rodar de novo não muda nada. Depois da meia-noite, o progresso do dia volta
  * a 0, como o de qualquer fã: para ver de novo o 3 de 5 e o 2 de 5, feche os
@@ -149,14 +165,21 @@ const FANS = [
     displayName: 'Gabi Souza',
     city: 'Cruz das Almas, BA',
   },
+  // O fã de propaganda da Moderação (bloco 11): foto, três comentários no
+  // clipe, denunciados pela Bia e pela Duda. Sem cidade.
+  {
+    email: 'spam@teste.imagineup',
+    password: 'fa-de-teste-7',
+    displayName: 'Promo Seguidores',
+    city: null,
+  },
 ];
 
-/** A conta da equipe do painel no emulador (admin, todas as seções). */
-const STAFF = {
-  uid: 'seed-equipe',
-  email: 'equipe@teste.imagineup',
-  password: 'equipe-de-teste-1',
-  displayName: 'Equipe de Teste',
+/** As senhas das contas da equipe do painel no emulador (as contas estão em functions/src/staff/seed.ts). */
+const STAFF_PASSWORDS = {
+  'seed-equipe': 'equipe-de-teste-1',
+  'seed-editora': 'editora-de-teste-1',
+  'seed-leitor': 'leitor-de-teste-1',
 };
 
 /** A senha das 48 contas de ranking (só o emulador). */
@@ -218,6 +241,16 @@ function functionsBuild(module) {
   return require(path);
 }
 
+/** Um arquivo do build das funções fora do index do módulo (`functions/lib/<path>.js`). */
+function functionsFile(path) {
+  const full = fileURLToPath(new URL(`../functions/lib/${path}.js`, import.meta.url));
+  if (!existsSync(full)) {
+    throw new Error('Falta o build das funções: rode npm --prefix functions run build.');
+  }
+  const require = createRequire(new URL('../functions/package.json', import.meta.url));
+  return require(full);
+}
+
 /** Roda `work` com o Firestore do emulador e fecha as conexões no fim (senão o Node espera). */
 async function withFirestore(work) {
   const require = createRequire(new URL('../functions/package.json', import.meta.url));
@@ -248,8 +281,8 @@ async function withStorage(work) {
   }
 }
 
-/** A foto de teste da Camila, pelo mesmo núcleo da rota (só se ela ainda não tem foto). */
-async function seedCamilaPhoto(uid) {
+/** A foto de teste de um fã, pelo mesmo núcleo da rota (só se ele ainda não tem foto). */
+async function seedPhoto(uid, fileName) {
   const { fanPhotoFiles, seedFanPhoto } = functionsBuild('fan-profile');
   const bytes = readFileSync(new URL('./seed-assets/foto-teste.jpg', import.meta.url));
   return withStorage((db, bucket) =>
@@ -259,6 +292,7 @@ async function seedCamilaPhoto(uid) {
       (path, data) => bucket.file(path).save(Buffer.from(data), { contentType: 'image/jpeg' }),
       uid,
       new Uint8Array(bytes),
+      fileName ? { fileName } : {},
     ),
   );
 }
@@ -292,57 +326,26 @@ async function seedCamilaShop(uid) {
 }
 
 /**
- * A conta da equipe do painel: staff/{uid} antes da conta (como o aceite do
- * convite), para o gatilho de cadastro não criar perfil de fã. Já existe: nada muda.
+ * As contas da equipe do painel (admin, editora e leitor): staff/{uid} antes
+ * da conta (como o aceite do convite), para o gatilho de cadastro não criar
+ * perfil de fã. Já existe: nada muda. Devolve o que aconteceu com cada uma.
  */
 async function seedStaff() {
   const require = createRequire(new URL('../functions/package.json', import.meta.url));
   const { deleteApp, initializeApp } = require('firebase-admin/app');
   const { getAuth } = require('firebase-admin/auth');
-  const { getFirestore, Timestamp } = require('firebase-admin/firestore');
-  const { SECTION_IDS } = require(
-    fileURLToPath(new URL('../functions/lib/staff/model.js', import.meta.url)),
-  );
+  const { getFirestore } = require('firebase-admin/firestore');
+  const { SEED_STAFF, seedStaffMember } = functionsFile('staff/seed');
   const app = initializeApp({ projectId: PROJECT_ID }, `seed-staff-${Date.now()}`);
   try {
     const db = getFirestore(app);
-    const ref = db.collection('staff').doc(STAFF.uid);
-    const created = !(await ref.get()).exists;
-    if (created) {
-      const now = Timestamp.now();
-      await ref.set({
-        uid: STAFF.uid,
-        email: STAFF.email,
-        displayName: STAFF.displayName,
-        role: 'admin',
-        sections: [...SECTION_IDS],
-        status: 'active',
-        accountCreatedByInvite: true,
-        inviteId: 'seed',
-        invitedBy: null,
-        createdAt: now,
-        updatedAt: now,
-        updatedBy: null,
-      });
+    const auth = getAuth(app);
+    const outcomes = [];
+    for (const member of SEED_STAFF) {
+      const status = await seedStaffMember(db, auth, member, STAFF_PASSWORDS[member.uid]);
+      outcomes.push({ member, status });
     }
-    try {
-      await getAuth(app).createUser({
-        uid: STAFF.uid,
-        email: STAFF.email,
-        password: STAFF.password,
-        displayName: STAFF.displayName,
-        emailVerified: true,
-      });
-      return 'created';
-    } catch (error) {
-      if (
-        error?.code === 'auth/uid-already-exists' ||
-        error?.code === 'auth/email-already-exists'
-      ) {
-        return 'exists';
-      }
-      throw error;
-    }
+    return outcomes;
   } finally {
     await deleteApp(app);
   }
@@ -450,27 +453,44 @@ console.log(
   `Loja de teste: ${shopCreated} recompensas criadas (6 no ar e 1 em rascunho no total).`,
 );
 
-const staff = await seedStaff();
+const ROLE_NAMES = { admin: 'admin', editor: 'editora', viewer: 'leitor' };
+for (const { member, status } of await seedStaff()) {
+  console.log(
+    `Equipe do painel: ${member.email} (${ROLE_NAMES[member.role]}, ${status === 'created' ? 'criada agora' : 'já existia'}).`,
+  );
+}
+
+// A versão 1 de config/points e config/achievements, antes do catálogo de missões (26.13).
+const gameConfig = await withFirestore((db) =>
+  functionsFile('points/config-seed').seedGameConfig(db),
+);
 console.log(
-  `Equipe do painel: ${STAFF.email} (admin, ${staff === 'created' ? 'criada agora' : 'já existia'}).`,
+  `Configuração inicial: ${gameConfig.length > 0 ? `${gameConfig.join(' e ')} na versão 1 agora` : 'config/points e config/achievements já existiam'}.`,
 );
 
 const invitees = [];
 const visitors = [];
 const engagementFans = {};
+/** Os uids dos fãs de teste pelo nome curto do e-mail (camila, alan, bia, duda, enzo, gabi, spam). */
+const fanUids = {};
 let camilaUid = null;
 let camilaEmail = null;
 for (const { city, wallet, invited, ...fan } of FANS) {
   const uid = await account(fan);
-  await setCity(uid, city);
-  console.log(`Cidade de ${fan.displayName}: ${city}.`);
+  if (city) {
+    await setCity(uid, city);
+    console.log(`Cidade de ${fan.displayName}: ${city}.`);
+  } else {
+    await waitForProfile(uid);
+  }
   if (wallet) {
     camilaUid = uid;
     camilaEmail = fan.email;
   }
   if (invited) invitees.push({ uid, email: fan.email, name: fan.displayName });
   const key = fan.email.split('@')[0];
-  if (key !== 'camila' && key !== 'gabi') engagementFans[key] = uid;
+  fanUids[key] = uid;
+  if (key !== 'camila' && key !== 'gabi' && key !== 'spam') engagementFans[key] = uid;
   const { SEED_VISITORS } = functionsBuild('invites');
   if (SEED_VISITORS.includes(fan.email)) {
     visitors.push({ uid, email: fan.email, name: fan.displayName });
@@ -554,6 +574,73 @@ if (camilaUid) {
 }
 
 if (camilaUid) {
-  const photo = await seedCamilaPhoto(camilaUid);
+  const photo = await seedPhoto(camilaUid);
   console.log(`Foto de teste da Camila: ${photo === 'created' ? 'enviada' : 'já existia'}.`);
+}
+
+// --- Telas do painel (bloco 11, 26.13) ---------------------------------------------------
+
+const { SEED_STAFF_ADMIN } = functionsFile('staff/seed');
+const staffActor = { uid: SEED_STAFF_ADMIN.uid, name: SEED_STAFF_ADMIN.displayName };
+
+// A foto do fã de propaganda vem antes dos comentários: as cópias nascem com ela.
+const { SEED_SPAM_PHOTO_FILE } = functionsBuild('fan-profile');
+const spamPhoto = await seedPhoto(fanUids.spam, SEED_SPAM_PHOTO_FILE);
+console.log(
+  `Foto de teste do Promo Seguidores: ${spamPhoto === 'created' ? 'enviada' : 'já existia'}.`,
+);
+const { SEED_SUSPENDED_EMAIL, seedModeration, seedSuspension } = functionsBuild('moderation');
+const moderation = await withFirestore((db) =>
+  seedModeration(db, { spam: fanUids.spam, reporters: [fanUids.bia, fanUids.duda] }, staffActor),
+);
+console.log(
+  `Moderação: ${moderation.comments} comentários de propaganda e ${moderation.reports} denúncias agora (3 e 6 no total), ${moderation.hidden ? 'um ocultado agora' : 'o ocultado já estava'}; a fila tem 3 itens abertos e 1 resolvido.`,
+);
+
+const suspendedUid = rankingUids.get(SEED_SUSPENDED_EMAIL);
+const suspended = await withFirestore((db) => seedSuspension(db, suspendedUid, staffActor));
+console.log(
+  `Suspensão: ${SEED_SUSPENDED_EMAIL} ${suspended ? 'suspensa agora' : 'já estava suspensa'} (a api responde 403 a ela).`,
+);
+
+const { seedOpenRedemptions } = functionsBuild('rewards');
+const openRedemptions = await withFirestore((db) => seedOpenRedemptions(db, rankingUids));
+console.log(
+  `Pedidos abertos: ${openRedemptions} agora (os ingressos dos rank-01 a rank-04, 4 solicitados no total).`,
+);
+const { seedGoalReached } = functionsBuild('missions');
+const goal = await withFirestore((db) =>
+  seedGoalReached(db, rankingUids.get('rank-02@teste.imagineup')),
+);
+console.log(`Meta da São João: rank-02 ${goal ? 'bateu agora' : 'já tinha batido'} (20 missões).`);
+
+const { seedPanelAudit } = functionsFile('staff/seed');
+const audit = await withFirestore((db) => seedPanelAudit(db, { bia: fanUids.bia }));
+console.log(`Auditoria de exemplo: ${audit} entradas agora (20 no total, nos últimos 10 dias).`);
+
+// Os números de 60 dias por último, depois de tudo que grava em dias passados.
+const statsSeed = functionsFile('points/stats-seed');
+const statsNow = Date.now();
+const quietLog = { info: () => {}, warn: console.warn, error: console.error };
+const stats = await withFirestore(async (db) => {
+  const written = await statsSeed.seedPanelStats(db, statsNow);
+  const close = await statsSeed.seedPanelClose(db, statsNow, quietLog);
+  return {
+    written,
+    close,
+    week: await statsSeed.readClosedTotals(db, statsNow, 7),
+    month: await statsSeed.readClosedTotals(db, statsNow, 30),
+  };
+});
+console.log(
+  `Números do painel: ${stats.written} dias do seed gravados agora, ${stats.close.closed.length} dias fechados agora (até ${stats.close.lastClosedDay}); hoje fica aberto.`,
+);
+const number = (value) => (value ?? 0).toLocaleString('pt-BR');
+for (const [label, totals] of [
+  ['7 dias', stats.week],
+  ['30 dias', stats.month],
+]) {
+  console.log(
+    `Fechados, ${label} (${totals.from} a ${totals.to}, ${totals.closedDays} dias): fãs ${number(totals.fans)} no retrato; cadastros ${number(totals.signups)} (${number(totals.invited)} por convite); pontos distribuídos ${number(totals.earned)}; ajustes da equipe ${number(totals.adjustmentPoints)} em ${number(totals.adjustmentEvents)}; ativos por dia ${number(totals.activesAverage)}; curtidas ${number(totals.likes)}, comentários ${number(totals.comments)}, presenças ${number(totals.rsvps)}, denúncias ${number(totals.reports)}; entradas nas centrais ${number(totals.joined)}; pedidos ${number(totals.redeemRequested)}, gastos ${number(totals.redeemSpent)}, devolvidos ${number(totals.refunded)}, entregues ${number(totals.redeemDelivered)}.`,
+  );
 }

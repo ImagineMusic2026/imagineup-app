@@ -1,5 +1,6 @@
 import { Timestamp, type Firestore } from 'firebase-admin/firestore';
 
+import { walletRef } from '../points/award';
 import { missionsConfigRef } from '../points/config';
 import { catalogDoc } from './panel';
 import {
@@ -120,6 +121,33 @@ export async function seedMissionsCatalog(
     };
     tx.create(ref, doc);
     tx.create(ref.collection('versions').doc('1'), doc);
+    return true;
+  });
+}
+
+/**
+ * Quem bateu a meta no seed (bloco 11, 26.13): a carteira do fã ganha as 20
+ * missões da temporada e o `goalReached` da São João, gravados direto, como as
+ * 48 contas de ranking nasceram (23.15), para o filtro "Bateram a meta" da
+ * seção Fãs ter uma linha. A carteira precisa estar na temporada da meta.
+ * Rodar de novo não muda nada. Devolve se gravou agora.
+ */
+export async function seedGoalReached(
+  db: Firestore,
+  uid: string,
+  now: number = Date.now(),
+): Promise<boolean> {
+  const ref = walletRef(db, uid);
+  return db.runTransaction(async (tx) => {
+    const wallet = await tx.get(ref);
+    if (wallet.get('seasonId') !== SEED_SEASON_GOAL.seasonId) {
+      throw new Error(`A carteira de ${uid} não está na temporada ${SEED_SEASON_GOAL.seasonId}.`);
+    }
+    if (wallet.get('goalReached.seasonId') === SEED_SEASON_GOAL.seasonId) return false;
+    tx.update(ref, {
+      seasonMissions: SEED_SEASON_GOAL.target,
+      goalReached: { seasonId: SEED_SEASON_GOAL.seasonId, at: Timestamp.fromMillis(now) },
+    });
     return true;
   });
 }

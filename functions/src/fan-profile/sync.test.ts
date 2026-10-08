@@ -2,6 +2,7 @@ import type { DocumentData, Firestore } from 'firebase-admin/firestore';
 import { describe, expect, it, vi } from 'vitest';
 
 import { FAN_PROFILE_SYNC_WINDOW_MS } from './model';
+import { fanSearchKeys } from './search';
 import {
   queueFanPhotoPurge,
   queueFanProfileSync,
@@ -10,7 +11,8 @@ import {
 } from './sync';
 
 // O gatilho do perfil e a fila das cópias (24.7) com um Firestore falso: o
-// perfil existe ou não, o orçamento guardado, e as gravações anotadas.
+// perfil existe ou não, o orçamento guardado, e as gravações anotadas (as do
+// `searchKeys`, bloco 11, em `updates`).
 
 const UID = 'uidCamila';
 // 15:04:03 em UTC, meio-dia em São Paulo.
@@ -23,6 +25,7 @@ const AFTER = { ...BEFORE, displayName: 'Camila Ribeiro' };
 function fakeDb(options: { profile?: DocumentData | null; budget?: DocumentData } = {}) {
   const profile: DocumentData | null = options.profile === undefined ? AFTER : options.profile;
   const writes: { path: string; data: unknown }[] = [];
+  const updates: { path: string; data: unknown }[] = [];
   const ref = (path: string) => ({
     path,
     collection: (name: string) => ({ doc: (id: string) => ref(`${path}/${name}/${id}`) }),
@@ -38,17 +41,25 @@ function fakeDb(options: { profile?: DocumentData | null; budget?: DocumentData 
         : path.endsWith('/profileSync/budget')
           ? options.budget
           : undefined;
-    return { exists: data !== undefined, data: () => data };
+    return {
+      exists: data !== undefined,
+      data: () => data,
+      get: (field: string) => data?.[field],
+      ref: { path },
+    };
   };
   const db = {
     collection: (name: string) => ({ doc: (id: string) => ref(`${name}/${id}`) }),
     runTransaction: async <T>(fn: (tx: unknown) => Promise<T>) =>
       fn({
+        get: async (target: { path: string }) => snap(target.path),
         getAll: async (...refs: { path: string }[]) => refs.map((target) => snap(target.path)),
         set: (target: { path: string }, data: unknown) => writes.push({ path: target.path, data }),
+        update: (target: { path: string }, data: unknown) =>
+          updates.push({ path: target.path, data }),
       }),
   };
-  return { db: db as unknown as Firestore, writes };
+  return { db: db as unknown as Firestore, writes, updates };
 }
 
 function fakeQueue(enqueue: FanProfileQueue['enqueue'] = async () => {}) {
@@ -60,7 +71,7 @@ const noFiles = { remove: vi.fn(async () => {}) };
 
 describe('gatilho queueFanProfileSync', () => {
   it('o nome mudou: grava o orçamento e põe a tarefa da janela de 5 min', async () => {
-    const { db, writes } = fakeDb();
+    const { db, writes, updates } = fakeDb();
     const queue = fakeQueue();
     const result = await queueFanProfileSync(
       db,
@@ -69,7 +80,11 @@ describe('gatilho queueFanProfileSync', () => {
       { uid: UID, before: BEFORE, after: AFTER, eventTime: EVENT_TIME },
       { emulator: false, log: quiet() },
     );
-    expect(result).toEqual({ photo: null, task: 'queued' });
+    expect(result).toEqual({ photo: null, task: 'queued', searchKeys: 'written' });
+    // O `searchKeys` do perfil de agora, sem `updatedAt` (bloco 11, 26.5).
+    expect(updates).toEqual([
+      { path: `users/${UID}`, data: { searchKeys: fanSearchKeys('Camila Ribeiro', undefined) } },
+    ]);
     expect(writes).toEqual([
       {
         path: `users/${UID}/profileSync/budget`,
@@ -121,13 +136,13 @@ describe('gatilho queueFanProfileSync', () => {
     );
   });
 
-  it('a cidade, o @ e o updatedAt sozinhos não põem tarefa', async () => {
+  it('a cidade, o @, o updatedAt e o searchKeys sozinhos não põem tarefa', async () => {
     const { db, writes } = fakeDb();
     const queue = fakeQueue();
     for (const after of [
       { ...BEFORE, city: 'Irará' },
-      { ...BEFORE, username: 'camilaribeiro' },
       { ...BEFORE, updatedAt: 1 },
+      { ...BEFORE, searchKeys: ['ca', 'cam'] },
     ]) {
       expect(
         await queueFanProfileSync(
@@ -139,12 +154,43 @@ describe('gatilho queueFanProfileSync', () => {
         ),
       ).toEqual({ photo: null, task: 'unchanged' });
     }
+    // O @ trocado acerta só o `searchKeys`, sem tarefa na fila das cópias.
+    expect(
+      await queueFanProfileSync(
+        db,
+        queue,
+        noFiles,
+        {
+          uid: UID,
+          before: BEFORE,
+          after: { ...BEFORE, username: 'camilaribeiro' },
+          eventTime: EVENT_TIME,
+        },
+        { emulator: false },
+      ),
+    ).toEqual({ photo: null, task: 'unchanged', searchKeys: 'written' });
     expect(queue.enqueue).not.toHaveBeenCalled();
     expect(writes).toEqual([]);
   });
 
+  it('o searchKeys sai do perfil relido, nunca do evento, e só grava quando muda', async () => {
+    // Evento velho (o nome "Camila" de antes) entregue depois do novo: as
+    // chaves ficam as do nome de agora, que já estão gravadas.
+    const now = { ...AFTER, searchKeys: fanSearchKeys('Camila Ribeiro', undefined) };
+    const { db, updates } = fakeDb({ profile: now });
+    const result = await queueFanProfileSync(
+      db,
+      fakeQueue(),
+      noFiles,
+      { uid: UID, before: AFTER, after: BEFORE, eventTime: EVENT_TIME },
+      { emulator: false },
+    );
+    expect(result.searchKeys).toBe('unchanged');
+    expect(updates).toEqual([]);
+  });
+
   it('sem perfil (conta sendo excluída): não grava orçamento nem põe tarefa', async () => {
-    const { db, writes } = fakeDb({ profile: null });
+    const { db, writes, updates } = fakeDb({ profile: null });
     const queue = fakeQueue();
     expect(
       await queueFanProfileSync(
@@ -154,8 +200,9 @@ describe('gatilho queueFanProfileSync', () => {
         { uid: UID, before: BEFORE, after: AFTER, eventTime: EVENT_TIME },
         { emulator: false },
       ),
-    ).toEqual({ photo: null, task: 'no-profile' });
+    ).toEqual({ photo: null, task: 'no-profile', searchKeys: 'no-profile' });
     expect(writes).toEqual([]);
+    expect(updates).toEqual([]);
     expect(queue.enqueue).not.toHaveBeenCalled();
   });
 
@@ -166,7 +213,7 @@ describe('gatilho queueFanProfileSync', () => {
     const input = { uid: UID, before: BEFORE, after: AFTER, eventTime: EVENT_TIME };
     expect(
       await queueFanProfileSync(fakeDb().db, exists, noFiles, input, { emulator: false }),
-    ).toEqual({ photo: null, task: 'exists' });
+    ).toEqual({ photo: null, task: 'exists', searchKeys: 'written' });
     const failure = Object.assign(new Error('permission denied'), {
       code: 'functions/permission-denied',
     });

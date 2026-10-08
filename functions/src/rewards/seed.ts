@@ -318,3 +318,52 @@ export async function seedCamilaRedemptions(
   }
   return { redeemed, transitions };
 }
+
+/**
+ * Os pedidos abertos de outros fãs (bloco 11, 26.13): as contas rank-01 a
+ * rank-04, as que têm saldo para tanto, pedem os ingressos hoje, com o código
+ * fixo de cada uma, para a aba Pedidos do painel ter o que aprovar, entregar,
+ * recusar e mostrar os contatos sem gastar os pedidos da Camila.
+ */
+export const SEED_OPEN_REDEMPTIONS: readonly {
+  email: string;
+  code: string;
+  minutesAgo: number;
+}[] = [
+  { email: 'rank-01@teste.imagineup', code: 'UP-RK2TQX', minutesAgo: 180 },
+  { email: 'rank-02@teste.imagineup', code: 'UP-RK3MZB', minutesAgo: 150 },
+  { email: 'rank-03@teste.imagineup', code: 'UP-RK4HDW', minutesAgo: 120 },
+  { email: 'rank-04@teste.imagineup', code: 'UP-RK5JVC', minutesAgo: 90 },
+];
+
+/** A recompensa dos pedidos abertos: o par de ingressos (sem estoque, limite de 2). */
+export const SEED_OPEN_REDEMPTION_REWARD = 'ingressos';
+
+/**
+ * Os pedidos abertos pelo mesmo núcleo da rota (o débito, o pedido
+ * solicitado com a cópia do nome e do @, os contadores do dia), com o código
+ * fixo e o ator do sistema (sem teto do dia, sem marcar atividade). Conta
+ * que falta no mapa fica de fora. Rodar de novo não muda nada: o pedido com o
+ * código já existe. Devolve quantos entraram agora.
+ */
+export async function seedOpenRedemptions(
+  db: Firestore,
+  uids: ReadonlyMap<string, string>,
+  now: number = Date.now(),
+): Promise<number> {
+  const { points: config } = await createConfigSource(db, { ttlMs: 0 }).get();
+  const cost = SEED_REWARDS.find((reward) => reward.id === SEED_OPEN_REDEMPTION_REWARD)!.cost;
+  let redeemed = 0;
+  for (const item of SEED_OPEN_REDEMPTIONS) {
+    const uid = uids.get(item.email);
+    if (!uid) continue;
+    const outcome = await runRedeemReward(
+      db,
+      uid,
+      { rewardId: SEED_OPEN_REDEMPTION_REWARD, expectedCost: cost, code: item.code },
+      { now: now - item.minutesAgo * 60_000, config, actor: SEED_ACTOR },
+    );
+    if (outcome.result) redeemed += 1;
+  }
+  return redeemed;
+}

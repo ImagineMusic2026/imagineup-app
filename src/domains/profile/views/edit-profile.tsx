@@ -76,7 +76,9 @@ type SaveMessage = { key: TranslationKey; tone: 'error' | 'info' };
  * a tela fechada e aberta de novo) e nos 10 s depois de salvar. Espera a
  * confirmação até 10 s; passado o prazo, avisa e segue desligado até a
  * gravação resolver. O formulário não volta aos valores do perfil enquanto o
- * fã edita: só se reinicia depois de salvar.
+ * fã edita: só se reinicia depois de salvar. Com a conta suspensa pela equipe
+ * (`suspendedAt`, bloco 11), o "Salvar" fica desligado com a frase própria:
+ * sem ela, a recusa da regra viraria a espera de 10 s para sempre.
  */
 function EditInfoForm({
   profile,
@@ -124,7 +126,11 @@ function EditInfoForm({
   const [name, city] = useWatch({ control, name: ['name', 'city'] });
   const dirty = Object.keys(changesOf(draftOf({ name, city }), profile)).length > 0;
   const pending = pendingSaves > 0;
-  const disabled = !dirty || !online || pending || cooling;
+  const suspended = Boolean(profile.suspendedAt);
+  const disabled = suspended || !dirty || !online || pending || cooling;
+  const shown: SaveMessage | null = suspended
+    ? { key: 'editProfile.info.suspended', tone: 'info' }
+    : message;
 
   const fail = (key: TranslationKey): void => {
     setMessage({ key, tone: 'error' });
@@ -218,14 +224,14 @@ function EditInfoForm({
         style={styles.save}
         testID="edit-profile-save"
       />
-      {message ? (
+      {shown ? (
         <Text
           variant="caption"
-          color={message.tone === 'error' ? colors.danger : colors.textSecondary}
+          color={shown.tone === 'error' ? colors.danger : colors.textSecondary}
           style={styles.message}
           testID="edit-profile-save-message"
         >
-          {t(message.key)}
+          {t(shown.key)}
         </Text>
       ) : null}
     </View>

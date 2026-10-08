@@ -12,6 +12,7 @@ import {
   addDailyCount,
   addInviteCounts,
   applyAwards,
+  isSuspendedProfile,
   planAwards,
   requireFan,
   requireProfile,
@@ -151,7 +152,9 @@ function markerHasSignup(marker: DocumentSnapshot): boolean {
  * O código de convite do fã (`GET /me/invite`), criado na primeira chamada:
  * 1. lê fanInvites/{uid} fora de transação; existe, devolve;
  * 2. numa transação: relê fanInvites e o perfil (outra chamada pode ter
- *    criado no meio); sem perfil, recusa como o requireFan;
+ *    criado no meio); sem perfil, recusa como o requireFan; com a conta
+ *    suspensa, 403 `account_suspended` (bloco 11, 26.5: quem já tem código
+ *    continua lendo o dele no passo 1);
  * 3. sorteia 5 códigos e fica com o primeiro livre em inviteCodes;
  * 4. cria inviteCodes/{code}, com o `ownerKey` (a chave da pessoa do dono),
  *    e fanInvites/{uid}.
@@ -173,6 +176,7 @@ export async function ensureInviteCode(
       const current = codeOf(invite);
       if (current) return current;
       await requireProfile(tx, db, caller.uid, profile!);
+      if (isSuspendedProfile(profile!)) throw new InviteError('account_suspended');
       const drawn = [
         ...new Set(Array.from({ length: INVITE_CODE_DRAWS }, () => drawInviteCode(deps.random))),
       ];

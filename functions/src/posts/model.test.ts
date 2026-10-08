@@ -8,6 +8,7 @@ import { windowTask } from '../window-task';
 import {
   commentRecord,
   commentView,
+  isRetriedDraft,
   mergePostBlocks,
   parseCommentText,
   parsePostMediaPaths,
@@ -296,6 +297,13 @@ describe('callables de posts: validação', () => {
       parsePostMediaPaths('video', { ...ok, videoPath: 'posts/p1/video-1.mp4' }, 'p1'),
     ).toEqual({ ...ok, videoPath: 'posts/p1/video-1.mp4' });
     expect(parsePostMediaPaths('photo', null, 'p1')).toBeNull();
+    // Bloco 11 (26.5): no vídeo, sem `videoPath` o vídeo de agora fica; null tira.
+    expect(parsePostMediaPaths('video', ok, 'p1')).toEqual(ok);
+    expect(parsePostMediaPaths('video', ok, 'p1')).not.toHaveProperty('videoPath');
+    expect(parsePostMediaPaths('video', { ...ok, videoPath: null }, 'p1')).toEqual({
+      ...ok,
+      videoPath: null,
+    });
     expect(reasonOf(() => parsePostMediaPaths('text', ok, 'p1'))).toBe('media-not-allowed');
     expect(reasonOf(() => parsePostMediaPaths('photo', ok, 'p2'))).toBe('invalid-media');
     expect(
@@ -318,5 +326,31 @@ describe('callables de posts: validação', () => {
         null,
       ]),
     ).toEqual(['posts/p1/a.webp']);
+  });
+});
+
+describe('a nova tentativa do rascunho com o id do painel (isRetriedDraft)', () => {
+  const draft = { status: 'draft', createdBy: 'uid-editora', artistId: 'nenho', kind: 'photo' };
+
+  it('o rascunho de quem chama, com os campos que travam iguais, é a mesma criação', () => {
+    expect(isRetriedDraft(draft, 'uid-editora', { artistId: 'nenho', kind: 'photo' })).toBe(true);
+    expect(isRetriedDraft(draft, 'uid-editora')).toBe(true);
+    expect(
+      isRetriedDraft({ status: 'draft', createdBy: 'u', artistIds: ['a', 'b'] }, 'u', {
+        artistIds: ['a', 'b'],
+      }),
+    ).toBe(true);
+  });
+
+  it('publicado, de outra pessoa, de outra central, de outro tipo ou com outras centrais, não', () => {
+    expect(isRetriedDraft({ ...draft, status: 'published' }, 'uid-editora')).toBe(false);
+    expect(isRetriedDraft({ ...draft, status: 'unpublished' }, 'uid-editora')).toBe(false);
+    expect(isRetriedDraft(draft, 'uid-admin')).toBe(false);
+    expect(isRetriedDraft(draft, 'uid-editora', { artistId: 'netto', kind: 'photo' })).toBe(false);
+    expect(isRetriedDraft(draft, 'uid-editora', { artistId: 'nenho', kind: 'video' })).toBe(false);
+    const show = { status: 'draft', createdBy: 'u', artistIds: ['a', 'b'] };
+    expect(isRetriedDraft(show, 'u', { artistIds: ['b', 'a'] })).toBe(false);
+    expect(isRetriedDraft(show, 'u', { artistIds: ['a'] })).toBe(false);
+    expect(isRetriedDraft(undefined, 'u')).toBe(false);
   });
 });

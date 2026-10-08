@@ -4,8 +4,8 @@ import * as logger from 'firebase-functions/logger';
 import { isImageContentType, imageSize } from '../artists/model';
 import { removeFiles, type ArtistFiles } from '../artists/files';
 import { artistRef } from '../centrals/service';
-import { isFileIn, parseContentStatus, staleFiles } from '../posts/model';
-import { PANEL_CONTENT_SECTION, type ContentDeps } from '../posts/panel';
+import { isFileIn, isRetriedDraft, parseContentStatus, staleFiles } from '../posts/model';
+import { PANEL_CONTENT_SECTION, panelContentId, type ContentDeps } from '../posts/panel';
 import { postsRef } from '../posts/store';
 import { requestFields } from '../staff/model';
 import { directRead, readPanelActor, transactionRead, type PanelActor } from '../staff/panel-actor';
@@ -114,7 +114,10 @@ async function rewardsOfEvent(tx: Transaction, db: Firestore, eventId: string): 
 /**
  * createEvent: o show nasce rascunho, com o instante da data local no fuso
  * (mais de 24 h no passado é `event-in-past`), as centrais conferidas (em
- * qualquer status) e o destaque desmarcado por padrão.
+ * qualquer status) e o destaque desmarcado por padrão. O `eventId` pode vir do
+ * painel: o mesmo id de novo, com o rascunho ainda rascunho, de quem chama e
+ * das mesmas centrais, responde sem gravar nem auditar; o id de qualquer outro
+ * documento é `invalid-request` (`field: 'eventId'`). Bloco 11, 26.5.
  */
 export async function addEvent(
   deps: ContentDeps,
@@ -133,11 +136,26 @@ export async function addEvent(
   const timeZone = parseTimeZone(input.timeZone);
   const featured = parseFlagOr(input.featured, false);
   const startsAt = eventInstant(startsAtLocal, timeZone, clock(deps));
+  let given: string | null;
+  try {
+    given = panelContentId(input.eventId, 'eventId');
+  } catch {
+    throw eventPanelError('invalid-request', { field: 'eventId' });
+  }
 
   return db.runTransaction(async (tx) => {
     const actor = await editorIn(tx, deps, caller);
+    const ref = given ? eventRef(db, given) : eventsRef(db).doc();
+    if (given) {
+      const existing = await tx.get(ref);
+      if (existing.exists) {
+        if (!isRetriedDraft(existing.data(), actor.uid, { artistIds })) {
+          throw eventPanelError('invalid-request', { field: 'eventId' });
+        }
+        return { eventId: ref.id };
+      }
+    }
     await requireArtists(tx, db, artistIds);
-    const ref = eventsRef(db).doc();
     const now = Timestamp.fromMillis(clock(deps));
     tx.create(ref, {
       title,

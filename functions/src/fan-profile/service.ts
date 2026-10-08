@@ -139,42 +139,62 @@ export async function changeUsername(
   return { username, changedAt: iso(award.now), changeableAt: iso(changeable) };
 }
 
+export type UsernameRelease = { uid: string; previous: string; username: string };
+
 /**
- * Libera o @ de um fã para uma central (decisão 17, até as callables do bloco
- * 11): numa transação do Admin SDK, troca o fã para um automático novo (o
- * primeiro livre entre os candidatos do gerador), sem prazo, e apaga a
- * reserva. Recusa sem gravar a reserva que não existe, a de uma central e a
- * que não é o @ de agora do perfil. Não mexe no `usernameChangedAt`, que é das
- * trocas do fã. Quem chama é o `scripts/release-fan-username.mjs`.
+ * O núcleo da liberação do @ de um fã, na transação de quem chama (o script
+ * pelo `releaseUsername`, a callable `resetFanUsername` do painel, bloco 11):
+ * troca o fã para um automático novo (o primeiro livre entre os candidatos do
+ * gerador), sem prazo (`usernameChangeableAt: null`), e apaga a reserva
+ * antiga, que fica livre na hora. Recusa sem gravar a reserva que não existe,
+ * a de uma central, a que não é o @ de agora do perfil e, com `uid`, a de
+ * outro fã. Não mexe no `usernameChangedAt`, que é das trocas do fã. Só lê
+ * antes de gravar: quem chama lê o que precisa antes e grava depois.
+ */
+export async function releaseUsernameIn(
+  tx: Transaction,
+  db: Firestore,
+  raw: string,
+  options: { now: number; random?: RandomDigits; uid?: string },
+): Promise<UsernameRelease> {
+  const username = normalizeUsername(raw);
+  const random = options.random ?? randomDigits;
+  const reservationRef = usernameRef(db, username);
+  const reservation = await tx.get(reservationRef);
+  if (!reservation.exists) throw new UsernameReleaseError('not_found');
+  const uid = reservation.get('uid');
+  if (typeof uid !== 'string') throw new UsernameReleaseError('central');
+  if (options.uid !== undefined && uid !== options.uid) throw new UsernameReleaseError('mismatch');
+  const fanRef = profileRef(db, uid);
+  const candidates = usernameCandidates('fa', random).map((name) => usernameRef(db, name));
+  const [profile, ...taken] = await tx.getAll(fanRef, ...candidates);
+  if (!profile!.exists || profile!.get('username') !== username) {
+    throw new UsernameReleaseError('mismatch');
+  }
+  const free = taken.find((snapshot) => !snapshot.exists);
+  // Só acontece com todos os sorteados tomados: rodar de novo sorteia outros.
+  if (!free) throw new Error('Nenhum @ automático livre entre os candidatos.');
+  tx.create(free.ref, { uid, createdAt: Timestamp.fromMillis(options.now) });
+  tx.delete(reservationRef);
+  tx.update(fanRef, { username: free.id, usernameChangeableAt: null });
+  return { uid, previous: username, username: free.id };
+}
+
+/**
+ * Libera o @ de um fã para uma central (decisão 17): o `releaseUsernameIn`
+ * numa transação própria do Admin SDK. Quem chama é o
+ * `scripts/release-fan-username.mjs`, que desde o bloco 11 fica para
+ * emergência (não audita): a equipe usa o `resetFanUsername` do painel.
  */
 export function releaseUsername(
   db: Firestore,
   raw: string,
   options: { now?: number; random?: RandomDigits } = {},
-): Promise<{ uid: string; previous: string; username: string }> {
-  const username = normalizeUsername(raw);
+): Promise<UsernameRelease> {
   const now = options.now ?? Date.now();
-  const random = options.random ?? randomDigits;
-  return db.runTransaction(async (tx) => {
-    const reservationRef = usernameRef(db, username);
-    const reservation = await tx.get(reservationRef);
-    if (!reservation.exists) throw new UsernameReleaseError('not_found');
-    const uid = reservation.get('uid');
-    if (typeof uid !== 'string') throw new UsernameReleaseError('central');
-    const fanRef = profileRef(db, uid);
-    const candidates = usernameCandidates('fa', random).map((name) => usernameRef(db, name));
-    const [profile, ...taken] = await tx.getAll(fanRef, ...candidates);
-    if (!profile!.exists || profile!.get('username') !== username) {
-      throw new UsernameReleaseError('mismatch');
-    }
-    const free = taken.find((snapshot) => !snapshot.exists);
-    // Só acontece com todos os sorteados tomados: rodar de novo sorteia outros.
-    if (!free) throw new Error('Nenhum @ automático livre entre os candidatos.');
-    tx.create(free.ref, { uid, createdAt: Timestamp.fromMillis(now) });
-    tx.delete(reservationRef);
-    tx.update(fanRef, { username: free.id, usernameChangeableAt: null });
-    return { uid, previous: username, username: free.id };
-  });
+  return db.runTransaction((tx) =>
+    releaseUsernameIn(tx, db, raw, { now, ...(options.random ? { random: options.random } : {}) }),
+  );
 }
 
 // --- Foto ---------------------------------------------------------------------

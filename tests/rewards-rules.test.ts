@@ -234,6 +234,15 @@ describe('catálogo e pedidos (rewards, redemptions)', () => {
   it('ninguém grava, nem admin', async () => {
     for (const uid of ['admin', 'editora', 'leitor']) await writesNothing(as(uid));
   });
+
+  it('a seção Fãs lê o perfil da fã, e os pedidos dela continuam só com rewards (bloco 11)', async () => {
+    const db = as('fas');
+    await assertSucceeds(getDoc(doc(db, 'users/uid-camila')));
+    await assertFails(getDoc(doc(db, REDEMPTION)));
+    await assertFails(
+      getDocs(query(collection(db, 'redemptions'), where('uid', '==', 'uid-camila'))),
+    );
+  });
 });
 
 describe('contadores do dia (statsDaily) e shows (events) para a seção rewards', () => {

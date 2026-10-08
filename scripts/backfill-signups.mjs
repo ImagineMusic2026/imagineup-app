@@ -16,9 +16,15 @@
  * marca que apareceram desde a rodada anterior e nunca desconta (a conta
  * excluída entre duas rodadas continua somada). Mostra os dias e os totais
  * antes de gravar. Rode quando a troca de versão do createUserProfile
- * terminar, de novo uns minutos depois, e antes de o fechamento do dia entrar
- * no ar. Fora do package.json de propósito (os scripts entram no fingerprint
- * da EAS).
+ * terminar e de novo uns minutos depois. Fora do package.json de propósito
+ * (os scripts entram no fingerprint da EAS).
+ *
+ * Desde o bloco 11 (26.3 e 26.9), a carga abre o fechamento do dia: no fim,
+ * cria statsMeta/close (só se ele não existe), com o fechamento começando no
+ * menor entre o primeiro dia somado e 2026-09-29, e o closeStatsDays só fecha
+ * algum dia depois disso. Um dia fechado nunca muda: cada transação lê o
+ * statsMeta/close, e o perfil de um dia já fechado fica de fora, sem marca,
+ * listado no resumo. Rodar de novo, em qualquer dia, continua seguro.
  *
  * Onde grava (o destino aparece antes de gravar):
  * - com FIRESTORE_EMULATOR_HOST, no emulador (projeto do --project, do
@@ -85,6 +91,8 @@ const { applicationDefault, deleteApp, initializeApp } = require('firebase-admin
 const { getFirestore } = require('firebase-admin/firestore');
 const { countUnmarkedSignups, writeSignupBackfill } = require(backfillPath);
 
+const sumOf = (entries) => entries.reduce((total, [, count]) => total + count, 0);
+
 const projectId = emulator
   ? project || process.env.GCLOUD_PROJECT || 'demo-imagine-up-app'
   : project;
@@ -99,23 +107,46 @@ const app = emulator
 
 try {
   const db = getFirestore(app);
-  const { days, counted, undated } = await countUnmarkedSignups(db);
+  const { days, closedDays, counted, undated, lastClosedDay } = await countUnmarkedSignups(db);
   const entries = Object.entries(days);
-  const total = entries.reduce((sum, [, count]) => sum + count, 0);
+  const closedEntries = Object.entries(closedDays);
   for (const [day, count] of entries) console.log(`${day}: ${count}`);
+  for (const [day, count] of closedEntries) {
+    console.log(`${day}: ${count} (dia já fechado, fica de fora)`);
+  }
   console.log(
-    `Cadastros sem a marca: ${total} em ${entries.length} dias. Já contados pelo gatilho: ${counted}.` +
+    `Cadastros sem a marca: ${sumOf(entries)} em ${entries.length} dias. Já contados pelo gatilho: ${counted}.` +
+      (closedEntries.length > 0 ? ` De dias já fechados (de fora): ${sumOf(closedEntries)}.` : '') +
       (undated > 0 ? ` Sem data (de fora): ${undated}.` : ''),
+  );
+  console.log(
+    lastClosedDay
+      ? `Fechamento do dia: fechado até ${lastClosedDay}.`
+      : 'Fechamento do dia: ainda não começou; a carga cria o statsMeta/close no fim.',
   );
   if (dryRun) {
     console.log('--dry-run: nada gravado.');
   } else {
     // Relê e marca numa transação por grupo de perfis: o que foi somado de
-    // fato pode diferir da contagem acima se um perfil sumiu ou nasceu no meio.
-    const added = Object.entries(await writeSignupBackfill(db));
-    const sum = added.reduce((total, [, count]) => total + count, 0);
+    // fato pode diferir da contagem acima se um perfil sumiu ou nasceu no meio,
+    // ou se o fechamento andou entre a contagem e a gravação.
+    const { added, skipped, close } = await writeSignupBackfill(db);
+    const addedEntries = Object.entries(added);
+    const skippedEntries = Object.entries(skipped);
     console.log(
-      `Carga somada: ${sum} cadastros em ${added.length} dias (statsDaily/{dia}/statsShards/backfill), perfis marcados.`,
+      `Carga somada: ${sumOf(addedEntries)} cadastros em ${addedEntries.length} dias (statsDaily/{dia}/statsShards/backfill), perfis marcados.`,
+    );
+    if (skippedEntries.length > 0) {
+      console.log(
+        `${sumOf(skippedEntries)} perfis de dias já fechados ficaram de fora: ${skippedEntries
+          .map(([day, count]) => `${day} (${count})`)
+          .join(', ')}.`,
+      );
+    }
+    console.log(
+      close.created
+        ? `Fechamento aberto: statsMeta/close criado com lastClosedDay ${close.lastClosedDay}; o closeStatsDays fecha a partir do dia seguinte.`
+        : `Fechamento já estava aberto (statsMeta/close fechado até ${close.lastClosedDay}).`,
     );
   }
 } catch (error) {

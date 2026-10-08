@@ -431,6 +431,28 @@ export function postPrefix(postId: string): string {
   return `posts/${postId}/`;
 }
 
+const sameValue = (stored: unknown, asked: unknown): boolean =>
+  Array.isArray(stored) && Array.isArray(asked)
+    ? stored.length === asked.length && stored.every((item, index) => item === asked[index])
+    : stored === asked;
+
+/**
+ * O documento que já existe com o id que o painel mandou no `createPost`, no
+ * `createEvent` ou no `createReward` é a nova tentativa do mesmo rascunho
+ * (puro, bloco 11, 26.5): ainda rascunho, criado por quem chama, com os
+ * campos que travam depois de criado iguais aos do pedido (`fields`). Fora
+ * disso, o id é de outro documento, e a criação recusa em vez de responder
+ * que criou.
+ */
+export function isRetriedDraft(
+  stored: Record<string, unknown> | undefined,
+  actorUid: string,
+  fields: Record<string, unknown> = {},
+): boolean {
+  if (!stored || stored.status !== 'draft' || stored.createdBy !== actorUid) return false;
+  return Object.entries(fields).every(([key, value]) => sameValue(stored[key], value));
+}
+
 const FILE_NAME_PATTERN = /^[A-Za-z0-9._-]{1,200}$/;
 
 /** true se o caminho é um arquivo direto em `<prefixo>` (sem subpasta). */
@@ -441,12 +463,19 @@ export function isFileIn(path: unknown, prefix: string): path is string {
 }
 
 /** Caminhos da mídia que o painel subiu para posts/{postId}/. */
-export type PostMediaPaths = { photoPath: string; thumbPath: string; videoPath: string | null };
+/**
+ * Os caminhos da mídia do `updatePost`. No vídeo, `videoPath` ausente mantém o
+ * vídeo de agora (o painel trocou só a capa, bloco 11, 26.5), e null tira; na
+ * foto, sempre null.
+ */
+export type PostMediaPaths = { photoPath: string; thumbPath: string; videoPath?: string | null };
 
 /**
  * `media` do updatePost: null tira; senão `{ photoPath, thumbPath }` na foto
  * e `{ photoPath, thumbPath, videoPath? }` no vídeo, arquivos diretos da pasta
- * do post, diferentes entre si. Texto e show não levam mídia.
+ * do post, diferentes entre si. No vídeo, `videoPath` ausente volta ausente (o
+ * vídeo de agora fica) e null tira o vídeo (bloco 11, 26.5). Texto e show não
+ * levam mídia.
  */
 export function parsePostMediaPaths(
   kind: PostKind,
@@ -470,6 +499,7 @@ export function parsePostMediaPaths(
     }
     return { photoPath, thumbPath, videoPath };
   }
+  if (kind === 'video' && videoPath === undefined) return { photoPath, thumbPath };
   return { photoPath, thumbPath, videoPath: null };
 }
 

@@ -1185,3 +1185,115 @@ describe('missões, meta e conquistas no cálculo', () => {
     ).toThrow(/título/);
   });
 });
+
+// --- Bloco 11: o contador negativo e o fã suspenso que não chama (26.5) ---------------
+
+describe('ajuste da equipe e suspensão (bloco 11)', () => {
+  const adjust = (extra: Partial<Extract<AwardEntry, { kind: 'adjust' }>>): AwardEntry => ({
+    kind: 'adjust',
+    source: 'adjustment',
+    eventId: 'ajuste-0001',
+    ...extra,
+  });
+  const counterOf = (run: () => unknown): unknown => {
+    try {
+      run();
+    } catch (error) {
+      return (error as PointsError).details?.counter;
+    }
+    return undefined;
+  };
+
+  it('o contador negativo diz qual, na ordem do painel', () => {
+    const base = fan({
+      wallet: wallet({ balance: 10, xp: 10, seasonId: SEASON.id, seasonPoints: 5 }),
+    });
+    expect(counterOf(() => compute([{ ...base, entries: [adjust({ balance: -11 })] }]))).toBe(
+      'balance',
+    );
+    expect(counterOf(() => compute([{ ...base, entries: [adjust({ xp: -11 })] }]))).toBe('xp');
+    expect(counterOf(() => compute([{ ...base, entries: [adjust({ season: -6 })] }]))).toBe(
+      'season',
+    );
+    expect(
+      counterOf(() =>
+        compute([{ ...base, entries: [adjust({ central: { artistId: 'nenho', season: -1 } })] }]),
+      ),
+    ).toBe('centralSeason');
+    expect(
+      counterOf(() =>
+        compute([{ ...base, entries: [adjust({ central: { artistId: 'nenho', total: -1 } })] }]),
+      ),
+    ).toBe('centralTotal');
+    // Dois negativos: o primeiro na ordem (saldo antes da central).
+    expect(
+      counterOf(() =>
+        compute([
+          {
+            ...base,
+            entries: [adjust({ balance: -11, central: { artistId: 'nenho', total: -1 } })],
+          },
+        ]),
+      ),
+    ).toBe('balance');
+  });
+
+  const AMIGO: MissionRecord = {
+    id: 'm-um-amigo',
+    title: 'Traga 1 amigo',
+    action: 'invite',
+    target: null,
+    goal: 1,
+    period: 'weekly',
+    featured: false,
+    startsAt: NOW - DAY_MS,
+    endsAt: null,
+    status: 'active',
+    activatedAt: NOW - DAY_MS,
+    createdAt: NOW - DAY_MS,
+    updatedAt: NOW - DAY_MS,
+    rewardPoints: 30,
+  };
+  const GAME: GameConfig = {
+    missions: missionIndex({ version: 1, missions: [AMIGO] }),
+    achievements: [],
+    seasonGoal: null,
+  };
+  const owner = (suspended: boolean): FanInput =>
+    fan({
+      uid: 'dono',
+      suspended,
+      wallet: wallet({ balance: 100, spentTotal: 500 }),
+      entries: [
+        { kind: 'earn', source: 'invite_visit', eventId: 'chave-1' },
+        { kind: 'earn', source: 'invite_signup', eventId: 'chave-1' },
+        { kind: 'refund', source: 'redeem_refund', eventId: 'UP-AAAA11', points: 300 },
+      ],
+      ticks: [{ action: 'invite', key: 'chave-1', on: { artistIds: [] } }],
+    });
+
+  it('o suspenso que não chama não ganha (convite e missão), e a devolução entra', () => {
+    const out = compute([fan({ uid: 'quem-chama' }), owner(true)], { game: GAME });
+    const results = out.results.filter((result) => result.uid === 'dono');
+    expect(results.map((result) => [result.entryId, result.status, result.points])).toEqual([
+      ['invite_visit:chave-1', 'skipped', 0],
+      ['invite_signup:chave-1', 'skipped', 0],
+      ['redeem_refund:UP-AAAA11', 'applied', 300],
+    ]);
+    const plan = out.fans.find((item) => item.uid === 'dono')!;
+    expect(plan.wallet!.state).toMatchObject({ balance: 400, spentTotal: 200, earnedTotal: 0 });
+    expect(plan.wallet!.state.missions.weekly).toBeNull();
+    expect(plan.ledger.map((entry) => entry.id)).toEqual(['redeem_refund:UP-AAAA11']);
+  });
+
+  it('sem a suspensão, o mesmo plano paga o convite e conclui a missão', () => {
+    const out = compute([fan({ uid: 'quem-chama' }), owner(false)], { game: GAME });
+    const plan = out.fans.find((item) => item.uid === 'dono')!;
+    expect(plan.ledger.map((entry) => entry.id)).toEqual([
+      'invite_visit:chave-1',
+      'invite_signup:chave-1',
+      'redeem_refund:UP-AAAA11',
+      expect.stringMatching(/^mission:m-um-amigo:/),
+    ]);
+  });
+});

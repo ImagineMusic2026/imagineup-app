@@ -269,7 +269,13 @@ async function runJobPages(
   }
 }
 
-/** Soma as conquistas de posição de uma página no shard do dia delas (uma gravação por página). */
+/**
+ * Soma as conquistas de posição de uma página no shard do dia da rodada (o
+ * "agora" dela, uma gravação por página). Desde o bloco 11 (26.5, decisão
+ * 22), nunca o dia do `endsAt`: uma virada atrasada ou um `closeSeasonNow`
+ * dias depois gravaria num dia já fechado (`statsDaily`), e o número sumiria
+ * do painel. A data da conquista na carteira continua o `endsAt`.
+ */
 function writeAchievementShard(tx: Transaction, db: Firestore, delta: ShardDelta, at: number) {
   if (isEmptyShardDelta(delta)) return;
   const day = dayKey(at);
@@ -411,7 +417,7 @@ export async function runSeasonClose(db: Firestore, options: JobOptions): Promis
             );
           }
         });
-        writeAchievementShard(tx, db, delta, season.endsAt);
+        writeAchievementShard(tx, db, delta, now);
       },
     },
   );

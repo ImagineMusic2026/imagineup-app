@@ -130,6 +130,7 @@ describe('recusa definitiva do convite (isFinalInviteRejection)', () => {
     ['invalid_request', 400],
     ['idempotency_key_required', 400],
     ['not_fan', 403],
+    ['account_suspended', 403],
     ['invite_not_found', 404],
     ['invite_not_allowed', 409],
     ['idempotency_key_reused', 422],

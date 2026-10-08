@@ -135,6 +135,7 @@ export function createApiHandler(deps: ApiDeps, routes: readonly ApiRoute[] = AP
           now,
           config: points,
           game,
+          allowSuspended: target.allowSuspended === true,
         },
         ({ tx, fan, award, profile }) =>
           target.handle({ ...base, uid: callerUid, tx, fan, award, profile }),

@@ -220,13 +220,14 @@ describe('a regra de grupo de centrals', () => {
   });
 });
 
-describe('o perfil continua com as regras de hoje', () => {
+describe('o perfil e o vínculo com as centrais', () => {
   beforeEach(seed);
 
-  it('o fã lê o próprio perfil, não o de outro, e a equipe com fans ainda não lê perfis', async () => {
+  it('o fã lê o próprio perfil, não o de outro; a equipe com fans lê perfis desde o bloco 11, e a com só artists não', async () => {
     await assertSucceeds(getDoc(doc(as('uid-camila'), 'users/uid-camila')));
     await assertFails(getDoc(doc(as('uid-camila'), 'users/uid-alan')));
-    await assertFails(getDoc(doc(as('editora'), 'users/uid-camila')));
+    await assertSucceeds(getDoc(doc(as('editora'), 'users/uid-camila')));
+    await assertFails(getDoc(doc(as('artistas'), 'users/uid-camila')));
     await assertSucceeds(
       updateDoc(doc(as('uid-camila'), 'users/uid-camila'), {
         displayName: 'Camila R.',

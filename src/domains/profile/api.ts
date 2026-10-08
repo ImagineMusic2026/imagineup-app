@@ -68,6 +68,8 @@ function isoOrNull(value: unknown): string | null {
  * `Timestamp` vira ISO, porque o cache do React Query vai para o disco em JSON.
  */
 export function toFanProfile(uid: string, data: DocumentData): FanProfile {
+  // A suspensão (bloco 11) só aparece quando existe: o perfil de sempre fica igual.
+  const suspendedAt = isoOrNull(data.suspendedAt);
   return {
     uid,
     displayName: textOrNull(data.displayName),
@@ -76,6 +78,7 @@ export function toFanProfile(uid: string, data: DocumentData): FanProfile {
     photoURL: textOrNull(data.photoURL),
     createdAt: isoOrNull(data.createdAt),
     usernameChangeableAt: isoOrNull(data.usernameChangeableAt),
+    ...(suspendedAt ? { suspendedAt } : {}),
   };
 }
 

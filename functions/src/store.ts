@@ -2,6 +2,7 @@ import { FieldValue, type Firestore } from 'firebase-admin/firestore';
 
 import { leaveAllCentrals } from './centrals/service';
 import type { FanPhotoFiles } from './fan-profile/files';
+import { fanSearchKeys } from './fan-profile/search';
 import { purgeFanPhotos } from './fan-profile/service';
 import { detachReferrals, referralRef, removeInviteData } from './invites/service';
 import { dayKey } from './points/model';
@@ -32,7 +33,9 @@ export type SignupCountOptions = { now?: () => number; shardRandom?: () => numbe
  * que a carga dos cadastros antigos (scripts/backfill-signups.mjs) usa para
  * não contar duas vezes. O evento de cadastro pode chegar mais de uma vez: se o
  * perfil já existe, não mexe em nada nem soma de novo. Não grava updatedAt,
- * que é o carimbo de edição do fã e segura as edições dele por 10 s.
+ * que é o carimbo de edição do fã e segura as edições dele por 10 s. O perfil
+ * nasce com o `searchKeys` do nome e do @ (a busca de fãs do painel, bloco 11,
+ * 26.7).
  */
 export async function createProfile(
   db: Firestore,
@@ -67,6 +70,7 @@ export async function createProfile(
       photoURL: null,
       createdAt: FieldValue.serverTimestamp(),
       signupCounted: true,
+      searchKeys: fanSearchKeys(displayName, free.id),
     });
     // O dia é o do relógio da função; o createdAt é o do servidor. Perto da
     // meia-noite os dois podem cair em dias diferentes por milissegundos.

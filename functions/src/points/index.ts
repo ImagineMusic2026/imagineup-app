@@ -11,6 +11,7 @@ export {
   applyAwards,
   centralFromDoc,
   centralPointsRef,
+  isSuspendedProfile,
   ledgerRef,
   planAwards,
   requireFan,

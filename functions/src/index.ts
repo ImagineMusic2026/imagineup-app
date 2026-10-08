@@ -37,12 +37,16 @@ import {
   type FanCountQueue,
 } from './centrals';
 import {
+  clearFanPhoto as removeFanPhotoByStaff,
   FAN_PROFILE_MAX_ATTEMPTS,
   FAN_PROFILE_QUEUE,
   fanPhotoFiles,
+  findFanByEmail as lookupFanByEmail,
   queueFanPhotoPurge,
   queueFanProfileSync as enqueueFanProfileSync,
+  resetFanUsername as resetUsernameOfFan,
   runFanProfileSync,
+  type FanPanelDeps,
   type FanProfileQueue,
 } from './fan-profile';
 import { handleUserCreated, type FindUser } from './handlers';
@@ -54,7 +58,11 @@ import {
   editMission,
   reorderMissionList,
 } from './missions';
-import { moderate } from './moderation';
+import {
+  hideFanComments as hideCommentsOfFan,
+  moderate,
+  setFanSuspended as suspendFan,
+} from './moderation';
 import {
   changePointsConfig,
   changeSeason,
@@ -62,7 +70,9 @@ import {
   type ConfigPanelDeps,
   type ConfigSource,
 } from './points';
-import { closeNow, endCurrent, runRankingTick, scheduleNext } from './ranking';
+import { adjustFanPoints as adjustPoints } from './points/adjust';
+import { runStatsClose } from './points/close';
+import { closeNow, endCurrent, readPanelRanking, runRankingTick, scheduleNext } from './ranking';
 import {
   addPost,
   changePostStatus,
@@ -455,6 +465,28 @@ export const rankingTick = onSchedule(
   },
 );
 
+/**
+ * O fechamento do dia (bloco 11, docs/arquitetura-api.md, 26.3), às 00:20 de
+ * São Paulo: soma os shards de cada dia passado num statsDaily/{dia} fechado
+ * (até 31 por rodada, só depois da folga de 10 min da meia-noite), com o
+ * retrato da noite no dia de ontem e a rede de segurança do fanCount. Sem
+ * statsMeta/close (a carga dos cadastros não rodou), registra um erro e não
+ * fecha nada. Separada do rankingTick: falha isolada e prazo próprio. O
+ * emulador não roda função agendada: o seed e os testes chamam o
+ * runStatsClose.
+ */
+export const closeStatsDays = onSchedule(
+  {
+    schedule: '20 0 * * *',
+    timeZone: 'America/Sao_Paulo',
+    timeoutSeconds: 300,
+    retryCount: 3,
+  },
+  async () => {
+    await runStatsClose(getFirestore(), { now: Date.now() });
+  },
+);
+
 /** Cria uma missão como rascunho no catálogo, com o id gerado pelo servidor. */
 export const createMission = onCall({ cors: PANEL_ORIGINS }, async (request) => {
   const result = await addMission(gameDeps(), request.auth, request.data);
@@ -601,6 +633,93 @@ export const getRedemptionContacts = onCall({ cors: PANEL_ORIGINS }, async (requ
   return result;
 });
 
+// Telas do painel (bloco 11, docs/arquitetura-api.md, 26.4): o ajuste de
+// pontos e a busca por e-mail da seção Fãs, o ranking ao vivo da seção
+// Ranking e as ferramentas da Moderação sobre a conta de um fã (trocar o @,
+// tirar a foto, suspender e ocultar os comentários). Mesmo molde das outras:
+// o acesso lido de staff/{uid} a cada chamada e de novo na transação, a
+// auditoria em staffAudit com o uid do fã e nunca o e-mail, e a recusa da
+// própria conta de fã de quem chama (`self`). Os logs levam ids, nunca o
+// e-mail buscado nem o motivo escrito pela equipe.
+
+let fansConfig: ConfigSource | null = null;
+
+const fanPanelDeps = (): FanPanelDeps => ({ db: getFirestore(), auth: getAuth() });
+
+/**
+ * Ajusta o saldo, o XP, os pontos da temporada ou os de uma central de um fã,
+ * com o motivo (no extrato e na auditoria), o teto do papel e o orçamento do
+ * dia do editor. 30 s: dentro da folga da virada (23.6).
+ */
+export const adjustFanPoints = onCall(
+  { cors: PANEL_ORIGINS, timeoutSeconds: 30 },
+  async (request) => {
+    const result = await adjustPoints(
+      { db: getFirestore(), config: (fansConfig ??= createConfigSource(getFirestore())) },
+      request.auth,
+      request.data,
+    );
+    logger.info('Pontos de um fã ajustados.', {
+      actorUid: request.auth?.uid,
+      status: result.status,
+    });
+    return result;
+  },
+);
+
+/** Acha o uid do fã pelo e-mail (só quem edita Fãs, até 50 por dia, auditado sem o e-mail). */
+export const findFanByEmail = onCall({ cors: PANEL_ORIGINS }, async (request) => {
+  const result = await lookupFanByEmail(fanPanelDeps(), request.auth, request.data);
+  logger.info('Fã buscado por e-mail.', {
+    actorUid: request.auth?.uid,
+    found: result.uid !== null,
+  });
+  return result;
+});
+
+/** O ranking ao vivo (geral ou de uma central em qualquer status), para a seção Ranking. */
+export const getPanelRanking = onCall({ cors: PANEL_ORIGINS }, (request) =>
+  readPanelRanking(gameDeps(), request.auth, request.data),
+);
+
+/** Troca o @ de um fã por um automático novo; o antigo fica livre na hora. */
+export const resetFanUsername = onCall({ cors: PANEL_ORIGINS }, async (request) => {
+  const result = await resetUsernameOfFan(fanPanelDeps(), request.auth, request.data);
+  logger.info('@ de um fã trocado pela equipe.', { actorUid: request.auth?.uid });
+  return result;
+});
+
+/** Tira a foto do perfil de um fã (o arquivo sai pelo gatilho do perfil). */
+export const clearFanPhoto = onCall({ cors: PANEL_ORIGINS }, async (request) => {
+  const result = await removeFanPhotoByStaff(fanPanelDeps(), request.auth, request.data);
+  logger.info('Foto de um fã removida pela equipe.', { actorUid: request.auth?.uid });
+  return result;
+});
+
+/** Suspende (ou tira a suspensão de) um fã: as rotas do app que gravam passam a recusar. */
+export const setFanSuspended = onCall({ cors: PANEL_ORIGINS }, async (request) => {
+  const result = await suspendFan({ db: getFirestore() }, request.auth, request.data);
+  logger.info('Suspensão de um fã alterada.', {
+    actorUid: request.auth?.uid,
+    suspended: result.suspended,
+  });
+  return result;
+});
+
+/**
+ * Oculta até 100 comentários visíveis de um fã por chamada (o painel chama de
+ * novo enquanto vier `more`), com uma auditoria por chamada. O painel espera
+ * até 130 s.
+ */
+export const hideFanComments = onCall(
+  { cors: PANEL_ORIGINS, timeoutSeconds: 120 },
+  async (request) => {
+    const result = await hideCommentsOfFan({ db: getFirestore() }, request.auth, request.data);
+    logger.info('Comentários de um fã ocultados.', { actorUid: request.auth?.uid, ...result });
+    return result;
+  },
+);
+
 // API HTTP do app (docs/arquitetura-api.md): carteira, progresso e extrato no
 // bloco 1, centrais no bloco 4, convite no bloco 5, mural e agenda no bloco 6,
 // missões e conquistas no bloco 7, ranking e temporada no bloco 8, o perfil
@@ -729,7 +848,7 @@ export const queueFanProfileSync = onDocumentUpdated(
       },
       { emulator: isEmulator() },
     );
-    if (result.photo || result.task === 'queued') {
+    if (result.photo || result.task === 'queued' || result.searchKeys === 'written') {
       logger.info('Perfil do fã alterado.', { uid: event.params.uid, ...result });
     }
   },

@@ -5,9 +5,20 @@ import type { EmailConfig } from './email';
 /**
  * Origens que chamam as funções da equipe pelo navegador: o painel publicado
  * na Vercel (projeto imagineup-admin) e o local, para desenvolvimento. Quando
- * o painel ganhar domínio próprio, o endereço novo entra aqui.
+ * o painel ganhar domínio próprio, o endereço novo entra aqui. No emulador
+ * (`FUNCTIONS_EMULATOR === 'true'`), também o painel local nas portas 3001 a
+ * 3009, para as trilhas do bloco 11 conferirem as telas ao mesmo tempo, cada
+ * uma na sua porta (26.5); em produção, a lista não muda.
  */
-export const PANEL_ORIGINS = ['https://imagineup-admin.vercel.app', 'http://localhost:3000'];
+export function panelOrigins(env: Record<string, string | undefined>): string[] {
+  const origins = ['https://imagineup-admin.vercel.app', 'http://localhost:3000'];
+  if (env.FUNCTIONS_EMULATOR !== 'true') return origins;
+  for (let port = 3001; port <= 3009; port += 1) origins.push(`http://localhost:${port}`);
+  return origins;
+}
+
+/** As origens desta execução (lidas quando o módulo carrega, antes de as funções serem definidas). */
+export const PANEL_ORIGINS = panelOrigins(process.env);
 
 /** Painel local do Next.js, usado quando PANEL_URL não foi definido. */
 export const DEFAULT_PANEL_URL = 'http://localhost:3000';

@@ -11,6 +11,7 @@ import {
   profileSyncNeeded,
   type ProfileSyncPlan,
 } from './model';
+import { sameSearchKeys, searchKeysOf } from './search';
 import { removeReplacedPhoto, syncFanProfile, type FanProfileSyncResult } from './service';
 
 // A fila das cópias do perfil (bloco 9, 24.7): o gatilho de users/{uid} apaga
@@ -49,11 +50,48 @@ export const profileSyncBudgetRef = (db: Firestore, uid: string) =>
 export type QueueFanProfileSyncResult = {
   photo: 'removed' | 'kept' | 'invalid' | null;
   task: 'queued' | 'exists' | 'unchanged' | 'no-profile' | 'invalid';
+  /** O `searchKeys` (bloco 11): gravado, já certo ou perfil que sumiu; ausente sem mudança de nome ou @. */
+  searchKeys?: 'written' | 'unchanged' | 'no-profile';
 };
+
+/** O nome ou o @ do evento mudaram: as chaves da busca podem ter mudado. */
+function searchFieldsChanged(
+  before: DocumentData | undefined,
+  after: DocumentData | undefined,
+): boolean {
+  if (!before || !after) return false;
+  return (['displayName', 'username'] as const).some(
+    (field) => (before[field] ?? null) !== (after[field] ?? null),
+  );
+}
+
+/**
+ * As chaves da busca de fãs do painel (bloco 11, 26.7) a partir do perfil de
+ * agora, relido numa transação, e nunca do `event.data.after`: a entrega é
+ * pelo menos uma vez e sem ordem, e um evento velho gravaria as chaves de um
+ * nome velho por cima das novas. Grava só quando mudou, sem `updatedAt` (o
+ * carimbo de edição do fã, que trava a edição por 10 s). A gravação dispara o
+ * gatilho de novo, que não vê nome nem @ mudados e não abre a transação.
+ */
+export function syncFanSearchKeys(
+  db: Firestore,
+  uid: string,
+): Promise<'written' | 'unchanged' | 'no-profile'> {
+  return db.runTransaction(async (tx) => {
+    const profile = await tx.get(db.collection('users').doc(uid));
+    if (!profile.exists) return 'no-profile';
+    const keys = searchKeysOf(profile);
+    if (sameSearchKeys(profile.get('searchKeys'), keys)) return 'unchanged';
+    tx.update(profile.ref, { searchKeys: keys });
+    return 'written';
+  });
+}
 
 /**
  * Gatilho `queueFanProfileSync` (`onDocumentUpdated` em users/{uid}):
  * 1. foto trocada ou tirada: apaga o arquivo antigo (`removeReplacedPhoto`);
+ *    nome ou @ trocados: o `searchKeys` do perfil de agora (bloco 11,
+ *    `syncFanSearchKeys`); mudar só o `searchKeys` não põe tarefa na fila;
  * 2. sem mudança no nome, na foto ou no caminho dela: termina;
  * 3. o orçamento do dia, numa transação que exige o perfil (o gatilho
  *    atrasado de uma conta excluída não o recria);
@@ -86,7 +124,10 @@ export async function queueFanProfileSync(
   if (oldPath && oldPath !== text(after?.photoPath)) {
     photo = await removeReplacedPhoto(db, files, uid, oldPath, log);
   }
-  if (!profileSyncNeeded(before, after)) return { photo, task: 'unchanged' };
+  const searchKeys = searchFieldsChanged(before, after)
+    ? await syncFanSearchKeys(db, uid)
+    : undefined;
+  if (!profileSyncNeeded(before, after)) return { photo, task: 'unchanged', searchKeys };
 
   const plan = await db.runTransaction(async (tx): Promise<ProfileSyncPlan | null> => {
     const budgetRef = profileSyncBudgetRef(db, uid);
@@ -96,18 +137,18 @@ export async function queueFanProfileSync(
     if (next.write) tx.set(budgetRef, next.write);
     return next;
   });
-  if (!plan) return { photo, task: 'no-profile' };
+  if (!plan) return { photo, task: 'no-profile', searchKeys };
 
   if (options.emulator) {
     await queue.enqueue({ uid });
-    return { photo, task: 'queued' };
+    return { photo, task: 'queued', searchKeys };
   }
   const task = windowTask(plan.prefix, uid, eventTime, plan.windowMs);
   try {
     await queue.enqueue({ uid }, { id: task.id, scheduleTime: task.scheduleTime });
-    return { photo, task: 'queued' };
+    return { photo, task: 'queued', searchKeys };
   } catch (error) {
-    if (isTaskExists(error)) return { photo, task: 'exists' };
+    if (isTaskExists(error)) return { photo, task: 'exists', searchKeys };
     throw error;
   }
 }

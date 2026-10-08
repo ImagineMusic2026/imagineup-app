@@ -272,6 +272,65 @@ describe('runIdempotent', () => {
     expect(tries[0]).toEqual([]);
   });
 
+  it('fã suspenso (bloco 11): 403 account_suspended sem gravar nada, nem a chave', async () => {
+    const suspended = {
+      [`users/${UID}`]: { displayName: 'Camila Ribeiro', suspendedAt: { seconds: 1 } },
+    };
+    const { db, tries } = fakeDb(suspended);
+    const work = vi.fn<IdempotentWork>(async () => ({ body: { ok: true } }));
+    await expect(
+      runIdempotent(
+        deps(db, () => 0),
+        CALL,
+        work,
+      ),
+    ).rejects.toMatchObject({ code: 'account_suspended', status: 403 });
+    expect(work).not.toHaveBeenCalled();
+    expect(tries[0]).toEqual([]);
+  });
+
+  it('a rota com allowSuspended responde ao suspenso; a chave guardada antes também', async () => {
+    const suspended = {
+      [`users/${UID}`]: { displayName: 'Camila Ribeiro', suspendedAt: { seconds: 1 } },
+    };
+    const { db, tries } = fakeDb(suspended);
+    const result = await runIdempotent(
+      deps(db, () => 0),
+      { ...CALL, allowSuspended: true },
+      async () => ({ body: { ok: true } }),
+    );
+    expect(result).toEqual({ status: 200, body: { ok: true }, replayed: false });
+    expect(tries[0]!.some((write) => write.path.startsWith('idempotency/'))).toBe(true);
+
+    // A resposta guardada antes da suspensão volta como estava, sem efeito novo.
+    const saved = fakeDb({
+      ...suspended,
+      [`idempotency/${idempotencyDocId(UID, CALL.key)}`]: {
+        fingerprint: CALL.fingerprint,
+        status: 200,
+        body: { liked: true },
+      },
+    });
+    await expect(
+      runIdempotent(
+        deps(saved.db, () => 0),
+        CALL,
+        async () => ({ body: { ok: false } }),
+      ),
+    ).resolves.toEqual({ status: 200, body: { liked: true }, replayed: true });
+  });
+
+  it('o suspendedAt apagado (null) não trava', async () => {
+    const { db } = fakeDb({ [`users/${UID}`]: { displayName: 'Camila', suspendedAt: null } });
+    await expect(
+      runIdempotent(
+        deps(db, () => 0),
+        CALL,
+        async () => ({ body: { ok: true } }),
+      ),
+    ).resolves.toMatchObject({ status: 200 });
+  });
+
   it('o mesmo fã duas vezes no plano grava a carteira uma vez, com a atividade', async () => {
     const { db, tries } = fakeDb(PROFILE);
     const work: IdempotentWork = async ({ tx, fan, award }) => {

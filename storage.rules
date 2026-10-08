@@ -70,6 +70,14 @@ service firebase.storage {
       return firestore.exists(/databases/(default)/documents/$(collection)/$(id));
     }
 
+    // O perfil do fã existe e não está suspenso (bloco 11, docs/arquitetura-api.md,
+    // 26.6): conta só da equipe, conta já excluída e fã suspenso não sobem foto.
+    // O get de um perfil que não existe dá erro, e erro nega.
+    function fanCanUpload(uid) {
+      let profile = firestore.get(/databases/(default)/documents/users/$(uid));
+      return profile != null && profile.data.get('suspendedAt', null) == null;
+    }
+
     function artistExists(artistId) {
       return docExists('artists', artistId);
     }
@@ -133,9 +141,10 @@ service firebase.storage {
 
     // Foto do fã (bloco 9): o próprio fã sobe para a pasta dele um JPEG de até
     // 1 MiB, com o nome que o app gera (photo-<id>.jpg), sem sobrescrever, e só
-    // com o perfil existindo: conta só da equipe e conta já excluída (o token
-    // ainda vale até 1 h) não sobem. A função api confere o arquivo e grava a
-    // URL no perfil; os outros fãs veem a foto pela URL com token. O dono lê
+    // com o perfil existindo e sem suspensão: conta só da equipe, conta já
+    // excluída (o token ainda vale até 1 h) e, desde o bloco 11, o fã suspenso
+    // não sobem. A função api confere o arquivo e grava a URL no perfil; os
+    // outros fãs veem a foto pela URL com token. O dono lê
     // pelo caminho: o app confere os metadados, antes de enviar de novo, para
     // saber se o envio de uma tentativa já chegou. Só o servidor apaga (a foto
     // trocada, os envios que não viraram a foto e a pasta da conta excluída).
@@ -150,7 +159,7 @@ service firebase.storage {
         && request.resource.size > 0
         && request.resource.size <= 1024 * 1024
         && request.resource.contentType == 'image/jpeg'
-        && docExists('users', uid);
+        && fanCanUpload(uid);
       allow update, delete: if false;
     }
 

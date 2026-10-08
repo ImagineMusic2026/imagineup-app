@@ -4,6 +4,7 @@ import { Timestamp, type DocumentSnapshot, type Transaction } from 'firebase-adm
 
 import {
   applyAwards,
+  isSuspendedProfile,
   planAwards,
   requireFan,
   retryOnAlreadyExists,
@@ -69,6 +70,8 @@ export type IdempotentCall = {
   config: PointsConfig;
   /** Missões, conquistas e meta da temporada, da mesma carga do cache dos valores (bloco 7). */
   game: GameConfig;
+  /** A rota aceita o fã suspenso (`WriteRoute.allowSuspended`, bloco 11, 26.5). */
+  allowSuspended?: boolean;
 };
 
 export type IdempotentWork = (ctx: {
@@ -100,7 +103,11 @@ export function storedBody(body: unknown): unknown {
  * Roda o efeito de uma rota que grava, numa transação:
  * 1. lê a chave, o perfil e a carteira num getAll só;
  * 2. chave com o mesmo pedido: a resposta guardada, sem efeito; com outro: 422;
- * 3. requireFan (perfil exigido, marcas de atividade);
+ * 3. requireFan (perfil exigido, marcas de atividade); o perfil suspenso
+ *    recusa com 403 `account_suspended`, sem gravar nada (nem a chave), salvo
+ *    nas rotas com `allowSuspended` (bloco 11, 26.5). A trava fica aqui, e
+ *    não no requireFan, que o ajuste da equipe, a devolução do resgate e o
+ *    seed também usam;
  * 4. o trabalho da rota (leituras, planAwards, gravações do domínio);
  * 5. grava o plano (ou só a atividade de quem chama) e a chave, juntos.
  * O plano da rota precisa ter partido do `fan` deste pedido (`plan.caller`).
@@ -130,6 +137,9 @@ export function runIdempotent(
       const fan = await requireFan(tx, db, call.uid, profile!, wallet!, call.now, {
         markActivity: true,
       });
+      if (!call.allowSuspended && isSuspendedProfile(profile!)) {
+        throw apiError('account_suspended');
+      }
       const award: AwardContext = {
         now: call.now,
         config: call.config,

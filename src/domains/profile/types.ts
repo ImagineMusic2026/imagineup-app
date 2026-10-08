@@ -21,6 +21,12 @@ export interface FanProfile {
    * bloco 9 não tem o campo.
    */
   usernameChangeableAt?: string | null;
+  /**
+   * ISO: desde quando a conta está suspensa pela equipe (bloco 11); ausente
+   * sem suspensão. O fã suspenso continua lendo o app, mas não grava nome e
+   * cidade (a regra recusa) nem cria nada pela API (403 `account_suspended`).
+   */
+  suspendedAt?: string | null;
 }
 
 /** O que a tela "Editar perfil" grava direto no perfil: só o que mudou. */

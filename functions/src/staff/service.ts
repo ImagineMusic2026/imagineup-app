@@ -11,6 +11,7 @@ import {
 import type { FunctionsErrorCode } from 'firebase-functions/https';
 import * as logger from 'firebase-functions/logger';
 
+import { auditIndex, type AuditIndex } from './audit-index';
 import { inviteEmailParams, type InviteEmailParams } from './email';
 import { staffError } from './errors';
 import {
@@ -143,7 +144,15 @@ export type AuditAction =
   | 'redemption.approved'
   | 'redemption.delivered'
   | 'redemption.refused'
-  | 'redemption.contacts.viewed';
+  | 'redemption.contacts.viewed'
+  | 'wallet.adjusted'
+  | 'fan.email.lookup'
+  | 'fan.username.reset'
+  | 'fan.photo.removed'
+  | 'fan.suspended'
+  | 'fan.unsuspended'
+  | 'fan.comments.hidden'
+  | 'config.seeded';
 
 /**
  * staffAudit/{autoId}: uma entrada por mudança feita pelo painel. Nas ações
@@ -210,14 +219,17 @@ const clock = (deps: { now?: () => number }) => (deps.now ?? Date.now)();
 const staffRef = (db: Firestore, uid: string) => db.collection('staff').doc(uid);
 const invitesOf = (db: Firestore) => db.collection('staffInvites');
 
-/** Grava uma entrada de staffAudit na transação da mudança. */
+/**
+ * Grava uma entrada de staffAudit na transação da mudança, com a seção e os
+ * alvos do `auditIndex` (os filtros dos Logs, bloco 11, 26.8).
+ */
 export function writeAudit(
   tx: Transaction,
   db: Firestore,
   entry: Omit<AuditEntry, 'createdAt'>,
   createdAt: Timestamp,
 ): void {
-  const record: AuditEntry = { ...entry, createdAt };
+  const record: AuditEntry & AuditIndex = { ...entry, ...auditIndex(entry), createdAt };
   tx.create(db.collection('staffAudit').doc(), record);
 }
 

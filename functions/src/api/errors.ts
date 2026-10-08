@@ -19,6 +19,7 @@ export type ApiErrorCode =
   | 'photo_invalid'
   | 'unauthenticated'
   | 'not_fan'
+  | 'account_suspended'
   | 'not_found'
   | 'artist_not_found'
   | 'invite_not_found'
@@ -58,6 +59,10 @@ export const API_ERRORS: Record<ApiErrorCode, { status: number; message: string 
   photo_invalid: { status: 400, message: 'Foto fora do formato. Escolha outra.' },
   unauthenticated: { status: 401, message: 'Entre na sua conta para continuar.' },
   not_fan: { status: 403, message: 'Esta conta não é de fã.' },
+  account_suspended: {
+    status: 403,
+    message: 'Sua conta está suspensa. Fale com a equipe do ImagineUP.',
+  },
   not_found: { status: 404, message: 'Não encontrado.' },
   artist_not_found: { status: 404, message: 'Central não encontrada.' },
   invite_not_found: { status: 404, message: 'Convite não encontrado.' },

@@ -156,6 +156,7 @@ export const postRoutes: ApiRoute[] = [
     method: 'DELETE',
     pattern: '/posts/:postId/like',
     writes: true,
+    allowSuspended: true,
     validate: postParam,
     async handle(ctx) {
       const { plan } = await unlikePost(ctx.tx, ctx.deps.db, {

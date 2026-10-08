@@ -1,5 +1,7 @@
 import { Timestamp } from 'firebase-admin/firestore';
 
+import type { LeaderboardEntry, Season } from '../api/contract';
+import { CentralError, isArtistId } from '../centrals/model';
 import { gamePanelError } from '../missions/errors';
 import {
   parseSeasonConfig,
@@ -11,9 +13,19 @@ import { expectedVersionOf, runConfigChange, type ConfigPanelDeps } from '../poi
 import { resolveSeason, seasonClosing, seasonIdUsed, seasonInputOf } from '../points/panel';
 import { requestFields } from '../staff/model';
 import { directRead, readPanelActor } from '../staff/panel-actor';
+import { panelError } from '../staff/panel-errors';
 import { writeAudit, type CallerAuth } from '../staff/service';
 import { runSeasonClose } from './jobs';
-import { closeNowRefusal, endSeasonRefusal, nextSeasonRefusal } from './model';
+import {
+  closeNowRefusal,
+  decodeRankCursor,
+  endSeasonRefusal,
+  GLOBAL_SCOPE,
+  nextSeasonRefusal,
+  type RankCursor,
+  type RankScope,
+} from './model';
+import { readLeaderboard, readSeason } from './service';
 
 // As callables da temporada do bloco 8 (docs/arquitetura-api.md, 23.10), com
 // a seção ranking: cadastrar a próxima (`scheduleNextSeason`), encerrar a de
@@ -205,4 +217,53 @@ export async function closeNow(
     );
   });
   return { ok: true, status, pages: result.pages };
+}
+
+/** O recorte do `getPanelRanking`: ausente ou null, o geral; fora do formato do @, a central não existe. */
+function panelScopeOf(value: unknown): RankScope {
+  if (value === undefined || value === null) return GLOBAL_SCOPE;
+  if (typeof value !== 'string') throw panelError('invalid-request', { field: 'artistId' });
+  if (!isArtistId(value)) throw panelError('artist-not-found');
+  return { kind: 'artist', artistId: value };
+}
+
+/** O cursor opaco de 23.2: ausente ou null, a primeira página; fora do formato, `invalid-request`. */
+function panelCursorOf(value: unknown): RankCursor | null {
+  if (value === undefined || value === null) return null;
+  const cursor = typeof value === 'string' ? decodeRankCursor(value) : null;
+  if (!cursor) throw panelError('invalid-request', { field: 'cursor' });
+  return cursor;
+}
+
+/**
+ * getPanelRanking (bloco 11, 26.4): o ranking ao vivo para a seção ranking,
+ * só de leitura, pelo mesmo `readLeaderboard` da rota do app, sem exigir a
+ * central publicada (ela precisa existir: `artist-not-found`). O
+ * `config/season` é lido sem cache, e o uid de quem chama nunca entra (o
+ * `isMe` sai sempre falso: um membro da equipe que também é fã não se vê
+ * marcado). Páginas de 20, com o cursor opaco do app. Sem auditoria: é
+ * leitura do que o app já mostra. A seção ranking não lê carteiras nem perfis
+ * pelas regras; esta callable é o caminho dela (decisão 7).
+ */
+export async function readPanelRanking(
+  deps: ConfigPanelDeps,
+  caller: CallerAuth | undefined,
+  data: unknown,
+): Promise<{ season: Season | null; items: LeaderboardEntry[]; nextCursor: string | null }> {
+  const { db } = deps;
+  await readPanelActor(directRead, db, caller, 'ranking', 'view');
+  const input = requestFields(data);
+  const scope = panelScopeOf(input.artistId);
+  const cursor = panelCursorOf(input.cursor);
+  const now = (deps.now ?? Date.now)();
+  const config = parseSeasonConfig((await seasonConfigRef(db).get()).data(), quiet);
+  try {
+    const page = await readLeaderboard(db, '', config, now, scope, cursor, {
+      requirePublished: false,
+    });
+    return { season: readSeason(config, now).season, ...page };
+  } catch (error) {
+    if (error instanceof CentralError) throw panelError('artist-not-found');
+    throw error;
+  }
 }

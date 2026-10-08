@@ -376,6 +376,29 @@ describe('Editar perfil: nome e cidade', () => {
     expect(saveButton()).toBeEnabled();
   });
 
+  it('a conta suspensa (bloco 11): o "Salvar" desligado com a frase própria, mesmo com mudança', async () => {
+    await openEditProfile({
+      ...CAMILA,
+      suspendedAt: { toDate: () => new Date('2026-10-07T12:00:00.000Z') },
+    });
+    expect(
+      screen.getByText('Sua conta está suspensa. Fale com a equipe do ImagineUP.'),
+    ).toBeTruthy();
+    fireEvent.changeText(screen.getByTestId('edit-profile-city'), 'Irará, BA');
+    expect(saveButton()).toBeDisabled();
+    fireEvent.press(saveButton());
+    expect(updateDoc).not.toHaveBeenCalled();
+  });
+
+  it('sem o campo da suspensão, nada muda: o "Salvar" liga com a mudança, sem a frase', async () => {
+    await openEditProfile();
+    expect(
+      screen.queryByText('Sua conta está suspensa. Fale com a equipe do ImagineUP.'),
+    ).toBeNull();
+    fireEvent.changeText(screen.getByTestId('edit-profile-city'), 'Irará, BA');
+    expect(saveButton()).toBeEnabled();
+  });
+
   it('a trava de 10 s da regra (permission-denied) mostra e anuncia o texto dela', async () => {
     jest
       .mocked(updateDoc)

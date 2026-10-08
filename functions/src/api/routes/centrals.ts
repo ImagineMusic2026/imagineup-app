@@ -126,9 +126,11 @@ export const centralRoutes: ApiRoute[] = [
   },
   {
     // Sair da central: sem vínculo, sucesso sem efeito; em qualquer status da central.
+    // O fã suspenso também sai (26.5).
     method: 'DELETE',
     pattern: '/me/centrals/:artistId',
     writes: true,
+    allowSuspended: true,
     validate: artistParam,
     async handle(ctx) {
       const artistId = ctx.params.artistId!;

@@ -93,6 +93,13 @@ export type ReadRoute = RouteBase & {
  */
 export type WriteRoute = RouteBase & {
   writes: true;
+  /**
+   * true nas rotas que desfazem ou protegem o fã (sair da central, descurtir,
+   * desfazer o "Eu vou", tirar a própria foto, bloquear e desbloquear): o fã
+   * suspenso continua podendo (bloco 11, 26.5). As outras recusam o suspenso
+   * com 403 `account_suspended`. Rota nova que cria ou soma não leva.
+   */
+  allowSuspended?: boolean;
   handle: (ctx: WriteContext) => Promise<WorkResult>;
 };
 

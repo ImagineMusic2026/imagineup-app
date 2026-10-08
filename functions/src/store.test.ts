@@ -6,6 +6,7 @@ import type { FanPhotoFiles } from './fan-profile/files';
 import { detachReferrals, removeInviteData } from './invites/service';
 import { removeFanEngagement } from './posts/service';
 import { cancelFanRedemptions } from './rewards/service';
+import { fanSearchKeys } from './fan-profile/search';
 import { createProfile, deleteUserData } from './store';
 
 // A ordem da exclusão de conta é o que impede o fanCount 1 acima para sempre
@@ -302,6 +303,8 @@ describe('cadastro do dia no createProfile', () => {
     expect(writes.find((write) => write.path === `users/${UID}`)?.data).toMatchObject({
       username: 'camilarib',
       signupCounted: true,
+      // A busca de fãs do painel (bloco 11, 26.7): o @ e o nome.
+      searchKeys: fanSearchKeys('Camila Ribeiro', 'camilarib'),
     });
     const shard = writes.find((write) => write.path.startsWith('statsDaily/'));
     expect(shard).toEqual({
