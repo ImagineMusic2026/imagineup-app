@@ -6809,7 +6809,7 @@ Ações (editor com `ranking` e admin), todas com o `version` de `config/season`
 - "Cadastrar temporada" (sem temporada) e "Editar" (`updateSeason`): diálogo com Nome (até 40), Identificador (sugerido pelo nome, `^[a-z0-9-]{3,40}$`, travado com a dica "Não muda depois que a temporada começa."), Início e Fim (data e hora de São Paulo), Título do 1º lugar (opcional) e Tamanho do top (1 a 50, padrão 10). A validação espelha o `validateSeasonInput`; o `invalid-request` com `details.field` vai para o campo. `config-changed`: "A temporada mudou enquanto você editava. Os dados novos já estão no formulário; confira e salve de novo." (a tela lê `config/season` de novo e o formulário recarrega com ele).
 - "Agendar próxima", "Editar próxima" e "Cancelar próxima" (`scheduleNextSeason`, com `null` para cancelar, confirmação).
 - "Encerrar temporada" (`endSeason`, só em andamento, confirmação vermelha: "A temporada termina agora para todos os fãs, e o ranking fecha na virada, em até 11 minutos. Isso não se desfaz.").
-- "Rodar a virada agora" (`closeSeasonNow`, só esperando a virada ou atrasada): chama de novo enquanto a resposta for `running`, com "Fechando o ranking... página N", e termina com "Temporada fechada." O botão aparece 60 s depois do `endsAt` (a folga `CLOSE_GRACE_MS`, que o painel espelha) com a explicação "A virada roda sozinha a cada 10 minutos. Para não esperar, isto faz o mesmo agora."; atrasada (`CLOSE_LATE_MS`), "A virada automática não rodou. Isto faz o mesmo agora."
+- "Rodar a virada agora" (`closeSeasonNow`, só esperando a virada ou atrasada): chama de novo enquanto a resposta for `running`, com "Fechando o ranking... página N", e termina com "Temporada fechada." O botão aparece 60 s depois do `endsAt` (a folga `CLOSE_GRACE_MS`, que o painel espelha) com a explicação "A virada roda sozinha a cada 10 minutos. Se ainda não rodou, isto faz o mesmo agora." (um texto só, para o painel não espelhar também o `CLOSE_LATE_MS`).
 
 - "Rodar a virada agora" e as chamadas seguintes vão com o `LONG_CALL_TIMEOUT_MS` (130 s) do `call`: o orçamento do `closeSeasonNow` é de 90 s por chamada, e o prazo padrão do SDK (70 s) cortaria a chamada no meio com um erro incerto.
 
@@ -7224,7 +7224,7 @@ Integração (duas revisões do código construído, em 07/10/2026):
 
 #### O painel (imagineup-admin, PR #1)
 
-- **O "Rodar a virada agora" aparece pela folga do servidor.** O painel espelha o `CLOSE_GRACE_MS` e mostra o botão 60 s depois do `endsAt`, com o texto de quem espera a virada automática; o "não rodou" só vale atrasada.
+- **O "Rodar a virada agora" aparece pela folga do servidor.** O painel espelha o `CLOSE_GRACE_MS` e mostra o botão 60 s depois do `endsAt`, com um texto que vale tanto esperando a virada automática quanto atrasada ("Se ainda não rodou, isto faz o mesmo agora."). O desenho dizia "A virada automática não rodou", que logo depois de encerrar ainda não é verdade.
 - **A origem na ficha do fã sai do extrato de quem convidou.** O "o que quem convidou ganhou" é lido em `wallets/{inviterUid}/ledger` com `createdAt ==` o `claimedAt` do `referrals/{uid}`, e não de um campo novo no convite.
 - **O aviso `has-content` da lixeira das centrais faz duas consultas com `limit(1)`** (`posts` por `artistId` e `events` por `artistIds`), as mesmas formas do `deleteArtist`, antes de chamar a callable.
 - **O botão da temporada se chama "Encerrar temporada"**, e não "Encerrar agora" como no desenho de 26.16: casa com as frases do servidor e não se confunde com o "Encerrar agora" das missões.
