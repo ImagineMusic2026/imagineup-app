@@ -101,6 +101,7 @@ describe('CPU e concorrência das funções', () => {
     expect(api.cpu).toBe(1);
     expect(api.concurrency).toBe(80);
     expect(api.availableMemoryMb).toBe(512);
+    expect(api.maxInstances).toBe(8);
     for (const name of FULL_CPU) {
       expect(typeof endpointOf(name).concurrency, name).toBe('number');
     }
@@ -128,6 +129,15 @@ describe('CPU e concorrência das funções', () => {
     // Com 1 vCPU em todas, eram 64. Hoje: a api, o rankingTick e o
     // createUserProfile a 1/3 e as outras 61 a 1/6, uns 11,8.
     expect(total).toBeLessThan(REGION_CPU_QUOTA);
+  });
+
+  it('a api cheia, com uma instância de cada outra função, ainda cabe na cota de 20 vCPU', () => {
+    const others = [...endpoints]
+      .filter(([name]) => name !== 'api')
+      .reduce((sum, [, endpoint]) => sum + vcpuOf(endpoint), 0);
+    const api = endpointOf('api');
+    // As 8 instâncias da api a 1 vCPU mais uns 10,8 das outras: uns 18,8.
+    expect((api.maxInstances as number) * vcpuOf(api) + others).toBeLessThan(REGION_CPU_QUOTA);
   });
 
   it('os gatilhos de evento tentam de novo (o 429 da concorrência 1 depende disso)', () => {

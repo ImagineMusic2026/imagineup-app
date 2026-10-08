@@ -812,6 +812,10 @@ export const api = onRequest(
     memory: '512MiB',
     cpu: 1,
     concurrency: 80,
+    // 8 instâncias (até 640 pedidos ao mesmo tempo), e não as 10 do padrão:
+    // com 10 instâncias de 1 vCPU e uma de cada outra função, a soma passaria
+    // da cota de 20 vCPU da região (decisão do dono em 08/10/2026).
+    maxInstances: 8,
     secrets: [INVITE_KEY_SECRET],
   },
   (req, res) => {
