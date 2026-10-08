@@ -401,23 +401,63 @@ describe('foto do fã (fans/{uid}/)', () => {
     `fans/${uid}/photo-mg5k2x1a-${(++counter).toString(36).padStart(8, '0')}.jpg`;
   const jpeg = { contentType: 'image/jpeg' };
 
-  it('a fã com perfil sobe um JPEG pequeno com o nome no formato', async () => {
-    await assertSucceeds(upload(as('camila'), photoPath(), jpeg));
+  /**
+   * A vaga de envio que o POST /me/photo/upload grava (proteção contra abuso,
+   * 27.4): o nome do arquivo e o prazo. Sem ela, nenhum envio do fã passa.
+   */
+  async function reserveSlot(uid: string, path: string, expiresInMs = 10 * 60_000) {
+    await env.withSecurityRulesDisabled(async (context) => {
+      await setDoc(doc(context.firestore(), `users/${uid}/uploads/photo`), {
+        fileName: path.split('/').at(-1),
+        expiresAt: Timestamp.fromMillis(Date.now() + expiresInMs),
+        createdAt: Timestamp.now(),
+      });
+    });
+  }
+
+  /** Um nome novo na pasta do fã, já com a vaga aberta para ele. */
+  async function reservedPath(uid = 'camila'): Promise<string> {
+    const path = photoPath(uid);
+    await reserveSlot(uid, path);
+    return path;
+  }
+
+  it('a fã com perfil e a vaga aberta sobe um JPEG pequeno com o nome no formato', async () => {
+    await assertSucceeds(upload(as('camila'), await reservedPath(), jpeg));
+  });
+
+  it('sem vaga, com a vaga de outro arquivo ou com a vaga vencida, não sobe (27.4)', async () => {
+    await assertFails(upload(as('camila'), photoPath(), jpeg));
+    const other = await reservedPath();
+    await assertFails(upload(as('camila'), photoPath(), jpeg));
+    // A vaga nova troca a de antes: o envio que ficou para trás não passa mais.
+    await reservedPath();
+    await assertFails(upload(as('camila'), other, jpeg));
+    const expired = photoPath();
+    await reserveSlot('camila', expired, -1_000);
+    await assertFails(upload(as('camila'), expired, jpeg));
+  });
+
+  it('a vaga de um fã não abre a pasta de outro', async () => {
+    const path = photoPath('camila');
+    await reserveSlot('alan', path);
+    await assertFails(upload(as('camila'), path, jpeg));
   });
 
   it('outro fã, sem login, a equipe e a conta só da equipe não sobem na pasta dela', async () => {
-    await assertFails(upload(as('alan'), photoPath(), jpeg));
-    await assertFails(upload(anonymous(), photoPath(), jpeg));
-    await assertFails(upload(as('admin'), photoPath(), jpeg));
+    await assertFails(upload(as('alan'), await reservedPath(), jpeg));
+    await assertFails(upload(anonymous(), await reservedPath(), jpeg));
+    await assertFails(upload(as('admin'), await reservedPath(), jpeg));
     // A conta só da equipe (staff/editora, sem users/editora) na própria pasta.
-    await assertFails(upload(as('editora'), photoPath('editora'), jpeg));
+    await assertFails(upload(as('editora'), await reservedPath('editora'), jpeg));
   });
 
   it('sem users/{uid} (conta excluída, token ainda válido), não sobe', async () => {
+    const path = await reservedPath();
     await env.withSecurityRulesDisabled(async (context) => {
       await deleteDoc(doc(context.firestore(), 'users/camila'));
     });
-    await assertFails(upload(as('camila'), photoPath(), jpeg));
+    await assertFails(upload(as('camila'), path, jpeg));
   });
 
   it('o fã suspenso não sobe foto, e volta a subir quando a suspensão sai (bloco 11)', async () => {
@@ -427,14 +467,14 @@ describe('foto do fã (fans/{uid}/)', () => {
         suspensionReason: 'offensive',
       });
     });
-    await assertFails(upload(as('camila'), photoPath(), jpeg));
+    await assertFails(upload(as('camila'), await reservedPath(), jpeg));
     await env.withSecurityRulesDisabled(async (context) => {
       await updateDoc(doc(context.firestore(), 'users/camila'), {
         suspendedAt: deleteField(),
         suspensionReason: deleteField(),
       });
     });
-    await assertSucceeds(upload(as('camila'), photoPath(), jpeg));
+    await assertSucceeds(upload(as('camila'), await reservedPath(), jpeg));
   });
 
   it('png, webp e image/jpeg com parâmetro não sobem', async () => {
@@ -444,17 +484,17 @@ describe('foto do fã (fans/{uid}/)', () => {
       'image/jpeg; charset=utf-8',
       'image/jpg',
     ]) {
-      await assertFails(upload(as('camila'), photoPath(), { contentType }));
+      await assertFails(upload(as('camila'), await reservedPath(), { contentType }));
     }
   });
 
   it('até 1 MiB passa; acima, não; vazio, não', async () => {
-    await assertSucceeds(upload(as('camila'), photoPath(), { ...jpeg, size: MB }));
-    await assertFails(upload(as('camila'), photoPath(), { ...jpeg, size: MB + 1 }));
-    await assertFails(upload(as('camila'), photoPath(), { ...jpeg, size: 0 }));
+    await assertSucceeds(upload(as('camila'), await reservedPath(), { ...jpeg, size: MB }));
+    await assertFails(upload(as('camila'), await reservedPath(), { ...jpeg, size: MB + 1 }));
+    await assertFails(upload(as('camila'), await reservedPath(), { ...jpeg, size: 0 }));
   });
 
-  it('nome fora do formato e subpasta não sobem', async () => {
+  it('nome fora do formato e subpasta não sobem, nem com a vaga do nome', async () => {
     for (const name of [
       'avatar.jpg',
       'photo-ABCDEFGH.jpg',
@@ -462,19 +502,21 @@ describe('foto do fã (fans/{uid}/)', () => {
       'photo-mg5k2x1a-4f9z0abc.jpeg',
       `photo-${'a'.repeat(41)}.jpg`,
     ]) {
+      await reserveSlot('camila', `fans/camila/${name}`);
       await assertFails(upload(as('camila'), `fans/camila/${name}`, jpeg));
     }
+    await reserveSlot('camila', 'fans/camila/sub/photo-mg5k2x1a-0001.jpg');
     await assertFails(upload(as('camila'), 'fans/camila/sub/photo-mg5k2x1a-0001.jpg', jpeg));
   });
 
-  it('o mesmo nome duas vezes não sobe (sem sobrescrever)', async () => {
-    const path = photoPath();
+  it('o mesmo nome duas vezes não sobe (sem sobrescrever), mesmo com a vaga aberta', async () => {
+    const path = await reservedPath();
     await assertSucceeds(upload(as('camila'), path, jpeg));
     await assertFails(upload(as('camila'), path, jpeg));
   });
 
   it('a dona baixa e lê os metadados pelo caminho; outro fã e sem login, não', async () => {
-    const path = photoPath();
+    const path = await reservedPath();
     await assertSucceeds(upload(as('camila'), path, jpeg));
     await assertSucceeds(as('camila').ref(path).getMetadata());
     await assertSucceeds(as('camila').ref(path).getDownloadURL());
@@ -483,7 +525,7 @@ describe('foto do fã (fans/{uid}/)', () => {
   });
 
   it('ninguém lista, troca metadados nem apaga, nem a dona nem a admin', async () => {
-    const path = photoPath();
+    const path = await reservedPath();
     await assertSucceeds(upload(as('camila'), path, jpeg));
     for (const storage of [as('camila'), as('admin')]) {
       await assertFails(storage.ref('fans/camila').listAll());

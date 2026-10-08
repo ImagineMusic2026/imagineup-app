@@ -4,7 +4,8 @@ import { apiError } from '../errors';
 import type { RouteInput } from '../types';
 
 // Parâmetros comuns das listas do bloco 6 (mural, grade, comentários e
-// agenda): `limit` de 1 a 50, com o padrão de cada rota, e o `cursor` opaco.
+// agenda): `limit` de 1 a 20 (50 até a proteção contra abuso, 27.2), com o
+// padrão de cada rota, e o `cursor` opaco.
 // Fora disso, 400 invalid_request com o campo. docs/arquitetura-api.md, 21.2.
 
 /** Parâmetro de busca como texto: ausente é undefined; lista ou objeto é inválido. */

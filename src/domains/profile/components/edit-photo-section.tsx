@@ -7,7 +7,6 @@ import { Button } from '@/components/button';
 import { Text } from '@/components/text';
 import { TextLink } from '@/components/text-link';
 import { t, type TranslationKey } from '@/i18n';
-import { ApiError } from '@/services/api';
 import { haptics } from '@/services/haptics';
 import { colors, layout, spacing } from '@/theme';
 
@@ -19,9 +18,6 @@ import {
   useRemovePhotoMutation,
 } from '../queries';
 
-/** Status HTTP do teto do dia (`too_many_requests`). */
-const TOO_MANY_REQUESTS = 429;
-
 type PhotoMessage = { text: string; action: 'settings' | 'retry' | null };
 
 /** O texto da falha da troca de foto: o motivo que o fã entende, ou o genérico. */
@@ -32,9 +28,9 @@ function photoErrorKey(error: unknown): TranslationKey {
     return 'editProfile.photo.cameraDenied';
   }
   if (apiErrorCode(error) === 'photo_invalid') return 'editProfile.photo.invalid';
-  if (error instanceof ApiError && error.status === TOO_MANY_REQUESTS) {
-    return 'editProfile.photo.tooMany';
-  }
+  // O teto do dia das vagas e das trocas; o 429 `rate_limited` (pedidos
+  // seguidos demais, 27.3) fica com o genérico.
+  if (apiErrorCode(error) === 'too_many_requests') return 'editProfile.photo.tooMany';
   return 'editProfile.photo.error';
 }
 

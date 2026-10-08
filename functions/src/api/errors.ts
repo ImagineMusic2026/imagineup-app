@@ -41,6 +41,8 @@ export type ApiErrorCode =
   | 'payload_too_large'
   | 'idempotency_key_reused'
   | 'too_many_requests'
+  | 'rate_limited'
+  | 'app_check_failed'
   | 'internal'
   | 'profile_not_ready'
   | 'unavailable';
@@ -58,6 +60,10 @@ export const API_ERRORS: Record<ApiErrorCode, { status: number; message: string 
   },
   photo_invalid: { status: 400, message: 'Foto fora do formato. Escolha outra.' },
   unauthenticated: { status: 401, message: 'Entre na sua conta para continuar.' },
+  app_check_failed: {
+    status: 403,
+    message: 'Não deu para confirmar este aparelho. Atualize o app e tente de novo.',
+  },
   not_fan: { status: 403, message: 'Esta conta não é de fã.' },
   account_suspended: {
     status: 403,
@@ -93,6 +99,10 @@ export const API_ERRORS: Record<ApiErrorCode, { status: number; message: string 
   payload_too_large: { status: 413, message: 'Pedido grande demais.' },
   idempotency_key_reused: { status: 422, message: 'Esta chave já foi usada em outro pedido.' },
   too_many_requests: { status: 429, message: 'Tentativas demais por hoje. Tente amanhã.' },
+  rate_limited: {
+    status: 429,
+    message: 'Muitos pedidos seguidos. Espere alguns segundos e tente de novo.',
+  },
   internal: { status: 500, message: 'Algo deu errado. Tente de novo.' },
   profile_not_ready: {
     status: 503,

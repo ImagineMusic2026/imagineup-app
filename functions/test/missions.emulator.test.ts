@@ -804,7 +804,7 @@ describe('extrato', () => {
     await comment(api, fan, p2);
     await db.doc(`artists/${gone}`).delete();
     await writeCatalog([]);
-    const page = await api('GET', '/me/ledger', { token: fan.token, query: { limit: '50' } });
+    const page = await api('GET', '/me/ledger', { token: fan.token, query: { limit: '20' } });
     const items = page.body.items as {
       id: string;
       source: string;

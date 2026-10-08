@@ -230,14 +230,17 @@ service cloud.firestore {
     }
 
     // Centrais dos artistas (o id é o @). O painel cria, edita, publica e
-    // ordena pelas Cloud Functions; pelo cliente, ninguém grava. O fã logado lê
-    // só as publicadas, e a consulta dele precisa de where('status', '==',
-    // 'published'); a equipe com a seção artists lê todas. As regras não
-    // escondem campo: o fã lê o documento inteiro, então aqui só fica o que o
-    // app pode mostrar.
+    // ordena pelas Cloud Functions; pelo cliente, ninguém grava. A equipe com
+    // a seção artists lê todas; a equipe ativa sem ela lê só as publicadas (o
+    // painel mostra o nome das centrais nas outras seções, e a consulta
+    // precisa de where('status', '==', 'published')). O fã lia as publicadas
+    // direto até a proteção contra abuso (docs/arquitetura-api.md, 27.6): o
+    // app lê pela API desde o bloco 4, e a leitura direta só servia para
+    // alguém de fora gastar leituras do projeto. Mesmo assim, aqui só fica o
+    // que o app pode mostrar.
     match /artists/{artistId} {
-      allow get, list: if (request.auth != null && resource.data.status == 'published')
-        || canSeeSection('artists');
+      allow get, list: if canSeeSection('artists')
+        || (isActiveStaff() && resource.data.status == 'published');
       allow write: if false;
     }
 

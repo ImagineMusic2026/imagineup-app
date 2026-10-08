@@ -284,6 +284,28 @@ describe('perfil do fã (users/{uid})', () => {
     await assertFails(getDoc(doc(admin, 'users/fa/profileSync/budget')));
   });
 
+  it('a vaga de envio da foto (users/{uid}/uploads/photo, 27.4) é só do servidor: o fã não grava a própria', async () => {
+    // O teto do dia e o prazo dependem disto: um fã que gravasse a vaga
+    // subiria arquivos sem contar, com o prazo que quisesse.
+    await seedProfile();
+    const slot = {
+      fileName: 'photo-mg5k2x1a-00000001.jpg',
+      expiresAt: Timestamp.fromMillis(Date.now() + 365 * 24 * 60 * 60_000),
+      createdAt: Timestamp.now(),
+    };
+    await assertFails(setDoc(doc(fan(), 'users/fa/uploads/photo'), slot));
+    await env.withSecurityRulesDisabled(async (context) => {
+      await setDoc(doc(context.firestore(), 'users/fa/uploads/photo'), slot);
+    });
+    await assertFails(getDoc(doc(fan(), 'users/fa/uploads/photo')));
+    await assertFails(getDocs(collection(fan(), 'users/fa/uploads')));
+    await assertFails(
+      updateDoc(doc(fan(), 'users/fa/uploads/photo'), { fileName: 'photo-outro-0000001.jpg' }),
+    );
+    await assertFails(deleteDoc(doc(fan(), 'users/fa/uploads/photo')));
+    await assertFails(setDoc(doc(otherFan(), 'users/fa/uploads/photo'), slot));
+  });
+
   it('não apaga campos do servidor', async () => {
     await seedProfile();
     await assertFails(edit({ points: deleteField() }));

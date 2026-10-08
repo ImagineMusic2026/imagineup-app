@@ -78,6 +78,19 @@ service firebase.storage {
       return profile != null && profile.data.get('suspendedAt', null) == null;
     }
 
+    // A vaga de envio (proteção contra abuso, docs/arquitetura-api.md, 27.4):
+    // o servidor grava users/{uid}/uploads/photo pelo POST /me/photo/upload,
+    // com o nome do arquivo e o prazo, e conta cada arquivo novo no teto do
+    // dia. A regra não conta envios; sem a vaga, um fã subiria arquivos sem
+    // parar. Com o fanCanUpload, são as duas leituras do Firestore que o
+    // Storage aceita por avaliação.
+    function photoUploadReserved(uid, fileName) {
+      let slot = firestore.get(/databases/(default)/documents/users/$(uid)/uploads/photo);
+      return slot != null
+        && slot.data.fileName == fileName
+        && request.time < slot.data.expiresAt;
+    }
+
     function artistExists(artistId) {
       return docExists('artists', artistId);
     }
@@ -143,7 +156,9 @@ service firebase.storage {
     // 1 MiB, com o nome que o app gera (photo-<id>.jpg), sem sobrescrever, e só
     // com o perfil existindo e sem suspensão: conta só da equipe, conta já
     // excluída (o token ainda vale até 1 h) e, desde o bloco 11, o fã suspenso
-    // não sobem. A função api confere o arquivo e grava a URL no perfil; os
+    // não sobem. Desde a proteção contra abuso, só o arquivo da vaga aberta
+    // pela API e antes do prazo dela (photoUploadReserved, acima). A função
+    // api confere o arquivo e grava a URL no perfil; os
     // outros fãs veem a foto pela URL com token. O dono lê
     // pelo caminho: o app confere os metadados, antes de enviar de novo, para
     // saber se o envio de uma tentativa já chegou. Só o servidor apaga (a foto
@@ -159,7 +174,8 @@ service firebase.storage {
         && request.resource.size > 0
         && request.resource.size <= 1024 * 1024
         && request.resource.contentType == 'image/jpeg'
-        && fanCanUpload(uid);
+        && fanCanUpload(uid)
+        && photoUploadReserved(uid, fileName);
       allow update, delete: if false;
     }
 

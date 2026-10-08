@@ -10,8 +10,8 @@ import { DailyCapError, ModerationError } from '../moderation/model';
 import { staticConfigSource } from '../points/config';
 import { PostError } from '../posts/model';
 import { RewardError } from '../rewards/model';
-import { API_ROUTES, createApiHandler } from './index';
-import type { ApiRequest, ApiRoute } from './types';
+import { API_ROUTES, APP_CHECK_MODE, createApiHandler, createRateLimiter } from './index';
+import type { ApiDeps, ApiRequest, ApiRoute } from './types';
 
 // O vi.mock sobe para antes dos imports: o logger acima já é o falso.
 vi.mock('firebase-functions/logger', () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn() }));
@@ -169,7 +169,8 @@ describe('formato da resposta e dos erros', () => {
   it('extrato com limite ou cursor fora do formato: 400 invalid_request', async () => {
     for (const query of [
       { limit: '0' },
-      { limit: '51' },
+      // O teto é 20 desde a proteção contra abuso (27.2).
+      { limit: '21' },
       { limit: 'dez' },
       { limit: ['1', '2'] },
       { cursor: '!!!' },
@@ -613,7 +614,8 @@ describe('mural, agenda e moderação (bloco 6)', () => {
   it('limite e cursor fora do formato: 400 com o campo', async () => {
     for (const [query, field] of [
       [{ limit: '0' }, 'limit'],
-      [{ limit: '51' }, 'limit'],
+      // O teto é 20 desde a proteção contra abuso (27.2).
+      [{ limit: '21' }, 'limit'],
       [{ limit: 'dez' }, 'limit'],
       [{ cursor: 'não é cursor' }, 'cursor'],
       [{ cursor: Buffer.from('[1,"a/b"]').toString('base64url') }, 'cursor'],
@@ -870,12 +872,23 @@ describe('perfil editável (bloco 9)', () => {
       expect(sent.status).toBe(status);
       expect(sent.body).toMatchObject(expected);
     }
+    // A vaga do envio (27.4) confere o mesmo caminho, antes de abrir a transação.
+    for (const [body, expected] of [
+      [{ path: 'fans/uid/avatar.jpg' }, { code: 'photo_invalid', details: { reason: 'path' } }],
+      [{ path: 'artists/nenho/photo-abcdefgh.jpg' }, { code: 'photo_invalid' }],
+      [{}, { code: 'invalid_request', details: { field: 'path' } }],
+    ] as const) {
+      const sent = await call(request('POST', '/me/photo/upload', { body, headers: key }));
+      expect(sent.status).toBe(400);
+      expect(sent.body).toMatchObject(expected);
+    }
   });
 
-  it('as três que gravam exigem a Idempotency-Key', async () => {
+  it('as quatro que gravam exigem a Idempotency-Key', async () => {
     for (const [method, path, body] of [
       ['PUT', '/me/username', { username: 'camilaribeiro' }],
       ['PUT', '/me/photo', { path: 'fans/uidCamila/photo-abcdefgh.jpg' }],
+      ['POST', '/me/photo/upload', { path: 'fans/uidCamila/photo-abcdefgh.jpg' }],
       ['DELETE', '/me/photo', undefined],
     ] as const) {
       const sent = await call(request(method, path, { body }));
@@ -1056,6 +1069,101 @@ describe('loja e resgate (bloco 10)', () => {
     const wrong = await call(request('GET', '/rewards/camisa/redeem'));
     expect(wrong.status).toBe(405);
     expect(wrong.headers.Allow).toBe('POST');
+  });
+});
+
+describe('proteção contra abuso (27.3 e 27.5)', () => {
+  async function callWith(req: ApiRequest, extra: Partial<ApiDeps>) {
+    const handler = createApiHandler({
+      db: emptyDb,
+      auth,
+      now: () => NOW,
+      random: () => 0,
+      config: staticConfigSource(),
+      ...extra,
+    });
+    const { res, sent } = response();
+    await handler(req, res);
+    return sent;
+  }
+
+  it('sem ficha: 429 rate_limited com o Retry-After, sem rodar a rota; outro fã segue', async () => {
+    const rateLimiter = createRateLimiter({ burst: 2, perSecond: 1 });
+    for (let i = 0; i < 2; i += 1) {
+      expect((await callWith(request('GET', '/me/wallet'), { rateLimiter })).status).toBe(200);
+    }
+    const sent = await callWith(request('GET', '/me/wallet'), { rateLimiter });
+    expect(sent.status).toBe(429);
+    expect(sent.headers['Retry-After']).toBe('1');
+    expect(sent.body).toEqual({
+      code: 'rate_limited',
+      message: 'Muitos pedidos seguidos. Espere alguns segundos e tente de novo.',
+    });
+    const other = await callWith(
+      request('GET', '/me/wallet', { headers: { Authorization: 'Bearer token-sem-email' } }),
+      { rateLimiter },
+    );
+    expect(other.status).toBe(200);
+  });
+
+  it('o ritmo conta depois do login: o pedido sem token é 401 e não gasta ficha', async () => {
+    const rateLimiter = { take: vi.fn(() => null) };
+    const sent = await callWith(request('GET', '/me/wallet', { headers: { Authorization: '' } }), {
+      rateLimiter,
+    });
+    expect(sent.status).toBe(401);
+    expect(rateLimiter.take).not.toHaveBeenCalled();
+  });
+
+  it('App Check desligado não lê o cabeçalho', async () => {
+    const verify = vi.fn();
+    const sent = await callWith(request('GET', '/me/wallet'), {
+      appCheck: { mode: 'off', verify },
+    });
+    expect(sent.status).toBe(200);
+    expect(verify).not.toHaveBeenCalled();
+  });
+
+  it('App Check em monitor: sem token, segue com o aviso no log', async () => {
+    const verify = vi.fn();
+    const sent = await callWith(request('GET', '/me/wallet'), {
+      appCheck: { mode: 'monitor', verify },
+    });
+    expect(sent.status).toBe(200);
+    expect(logger.warn).toHaveBeenCalledWith('api: pedido sem App Check válido', {
+      problem: 'missing',
+      route: 'GET /me/wallet',
+    });
+  });
+
+  it('App Check exigido: sem token ou com token inválido, 403 app_check_failed; válido, segue', async () => {
+    const verify = vi.fn(async (token: string) => {
+      if (token !== 'token-do-aparelho') throw new Error('invalid');
+    });
+    const appCheck = { mode: 'enforce' as const, verify };
+    const missing = await callWith(request('GET', '/me/wallet'), { appCheck });
+    expect(missing.status).toBe(403);
+    expect(missing.body).toMatchObject({
+      code: 'app_check_failed',
+      details: { reason: 'missing' },
+    });
+    const invalid = await callWith(
+      request('GET', '/me/wallet', { headers: { 'X-Firebase-AppCheck': 'outro' } }),
+      { appCheck },
+    );
+    expect(invalid.body).toMatchObject({
+      code: 'app_check_failed',
+      details: { reason: 'invalid' },
+    });
+    const valid = await callWith(
+      request('GET', '/me/wallet', { headers: { 'X-Firebase-AppCheck': 'token-do-aparelho' } }),
+      { appCheck },
+    );
+    expect(valid.status).toBe(200);
+  });
+
+  it('o App Check da função publicada está desligado até a build das lojas', () => {
+    expect(APP_CHECK_MODE).toBe('off');
   });
 });
 

@@ -869,7 +869,7 @@ describe('publicar (setArtistStatus)', () => {
     expect(await auditOf('artist.published')).toHaveLength(0);
   });
 
-  it('fã lê a central publicada sem nada da equipe; artistPrivate só para a equipe com a seção', async () => {
+  it('o fã não lê direto nem a publicada (27.6); a equipe sem a seção lê a publicada sem nada da equipe; artistPrivate só com a seção', async () => {
     const admin = await seedMember('Admin Um', 'admin');
     const manager = await seedMember('Gestora', 'editor', ['artists']);
     const viewer = await seedMember('Leitor', 'viewer', ['artists']);
@@ -883,14 +883,17 @@ describe('publicar (setArtistStatus)', () => {
     });
     await ok('updateArtist', { artistId, photo: await uploadPhotos(artistId) }, admin.token);
 
-    // Rascunho: o fã não lê nem a central.
-    expect((await readWithRules(fan.token, `artists/${artistId}`)).status).toBe(403);
+    // Rascunho: nem a equipe sem a seção lê a central.
+    expect((await readWithRules(withoutSection.token, `artists/${artistId}`)).status).toBe(403);
 
     await ok('setArtistStatus', { artistId, status: 'published' }, admin.token);
-    const seenByFan = await readWithRules(fan.token, `artists/${artistId}`);
-    expect(seenByFan.status).toBe(200);
-    expect(seenByFan.fields).toEqual(PUBLIC_FIELDS);
-    for (const field of STAFF_ONLY_FIELDS) expect(seenByFan.fields).not.toContain(field);
+    // Desde a proteção contra abuso (27.6), o fã lê as centrais só pela API.
+    expect((await readWithRules(fan.token, `artists/${artistId}`)).status).toBe(403);
+    // O documento só tem o que o app pode mostrar: a API devolve ao fã o que sai dele.
+    const seenOutsideSection = await readWithRules(withoutSection.token, `artists/${artistId}`);
+    expect(seenOutsideSection.status).toBe(200);
+    expect(seenOutsideSection.fields).toEqual(PUBLIC_FIELDS);
+    for (const field of STAFF_ONLY_FIELDS) expect(seenOutsideSection.fields).not.toContain(field);
     for (const outsider of [fan, withoutSection]) {
       expect((await readWithRules(outsider.token, `artistPrivate/${artistId}`)).status).toBe(403);
     }
@@ -1039,12 +1042,13 @@ describe('apagar (deleteArtist)', () => {
   it('admin apaga a central no ar: some do Firestore, do usernames/ e do bucket', async () => {
     const admin = await seedMember('Admin Um', 'admin');
     const editor = await seedMember('Editora', 'editor', ['artists']);
-    const fan = await signUpFan('Camila Ribeiro');
+    // A equipe sem a seção lê a publicada (o fã não lê direto desde 27.6).
+    const outsider = await seedMember('Leitor sem seção', 'viewer', ['fans']);
     const artistId = await readyArtist(admin);
     await ok('setArtistStatus', { artistId, status: 'published' }, admin.token);
     await uploadFile(`artists/${artistId}/photo-${unique('')}-1200.webp`);
     const { photo } = (await read(`artists/${artistId}`))!;
-    expect((await readWithRules(fan.token, `artists/${artistId}`)).status).toBe(200);
+    expect((await readWithRules(outsider.token, `artists/${artistId}`)).status).toBe(200);
     expect(await folder(artistId)).toHaveLength(3);
 
     // O editor com a seção não apaga, nem a central no ar.
@@ -1059,8 +1063,8 @@ describe('apagar (deleteArtist)', () => {
     expect(await exists(`artistPrivate/${artistId}`)).toBe(false);
     expect(await exists(`usernames/${artistId}`)).toBe(false);
     expect(await folder(artistId)).toEqual([]);
-    // O fã não lê mais a central, e a URL da foto não baixa mais.
-    expect((await readWithRules(fan.token, `artists/${artistId}`)).status).not.toBe(200);
+    // Ninguém lê mais a central, e a URL da foto não baixa mais.
+    expect((await readWithRules(outsider.token, `artists/${artistId}`)).status).not.toBe(200);
     expect((await fetch(photo.url)).status).toBe(404);
     expect(await auditOf('artist.deleted')).toMatchObject([
       {

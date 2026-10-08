@@ -2,6 +2,7 @@ import * as logger from 'firebase-functions/logger';
 
 import { MISSING_FAN_PHOTO_FILES } from '../fan-profile/files';
 import { createConfigSource } from '../points/config';
+import { APP_CHECK_HEADER, checkAppCheck, type AppCheckConfig } from './app-check';
 import { authenticate } from './auth';
 import { ApiHttpError, apiError, toApiHttpError } from './errors';
 import { parseIdempotencyKey, requestFingerprint, runIdempotent } from './idempotency';
@@ -32,6 +33,19 @@ export {
   runIdempotent,
 } from './idempotency';
 export { matchRoute } from './router';
+export {
+  APP_CHECK_HEADER,
+  APP_CHECK_MODE,
+  checkAppCheck,
+  type AppCheckConfig,
+  type AppCheckMode,
+} from './app-check';
+export {
+  createRateLimiter,
+  RATE_LIMIT_BURST,
+  RATE_LIMIT_PER_SECOND,
+  type RateLimiter,
+} from './rate-limit';
 export type * from './types';
 
 /** Rotas de hoje. Cada bloco acrescenta as suas aqui. */
@@ -52,6 +66,12 @@ export const API_ROUTES: readonly ApiRoute[] = [
 function missingInviteKey(): string {
   throw new Error('Falta o segredo do convite (inviteKey) nas dependências da API.');
 }
+
+/** Sem App Check nas dependências: desligado, sem ler o cabeçalho. */
+const APP_CHECK_OFF: AppCheckConfig = {
+  mode: 'off',
+  verify: () => Promise.reject(new Error('App Check desligado.')),
+};
 
 /** Corpo até 16 KiB, medido em req.rawBody. */
 export const MAX_BODY_BYTES = 16 * 1024;
@@ -87,6 +107,8 @@ export function createApiHandler(deps: ApiDeps, routes: readonly ApiRoute[] = AP
     config: deps.config ?? createConfigSource(deps.db),
     inviteKey: deps.inviteKey ?? missingInviteKey,
     files: deps.files ?? MISSING_FAN_PHOTO_FILES,
+    rateLimiter: deps.rateLimiter ?? null,
+    appCheck: deps.appCheck ?? APP_CHECK_OFF,
   };
 
   return async (req: ApiRequest, res: ApiResponse): Promise<void> => {
@@ -108,8 +130,15 @@ export function createApiHandler(deps: ApiDeps, routes: readonly ApiRoute[] = AP
       route = `${target.method} ${target.pattern}`;
 
       if ((req.rawBody?.length ?? 0) > MAX_BODY_BYTES) throw apiError('payload_too_large');
+      await checkAppCheck(resolved.appCheck, req.get(APP_CHECK_HEADER), logger, { route });
       const caller = await authenticate(resolved.auth, req.get('Authorization'));
       uid = caller.uid;
+      // O ritmo conta depois do login, por fã, com o relógio de verdade: o
+      // `now` das dependências fica parado em alguns testes (27.3).
+      const wait = resolved.rateLimiter?.take(uid, Date.now()) ?? null;
+      if (wait !== null) {
+        throw new ApiHttpError('rate_limited', undefined, { 'Retry-After': String(wait) });
+      }
       const key = target.writes ? parseIdempotencyKey(req.get('Idempotency-Key')) : null;
 
       const input: RouteInput = { params: match.params, query: queryOf(req), body: req.body };

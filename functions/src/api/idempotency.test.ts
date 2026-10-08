@@ -185,6 +185,8 @@ function deps(db: Firestore, random: () => number): ResolvedDeps {
     config: staticConfigSource(),
     inviteKey: () => 'segredo-de-teste',
     files: MISSING_FAN_PHOTO_FILES,
+    rateLimiter: null,
+    appCheck: { mode: 'off', verify: vi.fn() },
   };
 }
 

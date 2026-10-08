@@ -1,4 +1,5 @@
 import { initializeApp } from 'firebase-admin/app';
+import { getAppCheck } from 'firebase-admin/app-check';
 import { getAuth } from 'firebase-admin/auth';
 import { getFirestore } from 'firebase-admin/firestore';
 import { getFunctions } from 'firebase-admin/functions';
@@ -28,7 +29,7 @@ import {
   reorderArtistList,
   type ArtistDeps,
 } from './artists';
-import { createApiHandler } from './api';
+import { APP_CHECK_MODE, createApiHandler, createRateLimiter } from './api';
 import {
   FAN_COUNT_MAX_ATTEMPTS,
   FAN_COUNT_QUEUE,
@@ -796,7 +797,9 @@ let apiHandler: ReturnType<typeof createApiHandler> | null = null;
  * resgate, com o débito, o estoque e o pedido numa transação só); os pontos,
  * as missões, os níveis, as posições e os resgates são sempre calculados no
  * servidor. O segredo do HMAC da chave da pessoa (INVITE_KEY_SECRET) só
- * chega a esta função, lido a cada pedido.
+ * chega a esta função, lido a cada pedido. Desde a proteção contra abuso
+ * (27.3 e 27.5), cada instância limita o ritmo de cada fã, e o App Check fica
+ * pronto para ligar, desligado (APP_CHECK_MODE).
  *
  * A única com 1 vCPU e concorrência 80 (o resto é fracionado, no
  * setGlobalOptions): ela atende os fãs, e uma instância serve 80 pedidos de
@@ -824,6 +827,10 @@ export const api = onRequest(
       auth: getAuth(),
       inviteKey: () => INVITE_KEY_SECRET.value(),
       files: fanFiles(),
+      // No emulador, sem teto de ritmo: os testes e o seed fazem centenas de
+      // pedidos seguidos com a mesma conta (27.3).
+      rateLimiter: isEmulator() ? null : createRateLimiter(),
+      appCheck: { mode: APP_CHECK_MODE, verify: (token) => getAppCheck().verifyToken(token) },
     });
     return apiHandler(req, res);
   },

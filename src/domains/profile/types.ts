@@ -62,6 +62,15 @@ export interface PhotoChange {
 }
 
 /**
+ * `POST /me/photo/upload`: a vaga do envio (o caminho e o fim do prazo, em ISO).
+ * Sem ela, a regra do Storage recusa o arquivo (proteção contra abuso, 27.4).
+ */
+export interface PhotoUploadSlot {
+  path: string;
+  expiresAt: string;
+}
+
+/**
  * Os três contadores do fã (aprovados em 2026-09-28), todos decididos no
  * servidor: o app só lê.
  */

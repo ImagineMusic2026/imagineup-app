@@ -25,6 +25,8 @@ import {
   normalizeUsername,
   parseFanPhotoPath,
   PHOTO_HEAD_BYTES,
+  PHOTO_UPLOAD_RENEW_MS,
+  PHOTO_UPLOAD_SLOT_MS,
   photoProblem,
   photoTooOld,
   PROFILE_SYNC_PAGE,
@@ -55,6 +57,7 @@ export type UsernameChange = {
   changeableAt: string | null;
 };
 export type PhotoChange = { photoURL: string | null };
+export type PhotoUploadSlot = { path: string; expiresAt: string };
 
 const text = (value: unknown): string | null =>
   typeof value === 'string' && value !== '' ? value : null;
@@ -262,6 +265,56 @@ export async function setFanPhoto(
     photoUpdatedAt: Timestamp.fromMillis(award.now),
   });
   return { body: { photoURL }, plan };
+}
+
+/**
+ * A vaga de envio da foto (27.4): `users/{uid}/uploads/photo`, com o nome do
+ * arquivo e o prazo. Só o servidor grava (a regra do Firestore fecha pelo
+ * `match /{document=**}`); a regra do Storage lê e só aceita o envio desse
+ * arquivo, antes do prazo. Sai com o perfil, no `recursiveDelete` da exclusão.
+ */
+export const photoUploadSlotRef = (db: Firestore, uid: string) =>
+  profileRef(db, uid).collection('uploads').doc('photo');
+
+/**
+ * `POST /me/photo/upload`: abre a vaga do arquivo que o app vai enviar, no
+ * caminho da pasta de quem chama (fora dela, 400 `photo_invalid`), com o prazo
+ * de 10 min. Cada arquivo novo conta 1 no teto do dia `photo_upload`, que
+ * recusa com 429 antes de gravar; pedir de novo a vaga do mesmo arquivo, até
+ * 30 min depois da vaga que contou, só renova o prazo, sem contar (a nova
+ * tentativa do app depois de uma falha incerta); depois disso, conta de novo. Uma vaga por fã: a nova troca a de antes, e o envio que ficou para
+ * trás passa a ser recusado. A regra do Storage não conta envios; a vaga é o
+ * que limita quantos arquivos um fã sobe por dia.
+ */
+export async function reservePhotoUpload(
+  tx: Transaction,
+  db: Firestore,
+  options: { fan: FanContext; award: AwardContext; path: string },
+): Promise<{ body: PhotoUploadSlot; plan: AwardPlan }> {
+  const { fan, award, path } = options;
+  const parsed = parseFanPhotoPath(path);
+  if (!parsed || parsed.uid !== fan.uid) {
+    throw new ProfileEditError('photo_invalid', { reason: 'path' });
+  }
+  const slotRef = photoUploadSlotRef(db, fan.uid);
+  const slot = await tx.get(slotRef);
+  const countedAt = millis(slot.get('createdAt'));
+  const renewal =
+    slot.get('fileName') === parsed.fileName &&
+    countedAt !== null &&
+    award.now < countedAt + PHOTO_UPLOAD_RENEW_MS;
+  if (!renewal) enforceDailyCap(fan, award, 'upload');
+
+  const plan = await planAwards(tx, db, [{ uid: fan.uid, fan, entries: [] }], award);
+  if (!renewal) countDailyAction(plan, fan, award, 'upload');
+  const expiresAt = award.now + PHOTO_UPLOAD_SLOT_MS;
+  tx.set(slotRef, {
+    fileName: parsed.fileName,
+    expiresAt: Timestamp.fromMillis(expiresAt),
+    // O instante da vaga que contou: a renovação não o muda.
+    createdAt: Timestamp.fromMillis(renewal ? countedAt! : award.now),
+  });
+  return { body: { path, expiresAt: new Date(expiresAt).toISOString() }, plan };
 }
 
 /**

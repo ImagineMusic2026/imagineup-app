@@ -903,9 +903,17 @@ describe('o seed da loja (25.13)', () => {
     ]);
 
     // O extrato: os 6 lançamentos da loja, às 18:00 de São Paulo de cada dia.
-    const page = await http(env, '/me/ledger?limit=50', { token: camila.token });
+    // O extrato inteiro, em páginas de 20 (o teto desde 27.2).
     type Line = { id: string; points: number; subjectTitle: string | null; createdAt: string };
-    const items = (page.body.items as Line[]).filter(
+    const lines: Line[] = [];
+    let cursor: string | null = null;
+    do {
+      const query: string = cursor ? `&cursor=${cursor}` : '';
+      const page = await http(env, `/me/ledger?limit=20${query}`, { token: camila.token });
+      lines.push(...(page.body.items as Line[]));
+      cursor = page.body.nextCursor as string | null;
+    } while (cursor);
+    const items = lines.filter(
       (item) => item.id.startsWith('redeem') || item.id === 'seed:camila-loja',
     );
     expect(items.map((item) => [item.id, item.points, item.subjectTitle])).toEqual([

@@ -458,11 +458,13 @@ describe('comentar e a lista de comentários', () => {
       if (!cursor) break;
     }
     expect(seen).toEqual(['c-outra', 'c-terceira']);
+    // Quem não bloqueou vê os do bloqueado: uma página cheia (o teto é 20 desde 27.2).
     const others = await call('GET', `/posts/${postId}/comments`, {
       token: other.token,
-      query: { limit: '50' },
+      query: { limit: '20' },
     });
-    expect((others.body.items as unknown[]).length).toBe(47);
+    expect((others.body.items as unknown[]).length).toBe(20);
+    expect(others.body.nextCursor).not.toBeNull();
   });
 });
 
