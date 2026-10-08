@@ -8,7 +8,7 @@ import { ListRow } from '@/components/list-row';
 import { PressableScale } from '@/components/pressable-scale';
 import { Text } from '@/components/text';
 import { t, type TranslationKey } from '@/i18n';
-import { colors, LARGE_TEXT_SCALE, layout, motion, spacing } from '@/theme';
+import { colors, isLargeText, layout, motion, spacing } from '@/theme';
 import { selectionAccessibility } from '@/utils/selection-accessibility';
 
 import { GENDERS } from '../details';
@@ -46,14 +46,14 @@ export interface GenderFieldProps {
  * veem." e o `expanded`; o valor e a seta ficam fora do leitor. As opções
  * ficam sempre montadas e medidas, e a altura anda por valor animado. Cada
  * opção é rádio no Android e botão com "selecionado" no iOS. Escolher fecha e
- * devolve o foco do leitor à linha. Com a fonte a partir de 1,3, o valor desce
- * para baixo do título.
+ * devolve o foco do leitor à linha. Com a fonte a partir de 1,3 (`isLargeText`),
+ * o valor desce para baixo do título, no recuo dele.
  */
 export function GenderField({ value, onChange, readOnly = false }: GenderFieldProps) {
   const [open, setOpen] = useState(false);
   const progress = useExpandProgress(open);
   const row = useRef<View>(null);
-  const stacked = useWindowDimensions().fontScale >= LARGE_TEXT_SCALE;
+  const stacked = isLargeText(useWindowDimensions().fontScale);
   const valueText = genderText(value);
   const label = `${t('editProfile.details.genderLabel', { value: valueText })}. ${t(
     'editProfile.details.genderMeta',
@@ -73,7 +73,10 @@ export function GenderField({ value, onChange, readOnly = false }: GenderFieldPr
   };
 
   const trailing = (
-    <View style={styles.trailing}>
+    <View
+      style={[styles.trailing, stacked && styles.trailingBelow]}
+      testID="edit-profile-gender-value"
+    >
       <Text variant="caption" color={colors.textSecondary}>
         {valueText}
       </Text>
@@ -145,6 +148,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.xs,
+  },
+  // Embaixo do título, o valor fica no recuo do título e da meta, como as
+  // opções; na borda da linha, embaixo do ícone, ele parecia solto da linha.
+  trailingBelow: {
+    paddingLeft: ICON_SIZE + spacing.itemGap,
   },
   options: {
     paddingHorizontal: spacing.lg,

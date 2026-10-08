@@ -195,6 +195,8 @@ describe('linha de show', () => {
       [1, 2, 'ao lado', 'row'],
       [1.15, 2, 'ao lado', 'row'],
       [1.3, undefined, 'embaixo', 'column'],
+      // O preset "Grande" do Android chega como o float 1.3f, abaixo de 1,3.
+      [Math.fround(1.3), undefined, 'embaixo', 'column'],
       [2, undefined, 'embaixo', 'column'],
     ])(
       'a %sx, o título vai até %s linhas, e o "Eu vou" fica %s',
@@ -206,8 +208,8 @@ describe('linha de show', () => {
       },
     );
 
-    it('a 2x, título e meta do destaque quebram inteiros', () => {
-      setFontScale(2);
+    it.each([2, Math.fround(1.3)])('a %sx, título e meta do destaque quebram inteiros', (scale) => {
+      setFontScale(scale);
       render(<EventHeroCard event={IRARA} now={NOW} onInvite={jest.fn()} />, { wrapper });
       expect(screen.getByText('São João de Irará', hidden)).not.toHaveProp('numberOfLines');
       expect(screen.getByText('Netto Brito + Nenho · Irará, BA · 22 h', hidden)).not.toHaveProp(

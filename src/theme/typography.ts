@@ -176,5 +176,16 @@ export type TypographyVariant = keyof typeof typography;
  * (1,3); daí para cima, o que fica ao lado deixaria menos de uma palavra por
  * linha para o título num aparelho de 360. Usada pela agenda (1m) e pela
  * tela "Editar perfil" (o valor do gênero desce para baixo do título).
+ * Compare sempre pelo `isLargeText`, nunca com `>=` direto.
  */
 export const LARGE_TEXT_SCALE = 1.3;
+
+// O Android entrega a fonte do sistema a partir de um float: o 1,3 do preset
+// "Grande" chega como 1,2999999..., abaixo do `LARGE_TEXT_SCALE`. A folga cobre
+// o arredondamento sem chegar perto do degrau de baixo (1,15).
+const FONT_SCALE_SLACK = 0.01;
+
+/** Se a fonte do sistema (`useWindowDimensions().fontScale`) chegou ao `LARGE_TEXT_SCALE`. */
+export function isLargeText(fontScale: number): boolean {
+  return fontScale >= LARGE_TEXT_SCALE - FONT_SCALE_SLACK;
+}

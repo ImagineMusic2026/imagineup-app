@@ -859,15 +859,29 @@ describe('Editar perfil: detalhes', () => {
     expect(profilePuts()[0]?.body).toEqual({ gender: 'woman' });
   });
 
-  it('com a fonte grande, o valor do gênero desce para baixo do título; na padrão, fica ao lado', async () => {
-    act(() => Dimensions.set({ window: { ...window, fontScale: 2 } }));
-    await openEditProfile();
-    expect(screen.getByTestId('edit-profile-gender')).toHaveStyle({ flexDirection: 'column' });
-    act(() => Dimensions.set({ window: { ...window, fontScale: 1 } }));
-    await waitFor(() =>
-      expect(screen.getByTestId('edit-profile-gender')).toHaveStyle({ flexDirection: 'row' }),
-    );
-  });
+  // O preset "Grande" do Android chega como o float 1.3f (1,2999999...), abaixo de 1,3.
+  it.each([
+    ['2', 2],
+    ['1,3 do Android', Math.fround(1.3)],
+  ])(
+    'com a fonte a %s, o valor do gênero desce para baixo do título, no recuo dele; na padrão, fica ao lado',
+    async (_scale, fontScale) => {
+      act(() => Dimensions.set({ window: { ...window, fontScale } }));
+      await openEditProfile();
+      expect(screen.getByTestId('edit-profile-gender')).toHaveStyle({ flexDirection: 'column' });
+      // O recuo do ícone (18) e do vão da linha (12): o valor fica embaixo do título.
+      expect(screen.getByTestId('edit-profile-gender-value', hidden)).toHaveStyle({
+        paddingLeft: 30,
+      });
+      act(() => Dimensions.set({ window: { ...window, fontScale: 1 } }));
+      await waitFor(() =>
+        expect(screen.getByTestId('edit-profile-gender')).toHaveStyle({ flexDirection: 'row' }),
+      );
+      expect(screen.getByTestId('edit-profile-gender-value', hidden)).not.toHaveStyle({
+        paddingLeft: 30,
+      });
+    },
+  );
 
   it('a conta privada é uma chave só, com o checked e o rótulo com a meta', async () => {
     await openEditProfile();

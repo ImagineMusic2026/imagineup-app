@@ -1,7 +1,7 @@
 import { StyleSheet, useWindowDimensions, View } from 'react-native';
 
 import { ListRow } from '@/components/list-row';
-import { borderWidths, colors, LARGE_TEXT_SCALE, layout, spacing } from '@/theme';
+import { borderWidths, colors, isLargeText, layout, spacing } from '@/theme';
 
 import { eventDateBadge, eventPlace, eventRowLabel } from '../describe-event';
 import type { AgendaEvent } from '../types';
@@ -30,7 +30,7 @@ const TRAILING_OVERLAP = (layout.dateDivider - layout.minTouchTarget) / 2;
  */
 export function EventRow({ event, now, testID }: EventRowProps) {
   const badge = eventDateBadge(event, now);
-  const stacked = useWindowDimensions().fontScale >= LARGE_TEXT_SCALE;
+  const stacked = isLargeText(useWindowDimensions().fontScale);
 
   return (
     <ListRow

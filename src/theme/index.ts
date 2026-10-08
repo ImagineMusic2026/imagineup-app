@@ -27,4 +27,10 @@ export { motion } from './motion';
 export { navigationTheme } from './navigation';
 export { shadows } from './shadow';
 export { layout, spacing, type AvatarSize } from './spacings';
-export { fonts, LARGE_TEXT_SCALE, typography, type TypographyVariant } from './typography';
+export {
+  fonts,
+  isLargeText,
+  LARGE_TEXT_SCALE,
+  typography,
+  type TypographyVariant,
+} from './typography';
