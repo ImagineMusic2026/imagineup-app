@@ -18,7 +18,9 @@ export const RANKING_JOB_PAGE = 200;
 /**
  * Folga depois do `endsAt` antes da virada: o maior `timeoutSeconds` das
  * funções que lançam pontos (a `api`, 30 s) mais uma margem. Função nova que
- * lance pontos cabe nela, ou a folga sobe junto (23.19).
+ * lance pontos cabe nela, ou a folga sobe junto (23.19). O painel espelha o
+ * valor (`src/lib/season.ts` do imagineup-admin, o "Rodar a virada agora"):
+ * mudou aqui, muda lá (26.22).
  */
 export const CLOSE_GRACE_MS = 60_000;
 

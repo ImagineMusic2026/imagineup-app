@@ -157,6 +157,12 @@ const SINGLE: SingleFieldShape[] = [
     queryScope: 'COLLECTION',
     field: desc('createdAt'),
   },
+  {
+    name: 'Fãs: o que quem convidou ganhou, no extrato dele pelo claimedAt do convite',
+    collectionGroup: 'ledger',
+    queryScope: 'COLLECTION',
+    field: asc('createdAt'),
+  },
 ];
 
 describe('índices das seções Fãs e Moderação do painel (26.11)', () => {

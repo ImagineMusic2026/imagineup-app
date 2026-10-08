@@ -6808,8 +6808,8 @@ Ações (editor com `ranking` e admin), todas com o `version` de `config/season`
 
 - "Cadastrar temporada" (sem temporada) e "Editar" (`updateSeason`): diálogo com Nome (até 40), Identificador (sugerido pelo nome, `^[a-z0-9-]{3,40}$`, travado com a dica "Não muda depois que a temporada começa."), Início e Fim (data e hora de São Paulo), Título do 1º lugar (opcional) e Tamanho do top (1 a 50, padrão 10). A validação espelha o `validateSeasonInput`; o `invalid-request` com `details.field` vai para o campo. `config-changed`: "A temporada mudou enquanto você editava. Os dados novos já estão no formulário; confira e salve de novo." (a tela lê `config/season` de novo e o formulário recarrega com ele).
 - "Agendar próxima", "Editar próxima" e "Cancelar próxima" (`scheduleNextSeason`, com `null` para cancelar, confirmação).
-- "Encerrar agora" (`endSeason`, só em andamento, confirmação vermelha: "A temporada termina agora para todos os fãs, e o ranking fecha na virada, em até 11 minutos. Isso não se desfaz.").
-- "Rodar a virada agora" (`closeSeasonNow`, só esperando a virada ou atrasada): chama de novo enquanto a resposta for `running`, com "Fechando o ranking... página N", e termina com "Temporada fechada." O botão aparece com a explicação "A virada automática não rodou. Isto faz o mesmo agora."
+- "Encerrar temporada" (`endSeason`, só em andamento, confirmação vermelha: "A temporada termina agora para todos os fãs, e o ranking fecha na virada, em até 11 minutos. Isso não se desfaz.").
+- "Rodar a virada agora" (`closeSeasonNow`, só esperando a virada ou atrasada): chama de novo enquanto a resposta for `running`, com "Fechando o ranking... página N", e termina com "Temporada fechada." O botão aparece 60 s depois do `endsAt` (a folga `CLOSE_GRACE_MS`, que o painel espelha) com a explicação "A virada roda sozinha a cada 10 minutos. Se ainda não rodou, isto faz o mesmo agora." (um texto só, para o painel não espelhar também o `CLOSE_LATE_MS`).
 
 - "Rodar a virada agora" e as chamadas seguintes vão com o `LONG_CALL_TIMEOUT_MS` (130 s) do `call`: o orçamento do `closeSeasonNow` é de 90 s por chamada, e o prazo padrão do SDK (70 s) cortaria a chamada no meio com um erro incerto.
 
@@ -7164,6 +7164,10 @@ O `closeStatsDays` rodou à 00:20 de 08/10, antes de a carga criar o `statsMeta/
 - O id do painel no `createPost`, no `createEvent` e no `createReward` só responde o id quando o documento é o rascunho de quem chama (`isRetriedDraft`); qualquer outro é `invalid-request`. Responder "criei" para um post no ar levaria a trilha a subir a mídia e gravar por cima dele.
 - O retrato de ontem guarda a temporada do dia (`seasonOfDay`), e não a em andamento na hora da rodada: às 00:20, a que terminou à meia-noite já pode ter ido para `lastClosed`, e a `season` já pode ser a próxima.
 
+- O painel espelha o `CLOSE_GRACE_MS` (60 s, `closeDue` em `functions/src/ranking/model.ts`) em `src/lib/season.ts` do imagineup-admin: o "Rodar a virada agora" só aparece depois dele. Mudou a folga no servidor, muda no painel junto (o comentário da constante diz isso).
+- O "Encerrar temporada" da temporada e o "Encerrar agora" da missão são botões diferentes: as frases de `season-started`, `season-end-in-past` e `season-not-due` (`missions/errors.ts`) mandam usar "Encerrar temporada", o nome do botão da temporada no painel.
+- As consultas do painel que usam o índice automático de um campo estão nos testes de índice, também as que não vêm do desenho: `posts` com `artistId ==` e `events` com `artistIds array-contains`, com `limit(1)` (o aviso `has-content` da lixeira das centrais), e o `ledger` de um fã com `createdAt ==` (a origem na ficha do fã). Uma isenção nova nesses campos derrubaria a tela em produção, e o emulador não pega.
+
 ### 26.23 O que o código fez diferente do desenho
 
 Etapa 1 da construção (o fechamento, o orçamento do dia, as cargas, as regras e os índices):
@@ -7217,6 +7221,13 @@ Integração (duas revisões do código construído, em 07/10/2026):
 - **Testes acrescentados:** a recusa do `resetFanUsername` com o fã que não existe e com o @ fora do formato (e o `parseCurrentUsername` puro), o `clearFanPhoto` do leitor e da editora sem `moderation`, o acesso perdido no meio do `hideFanComments`, o retrato do último dia da temporada e o id do painel de outro documento.
 - **O `CLAUDE.md` deixou de dizer "sem deploy"** nos blocos 1 e 4 a 10, publicados em 07/10/2026.
 - **O @ que a Moderação troca pode voltar na hora pelo app.** A revisão apontou que o fã não suspenso pega o @ antigo de volta, porque o automático deixa a troca seguinte livre. Mudar isso contraria a pergunta 15 como o dono aprovou, então o código ficou e a escolha virou a pergunta 23.
+
+#### O painel (imagineup-admin, PR #1)
+
+- **O "Rodar a virada agora" aparece pela folga do servidor.** O painel espelha o `CLOSE_GRACE_MS` e mostra o botão 60 s depois do `endsAt`, com um texto que vale tanto esperando a virada automática quanto atrasada ("Se ainda não rodou, isto faz o mesmo agora."). O desenho dizia "A virada automática não rodou", que logo depois de encerrar ainda não é verdade.
+- **A origem na ficha do fã sai do extrato de quem convidou.** O "o que quem convidou ganhou" é lido em `wallets/{inviterUid}/ledger` com `createdAt ==` o `claimedAt` do `referrals/{uid}`, e não de um campo novo no convite.
+- **O aviso `has-content` da lixeira das centrais faz duas consultas com `limit(1)`** (`posts` por `artistId` e `events` por `artistIds`), as mesmas formas do `deleteArtist`, antes de chamar a callable.
+- **O botão da temporada se chama "Encerrar temporada"**, e não "Encerrar agora" como no desenho de 26.16: casa com as frases do servidor e não se confunde com o "Encerrar agora" das missões.
 
 ## Armadilhas
 
