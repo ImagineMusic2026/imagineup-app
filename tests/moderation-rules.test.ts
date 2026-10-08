@@ -109,12 +109,9 @@ type Db = ReturnType<RulesTestContext['firestore']>;
 
 const as = (uid: string) => env.authenticatedContext(uid).firestore();
 
-async function readsModeration(db: Db, outcome: 'succeeds' | 'fails'): Promise<void> {
+/** A fila como a Moderação lê (26.16): os abertos, os resolvidos e os itens de um fã. */
+async function readsQueue(db: Db, outcome: 'succeeds' | 'fails'): Promise<void> {
   const check = outcome === 'succeeds' ? assertSucceeds : assertFails;
-  await check(getDoc(doc(db, REPORT)));
-  await check(
-    getDocs(query(collection(db, 'commentReports'), where('commentId', '==', 'seed-c-show-enzo'))),
-  );
   await check(getDoc(doc(db, ITEM)));
   await check(
     getDocs(
@@ -125,18 +122,51 @@ async function readsModeration(db: Db, outcome: 'succeeds' | 'fails'): Promise<v
       ),
     ),
   );
+  await check(
+    getDocs(
+      query(
+        collection(db, 'moderationQueue'),
+        where('status', '==', 'resolved'),
+        orderBy('resolvedAt', 'desc'),
+      ),
+    ),
+  );
+  await check(
+    getDocs(
+      query(
+        collection(db, 'moderationQueue'),
+        where('authorUid', '==', 'uid-enzo'),
+        orderBy('lastReportedAt', 'desc'),
+      ),
+    ),
+  );
+}
+
+/** As denúncias uma a uma: guardam quem denunciou. */
+async function readsReports(db: Db): Promise<void> {
+  await assertFails(getDoc(doc(db, REPORT)));
+  await assertFails(
+    getDocs(query(collection(db, 'commentReports'), where('commentId', '==', 'seed-c-show-enzo'))),
+  );
+  await assertFails(getDocs(collection(db, 'commentReports')));
 }
 
 describe('denúncias e a fila da Moderação', () => {
-  it('só a equipe com moderation lê (editora e leitora) e admin', async () => {
+  it('só a equipe com moderation lê a fila (editora e leitora) e admin', async () => {
     for (const uid of ['admin', 'moderacao', 'leitorModeracao']) {
-      await readsModeration(as(uid), 'succeeds');
+      await readsQueue(as(uid), 'succeeds');
     }
   });
 
-  it('o fã, outras seções e a desativada não leem', async () => {
+  it('as denúncias uma a uma ficam fechadas para toda a equipe, até a Moderação e o admin (bloco 11)', async () => {
+    for (const uid of ['admin', 'moderacao', 'leitorModeracao', 'fas', 'uid-alan']) {
+      await readsReports(as(uid));
+    }
+  });
+
+  it('o fã, outras seções e a desativada não leem a fila', async () => {
     for (const uid of ['uid-alan', 'uid-enzo', 'artistas', 'fas', 'desativada']) {
-      await readsModeration(as(uid), 'fails');
+      await readsQueue(as(uid), 'fails');
     }
   });
 

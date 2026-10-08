@@ -105,12 +105,18 @@ export function profileView(
 
 /**
  * A central do recorte, publicada (404 `artist_not_found`, como as rotas do
- * bloco 4). Lida em paralelo com a página.
+ * bloco 4), ou, no ranking do painel (`requirePublished: false`, bloco 11),
+ * só existindo, em qualquer status. Lida em paralelo com a página.
  */
-async function requirePublishedArtist(db: Firestore, artistId: string): Promise<void> {
+async function requireArtist(
+  db: Firestore,
+  artistId: string,
+  requirePublished: boolean,
+): Promise<void> {
   const snap = await db.collection('artists').doc(artistId).get();
   const artist = snap.exists ? artistRecord(snap.id, snap.data() ?? {}) : null;
-  if (!isPublished(artist)) throw new CentralError('artist_not_found', { artistId });
+  const ok = requirePublished ? isPublished(artist) : artist !== null;
+  if (!ok) throw new CentralError('artist_not_found', { artistId });
 }
 
 const archivePositionField = (scope: RankScope) =>
@@ -123,7 +129,9 @@ const archivePointsField = (scope: RankScope) =>
  * Uma página do ranking (`GET /ranking`, 23.2): 20 linhas, a 21ª só diz que há
  * página seguinte. Ao vivo, a página e (com cursor) as contagens até ele na
  * mesma transação só de leitura; a posição da primeira linha é a contagem
- * mais 1. A temporada fechada vem do arquivo, pela posição guardada.
+ * mais 1. A temporada fechada vem do arquivo, pela posição guardada. O
+ * ranking do painel (`getPanelRanking`, bloco 11) passa `requirePublished:
+ * false`: a central precisa só existir.
  */
 export async function readLeaderboard(
   db: Firestore,
@@ -132,10 +140,13 @@ export async function readLeaderboard(
   now: number,
   scope: RankScope,
   cursor: RankCursor | null,
+  options: { requirePublished?: boolean } = {},
 ): Promise<LeaderboardPage> {
   const shown = shownSeason(config, now);
   const artistCheck =
-    scope.kind === 'artist' ? requirePublishedArtist(db, scope.artistId) : Promise.resolve();
+    scope.kind === 'artist'
+      ? requireArtist(db, scope.artistId, options.requirePublished ?? true)
+      : Promise.resolve();
   if (!shown) {
     await artistCheck;
     return { items: [], nextCursor: null };
@@ -278,7 +289,7 @@ export async function readMyRank(
 ): Promise<MyRank> {
   const shown = shownSeason(config, now);
   const artistCheck =
-    scope.kind === 'artist' ? requirePublishedArtist(db, scope.artistId) : Promise.resolve();
+    scope.kind === 'artist' ? requireArtist(db, scope.artistId, true) : Promise.resolve();
   if (!shown) {
     await artistCheck;
     return { position: null, points: 0, target: null };

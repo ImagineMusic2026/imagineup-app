@@ -1,8 +1,10 @@
 import { Timestamp } from 'firebase-admin/firestore';
 import { describe, expect, it } from 'vitest';
 
+import { DEFAULT_ACHIEVEMENTS_CONFIG } from '../src/achievements';
 import { addMission, catalogDoc, type MissionRecord } from '../src/missions';
 import { createConfigSource, DEFAULT_POINTS_CONFIG } from '../src/points';
+import { seedGameConfig } from '../src/points/config-seed';
 import { CLOSE_GRACE_MS, runSeasonClose } from '../src/ranking';
 import {
   callable,
@@ -110,6 +112,96 @@ describe('acesso às callables do jogo', () => {
     };
     expect((await failure('updateSeason', season, editor)).reason).toBe('no-section');
     expect(await ok('updateSeason', season, ranking)).toMatchObject({ version: 1 });
+  });
+});
+
+describe('carga da versão 1 (seedGameConfig, bloco 11, 26.9)', () => {
+  it('grava o padrão do código como a versão 1, uma vez; rodar de novo não muda nada', async () => {
+    const now = Date.parse('2026-10-08T03:30:00.000Z');
+    expect(await seedGameConfig(db, now)).toEqual(['points', 'achievements']);
+    const points = await read('config/points');
+    expect(points).toMatchObject({
+      version: 1,
+      updatedBy: null,
+      values: DEFAULT_POINTS_CONFIG.values,
+      dailyLimits: DEFAULT_POINTS_CONFIG.dailyLimits,
+      actionCaps: DEFAULT_POINTS_CONFIG.actionCaps,
+      levels: DEFAULT_POINTS_CONFIG.levels,
+    });
+    expect(await read('config/points/versions/1')).toEqual(points);
+    const achievements = await read('config/achievements');
+    expect(achievements!.version).toBe(1);
+    expect(achievements!.achievements.map((item: { id: string }) => item.id)).toEqual(
+      DEFAULT_ACHIEVEMENTS_CONFIG.achievements.map((item) => item.id),
+    );
+    const active = achievements!.achievements.filter(
+      (item: { status: string }) => item.status === 'active',
+    );
+    expect(
+      active.every((item: { activatedAt: Timestamp }) => item.activatedAt.toMillis() === now),
+    ).toBe(true);
+    expect(await read('config/achievements/versions/1')).toEqual(achievements);
+
+    // O lido pelas funções é o mesmo padrão, agora na versão 1.
+    const loaded = await createConfigSource(db, { ttlMs: 0 }).get();
+    expect(loaded.points).toEqual({ ...DEFAULT_POINTS_CONFIG, version: 1 });
+    expect(loaded.game.achievements.map((item) => item.id)).toEqual(
+      DEFAULT_ACHIEVEMENTS_CONFIG.achievements.map((item) => item.id),
+    );
+
+    const seeded = await audits('config.seeded');
+    expect(seeded.map((entry) => entry.details.doc).sort()).toEqual(['achievements', 'points']);
+    expect(seeded[0]).toMatchObject({
+      actorUid: null,
+      actorName: 'Carga inicial',
+      targetEmail: '',
+      targetUid: null,
+      section: 'missions',
+      targets: [],
+    });
+
+    // De novo: nada muda, nem a auditoria.
+    expect(await seedGameConfig(db, now + 60_000)).toEqual([]);
+    expect(await read('config/points')).toEqual(points);
+    expect(await read('config/achievements')).toEqual(achievements);
+    expect(await audits('config.seeded')).toHaveLength(2);
+  });
+
+  it('o documento que existe nunca é tocado: só o que falta é gravado', async () => {
+    const editor = await seedMember(env, 'Editora', 'editor', ['missions']);
+    await ok('updatePointsConfig', { expectedVersion: 0, values: { like: 7 } }, editor);
+    expect(await seedGameConfig(db)).toEqual(['achievements']);
+    expect(await read('config/points')).toMatchObject({ version: 1, values: { like: 7 } });
+  });
+
+  it('depois da carga, o painel muda a régua e as conquistas com expectedVersion 1, com a seção na auditoria', async () => {
+    const editor = await seedMember(env, 'Editora', 'editor', ['missions']);
+    await seedGameConfig(db);
+    expect(
+      await ok('updatePointsConfig', { expectedVersion: 1, values: { comment: 3 } }, editor),
+    ).toEqual({ ok: true, version: 2 });
+    const created = await ok<{ achievementId: string; version: number }>(
+      'createAchievement',
+      {
+        expectedVersion: 1,
+        achievement: {
+          title: 'Primeiro comentário',
+          icon: 'heart',
+          tone: 'action',
+          rule: { type: 'first', action: 'comment' },
+        },
+      },
+      editor,
+    );
+    expect(created.version).toBe(2);
+    expect((await audits('points.config.updated'))[0]).toMatchObject({
+      section: 'missions',
+      targets: [],
+    });
+    expect((await audits('achievement.created'))[0]).toMatchObject({
+      section: 'missions',
+      targets: [`achievement:${created.achievementId}`],
+    });
   });
 });
 

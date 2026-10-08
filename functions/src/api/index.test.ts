@@ -1058,3 +1058,43 @@ describe('loja e resgate (bloco 10)', () => {
     expect(wrong.headers.Allow).toBe('POST');
   });
 });
+
+describe('suspensão do fã (bloco 11)', () => {
+  it('as rotas que gravam e aceitam o suspenso são só as de desfazer e de segurança', () => {
+    const allowed = API_ROUTES.filter((route) => route.writes && route.allowSuspended).map(
+      (route) => `${route.method} ${route.pattern}`,
+    );
+    expect(allowed.sort()).toEqual(
+      [
+        'DELETE /me/centrals/:artistId',
+        'DELETE /posts/:postId/like',
+        'DELETE /events/:eventId/rsvp',
+        'DELETE /me/photo',
+        'PUT /me/blocks/:fanId',
+        'DELETE /me/blocks/:fanId',
+      ].sort(),
+    );
+    // Toda rota que lê ignora a trava (ela mora no runIdempotent).
+    expect(API_ROUTES.filter((route) => !route.writes && 'allowSuspended' in route)).toEqual([]);
+  });
+
+  it('o código do suspenso sem código novo: 403 account_suspended no formato combinado', async () => {
+    const routes: ApiRoute[] = [
+      {
+        method: 'GET',
+        pattern: '/teste/suspenso',
+        writes: false,
+        handle: async () => {
+          throw new InviteError('account_suspended');
+        },
+      },
+    ];
+    const sent = await call(request('GET', '/teste/suspenso'), routes);
+    expect(sent.status).toBe(403);
+    expect(sent.body).toEqual({
+      code: 'account_suspended',
+      message: 'Sua conta está suspensa. Fale com a equipe do ImagineUP.',
+    });
+    expect(logger.error).not.toHaveBeenCalled();
+  });
+});

@@ -30,12 +30,29 @@ export {
   type ProfileEditErrorReason,
   type UsernameReleaseReason,
 } from './model';
-export { SEED_PHOTO_FILE, seedFanPhoto, type UploadPhoto } from './seed';
+export {
+  clearFanPhoto,
+  findFanByEmail,
+  parseCurrentUsername,
+  parseLookupEmail,
+  resetFanUsername,
+  type FanPanelDeps,
+} from './panel';
+export {
+  countFanSearchKeys,
+  fanSearchKeys,
+  normalizeSearch,
+  sameSearchKeys,
+  searchKeysOf,
+  writeFanSearchKeys,
+} from './search';
+export { SEED_PHOTO_FILE, SEED_SPAM_PHOTO_FILE, seedFanPhoto, type UploadPhoto } from './seed';
 export {
   changeUsername,
   purgeFanPhotos,
   readUsernameAvailability,
   releaseUsername,
+  releaseUsernameIn,
   removeFanPhoto,
   removeReplacedPhoto,
   setFanPhoto,
@@ -44,6 +61,7 @@ export {
   type PhotoChange,
   type UsernameAvailability,
   type UsernameChange,
+  type UsernameRelease,
   type UsernameStatus,
 } from './service';
 export {
@@ -53,6 +71,7 @@ export {
   queueFanPhotoPurge,
   queueFanProfileSync,
   runFanProfileSync,
+  syncFanSearchKeys,
   type FanProfileQueue,
   type QueueFanProfileSyncResult,
 } from './sync';

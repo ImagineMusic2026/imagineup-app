@@ -11,10 +11,13 @@ import {
   doc,
   getDoc,
   getDocs,
+  orderBy,
+  query,
   serverTimestamp,
   setDoc,
   Timestamp,
   updateDoc,
+  where,
 } from 'firebase/firestore';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -100,12 +103,36 @@ describe('perfil do fã (users/{uid})', () => {
     );
   });
 
-  it('só o próprio fã lê o perfil, e ninguém lista os perfis', async () => {
+  it('o fã lê só o próprio perfil, e nenhum fã lista os perfis', async () => {
     await seedProfile();
     await assertSucceeds(getDoc(doc(fan(), 'users/fa')));
     await assertFails(getDoc(doc(otherFan(), 'users/fa')));
     await assertFails(getDoc(doc(anonymous(), 'users/fa')));
     await assertFails(getDocs(collection(fan(), 'users')));
+    await assertFails(getDocs(query(collection(fan(), 'users'), where('suspendedAt', '!=', null))));
+  });
+
+  it('o fã suspenso não edita nome nem cidade, e volta a editar depois que o campo sai (bloco 11)', async () => {
+    await seedProfile({ suspendedAt: MINUTE_AGO(), suspensionReason: 'spam' });
+    await assertSucceeds(getDoc(doc(fan(), 'users/fa')));
+    await assertFails(edit({ displayName: 'Camila R.' }));
+    await assertFails(edit({ city: null }));
+    // Nem tira a própria suspensão.
+    await assertFails(edit({ suspendedAt: deleteField(), suspensionReason: deleteField() }));
+    await env.withSecurityRulesDisabled(async (context) => {
+      await updateDoc(doc(context.firestore(), 'users/fa'), {
+        suspendedAt: deleteField(),
+        suspensionReason: deleteField(),
+      });
+    });
+    await assertSucceeds(edit({ displayName: 'Camila R.' }));
+  });
+
+  it('o fã não grava a própria suspensão nem as chaves da busca (bloco 11)', async () => {
+    await seedProfile();
+    await assertFails(edit({ suspendedAt: Timestamp.now() }));
+    await assertFails(edit({ suspensionReason: 'other' }));
+    await assertFails(edit({ searchKeys: ['ca', 'cam'] }));
   });
 
   it('o fã edita nome e cidade', async () => {
@@ -457,6 +484,170 @@ describe('perfil do fã (users/{uid})', () => {
     await seedProfile();
     await assertFails(getDoc(doc(fan(), 'users/fa/resgates/1')));
     await assertFails(setDoc(doc(fan(), 'users/fa/resgates/1'), { recompensa: 'camisa' }));
+  });
+});
+
+// --- A equipe e o perfil do fã (bloco 11, docs/arquitetura-api.md, 26.10) ----------------------
+
+const ALL_SECTIONS = [
+  'overview',
+  'growth',
+  'ranking',
+  'fans',
+  'artists',
+  'missions',
+  'rewards',
+  'moderation',
+  'audit',
+];
+
+// auth_time do login que ligou a conta à equipe (authValidAfter).
+const LINKED_AT = 1_800_000_000;
+
+type Member = {
+  role: 'admin' | 'editor' | 'viewer';
+  status: 'pending' | 'active' | 'disabled';
+  sections?: string[];
+  authValidAfter?: number;
+};
+
+const MEMBERS: Record<string, Member> = {
+  admin: { role: 'admin', status: 'active' },
+  editora: { role: 'editor', status: 'active', sections: ['fans', 'missions', 'rewards'] },
+  leitor: { role: 'viewer', status: 'active', sections: ['fans'] },
+  moderacao: { role: 'editor', status: 'active', sections: ['moderation'] },
+  leitorModeracao: { role: 'viewer', status: 'active', sections: ['moderation'] },
+  semSecao: { role: 'editor', status: 'active', sections: ['artists', 'missions', 'audit'] },
+  desativada: { role: 'editor', status: 'disabled', sections: ['fans', 'moderation'] },
+  pendente: { role: 'admin', status: 'pending' },
+  ligada: {
+    role: 'editor',
+    status: 'active',
+    sections: ['fans', 'moderation'],
+    authValidAfter: LINKED_AT,
+  },
+};
+
+/** A equipe, a fã de sempre e dois perfis a mais (um suspenso), como o servidor grava. */
+async function seedTeamAndFans(): Promise<void> {
+  await seedProfile();
+  await env.withSecurityRulesDisabled(async (context) => {
+    const db = context.firestore();
+    for (const [uid, member] of Object.entries(MEMBERS)) {
+      await setDoc(doc(db, `staff/${uid}`), {
+        uid,
+        email: `${uid}@imagine.music`,
+        displayName: uid,
+        role: member.role,
+        sections: member.role === 'admin' ? ALL_SECTIONS : (member.sections ?? []),
+        status: member.status,
+        accountCreatedByInvite: member.authValidAfter === undefined,
+        ...(member.authValidAfter === undefined ? {} : { authValidAfter: member.authValidAfter }),
+      });
+    }
+    await setDoc(doc(db, 'users/outro'), {
+      displayName: 'Alan',
+      username: 'alanzin',
+      createdAt: Timestamp.fromDate(new Date('2026-09-30')),
+      searchKeys: ['al', 'ala', 'alan', 'alanz', 'alanzi', 'alanzin'],
+    });
+    await setDoc(doc(db, 'users/suspenso'), {
+      displayName: 'Promo Seguidores',
+      username: 'promoseg',
+      createdAt: Timestamp.fromDate(new Date('2026-10-01')),
+      suspendedAt: MINUTE_AGO(),
+      suspensionReason: 'spam',
+    });
+  });
+}
+
+const staffDb = (uid: string, authTime?: number) =>
+  env
+    .authenticatedContext(uid, authTime === undefined ? undefined : { auth_time: authTime })
+    .firestore();
+
+type Db = ReturnType<typeof fan>;
+
+const suspendedQuery = (db: Db) =>
+  query(collection(db, 'users'), where('suspendedAt', '!=', null), orderBy('suspendedAt', 'desc'));
+
+describe('perfil do fã pela equipe (bloco 11)', () => {
+  beforeEach(seedTeamAndFans);
+
+  it('a equipe com fans (editora e leitor) e o admin leem e listam todos os perfis, também pela busca', async () => {
+    for (const uid of ['admin', 'editora', 'leitor']) {
+      const db = staffDb(uid);
+      await assertSucceeds(getDoc(doc(db, 'users/fa')));
+      await assertSucceeds(getDoc(doc(db, 'users/suspenso')));
+      await assertSucceeds(getDocs(collection(db, 'users')));
+      await assertSucceeds(getDocs(query(collection(db, 'users'), orderBy('createdAt', 'desc'))));
+      await assertSucceeds(
+        getDocs(query(collection(db, 'users'), where('searchKeys', 'array-contains', 'alan'))),
+      );
+      await assertSucceeds(getDocs(suspendedQuery(db)));
+    }
+    await assertSucceeds(getDocs(collection(staffDb('ligada', LINKED_AT), 'users')));
+  });
+
+  it('com só moderation, lê qualquer perfil e lista só com o filtro dos suspensos', async () => {
+    for (const uid of ['moderacao', 'leitorModeracao']) {
+      const db = staffDb(uid);
+      await assertSucceeds(getDoc(doc(db, 'users/fa')));
+      await assertSucceeds(getDoc(doc(db, 'users/outro')));
+      const suspended = await assertSucceeds(getDocs(suspendedQuery(db)));
+      expect(suspended.docs.map((item) => item.id)).toEqual(['suspenso']);
+      await assertSucceeds(
+        getDocs(query(collection(db, 'users'), where('suspendedAt', '!=', null))),
+      );
+      await assertFails(getDocs(collection(db, 'users')));
+      await assertFails(getDocs(query(collection(db, 'users'), orderBy('createdAt', 'desc'))));
+      await assertFails(
+        getDocs(query(collection(db, 'users'), where('searchKeys', 'array-contains', 'alan'))),
+      );
+      await assertFails(getDocs(query(collection(db, 'users'), where('suspendedAt', '==', null))));
+    }
+  });
+
+  it('sem as duas seções, desativada, pendente ou com sessão de antes do authValidAfter, não lê nem lista', async () => {
+    for (const uid of ['semSecao', 'desativada', 'pendente']) {
+      const db = staffDb(uid);
+      await assertFails(getDoc(doc(db, 'users/fa')));
+      await assertFails(getDocs(collection(db, 'users')));
+      await assertFails(getDocs(suspendedQuery(db)));
+    }
+    const stale = staffDb('ligada', LINKED_AT - 1);
+    await assertFails(getDoc(doc(stale, 'users/fa')));
+    await assertFails(getDocs(suspendedQuery(stale)));
+  });
+
+  it('ninguém da equipe grava no perfil, nem admin: suspender é do servidor', async () => {
+    for (const uid of ['admin', 'editora', 'moderacao']) {
+      const db = staffDb(uid);
+      await assertFails(
+        updateDoc(doc(db, 'users/fa'), { displayName: 'Outra', updatedAt: serverTimestamp() }),
+      );
+      await assertFails(updateDoc(doc(db, 'users/fa'), { suspendedAt: serverTimestamp() }));
+      await assertFails(updateDoc(doc(db, 'users/suspenso'), { suspendedAt: deleteField() }));
+      await assertFails(setDoc(doc(db, 'users/novo'), { displayName: 'Novo' }));
+      await assertFails(deleteDoc(doc(db, 'users/outro')));
+    }
+  });
+
+  it('o orçamento do dia da equipe (staffLimits) é só do servidor, nem admin lê', async () => {
+    await env.withSecurityRulesDisabled(async (context) => {
+      await setDoc(doc(context.firestore(), 'staffLimits/editora_2026-10-07'), {
+        uid: 'editora',
+        day: '2026-10-07',
+        adjusted: { balance: 100 },
+        emailLookups: 1,
+      });
+    });
+    for (const uid of ['admin', 'editora']) {
+      const db = staffDb(uid);
+      await assertFails(getDoc(doc(db, 'staffLimits/editora_2026-10-07')));
+      await assertFails(getDocs(collection(db, 'staffLimits')));
+      await assertFails(setDoc(doc(db, 'staffLimits/editora_2026-10-07'), { emailLookups: 0 }));
+    }
   });
 });
 

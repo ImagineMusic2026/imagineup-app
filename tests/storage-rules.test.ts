@@ -5,7 +5,7 @@ import {
   type RulesTestContext,
   type RulesTestEnvironment,
 } from '@firebase/rules-unit-testing';
-import { deleteDoc, doc, setDoc, Timestamp, updateDoc } from 'firebase/firestore';
+import { deleteDoc, deleteField, doc, setDoc, Timestamp, updateDoc } from 'firebase/firestore';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
@@ -418,6 +418,23 @@ describe('foto do fã (fans/{uid}/)', () => {
       await deleteDoc(doc(context.firestore(), 'users/camila'));
     });
     await assertFails(upload(as('camila'), photoPath(), jpeg));
+  });
+
+  it('o fã suspenso não sobe foto, e volta a subir quando a suspensão sai (bloco 11)', async () => {
+    await env.withSecurityRulesDisabled(async (context) => {
+      await updateDoc(doc(context.firestore(), 'users/camila'), {
+        suspendedAt: Timestamp.now(),
+        suspensionReason: 'offensive',
+      });
+    });
+    await assertFails(upload(as('camila'), photoPath(), jpeg));
+    await env.withSecurityRulesDisabled(async (context) => {
+      await updateDoc(doc(context.firestore(), 'users/camila'), {
+        suspendedAt: deleteField(),
+        suspensionReason: deleteField(),
+      });
+    });
+    await assertSucceeds(upload(as('camila'), photoPath(), jpeg));
   });
 
   it('png, webp e image/jpeg com parâmetro não sobem', async () => {

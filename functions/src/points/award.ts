@@ -262,6 +262,18 @@ export function centralFromDoc(artistId: string, data: DocumentData | undefined)
   };
 }
 
+/**
+ * A conta do fã está suspensa pela equipe (bloco 11, 26.6): o perfil tem o
+ * `suspendedAt`, que só o servidor grava e que sai (`FieldValue.delete()`)
+ * quando a suspensão é tirada. A trava das rotas que gravam (`runIdempotent`),
+ * o código de convite e o plano dos outros fãs leem daqui.
+ */
+export function isSuspendedProfile(profile: DocumentSnapshot): boolean {
+  if (!profile.exists) return false;
+  const at = profile.get('suspendedAt');
+  return at !== undefined && at !== null;
+}
+
 /** Conta só da equipe: staff/{uid} sem a marca de fã ligada (accountCreatedByInvite: false). */
 function isStaffOnly(staff: DocumentSnapshot): boolean {
   return staff.exists && staff.get('accountCreatedByInvite') !== false;
@@ -426,6 +438,8 @@ export async function planAwards(
   const inputs: FanInput[] = layout.map(({ fan, profileAt, walletAt, ledger, centrals }) => ({
     uid: fan.uid,
     hasProfile: fan.fan ? true : snaps[profileAt]!.exists,
+    // Só quem não chama (sem o retrato): o perfil dele já veio no getAll.
+    suspended: fan.fan ? false : isSuspendedProfile(snaps[profileAt]!),
     wallet: fan.fan ? fan.fan.wallet : walletFromDoc(snaps[walletAt]!.data()),
     entries: fan.entries,
     ticks: fan.ticks ?? [],

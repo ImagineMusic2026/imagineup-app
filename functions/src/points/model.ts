@@ -323,7 +323,8 @@ export type PointsErrorReason =
 /**
  * Recusa do núcleo de pontos. A API traduz `insufficient_points`, `not_fan` e
  * `profile_not_ready` para o erro combinado com o app; o resto é erro de
- * programação (500) ou do ajuste da equipe (bloco seguinte).
+ * programação (500) ou do ajuste da equipe (`adjustFanPoints`, bloco 11, que
+ * lê o `details.counter` do `negative_counter`).
  */
 export class PointsError extends Error {
   readonly reason: PointsErrorReason;
@@ -571,6 +572,13 @@ export type FanInput = {
   uid: string;
   /** false para outro fã sem users/{uid} (conta excluída): os lançamentos dele saem skipped. */
   hasProfile: boolean;
+  /**
+   * true para outro fã (não quem chama) com a conta suspensa (`suspendedAt`
+   * no perfil, bloco 11, 26.6): os ganhos (`earn`) dele saem skipped e as
+   * unidades de missão são ignoradas, como o fã sem perfil; a devolução do
+   * resgate entra. Quem chama nunca vem marcado (a trava dele é a da API).
+   */
+  suspended?: boolean;
   wallet: WalletState;
   entries: readonly AwardEntry[];
   /** As unidades das missões (bloco 7), na ordem; sem perfil, ignoradas. */
@@ -764,6 +772,8 @@ export function computeAwards(input: ComputeInput): ComputeOutput {
         results.push({ uid: fan.uid, entryId: id, status, points });
         return { status, points };
       };
+      // O suspenso que não chama não ganha nada (o convite e as missões dele, 26.6).
+      if (fan.suspended && entry.kind === 'earn') return result('skipped');
       if (seen.has(id)) return result('duplicate');
 
       const artistId = entryArtistId(entry);
@@ -838,16 +848,28 @@ export function computeAwards(input: ComputeInput): ComputeOutput {
           seasonPoints: wallet.seasonPoints + (entry.season ?? 0),
         };
         let central: CentralState | null = null;
+        let centralNext: { season: number; total: number } | null = null;
         if (entry.central) {
           central = centralOf(entry.central.artistId);
-          const centralSeason = central.seasonPoints + (entry.central.season ?? 0);
-          const centralTotal = central.totalPoints + (entry.central.total ?? 0);
-          if (centralSeason < 0 || centralTotal < 0) {
-            throw new PointsError('negative_counter', 'O ajuste deixaria a central negativa.');
-          }
+          centralNext = {
+            season: central.seasonPoints + (entry.central.season ?? 0),
+            total: central.totalPoints + (entry.central.total ?? 0),
+          };
         }
-        if (next.balance < 0 || next.xp < 0 || next.seasonPoints < 0) {
-          throw new PointsError('negative_counter', 'O ajuste deixaria um contador negativo.');
+        // O primeiro contador que ficaria negativo, na ordem do painel (26.4).
+        const negative = (
+          [
+            ['balance', next.balance],
+            ['xp', next.xp],
+            ['season', next.seasonPoints],
+            ['centralSeason', centralNext?.season ?? 0],
+            ['centralTotal', centralNext?.total ?? 0],
+          ] as const
+        ).find(([, value]) => value < 0);
+        if (negative) {
+          throw new PointsError('negative_counter', 'O ajuste deixaria um contador negativo.', {
+            counter: negative[0],
+          });
         }
         points = entry.balance ?? 0;
         xpDelta = entry.xp ?? 0;
@@ -901,7 +923,8 @@ export function computeAwards(input: ComputeInput): ComputeOutput {
     for (const entry of fan.entries) apply(entry);
 
     // Missões (22.4, passos 3 a 5): a troca de período, as unidades e as conclusões.
-    const ticks = fan.ticks ?? [];
+    // As do suspenso que não chama não andam (26.6).
+    const ticks = fan.suspended ? [] : (fan.ticks ?? []);
     if (ticks.length > 0) {
       const candidates = candidateMissions(game.missions, ticks, now);
       const applied = applyMissionTicks(rollMissions(wallet.missions, now), candidates, ticks, now);

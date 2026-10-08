@@ -177,14 +177,45 @@ describe('equipe do painel: quem lê', () => {
     await assertSucceeds(pendingInvites(db));
   });
 
-  it('editor e leitor não listam a equipe nem os convites', async () => {
-    for (const uid of ['editor', 'leitor', 'auditor']) {
+  it('editor e leitor sem a seção audit não listam a equipe nem os convites', async () => {
+    for (const uid of ['editor', 'leitor']) {
       const db = as(uid);
       await assertFails(listStaff(db));
       await assertFails(getDoc(doc(db, 'staff/admin')));
       await assertFails(listInvites(db));
       await assertFails(pendingInvites(db));
       await assertFails(getDoc(doc(db, 'staffInvites/convite1')));
+    }
+  });
+
+  it('quem tem a seção audit lê e lista a equipe (o filtro por pessoa dos Logs), e não os convites (bloco 11)', async () => {
+    const db = as('auditor');
+    await assertSucceeds(listStaff(db));
+    await assertSucceeds(getDoc(doc(db, 'staff/admin')));
+    await assertSucceeds(getDoc(doc(db, 'staff/desativado')));
+    await assertFails(listInvites(db));
+    await assertFails(pendingInvites(db));
+    await assertFails(getDoc(doc(db, 'staffInvites/convite1')));
+    // O desativado com audit não lê a equipe.
+    await assertFails(listStaff(as('desativado')));
+    await assertFails(getDoc(doc(as('desativado'), 'staff/admin')));
+  });
+
+  it('os filtros dos Logs (seção, pessoa, ação e alvo) passam para quem tem audit (bloco 11)', async () => {
+    const db = as('auditor');
+    const audit = collection(db, 'staffAudit');
+    for (const filter of [
+      where('section', '==', 'team'),
+      where('actorUid', '==', 'admin'),
+      where('action', '==', 'invite.created'),
+      where('targets', 'array-contains', 'invite:convite1'),
+    ]) {
+      await assertSucceeds(getDocs(query(audit, filter, orderBy('createdAt', 'desc'), limit(50))));
+      await assertFails(
+        getDocs(
+          query(collection(as('editor'), 'staffAudit'), filter, orderBy('createdAt', 'desc')),
+        ),
+      );
     }
   });
 

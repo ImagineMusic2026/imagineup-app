@@ -8,7 +8,7 @@ import { removeFiles, type ArtistFiles } from '../artists/files';
 import { imageSize, isImageContentType } from '../artists/model';
 import type { ConfigSource } from '../points/config';
 import { pickShard } from '../points/stats';
-import { isFileIn, staleFiles } from '../posts/model';
+import { isFileIn, isRetriedDraft, staleFiles } from '../posts/model';
 import { requestFields } from '../staff/model';
 import { directRead, readPanelActor, transactionRead, type PanelActor } from '../staff/panel-actor';
 import { writeAudit, type AuditAction, type CallerAuth } from '../staff/service';
@@ -128,7 +128,9 @@ export function newRewardDoc(
 /**
  * createReward: o rascunho, no fim da ordem, sem foto e sem pedido. O
  * `rewardId` pode vir do painel (`doc(collection(db, 'rewards')).id`): o mesmo
- * id de novo responde sem gravar (25.5). O show precisa existir.
+ * id de novo, com o rascunho ainda rascunho e de quem chama, responde sem
+ * gravar (25.5); o id de qualquer outro documento é `invalid-request`
+ * (`field: 'rewardId'`, bloco 11, 26.5). O show precisa existir.
  */
 export async function addReward(
   deps: RewardsPanelDeps,
@@ -144,7 +146,15 @@ export async function addReward(
   return db.runTransaction(async (tx) => {
     const actor = await editorIn(tx, deps, caller);
     const ref = given ? rewardRef(db, given) : rewardsRef(db).doc();
-    if (given && (await tx.get(ref)).exists) return { rewardId: ref.id };
+    if (given) {
+      const existing = await tx.get(ref);
+      if (existing.exists) {
+        if (!isRetriedDraft(existing.data(), actor.uid)) {
+          throw rewardPanelError('invalid-request', { field: 'rewardId' });
+        }
+        return { rewardId: ref.id };
+      }
+    }
     if (fields.eventId) await requireEvent(tx, db, fields.eventId);
     const order = await nextRewardOrder(tx, db);
     const now = clock(deps);

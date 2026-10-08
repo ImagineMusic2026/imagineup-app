@@ -2,7 +2,7 @@ import { Timestamp, type DocumentData } from 'firebase-admin/firestore';
 import { describe, expect, it } from 'vitest';
 
 import { seedCamilaCentrals, seedCentrals } from '../src/centrals';
-import { weekStart } from '../src/day';
+import { dayKey, weekStart } from '../src/day';
 import {
   createConfigSource,
   DEFAULT_POINTS_CONFIG,
@@ -31,7 +31,16 @@ import {
   type JobOptions,
 } from '../src/ranking';
 import { deleteUserData } from '../src/store';
-import { central, http, localApi, signUpFan, unique, useEmulators, type Fan } from './support';
+import {
+  central,
+  http,
+  localApi,
+  signUpFan,
+  statsSum,
+  unique,
+  useEmulators,
+  type Fan,
+} from './support';
 
 /**
  * O ranking e as temporadas do bloco 8 nos emuladores (docs/arquitetura-api.md,
@@ -757,6 +766,23 @@ describe('a virada de temporada', () => {
       status: 'done',
       cursor: null,
     });
+  });
+
+  it('a virada atrasada soma o Top 20 no shard do dia da rodada, e a carteira fica com o endsAt (bloco 11)', async () => {
+    await scenario();
+    const endsAt = T0 - 5 * MIN_MS;
+    // A virada que roda três dias depois (um closeSeasonNow tardio): o dia do
+    // `endsAt` pode já estar fechado, e o número sumiria do painel (26.5).
+    const late = endsAt + 3 * DAY_MS;
+    expect(await closeAll(late, { pageSize: 10 })).toMatchObject({ status: 'closed' });
+    const top20 = (data: DocumentData) =>
+      (data.byAchievement as Record<string, { unlocked?: number }> | undefined)?.['top-20']
+        ?.unlocked ?? 0;
+    expect(await statsSum(db, [dayKey(late)], top20)).toBe(20);
+    expect(await statsSum(db, [dayKey(endsAt)], top20)).toBe(0);
+    expect(((await read('wallets/v20'))!.achievements['top-20'] as Timestamp).toMillis()).toBe(
+      endsAt,
+    );
   });
 
   it('duas rodadas em paralelo e uma repetida somam 1 uma vez só; a interrompida continua do cursor', async () => {

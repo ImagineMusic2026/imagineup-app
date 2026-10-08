@@ -69,6 +69,8 @@ const MEMBERS: Record<string, Member> = {
   leitor: { role: 'viewer', status: 'active', sections: ['fans'] },
   visaoGeral: { role: 'viewer', status: 'active', sections: ['overview'] },
   crescimento: { role: 'editor', status: 'active', sections: ['growth'] },
+  missoes: { role: 'viewer', status: 'active', sections: ['missions'] },
+  recompensas: { role: 'editor', status: 'active', sections: ['rewards'] },
   semSecao: { role: 'viewer', status: 'active', sections: ['artists', 'audit'] },
   desativada: { role: 'editor', status: 'disabled', sections: ['fans', 'overview', 'growth'] },
   pendente: { role: 'admin', status: 'pending' },
@@ -147,6 +149,13 @@ async function seed(): Promise<void> {
     await setDoc(doc(db, STATS_DAY), { day: '2026-10-05', closed: true });
     await setDoc(doc(db, STATS_SHARD), { day: '2026-10-05', totals: { earned: 2 } });
     await setDoc(doc(db, 'statsMeta/close'), { lastClosedDay: '2026-10-04' });
+    await setDoc(doc(db, 'statsMeta/outro'), { segredo: 1 });
+    await setDoc(doc(db, 'staffLimits/editora_2026-10-05'), {
+      uid: 'editora',
+      day: '2026-10-05',
+      adjusted: { balance: 100 },
+      emailLookups: 1,
+    });
     await setDoc(doc(db, 'idempotency/abc'), { uid: 'uid-camila', status: 200, body: {} });
   });
 }
@@ -277,11 +286,27 @@ describe('contadores agregados do painel', () => {
 describe('controle do servidor', () => {
   beforeEach(seed);
 
-  it('statsMeta e idempotency: ninguém lê nem grava, nem admin', async () => {
+  it('statsMeta/close: as seções de números (overview, growth, missions, rewards) e admin leem até onde o fechamento chegou (bloco 11)', async () => {
+    for (const uid of ['admin', 'visaoGeral', 'crescimento', 'missoes', 'recompensas']) {
+      await assertSucceeds(getDoc(doc(as(uid), 'statsMeta/close')));
+    }
+    await assertSucceeds(getDoc(doc(as('ligada', LINKED_AT), 'statsMeta/close')));
+    for (const uid of ['editora', 'leitor', 'semSecao', 'desativada', 'pendente', 'uid-camila']) {
+      await assertFails(getDoc(doc(as(uid), 'statsMeta/close')));
+    }
+    await assertFails(getDoc(doc(as('ligada', LINKED_AT - 1), 'statsMeta/close')));
+    await assertFails(getDoc(doc(anonymous(), 'statsMeta/close')));
+  });
+
+  it('outro documento de statsMeta, a lista, staffLimits e idempotency: ninguém lê nem grava, nem admin', async () => {
     for (const uid of ['admin', 'visaoGeral', 'editora', 'uid-camila']) {
       const db = as(uid);
-      await assertFails(getDoc(doc(db, 'statsMeta/close')));
+      await assertFails(getDoc(doc(db, 'statsMeta/outro')));
       await assertFails(getDocs(collection(db, 'statsMeta')));
+      await assertFails(setDoc(doc(db, 'statsMeta/close'), { lastClosedDay: '2026-10-05' }));
+      await assertFails(getDoc(doc(db, 'staffLimits/editora_2026-10-05')));
+      await assertFails(getDocs(collection(db, 'staffLimits')));
+      await assertFails(setDoc(doc(db, 'staffLimits/editora_2026-10-05'), { emailLookups: 0 }));
       await assertFails(getDoc(doc(db, 'idempotency/abc')));
       await assertFails(getDocs(collection(db, 'idempotency')));
       await assertFails(setDoc(doc(db, 'idempotency/abc'), { uid }));

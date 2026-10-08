@@ -98,6 +98,7 @@ export const profileRoutes: ApiRoute[] = [
     method: 'DELETE',
     pattern: '/me/photo',
     writes: true,
+    allowSuspended: true,
     async handle(ctx) {
       const body: PhotoChange = removeFanPhoto(ctx.tx, ctx.deps.db, {
         fan: ctx.fan,

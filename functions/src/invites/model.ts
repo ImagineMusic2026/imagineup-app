@@ -51,18 +51,20 @@ export const INVITE_PATH_MAX = 200;
 export const UTM_RAW_MAX = 200;
 export const UTM_MAX = 100;
 
-export type InviteErrorReason = 'invite_not_found' | 'invite_not_allowed';
+export type InviteErrorReason = 'invite_not_found' | 'invite_not_allowed' | 'account_suspended';
 
 const INVITE_ERROR_MESSAGES: Record<InviteErrorReason, string> = {
   invite_not_found: 'Convite não encontrado.',
   invite_not_allowed: 'Este convite não vale para esta conta.',
+  account_suspended: 'Conta suspensa: sem código de convite novo.',
 };
 
 /**
  * Recusa do convite. A API traduz `invite_not_found` para o 404 e
  * `invite_not_allowed` para o 409 combinados com o app (`toApiHttpError`),
  * com o motivo em `details.reason` (`self`, só para a própria conta dona do
- * código, ou `account_too_old`).
+ * código, ou `account_too_old`), e `account_suspended` (o fã suspenso sem
+ * código não ganha um, bloco 11, 26.5) para o 403 de mesmo nome.
  */
 export class InviteError extends Error {
   readonly reason: InviteErrorReason;

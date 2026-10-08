@@ -143,8 +143,17 @@ service cloud.firestore {
     // O @, a foto e o prazo do @ são do servidor (API, bloco 9); o orçamento da
     // fila das cópias do perfil (users/{uid}/profileSync) também, e fica fechado
     // pelo match /{document=**} do fim, para o fã e para a equipe.
+    //
+    // Desde o bloco 11 (docs/arquitetura-api.md, 26.10), a equipe com a seção
+    // fans lê e lista os perfis (a lista, a busca e a ficha da seção Fãs), e a
+    // com moderation lê qualquer perfil (o autor de um comentário) e lista só
+    // os suspensos (a consulta precisa de where('suspendedAt', '!=', null)).
+    // A suspensão (suspendedAt, suspensionReason) e as chaves da busca
+    // (searchKeys) são do servidor; o fã suspenso não edita nome nem cidade.
     match /users/{uid} {
-      allow get: if isSelf(uid);
+      allow get: if isSelf(uid) || canSeeSection('fans') || canSeeSection('moderation');
+      allow list: if canSeeSection('fans')
+        || (canSeeSection('moderation') && resource.data.get('suspendedAt', null) != null);
 
       // O perfil nasce no servidor, no cadastro (com createdAt, @ e pontos).
       // Assim não há corrida com o servidor nem perfil recriado por um token
@@ -152,6 +161,7 @@ service cloud.firestore {
       allow create: if false;
 
       allow update: if isSelf(uid)
+        && resource.data.get('suspendedAt', null) == null
         && validProfileUpdate(request.resource.data.diff(resource.data).affectedKeys());
 
       // Excluir a conta apaga o perfil e os pontos e cancela os resgates
@@ -202,9 +212,10 @@ service cloud.firestore {
     // Cloud Functions (Admin SDK); pelo cliente, ninguém grava, nem admin.
     match /staff/{uid} {
       // O próprio membro lê o seu em qualquer status: o painel mostra
-      // "acesso desativado" em vez de uma tela vazia.
-      allow get: if isSelf(uid) || isStaffAdmin();
-      allow list: if isStaffAdmin();
+      // "acesso desativado" em vez de uma tela vazia. Quem tem a seção audit
+      // lê e lista a equipe, para o filtro por pessoa dos Logs (bloco 11).
+      allow get: if isSelf(uid) || isStaffAdmin() || canSeeSection('audit');
+      allow list: if isStaffAdmin() || canSeeSection('audit');
       allow write: if false;
     }
 
@@ -292,8 +303,11 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // A Visão geral também lê o catálogo de agora (bloco 11): dá nome às
+    // conquistas desbloqueadas no período.
     match /config/achievements {
-      allow read: if canSeeSection('missions') || canSeeSection('fans');
+      allow read: if canSeeSection('missions') || canSeeSection('fans')
+        || canSeeSection('overview');
       allow write: if false;
 
       match /versions/{version} {
@@ -330,11 +344,19 @@ service cloud.firestore {
       }
     }
 
-    // Controle do fechamento do dia e chaves de idempotência da API: só o servidor.
+    // Controle do fechamento do dia (bloco 11, 26.3): só o servidor grava; as
+    // telas de números leem statsMeta/close para saber até onde o fechamento
+    // chegou. Outro documento de statsMeta fica fechado.
     match /statsMeta/{docId} {
-      allow read, write: if false;
+      allow read: if docId == 'close'
+        && (canSeeSection('overview') || canSeeSection('growth')
+          || canSeeSection('missions') || canSeeSection('rewards'));
+      allow write: if false;
     }
 
+    // Chaves de idempotência da API: só o servidor. O orçamento do dia da
+    // equipe (staffLimits, bloco 11) também é só do servidor e não tem regra
+    // própria: o match /{document=**} do fim fecha.
     match /idempotency/{id} {
       allow read, write: if false;
     }
@@ -370,20 +392,25 @@ service cloud.firestore {
     }
 
     // Mural (bloco 6): a equipe publica pelas callables, com a seção artists.
-    // O fã lê tudo pela API, nunca direto, nem os posts no ar.
+    // O fã lê tudo pela API, nunca direto, nem os posts no ar. Desde o bloco
+    // 11, a seção missions também lê (escolhe e mostra o post alvo de uma
+    // missão).
     match /posts/{postId} {
-      allow read: if canSeeContent();
+      allow read: if canSeeContent() || canSeeSection('missions');
       allow write: if false;
 
-      // Comentários: a equipe que cuida do conteúdo e a da Moderação.
+      // Comentários: a equipe que cuida do conteúdo, a da Moderação e, desde
+      // o bloco 11, a seção fans (os comentários de um fã, na ficha).
       match /postComments/{commentId} {
-        allow read: if canSeeSection('artists') || canSeeSection('moderation');
+        allow read: if canSeeSection('artists') || canSeeSection('moderation')
+          || canSeeSection('fans');
         allow write: if false;
       }
     }
 
     match /{path=**}/postComments/{commentId} {
-      allow read: if canSeeSection('artists') || canSeeSection('moderation');
+      allow read: if canSeeSection('artists') || canSeeSection('moderation')
+        || canSeeSection('fans');
     }
 
     // Contagens dos posts em shards: só o servidor. O número que o app mostra
@@ -398,16 +425,21 @@ service cloud.firestore {
 
     // Agenda (bloco 6): os shows, pelas callables, com a seção artists. A
     // seção rewards também lê (bloco 10): escolhe o show da recompensa e
-    // mostra o nome dele. O show não guarda dado que ela não deva ver.
+    // mostra o nome dele; e, desde o bloco 11, a seção missions (o show alvo
+    // de uma missão). O show não guarda dado que elas não devam ver.
     match /events/{eventId} {
-      allow read: if canSeeContent() || canSeeSection('rewards');
+      allow read: if canSeeContent() || canSeeSection('rewards')
+        || canSeeSection('missions');
       allow write: if false;
     }
 
     // Moderação (bloco 6, provisória até a UP-48): as denúncias e a fila.
+    // Desde o bloco 11, as denúncias uma a uma ficam só do servidor, até para
+    // a Moderação: guardam quem denunciou (reporterUid), e com o perfil
+    // liberado a equipe ligaria o uid ao nome. A tela usa os itens da fila
+    // (moderationQueue), com a contagem por motivo e as datas.
     match /commentReports/{reportId} {
-      allow read: if canSeeSection('moderation');
-      allow write: if false;
+      allow read, write: if false;
     }
 
     match /moderationQueue/{commentId} {

@@ -83,6 +83,7 @@ export const agendaRoutes: ApiRoute[] = [
     method: 'DELETE',
     pattern: '/events/:eventId/rsvp',
     writes: true,
+    allowSuspended: true,
     validate: eventParam,
     async handle(ctx) {
       const eventId = ctx.params.eventId!;

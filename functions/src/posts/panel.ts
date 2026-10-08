@@ -11,6 +11,7 @@ import { directRead, readPanelActor, transactionRead, type PanelActor } from '..
 import { writeAudit, type AuditAction, type CallerAuth } from '../staff/service';
 import { postPanelError } from './errors';
 import {
+  isRetriedDraft,
   parseContentId,
   parseContentStatus,
   parsePostKind,
@@ -102,9 +103,25 @@ function parseEventIdFor(kind: PostKind, value: unknown): string | null {
 }
 
 /**
+ * O id que o painel gera (`doc(collection(db, 'posts')).id`) para o
+ * `createPost` e o `createEvent` (bloco 11, 26.5): ausente, o servidor gera;
+ * fora do formato (ou um `__.*__`), `invalid-request` com o campo.
+ */
+export function panelContentId(value: unknown, field: string): string | null {
+  if (value === undefined) return null;
+  if (!isContentId(value)) throw postPanelError('invalid-request', { field });
+  return value;
+}
+
+/**
  * createPost: o rascunho, com as contagens em 0 e sem `publishedAt`. A
  * central precisa existir (em qualquer status); o tipo não muda depois; o
- * post de show aponta para um show que tem a central do post.
+ * post de show aponta para um show que tem a central do post. O `postId` pode
+ * vir do painel: o mesmo id de novo, com o rascunho ainda rascunho, de quem
+ * chama, da mesma central e do mesmo tipo, responde sem gravar nem auditar,
+ * como o `createReward` (25.5), e a criação em quatro passos retoma sem
+ * rascunho a mais; o id de qualquer outro documento é `invalid-request`
+ * (`field: 'postId'`).
  */
 export async function addPost(
   deps: ContentDeps,
@@ -119,13 +136,23 @@ export async function addPost(
   const kind = parsePostKind(input.kind);
   const text = parsePostText(kind, input.text);
   const eventId = parseEventIdFor(kind, input.eventId);
+  const given = panelContentId(input.postId, 'postId');
 
   return db.runTransaction(async (tx) => {
     const actor = await editorIn(tx, deps, caller);
+    const ref = given ? postRef(db, given) : postsRef(db).doc();
+    if (given) {
+      const existing = await tx.get(ref);
+      if (existing.exists) {
+        if (!isRetriedDraft(existing.data(), actor.uid, { artistId, kind })) {
+          throw postPanelError('invalid-request', { field: 'postId' });
+        }
+        return { postId: ref.id };
+      }
+    }
     const artist = await tx.get(artistRef(db, artistId));
     if (!artist.exists) throw postPanelError('artist-not-found');
     if (eventId) await readEventFor(tx, db, eventId, artistId);
-    const ref = postsRef(db).doc();
     const now = Timestamp.fromMillis(clock(deps));
     tx.create(ref, {
       artistId,
@@ -171,7 +198,8 @@ async function storedVideo(files: ArtistFiles, path: string): Promise<VideoFile>
   return { url, path, size: file.size ?? 0 };
 }
 
-type StoredMedia = { photo: ImageFile; thumb: ImageFile; video: VideoFile | null };
+/** A mídia conferida no bucket; `video` ausente mantém o vídeo de agora (o `videoPath` que não veio). */
+type StoredMedia = { photo: ImageFile; thumb: ImageFile; video?: VideoFile | null };
 
 async function storedMedia(
   files: ArtistFiles,
@@ -184,7 +212,7 @@ async function storedMedia(
     storedImage(files, paths.thumbPath, sizes.thumb),
     paths.videoPath ? storedVideo(files, paths.videoPath) : Promise.resolve(null),
   ]);
-  return { photo, thumb, video };
+  return paths.videoPath === undefined ? { photo, thumb } : { photo, thumb, video };
 }
 
 /** Os caminhos da mídia gravada num post (para a limpeza da pasta). */
@@ -226,9 +254,11 @@ async function prunePostFiles(deps: ContentDeps, postId: string, keep: string[])
 
 /**
  * updatePost: ausente não muda. `media` só em foto e vídeo (conferida no
- * bucket antes da transação); null tira, só fora do ar. Trocar o show de um
- * post no ar exige o show novo no ar. Nada mudou: ok, sem gravar nem auditar.
- * Com `media`, depois da transação, a pasta fica só com a mídia nova.
+ * bucket antes da transação); null tira, só fora do ar. No vídeo, `media` sem
+ * `videoPath` mantém o vídeo de agora (relido na transação, e ele fica na
+ * pasta), e `videoPath: null` tira o vídeo (bloco 11, 26.5). Trocar o show de
+ * um post no ar exige o show novo no ar. Nada mudou: ok, sem gravar nem
+ * auditar. Com `media`, depois da transação, a pasta fica só com a mídia nova.
  */
 export async function editPost(
   deps: ContentDeps,
@@ -247,16 +277,26 @@ export async function editPost(
     input.eventId === undefined ? undefined : parseEventIdFor(before.kind, input.eventId);
   const paths =
     input.media === undefined ? undefined : parsePostMediaPaths(before.kind, input.media, postId);
-  const media =
+  const stored =
     paths === undefined || paths === null
       ? paths
       : await storedMedia(deps.files, before.kind as 'photo' | 'video', paths);
+  // A mídia que fica gravada (com o vídeo de agora, quando ele não veio).
+  let media: { photo: ImageFile; thumb: ImageFile; video: VideoFile | null } | null | undefined =
+    stored === undefined || stored === null ? stored : undefined;
 
   await db.runTransaction(async (tx) => {
     const actor = await editorIn(tx, deps, caller);
     const snap = await tx.get(postRef(db, postId));
     const current = postOf(snap);
     if (!current) throw postPanelError('post-not-found');
+    if (stored) {
+      media = {
+        photo: stored.photo,
+        thumb: stored.thumb,
+        video: stored.video === undefined ? current.video : stored.video,
+      };
+    }
     const published = current.status === 'published';
     if (eventId && eventId !== current.eventId) {
       const event = await readEventFor(tx, db, eventId, current.artistId);
@@ -299,11 +339,12 @@ export async function editPost(
     );
   });
 
-  if (media !== undefined) {
+  const kept = media as { photo: ImageFile; thumb: ImageFile; video: VideoFile | null } | null;
+  if (stored !== undefined) {
     await prunePostFiles(
       deps,
       postId,
-      media ? [media.photo.path, media.thumb.path, ...(media.video ? [media.video.path] : [])] : [],
+      kept ? [kept.photo.path, kept.thumb.path, ...(kept.video ? [kept.video.path] : [])] : [],
     );
   }
   return { ok: true };

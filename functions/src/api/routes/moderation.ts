@@ -50,6 +50,7 @@ export const moderationRoutes: ApiRoute[] = [
     method: 'PUT',
     pattern: '/me/blocks/:fanId',
     writes: true,
+    allowSuspended: true,
     validate: fanParam,
     async handle(ctx) {
       const fanId = ctx.params.fanId!;
@@ -67,6 +68,7 @@ export const moderationRoutes: ApiRoute[] = [
     method: 'DELETE',
     pattern: '/me/blocks/:fanId',
     writes: true,
+    allowSuspended: true,
     validate: fanParam,
     async handle(ctx) {
       const fanId = ctx.params.fanId!;

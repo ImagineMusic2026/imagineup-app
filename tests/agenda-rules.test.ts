@@ -16,6 +16,7 @@ import {
   setDoc,
   Timestamp,
   updateDoc,
+  where,
 } from 'firebase/firestore';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -58,6 +59,7 @@ const MEMBERS: Record<string, Member> = {
   artistas: { role: 'viewer', status: 'active', sections: ['artists'] },
   moderacao: { role: 'editor', status: 'active', sections: ['moderation'] },
   fas: { role: 'viewer', status: 'active', sections: ['fans'] },
+  missoes: { role: 'viewer', status: 'active', sections: ['missions'] },
   semSecao: { role: 'editor', status: 'active', sections: ['growth'] },
   desativada: { role: 'editor', status: 'disabled', sections: ['artists'] },
 };
@@ -118,12 +120,26 @@ describe('shows da agenda (events)', () => {
     }
   });
 
+  it('a seção Missões lê os shows, também os de uma central (o alvo da missão, bloco 11)', async () => {
+    const db = as('missoes');
+    await readsEvents(db, 'succeeds');
+    await assertSucceeds(
+      getDocs(
+        query(
+          collection(db, 'events'),
+          where('artistIds', 'array-contains', 'nenho'),
+          orderBy('startsAt'),
+        ),
+      ),
+    );
+  });
+
   it('sem essas seções, ou desativada, não lê', async () => {
     for (const uid of ['semSecao', 'desativada']) await readsEvents(as(uid), 'fails');
   });
 
   it('ninguém grava, nem admin', async () => {
-    for (const uid of ['admin', 'artistas', 'uid-camila']) {
+    for (const uid of ['admin', 'artistas', 'missoes', 'uid-camila']) {
       const db = as(uid);
       await assertFails(setDoc(doc(db, 'events/novo'), { title: 'Novo' }));
       await assertFails(updateDoc(doc(db, 'events/sao-joao-irara'), { featured: false }));

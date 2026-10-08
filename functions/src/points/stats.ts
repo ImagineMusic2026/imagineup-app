@@ -167,7 +167,7 @@ export function emptyShardDelta(): ShardDelta {
   };
 }
 
-function emptyArtistCount(): ArtistCount {
+export function emptyArtistCount(): ArtistCount {
   return {
     earned: 0,
     earnedEvents: 0,

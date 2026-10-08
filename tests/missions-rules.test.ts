@@ -237,18 +237,22 @@ describe('catálogo de missões, versões e arquivo', () => {
 describe('catálogo de conquistas e versões', () => {
   beforeEach(seed);
 
-  it('só com missions (e admin); a seção Fãs lê o de agora, sem as versões', async () => {
+  it('só com missions (e admin); a seção Fãs e, desde o bloco 11, a Visão geral leem o de agora, sem as versões', async () => {
     for (const uid of ['admin', 'missoes', 'leitorMissoes']) {
       await readsAchievements(as(uid), 'succeeds');
     }
     await readsAchievements(as('ligada', LINKED_AT), 'succeeds');
-    await assertSucceeds(getDoc(doc(as('fas'), ACHIEVEMENTS)));
-    await assertFails(getDoc(doc(as('fas'), ACHIEVEMENTS_VERSION)));
+    for (const uid of ['fas', 'visaoGeral']) {
+      await assertSucceeds(getDoc(doc(as(uid), ACHIEVEMENTS)));
+      await assertFails(getDoc(doc(as(uid), ACHIEVEMENTS_VERSION)));
+      await assertFails(getDocs(collection(as(uid), `${ACHIEVEMENTS}/versions`)));
+    }
   });
 
-  it('com overview sozinha não, nem o resto', async () => {
-    for (const uid of ['visaoGeral', 'ranking', 'desativada', 'pendente', 'uid-camila']) {
+  it('as versões só com missions; o resto não lê nem o de agora', async () => {
+    for (const uid of ['ranking', 'desativada', 'pendente', 'uid-camila']) {
       await readsAchievements(as(uid), 'fails');
+      await assertFails(getDoc(doc(as(uid), ACHIEVEMENTS)));
     }
     await readsAchievements(as('ligada', LINKED_AT - 1), 'fails');
     await readsAchievements(anonymous(), 'fails');

@@ -240,12 +240,16 @@ export async function sendInviteVisit(
  * sem status (rede, tempo, o `getIdToken` que falhou antes de o pedido sair,
  * a sessão que mudou), 401, 429, 5xx e um 4xx sem um destes códigos (o
  * `not_found` de um servidor que ainda não tem a rota). O `isRetryable` não
- * serve: o `unknown` sem status e o 429 não são recusa.
+ * serve: o `unknown` sem status e o 429 não são recusa. O 403
+ * `account_suspended` (a conta suspensa pela equipe, bloco 11) também é
+ * definitivo: sem ele, a sincronização repetiria o claim e a visita do
+ * suspenso por até 7 dias.
  */
 export const FINAL_INVITE_REJECTIONS: readonly string[] = [
   'invalid_request',
   'idempotency_key_required',
   'not_fan',
+  'account_suspended',
   'invite_not_found',
   'invite_not_allowed',
   'idempotency_key_reused',

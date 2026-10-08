@@ -38,5 +38,11 @@ export {
   missionArchiveRef,
   reorderMissionList,
 } from './panel';
-export { SEED_MISSIONS, SEED_SEASON_GOAL, seedCatalog, seedMissionsCatalog } from './seed';
+export {
+  SEED_MISSIONS,
+  SEED_SEASON_GOAL,
+  seedCatalog,
+  seedGoalReached,
+  seedMissionsCatalog,
+} from './seed';
 export { readDailyMission, readMissions } from './service';

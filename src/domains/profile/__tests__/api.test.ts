@@ -96,6 +96,19 @@ describe('perfil do Firestore', () => {
     expect(toFanProfile('uid-camila', CAMILA).usernameChangeableAt).toBeNull();
   });
 
+  it('a suspensão (bloco 11) vira ISO e só aparece quando existe', () => {
+    expect(
+      toFanProfile('uid-camila', {
+        ...CAMILA,
+        suspendedAt: timestamp('2026-10-07T12:00:00.000Z'),
+      }).suspendedAt,
+    ).toBe('2026-10-07T12:00:00.000Z');
+    expect(toFanProfile('uid-camila', CAMILA)).not.toHaveProperty('suspendedAt');
+    expect(toFanProfile('uid-camila', { ...CAMILA, suspendedAt: null })).not.toHaveProperty(
+      'suspendedAt',
+    );
+  });
+
   it('campo fora do formato vira null em vez de quebrar a tela', () => {
     expect(
       toFanProfile('uid', { displayName: 42, username: '', city: ['x'], createdAt: 'não é data' }),

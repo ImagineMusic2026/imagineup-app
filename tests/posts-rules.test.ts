@@ -75,7 +75,8 @@ const MEMBERS: Record<string, Member> = {
   leitorArtistas: { role: 'viewer', status: 'active', sections: ['artists'] },
   moderacao: { role: 'editor', status: 'active', sections: ['moderation'] },
   fas: { role: 'viewer', status: 'active', sections: ['fans'] },
-  semSecao: { role: 'editor', status: 'active', sections: ['missions', 'overview'] },
+  missoes: { role: 'viewer', status: 'active', sections: ['missions'] },
+  semSecao: { role: 'editor', status: 'active', sections: ['overview', 'growth'] },
   desativada: { role: 'editor', status: 'disabled', sections: ['artists', 'moderation', 'fans'] },
   pendente: { role: 'admin', status: 'pending' },
   ligada: {
@@ -237,11 +238,19 @@ describe('posts e comentários', () => {
     await readsPosts(as('ligada', LINKED_AT), 'succeeds');
   });
 
-  it('a Moderação lê posts e comentários; a seção Fãs lê posts e não lê comentários', async () => {
-    await readsPosts(as('moderacao'), 'succeeds');
-    await readsComments(as('moderacao'), 'succeeds');
-    await readsPosts(as('fas'), 'succeeds');
-    await readsComments(as('fas'), 'fails');
+  it('a Moderação e a seção Fãs leem posts e comentários (a Fãs, desde o bloco 11: os comentários de um fã na ficha)', async () => {
+    for (const uid of ['moderacao', 'fas']) {
+      await readsPosts(as(uid), 'succeeds');
+      await readsComments(as(uid), 'succeeds');
+    }
+    await readsComments(as('ligada', LINKED_AT), 'succeeds');
+    await readsComments(as('ligada', LINKED_AT - 1), 'fails');
+  });
+
+  it('a seção Missões lê os posts (o alvo da missão), e não os comentários (bloco 11)', async () => {
+    await readsPosts(as('missoes'), 'succeeds');
+    await readsComments(as('missoes'), 'fails');
+    await writesNothing(as('missoes'));
   });
 
   it('sem nenhuma dessas seções, desativada, pendente ou com sessão de antes do authValidAfter não lê', async () => {
@@ -288,8 +297,9 @@ describe('as regras de grupo do mural', () => {
     await assertSucceeds(getDoc(doc(as('fas'), 'postLikes/raiz')));
     await assertSucceeds(getDoc(doc(as('fas'), 'eventRsvps/raiz')));
     await assertSucceeds(getDoc(doc(as('moderacao'), 'postComments/raiz')));
+    await assertSucceeds(getDoc(doc(as('fas'), 'postComments/raiz')));
     await assertFails(getDoc(doc(as('uid-camila'), 'postLikes/raiz')));
     await assertFails(getDoc(doc(as('artistas'), 'eventRsvps/raiz')));
-    await assertFails(getDoc(doc(as('fas'), 'postComments/raiz')));
+    await assertFails(getDoc(doc(as('missoes'), 'postComments/raiz')));
   });
 });

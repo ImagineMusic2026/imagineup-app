@@ -6,7 +6,13 @@ import type {
 } from 'firebase-admin/firestore';
 import { HttpsError } from 'firebase-functions/https';
 
-import { isActiveMember, sectionAccess, type SectionId } from './model';
+import {
+  isActiveMember,
+  sectionAccess,
+  STAFF_ROLES,
+  type SectionId,
+  type StaffRole,
+} from './model';
 import type { CallerAuth, StaffMember } from './service';
 
 // Quem chama uma callable do painel, lido de staff/{uid} a cada chamada, para
@@ -14,8 +20,11 @@ import type { CallerAuth, StaffMember } from './service';
 // callables do bloco 6 (posts, shows e moderação) usam este; o dos artistas
 // fica como está (migrar depois, sem pressa). docs/arquitetura-api.md, 21.2.
 
-/** Quem fez a mudança, para a auditoria. */
-export type PanelActor = { uid: string; name: string };
+/**
+ * Quem fez a mudança, para a auditoria, com o papel lido do mesmo
+ * staff/{uid} (o teto do ajuste de pontos usa, bloco 11, 26.4).
+ */
+export type PanelActor = { uid: string; name: string; role: StaffRole };
 
 /** O que a chamada precisa na seção: ver ou alterar. */
 export type PanelNeed = 'view' | 'edit';
@@ -32,12 +41,15 @@ export const transactionRead =
 
 /** Nome de cada seção nas mensagens de acesso. */
 const SECTION_LABELS: Partial<Record<SectionId, string>> = {
+  overview: 'Visão geral',
+  growth: 'Crescimento',
   artists: 'Artistas e centrais',
   moderation: 'Moderação',
   fans: 'Fãs',
   missions: 'Missões',
   ranking: 'Ranking e temporadas',
   rewards: 'Recompensas e resgates',
+  audit: 'Logs e auditoria',
 };
 
 /** Motivos de recusa de acesso, iguais aos das funções de artistas. */
@@ -65,6 +77,10 @@ export function panelAccessError(reason: PanelAccessReason, section?: SectionId)
 const nameOf = (member: StaffMember) =>
   typeof member.displayName === 'string' ? member.displayName : '';
 
+// O papel gravado; um valor estranho vale o de menos poder (o acesso já passou).
+const roleOf = (member: StaffMember): StaffRole =>
+  (STAFF_ROLES as readonly unknown[]).includes(member.role) ? member.role : 'viewer';
+
 /**
  * Quem chamou, lido de staff/{uid}: fora da equipe ativa (ou sessão de antes
  * do `authValidAfter`) é `not-staff`; sem a seção, ou só com leitura para uma
@@ -88,5 +104,5 @@ export async function readPanelActor(
   if (access === 'none' || (need === 'edit' && access !== 'edit')) {
     throw panelAccessError('no-section', section);
   }
-  return { uid: caller.uid, name: nameOf(member) };
+  return { uid: caller.uid, name: nameOf(member), role: roleOf(member) };
 }

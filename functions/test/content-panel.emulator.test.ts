@@ -192,7 +192,23 @@ describe('posts (createPost, updatePost, setPostStatus, deletePost)', () => {
     await upload(next.photoPath);
     await upload(next.thumbPath);
     await upload(`posts/${postId}/abandonado.webp`);
+    // Bloco 11 (26.5): a capa trocada sem `videoPath` mantém o mp4 (no post e na pasta).
     await ok('updatePost', { postId, media: next }, editor);
+    expect(await folder(`posts/${postId}/`)).toEqual(
+      [next.photoPath, next.thumbPath, first.videoPath].sort(),
+    );
+    expect((await read(`posts/${postId}`))?.media).toMatchObject({
+      photo: { path: next.photoPath },
+      thumb: { path: next.thumbPath },
+      video: { path: first.videoPath, url: expect.any(String) },
+    });
+    expect(await auditOf('post.updated')).toHaveLength(2);
+    // A mesma capa de novo, sem `videoPath`: nada muda.
+    await ok('updatePost', { postId, media: next }, editor);
+    expect(await auditOf('post.updated')).toHaveLength(2);
+    // `videoPath: null` tira o vídeo.
+    await ok('updatePost', { postId, media: { ...next, videoPath: null } }, editor);
+    expect((await read(`posts/${postId}`))?.media?.video).toBeNull();
     expect(await folder(`posts/${postId}/`)).toEqual([next.photoPath, next.thumbPath].sort());
     expect(await fails('updatePost', { postId, media: null }, editor)).toBe(
       'published-needs-media',
@@ -340,6 +356,95 @@ describe('posts (createPost, updatePost, setPostStatus, deletePost)', () => {
     expect(await auditOf('post.updated')).toMatchObject([
       { details: { postId, artistId, changed: ['text'] } },
     ]);
+  });
+});
+
+describe('o id do painel no createPost e no createEvent (bloco 11)', () => {
+  it('o mesmo id não cria outro rascunho nem audita de novo; sem ele, o servidor gera', async () => {
+    const editor = await seedMember(env, 'Editora', 'editor', ['artists']);
+    const artistId = await central(env);
+    const postId = unique('postpainel');
+    const input = { postId, artistId, kind: 'text', text: 'Bora!' };
+    expect(await ok<{ postId: string }>('createPost', input, editor)).toEqual({ postId });
+    // A resposta perdida: o painel repete com o mesmo id (até com outro texto).
+    expect(await ok('createPost', { ...input, text: 'Outro' }, editor)).toEqual({ postId });
+    expect((await read(`posts/${postId}`))?.text).toBe('Bora!');
+    expect(await auditOf('post.created')).toHaveLength(1);
+    const generated = await ok<{ postId: string }>(
+      'createPost',
+      { artistId, kind: 'text', text: 'Sem id' },
+      editor,
+    );
+    expect(generated.postId).not.toBe(postId);
+    for (const bad of ['', 'com espaço', '__reservado__', 'a'.repeat(129), 42]) {
+      const { error } = await callable(env, 'createPost', { ...input, postId: bad }, editor.token);
+      expect(error?.details).toEqual({ reason: 'invalid-request', field: 'postId' });
+    }
+
+    const eventId = unique('showpainel');
+    const show = {
+      eventId,
+      title: 'São João de Irará',
+      artistIds: [artistId],
+      city: 'Irará',
+      state: 'BA',
+      startsAtLocal: '2027-06-23T22:00',
+      timeZone: 'America/Bahia',
+    };
+    expect(await ok('createEvent', show, editor)).toEqual({ eventId });
+    expect(await ok('createEvent', { ...show, title: 'Outro' }, editor)).toEqual({ eventId });
+    expect((await read(`events/${eventId}`))?.title).toBe('São João de Irará');
+    expect(await auditOf('event.created')).toHaveLength(1);
+    const { error } = await callable(
+      env,
+      'createEvent',
+      { ...show, eventId: 'barra/no-meio' },
+      editor.token,
+    );
+    expect(error?.details).toEqual({ reason: 'invalid-request', field: 'eventId' });
+  });
+
+  it('o id de outro documento recusa: o publicado, o de outra pessoa, de outra central ou de outro tipo', async () => {
+    const editor = await seedMember(env, 'Editora', 'editor', ['artists']);
+    const admin = await seedMember(env, 'Admin', 'admin');
+    const artistId = await central(env);
+    const other = await central(env);
+    const postId = unique('postpainel');
+    const input = { postId, artistId, kind: 'text', text: 'Bora!' };
+    await ok('createPost', input, editor);
+    const refused = async (data: Record<string, unknown>, who: Member) => {
+      const { error } = await callable(env, 'createPost', data, who.token);
+      expect(error?.details).toEqual({ reason: 'invalid-request', field: 'postId' });
+    };
+    await refused(input, admin);
+    await refused({ ...input, artistId: other }, editor);
+    await refused({ postId, artistId, kind: 'photo' }, editor);
+    await ok('setPostStatus', { postId, status: 'published' }, editor);
+    // O post no ar com o mesmo id: nada de "criei", e a trilha não segue para a mídia.
+    await refused(input, editor);
+    expect((await read(`posts/${postId}`))?.status).toBe('published');
+    expect(await auditOf('post.created')).toHaveLength(1);
+
+    const eventId = unique('showpainel');
+    const show = {
+      eventId,
+      title: 'São João de Irará',
+      artistIds: [artistId],
+      city: 'Irará',
+      state: 'BA',
+      startsAtLocal: '2027-06-23T22:00',
+      timeZone: 'America/Bahia',
+    };
+    await ok('createEvent', show, editor);
+    for (const [data, who] of [
+      [show, admin],
+      [{ ...show, artistIds: [other] }, editor],
+      [{ ...show, artistIds: [artistId, other] }, editor],
+    ] as const) {
+      const { error } = await callable(env, 'createEvent', data, who.token);
+      expect(error?.details).toEqual({ reason: 'invalid-request', field: 'eventId' });
+    }
+    expect(await auditOf('event.created')).toHaveLength(1);
   });
 });
 

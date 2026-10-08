@@ -41,6 +41,7 @@ export {
   CLOSE_NOW_BUDGET_MS,
   closeNow,
   endCurrent,
+  readPanelRanking,
   scheduleNext,
   type SeasonPanelDeps,
 } from './panel';

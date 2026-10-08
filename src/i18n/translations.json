@@ -754,7 +754,8 @@
       "saved": "Perfil salvo.",
       "tooSoon": "Você salvou há pouco. Espere alguns segundos e tente de novo.",
       "timeout": "Ainda salvando. Confira a internet.",
-      "error": "Não deu para salvar. Tente de novo."
+      "error": "Não deu para salvar. Tente de novo.",
+      "suspended": "Sua conta está suspensa. Fale com a equipe do ImagineUP."
     },
     "username": {
       "section": "Seu @",

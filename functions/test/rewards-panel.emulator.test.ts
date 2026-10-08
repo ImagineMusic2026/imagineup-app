@@ -187,6 +187,24 @@ describe('recompensas (createReward, updateReward, setRewardStatus, setRewardSto
     });
   });
 
+  it('o id de outro documento recusa: o rascunho de outra pessoa e a recompensa publicada (bloco 11)', async () => {
+    const editor = await seedMember(env, 'Editora', 'editor', ['rewards']);
+    const admin = await seedMember(env, 'Admin', 'admin');
+    const rewardId = unique('rec');
+    await ok('createReward', { ...BASE, rewardId }, editor);
+    expect(await failure('createReward', { ...BASE, rewardId }, admin)).toEqual({
+      reason: 'invalid-request',
+      field: 'rewardId',
+    });
+    await ok('setRewardStatus', { rewardId, status: 'published' }, editor);
+    expect(await failure('createReward', { ...BASE, rewardId }, editor)).toEqual({
+      reason: 'invalid-request',
+      field: 'rewardId',
+    });
+    expect((await read(`rewards/${rewardId}`))!.status).toBe('published');
+    expect(await audits('reward.created')).toHaveLength(1);
+  });
+
   it('editar cada campo; nada mudou não grava nem audita; o estoque não muda por aqui', async () => {
     const editor = await seedMember(env, 'Editora', 'editor', ['rewards']);
     const event = await show(env, ['nettobrito'], Date.now() + 10 * DAY_MS);

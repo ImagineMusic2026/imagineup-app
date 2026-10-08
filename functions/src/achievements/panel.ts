@@ -36,8 +36,8 @@ import {
 // primeira mudança parte da lista provisória do código, com `activatedAt` nas
 // ativas. As telas são do bloco 11.
 
-/** Uma conquista como fica no documento (datas em Timestamp). */
-function achievementDoc(item: AchievementRecord): DocumentData {
+/** Uma conquista como fica no documento (datas em Timestamp); a carga da versão 1 também usa. */
+export function achievementDoc(item: AchievementRecord): DocumentData {
   return {
     id: item.id,
     title: item.title,
