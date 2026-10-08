@@ -16,6 +16,7 @@ import {
   photoUploaded,
   registerInviteLink,
   removeMyPhoto,
+  reservePhotoUpload,
   setMyPhoto,
   toFanProfile,
   updateMyProfile,
@@ -37,7 +38,7 @@ jest.mock('@/firebase', () => ({
   uploadLocalFile: jest.fn(),
 }));
 jest.mock('@/services/api', () => ({
-  api: { get: jest.fn(), put: jest.fn(), delete: jest.fn() },
+  api: { get: jest.fn(), put: jest.fn(), post: jest.fn(), delete: jest.fn() },
 }));
 
 // Lido na hora da chamada: cada teste escolhe a fonte.
@@ -322,6 +323,24 @@ describe('perfil editável (bloco 9)', () => {
     });
   });
 
+  it('a vaga do envio vai ao POST /me/photo/upload com o caminho e a chave', async () => {
+    mockDataSource = 'api';
+    const post = jest.mocked(api.post);
+    const slot = {
+      path: 'fans/uid-camila/photo-abcdefgh.jpg',
+      expiresAt: '2026-10-08T15:10:00.000Z',
+    };
+    post.mockResolvedValueOnce({ data: slot });
+    await expect(
+      reservePhotoUpload('fans/uid-camila/photo-abcdefgh.jpg', 'photo-upload-0001'),
+    ).resolves.toEqual(slot);
+    expect(post).toHaveBeenCalledWith(
+      '/me/photo/upload',
+      { path: 'fans/uid-camila/photo-abcdefgh.jpg' },
+      { headers: { 'Idempotency-Key': 'photo-upload-0001' } },
+    );
+  });
+
   it('o envio da foto vai para a pasta do fã, com o id da tentativa e o tipo JPEG', async () => {
     mockDataSource = 'api';
     jest.mocked(uploadLocalFile).mockResolvedValue(undefined);
@@ -342,6 +361,8 @@ describe('perfil editável (bloco 9)', () => {
     await expect(changeUsername('camilaribeiro', 'chave-0001')).rejects.toThrow();
     await expect(setMyPhoto('fans/u/photo-abcdefgh.jpg', 'chave-0001')).rejects.toThrow();
     await expect(uploadFanPhoto('u', 'file:///x.jpg', 'abcdefgh')).rejects.toThrow();
+    await expect(reservePhotoUpload('fans/u/photo-abcdefgh.jpg', 'chave-0001')).rejects.toThrow();
+    expect(api.post).not.toHaveBeenCalled();
     expect(api.get).not.toHaveBeenCalled();
     expect(api.put).not.toHaveBeenCalled();
     expect(uploadLocalFile).not.toHaveBeenCalled();

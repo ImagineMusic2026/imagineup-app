@@ -34,6 +34,27 @@ export const PHOTO_UPLOAD_MAX_AGE_MS = 10 * 60_000;
 export const PHOTO_CHANGES_PER_DAY = 10;
 
 /**
+ * O padrão do teto do dia `photo_upload`: as vagas de envio da foto (27.4),
+ * editável no `config/points.actionCaps`. O dobro das trocas, para a nova
+ * tentativa depois do `photo_not_found` e o envio que o fã desistiu de usar.
+ */
+export const PHOTO_UPLOADS_PER_DAY = 20;
+
+/**
+ * Prazo da vaga de envio: o mesmo do `PUT /me/photo`, que recusa o arquivo de
+ * mais de 10 min. Passado o prazo, a regra do Storage recusa o envio.
+ */
+export const PHOTO_UPLOAD_SLOT_MS = PHOTO_UPLOAD_MAX_AGE_MS;
+
+/**
+ * Janela em que pedir de novo a vaga do mesmo arquivo só renova o prazo, sem
+ * contar no teto, a partir da vaga que contou. Passada a janela, o mesmo nome
+ * conta como arquivo novo: sem ela, um fã renovaria a vaga sem fim e subiria o
+ * mesmo nome de novo a cada varredura da pasta (27.4).
+ */
+export const PHOTO_UPLOAD_RENEW_MS = 30 * 60_000;
+
+/**
  * Idade a partir da qual um envio que não é a foto sai na varredura. A folga
  * de 5 min sobre o `PHOTO_UPLOAD_MAX_AGE_MS` cobre o pedido que ainda está na
  * transação: nada que a varredura apaga pode virar a foto depois.

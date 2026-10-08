@@ -183,6 +183,7 @@ Corpo de erro, sempre:
 | `photo_invalid`            | 400    | validation   | foto de outro fã, fora do tipo, do tamanho, das dimensões ou que não é JPEG (bloco 9) |
 | `unauthenticated`          | 401    | unauthorized | sem token, token inválido, vencido ou de outro projeto                                |
 | `not_fan`                  | 403    | forbidden    | conta só da equipe tentando gravar                                                    |
+| `app_check_failed`         | 403    | forbidden    | App Check exigido e o pedido sem token ou com token inválido (27.5; hoje desligado)   |
 | `account_suspended`        | 403    | forbidden    | conta suspensa pela equipe numa rota que cria ou soma, ou no código novo (bloco 11)   |
 | `not_found`                | 404    | notFound     | rota que não existe                                                                   |
 | `artist_not_found`         | 404    | notFound     | central inexistente, fora do ar ou id fora do formato (bloco 4)                       |
@@ -204,12 +205,13 @@ Corpo de erro, sempre:
 | `username_change_too_soon` | 409    | validation   | troca do @ antes do prazo de 30 dias (bloco 9)                                        |
 | `payload_too_large`        | 413    | unknown      | corpo acima de 16 KiB                                                                 |
 | `idempotency_key_reused`   | 422    | validation   | mesma chave com outro pedido                                                          |
-| `too_many_requests`        | 429    | unknown      | ação acima do teto do dia (blocos 4, 6, 9 e 10: 19.5, 21.7, 24.8 e 25.7)              |
+| `too_many_requests`        | 429    | unknown      | ação acima do teto do dia (blocos 4, 6, 9 e 10: 19.5, 21.7, 24.8 e 25.7; 27.4)        |
+| `rate_limited`             | 429    | unknown      | pedidos seguidos demais do mesmo fã na instância, com `Retry-After` (27.3)            |
 | `internal`                 | 500    | server       | erro inesperado                                                                       |
 | `profile_not_ready`        | 503    | server       | gravação sem `users/{uid}` (perfil nascendo ou conta excluída)                        |
 | `unavailable`              | 503    | server       | disputa, Firestore fora ou falha ao conferir o token                                  |
 
-Mensagens: `invalid_request` "Pedido inválido."; `idempotency_key_required` "Falta a chave de idempotência."; `unauthenticated` "Entre na sua conta para continuar."; `not_fan` "Esta conta não é de fã."; `not_found` "Não encontrado."; `artist_not_found` "Central não encontrada."; `invite_not_found` "Convite não encontrado."; `invite_not_allowed` "Este convite não vale para esta conta."; `method_not_allowed` "Método não aceito nesta rota."; `insufficient_points` "Saldo insuficiente."; `payload_too_large` "Pedido grande demais."; `idempotency_key_reused` "Esta chave já foi usada em outro pedido."; `too_many_requests` "Tentativas demais por hoje. Tente amanhã."; `internal` "Algo deu errado. Tente de novo."; `profile_not_ready` "Seu perfil ainda está sendo criado. Tente de novo em instantes."; `unavailable` "Serviço ocupado. Tente de novo."; do bloco 6, `post_not_found` "Post não encontrado.", `event_not_found` "Show não encontrado.", `comment_not_found` "Comentário não encontrado.", `fan_not_found` "Fã não encontrado.", `comment_invalid` "Comentário vazio, longo demais ou com caracteres invisíveis." e `block_list_full` "Você chegou ao limite de fãs bloqueados."; do bloco 9 (24.2), `username_invalid` "Este @ não vale. Use de 3 a 20 letras minúsculas e números.", `photo_invalid` "Foto fora do formato. Escolha outra.", `photo_not_found` "Foto não encontrada. Envie de novo.", `username_taken` "Este @ já tem dono." e `username_change_too_soon` "Você trocou o @ há pouco. Tente de novo mais tarde."; do bloco 10 (25.2), `reward_not_found` "Recompensa não encontrada.", `sold_out` "Recompensa esgotada.", `redeem_limit_reached` "Você chegou ao limite de resgates desta recompensa." e `reward_changed` "O custo desta recompensa mudou. Confira antes de resgatar."; do bloco 11 (26.5), `account_suspended` "Sua conta está suspensa. Fale com a equipe do ImagineUP.".
+Mensagens: `invalid_request` "Pedido inválido."; `idempotency_key_required` "Falta a chave de idempotência."; `unauthenticated` "Entre na sua conta para continuar."; `not_fan` "Esta conta não é de fã."; `not_found` "Não encontrado."; `artist_not_found` "Central não encontrada."; `invite_not_found` "Convite não encontrado."; `invite_not_allowed` "Este convite não vale para esta conta."; `method_not_allowed` "Método não aceito nesta rota."; `insufficient_points` "Saldo insuficiente."; `payload_too_large` "Pedido grande demais."; `idempotency_key_reused` "Esta chave já foi usada em outro pedido."; `too_many_requests` "Tentativas demais por hoje. Tente amanhã."; `internal` "Algo deu errado. Tente de novo."; `profile_not_ready` "Seu perfil ainda está sendo criado. Tente de novo em instantes."; `unavailable` "Serviço ocupado. Tente de novo."; do bloco 6, `post_not_found` "Post não encontrado.", `event_not_found` "Show não encontrado.", `comment_not_found` "Comentário não encontrado.", `fan_not_found` "Fã não encontrado.", `comment_invalid` "Comentário vazio, longo demais ou com caracteres invisíveis." e `block_list_full` "Você chegou ao limite de fãs bloqueados."; do bloco 9 (24.2), `username_invalid` "Este @ não vale. Use de 3 a 20 letras minúsculas e números.", `photo_invalid` "Foto fora do formato. Escolha outra.", `photo_not_found` "Foto não encontrada. Envie de novo.", `username_taken` "Este @ já tem dono." e `username_change_too_soon` "Você trocou o @ há pouco. Tente de novo mais tarde."; do bloco 10 (25.2), `reward_not_found` "Recompensa não encontrada.", `sold_out` "Recompensa esgotada.", `redeem_limit_reached` "Você chegou ao limite de resgates desta recompensa." e `reward_changed` "O custo desta recompensa mudou. Confira antes de resgatar."; do bloco 11 (26.5), `account_suspended` "Sua conta está suspensa. Fale com a equipe do ImagineUP."; da proteção contra abuso (27.3 e 27.5), `rate_limited` "Muitos pedidos seguidos. Espere alguns segundos e tente de novo." e `app_check_failed` "Não deu para confirmar este aparelho. Atualize o app e tente de novo.".
 
 Códigos que os próximos blocos vão criar entram nesta tabela quando nascerem. Não há limite de pedidos por minuto no bloco 1: o `maxInstances` segura o custo, e os limites de pontos não são erro (seção 5). A exceção, do bloco 4, é o teto diário de entradas em centrais (19.5), com 429 e `Retry-After`: sem ele, um script que entra e sai sem parar gravaria sem teto e inflaria os fluxos do painel. O bloco 6 faz o mesmo com curtidas, comentários, presenças, denúncias e bloqueios (21.7), o bloco 9, com as trocas de foto (24.8), e o bloco 10, com os resgates (25.7).
 
@@ -637,7 +639,7 @@ O `MyProgress` do app.
 
 ### `GET /me/ledger`
 
-Extrato, do mais novo ao mais antigo. `limit` de 1 a 50 (padrão 20) e `cursor` opcional.
+Extrato, do mais novo ao mais antigo. `limit` de 1 a 20 (padrão 20; era de 1 a 50 até a proteção contra abuso, 27.2) e `cursor` opcional.
 
 ```json
 {
@@ -2198,7 +2200,7 @@ Arquivos: `functions/src/api/routes/posts.ts` (`postRoutes`), `routes/agenda.ts`
 
 Os tipos das respostas entram em `api/contract.ts`, espelho de `src/domains/posts/types.ts` e `src/domains/agenda/types.ts`. O `toApiHttpError` traduz `PostError`, `AgendaError` e `ModerationError`, como faz com o `CentralError`.
 
-**Parâmetros comuns.** `cursor` opaco e `limit` de 1 a 50; sem `limit`, o padrão da rota: mural 10, posts da central 12 (quatro linhas da grade), comentários 20, agenda 20. O app não manda `limit`. Fora da faixa, 400 `invalid_request` com `details.field: 'limit'`. Cursor que não decodifica, com instante acima do maior `Timestamp` ou com id fora do formato, é 400 `invalid_request` com `details.field: 'cursor'`, como o do extrato (seção 6). O cursor é o base64url de `[instanteEmMs, id]`: `publishedAt` nos posts, `createdAt` nos comentários e `startsAt` na agenda.
+**Parâmetros comuns.** `cursor` opaco e `limit` de 1 a 20 (era 50 até a proteção contra abuso, 27.2); sem `limit`, o padrão da rota: mural 10, posts da central 12 (quatro linhas da grade), comentários 20, agenda 20. O app não manda `limit`. Fora da faixa, 400 `invalid_request` com `details.field: 'limit'`. Cursor que não decodifica, com instante acima do maior `Timestamp` ou com id fora do formato, é 400 `invalid_request` com `details.field: 'cursor'`, como o do extrato (seção 6). O cursor é o base64url de `[instanteEmMs, id]`: `publishedAt` nos posts, `createdAt` nos comentários e `startsAt` na agenda.
 
 **Ids na rota.** `postId`, `eventId` e `commentId` seguem `^[A-Za-z0-9_-]{1,128}$`, fora dos ids `__.*__`. Fora disso, o recurso não existe: 404 `post_not_found`, `event_not_found` ou `comment_not_found`, como o `artistParam` do bloco 4. `fanId` segue `^[A-Za-z0-9]{1,128}$` (o uid do Auth); fora disso, 404 `fan_not_found`.
 
@@ -7232,6 +7234,104 @@ Integração (duas revisões do código construído, em 07/10/2026):
 - **A origem na ficha do fã sai do extrato de quem convidou.** O "o que quem convidou ganhou" é lido em `wallets/{inviterUid}/ledger` com `createdAt ==` o `claimedAt` do `referrals/{uid}`, e não de um campo novo no convite.
 - **O aviso `has-content` da lixeira das centrais faz duas consultas com `limit(1)`** (`posts` por `artistId` e `events` por `artistIds`), as mesmas formas do `deleteArtist`, antes de chamar a callable.
 - **O botão da temporada se chama "Encerrar temporada"**, e não "Encerrar agora" como no desenho de 26.16: casa com as frases do servidor e não se confunde com o "Encerrar agora" das missões.
+
+## 27. Proteção contra abuso
+
+Pedido do dono em 08/10/2026, depois da revisão de custo (o texto do custo esperado para a cliente). A revisão achou caminhos em que uma pessoa com uma conta de fã, ou sem conta, gastaria leituras, gravações ou Storage do projeto sem teto. Este bloco fecha os que dependem só do servidor e deixa o App Check pronto para a build das lojas. Nenhuma tela nova; no app, só a troca de foto muda (27.4).
+
+### 27.1 O que entra e o que fica fora
+
+| Item                                                     | O que faz                                                                                     | Seção |
+| -------------------------------------------------------- | --------------------------------------------------------------------------------------------- | ----- |
+| Páginas de até 20                                        | o `?limit=` do mural, da grade, dos comentários, da agenda e do extrato vai de 50 para 20     | 27.2  |
+| Ritmo por fã na `api`                                    | cada instância barra o fã que passa de 60 pedidos de uma vez e 1 por segundo depois           | 27.3  |
+| Vaga de envio da foto                                    | a regra do Storage só aceita o arquivo que a API liberou, e a API conta os arquivos por dia   | 27.4  |
+| App Check pronto, desligado                              | a `api` confere o token do aparelho quando o modo for ligado                                  | 27.5  |
+| `artists` fechado para o fã                              | o fã não lê mais as centrais direto do Firestore (o app lê pela API desde o bloco 4)          | 27.6  |
+
+Fica fora:
+
+- **A edição do perfil a cada 10 s** (nome e cidade direto no Firestore, cada troca de nome regravando os comentários pela fila do bloco 9). Vai junto com o perfil novo pedido pelo dono em 08/10/2026 (bio, gênero, conta privada, redes sociais e o perfil público), que muda a edição inteira; o teto das trocas de nome entra nele. Até lá, o orçamento da fila (24.7: 12 janelas de 5 min por dia, depois 1 h) segura o custo das cópias.
+- **A saída das fotos públicas** e o 401 cobrado (27.7): ficam documentados, com o alerta de orçamento da cliente como rede.
+
+### 27.2 Páginas de até 20
+
+O app nunca manda `limit`: cada lista usa o padrão da rota (mural 10, grade 12, comentários 20, agenda 20, extrato 20; o ranking ignora o parâmetro e pagina de 20). O teto de 50 só servia a quem chama a API por fora, e cada item a mais na página é mais uma leitura (no mural, a curtida do fã e o show do post; nos comentários, até 5 rodadas quando os bloqueados esvaziam a página). Agora `PAGE_LIMIT_MAX` (`posts/model.ts`) e `LEDGER_LIMIT_MAX` (`points/wallet.ts`) são 20; `limit=21` é 400 `invalid_request` com o campo. Nenhum padrão mudou, então nada muda no app.
+
+O pior caso dos comentários passa a ser 5 rodadas de 21 leituras (era de 51). O do mural depende das centrais do fã (27.7).
+
+### 27.3 Ritmo por fã na `api`
+
+`api/rate-limit.ts`, puro: um balde por uid, em memória, em cada instância. Começa com `RATE_LIMIT_BURST` (60) fichas, cada pedido gasta uma e elas voltam a `RATE_LIMIT_PER_SECOND` (1) por segundo, até o teto. Sem ficha, 429 `rate_limited` ("Muitos pedidos seguidos. Espere alguns segundos e tente de novo.") com o `Retry-After` em segundos até a próxima ficha, antes de qualquer leitura do Firestore. Até 10.000 baldes por instância (`RATE_LIMIT_TRACKED_MAX`); passado isso, sai o do fã parado há mais tempo, que depois de um minuto parado já estaria cheio.
+
+- **Onde conta:** no `createApiHandler`, depois do token (o pedido sem login é 401 e não gasta ficha) e antes da rota. Vale para as rotas que leem e as que gravam. O relógio é o `Date.now()` de verdade, e não o `now` das dependências, que alguns testes deixam parado.
+- **Quanto segura:** a abertura do app pede uns 15 pedidos de uma vez, e o toque no card "Você" busca até 10 páginas; 60 de folga e 1 por segundo nunca barram um fã de verdade. Um script com uma conta passa a no máximo 1 pedido por segundo em cada instância: com as 8 da `api` (`maxInstances`), 8 por segundo, contra centenas antes. Não é um teto entre instâncias nem por dia (esse é o `actionCaps`, na carteira).
+- **Emulador:** sem o teto (`rateLimiter: null` com `FUNCTIONS_EMULATOR`), porque os testes e o seed fazem centenas de pedidos seguidos com a mesma conta. O `createApiHandler` sem `rateLimiter` nas dependências também não barra nada (os testes no processo).
+- **App:** o 429 é o kind `unknown`, que não tenta de novo sozinho; cada tela mostra o erro genérico dela. Na troca de foto, o `rate_limited` fica com o genérico, e só o `too_many_requests` diz "Você trocou a foto muitas vezes hoje" (27.4).
+
+### 27.4 Vaga de envio da foto
+
+Antes, a regra do Storage aceitava qualquer JPEG de até 1 MiB na pasta do fã, com nome novo, sem contar: um script subiria arquivos sem parar, e a varredura do bloco 9 só limpa a pasta quando a foto muda ou a conta sai. Regra não conta; quem conta é a API.
+
+- **`POST /me/photo/upload`** (rota que grava, com a `Idempotency-Key`, no `runIdempotent`: o suspenso recebe 403 `account_suspended`, a conta só da equipe 403 `not_fan`, sem perfil 503 `profile_not_ready`). Corpo `{ path }`, o mesmo caminho do `PUT /me/photo`, na pasta de quem chama (fora dela, 400 `photo_invalid` com `reason: 'path'`). Grava `users/{uid}/uploads/photo` com `fileName`, `expiresAt` (agora mais 10 min, `PHOTO_UPLOAD_SLOT_MS`, a mesma idade que o `PUT /me/photo` aceita) e `createdAt`, e responde `{ path, expiresAt }` (`PhotoUploadSlot`).
+- **Teto do dia `photo_upload`** (padrão 20, `PHOTO_UPLOADS_PER_DAY`, nos `actionCaps`, editável pelo `updatePointsConfig` como os outros): cada arquivo novo soma 1 em `days[dia].count.photo_upload` da carteira; o 21º do dia de São Paulo é 429 `too_many_requests` com `details: { limit, action: 'upload' }` e o `Retry-After` até a meia-noite, antes de gravar. Pedir de novo a vaga do mesmo arquivo, até 30 min depois da vaga que contou (`PHOTO_UPLOAD_RENEW_MS`), só renova o prazo e não conta (a nova tentativa do app depois de uma falha incerta); passada a janela, o mesmo nome conta como arquivo novo. Sem a janela, um fã renovaria a vaga sem fim e subiria o mesmo nome de novo a cada varredura da pasta. O dobro das 10 trocas (`photo_set`) cobre a tentativa nova do `photo_not_found` e a foto que o fã desistiu de usar.
+- **Uma vaga por fã:** a nova troca a de antes; o envio que ficou para trás passa a ser recusado. Dois aparelhos do mesmo fã trocando a foto no mesmo minuto: um deles recebe a recusa do Storage e escolhe a foto de novo (aceito).
+- **A regra** (`storage.rules`, `photoUploadReserved`): além do que já conferia (dono, nome, tipo, tamanho, sem sobrescrever, perfil existente e sem suspensão), a vaga existe, é desse arquivo e `request.time < expiresAt`. São as duas leituras do Firestore que o Storage aceita por avaliação (o perfil e a vaga): condição nova que leia outro documento precisa tirar uma.
+- **O documento da vaga** fica fechado pelo `match /{document=**}` do `firestore.rules` (ninguém lê pelo cliente, nem a equipe) e sai com o perfil, no `recursiveDelete` da exclusão de conta. Sem gatilho e sem TTL: é um documento por fã, regravado.
+- **Os envios que não viram a foto** continuam saindo na varredura do `syncFanProfile` (24.7), que roda quando o nome ou a foto mudam, e na exclusão de conta. Uma vaga usada e abandonada deixa um arquivo na pasta até lá; com o teto, no máximo 20 por fã e dia (até 20 MiB). Não há varredura agendada por vaga: o custo de guardar esses arquivos é desprezível perto do de uma tarefa a mais por envio.
+- **App** (`profile/api.ts` e o `useChangePhotoMutation`): antes de enviar o arquivo, `reservePhotoUpload(path, 'photo-upload-<nova>')`, com uma chave nova a cada chamada (a resposta guardada de uma chave repetida traria o prazo antigo, e o servidor não conta a renovação). A nova tentativa com o arquivo já no Storage não pede vaga. O teto (`too_many_requests`) mostra "Você trocou a foto muitas vezes hoje. Tente amanhã." e não envia nada. O APK interno de 08/10/2026 (canal preview) chama a produção com o fluxo antigo, sem a vaga: com o `storage.rules` novo, o envio dele seria recusado. Por isso a ordem de 27.8.
+- **Seed:** o `seedFanPhoto` sobe a foto de teste pelo Admin SDK, que passa por cima das regras, e não precisa de vaga.
+
+### 27.5 App Check pronto, desligado
+
+`api/app-check.ts`: o `checkAppCheck` lê o cabeçalho `X-Firebase-AppCheck` e confere pelo `getAppCheck().verifyToken` do firebase-admin, conforme o `APP_CHECK_MODE`:
+
+- `off` (hoje): não lê o cabeçalho.
+- `monitor`: confere e só registra no log o pedido sem token (`missing`) ou com token inválido (`invalid`), com a rota; o pedido segue.
+- `enforce`: recusa esses pedidos com 403 `app_check_failed` ("Não deu para confirmar este aparelho. Atualize o app e tente de novo."), antes do token do Firebase. É 403, e não 401, porque o 401 faz o axios do app renovar o ID token e repetir à toa. A falha ao buscar as chaves do Google (o firebase-admin devolve com o código de token inválido e a causa `key-fetch-error`, como no ID token) é 503 `unavailable` com `Retry-After`, e não 403: o aparelho não tem culpa (no `monitor`, o log diz `unavailable`).
+
+Por que desligado: o app usa o SDK JS do Firebase, que no React Native não tem atestado do aparelho (decisão 2 do `CLAUDE.md`), e o Expo Go não roda módulo nativo. O atestado precisa da build das lojas: no Android, o Play Integrity, com o app no Play Console (a conta da cliente ainda espera a verificação, UP-4); no iOS, o App Attest, com a conta Apple (UP-3).
+
+Para ligar, na ordem:
+
+1. Registrar os provedores no console do Firebase (App Check): Play Integrity no app Android e App Attest (com o DeviceCheck de reserva) no iOS, com o SHA-256 da chave de assinatura da EAS.
+2. No app, `@react-native-firebase/app` e `@react-native-firebase/app-check` (módulos nativos: build nova, fingerprint novo) só para pegar o token, entregue ao SDK JS por um `CustomProvider` (`initializeAppCheck` do `firebase/app-check`), e o axios mandando o `X-Firebase-AppCheck` em todo pedido. Em desenvolvimento, o provedor de depuração com o token registrado no console.
+3. Publicar a `api` com `APP_CHECK_MODE = 'monitor'` e olhar o log por uns dias, até os pedidos sem token serem só das builds antigas.
+4. Trocar para `enforce` quando as builds antigas saírem de uso (as que não mandam o token passam a receber 403).
+5. Depois, ligar a exigência do App Check no console para o Firestore e o Storage (o perfil e a foto, que o app acessa direto) e, no painel, o reCAPTCHA Enterprise com o `enforceAppCheck` nas callables. Isso é do painel e de outra rodada.
+
+### 27.6 `artists` fechado para o fã
+
+A regra deixava qualquer conta logada ler e listar as centrais publicadas (`where('status', '==', 'published')`). O app lê as centrais pela API desde o bloco 4, e nada no app lê `artists` direto; a leitura direta só servia para alguém com uma conta de fã gastar leituras do projeto num laço. Agora:
+
+- a equipe com a seção `artists` lê tudo, como antes;
+- a equipe ativa sem a seção lê as publicadas, com o mesmo `where` (o painel mostra o nome das centrais nas Missões, na Moderação e nos números, `getArtistNames` do `imagineup-admin`);
+- o fã e quem está sem login não leem nada.
+
+As regras do Storage que leem `artists/{id}` (`artistExists`, nas fotos da equipe) não mudam: a leitura de outro serviço passa pela conta de serviço do Storage, e não pelas regras do Firestore.
+
+### 27.7 O que fica (riscos aceitos)
+
+- **O mural lê as centrais do fã a cada página:** os vínculos (até `CENTRALS_MAX`, 240) e os documentos das centrais, antes dos posts. Com 10 centrais, umas 40 leituras por página; com 240, umas 500. As entradas têm teto de 30 por dia (19.5), então ninguém chega a 240 de uma vez. Primeira alavanca, se o custo aparecer: guardar as centrais publicadas na memória da instância por 60 s, como a configuração (custo: uma central tirada do ar leva até 60 s para sumir do mural).
+- **A saída das fotos públicas:** as fotos das centrais, dos posts, das recompensas e dos fãs são baixadas pela URL com token, que não passa pelas regras e não tem teto. Um script baixando a mesma foto sem parar gasta a saída de rede do Storage (perto de US$ 0,12 por GB). O app guarda as imagens no cache do aparelho (expo-image). Alavancas, se aparecer: `Cache-Control` longo nos arquivos (os nomes nunca se repetem) e uma CDN na frente. A rede é o alerta de orçamento da cliente.
+- **A `api` é pública:** o pedido que volta 401 também é cobrado (a invocação e uns milissegundos de CPU, sem leitura do Firestore). É o preço do `invoker: 'public'`; o App Check em `enforce` (27.5) barra antes do token.
+- **Contas novas:** cada conta tem o próprio balde e os próprios tetos do dia. O Authentication limita os cadastros por IP; o App Check é o que fecha de vez.
+- **O ritmo é por instância:** quem espalha os pedidos pelas 8 instâncias soma até 8 por segundo (27.3).
+
+### 27.8 Publicação
+
+- **Regras** (`npm run rules:deploy`): o `firestore.rules` (o `artists`) e o `storage.rules` (a vaga). Nenhum índice novo.
+- **Funções:** todas, em lotes (a receita de "Publicar" no `CLAUDE.md`): mudam a `api` (as páginas, o ritmo, a vaga e o App Check) e o código comum dos tetos (`points/config.ts`, que o `updatePointsConfig` e o `seedGameConfig` usam).
+- **Ordem:** as funções (com a `api` nova), depois um EAS Update no canal preview (`npm run update:preview`, com o ok do dono; só JS, o fingerprint não muda) para o APK interno pedir a vaga, e só então o `storage.rules`. Com a regra nova antes, nenhum envio passaria: a `api` velha não abre vaga, e o APK com o JS antigo não a pede.
+- **Painel:** o `updatePointsConfig` aceita o `actionCaps.photo_upload`; o painel só mostra os tetos que conhece (`ACTION_CAP_KEYS` em `src/lib/points-config.ts` do `imagineup-admin`) e só manda os que mudaram, então nada quebra. Para a equipe ver e mudar o teto novo, o painel ganha a chave com o rótulo "Envios de foto".
+- **Conferir:** `GET /feed?limit=21` sem login dá 401 (o token vem antes); com login, 400 com o campo `limit`.
+
+### 27.9 Testes
+
+- Puros: `api/rate-limit.test.ts` (o padrão, o balde por fã, o `Retry-After`, o teto de fichas, o relógio que volta e o teto de baldes), `api/app-check.test.ts` (os três modos e o 403), o `api/index.test.ts` (o 429 `rate_limited` antes da rota e só depois do token, os modos do App Check no handler, o `limit=21`, o corpo da vaga conferido antes da transação e a chave exigida), e as tabelas dos tetos em `moderation/model.test.ts` e `points/config.test.ts` com o `photo_upload`.
+- Emulador: `profile-edit.emulator.test.ts` ganha a vaga (o documento e o prazo, a renovação sem contar dentro da janela e contando depois dela, a troca de arquivo, o teto com a renovação passando e o dia seguinte, as recusas de caminho, suspenso e conta da equipe, a chave repetida pela `api` de verdade e a exclusão de conta); os testes que pediam páginas de 50 passam a 20 (`missions`, `points`, `posts` e o extrato da loja em páginas).
+- Regras: `tests/firestore-rules.test.ts` confere que o fã não lê nem grava a própria vaga (o teto depende disso, e quem fecha é só o `match /{document=**}`); `tests/storage-rules.test.ts` abre a vaga antes de cada envio e confere sem vaga, a vaga de outro arquivo, a vaga trocada, a vencida e a vaga de outro fã; `tests/artists-rules.test.ts` confere que o fã e quem está sem login não leem nem a publicada, e que a equipe sem a seção lê só a publicada.
+- App: `profile/__tests__/api.test.ts` (o `POST /me/photo/upload` e a recusa nas fixtures) e `navigation/__tests__/edit-profile.test.tsx` (a vaga antes do envio, nenhuma vaga na nova tentativa com o arquivo lá, uma vaga por arquivo no `photo_not_found`, o teto e o `rate_limited`).
 
 ## Armadilhas
 

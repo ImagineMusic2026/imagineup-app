@@ -93,13 +93,14 @@ const folder = async (uid: string) =>
   (await bucket.getFiles({ prefix: `fans/${uid}/` }))[0].map((file) => file.name).sort();
 
 /** O handler no processo com um relógio que o teste move. */
-function clockApi(start: number, options: { photoCap?: number } = {}) {
+function clockApi(start: number, options: { photoCap?: number; uploadCap?: number } = {}) {
   const clock = { now: start };
   const points = {
     ...DEFAULT_POINTS_CONFIG,
     actionCaps: {
       ...DEFAULT_POINTS_CONFIG.actionCaps,
       ...(options.photoCap ? { photo_set: options.photoCap } : {}),
+      ...(options.uploadCap ? { photo_upload: options.uploadCap } : {}),
     },
   };
   const call = localApi(env, { now: () => clock.now, config: staticConfigSource({ points }) });
@@ -583,6 +584,152 @@ describe('foto (PUT e DELETE /me/photo)', () => {
     expect(
       await call('DELETE', '/me/photo', { token: fan.token, key: unique('chave-remover-') }),
     ).toEqual({ status: 200, body: { photoURL: null } });
+  });
+});
+
+describe('vaga de envio da foto (POST /me/photo/upload, 27.4)', () => {
+  const reserve = (
+    call: ReturnType<typeof localApi>,
+    fan: Fan,
+    path: string,
+    key = unique('chave-vaga-'),
+  ) => call('POST', '/me/photo/upload', { token: fan.token, key, body: { path } });
+
+  const slotOf = (uid: string) => read(`users/${uid}/uploads/photo`);
+  const uploadsToday = async (uid: string, now: number) =>
+    ((await read(`wallets/${uid}`))?.days?.[dayKey(now)]?.count?.photo_upload as
+      number | undefined) ?? 0;
+
+  it('grava a vaga com o nome do arquivo e o prazo de 10 min, e conta 1 no dia', async () => {
+    const fan = await signUpFan(db, 'Camila Ribeiro');
+    const now = Date.now();
+    const { call } = clockApi(now);
+    const path = photoPath(fan.uid);
+    const sent = await reserve(call, fan, path);
+    expect(sent).toEqual({
+      status: 200,
+      body: { path, expiresAt: new Date(now + 10 * MIN).toISOString() },
+    });
+    const slot = await slotOf(fan.uid);
+    expect(slot!.fileName).toBe(path.split('/').at(-1));
+    expect((slot!.expiresAt as Timestamp).toMillis()).toBe(now + 10 * MIN);
+    expect(await uploadsToday(fan.uid, now)).toBe(1);
+  });
+
+  it('a vaga do mesmo arquivo de novo renova o prazo sem contar; outro arquivo troca a vaga e conta', async () => {
+    const fan = await signUpFan(db, 'Camila Ribeiro');
+    const now = Date.now();
+    const { clock, call } = clockApi(now);
+    const first = photoPath(fan.uid);
+    expect((await reserve(call, fan, first)).status).toBe(200);
+    clock.now += 5 * MIN;
+    expect(await reserve(call, fan, first)).toMatchObject({
+      status: 200,
+      body: { expiresAt: new Date(now + 15 * MIN).toISOString() },
+    });
+    expect(await uploadsToday(fan.uid, now)).toBe(1);
+    const second = photoPath(fan.uid);
+    expect((await reserve(call, fan, second)).status).toBe(200);
+    expect((await slotOf(fan.uid))!.fileName).toBe(second.split('/').at(-1));
+    expect(await uploadsToday(fan.uid, now)).toBe(2);
+  });
+
+  it('a renovação vale até 30 min depois da vaga que contou; depois, o mesmo arquivo conta de novo', async () => {
+    const fan = await signUpFan(db, 'Camila Ribeiro');
+    const now = Date.now();
+    const { clock, call } = clockApi(now);
+    const path = photoPath(fan.uid);
+    expect((await reserve(call, fan, path)).status).toBe(200);
+    // Renovar perto do fim da janela não muda o instante da vaga que contou.
+    clock.now = now + 29 * MIN;
+    expect((await reserve(call, fan, path)).status).toBe(200);
+    expect(((await slotOf(fan.uid))!.createdAt as Timestamp).toMillis()).toBe(now);
+    expect(await uploadsToday(fan.uid, now)).toBe(1);
+    clock.now = now + 30 * MIN;
+    expect(await reserve(call, fan, path)).toMatchObject({
+      status: 200,
+      body: { expiresAt: new Date(now + 40 * MIN).toISOString() },
+    });
+    expect(((await slotOf(fan.uid))!.createdAt as Timestamp).toMillis()).toBe(now + 30 * MIN);
+    expect(await uploadsToday(fan.uid, clock.now)).toBe(dayKey(clock.now) === dayKey(now) ? 2 : 1);
+  });
+
+  it('o teto do dia (aqui 2): a 3ª vaga de arquivo novo é 429, e renovar a de agora continua passando', async () => {
+    const fan = await signUpFan(db, 'Camila Ribeiro');
+    const { clock, call } = clockApi(Date.now(), { uploadCap: 2 });
+    const second = photoPath(fan.uid);
+    expect((await reserve(call, fan, photoPath(fan.uid))).status).toBe(200);
+    clock.now += 1;
+    expect((await reserve(call, fan, second)).status).toBe(200);
+    clock.now += 1;
+    expect(await reserve(call, fan, photoPath(fan.uid))).toEqual({
+      status: 429,
+      body: {
+        code: 'too_many_requests',
+        message: 'Tentativas demais por hoje. Tente amanhã.',
+        details: { limit: 2, action: 'upload' },
+      },
+    });
+    expect((await slotOf(fan.uid))!.fileName).toBe(second.split('/').at(-1));
+    clock.now += 1;
+    expect((await reserve(call, fan, second)).status).toBe(200);
+    // No dia seguinte de São Paulo, o teto começa de novo.
+    clock.now += DAY;
+    expect((await reserve(call, fan, photoPath(fan.uid))).status).toBe(200);
+  });
+
+  it('recusas: caminho de outro fã ou fora da pasta, suspenso, sem perfil e a conta só da equipe', async () => {
+    const fan = await signUpFan(db, 'Camila Ribeiro');
+    const other = await signUpFan(db, 'Alan');
+    const { call } = clockApi(Date.now());
+    expect(await reserve(call, fan, photoPath(other.uid))).toMatchObject({
+      status: 400,
+      body: { code: 'photo_invalid', details: { reason: 'path' } },
+    });
+    expect(await reserve(call, fan, `fans/${fan.uid}/avatar.png`)).toMatchObject({
+      status: 400,
+      body: { code: 'photo_invalid' },
+    });
+    expect(await exists(`users/${fan.uid}/uploads/photo`)).toBe(false);
+
+    await db.doc(`users/${other.uid}`).update({
+      suspendedAt: Timestamp.now(),
+      suspensionReason: 'spam',
+    });
+    expect(await reserve(call, other, photoPath(other.uid))).toMatchObject({
+      status: 403,
+      body: { code: 'account_suspended' },
+    });
+    expect(await exists(`users/${other.uid}/uploads/photo`)).toBe(false);
+
+    const staff = await seedMember(env, 'Equipe', 'admin');
+    expect(await reserve(call, staff, photoPath(staff.uid))).toMatchObject({
+      status: 403,
+      body: { code: 'not_fan' },
+    });
+  });
+
+  it('a mesma chave repetida devolve a vaga guardada (a api de verdade), e a exclusão de conta a leva', async () => {
+    const fan = await signUpFan(db, 'Camila Ribeiro');
+    const path = photoPath(fan.uid);
+    const key = unique('chave-vaga-');
+    const first = await http(env, '/me/photo/upload', {
+      method: 'POST',
+      token: fan.token,
+      key,
+      body: { path },
+    });
+    expect(first.status).toBe(200);
+    const again = await http(env, '/me/photo/upload', {
+      method: 'POST',
+      token: fan.token,
+      key,
+      body: { path },
+    });
+    expect(again).toMatchObject({ status: 200, body: first.body });
+    expect(again.headers.get('Idempotency-Replayed')).toBe('true');
+    await deleteUserData(db, fan.uid, { files });
+    expect(await exists(`users/${fan.uid}/uploads/photo`)).toBe(false);
   });
 });
 

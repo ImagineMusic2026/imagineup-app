@@ -21,12 +21,16 @@ export type ContentStatus = 'draft' | 'published' | 'unpublished';
  */
 export const POST_SHARD_COUNT = 16;
 
-/** Páginas: sem `limit`, o padrão de cada lista; com ele, de 1 a 50. */
+/**
+ * Páginas: sem `limit`, o padrão de cada lista; com ele, de 1 a 20. O teto era
+ * 50 até a proteção contra abuso (27.2): o app nunca manda `limit`, e cada post
+ * a mais na página é mais uma leitura da curtida (e do show) por pedido.
+ */
 export const FEED_LIMIT_DEFAULT = 10;
 /** Quatro linhas da grade da 1d. */
 export const ARTIST_POSTS_LIMIT_DEFAULT = 12;
 export const COMMENTS_LIMIT_DEFAULT = 20;
-export const PAGE_LIMIT_MAX = 50;
+export const PAGE_LIMIT_MAX = 20;
 
 /** O `in` do Firestore aceita até 30 valores: o mural junta blocos de 30 centrais. */
 export const FEED_IN_BLOCK = 30;

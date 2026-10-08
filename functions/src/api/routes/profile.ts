@@ -5,20 +5,27 @@ import {
   ProfileEditError,
   readUsernameAvailability,
   removeFanPhoto,
+  reservePhotoUpload,
   setFanPhoto,
   USERNAME_INPUT_MAX,
   USERNAME_PATTERN,
 } from '../../fan-profile';
-import type { PhotoChange, UsernameAvailability, UsernameChange } from '../contract';
+import type {
+  PhotoChange,
+  PhotoUploadSlot,
+  UsernameAvailability,
+  UsernameChange,
+} from '../contract';
 import { apiError } from '../errors';
 import type { ApiRoute, RouteInput } from '../types';
 
 // Rotas do bloco 9: o @ escolhido pelo fã (a disponibilidade enquanto ele
 // digita e a troca) e a foto do perfil (conferir e gravar o arquivo que o app
-// enviou ao Storage, ou tirar). As três que gravam rodam no runIdempotent, com
-// o perfil exigido e lido na transação (o `profile` do contexto). Nome e
-// cidade não passam por aqui: o app grava direto no Firestore, pelas regras.
-// docs/arquitetura-api.md, seção 24.
+// enviou ao Storage, ou tirar). Desde a proteção contra abuso (27.4), também a
+// vaga do envio, pedida antes de o app subir o arquivo. As quatro que gravam
+// rodam no runIdempotent, com o perfil exigido e lido na transação (o
+// `profile` do contexto). Nome e cidade não passam por aqui: o app grava
+// direto no Firestore, pelas regras. docs/arquitetura-api.md, seção 24.
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -75,6 +82,23 @@ export const profileRoutes: ApiRoute[] = [
         username: bodyUsername(ctx),
       });
       return { body };
+    },
+  },
+  {
+    // A vaga do arquivo que o app vai subir ao Storage (27.4): a regra do
+    // Storage só aceita o envio com ela, e cada arquivo novo conta no teto do dia.
+    method: 'POST',
+    pattern: '/me/photo/upload',
+    writes: true,
+    validate: (input) => void bodyPath(input),
+    async handle(ctx) {
+      const { body, plan } = await reservePhotoUpload(ctx.tx, ctx.deps.db, {
+        fan: ctx.fan,
+        award: ctx.award,
+        path: bodyPath(ctx),
+      });
+      const result: PhotoUploadSlot = body;
+      return { body: result, plan };
     },
   },
   {

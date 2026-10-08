@@ -197,7 +197,8 @@ export type AwardResult = { uid: string; entryId: string; status: AwardStatus; p
  * as trocas para curtido, os comentários, as trocas para "Eu vou", as
  * denúncias e os bloqueios (os tetos do bloco 6, 21.7); `photo_set`, as trocas
  * de foto do perfil (o teto do bloco 9, 24.1, decisão 11); `reward_redeem`,
- * os resgates da loja (o teto do bloco 10, 25.1, decisão 15).
+ * os resgates da loja (o teto do bloco 10, 25.1, decisão 15); `photo_upload`,
+ * as vagas de envio da foto (a proteção contra abuso, 27.4).
  */
 export type DailyActionKey =
   | 'central_entry'
@@ -209,7 +210,8 @@ export type DailyActionKey =
   | 'comment_report'
   | 'fan_block'
   | 'photo_set'
-  | 'reward_redeem';
+  | 'reward_redeem'
+  | 'photo_upload';
 
 export type DayStats = {
   earned: number;

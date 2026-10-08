@@ -464,6 +464,9 @@ export type UsernameChange = {
 /** `PhotoChange` do app (`PUT` e `DELETE /me/photo`): a URL de download com token, ou null. */
 export type PhotoChange = { photoURL: string | null };
 
+/** A vaga de envio da foto (`POST /me/photo/upload`, 27.4): o caminho e o fim do prazo, em ISO. */
+export type PhotoUploadSlot = { path: string; expiresAt: string };
+
 // --- Loja e resgate (bloco 10), espelho de src/domains/rewards/types.ts ---
 
 /** `RewardKind` do app: decide o ícone e a cor do quadro. */

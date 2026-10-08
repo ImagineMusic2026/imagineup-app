@@ -199,7 +199,7 @@ describe('a função api no emulador', () => {
     ]);
     // Uma página de 5 corta entre o Netto e o Nenho, do mesmo milissegundo.
     const five = await http('/me/ledger?limit=5', { token: camila.token });
-    const after = await http(`/me/ledger?limit=50&cursor=${String(five.body.nextCursor)}`, {
+    const after = await http(`/me/ledger?limit=20&cursor=${String(five.body.nextCursor)}`, {
       token: camila.token,
     });
     expect((after.body.items as Item[]).map((item) => item.id).slice(0, 3)).toEqual([

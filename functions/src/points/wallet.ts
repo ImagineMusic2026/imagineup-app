@@ -116,7 +116,8 @@ export function progressView(
 }
 
 export const LEDGER_LIMIT_DEFAULT = 20;
-export const LEDGER_LIMIT_MAX = 50;
+/** O teto do `?limit=` do extrato: 20 desde a proteção contra abuso (27.2); era 50. */
+export const LEDGER_LIMIT_MAX = 20;
 
 export type LedgerCursor = { createdAt: number; id: string };
 

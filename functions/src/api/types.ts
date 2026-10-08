@@ -4,7 +4,9 @@ import type { FanPhotoFiles } from '../fan-profile/files';
 
 import type { AwardContext, AwardPlan, FanContext } from '../points/award';
 import type { ConfigSource } from '../points/config';
+import type { AppCheckConfig } from './app-check';
 import type { TokenVerifier } from './auth';
+import type { RateLimiter } from './rate-limit';
 import type { Method } from './router';
 
 /** O que o handler usa do pedido (o Request do Express cabe aqui; os testes usam objetos falsos). */
@@ -44,6 +46,13 @@ export type ApiDeps = {
    * padrão; os testes, o do emulador. Sem ele, só as rotas da foto falham.
    */
   files?: FanPhotoFiles;
+  /**
+   * O teto de pedidos por fã na instância (27.3): a função api recebe um; sem
+   * ele (os testes e o emulador), nenhum pedido é barrado por ritmo.
+   */
+  rateLimiter?: RateLimiter | null;
+  /** O App Check do pedido (27.5); sem ele, desligado. */
+  appCheck?: AppCheckConfig;
 };
 
 export type ResolvedDeps = Required<ApiDeps>;

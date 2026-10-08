@@ -60,6 +60,8 @@ describe('tetos do dia', () => {
       photo: { key: 'photo_set', limit: 10 },
       // Bloco 10: os resgates da loja (25.7).
       redeem: { key: 'reward_redeem', limit: 10 },
+      // Proteção contra abuso: as vagas de envio da foto (27.4).
+      upload: { key: 'photo_upload', limit: 20 },
     });
     expect(BLOCK_LIST_MAX).toBe(1_000);
   });

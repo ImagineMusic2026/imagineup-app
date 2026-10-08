@@ -29,6 +29,7 @@ import {
   photoUploaded,
   registerInviteLink,
   removeMyPhoto,
+  reservePhotoUpload,
   setMyPhoto,
   updateMyProfile,
   uploadFanPhoto,
@@ -346,7 +347,9 @@ type PhotoAttempt = {
 };
 
 /**
- * Troca a foto: prepara (recorte e redução), envia ao Storage e grava pela API
+ * Troca a foto: prepara (recorte e redução), abre a vaga do envio na API
+ * (`POST /me/photo/upload`, com uma chave nova a cada chamada: a vaga do mesmo
+ * arquivo só renova o prazo), envia ao Storage e grava pela API
  * (`PUT /me/photo`), numa tentativa só. A chave é `photo-<id>`, com o mesmo
  * `id` do nome do arquivo: na nova tentativa depois de uma falha incerta (a
  * mesma foto escolhida de novo), antes de enviar, confere pelos metadados se o
@@ -366,6 +369,7 @@ export function useChangePhotoMutation() {
     const path = fanPhotoPath(fanUid, current.id);
     const uploaded = current.sent && (await photoUploaded(path));
     if (!uploaded) {
+      await reservePhotoUpload(path, `photo-upload-${createIdempotencyKey()}`);
       current.sent = true;
       await uploadFanPhoto(fanUid, current.prepared, current.id);
     }

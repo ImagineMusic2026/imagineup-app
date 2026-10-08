@@ -27,6 +27,7 @@ import type {
   MyInvite,
   MyProgress,
   PhotoChange,
+  PhotoUploadSlot,
   ProfileChanges,
   UsernameAvailability,
   UsernameChange,
@@ -242,6 +243,26 @@ export async function changeUsername(
 
 /** O caminho da foto no Storage: a pasta do fã e o id da tentativa. */
 export const fanPhotoPath = (uid: string, id: string): string => `fans/${uid}/photo-${id}.jpg`;
+
+/**
+ * Abre a vaga do envio (`POST /me/photo/upload`): a regra do Storage só aceita
+ * o arquivo com a vaga aberta pela API, e cada arquivo novo conta no teto do
+ * dia. A chave é de cada chamada, e não da tentativa: pedir de novo a vaga do
+ * mesmo arquivo renova o prazo sem contar, e a resposta guardada de uma chave
+ * repetida traria o prazo antigo.
+ */
+export async function reservePhotoUpload(
+  path: string,
+  idempotencyKey: string,
+): Promise<PhotoUploadSlot> {
+  requireProfileApi();
+  const { data } = await api.post<PhotoUploadSlot>(
+    '/me/photo/upload',
+    { path },
+    { headers: { 'Idempotency-Key': idempotencyKey } },
+  );
+  return data;
+}
 
 /** Envia a foto preparada (JPEG) para a pasta do fã e devolve o caminho. */
 export async function uploadFanPhoto(uid: string, localUri: string, id: string): Promise<string> {

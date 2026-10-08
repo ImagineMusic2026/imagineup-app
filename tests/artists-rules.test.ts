@@ -197,6 +197,17 @@ const listDrafts = (db: Db) =>
   getDocs(query(collection(db, 'artists'), where('status', '==', 'draft')));
 const listPrivate = (db: Db) => getDocs(collection(db, 'artistPrivate'));
 
+/**
+ * Nada das centrais passa para esta pessoa: nem a publicada (o fã lê pela API
+ * desde o bloco 4, e a leitura direta fechou na proteção contra abuso, 27.6),
+ * nem rascunho, nem a parte da equipe.
+ */
+async function readsNothing(db: Db): Promise<void> {
+  await assertFails(getDoc(doc(db, 'artists/triobembahia')));
+  await assertFails(listPublished(db));
+  await readsNothingUnpublished(db);
+}
+
 /** Nada que não está publicado passa para esta pessoa, nem a parte da equipe. */
 async function readsNothingUnpublished(db: Db): Promise<void> {
   await assertFails(getDoc(doc(db, 'artists/juninho_m')));
@@ -230,16 +241,13 @@ async function readsEverything(db: Db): Promise<void> {
 describe('centrais: quem lê', () => {
   beforeEach(seed);
 
-  it('fã logado lê a central publicada e a lista filtrada por status published', async () => {
-    const db = as('fa');
-    const central = await assertSucceeds(getDoc(doc(db, 'artists/triobembahia')));
-    expect(central.get('status')).toBe('published');
-    const published = await assertSucceeds(listPublished(db));
-    expect(published.docs.map((snap) => snap.id)).toEqual(['triobembahia']);
+  it('fã logado não lê nem a central publicada nem a lista filtrada (27.6: o app lê pela API)', async () => {
+    await readsNothing(as('fa'));
   });
 
-  it('o doc que o fã lê não tem nada da equipe: contato, gestor, autorização e autoria', async () => {
-    const db = as('fa');
+  it('o doc da central só tem o que o app mostra: nada de contato, gestor, autorização e autoria', async () => {
+    // Lido pela equipe: o que a API devolve ao fã sai deste documento.
+    const db = as('leitor');
     const central = await assertSucceeds(getDoc(doc(db, 'artists/triobembahia')));
     const listed = (await assertSucceeds(listPublished(db))).docs.map((snap) => snap.data());
     expect(listed).toHaveLength(1);
@@ -250,7 +258,7 @@ describe('centrais: quem lê', () => {
   });
 
   it('fã não lê rascunho, central fora do ar nem artistPrivate, e a lista sem o filtro é negada', async () => {
-    await readsNothingUnpublished(as('fa'));
+    await readsNothing(as('fa'));
     // Nem o artistPrivate da central que está no ar.
     await assertFails(getDoc(doc(as('fa'), 'artistPrivate/triobembahia')));
   });
@@ -260,10 +268,7 @@ describe('centrais: quem lê', () => {
   });
 
   it('sem login, nem a central publicada', async () => {
-    const db = anonymous();
-    await assertFails(getDoc(doc(db, 'artists/triobembahia')));
-    await assertFails(listPublished(db));
-    await readsNothingUnpublished(db);
+    await readsNothing(anonymous());
   });
 
   it('admin, editora e leitor com a seção artists leem tudo, com o artistPrivate', async () => {
@@ -272,7 +277,7 @@ describe('centrais: quem lê', () => {
     }
   });
 
-  it('equipe sem a seção artists só lê o publicado, como fã', async () => {
+  it('equipe sem a seção artists só lê o publicado (o nome das centrais nas outras seções do painel)', async () => {
     for (const uid of ['leitorSemSecao', 'editorSemSecao']) {
       const db = as(uid);
       await assertSucceeds(getDoc(doc(db, 'artists/triobembahia')));
@@ -281,19 +286,17 @@ describe('centrais: quem lê', () => {
     }
   });
 
-  it('desativada ou pendente não lê nada que não está publicado', async () => {
-    await readsNothingUnpublished(as('desativada'));
-    await readsNothingUnpublished(as('pendente'));
+  it('desativada ou pendente não lê nada', async () => {
+    await readsNothing(as('desativada'));
+    await readsNothing(as('pendente'));
   });
 
   it('custom claim de admin não vale nada sem o doc em staff', async () => {
-    await readsNothingUnpublished(
-      env.authenticatedContext('fa', { staff: true, role: 'admin' }).firestore(),
-    );
+    await readsNothing(env.authenticatedContext('fa', { staff: true, role: 'admin' }).firestore());
   });
 
   it('conta ligada: sessão de antes do login que ligou não lê; a do login em diante lê', async () => {
-    await readsNothingUnpublished(as('ligada', LINKED_AT - 1));
+    await readsNothing(as('ligada', LINKED_AT - 1));
     await readsEverything(as('ligada', LINKED_AT));
   });
 
@@ -303,7 +306,7 @@ describe('centrais: quem lê', () => {
     await env.withSecurityRulesDisabled(async (context) => {
       await updateDoc(doc(context.firestore(), 'staff/editora'), { status: 'disabled' });
     });
-    await readsNothingUnpublished(db);
+    await readsNothing(db);
   });
 });
 

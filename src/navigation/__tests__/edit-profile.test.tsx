@@ -42,7 +42,7 @@ jest.mock('@/firebase', () => ({
 }));
 jest.mock('@/services/api', () => ({
   ...jest.requireActual('@/services/api/errors'),
-  api: { get: jest.fn(), put: jest.fn(), delete: jest.fn() },
+  api: { get: jest.fn(), put: jest.fn(), post: jest.fn(), delete: jest.fn() },
 }));
 jest.mock('expo-image-picker', () => ({
   launchImageLibraryAsync: jest.fn(),
@@ -129,6 +129,7 @@ const treeWithProfile = { ...appTree, '(tabs)/(perfil)/perfil': ProfileRoute };
 const get = jest.mocked(api.get);
 const put = jest.mocked(api.put);
 const remove = jest.mocked(api.delete);
+const post = jest.mocked(api.post);
 
 const announced = () =>
   jest.mocked(AccessibilityInfo.announceForAccessibility).mock.calls.map(([text]) => text);
@@ -662,6 +663,10 @@ describe('Editar perfil: a foto (com a API)', () => {
     mockDataSource = 'api';
     mockGallery();
     jest.mocked(uploadLocalFile).mockResolvedValue(undefined);
+    // A vaga do envio (proteção contra abuso, 27.4) responde o caminho pedido.
+    post.mockImplementation(async (_url, body) => ({
+      data: { path: (body as { path: string }).path, expiresAt: '2026-10-07T15:10:00.000Z' },
+    }));
   });
 
   it('da galeria ao PUT: o avatar troca, anuncia e toca success', async () => {
@@ -676,6 +681,15 @@ describe('Editar perfil: a foto (com a API)', () => {
     const { path } = body as { path: string };
     expect(path).toMatch(new RegExp(`^fans/${UID}/photo-[a-z0-9-]+\\.jpg$`));
     expect(uploadLocalFile).toHaveBeenCalledWith(path, 'file:///pronta.jpg', 'image/jpeg');
+    // A vaga vem antes do envio, com o mesmo caminho e uma chave própria.
+    expect(post).toHaveBeenCalledWith(
+      '/me/photo/upload',
+      { path },
+      { headers: { 'Idempotency-Key': expect.stringMatching(/^photo-upload-/) } },
+    );
+    expect(post.mock.invocationCallOrder[0]!).toBeLessThan(
+      jest.mocked(uploadLocalFile).mock.invocationCallOrder[0]!,
+    );
     expect((config as { headers: Record<string, string> }).headers['Idempotency-Key']).toBe(
       `photo-${path.slice(path.indexOf('photo-') + 'photo-'.length, -'.jpg'.length)}`,
     );
@@ -698,6 +712,8 @@ describe('Editar perfil: a foto (com a API)', () => {
     fireEvent.press(screen.getByTestId('edit-profile-photo-retry'));
     await waitFor(() => expect(announced()).toContain('Foto atualizada.'));
     expect(uploadLocalFile).toHaveBeenCalledTimes(1);
+    // Com o arquivo lá, nem a vaga é pedida de novo.
+    expect(post).toHaveBeenCalledTimes(1);
     expect(storageFileExists).toHaveBeenCalledTimes(1);
     expect(put.mock.calls[1]![1]).toEqual(put.mock.calls[0]![1]);
     expect(put.mock.calls[1]![2]).toEqual(put.mock.calls[0]![2]);
@@ -714,6 +730,11 @@ describe('Editar perfil: a foto (com a API)', () => {
     expect(uploadLocalFile).toHaveBeenCalledTimes(2);
     const [first, second] = jest.mocked(uploadLocalFile).mock.calls.map(([path]) => path);
     expect(second).not.toBe(first);
+    // Uma vaga para cada arquivo.
+    expect(post.mock.calls.map(([, body]) => (body as { path: string }).path)).toEqual([
+      first,
+      second,
+    ]);
     expect(put.mock.calls[1]![2]).not.toEqual(put.mock.calls[0]![2]);
 
     // Vindo de novo nas duas, o erro.
@@ -737,6 +758,26 @@ describe('Editar perfil: a foto (com a API)', () => {
     );
     expect(screen.queryByTestId('edit-profile-photo-retry')).toBeNull();
     expect(put).not.toHaveBeenCalled();
+  });
+
+  it('o teto do dia das vagas: diz que trocou muitas vezes e não envia', async () => {
+    post.mockRejectedValue(new ApiError('unknown', 'teto', 429, 'too_many_requests'));
+    await openEditProfile();
+    fireEvent.press(screen.getByRole('button', { name: 'Escolher foto da galeria' }));
+    const text = 'Você trocou a foto muitas vezes hoje. Tente amanhã.';
+    expect(await screen.findByText(text)).toBeTruthy();
+    expect(uploadLocalFile).not.toHaveBeenCalled();
+    expect(put).not.toHaveBeenCalled();
+  });
+
+  it('pedidos seguidos demais (rate_limited) ficam com o aviso genérico', async () => {
+    post.mockRejectedValue(new ApiError('unknown', 'ritmo', 429, 'rate_limited'));
+    await openEditProfile();
+    fireEvent.press(screen.getByRole('button', { name: 'Escolher foto da galeria' }));
+    await waitFor(() =>
+      expect(announced()).toContain('Não deu para trocar a foto. Tente de novo.'),
+    );
+    expect(uploadLocalFile).not.toHaveBeenCalled();
   });
 
   it('a foto recusada pelo servidor anuncia o motivo e toca error', async () => {
