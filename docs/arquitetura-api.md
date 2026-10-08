@@ -7168,6 +7168,8 @@ O `closeStatsDays` rodou à 00:20 de 08/10, antes de a carga criar o `statsMeta/
 - O "Encerrar temporada" da temporada e o "Encerrar agora" da missão são botões diferentes: as frases de `season-started`, `season-end-in-past` e `season-not-due` (`missions/errors.ts`) mandam usar "Encerrar temporada", o nome do botão da temporada no painel.
 - As consultas do painel que usam o índice automático de um campo estão nos testes de índice, também as que não vêm do desenho: `posts` com `artistId ==` e `events` com `artistIds array-contains`, com `limit(1)` (o aviso `has-content` da lixeira das centrais), e o `ledger` de um fã com `createdAt ==` (a origem na ficha do fã). Uma isenção nova nesses campos derrubaria a tela em produção, e o emulador não pega.
 
+- A callable cuja criação falhou no meio (a cota de CPU, 07/10/2026) fica sem o acesso público do Cloud Run, e as publicações seguintes, que só trocam o código, não o dão: ela aparece ACTIVE e responde 403 (página HTML) a todo pedido, e o painel recebe um erro de rede. Foram 19 callables do painel, achadas em 08/10/2026 pela revisão geral e liberadas pelo dono com `gcloud functions add-invoker-policy-binding` (a `api` e as outras 34 estavam certas). Depois de cada deploy, `node scripts/check-public-functions.mjs` lista as barradas e imprime o comando.
+
 ### 26.23 O que o código fez diferente do desenho
 
 Etapa 1 da construção (o fechamento, o orçamento do dia, as cargas, as regras e os índices):
