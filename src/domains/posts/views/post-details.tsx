@@ -16,7 +16,7 @@ import { EmptyState } from '@/components/empty-state';
 import { BackHeader } from '@/components/header';
 import { Screen } from '@/components/screen';
 import { SectionHeader } from '@/components/section-header';
-import { useFanIdentity, useWatchMyProfile } from '@/domains/profile';
+import { fanProfileHref, useFanIdentity, useWatchMyProfile } from '@/domains/profile';
 import { useAnnounceWhen } from '@/hooks/use-announce-when';
 import { useKeyboardVisible } from '@/hooks/use-keyboard-visible';
 import { useNow } from '@/hooks/use-now';
@@ -134,11 +134,12 @@ type CommentsState = 'loading' | 'error' | 'ready';
  * topo, logo abaixo do post, e a lista rola até ele se ele estiver fora da vista.
  *
  * No comentário de outro fã, o botão de opções abre a sheet "Opções do
- * comentário" (denunciar e bloquear, provisória até a UP-48). Bloquear tira os
- * comentários do autor da lista; se a página que chega fica vazia e o servidor
- * ainda tem mais (comentários seguidos de bloqueados), a tela pede a seguinte
- * sozinha, uma vez por página: a lista não cresceu, e o fim dela não dispara
- * de novo.
+ * comentário" (denunciar e bloquear, provisória até a UP-48), e o toque na
+ * linha abre o perfil público dele (seção 28), empilhado sobre o post: o
+ * voltar devolve ao post. Bloquear tira os comentários do autor da lista; se a
+ * página que chega fica vazia e o servidor ainda tem mais (comentários
+ * seguidos de bloqueados), a tela pede a seguinte sozinha, uma vez por
+ * página: a lista não cresceu, e o fim dela não dispara de novo.
  */
 export function PostDetailsScreen() {
   const { postId = '' } = useLocalSearchParams<{ postId: string }>();
@@ -345,6 +346,7 @@ export function PostDetailsScreen() {
               animateIn={item.status === 'pending' && sentKeys.has(commentKey(item))}
               onRetry={() => commenting.retry(item.id)}
               onOptions={() => openOptions(item)}
+              onOpenProfile={() => router.push(fanProfileHref(item.authorId))}
             />
           )}
           extraData={now.getTime()}

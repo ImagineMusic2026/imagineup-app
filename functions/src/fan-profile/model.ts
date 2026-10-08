@@ -41,6 +41,20 @@ export const PHOTO_CHANGES_PER_DAY = 10;
 export const PHOTO_UPLOADS_PER_DAY = 20;
 
 /**
+ * O padrão do teto do dia `profile_save` (perfil novo, seção 28, decisão 9):
+ * os `PUT /me/profile` que gravam alguma coisa (o @ sozinho também). O pedido
+ * sem mudança não conta. Editável no `config/points.actionCaps`.
+ */
+export const PROFILE_SAVES_PER_DAY = 20;
+
+/**
+ * O padrão do teto do dia `name_change` (seção 28, decisão 9): os
+ * `PUT /me/profile` que mudam o `displayName`, inclusive de null para um
+ * nome. Segura as trocas de nome que viram tarefa na fila das cópias.
+ */
+export const NAME_CHANGES_PER_DAY = 5;
+
+/**
  * Prazo da vaga de envio: o mesmo do `PUT /me/photo`, que recusa o arquivo de
  * mais de 10 min. Passado o prazo, a regra do Storage recusa o envio.
  */
@@ -131,6 +145,30 @@ export function usernameChangeAllowed(changeableAt: number | null, now: number):
 
 /** A partir de quando o fã troca o @ de novo, depois de uma troca agora. */
 export const nextUsernameChange = (now: number): number => now + USERNAME_CHANGE_INTERVAL_MS;
+
+/**
+ * Por que o fã não pode trocar agora para este @ (já normalizado e diferente
+ * do de agora), sem ler nada: fora do formato, automático ou reservado é 400
+ * `username_invalid` com o motivo; o prazo de 30 dias correndo
+ * (`changeableAt`, em ms, ou null sem prazo) é 409 `username_change_too_soon`
+ * com a data. Null quando pode. A reserva com dono é lida depois, na
+ * transação (`readUsernameSwap`). O `PUT /me/username` e o `PUT /me/profile`
+ * usam, na mesma ordem (seção 28, 28.4, passo 3).
+ */
+export function usernameChangeProblem(
+  username: string,
+  changeableAt: number | null,
+  now: number,
+): ProfileEditError | null {
+  const refusal = usernameRefusal(username);
+  if (refusal) return new ProfileEditError('username_invalid', { reason: refusal });
+  if (!usernameChangeAllowed(changeableAt, now)) {
+    return new ProfileEditError('username_change_too_soon', {
+      changeableAt: changeableAt === null ? null : new Date(changeableAt).toISOString(),
+    });
+  }
+  return null;
+}
 
 // --- Foto ---------------------------------------------------------------------
 
@@ -291,7 +329,8 @@ export function copiesDiffer(
 
 /**
  * A mudança do perfil põe tarefa na fila: o nome, a foto ou o caminho dela
- * mudaram. A cidade, o @ e o `updatedAt` sozinhos não (nenhuma cópia os
+ * mudaram. A cidade, o @, o `updatedAt` e, desde o perfil novo (seção 28), a
+ * bio, o gênero, a conta privada e as redes sozinhos não (nenhuma cópia os
  * guarda); o caminho sozinho põe, porque a varredura da tarefa leva o envio
  * que falhou antes da troca.
  */
@@ -362,7 +401,8 @@ export type ProfileEditErrorReason =
   | 'photo_invalid'
   | 'photo_not_found'
   | 'username_taken'
-  | 'username_change_too_soon';
+  | 'username_change_too_soon'
+  | 'profile_invalid';
 
 const PROFILE_EDIT_MESSAGES: Record<ProfileEditErrorReason, string> = {
   username_invalid: 'Este @ não vale.',
@@ -370,12 +410,14 @@ const PROFILE_EDIT_MESSAGES: Record<ProfileEditErrorReason, string> = {
   photo_not_found: 'Foto não encontrada.',
   username_taken: 'Este @ já tem dono.',
   username_change_too_soon: 'Troca do @ antes do prazo.',
+  profile_invalid: 'Campo do perfil fora do formato.',
 };
 
 /**
  * Recusa da edição do perfil. A API traduz para o código de mesmo nome, com
  * `details` (`reason` no `username_invalid` e no `photo_invalid`,
- * `changeableAt` no `username_change_too_soon`), como o `PostError`.
+ * `changeableAt` no `username_change_too_soon`, `field` e `reason` no
+ * `profile_invalid` da seção 28), como o `PostError`.
  */
 export class ProfileEditError extends Error {
   readonly reason: ProfileEditErrorReason;

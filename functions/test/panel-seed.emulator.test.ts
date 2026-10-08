@@ -7,7 +7,15 @@ import { describe, expect, it } from 'vitest';
 import { seedEvents } from '../src/agenda';
 import { seedCamilaCentrals, seedCentrals } from '../src/centrals';
 import { dayKey, shiftDay } from '../src/day';
-import { fanPhotoFiles, SEED_SPAM_PHOTO_FILE, seedFanPhoto } from '../src/fan-profile';
+import {
+  editableProfileOf,
+  fanPhotoFiles,
+  SEED_FAN_DETAILS,
+  SEED_SPAM_PHOTO_FILE,
+  seedFanDetails,
+  seedFanDetailsChanges,
+  seedFanPhoto,
+} from '../src/fan-profile';
 import { seedCamilaInvite } from '../src/invites';
 import { SEED_SEASON_GOAL, seedGoalReached, seedMissionsCatalog } from '../src/missions';
 import {
@@ -57,7 +65,9 @@ import { localApi, signIn, useEmulators } from './support';
  * shards reais dos seeds dos blocos anteriores), e rodar duas vezes sem mudar
  * nada. Os perfis nascem direto (como no teste do seed do ranking), sem
  * passar pelo gatilho de cadastro; os claims e as visitas do convite, que só
- * gravam no dia de hoje, ficam com os testes do bloco 5 e do bloco 7.
+ * gravam no dia de hoje, ficam com os testes do bloco 5 e do bloco 7. Desde o
+ * perfil novo (28.10), também os detalhes da tabela (bio, gênero, conta
+ * privada e redes), no fim, antes dos números, como o script.
  */
 const env = useEmulators('painel-seed', ['api', 'createUserProfile']);
 const { db, bucket } = env;
@@ -90,6 +100,14 @@ async function profile(uid: string, displayName: string): Promise<void> {
     photoURL: null,
     createdAt: Timestamp.fromMillis(T0 - 200 * DAY_MS),
   });
+}
+
+/** O uid de um fã de teste ou de uma conta de ranking, pelo e-mail. */
+function uidOf(ranking: Map<string, string>, email: string): string {
+  const fan = Object.entries(FANS).find(([, item]) => item.email === email);
+  const uid = fan?.[0] ?? ranking.get(email);
+  if (!uid) throw new Error(`Sem conta para ${email}.`);
+  return uid;
 }
 
 /** As contas de ranking: `rank01` a `rank48`, pelo e-mail. */
@@ -146,6 +164,12 @@ async function seed(ranking: Map<string, string>): Promise<void> {
   await seedOpenRedemptions(db, ranking, T0);
   await seedGoalReached(db, ranking.get('rank-02@teste.imagineup')!, T0);
   await seedPanelAudit(db, { bia: 'bia' }, T0);
+  // O perfil novo (28.10), pelo mesmo núcleo do PUT /me/profile.
+  for (const details of SEED_FAN_DETAILS) {
+    await seedFanDetails(db, uidOf(ranking, details.email), seedFanDetailsChanges(details), {
+      now: T0,
+    });
+  }
   await seedPanelStats(db, T0);
   await seedPanelClose(db, T0, quiet);
 }
@@ -154,6 +178,7 @@ async function seed(ranking: Map<string, string>): Promise<void> {
 async function dump(): Promise<Record<string, [string, DocumentData][]>> {
   const out: Record<string, [string, DocumentData][]> = {};
   for (const name of [
+    'users',
     'staff',
     'staffAudit',
     'statsDaily',
@@ -271,6 +296,26 @@ describe('o seed das telas do painel (26.13)', () => {
       .get();
     expect(goal.docs.map((doc) => doc.id)).toEqual(['rank02']);
     expect((await read('wallets/rank02'))!.seasonMissions).toBe(20);
+
+    // O perfil novo (28.10): a bio, o gênero, a privada e as redes da tabela; a
+    // Renata (rank-48, suspensa) e os outros sem detalhes.
+    for (const details of SEED_FAN_DETAILS) {
+      const profile = editableProfileOf((await read(`users/${uidOf(ranking, details.email)}`))!);
+      expect(profile, details.email).toMatchObject({
+        displayName: details.displayName,
+        bio: details.bio,
+        gender: details.gender,
+        privateAccount: details.privateAccount,
+        socials: { instagram: null, tiktok: null, linkedin: null, x: null, ...details.socials },
+      });
+    }
+    expect(await read('users/rank05')).toMatchObject({ privateAccount: true });
+    for (const uid of ['rank48', 'alan', 'duda', 'rank02']) {
+      expect(await read(`users/${uid}`)).not.toHaveProperty('bio');
+      expect(await read(`users/${uid}`)).not.toHaveProperty('socials');
+    }
+    // O seed não grava o updatedAt (só o primeiro nome do fã leva).
+    expect(await read('users/spam')).not.toHaveProperty('updatedAt');
 
     // A auditoria: toda entrada com a seção e os alvos, todas as seções com ação e os autores.
     const audit = (await db.collection('staffAudit').get()).docs.map((doc) => doc.data());

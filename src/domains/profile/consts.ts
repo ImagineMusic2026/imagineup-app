@@ -51,22 +51,16 @@ export const ACHIEVEMENT_TONE_COLORS: Readonly<Record<AchievementTone, string>> 
 /** Quantas peças de conquista cabem na linha do perfil. */
 export const ACHIEVEMENT_SLOTS = 4;
 
-// --- Editar perfil (bloco 9, docs/arquitetura-api.md, 24.12) ---------------------
+// --- Editar perfil (bloco 9 e seção 28 de docs/arquitetura-api.md) ---------------
 
 /**
- * Quanto a tela espera a confirmação do servidor ao salvar nome e cidade: o
- * `updateDoc` do SDK JS só resolve com a resposta, e sem rede fica na fila em
- * memória. Passado o prazo, a tela avisa e o "Salvar" segue desligado até a
- * gravação resolver.
+ * O prazo da tentativa do ✓ inteira (esperar a sessão, o token e o pedido do
+ * `PUT /me/profile`): a tela fica presa enquanto salva, e sem prazo o fã
+ * ficaria preso com sinal ruim (o `timeout` de 15 s do axios só começa depois
+ * do token, e o 401 repete o pedido). Passado o prazo, o pedido é cancelado e
+ * vira falha incerta, que solta a tela e guarda a chave.
  */
-export const PROFILE_SAVE_TIMEOUT_MS = 10_000;
-
-/**
- * O "Salvar" fica desligado depois de salvar: a regra do Firestore aceita uma
- * edição a cada 10 s, contada aqui pelo relógio do aparelho a partir da
- * resposta (sem depender do relógio do servidor).
- */
-export const PROFILE_EDIT_COOLDOWN_MS = 10_000;
+export const PROFILE_SAVE_TIMEOUT_MS = 20_000;
 
 /** Espera entre a última tecla do @ e a consulta de disponibilidade. */
 export const USERNAME_CHECK_DEBOUNCE_MS = 400;

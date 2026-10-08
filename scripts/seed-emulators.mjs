@@ -2,7 +2,9 @@
  * Contas de teste nos emuladores do Firebase. Rode com `npm run emulators:seed`
  * enquanto `npm run emulators` estiver aberto. Cada conta dispara a função de
  * cadastro, que cria o perfil com o @ em alguns segundos. Depois o script grava
- * a cidade de cada um, como o fã faria no app, para o perfil bater com o protótipo.
+ * a cidade de cada um (pelo token do emulador, que passa por cima das regras),
+ * para o perfil bater com o protótipo. Os fãs de teste (e-mail, nome e cidade)
+ * vêm do build (SEED_FANS, functions/lib/fan-profile); as senhas ficam aqui.
  *
  * A Camila ganha a carteira do protótipo (saldo 12.480, XP 12.480, temporada
  * 4.120, Netto 4.120 e Nenho 2.980, "+840" na semana), gravada pelo mesmo
@@ -103,6 +105,13 @@
  * produção com o retrato do seed. Hoje fica aberto. No fim, o script mostra
  * os totais fechados de 7 e 30 dias que a Visão geral tem de mostrar.
  *
+ * Perfil novo (functions/lib/fan-profile, docs/arquitetura-api.md, 28.10): no
+ * fim, antes dos números do painel, a bio, o gênero, a conta privada e as
+ * redes da Camila, da Bia, do Promo Seguidores, da Thalita (rank-01) e da
+ * Aline (rank-05, com a conta privada), pelo mesmo núcleo do PUT /me/profile,
+ * com o ator de sistema. Os usuários das redes são de exemplo: no app ligado
+ * ao emulador, os links não abrem.
+ *
  * Rodar de novo não muda nada. Depois da meia-noite, o progresso do dia volta
  * a 0, como o de qualquer fã: para ver de novo o 3 de 5 e o 2 de 5, feche os
  * emuladores (os dados somem) e rode o seed outra vez.
@@ -121,59 +130,20 @@ const USERS =
 // "owner" é o token do emulador que passa por cima das regras.
 const OWNER = { Authorization: 'Bearer owner', 'Content-Type': 'application/json' };
 
-const FANS = [
-  {
-    email: 'camila@teste.imagineup',
-    password: 'fa-de-teste-1',
-    displayName: 'Camila Ribeiro',
-    city: 'Feira de Santana, BA',
-    wallet: true,
-  },
-  {
-    email: 'alan@teste.imagineup',
-    password: 'fa-de-teste-2',
-    displayName: 'Alan Ferreira',
-    city: 'Irará, BA',
-  },
-  // Convidados da Camila: a origem de cada um está em SEED_INVITEES
-  // (functions/src/invites/seed.ts), pelo e-mail.
-  {
-    email: 'bia@teste.imagineup',
-    password: 'fa-de-teste-3',
-    displayName: 'Bia Santos',
-    city: 'Salvador, BA',
-    invited: true,
-  },
-  {
-    email: 'duda@teste.imagineup',
-    password: 'fa-de-teste-4',
-    displayName: 'Duda Lima',
-    city: 'Alagoinhas, BA',
-    invited: true,
-  },
-  {
-    email: 'enzo@teste.imagineup',
-    password: 'fa-de-teste-5',
-    displayName: 'Enzo Rocha',
-    city: 'Santo Amaro, BA',
-    invited: true,
-  },
-  // Só visita o link do clipe da Camila (bloco 7): anda o "Leve 5 pessoas".
-  {
-    email: 'gabi@teste.imagineup',
-    password: 'fa-de-teste-6',
-    displayName: 'Gabi Souza',
-    city: 'Cruz das Almas, BA',
-  },
-  // O fã de propaganda da Moderação (bloco 11): foto, três comentários no
-  // clipe, denunciados pela Bia e pela Duda. Sem cidade.
-  {
-    email: 'spam@teste.imagineup',
-    password: 'fa-de-teste-7',
-    displayName: 'Promo Seguidores',
-    city: null,
-  },
-];
+/**
+ * As senhas dos fãs de teste no emulador, pelo e-mail. Os fãs (nome, cidade,
+ * a carteira da Camila e os convidados, com a origem em SEED_INVITEES) estão
+ * em SEED_FANS (functions/src/fan-profile/seed.ts), que o teste do seed lê.
+ */
+const FAN_PASSWORDS = {
+  'camila@teste.imagineup': 'fa-de-teste-1',
+  'alan@teste.imagineup': 'fa-de-teste-2',
+  'bia@teste.imagineup': 'fa-de-teste-3',
+  'duda@teste.imagineup': 'fa-de-teste-4',
+  'enzo@teste.imagineup': 'fa-de-teste-5',
+  'gabi@teste.imagineup': 'fa-de-teste-6',
+  'spam@teste.imagineup': 'fa-de-teste-7',
+};
 
 /** As senhas das contas da equipe do painel no emulador (as contas estão em functions/src/staff/seed.ts). */
 const STAFF_PASSWORDS = {
@@ -473,9 +443,15 @@ const visitors = [];
 const engagementFans = {};
 /** Os uids dos fãs de teste pelo nome curto do e-mail (camila, alan, bia, duda, enzo, gabi, spam). */
 const fanUids = {};
+/** Os uids dos fãs de teste pelo e-mail (os detalhes do perfil novo, 28.10). */
+const fanUidsByEmail = new Map();
 let camilaUid = null;
 let camilaEmail = null;
-for (const { city, wallet, invited, ...fan } of FANS) {
+const { SEED_FANS } = functionsBuild('fan-profile');
+for (const { city, wallet, invited, ...seedFan } of SEED_FANS) {
+  const password = FAN_PASSWORDS[seedFan.email];
+  if (!password) throw new Error(`Sem senha para ${seedFan.email} em FAN_PASSWORDS.`);
+  const fan = { ...seedFan, password };
   const uid = await account(fan);
   if (city) {
     await setCity(uid, city);
@@ -490,6 +466,7 @@ for (const { city, wallet, invited, ...fan } of FANS) {
   if (invited) invitees.push({ uid, email: fan.email, name: fan.displayName });
   const key = fan.email.split('@')[0];
   fanUids[key] = uid;
+  fanUidsByEmail.set(fan.email, uid);
   if (key !== 'camila' && key !== 'gabi' && key !== 'spam') engagementFans[key] = uid;
   const { SEED_VISITORS } = functionsBuild('invites');
   if (SEED_VISITORS.includes(fan.email)) {
@@ -617,6 +594,23 @@ console.log(`Meta da São João: rank-02 ${goal ? 'bateu agora' : 'já tinha bat
 const { seedPanelAudit } = functionsFile('staff/seed');
 const audit = await withFirestore((db) => seedPanelAudit(db, { bia: fanUids.bia }));
 console.log(`Auditoria de exemplo: ${audit} entradas agora (20 no total, nos últimos 10 dias).`);
+
+// O perfil novo (28.10): a bio, o gênero, a conta privada e as redes da tabela,
+// pelo mesmo núcleo do PUT /me/profile (rodar de novo não grava).
+const { SEED_FAN_DETAILS, seedFanDetails, seedFanDetailsChanges } = functionsBuild('fan-profile');
+const detailsWritten = await withFirestore(async (db) => {
+  let written = 0;
+  for (const details of SEED_FAN_DETAILS) {
+    const uid = fanUidsByEmail.get(details.email) ?? rankingUids.get(details.email);
+    if (!uid) throw new Error(`Sem conta para ${details.email}.`);
+    const status = await seedFanDetails(db, uid, seedFanDetailsChanges(details));
+    if (status === 'written') written += 1;
+  }
+  return written;
+});
+console.log(
+  `Perfil de teste: Camila, Bia, Thalita, Aline e Promo com bio e redes; Aline com conta privada (${detailsWritten} gravados agora, ${SEED_FAN_DETAILS.length} no total).`,
+);
 
 // Os números de 60 dias por último, depois de tudo que grava em dias passados.
 const statsSeed = functionsFile('points/stats-seed');

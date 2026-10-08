@@ -72,7 +72,7 @@ afterEach(() => {
   setFixtureNow(null);
 });
 
-describe('carteira nas fixtures (builds de hoje)', () => {
+describe('carteira nas fixtures (build sem a API)', () => {
   it('earnFixturePoints soma nos três contadores e devolve os pontos', () => {
     expect(earnFixturePoints(10)).toBe(10);
     expect(fixtureWallet.get()).toEqual({ balance: 12_490, xp: 12_490, seasonPoints: 4_130 });

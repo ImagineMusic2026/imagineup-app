@@ -24,7 +24,11 @@ export type DataDomain =
   | 'missions'
   /** Temporada e ranking (bloco 8). */
   | 'ranking'
-  /** /me/username e /me/photo (bloco 9): o @ escolhido e a foto do perfil. */
+  /**
+   * /me/username e /me/photo (bloco 9): o @ escolhido e a foto do perfil; e,
+   * desde a seção 28, /me/profile (a edição pelo ✓) e /fans/:fanId (o perfil
+   * público de outro fã).
+   */
   | 'profile'
   /** Loja e resgate (bloco 10). */
   | 'rewards';
@@ -49,9 +53,10 @@ export const SERVER_DOMAINS: ReadonlySet<DataDomain> = new Set<DataDomain>([
 /**
  * A fonte de um domínio: a API quando ela está configurada (emulador em
  * desenvolvimento, ou `EXPO_PUBLIC_API_URL`) e o domínio já tem rota no
- * servidor; as fixtures no resto. Sem API (as builds de hoje), tudo nas
- * fixtures. Só o `api.ts` de cada domínio e o cache do React Query olham para
- * isto: a view e o `queries.ts` não sabem de onde o dado veio.
+ * servidor; as fixtures no resto. Sem API (build sem a variável e sem
+ * emulador), tudo nas fixtures. Só o `api.ts` de cada domínio e o cache do
+ * React Query olham para isto: a view e o `queries.ts` não sabem de onde o
+ * dado veio.
  */
 export function sourceOf(domain: DataDomain): DataSource {
   return apiUrl && SERVER_DOMAINS.has(domain) ? 'api' : 'fixtures';

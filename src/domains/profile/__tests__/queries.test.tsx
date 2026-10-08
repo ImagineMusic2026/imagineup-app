@@ -6,8 +6,18 @@ import type { ReactNode } from 'react';
 import { usePreferencesStore } from '@/stores/preferences';
 import { useSessionStore, type SessionUser } from '@/stores/session';
 
+import { api } from '@/services/api';
+
 import { useFanIdentity } from '../hooks/use-fan-identity';
-import { profileKeys, useMyProfileQuery, useWatchMyProfile } from '../queries';
+import {
+  fanKeys,
+  profileKeys,
+  useFanProfileQuery,
+  useMyProfileQuery,
+  useUpdateProfileMutation,
+  useWatchMyProfile,
+} from '../queries';
+import type { EditableProfile, FanPublicProfile } from '../types';
 
 jest.mock('firebase/firestore', () => ({
   doc: jest.fn((_db: unknown, ...path: string[]) => path.join('/')),
@@ -15,12 +25,14 @@ jest.mock('firebase/firestore', () => ({
   onSnapshot: jest.fn(),
 }));
 jest.mock('@/firebase', () => ({ getDb: () => ({}) }));
-jest.mock('@/services/api', () => ({ api: { get: jest.fn() } }));
+jest.mock('@/services/api', () => ({ api: { get: jest.fn(), put: jest.fn() } }));
 // Sem .env no Jest: o aviso de Firebase sem configuração não polui a saída.
 jest.mock('@/config/env', () => ({ firebaseEmulatorHost: undefined }));
+// Lido na hora da chamada: os testes do ✓ põem o perfil na API.
+let mockDataSource: 'api' | 'fixtures' = 'fixtures';
 jest.mock('@/config/data-source', () => ({
-  sourceOf: () => 'fixtures',
-  usesFixtures: () => true,
+  sourceOf: () => mockDataSource,
+  usesFixtures: () => mockDataSource === 'fixtures',
 }));
 
 const getDocMock = jest.mocked(getDoc);
@@ -61,9 +73,15 @@ function signIn(status: 'signedIn' | 'loading' = 'signedIn'): void {
 
 beforeEach(() => {
   jest.clearAllMocks();
+  mockDataSource = 'fixtures';
   // O padrão das consultas no modo fixtures é `always`: o perfil precisa passar por cima.
+  // A mutação que termina sem observador marcaria 5 min para sair do cache, e o
+  // timer seguraria o Jest aberto: `gcTime` infinito nas mutações também.
   client = new QueryClient({
-    defaultOptions: { queries: { retry: false, networkMode: 'always', gcTime: Infinity } },
+    defaultOptions: {
+      queries: { retry: false, networkMode: 'always', gcTime: Infinity },
+      mutations: { gcTime: Infinity },
+    },
   });
   onSnapshotMock.mockReturnValue(() => undefined);
 });
@@ -250,5 +268,54 @@ describe('nome e foto das telas', () => {
 
     await waitFor(() => expect(result.current.loading).toBe(false));
     expect(result.current.name).toBe('Camila da Sessão');
+  });
+});
+
+describe('perfil público de outro fã (seção 28)', () => {
+  it('nas fixtures, o perfil de exemplo, com retrato de 30 s e fora do disco', async () => {
+    const { result } = renderHook(() => useFanProfileQuery('fa-rank-01'), { wrapper });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(result.current.data).toMatchObject({
+      uid: 'fa-rank-01',
+      displayName: 'Thalita Santos',
+      restricted: false,
+    });
+    const query = client.getQueryCache().find({ queryKey: fanKeys.profile('fa-rank-01') });
+    expect(query?.meta).toMatchObject({ persist: false });
+    expect(result.current.isStale).toBe(false);
+    // O prazo exato: o `isStale` falso logo depois da busca passaria com qualquer
+    // valor positivo, `Infinity` inclusive.
+    expect(query?.observers[0]?.options.staleTime).toBe(30_000);
+  });
+
+  it('o ✓ que salva invalida o perfil público do próprio fã, e o de outro fica', async () => {
+    signIn();
+    mockDataSource = 'api';
+    const edited: EditableProfile = {
+      displayName: 'Camila Ribeiro',
+      username: 'camilarib',
+      usernameChangeableAt: null,
+      bio: 'Oi',
+      city: null,
+      gender: null,
+      privateAccount: false,
+      socials: { instagram: null, tiktok: null, linkedin: null, x: null },
+    };
+    jest.mocked(api.put).mockResolvedValue({ data: edited });
+    const mine = { uid: 'uid-camila' } as FanPublicProfile;
+    const other = { uid: 'fa-rank-01' } as FanPublicProfile;
+    client.setQueryData(fanKeys.profile('uid-camila'), mine);
+    client.setQueryData(fanKeys.profile('fa-rank-01'), other);
+
+    const { result } = renderHook(() => useUpdateProfileMutation(), { wrapper });
+    await act(async () => {
+      await result.current.mutateAsync({ bio: 'Oi' });
+    });
+
+    const state = (fanId: string) =>
+      client.getQueryCache().find({ queryKey: fanKeys.profile(fanId) })?.state.isInvalidated;
+    expect(state('uid-camila')).toBe(true);
+    expect(state('fa-rank-01')).toBe(false);
   });
 });

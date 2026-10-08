@@ -168,3 +168,13 @@ export const typography = {
 } as const satisfies Record<string, TextStyle>;
 
 export type TypographyVariant = keyof typeof typography;
+
+/**
+ * Fonte do sistema a partir da qual as linhas deixam de cortar texto: o que
+ * fica à direita do título desce para baixo dele, e os títulos quebram
+ * inteiros. É a maior fonte do Android sem a ampliação de acessibilidade
+ * (1,3); daí para cima, o que fica ao lado deixaria menos de uma palavra por
+ * linha para o título num aparelho de 360. Usada pela agenda (1m) e pela
+ * tela "Editar perfil" (o valor do gênero desce para baixo do título).
+ */
+export const LARGE_TEXT_SCALE = 1.3;

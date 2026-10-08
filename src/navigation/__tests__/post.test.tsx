@@ -108,6 +108,7 @@ const appTree = {
   '(tabs)/(inicio,explorar,ranking,perfil)/artista/[artistaId]': label('artist'),
   'post/[postId]': PostRoute,
   'comentario/[comentarioId]': CommentOptionsRoute,
+  'fa/[fanId]': label('fan'),
   convidar: label('invite'),
 };
 
@@ -300,5 +301,44 @@ describe('opções do comentário (denunciar e bloquear, bloco 6)', () => {
       screen.getByRole('button', { name: 'Bloquear Thalita S.' }).props.accessibilityState,
     ).toMatchObject({ disabled: true });
     act(() => onlineManager.setOnline(true));
+  });
+});
+
+describe('perfil público pelo comentário (seção 28)', () => {
+  const THALITA_ROW =
+    'Thalita S., há 1 hora: Já mandei pro grupo da família inteira, Irará em peso! 💃';
+
+  it('a linha da Thalita é o botão que abre o perfil dela por cima do post; o Netto e o "Você" não', async () => {
+    // Um comentário do próprio fã, já gravado: a linha "Você".
+    postsFixture.addComment(
+      {
+        postId: 'p-clipe',
+        text: 'Que clipe!',
+        idempotencyKey: 'comment-camila-0001',
+        author: { id: 'uid-camila', name: 'Camila Ribeiro', photoURL: null },
+      },
+      new Date(),
+    );
+    const view = renderRouter(appTree, { initialUrl: '/' });
+    fireEvent.press(await screen.findByRole('button', { name: CLIP_ROW }));
+
+    const thalita = await screen.findByRole('button', { name: THALITA_ROW });
+    expect(thalita.props.accessibilityHint).toBe('Abre o perfil de Thalita S.');
+    // A resposta do Netto (artista) e o comentário do fã continuam sem botão.
+    expect(screen.getByLabelText(/^Netto Brito, artista verificado, há 48 minutos/)).toBeTruthy();
+    expect(
+      screen.queryByRole('button', { name: /^Netto Brito, artista verificado, há 48 minutos/ }),
+    ).toBeNull();
+    expect(screen.getByLabelText(/^Você, .*Que clipe!$/)).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /^Você, / })).toBeNull();
+
+    fireEvent.press(thalita);
+    await waitFor(() => expect(view.getPathname()).toBe('/fa/fa-thalita'));
+    expect(rootRoutes(view)).toEqual(['(tabs)', 'post/[postId]', 'fa/[fanId]']);
+    expect(haptics.trigger).toHaveBeenCalledWith('tap');
+
+    act(() => testRouter.back());
+    await waitFor(() => expect(view.getPathname()).toBe('/post/p-clipe'));
+    expect(rootRoutes(view)).toEqual(['(tabs)', 'post/[postId]']);
   });
 });

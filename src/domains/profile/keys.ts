@@ -29,13 +29,23 @@ export const profileKeys = {
 };
 
 /**
- * As mutações da tela "Editar perfil" (bloco 9). A do nome e da cidade é lida
- * pelo `useIsMutating`: a gravação pendente vale também com a tela fechada e
- * aberta de novo.
+ * O perfil público de outro fã (`GET /fans/:fanId`, seção 28), fora do
+ * `profileKeys`: invalidar o perfil do próprio fã (a carteira, o nível) não
+ * busca de novo o perfil de quem ele abriu, e o ✓ invalida só o dele aqui.
+ */
+export const fanKeys = {
+  all: ['fan'] as const,
+  profile: (fanId: string) => [...fanKeys.all, 'profile', fanId] as const,
+};
+
+/**
+ * As mutações da tela "Editar perfil" (bloco 9 e seção 28), lidas pelo
+ * `useIsMutating`: a gravação pendente vale também com a tela fechada e aberta
+ * de novo. O `update` é o ✓ (`PUT /me/profile`, com o @ junto); a foto salva
+ * na hora, fora dele.
  */
 export const profileMutationKeys = {
   update: ['profile', 'update'] as const,
-  username: ['profile', 'username', 'change'] as const,
   photo: ['profile', 'photo', 'set'] as const,
   removePhoto: ['profile', 'photo', 'remove'] as const,
 };

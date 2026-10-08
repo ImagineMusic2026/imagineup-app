@@ -74,7 +74,12 @@ export const layout = {
   compactHeaderHeight: 38,
   iconTile: 38,
   checkBadge: 26,
+  // O selo da câmera no canto da foto grande (tela "Editar perfil").
+  photoBadge: 32,
   selectMark: 24,
+  // Trilho e polegar do `Switch` (a conta privada da tela "Editar perfil"),
+  // nas medidas do switch do iOS; o polegar fica a 2 da borda do trilho.
+  switch: { width: 51, height: 31, thumb: 27 },
   progressBar: { sm: 7, md: 8 },
   stepBar: 3,
   // minWidth da coluna do selo de data (1m).
@@ -110,6 +115,8 @@ export const layout = {
     podiumFirst: { size: 62, initials: 19 },
     // 1e, dentro do ProgressRing de 96.
     hero: { size: 84, initials: 28 },
+    // A foto grande da tela "Editar perfil" e do perfil público (seção 28).
+    profile: { size: 104, initials: 34 },
   },
   // Espessura do anel do avatar: 2 no gradiente da 1b e no rosa do próprio
   // fã, 2,5 no lima do 1º do pódio (1f), que fica com miolo de 57.

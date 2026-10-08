@@ -152,6 +152,48 @@ describe('ListRow', () => {
     expect(screen.getByRole('button', { name: 'Sair' })).toBeBusy();
   });
 
+  it('pressável com estado de quem chama: a linha com papel de switch diz se está marcada', () => {
+    render(
+      <ListRow
+        title="Conta privada"
+        meta="Os outros fãs não veem sua bio nem suas redes."
+        trailing={<Text>chave</Text>}
+        onPress={jest.fn()}
+        accessibilityRole="switch"
+        accessibilityState={{ checked: true }}
+        accessibilityLabel="Conta privada. Os outros fãs não veem sua bio nem suas redes."
+        variant="divided"
+      />,
+    );
+    expect(
+      screen.getByRole('switch', {
+        name: 'Conta privada. Os outros fãs não veem sua bio nem suas redes.',
+        checked: true,
+      }),
+    ).toBeTruthy();
+  });
+
+  it('o estado de quem chama soma com o ocupado, nas duas variantes', () => {
+    const { rerender } = render(
+      <ListRow title="Gênero" onPress={jest.fn()} busy accessibilityState={{ expanded: true }} />,
+    );
+    const card = screen.getByRole('button', { name: 'Gênero' });
+    expect(card).toBeBusy();
+    expect(card).toBeExpanded();
+
+    rerender(
+      <ListRow
+        title="Gênero"
+        variant="divided"
+        onPress={jest.fn()}
+        accessibilityState={{ expanded: false }}
+      />,
+    );
+    const divided = screen.getByRole('button', { name: 'Gênero' });
+    expect(divided).toBeCollapsed();
+    expect(divided).not.toBeBusy();
+  });
+
   it('haptic null desliga o toque', () => {
     render(<ListRow title="Comente em 3 posts" onPress={jest.fn()} haptic={null} />);
     fireEvent.press(screen.getByRole('button'));

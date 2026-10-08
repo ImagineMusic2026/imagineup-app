@@ -1,4 +1,4 @@
-import { FieldValue, Timestamp } from 'firebase-admin/firestore';
+import { Timestamp } from 'firebase-admin/firestore';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { describe, expect, it } from 'vitest';
 
@@ -26,7 +26,7 @@ import {
  * 26.7 e 26.14): o `adjustFanPoints` com os papéis, os tetos, o orçamento do
  * dia, a repetição da tentativa e o `game`; o `findFanByEmail` com a auditoria
  * sem o e-mail e o teto do dia; e o `searchKeys` no cadastro e no gatilho do
- * perfil (a troca do nome direto no Firestore e a do @ pela api).
+ * perfil (o nome gravado pelo Admin SDK, como a API grava, e o @ pela api).
  */
 const env = useEmulators('fas-painel', [
   'api',
@@ -429,15 +429,14 @@ describe('findFanByEmail', () => {
 });
 
 describe('searchKeys (a busca de fãs do painel)', () => {
-  it('nasce no cadastro e acompanha o nome trocado direto no Firestore', async () => {
+  it('nasce no cadastro e acompanha o nome trocado no perfil (gravado pelo Admin SDK)', async () => {
     const fan = await signUpFan(db, 'Camila Ribeiro');
     const profile = (await read(`users/${fan.uid}`))!;
     expect(profile.searchKeys).toEqual(fanSearchKeys('Camila Ribeiro', profile.username));
     expect(profile.searchKeys).toContain('cami');
 
-    await db
-      .doc(`users/${fan.uid}`)
-      .update({ displayName: 'Bia Andrade', updatedAt: FieldValue.serverTimestamp() });
+    // O teste é do gatilho, não do caminho: a gravação como a API faz, sem o updatedAt.
+    await db.doc(`users/${fan.uid}`).update({ displayName: 'Bia Andrade' });
     // O @ continua o do cadastro (e as palavras dele, com o "cami").
     const expected = fanSearchKeys('Bia Andrade', profile.username);
     expect(expected).toContain('andr');

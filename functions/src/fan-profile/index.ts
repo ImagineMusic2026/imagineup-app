@@ -3,7 +3,39 @@
 // exclusão de conta e o seed da foto de teste. A API (src/api/routes/
 // profile.ts) e o gatilho usam daqui; o seed dos emuladores e o
 // scripts/release-fan-username.mjs carregam o build (functions/lib/fan-profile).
-// docs/arquitetura-api.md, seção 24.
+// docs/arquitetura-api.md, seção 24. Desde o perfil novo (seção 28): a bio, o
+// gênero, a conta privada e as redes (details.ts), a edição inteira pelo
+// `PUT /me/profile`, o perfil público (`GET /fans/:fanId`), o
+// `clearFanProfileText` da Moderação e os fãs de teste com os detalhes.
+export {
+  BIO_MAX,
+  BIO_MAX_LINES,
+  editableProfileOf,
+  FAN_CITY_MAX,
+  GENDERS,
+  genderOf,
+  hasProfileChanges,
+  isSocialHandle,
+  normalizeSocialHandle,
+  parseProfileChanges,
+  PROFILE_CHANGE_KEYS,
+  profileDiff,
+  profileUpdateOf,
+  publicProfileOf,
+  SOCIAL_INPUT_MAX,
+  SOCIAL_NETWORKS,
+  SOCIAL_PATTERNS,
+  socialsOf,
+  type FanSocials,
+  type Gender,
+  type ParsedProfileChanges,
+  type ProfileChanges,
+  type ProfileInvalidField,
+  type ProfileInvalidReason,
+  type SocialHandleResult,
+  type SocialNetwork,
+  type SocialProblem,
+} from './details';
 export { fanPhotoFiles, MISSING_FAN_PHOTO_FILES, type FanPhotoFiles } from './files';
 export {
   ABANDONED_UPLOAD_MS,
@@ -13,6 +45,7 @@ export {
   FAN_PROFILE_SLOW_WINDOW_MS,
   FAN_PROFILE_SYNC_DAILY_WINDOWS,
   FAN_PROFILE_SYNC_WINDOW_MS,
+  NAME_CHANGES_PER_DAY,
   normalizeUsername,
   parseFanPhotoPath,
   PHOTO_CHANGES_PER_DAY,
@@ -23,11 +56,13 @@ export {
   PHOTO_UPLOAD_RENEW_MS,
   PHOTO_UPLOAD_SLOT_MS,
   PHOTO_UPLOADS_PER_DAY,
+  PROFILE_SAVES_PER_DAY,
   PROFILE_SYNC_PAGE,
   ProfileEditError,
   USERNAME_CHANGE_INTERVAL_MS,
   USERNAME_INPUT_MAX,
   USERNAME_PATTERN,
+  usernameChangeProblem,
   UsernameReleaseError,
   usernameRefusal,
   type ProfileEditErrorReason,
@@ -35,11 +70,15 @@ export {
 } from './model';
 export {
   clearFanPhoto,
+  clearFanProfileText,
   findFanByEmail,
   parseCurrentUsername,
   parseLookupEmail,
+  parseProfileTextFields,
+  PROFILE_TEXT_FIELDS,
   resetFanUsername,
   type FanPanelDeps,
+  type ProfileTextField,
 } from './panel';
 export {
   countFanSearchKeys,
@@ -49,12 +88,25 @@ export {
   searchKeysOf,
   writeFanSearchKeys,
 } from './search';
-export { SEED_PHOTO_FILE, SEED_SPAM_PHOTO_FILE, seedFanPhoto, type UploadPhoto } from './seed';
+export {
+  SEED_FAN_DETAILS,
+  SEED_FANS,
+  SEED_PHOTO_FILE,
+  SEED_SPAM_PHOTO_FILE,
+  seedFanDetails,
+  seedFanDetailsChanges,
+  seedFanPhoto,
+  type SeedFan,
+  type SeedFanDetails,
+  type UploadPhoto,
+} from './seed';
 export {
   changeUsername,
   photoUploadSlotRef,
   purgeFanPhotos,
+  readFanPublicProfile,
   readUsernameAvailability,
+  readUsernameSwap,
   releaseUsername,
   releaseUsernameIn,
   removeFanPhoto,
@@ -62,6 +114,8 @@ export {
   reservePhotoUpload,
   setFanPhoto,
   syncFanProfile,
+  updateFanProfile,
+  writeUsernameSwap,
   type FanProfileSyncResult,
   type PhotoChange,
   type PhotoUploadSlot,
@@ -69,6 +123,8 @@ export {
   type UsernameChange,
   type UsernameRelease,
   type UsernameStatus,
+  type UsernameSwap,
+  type UsernameSwapFields,
 } from './service';
 export {
   FAN_PROFILE_MAX_ATTEMPTS,

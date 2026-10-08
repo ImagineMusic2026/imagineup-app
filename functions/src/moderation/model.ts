@@ -1,5 +1,10 @@
 import { secondsUntil } from '../centrals/model';
-import { PHOTO_CHANGES_PER_DAY, PHOTO_UPLOADS_PER_DAY } from '../fan-profile/model';
+import {
+  NAME_CHANGES_PER_DAY,
+  PHOTO_CHANGES_PER_DAY,
+  PHOTO_UPLOADS_PER_DAY,
+  PROFILE_SAVES_PER_DAY,
+} from '../fan-profile/model';
 import { dayKey, nextDayStart, type DailyActionKey, type DayStats } from '../points/model';
 
 // Moderação mínima do bloco 6 e os tetos do dia das ações que gravam, puro:
@@ -44,10 +49,21 @@ export const REDEEMS_PER_DAY = 10;
  * A ação que o teto conta, como vai no `details.action` do 429. `photo` é a
  * troca de foto do perfil (bloco 9, 24.1, decisão 11) e `redeem`, o resgate
  * da loja (bloco 10, 25.7), no mesmo molde; `upload`, a vaga de envio da
- * foto do perfil (proteção contra abuso, 27.4).
+ * foto do perfil (proteção contra abuso, 27.4); `profile` e `name`, o
+ * salvamento do perfil e a troca de nome do `PUT /me/profile` (seção 28,
+ * decisão 9).
  */
 export type CapAction =
-  'like' | 'comment' | 'rsvp' | 'report' | 'block' | 'photo' | 'redeem' | 'upload';
+  | 'like'
+  | 'comment'
+  | 'rsvp'
+  | 'report'
+  | 'block'
+  | 'photo'
+  | 'redeem'
+  | 'upload'
+  | 'profile'
+  | 'name';
 
 export const DAILY_CAPS: Record<CapAction, { key: DailyActionKey; limit: number }> = {
   like: { key: 'like_set', limit: LIKES_PER_DAY },
@@ -58,6 +74,8 @@ export const DAILY_CAPS: Record<CapAction, { key: DailyActionKey; limit: number 
   photo: { key: 'photo_set', limit: PHOTO_CHANGES_PER_DAY },
   redeem: { key: 'reward_redeem', limit: REDEEMS_PER_DAY },
   upload: { key: 'photo_upload', limit: PHOTO_UPLOADS_PER_DAY },
+  profile: { key: 'profile_save', limit: PROFILE_SAVES_PER_DAY },
+  name: { key: 'name_change', limit: NAME_CHANGES_PER_DAY },
 };
 
 /**

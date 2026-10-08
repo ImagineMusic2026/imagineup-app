@@ -208,17 +208,29 @@ export async function http(
   };
 }
 
-export type LocalResult = { status: number; body: Record<string, unknown> };
+export type LocalResult = {
+  status: number;
+  body: Record<string, unknown>;
+  /** Os cabeçalhos da resposta, só com `withHeaders` (o `Retry-After` dos tetos do dia). */
+  headers?: Record<string, string>;
+};
 
 /**
  * O handler da API no processo do teste, com o relógio e a configuração
  * fixos (para o corte da meia-noite, os limites e os valores injetados). As
  * rotas da foto (bloco 9) usam o bucket do emulador. `routes` acrescenta rotas
- * só do teste (a colisão do código do resgate, bloco 10).
+ * só do teste (a colisão do código do resgate, bloco 10). Com `withHeaders`,
+ * o resultado traz também os cabeçalhos (sem ele, só o status e o corpo, como
+ * os testes comparam).
  */
 export function localApi(
   env: Emulators,
-  options: { now?: () => number; config?: ConfigSource; routes?: readonly ApiRoute[] } = {},
+  options: {
+    now?: () => number;
+    config?: ConfigSource;
+    routes?: readonly ApiRoute[];
+    withHeaders?: boolean;
+  } = {},
 ) {
   const startedAt = Date.now();
   const handler = createApiHandler(
@@ -249,12 +261,15 @@ export function localApi(
       body: request.body,
     };
     const sent: LocalResult = { status: 0, body: {} };
+    const headersSent: Record<string, string> = {};
+    if (options.withHeaders) sent.headers = headersSent;
     const res = {
       status(code: number) {
         sent.status = code;
         return res;
       },
-      set() {
+      set(field: string, value: string) {
+        headersSent[field] = value;
         return res;
       },
       json(body: unknown) {

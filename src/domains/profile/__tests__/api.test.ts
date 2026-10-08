@@ -1,4 +1,4 @@
-import { doc, getDoc, onSnapshot, serverTimestamp, updateDoc } from 'firebase/firestore';
+import { doc, getDoc, onSnapshot } from 'firebase/firestore';
 
 import { storageFileExists, uploadLocalFile } from '@/firebase';
 
@@ -6,7 +6,8 @@ import { api } from '@/services/api';
 import { fixtureWallet } from '@/services/fixtures';
 
 import {
-  changeUsername,
+  applyEditableProfile,
+  fetchFanProfile,
   fetchMyAchievements,
   fetchMyInvite,
   fetchMyProfile,
@@ -19,18 +20,18 @@ import {
   reservePhotoUpload,
   setMyPhoto,
   toFanProfile,
+  toFanPublicProfile,
   updateMyProfile,
   uploadFanPhoto,
   watchMyProfile,
 } from '../api';
 
 // O build do Firebase que o Jest resolve é ESM; o domínio só usa estas peças.
+// O domínio não grava o perfil direto no Firestore desde a seção 28: sem updateDoc.
 jest.mock('firebase/firestore', () => ({
   doc: jest.fn((_db: unknown, ...path: string[]) => path.join('/')),
   getDoc: jest.fn(),
   onSnapshot: jest.fn(),
-  serverTimestamp: jest.fn(() => 'agora-do-servidor'),
-  updateDoc: jest.fn(),
 }));
 jest.mock('@/firebase', () => ({
   getDb: () => ({}),
@@ -74,6 +75,9 @@ beforeEach(() => {
   fixtureWallet.reset();
 });
 
+/** Os campos do perfil novo (seção 28) com o padrão do ausente. */
+const NO_DETAILS = { bio: null, gender: null, privateAccount: false, socials: null } as const;
+
 describe('perfil do Firestore', () => {
   it('o Timestamp vira ISO, porque o cache vai para o disco em JSON', () => {
     expect(toFanProfile('uid-camila', CAMILA)).toEqual({
@@ -84,6 +88,95 @@ describe('perfil do Firestore', () => {
       photoURL: null,
       createdAt: '2026-09-29T11:17:40.910Z',
       usernameChangeableAt: null,
+      ...NO_DETAILS,
+    });
+  });
+
+  it('os campos do perfil novo (seção 28): bio, gênero, conta privada e as quatro redes', () => {
+    expect(
+      toFanProfile('uid-camila', {
+        ...CAMILA,
+        bio: 'Feira de Santana.\nFã do Netto desde o primeiro show.',
+        gender: 'woman',
+        privateAccount: true,
+        socials: {
+          instagram: 'camila.teste.up',
+          tiktok: 'camila.teste.up',
+          linkedin: 'camila-teste-imagineup',
+          x: 'camilatesteup',
+        },
+      }),
+    ).toMatchObject({
+      bio: 'Feira de Santana.\nFã do Netto desde o primeiro show.',
+      gender: 'woman',
+      privateAccount: true,
+      socials: {
+        instagram: 'camila.teste.up',
+        tiktok: 'camila.teste.up',
+        linkedin: 'camila-teste-imagineup',
+        x: 'camilatesteup',
+      },
+    });
+  });
+
+  it('sem os campos novos (o perfil de antes), o ausente vale o padrão', () => {
+    expect(toFanProfile('uid-camila', CAMILA)).toMatchObject(NO_DETAILS);
+  });
+
+  it('os campos novos fora do formato: a rede torta e o gênero desconhecido viram null', () => {
+    expect(
+      toFanProfile('uid-camila', {
+        ...CAMILA,
+        bio: 42,
+        gender: 'other',
+        privateAccount: 'true',
+        socials: {
+          instagram: 'https://golpe.example/camila',
+          tiktok: 'Camila',
+          linkedin: 'thalita-teste-imagineup',
+          x: 7,
+          facebook: 'camila',
+        },
+      }),
+    ).toMatchObject({
+      bio: null,
+      gender: null,
+      privateAccount: false,
+      socials: { instagram: null, tiktok: null, linkedin: 'thalita-teste-imagineup', x: null },
+    });
+    expect(
+      toFanProfile('uid-camila', { ...CAMILA, socials: { instagram: 'Camila' } }).socials,
+    ).toBeNull();
+    expect(toFanProfile('uid-camila', { ...CAMILA, socials: 'camila' }).socials).toBeNull();
+  });
+
+  it('a resposta do PUT /me/profile entra no perfil em cache, com a mesma conferência das redes', () => {
+    const cached = toFanProfile('uid-camila', {
+      ...CAMILA,
+      photoURL: 'https://fotos/camila.jpg',
+      suspendedAt: null,
+    });
+    expect(
+      applyEditableProfile(cached, {
+        displayName: 'Camila R.',
+        username: 'camilaribeiro',
+        usernameChangeableAt: '2026-11-06T15:00:00.000Z',
+        bio: 'Oi',
+        city: 'Irará, BA',
+        gender: 'woman',
+        privateAccount: true,
+        socials: { instagram: 'camila.teste.up', tiktok: 'Torto', linkedin: null, x: null },
+      }),
+    ).toEqual({
+      ...cached,
+      displayName: 'Camila R.',
+      username: 'camilaribeiro',
+      usernameChangeableAt: '2026-11-06T15:00:00.000Z',
+      bio: 'Oi',
+      city: 'Irará, BA',
+      gender: 'woman',
+      privateAccount: true,
+      socials: { instagram: 'camila.teste.up', tiktok: null, linkedin: null, x: null },
     });
   });
 
@@ -121,6 +214,7 @@ describe('perfil do Firestore', () => {
       photoURL: null,
       createdAt: null,
       usernameChangeableAt: null,
+      ...NO_DETAILS,
     });
   });
 
@@ -270,16 +364,34 @@ describe('convite do fã', () => {
   });
 });
 
-describe('perfil editável (bloco 9)', () => {
-  it('nome e cidade: updateDoc só com o que mudou e o updatedAt do servidor', async () => {
-    jest.mocked(updateDoc).mockResolvedValue(undefined);
-    await updateMyProfile('uid-camila', { city: null });
-    expect(doc).toHaveBeenCalledWith({}, 'users', 'uid-camila');
-    expect(updateDoc).toHaveBeenCalledWith('users/uid-camila', {
+describe('perfil editável (bloco 9 e seção 28)', () => {
+  it('salvar o perfil vai ao PUT /me/profile com só o que mudou, a chave e o prazo da tentativa', async () => {
+    mockDataSource = 'api';
+    const put = jest.mocked(api.put);
+    const edited = {
+      displayName: 'Camila Ribeiro',
+      username: 'camilarib',
+      usernameChangeableAt: null,
+      bio: 'Oi',
       city: null,
-      updatedAt: 'agora-do-servidor',
-    });
-    expect(serverTimestamp).toHaveBeenCalled();
+      gender: null,
+      privateAccount: false,
+      socials: { instagram: 'camila.teste.up', tiktok: null, linkedin: null, x: null },
+    };
+    put.mockResolvedValueOnce({ data: edited });
+    const controller = new AbortController();
+    await expect(
+      updateMyProfile(
+        { bio: 'Oi', city: null, socials: { instagram: 'camila.teste.up' } },
+        'profile-chave-0001',
+        controller.signal,
+      ),
+    ).resolves.toEqual(edited);
+    expect(put).toHaveBeenCalledWith(
+      '/me/profile',
+      { bio: 'Oi', city: null, socials: { instagram: 'camila.teste.up' } },
+      { headers: { 'Idempotency-Key': 'profile-chave-0001' }, signal: controller.signal },
+    );
   });
 
   it('a disponibilidade do @ vai com o parâmetro', async () => {
@@ -294,19 +406,10 @@ describe('perfil editável (bloco 9)', () => {
     });
   });
 
-  it('trocar o @, gravar e tirar a foto vão com a chave da tentativa', async () => {
+  it('gravar e tirar a foto vão com a chave da tentativa', async () => {
     mockDataSource = 'api';
     const put = jest.mocked(api.put);
     const remove = jest.mocked(api.delete);
-    put.mockResolvedValueOnce({
-      data: { username: 'camilaribeiro', changedAt: 'x', changeableAt: 'y' },
-    });
-    await changeUsername('camilaribeiro', 'username-chave-0001');
-    expect(put).toHaveBeenLastCalledWith(
-      '/me/username',
-      { username: 'camilaribeiro' },
-      { headers: { 'Idempotency-Key': 'username-chave-0001' } },
-    );
     put.mockResolvedValueOnce({ data: { photoURL: 'https://fotos/nova.jpg' } });
     await expect(
       setMyPhoto('fans/uid-camila/photo-abcdefgh.jpg', 'photo-abcdefgh'),
@@ -356,9 +459,9 @@ describe('perfil editável (bloco 9)', () => {
     await expect(photoUploaded('fans/uid-camila/photo-abcdefgh.jpg')).resolves.toBe(true);
   });
 
-  it('nas fixtures, o @ e a foto não imitam: lançam sem chamar nada', async () => {
+  it('nas fixtures, o perfil, o @ e a foto não imitam: lançam sem chamar nada', async () => {
+    await expect(updateMyProfile({ bio: 'Oi' }, 'profile-chave-0001')).rejects.toThrow();
     await expect(fetchUsernameAvailability('camilaribeiro')).rejects.toThrow();
-    await expect(changeUsername('camilaribeiro', 'chave-0001')).rejects.toThrow();
     await expect(setMyPhoto('fans/u/photo-abcdefgh.jpg', 'chave-0001')).rejects.toThrow();
     await expect(uploadFanPhoto('u', 'file:///x.jpg', 'abcdefgh')).rejects.toThrow();
     await expect(reservePhotoUpload('fans/u/photo-abcdefgh.jpg', 'chave-0001')).rejects.toThrow();
@@ -366,5 +469,115 @@ describe('perfil editável (bloco 9)', () => {
     expect(api.get).not.toHaveBeenCalled();
     expect(api.put).not.toHaveBeenCalled();
     expect(uploadLocalFile).not.toHaveBeenCalled();
+  });
+});
+
+describe('perfil público de outro fã (seção 28)', () => {
+  const THALITA = {
+    uid: 'fa-rank-01',
+    displayName: 'Thalita Santos',
+    username: 'thalitasan',
+    photoURL: null,
+    restricted: false,
+    bio: 'Do arrocha ao piseiro, sigo o Netto em todo São João.\nIrará na veia.',
+    socials: {
+      instagram: 'thalita.teste.up',
+      tiktok: 'thalita.teste.up',
+      linkedin: 'thalita-teste-imagineup',
+      x: 'thalitatesteup',
+    },
+  };
+
+  it('com a API, pede /fans/:fanId com o id codificado e confere a resposta', async () => {
+    mockDataSource = 'api';
+    get.mockResolvedValue({ data: THALITA });
+    await expect(fetchFanProfile('fa-rank-01')).resolves.toEqual(THALITA);
+    expect(get).toHaveBeenCalledWith('/fans/fa-rank-01');
+
+    get.mockResolvedValue({ data: { ...THALITA, uid: 'a/b' } });
+    await fetchFanProfile('a/b');
+    expect(get).toHaveBeenLastCalledWith('/fans/a%2Fb');
+  });
+
+  it('a rede torta da resposta é descartada, e a chave estranha, o gênero e a cidade não passam', async () => {
+    mockDataSource = 'api';
+    get.mockResolvedValue({
+      data: {
+        ...THALITA,
+        gender: 'woman',
+        city: 'Irará, BA',
+        socials: {
+          instagram: 'https://evil.example/x',
+          tiktok: 'thalita.teste.up',
+          linkedin: 'Thalita Teste',
+          x: 'muito_comprido_para_o_x',
+          site: 'evil.example',
+        },
+      },
+    });
+    const profile = await fetchFanProfile('fa-rank-01');
+    expect(profile.socials).toEqual({
+      instagram: null,
+      tiktok: 'thalita.teste.up',
+      linkedin: null,
+      x: null,
+    });
+    expect(Object.keys(profile)).toEqual([
+      'uid',
+      'displayName',
+      'username',
+      'photoURL',
+      'restricted',
+      'bio',
+      'socials',
+    ]);
+
+    // Nenhuma rede no padrão: sem redes.
+    get.mockResolvedValue({ data: { ...THALITA, socials: { linkedin: 'Thalita Teste' } } });
+    await expect(fetchFanProfile('fa-rank-01')).resolves.toMatchObject({ socials: null });
+  });
+
+  it('fechado, nunca a bio nem as redes, mesmo que a resposta traga; campo fora do formato vira null', () => {
+    expect(
+      toFanPublicProfile('fa-rank-05', { ...THALITA, uid: 'fa-rank-05', restricted: true }),
+    ).toEqual({
+      ...THALITA,
+      uid: 'fa-rank-05',
+      restricted: true,
+      bio: null,
+      socials: null,
+    });
+    expect(
+      toFanPublicProfile('fa-x', { displayName: 42, username: '', restricted: 'sim' }),
+    ).toEqual({
+      uid: 'fa-x',
+      displayName: null,
+      username: null,
+      photoURL: null,
+      restricted: false,
+      bio: null,
+      socials: null,
+    });
+  });
+
+  it('com a API, o 404 passa como veio', async () => {
+    mockDataSource = 'api';
+    const notFound = new Error('fan_not_found');
+    get.mockRejectedValue(notFound);
+    await expect(fetchFanProfile('fa-ninguem')).rejects.toBe(notFound);
+  });
+
+  it('nas fixtures, o perfil de exemplo sem chamar a API; o desconhecido dá 404 fan_not_found', async () => {
+    await expect(fetchFanProfile('fa-rank-01')).resolves.toEqual(THALITA);
+    await expect(fetchFanProfile('fa-rank-05')).resolves.toMatchObject({
+      restricted: true,
+      bio: null,
+      socials: null,
+    });
+    await expect(fetchFanProfile('me')).rejects.toMatchObject({
+      status: 404,
+      code: 'fan_not_found',
+    });
+    expect(get).not.toHaveBeenCalled();
   });
 });

@@ -131,7 +131,8 @@ export async function countFanSearchKeys(db: Firestore): Promise<FanSearchBackfi
  * Grava o `searchKeys` dos perfis em que ele falta ou difere, em transações de
  * até 200 perfis: cada uma relê os perfis (o nome pode ter mudado no meio, e
  * o perfil que sumiu não é recriado) e grava só onde ainda difere, sem
- * `updatedAt` (o carimbo de edição do fã, que trava a edição por 10 s). A
+ * `updatedAt` (o carimbo da gravação do primeiro nome pelo fã, a única que a
+ * regra deixa desde o perfil novo, seção 28; o servidor nunca grava). A
  * gravação dispara o gatilho do perfil, que não vê nome nem @ mudados e não
  * faz nada. Rodar de novo não grava nada. Devolve quantos gravou.
  */

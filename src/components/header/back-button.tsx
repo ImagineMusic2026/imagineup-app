@@ -9,9 +9,13 @@ import { borderWidths, colors, layout, opacities } from '@/theme';
 
 /**
  * - `back`: seta, no começo da linha (headers e formulários de conta);
- * - `close`: "×", no fim da linha, para fechar uma sheet.
+ * - `close`: "×", para fechar uma sheet (no fim da linha) ou a tela "Editar
+ *   perfil" (no começo, com `align="start"`).
  */
 export type BackButtonVariant = 'back' | 'close';
+
+/** A ponta do alvo de 44 em que o círculo encosta: a que fica junto da margem da tela. */
+export type BackButtonAlign = 'start' | 'end';
 
 export interface BackButtonProps {
   variant?: BackButtonVariant;
@@ -19,6 +23,8 @@ export interface BackButtonProps {
   onPress?: () => void;
   /** Enquanto uma ação não pode ser deixada no meio (a conta sendo criada). */
   disabled?: boolean;
+  /** Padrão: `start` na seta e `end` no "×" das sheets. */
+  align?: BackButtonAlign;
   style?: StyleProp<ViewStyle>;
 }
 
@@ -31,7 +37,13 @@ const LABELS = { back: 'common.back', close: 'common.close' } as const;
 /** Folga entre o círculo de 36 e a borda de cima e de baixo do alvo de 44. */
 export const BACK_BUTTON_SLACK = (layout.minTouchTarget - layout.headerButtonSize) / 2;
 
-function goBack(): void {
+/**
+ * Volta na pilha ou, sem para onde voltar (link aberto a frio, a tela é a
+ * única da pilha raiz), vai ao início. Toda saída da tela "Editar perfil" (o
+ * X, o "Descartar" e o sucesso do ✓) passa por aqui: um `router.back()` sem
+ * tela embaixo deixaria o fã nela.
+ */
+export function goBack(): void {
   if (router.canGoBack()) router.back();
   else router.replace('/');
 }
@@ -41,12 +53,14 @@ function goBack(): void {
  * formulários de conta, que não têm título; no `close`, o de fechar a sheet. O
  * alvo de 44 é o próprio pressável: no Fabric do iOS o hitSlop fora do pai não
  * recebe toque. O círculo fica colado na ponta do alvo que encosta na margem da
- * tela (começo no voltar, fim no fechar), e a sobra vai para dentro.
+ * tela (por padrão, o começo no voltar e o fim no fechar), e a sobra vai para
+ * dentro.
  */
 export function BackButton({
   variant = 'back',
   onPress = goBack,
   disabled = false,
+  align = variant === 'close' ? 'end' : 'start',
   style,
 }: BackButtonProps) {
   return (
@@ -56,7 +70,7 @@ export function BackButton({
       accessibilityLabel={t(LABELS[variant])}
       style={[
         styles.target,
-        variant === 'close' && styles.trailing,
+        align === 'end' && styles.trailing,
         disabled && styles.inactive,
         style,
       ]}

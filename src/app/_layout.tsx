@@ -74,6 +74,12 @@ export default function RootLayout() {
           <Stack.Screen name="(tabs)" />
           {/* Post fica fora das abas: a tela de comentários tem teclado e não leva tab bar. */}
           <Stack.Screen name="post/[postId]" />
+          {/* Perfil público de outro fã, aberto pelo ranking e pelos comentários:
+              tela empilhada, sem tab bar, no modelo do post. */}
+          <Stack.Screen name="fa/[fanId]" />
+          {/* "Editar perfil" fora das abas, com o header fixo (X, título e ✓). Push
+              padrão: o "sem animação" de reduzir movimento vem da pilha. */}
+          <Stack.Screen name="editar-perfil" />
           {/* "Gerar meu link" na altura do conteúdo: o link, as regras e o botão
               aparecem sem o fã puxar a sheet. */}
           <Stack.Screen

@@ -168,19 +168,57 @@ describe('pódio', () => {
     expect(first - second).toBeGreaterThanOrEqual(16);
   });
 
+  it('com onOpen, a coluna de outro fã é um botão que abre o perfil; a escada e a ordem não mudam', () => {
+    const onOpen = jest.fn();
+    render(
+      <Podium
+        entries={PODIUM.slice(0, 2)}
+        self={SELF}
+        leaderTitle={null}
+        onOpen={onOpen}
+        testID="podium"
+      />,
+    );
+
+    // Três rótulos, na ordem 1, 2, 3: o de fora só anima, o de dentro tem o rótulo.
+    expect(screen.getAllByLabelText(/lugar/).map((node) => node.props.accessibilityLabel)).toEqual([
+      '1º lugar, Thalita S., 9.140 pontos, Líder da temporada',
+      '2º lugar, Davi L., 7.902 pontos',
+      '3º lugar, vago',
+    ]);
+    const first = screen.getByRole('button', {
+      name: '1º lugar, Thalita S., 9.140 pontos, Líder da temporada',
+    });
+    expect(first.props.accessibilityHint).toBe('Abre o perfil de Thalita S.');
+    // A vaga continua estática.
+    expect(screen.queryByRole('button', { name: '3º lugar, vago' })).toBeNull();
+    expect(nestedPressables()).toEqual([]);
+    // O `translateX` fica no `Animated.View` de fora, e o `scale` do toque, no de dentro.
+    expect(translateX(screen.getByTestId('podium-1'))).toBeGreaterThan(0);
+    expect(translateX(screen.getByTestId('podium-2'))).toBeLessThan(0);
+
+    fireEvent.press(first);
+    expect(onOpen).toHaveBeenCalledWith(PODIUM[0]);
+    expect(haptics.trigger).toHaveBeenCalledWith('tap');
+  });
+
   it('o próprio fã no pódio aparece como "Você"', () => {
     const withMe = [
       PODIUM[0],
       entry({ position: 2, userId: 'me', displayName: null, isMe: true, points: 7_902 }),
       PODIUM[2],
     ].filter((item): item is LeaderboardEntry => item !== undefined);
-    render(<Podium entries={withMe} self={SELF} leaderTitle={null} />);
+    const onOpen = jest.fn();
+    render(<Podium entries={withMe} self={SELF} leaderTitle={null} onOpen={onOpen} />);
     expect(screen.getByLabelText('2º lugar, Você, 7.902 pontos')).toBeTruthy();
+    // A coluna "Você" não abre perfil nenhum: fica estática, com o rótulo.
+    expect(screen.queryByRole('button', { name: '2º lugar, Você, 7.902 pontos' })).toBeNull();
+    expect(screen.getAllByRole('button')).toHaveLength(2);
   });
 });
 
 describe('linha do ranking', () => {
-  it('é um elemento só, com a variação por extenso, e não é tocável', () => {
+  it('sem onPress, é um elemento só, com a variação por extenso, e não é tocável', () => {
     render(<RankingRow entry={entry({})} self={SELF} />);
 
     expect(
@@ -189,6 +227,38 @@ describe('linha do ranking', () => {
     expect(screen.queryByRole('button')).toBeNull();
     // A seta e o número moram dentro do elemento da linha. Subida em branco cheio.
     expect(textColor(screen.getByText('3', hidden))).toBe(colors.text);
+  });
+
+  it('com onPress, a linha de outro fã é um botão só, com a dica, e os pontos ficam dentro, ocultos', () => {
+    const onPress = jest.fn();
+    render(<RankingRow entry={entry({})} self={SELF} onPress={onPress} testID="row" />);
+
+    const row = screen.getByRole('button', {
+      name: '4º, Maria Clara Souza, Salvador, BA, 6.844 pontos, subiu 3 posições',
+    });
+    expect(row.props.accessibilityHint).toBe('Abre o perfil de Maria Clara Souza');
+    // Os pontos e a seta, no `trailing`, fora do leitor e do toque.
+    const trailing = screen.getByTestId('row-trailing', hidden);
+    expect(trailing.props.importantForAccessibility).toBe('no-hide-descendants');
+    expect(trailing.props.pointerEvents).toBe('none');
+    expect(nestedPressables()).toEqual([]);
+
+    fireEvent.press(row);
+    expect(onPress).toHaveBeenCalledTimes(1);
+    expect(haptics.trigger).toHaveBeenCalledWith('tap');
+  });
+
+  it('a linha "Você" fica estática mesmo com onPress', () => {
+    const onPress = jest.fn();
+    render(
+      <RankingRow
+        entry={entry({ position: 12, userId: 'me', displayName: null, isMe: true })}
+        self={SELF}
+        onPress={onPress}
+      />,
+    );
+    expect(screen.getByLabelText(/^12º, Você/)).toBeTruthy();
+    expect(screen.queryByRole('button')).toBeNull();
   });
 
   it('sem cidade e sem variação, mostra só o nome e os pontos', () => {

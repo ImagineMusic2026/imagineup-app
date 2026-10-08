@@ -28,6 +28,11 @@ export interface TopFansCardProps {
   self: RankingSelf;
   /** "Ver ranking": escolhe a aba Ranking desta página e rola até as abas. */
   onSeeRanking: () => void;
+  /**
+   * Abre o perfil público do fã de um lugar (seção 28). Não vale no lugar do
+   * próprio fã nem na vaga, que ficam estáticos.
+   */
+  onOpenFan?: (entry: LeaderboardEntry) => void;
   /** O título, para levar o foco do leitor de tela até ele (o Mural escolhido pela barra grudada). */
   titleRef?: Ref<TextInstance>;
 }
@@ -36,7 +41,17 @@ function placeLabel(position: number): string {
   return t('ranking.a11y.place', { position });
 }
 
-function FanCell({ entry, self }: { entry: LeaderboardEntry; self: RankingSelf }) {
+interface FanCellProps {
+  entry: LeaderboardEntry;
+  self: RankingSelf;
+  onOpen?: (entry: LeaderboardEntry) => void;
+}
+
+/**
+ * Um lugar: um elemento só para o leitor. O de outro fã, com `onOpen`, é um
+ * botão só (o `Card` pressável), que abre o perfil dele, com a dica.
+ */
+function FanCell({ entry, self, onOpen }: FanCellProps) {
   const first = entry.position === 1;
   const person = entry.isMe
     ? self
@@ -46,6 +61,7 @@ function FanCell({ entry, self }: { entry: LeaderboardEntry; self: RankingSelf }
   const label = entry.isMe
     ? t('artist.topFans.cellMe', { place: placeLabel(entry.position), points })
     : t('artist.topFans.cell', { place: placeLabel(entry.position), name, points });
+  const open = !entry.isMe && onOpen ? () => onOpen(entry) : undefined;
 
   return (
     <Card
@@ -53,6 +69,8 @@ function FanCell({ entry, self }: { entry: LeaderboardEntry; self: RankingSelf }
       highlight={first}
       accessible
       accessibilityLabel={label}
+      accessibilityHint={open ? t('fanProfile.openHint', { name }) : undefined}
+      onPress={open}
       testID={`artist-top-fan-${entry.position}`}
       style={styles.cell}
     >
@@ -132,10 +150,18 @@ function LoadingCells() {
  * "Top fãs da temporada" da página do artista (1d): os três primeiros do
  * ranking da temporada na central, a mesma fonte da aba Ranking e da 1f (o
  * protótipo diz "da semana", mas os números são os da temporada, e o título
- * acompanha). O 1º em lima. Cada lugar é um elemento só para o leitor. Com
- * erro, quem chama não mostra o card; o resto da página continua.
+ * acompanha). O 1º em lima. Cada lugar é um elemento só para o leitor; com
+ * `onOpenFan`, o de outro fã abre o perfil público dele (seção 28). Com erro,
+ * quem chama não mostra o card; o resto da página continua.
  */
-export function TopFansCard({ entries, state, self, onSeeRanking, titleRef }: TopFansCardProps) {
+export function TopFansCard({
+  entries,
+  state,
+  self,
+  onSeeRanking,
+  onOpenFan,
+  titleRef,
+}: TopFansCardProps) {
   const byPlace = new Map(entries.map((entry) => [entry.position, entry]));
 
   return (
@@ -169,7 +195,7 @@ export function TopFansCard({ entries, state, self, onSeeRanking, titleRef }: To
           {PLACES.map((place) => {
             const entry = byPlace.get(place);
             return entry ? (
-              <FanCell key={place} entry={entry} self={self} />
+              <FanCell key={place} entry={entry} self={self} onOpen={onOpenFan} />
             ) : (
               <VacantCell key={place} position={place} />
             );

@@ -228,7 +228,9 @@ describe('o perfil e o vínculo com as centrais', () => {
     await assertFails(getDoc(doc(as('uid-camila'), 'users/uid-alan')));
     await assertSucceeds(getDoc(doc(as('editora'), 'users/uid-camila')));
     await assertFails(getDoc(doc(as('artistas'), 'users/uid-camila')));
-    await assertSucceeds(
+    // Desde o perfil novo (docs/arquitetura-api.md, seção 28), o nome vai pela
+    // API: o fã com nome não grava o próprio perfil pelo celular.
+    await assertFails(
       updateDoc(doc(as('uid-camila'), 'users/uid-camila'), {
         displayName: 'Camila R.',
         updatedAt: serverTimestamp(),

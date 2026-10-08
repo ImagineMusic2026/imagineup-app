@@ -4,9 +4,8 @@ import { StyleSheet, useWindowDimensions, View } from 'react-native';
 import { Button } from '@/components/button';
 import { PhotoCard } from '@/components/photo-card';
 import { Text } from '@/components/text';
-import { colors, layout, radii, spacing } from '@/theme';
+import { colors, LARGE_TEXT_SCALE, layout, radii, spacing } from '@/theme';
 
-import { LARGE_TEXT_SCALE } from '../consts';
 import { eventDateBadge, eventMeta, featuredEventLabel, inviteButtonText } from '../describe-event';
 import type { AgendaEvent } from '../types';
 import { DateBadge } from './date-badge';

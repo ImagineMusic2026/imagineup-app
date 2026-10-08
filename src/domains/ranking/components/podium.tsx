@@ -14,6 +14,7 @@ import Animated, {
   withSpring,
 } from 'react-native-reanimated';
 
+import { PressableScale } from '@/components/pressable-scale';
 import { maxFontScaleOf, Text } from '@/components/text';
 import { usePrefersReducedMotion } from '@/hooks/use-prefers-reduced-motion';
 import { t } from '@/i18n';
@@ -75,6 +76,8 @@ export interface PodiumProps {
   leaderTitle: string | null;
   /** A coluna do próprio fã, quando ele está no pódio (o card "Você" leva o foco até ela). */
   meRef?: Ref<View>;
+  /** Abre o perfil público do fã de uma coluna (seção 28); não vale na coluna "Você" nem na vaga. */
+  onOpen?: (entry: LeaderboardEntry) => void;
   style?: StyleProp<ViewStyle>;
   testID?: string;
 }
@@ -160,6 +163,7 @@ interface ColumnProps {
   largeText: boolean;
   onContentHeight: (place: Place, height: number) => void;
   meRef?: Ref<View>;
+  onOpen?: (entry: LeaderboardEntry) => void;
   testID?: string;
 }
 
@@ -173,6 +177,7 @@ function PodiumColumn({
   largeText,
   onContentHeight,
   meRef,
+  onOpen,
   testID,
 }: ColumnProps) {
   const progress = useRise(place);
@@ -189,14 +194,9 @@ function PodiumColumn({
     };
   });
 
-  return (
-    <Animated.View
-      ref={entry?.isMe ? meRef : undefined}
-      accessible
-      accessibilityLabel={describePodium(place, entry, name, first ? title : null)}
-      testID={testID}
-      style={[{ flex: COLUMN_FLEX[place] }, animatedStyle]}
-    >
+  const label = describePodium(place, entry, name, first ? title : null);
+  const body = (
+    <>
       <View style={styles.avatarSlot}>
         {entry ? (
           <EntryAvatar
@@ -260,6 +260,28 @@ function PodiumColumn({
           ) : null}
         </View>
       </View>
+    </>
+  );
+
+  // O `Animated.View` de fora só anima (a subida e o lugar na tela): o
+  // `scale` do pressável no mesmo elemento trocaria o `translateX`. Dentro,
+  // um foco por coluna: o botão que abre o perfil de outro fã, ou o elemento
+  // com o rótulo na coluna "Você" (com o `meRef`) e na vaga.
+  return (
+    <Animated.View testID={testID} style={[{ flex: COLUMN_FLEX[place] }, animatedStyle]}>
+      {entry && !entry.isMe && onOpen ? (
+        <PressableScale
+          onPress={() => onOpen(entry)}
+          accessibilityLabel={label}
+          accessibilityHint={t('fanProfile.openHint', { name })}
+        >
+          {body}
+        </PressableScale>
+      ) : (
+        <View ref={entry?.isMe ? meRef : undefined} accessible accessibilityLabel={label}>
+          {body}
+        </View>
+      )}
     </Animated.View>
   );
 }
@@ -279,9 +301,11 @@ function vacantSize(size: number): ViewStyle {
  *
  * O leitor de tela lê 1º, 2º e 3º, não a ordem da tela: as colunas ficam
  * nessa ordem na árvore, e o 1º e o 2º trocam de lugar só no desenho
- * (`translateX`, que não mexe no layout). Cada coluna é um elemento só.
+ * (`translateX`, que não mexe no layout). Cada coluna é um elemento só; com
+ * `onOpen`, a coluna de outro fã é um botão que abre o perfil público dele
+ * (seção 28), e a do próprio fã e as vagas seguem estáticas.
  */
-export function Podium({ entries, self, leaderTitle, meRef, style, testID }: PodiumProps) {
+export function Podium({ entries, self, leaderTitle, meRef, onOpen, style, testID }: PodiumProps) {
   const { width: windowWidth, fontScale } = useWindowDimensions();
   // Começa na largura da tela menos as margens; o onLayout corrige.
   const [width, setWidth] = useState(windowWidth - spacing.gutter * 2);
@@ -330,6 +354,7 @@ export function Podium({ entries, self, leaderTitle, meRef, style, testID }: Pod
           largeText={fontScale >= LARGE_TEXT_SCALE}
           onContentHeight={onContentHeight}
           meRef={meRef}
+          onOpen={onOpen}
           testID={testID ? `${testID}-${place}` : undefined}
         />
       ))}

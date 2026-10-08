@@ -78,6 +78,12 @@ interface PressableRowBase {
    * ocupada, já que o indicador do `trailing` fica fora dele.
    */
   busy?: boolean;
+  /**
+   * Estado que a linha diz ao leitor, somado ao `busy`: o `checked` da linha
+   * com papel `switch` (a conta privada) e o `expanded` da que abre opções
+   * embaixo (o gênero), na tela "Editar perfil".
+   */
+  accessibilityState?: AccessibilityState;
   accessibilityGroup?: never;
 }
 
@@ -102,6 +108,7 @@ interface StaticRow extends RowLabel {
   haptic?: never;
   busy?: never;
   accessibilityRole?: never;
+  accessibilityState?: never;
   /**
    * O que o leitor lê como um elemento só:
    * - `row` (padrão): a linha inteira (ranking 1f, missão concluída);
@@ -155,9 +162,14 @@ export function ListRow(props: ListRowProps) {
   const pressable = props.onPress !== undefined;
   const group = pressable ? 'row' : (props.accessibilityGroup ?? 'row');
   // Só a linha estática bloqueada se diz desativada. A pressável responde ao
-  // toque, e o TalkBack nem entrega a ação a um nó desativado.
+  // toque, e o TalkBack nem entrega a ação a um nó desativado. Na pressável, o
+  // ocupado soma com o estado de quem chama (marcado, aberto).
   const accessibilityState: AccessibilityState | undefined =
-    locked && !pressable ? { disabled: true } : props.busy ? { busy: true } : undefined;
+    locked && !pressable
+      ? { disabled: true }
+      : props.busy || props.accessibilityState
+        ? { ...(props.busy ? { busy: true } : null), ...props.accessibilityState }
+        : undefined;
   const gapStyle = [gapStyles[variant], gap ? gapFor(gap) : null];
 
   // O rótulo vai para quem o leitor foca: a linha, ou só o bloco de conteúdo.

@@ -316,6 +316,21 @@ describe('ranking (1f)', () => {
     expect(meCard().props.accessibilityElementsHidden).toBe(false);
   });
 
+  it('a linha e a coluna do pódio de outro fã são botões que abrem o perfil (seção 28)', async () => {
+    renderRouter(appTree, { initialUrl: '/ranking' });
+
+    const first = await screen.findByRole('button', { name: PODIUM[0] });
+    expect(first.props.accessibilityHint).toBe('Abre o perfil de Thalita S.');
+    const row = screen.getByRole('button', {
+      name: '4º, Maria Clara Souza, Salvador, BA, 6.844 pontos, subiu 3 posições',
+    });
+    expect(row.props.accessibilityHint).toBe('Abre o perfil de Maria Clara Souza');
+    // Os três lugares continuam na ordem 1, 2, 3, um foco por coluna.
+    expect(
+      screen.getAllByLabelText(/^\dº lugar/).map((node) => node.props.accessibilityLabel),
+    ).toEqual(PODIUM);
+  });
+
   it('trocar de chip busca o ranking daquela central, com o toque de seleção', async () => {
     const view = renderRouter(appTree, { initialUrl: '/ranking' });
     await screen.findByRole('button', { name: ME_GLOBAL });
@@ -402,6 +417,8 @@ describe('ranking (1f)', () => {
     const mine = await screen.findByLabelText('41º, Você, 2.980 pontos');
     await waitFor(() => expect(focused()).toEqual([mine.props.accessibilityLabel]));
     expect(meCard().props.accessibilityElementsHidden).toBe(true);
+    // A linha "Você" não abre perfil: fica estática, com o foco.
+    expect(screen.queryByRole('button', { name: '41º, Você, 2.980 pontos' })).toBeNull();
 
     // Rolando de volta para cima, o card volta.
     act(() => scrollListTo(0));
@@ -738,6 +755,9 @@ describe('ranking (1f) com a resposta do servidor', () => {
     renderRouter(appTree, { initialUrl: '/ranking' });
 
     expect(await screen.findByLabelText('2º lugar, Você, 7.902 pontos')).toBeTruthy();
+    // A coluna "Você" fica estática; as dos outros abrem o perfil.
+    expect(screen.queryByRole('button', { name: '2º lugar, Você, 7.902 pontos' })).toBeNull();
+    expect(screen.getByRole('button', { name: /^1º lugar, Ana L\./ })).toBeTruthy();
     const card = await screen.findByRole('button', {
       name: 'Você, 2º lugar, 7.902 pontos. No pódio da temporada.',
     });

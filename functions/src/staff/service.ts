@@ -149,6 +149,7 @@ export type AuditAction =
   | 'fan.email.lookup'
   | 'fan.username.reset'
   | 'fan.photo.removed'
+  | 'fan.profile.cleared'
   | 'fan.suspended'
   | 'fan.unsuspended'
   | 'fan.comments.hidden'

@@ -22,23 +22,34 @@ export const API_ERROR_CODES = {
   soldOut: 'sold_out',
 } as const;
 
+/** O `details` do corpo do erro: o campo do `profile_invalid`, a ação do teto do dia (429). */
+export type ApiErrorDetails = Readonly<Record<string, unknown>>;
+
 /** Erro único que telas e hooks tratam, venha de onde vier. */
 export class ApiError extends Error {
   readonly kind: ApiErrorKind;
   readonly status: number | null;
   readonly code: string | null;
+  /**
+   * O objeto `details` do corpo do erro, ou `null` (sem corpo, ou o campo
+   * ausente ou fora do formato). A tela de editar o perfil lê o campo do
+   * `profile_invalid` e a ação do 429 (seção 28 de docs/arquitetura-api.md).
+   */
+  readonly details: ApiErrorDetails | null;
 
   constructor(
     kind: ApiErrorKind,
     message: string,
     status: number | null = null,
     code: string | null = null,
+    details: ApiErrorDetails | null = null,
   ) {
     super(message);
     this.name = 'ApiError';
     this.kind = kind;
     this.status = status;
     this.code = code;
+    this.details = details;
   }
 
   /** Erros de cliente (4xx) não melhoram tentando de novo. */
@@ -56,9 +67,16 @@ function kindFromStatus(status: number): ApiErrorKind {
   return 'unknown';
 }
 
+/** O `details` do corpo, só quando é um objeto. */
+function detailsOf(value: unknown): ApiErrorDetails | null {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+    ? (value as ApiErrorDetails)
+    : null;
+}
+
 export function toApiError(error: unknown): ApiError {
   if (error instanceof ApiError) return error;
-  if (isAxiosError<{ code?: string; message?: string }>(error)) {
+  if (isAxiosError<{ code?: string; message?: string; details?: unknown }>(error)) {
     if (error.code === 'ECONNABORTED' || error.code === 'ETIMEDOUT') {
       return new ApiError('timeout', error.message);
     }
@@ -69,6 +87,7 @@ export function toApiError(error: unknown): ApiError {
       data?.message ?? error.message,
       status,
       data?.code ?? null,
+      detailsOf(data?.details),
     );
   }
   return new ApiError('unknown', error instanceof Error ? error.message : String(error));

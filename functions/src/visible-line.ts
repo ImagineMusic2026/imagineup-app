@@ -43,6 +43,18 @@ export function isVisibleLine(text: string): boolean {
 const BIDI_ISOLATES = /[⁦-⁩]/g;
 
 /**
+ * Prepara um texto de uma linha digitado pelo fã (o nome e a cidade do
+ * `PUT /me/profile`, seção 28) para ser validado e gravado: tira os isolantes
+ * bidi do texto colado, junta os acentos (NFC, como a função de cadastro faz)
+ * e corta os espaços das pontas. O que sobra no meio continua sendo validado
+ * (`isVisibleLine`). Espelho do `cleanLine` do app (src/utils/visible-line.ts):
+ * mudou um, mude o outro e a tabela dos dois testes.
+ */
+export function cleanLine(text: string): string {
+  return text.replace(BIDI_ISOLATES, '').normalize('NFC').trim();
+}
+
+/**
  * Prepara um texto de várias linhas (o comentário do fã, a legenda de um
  * post), nesta ordem: tira os isolantes bidi colados; junta os acentos (NFC);
  * troca `\r\n` e `\r` por `\n`; tira os espaços das pontas de cada linha;

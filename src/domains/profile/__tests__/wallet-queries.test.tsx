@@ -90,7 +90,7 @@ describe('carteira na API', () => {
   });
 });
 
-describe('carteira nas fixtures (builds de hoje)', () => {
+describe('carteira nas fixtures (build sem a API)', () => {
   it('lê a carteira de exemplo, sem rede, e fica fora do disco', async () => {
     mockWalletSource = 'fixtures';
     onlineManager.setOnline(false);

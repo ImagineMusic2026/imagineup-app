@@ -29,6 +29,22 @@ describe('Glyph', () => {
     expect(glyphPath()?.props.stroke).toBeUndefined();
   });
 
+  it.each(['instagram', 'tiktok', 'linkedin', 'x'] as const)(
+    'a marca %s é cheia, na cor de quem usa (nunca a da marca), e decorativa',
+    (name) => {
+      render(<Glyph name={name} size={18} color={colors.textMuted} />);
+      expect(isHiddenFromAccessibility(screen.root)).toBe(true);
+      expect(screen.root).toHaveProp('width', 18);
+      const paths = screen.root.findAll((node) => node.type === Path);
+      expect(paths.length).toBeGreaterThan(0);
+      for (const path of paths) {
+        expect(path.props.fill).toBe(colors.textMuted);
+        expect(path.props.stroke).toBeUndefined();
+        expect(path.props.d.length).toBeGreaterThan(20);
+      }
+    },
+  );
+
   it('a taça tem o copo cheio e o pé em traço, na mesma cor', () => {
     render(<Glyph name="goblet" size={24} color={colors.points} />);
     const [cup, stem] = screen.root.findAll((node) => node.type === Path);

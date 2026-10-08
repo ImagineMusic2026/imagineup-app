@@ -84,7 +84,7 @@ describe('cadastro (onUserCreated)', () => {
       photoURL: null,
     });
     expect(profile.createdAt).toBeInstanceOf(Timestamp);
-    // updatedAt é o carimbo de edição do fã: se o servidor gravasse, ele ficaria 10 s travado.
+    // updatedAt é só o carimbo da gravação do primeiro nome pelo fã (seção 28): o servidor nunca grava.
     expect(profile).not.toHaveProperty('updatedAt');
     expect(await reservationsOf(user.uid)).toEqual(['camilarib']);
   });

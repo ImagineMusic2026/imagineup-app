@@ -32,12 +32,3 @@ export const BRAZIL_STATE_NAMES: Readonly<Record<string, string>> = {
   SE: 'Sergipe',
   TO: 'Tocantins',
 };
-
-/**
- * Fonte do sistema a partir da qual a agenda deixa de cortar texto: a linha
- * põe o "Eu vou" embaixo do título, e os títulos quebram inteiros. É a maior
- * fonte do Android sem a ampliação de acessibilidade (1,3); daí para cima, o
- * "Confirmado" ao lado deixaria menos de uma palavra por linha para o título
- * num aparelho de 360.
- */
-export const LARGE_TEXT_SCALE = 1.3;

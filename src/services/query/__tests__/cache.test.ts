@@ -7,7 +7,7 @@ import { persistOptions, shouldPersistQuery } from '../persister';
 
 // Sem API e sem emulador, em vez de lidos do ambiente: com EXPO_PUBLIC_API_URL
 // preenchida (CI, depois do deploy), estes testes continuam falando do modo
-// fixtures, o das builds de hoje.
+// fixtures, o das builds sem a variável.
 jest.mock('@/config/server', () => ({
   ...jest.requireActual('@/config/server'),
   apiUrl: undefined,

@@ -2,30 +2,38 @@ import {
   changeUsername,
   normalizeUsername,
   parseFanPhotoPath,
+  parseProfileChanges,
   ProfileEditError,
   readUsernameAvailability,
   removeFanPhoto,
   reservePhotoUpload,
   setFanPhoto,
+  updateFanProfile,
   USERNAME_INPUT_MAX,
   USERNAME_PATTERN,
 } from '../../fan-profile';
 import type {
+  EditableProfile,
   PhotoChange,
   PhotoUploadSlot,
+  ProfileChanges,
   UsernameAvailability,
   UsernameChange,
 } from '../contract';
 import { apiError } from '../errors';
 import type { ApiRoute, RouteInput } from '../types';
 
-// Rotas do bloco 9: o @ escolhido pelo fã (a disponibilidade enquanto ele
-// digita e a troca) e a foto do perfil (conferir e gravar o arquivo que o app
-// enviou ao Storage, ou tirar). Desde a proteção contra abuso (27.4), também a
-// vaga do envio, pedida antes de o app subir o arquivo. As quatro que gravam
-// rodam no runIdempotent, com o perfil exigido e lido na transação (o
-// `profile` do contexto). Nome e cidade não passam por aqui: o app grava
-// direto no Firestore, pelas regras. docs/arquitetura-api.md, seção 24.
+// Rotas do perfil do fã. Desde o perfil novo (seção 28), toda a edição passa
+// por aqui: o `PUT /me/profile` grava nome, @, bio, cidade, gênero, conta
+// privada e redes num pedido só, com os tetos do dia, e as regras fecham a
+// gravação direta (só o primeiro nome do perfil sem nome fica no cliente). Do
+// bloco 9 ficam a disponibilidade do @ enquanto o fã digita, o
+// `PUT /me/username` (o app novo não chama; fica para o APK de antes, com o
+// mesmo núcleo) e a foto (conferir e gravar o arquivo que o app enviou ao
+// Storage, ou tirar); desde a proteção contra abuso (27.4), também a vaga do
+// envio, pedida antes de o app subir o arquivo. As que gravam rodam no
+// runIdempotent, com o perfil exigido e lido na transação (o `profile` do
+// contexto). docs/arquitetura-api.md, seções 24 e 28.
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -48,6 +56,17 @@ function bodyUsername(input: RouteInput): string {
   return username;
 }
 
+/**
+ * O corpo do `PUT /me/profile` conferido e limpo (`parseProfileChanges`), sem
+ * leitura: o malformado é 400 `invalid_request` com o campo, e o fora da regra
+ * lança `profile_invalid` ou `username_invalid`.
+ */
+function bodyChanges(input: RouteInput): ProfileChanges {
+  const parsed = parseProfileChanges(input.body);
+  if (!parsed.ok) throw apiError('invalid_request', { field: parsed.field });
+  return parsed.value;
+}
+
 /** O caminho do corpo do `PUT /me/photo`; fora do formato da pasta do fã, 400 `photo_invalid`. */
 function bodyPath(input: RouteInput): string {
   if (!isRecord(input.body) || typeof input.body.path !== 'string') {
@@ -59,6 +78,25 @@ function bodyPath(input: RouteInput): string {
 }
 
 export const profileRoutes: ApiRoute[] = [
+  {
+    // A edição inteira (seção 28): só o que mudou, numa transação. O suspenso
+    // recebe 403 (sem `allowSuspended`); sem diferença, o perfil de agora,
+    // sem gravar e sem contar no teto.
+    method: 'PUT',
+    pattern: '/me/profile',
+    writes: true,
+    validate: (input) => void bodyChanges(input),
+    async handle(ctx) {
+      const { body, plan } = await updateFanProfile(ctx.tx, ctx.deps.db, {
+        fan: ctx.fan,
+        award: ctx.award,
+        profile: ctx.profile,
+        changes: bodyChanges(ctx),
+      });
+      const result: EditableProfile = body;
+      return { body: result, plan };
+    },
+  },
   {
     // Enquanto o fã digita: só lê (0 ou 1 leitura), sem chave e sem exigir o perfil.
     method: 'GET',

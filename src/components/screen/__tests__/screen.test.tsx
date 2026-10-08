@@ -6,7 +6,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { Text } from '@/components/text';
 import { t } from '@/i18n';
-import { colors } from '@/theme';
+import { colors, spacing } from '@/theme';
 
 import { Screen } from '..';
 
@@ -144,6 +144,36 @@ describe('Screen', () => {
     });
     // Os dois juntos somariam o espaço do teclado.
     expect(screen.UNSAFE_getByType(KeyboardAvoidingView).props.enabled).toBe(false);
+  });
+
+  it('o header fica fora da rolagem, acima dela e do aviso de offline, com a margem da tela', () => {
+    goOffline();
+    renderScreen(
+      <Screen scroll header={<Text>Título fixo</Text>}>
+        <Text>Formulário</Text>
+      </Screen>,
+    );
+    const scroll = screen.UNSAFE_getByType(ScrollView);
+    expect(scroll.findAll((node) => node.props.children === 'Título fixo')).toHaveLength(0);
+    expect(scroll.findAll((node) => node.props.children === 'Formulário').length).toBeGreaterThan(
+      0,
+    );
+    const frame = hostParent(screen.getByText('Título fixo'))!;
+    expect(frame).toHaveStyle({ paddingHorizontal: spacing.gutter });
+    // Na ordem: o header, o aviso e só então a rolagem.
+    const order = screen.root.findAll(
+      (node) =>
+        typeof node.type === 'string' &&
+        (node.props.children === 'Título fixo' ||
+          node.props.children === t('offline.banner') ||
+          node.props.children === 'Formulário'),
+      { deep: true },
+    );
+    expect(order.map((node) => node.props.children)).toEqual([
+      'Título fixo',
+      t('offline.banner'),
+      'Formulário',
+    ]);
   });
 
   it('online, nenhum aviso aparece', () => {

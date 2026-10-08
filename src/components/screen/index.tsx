@@ -26,6 +26,13 @@ export interface ScreenProps {
   /** Respeita a área segura de cima. Desligue quando a tela começa com imagem sob a barra de status. */
   safeTop?: boolean;
   /**
+   * Header fixo acima da rolagem, dentro da área segura e com a margem
+   * lateral da tela (o X, o título e o ✓ da tela "Editar perfil"): o conteúdo
+   * rola por baixo dele, e o tratamento de teclado da rolagem continua. O
+   * aviso de offline fica logo abaixo dele.
+   */
+  header?: ReactNode;
+  /**
    * Camada presa ao y 0 da tela (sob a barra de status), atrás do conteúdo e
    * parada quando ele rola, como o brilho do Perfil e do Ranking (`PageGlow`).
    * Não recebe toque.
@@ -57,6 +64,7 @@ export function Screen({
   padded = true,
   bottomInset = 0,
   safeTop = true,
+  header,
   backdrop,
   bannerTop,
   transparent = false,
@@ -82,6 +90,7 @@ export function Screen({
           {backdrop}
         </View>
       ) : null}
+      {header ? <View style={padded && styles.padded}>{header}</View> : null}
       {floatingBanner ? null : <OfflineBanner />}
       {scroll ? (
         // Android: com edge-to-edge (obrigatório) a janela não encolhe com o

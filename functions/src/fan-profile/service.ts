@@ -2,6 +2,7 @@ import {
   FieldPath,
   Timestamp,
   type DocumentData,
+  type DocumentReference,
   type DocumentSnapshot,
   type Firestore,
   type QueryDocumentSnapshot,
@@ -10,10 +11,26 @@ import {
 } from 'firebase-admin/firestore';
 import * as logger from 'firebase-functions/logger';
 
+import type { EditableProfile, FanPublicProfile, ProfileChanges } from '../api/contract';
 import { removeFiles, type LeftoverFile } from '../artists/files';
 import { countDailyAction, enforceDailyCap } from '../moderation/caps';
-import { planAwards, type AwardContext, type AwardPlan, type FanContext } from '../points/award';
+import { blockedOf } from '../moderation/model';
+import { blockListRef } from '../moderation/store';
+import {
+  isSuspendedProfile,
+  planAwards,
+  type AwardContext,
+  type AwardPlan,
+  type FanContext,
+} from '../points/award';
 import { randomDigits, usernameCandidates, type RandomDigits } from '../profile';
+import {
+  editableProfileOf,
+  hasProfileChanges,
+  profileDiff,
+  profileUpdateOf,
+  publicProfileOf,
+} from './details';
 import { isMissingBucket, type FanPhotoFiles } from './files';
 import {
   authorCopies,
@@ -32,7 +49,7 @@ import {
   PROFILE_SYNC_PAGE,
   ProfileEditError,
   stalePhotoFiles,
-  usernameChangeAllowed,
+  usernameChangeProblem,
   usernameRefusal,
   UsernameReleaseError,
   USERNAME_PATTERN,
@@ -42,7 +59,9 @@ import {
 // (as duas reservas e o perfil numa transação), a foto conferida e gravada
 // pela API, a limpeza da foto trocada, a tarefa que acerta as cópias do nome e
 // da foto nos comentários e varre a pasta, e a pasta que sai na exclusão de
-// conta. docs/arquitetura-api.md, 24.4, 24.7 e 24.11.
+// conta. docs/arquitetura-api.md, 24.4, 24.7 e 24.11. Desde o perfil novo
+// (seção 28), a edição inteira num pedido (`updateFanProfile`, com o @ junto)
+// e o perfil público de outro fã (`readFanPublicProfile`).
 
 type Log = Pick<typeof logger, 'info' | 'warn' | 'error'>;
 
@@ -94,12 +113,78 @@ export async function readUsernameAvailability(
   return { username, status: reservation.exists ? 'taken' : 'available' };
 }
 
+/** As reservas da troca do @, lidas na transação (`readUsernameSwap`). */
+export type UsernameSwap = {
+  /** O @ novo, já normalizado. */
+  username: string;
+  nextRef: DocumentReference;
+  /** A reserva nova ainda não existe (a com o uid deste fã é sobra de uma falha antiga). */
+  createNext: boolean;
+  /** A reserva antiga quando é deste fã; a de uma central (sem uid) nunca sai. */
+  releaseRef: DocumentReference | null;
+};
+
+/** Os campos do perfil que a troca do @ grava (no `tx.update` de quem chama). */
+export type UsernameSwapFields = {
+  username: string;
+  usernameChangedAt: Timestamp;
+  usernameChangeableAt: Timestamp;
+};
+
+/**
+ * As duas reservas da troca do @ (a nova e a de agora) num `tx.getAll` só. A
+ * nova de outro fã ou de uma central é 409 `username_taken`; a nova com o uid
+ * deste fã segue sem criar (24.4). Só lê: quem chama grava depois.
+ */
+export async function readUsernameSwap(
+  tx: Transaction,
+  db: Firestore,
+  uid: string,
+  current: string | null,
+  username: string,
+): Promise<UsernameSwap> {
+  const nextRef = usernameRef(db, username);
+  const currentRef = current ? usernameRef(db, current) : null;
+  const [next, old] = await tx.getAll(nextRef, ...(currentRef ? [currentRef] : []));
+  if (next!.exists && !reservedBy(next!, uid)) throw new ProfileEditError('username_taken');
+  return {
+    username,
+    nextRef,
+    createNext: !next!.exists,
+    releaseRef: currentRef && old && reservedBy(old, uid) ? currentRef : null,
+  };
+}
+
+/**
+ * Grava as reservas da troca (cria a nova e apaga a antiga, só se for deste
+ * fã) e devolve os campos do perfil, sem gravar o perfil: quem chama junta
+ * tudo num `tx.update` só (um por documento na transação).
+ */
+export function writeUsernameSwap(
+  tx: Transaction,
+  uid: string,
+  swap: UsernameSwap,
+  now: number,
+): UsernameSwapFields {
+  if (swap.createNext) tx.create(swap.nextRef, { uid, createdAt: Timestamp.fromMillis(now) });
+  if (swap.releaseRef) tx.delete(swap.releaseRef);
+  return {
+    username: swap.username,
+    usernameChangedAt: Timestamp.fromMillis(now),
+    usernameChangeableAt: Timestamp.fromMillis(nextUsernameChange(now)),
+  };
+}
+
 /**
  * `PUT /me/username` (24.4), dentro do runIdempotent: o @ de agora e o prazo
  * saem do retrato do perfil que ele já leu. O @ igual ao de agora responde o
  * de agora, sem gravar e sem mexer no prazo. Senão: reservado ou automático
  * (400), antes do prazo (409), de outro fã ou de uma central (409); e grava a
- * reserva nova, apaga a antiga (só a deste fã) e o perfil, juntos.
+ * reserva nova, apaga a antiga (só a deste fã) e o perfil, juntos. Desde o
+ * perfil novo (seção 28), o mesmo núcleo do `PUT /me/profile`, dividido em
+ * conferir (`usernameChangeProblem`), ler (`readUsernameSwap`) e gravar
+ * (`writeUsernameSwap`); as respostas e a ordem das recusas não mudam. O app
+ * novo não chama: a rota fica para o APK de antes.
  */
 export async function changeUsername(
   tx: Transaction,
@@ -116,30 +201,99 @@ export async function changeUsername(
       changeableAt: iso(changeableAt),
     };
   }
-  const refusal = usernameRefusal(username);
-  if (refusal) throw new ProfileEditError('username_invalid', { reason: refusal });
-  if (!usernameChangeAllowed(changeableAt, award.now)) {
-    throw new ProfileEditError('username_change_too_soon', { changeableAt: iso(changeableAt) });
-  }
-
-  const nextRef = usernameRef(db, username);
-  const currentRef = current ? usernameRef(db, current) : null;
-  const [next, old] = await tx.getAll(nextRef, ...(currentRef ? [currentRef] : []));
-  // A reserva nova com o uid deste fã é sobra de uma falha antiga: segue sem criar.
-  if (next!.exists && !reservedBy(next!, fan.uid)) throw new ProfileEditError('username_taken');
-
-  const changeable = nextUsernameChange(award.now);
-  if (!next!.exists) {
-    tx.create(nextRef, { uid: fan.uid, createdAt: Timestamp.fromMillis(award.now) });
-  }
-  // Só a reserva deste fã sai: a de uma central nunca.
-  if (currentRef && old && reservedBy(old, fan.uid)) tx.delete(currentRef);
-  tx.update(profileRef(db, fan.uid), {
+  const problem = usernameChangeProblem(username, changeableAt, award.now);
+  if (problem) throw problem;
+  const swap = await readUsernameSwap(tx, db, fan.uid, current, username);
+  const fields = writeUsernameSwap(tx, fan.uid, swap, award.now);
+  tx.update(profileRef(db, fan.uid), fields);
+  return {
     username,
-    usernameChangedAt: Timestamp.fromMillis(award.now),
-    usernameChangeableAt: Timestamp.fromMillis(changeable),
-  });
-  return { username, changedAt: iso(award.now), changeableAt: iso(changeable) };
+    changedAt: iso(award.now),
+    changeableAt: iso(fields.usernameChangeableAt.toMillis()),
+  };
+}
+
+// --- Perfil novo (seção 28) ------------------------------------------------------
+
+/**
+ * `PUT /me/profile` (28.4), dentro do runIdempotent, com as mudanças já
+ * conferidas e limpas (`parseProfileChanges`). Devolve sempre `{ body, plan }`
+ * (o seed aplica o plano pelo `runAsFan`):
+ * 1. a diferença contra o `profile` lido na transação (`profileDiff`);
+ * 2. sem diferença: o perfil de agora, sem gravar e sem contar no teto;
+ * 3. com o @: `usernameChangeProblem` (400 ou 409, sem ler);
+ * 4. os tetos, antes de qualquer leitura: `name` com o nome na diferença e
+ *    `profile` sempre (429);
+ * 5. com o @: as reservas (`readUsernameSwap`, 409 `username_taken`);
+ * 6. o plano, contando `profile` e, com o nome, `name`;
+ * 7. grava as reservas e o perfil num `tx.update` só, nunca com `updatedAt`;
+ * 8. responde o perfil editável com a diferença aplicada.
+ * Toda recusa não grava nada: o @ recusado segura também o resto.
+ */
+export async function updateFanProfile(
+  tx: Transaction,
+  db: Firestore,
+  options: {
+    fan: FanContext;
+    award: AwardContext;
+    profile: DocumentSnapshot;
+    changes: ProfileChanges;
+  },
+): Promise<{ body: EditableProfile; plan: AwardPlan }> {
+  const { fan, award, profile, changes } = options;
+  const stored = (profile.data() ?? {}) as Record<string, unknown>;
+  const diff = profileDiff(stored, changes);
+  if (!hasProfileChanges(diff)) {
+    const plan = await planAwards(tx, db, [{ uid: fan.uid, fan, entries: [] }], award);
+    return { body: editableProfileOf(stored), plan };
+  }
+  if (diff.username !== undefined) {
+    const problem = usernameChangeProblem(
+      diff.username,
+      millis(profile.get('usernameChangeableAt')),
+      award.now,
+    );
+    if (problem) throw problem;
+  }
+  if (diff.displayName !== undefined) enforceDailyCap(fan, award, 'name');
+  enforceDailyCap(fan, award, 'profile');
+
+  const swap =
+    diff.username !== undefined
+      ? await readUsernameSwap(tx, db, fan.uid, text(profile.get('username')), diff.username)
+      : null;
+  const plan = await planAwards(tx, db, [{ uid: fan.uid, fan, entries: [] }], award);
+  countDailyAction(plan, fan, award, 'profile');
+  if (diff.displayName !== undefined) countDailyAction(plan, fan, award, 'name');
+
+  const fields = profileUpdateOf(stored, diff);
+  if (swap) Object.assign(fields, writeUsernameSwap(tx, fan.uid, swap, award.now));
+  tx.update(profileRef(db, fan.uid), fields);
+  return { body: editableProfileOf({ ...stored, ...fields }), plan };
+}
+
+/**
+ * `GET /fans/:fanId` (28.4), fora de transação: o perfil público de outro fã
+ * (ou o próprio), ou null sem `users/{fanId}` (conta excluída, só da equipe ou
+ * id que não existe: 404 na rota). O próprio fã vê o completo, mesmo com a
+ * conta privada. A conta privada ou suspensa sai fechada sem mais leitura;
+ * senão, a lista de quem o alvo bloqueou: quem pede está nela, fechada (o
+ * mesmo corpo, sem o motivo). Uma ou duas leituras.
+ */
+export async function readFanPublicProfile(
+  db: Firestore,
+  uid: string,
+  fanId: string,
+): Promise<FanPublicProfile | null> {
+  const profile = await profileRef(db, fanId).get();
+  if (!profile.exists) return null;
+  const data = (profile.data() ?? {}) as Record<string, unknown>;
+  if (fanId === uid) return publicProfileOf(fanId, data, false);
+  if (data.privateAccount === true || isSuspendedProfile(profile)) {
+    return publicProfileOf(fanId, data, true);
+  }
+  const list = await blockListRef(db, fanId).get();
+  return publicProfileOf(fanId, data, blockedOf(list.get('blocked')).includes(uid));
 }
 
 export type UsernameRelease = { uid: string; previous: string; username: string };

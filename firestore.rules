@@ -6,8 +6,9 @@ rules_version = '2';
 // passa por estas regras) cria o perfil no cadastro e grava pontos, nível,
 // saldo, @, foto, missões, resgates, ranking, convites, a entrada em centrais,
 // o mural, a agenda e a moderação.
-// O celular só lê o próprio perfil e edita o nome e a cidade; o resto chega
-// pela API (função api, docs/arquitetura-api.md).
+// O celular só lê o próprio perfil e grava o primeiro nome do perfil que
+// nasceu sem nome; o resto chega pela API (função api,
+// docs/arquitetura-api.md).
 //
 // A equipe do painel admin entra pelo mesmo Authentication dos fãs, mas estar
 // logado nunca basta: só um staff/{uid} com status 'active' (gravado pelo
@@ -75,15 +76,6 @@ service cloud.firestore {
         || canSeeSection('fans');
     }
 
-    // Campos que o próprio fã pode editar. O @, a foto (photoURL, photoPath,
-    // photoUpdatedAt) e o prazo do @ (usernameChangedAt, usernameChangeableAt)
-    // são do servidor (API, bloco 9): a foto é gravada depois de validar o
-    // upload, para ninguém apontar para um endereço de fora, e o @ troca junto
-    // com as reservas em usernames/.
-    function editableProfileFields() {
-      return ['displayName', 'city', 'updatedAt'];
-    }
-
     // O motor de regras classifica caracteres com tabelas antigas do Unicode
     // (6.0 no emulador): U+2066, U+180F e U+FFF0, por exemplo, não contam como
     // \p{C} nem \p{M} para ele e aparecem em branco no aparelho. Por isso a
@@ -117,31 +109,29 @@ service cloud.firestore {
         && visibleLine(data.displayName);
     }
 
-    // Cidade é opcional: null limpa o campo. Texto vazio não vale.
-    function validCity(data) {
-      return data.get('city', null) == null
-        || (data.city is string
-          && data.city.size() >= 1
-          && data.city.size() <= 80
-          && visibleLine(data.city));
-    }
-
-    // Só os campos que mudaram são validados, para um valor gravado pelo servidor
-    // em outro campo não travar a edição. updatedAt é obrigatório, vem do
-    // servidor (serverTimestamp) e segura a edição a no máximo uma a cada 10 s.
-    // É o carimbo de edição do fã: o servidor não grava esse campo. Se gravar
-    // algo que não é data, a trava pula uma vez em vez de bloquear para sempre.
-    function validProfileUpdate(changed) {
-      return changed.hasOnly(editableProfileFields())
+    // O fã não edita o perfil pelo cliente desde o perfil novo
+    // (docs/arquitetura-api.md, seção 28): nome, @, bio, cidade, gênero,
+    // conta privada e redes vão pela API (PUT /me/profile), com os tetos do
+    // dia. Fica só o primeiro nome do perfil que nasceu sem nome, que o
+    // cadastro grava (fillMissingProfileName, src/domains/auth/api.ts): só
+    // displayName e updatedAt, com o nome de antes null. Depois dele o nome
+    // não é mais null, e a regra não deixa outra gravação.
+    function firstProfileName(changed) {
+      return changed.hasOnly(['displayName', 'updatedAt'])
+        && 'displayName' in changed
+        && resource.data.get('displayName', null) == null
         && request.resource.data.updatedAt == request.time
-        && (!(resource.data.get('updatedAt', null) is timestamp)
-          || request.time > resource.data.updatedAt + duration.value(10, 's'))
-        && (!('displayName' in changed) || validDisplayName(request.resource.data))
-        && (!('city' in changed) || validCity(request.resource.data));
+        && validDisplayName(request.resource.data);
     }
 
-    // O @, a foto e o prazo do @ são do servidor (API, bloco 9); o orçamento da
-    // fila das cópias do perfil (users/{uid}/profileSync) também, e fica fechado
+    // Todo o perfil é do servidor (API): o nome e a cidade, o @ e o prazo dele
+    // (bloco 9), a foto (photoURL, photoPath, photoUpdatedAt, gravada depois
+    // de validar o upload, para ninguém apontar para um endereço de fora) e,
+    // desde o perfil novo (seção 28), a bio, o gênero (só o fã e a equipe
+    // veem), a conta privada e as redes (bio, gender, privateAccount,
+    // socials), menos o primeiro nome acima. O updatedAt é só o carimbo dessa
+    // gravação: o servidor nunca grava. O orçamento da fila das cópias do
+    // perfil (users/{uid}/profileSync) também é do servidor, e fica fechado
     // pelo match /{document=**} do fim, para o fã e para a equipe.
     //
     // Desde o bloco 11 (docs/arquitetura-api.md, 26.10), a equipe com a seção
@@ -149,7 +139,7 @@ service cloud.firestore {
     // com moderation lê qualquer perfil (o autor de um comentário) e lista só
     // os suspensos (a consulta precisa de where('suspendedAt', '!=', null)).
     // A suspensão (suspendedAt, suspensionReason) e as chaves da busca
-    // (searchKeys) são do servidor; o fã suspenso não edita nome nem cidade.
+    // (searchKeys) são do servidor; o fã suspenso não grava nem o primeiro nome.
     match /users/{uid} {
       allow get: if isSelf(uid) || canSeeSection('fans') || canSeeSection('moderation');
       allow list: if canSeeSection('fans')
@@ -162,7 +152,7 @@ service cloud.firestore {
 
       allow update: if isSelf(uid)
         && resource.data.get('suspendedAt', null) == null
-        && validProfileUpdate(request.resource.data.diff(resource.data).affectedKeys());
+        && firstProfileName(request.resource.data.diff(resource.data).affectedKeys());
 
       // Excluir a conta apaga o perfil e os pontos e cancela os resgates
       // abertos: é o servidor.

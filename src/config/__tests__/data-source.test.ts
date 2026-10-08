@@ -2,8 +2,8 @@ import type { DataDomain } from '../data-source';
 
 /**
  * O seletor por domínio (docs/arquitetura-api.md, seção 13): sem API tudo nas
- * fixtures (as builds de hoje); com a API (o emulador em desenvolvimento, ou o
- * EXPO_PUBLIC_API_URL depois do deploy), só os domínios com rota no servidor.
+ * fixtures (build sem a variável); com a API (o emulador em desenvolvimento, ou o
+ * EXPO_PUBLIC_API_URL das builds da EAS), só os domínios com rota no servidor.
  */
 
 const DOMAINS: DataDomain[] = [
@@ -33,7 +33,7 @@ function load(env: { apiUrl?: string }): typeof import('../data-source') {
 const realServer = (): typeof import('../server') => jest.requireActual('../server');
 
 describe('fonte de cada domínio', () => {
-  it('sem API (builds de hoje), tudo nas fixtures', () => {
+  it('sem API (build sem a variável), tudo nas fixtures', () => {
     const { sourceOf, usesFixtures } = load({ apiUrl: undefined });
     for (const domain of DOMAINS) expect(sourceOf(domain)).toBe('fixtures');
     expect(usesFixtures()).toBe(true);

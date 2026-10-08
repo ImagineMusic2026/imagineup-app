@@ -9,7 +9,8 @@ import type { CallerAuth } from './service';
  * Motivos que o painel recebe em `details.reason` nas callables do bloco 11
  * que mexem num fã ou leem o ranking ao vivo (docs/arquitetura-api.md, 26.4):
  * `adjustFanPoints`, `findFanByEmail`, `getPanelRanking`, `resetFanUsername`,
- * `clearFanPhoto`, `setFanSuspended` e `hideFanComments`. A mensagem em pt-BR
+ * `clearFanPhoto`, `setFanSuspended` e `hideFanComments`, e a do perfil novo
+ * (28.6), `clearFanProfileText`. A mensagem em pt-BR
  * vai junto e pode ser mostrada como está. Os de acesso (`unauthenticated`,
  * `not-staff`, `no-section`) vêm do `readPanelActor`.
  */
@@ -65,7 +66,7 @@ export function panelError(
 }
 
 /**
- * O fã que a callable muda (o ajuste e as quatro da Moderação, 26.4), antes
+ * O fã que a callable muda (o ajuste e as da Moderação, 26.4 e 28.6), antes
  * de qualquer leitura: sem login, `unauthenticated`; o uid fora do formato do
  * fã, `invalid-request` com o campo; o uid de quem chama, `self` (um membro da
  * equipe pode ser fã na mesma conta, e não muda a própria).

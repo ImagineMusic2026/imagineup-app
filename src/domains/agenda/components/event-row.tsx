@@ -1,9 +1,8 @@
 import { StyleSheet, useWindowDimensions, View } from 'react-native';
 
 import { ListRow } from '@/components/list-row';
-import { borderWidths, colors, layout, spacing } from '@/theme';
+import { borderWidths, colors, LARGE_TEXT_SCALE, layout, spacing } from '@/theme';
 
-import { LARGE_TEXT_SCALE } from '../consts';
 import { eventDateBadge, eventPlace, eventRowLabel } from '../describe-event';
 import type { AgendaEvent } from '../types';
 import { DateBadge } from './date-badge';

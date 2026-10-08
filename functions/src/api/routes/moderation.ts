@@ -1,8 +1,9 @@
-import { blockFan, isFanId, parseReportReason, reportComment, unblockFan } from '../../moderation';
+import { blockFan, parseReportReason, reportComment, unblockFan } from '../../moderation';
 import { isContentId } from '../../page-cursor';
 import type { BlockFanResult, ReportCommentResult } from '../contract';
 import { apiError } from '../errors';
 import type { ApiRoute, RouteInput } from '../types';
+import { fanParam } from './params';
 
 // Rotas da moderação mínima (bloco 6, provisória até a UP-48): denunciar o
 // comentário de outro fã e bloquear ou desbloquear um fã. Gravam no
@@ -12,10 +13,6 @@ function commentParams(input: RouteInput): void {
   if (!isContentId(input.params.postId) || !isContentId(input.params.commentId)) {
     throw apiError('comment_not_found');
   }
-}
-
-function fanParam(input: RouteInput): void {
-  if (!isFanId(input.params.fanId)) throw apiError('fan_not_found');
 }
 
 function reasonOf(input: RouteInput) {

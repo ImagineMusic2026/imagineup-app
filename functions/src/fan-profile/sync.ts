@@ -70,7 +70,8 @@ function searchFieldsChanged(
  * agora, relido numa transação, e nunca do `event.data.after`: a entrega é
  * pelo menos uma vez e sem ordem, e um evento velho gravaria as chaves de um
  * nome velho por cima das novas. Grava só quando mudou, sem `updatedAt` (o
- * carimbo de edição do fã, que trava a edição por 10 s). A gravação dispara o
+ * carimbo da gravação do primeiro nome pelo fã, a única que a regra deixa
+ * desde o perfil novo, seção 28; o servidor nunca grava). A gravação dispara o
  * gatilho de novo, que não vê nome nem @ mudados e não abre a transação.
  */
 export function syncFanSearchKeys(

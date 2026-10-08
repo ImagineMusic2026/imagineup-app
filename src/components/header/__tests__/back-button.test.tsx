@@ -5,7 +5,7 @@ import { StyleSheet, View } from 'react-native';
 import { t } from '@/i18n';
 import { layout } from '@/theme';
 
-import { BackButton } from '..';
+import { BackButton, goBack } from '..';
 
 jest.mock('expo-router', () => ({
   ...jest.requireActual('expo-router'),
@@ -75,5 +75,28 @@ describe('BackButton', () => {
     expect(screen.queryByLabelText(t('common.back'))).toBeNull();
     fireEvent.press(button);
     expect(mockedRouter.back).toHaveBeenCalled();
+  });
+
+  it('o fechar no começo da linha (a tela "Editar perfil") cola o círculo na margem da esquerda', () => {
+    render(<BackButton variant="close" align="start" />);
+    expect(screen.getByRole('button', { name: t('common.close') })).toHaveStyle({
+      alignItems: 'flex-start',
+    });
+  });
+});
+
+describe('goBack', () => {
+  it('volta na pilha quando há para onde voltar', () => {
+    mockedRouter.canGoBack.mockReturnValue(true);
+    goBack();
+    expect(mockedRouter.back).toHaveBeenCalled();
+    expect(mockedRouter.replace).not.toHaveBeenCalled();
+  });
+
+  it('aberta a frio (a tela é a única da pilha), vai ao início', () => {
+    mockedRouter.canGoBack.mockReturnValue(false);
+    goBack();
+    expect(mockedRouter.back).not.toHaveBeenCalled();
+    expect(mockedRouter.replace).toHaveBeenCalledWith('/');
   });
 });
