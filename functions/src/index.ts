@@ -117,7 +117,36 @@ import { deleteUserData } from './store';
 
 // Mesma região do Firestore. Sem isso, o gatilho de Auth vai para os EUA. As
 // funções abaixo leem esta opção quando são definidas: ela vem antes de todas.
-setGlobalOptions({ region: 'southamerica-east1', maxInstances: 10 });
+//
+// CPU fracionada (decisão do dono em 08/10/2026): a cota "Total CPU
+// allocation, per project per region" do Cloud Run em southamerica-east1 é de
+// 20 vCPU, e cada instância parada fica viva uns 15 min contando nela. Com 1
+// vCPU por função, umas 20 funções acordadas enchiam a região, e as seguintes
+// recebiam 429 ("Rate exceeded"). O `gcf_gen1` dá a CPU da 1ª geração pela
+// memória: 1/6 de vCPU com 256 MiB e 1/3 com 512 MiB. Abaixo de 1 vCPU, o
+// Cloud Run só aceita concorrência 1 (o firebase-tools 15.32 põe sozinho; fica
+// escrita para não depender dele). Só a `api`, que atende os fãs, tem 1 vCPU e
+// concorrência 80. Função nova herda o fracionado; cpu 1 só com o ok do dono,
+// com o motivo e a função no FULL_CPU do `cpu.test.ts`, que confere a soma
+// contra a cota. Com concorrência 1, o evento que chega com as 10 instâncias
+// ocupadas recebe 429: gatilho de evento novo leva `retry: true`, que o traz
+// de volta (o teste também confere).
+setGlobalOptions({
+  region: 'southamerica-east1',
+  maxInstances: 10,
+  cpu: 'gcf_gen1',
+  concurrency: 1,
+});
+
+/**
+ * Envios ao mesmo tempo de cada fila de cópia. Com a CPU fracionada, a função
+ * da fila atende um pedido por instância, até 10 instâncias, e o padrão do
+ * Cloud Tasks manda até 1.000 de uma vez: o que passa das instâncias pode
+ * voltar 429, que gasta uma das 5 tentativas da tarefa. A janela de 10 s solta
+ * as tarefas dela no mesmo segundo; 5 de cada vez (5/6 de vCPU) esvaziam
+ * dezenas em poucos segundos e deixam a cota para o resto.
+ */
+const QUEUE_RATE_LIMITS = { maxConcurrentDispatches: 5 };
 
 initializeApp();
 
@@ -127,8 +156,16 @@ initializeApp();
  * aparecer depois do cadastro: leva alguns segundos, e conta que nasce sem nome
  * espera mais um pouco por ele (NAME_WAIT_MS, em handlers.ts). Conta da equipe
  * do painel (staff/{uid}) fica sem perfil de fã.
+ *
+ * 512 MiB pela CPU, e não pela memória: com o `gcf_gen1`, dão 1/3 de vCPU em
+ * vez de 1/6, ainda fracionada. A instância nova gasta cerca de 1 s de CPU só
+ * para carregar o lib/index.js (medido com a CPU inteira); a 1/6 seriam uns
+ * 6 s antes do primeiro trabalho, somados à espera do nome, e o cadastro do
+ * app espera o perfil só 20 s (PROFILE_WAIT_MS). Com concorrência 1, cada
+ * cadastro que chega com a instância ocupada abre outra fria; com picos de
+ * cadastro, subir o `maxInstances` desta função.
  */
-export const createUserProfile = onUserCreated({ retry: true }, async (event) => {
+export const createUserProfile = onUserCreated({ retry: true, memory: '512MiB' }, async (event) => {
   const result = await handleUserCreated(getFirestore(), findUser, event.data);
   logger.info('Perfil do fã.', { uid: event.data.uid, ...result });
 });
@@ -430,7 +467,12 @@ export const endSeason = onCall({ cors: PANEL_ORIGINS }, async (request) => {
   return result;
 });
 
-/** Roda na hora a virada que já venceu (a saída da equipe se a função agendada parar). */
+/**
+ * Roda na hora a virada que já venceu (a saída da equipe se a função agendada
+ * parar). Com a CPU fracionada, cada chamada fecha menos páginas no orçamento
+ * de 90 s (CLOSE_NOW_BUDGET_MS), e o painel chama de novo enquanto vier
+ * `running`; os 30 s até os 120 s cobrem a última página.
+ */
 export const closeSeasonNow = onCall(
   { cors: PANEL_ORIGINS, timeoutSeconds: 120 },
   async (request) => {
@@ -451,6 +493,12 @@ export const closeSeasonNow = onCall(
  * andamento em rankingJobs, então a rodada seguinte continua de onde esta
  * parou. Sem nova tentativa: uma falha espera a próxima rodada. O emulador
  * não roda função agendada: os testes e o seed chamam o handler.
+ *
+ * CPU fracionada, sem cpu 1: os 512 MiB dão 1/3 de vCPU. Rodando a cada 10
+ * min, com a instância parada viva uns 15 min, ela nunca dorme, e 1 vCPU
+ * prenderia 1 dos 20 da cota o tempo todo. O trabalho anda em páginas, com o
+ * orçamento de 7 min e o cursor em rankingJobs: CPU menor só quer dizer mais
+ * rodadas para fechar a temporada.
  */
 export const rankingTick = onSchedule(
   {
@@ -474,6 +522,11 @@ export const rankingTick = onSchedule(
  * fecha nada. Separada do rankingTick: falha isolada e prazo próprio. O
  * emulador não roda função agendada: o seed e os testes chamam o
  * runStatsClose.
+ *
+ * CPU fracionada (1/6 de vCPU): o peso fica no Firestore (os `count()` e a
+ * soma do centralPoints rodam no servidor, e cada dia lê só os shards dele),
+ * e cada dia fecha na própria transação, com `create`. O que não couber nos
+ * 300 s fecha na nova tentativa ou na noite seguinte, sem refazer nada.
  */
 export const closeStatsDays = onSchedule(
   {
@@ -707,9 +760,9 @@ export const setFanSuspended = onCall({ cors: PANEL_ORIGINS }, async (request) =
 });
 
 /**
- * Oculta até 100 comentários visíveis de um fã por chamada (o painel chama de
- * novo enquanto vier `more`), com uma auditoria por chamada. O painel espera
- * até 130 s.
+ * Oculta até 24 comentários visíveis de um fã por chamada
+ * (HIDE_FAN_COMMENTS_PAGE; o painel chama de novo enquanto vier `more`), com
+ * uma auditoria por chamada. O painel espera até 130 s.
  */
 export const hideFanComments = onCall(
   { cors: PANEL_ORIGINS, timeoutSeconds: 120 },
@@ -744,6 +797,12 @@ let apiHandler: ReturnType<typeof createApiHandler> | null = null;
  * as missões, os níveis, as posições e os resgates são sempre calculados no
  * servidor. O segredo do HMAC da chave da pessoa (INVITE_KEY_SECRET) só
  * chega a esta função, lido a cada pedido.
+ *
+ * A única com 1 vCPU e concorrência 80 (o resto é fracionado, no
+ * setGlobalOptions): ela atende os fãs, e uma instância serve 80 pedidos de
+ * uma vez. Com a CPU fracionada seria uma instância por pedido, 10 pedidos ao
+ * mesmo tempo no máximo. O `minInstances: 1`, se um dia entrar, prende 1 dos
+ * 20 vCPU da cota o tempo todo.
  */
 export const api = onRequest(
   {
@@ -753,6 +812,10 @@ export const api = onRequest(
     memory: '512MiB',
     cpu: 1,
     concurrency: 80,
+    // 8 instâncias (até 640 pedidos ao mesmo tempo), e não as 10 do padrão:
+    // com 10 instâncias de 1 vCPU e uma de cada outra função, a soma passaria
+    // da cota de 20 vCPU da região (decisão do dono em 08/10/2026).
+    maxInstances: 8,
     secrets: [INVITE_KEY_SECRET],
   },
   (req, res) => {
@@ -786,7 +849,10 @@ export const queueArtistFanCountSync = onDocumentWritten(
 
 /** Soma os shards do fanCount de uma central e copia para artists/{id}. */
 export const syncArtistFanCount = onTaskDispatched<{ artistId: string }>(
-  { retryConfig: { maxAttempts: FAN_COUNT_MAX_ATTEMPTS, minBackoffSeconds: 10 } },
+  {
+    retryConfig: { maxAttempts: FAN_COUNT_MAX_ATTEMPTS, minBackoffSeconds: 10 },
+    rateLimits: QUEUE_RATE_LIMITS,
+  },
   async (request) => {
     const result = await runFanCountSync(getFirestore(), request.data, {
       retryCount: request.retryCount,
@@ -815,7 +881,10 @@ export const queuePostCountSync = onDocumentWritten(
 
 /** Soma as curtidas e os comentários dos shards de um post e copia para posts/{id}. */
 export const syncPostCounts = onTaskDispatched<{ postId: string }>(
-  { retryConfig: { maxAttempts: POST_COUNTS_MAX_ATTEMPTS, minBackoffSeconds: 10 } },
+  {
+    retryConfig: { maxAttempts: POST_COUNTS_MAX_ATTEMPTS, minBackoffSeconds: 10 },
+    rateLimits: QUEUE_RATE_LIMITS,
+  },
   async (request) => {
     const result = await runPostCountSync(getFirestore(), request.data, {
       retryCount: request.retryCount,
@@ -858,6 +927,7 @@ export const queueFanProfileSync = onDocumentUpdated(
 export const syncFanProfile = onTaskDispatched<{ uid: string }>(
   {
     retryConfig: { maxAttempts: FAN_PROFILE_MAX_ATTEMPTS, minBackoffSeconds: 10 },
+    rateLimits: QUEUE_RATE_LIMITS,
     timeoutSeconds: 300,
   },
   async (request) => {
