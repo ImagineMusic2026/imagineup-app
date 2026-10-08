@@ -116,6 +116,18 @@ const SINGLE: SingleFieldShape[] = [
     queryScope: 'COLLECTION',
     field: asc('eventId'),
   },
+  {
+    name: 'Artistas: a central tem post (o aviso da lixeira, com limit 1)',
+    collectionGroup: 'posts',
+    queryScope: 'COLLECTION',
+    field: asc('artistId'),
+  },
+  {
+    name: 'Artistas: a central tem show (o aviso da lixeira, com limit 1)',
+    collectionGroup: 'events',
+    queryScope: 'COLLECTION',
+    field: contains('artistIds'),
+  },
 ];
 
 describe('índices do Mural, da Agenda e do alvo de missão (26.11)', () => {
