@@ -1,4 +1,4 @@
-import { FieldValue, Timestamp } from 'firebase-admin/firestore';
+import { Timestamp } from 'firebase-admin/firestore';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { describe, expect, it } from 'vitest';
 
@@ -6,12 +6,15 @@ import {
   fanPhotoFiles,
   releaseUsername,
   runFanProfileSync,
+  SEED_FAN_DETAILS,
+  seedFanDetails,
+  seedFanDetailsChanges,
   seedFanPhoto,
   syncFanProfile,
   UsernameReleaseError,
   type FanPhotoFiles,
 } from '../src/fan-profile';
-import { DEFAULT_POINTS_CONFIG, dayKey, staticConfigSource } from '../src/points';
+import { DEFAULT_POINTS_CONFIG, dayKey, nextDayStart, staticConfigSource } from '../src/points';
 import { deleteUserData } from '../src/store';
 import {
   callable,
@@ -31,7 +34,9 @@ import {
  * O perfil editável do bloco 9 nos emuladores (docs/arquitetura-api.md,
  * 24.14): a `api` de verdade pelo HTTP do emulador, com o ID token do Auth, e
  * o handler no processo, com o relógio fixo (os 30 dias do @ e a idade da
- * foto). O gatilho queueFanProfileSync roda no emulador de Functions e a
+ * foto). Desde o perfil novo (seção 28, 28.12), também a edição inteira
+ * (`PUT /me/profile`, com os tetos do dia) e o perfil público
+ * (`GET /fans/:fanId`). O gatilho queueFanProfileSync roda no emulador de Functions e a
  * tarefa syncFanProfile no do Cloud Tasks (lá, uma tarefa por gravação, na
  * hora): os testes esperam o efeito. Os arquivos sobem pelo Admin SDK, que
  * passa por cima das regras (as regras ficam nos testes de regras). O Storage
@@ -93,7 +98,16 @@ const folder = async (uid: string) =>
   (await bucket.getFiles({ prefix: `fans/${uid}/` }))[0].map((file) => file.name).sort();
 
 /** O handler no processo com um relógio que o teste move. */
-function clockApi(start: number, options: { photoCap?: number; uploadCap?: number } = {}) {
+function clockApi(
+  start: number,
+  options: {
+    photoCap?: number;
+    uploadCap?: number;
+    profileCap?: number;
+    nameCap?: number;
+    withHeaders?: boolean;
+  } = {},
+) {
   const clock = { now: start };
   const points = {
     ...DEFAULT_POINTS_CONFIG,
@@ -101,9 +115,15 @@ function clockApi(start: number, options: { photoCap?: number; uploadCap?: numbe
       ...DEFAULT_POINTS_CONFIG.actionCaps,
       ...(options.photoCap ? { photo_set: options.photoCap } : {}),
       ...(options.uploadCap ? { photo_upload: options.uploadCap } : {}),
+      ...(options.profileCap ? { profile_save: options.profileCap } : {}),
+      ...(options.nameCap ? { name_change: options.nameCap } : {}),
     },
   };
-  const call = localApi(env, { now: () => clock.now, config: staticConfigSource({ points }) });
+  const call = localApi(env, {
+    now: () => clock.now,
+    config: staticConfigSource({ points }),
+    withHeaders: options.withHeaders === true,
+  });
   return { clock, call };
 }
 
@@ -751,9 +771,13 @@ describe('cópias do nome e da foto nos comentários', () => {
     return { authorName: data.authorName, authorPhotoURL: data.authorPhotoURL };
   };
 
-  /** Grava o perfil como a regra deixaria o fã gravar (nome) ou como a API grava (foto). */
+  /**
+   * Grava o perfil pelo Admin SDK, como a API grava (sem o `updatedAt`): estes
+   * testes são do gatilho e da fila, não do caminho. O nome pela API de verdade
+   * está em "perfil novo: PUT /me/profile".
+   */
   const change = (fan: Fan, data: Record<string, unknown>) =>
-    db.doc(`users/${fan.uid}`).update({ ...data, updatedAt: FieldValue.serverTimestamp() });
+    db.doc(`users/${fan.uid}`).update(data);
 
   it('o nome trocado chega a todos os comentários do fã, inclusive o oculto, e não aos de outro fã', async () => {
     const fan = await signUpFan(db, 'Camila Ribeiro');
@@ -946,5 +970,536 @@ describe('seed', () => {
     expect(await exists(`wallets/${fan.uid}`)).toBe(false);
     expect(await seedFanPhoto(db, files, save, fan.uid, JPEG_1X1)).toBe('exists');
     expect((await read(`users/${fan.uid}`))!.photoURL).toBe(profile.photoURL);
+  });
+});
+
+// --- Perfil novo (seção 28, 28.12) ------------------------------------------------
+
+const putProfile = (
+  call: ReturnType<typeof localApi>,
+  fan: Fan,
+  body: unknown,
+  key = unique('chave-perfil-'),
+) => call('PUT', '/me/profile', { token: fan.token, key, body });
+
+/** Os contadores do dia de São Paulo do fã (os tetos `profile_save` e `name_change`). */
+const dayCounts = async (uid: string, now: number) =>
+  ((await read(`wallets/${uid}`))?.days?.[dayKey(now)]?.count ?? {}) as Record<string, number>;
+
+const NO_SOCIALS = { instagram: null, tiktok: null, linkedin: null, x: null };
+
+describe('perfil novo: PUT /me/profile', () => {
+  it('grava só o que mudou, num update, sem o updatedAt; o mesmo valor responde sem gravar e sem contar', async () => {
+    const fan = await signUpFan(db, 'Camila Ribeiro');
+    const before = (await read(`users/${fan.uid}`))!;
+    const start = Date.now();
+    const { clock, call } = clockApi(start);
+
+    const body = {
+      bio: '  Feira de Santana.  \n  Fã do Netto desde o primeiro show. ',
+      gender: 'woman',
+      socials: { instagram: 'https://www.instagram.com/camila.teste.up/', x: null },
+    };
+    const saved = await putProfile(call, fan, body);
+    expect(saved).toEqual({
+      status: 200,
+      body: {
+        displayName: 'Camila Ribeiro',
+        username: before.username,
+        usernameChangeableAt: null,
+        bio: 'Feira de Santana.\nFã do Netto desde o primeiro show.',
+        city: null,
+        gender: 'woman',
+        privateAccount: false,
+        socials: { ...NO_SOCIALS, instagram: 'camila.teste.up' },
+      },
+    });
+    const after = (await db.doc(`users/${fan.uid}`).get())!;
+    expect(after.data()).toEqual({
+      ...before,
+      bio: 'Feira de Santana.\nFã do Netto desde o primeiro show.',
+      gender: 'woman',
+      socials: { ...NO_SOCIALS, instagram: 'camila.teste.up' },
+    });
+    // O servidor nunca grava o carimbo do primeiro nome; a privada igual ao padrão não sai.
+    expect(after.get('updatedAt')).toBeUndefined();
+    expect(after.get('privateAccount')).toBeUndefined();
+    expect(await dayCounts(fan.uid, start)).toMatchObject({ profile_save: 1 });
+    expect((await dayCounts(fan.uid, start)).name_change).toBeUndefined();
+
+    // O mesmo corpo com outra chave: a mesma resposta, sem gravar e sem contar.
+    clock.now = start + MIN;
+    expect(await putProfile(call, fan, body)).toEqual(saved);
+    expect(await putProfile(call, fan, { privateAccount: false, socials: { tiktok: '' } })).toEqual(
+      saved,
+    );
+    const again = await db.doc(`users/${fan.uid}`).get();
+    expect(again.updateTime!.isEqual(after.updateTime!)).toBe(true);
+    expect((await dayCounts(fan.uid, start)).profile_save).toBe(1);
+  });
+
+  it('nome, @, bio, cidade e redes numa transação: as reservas trocadas e o perfil num update', async () => {
+    const fan = await signUpFan(db, 'Camila Ribeiro');
+    const old = (await read(`users/${fan.uid}`))!.username as string;
+    const start = Date.now();
+    const { call } = clockApi(start);
+    const chosen = unique('camilaperfil');
+
+    const saved = await putProfile(call, fan, {
+      displayName: ' Camila Nova ',
+      username: ` @${chosen.toUpperCase()} `,
+      bio: 'Oi!',
+      city: ' Irará, BA ',
+      privateAccount: true,
+      socials: { x: 'https://x.com/CamilaTesteUp', linkedin: 'br.linkedin.com/in/jo%C3%A3o-teste' },
+    });
+    expect(saved).toEqual({
+      status: 200,
+      body: {
+        displayName: 'Camila Nova',
+        username: chosen,
+        usernameChangeableAt: new Date(start + 30 * DAY).toISOString(),
+        bio: 'Oi!',
+        city: 'Irará, BA',
+        gender: null,
+        privateAccount: true,
+        socials: { ...NO_SOCIALS, linkedin: 'joão-teste', x: 'camilatesteup' },
+      },
+    });
+    expect(await read(`usernames/${chosen}`)).toMatchObject({ uid: fan.uid });
+    expect(await exists(`usernames/${old}`)).toBe(false);
+    const profile = (await read(`users/${fan.uid}`))!;
+    expect(profile).toMatchObject({
+      displayName: 'Camila Nova',
+      username: chosen,
+      bio: 'Oi!',
+      city: 'Irará, BA',
+      privateAccount: true,
+      socials: { ...NO_SOCIALS, linkedin: 'joão-teste', x: 'camilatesteup' },
+    });
+    expect((profile.usernameChangedAt as Timestamp).toMillis()).toBe(start);
+    expect((profile.usernameChangeableAt as Timestamp).toMillis()).toBe(start + 30 * DAY);
+    expect(profile.updatedAt).toBeUndefined();
+    expect(await dayCounts(fan.uid, start)).toMatchObject({ profile_save: 1, name_change: 1 });
+
+    // Tirar as redes todas grava o mapa como null; a bio vazia vira null.
+    const cleared = await putProfile(call, fan, {
+      bio: '  ',
+      socials: { linkedin: null, x: '' },
+    });
+    expect(cleared.body).toMatchObject({ bio: null, socials: NO_SOCIALS });
+    expect(await read(`users/${fan.uid}`)).toMatchObject({ bio: null, socials: null });
+  });
+
+  it('o @ com dono é 409 e nada grava (nem a bio); o de uma central também; o automático e o reservado são 400', async () => {
+    const fan = await signUpFan(db, 'Camila Ribeiro');
+    const other = await signUpFan(db, 'Alan Ferreira');
+    const otherAt = (await read(`users/${other.uid}`))!.username as string;
+    const handle = unique('centralperfil');
+    await centralReservation(handle);
+    const before = await db.doc(`users/${fan.uid}`).get();
+    const start = Date.now();
+    const { call } = clockApi(start);
+
+    for (const taken of [otherAt, handle]) {
+      expect(await putProfile(call, fan, { username: taken, bio: 'Não grava' })).toEqual({
+        status: 409,
+        body: { code: 'username_taken', message: 'Este @ já tem dono.' },
+      });
+    }
+    expect(
+      (await putProfile(call, fan, { username: 'fa123456', bio: 'Não grava' })).body,
+    ).toMatchObject({ code: 'username_invalid', details: { reason: 'automatic' } });
+    expect(
+      (await putProfile(call, fan, { username: 'adm1n', bio: 'Não grava' })).body,
+    ).toMatchObject({ code: 'username_invalid', details: { reason: 'reserved' } });
+    expect((await putProfile(call, fan, { username: 'ca', bio: 'Não grava' })).body).toMatchObject({
+      code: 'username_invalid',
+      details: { reason: 'format' },
+    });
+
+    const after = await db.doc(`users/${fan.uid}`).get();
+    expect(after.updateTime!.isEqual(before.updateTime!)).toBe(true);
+    expect(after.get('bio')).toBeUndefined();
+    expect(await read(`usernames/${handle}`)).toMatchObject({ artistId: handle });
+    expect(await read(`usernames/${otherAt}`)).toMatchObject({ uid: other.uid });
+    // Nada contou: a recusa não grava a carteira nem a chave.
+    expect((await dayCounts(fan.uid, start)).profile_save).toBeUndefined();
+    const keys = await db.collection('idempotency').where('uid', '==', fan.uid).get();
+    expect(keys.size).toBe(0);
+  });
+
+  it('o prazo do @: o 409 com a data segura a bio; o @ igual ao de agora sai do corpo; depois dos 30 dias, passa', async () => {
+    const fan = await signUpFan(db, 'Camila Ribeiro');
+    const start = Date.now();
+    const { clock, call } = clockApi(start);
+    const first = unique('primeiroperfil');
+    expect((await putProfile(call, fan, { username: first })).status).toBe(200);
+
+    clock.now = start + 30 * DAY - 1;
+    expect(await putProfile(call, fan, { username: unique('segundo'), bio: 'Não grava' })).toEqual({
+      status: 409,
+      body: {
+        code: 'username_change_too_soon',
+        message: 'Você trocou o @ há pouco. Tente de novo mais tarde.',
+        details: { changeableAt: new Date(start + 30 * DAY).toISOString() },
+      },
+    });
+    expect((await read(`users/${fan.uid}`))!.bio).toBeUndefined();
+    // O @ de agora junto com a bio: o @ não difere e sai; a bio grava.
+    const withCurrent = await putProfile(call, fan, { username: first, bio: 'Grava' });
+    expect(withCurrent.body).toMatchObject({ username: first, bio: 'Grava' });
+    expect(((await read(`users/${fan.uid}`))!.usernameChangeableAt as Timestamp).toMillis()).toBe(
+      start + 30 * DAY,
+    );
+
+    // O PUT /me/username de antes divide o mesmo prazo.
+    expect((await putUsername(call, fan, unique('pelarota'))).body).toMatchObject({
+      code: 'username_change_too_soon',
+    });
+
+    clock.now = start + 30 * DAY;
+    expect((await putProfile(call, fan, { username: unique('segundo') })).status).toBe(200);
+  });
+
+  it('os tetos do dia (aqui profile_save 2 e name_change 1): o 429 com a ação e o Retry-After; o mesmo valor não conta; o dia seguinte passa', async () => {
+    const fan = await signUpFan(db, 'Camila Ribeiro');
+    // Meio-dia em São Paulo, para o dia seguinte ficar a 12 h.
+    const start = Date.parse('2026-10-08T15:00:00.000Z');
+    const { clock, call } = clockApi(start, { profileCap: 2, nameCap: 1, withHeaders: true });
+    const retryAfter = String(Math.ceil((nextDayStart(start) - start) / 1000));
+
+    expect((await putProfile(call, fan, { displayName: 'Nome Um' })).status).toBe(200);
+    const name = await putProfile(call, fan, { displayName: 'Nome Dois' });
+    expect(name).toMatchObject({
+      status: 429,
+      body: { code: 'too_many_requests', details: { limit: 1, action: 'name' } },
+      headers: { 'Retry-After': retryAfter },
+    });
+    expect((await putProfile(call, fan, { bio: 'Um' })).status).toBe(200);
+    const profile = await putProfile(call, fan, { bio: 'Dois' });
+    expect(profile).toMatchObject({
+      status: 429,
+      body: { code: 'too_many_requests', details: { limit: 2, action: 'profile' } },
+      headers: { 'Retry-After': retryAfter },
+    });
+    // O mesmo valor, já no teto: responde sem contar (a nova tentativa com outra chave).
+    expect((await putProfile(call, fan, { displayName: 'Nome Um', bio: 'Um' })).status).toBe(200);
+    expect(await dayCounts(fan.uid, start)).toMatchObject({ profile_save: 2, name_change: 1 });
+    expect((await read(`users/${fan.uid}`))!).toMatchObject({ displayName: 'Nome Um', bio: 'Um' });
+
+    clock.now = nextDayStart(start);
+    expect((await putProfile(call, fan, { displayName: 'Nome Dois' })).status).toBe(200);
+    expect(await dayCounts(fan.uid, clock.now)).toMatchObject({ profile_save: 1, name_change: 1 });
+  });
+
+  it('os tetos contam o nome de null para um nome (name_change) e o @ sozinho (profile_save), como a decisão 9', async () => {
+    const fan = await signUpFan(db, 'Camila Ribeiro');
+    // O perfil sem nome (a gravação do cadastro não aconteceu): o ✓ manda o nome da sessão.
+    await db.doc(`users/${fan.uid}`).update({ displayName: null });
+    const start = Date.parse('2026-10-08T15:00:00.000Z');
+    const { call } = clockApi(start, { profileCap: 3, nameCap: 1 });
+
+    expect((await putProfile(call, fan, { displayName: 'Camila Ribeiro' })).status).toBe(200);
+    expect(await dayCounts(fan.uid, start)).toMatchObject({ profile_save: 1, name_change: 1 });
+    expect(await putProfile(call, fan, { displayName: 'Camila Nova' })).toMatchObject({
+      status: 429,
+      body: { code: 'too_many_requests', details: { limit: 1, action: 'name' } },
+    });
+
+    // O @ sozinho grava e conta no profile_save, e não no name_change.
+    const chosen = unique('soarroba');
+    expect((await putProfile(call, fan, { username: chosen })).body).toMatchObject({
+      username: chosen,
+    });
+    expect(await dayCounts(fan.uid, start)).toMatchObject({ profile_save: 2, name_change: 1 });
+  });
+
+  it('no teto do dia, o @ de outro fã é 429, e não 409: os tetos vêm antes de ler as reservas', async () => {
+    // Uma fã sem prazo do @ correndo (senão o 409 do prazo, que vem antes dos tetos, responderia).
+    const fan = await signUpFan(db, 'Camila Ribeiro');
+    const other = await signUpFan(db, 'Alan Ferreira');
+    const otherAt = (await read(`users/${other.uid}`))!.username as string;
+    const start = Date.parse('2026-10-08T15:00:00.000Z');
+    const { clock, call } = clockApi(start, { profileCap: 1 });
+
+    expect((await putProfile(call, fan, { bio: 'Um' })).status).toBe(200);
+    expect(await putProfile(call, fan, { username: otherAt, bio: 'Dois' })).toMatchObject({
+      status: 429,
+      body: { code: 'too_many_requests', details: { limit: 1, action: 'profile' } },
+    });
+    // No dia seguinte, abaixo do teto, o mesmo pedido é o 409 de sempre.
+    clock.now = nextDayStart(start);
+    expect(await putProfile(call, fan, { username: otherAt, bio: 'Dois' })).toMatchObject({
+      status: 409,
+      body: { code: 'username_taken' },
+    });
+    expect((await read(`users/${fan.uid}`))!.bio).toBe('Um');
+  });
+
+  it('duas edições do mesmo fã em paralelo, com chaves diferentes: as duas redes ficam e o dia conta 2', async () => {
+    // A transação que perde roda de novo com o perfil novo (28.4): o socials é gravado inteiro,
+    // e um retrato lido fora dela apagaria a rede da outra.
+    const fan = await signUpFan(db, 'Camila Ribeiro');
+    const start = Date.now();
+    const { call } = clockApi(start);
+
+    const [instagram, x] = await Promise.all([
+      putProfile(call, fan, { socials: { instagram: 'a.teste.up' } }),
+      putProfile(call, fan, { socials: { x: 'bteste' } }),
+    ]);
+    expect([instagram.status, x.status]).toEqual([200, 200]);
+    expect((await read(`users/${fan.uid}`))!.socials).toEqual({
+      ...NO_SOCIALS,
+      instagram: 'a.teste.up',
+      x: 'bteste',
+    });
+    expect((await dayCounts(fan.uid, start)).profile_save).toBe(2);
+  });
+
+  it('a troca de nome pela api de verdade chega às cópias dos comentários pela fila; a da bio não põe tarefa', async () => {
+    const fan = await signUpFan(db, 'Camila Ribeiro');
+    const artist = await central(env);
+    const postId = await post(env, artist);
+    const commented = await http(env, `/posts/${postId}/comments`, {
+      method: 'POST',
+      token: fan.token,
+      key: unique('chave-comentario-'),
+      body: { text: 'Que show!' },
+    });
+    expect(commented.status).toBe(200);
+    const commentPath = `posts/${postId}/postComments/${String(commented.body.id)}`;
+
+    const renamed = await http(env, '/me/profile', {
+      method: 'PUT',
+      token: fan.token,
+      key: unique('chave-perfil-'),
+      body: { displayName: 'Camila Nova' },
+    });
+    expect(renamed.status).toBe(200);
+    await waitFor(
+      'o nome novo na cópia do comentário',
+      async () => (await read(commentPath))?.authorName === 'Camila Nova',
+    );
+
+    // Outro fã, só a bio e as redes: o orçamento da fila não nasce.
+    const other = await signUpFan(db, 'Bia Santos');
+    const bio = await http(env, '/me/profile', {
+      method: 'PUT',
+      token: other.token,
+      key: unique('chave-perfil-'),
+      body: { bio: 'Salvador.', socials: { instagram: 'bia.teste.up' }, privateAccount: true },
+    });
+    expect(bio.status).toBe(200);
+    await sleep(3_000);
+    expect(await exists(`users/${other.uid}/profileSync/budget`)).toBe(false);
+  });
+
+  it('a mesma chave repetida devolve a resposta guardada (a api de verdade)', async () => {
+    const fan = await signUpFan(db, 'Camila Ribeiro');
+    const key = unique('chave-perfil-repetida-');
+    const body = { bio: 'Feira de Santana.', gender: 'woman' };
+    const first = await http(env, '/me/profile', { method: 'PUT', token: fan.token, key, body });
+    expect(first.status).toBe(200);
+    const again = await http(env, '/me/profile', { method: 'PUT', token: fan.token, key, body });
+    expect(again.status).toBe(200);
+    expect(again.body).toEqual(first.body);
+    expect(again.headers.get('Idempotency-Replayed')).toBe('true');
+  });
+
+  it('o suspenso recebe 403 sem gravar; sem perfil, 503; a conta só da equipe, 403', async () => {
+    const fan = await signUpFan(db, 'Promo Seguidores');
+    await db
+      .doc(`users/${fan.uid}`)
+      .update({ suspendedAt: Timestamp.now(), suspensionReason: 'spam' });
+    const { call } = clockApi(Date.now());
+    expect(await putProfile(call, fan, { privateAccount: true, bio: null })).toEqual({
+      status: 403,
+      body: {
+        code: 'account_suspended',
+        message: 'Sua conta está suspensa. Fale com a equipe do ImagineUP.',
+      },
+    });
+    expect((await read(`users/${fan.uid}`))!.privateAccount).toBeUndefined();
+
+    const gone = await signUpFan(db, 'Sem Perfil');
+    await db.doc(`users/${gone.uid}`).delete();
+    expect((await putProfile(call, gone, { bio: 'Oi' })).body).toMatchObject({
+      code: 'profile_not_ready',
+    });
+    expect(await exists(`users/${gone.uid}`)).toBe(false);
+
+    const staff = await seedMember(env, 'Equipe', 'admin');
+    const asStaff = await call('PUT', '/me/profile', {
+      token: staff.token,
+      key: unique('chave-equipe-'),
+      body: { bio: 'Oi' },
+    });
+    expect(asStaff).toMatchObject({ status: 403, body: { code: 'not_fan' } });
+  });
+});
+
+describe('perfil novo: GET /fans/:fanId', () => {
+  const THALITA = SEED_FAN_DETAILS.find((details) => details.email === 'rank-01@teste.imagineup')!;
+
+  /** A Thalita do seed: bio, gênero, as quatro redes e a cidade (que nunca sai). */
+  async function thalita(): Promise<Fan> {
+    const fan = await signUpFan(db, 'Thalita Santos');
+    expect(await seedFanDetails(db, fan.uid, seedFanDetailsChanges(THALITA))).toBe('written');
+    await db.doc(`users/${fan.uid}`).update({ city: 'Irará, BA' });
+    return fan;
+  }
+
+  const getFan = (call: ReturnType<typeof localApi>, viewer: Fan, fanId: string) =>
+    call('GET', `/fans/${fanId}`, { token: viewer.token });
+
+  it('a completa pela api de verdade: foto, nome, @, bio e redes; nunca o gênero, a cidade nem a privada', async () => {
+    const target = await thalita();
+    const viewer = await signUpFan(db, 'Camila Ribeiro');
+    const username = (await read(`users/${target.uid}`))!.username;
+    const result = await http(env, `/fans/${target.uid}`, { token: viewer.token });
+    expect(result.status).toBe(200);
+    expect(result.body).toEqual({
+      uid: target.uid,
+      displayName: 'Thalita Santos',
+      username,
+      photoURL: null,
+      restricted: false,
+      bio: THALITA.bio,
+      socials: {
+        instagram: 'thalita.teste.up',
+        tiktok: 'thalita.teste.up',
+        linkedin: 'thalita-teste-imagineup',
+        x: 'thalitatesteup',
+      },
+    });
+    // Só lê: sem chave e sem exigir o perfil de quem pede (a conta só da equipe também lê).
+    const staff = await seedMember(env, 'Equipe', 'admin');
+    expect((await http(env, `/fans/${target.uid}`, { token: staff.token })).status).toBe(200);
+  });
+
+  it('fechada na conta privada, na suspensa e para quem o alvo bloqueou, com o mesmo corpo', async () => {
+    const target = await thalita();
+    const viewer = await signUpFan(db, 'Camila Ribeiro');
+    const call = localApi(env, { now: () => Date.now() });
+    const username = (await read(`users/${target.uid}`))!.username;
+    const closed = {
+      uid: target.uid,
+      displayName: 'Thalita Santos',
+      username,
+      photoURL: null,
+      restricted: true,
+      bio: null,
+      socials: null,
+    };
+
+    await db.doc(`users/${target.uid}`).update({ privateAccount: true });
+    const asPrivate = await getFan(call, viewer, target.uid);
+    expect(asPrivate).toEqual({ status: 200, body: closed });
+
+    await db
+      .doc(`users/${target.uid}`)
+      .update({ privateAccount: false, suspendedAt: Timestamp.now() });
+    const asSuspended = await getFan(call, viewer, target.uid);
+    expect(asSuspended.body).toEqual(asPrivate.body);
+
+    await db.doc(`users/${target.uid}`).update({ suspendedAt: null });
+    expect((await getFan(call, viewer, target.uid)).body).toMatchObject({ restricted: false });
+    const blocked = await call('PUT', `/me/blocks/${viewer.uid}`, {
+      token: target.token,
+      key: unique('chave-bloqueio-'),
+    });
+    expect(blocked.status).toBe(200);
+    const asBlocked = await getFan(call, viewer, target.uid);
+    // O bloqueado não fica sabendo: o corpo é o mesmo da conta privada.
+    expect(asBlocked.body).toEqual(asPrivate.body);
+    // Um terceiro, que não foi bloqueado, segue vendo a completa.
+    const third = await signUpFan(db, 'Bia Santos');
+    expect((await getFan(call, third, target.uid)).body).toMatchObject({ restricted: false });
+  });
+
+  it('quem bloqueou o alvo vê a completa; o próprio fã vê a completa mesmo com a privada', async () => {
+    const target = await thalita();
+    const viewer = await signUpFan(db, 'Camila Ribeiro');
+    const call = localApi(env, { now: () => Date.now() });
+    expect(
+      (
+        await call('PUT', `/me/blocks/${target.uid}`, {
+          token: viewer.token,
+          key: unique('chave-bloqueio-'),
+        })
+      ).status,
+    ).toBe(200);
+    expect((await getFan(call, viewer, target.uid)).body).toMatchObject({
+      restricted: false,
+      bio: THALITA.bio,
+    });
+
+    await db.doc(`users/${target.uid}`).update({ privateAccount: true });
+    expect((await getFan(call, target, target.uid)).body).toMatchObject({
+      restricted: false,
+      bio: THALITA.bio,
+    });
+  });
+
+  it('404 sem perfil, para a conta só da equipe e para o id fora do formato', async () => {
+    const viewer = await signUpFan(db, 'Camila Ribeiro');
+    const gone = await signUpFan(db, 'Sem Perfil');
+    await db.doc(`users/${gone.uid}`).delete();
+    const staff = await seedMember(env, 'Equipe', 'admin');
+    const call = localApi(env, { now: () => Date.now() });
+    for (const fanId of [gone.uid, staff.uid, 'naoExiste1', 'fa-rank-01']) {
+      expect(await getFan(call, viewer, fanId)).toEqual({
+        status: 404,
+        body: { code: 'fan_not_found', message: 'Fã não encontrado.' },
+      });
+    }
+  });
+
+  it('a rede gravada fora do padrão (pelo Admin SDK) não sai; só ela, as outras seguem', async () => {
+    const target = await thalita();
+    const viewer = await signUpFan(db, 'Camila Ribeiro');
+    const call = localApi(env, { now: () => Date.now() });
+    await db.doc(`users/${target.uid}`).update({
+      socials: {
+        instagram: 'https://golpe.example/thalita',
+        tiktok: 'Thalita Teste',
+        linkedin: null,
+        x: 'thalitatesteup',
+        facebook: 'thalita',
+      },
+    });
+    expect((await getFan(call, viewer, target.uid)).body).toMatchObject({
+      restricted: false,
+      socials: { instagram: null, tiktok: null, linkedin: null, x: 'thalitatesteup' },
+    });
+    await db.doc(`users/${target.uid}`).update({ socials: { instagram: 'Fora Do Padrão' } });
+    expect((await getFan(call, viewer, target.uid)).body).toMatchObject({ socials: null });
+  });
+});
+
+describe('seed do perfil novo (28.10)', () => {
+  it('o seedFanDetails grava pelo runAsFan com o ator de sistema; a segunda vez não grava (o plano vazio)', async () => {
+    const fan = await signUpFan(db, 'Aline Ferreira');
+    const aline = SEED_FAN_DETAILS.find((details) => details.email === 'rank-05@teste.imagineup')!;
+    expect(await seedFanDetails(db, fan.uid, seedFanDetailsChanges(aline))).toBe('written');
+    const first = await db.doc(`users/${fan.uid}`).get();
+    expect(first.data()).toMatchObject({
+      bio: aline.bio,
+      gender: 'undisclosed',
+      privateAccount: true,
+      socials: { instagram: 'aline.teste.up', tiktok: null, linkedin: null, x: 'alinetesteup' },
+    });
+    expect(first.get('updatedAt')).toBeUndefined();
+    // O ator de sistema não conta no teto do dia, e o plano vazio não grava a carteira.
+    expect(await exists(`wallets/${fan.uid}`)).toBe(false);
+
+    expect(await seedFanDetails(db, fan.uid, seedFanDetailsChanges(aline))).toBe('unchanged');
+    const second = await db.doc(`users/${fan.uid}`).get();
+    expect(second.updateTime!.isEqual(first.updateTime!)).toBe(true);
+    // O corpo fora da regra é recusado como na rota.
+    await expect(seedFanDetails(db, fan.uid, { bio: 'x'.repeat(201) })).rejects.toMatchObject({
+      reason: 'profile_invalid',
+    });
   });
 });

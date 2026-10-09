@@ -50,13 +50,14 @@ import {
   type Mission,
 } from '@/domains/missions';
 import { useArtistPostsQuery } from '@/domains/posts';
-import { useFanIdentity } from '@/domains/profile';
+import { fanProfileHref, useFanIdentity } from '@/domains/profile';
 import {
   RankingRow,
   SeasonLine,
   useLeaderboardInfiniteQuery,
   useSeasonOver,
   useSeasonQuery,
+  type LeaderboardEntry,
   type RankingScope,
   type RankingSelf,
 } from '@/domains/ranking';
@@ -430,6 +431,12 @@ function ArtistPage({ artistId }: { artistId: string }) {
     selectTab('ranking', { reveal: true, focus: true });
   };
 
+  // O perfil público de outro fã (os top fãs e a aba Ranking), por cima das
+  // abas; o voltar devolve à 1d, na mesma aba.
+  const openFan = (entry: LeaderboardEntry): void => {
+    router.push(fanProfileHref(entry.userId));
+  };
+
   const pressMission = (mission: Mission): void => {
     const destination = tabOfMission(mission, artistId);
     if (destination) {
@@ -506,6 +513,7 @@ function ArtistPage({ artistId }: { artistId: string }) {
               state={board.isPending ? 'loading' : 'ready'}
               self={self}
               onSeeRanking={seeRanking}
+              onOpenFan={openFan}
               titleRef={ref}
             />
           </View>
@@ -566,6 +574,7 @@ function ArtistPage({ artistId }: { artistId: string }) {
               entry={item.entry}
               self={self}
               seasonOver={seasonOver}
+              onPress={() => openFan(item.entry)}
               testID={target === 'Cell' ? `artist-rank-${item.entry.position}` : undefined}
             />
           </View>
@@ -669,7 +678,9 @@ function ArtistPage({ artistId }: { artistId: string }) {
           ref={listRef}
           data={items}
           keyExtractor={(item) => item.key}
-          getItemType={(item) => item.type}
+          // A linha "Você" (estática, sem toque) e as de outros fãs (botões) não
+          // se reciclam uma na outra; o tipo do item não muda.
+          getItemType={(item) => (item.type === 'rank' && item.entry.isMe ? 'rankMe' : item.type)}
           renderItem={renderItem}
           extraData={{ tab, stuck, now, self, board, season, artist, reducedMotion }}
           ItemSeparatorComponent={ItemGap}

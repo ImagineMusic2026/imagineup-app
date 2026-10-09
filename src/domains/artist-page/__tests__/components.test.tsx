@@ -93,6 +93,40 @@ describe('TopFansCard', () => {
     expect(screen.getByLabelText('2º lugar, você, 8.000 pontos')).toBeTruthy();
   });
 
+  it('sem onOpenFan, nenhum lugar é tocável', () => {
+    render(
+      <TopFansCard
+        entries={[entry(1), entry(2), entry(3)]}
+        state="ready"
+        self={self}
+        onSeeRanking={jest.fn()}
+      />,
+    );
+    expect(screen.queryByRole('button', { name: /lugar/ })).toBeNull();
+  });
+
+  it('com onOpenFan, o lugar de outro fã abre o perfil dele; "você" e a vaga ficam estáticos', () => {
+    const onOpenFan = jest.fn();
+    render(
+      <TopFansCard
+        entries={[entry(1), entry(2, { isMe: true, displayName: null })]}
+        state="ready"
+        self={self}
+        onSeeRanking={jest.fn()}
+        onOpenFan={onOpenFan}
+      />,
+    );
+    const first = screen.getByRole('button', { name: '1º lugar, Thalita S., 9.000 pontos' });
+    expect(first.props.accessibilityHint).toBe('Abre o perfil de Thalita S.');
+    expect(screen.queryByRole('button', { name: '2º lugar, você, 8.000 pontos' })).toBeNull();
+    expect(screen.getByLabelText('2º lugar, você, 8.000 pontos')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: '3º lugar, vaga aberta' })).toBeNull();
+    expect(screen.getByLabelText('3º lugar, vaga aberta')).toBeTruthy();
+
+    fireEvent.press(first);
+    expect(onOpenFan).toHaveBeenCalledWith(entry(1));
+  });
+
   it('com menos de três fãs, os lugares que faltam ficam como vaga aberta', () => {
     render(<TopFansCard entries={[entry(1)]} state="ready" self={self} onSeeRanking={jest.fn()} />);
     expect(screen.getByLabelText('2º lugar, vaga aberta')).toBeTruthy();

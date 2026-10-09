@@ -32,6 +32,8 @@ function RootLayout() {
       </Stack.Protected>
       <Stack.Protected guard={signedIn && onboarded}>
         <Stack.Screen name="(tabs)" />
+        <Stack.Screen name="fa/[fanId]" />
+        <Stack.Screen name="editar-perfil" />
       </Stack.Protected>
       <Stack.Screen name="convite/[codigo]" />
     </Stack>
@@ -65,6 +67,8 @@ const appTree = {
   '(tabs)/(ranking)/ranking': label('ranking'),
   '(tabs)/(perfil)/perfil': label('profile'),
   '(tabs)/(inicio,explorar,ranking,perfil)/artista/[artistaId]': label('artist'),
+  'fa/[fanId]': label('fan'),
+  'editar-perfil': label('edit-profile'),
   'convite/[codigo]': InviteCaptureScreen,
 };
 
@@ -140,6 +144,57 @@ describe('cadastro com os guards de sessão', () => {
 
     act(() => first());
     await waitFor(() => expect(view.getPathname()).toBe('/artistas'));
+  });
+});
+
+describe('"Editar perfil" na pilha raiz, dentro dos guards (seção 28)', () => {
+  it('sem sessão, o link de "Editar perfil" não abre a tela e cai na entrada', async () => {
+    setSession(false, false);
+    const view = renderRouter(appTree, { initialUrl: '/editar-perfil' });
+    // A rota barrada fica de fora em silêncio, e o guard mostra a entrada.
+    expect(await view.findByText('login')).toBeTruthy();
+    expect(view.queryByText('edit-profile')).toBeNull();
+  });
+
+  it('logado sem onboarding, também não abre', async () => {
+    setSession(true, false);
+    const view = renderRouter(appTree, { initialUrl: '/editar-perfil' });
+    expect(await view.findByText('onboarding')).toBeTruthy();
+    expect(view.queryByText('edit-profile')).toBeNull();
+  });
+
+  it('logado, abre por cima das abas', async () => {
+    setSession(true, true);
+    const view = renderRouter(appTree, { initialUrl: '/perfil' });
+    act(() => router.push('/editar-perfil'));
+    await waitFor(() => expect(view.getPathname()).toBe('/editar-perfil'));
+    expect(view.getByText('edit-profile')).toBeTruthy();
+    expect(rootRoutes(view)).toEqual(['(tabs)', 'editar-perfil']);
+  });
+});
+
+describe('perfil público de outro fã na pilha raiz, dentro dos guards (seção 28)', () => {
+  it('sem sessão, o link do perfil de um fã não abre a tela e cai na entrada', async () => {
+    setSession(false, false);
+    const view = renderRouter(appTree, { initialUrl: '/fa/x' });
+    expect(await view.findByText('login')).toBeTruthy();
+    expect(view.queryByText('fan')).toBeNull();
+  });
+
+  it('logado sem onboarding, também não abre', async () => {
+    setSession(true, false);
+    const view = renderRouter(appTree, { initialUrl: '/fa/x' });
+    expect(await view.findByText('onboarding')).toBeTruthy();
+    expect(view.queryByText('fan')).toBeNull();
+  });
+
+  it('logado, abre por cima das abas', async () => {
+    setSession(true, true);
+    const view = renderRouter(appTree, { initialUrl: '/ranking' });
+    act(() => router.push({ pathname: '/fa/[fanId]', params: { fanId: 'fa-rank-01' } }));
+    await waitFor(() => expect(view.getPathname()).toBe('/fa/fa-rank-01'));
+    expect(view.getByText('fan')).toBeTruthy();
+    expect(rootRoutes(view)).toEqual(['(tabs)', 'fa/[fanId]']);
   });
 });
 

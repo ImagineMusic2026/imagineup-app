@@ -286,6 +286,33 @@ describe('rotas do perfil editável (bloco 9)', () => {
   });
 });
 
+describe('rotas do perfil novo (seção 28)', () => {
+  it('PUT /me/profile e GET /fans/:fanId, com o id decodificado', () => {
+    expect(matchRoute(API_ROUTES, 'PUT', '/me/profile')).toMatchObject({
+      kind: 'match',
+      route: { method: 'PUT', pattern: '/me/profile', writes: true },
+    });
+    expect(matchRoute(API_ROUTES, 'GET', '/fans/Kq3vZ8wQb1TnUe0aRk5pL2mXy7Fd')).toMatchObject({
+      kind: 'match',
+      route: { method: 'GET', pattern: '/fans/:fanId', writes: false },
+      params: { fanId: 'Kq3vZ8wQb1TnUe0aRk5pL2mXy7Fd' },
+    });
+  });
+
+  it('GET /me/profile e PUT /fans/:fanId são 405', () => {
+    expect(matchRoute(API_ROUTES, 'GET', '/me/profile')).toEqual({
+      kind: 'method_not_allowed',
+      allow: ['PUT'],
+    });
+    expect(matchRoute(API_ROUTES, 'PUT', '/fans/uidCamila')).toEqual({
+      kind: 'method_not_allowed',
+      allow: ['GET'],
+    });
+    expect(matchRoute(API_ROUTES, 'GET', '/fans').kind).toBe('not_found');
+    expect(matchRoute(API_ROUTES, 'GET', '/fans/a%2Fb').kind).toBe('invalid');
+  });
+});
+
 describe('rotas da loja (bloco 10)', () => {
   it('/rewards e /rewards/:rewardId/redeem não se confundem', () => {
     expect(matchRoute(API_ROUTES, 'GET', '/rewards')).toMatchObject({

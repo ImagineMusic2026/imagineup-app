@@ -39,6 +39,7 @@ import {
 } from './centrals';
 import {
   clearFanPhoto as removeFanPhotoByStaff,
+  clearFanProfileText as clearFanTextByStaff,
   FAN_PROFILE_MAX_ATTEMPTS,
   FAN_PROFILE_QUEUE,
   fanPhotoFiles,
@@ -690,7 +691,8 @@ export const getRedemptionContacts = onCall({ cors: PANEL_ORIGINS }, async (requ
 // Telas do painel (bloco 11, docs/arquitetura-api.md, 26.4): o ajuste de
 // pontos e a busca por e-mail da seção Fãs, o ranking ao vivo da seção
 // Ranking e as ferramentas da Moderação sobre a conta de um fã (trocar o @,
-// tirar a foto, suspender e ocultar os comentários). Mesmo molde das outras:
+// tirar a foto, apagar a bio e as redes desde o perfil novo, 28.6, suspender
+// e ocultar os comentários). Mesmo molde das outras:
 // o acesso lido de staff/{uid} a cada chamada e de novo na transação, a
 // auditoria em staffAudit com o uid do fã e nunca o e-mail, e a recusa da
 // própria conta de fã de quem chama (`self`). Os logs levam ids, nunca o
@@ -750,6 +752,16 @@ export const clearFanPhoto = onCall({ cors: PANEL_ORIGINS }, async (request) => 
   return result;
 });
 
+/**
+ * Apaga a bio, as redes ou as duas do perfil de um fã (28.6). A auditoria
+ * guarda os campos que saíram, nunca o texto.
+ */
+export const clearFanProfileText = onCall({ cors: PANEL_ORIGINS }, async (request) => {
+  const result = await clearFanTextByStaff(fanPanelDeps(), request.auth, request.data);
+  logger.info('Bio e redes de um fã apagadas pela equipe.', { actorUid: request.auth?.uid });
+  return result;
+});
+
 /** Suspende (ou tira a suspensão de) um fã: as rotas do app que gravam passam a recusar. */
 export const setFanSuspended = onCall({ cors: PANEL_ORIGINS }, async (request) => {
   const result = await suspendFan({ db: getFirestore() }, request.auth, request.data);
@@ -777,7 +789,8 @@ export const hideFanComments = onCall(
 // API HTTP do app (docs/arquitetura-api.md): carteira, progresso e extrato no
 // bloco 1, centrais no bloco 4, convite no bloco 5, mural e agenda no bloco 6,
 // missões e conquistas no bloco 7, ranking e temporada no bloco 8, o perfil
-// editável no bloco 9 e a loja no bloco 10; os blocos seguintes acrescentam
+// editável no bloco 9 (e, na seção 28, a edição inteira e o perfil público)
+// e a loja no bloco 10; os blocos seguintes acrescentam
 // as rotas deles em src/api. Quem protege é o ID token do Firebase
 // em toda rota, por isso o invoker público. Sem CORS: o app nativo não faz
 // preflight, e o painel usa as callables. A visita ao link de convite conta

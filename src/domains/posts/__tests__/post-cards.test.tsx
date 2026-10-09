@@ -13,7 +13,7 @@ import { profileKeys } from '@/domains/profile';
 import { buildMyInviteFixture } from '@/domains/profile/fixtures';
 import { t } from '@/i18n';
 import { haptics } from '@/services/haptics';
-import { colors, layout } from '@/theme';
+import { colors, layout, motion } from '@/theme';
 
 import { CommentRow } from '../components/comment-row';
 import { PostActions } from '../components/post-actions';
@@ -449,5 +449,77 @@ describe('CommentRow: opções do comentário (denunciar e bloquear)', () => {
       expect(screen.queryByRole('button', { name: /Opções do comentário/ })).toBeNull();
       view.unmount();
     }
+  });
+});
+
+describe('CommentRow: o perfil público do autor (seção 28)', () => {
+  /** O pressável da linha (o de fora, com o rótulo). */
+  const rowPressable = (key = 'c-thalita') =>
+    screen
+      .UNSAFE_getAllByType(PressableScale)
+      .find((node) => node.props.testID === `comment-${key}`)!;
+
+  it('no comentário entregue de outro fã, a linha é o botão que abre o perfil, com a dica, o toque e o encolher', () => {
+    const onOpenProfile = jest.fn();
+    render(
+      <CommentRow
+        comment={comment()}
+        now={NOW}
+        onOptions={jest.fn()}
+        onOpenProfile={onOpenProfile}
+      />,
+    );
+    const row = screen.getByRole('button', { name: 'Thalita S., há 1 hora: Irará em peso!' });
+    expect(row.props.accessibilityHint).toBe('Abre o perfil de Thalita S.');
+    expect(row.props.focusable).toBe(true);
+    expect(rowPressable().props.haptic).toBe('tap');
+    expect(rowPressable().props.scaleTo).toBe(motion.pressScale);
+    // As opções continuam irmãs da linha: nada aninhado.
+    expect(screen.getByRole('button', { name: 'Opções do comentário de Thalita S.' })).toBeTruthy();
+    expect(nestedPressables()).toEqual([]);
+
+    fireEvent.press(row);
+    expect(onOpenProfile).toHaveBeenCalledTimes(1);
+    expect(haptics.trigger).toHaveBeenCalledWith('tap');
+  });
+
+  it('nada no "Você", no do artista e no que ainda vai; no que falhou, o toque tenta de novo', () => {
+    const onOpenProfile = jest.fn();
+    const cases: { mine?: boolean; overrides: Partial<PostComment> }[] = [
+      { mine: true, overrides: { authorId: 'uid-camila' } },
+      { overrides: { authorId: 'nettobrito', authorIsArtist: true, authorName: 'Netto Brito' } },
+      { overrides: { status: 'pending' } },
+    ];
+    for (const { mine, overrides } of cases) {
+      const view = render(
+        <CommentRow
+          comment={comment(overrides)}
+          now={NOW}
+          mine={mine}
+          onOpenProfile={onOpenProfile}
+        />,
+      );
+      expect(screen.queryByRole('button')).toBeNull();
+      expect(rowPressable().props.scaleTo).toBe(1);
+      expect(rowPressable().props.haptic).toBeNull();
+      fireEvent.press(rowPressable());
+      view.unmount();
+    }
+    expect(onOpenProfile).not.toHaveBeenCalled();
+
+    const onRetry = jest.fn();
+    render(
+      <CommentRow
+        comment={comment({ status: 'failed' })}
+        now={NOW}
+        onRetry={onRetry}
+        onOpenProfile={onOpenProfile}
+      />,
+    );
+    const row = screen.getByRole('button', { name: 'Thalita S., não enviado: Irará em peso!' });
+    expect(row.props.accessibilityHint).toBe(t('post.comments.retryHint'));
+    fireEvent.press(row);
+    expect(onRetry).toHaveBeenCalledTimes(1);
+    expect(onOpenProfile).not.toHaveBeenCalled();
   });
 });

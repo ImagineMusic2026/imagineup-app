@@ -33,7 +33,7 @@ import { EmptyState } from '@/components/empty-state';
 import { LargeTitleHeader } from '@/components/header';
 import { PageGlow } from '@/components/page-glow';
 import { Screen } from '@/components/screen';
-import { useFanIdentity } from '@/domains/profile';
+import { fanProfileHref, useFanIdentity } from '@/domains/profile';
 import { useAnnounceWhen } from '@/hooks/use-announce-when';
 import { useNow } from '@/hooks/use-now';
 import { usePrefersReducedMotion } from '@/hooks/use-prefers-reduced-motion';
@@ -316,6 +316,11 @@ export function RankingScreen() {
     updateMeInView(box);
   };
 
+  // O perfil público de outro fã, por cima das abas; o voltar devolve à 1f.
+  const openFan = (entry: LeaderboardEntry): void => {
+    router.push(fanProfileHref(entry.userId));
+  };
+
   const sendFocus = (node: View): void => {
     pendingFocus.current = null;
     setTimeout(() => AccessibilityInfo.sendAccessibilityEvent(node, 'focus'), motion.duration.fast);
@@ -434,6 +439,7 @@ export function RankingScreen() {
             self={self}
             leaderTitle={season.data?.leaderTitle ?? null}
             meRef={meRef}
+            onOpen={openFan}
             testID="ranking-podium"
           />
         </View>
@@ -447,6 +453,7 @@ export function RankingScreen() {
         entry={item}
         self={self}
         seasonOver={seasonOver}
+        onPress={() => openFan(item)}
         ref={item.isMe && target === 'Cell' ? meRef : undefined}
         testID={target === 'Cell' ? `ranking-row-${item.position}` : undefined}
       />

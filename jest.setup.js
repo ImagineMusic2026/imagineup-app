@@ -58,11 +58,12 @@ jest.mock('@shopify/react-native-skia', () => {
   return require('@shopify/react-native-skia/lib/commonjs/mock').Mock(canvasKit);
 });
 
-// Os testes rodam como as builds de hoje: sem API e sem emulador. O Jest não lê
-// o .env, mas lê o ambiente do shell e do CI; com EXPO_PUBLIC_API_URL ou
-// EXPO_PUBLIC_FIREBASE_EMULATOR_HOST exportada, a carteira iria para a API e as
-// suítes das fixtures quebrariam sem nada mudar no código. Teste do modo API
-// mocka `@/config/data-source` (ou este módulo) no próprio arquivo.
+// Os testes rodam como uma build sem API e sem emulador (o Expo Go sem o
+// .env). O Jest não lê o .env, mas lê o ambiente do shell e do CI; com
+// EXPO_PUBLIC_API_URL ou EXPO_PUBLIC_FIREBASE_EMULATOR_HOST exportada, a
+// carteira iria para a API e as suítes das fixtures quebrariam sem nada mudar
+// no código. Teste do modo API mocka `@/config/data-source` (ou este módulo)
+// no próprio arquivo.
 jest.mock('@/config/server', () => ({
   ...jest.requireActual('@/config/server'),
   apiUrl: undefined,

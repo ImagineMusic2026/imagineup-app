@@ -26,12 +26,12 @@ function Chevron() {
 }
 
 /**
- * O que a linha "Editar perfil" promete: com a API, "Nome, @, cidade e foto"
- * (ou o aviso do @ automático); sem ela, "Nome e cidade", o que a tela faz
- * nas fixtures (24.1, decisão 12).
+ * O que a linha "Editar perfil" promete: com a API, "Foto, nome, @, bio e
+ * redes" (ou o aviso do @ automático); sem ela, a tela é só leitura (seção 28,
+ * decisão 12), e a linha diz isso.
  */
 function editProfileMeta(username: string | null | undefined): string {
-  if (sourceOf('profile') !== 'api') return t('settings.editProfileMetaBasic');
+  if (sourceOf('profile') !== 'api') return t('settings.editProfileMetaReadOnly');
   return t(
     isAutomaticUsername(username)
       ? 'settings.editProfileMetaAutomatic'

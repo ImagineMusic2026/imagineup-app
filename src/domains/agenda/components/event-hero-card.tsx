@@ -4,9 +4,8 @@ import { StyleSheet, useWindowDimensions, View } from 'react-native';
 import { Button } from '@/components/button';
 import { PhotoCard } from '@/components/photo-card';
 import { Text } from '@/components/text';
-import { colors, layout, radii, spacing } from '@/theme';
+import { colors, isLargeText, layout, radii, spacing } from '@/theme';
 
-import { LARGE_TEXT_SCALE } from '../consts';
 import { eventDateBadge, eventMeta, featuredEventLabel, inviteButtonText } from '../describe-event';
 import type { AgendaEvent } from '../types';
 import { DateBadge } from './date-badge';
@@ -46,7 +45,7 @@ export function EventHeroCard({ event, now, onInvite, infoRef, testID }: EventHe
   const invite = inviteButtonText(event);
   const dimensions = useWindowDimensions();
   // Com a fonte grande, título e meta quebram inteiros em vez de cortar.
-  const lines = dimensions.fontScale >= LARGE_TEXT_SCALE ? undefined : 2;
+  const lines = isLargeText(dimensions.fontScale) ? undefined : 2;
   // A agenda põe o destaque entre as margens da tela.
   const fallbackSize = {
     width: dimensions.width - 2 * spacing.gutter,

@@ -1,9 +1,11 @@
+export { fanProfileHref } from './fan-profile-href';
 export { useFanIdentity, type FanIdentity } from './hooks/use-fan-identity';
 export {
+  fanKeys,
   profileKeys,
   profileMutationKeys,
   useChangePhotoMutation,
-  useChangeUsernameMutation,
+  useFanProfileQuery,
   useLedgerInfiniteQuery,
   useMyAchievementsQuery,
   useMyInviteQuery,
@@ -19,8 +21,12 @@ export {
 } from './queries';
 export type {
   Achievement,
+  EditableProfile,
   FanProfile,
+  FanPublicProfile,
+  FanSocials,
   FanStats,
+  Gender,
   LedgerEntry,
   LedgerPage,
   Level,
@@ -29,13 +35,14 @@ export type {
   MyProgress,
   PhotoChange,
   ProfileChanges,
+  SocialNetwork,
   UsernameAvailability,
-  UsernameChange,
   UsernameStatus,
   Wallet,
 } from './types';
 export { isAutomaticUsername, normalizeUsername } from './username';
 export { EditProfileScreen } from './views/edit-profile';
+export { FanProfileScreen } from './views/fan-profile';
 export { LedgerScreen } from './views/ledger';
 export { ProfileScreen } from './views/profile';
 export { SettingsScreen } from './views/settings';

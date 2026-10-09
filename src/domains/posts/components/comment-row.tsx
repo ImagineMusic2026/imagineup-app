@@ -48,6 +48,11 @@ export interface CommentRowProps {
    * outro fã: não no "Você", não no do artista, não no que ainda vai.
    */
   onOptions?: () => void;
+  /**
+   * Abre o perfil público do autor (seção 28), pelo toque na própria linha.
+   * Só no comentário entregue de outro fã, o mesmo caso do botão de opções.
+   */
+  onOpenProfile?: () => void;
 }
 
 function nameOf(comment: PostComment, mine: boolean): string {
@@ -78,11 +83,15 @@ function rowLabel(comment: PostComment, now: Date, mine: boolean): string {
  * "Não enviado" em laranja e vira um botão que tenta de novo. Sem curtida em
  * comentário: o fã só curte o post.
  *
- * Toda linha é o mesmo pressável, só ligado quando falhou: trocar o elemento
- * de fora (um `View` enviando, um botão no "Não enviado", outro `View` depois
- * de gravado) recriava a view nativa, e o leitor de tela perdia o foco ao
- * tentar de novo. Fora do "Não enviado", ela não recebe o foco do teclado nem
- * o clique do Android (`focusable`), e o leitor não a trata como botão.
+ * Toda linha é o mesmo pressável, ligado quando falhou (tenta de novo) e no
+ * comentário entregue de outro fã (abre o perfil público dele, seção 28):
+ * trocar o elemento de fora (um `View` enviando, um botão no "Não enviado",
+ * outro `View` depois de gravado) recriava a view nativa, e o leitor de tela
+ * perdia o foco ao tentar de novo. Desligada (o "Você", o artista, o que ainda
+ * vai), ela não recebe o foco do teclado nem o clique do Android
+ * (`focusable`), e o leitor não a trata como botão. Nada pressável no avatar
+ * nem no nome: dentro da linha, que é acessível mesmo desligada, sumiria para
+ * o leitor; o rótulo da linha não muda, e a dica diz o que o toque faz.
  *
  * Com a fonte grande (1,3 em diante), o nome não corta: quebra em linhas e a
  * hora desce para baixo dele.
@@ -103,12 +112,17 @@ export function CommentRow({
   me,
   onRetry,
   onOptions,
+  onOpenProfile,
 }: CommentRowProps) {
   const pending = comment.status === 'pending';
   const failed = comment.status === 'failed';
   const key = comment.localId ?? comment.id;
   const largeText = useWindowDimensions().fontScale >= LARGE_TEXT_SCALE;
-  const showOptions = !!onOptions && !mine && !comment.authorIsArtist && !comment.status;
+  // O comentário entregue de outro fã: as opções e o perfil público.
+  const othersDelivered = !mine && !comment.authorIsArtist && !comment.status;
+  const showOptions = !!onOptions && othersDelivered;
+  const openable = !!onOpenProfile && othersDelivered;
+  const pressable = failed || openable;
 
   const content = (
     <>
@@ -160,13 +174,19 @@ export function CommentRow({
     // comentário: o fade só roda na montagem, e só no que o fã acabou de mandar.
     <Animated.View key={key} entering={animateIn ? ENTERING : undefined}>
       <PressableScale
-        onPress={failed ? onRetry : undefined}
-        haptic={failed ? 'tap' : null}
-        scaleTo={failed ? motion.pressScale : 1}
-        focusable={failed}
-        accessibilityRole={failed ? 'button' : 'none'}
+        onPress={failed ? onRetry : openable ? onOpenProfile : undefined}
+        haptic={pressable ? 'tap' : null}
+        scaleTo={pressable ? motion.pressScale : 1}
+        focusable={pressable}
+        accessibilityRole={pressable ? 'button' : 'none'}
         accessibilityLabel={rowLabel(comment, now, mine)}
-        accessibilityHint={failed ? t('post.comments.retryHint') : undefined}
+        accessibilityHint={
+          failed
+            ? t('post.comments.retryHint')
+            : openable
+              ? t('fanProfile.openHint', { name: comment.authorName })
+              : undefined
+        }
         style={[styles.row, showOptions && styles.rowWithOptions]}
         testID={`comment-${key}`}
       >

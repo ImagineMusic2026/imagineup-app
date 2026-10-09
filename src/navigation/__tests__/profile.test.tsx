@@ -95,7 +95,8 @@ const appTree = {
   '(tabs)/(ranking)/ranking': label('ranking'),
   '(tabs)/(perfil)/perfil': ProfileRoute,
   '(tabs)/(perfil)/ajustes': SettingsRoute,
-  '(tabs)/(perfil)/editar-perfil': label('editar perfil'),
+  // "Editar perfil" fica na pilha raiz, fora das abas (seção 28).
+  'editar-perfil': label('editar perfil'),
   '(tabs)/(inicio,explorar,ranking,perfil)/artista/[artistaId]': label('artist'),
 };
 
@@ -259,7 +260,7 @@ describe('perfil (1e)', () => {
     expect(rootRoutes(view)).toEqual(['(tabs)']);
   });
 
-  it('o hero é um botão (bloco 9): o rótulo de sempre, a dica, e abre "Editar perfil" na pilha do Perfil', async () => {
+  it('o hero é um botão (bloco 9): o rótulo de sempre, a dica, e abre "Editar perfil" por cima das abas', async () => {
     const view = renderRouter(appTree, { initialUrl: '/perfil' });
 
     const hero = await screen.findByRole('button', { name: HERO });
@@ -267,8 +268,8 @@ describe('perfil (1e)', () => {
     fireEvent.press(hero);
 
     await waitFor(() => expect(view.getPathname()).toBe('/editar-perfil'));
-    expect(view.getSegments()).toEqual(['(tabs)', '(perfil)', 'editar-perfil']);
-    expect(rootRoutes(view)).toEqual(['(tabs)']);
+    expect(view.getSegments()).toEqual(['editar-perfil']);
+    expect(rootRoutes(view)).toEqual(['(tabs)', 'editar-perfil']);
   });
 
   it('a engrenagem abre os Ajustes na pilha do Perfil', async () => {

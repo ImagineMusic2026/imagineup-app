@@ -35,8 +35,19 @@ const appTree = {
   '(tabs)/(perfil)/perfil': label('profile'),
   '(tabs)/(inicio,explorar,ranking,perfil)/artista/[artistaId]': label('artist'),
   'post/[postId]': label('post'),
+  'fa/[fanId]': label('fan'),
+  'editar-perfil': label('edit-profile'),
   'recompensa/[recompensaId]': label('reward'),
   'convite/[codigo]': label('invite'),
+};
+
+type Router = ReturnType<typeof renderRouter>;
+type StateNode = { routes?: { name: string; state?: StateNode }[] };
+
+/** Rotas da pilha raiz (o nível de cima é o contêiner `__root`). */
+const rootRoutes = (view: Router): string[] => {
+  const container = view.getRouterState() as StateNode | undefined;
+  return container?.routes?.[0]?.state?.routes?.map((route) => route.name) ?? [];
 };
 
 describe('rotas do app', () => {
@@ -81,6 +92,21 @@ describe('rotas do app', () => {
     expect(view.getSegments()).toEqual(['post', '[postId]']);
   });
 
+  it('o perfil público de outro fã abre fora das abas, com o id no parâmetro', () => {
+    const view = renderRouter(appTree, { initialUrl: '/fa/fa-rank-01' });
+    expect(view.getByText('fan')).toBeTruthy();
+    expect(view.getPathname()).toBe('/fa/fa-rank-01');
+    expect(view.getSegments()).toEqual(['fa', '[fanId]']);
+    expect(view.getSearchParams()).toEqual({ fanId: 'fa-rank-01' });
+  });
+
+  it('"Editar perfil" abre fora das abas, na pilha raiz, com o mesmo endereço de antes', () => {
+    const view = renderRouter(appTree, { initialUrl: '/editar-perfil' });
+    expect(view.getByText('edit-profile')).toBeTruthy();
+    expect(view.getPathname()).toBe('/editar-perfil');
+    expect(view.getSegments()).toEqual(['editar-perfil']);
+  });
+
   it('o detalhe do resgate abre fora das abas, como a sheet do convite', () => {
     const view = renderRouter(appTree, { initialUrl: '/recompensa/videochamada' });
     expect(view.getByText('reward')).toBeTruthy();
@@ -102,6 +128,16 @@ describe('rotas do app', () => {
     expect(view.getSegments()).toEqual(['(tabs)', '(explorar)', 'agenda']);
     act(() => testRouter.back());
     expect(view.getPathname()).toBe('/explorar');
+  });
+
+  it('o perfil público aberto pelo ranking empilha por cima das abas, e o voltar devolve à 1f', () => {
+    const view = renderRouter(appTree, { initialUrl: '/ranking' });
+    act(() => router.push({ pathname: '/fa/[fanId]', params: { fanId: 'fa-rank-04' } }));
+    expect(view.getByText('fan')).toBeTruthy();
+    expect(rootRoutes(view)).toEqual(['(tabs)', 'fa/[fanId]']);
+    act(() => testRouter.back());
+    expect(view.getPathname()).toBe('/ranking');
+    expect(rootRoutes(view)).toEqual(['(tabs)']);
   });
 
   it('agenda e artista abertos pelas missões ficam na pilha do Ranking, e o voltar devolve às missões', () => {

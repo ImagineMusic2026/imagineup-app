@@ -1,9 +1,21 @@
-import { fireEvent, render, screen } from '@testing-library/react-native';
+import {
+  fireEvent,
+  isHiddenFromAccessibility,
+  render,
+  screen,
+} from '@testing-library/react-native';
 import { Eye, Search } from 'lucide-react-native';
 import { createRef } from 'react';
-import { StyleSheet, View, type TextInput as NativeTextInput, type ViewStyle } from 'react-native';
+import {
+  Dimensions,
+  StyleSheet,
+  View,
+  type TextInput as NativeTextInput,
+  type ViewStyle,
+} from 'react-native';
 
-import { colors, layout, radii, spacing, typography } from '@/theme';
+import { Text } from '@/components/text';
+import { borderWidths, colors, layout, radii, spacing, typography } from '@/theme';
 
 import { TextInput, TextInputAction } from '..';
 
@@ -144,9 +156,165 @@ describe('TextInput', () => {
     expect(screen.UNSAFE_getByType(Search).props.accessibilityElementsHidden).toBe(true);
   });
 
+  it('o status do campo vai para a dica do leitor, depois do erro e da dica, sem ser desenhado', () => {
+    render(
+      <TextInput
+        label="Seu @"
+        hint="De 3 a 20 letras"
+        accessibilityStatus="Indisponível: este @ já tem dono."
+      />,
+    );
+    expect(screen.getByLabelText('Seu @')).toHaveProp(
+      'accessibilityHint',
+      'De 3 a 20 letras. Indisponível: este @ já tem dono.',
+    );
+    expect(
+      screen.queryByText('Indisponível: este @ já tem dono.', { includeHiddenElements: true }),
+    ).toBeNull();
+  });
+
   it('entrega o ref do campo, para o envio inválido levar o foco ao erro', () => {
     const ref = createRef<NativeTextInput>();
     render(<TextInput ref={ref} label="E-mail" />);
     expect(ref.current).not.toBeNull();
+  });
+});
+
+type Node = ReturnType<typeof screen.getByText>;
+
+/** A caixa (View em host) mais próxima acima do nó. */
+function hostBox(node: Node): Node {
+  let current = node.parent;
+  while (current && (typeof current.type !== 'string' || (current.type as string) === 'Text')) {
+    current = current.parent;
+  }
+  if (!current) throw new Error('sem caixa em volta');
+  return current;
+}
+
+/** A entrelinha do campo com a fonte do sistema do Jest (o texto cresce até 200%). */
+const lineHeight = () =>
+  typography.input.lineHeight * Math.min(Dimensions.get('window').fontScale, 2);
+
+/** A caixa do campo sem caixa (`bare`): a que só tem a linha de baixo. */
+function bareFieldStyle(): ViewStyle {
+  const style = screen
+    .UNSAFE_getAllByType(View)
+    .map((node) => StyleSheet.flatten(node.props.style) as ViewStyle | undefined)
+    .find((item) => item?.borderBottomWidth !== undefined);
+  if (!style) throw new Error('campo sem linha');
+  return style;
+}
+
+describe('TextInput nos cards da tela "Editar perfil"', () => {
+  it('bare: sem fundo, sem borda e sem raio; a linha de baixo só acende no foco', () => {
+    render(<TextInput label="Nome" labelHidden variant="bare" />);
+    expect(bareFieldStyle()).toMatchObject({
+      borderWidth: 0,
+      borderBottomWidth: borderWidths.default,
+      backgroundColor: colors.transparent,
+      borderColor: colors.transparent,
+    });
+    expect(bareFieldStyle().borderRadius).toBeUndefined();
+    fireEvent(screen.getByLabelText('Nome'), 'focus');
+    expect(bareFieldStyle().borderColor).toBe(colors.accent);
+  });
+
+  it('bare com erro: a linha fica no tom de erro e a mensagem alinha com o texto do campo', () => {
+    render(<TextInput label="Nome" labelHidden variant="bare" error="Digite seu nome." />);
+    expect(bareFieldStyle().borderColor).toBe(colors.danger);
+    const message = screen.getByText('Digite seu nome.', { includeHiddenElements: true });
+    expect(hostBox(message)).toHaveStyle({ paddingHorizontal: spacing.lg });
+  });
+
+  it('o prefixo fica fora do leitor e do toque, e o texto começa depois da largura medida', () => {
+    render(<TextInput label="Seu @" labelHidden variant="bare" prefix="@" value="camilarib" />);
+    const prefix = screen.getByText('@', { includeHiddenElements: true });
+    expect(isHiddenFromAccessibility(prefix)).toBe(true);
+    const box = hostBox(prefix);
+    expect(box).toHaveProp('pointerEvents', 'none');
+    expect(box).toHaveStyle({ left: spacing.lg });
+    // O valor do campo não leva o prefixo.
+    expect(screen.getByLabelText('Seu @')).toHaveProp('value', 'camilarib');
+
+    fireEvent(box, 'layout', { nativeEvent: { layout: { width: 13.2, height: 20, x: 0, y: 0 } } });
+    expect(StyleSheet.flatten(screen.getByLabelText('Seu @').props.style).paddingLeft).toBe(
+      spacing.lg + 14,
+    );
+  });
+
+  it('com o ícone e o prefixo, o prefixo vem depois do ícone', () => {
+    render(
+      <TextInput
+        label="LinkedIn"
+        labelHidden
+        variant="bare"
+        prefix="in/"
+        leadingGlyph="linkedin"
+      />,
+    );
+    const box = hostBox(screen.getByText('in/', { includeHiddenElements: true }));
+    expect(box).toHaveStyle({ left: spacing.lg + 18 + spacing.sm });
+  });
+
+  it('o desenho de marca à esquerda é decorativo e não pega o toque', () => {
+    render(<TextInput label="Instagram" labelHidden variant="bare" leadingGlyph="instagram" />);
+    const svg = screen.root.find(
+      (node) => node.props.viewBox === '0 0 24 24' && node.props.accessibilityElementsHidden,
+    );
+    expect(svg).toBeTruthy();
+    let parent = svg.parent;
+    while (parent && parent.props.pointerEvents === undefined) parent = parent.parent;
+    expect(parent).toHaveProp('pointerEvents', 'none');
+  });
+
+  it('várias linhas: o texto no topo, com a entrelinha, e a caixa com 3 linhas', () => {
+    render(<TextInput label="Bio" labelHidden variant="bare" multiline />);
+    const input = screen.getByLabelText('Bio');
+    expect(input).toHaveProp('textAlignVertical', 'top');
+    expect(input).toHaveStyle({ lineHeight: typography.input.lineHeight });
+    expect(bareFieldStyle()).toMatchObject({
+      alignItems: 'flex-start',
+      minHeight: lineHeight() * 3 + spacing.md * 2,
+    });
+  });
+
+  it('várias linhas com ícone: o ícone fica na altura da primeira linha', () => {
+    render(<TextInput label="Bio" labelHidden variant="bare" multiline leadingIcon={Search} />);
+    const box = screen.UNSAFE_getByType(Search).parent?.parent;
+    expect(box).toHaveStyle({ top: spacing.md, height: lineHeight() });
+  });
+
+  it('o rodapé fica embaixo da caixa do texto, fora dela', () => {
+    render(
+      <TextInput
+        label="Bio"
+        labelHidden
+        variant="bare"
+        multiline
+        footer={<Text testID="contador">0/200</Text>}
+      />,
+    );
+    const footer = screen.getByTestId('contador');
+    const field = screen.root.find(
+      (node) =>
+        typeof node.type !== 'string' &&
+        StyleSheet.flatten(node.props.style)?.borderBottomWidth !== undefined,
+    );
+    expect(field.findAll((node) => node.props.testID === 'contador')).toHaveLength(0);
+    expect(footer).toBeTruthy();
+  });
+
+  it('o padrão de sempre não muda: com caixa, sem prefixo nem status', () => {
+    render(<TextInput label="E-mail" />);
+    expect(fieldStyle()).toMatchObject({
+      borderRadius: radii.md,
+      backgroundColor: colors.surface,
+      borderWidth: borderWidths.default,
+    });
+    const input = screen.getByLabelText('E-mail');
+    expect(StyleSheet.flatten(input.props.style).paddingLeft).toBeUndefined();
+    expect(input.props.textAlignVertical).toBeUndefined();
+    expect(input.props.accessibilityHint).toBeUndefined();
   });
 });

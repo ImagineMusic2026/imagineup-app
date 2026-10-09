@@ -1,8 +1,21 @@
+/** O gênero do fã: só ele e a equipe veem. Sem escolha (`null`), "Não informado". */
+export type Gender = 'woman' | 'man' | 'nonbinary' | 'undisclosed';
+
+/** As redes sociais do perfil, na ordem da tela, das respostas e do mapa gravado. */
+export type SocialNetwork = 'instagram' | 'tiktok' | 'linkedin' | 'x';
+
 /**
- * Perfil básico do fã, lido de `users/{uid}` no Firestore. Nasce no servidor
- * (função `createUserProfile`) alguns segundos depois do cadastro; o celular só
- * lê o próprio e muda `displayName` e `city` direto (a tela "Editar perfil",
- * bloco 9). O @ e a foto mudam pela API.
+ * O usuário de cada rede, já normalizado (nunca o link: quem mostra monta o
+ * link com o domínio fixo), ou `null` na rede vazia.
+ */
+export type FanSocials = Record<SocialNetwork, string | null>;
+
+/**
+ * Perfil do fã, lido de `users/{uid}` no Firestore. Nasce no servidor (função
+ * `createUserProfile`) alguns segundos depois do cadastro; o celular só lê o
+ * próprio. Desde o perfil novo (seção 28 de docs/arquitetura-api.md), toda a
+ * edição vai pela API (`PUT /me/profile`): o celular só grava direto o
+ * primeiro nome do perfil que nasceu sem nome, no cadastro.
  */
 export interface FanProfile {
   uid: string;
@@ -23,17 +36,73 @@ export interface FanProfile {
   usernameChangeableAt?: string | null;
   /**
    * ISO: desde quando a conta está suspensa pela equipe (bloco 11); ausente
-   * sem suspensão. O fã suspenso continua lendo o app, mas não grava nome e
-   * cidade (a regra recusa) nem cria nada pela API (403 `account_suspended`).
+   * sem suspensão. O fã suspenso continua lendo o app, mas não edita o perfil
+   * nem cria nada pela API (403 `account_suspended`).
    */
   suspendedAt?: string | null;
+  // Os campos do perfil novo (seção 28) são opcionais: o perfil salvo no disco
+  // antes dele não os tem, e o `QUERY_CACHE_VERSION` não sobe. O ausente vale
+  // o padrão (null, `false`).
+  /** Até 200 em UTF-16 e 6 linhas, já limpa; `null` sem bio. */
+  bio?: string | null;
+  /** `null`: "Não informado". */
+  gender?: Gender | null;
+  /** Os outros fãs não veem a bio nem as redes. */
+  privateAccount?: boolean;
+  /** As quatro redes; `null` sem nenhuma. */
+  socials?: FanSocials | null;
 }
 
-/** O que a tela "Editar perfil" grava direto no perfil: só o que mudou. */
+/**
+ * O corpo do `PUT /me/profile` (espelho do `ProfileChanges` do
+ * `functions/src/api/contract.ts`): só o que mudou. Uma rede `null` limpa a
+ * rede, e `socials` traz só as redes que mudaram.
+ */
 export interface ProfileChanges {
   displayName?: string;
+  username?: string;
+  /** `null` limpa a bio. */
+  bio?: string | null;
   /** `null` limpa a cidade. */
   city?: string | null;
+  gender?: Gender | null;
+  privateAccount?: boolean;
+  socials?: Partial<FanSocials>;
+}
+
+/**
+ * A resposta do `PUT /me/profile` (espelho do `EditableProfile` das funções):
+ * o perfil editável depois da mudança, que o app põe no cache antes da escuta.
+ */
+export interface EditableProfile {
+  displayName: string | null;
+  username: string | null;
+  /** ISO; `null` sem prazo. */
+  usernameChangeableAt: string | null;
+  bio: string | null;
+  city: string | null;
+  gender: Gender | null;
+  privateAccount: boolean;
+  /** Sempre com as quatro chaves (`null` na rede vazia). */
+  socials: FanSocials;
+}
+
+/**
+ * O perfil público de outro fã (`GET /fans/:fanId`, espelho do
+ * `FanPublicProfile` das funções). Fechado (`restricted`: conta privada,
+ * suspensa ou que bloqueou quem vê, sem dizer qual): só a foto, o nome e o @,
+ * com a bio e as redes `null`. Completo sem nenhuma rede: `socials` `null`.
+ * Nunca o gênero, a cidade, a conta privada nem a suspensão.
+ */
+export interface FanPublicProfile {
+  uid: string;
+  /** `null` sem nome visível: a tela mostra "Fã". */
+  displayName: string | null;
+  username: string | null;
+  photoURL: string | null;
+  restricted: boolean;
+  bio: string | null;
+  socials: FanSocials | null;
 }
 
 /**
@@ -47,13 +116,6 @@ export type UsernameStatus = 'available' | 'current' | 'taken' | 'invalid' | 're
 export interface UsernameAvailability {
   username: string;
   status: UsernameStatus;
-}
-
-/** `PUT /me/username`: as datas em ISO, `null` se o fã nunca trocou. */
-export interface UsernameChange {
-  username: string;
-  changedAt: string | null;
-  changeableAt: string | null;
 }
 
 /** `PUT` e `DELETE /me/photo`: a URL de download com token, ou `null`. */

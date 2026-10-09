@@ -2,7 +2,14 @@ import { FlashList } from '@shopify/flash-list';
 import { onlineManager, QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { router, Stack } from 'expo-router';
 import { Tabs } from 'expo-router/js-tabs';
-import { act, fireEvent, renderRouter, screen, waitFor } from 'expo-router/testing-library';
+import {
+  act,
+  fireEvent,
+  renderRouter,
+  screen,
+  testRouter,
+  waitFor,
+} from 'expo-router/testing-library';
 import { AccessibilityInfo, Share, Text } from 'react-native';
 
 import ArtistRoute from '@/app/(tabs)/(inicio,explorar,ranking,perfil)/artista/[artistaId]';
@@ -114,6 +121,16 @@ const appTree = {
   '(tabs)/(inicio,explorar,ranking,perfil)/artista/[artistaId]': ArtistRoute,
   'post/[postId]': label('post'),
   'sair-da-central/[artistaId]': LeaveCentralRoute,
+  'fa/[fanId]': label('fan'),
+};
+
+type Router = ReturnType<typeof renderRouter>;
+type StateNode = { routes?: { name: string; state?: StateNode }[] };
+
+/** Rotas da pilha raiz (o nível de cima é o contêiner `__root`). */
+const rootRoutes = (view: Router): string[] => {
+  const container = view.getRouterState() as StateNode | undefined;
+  return container?.routes?.[0]?.state?.routes?.map((route) => route.name) ?? [];
 };
 
 /** A aba visível (a grudada, quando a lista a desenha grudada), pelo nome. */
@@ -211,6 +228,30 @@ describe('página do artista (1d)', () => {
     // O leitor de tela vai à temporada, o começo da aba.
     afterScroll();
     expect(focused()).toEqual(['artist-season']);
+  });
+
+  it('os top fãs e as linhas da aba Ranking abrem o perfil público; o voltar devolve à 1d, na mesma aba', async () => {
+    const view = await openArtist('nettobrito');
+
+    // A Aline, 2ª no Netto (conta privada nas fixtures).
+    const aline = await screen.findByRole('button', { name: '2º lugar, Aline F., 6.050 pontos' });
+    expect(aline.props.accessibilityHint).toBe('Abre o perfil de Aline F.');
+    fireEvent.press(aline);
+    await waitFor(() => expect(view.getPathname()).toBe('/fa/fa-rank-05'));
+    expect(rootRoutes(view)).toEqual(['(tabs)', 'fa/[fanId]']);
+    act(() => testRouter.back());
+    await waitFor(() => expect(view.getPathname()).toBe('/artista/nettobrito'));
+
+    fireEvent.press(tab('Ranking'));
+    const row = await screen.findByTestId('artist-rank-1');
+    expect(row.props.accessibilityRole).toBe('button');
+    expect(row.props.accessibilityHint).toBe('Abre o perfil de Maria Clara Souza');
+    fireEvent.press(row);
+    await waitFor(() => expect(view.getPathname()).toBe('/fa/fa-rank-04'));
+    act(() => testRouter.back());
+    await waitFor(() => expect(view.getPathname()).toBe('/artista/nettobrito'));
+    expect(selected('Ranking')).toBe(true);
+    expect(rootRoutes(view)).toEqual(['(tabs)']);
   });
 
   it('com o ranking no servidor (bloco 8), os top fãs e a aba Ranking vêm dele, sem aviso de exemplo', async () => {

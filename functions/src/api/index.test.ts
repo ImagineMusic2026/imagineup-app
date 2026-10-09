@@ -31,6 +31,14 @@ const emptyDb = {
   }),
 } as unknown as Firestore;
 
+// Firestore que lança na primeira leitura (e não tem transação): a rota que
+// responde com ele não leu nada.
+const noReads = {
+  collection: () => {
+    throw new Error('leu o Firestore');
+  },
+} as unknown as Firestore;
+
 const auth = {
   verifyIdToken: vi.fn(async (token: string) => {
     if (token === 'token-da-camila') {
@@ -86,9 +94,13 @@ function response() {
   return { res, sent };
 }
 
-async function call(req: ApiRequest, routes: readonly ApiRoute[] = API_ROUTES) {
+async function call(
+  req: ApiRequest,
+  routes: readonly ApiRoute[] = API_ROUTES,
+  db: Firestore = emptyDb,
+) {
   const handler = createApiHandler(
-    { db: emptyDb, auth, now: () => NOW, random: () => 0, config: staticConfigSource() },
+    { db, auth, now: () => NOW, random: () => 0, config: staticConfigSource() },
     routes,
   );
   const { res, sent } = response();
@@ -809,6 +821,16 @@ describe('perfil editável (bloco 9)', () => {
         details: { changeableAt: '2026-11-06T15:00:00.000Z' },
       },
     ],
+    // O perfil novo (seção 28): o campo fora da regra, com o campo e o motivo.
+    [
+      new ProfileEditError('profile_invalid', { field: 'socials.x', reason: 'format' }),
+      400,
+      {
+        code: 'profile_invalid',
+        message: 'Perfil fora do formato. Confira os campos.',
+        details: { field: 'socials.x', reason: 'format' },
+      },
+    ],
   ])('%s vira o código combinado', async (error, status, body) => {
     const sent = await call(request('GET', '/teste/bloco9'), thrower(error));
     expect(sent.status).toBe(status);
@@ -884,8 +906,105 @@ describe('perfil editável (bloco 9)', () => {
     }
   });
 
-  it('as quatro que gravam exigem a Idempotency-Key', async () => {
+  it('os tetos do perfil novo (seção 28): 429 com a ação name ou profile e o Retry-After', async () => {
+    for (const [action, limit] of [
+      ['name', 5],
+      ['profile', 20],
+    ] as const) {
+      const sent = await call(
+        request('GET', '/teste/bloco9'),
+        thrower(new DailyCapError(action, limit, 600)),
+      );
+      expect(sent.status).toBe(429);
+      expect(sent.body).toMatchObject({ code: 'too_many_requests', details: { limit, action } });
+      expect(sent.headers['Retry-After']).toBe('600');
+    }
+  });
+
+  it('PUT /me/profile confere o corpo antes de abrir a transação (sem leitura)', async () => {
+    // Com o `noReads`, qualquer leitura (da rota ou do handler antes dela) e o
+    // corpo que passasse da conferência, sem transação, dariam 500.
+    const key = { 'Idempotency-Key': 'chave-perfil-0001' };
+    const cases: [unknown, Record<string, unknown>][] = [
+      [undefined, { code: 'invalid_request', details: { field: 'body' } }],
+      [{}, { code: 'invalid_request', details: { field: 'body' } }],
+      [
+        { bio: 'oi', photoURL: 'x' },
+        { code: 'invalid_request', details: { field: 'photoURL' } },
+      ],
+      [
+        JSON.parse('{"__proto__": {"bio": "oi"}}'),
+        { code: 'invalid_request', details: { field: '__proto__' } },
+      ],
+      [
+        { socials: JSON.parse('{"__proto__": "x"}') },
+        { code: 'invalid_request', details: { field: 'socials.__proto__' } },
+      ],
+      [
+        { privateAccount: 'sim' },
+        { code: 'invalid_request', details: { field: 'privateAccount' } },
+      ],
+      [
+        { displayName: '   ' },
+        { code: 'profile_invalid', details: { field: 'displayName', reason: 'empty' } },
+      ],
+      [
+        { bio: 'a\nb\nc\nd\ne\nf\ng' },
+        { code: 'profile_invalid', details: { field: 'bio', reason: 'too_many_lines' } },
+      ],
+      [
+        { city: 'x'.repeat(81) },
+        { code: 'profile_invalid', details: { field: 'city', reason: 'too_long' } },
+      ],
+      [
+        { gender: 'outro' },
+        { code: 'profile_invalid', details: { field: 'gender', reason: 'unknown' } },
+      ],
+      [
+        { socials: { instagram: 'https://golpe.example/camila' } },
+        { code: 'profile_invalid', details: { field: 'socials.instagram', reason: 'host' } },
+      ],
+      [
+        { username: 'ca', bio: 'oi' },
+        { code: 'username_invalid', details: { reason: 'format' } },
+      ],
+    ];
+    for (const [body, expected] of cases) {
+      const sent = await call(
+        request('PUT', '/me/profile', { body, headers: key }),
+        API_ROUTES,
+        noReads,
+      );
+      expect(sent.status, JSON.stringify(body)).toBe(400);
+      expect(sent.body).toMatchObject(expected);
+    }
+    expect(logger.error).not.toHaveBeenCalled();
+  });
+
+  it('GET /fans/:fanId com o id fora do formato: 404 fan_not_found, sem ler nada', async () => {
+    const handler = createApiHandler({
+      db: noReads,
+      auth,
+      now: () => NOW,
+      random: () => 0,
+      config: staticConfigSource(),
+    });
+    for (const fanId of ['fa-rank-01', 'a'.repeat(129), 'uid%20com%20espaco']) {
+      const { res, sent } = response();
+      await handler(request('GET', `/fans/${fanId}`), res);
+      expect(sent.status, fanId).toBe(404);
+      expect(sent.body).toEqual({ code: 'fan_not_found', message: 'Fã não encontrado.' });
+    }
+    // A barra codificada é 400, como em toda rota.
+    const { res, sent } = response();
+    await handler(request('GET', '/fans/a%2Fb'), res);
+    expect(sent.status).toBe(400);
+    expect(logger.error).not.toHaveBeenCalled();
+  });
+
+  it('as que gravam exigem a Idempotency-Key; o perfil público só lê', async () => {
     for (const [method, path, body] of [
+      ['PUT', '/me/profile', { bio: 'Feira de Santana.' }],
       ['PUT', '/me/username', { username: 'camilaribeiro' }],
       ['PUT', '/me/photo', { path: 'fans/uidCamila/photo-abcdefgh.jpg' }],
       ['POST', '/me/photo/upload', { path: 'fans/uidCamila/photo-abcdefgh.jpg' }],
@@ -895,6 +1014,9 @@ describe('perfil editável (bloco 9)', () => {
       expect(sent.status).toBe(400);
       expect(sent.body).toMatchObject({ code: 'idempotency_key_required' });
     }
+    // O perfil público não pede a chave: chega à leitura (aqui, o perfil que não existe).
+    const read = await call(request('GET', '/fans/uidThalita'));
+    expect(read).toMatchObject({ status: 404, body: { code: 'fan_not_found' } });
   });
 
   it('sem files nas dependências, só as rotas da foto falham com 500', async () => {
@@ -1184,6 +1306,12 @@ describe('suspensão do fã (bloco 11)', () => {
     );
     // Toda rota que lê ignora a trava (ela mora no runIdempotent).
     expect(API_ROUTES.filter((route) => !route.writes && 'allowSuspended' in route)).toEqual([]);
+    // O perfil novo (seção 28, decisão 11): o suspenso não edita nada.
+    const edit = API_ROUTES.find(
+      (route) => route.method === 'PUT' && route.pattern === '/me/profile',
+    );
+    expect(edit).toMatchObject({ writes: true });
+    expect(edit && 'allowSuspended' in edit).toBe(false);
   });
 
   it('o código do suspenso sem código novo: 403 account_suspended no formato combinado', async () => {

@@ -36,6 +36,7 @@ const SECTION_BY_ACTION: Record<string, AuditSection> = {
   'config.seeded': 'missions',
   'fan.username.reset': 'moderation',
   'fan.photo.removed': 'moderation',
+  'fan.profile.cleared': 'moderation',
   'fan.suspended': 'moderation',
   'fan.unsuspended': 'moderation',
   'fan.comments.hidden': 'moderation',

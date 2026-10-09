@@ -35,6 +35,11 @@ export interface RankingRowProps {
    * congelado não tem seta), também antes de o servidor responder e sem rede.
    */
   seasonOver?: boolean;
+  /**
+   * Abre o perfil público do fã da linha (seção 28). Na linha "Você" não vale:
+   * ela fica estática, com o `ref` que o card "Você" usa para o foco.
+   */
+  onPress?: () => void;
   /** A linha do próprio fã (o card "Você" leva o foco até ela). */
   ref?: Ref<View>;
   style?: StyleProp<ViewStyle>;
@@ -69,13 +74,20 @@ function RankChange({ change }: { change: number }) {
 /**
  * Uma posição do ranking (1f), do 4º em diante: posição, avatar, nome inteiro
  * (com reticências; com a fonte grande, em até duas linhas), cidade quando o
- * fã informou, pontos da temporada e a variação. Um elemento só para o leitor, e não tocável: não existe perfil
- * público de outro fã. A linha do próprio fã diz "Você" e ganha um fundo rosa.
+ * fã informou, pontos da temporada e a variação. Um elemento só para o leitor.
+ * Com `onPress`, a linha de outro fã é um botão só, que abre o perfil público
+ * dele (seção 28), com a dica e o mesmo rótulo; os pontos e a seta ficam
+ * ocultos dentro dela (o `trailing` da linha pressável). A linha do próprio fã
+ * diz "Você", ganha um fundo rosa e não é tocável.
+ *
+ * Dois JSX: o `ListRowProps` é uma união, e um `onPress` opcional repassado
+ * não casa com nenhum dos lados.
  */
 export function RankingRow({
   entry: received,
   self,
   seasonOver,
+  onPress,
   ref,
   style,
   testID,
@@ -84,40 +96,45 @@ export function RankingRow({
   const name = entry.isMe ? t('ranking.you') : entryName(entry);
   const largeText = useWindowDimensions().fontScale >= LARGE_TEXT_SCALE;
 
-  return (
-    <ListRow
-      ref={ref}
-      variant="divided"
-      title={name}
-      meta={entry.city ?? undefined}
-      titleNumberOfLines={largeText ? 2 : 1}
-      leading={
-        <>
-          <Text
-            variant="points"
-            color={colors.textMuted}
-            tabular
-            numberOfLines={1}
-            style={styles.position}
-          >
-            {entry.position}
-          </Text>
-          <EntryAvatar entry={entry} self={self} size="md" />
-        </>
-      }
-      trailing={
-        <>
-          <Text variant="points" tabular>
-            {formatNumber(entry.points)}
-          </Text>
-          <RankChange change={entry.change} />
-        </>
-      }
-      accessibilityLabel={describeRow(entry, name)}
-      testID={testID}
-      style={[entry.isMe && styles.me, style]}
-    />
-  );
+  const row = {
+    ref,
+    variant: 'divided' as const,
+    title: name,
+    meta: entry.city ?? undefined,
+    titleNumberOfLines: largeText ? 2 : 1,
+    leading: (
+      <>
+        <Text
+          variant="points"
+          color={colors.textMuted}
+          tabular
+          numberOfLines={1}
+          style={styles.position}
+        >
+          {entry.position}
+        </Text>
+        <EntryAvatar entry={entry} self={self} size="md" />
+      </>
+    ),
+    trailing: (
+      <>
+        <Text variant="points" tabular>
+          {formatNumber(entry.points)}
+        </Text>
+        <RankChange change={entry.change} />
+      </>
+    ),
+    accessibilityLabel: describeRow(entry, name),
+    testID,
+    style: [entry.isMe && styles.me, style],
+  };
+
+  if (onPress && !entry.isMe) {
+    return (
+      <ListRow {...row} onPress={onPress} accessibilityHint={t('fanProfile.openHint', { name })} />
+    );
+  }
+  return <ListRow {...row} />;
 }
 
 const styles = StyleSheet.create({

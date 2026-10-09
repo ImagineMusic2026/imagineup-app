@@ -467,6 +467,64 @@ export type PhotoChange = { photoURL: string | null };
 /** A vaga de envio da foto (`POST /me/photo/upload`, 27.4): o caminho e o fim do prazo, em ISO. */
 export type PhotoUploadSlot = { path: string; expiresAt: string };
 
+// --- Perfil novo (seção 28), espelho de src/domains/profile/types.ts ---
+
+/** `Gender` do app: só o próprio fã e a equipe veem; null é "Não informado". */
+export type Gender = 'woman' | 'man' | 'nonbinary' | 'undisclosed';
+
+/** `SocialNetwork` do app, na ordem da tela, das respostas e do mapa gravado. */
+export type SocialNetwork = 'instagram' | 'tiktok' | 'linkedin' | 'x';
+
+/**
+ * `FanSocials` do app: o usuário de cada rede, já normalizado (nunca o link;
+ * quem mostra monta o link com o domínio fixo), ou null na rede vazia.
+ */
+export type FanSocials = Record<SocialNetwork, string | null>;
+
+/**
+ * `ProfileChanges` do app: o corpo do `PUT /me/profile`, só com o que mudou.
+ * Uma rede null ou vazia limpa a rede; `socials` traz só as redes que mudaram.
+ */
+export type ProfileChanges = {
+  displayName?: string;
+  username?: string;
+  bio?: string | null;
+  city?: string | null;
+  gender?: Gender | null;
+  privateAccount?: boolean;
+  socials?: Partial<FanSocials>;
+};
+
+/** `EditableProfile` do app (`PUT /me/profile`): o perfil editável depois da mudança. */
+export type EditableProfile = {
+  displayName: string | null;
+  username: string | null;
+  /** ISO; null sem prazo. */
+  usernameChangeableAt: string | null;
+  bio: string | null;
+  city: string | null;
+  gender: Gender | null;
+  privateAccount: boolean;
+  /** Sempre com as quatro chaves (null na rede vazia). */
+  socials: FanSocials;
+};
+
+/**
+ * `FanPublicProfile` do app (`GET /fans/:fanId`). Fechado (`restricted`, sem
+ * o motivo: conta privada, suspensa ou que bloqueou quem pede): só a foto, o
+ * nome e o @, com `bio` e `socials` null. Completo sem nenhuma rede: `socials`
+ * null. Nunca o gênero, a cidade, a conta privada nem a suspensão.
+ */
+export type FanPublicProfile = {
+  uid: string;
+  displayName: string | null;
+  username: string | null;
+  photoURL: string | null;
+  restricted: boolean;
+  bio: string | null;
+  socials: FanSocials | null;
+};
+
 // --- Loja e resgate (bloco 10), espelho de src/domains/rewards/types.ts ---
 
 /** `RewardKind` do app: decide o ícone e a cor do quadro. */

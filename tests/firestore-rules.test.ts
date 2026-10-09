@@ -66,8 +66,32 @@ async function seedProfile(extra: Record<string, unknown> = {}): Promise<void> {
   });
 }
 
+/**
+ * O perfil como o servidor cria quando o nome do cadastro não passou (o
+ * formato do createProfile, functions/src/store.ts): sem nome e sem updatedAt.
+ */
+async function seedNamelessProfile(extra: Record<string, unknown> = {}): Promise<void> {
+  await env.withSecurityRulesDisabled(async (context) => {
+    await setDoc(doc(context.firestore(), 'users/fa'), {
+      displayName: null,
+      username: 'fa123456',
+      city: null,
+      photoURL: null,
+      createdAt: Timestamp.now(),
+      ...extra,
+    });
+  });
+}
+
 const edit = (data: Record<string, unknown>) =>
   updateDoc(doc(fan(), 'users/fa'), { ...data, updatedAt: serverTimestamp() });
+
+/**
+ * A única gravação do fã no perfil desde o perfil novo (docs/arquitetura-api.md,
+ * seção 28): a do fillMissingProfileName (src/domains/auth/api.ts), o nome e o
+ * horário do servidor no perfil que nasceu sem nome.
+ */
+const firstName = (displayName: unknown) => edit({ displayName });
 
 /** Código de cada caractere, para a falha dizer qual valor escapou. */
 const codePoints = (value: unknown) =>
@@ -79,19 +103,15 @@ const codePoints = (value: unknown) =>
         .join(' ')
     : String(value);
 
-/** A mesma checagem para cada valor, cada um num perfil novo (a trava de 10 s não interfere). */
-async function checkEach(
-  field: 'displayName' | 'city',
-  values: unknown[],
-  check: typeof assertFails,
-): Promise<void> {
+/** A mesma checagem do primeiro nome para cada valor, cada um num perfil sem nome novo. */
+async function checkEachName(values: unknown[], check: typeof assertFails): Promise<void> {
   for (const value of values) {
     await env.clearFirestore();
-    await seedProfile();
+    await seedNamelessProfile();
     try {
-      await check(edit({ [field]: value }));
+      await check(firstName(value));
     } catch (error) {
-      throw new Error(`${field} = [${codePoints(value)}]: ${(error as Error).message}`);
+      throw new Error(`displayName = [${codePoints(value)}]: ${(error as Error).message}`);
     }
   }
 }
@@ -112,11 +132,10 @@ describe('perfil do fã (users/{uid})', () => {
     await assertFails(getDocs(query(collection(fan(), 'users'), where('suspendedAt', '!=', null))));
   });
 
-  it('o fã suspenso não edita nome nem cidade, e volta a editar depois que o campo sai (bloco 11)', async () => {
-    await seedProfile({ suspendedAt: MINUTE_AGO(), suspensionReason: 'spam' });
+  it('o fã suspenso sem nome não grava o primeiro nome, e grava depois que a suspensão sai (bloco 11)', async () => {
+    await seedNamelessProfile({ suspendedAt: MINUTE_AGO(), suspensionReason: 'spam' });
     await assertSucceeds(getDoc(doc(fan(), 'users/fa')));
-    await assertFails(edit({ displayName: 'Camila R.' }));
-    await assertFails(edit({ city: null }));
+    await assertFails(firstName('Camila R.'));
     // Nem tira a própria suspensão.
     await assertFails(edit({ suspendedAt: deleteField(), suspensionReason: deleteField() }));
     await env.withSecurityRulesDisabled(async (context) => {
@@ -125,7 +144,7 @@ describe('perfil do fã (users/{uid})', () => {
         suspensionReason: deleteField(),
       });
     });
-    await assertSucceeds(edit({ displayName: 'Camila R.' }));
+    await assertSucceeds(firstName('Camila R.'));
   });
 
   it('o fã não grava a própria suspensão nem as chaves da busca (bloco 11)', async () => {
@@ -135,60 +154,64 @@ describe('perfil do fã (users/{uid})', () => {
     await assertFails(edit({ searchKeys: ['ca', 'cam'] }));
   });
 
-  it('o fã edita nome e cidade', async () => {
+  it('o fã não edita nome nem cidade pelo celular: vão pela API (PUT /me/profile, seção 28)', async () => {
     await seedProfile();
-    await assertSucceeds(edit({ displayName: 'Camila R.', city: 'Irará, BA' }));
+    await assertFails(edit({ displayName: 'Camila R.', city: 'Irará, BA' }));
+    await assertFails(edit({ displayName: 'Camila R.' }));
+    await assertFails(edit({ city: 'Irará, BA' }));
   });
 
-  it('o fã limpa a cidade', async () => {
+  it('o fã não limpa a cidade pelo celular', async () => {
     await seedProfile();
-    await assertSucceeds(edit({ city: null }));
+    await assertFails(edit({ city: null }));
   });
 
-  it('toda edição leva o horário do servidor', async () => {
-    await seedProfile();
+  it('o primeiro nome leva o horário do servidor', async () => {
+    await seedNamelessProfile();
     await assertFails(updateDoc(doc(fan(), 'users/fa'), { displayName: 'Sem horário' }));
     await assertFails(
       updateDoc(doc(fan(), 'users/fa'), { displayName: 'Camila', updatedAt: new Date() }),
     );
+    await assertFails(
+      updateDoc(doc(fan(), 'users/fa'), { displayName: 'Camila', updatedAt: MINUTE_AGO() }),
+    );
   });
 
-  it('segura edições em rajada: no máximo uma a cada 10 segundos', async () => {
-    await seedProfile({ updatedAt: Timestamp.now() });
-    await assertFails(edit({ displayName: 'De novo' }));
-  });
-
-  it('um updatedAt que não é data, gravado pelo servidor, não trava o perfil', async () => {
-    for (const updatedAt of [null, Date.now() - 60_000, '2026-09-01T00:00:00Z']) {
-      await env.clearFirestore();
-      await seedProfile({ updatedAt });
-      await assertSucceeds(edit({ displayName: 'Camila R.' }));
-      // Depois da edição a trava volta a valer.
-      await assertFails(edit({ displayName: 'De novo' }));
-    }
-  });
-
-  it('o perfil como o servidor cria (sem nome e sem updatedAt) recebe o nome do cadastro', async () => {
+  it('o perfil como o servidor cria (sem nome e sem updatedAt) recebe o nome do cadastro, uma vez só', async () => {
     // O formato de createProfile (functions/src/store.ts) e a gravação de
     // fillMissingProfileName (src/domains/auth/api.ts), quando o nome chegou
     // depois da espera da função de cadastro.
-    await env.withSecurityRulesDisabled(async (context) => {
-      await setDoc(doc(context.firestore(), 'users/fa'), {
-        displayName: null,
-        username: 'fa123456',
-        city: null,
-        photoURL: null,
-        createdAt: Timestamp.now(),
-      });
-    });
-    await assertSucceeds(
-      updateDoc(doc(fan(), 'users/fa'), {
-        displayName: 'Beatriz Santos',
-        updatedAt: serverTimestamp(),
-      }),
-    );
-    // A partir dessa gravação, a trava de 10 s vale.
-    await assertFails(edit({ displayName: 'Beatriz S.' }));
+    await seedNamelessProfile();
+    // Com a cidade junto, não: só o nome e o horário.
+    await assertFails(edit({ displayName: 'Beatriz Santos', city: 'Irará, BA' }));
+    await assertSucceeds(firstName('Beatriz Santos'));
+    // Com o nome gravado, a regra não deixa outra gravação.
+    await assertFails(firstName('Beatriz S.'));
+    await assertFails(edit({ city: 'Irará, BA' }));
+  });
+
+  it('o fã não grava a bio, o gênero, a conta privada, as redes, o @ nem o updatedAt sozinho (seção 28)', async () => {
+    for (const seed of [() => seedProfile(), () => seedNamelessProfile()]) {
+      await env.clearFirestore();
+      await seed();
+      for (const change of [
+        { bio: 'Feira de Santana.' },
+        { bio: null },
+        { gender: 'woman' },
+        { gender: null },
+        { privateAccount: true },
+        { socials: { instagram: 'camila.teste.up', tiktok: null, linkedin: null, x: null } },
+        { socials: null },
+        { username: 'camilanova' },
+        // Só o updatedAt.
+        {},
+      ]) {
+        await assertFails(edit(change));
+      }
+      // Nem junto do primeiro nome.
+      await assertFails(edit({ displayName: 'Camila', bio: 'Feira de Santana.' }));
+      await assertFails(edit({ displayName: 'Camila', privateAccount: true }));
+    }
   });
 
   it('o fã não mexe em pontos, nível, @, foto nem na data de criação', async () => {
@@ -211,23 +234,19 @@ describe('perfil do fã (users/{uid})', () => {
     }
   });
 
-  it('o perfil com a foto e o prazo do @ gravados pelo servidor continua aceitando nome e cidade (bloco 9)', async () => {
-    await seedProfile({
+  it('o perfil sem nome com a foto e o prazo do @ gravados pelo servidor aceita o primeiro nome; com nome, recusa (bloco 9)', async () => {
+    const serverFields = {
       photoPath: 'fans/fa/photo-mg5k2x1a-4f9z0abc.jpg',
       photoUpdatedAt: MINUTE_AGO(),
       usernameChangedAt: MINUTE_AGO(),
       usernameChangeableAt: Timestamp.fromMillis(Date.now() + 30 * 24 * 60 * 60 * 1000),
-    });
-    await assertSucceeds(edit({ displayName: 'Camila Ribeiro', city: 'Irará, BA' }));
+    };
+    await seedNamelessProfile(serverFields);
+    await assertSucceeds(firstName('Camila Ribeiro'));
     await env.clearFirestore();
-    await seedProfile({
-      photoURL: null,
-      photoPath: null,
-      photoUpdatedAt: null,
-      usernameChangedAt: null,
-      usernameChangeableAt: null,
-    });
-    await assertSucceeds(edit({ city: null }));
+    await seedProfile(serverFields);
+    await assertFails(firstName('Camila Ribeiro'));
+    await assertFails(edit({ displayName: 'Camila Ribeiro', city: 'Irará, BA' }));
   });
 
   it('as reservas de @ (usernames/) são só do servidor: nem a própria, nem a de outro, nem a de uma central', async () => {
@@ -314,8 +333,8 @@ describe('perfil do fã (users/{uid})', () => {
     );
   });
 
-  it('o nome é obrigatório e não pode ser vazio, invisível ou quebrado', async () => {
-    await seedProfile();
+  it('o primeiro nome é obrigatório e não pode ser vazio, invisível ou quebrado', async () => {
+    await seedNamelessProfile();
     for (const displayName of [
       '',
       ' ',
@@ -330,7 +349,7 @@ describe('perfil do fã (users/{uid})', () => {
       42,
       null,
     ]) {
-      await assertFails(edit({ displayName }));
+      await assertFails(firstName(displayName));
     }
     await assertFails(edit({ displayName: deleteField() }));
   });
@@ -338,8 +357,7 @@ describe('perfil do fã (users/{uid})', () => {
   it('o nome não pode ser só caractere em branco, nem começar por acento solto', async () => {
     // Inclui os que o motor de regras não conhece como controle ou acento
     // (Unicode 6.0) e que o aparelho desenha em branco.
-    await checkEach(
-      'displayName',
+    await checkEachName(
       [
         '\u034F',
         '\uFE0F',
@@ -373,12 +391,11 @@ describe('perfil do fã (users/{uid})', () => {
   });
 
   it('o nome fica numa linha só', async () => {
-    await checkEach('displayName', ['Camila\u2028Oficial', 'A\u2029B'], assertFails);
+    await checkEachName(['Camila\u2028Oficial', 'A\u2029B'], assertFails);
   });
 
   it('recusa acento empilhado (texto "zalgo")', async () => {
-    await checkEach(
-      'displayName',
+    await checkEachName(
       [
         'a' + '\u0336'.repeat(59),
         'Camila' + '\u0489'.repeat(40),
@@ -391,8 +408,7 @@ describe('perfil do fã (users/{uid})', () => {
   });
 
   it('aceita emoji composto (ZWJ), como a cantora e o coração em chamas', async () => {
-    await checkEach(
-      'displayName',
+    await checkEachName(
       [
         'Camila \u{1F469}\u200D\u{1F3A4}',
         'Camila \u{1F469}\u{1F3FD}\u200D\u{1F3A4}',
@@ -411,8 +427,7 @@ describe('perfil do fã (users/{uid})', () => {
   });
 
   it('o ZWJ fora de emoji continua recusado', async () => {
-    await checkEach(
-      'displayName',
+    await checkEachName(
       [
         'A\u200DB',
         'A\u200D\u200DB',
@@ -426,8 +441,7 @@ describe('perfil do fã (users/{uid})', () => {
   });
 
   it('aceita nomes reais: acento, outras escritas e emoji', async () => {
-    await checkEach(
-      'displayName',
+    await checkEachName(
       [
         'Camila Ribeiro 🎶',
         'Camila ❤\uFE0F',
@@ -450,50 +464,13 @@ describe('perfil do fã (users/{uid})', () => {
     );
   });
 
-  it('valida a cidade', async () => {
-    await checkEach(
-      'city',
-      [
-        'x'.repeat(81),
-        'Irará\u0000',
-        42,
-        '',
-        '   ',
-        ' Irará, BA',
-        'Irará, BA ',
-        'Irará\u2028BA',
-        '\u034F',
-        '\u2065',
-        'A\u2067B',
-      ],
-      assertFails,
-    );
-    await checkEach(
-      'city',
-      [
-        'Irará, BA',
-        'São João del-Rei, MG',
-        'São Paulo, SP'.normalize('NFD'),
-        "Olho-d'Água das Flores, AL",
-        'Salvador \u{1F3F3}\uFE0F\u200D\u{1F308}',
-      ],
-      assertSucceeds,
-    );
-  });
-
-  it('um valor do servidor fora do padrão não trava a edição de outro campo', async () => {
-    // Nome longo vindo do login da Apple, gravado pelo servidor.
-    await seedProfile({ city: null, displayName: 'x'.repeat(70) });
-    await assertSucceeds(edit({ city: 'Irará, BA' }));
-  });
-
   it('ninguém apaga o perfil pelo celular', async () => {
     await seedProfile();
     await assertFails(deleteDoc(doc(fan(), 'users/fa')));
   });
 
-  it('outra pessoa não edita o perfil', async () => {
-    await seedProfile();
+  it('outra pessoa não grava o perfil, nem o primeiro nome do perfil sem nome', async () => {
+    await seedNamelessProfile();
     await assertFails(
       updateDoc(doc(otherFan(), 'users/fa'), {
         displayName: 'Hacker',

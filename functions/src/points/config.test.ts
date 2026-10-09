@@ -395,6 +395,9 @@ describe('tetos do dia e o limite da missão (bloco 7)', () => {
       photo_set: 10,
       reward_redeem: 10,
       photo_upload: 20,
+      // O perfil novo (seção 28): os salvamentos do perfil e as trocas de nome.
+      profile_save: 20,
+      name_change: 5,
     });
   });
 
@@ -428,6 +431,16 @@ describe('tetos do dia e o limite da missão (bloco 7)', () => {
     });
     expect(fieldOf(() => validatePointsConfigInput({ actionCaps: { photo_set: 0 } }))).toBe(
       'actionCaps.photo_set',
+    );
+    // Os do perfil novo (seção 28) também, de 1 a 10.000.
+    expect(
+      validatePointsConfigInput({ actionCaps: { profile_save: 2, name_change: 10_000 } }),
+    ).toEqual({ actionCaps: { profile_save: 2, name_change: 10_000 } });
+    expect(fieldOf(() => validatePointsConfigInput({ actionCaps: { name_change: 0 } }))).toBe(
+      'actionCaps.name_change',
+    );
+    expect(fieldOf(() => validatePointsConfigInput({ actionCaps: { profile_save: 10_001 } }))).toBe(
+      'actionCaps.profile_save',
     );
     expect(fieldOf(() => validatePointsConfigInput({ actionCaps: { like_set: 0 } }))).toBe(
       'actionCaps.like_set',

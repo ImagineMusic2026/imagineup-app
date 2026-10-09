@@ -9,6 +9,7 @@ import { parseIdempotencyKey, requestFingerprint, runIdempotent } from './idempo
 import { matchRoute, normalizePath } from './router';
 import { agendaRoutes } from './routes/agenda';
 import { centralRoutes } from './routes/centrals';
+import { fanRoutes } from './routes/fans';
 import { inviteRoutes } from './routes/invites';
 import { meRoutes } from './routes/me';
 import { missionRoutes } from './routes/missions';
@@ -59,6 +60,7 @@ export const API_ROUTES: readonly ApiRoute[] = [
   ...missionRoutes,
   ...rankingRoutes,
   ...profileRoutes,
+  ...fanRoutes,
   ...rewardRoutes,
 ];
 

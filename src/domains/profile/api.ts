@@ -1,11 +1,4 @@
-import {
-  doc,
-  getDoc,
-  onSnapshot,
-  serverTimestamp,
-  updateDoc,
-  type DocumentData,
-} from 'firebase/firestore';
+import { doc, getDoc, onSnapshot, type DocumentData } from 'firebase/firestore';
 
 import { sourceOf } from '@/config/data-source';
 import { getDb, storageFileExists, uploadLocalFile } from '@/firebase';
@@ -13,6 +6,8 @@ import { api } from '@/services/api';
 import type { InviteLinkResult } from '@/domains/invites';
 import { fixtureDelay, fixtureNow } from '@/services/fixtures';
 
+import { genderOf, socialsOf } from './details';
+import { fanProfileFixture } from './fan-fixtures';
 import {
   buildLedgerPageFixture,
   buildMyAchievementsFixture,
@@ -21,7 +16,9 @@ import {
   buildWalletFixture,
 } from './fixtures';
 import type {
+  EditableProfile,
   FanProfile,
+  FanPublicProfile,
   LedgerPage,
   MyAchievements,
   MyInvite,
@@ -30,11 +27,11 @@ import type {
   PhotoUploadSlot,
   ProfileChanges,
   UsernameAvailability,
-  UsernameChange,
   Wallet,
 } from './types';
 
 // Chamadas cruas ao Firestore e à API. Sem React: quem cacheia é o queries.ts.
+// O Firestore aqui só lê: toda a edição do perfil vai pela API (seção 28).
 
 function profileRef(uid: string) {
   return doc(getDb(), 'users', uid);
@@ -67,6 +64,9 @@ function isoOrNull(value: unknown): string | null {
  * O documento como o app usa. Só os campos conhecidos, cada um conferido: um
  * valor do servidor fora do formato vira `null` em vez de quebrar a tela, e o
  * `Timestamp` vira ISO, porque o cache do React Query vai para o disco em JSON.
+ * Os campos do perfil novo (seção 28): a bio texto ou `null`, o gênero só dos
+ * quatro valores, a conta privada só booleano (o ausente vale `false`) e as
+ * redes rede a rede pela lista fixa, com a fora do padrão como vazia.
  */
 export function toFanProfile(uid: string, data: DocumentData): FanProfile {
   // A suspensão (bloco 11) só aparece quando existe: o perfil de sempre fica igual.
@@ -79,7 +79,30 @@ export function toFanProfile(uid: string, data: DocumentData): FanProfile {
     photoURL: textOrNull(data.photoURL),
     createdAt: isoOrNull(data.createdAt),
     usernameChangeableAt: isoOrNull(data.usernameChangeableAt),
+    bio: textOrNull(data.bio),
+    gender: genderOf(data.gender),
+    privateAccount: data.privateAccount === true,
+    socials: socialsOf(data.socials),
     ...(suspendedAt ? { suspendedAt } : {}),
+  };
+}
+
+/**
+ * A resposta do `PUT /me/profile` como o perfil em cache guarda, com a mesma
+ * conferência da leitura do Firestore (as redes pela lista fixa). Os campos
+ * que a resposta não traz (foto, cadastro, suspensão) ficam como estão.
+ */
+export function applyEditableProfile(profile: FanProfile, edited: EditableProfile): FanProfile {
+  return {
+    ...profile,
+    displayName: textOrNull(edited.displayName),
+    username: textOrNull(edited.username),
+    usernameChangeableAt: isoOrNull(edited.usernameChangeableAt),
+    bio: textOrNull(edited.bio),
+    city: textOrNull(edited.city),
+    gender: genderOf(edited.gender),
+    privateAccount: edited.privateAccount === true,
+    socials: socialsOf(edited.socials),
   };
 }
 
@@ -193,29 +216,37 @@ export async function registerInviteLink(
   return data;
 }
 
-// --- Perfil editável (bloco 9, docs/arquitetura-api.md, 24.12) ---------------------
+// --- Perfil editável (bloco 9 e seção 28 de docs/arquitetura-api.md) -------------
 
 /**
- * Nome e cidade, direto no Firestore pelas regras (como o
- * `fillMissingProfileName` do cadastro): só os campos que mudaram e o
- * `updatedAt` do servidor. O `updateDoc` do SDK JS só resolve com a resposta
- * do servidor; sem rede, fica na fila em memória (a tela conta o prazo). A
- * regra recusa com `permission-denied` o valor inválido e a segunda edição em
- * menos de 10 s.
- */
-export async function updateMyProfile(uid: string, changes: ProfileChanges): Promise<void> {
-  await updateDoc(profileRef(uid), { ...changes, updatedAt: serverTimestamp() });
-}
-
-/**
- * O @ e a foto só existem com a API (`sourceOf('profile')`): nas fixtures, a
- * tela não chama estas funções; se chamar, é erro, e não uma imitação (o
- * perfil é dado de verdade, 24.1, decisão 12).
+ * O perfil só muda com a API (`sourceOf('profile')`): nas fixtures, a tela
+ * fica só leitura e não chama estas funções; se chamar, é erro, e não uma
+ * imitação (o perfil é dado de verdade, 24.1, decisão 12, e as regras não
+ * deixam o fã gravar o perfil direto, 28.8).
  */
 function requireProfileApi(): void {
   if (sourceOf('profile') === 'fixtures') {
-    throw new Error('O @ e a foto do perfil só mudam com a API do servidor.');
+    throw new Error('O perfil só muda com a API do servidor.');
   }
+}
+
+/**
+ * Salva o perfil (`PUT /me/profile`, seção 28): só o que mudou, nome, @, bio,
+ * cidade, gênero, conta privada e redes numa transação (tudo grava ou nada
+ * grava), com a chave da tentativa. O `signal` é o prazo da tentativa do ✓
+ * (cancela o pedido). Devolve o perfil editável depois da mudança.
+ */
+export async function updateMyProfile(
+  changes: ProfileChanges,
+  idempotencyKey: string,
+  signal?: AbortSignal,
+): Promise<EditableProfile> {
+  requireProfileApi();
+  const { data } = await api.put<EditableProfile>('/me/profile', changes, {
+    headers: { 'Idempotency-Key': idempotencyKey },
+    signal,
+  });
+  return data;
 }
 
 /** O @ está livre? Enquanto o fã digita (só lê, sem chave). */
@@ -224,20 +255,6 @@ export async function fetchUsernameAvailability(username: string): Promise<Usern
   const { data } = await api.get<UsernameAvailability>('/me/username/availability', {
     params: { username },
   });
-  return data;
-}
-
-/** Troca o @ (`PUT /me/username`), com a chave da tentativa. */
-export async function changeUsername(
-  username: string,
-  idempotencyKey: string,
-): Promise<UsernameChange> {
-  requireProfileApi();
-  const { data } = await api.put<UsernameChange>(
-    '/me/username',
-    { username },
-    { headers: { 'Idempotency-Key': idempotencyKey } },
-  );
   return data;
 }
 
@@ -296,4 +313,43 @@ export async function removeMyPhoto(idempotencyKey: string): Promise<PhotoChange
     headers: { 'Idempotency-Key': idempotencyKey },
   });
   return data;
+}
+
+// --- Perfil público de outro fã (seção 28) ----------------------------------------
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value);
+
+/**
+ * A resposta do `GET /fans/:fanId` como a tela usa, com a mesma conferência
+ * do perfil do Firestore: cada campo conferido, e as redes lidas pela lista
+ * fixa, com a rede fora do padrão descartada (quem mostra nunca monta o link
+ * de um valor torto, 28.1, decisão 4). O fechado nunca traz a bio nem as redes.
+ */
+export function toFanPublicProfile(fanId: string, data: unknown): FanPublicProfile {
+  const body = isRecord(data) ? data : {};
+  const restricted = body.restricted === true;
+  return {
+    uid: textOrNull(body.uid) ?? fanId,
+    displayName: textOrNull(body.displayName),
+    username: textOrNull(body.username),
+    photoURL: textOrNull(body.photoURL),
+    restricted,
+    bio: restricted ? null : textOrNull(body.bio),
+    socials: restricted ? null : socialsOf(body.socials),
+  };
+}
+
+/**
+ * O perfil público de outro fã (`GET /fans/:fanId`): a foto, o nome e o @, e a
+ * bio e as redes quando ele não está fechado. Só lê. Nas fixtures, o perfil de
+ * exemplo do ranking e dos comentários (`fan-fixtures.ts`); o 404
+ * `fan_not_found` nos dois.
+ */
+export async function fetchFanProfile(fanId: string): Promise<FanPublicProfile> {
+  if (sourceOf('profile') === 'fixtures') {
+    return toFanPublicProfile(fanId, await fanProfileFixture(fanId));
+  }
+  const { data } = await api.get<unknown>(`/fans/${encodeURIComponent(fanId)}`);
+  return toFanPublicProfile(fanId, data);
 }

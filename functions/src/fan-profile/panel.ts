@@ -15,6 +15,7 @@ import { requestFields } from '../staff/model';
 import { directRead, readPanelActor, transactionRead, type PanelActor } from '../staff/panel-actor';
 import { panelError, targetFanUid } from '../staff/panel-errors';
 import { writeAudit, type AuditAction, type CallerAuth } from '../staff/service';
+import { SOCIAL_NETWORKS } from './details';
 import {
   normalizeUsername,
   USERNAME_INPUT_MAX,
@@ -26,8 +27,9 @@ import { releaseUsernameIn } from './service';
 // As ferramentas do painel sobre o perfil de um fã (bloco 11,
 // docs/arquitetura-api.md, 26.4): a busca por e-mail da seção Fãs
 // (`findFanByEmail`, só para quem edita, com teto por dia e auditoria sem o
-// e-mail) e, na Moderação, trocar o @ por um automático (`resetFanUsername`)
-// e tirar a foto (`clearFanPhoto`). Ninguém usa as da Moderação na própria
+// e-mail) e, na Moderação, trocar o @ por um automático (`resetFanUsername`),
+// tirar a foto (`clearFanPhoto`) e, desde o perfil novo (28.6), apagar a bio e
+// as redes (`clearFanProfileText`). Ninguém usa as da Moderação na própria
 // conta de fã (`self`).
 
 export type FanPanelDeps = {
@@ -231,4 +233,73 @@ export async function clearFanPhoto(
     auditFan(tx, db, 'fan.photo.removed', actor, uid, { uid }, now);
   });
   return { ok: true };
+}
+
+/** O que o `clearFanProfileText` apaga, na ordem da resposta e da auditoria. */
+export const PROFILE_TEXT_FIELDS = ['bio', 'socials'] as const;
+export type ProfileTextField = (typeof PROFILE_TEXT_FIELDS)[number];
+
+/**
+ * Os campos pedidos (puro): 1 ou 2 de `bio` e `socials`, sem repetir; senão
+ * `invalid-request` com `field: 'fields'`. Devolve na ordem fixa.
+ */
+export function parseProfileTextFields(value: unknown): ProfileTextField[] {
+  if (
+    !Array.isArray(value) ||
+    value.length < 1 ||
+    value.length > PROFILE_TEXT_FIELDS.length ||
+    new Set(value).size !== value.length ||
+    value.some((field) => !(PROFILE_TEXT_FIELDS as readonly unknown[]).includes(field))
+  ) {
+    throw panelError('invalid-request', { field: 'fields' });
+  }
+  return PROFILE_TEXT_FIELDS.filter((field) => value.includes(field));
+}
+
+/** O campo tem o que apagar: a bio com texto; as redes com alguma rede guardada. */
+function hasProfileText(data: Record<string, unknown>, field: ProfileTextField): boolean {
+  const value = data[field];
+  if (field === 'bio') return typeof value === 'string' && value !== '';
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return false;
+  const socials = value as Record<string, unknown>;
+  return SOCIAL_NETWORKS.some((network) => {
+    const handle = Object.prototype.hasOwnProperty.call(socials, network) ? socials[network] : null;
+    return typeof handle === 'string' && handle !== '';
+  });
+}
+
+/**
+ * clearFanProfileText (28.6): apaga a bio, as redes ou as duas de um fã, com
+ * a seção `moderation` e edição (lida direto e de novo na transação). Numa
+ * transação: o perfil (`fan-not-found`) e, dos campos pedidos, os que têm
+ * conteúdo; nenhum, `{ ok: true, cleared: [] }` sem gravar nem auditar. Senão,
+ * `bio` e ou `socials` null (nunca `updatedAt`) e a auditoria
+ * `fan.profile.cleared` com os campos que saíram e nunca o texto (decisão 21).
+ * O fã pode escrever outra bio depois, com o teto do dia.
+ */
+export async function clearFanProfileText(
+  deps: FanPanelDeps,
+  caller: CallerAuth | undefined,
+  data: unknown,
+): Promise<{ ok: true; cleared: ProfileTextField[] }> {
+  const { db } = deps;
+  const input = requestFields(data);
+  const uid = targetFanUid(caller, input.uid);
+  await readPanelActor(directRead, db, caller, 'moderation', 'edit');
+  const fields = parseProfileTextFields(input.fields);
+  const now = clock(deps);
+
+  return db.runTransaction(async (tx) => {
+    const actor = await readPanelActor(transactionRead(tx), db, caller, 'moderation', 'edit');
+    const profile = await tx.get(db.collection('users').doc(uid));
+    if (!profile.exists) throw panelError('fan-not-found');
+    const stored = (profile.data() ?? {}) as Record<string, unknown>;
+    const cleared = fields.filter((field) => hasProfileText(stored, field));
+    if (cleared.length === 0) return { ok: true as const, cleared };
+    const update: Record<string, null> = {};
+    for (const field of cleared) update[field] = null;
+    tx.update(profile.ref, update);
+    auditFan(tx, db, 'fan.profile.cleared', actor, uid, { uid, fields: cleared }, now);
+    return { ok: true as const, cleared };
+  });
 }

@@ -62,6 +62,9 @@ describe('tetos do dia', () => {
       redeem: { key: 'reward_redeem', limit: 10 },
       // Proteção contra abuso: as vagas de envio da foto (27.4).
       upload: { key: 'photo_upload', limit: 20 },
+      // O perfil novo: os salvamentos do perfil e as trocas de nome (seção 28).
+      profile: { key: 'profile_save', limit: 20 },
+      name: { key: 'name_change', limit: 5 },
     });
     expect(BLOCK_LIST_MAX).toBe(1_000);
   });

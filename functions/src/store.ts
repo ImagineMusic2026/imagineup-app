@@ -33,7 +33,8 @@ export type SignupCountOptions = { now?: () => number; shardRandom?: () => numbe
  * que a carga dos cadastros antigos (scripts/backfill-signups.mjs) usa para
  * não contar duas vezes. O evento de cadastro pode chegar mais de uma vez: se o
  * perfil já existe, não mexe em nada nem soma de novo. Não grava updatedAt,
- * que é o carimbo de edição do fã e segura as edições dele por 10 s. O perfil
+ * que é só o carimbo da gravação do primeiro nome pelo fã (a única que a regra
+ * deixa desde o perfil novo, seção 28; o servidor nunca grava). O perfil
  * nasce com o `searchKeys` do nome e do @ (a busca de fãs do painel, bloco 11,
  * 26.7).
  */

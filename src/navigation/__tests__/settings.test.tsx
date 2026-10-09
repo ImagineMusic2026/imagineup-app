@@ -69,9 +69,11 @@ jest.mock('@/config/env', () => ({
   apiUrl: undefined,
   firebaseEmulatorHost: undefined,
 }));
+// Nas fixtures por padrão; os casos da meta com a API trocam.
+let mockDataSource: 'api' | 'fixtures' = 'fixtures';
 jest.mock('@/config/data-source', () => ({
-  sourceOf: () => 'fixtures',
-  usesFixtures: () => true,
+  sourceOf: () => mockDataSource,
+  usesFixtures: () => mockDataSource === 'fixtures',
 }));
 
 /** Os guards do app, o listener do Auth de verdade e o cache do app (que ele limpa). */
@@ -89,6 +91,7 @@ function RootLayout() {
         </Stack.Protected>
         <Stack.Protected guard={signedIn && onboarded}>
           <Stack.Screen name="(tabs)" />
+          <Stack.Screen name="editar-perfil" />
         </Stack.Protected>
       </Stack>
     </QueryClientProvider>
@@ -122,7 +125,7 @@ const appTree = {
   '(tabs)/(perfil)/perfil': label('profile'),
   '(tabs)/(perfil)/ajustes': SettingsRoute,
   '(tabs)/(perfil)/excluir-conta': DeleteAccountRoute,
-  '(tabs)/(perfil)/editar-perfil': label('editar perfil'),
+  'editar-perfil': label('editar perfil'),
   '(tabs)/(inicio,explorar,ranking,perfil)/artista/[artistaId]': label('artist'),
 };
 
@@ -150,6 +153,7 @@ let removeClient: jest.SpyInstance;
 
 beforeEach(() => {
   jest.clearAllMocks();
+  mockDataSource = 'fixtures';
   mockAuth.currentUser = mockUser;
   jest.mocked(onAuthStateChanged).mockReturnValue(() => undefined);
   jest.mocked(firebaseSignOut).mockResolvedValue(undefined);
@@ -199,18 +203,40 @@ describe('Ajustes', () => {
     expect(screen.getByTestId('settings-delete-account-trailing', hidden)).toBeTruthy();
   });
 
-  it('a seção Perfil traz "Editar perfil", que abre a tela; nas fixtures, a meta "Nome e cidade"', async () => {
+  it('a seção Perfil traz "Editar perfil", que abre a tela fora das abas; nas fixtures, a meta de só leitura', async () => {
     const view = renderRouter(appTree, { initialUrl: '/ajustes' });
 
     expect(screen.getByRole('header', { name: 'Perfil' })).toBeTruthy();
-    const row = screen.getByRole('button', { name: 'Editar perfil. Nome e cidade' });
+    const row = screen.getByRole('button', {
+      name: 'Editar perfil. Só leitura nesta versão do app',
+    });
+    expect(screen.getByText('Só leitura nesta versão do app')).toBeTruthy();
     expect(row).toHaveProp('accessibilityHint', 'Abre a edição do perfil');
     expect(screen.getByTestId('settings-edit-profile-trailing', hidden)).toBeTruthy();
 
     fireEvent.press(row);
     await waitFor(() => expect(view.getPathname()).toBe('/editar-perfil'));
-    expect(view.getSegments()).toEqual(['(tabs)', '(perfil)', 'editar-perfil']);
+    expect(view.getSegments()).toEqual(['editar-perfil']);
     expect(screen.getByText('editar perfil')).toBeTruthy();
+  });
+
+  it('com a API, a meta diz o que a tela edita; com o @ automático, avisa dele', async () => {
+    mockDataSource = 'api';
+    renderRouter(appTree, { initialUrl: '/ajustes' });
+    // O perfil semeado tem o @ automático (fa711224).
+    expect(
+      await screen.findByRole('button', { name: 'Editar perfil. Seu @ ainda é automático' }),
+    ).toBeTruthy();
+    expect(screen.queryByText('Só leitura nesta versão do app')).toBeNull();
+  });
+
+  it('com a API e o @ escolhido, a meta é "Foto, nome, @, bio e redes"', async () => {
+    mockDataSource = 'api';
+    queryClient.setQueryData(['profile', 'me', 'uid-descarte'], { username: 'camilarib' });
+    renderRouter(appTree, { initialUrl: '/ajustes' });
+    expect(
+      await screen.findByRole('button', { name: 'Editar perfil. Foto, nome, @, bio e redes' }),
+    ).toBeTruthy();
   });
 
   it('Sair: sai no Firebase, o cache do aparelho vai embora e o guard leva à entrada', async () => {
@@ -240,7 +266,7 @@ describe('Ajustes', () => {
     expect(view.getSegments()).toEqual(['(tabs)', '(perfil)', 'excluir-conta']);
     expect(screen.getByRole('header', { name: 'Excluir conta' })).toBeTruthy();
     expect(screen.getByText(/A exclusão é definitiva/)).toBeTruthy();
-    expect(screen.getByText(/o seu @, que fica livre para outra pessoa/)).toBeTruthy();
+    expect(screen.getByText(/bio, cidade e redes\. O @ fica livre para outra pessoa/)).toBeTruthy();
     expect(screen.getByText(/o saldo, o nível e as conquistas/)).toBeTruthy();
     expect(screen.getByRole('button', { name: DELETE })).toBeTruthy();
     expect(deleteUser).not.toHaveBeenCalled();

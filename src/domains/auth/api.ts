@@ -128,8 +128,10 @@ export function waitForProfile(
  * por alguns segundos (`NAME_WAIT_MS` em `functions/src/handlers.ts`); se o
  * `updateProfile` chegou depois disso, o perfil nasce sem nome. Aqui o fã grava
  * o nome da sessão pelo caminho que as regras dão a ele (`displayName` com
- * `updatedAt` do servidor). É a primeira edição do perfil, então a trava de
- * 10 s não pega.
+ * `updatedAt` do servidor, o `firstProfileName` do `firestore.rules`). É a
+ * única gravação do fã no perfil: com o nome de antes `null`, uma vez só;
+ * depois dela, o resto da edição vai pela API (`PUT /me/profile`, seção 28 de
+ * docs/arquitetura-api.md).
  *
  * O @ não muda: ele é do servidor (o fã não grava `username` nem `usernames/`)
  * e continua `fa` com dígitos.

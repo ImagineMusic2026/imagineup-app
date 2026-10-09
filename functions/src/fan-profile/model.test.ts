@@ -16,9 +16,11 @@ import {
   photoTooOld,
   profileSyncBudget,
   profileSyncNeeded,
+  ProfileEditError,
   stalePhotoFiles,
   USERNAME_CHANGE_INTERVAL_MS,
   usernameChangeAllowed,
+  usernameChangeProblem,
   usernameRefusal,
   type ProfileSyncBudget,
 } from './model';
@@ -90,6 +92,43 @@ describe('prazo da troca do @', () => {
 
   it('sem prazo gravado (o @ do cadastro, ou o liberado pelo script), livre', () => {
     expect(usernameChangeAllowed(null, NOW)).toBe(true);
+  });
+});
+
+// A conferência pura que saiu do changeUsername (seção 28, 28.4, passo 3): os
+// mesmos casos do PUT /me/username, na mesma ordem (o motivo antes do prazo).
+describe('usernameChangeProblem', () => {
+  const changeableAt = nextUsernameChange(NOW);
+  const problemOf = (username: string, deadline: number | null, now: number) => {
+    const problem = usernameChangeProblem(username, deadline, now);
+    return problem && { reason: problem.reason, details: problem.details };
+  };
+
+  it.each([
+    ['ab', 'format'],
+    ['fa123456', 'automatic'],
+    ['adm1n', 'reserved'],
+    ['ajuda', 'reserved'],
+  ])('%s: 400 username_invalid com %s, antes do prazo', (username, reason) => {
+    // Mesmo com o prazo correndo, o motivo do @ vem primeiro (como o changeUsername).
+    expect(problemOf(username, changeableAt, NOW)).toEqual({
+      reason: 'username_invalid',
+      details: { reason },
+    });
+  });
+
+  it('o prazo correndo: 409 username_change_too_soon com a data; na hora exata, livre', () => {
+    const problem = usernameChangeProblem('camilanova', changeableAt, changeableAt - 1);
+    expect(problem).toBeInstanceOf(ProfileEditError);
+    expect(problem).toMatchObject({
+      reason: 'username_change_too_soon',
+      details: { changeableAt: '2026-11-06T15:00:00.000Z' },
+    });
+    expect(usernameChangeProblem('camilanova', changeableAt, changeableAt)).toBeNull();
+  });
+
+  it('sem prazo gravado e no formato: livre', () => {
+    expect(usernameChangeProblem('camilanova', null, NOW)).toBeNull();
   });
 });
 

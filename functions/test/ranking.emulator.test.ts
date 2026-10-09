@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 
 import { seedCamilaCentrals, seedCentrals } from '../src/centrals';
 import { dayKey, weekStart } from '../src/day';
+import { SEED_FAN_DETAILS, seedFanDetails, seedFanDetailsChanges } from '../src/fan-profile';
 import {
   createConfigSource,
   DEFAULT_POINTS_CONFIG,
@@ -1096,6 +1097,12 @@ describe('o seed do ranking (23.15)', () => {
       await seedRankingSnapshot(db, { now: T0 });
       await seedCamilaWallet(db, camila.uid, { now: T0, steps: 'week' });
       await seedRankingWeek(db, uids, { now: T0 });
+      // O perfil novo (28.10): os detalhes das contas de ranking da tabela (a
+      // Thalita e a Aline), no fim, como o script.
+      for (const details of SEED_FAN_DETAILS) {
+        const uid = uids.get(details.email);
+        if (uid) await seedFanDetails(db, uid, seedFanDetailsChanges(details), { now: T0 });
+      }
     };
     await seed();
 
@@ -1164,15 +1171,33 @@ describe('o seed do ranking (23.15)', () => {
       lastClosed: { id: 'temporada-carnaval' },
     });
 
-    // Rodar de novo não muda nada.
-    const before = (await db.collection('wallets').get()).docs.map(
-      (doc) => [doc.id, doc.data()] as [string, DocumentData],
-    );
+    // Os detalhes da tabela: a Thalita completa e a Aline privada, sem mudar o ranking.
+    expect(await read('users/rank01')).toMatchObject({
+      bio: 'Do arrocha ao piseiro, sigo o Netto em todo São João.\nIrará na veia.',
+      gender: 'woman',
+      socials: {
+        instagram: 'thalita.teste.up',
+        tiktok: 'thalita.teste.up',
+        linkedin: 'thalita-teste-imagineup',
+        x: 'thalitatesteup',
+      },
+    });
+    expect(await read('users/rank05')).toMatchObject({
+      privateAccount: true,
+      gender: 'undisclosed',
+    });
+    expect(await read('users/rank48')).not.toHaveProperty('bio');
+
+    // Rodar de novo não muda nada (nem a carteira, nem os perfis).
+    const dump = async (name: string) =>
+      (await db.collection(name).get()).docs.map(
+        (doc) => [doc.id, doc.data()] as [string, DocumentData],
+      );
+    const before = await dump('wallets');
+    const profiles = await dump('users');
     await seed();
-    const after = (await db.collection('wallets').get()).docs.map(
-      (doc) => [doc.id, doc.data()] as [string, DocumentData],
-    );
-    expect(after).toEqual(before);
+    expect(await dump('wallets')).toEqual(before);
+    expect(await dump('users')).toEqual(profiles);
   }, 300_000);
 
   it('nenhum valor se repete no mesmo recorte e no mesmo momento (a ordem nunca depende do uid)', () => {

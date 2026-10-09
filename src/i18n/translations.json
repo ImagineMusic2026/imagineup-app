@@ -718,8 +718,8 @@
     "deleteAccountHint": "Mostra o que se perde antes de confirmar",
     "profile": "Perfil",
     "editProfile": "Editar perfil",
-    "editProfileMeta": "Nome, @, cidade e foto",
-    "editProfileMetaBasic": "Nome e cidade",
+    "editProfileMeta": "Foto, nome, @, bio e redes",
+    "editProfileMetaReadOnly": "Só leitura nesta versão do app",
     "editProfileMetaAutomatic": "Seu @ ainda é automático",
     "editProfileHint": "Abre a edição do perfil"
   },
@@ -727,8 +727,33 @@
     "title": "Editar perfil",
     "notReady": "Seu perfil ainda não está pronto. Espere alguns segundos.",
     "loadError": "Não deu para carregar seu perfil.",
+    "save": "Salvar",
+    "saving": "Salvando o perfil",
+    "saved": "Perfil salvo.",
+    "savedWithUsername": "Perfil salvo. Seu @ agora é @{{username}}.",
+    "error": "Não deu para salvar. Tente de novo.",
+    "uncertain": "Não deu para confirmar se o perfil foi salvo. Tente de novo.",
+    "tooManySaves": "Você salvou o perfil muitas vezes hoje. Tente amanhã.",
+    "tooManyNames": "Você trocou o nome muitas vezes hoje. Tente amanhã.",
+    "fieldInvalid": "Confira este campo.",
+    "readOnly": "Nesta versão do app, o perfil é só para ver.",
+    "readOnlyEmpty": "Não preenchido",
+    "discard": {
+      "title": "Descartar alterações?",
+      "message": "O que você mudou não vai ser salvo.",
+      "messagePhoto": "O que você mudou não vai ser salvo. A foto nova já está salva.",
+      "keep": "Continuar editando",
+      "confirm": "Descartar"
+    },
+    "leavePhoto": {
+      "title": "Sair com a foto indo?",
+      "message": "A foto ainda está sendo enviada e pode não ser trocada.",
+      "messageWithChanges": "A foto ainda está sendo enviada e pode não ser trocada. O que você mudou no resto não vai ser salvo.",
+      "confirm": "Sair"
+    },
     "photo": {
-      "section": "Foto",
+      "change": "Trocar foto",
+      "changeHint": "Mostra as opções da foto",
       "gallery": "Galeria",
       "galleryLabel": "Escolher foto da galeria",
       "camera": "Câmera",
@@ -745,21 +770,19 @@
       "openSettings": "Abrir ajustes",
       "noCamera": "Câmera indisponível neste aparelho."
     },
-    "info": {
-      "section": "Nome e cidade",
+    "basic": {
+      "section": "Informações básicas",
       "name": "Nome",
-      "city": "Cidade (opcional)",
-      "cityHint": "Ex.: Feira de Santana, BA",
-      "save": "Salvar",
-      "saved": "Perfil salvo.",
-      "tooSoon": "Você salvou há pouco. Espere alguns segundos e tente de novo.",
-      "timeout": "Ainda salvando. Confira a internet.",
-      "error": "Não deu para salvar. Tente de novo.",
-      "suspended": "Sua conta está suspensa. Fale com a equipe do ImagineUP."
+      "namePlaceholder": "Seu nome",
+      "username": "Seu @",
+      "usernamePlaceholder": "seunome",
+      "bio": "Bio",
+      "bioPlaceholder": "Conte um pouco sobre você...",
+      "bioCounter": "{{count}}/{{max}}",
+      "bioCounterLabel": "{{count}} de {{max}} caracteres",
+      "bioLimit": "Você chegou ao limite de {{max}} caracteres."
     },
     "username": {
-      "section": "Seu @",
-      "label": "@",
       "automatic": "Automático",
       "automaticHint": "Este @ foi criado sozinho. Escolha um com a sua cara.",
       "rule": "De 3 a 20 letras minúsculas e números. Depois de trocar, só de novo em 30 dias.",
@@ -767,22 +790,67 @@
       "checkError": "Não deu para conferir o @.",
       "recheck": "Conferir o @ de novo",
       "available": "Disponível",
-      "current": "É o seu @ de agora",
-      "taken": "Este @ já tem dono.",
-      "reserved": "Este @ não está disponível.",
-      "invalid": "Use de 3 a 20 letras minúsculas e números.",
+      "taken": "Indisponível: este @ já tem dono.",
+      "reserved": "Indisponível: este @ é reservado.",
+      "invalid": "Indisponível: use de 3 a 20 letras minúsculas e números.",
       "lockedUntil": "Você troca o @ de novo em {{date}}.",
-      "tooSoon": "Você trocou o @ há menos de 30 dias.",
-      "submit": "Trocar @",
-      "changed": "Seu @ agora é @{{username}}.",
-      "error": "Não deu para trocar o @. Tente de novo."
+      "tooSoon": "Você trocou o @ há menos de 30 dias."
+    },
+    "details": {
+      "section": "Detalhes",
+      "city": "Cidade",
+      "cityPlaceholder": "Sua cidade (opcional)",
+      "gender": "Gênero",
+      "genderMeta": "Só você e a equipe do ImagineUP veem.",
+      "genderUnset": "Não informado",
+      "genderLabel": "Gênero, {{value}}",
+      "genders": {
+        "woman": "Mulher",
+        "man": "Homem",
+        "nonbinary": "Não binário",
+        "undisclosed": "Prefiro não dizer"
+      },
+      "privateAccount": "Conta privada",
+      "privateAccountMeta": "Os outros fãs não veem sua bio nem suas redes.",
+      "privateAccountOn": "Ligada",
+      "privateAccountOff": "Desligada"
+    },
+    "socials": {
+      "section": "Redes sociais",
+      "instagram": "Instagram",
+      "tiktok": "TikTok",
+      "linkedin": "LinkedIn",
+      "x": "X (Twitter)",
+      "placeholder": "seu.usuario",
+      "linkedinPlaceholder": "seunome",
+      "hint": "Coloque só o seu usuário. Também dá para colar o link do perfil.",
+      "publicHint": "Sem a conta privada, qualquer fã do ImagineUP vê sua bio e suas redes.",
+      "host": "Esse link não é do {{network}}.",
+      "format": "Usuário fora do formato do {{network}}."
+    },
+    "info": {
+      "suspended": "Sua conta está suspensa. Fale com a equipe do ImagineUP."
     }
+  },
+  "fanProfile": {
+    "openHint": "Abre o perfil de {{name}}",
+    "loading": "Carregando o perfil",
+    "closed": "Perfil fechado",
+    "closedText": "Só a foto, o nome e o @ ficam à vista.",
+    "empty": "Este fã ainda não escreveu nada aqui.",
+    "notFound": "Este fã não está mais no ImagineUP.",
+    "loadError": "Não deu para carregar o perfil.",
+    "socials": "Redes sociais",
+    "socialLabel": "{{network}}, {{handle}}",
+    "socialHint": "Abre o perfil no {{network}}, fora do app",
+    "openError": "Não deu para abrir o link.",
+    "sampleLinks": "Perfil de exemplo: os links não abrem nesta versão."
   },
   "deleteAccount": {
     "title": "Excluir conta",
     "lead": "A exclusão é definitiva e não dá para desfazer. Com a conta, vão embora:",
     "losses": {
-      "profile": "Seu perfil: nome, foto, cidade e o seu @, que fica livre para outra pessoa.",
+      "profile": "Seu perfil: nome, foto, @, bio, cidade e redes. O @ fica livre para outra pessoa.",
       "points": "Seus pontos: o saldo, o nível e as conquistas.",
       "ranking": "Sua posição no ranking e as centrais que você segue.",
       "rewards": "Seus resgates: os que ainda não foram entregues são cancelados, e os pontos não voltam."
@@ -849,7 +917,10 @@
     "commentMax": "O comentário pode ter até {{max}} caracteres.",
     "commentInvisible": "Tire os caracteres invisíveis do comentário.",
     "cityMax": "Use até {{max}} caracteres.",
-    "cityInvalid": "Use só uma linha, sem caracteres invisíveis."
+    "cityInvalid": "Use só uma linha, sem caracteres invisíveis.",
+    "bioMax": "Use até {{max}} caracteres.",
+    "bioLines": "Use até {{max}} linhas.",
+    "bioInvalid": "Tire os caracteres invisíveis."
   },
   "points": {
     "balance": "{{points}} pontos",

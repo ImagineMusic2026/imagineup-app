@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { cleanMultiline, isVisibleLine, isVisibleMultiline } from './visible-line';
+import { cleanLine, cleanMultiline, isVisibleLine, isVisibleMultiline } from './visible-line';
 
 // Casos em comum com tests/firestore-rules.test.ts, na raiz, mais um por item da lista de
 // caracteres em branco: as duas validações precisam concordar.
@@ -97,5 +97,25 @@ describe('cleanMultiline e isVisibleMultiline', () => {
   ])('%s', (_, input, cleaned, visible) => {
     expect(cleanMultiline(input)).toBe(cleaned);
     expect(isVisibleMultiline(cleanMultiline(input))).toBe(visible);
+  });
+});
+
+// A mesma tabela de src/utils/__tests__/visible-line.test.ts ("limpeza do
+// texto digitado"), no app: o nome e a cidade do PUT /me/profile (seção 28)
+// são limpos igual nos dois lados.
+describe('cleanLine', () => {
+  it.each([
+    ['  Camila Ribeiro  ', 'Camila Ribeiro'],
+    ['⁦Camila⁩', 'Camila'],
+    ['Camila ⁧Ribeiro⁨', 'Camila Ribeiro'],
+    ['Cámila'.normalize('NFD'), 'Cámila'],
+    ['\n Camila \t', 'Camila'],
+  ])('%j vira %j', (typed, expected) => {
+    expect(cleanLine(typed)).toBe(expected);
+  });
+
+  it('só tira as pontas: o que sobra no meio continua sendo validado', () => {
+    expect(cleanLine('A\nB')).toBe('A\nB');
+    expect(isVisibleLine(cleanLine('A\nB'))).toBe(false);
   });
 });

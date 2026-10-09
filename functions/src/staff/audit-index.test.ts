@@ -173,6 +173,13 @@ const ROWS: Record<AuditAction, Row> = {
     section: 'moderation',
     targets: ['fan:uid-fa'],
   },
+  // O perfil novo (28.6): os campos que saíram, nunca o texto.
+  'fan.profile.cleared': {
+    targetUid: 'uid-fa',
+    details: { uid: 'uid-fa', fields: ['bio', 'socials'] },
+    section: 'moderation',
+    targets: ['fan:uid-fa'],
+  },
   'fan.suspended': {
     targetUid: 'uid-fa',
     details: { uid: 'uid-fa', reason: 'spam', note: 'Propaganda' },

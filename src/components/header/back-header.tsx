@@ -9,16 +9,29 @@ import { BackButton } from './back-button';
 export interface BackHeaderProps {
   title?: string;
   onBack?: () => void;
-  /** Ação à direita (compartilhar, mais opções). */
+  /**
+   * O botão da esquerda: a seta de voltar (padrão) ou o "×" de fechar, que a
+   * tela "Editar perfil" usa ("Fechar", colado na margem da esquerda).
+   */
+  leading?: 'back' | 'close';
+  /** O botão da esquerda desligado, enquanto a tela não pode sair (o perfil salvando). */
+  backDisabled?: boolean;
+  /** Ação à direita (compartilhar, mais opções, o ✓ de salvar). */
   right?: ReactNode;
 }
 
-/** Header fixo das telas empilhadas: voltar, título centralizado e ação opcional. */
-export function BackHeader({ title, onBack, right }: BackHeaderProps) {
+/** Header fixo das telas empilhadas: voltar (ou fechar), título centralizado e ação opcional. */
+export function BackHeader({
+  title,
+  onBack,
+  leading = 'back',
+  backDisabled = false,
+  right,
+}: BackHeaderProps) {
   return (
     <View style={styles.container}>
       <View style={styles.side}>
-        <BackButton onPress={onBack} />
+        <BackButton variant={leading} align="start" onPress={onBack} disabled={backDisabled} />
       </View>
       {title ? (
         <Text

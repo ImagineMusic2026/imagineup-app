@@ -17,8 +17,9 @@ import { useSessionStore } from '@/stores/session';
 import { createIdempotencyKey } from '@/utils/id';
 
 import {
-  changeUsername,
+  applyEditableProfile,
   fanPhotoPath,
+  fetchFanProfile,
   fetchLedgerPage,
   fetchMyAchievements,
   fetchMyInvite,
@@ -35,11 +36,18 @@ import {
   uploadFanPhoto,
   watchMyProfile,
 } from './api';
-import { profileKeys, profileMutationKeys } from './keys';
+import { PROFILE_SAVE_TIMEOUT_MS } from './consts';
+import { fanKeys, profileKeys, profileMutationKeys } from './keys';
 import { PhotoPickError, preparePhoto, type PickedPhoto } from './photo';
-import type { FanProfile, PhotoChange, ProfileChanges, UsernameAvailability } from './types';
+import type {
+  EditableProfile,
+  FanProfile,
+  PhotoChange,
+  ProfileChanges,
+  UsernameAvailability,
+} from './types';
 
-export { profileKeys, profileMutationKeys };
+export { fanKeys, profileKeys, profileMutationKeys };
 
 /** Uid da sessão que o Firebase já confirmou; `null` enquanto ela é só presumida. */
 function useConfirmedUid(): string | null {
@@ -177,26 +185,7 @@ export function useRegisterInviteLinkMutation() {
   });
 }
 
-// --- Editar perfil (bloco 9, docs/arquitetura-api.md, 24.12) -----------------------
-
-/**
- * Quando a última gravação de nome e cidade foi confirmada (relógio do
- * aparelho), e de quem. Fica em memória, fora da tela: aberta de novo dentro
- * dos 10 s, ela continua com o "Salvar" desligado. Guarda o uid porque a trava
- * de 10 s da regra é por perfil: outro fã que entra no mesmo aparelho logo
- * depois não herda a espera.
- */
-let lastProfileSaveAt: { uid: string; at: number } | null = null;
-
-/** Quando o perfil deste fã foi salvo pela última vez nesta sessão do app (ou `null`). */
-export function lastProfileSave(uid: string): number | null {
-  return lastProfileSaveAt?.uid === uid ? lastProfileSaveAt.at : null;
-}
-
-/** Só os testes: volta ao começo, sem gravação confirmada. */
-export function resetLastProfileSave(): void {
-  lastProfileSaveAt = null;
-}
+// --- Editar perfil (bloco 9 e seção 28 de docs/arquitetura-api.md) ----------------
 
 /**
  * O @ que o fã digita está livre? Só liga com a API, com o @ no formato,
@@ -216,6 +205,24 @@ export function useUsernameAvailabilityQuery(username: string, enabled: boolean)
   });
 }
 
+/**
+ * O perfil público de outro fã (`GET /fans/:fanId`, seção 28), aberto pelo
+ * ranking, pelo pódio, pelos top fãs e pelos comentários. Da API com ela (o
+ * domínio `profile`), das fixtures no resto. Retrato de 30 s e fora do disco:
+ * o perfil de outro fã, que pode ter fechado a conta ou a conta privada
+ * depois, não fica guardado no aparelho.
+ */
+export function useFanProfileQuery(fanId: string) {
+  const options = queryOptionsFor('profile');
+  return useQuery({
+    ...options,
+    queryKey: fanKeys.profile(fanId),
+    queryFn: () => fetchFanProfile(fanId),
+    staleTime: 30_000,
+    meta: { ...options.meta, persist: false },
+  });
+}
+
 /** Põe no perfil em cache o que a resposta do servidor já trouxe, antes da escuta. */
 function patchMyProfile(
   client: QueryClient,
@@ -228,30 +235,97 @@ function patchMyProfile(
 }
 
 /**
- * Nome e cidade, direto no Firestore (`updateMyProfile`). Sem fila offline (o
- * "Salvar" fica desligado sem internet) e sem nova tentativa: uma segunda
- * gravação bateria na trava de 10 s, e o SDK desfaria a mais nova. A
- * `mutationFn` espera o `updateDoc` inteiro; o prazo de 10 s é só da tela.
- * Depois, o ranking busca de novo (a linha do fã mostra o nome e a cidade);
- * os comentários não mudam no cache (as linhas "Você" leem o perfil).
+ * A foto nova (ou a falta dela) no perfil em cache, e o próprio perfil público
+ * busca de novo (a foto dele é a mesma).
+ */
+function patchPhoto(client: QueryClient, uid: string, change: PhotoChange): void {
+  patchMyProfile(client, uid, (profile) => ({ ...profile, ...change }));
+  void client.invalidateQueries({ queryKey: fanKeys.profile(uid) });
+}
+
+/**
+ * Corre a tentativa contra o prazo: passado o prazo, cancela o pedido pelo
+ * `signal` e rejeita com `ApiError('timeout')`, que é falha incerta. O prazo
+ * cobre também a espera da sessão e do token, que vêm antes do `timeout` do
+ * axios.
+ */
+async function withDeadline<T>(ms: number, run: (signal: AbortSignal) => Promise<T>): Promise<T> {
+  const controller = new AbortController();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<never>((_resolve, reject) => {
+    timer = setTimeout(() => {
+      controller.abort();
+      reject(new ApiError('timeout', 'O perfil não respondeu a tempo.'));
+    }, ms);
+  });
+  try {
+    return await Promise.race([run(controller.signal), deadline]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/** Uma tentativa do ✓: o corpo que foi e a chave dele. */
+type ProfileAttempt = { body: string; key: string };
+
+/**
+ * O ✓ da tela "Editar perfil" (`PUT /me/profile`, seção 28): nome, @, bio,
+ * cidade, gênero, conta privada e redes num pedido só. Sem fila offline (o ✓
+ * fica apagado sem internet) e sem nova tentativa automática. A chave é da
+ * tentativa, `profile-<id>`, guardada com o corpo que foi: depois de uma falha
+ * incerta (rede, servidor, o prazo), o mesmo corpo vai com a mesma chave; o fã
+ * mexeu num campo, chave nova; a recusa definitiva fecha a tentativa. A
+ * tentativa inteira tem o prazo de `PROFILE_SAVE_TIMEOUT_MS` (28.5).
+ *
+ * No sucesso, o perfil em cache recebe a resposta antes da escuta, e o perfil
+ * público do próprio fã (`fanKeys.profile(uid)`) busca de novo; o ranking
+ * busca de novo quando o nome ou a cidade mudaram (a linha do fã mostra os
+ * dois); com o @, as consultas de disponibilidade saem do cache. A recusa de @
+ * com dono, reservado ou fora do formato vai para o retrato da
+ * disponibilidade desse @: senão, por até 30 s, o mesmo @ voltaria
+ * "Disponível".
  */
 export function useUpdateProfileMutation() {
   const queryClient = useQueryClient();
   const uid = useConfirmedUid();
+  const attempt = useRef<ProfileAttempt | null>(null);
   return useMutation({
     mutationKey: profileMutationKeys.update,
-    mutationFn: (changes: ProfileChanges) => {
-      if (!uid) throw new Error('Sem sessão confirmada para salvar o perfil.');
-      return updateMyProfile(uid, changes);
+    mutationFn: (changes: ProfileChanges): Promise<EditableProfile> => {
+      const body = JSON.stringify(changes);
+      if (attempt.current?.body !== body) {
+        attempt.current = { body, key: `profile-${createIdempotencyKey()}` };
+      }
+      const { key } = attempt.current;
+      return withDeadline(PROFILE_SAVE_TIMEOUT_MS, (signal) =>
+        updateMyProfile(changes, key, signal),
+      );
     },
     networkMode: 'always',
     retry: false,
-    onSuccess: (_result, changes) => {
+    onSuccess: (edited, changes) => {
+      attempt.current = null;
       if (uid) {
-        lastProfileSaveAt = { uid, at: Date.now() };
-        patchMyProfile(queryClient, uid, (profile) => ({ ...profile, ...changes }));
+        patchMyProfile(queryClient, uid, (profile) => applyEditableProfile(profile, edited));
+        // O próprio perfil público (aberto pelo ranking ou por um comentário dele).
+        void queryClient.invalidateQueries({ queryKey: fanKeys.profile(uid) });
       }
-      refreshRanking(queryClient);
+      if (changes.displayName !== undefined || changes.city !== undefined) {
+        refreshRanking(queryClient);
+      }
+      if (changes.username !== undefined) {
+        void queryClient.invalidateQueries({ queryKey: profileKeys.username() });
+      }
+    },
+    onError: (error, changes) => {
+      if (!isUncertainFailure(error)) attempt.current = null;
+      const refused = refusedUsernameStatus(error);
+      if (refused && changes.username !== undefined) {
+        queryClient.setQueryData<UsernameAvailability>(
+          profileKeys.usernameAvailability(changes.username),
+          { username: changes.username, status: refused },
+        );
+      }
     },
   });
 }
@@ -278,63 +352,24 @@ export function apiErrorCode(error: unknown): string | null {
   return error instanceof ApiError ? error.code : null;
 }
 
-/**
- * A recusa definitiva da troca do @, como status do @: `username_taken` é
- * `taken`, e o `username_invalid` que chega ao app é de reservado ou
- * automático (o formato é conferido no aparelho antes), `reserved`.
- */
-export function refusedUsernameStatus(error: unknown): 'taken' | 'reserved' | null {
-  const code = apiErrorCode(error);
-  if (code === 'username_taken') return 'taken';
-  if (code === 'username_invalid') return 'reserved';
-  return null;
+/** Um texto do `details` do erro da API (`field`, `reason`, `action`), ou `null`. */
+export function apiErrorDetail(error: unknown, key: string): string | null {
+  const value = error instanceof ApiError ? error.details?.[key] : undefined;
+  return typeof value === 'string' ? value : null;
 }
 
 /**
- * Troca o @ (`PUT /me/username`). A chave é da tentativa: nasce quando o fã
- * toca em "Trocar @" e fica até a resposta; depois de uma falha incerta, o
- * mesmo @ vai de novo com a mesma chave, e depois de uma recusa definitiva,
- * com chave nova. Sem fila offline (`networkMode: 'always'`). O perfil em
- * cache recebe o @ e o prazo da resposta antes da escuta. A recusa de @ com
- * dono ou reservado vai para o retrato da disponibilidade desse @: senão, por
- * até 30 s, o mesmo @ digitado de novo voltaria "Disponível".
+ * A recusa definitiva do @, como status do @: `username_taken` é `taken`; o
+ * `username_invalid` de formato (`details.reason`), `invalid`; o resto dele
+ * (reservado ou automático, o formato o aparelho já conferiu), `reserved`.
  */
-export function useChangeUsernameMutation() {
-  const queryClient = useQueryClient();
-  const uid = useConfirmedUid();
-  const attempt = useRef<{ username: string; key: string } | null>(null);
-  return useMutation({
-    mutationKey: profileMutationKeys.username,
-    mutationFn: (username: string) => {
-      if (attempt.current?.username !== username) {
-        attempt.current = { username, key: `username-${createIdempotencyKey()}` };
-      }
-      return changeUsername(username, attempt.current.key);
-    },
-    networkMode: 'always',
-    retry: false,
-    onSuccess: (change) => {
-      attempt.current = null;
-      if (uid) {
-        patchMyProfile(queryClient, uid, (profile) => ({
-          ...profile,
-          username: change.username,
-          usernameChangeableAt: change.changeableAt,
-        }));
-      }
-      void queryClient.invalidateQueries({ queryKey: profileKeys.username() });
-    },
-    onError: (error, username) => {
-      if (!isUncertainFailure(error)) attempt.current = null;
-      const refused = refusedUsernameStatus(error);
-      if (refused) {
-        queryClient.setQueryData<UsernameAvailability>(profileKeys.usernameAvailability(username), {
-          username,
-          status: refused,
-        });
-      }
-    },
-  });
+export function refusedUsernameStatus(error: unknown): 'taken' | 'reserved' | 'invalid' | null {
+  const code = apiErrorCode(error);
+  if (code === 'username_taken') return 'taken';
+  if (code === 'username_invalid') {
+    return apiErrorDetail(error, 'reason') === 'format' ? 'invalid' : 'reserved';
+  }
+  return null;
 }
 
 /** Uma tentativa de troca de foto: o arquivo preparado e o id (o nome do arquivo e a chave). */
@@ -402,7 +437,7 @@ export function useChangePhotoMutation() {
     retry: false,
     onSuccess: (change) => {
       attempt.current = null;
-      if (uid) patchMyProfile(queryClient, uid, (profile) => ({ ...profile, ...change }));
+      if (uid) patchPhoto(queryClient, uid, change);
       refreshRanking(queryClient);
     },
     onError: (error) => {
@@ -429,7 +464,7 @@ export function useRemovePhotoMutation() {
     retry: false,
     onSuccess: (change) => {
       attempt.current = null;
-      if (uid) patchMyProfile(queryClient, uid, (profile) => ({ ...profile, ...change }));
+      if (uid) patchPhoto(queryClient, uid, change);
       refreshRanking(queryClient);
     },
     onError: (error) => {

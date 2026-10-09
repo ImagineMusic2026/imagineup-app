@@ -35,8 +35,11 @@ const FUNCTIONS_REGION = 'southamerica-east1';
  * emuladores, é a `api` do emulador de Functions, montada a partir do host
  * deles, sem variável nova; o `EXPO_PUBLIC_API_URL` fica de fora, porque o
  * token do emulador não vale na API de verdade. Sem emulador, o
- * `EXPO_PUBLIC_API_URL`, que fica vazio nas builds até as ações que rendem e
- * gastam pontos estarem na API (docs/arquitetura-api.md, seção 13).
+ * `EXPO_PUBLIC_API_URL`, a `api` de produção nos três ambientes da EAS
+ * (preview desde 08/10/2026 e, pela resposta 10 de 28.15 de
+ * docs/arquitetura-api.md, development e production também): entra no bundle
+ * quando ele é gerado, então vale nas builds e nos EAS Updates novos. Vazio só
+ * no Expo Go ou no dev client sem a variável no `.env` e sem emulador.
  */
 export function resolveApiUrl(
   emulatorHost: string | undefined,

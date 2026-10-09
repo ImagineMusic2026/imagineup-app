@@ -4,7 +4,13 @@ import { resolve } from 'node:path';
 import { Timestamp } from 'firebase-admin/firestore';
 import { describe, expect, it } from 'vitest';
 
-import { fanPhotoFiles, seedFanPhoto } from '../src/fan-profile';
+import {
+  fanPhotoFiles,
+  SEED_FAN_DETAILS,
+  seedFanDetails,
+  seedFanDetailsChanges,
+  seedFanPhoto,
+} from '../src/fan-profile';
 import { hideFanComments, moderate } from '../src/moderation';
 import { createConfigSource, runAward, SEED_ACTOR } from '../src/points';
 import {
@@ -30,7 +36,8 @@ import {
  * na `api` (as rotas que gravam recusam, as que leem e as seis de desfazer e
  * de segurança respondem), o convite do dono suspenso, o código novo recusado,
  * a devolução de um pedido do suspenso, o `hideFanComments` em páginas, o
- * `resetFanUsername` e o `clearFanPhoto` (com o gatilho e a fila das cópias).
+ * `resetFanUsername` e o `clearFanPhoto` (com o gatilho e a fila das cópias)
+ * e, desde o perfil novo (28.6), o `clearFanProfileText`.
  * A regra do perfil e a do Storage com o suspenso ficam nos testes de regras
  * (tests/firestore-rules.test.ts e tests/storage-rules.test.ts).
  */
@@ -39,6 +46,7 @@ const MODERATION_FUNCTIONS = [
   'hideFanComments',
   'resetFanUsername',
   'clearFanPhoto',
+  'clearFanProfileText',
 ];
 const env = useEmulators('moderacao-fas', [
   'api',
@@ -218,6 +226,9 @@ describe('a api com o fã suspenso', () => {
         reason: 'spam',
       }),
       await send('PUT', '/me/username', { username: unique('promo') }),
+      // O perfil novo (seção 28, decisão 11): o suspenso não edita nada, nem o que esconde.
+      await send('PUT', '/me/profile', { bio: 'Sigam meu perfil' }),
+      await send('PUT', '/me/profile', { privateAccount: true, bio: null }),
       await send('POST', '/invites/visit', {
         code: 'ABCD2345',
         link: { path: '/' },
@@ -674,5 +685,138 @@ describe('clearFanPhoto', () => {
     }
     expect((await read(`users/${fan.uid}`))?.photoPath).toBe(before);
     expect(await audits('fan.photo.removed')).toEqual([]);
+  });
+});
+
+describe('clearFanProfileText', () => {
+  const SPAM = SEED_FAN_DETAILS.find((details) => details.email === 'spam@teste.imagineup')!;
+
+  /** O fã de propaganda do seed, com a bio de spam e duas redes. */
+  async function spamFan(): Promise<Fan> {
+    const fan = await signUpFan(db, 'Promo Seguidores');
+    expect(await seedFanDetails(db, fan.uid, seedFanDetailsChanges(SPAM))).toBe('written');
+    return fan;
+  }
+
+  it('apaga só a bio, depois só as redes; nada a apagar não grava nem audita; a auditoria sem o texto', async () => {
+    const editor = await seedMember(env, 'Editora', 'editor', ['moderation']);
+    const fan = await spamFan();
+
+    expect(await ok('clearFanProfileText', { uid: fan.uid, fields: ['bio'] }, editor)).toEqual({
+      ok: true,
+      cleared: ['bio'],
+    });
+    const afterBio = (await read(`users/${fan.uid}`))!;
+    expect(afterBio.bio).toBeNull();
+    expect(afterBio.socials).toEqual({
+      instagram: 'promo.teste.up',
+      tiktok: null,
+      linkedin: null,
+      x: 'promotesteup',
+    });
+    expect(afterBio.updatedAt).toBeUndefined();
+
+    // As duas pedidas, só as redes têm o que apagar.
+    expect(
+      await ok('clearFanProfileText', { uid: fan.uid, fields: ['socials', 'bio'] }, editor),
+    ).toEqual({ ok: true, cleared: ['socials'] });
+    expect(await read(`users/${fan.uid}`)).toMatchObject({ bio: null, socials: null });
+
+    // Nada a apagar: ok sem gravar nem auditar.
+    const before = await db.doc(`users/${fan.uid}`).get();
+    expect(
+      await ok('clearFanProfileText', { uid: fan.uid, fields: ['bio', 'socials'] }, editor),
+    ).toEqual({ ok: true, cleared: [] });
+    expect((await db.doc(`users/${fan.uid}`).get()).updateTime!.isEqual(before.updateTime!)).toBe(
+      true,
+    );
+
+    const entries = await audits('fan.profile.cleared');
+    expect(entries).toHaveLength(2);
+    expect(entries).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          targetUid: fan.uid,
+          targetEmail: '',
+          section: 'moderation',
+          targets: [`fan:${fan.uid}`],
+          details: { uid: fan.uid, fields: ['bio'] },
+        }),
+        expect.objectContaining({ details: { uid: fan.uid, fields: ['socials'] } }),
+      ]),
+    );
+    // Nunca o texto apagado (decisão 21).
+    const logged = JSON.stringify(entries);
+    expect(logged).not.toContain('Seguidores reais');
+    expect(logged).not.toContain('promo.teste.up');
+
+    // O fã escreve outra bio depois, pela API, com o teto do dia.
+    const call = localApi(env, { now: () => Date.now() });
+    const again = await call('PUT', '/me/profile', {
+      token: fan.token,
+      key: unique('chave-perfil-'),
+      body: { bio: 'Agora só música.' },
+    });
+    expect(again).toMatchObject({ status: 200, body: { bio: 'Agora só música.' } });
+  });
+
+  it('as duas de uma vez, numa auditoria só', async () => {
+    const editor = await seedMember(env, 'Editora', 'editor', ['moderation']);
+    const fan = await spamFan();
+    expect(
+      await ok('clearFanProfileText', { uid: fan.uid, fields: ['bio', 'socials'] }, editor),
+    ).toEqual({ ok: true, cleared: ['bio', 'socials'] });
+    expect(await read(`users/${fan.uid}`)).toMatchObject({ bio: null, socials: null });
+    expect(await audits('fan.profile.cleared')).toEqual([
+      expect.objectContaining({ details: { uid: fan.uid, fields: ['bio', 'socials'] } }),
+    ]);
+  });
+
+  it('recusas: fan-not-found, self, os campos fora do formato, sem a seção e o Leitor', async () => {
+    const editor = await seedMember(env, 'Editora', 'editor', ['moderation']);
+    const viewer = await seedMember(env, 'Leitor', 'viewer', ['moderation']);
+    const fansOnly = await seedMember(env, 'Fãs', 'editor', ['fans']);
+    const self = await staffFan(['moderation']);
+    const fan = await spamFan();
+    const before = await db.doc(`users/${fan.uid}`).get();
+
+    expect(
+      (await failure('clearFanProfileText', { uid: 'naoExiste1', fields: ['bio'] }, editor)).details
+        ?.reason,
+    ).toBe('fan-not-found');
+    expect(
+      (await failure('clearFanProfileText', { uid: self.uid, fields: ['bio'] }, self)).details
+        ?.reason,
+    ).toBe('self');
+    expect(
+      (await failure('clearFanProfileText', { uid: 'com espaço', fields: ['bio'] }, editor))
+        .details,
+    ).toEqual({ reason: 'invalid-request', field: 'uid' });
+    for (const fields of [
+      undefined,
+      [],
+      'bio',
+      ['bio', 'bio'],
+      ['foto'],
+      ['bio', 'socials', 'bio'],
+      ['displayName'],
+    ]) {
+      expect(
+        (await failure('clearFanProfileText', { uid: fan.uid, fields }, editor)).details,
+      ).toEqual({ reason: 'invalid-request', field: 'fields' });
+    }
+    for (const member of [viewer, fansOnly]) {
+      expect(
+        (await failure('clearFanProfileText', { uid: fan.uid, fields: ['bio'] }, member)).details
+          ?.reason,
+      ).toBe('no-section');
+    }
+    expect((await failure('clearFanProfileText', { uid: fan.uid, fields: ['bio'] })).status).toBe(
+      'UNAUTHENTICATED',
+    );
+    const after = await db.doc(`users/${fan.uid}`).get();
+    expect(after.updateTime!.isEqual(before.updateTime!)).toBe(true);
+    expect(after.get('bio')).toBe(SPAM.bio);
+    expect(await audits('fan.profile.cleared')).toEqual([]);
   });
 });

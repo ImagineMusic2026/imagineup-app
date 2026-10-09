@@ -14,7 +14,12 @@ import {
 } from '../achievements/model';
 import { CENTRAL_ENTRIES_PER_DAY } from '../centrals/model';
 import { ConfigValidationError } from '../config-validation';
-import { PHOTO_CHANGES_PER_DAY, PHOTO_UPLOADS_PER_DAY } from '../fan-profile/model';
+import {
+  NAME_CHANGES_PER_DAY,
+  PHOTO_CHANGES_PER_DAY,
+  PHOTO_UPLOADS_PER_DAY,
+  PROFILE_SAVES_PER_DAY,
+} from '../fan-profile/model';
 import { INVITE_LINKS_PER_DAY, INVITE_VISITS_SENT_PER_DAY } from '../invites/model';
 import {
   EMPTY_MISSIONS_CONFIG,
@@ -65,13 +70,16 @@ export const ACTION_CAP_KEYS = [
   'photo_set',
   'reward_redeem',
   'photo_upload',
+  'profile_save',
+  'name_change',
 ] as const satisfies readonly DailyActionKey[];
 
 /**
  * Os tetos do dia (blocos 4, 5, 6, desde o bloco 9 as trocas de foto e desde o
- * bloco 10 os resgates da loja, e as vagas de envio da foto da proteção contra
- * abuso) como padrão do código (22.1, decisão 13; 24.1,
- * decisão 11; 25.1, decisão 15).
+ * bloco 10 os resgates da loja, as vagas de envio da foto da proteção contra
+ * abuso e, desde o perfil novo, os salvamentos do perfil e as trocas de nome)
+ * como padrão do código (22.1, decisão 13; 24.1, decisão 11; 25.1, decisão
+ * 15; 28.1, decisão 9).
  */
 export const DEFAULT_ACTION_CAPS: Record<DailyActionKey, number> = {
   central_entry: CENTRAL_ENTRIES_PER_DAY,
@@ -85,6 +93,8 @@ export const DEFAULT_ACTION_CAPS: Record<DailyActionKey, number> = {
   photo_set: PHOTO_CHANGES_PER_DAY,
   reward_redeem: REDEEMS_PER_DAY,
   photo_upload: PHOTO_UPLOADS_PER_DAY,
+  profile_save: PROFILE_SAVES_PER_DAY,
+  name_change: NAME_CHANGES_PER_DAY,
 };
 
 /** Teto do dia: de 1 a 10.000. */

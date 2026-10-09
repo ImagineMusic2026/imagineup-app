@@ -17,6 +17,7 @@ export type ApiErrorCode =
   | 'comment_invalid'
   | 'username_invalid'
   | 'photo_invalid'
+  | 'profile_invalid'
   | 'unauthenticated'
   | 'not_fan'
   | 'account_suspended'
@@ -59,6 +60,7 @@ export const API_ERRORS: Record<ApiErrorCode, { status: number; message: string 
     message: 'Este @ não vale. Use de 3 a 20 letras minúsculas e números.',
   },
   photo_invalid: { status: 400, message: 'Foto fora do formato. Escolha outra.' },
+  profile_invalid: { status: 400, message: 'Perfil fora do formato. Confira os campos.' },
   unauthenticated: { status: 401, message: 'Entre na sua conta para continuar.' },
   app_check_failed: {
     status: 403,
