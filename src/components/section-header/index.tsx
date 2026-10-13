@@ -10,6 +10,8 @@ export interface SectionHeaderAction {
   onPress: () => void;
   /** Frase completa para o leitor ("Ver todas as suas centrais"), via `t()`. */
   accessibilityLabel: string;
+  /** O que o toque faz ("Abre a agenda completa"), via `t()`. */
+  accessibilityHint?: string;
   /** `link` quando abre outra tela e o chamador quer que o leitor diga isso. */
   accessibilityRole?: 'button' | 'link';
 }
@@ -93,6 +95,7 @@ export function SectionHeader({
           onPress={action.onPress}
           accessibilityRole={action.accessibilityRole ?? 'button'}
           accessibilityLabel={action.accessibilityLabel}
+          accessibilityHint={action.accessibilityHint}
           testID={testID ? `${testID}-action` : undefined}
           style={styles.action}
         >

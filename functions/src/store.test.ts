@@ -108,7 +108,7 @@ describe('exclusão de conta (deleteUserData)', () => {
     });
     vi.mocked(removeFanEngagement).mockImplementation(async (_db, uid) => {
       steps.push(`removeFanEngagement ${uid}`);
-      return { likes: 0, comments: 0, reports: 0, blocks: 0 };
+      return { likes: 0, comments: 0, reports: 0, profileReports: 0, blocks: 0 };
     });
     vi.mocked(cancelFanRedemptions).mockImplementation(async (_db, uid) => {
       steps.push(`cancelFanRedemptions ${uid}`);
@@ -202,7 +202,7 @@ describe('exclusão de conta (deleteUserData)', () => {
     vi.mocked(removeFanEngagement).mockImplementation(async () => {
       await new Promise((resolve) => setTimeout(resolve, 5));
       steps.push('removeFanEngagement terminou');
-      return { likes: 1, comments: 1, reports: 0, blocks: 0 };
+      return { likes: 1, comments: 1, reports: 0, profileReports: 0, blocks: 0 };
     });
 
     await deleteUserData(fakeDb(steps), UID);
@@ -219,7 +219,7 @@ describe('exclusão de conta (deleteUserData)', () => {
     const steps: string[] = [];
     vi.mocked(removeFanEngagement).mockImplementation(async () => {
       steps.push('removeFanEngagement');
-      return { likes: 0, comments: 0, reports: 0, blocks: 0 };
+      return { likes: 0, comments: 0, reports: 0, profileReports: 0, blocks: 0 };
     });
     vi.mocked(cancelFanRedemptions).mockImplementation(async () => {
       await new Promise((resolve) => setTimeout(resolve, 5));

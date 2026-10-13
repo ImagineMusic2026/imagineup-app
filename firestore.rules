@@ -440,6 +440,20 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // Denúncias de perfil (exigências das lojas, seção 29): as denúncias uma
+    // a uma ficam só do servidor, como as de comentário (guardam quem
+    // denunciou). A fila mora numa coleção separada da moderationQueue, um
+    // item por fã denunciado (o id é o uid dele): o painel publicado lê post e
+    // comentário de todo item daquela fila. A Moderação lê; ninguém grava.
+    match /profileReports/{reportId} {
+      allow read, write: if false;
+    }
+
+    match /profileReportQueue/{uid} {
+      allow read: if canSeeSection('moderation');
+      allow write: if false;
+    }
+
     // Listas de bloqueio: dizem quem bloqueou quem, e nenhuma tela do painel
     // as usa. Só o servidor (API e exclusão de conta). Repete o fechado do
     // match final de propósito, como o postStats.

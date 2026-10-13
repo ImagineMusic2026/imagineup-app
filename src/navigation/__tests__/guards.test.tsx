@@ -34,6 +34,9 @@ function RootLayout() {
         <Stack.Screen name="(tabs)" />
         <Stack.Screen name="fa/[fanId]" />
         <Stack.Screen name="editar-perfil" />
+        <Stack.Screen name="trocar-senha" />
+        <Stack.Screen name="trocar-email" />
+        <Stack.Screen name="denunciar-perfil/[fanId]" />
       </Stack.Protected>
       <Stack.Screen name="convite/[codigo]" />
     </Stack>
@@ -66,9 +69,13 @@ const appTree = {
   '(tabs)/(explorar)/explorar': label('explore'),
   '(tabs)/(ranking)/ranking': label('ranking'),
   '(tabs)/(perfil)/perfil': label('profile'),
+  '(tabs)/(perfil)/fas-bloqueados': label('blocked-fans'),
   '(tabs)/(inicio,explorar,ranking,perfil)/artista/[artistaId]': label('artist'),
   'fa/[fanId]': label('fan'),
   'editar-perfil': label('edit-profile'),
+  'trocar-senha': label('change-password'),
+  'trocar-email': label('change-email'),
+  'denunciar-perfil/[fanId]': label('report-fan'),
   'convite/[codigo]': InviteCaptureScreen,
 };
 
@@ -195,6 +202,78 @@ describe('perfil público de outro fã na pilha raiz, dentro dos guards (seção
     await waitFor(() => expect(view.getPathname()).toBe('/fa/fa-rank-01'));
     expect(view.getByText('fan')).toBeTruthy();
     expect(rootRoutes(view)).toEqual(['(tabs)', 'fa/[fanId]']);
+  });
+});
+
+describe('denunciar perfil e "Fãs bloqueados" dentro dos guards (seção 29)', () => {
+  it.each(['/denunciar-perfil/x', '/fas-bloqueados'])(
+    'sem sessão, o link %s não abre a tela e cai na entrada',
+    async (url) => {
+      setSession(false, false);
+      const view = renderRouter(appTree, { initialUrl: url });
+      expect(await view.findByText('login')).toBeTruthy();
+      expect(view.queryByText('report-fan')).toBeNull();
+      expect(view.queryByText('blocked-fans')).toBeNull();
+    },
+  );
+
+  it.each(['/denunciar-perfil/x', '/fas-bloqueados'])(
+    'logado sem onboarding, o link %s também não abre',
+    async (url) => {
+      setSession(true, false);
+      const view = renderRouter(appTree, { initialUrl: url });
+      expect(await view.findByText('onboarding')).toBeTruthy();
+      expect(view.queryByText('report-fan')).toBeNull();
+      expect(view.queryByText('blocked-fans')).toBeNull();
+    },
+  );
+
+  it('logado, a sheet abre por cima do perfil público', async () => {
+    setSession(true, true);
+    const view = renderRouter(appTree, { initialUrl: '/ranking' });
+    act(() => router.push({ pathname: '/fa/[fanId]', params: { fanId: 'fa-rank-01' } }));
+    act(() =>
+      router.push({ pathname: '/denunciar-perfil/[fanId]', params: { fanId: 'fa-rank-01' } }),
+    );
+    await waitFor(() => expect(view.getPathname()).toBe('/denunciar-perfil/fa-rank-01'));
+    expect(view.getByText('report-fan')).toBeTruthy();
+    expect(rootRoutes(view)).toEqual(['(tabs)', 'fa/[fanId]', 'denunciar-perfil/[fanId]']);
+  });
+});
+
+describe('"Trocar senha" e "Trocar e-mail" dentro dos guards (seção 29)', () => {
+  it.each(['/trocar-senha', '/trocar-email'])(
+    'sem sessão, o link %s não abre a tela e cai na entrada',
+    async (url) => {
+      setSession(false, false);
+      const view = renderRouter(appTree, { initialUrl: url });
+      expect(await view.findByText('login')).toBeTruthy();
+      expect(view.queryByText('change-password')).toBeNull();
+      expect(view.queryByText('change-email')).toBeNull();
+    },
+  );
+
+  it.each(['/trocar-senha', '/trocar-email'])(
+    'logado sem onboarding, o link %s também não abre',
+    async (url) => {
+      setSession(true, false);
+      const view = renderRouter(appTree, { initialUrl: url });
+      expect(await view.findByText('onboarding')).toBeTruthy();
+      expect(view.queryByText('change-password')).toBeNull();
+      expect(view.queryByText('change-email')).toBeNull();
+    },
+  );
+
+  it.each([
+    ['/trocar-senha', 'trocar-senha', 'change-password'],
+    ['/trocar-email', 'trocar-email', 'change-email'],
+  ] as const)('logado, %s abre por cima das abas', async (url, route, text) => {
+    setSession(true, true);
+    const view = renderRouter(appTree, { initialUrl: '/perfil' });
+    act(() => router.push(url));
+    await waitFor(() => expect(view.getPathname()).toBe(url));
+    expect(view.getByText(text)).toBeTruthy();
+    expect(rootRoutes(view)).toEqual(['(tabs)', route]);
   });
 });
 

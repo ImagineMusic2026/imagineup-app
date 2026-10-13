@@ -295,6 +295,7 @@ export function AgendaScreen() {
     <Screen padded={false} contentStyle={styles.screen}>
       <FlashList<AgendaListItem>
         ref={listRef}
+        testID="agenda-list"
         data={items}
         keyExtractor={(item) => item.key}
         getItemType={(item) => item.type}

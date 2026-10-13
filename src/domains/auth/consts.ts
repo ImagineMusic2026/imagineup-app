@@ -1,11 +1,8 @@
 /**
- * Termos de uso e política de privacidade, publicados no site do ImagineUP
- * (repositório `imagineup-LP`, projeto `imagineup-painel` da Vercel). Endereço
- * provisório até o domínio próprio (UP-46); a barra no fim evita o
- * redirecionamento do `trailingSlash`.
+ * Termos de uso e política de privacidade: os endereços moram em
+ * `src/config/links.ts`, com o e-mail de contato (seção 29, decisão 15).
  */
-export const TERMS_URL = 'https://imagineup-painel.vercel.app/termos/';
-export const PRIVACY_URL = 'https://imagineup-painel.vercel.app/privacidade/';
+export { PRIVACY_URL, TERMS_URL } from '@/config/links';
 
 /**
  * Quanto o cadastro espera o perfil (`users/{uid}`) nascer na função de

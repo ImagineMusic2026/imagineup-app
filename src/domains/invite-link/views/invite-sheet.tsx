@@ -14,8 +14,14 @@ import { SheetGrabber } from '@/components/sheet-grabber';
 import { Skeleton, SkeletonGroup } from '@/components/skeleton';
 import { Text } from '@/components/text';
 import { TextLink } from '@/components/text-link';
-import { useMyInviteQuery, useRegisterInviteLinkMutation } from '@/domains/profile';
+import {
+  SuspensionContact,
+  useMyInviteQuery,
+  useRegisterInviteLinkMutation,
+  useSuspension,
+} from '@/domains/profile';
 import { t } from '@/i18n';
+import { isAccountSuspended } from '@/services/api/errors';
 import { colors, motion, spacing, typography } from '@/theme';
 import { createIdempotencyKey } from '@/utils/id';
 import { formatPointsDelta, formatPointsSpoken } from '@/utils/number';
@@ -82,7 +88,10 @@ function LinkSkeleton() {
  * app. Sem o código (não carregou), o link sai sem ele e a tela avisa que não
  * rende pontos. Não há botão de copiar: a folha do sistema já tem o "Copiar".
  * Com o código e a folha voltando compartilhada, o link conta nos "links
- * criados" do Perfil (`invite`, `post:<id>` ou `agenda`).
+ * criados" do Perfil (`invite`, `post:<id>` ou `agenda`). A conta suspensa sem
+ * código (o servidor não cria código para ela, 403 `account_suspended`) diz
+ * que o link sai sem os pontos, com "Escrever para a equipe" e sem "Tentar de
+ * novo", que daria a mesma recusa (seção 29, frente E).
  */
 export function InviteSheetScreen() {
   const params = useLocalSearchParams<InviteParams>();
@@ -98,6 +107,8 @@ export function InviteSheetScreen() {
   // Sem o código e ainda buscando pela primeira vez: o link sai quando ele chegar.
   const waiting = rules === undefined && invite.fetchStatus === 'fetching' && !invite.isError;
   const codeMissing = rules === undefined && !waiting;
+  const { suspended } = useSuspension();
+  const suspendedWithoutCode = codeMissing && (suspended || isAccountSuspended(invite.error));
   const link = describeInviteLink(target, code, rules?.linkBase);
 
   const share = (): void => {
@@ -166,7 +177,14 @@ export function InviteSheetScreen() {
           </View>
         </Card>
 
-        {codeMissing ? (
+        {suspendedWithoutCode ? (
+          <View style={styles.notice} testID="invite-suspended">
+            <Text variant="caption" color={colors.textSecondary}>
+              {t('suspension.invite')}
+            </Text>
+            <SuspensionContact />
+          </View>
+        ) : codeMissing ? (
           <View style={styles.notice}>
             <Text variant="caption" color={colors.textSecondary}>
               {t('invite.noCode')}

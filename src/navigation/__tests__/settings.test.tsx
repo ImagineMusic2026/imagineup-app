@@ -1,7 +1,8 @@
 import { onlineManager, QueryClientProvider } from '@tanstack/react-query';
-import { Stack } from 'expo-router';
+import { router, Stack } from 'expo-router';
 import { Tabs } from 'expo-router/js-tabs';
 import { act, fireEvent, renderRouter, screen, waitFor } from 'expo-router/testing-library';
+import * as WebBrowser from 'expo-web-browser';
 import { FirebaseError } from 'firebase/app';
 import {
   deleteUser,
@@ -11,12 +12,15 @@ import {
   signOut as firebaseSignOut,
 } from 'firebase/auth';
 import type { ReactNode } from 'react';
-import { AccessibilityInfo, Text } from 'react-native';
+import { AccessibilityInfo, Linking, Text } from 'react-native';
 
 import DeleteAccountRoute from '@/app/(tabs)/(perfil)/excluir-conta';
 import SettingsRoute from '@/app/(tabs)/(perfil)/ajustes';
+import { PRIVACY_URL, SUPPORT_EMAIL, TERMS_URL } from '@/config/links';
 import { useAuthListener } from '@/domains/auth';
+import { handOffEmail, readHandedOffEmail } from '@/domains/auth/email-handoff';
 import { useSessionGate } from '@/hooks/use-session-gate';
+import { api } from '@/services/api';
 import { queryClient, queryPersister } from '@/services/query';
 import { haptics } from '@/services/haptics';
 import { usePreferencesStore } from '@/stores/preferences';
@@ -69,6 +73,37 @@ jest.mock('@/config/env', () => ({
   apiUrl: undefined,
   firebaseEmulatorHost: undefined,
 }));
+jest.mock('expo-web-browser', () => ({ openBrowserAsync: jest.fn(() => Promise.resolve()) }));
+// A config do app que está rodando. O `expoConfig` do jest-expo é um getter
+// que não se troca (null sem manifesto); o resto das constantes segue o real.
+jest.mock('expo-constants', () => {
+  const actual = jest.requireActual('expo-constants');
+  return {
+    ...actual,
+    __esModule: true,
+    default: Object.create(actual.default, {
+      expoConfig: { get: () => ({ name: 'ImagineUP', slug: 'imagineup', version: '0.1.0' }) },
+    }),
+  };
+});
+// O update que está rodando: o binário embutido por padrão; os casos da versão trocam.
+const mockUpdate = {
+  isEmbeddedLaunch: true,
+  createdAt: null as Date | null,
+  updateId: null as string | null,
+};
+jest.mock('expo-updates', () => ({
+  __esModule: true,
+  get isEmbeddedLaunch() {
+    return mockUpdate.isEmbeddedLaunch;
+  },
+  get createdAt() {
+    return mockUpdate.createdAt;
+  },
+  get updateId() {
+    return mockUpdate.updateId;
+  },
+}));
 // Nas fixtures por padrão; os casos da meta com a API trocam.
 let mockDataSource: 'api' | 'fixtures' = 'fixtures';
 jest.mock('@/config/data-source', () => ({
@@ -92,6 +127,8 @@ function RootLayout() {
         <Stack.Protected guard={signedIn && onboarded}>
           <Stack.Screen name="(tabs)" />
           <Stack.Screen name="editar-perfil" />
+          <Stack.Screen name="trocar-senha" />
+          <Stack.Screen name="trocar-email" />
         </Stack.Protected>
       </Stack>
     </QueryClientProvider>
@@ -125,7 +162,10 @@ const appTree = {
   '(tabs)/(perfil)/perfil': label('profile'),
   '(tabs)/(perfil)/ajustes': SettingsRoute,
   '(tabs)/(perfil)/excluir-conta': DeleteAccountRoute,
+  '(tabs)/(perfil)/fas-bloqueados': label('fas bloqueados'),
   'editar-perfil': label('editar perfil'),
+  'trocar-senha': label('trocar senha'),
+  'trocar-email': label('trocar email'),
   '(tabs)/(inicio,explorar,ranking,perfil)/artista/[artistaId]': label('artist'),
 };
 
@@ -151,10 +191,25 @@ const CONFIRM = 'Confirmar e excluir';
 
 let removeClient: jest.SpyInstance;
 
+/** A sessão de antes, com ou sem o provedor de senha (`undefined`: sem o campo). */
+function setSessionPassword(hasPassword: boolean | undefined): void {
+  useSessionStore.setState({
+    user: {
+      uid: 'uid-descarte',
+      email: 'descarte@teste.imagineup',
+      displayName: null,
+      photoURL: null,
+      ...(hasPassword === undefined ? {} : { hasPassword }),
+    },
+  });
+}
+
 beforeEach(() => {
   jest.clearAllMocks();
   mockDataSource = 'fixtures';
   mockAuth.currentUser = mockUser;
+  Object.assign(mockUpdate, { isEmbeddedLaunch: true, createdAt: null, updateId: null });
+  jest.spyOn(Linking, 'openURL').mockResolvedValue(true);
   jest.mocked(onAuthStateChanged).mockReturnValue(() => undefined);
   jest.mocked(firebaseSignOut).mockResolvedValue(undefined);
   removeClient = jest.spyOn(queryPersister, 'removeClient').mockResolvedValue(undefined);
@@ -203,6 +258,50 @@ describe('Ajustes', () => {
     expect(screen.getByTestId('settings-delete-account-trailing', hidden)).toBeTruthy();
   });
 
+  it('as seções na ordem: Perfil, Segurança, Conta e Sobre (seção 29)', () => {
+    renderRouter(appTree, { initialUrl: '/ajustes' });
+
+    expect(screen.getAllByRole('header').map((node) => node.props.children)).toEqual([
+      'Ajustes',
+      'Perfil',
+      'Segurança',
+      'Conta',
+      'Sobre',
+    ]);
+    // Sem a suspensão, nada de aviso no topo.
+    expect(screen.queryByTestId('suspended-notice')).toBeNull();
+  });
+
+  it('a seção Segurança traz "Fãs bloqueados", que abre a lista na pilha do Perfil', async () => {
+    const view = renderRouter(appTree, { initialUrl: '/ajustes' });
+
+    const row = screen.getByRole('button', { name: 'Fãs bloqueados. Veja e desbloqueie' });
+    expect(row).toHaveProp('accessibilityHint', 'Abre a lista de fãs bloqueados');
+    expect(screen.getByTestId('settings-blocked-fans-trailing', hidden)).toBeTruthy();
+
+    fireEvent.press(row);
+    await waitFor(() => expect(view.getPathname()).toBe('/fas-bloqueados'));
+    expect(view.getSegments()).toEqual(['(tabs)', '(perfil)', 'fas-bloqueados']);
+    expect(screen.getByText('fas bloqueados')).toBeTruthy();
+  });
+
+  it('a conta suspensa: o aviso fixo no topo, com o motivo e "Escrever para a equipe" (seção 29)', () => {
+    queryClient.setQueryData(['profile', 'me', 'uid-descarte'], {
+      username: 'fa711224',
+      suspendedAt: '2026-10-10T12:00:00.000Z',
+      suspensionReason: 'spam',
+    });
+    renderRouter(appTree, { initialUrl: '/ajustes' });
+
+    expect(screen.getByTestId('suspended-notice')).toBeTruthy();
+    expect(screen.getByRole('header', { name: 'Sua conta está suspensa' })).toBeTruthy();
+    expect(screen.getByText('Motivo: envio de spam.')).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Escrever para a equipe' })).toBeTruthy();
+    // O aviso vem antes da primeira seção.
+    const headers = screen.getAllByRole('header').map((node) => node.props.children);
+    expect(headers.indexOf('Sua conta está suspensa')).toBeLessThan(headers.indexOf('Perfil'));
+  });
+
   it('a seção Perfil traz "Editar perfil", que abre a tela fora das abas; nas fixtures, a meta de só leitura', async () => {
     const view = renderRouter(appTree, { initialUrl: '/ajustes' });
 
@@ -237,6 +336,66 @@ describe('Ajustes', () => {
     expect(
       await screen.findByRole('button', { name: 'Editar perfil. Foto, nome, @, bio e redes' }),
     ).toBeTruthy();
+  });
+
+  it('"Trocar e-mail" e "Trocar senha" só aparecem na conta com senha (seção 29, frente D)', () => {
+    setSessionPassword(true);
+    renderRouter(appTree, { initialUrl: '/ajustes' });
+
+    const email = screen.getByRole('button', {
+      name: 'Trocar e-mail. Manda um link para o e-mail novo',
+    });
+    expect(email).toHaveProp('accessibilityHint', 'Abre a troca de e-mail');
+    const password = screen.getByRole('button', { name: 'Trocar senha. Pede a senha atual' });
+    expect(password).toHaveProp('accessibilityHint', 'Abre a troca de senha');
+    // Na conta: as duas trocas antes de Sair e Excluir conta.
+    const rows = screen
+      .getAllByTestId(/^settings-(change-email|change-password|sign-out|delete-account)$/)
+      .map((node) => node.props.testID);
+    expect(rows).toEqual([
+      'settings-change-email',
+      'settings-change-password',
+      'settings-sign-out',
+      'settings-delete-account',
+    ]);
+  });
+
+  it.each([
+    ['sem o provedor de senha', false],
+    ['sem o campo na sessão', undefined],
+  ])('%s, as duas linhas não aparecem', (_, hasPassword) => {
+    setSessionPassword(hasPassword);
+    renderRouter(appTree, { initialUrl: '/ajustes' });
+
+    expect(screen.queryByTestId('settings-change-email')).toBeNull();
+    expect(screen.queryByTestId('settings-change-password')).toBeNull();
+    expect(screen.getByTestId('settings-sign-out')).toBeTruthy();
+  });
+
+  it('"Trocar senha" e "Trocar e-mail" abrem fora das abas, na pilha raiz', async () => {
+    setSessionPassword(true);
+    const view = renderRouter(appTree, { initialUrl: '/ajustes' });
+
+    fireEvent.press(screen.getByTestId('settings-change-password'));
+    await waitFor(() => expect(view.getPathname()).toBe('/trocar-senha'));
+    expect(view.getSegments()).toEqual(['trocar-senha']);
+    expect(screen.getByText('trocar senha')).toBeTruthy();
+
+    act(() => router.back());
+    await waitFor(() => expect(view.getPathname()).toBe('/ajustes'));
+    fireEvent.press(screen.getByTestId('settings-change-email'));
+    await waitFor(() => expect(view.getPathname()).toBe('/trocar-email'));
+    expect(view.getSegments()).toEqual(['trocar-email']);
+  });
+
+  it('Sair esquece o e-mail guardado para o login (o da troca de e-mail ainda não entra)', async () => {
+    handOffEmail('descarte.novo@teste.imagineup');
+    renderRouter(appTree, { initialUrl: '/ajustes' });
+
+    fireEvent.press(screen.getByTestId('settings-sign-out'));
+
+    await waitFor(() => expect(firebaseSignOut).toHaveBeenCalled());
+    expect(readHandedOffEmail()).toBeNull();
   });
 
   it('Sair: sai no Firebase, o cache do aparelho vai embora e o guard leva à entrada', async () => {
@@ -455,5 +614,110 @@ describe('excluir conta', () => {
 
     await waitFor(() => expect(firebaseSignOut).toHaveBeenCalled());
     expect(deleteUser).not.toHaveBeenCalled();
+  });
+});
+
+describe('Sobre (seção 29, frente C)', () => {
+  it('privacidade e termos abrem no navegador dentro do app, com a seta de fora do app', () => {
+    renderRouter(appTree, { initialUrl: '/ajustes' });
+
+    const privacy = screen.getByRole('link', { name: 'Política de privacidade' });
+    expect(privacy).toHaveProp('accessibilityHint', 'Abre a página no navegador');
+    expect(screen.getByTestId('settings-privacy-trailing', hidden)).toBeTruthy();
+    fireEvent.press(privacy);
+    expect(WebBrowser.openBrowserAsync).toHaveBeenLastCalledWith(
+      PRIVACY_URL,
+      expect.objectContaining({ createTask: false }),
+    );
+
+    fireEvent.press(screen.getByRole('link', { name: 'Termos de uso' }));
+    expect(WebBrowser.openBrowserAsync).toHaveBeenLastCalledWith(
+      TERMS_URL,
+      expect.objectContaining({ createTask: false }),
+    );
+  });
+
+  it('o regulamento só aparece com o endereço no cache da loja', () => {
+    queryClient.setQueryData(['rewards', 'list'], {
+      rulesUrl: 'https://imagineup-painel.vercel.app/regulamento/',
+      rewards: [],
+    });
+    renderRouter(appTree, { initialUrl: '/ajustes' });
+
+    const rules = screen.getByRole('link', { name: 'Regulamento das recompensas' });
+    expect(rules).toHaveProp('accessibilityHint', 'Abre a página no navegador');
+    fireEvent.press(rules);
+    expect(WebBrowser.openBrowserAsync).toHaveBeenLastCalledWith(
+      'https://imagineup-painel.vercel.app/regulamento/',
+      expect.anything(),
+    );
+  });
+
+  it('sem a loja no cache, nem com o endereço null, a linha não aparece, e a loja não é buscada', () => {
+    mockDataSource = 'api';
+    const view = renderRouter(appTree, { initialUrl: '/ajustes' });
+
+    expect(screen.queryByTestId('settings-rules')).toBeNull();
+    expect(api.get).not.toHaveBeenCalledWith('/rewards');
+    expect(queryClient.getQueryState(['rewards', 'list'])?.fetchStatus).toBe('idle');
+    view.unmount();
+
+    queryClient.setQueryData(['rewards', 'list'], { rulesUrl: null, rewards: [] });
+    renderRouter(appTree, { initialUrl: '/ajustes' });
+    expect(screen.queryByTestId('settings-rules')).toBeNull();
+  });
+
+  it('"Fale com a equipe" abre o app de e-mail, com o endereço na meta', async () => {
+    renderRouter(appTree, { initialUrl: '/ajustes' });
+
+    const contact = screen.getByRole('link', { name: `Fale com a equipe. ${SUPPORT_EMAIL}` });
+    expect(contact).toHaveProp('accessibilityHint', 'Abre o seu app de e-mail');
+    expect(screen.getByText(SUPPORT_EMAIL)).toBeTruthy();
+    fireEvent.press(contact);
+
+    await waitFor(() =>
+      expect(Linking.openURL).toHaveBeenCalledWith(
+        `mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent('Contato pelo app ImagineUP')}`,
+      ),
+    );
+    expect(screen.queryByTestId('settings-contact-error')).toBeNull();
+  });
+
+  it('sem app de e-mail, o endereço aparece embaixo da lista, selecionável, e é anunciado', async () => {
+    jest.mocked(Linking.openURL).mockRejectedValueOnce(new Error('sem app de e-mail'));
+    renderRouter(appTree, { initialUrl: '/ajustes' });
+
+    fireEvent.press(screen.getByTestId('settings-contact'));
+
+    const message = `Não deu para abrir o e-mail. Escreva para ${SUPPORT_EMAIL}.`;
+    const error = await screen.findByTestId('settings-contact-error');
+    expect(error).toHaveTextContent(message);
+    expect(error).toHaveProp('selectable', true);
+    expect(announced()).toContain(message);
+  });
+
+  it('a versão do binário embutido, sem toque', () => {
+    renderRouter(appTree, { initialUrl: '/ajustes' });
+
+    const version = screen.getByTestId('settings-version');
+    expect(version).toHaveProp('accessibilityLabel', 'Versão do app, 0.1.0');
+    expect(version).not.toHaveProp('accessibilityRole', 'button');
+    expect(screen.getByText('Versão 0.1.0')).toBeTruthy();
+  });
+
+  it('num EAS Update, a versão traz a data e o id curto do update', () => {
+    Object.assign(mockUpdate, {
+      isEmbeddedLaunch: false,
+      // Meio do dia em UTC: "13 out" em qualquer fuso de -12 a +11.
+      createdAt: new Date('2026-10-13T12:00:00.000Z'),
+      updateId: 'a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d',
+    });
+    renderRouter(appTree, { initialUrl: '/ajustes' });
+
+    expect(screen.getByText('Versão 0.1.0, atualização de 13 out (a1b2c3d4)')).toBeTruthy();
+    expect(screen.getByTestId('settings-version')).toHaveProp(
+      'accessibilityLabel',
+      'Versão do app, 0.1.0, atualização de 13 out (a1b2c3d4)',
+    );
   });
 });

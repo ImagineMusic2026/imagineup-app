@@ -1,10 +1,10 @@
-import * as WebBrowser from 'expo-web-browser';
 import { Fragment } from 'react';
 import { StyleSheet, type StyleProp, type TextStyle } from 'react-native';
 
 import { Text } from '@/components/text';
 import { TextLink } from '@/components/text-link';
 import { t, type TranslationKey } from '@/i18n';
+import { openWebPage } from '@/services/web-page';
 import { colors } from '@/theme';
 
 import { PRIVACY_URL, TERMS_URL } from '../consts';
@@ -31,16 +31,6 @@ type LinkName = keyof typeof LINKS;
 
 const isLinkName = (name: string): name is LinkName => name in LINKS;
 
-function openPage(url: string): void {
-  WebBrowser.openBrowserAsync(url, {
-    toolbarColor: colors.background,
-    controlsColor: colors.accent,
-    // No Android, na mesma tarefa do app: fechar a aba volta para a tela de
-    // conta, e não para outra tarefa (no Expo Go, a tela inicial dele).
-    createTask: false,
-  }).catch(() => undefined);
-}
-
 /**
  * "Ao continuar, você aceita os Termos de uso e a Política de privacidade...":
  * a frase vem inteira do `translations.json`, com `{{terms}}` e `{{privacy}}`
@@ -64,7 +54,7 @@ export function TermsNotice({ variant, style }: TermsNoticeProps) {
               // Manrope 700, com a mesma entrelinha (15) do texto em volta.
               textVariant="labelCompact"
               label={t(link.labelKey)}
-              onPress={() => openPage(link.url)}
+              onPress={() => openWebPage(link.url)}
             />
           );
         }

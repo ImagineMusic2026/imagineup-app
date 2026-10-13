@@ -365,6 +365,30 @@ export type ReportCommentResult = {
 /** Resposta de `PUT` e `DELETE /me/blocks/:fanId`. */
 export type BlockFanResult = { fanId: string; blocked: boolean };
 
+/** Corpo de `POST /fans/:fanId/report` (seção 29): o mesmo motivo da denúncia de comentário. */
+export type ReportFanBody = { reason: CommentReportReason | null };
+
+/** Resposta da denúncia de perfil: a mesma frase no app para os dois status. */
+export type ReportFanResult = {
+  fanId: string;
+  status: 'reported' | 'already_reported';
+};
+
+/**
+ * Um fã da lista de bloqueados (`GET /me/blocks`, seção 29): os campos que a
+ * visão fechada do perfil público já mostra a qualquer fã. Nunca a bio, as
+ * redes, o gênero, a cidade, a conta privada nem a suspensão.
+ */
+export type BlockedFan = {
+  uid: string;
+  displayName: string | null;
+  username: string | null;
+  photoURL: string | null;
+};
+
+/** Uma página da lista de bloqueados, do mais novo ao mais antigo; o cursor é `<índice>:<uid>`. */
+export type BlockedFansPage = Page<BlockedFan>;
+
 /** `AgendaArtist` do app. */
 export type AgendaArtist = { id: string; name: string };
 
@@ -513,7 +537,9 @@ export type EditableProfile = {
  * `FanPublicProfile` do app (`GET /fans/:fanId`). Fechado (`restricted`, sem
  * o motivo: conta privada, suspensa ou que bloqueou quem pede): só a foto, o
  * nome e o @, com `bio` e `socials` null. Completo sem nenhuma rede: `socials`
- * null. Nunca o gênero, a cidade, a conta privada nem a suspensão.
+ * null. Nunca o gênero, a cidade, a conta privada nem a suspensão. Desde as
+ * exigências das lojas (seção 29, decisão 7), `blockedByMe`: quem pede
+ * bloqueou o alvo (depende só de quem pede; nunca conta nada ao bloqueado).
  */
 export type FanPublicProfile = {
   uid: string;
@@ -523,6 +549,7 @@ export type FanPublicProfile = {
   restricted: boolean;
   bio: string | null;
   socials: FanSocials | null;
+  blockedByMe: boolean;
 };
 
 // --- Loja e resgate (bloco 10), espelho de src/domains/rewards/types.ts ---

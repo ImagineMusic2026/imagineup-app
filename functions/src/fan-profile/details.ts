@@ -1,4 +1,7 @@
+import { createHash } from 'node:crypto';
+
 import type {
+  BlockedFan,
   EditableProfile,
   FanPublicProfile,
   FanSocials,
@@ -494,18 +497,29 @@ export function editableProfileOf(data: Record<string, unknown>): EditableProfil
  * completa. A fechada tem o mesmo corpo seja qual for o motivo (conta privada,
  * suspensa ou que bloqueou quem pede), para o bloqueado não ficar sabendo.
  * Nunca o gênero, a cidade, a conta privada, a suspensão, o `searchKeys`, o
- * prazo do @ nem os outros campos da foto.
+ * prazo do @ nem os outros campos da foto. O `blockedByMe` (seção 29, decisão
+ * 7) diz se quem pede bloqueou o alvo, e depende só de quem pede.
  */
 export function publicProfileOf(
   uid: string,
   data: Record<string, unknown>,
   restricted: boolean,
+  blockedByMe: boolean,
 ): FanPublicProfile {
   const displayName = textOf(data.displayName);
   const username = textOf(data.username);
   const photoURL = textOf(data.photoURL);
   if (restricted) {
-    return { uid, displayName, username, photoURL, restricted: true, bio: null, socials: null };
+    return {
+      uid,
+      displayName,
+      username,
+      photoURL,
+      restricted: true,
+      bio: null,
+      socials: null,
+      blockedByMe,
+    };
   }
   const socials = socialsOf(data.socials);
   return {
@@ -516,5 +530,40 @@ export function publicProfileOf(
     restricted: false,
     bio: textOf(data.bio),
     socials: hasAnySocial(socials) ? socials : null,
+    blockedByMe,
   };
+}
+
+/**
+ * Um fã da lista de bloqueados (`GET /me/blocks`, seção 29): o uid, o nome, o
+ * @ e a foto, lidos como o perfil público os lê. Nada mais do documento.
+ */
+export function blockedFanOf(uid: string, data: Record<string, unknown>): BlockedFan {
+  return {
+    uid,
+    displayName: textOf(data.displayName),
+    username: textOf(data.username),
+    photoURL: textOf(data.photoURL),
+  };
+}
+
+/**
+ * O resumo do que o perfil público mostra (seção 29, decisão 3): o sha256 de
+ * um JSON com o nome, o @, a foto, a bio e as quatro redes, em ordem fixa e
+ * lidos como o `publicProfileOf` os lê. A conta privada, a cidade e o gênero
+ * ficam fora (o perfil público não os mostra). Sem perfil, null. A callable da
+ * Moderação grava o resumo na resolução, e a denúncia de quem já denunciou na
+ * rodada resolvida só reabre o item com um resumo diferente. Nunca o texto.
+ */
+export function profileDigest(data: Record<string, unknown> | null | undefined): string | null {
+  if (!data) return null;
+  const socials = socialsOf(data.socials);
+  const shown = [
+    textOf(data.displayName),
+    textOf(data.username),
+    textOf(data.photoURL),
+    textOf(data.bio),
+    SOCIAL_NETWORKS.map((network) => socials[network]),
+  ];
+  return createHash('sha256').update(JSON.stringify(shown), 'utf8').digest('hex');
 }

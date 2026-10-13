@@ -1,4 +1,7 @@
+import { SUPPORT_EMAIL } from '@/config/links';
+
 import { t, type TranslationKey } from '..';
+import translations from '../translations.json';
 
 describe('t()', () => {
   it('devolve o texto em pt-BR pela chave', () => {
@@ -13,5 +16,25 @@ describe('t()', () => {
     const warn = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
     expect(t('nao.existe' as TranslationKey)).toBe('nao.existe');
     warn.mockRestore();
+  });
+});
+
+/** Todos os textos do arquivo, de todos os níveis. */
+function allTexts(node: unknown): string[] {
+  if (typeof node === 'string') return [node];
+  if (typeof node !== 'object' || node === null) return [];
+  return Object.values(node).flatMap(allTexts);
+}
+
+describe('translations.json', () => {
+  it('nenhum texto escreve um endereço de e-mail: as frases usam {{email}} (seção 29)', () => {
+    const emails = allTexts(translations).filter((text) =>
+      /[^\s@{}]+@[^\s@{}]+\.[^\s@{}]+/.test(text),
+    );
+    expect(emails).toEqual([]);
+    expect(JSON.stringify(translations)).not.toContain(SUPPORT_EMAIL);
+    // As frases que mostram o contato recebem o endereço do `SUPPORT_EMAIL`.
+    expect(t('suspension.alertMessage', { email: SUPPORT_EMAIL })).toContain(SUPPORT_EMAIL);
+    expect(t('settings.contactError', { email: SUPPORT_EMAIL })).toContain(SUPPORT_EMAIL);
   });
 });

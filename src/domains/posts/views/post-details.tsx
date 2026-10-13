@@ -16,7 +16,12 @@ import { EmptyState } from '@/components/empty-state';
 import { BackHeader } from '@/components/header';
 import { Screen } from '@/components/screen';
 import { SectionHeader } from '@/components/section-header';
-import { fanProfileHref, useFanIdentity, useWatchMyProfile } from '@/domains/profile';
+import {
+  fanProfileHref,
+  useFanIdentity,
+  useSuspension,
+  useWatchMyProfile,
+} from '@/domains/profile';
 import { useAnnounceWhen } from '@/hooks/use-announce-when';
 import { useKeyboardVisible } from '@/hooks/use-keyboard-visible';
 import { useNow } from '@/hooks/use-now';
@@ -161,6 +166,8 @@ export function PostDetailsScreen() {
   const commenting = useAddCommentMutation(postId, {
     restoreDraft: (text) => composer.current?.restore(text) ?? false,
   });
+  // A conta suspensa: o compositor dá lugar à frase (seção 29, frente E).
+  const { suspended } = useSuspension();
   const listRef = useRef<FlashListRef<PostComment>>(null);
   const scrollY = useRef(0);
   const pendingReveal = useRef<string | null>(null);
@@ -379,6 +386,12 @@ export function PostDetailsScreen() {
           sending={local.sending}
           award={commenting.award}
           keyboardVisible={keyboardVisible}
+          suspended={suspended}
+          refusal={
+            commenting.refusal
+              ? { text: t(commenting.refusal.key), contact: commenting.refusal.suspended }
+              : null
+          }
         />
       </Screen>
     </KeyboardAvoidingView>

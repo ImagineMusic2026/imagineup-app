@@ -2,13 +2,19 @@ import { describe, expect, it } from 'vitest';
 
 import {
   BLOCK_LIST_MAX,
+  BLOCKED_PAGE_MAX,
   blockedOf,
+  blockedPage,
   capCount,
   DAILY_CAPS,
   dailyCapProblem,
   DailyCapError,
+  formatBlockCursor,
   isFanId,
+  ModerationError,
+  parseBlockCursor,
   parseReportReason,
+  profileReportId,
   reasonsOf,
   reportId,
   withoutBlocked,
@@ -118,5 +124,112 @@ describe('bloqueios', () => {
 
   it('uma denúncia por fã e comentário', () => {
     expect(reportId('seed-c-show-enzo', 'uidAlan')).toBe('seed-c-show-enzo_uidAlan');
+  });
+});
+
+describe('denúncia de perfil (seção 29)', () => {
+  it('uma denúncia por alvo e fã: o _ separa os dois uids sem ambiguidade', () => {
+    expect(profileReportId('uidPromo', 'uidBia')).toBe('uidPromo_uidBia');
+    // Uid não tem "_": o único "_" é o separador.
+    expect(profileReportId('aB3dE9fGh1', 'Zz9').split('_')).toEqual(['aB3dE9fGh1', 'Zz9']);
+  });
+
+  it('o próprio perfil não se denuncia', () => {
+    const error = new ModerationError('own_profile');
+    expect(error.reason).toBe('own_profile');
+    expect(error.message).toBe('O próprio perfil não se denuncia.');
+  });
+});
+
+describe('cursor da lista de bloqueados (seção 29, decisão 8)', () => {
+  it.each([
+    ['0:uidA', { index: 0, uid: 'uidA' }],
+    ['999:uidA', { index: 999, uid: 'uidA' }],
+    ['42:Kq3vZ8wQb1TnUe0aRk5pL2mXy7Fd', { index: 42, uid: 'Kq3vZ8wQb1TnUe0aRk5pL2mXy7Fd' }],
+  ])('%s vale', (text, cursor) => {
+    expect(parseBlockCursor(text)).toEqual(cursor);
+    expect(formatBlockCursor(cursor)).toBe(text);
+  });
+
+  it.each([
+    ['-1:uidA'],
+    ['1000:uidA'],
+    ['1.000:uidA'],
+    ['1.5:uidA'],
+    ['01:uidA'],
+    ['uidA'],
+    ['3'],
+    ['3:'],
+    [':uidA'],
+    ['3:uid-com-hifen'],
+    ['3:uid_a'],
+    ['3:' + 'a'.repeat(129)],
+    ['3:uidA:outro'],
+    [''],
+  ])('%j é inválido (400)', (text) => {
+    expect(parseBlockCursor(text)).toBeNull();
+  });
+});
+
+describe('página da lista de bloqueados', () => {
+  /** A lista na ordem da inclusão: f0 (o mais antigo) até o mais novo. */
+  const list = (n: number) => Array.from({ length: n }, (_, index) => `f${index}`);
+
+  it('do mais novo ao mais antigo, em páginas de 20, com o cursor do último da página', () => {
+    expect(BLOCKED_PAGE_MAX).toBe(20);
+    const first = blockedPage(list(45), null, BLOCKED_PAGE_MAX);
+    expect(first.uids).toEqual(list(45).slice(25).reverse());
+    expect(first.next).toEqual({ index: 25, uid: 'f25' });
+    const second = blockedPage(list(45), first.next, BLOCKED_PAGE_MAX);
+    expect(second.uids).toEqual(list(45).slice(5, 25).reverse());
+    expect(second.next).toEqual({ index: 5, uid: 'f5' });
+    const last = blockedPage(list(45), second.next, BLOCKED_PAGE_MAX);
+    expect(last.uids).toEqual(['f4', 'f3', 'f2', 'f1', 'f0']);
+    expect(last.next).toBeNull();
+  });
+
+  it('a página que chega ao índice 0 fecha com null', () => {
+    expect(blockedPage(list(20), null, 20)).toEqual({ uids: list(20).reverse(), next: null });
+    expect(blockedPage(list(3), null, 20)).toEqual({ uids: ['f2', 'f1', 'f0'], next: null });
+  });
+
+  it('a lista vazia', () => {
+    expect(blockedPage([], null, 20)).toEqual({ uids: [], next: null });
+    expect(blockedPage([], { index: 3, uid: 'f3' }, 20)).toEqual({ uids: [], next: null });
+  });
+
+  it('o cursor com o uid que saiu usa o índice guardado', () => {
+    // f10 foi desbloqueado depois de a página que terminou nele ser lida.
+    const after = list(30).filter((uid) => uid !== 'f10');
+    expect(blockedPage(after, { index: 10, uid: 'f10' }, 20).uids).toEqual(list(10).reverse());
+  });
+
+  it('dois desbloqueios juntos, um deles o fã do cursor, não pulam ninguém', () => {
+    const first = blockedPage(list(30), null, 20);
+    expect(first.next).toEqual({ index: 10, uid: 'f10' });
+    // Na própria tela, desbloqueia um já visto (f15) e o do cursor (f10).
+    const after = list(30).filter((uid) => uid !== 'f15' && uid !== 'f10');
+    expect(blockedPage(after, first.next, 20).uids).toEqual(list(10).reverse());
+    // Só o já visto: o índice do fã do cursor muda, e o uid o acha.
+    const onlySeen = list(30).filter((uid) => uid !== 'f15');
+    expect(blockedPage(onlySeen, first.next, 20).uids).toEqual(list(10).reverse());
+  });
+
+  it('um bloqueio novo no fim (outro aparelho) não repete ninguém', () => {
+    const first = blockedPage(list(30), null, 20);
+    const second = blockedPage([...list(30), 'novo'], first.next, 20);
+    expect(second.uids).toEqual(list(10).reverse());
+    expect(new Set([...first.uids, ...second.uids]).size).toBe(30);
+  });
+
+  it('o índice guardado maior que a lista é limitado ao tamanho dela', () => {
+    expect(blockedPage(list(5), { index: 900, uid: 'saiu' }, 20).uids).toEqual(list(5).reverse());
+  });
+
+  it('o limit menor que 20', () => {
+    expect(blockedPage(list(5), null, 2)).toEqual({
+      uids: ['f4', 'f3'],
+      next: { index: 3, uid: 'f3' },
+    });
   });
 });

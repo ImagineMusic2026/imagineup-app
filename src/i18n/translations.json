@@ -4,7 +4,6 @@
     "close": "Fechar",
     "continue": "Continuar",
     "retry": "Tentar de novo",
-    "comingSoon": "Em construção",
     "loading": "Carregando"
   },
   "offline": {
@@ -135,7 +134,22 @@
   },
   "explore": {
     "title": "Explorar",
-    "agenda": "Agenda"
+    "searchPlaceholder": "Buscar artista",
+    "searchLabel": "Buscar artista pelo nome",
+    "searchEmpty": "Nenhum artista com “{{query}}”.",
+    "shows": "Próximos shows",
+    "seeAgenda": "Ver agenda",
+    "seeAgendaHint": "Abre a agenda completa",
+    "showsLoading": "Carregando os shows",
+    "showsEmpty": "Nenhum show marcado por enquanto.",
+    "showsError": "Não deu para carregar os shows.",
+    "centrals": "Todas as centrais",
+    "member": "Na central",
+    "memberLabel": "{{label}}, você está na central",
+    "tileHint": "Abre a central",
+    "loading": "Carregando as centrais",
+    "centralsEmpty": "Nenhuma central no ar por enquanto.",
+    "centralsError": "Não deu para carregar as centrais."
   },
   "artist": {
     "title": "Artista",
@@ -298,9 +312,9 @@
       "blockSection": "Bloquear",
       "blockBody": "Os comentários de {{name}} somem para você, neste e nos outros posts. {{name}} não fica sabendo.",
       "block": "Bloquear {{name}}",
-      "blocked": "Bloqueio feito: os comentários de {{name}} somem para você.",
       "blockedShort": "Bloqueio feito. Os comentários somem para você.",
-      "blockError": "Não deu para bloquear. Tente de novo."
+      "blockError": "Não deu para bloquear. Tente de novo.",
+      "blockedReportInvite": "Você bloqueou {{name}}. A equipe só fica sabendo se você denunciar o comentário."
     },
     "composer": {
       "send": "Enviar comentário",
@@ -721,7 +735,31 @@
     "editProfileMeta": "Foto, nome, @, bio e redes",
     "editProfileMetaReadOnly": "Só leitura nesta versão do app",
     "editProfileMetaAutomatic": "Seu @ ainda é automático",
-    "editProfileHint": "Abre a edição do perfil"
+    "editProfileHint": "Abre a edição do perfil",
+    "contactHint": "Abre o seu app de e-mail",
+    "contactError": "Não deu para abrir o e-mail. Escreva para {{email}}.",
+    "security": "Segurança",
+    "blockedFans": "Fãs bloqueados",
+    "blockedFansMeta": "Veja e desbloqueie",
+    "blockedFansHint": "Abre a lista de fãs bloqueados",
+    "changeEmail": "Trocar e-mail",
+    "changeEmailMeta": "Manda um link para o e-mail novo",
+    "changeEmailHint": "Abre a troca de e-mail",
+    "changePassword": "Trocar senha",
+    "changePasswordMeta": "Pede a senha atual",
+    "changePasswordHint": "Abre a troca de senha",
+    "about": "Sobre",
+    "privacy": "Política de privacidade",
+    "terms": "Termos de uso",
+    "rules": "Regulamento das recompensas",
+    "pageHint": "Abre a página no navegador",
+    "contact": "Fale com a equipe",
+    "contactSubject": "Contato pelo app ImagineUP",
+    "version": "Versão do app",
+    "versionMeta": "Versão {{version}}",
+    "versionMetaUpdate": "Versão {{version}}, atualização de {{date}} ({{id}})",
+    "versionLabel": "Versão do app, {{version}}",
+    "versionLabelUpdate": "Versão do app, {{version}}, atualização de {{date}} ({{id}})"
   },
   "editProfile": {
     "title": "Editar perfil",
@@ -827,9 +865,6 @@
       "publicHint": "Sem a conta privada, qualquer fã do ImagineUP vê sua bio e suas redes.",
       "host": "Esse link não é do {{network}}.",
       "format": "Usuário fora do formato do {{network}}."
-    },
-    "info": {
-      "suspended": "Sua conta está suspensa. Fale com a equipe do ImagineUP."
     }
   },
   "fanProfile": {
@@ -845,6 +880,46 @@
     "socialHint": "Abre o perfil no {{network}}, fora do app",
     "openError": "Não deu para abrir o link.",
     "sampleLinks": "Perfil de exemplo: os links não abrem nesta versão."
+  },
+  "fanPage": {
+    "security": "Segurança",
+    "report": "Denunciar perfil",
+    "reportHint": "Abre os motivos da denúncia",
+    "block": "Bloquear",
+    "blockLabel": "Bloquear {{name}}",
+    "blockHint": "Pede confirmação antes de bloquear",
+    "unblock": "Desbloquear",
+    "unblockLabel": "Desbloquear {{name}}",
+    "thisFan": "este fã",
+    "blockTitle": "Bloquear {{name}}?",
+    "blockMessage": "Os comentários de {{name}} somem para você, em todos os posts. {{name}} não fica sabendo. A equipe só fica sabendo se você denunciar.",
+    "blockConfirm": "Bloquear",
+    "blockAndReport": "Bloquear e denunciar",
+    "cancel": "Cancelar",
+    "blocked": "Você bloqueou {{name}}. Os comentários somem para você.",
+    "unblocked": "Você desbloqueou {{name}}.",
+    "unblockedShort": "Desbloqueio feito.",
+    "unblockError": "Não deu para desbloquear. Tente de novo.",
+    "reportSheet": {
+      "title": "Denunciar {{name}}",
+      "body": "A equipe do ImagineUP analisa a foto, o nome, o @, a bio e as redes. O motivo é opcional.",
+      "submit": "Enviar denúncia",
+      "sent": "Denúncia enviada. A equipe vai analisar.",
+      "error": "Não deu para enviar a denúncia. Tente de novo."
+    }
+  },
+  "blockedFans": {
+    "title": "Fãs bloqueados",
+    "intro": "Os comentários de quem está aqui não aparecem para você. Ninguém fica sabendo do bloqueio.",
+    "rowLabel": "{{name}}, @{{username}}",
+    "unblock": "Desbloquear",
+    "unblockLabel": "Desbloquear {{name}}",
+    "unblocked": "Você desbloqueou {{name}}.",
+    "empty": "Você não bloqueou ninguém",
+    "emptyText": "Para bloquear, abra o perfil de um fã ou as opções de um comentário.",
+    "loadError": "Não deu para carregar a lista.",
+    "moreError": "Não deu para carregar mais.",
+    "loading": "Carregando a lista"
   },
   "deleteAccount": {
     "title": "Excluir conta",
@@ -873,6 +948,40 @@
       "unknown": "Não deu para excluir a conta agora. Ela continua como estava."
     },
     "passwordRequired": "Digite sua senha."
+  },
+  "changePassword": {
+    "title": "Trocar senha",
+    "lead": "Digite a senha atual e a nova. Nos outros aparelhos, você sai da conta em até 1 hora.",
+    "current": "Senha atual",
+    "next": "Nova senha",
+    "samePassword": "A senha nova precisa ser diferente da atual.",
+    "submit": "Trocar senha",
+    "submitHint": "Troca a senha da sua conta",
+    "offline": "Sem internet. Conecte-se para trocar a senha.",
+    "done": "Senha trocada.",
+    "errors": {
+      "sessionEnded": "Sua sessão terminou. Entre de novo.",
+      "unknown": "Não deu para trocar a senha. Tente de novo."
+    }
+  },
+  "changeEmail": {
+    "title": "Trocar e-mail",
+    "current": "Hoje sua conta usa {{email}}.",
+    "lead": "Mandamos um link para o e-mail novo, e a troca só vale quando você abrir o link.",
+    "email": "Novo e-mail",
+    "sameEmail": "Este já é o e-mail da sua conta.",
+    "submit": "Mandar o link",
+    "submitHint": "Manda o link de confirmação para o e-mail novo",
+    "offline": "Sem internet. Conecte-se para trocar o e-mail.",
+    "sent": "Mandamos o link para {{email}}. Depois de abrir o link, o app pede para você entrar de novo com o e-mail novo. Pode levar até 1 hora.",
+    "sentNotice": "O e-mail de agora recebe um aviso com um link para desfazer a troca.",
+    "sentAnnounce": "Link enviado para {{email}}.",
+    "backToSettings": "Voltar aos ajustes",
+    "errors": {
+      "emailInUse": "Este e-mail já tem uma conta no ImagineUP.",
+      "notAllowed": "Não deu para trocar o e-mail agora. Fale com a equipe do ImagineUP.",
+      "unknown": "Não deu para mandar o link. Tente de novo."
+    }
   },
   "invite": {
     "title": "Convidar",
@@ -928,9 +1037,39 @@
     "spoken": "{{points}} pontos",
     "spokenOne": "{{points}} ponto"
   },
+  "suspension": {
+    "short": "Sua conta está suspensa. Fale com a equipe do ImagineUP.",
+    "title": "Sua conta está suspensa",
+    "text": "Você continua vendo o app, mas não pode curtir, comentar, confirmar presença, entrar em centrais, resgatar, denunciar nem mudar o perfil.",
+    "reason": "Motivo: {{reason}}.",
+    "reasons": {
+      "spam": "envio de spam",
+      "offensive": "conteúdo ofensivo",
+      "harassment": "assédio"
+    },
+    "contact": "Escrever para a equipe",
+    "alertTitle": "Conta suspensa",
+    "alertMessage": "A equipe do ImagineUP suspendeu sua conta. Você continua vendo o app, mas não pode curtir, comentar, confirmar presença, entrar em centrais, resgatar, denunciar nem mudar o perfil. Para entender ou pedir revisão, escreva para {{email}}.",
+    "alertOk": "Entendi",
+    "comment": "Sua conta está suspensa. Você não pode comentar.",
+    "redeem": "Sua conta está suspensa. Você não pode resgatar.",
+    "invite": "Sua conta está suspensa. O link sai sem os pontos.",
+    "mailSubject": "Conta suspensa no ImagineUP"
+  },
   "errors": {
     "title": "Algo deu errado",
-    "message": "Tente de novo. Se continuar, feche e abra o app."
+    "message": "Tente de novo. Se continuar, feche e abra o app.",
+    "rateLimited": "Muitos pedidos seguidos. Espere alguns segundos e tente de novo.",
+    "dailyLimitTitle": "Limite de hoje",
+    "dailyLimit": {
+      "like": "Você chegou ao limite de curtidas de hoje. Tente amanhã.",
+      "comment": "Você chegou ao limite de comentários de hoje. Tente amanhã.",
+      "rsvp": "Você chegou ao limite de presenças de hoje. Tente amanhã.",
+      "join": "Você chegou ao limite de entradas em centrais de hoje. Tente amanhã.",
+      "report": "Você chegou ao limite de denúncias de hoje. Tente amanhã.",
+      "block": "Você chegou ao limite de bloqueios de hoje. Tente amanhã."
+    },
+    "ok": "Entendi"
   },
   "quickActions": {
     "invite": "Convidar",

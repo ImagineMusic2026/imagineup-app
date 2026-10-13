@@ -33,10 +33,14 @@ const appTree = {
   '(tabs)/(ranking)/ranking': label('ranking'),
   '(tabs)/(ranking)/missoes': label('missions'),
   '(tabs)/(perfil)/perfil': label('profile'),
+  '(tabs)/(perfil)/fas-bloqueados': label('blocked-fans'),
   '(tabs)/(inicio,explorar,ranking,perfil)/artista/[artistaId]': label('artist'),
   'post/[postId]': label('post'),
   'fa/[fanId]': label('fan'),
+  'denunciar-perfil/[fanId]': label('report-fan'),
   'editar-perfil': label('edit-profile'),
+  'trocar-senha': label('change-password'),
+  'trocar-email': label('change-email'),
   'recompensa/[recompensaId]': label('reward'),
   'convite/[codigo]': label('invite'),
 };
@@ -100,11 +104,38 @@ describe('rotas do app', () => {
     expect(view.getSearchParams()).toEqual({ fanId: 'fa-rank-01' });
   });
 
+  it('a sheet "Denunciar perfil" abre fora das abas, com o id no parâmetro (seção 29)', () => {
+    const view = renderRouter(appTree, { initialUrl: '/denunciar-perfil/fa-rank-01' });
+    expect(view.getByText('report-fan')).toBeTruthy();
+    expect(view.getSegments()).toEqual(['denunciar-perfil', '[fanId]']);
+    expect(view.getSearchParams()).toEqual({ fanId: 'fa-rank-01' });
+    expect(rootRoutes(view)).toEqual(['denunciar-perfil/[fanId]']);
+  });
+
+  it('"Fãs bloqueados" por link abre na pilha do Perfil, com a raiz da aba embaixo (seção 29)', () => {
+    const view = renderRouter(appTree, { initialUrl: '/fas-bloqueados' });
+    expect(view.getByText('blocked-fans')).toBeTruthy();
+    expect(view.getSegments()).toEqual(['(tabs)', '(perfil)', 'fas-bloqueados']);
+    act(() => testRouter.back());
+    expect(view.getPathname()).toBe('/perfil');
+  });
+
   it('"Editar perfil" abre fora das abas, na pilha raiz, com o mesmo endereço de antes', () => {
     const view = renderRouter(appTree, { initialUrl: '/editar-perfil' });
     expect(view.getByText('edit-profile')).toBeTruthy();
     expect(view.getPathname()).toBe('/editar-perfil');
     expect(view.getSegments()).toEqual(['editar-perfil']);
+  });
+
+  it.each([
+    ['/trocar-senha', 'trocar-senha', 'change-password'],
+    ['/trocar-email', 'trocar-email', 'change-email'],
+  ])('%s abre a frio fora das abas, sozinha na pilha raiz (seção 29)', (url, route, text) => {
+    const view = renderRouter(appTree, { initialUrl: url });
+    expect(view.getByText(text)).toBeTruthy();
+    expect(view.getPathname()).toBe(url);
+    expect(view.getSegments()).toEqual([route]);
+    expect(rootRoutes(view)).toEqual([route]);
   });
 
   it('o detalhe do resgate abre fora das abas, como a sheet do convite', () => {

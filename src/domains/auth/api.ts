@@ -8,7 +8,9 @@ import {
   sendPasswordResetEmail,
   signInWithEmailAndPassword,
   signOut as firebaseSignOut,
+  updatePassword,
   updateProfile,
+  verifyBeforeUpdateEmail,
   type User,
 } from 'firebase/auth';
 import { doc, onSnapshot, serverTimestamp, updateDoc } from 'firebase/firestore';
@@ -40,6 +42,9 @@ export function toSessionUser(user: User): SessionUser {
     email: user.email,
     displayName: user.displayName,
     photoURL: user.photoURL,
+    // Sem a lista (usuário montado à mão), conta como sem senha: as linhas de
+    // trocar senha e e-mail só aparecem com certeza.
+    hasPassword: user.providerData?.some((info) => info.providerId === 'password') ?? false,
   };
 }
 
@@ -377,6 +382,109 @@ export function deleteAccountFailure(error: unknown): DeleteAccountFailure {
       return 'sessionEnded';
     default:
       return 'unknown';
+  }
+}
+
+/**
+ * A conta da sessão, confirmada e reautenticada com a senha atual, para trocar
+ * a senha ou o e-mail (seção 29, decisão 18). Reautentica sempre, sem esperar
+ * o `auth/requires-recent-login`. Espera a sessão confirmada (o app abre com
+ * a presumida); sem conta logada, ou sem e-mail para reautenticar,
+ * `SessionEndedError`.
+ */
+async function reauthenticatedUser(currentPassword: string): Promise<User> {
+  const auth = getFirebaseAuth();
+  await auth.authStateReady();
+  const user = auth.currentUser;
+  if (!user) throw new SessionEndedError();
+  if (!user.email) throw new SessionEndedError('Conta sem e-mail para reautenticar.');
+  await reauthenticateWithCredential(
+    user,
+    EmailAuthProvider.credential(user.email, currentPassword),
+  );
+  return user;
+}
+
+/**
+ * Troca a senha. O SDK renova o token deste aparelho, e a sessão continua; os
+ * outros aparelhos saem quando o token deles vence, em até 1 hora. A `api`
+ * aceita o token antigo até ele vencer (sem `checkRevoked`, 29.1, decisão 18).
+ */
+export async function changePassword(current: string, next: string): Promise<void> {
+  const user = await reauthenticatedUser(current);
+  await updatePassword(user, next);
+}
+
+/**
+ * Pede a troca do e-mail: manda o link para o e-mail novo, e nada muda até o
+ * fã abrir o link. Sempre o `verifyBeforeUpdateEmail`, nunca o `updateEmail`:
+ * com a proteção contra enumeração de e-mails ligada, ele é barrado
+ * (`auth/operation-not-allowed`). Sem `actionCodeSettings`: o link abre o
+ * tratador padrão do Firebase, e o e-mail sai em pt-BR pelo `languageCode`
+ * do Auth. Aberto o link, o Firebase revoga as sessões, e este aparelho sai
+ * quando o SDK renova o token.
+ */
+export async function requestEmailChange(current: string, newEmail: string): Promise<void> {
+  const user = await reauthenticatedUser(current);
+  await verifyBeforeUpdateEmail(user, newEmail);
+}
+
+/** As falhas que a troca de senha e a de e-mail dividem, pelo código do Firebase. */
+type SharedChangeFailure = 'wrongPassword' | 'tooManyRequests' | 'network' | 'sessionEnded';
+
+const SHARED_CHANGE_FAILURES: Partial<Record<string, SharedChangeFailure>> = {
+  'auth/invalid-credential': 'wrongPassword',
+  'auth/wrong-password': 'wrongPassword',
+  'auth/too-many-requests': 'tooManyRequests',
+  'auth/network-request-failed': 'network',
+  'auth/user-token-expired': 'sessionEnded',
+  'auth/user-not-found': 'sessionEnded',
+  'auth/user-disabled': 'sessionEnded',
+};
+
+/**
+ * Por que a troca de senha não passou:
+ * - `wrongPassword`: a senha atual não confere;
+ * - `weakPassword`: o Firebase recusou a senha nova;
+ * - `sessionEnded`: a conta já não está logada (sumiu, foi desativada, o token caiu);
+ * - `network`, `tooManyRequests` e `unknown`: a senha continua a de antes.
+ */
+export type ChangePasswordFailure = SharedChangeFailure | 'weakPassword' | 'unknown';
+
+export function changePasswordFailure(error: unknown): ChangePasswordFailure {
+  if (error instanceof SessionEndedError) return 'sessionEnded';
+  if (!(error instanceof FirebaseError)) return 'unknown';
+  switch (error.code) {
+    case 'auth/weak-password':
+    case 'auth/password-does-not-meet-requirements':
+      return 'weakPassword';
+    default:
+      return SHARED_CHANGE_FAILURES[error.code] ?? 'unknown';
+  }
+}
+
+/**
+ * Por que o link da troca de e-mail não saiu: as falhas da senha atual e da
+ * sessão, como na troca de senha, e as do e-mail novo (`emailInUse`,
+ * `invalidEmail`) e da configuração do projeto (`notAllowed`).
+ */
+export type ChangeEmailFailure =
+  SharedChangeFailure | 'emailInUse' | 'invalidEmail' | 'notAllowed' | 'unknown';
+
+export function changeEmailFailure(error: unknown): ChangeEmailFailure {
+  if (error instanceof SessionEndedError) return 'sessionEnded';
+  if (!(error instanceof FirebaseError)) return 'unknown';
+  switch (error.code) {
+    case 'auth/email-already-in-use':
+      return 'emailInUse';
+    case 'auth/invalid-new-email':
+    case 'auth/invalid-email':
+    case 'auth/missing-new-email':
+      return 'invalidEmail';
+    case 'auth/operation-not-allowed':
+      return 'notAllowed';
+    default:
+      return SHARED_CHANGE_FAILURES[error.code] ?? 'unknown';
   }
 }
 

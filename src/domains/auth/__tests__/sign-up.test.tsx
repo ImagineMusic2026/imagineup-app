@@ -107,7 +107,14 @@ function fakeFirebase() {
   const unsubscribe = jest.fn();
   let profileListener: SnapshotListener | null = null;
   let profileError: (() => void) | null = null;
-  const user = { uid: 'nova', email: form.email, displayName: null, photoURL: null } as User;
+  // A conta criada por e-mail e senha tem o provedor `password`.
+  const user = {
+    uid: 'nova',
+    email: form.email,
+    displayName: null,
+    photoURL: null,
+    providerData: [{ providerId: 'password' }],
+  } as User;
 
   createUser.mockImplementation(async () => {
     // O guard já precisa estar seguro quando a conta nasce (logada).
@@ -578,13 +585,14 @@ describe('nome que faltou no perfil (rede de segurança da corrida do cadastro)'
 });
 
 describe('criar a conta (signUpWithEmail)', () => {
-  it('devolve a conta já com o nome', async () => {
+  it('devolve a conta já com o nome e com a senha (seção 29, frente D)', async () => {
     fakeFirebase();
     await expect(signUpWithEmail(form)).resolves.toEqual({
       uid: 'nova',
       email: form.email,
       displayName: 'Beatriz Santos',
       photoURL: null,
+      hasPassword: true,
     });
     expect(createUser).toHaveBeenCalledWith({}, form.email, form.password);
   });

@@ -1,6 +1,6 @@
 import { useLocalSearchParams } from 'expo-router';
 import { ExternalLink, Lock } from 'lucide-react-native';
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { ActivityIndicator, Linking, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -152,14 +152,24 @@ function FanDetails({ profile }: { profile: FanPublicProfile }) {
  * comentários. Tela fora do protótipo, aprovada pelo dono: o voltar sem
  * título, e no topo a foto, o nome (o cabeçalho da tela) e o @. Completo, a
  * bio e as redes; fechado (conta privada, suspensa ou que bloqueou quem vê),
- * o mesmo aviso nos três casos, para o bloqueio não aparecer. Sem botão de
- * bloquear nem de denunciar (28.1, decisão 22).
+ * o mesmo aviso nos três casos, para o bloqueio não aparecer.
+ *
+ * Denunciar e bloquear (seção 29) moram nos posts, que importam o perfil: a
+ * rota monta esta tela pelo domínio de composição `fan-page`, que passa as
+ * ações pelo `actions`. Elas aparecem depois da bio e das redes (ou do aviso
+ * de perfil fechado), só com o perfil carregado: nunca carregando, no 404 nem
+ * no erro.
  *
  * Fora das abas: o `useTabBarInset` dá 0, e o `Screen` não soma a área segura
  * de baixo, então a tela passa o `insets.bottom`. Sem internet, a consulta
  * pausa, com o aviso de offline de sempre.
  */
-export function FanProfileScreen() {
+export interface FanProfileScreenProps {
+  /** O que vem depois do perfil carregado (o bloco "Segurança" do `fan-page`). */
+  actions?: (profile: FanPublicProfile) => ReactNode;
+}
+
+export function FanProfileScreen({ actions }: FanProfileScreenProps = {}) {
   const { fanId = '' } = useLocalSearchParams<{ fanId: string }>();
   const insets = useSafeAreaInsets();
   const query = useFanProfileQuery(fanId);
@@ -227,6 +237,7 @@ export function FanProfileScreen() {
         ) : (
           <FanDetails profile={profile} />
         )}
+        {actions?.(profile)}
       </>
     );
   })();

@@ -11,6 +11,7 @@ import {
   postsFixture,
 } from './fixtures';
 import type {
+  BlockedFansPage,
   BlockFanResult,
   CommentAuthor,
   CommentReportReason,
@@ -19,6 +20,7 @@ import type {
   Post,
   PostComment,
   ReportCommentResult,
+  ReportFanResult,
 } from './types';
 
 /** Chamadas cruas à API. Sem React: quem cacheia é o queries.ts. */
@@ -163,14 +165,15 @@ export async function reportComment({
 }
 
 export interface BlockFanVariables {
-  /** O uid do autor do comentário (`PostComment.authorId`). */
+  /** O uid do fã: o autor do comentário (`PostComment.authorId`) ou o do perfil público. */
   fanId: string;
   idempotencyKey: string;
 }
 
 /**
  * Bloqueia um fã: os comentários dele somem para quem bloqueou, em todos os
- * posts, e ele não fica sabendo. Desbloquear (`DELETE`) ainda não tem tela.
+ * posts, e ele não fica sabendo. Pela sheet do comentário e pelo perfil
+ * público (seção 29).
  */
 export async function blockFan({
   fanId,
@@ -185,5 +188,67 @@ export async function blockFan({
     undefined,
     { headers: { 'Idempotency-Key': idempotencyKey } },
   );
+  return data;
+}
+
+/**
+ * Desbloqueia um fã (`DELETE /me/blocks/:fanId`, seção 29): pelo perfil
+ * público e pela tela "Fãs bloqueados". Quem não está na lista responde
+ * `blocked: false` sem gravar.
+ */
+export async function unblockFan({
+  fanId,
+  idempotencyKey,
+}: BlockFanVariables): Promise<BlockFanResult> {
+  if (sourceOf('posts') === 'fixtures') {
+    await fixtureDelay();
+    return moderationFixture.unblock(fanId, idempotencyKey);
+  }
+  const { data } = await api.delete<BlockFanResult>(`/me/blocks/${encodeURIComponent(fanId)}`, {
+    headers: { 'Idempotency-Key': idempotencyKey },
+  });
+  return data;
+}
+
+export interface ReportFanVariables {
+  /** O uid do fã denunciado (o do perfil público). */
+  fanId: string;
+  /** Sem motivo, `null`. */
+  reason: CommentReportReason | null;
+  idempotencyKey: string;
+}
+
+/**
+ * Denuncia o perfil de outro fã (seção 29): a foto, o nome, o @, a bio e as
+ * redes vão para a fila da equipe, sem esconder nada. Mora nos posts, com a
+ * denúncia de comentário, e lê o mesmo seletor (`sourceOf('posts')`).
+ */
+export async function reportFan({
+  fanId,
+  reason,
+  idempotencyKey,
+}: ReportFanVariables): Promise<ReportFanResult> {
+  if (sourceOf('posts') === 'fixtures') {
+    await fixtureDelay();
+    return moderationFixture.reportFan(fanId, reason, idempotencyKey);
+  }
+  const { data } = await api.post<ReportFanResult>(
+    `/fans/${encodeURIComponent(fanId)}/report`,
+    { reason },
+    { headers: { 'Idempotency-Key': idempotencyKey } },
+  );
+  return data;
+}
+
+/**
+ * A lista de quem o fã bloqueou (`GET /me/blocks`, seção 29), do mais novo ao
+ * mais antigo, uma página por vez. Só lê.
+ */
+export async function fetchBlockedFans(cursor: string | null): Promise<BlockedFansPage> {
+  if (sourceOf('posts') === 'fixtures') {
+    await fixtureDelay();
+    return moderationFixture.blockedPage(cursor);
+  }
+  const { data } = await api.get<BlockedFansPage>('/me/blocks', { params: { cursor } });
   return data;
 }

@@ -1372,6 +1372,7 @@ describe('perfil novo: GET /fans/:fanId', () => {
         linkedin: 'thalita-teste-imagineup',
         x: 'thalitatesteup',
       },
+      blockedByMe: false,
     });
     // Só lê: sem chave e sem exigir o perfil de quem pede (a conta só da equipe também lê).
     const staff = await seedMember(env, 'Equipe', 'admin');
@@ -1391,6 +1392,7 @@ describe('perfil novo: GET /fans/:fanId', () => {
       restricted: true,
       bio: null,
       socials: null,
+      blockedByMe: false,
     };
 
     await db.doc(`users/${target.uid}`).update({ privateAccount: true });
@@ -1439,6 +1441,51 @@ describe('perfil novo: GET /fans/:fanId', () => {
     expect((await getFan(call, target, target.uid)).body).toMatchObject({
       restricted: false,
       bio: THALITA.bio,
+    });
+  });
+
+  it('o blockedByMe (seção 29): verdadeiro e falso na completa e na fechada; o próprio fã, falso', async () => {
+    const target = await thalita();
+    const viewer = await signUpFan(db, 'Camila Ribeiro');
+    const call = localApi(env, { now: () => Date.now() });
+    const block = (who: Fan, fanId: string, method = 'PUT') =>
+      call(method, `/me/blocks/${fanId}`, { token: who.token, key: unique('chave-bloqueio-') });
+
+    expect((await getFan(call, viewer, target.uid)).body).toMatchObject({
+      restricted: false,
+      blockedByMe: false,
+    });
+    expect((await block(viewer, target.uid)).status).toBe(200);
+    expect((await getFan(call, viewer, target.uid)).body).toMatchObject({
+      restricted: false,
+      bio: THALITA.bio,
+      blockedByMe: true,
+    });
+
+    // Na fechada, o mesmo corpo nos três casos para o mesmo blockedByMe.
+    await db.doc(`users/${target.uid}`).update({ privateAccount: true });
+    const privateBlocked = await getFan(call, viewer, target.uid);
+    expect(privateBlocked.body).toMatchObject({ restricted: true, bio: null, blockedByMe: true });
+    await db
+      .doc(`users/${target.uid}`)
+      .update({ privateAccount: false, suspendedAt: Timestamp.now() });
+    expect((await getFan(call, viewer, target.uid)).body).toEqual(privateBlocked.body);
+    await db.doc(`users/${target.uid}`).update({ suspendedAt: null });
+    expect((await block(target, viewer.uid)).status).toBe(200);
+    // Os dois se bloquearam: fechada (o alvo bloqueou quem pede), com o blockedByMe de quem pede.
+    expect((await getFan(call, viewer, target.uid)).body).toEqual(privateBlocked.body);
+
+    // Desbloqueado por quem pede: a fechada segue (o alvo ainda bloqueia), com o blockedByMe falso.
+    expect((await block(viewer, target.uid, 'DELETE')).status).toBe(200);
+    const blockedByTarget = await getFan(call, viewer, target.uid);
+    expect(blockedByTarget.body).toMatchObject({ restricted: true, blockedByMe: false });
+    await db.doc(`users/${target.uid}`).update({ privateAccount: true });
+    expect((await getFan(call, viewer, target.uid)).body).toEqual(blockedByTarget.body);
+
+    // O próprio fã: a completa, com o blockedByMe falso, mesmo com a privada.
+    expect((await getFan(call, target, target.uid)).body).toMatchObject({
+      restricted: false,
+      blockedByMe: false,
     });
   });
 

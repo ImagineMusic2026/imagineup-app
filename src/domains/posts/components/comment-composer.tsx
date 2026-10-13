@@ -22,6 +22,7 @@ import { PointsToast, pointsToastAnnouncement } from '@/components/points-toast'
 import { PressableScale } from '@/components/pressable-scale';
 import { MAX_FONT_SCALE, Text } from '@/components/text';
 import { useFocusBorder } from '@/components/text-input';
+import { SuspensionContact } from '@/domains/profile';
 import { useAnnounceWhen } from '@/hooks/use-announce-when';
 import { usePrefersReducedMotion } from '@/hooks/use-prefers-reduced-motion';
 import { t } from '@/i18n';
@@ -73,6 +74,16 @@ export interface CommentComposerProps {
   award: CommentAward | null;
   /** O teclado cobre o pé da tela (`useKeyboardVisible`, lido pela tela). */
   keyboardVisible: boolean;
+  /**
+   * A conta suspensa (o perfil diz): o campo dá lugar à frase, com o link
+   * "Escrever para a equipe" (seção 29, frente E).
+   */
+  suspended?: boolean;
+  /**
+   * A recusa do último envio (o teto do dia, a conta suspensa que o perfil
+   * ainda não mostrava), embaixo do campo; anunciada pelo hook de comentar.
+   */
+  refusal?: { text: string; contact: boolean } | null;
   ref?: Ref<CommentComposerHandle>;
 }
 
@@ -172,6 +183,8 @@ export function CommentComposer({
   sending,
   award,
   keyboardVisible,
+  suspended = false,
+  refusal = null,
   ref,
 }: CommentComposerProps) {
   const [value, setValue] = useState('');
@@ -214,7 +227,8 @@ export function CommentComposer({
       }, motion.duration.fast);
     },
     restore: (text) => {
-      if (latest.current.trim().length > 0) return false;
+      // Sem o campo (a conta suspensa), a linha fica "Não enviado" com o texto.
+      if (suspended || latest.current.trim().length > 0) return false;
       latest.current = text;
       setValue(text);
       return true;
@@ -240,6 +254,22 @@ export function CommentComposer({
     setValue(text);
     if (error) setError(null);
   };
+
+  if (suspended) {
+    return (
+      <View style={styles.anchor}>
+        <View
+          style={[styles.container, styles.suspended, { paddingBottom }]}
+          testID="comment-suspended"
+        >
+          <Text variant="bodySmall" color={colors.textSecondary} style={styles.centered}>
+            {t('suspension.comment')}
+          </Text>
+          <SuspensionContact align="center" />
+        </View>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.anchor}>
@@ -293,6 +323,19 @@ export function CommentComposer({
           <Text variant="caption" color={colors.danger} style={styles.error} testID="comment-error">
             {error}
           </Text>
+        ) : refusal ? (
+          // A recusa do servidor, anunciada pelo hook; o link é irmão do texto.
+          <View>
+            <Text
+              variant="caption"
+              color={colors.danger}
+              style={styles.error}
+              testID="comment-refusal"
+            >
+              {refusal.text}
+            </Text>
+            {refusal.contact ? <SuspensionContact style={styles.contact} /> : null}
+          </View>
         ) : null}
       </View>
       {/* Depois do compositor, para ficar por cima dele; nasce na borda de cima. */}
@@ -336,6 +379,18 @@ const styles = StyleSheet.create({
   error: {
     marginTop: spacing.xs,
     paddingHorizontal: INPUT_PADDING_HORIZONTAL,
+  },
+  contact: {
+    paddingHorizontal: INPUT_PADDING_HORIZONTAL,
+  },
+  // A frase da conta suspensa no lugar do campo, centrada, com o link embaixo.
+  suspended: {
+    paddingTop: spacing.md,
+    alignItems: 'center',
+    gap: spacing.xs,
+  },
+  centered: {
+    textAlign: 'center',
   },
   // Com o vão de 6, o campo e o círculo ficam a 10 um do outro.
   row: {

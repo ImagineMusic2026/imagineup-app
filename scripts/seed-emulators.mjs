@@ -112,6 +112,13 @@
  * com o ator de sistema. Os usuários das redes são de exemplo: no app ligado
  * ao emulador, os links não abrem.
  *
+ * Exigências das lojas (functions/lib/moderation, docs/arquitetura-api.md,
+ * 29.10): logo depois, a Camila bloqueia o rank-13 (uma linha em "Fãs
+ * bloqueados", e o perfil dele mostra "Desbloquear") e a Bia denuncia o
+ * perfil do Promo como spam (o item da profileReportQueue aberto, para o
+ * painel conferir), pelos núcleos das rotas, com o ator de sistema. A denúncia
+ * só vai sem o item do Promo na fila.
+ *
  * Rodar de novo não muda nada. Depois da meia-noite, o progresso do dia volta
  * a 0, como o de qualquer fã: para ver de novo o 3 de 5 e o 2 de 5, feche os
  * emuladores (os dados somem) e rode o seed outra vez.
@@ -610,6 +617,21 @@ const detailsWritten = await withFirestore(async (db) => {
 });
 console.log(
   `Perfil de teste: Camila, Bia, Thalita, Aline e Promo com bio e redes; Aline com conta privada (${detailsWritten} gravados agora, ${SEED_FAN_DETAILS.length} no total).`,
+);
+
+// As exigências das lojas (29.10): o bloqueio da Camila e a denúncia de perfil
+// da Bia contra o Promo, depois dos detalhes do perfil. A denúncia só vai sem o
+// item do Promo na fila: rodar de novo não muda nada, nem depois de "Manter".
+const { seedProfileModeration } = functionsBuild('moderation');
+const profileModeration = await withFirestore((db) =>
+  seedProfileModeration(db, (email) => {
+    const uid = fanUidsByEmail.get(email) ?? rankingUids.get(email);
+    if (!uid) throw new Error(`Sem conta para ${email}.`);
+    return uid;
+  }),
+);
+console.log(
+  `Moderação: a Camila bloqueou um fã do ranking, e a Bia denunciou o perfil do Promo (${profileModeration.blocks} bloqueio e ${profileModeration.reports} denúncia gravados agora; 1 e 1 no total).`,
 );
 
 // Os números de 60 dias por último, depois de tudo que grava em dias passados.

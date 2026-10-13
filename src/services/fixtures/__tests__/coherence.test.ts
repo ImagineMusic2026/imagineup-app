@@ -4,13 +4,15 @@ import {
   missionsFixture,
   RSVP_MISSION_POINTS,
 } from '@/domains/missions/fixtures';
-import { postsFixture } from '@/domains/posts/fixtures';
+import { moderationFixture, postsFixture } from '@/domains/posts/fixtures';
+import { buildFanProfileFixture } from '@/domains/profile/fan-fixtures';
 import { buildRewardsFixture, rewardsFixture } from '@/domains/rewards/fixtures';
 import { API_ERROR_CODES, ApiError } from '@/services/api/errors';
 
 import {
   earnFixturePoints,
   FIXTURE_POINTS_UNAVAILABLE,
+  fixtureBlocks,
   fixtureWallet,
   resetFixtureSession,
   setFixtureNow,
@@ -149,5 +151,21 @@ describe('carteira na API (emuladores no bloco 1)', () => {
       before,
     );
     expect(fixtureWallet.get()).toEqual(INITIAL);
+  });
+});
+
+describe('bloqueios num lugar só (seção 29, 29.10)', () => {
+  it('o fixtureBlocks volta à fa-rank-13 no fim da sessão, e o perfil e os comentários leem o mesmo', () => {
+    moderationFixture.block('fa-thalita', 'bloq-thalita');
+    moderationFixture.unblock('fa-rank-13', 'desbloq-13');
+    expect(fixtureBlocks.list()).toEqual(['fa-rank-01']);
+    expect(buildFanProfileFixture('fa-rank-01').blockedByMe).toBe(true);
+    expect(buildFanProfileFixture('fa-rank-13').blockedByMe).toBe(false);
+
+    resetFixtureSession();
+
+    expect(fixtureBlocks.list()).toEqual(['fa-rank-13']);
+    expect(buildFanProfileFixture('fa-rank-01').blockedByMe).toBe(false);
+    expect(buildFanProfileFixture('fa-rank-13').blockedByMe).toBe(true);
   });
 });

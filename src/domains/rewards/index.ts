@@ -1,4 +1,10 @@
-export { rewardKeys, useRedeemRewardMutation, useRewardQuery, useRewardsQuery } from './queries';
+export {
+  rewardKeys,
+  useRedeemRewardMutation,
+  useRewardQuery,
+  useRewardsQuery,
+  useRewardsRulesUrl,
+} from './queries';
 export type {
   RedeemResult,
   RedeemVariables,

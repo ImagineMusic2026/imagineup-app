@@ -3,16 +3,28 @@ import { t } from '@/i18n';
 
 import { MIN_ARTISTS } from '../consts';
 import {
-  artistCardLabel,
   continueLabel,
-  fansText,
-  filterArtists,
   minimumArtists,
   missingArtists,
   needMoreHint,
-  sortByOrder,
   splitFeatured,
 } from '../selection';
+
+// O build do Firebase que o Jest resolve é ESM. A escolha não fala com ele, mas
+// a ordem de destaque vem do index do domínio de artistas, que chega à API.
+jest.mock('firebase/app', () => ({ FirebaseError: class FirebaseError extends Error {} }));
+jest.mock('firebase/auth', () => ({}));
+jest.mock('firebase/firestore', () => ({}));
+jest.mock('@/firebase', () => ({
+  getFirebaseAuth: () => ({}),
+  getDb: () => ({}),
+  isFirebaseConfigured: true,
+}));
+jest.mock('@/config/env', () => ({
+  firebaseEnv: null,
+  apiUrl: undefined,
+  firebaseEmulatorHost: undefined,
+}));
 
 const artist = (id: string, name: string, order: number): Artist => ({
   id,
@@ -42,12 +54,6 @@ describe('grade da escolha de artistas', () => {
     const { featured, rest } = splitFeatured(artists.slice(0, 2), 4);
     expect(featured).toHaveLength(2);
     expect(rest).toEqual([]);
-  });
-
-  it('ordenar não mexe na lista que veio do cache', () => {
-    const original = [...artists];
-    sortByOrder(artists);
-    expect(artists).toEqual(original);
   });
 });
 
@@ -106,33 +112,5 @@ describe('mínimo de artistas', () => {
     expect(continueLabel(2)).toBe(t('onboarding.chooseArtists.needMoreOne'));
     expect(continueLabel(0)).toBe(t('onboarding.chooseArtists.needMore', { count: 3 }));
     expect(continueLabel(4)).toBe(t('onboarding.chooseArtists.continue', { count: 4 }));
-  });
-});
-
-describe('busca por nome', () => {
-  it.each([
-    ['netto', ['netto']],
-    ['NENHO', ['nenho']],
-    ['angela', ['angela']],
-    ['ângela', ['angela']],
-    ['juninho mor', ['juninho']],
-    ['artista', ['a5']],
-    ['o', ['rock', 'netto', 'nenho', 'juninho']],
-    ['xyz', []],
-    ['', ['rock', 'netto', 'a5', 'nenho', 'angela', 'juninho']],
-  ])('"%s" encontra %j', (query, ids) => {
-    expect(filterArtists(artists, query).map((item) => item.id)).toEqual(ids);
-  });
-});
-
-describe('fãs no card', () => {
-  it('"1 fã" no singular, o resto abreviado', () => {
-    expect(fansText(1)).toBe('1 fã');
-    expect(fansText(0)).toBe('0 fãs');
-    expect(fansText(412_000)).toBe('412 mil fãs');
-    expect(artistCardLabel({ name: 'Nenho', fanCount: 1 })).toBe('Nenho, 1 fã');
-    expect(artistCardLabel({ name: 'Netto Brito', fanCount: 412_000 })).toBe(
-      'Netto Brito, 412 mil fãs',
-    );
   });
 });

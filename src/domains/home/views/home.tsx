@@ -8,7 +8,7 @@ import { SectionHeader } from '@/components/section-header';
 import { useFanCentralsQuery } from '@/domains/artists';
 import { DailyMissionSection, useDailyMissionQuery } from '@/domains/missions';
 import { PostDivider, PostRow, PostRowsSkeleton, useFeedQuery, type Post } from '@/domains/posts';
-import { useWatchMyProfile } from '@/domains/profile';
+import { SuspendedNotice, useWatchMyProfile } from '@/domains/profile';
 import { useAnnounceWhen } from '@/hooks/use-announce-when';
 import { useTabBarInset } from '@/hooks/use-tab-bar-inset';
 import { t } from '@/i18n';
@@ -27,12 +27,14 @@ function postItemType(post: Post): 'event' | 'media' | 'text' {
 /**
  * Tudo o que vem antes do mural, de ponta a ponta (o carrossel sai da margem).
  * Fora de foco, a missão do dia que conclui não festeja: quem fala é a tela
- * que o fã está vendo (a 1g, quando a conclusão chega por lá).
+ * que o fã está vendo (a 1g, quando a conclusão chega por lá). A conta
+ * suspensa tem o aviso fixo logo embaixo da saudação (seção 29, frente E).
  */
 function HomeListHeader({ focused }: { focused: boolean }) {
   return (
     <View>
       <HomeHeader />
+      <SuspendedNotice style={styles.suspended} />
       <DailyMissionSection celebrate={focused} style={styles.mission} />
       <CentralsSection />
       <SectionHeader title={t('home.feed.title')} style={styles.feedTitle} />
@@ -165,6 +167,10 @@ const styles = StyleSheet.create({
   // A lista vai até o pé da tela, por baixo da tab bar; o espaço dela fica no conteúdo.
   screen: {
     paddingBottom: 0,
+  },
+  suspended: {
+    marginTop: spacing.metaGap,
+    marginHorizontal: spacing.gutter,
   },
   mission: {
     marginTop: spacing.metaGap,

@@ -1,3 +1,3 @@
-import { FanProfileScreen } from '@/domains/profile';
+import { FanPageScreen } from '@/domains/fan-page';
 
-export default FanProfileScreen;
+export default FanPageScreen;

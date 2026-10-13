@@ -11,6 +11,7 @@ import { useLeaveCentralMutation } from '@/domains/artists';
 import { useIsOnline } from '@/hooks/use-is-online';
 import { useStayOnScreen } from '@/hooks/use-stay-on-screen';
 import { t } from '@/i18n';
+import { actionRefusal } from '@/services/api/refusal';
 import { haptics } from '@/services/haptics';
 import { colors, spacing } from '@/theme';
 
@@ -31,7 +32,8 @@ function closeSheet(): void {
  *
  * Não é otimista: o botão fica "carregando" até o servidor responder. No
  * sucesso, a sheet fecha, avisa e a 1d volta a "Entrar na central"; no erro,
- * fica, com o aviso acima dos botões (também anunciado) e o toque de erro. Sem
+ * fica, com o aviso acima dos botões (também anunciado) e o toque de erro: o
+ * ritmo (pedidos seguidos demais) tem frase própria, seção 29. Sem
  * internet, "Sair da central" fica desligado. Enquanto o pedido vai, o voltar
  * do Android e o gesto do iOS ficam presos (`useStayOnScreen`), como no
  * resgate; o arrasto da sheet no Android não trava, e a resposta que chega
@@ -50,12 +52,13 @@ export function LeaveCentralSheetScreen() {
       closeSheet();
       AccessibilityInfo.announceForAccessibility(t('artist.leave.left'));
     },
-    onError: () => {
+    onError: (error) => {
       haptics.trigger('error');
-      AccessibilityInfo.announceForAccessibility(t('artist.leave.error'));
+      AccessibilityInfo.announceForAccessibility(t(actionRefusal(error, 'leave').key));
     },
   });
   useStayOnScreen(leave.isPending);
+  const errorKey = leave.isError ? actionRefusal(leave.error, 'leave').key : null;
 
   return (
     <View style={styles.root}>
@@ -71,9 +74,9 @@ export function LeaveCentralSheetScreen() {
           {t('artist.leave.body')}
         </Text>
         <View style={styles.actions}>
-          {leave.isError ? (
+          {errorKey ? (
             <Text variant="caption" color={colors.danger} style={styles.error}>
-              {t('artist.leave.error')}
+              {t(errorKey)}
             </Text>
           ) : null}
           <Button

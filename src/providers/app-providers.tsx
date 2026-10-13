@@ -8,6 +8,7 @@ import { ReduceMotion, ReducedMotionConfig } from 'react-native-reanimated';
 import { registerAgendaMutationDefaults } from '@/domains/agenda';
 import { registerArtistMutationDefaults } from '@/domains/artists';
 import { registerPostMutationDefaults } from '@/domains/posts';
+import { SuspensionWatcher } from '@/domains/profile';
 import { useAnnounceOffline } from '@/hooks/use-announce-offline';
 import { usePrefersReducedMotion } from '@/hooks/use-prefers-reduced-motion';
 import { persistOptions, queryClient, setupReactQueryForReactNative } from '@/services/query';
@@ -44,6 +45,8 @@ export function AppProviders({ children }: { children: ReactNode }) {
         persistOptions={persistOptions}
         onSuccess={resumeOfflineMutations}
       >
+        {/* As recusas de conta suspensa: o perfil busca de novo e, quando cabe, o Alert. */}
+        <SuspensionWatcher />
         <ThemeProvider value={navigationTheme}>{children}</ThemeProvider>
       </PersistQueryClientProvider>
     </GestureHandlerRootView>
