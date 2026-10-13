@@ -16,13 +16,13 @@ import { BackButton } from '@/components/header';
 import { SheetGrabber } from '@/components/sheet-grabber';
 import { Text } from '@/components/text';
 import { TextInput } from '@/components/text-input';
+import { ArtistGridSkeleton, filterArtists, sortByOrder } from '@/domains/artists';
 import { t } from '@/i18n';
 import { colors, spacing } from '@/theme';
 
-import { ArtistGridSkeleton } from '../components/artist-grid-skeleton';
 import { SelectableArtistCard } from '../components/artist-select-card';
+import { FEATURED_COUNT } from '../consts';
 import { useArtistsLoad, useFocusAfterRecovery } from '../hooks/use-artists-load';
-import { filterArtists, sortByOrder } from '../selection';
 
 const COLUMNS = 2;
 const isIOS = Platform.OS === 'ios';
@@ -131,7 +131,10 @@ export function AllArtistsSheetScreen() {
         />
       ) : (
         <View style={styles.loading}>
-          <ArtistGridSkeleton />
+          <ArtistGridSkeleton
+            count={FEATURED_COUNT}
+            accessibilityLabel={t('onboarding.chooseArtists.loading')}
+          />
         </View>
       )}
     </View>

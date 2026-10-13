@@ -30,6 +30,7 @@ import { useIsOnline } from '@/hooks/use-is-online';
 import { useNow } from '@/hooks/use-now';
 import { useStayOnScreen, type StayOnScreenMode } from '@/hooks/use-stay-on-screen';
 import { t, type TranslationKey } from '@/i18n';
+import { actionRefusal } from '@/services/api/refusal';
 import { haptics } from '@/services/haptics';
 import { colors, spacing } from '@/theme';
 import { formatLongDate } from '@/utils/date';
@@ -39,6 +40,7 @@ import { EditPhotoSection } from '../components/edit-photo-section';
 import { FormGroup } from '../components/form-group';
 import { GenderField } from '../components/gender-field';
 import { ProfileReadOnly, SOCIAL_PREFIX } from '../components/profile-read-only';
+import { SuspensionContact } from '../components/suspended-notice';
 import { BIO_MAX, SOCIAL_INPUT_MAX, SOCIAL_NETWORKS, normalizeSocialHandle } from '../details';
 import { useFanIdentity } from '../hooks/use-fan-identity';
 import {
@@ -78,8 +80,11 @@ const STATUS_ICON_SIZE = 18;
 /** Todos os campos do formulário, para acompanhar o perfil vivo. */
 const ALL_FIELDS: readonly EditProfileField[] = [...EDIT_PROFILE_FIELD_ORDER, 'privateAccount'];
 
-/** O aviso embaixo do header: a falha do ✓, o suspenso, o só leitura. */
-type Notice = { text: string; tone: 'error' | 'info' };
+/**
+ * O aviso embaixo do header: a falha do ✓, o suspenso (com o link "Escrever
+ * para a equipe", `contact`), o só leitura.
+ */
+type Notice = { text: string; tone: 'error' | 'info'; contact?: boolean };
 
 /** A falha do ✓ que fica embaixo do header; a incerta some quando a escuta mostra o perfil salvo. */
 type SaveMessage = { key: TranslationKey; uncertain: boolean };
@@ -127,6 +132,7 @@ function EditProfileHeader({ onClose, closeDisabled = false, save, notice }: Hea
           {notice.text}
         </Text>
       ) : null}
+      {notice?.contact ? <SuspensionContact align="center" style={styles.contact} /> : null}
     </View>
   );
 }
@@ -338,7 +344,7 @@ function ProfileForm({ profile, fallbackName, online }: ProfileFormProps) {
     ) : null;
 
   const notice: Notice | null = suspended
-    ? { text: t('editProfile.info.suspended'), tone: 'info' }
+    ? { text: t('suspension.short'), tone: 'info', contact: true }
     : message && (pending || !message.uncertain)
       ? { text: t(message.key), tone: 'error' }
       : null;
@@ -432,15 +438,19 @@ function ProfileForm({ profile, fallbackName, online }: ProfileFormProps) {
     if (code === 'account_suspended') {
       // A escuta traz o `suspendedAt`; até lá, a tela já fica a do suspenso.
       setRefusedSuspended(true);
-      failWith(t('editProfile.info.suspended'));
+      failWith(t('suspension.short'));
       return;
     }
+    // Pedidos seguidos demais (27.3): nada foi gravado, o ✓ seguinte vai de novo.
+    const rateLimited = actionRefusal(error, 'profile').type === 'rateLimited';
     const next: SaveMessage =
       code === 'too_many_requests' && apiErrorDetail(error, 'action') === 'profile'
         ? { key: 'editProfile.tooManySaves', uncertain: false }
-        : isUncertainFailure(error)
-          ? { key: 'editProfile.uncertain', uncertain: true }
-          : { key: 'editProfile.error', uncertain: false };
+        : rateLimited
+          ? { key: 'errors.rateLimited', uncertain: false }
+          : isUncertainFailure(error)
+            ? { key: 'editProfile.uncertain', uncertain: true }
+            : { key: 'editProfile.error', uncertain: false };
     setMessage(next);
     failWith(t(next.key));
   };
@@ -873,6 +883,11 @@ const styles = StyleSheet.create({
     marginTop: spacing.xs,
     marginBottom: spacing.sm,
     textAlign: 'center',
+  },
+  // O link fica logo embaixo da frase do suspenso, no alvo de 44.
+  contact: {
+    marginTop: -spacing.sm,
+    marginBottom: spacing.xs,
   },
   photo: {
     paddingTop: spacing.md,

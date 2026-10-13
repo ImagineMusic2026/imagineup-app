@@ -80,12 +80,48 @@ export type SignUpForm = z.output<typeof signUpSchema>;
 export const resetEmailSchema = emailField;
 
 /**
- * A senha que o Firebase pede de novo para excluir a conta com login antigo.
- * Só não pode ir vazia: quem confere é o Firebase (senha errada volta como
- * erro no campo), e uma conta antiga pode ter senha mais curta que a regra de hoje.
+ * A senha atual, que o Firebase confere de novo (excluir a conta com login
+ * antigo, trocar a senha ou o e-mail). Só não pode ir vazia: quem confere é o
+ * Firebase (senha errada volta como erro no campo), e uma conta antiga pode
+ * ter senha mais curta que a regra de hoje.
  */
+const currentPasswordField = z.string().min(1, { error: t('deleteAccount.passwordRequired') });
+
 export const reauthSchema = z.object({
-  password: z.string().min(1, { error: t('deleteAccount.passwordRequired') }),
+  password: currentPasswordField,
 });
 
 export type ReauthForm = z.infer<typeof reauthSchema>;
+
+/**
+ * "Trocar senha" (seção 29, frente D): a atual não vazia, como na
+ * reautenticação, e a nova com a regra do cadastro e diferente da atual.
+ */
+export const changePasswordSchema = z
+  .object({
+    current: currentPasswordField,
+    next: passwordField,
+  })
+  .refine((form) => form.next !== form.current, {
+    path: ['next'],
+    error: t('changePassword.samePassword'),
+  });
+
+export type ChangePasswordForm = z.infer<typeof changePasswordSchema>;
+
+/**
+ * "Trocar e-mail" (seção 29, frente D): o e-mail novo normalizado como no
+ * login, e diferente do de agora depois de normalizar (o Firebase guarda o
+ * e-mail em minúsculas); a senha atual, para reautenticar.
+ */
+export function changeEmailSchema(currentEmail: string | null) {
+  const current = currentEmail?.trim().toLowerCase() ?? null;
+  return z.object({
+    email: emailField.refine((email) => email !== current, {
+      error: t('changeEmail.sameEmail'),
+    }),
+    password: currentPasswordField,
+  });
+}
+
+export type ChangeEmailForm = z.infer<ReturnType<typeof changeEmailSchema>>;

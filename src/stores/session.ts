@@ -5,6 +5,12 @@ export interface SessionUser {
   email: string | null;
   displayName: string | null;
   photoURL: string | null;
+  /**
+   * A conta entra com e-mail e senha (`password` no `providerData`): só ela
+   * troca a senha e o e-mail nos Ajustes (seção 29, frente D). Opcional para a
+   * sessão montada à mão; sem o campo, as duas linhas não aparecem.
+   */
+  hasPassword?: boolean;
 }
 
 export type SessionStatus = 'loading' | 'signedOut' | 'signedIn';

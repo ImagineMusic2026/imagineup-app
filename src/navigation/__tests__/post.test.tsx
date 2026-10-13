@@ -10,14 +10,25 @@ import {
   waitFor,
 } from 'expo-router/testing-library';
 import { getDoc, onSnapshot } from 'firebase/firestore';
-import { AccessibilityInfo, Text } from 'react-native';
+import { AccessibilityInfo, Alert, Text } from 'react-native';
 
 import HomeRoute from '@/app/(tabs)/(inicio)/index';
 import CommentOptionsRoute from '@/app/comentario/[comentarioId]';
 import PostRoute from '@/app/post/[postId]';
 import { missionsFixture } from '@/domains/missions';
+import {
+  moderationKeys,
+  postKeys,
+  postMutationKeys,
+  registerPostMutationDefaults,
+  type Post,
+} from '@/domains/posts';
 import { moderationFixture, postsFixture } from '@/domains/posts/fixtures';
+import { fanKeys, type FanPublicProfile } from '@/domains/profile';
+import { ApiError } from '@/services/api/errors';
 import { haptics } from '@/services/haptics';
+import { createQueryClient } from '@/services/query/client';
+import { resetRefusalAlerts } from '@/services/refusal-alert';
 import { usePreferencesStore } from '@/stores/preferences';
 import { useSessionStore } from '@/stores/session';
 
@@ -274,19 +285,61 @@ describe('opções do comentário (denunciar e bloquear, bloco 6)', () => {
     expect(screen.getByLabelText(THALITA_ROW)).toBeTruthy();
   });
 
-  it('"Bloquear" fecha, anuncia e o comentário some da lista', async () => {
+  it('"Bloquear" não fecha (seção 29): o convite para denunciar no lugar do botão, e "Denunciar comentário" ainda envia', async () => {
     const view = renderRouter(appTree, { initialUrl: '/post/p-clipe' });
     await openOptions(view);
 
     fireEvent.press(screen.getByRole('button', { name: 'Bloquear Thalita S.' }));
 
+    // O nome do comentário sem o ponto dele, antes do ponto da frase.
+    const invite =
+      'Você bloqueou Thalita S. A equipe só fica sabendo se você denunciar o comentário.';
+    expect(await screen.findByText(invite)).toBeTruthy();
+    expect(AccessibilityInfo.announceForAccessibility).toHaveBeenCalledWith(invite);
+    expect(haptics.trigger).toHaveBeenCalledWith('success');
+    expect(view.getPathname()).toBe('/comentario/c-clipe-thalita');
+    expect(screen.queryByRole('button', { name: 'Bloquear Thalita S.' })).toBeNull();
+    // O comentário sai da lista do post, embaixo da sheet. `not.toBeOnTheScreen`,
+    // e não `toBeNull`: a mensagem da volta que ainda acha a linha imprimiria a
+    // árvore inteira (o `_fiber`), uns 2 s de CPU.
+    await waitFor(() => expect(screen.queryByLabelText(THALITA_ROW)).not.toBeOnTheScreen());
+
+    // A sheet segue com o comentário: denunciar ainda vai, e aí fecha.
+    fireEvent.press(screen.getByRole('button', { name: 'Ofensivo' }));
+    fireEvent.press(screen.getByRole('button', { name: 'Denunciar comentário' }));
     await waitFor(() => expect(view.getPathname()).toBe('/post/p-clipe'));
     expect(AccessibilityInfo.announceForAccessibility).toHaveBeenCalledWith(
-      'Bloqueio feito: os comentários de Thalita S. somem para você.',
+      'Denúncia enviada. A equipe vai analisar.',
     );
-    // `not.toBeOnTheScreen`, e não `toBeNull`: a mensagem da volta que ainda
-    // acha a linha imprimiria a árvore inteira (o `_fiber`), uns 2 s de CPU.
-    await waitFor(() => expect(screen.queryByLabelText(THALITA_ROW)).not.toBeOnTheScreen());
+  });
+
+  it('bloquear pela sheet muda o perfil público em cache e zera a lista de bloqueados', async () => {
+    const thalita: FanPublicProfile = {
+      uid: 'fa-thalita',
+      displayName: 'Thalita Santos',
+      username: 'thalitasan',
+      photoURL: null,
+      restricted: false,
+      bio: null,
+      socials: null,
+      blockedByMe: false,
+    };
+    client.setQueryData(fanKeys.profile('fa-thalita'), thalita);
+    client.setQueryData(moderationKeys.blocked(), {
+      pages: [{ items: [], nextCursor: null }],
+      pageParams: [null],
+    });
+    const view = renderRouter(appTree, { initialUrl: '/post/p-clipe' });
+    await openOptions(view);
+
+    fireEvent.press(screen.getByRole('button', { name: 'Bloquear Thalita S.' }));
+
+    await waitFor(() =>
+      expect(client.getQueryData<FanPublicProfile>(fanKeys.profile('fa-thalita'))).toMatchObject({
+        blockedByMe: true,
+      }),
+    );
+    expect(client.getQueryData(moderationKeys.blocked())).toBeUndefined();
   });
 
   it('sem internet, denunciar e bloquear ficam desligados', async () => {
@@ -340,5 +393,124 @@ describe('perfil público pelo comentário (seção 28)', () => {
     act(() => testRouter.back());
     await waitFor(() => expect(view.getPathname()).toBe('/post/p-clipe'));
     expect(rootRoutes(view)).toEqual(['(tabs)', 'post/[postId]']);
+  });
+});
+
+describe('o 429 com o cliente do app (seção 29, frente F)', () => {
+  const LIKE = 'Curtir, 4.812 curtidas';
+  const LIKED = 'Curtir, 4.813 curtidas';
+  const DAILY_LIKE = 'Você chegou ao limite de curtidas de hoje. Tente amanhã.';
+  const dailyLimit = () =>
+    new ApiError(
+      'dailyLimit',
+      'Tentativas demais por hoje.',
+      429,
+      'too_many_requests',
+      { limit: 30, action: 'like' },
+      43_200_000,
+    );
+  const rateLimited = () =>
+    new ApiError('rateLimited', 'Muitos pedidos.', 429, 'rate_limited', null, 1000);
+
+  beforeEach(() => {
+    // O cliente do app: as novas tentativas e o `MutationCache` de verdade.
+    client = createQueryClient({ queries: { gcTime: Infinity }, mutations: { gcTime: Infinity } });
+    resetRefusalAlerts();
+    jest.spyOn(Alert, 'alert').mockImplementation(() => undefined);
+  });
+
+  afterEach(() => jest.useRealTimers());
+
+  it('o teto do dia de curtir abre o "Limite de hoje", um só para duas recusas; a segunda anuncia a frase', async () => {
+    const like = jest.spyOn(postsFixture, 'setLike').mockImplementation(() => {
+      throw dailyLimit();
+    });
+    renderRouter(appTree, { initialUrl: '/post/p-clipe' });
+
+    fireEvent.press(await screen.findByRole('button', { name: LIKE }));
+    await waitFor(() => expect(Alert.alert).toHaveBeenCalledTimes(1));
+    expect(Alert.alert).toHaveBeenCalledWith('Limite de hoje', DAILY_LIKE, [
+      { text: 'Entendi', style: 'cancel' },
+    ]);
+    // O teto do dia não tenta de novo, e o coração volta. Com o `Alert`, sem anúncio.
+    expect(like).toHaveBeenCalledTimes(1);
+    expect(AccessibilityInfo.announceForAccessibility).not.toHaveBeenCalledWith(DAILY_LIKE);
+
+    // A segunda, com a trava de 30 s segurando o `Alert`, anuncia a frase do teto.
+    fireEvent.press(await screen.findByRole('button', { name: LIKE }));
+    await waitFor(() => expect(like).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(client.isMutating()).toBe(0));
+    expect(Alert.alert).toHaveBeenCalledTimes(1);
+    expect(await screen.findByRole('button', { name: LIKE })).toBeTruthy();
+    expect(AccessibilityInfo.announceForAccessibility).toHaveBeenCalledWith(DAILY_LIKE);
+    expect(AccessibilityInfo.announceForAccessibility).not.toHaveBeenCalledWith(
+      'Não deu para curtir o post. Tente de novo.',
+    );
+  });
+
+  it('a curtida restaurada do disco (só a default) recusada no teto apaga o coração', async () => {
+    registerPostMutationDefaults(client);
+    renderRouter(appTree, { initialUrl: '/post/p-clipe' });
+    await screen.findByRole('button', { name: LIKE });
+    // O cache que voltou do disco com a curtida da fila: o coração aceso.
+    act(() => {
+      client.setQueryData<Post>(postKeys.detail('p-clipe'), (post) =>
+        post ? { ...post, likedByMe: true, likeCount: post.likeCount + 1 } : post,
+      );
+    });
+    expect(await screen.findByRole('button', { name: LIKED })).toBeTruthy();
+
+    jest.spyOn(postsFixture, 'setLike').mockImplementation(() => {
+      throw dailyLimit();
+    });
+    // A mutação restaurada não tem o hook: roda com as defaults da fila.
+    await act(async () => {
+      const restored = client.getMutationCache().build(client, {
+        mutationKey: postMutationKeys.like,
+      });
+      await restored
+        .execute({ postId: 'p-clipe', liked: true, idempotencyKey: 'like-da-fila' })
+        .catch(() => undefined);
+    });
+
+    expect(await screen.findByRole('button', { name: LIKE })).toBeTruthy();
+    expect(Alert.alert).toHaveBeenCalledWith('Limite de hoje', DAILY_LIKE, [
+      { text: 'Entendi', style: 'cancel' },
+    ]);
+  });
+
+  it('o comentário no ritmo tenta de novo sozinho, vira "Não enviado" e o toque repete a mesma chave', async () => {
+    jest.useFakeTimers({ doNotFake: ['nextTick', 'setImmediate'] });
+    const add = jest.spyOn(postsFixture, 'addComment').mockImplementation(() => {
+      throw rateLimited();
+    });
+    renderRouter(appTree, { initialUrl: '/post/p-clipe' });
+
+    fireEvent.changeText(await screen.findByTestId('comment-input'), 'Que clipe!');
+    fireEvent.press(screen.getByTestId('comment-send'));
+    // As três novas tentativas do ritmo, cada uma depois do Retry-After (1 s).
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      await act(async () => {
+        await jest.advanceTimersByTimeAsync(1000);
+      });
+    }
+
+    const row = await screen.findByRole('button', { name: 'Você, não enviado: Que clipe!' });
+    expect(add).toHaveBeenCalledTimes(4);
+    // O texto não voltou ao campo: a tentativa fica na linha.
+    expect(screen.getByTestId('comment-input')).toHaveProp('value', '');
+    const firstKey = add.mock.calls[0]?.[0].idempotencyKey;
+    expect(new Set(add.mock.calls.map(([input]) => input.idempotencyKey))).toEqual(
+      new Set([firstKey]),
+    );
+
+    add.mockRestore();
+    const retried = jest.spyOn(postsFixture, 'addComment');
+    fireEvent.press(row);
+    await waitFor(() => expect(retried).toHaveBeenCalledTimes(1));
+    expect(retried.mock.calls[0]?.[0].idempotencyKey).toBe(firstKey);
+    await waitFor(() =>
+      expect(screen.queryByRole('button', { name: 'Você, não enviado: Que clipe!' })).toBeNull(),
+    );
   });
 });

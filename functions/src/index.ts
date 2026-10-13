@@ -63,6 +63,7 @@ import {
 import {
   hideFanComments as hideCommentsOfFan,
   moderate,
+  resolveProfileReport as resolveReportOfFan,
   setFanSuspended as suspendFan,
 } from './moderation';
 import {
@@ -759,6 +760,18 @@ export const clearFanPhoto = onCall({ cors: PANEL_ORIGINS }, async (request) => 
 export const clearFanProfileText = onCall({ cors: PANEL_ORIGINS }, async (request) => {
   const result = await clearFanTextByStaff(fanPanelDeps(), request.auth, request.data);
   logger.info('Bio e redes de um fã apagadas pela equipe.', { actorUid: request.auth?.uid });
+  return result;
+});
+
+/**
+ * Fecha a denúncia de perfil de um fã (29.6): "Manter" (`kept`) ou "Resolver"
+ * (`actioned`), com a rodada que o card mostrou. O item mora na
+ * `profileReportQueue`, separada da fila de comentários; a auditoria leva a
+ * resolução, a contagem e a rodada, nunca o texto do perfil.
+ */
+export const resolveProfileReport = onCall({ cors: PANEL_ORIGINS }, async (request) => {
+  const result = await resolveReportOfFan({ db: getFirestore() }, request.auth, request.data);
+  logger.info('Denúncia de perfil resolvida pela equipe.', { actorUid: request.auth?.uid });
   return result;
 });
 

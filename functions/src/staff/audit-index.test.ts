@@ -210,6 +210,13 @@ const ROWS: Record<AuditAction, Row> = {
       'comment:c3',
     ],
   },
+  // As exigências das lojas (29.6): a resolução, a contagem e a rodada, nunca o texto.
+  'fan.profile.report.resolved': {
+    targetUid: 'uid-fa',
+    details: { uid: 'uid-fa', resolution: 'kept', reportCount: 2, round: 1 },
+    section: 'moderation',
+    targets: ['fan:uid-fa'],
+  },
   'points.config.updated': {
     details: { fields: ['values'], fromVersion: 1, toVersion: 2 },
     section: 'missions',

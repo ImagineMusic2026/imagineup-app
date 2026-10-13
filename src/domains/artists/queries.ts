@@ -18,8 +18,10 @@ import { profileKeys } from '@/domains/profile/keys';
 import { refreshRanking } from '@/domains/ranking/queries';
 import { t } from '@/i18n';
 import { ApiError } from '@/services/api/errors';
+import { actionRefusal } from '@/services/api/refusal';
 import { haptics, type HapticEvent } from '@/services/haptics';
 import { queryOptionsFor } from '@/services/query/client';
+import { alertActionRefusal, showRefusalAlert } from '@/services/refusal-alert';
 import { createIdempotencyKey } from '@/utils/id';
 
 import {
@@ -262,7 +264,7 @@ const isNotFound = (error: unknown): boolean =>
  * reabre. Para isso a função precisa estar registrada aqui, fora do
  * componente, com o que ela muda nas outras telas. Restaurada do disco, a
  * entrada não tem o contexto do otimista para desfazer: no erro, a página e
- * as centrais buscam de novo.
+ * as centrais buscam de novo; o teto do dia abre o "Limite de hoje".
  */
 export function registerArtistMutationDefaults(client: QueryClient): void {
   client.setMutationDefaults<JoinCentralResult, Error, JoinCentralVariables>(
@@ -270,7 +272,12 @@ export function registerArtistMutationDefaults(client: QueryClient): void {
     {
       mutationFn: (variables) => joinCentral(variables),
       onSuccess: (result) => refreshAfterJoin(client, result),
-      onError: (_error, variables) => refreshAfterJoinFailed(client, variables.artistId),
+      onError: (error, variables) => {
+        refreshAfterJoinFailed(client, variables.artistId);
+        if (actionRefusal(error, 'join').type === 'dailyLimit') {
+          showRefusalAlert('dailyLimit', 'join');
+        }
+      },
     },
   );
 }
@@ -358,9 +365,18 @@ export function useJoinCentralMutation(artistId: string) {
       // mais (o anúncio é dela), e a central sai de "Suas centrais".
       const gone = isNotFound(error);
       if (gone) refreshAfterJoinFailed(queryClient, id);
+      // O teto do dia abre o "Limite de hoje" também com a página fechada (a
+      // fila que voltou), e a conta suspensa, o "Conta suspensa" (pelo
+      // `MutationCache`): com o `Alert`, sem anúncio. Com a trava de 30 s
+      // segurando o `Alert`, a página aberta anuncia a frase da recusa, que
+      // desmente o "Você entrou na central" do `onMutate`. O ritmo que esgotou
+      // as tentativas diz a frase dele.
+      const refusal = actionRefusal(error, 'join');
+      const alerted = alertActionRefusal(refusal.type, 'join');
       if (!mounted.current) return;
       haptics.trigger('error');
-      if (!gone) AccessibilityInfo.announceForAccessibility(t('artist.join.error'));
+      if (gone || alerted) return;
+      AccessibilityInfo.announceForAccessibility(t(refusal.key));
     },
   });
 
@@ -460,6 +476,8 @@ export function useLeaveCentralMutation(
     leave,
     isPending: mutation.isPending,
     isError: mutation.isError,
+    /** A recusa, para a frase da sheet (o ritmo tem a dele, seção 29). */
+    error: mutation.error,
     isSuccess: mutation.isSuccess,
     reset: mutation.reset,
   };

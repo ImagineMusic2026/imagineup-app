@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   BIO_MAX,
   BIO_MAX_LINES,
+  blockedFanOf,
   editableProfileOf,
   FAN_CITY_MAX,
   GENDERS,
@@ -10,6 +11,7 @@ import {
   normalizeSocialHandle,
   parseProfileChanges,
   profileDiff,
+  profileDigest,
   profileUpdateOf,
   publicProfileOf,
   SOCIAL_INPUT_MAX,
@@ -531,7 +533,7 @@ describe('publicProfileOf', () => {
   };
 
   it('a completa: só foto, nome, @, bio e redes (nunca gênero, cidade, privada, suspensão nem searchKeys)', () => {
-    const profile = publicProfileOf(UID, thalita, false);
+    const profile = publicProfileOf(UID, thalita, false, false);
     expect(profile).toEqual({
       uid: UID,
       displayName: 'Thalita Santos',
@@ -545,14 +547,24 @@ describe('publicProfileOf', () => {
         linkedin: 'thalita-teste-imagineup',
         x: 'thalitatesteup',
       },
+      blockedByMe: false,
     });
     expect(Object.keys(profile).sort()).toEqual(
-      ['uid', 'displayName', 'username', 'photoURL', 'restricted', 'bio', 'socials'].sort(),
+      [
+        'uid',
+        'displayName',
+        'username',
+        'photoURL',
+        'restricted',
+        'bio',
+        'socials',
+        'blockedByMe',
+      ].sort(),
     );
   });
 
   it('a fechada: só os três, e o mesmo corpo seja qual for o resto do documento', () => {
-    const closed = publicProfileOf(UID, thalita, true);
+    const closed = publicProfileOf(UID, thalita, true, false);
     expect(closed).toEqual({
       uid: UID,
       displayName: 'Thalita Santos',
@@ -561,40 +573,157 @@ describe('publicProfileOf', () => {
       restricted: true,
       bio: null,
       socials: null,
+      blockedByMe: false,
     });
-    expect(publicProfileOf(UID, { ...thalita, privateAccount: true }, true)).toEqual(closed);
+    expect(publicProfileOf(UID, { ...thalita, privateAccount: true }, true, false)).toEqual(closed);
     expect(
-      publicProfileOf(UID, { ...thalita, suspendedAt: timestamp('2026-10-08') }, true),
+      publicProfileOf(UID, { ...thalita, suspendedAt: timestamp('2026-10-08') }, true, false),
     ).toEqual(closed);
   });
 
   it('as redes vazias viram null; a rede guardada fora do padrão não sai', () => {
-    expect(publicProfileOf(UID, { ...thalita, socials: null }, false).socials).toBeNull();
+    expect(publicProfileOf(UID, { ...thalita, socials: null }, false, false).socials).toBeNull();
     expect(
-      publicProfileOf(UID, { ...thalita, socials: { instagram: null, x: '' } }, false).socials,
+      publicProfileOf(UID, { ...thalita, socials: { instagram: null, x: '' } }, false, false)
+        .socials,
     ).toBeNull();
     expect(
       publicProfileOf(
         UID,
         { ...thalita, socials: { instagram: 'https://golpe.example/x', x: 'thalitatesteup' } },
         false,
+        false,
       ).socials,
     ).toEqual({ instagram: null, tiktok: null, linkedin: null, x: 'thalitatesteup' });
     expect(
-      publicProfileOf(UID, { ...thalita, socials: { x: 'Fora Do Padrão' } }, false).socials,
+      publicProfileOf(UID, { ...thalita, socials: { x: 'Fora Do Padrão' } }, false, false).socials,
     ).toBeNull();
   });
 
   it('o perfil antigo, sem os campos novos: sem bio e sem redes', () => {
-    expect(publicProfileOf(UID, { displayName: null, username: 'fa123456' }, false)).toEqual({
+    expect(publicProfileOf(UID, { displayName: null, username: 'fa123456' }, false, false)).toEqual(
+      {
+        uid: UID,
+        displayName: null,
+        username: 'fa123456',
+        photoURL: null,
+        restricted: false,
+        bio: null,
+        socials: null,
+        blockedByMe: false,
+      },
+    );
+  });
+
+  it('o blockedByMe nas duas visões, e os três fechados com o mesmo corpo para o mesmo blockedByMe (seção 29)', () => {
+    expect(publicProfileOf(UID, thalita, false, true)).toMatchObject({
+      restricted: false,
+      bio: thalita.bio,
+      blockedByMe: true,
+    });
+    for (const blockedByMe of [false, true]) {
+      const closed = publicProfileOf(UID, thalita, true, blockedByMe);
+      expect(closed).toMatchObject({ restricted: true, bio: null, blockedByMe });
+      // Privada, suspensa ou que bloqueou quem pede: o mesmo corpo.
+      expect(publicProfileOf(UID, { ...thalita, privateAccount: true }, true, blockedByMe)).toEqual(
+        closed,
+      );
+      expect(
+        publicProfileOf(
+          UID,
+          { ...thalita, suspendedAt: timestamp('2026-10-08') },
+          true,
+          blockedByMe,
+        ),
+      ).toEqual(closed);
+    }
+  });
+});
+
+describe('blockedFanOf', () => {
+  it('só o uid, o nome, o @ e a foto (nunca bio, redes, gênero, cidade, privada nem suspensão)', () => {
+    expect(
+      blockedFanOf(UID, {
+        displayName: 'Thalita Santos',
+        username: 'thalitasan',
+        photoURL: 'https://exemplo.test/foto.jpg',
+        bio: 'Irará na veia.',
+        city: 'Irará, BA',
+        gender: 'woman',
+        privateAccount: true,
+        suspendedAt: timestamp('2026-10-08'),
+        socials: { x: 'thalitatesteup' },
+      }),
+    ).toEqual({
+      uid: UID,
+      displayName: 'Thalita Santos',
+      username: 'thalitasan',
+      photoURL: 'https://exemplo.test/foto.jpg',
+    });
+    expect(blockedFanOf(UID, { displayName: '', username: null })).toEqual({
       uid: UID,
       displayName: null,
-      username: 'fa123456',
+      username: null,
       photoURL: null,
-      restricted: false,
-      bio: null,
-      socials: null,
     });
+  });
+});
+
+describe('profileDigest (seção 29, decisão 3)', () => {
+  const base = {
+    displayName: 'Promo Seguidores',
+    username: 'promoseg',
+    photoURL: 'https://exemplo.test/promo.jpg',
+    bio: 'Seguidores reais e baratos! Chama no direct.',
+    socials: { instagram: 'promo.teste.up', tiktok: null, linkedin: null, x: 'promotesteup' },
+    city: 'Salvador, BA',
+    gender: 'man',
+    privateAccount: false,
+  };
+
+  it('igual com os mesmos campos (o resumo sha256 em hexadecimal)', () => {
+    const digest = profileDigest(base);
+    expect(digest).toMatch(/^[0-9a-f]{64}$/);
+    expect(profileDigest({ ...base })).toBe(digest);
+    // A ordem das chaves no documento e as redes ausentes contra null não mudam o resumo.
+    expect(
+      profileDigest({
+        socials: { x: 'promotesteup', instagram: 'promo.teste.up' },
+        bio: base.bio,
+        photoURL: base.photoURL,
+        username: base.username,
+        displayName: base.displayName,
+      }),
+    ).toBe(digest);
+  });
+
+  it.each([
+    ['o nome', { displayName: 'Promo Seguidores 2' }],
+    ['o @', { username: 'promoseg2' }],
+    ['a foto', { photoURL: 'https://exemplo.test/outra.jpg' }],
+    ['a bio', { bio: 'Agora só música.' }],
+    ['a bio apagada', { bio: null }],
+    ['as redes', { socials: { instagram: 'promo.teste.up', x: null } }],
+  ])('muda com %s', (_name, change) => {
+    expect(profileDigest({ ...base, ...change })).not.toBe(profileDigest(base));
+  });
+
+  it.each([
+    ['a cidade', { city: 'Feira de Santana, BA' }],
+    ['o gênero', { gender: 'woman' }],
+    ['a conta privada', { privateAccount: true }],
+    ['a suspensão', { suspendedAt: timestamp('2026-10-08') }],
+    [
+      'a rede fora do padrão (o perfil público não a mostra)',
+      { socials: { ...base.socials, tiktok: 'Fora Do Padrão' } },
+    ],
+  ])('não muda com %s', (_name, change) => {
+    expect(profileDigest({ ...base, ...change })).toBe(profileDigest(base));
+  });
+
+  it('null sem perfil', () => {
+    expect(profileDigest(undefined)).toBeNull();
+    expect(profileDigest(null)).toBeNull();
   });
 });
 

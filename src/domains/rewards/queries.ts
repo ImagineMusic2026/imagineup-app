@@ -12,7 +12,7 @@ import { createIdempotencyKey } from '@/utils/id';
 import { formatPointsSpoken } from '@/utils/number';
 
 import { fetchRewards, redeemReward } from './api';
-import { outcomeUnknown, redeemFailure } from './describe-reward';
+import { outcomeUnknown, redeemFailure, redeemFailureKey } from './describe-reward';
 import type { RedeemResult, RedeemVariables, Reward, RewardsResponse } from './types';
 
 /** A chave inclui tudo que muda o resultado. */
@@ -64,6 +64,24 @@ function rewardsQueryOptions(queryClient: QueryClient) {
 export function useRewardsQuery() {
   const queryClient = useQueryClient();
   return useQuery(rewardsQueryOptions(queryClient));
+}
+
+/**
+ * O endereço do regulamento das recompensas (`rulesUrl`) para os Ajustes
+ * (seção 29, decisão 16): a mesma consulta da 1h, mas só o cache (o do disco
+ * inclusive), sem buscar. O `GET /rewards` lê a loja inteira, os pedidos do fã
+ * e os shows ligados, e buscar tudo para um endereço que hoje é sempre `null`
+ * custaria leituras a cada Ajustes aberto com o cache vazio. Sem a loja no
+ * cache, ou sem o endereço, `null`.
+ */
+export function useRewardsRulesUrl(): string | null {
+  const queryClient = useQueryClient();
+  const query = useQuery({
+    ...rewardsQueryOptions(queryClient),
+    enabled: false,
+    select: (data: RewardsResponse): string | null => data.rulesUrl ?? null,
+  });
+  return query.data ?? null;
 }
 
 /**
@@ -190,6 +208,8 @@ export function useRedeemRewardMutation(rewardId: string) {
     mutationFn: (variables) => redeemReward(variables),
     networkMode: 'always',
     retry: false,
+    // O detalhe diz a frase do suspenso, com o link: sem o `Alert` por cima.
+    meta: { suspendedAlert: false },
     onSuccess: (result, variables) => {
       openAttempts.delete(attemptSlot(uid, variables.rewardId));
       queryClient.setQueryData<Wallet>(profileKeys.wallet(), (wallet) =>
@@ -234,6 +254,9 @@ export function useRedeemRewardMutation(rewardId: string) {
           haptics.trigger('warning');
           break;
         case 'dailyLimit':
+        case 'suspended':
+        case 'rateLimited':
+          // Nada foi gravado, e a loja e o saldo não mudaram.
           haptics.trigger('error');
           break;
         default:
@@ -241,7 +264,7 @@ export function useRedeemRewardMutation(rewardId: string) {
           refreshShop();
           haptics.trigger('error');
       }
-      if (!mounted.current) announce(t(`rewards.errors.${failure}`));
+      if (!mounted.current) announce(t(redeemFailureKey(failure)));
     },
     onSettled: (_result, _error, variables) => {
       inFlight.current = false;

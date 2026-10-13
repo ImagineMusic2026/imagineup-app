@@ -62,3 +62,12 @@ export function matchesSearch(text: string, query: string): boolean {
   const needle = searchKey(query);
   return needle === '' || searchKey(text).includes(needle);
 }
+
+/**
+ * Um nome que vem antes do ponto final da frase ("Você bloqueou {{name}}."):
+ * sem os pontos do fim dele, para o "Thalita S." do comentário não sair com
+ * dois pontos ("Você bloqueou Thalita S."). O resto do nome fica como veio.
+ */
+export function nameBeforePeriod(name: string): string {
+  return name.replace(/\.+$/u, '');
+}

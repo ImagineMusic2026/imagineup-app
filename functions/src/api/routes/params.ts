@@ -1,4 +1,4 @@
-import { isFanId } from '../../moderation';
+import { isFanId, parseReportReason, type ReportReason } from '../../moderation';
 import { apiError } from '../errors';
 import type { RouteInput } from '../types';
 
@@ -11,4 +11,15 @@ import type { RouteInput } from '../types';
  */
 export function fanParam(input: RouteInput): void {
   if (!isFanId(input.params.fanId)) throw apiError('fan_not_found');
+}
+
+/**
+ * O motivo da denúncia no corpo (`{ reason }`, a lista fechada ou null; sem
+ * corpo vale null). Outro valor: 400 `invalid_request` com `field: 'reason'`.
+ * A denúncia de comentário (bloco 6) e a de perfil (seção 29) usam.
+ */
+export function reportReason(input: RouteInput): ReportReason | null {
+  const reason = parseReportReason(input.body);
+  if (reason === undefined) throw apiError('invalid_request', { field: 'reason' });
+  return reason;
 }

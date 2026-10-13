@@ -52,5 +52,5 @@ npm run test:functions           # Cloud Functions nos emuladores de Auth, Fires
 npm run emulators                # Firebase local para o app (com EXPO_PUBLIC_FIREBASE_EMULATOR_HOST no .env)
 npm run emulators:seed           # contas de teste nos emuladores
 npm run rules:deploy             # publica as regras do Firestore e do Storage e os índices (veja "Publicar" no CLAUDE.md antes do primeiro deploy do Storage)
-npm run functions:deploy         # publica as Cloud Functions (exige o plano Blaze)
+# as Cloud Functions saem em lotes, pelo dono: veja "Publicar" no CLAUDE.md (o npm run functions:deploy publica todas de uma vez e estoura a cota de CPU)
 ```

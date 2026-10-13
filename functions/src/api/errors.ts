@@ -196,7 +196,11 @@ export function toApiHttpError(error: unknown): { error: ApiHttpError; unexpecte
     return { error: apiError(error.reason, error.details), unexpected: false };
   }
   if (error instanceof ModerationError) {
-    if (error.reason === 'own_comment' || error.reason === 'self') {
+    if (
+      error.reason === 'own_comment' ||
+      error.reason === 'own_profile' ||
+      error.reason === 'self'
+    ) {
       return { error: apiError('invalid_request', { reason: error.reason }), unexpected: false };
     }
     return { error: apiError(error.reason, error.details), unexpected: false };

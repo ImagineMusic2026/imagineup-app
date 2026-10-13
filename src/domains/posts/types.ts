@@ -124,8 +124,33 @@ export interface ReportCommentResult {
   status: 'reported' | 'already_reported';
 }
 
-/** Resposta do bloqueio (e do desbloqueio, ainda sem tela). */
+/** Resposta do bloqueio (`blocked: true`) e do desbloqueio (`false`). */
 export interface BlockFanResult {
   fanId: string;
   blocked: boolean;
 }
+
+/**
+ * Resposta da denúncia de perfil (`POST /fans/:fanId/report`, seção 29): a
+ * segunda da mesma pessoa na rodada não muda nada, e o app diz a mesma frase
+ * para os dois.
+ */
+export interface ReportFanResult {
+  fanId: string;
+  status: 'reported' | 'already_reported';
+}
+
+/**
+ * Um fã da lista de bloqueados (`GET /me/blocks`, seção 29): os campos que o
+ * perfil fechado já mostra a qualquer fã. Nunca a bio, as redes nem o resto.
+ */
+export interface BlockedFan {
+  uid: string;
+  /** `null` sem nome visível: a linha diz "Fã". */
+  displayName: string | null;
+  username: string | null;
+  photoURL: string | null;
+}
+
+/** Uma página da lista, do mais novo ao mais antigo; o cursor é `<índice>:<uid>`. */
+export type BlockedFansPage = Page<BlockedFan>;

@@ -168,6 +168,45 @@ export const fixtureMembership = {
   },
 };
 
+/**
+ * Quem o fã de exemplo bloqueou, na ordem da inclusão, como a `blockLists` do
+ * servidor: começa com a `fa-rank-13`, a pessoa genérica do ranking que o seed
+ * dos emuladores faz a Camila bloquear (29.10). Os ids chegam já normalizados
+ * pelo `canonicalFanId` do perfil público (`fa-thalita` vale `fa-rank-01`):
+ * quem grava e quem lê é o `moderationFixture` dos posts (os comentários
+ * escondidos, a lista de bloqueados) e o `fanProfileFixture` do perfil (o
+ * `blockedByMe`). Um conjunto em cada domínio deixaria o comentário da
+ * Thalita à vista depois de bloquear a `fa-rank-01` pelo ranking (seção 13).
+ */
+const INITIAL_BLOCKS: readonly string[] = ['fa-rank-13'];
+
+let blocks: string[] = [...INITIAL_BLOCKS];
+
+export const fixtureBlocks = {
+  has(fanId: string): boolean {
+    return blocks.includes(fanId);
+  },
+
+  /** Entra no fim, como o bloqueio novo no servidor; quem já está fica onde está. */
+  add(fanId: string): void {
+    if (!blocks.includes(fanId)) blocks = [...blocks, fanId];
+  },
+
+  remove(fanId: string): void {
+    blocks = blocks.filter((id) => id !== fanId);
+  },
+
+  /** Do mais antigo ao mais novo (a ordem da inclusão). */
+  list(): string[] {
+    return [...blocks];
+  },
+
+  /** Volta ao início (fim da sessão e testes). */
+  reset(): void {
+    blocks = [...INITIAL_BLOCKS];
+  },
+};
+
 // O `reset` do estado em memória de cada domínio (presenças, resgates,
 // centrais seguidas, missões).
 const sessionResets = new Set<() => void>();
@@ -187,5 +226,6 @@ export function onFixtureSessionEnd(reset: () => void): void {
 export function resetFixtureSession(): void {
   fixtureWallet.reset();
   fixtureMembership.reset();
+  fixtureBlocks.reset();
   for (const reset of sessionResets) reset();
 }

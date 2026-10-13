@@ -3,12 +3,13 @@ import { buildCommentsPageFixture, buildPostsFixture } from '@/domains/posts/fix
 import { buildLeaderboardPageFixture, RANKING_SEED } from '@/domains/ranking/fixtures';
 import type { RankingScope } from '@/domains/ranking';
 import { ApiError } from '@/services/api/errors';
-import { setFixtureNow } from '@/services/fixtures';
+import { fixtureBlocks, resetFixtureSession, setFixtureNow } from '@/services/fixtures';
 import { cleanMultiline, isVisibleMultiline } from '@/utils/visible-line';
 
 import { BIO_MAX, BIO_MAX_LINES, normalizeSocialHandle, SOCIAL_NETWORKS } from '../details';
 import {
   buildFanProfileFixture,
+  canonicalFanId,
   COMMENT_AUTHOR_ALIASES,
   COMMENT_ONLY_AUTHORS,
   FAN_FIXTURE_DETAILS,
@@ -35,7 +36,10 @@ jest.mock('@/config/data-source', () => ({
 // Terça, 29 de setembro de 2026, 20 h.
 const NOW = new Date(2026, 8, 29, 20, 0);
 
-beforeEach(() => setFixtureNow(NOW));
+beforeEach(() => {
+  setFixtureNow(NOW);
+  resetFixtureSession();
+});
 afterEach(() => setFixtureNow(null));
 
 /** Todas as linhas de um recorte do ranking de exemplo, página a página. */
@@ -62,7 +66,16 @@ function commentsOf(postId: string) {
   return comments;
 }
 
-const PUBLIC_KEYS = ['uid', 'displayName', 'username', 'photoURL', 'restricted', 'bio', 'socials'];
+const PUBLIC_KEYS = [
+  'uid',
+  'displayName',
+  'username',
+  'photoURL',
+  'restricted',
+  'bio',
+  'socials',
+  'blockedByMe',
+];
 
 describe('perfil público de exemplo: coerência com o ranking e os comentários', () => {
   it('todo fã do ranking de exemplo (o geral e cada central, sem o "me") abre um perfil', () => {
@@ -228,6 +241,7 @@ describe('a tabela de 28.10 (Thalita, Aline e Renata)', () => {
         linkedin: 'thalita-teste-imagineup',
         x: 'thalitatesteup',
       },
+      blockedByMe: false,
     });
     expect(Object.keys(thalita)).toEqual(PUBLIC_KEYS);
   });
@@ -254,6 +268,7 @@ describe('a tabela de 28.10 (Thalita, Aline e Renata)', () => {
       restricted: false,
       bio: null,
       socials: null,
+      blockedByMe: false,
     });
     expect(buildFanProfileFixture('fa-carla')).toMatchObject({
       displayName: 'Carla M.',
@@ -261,5 +276,45 @@ describe('a tabela de 28.10 (Thalita, Aline e Renata)', () => {
       bio: null,
       socials: null,
     });
+  });
+});
+
+describe('bloqueio nas fixtures (seção 29, 29.10)', () => {
+  it('a fa-rank-13 começa bloqueada, como no seed, e não comenta em nenhum post de exemplo', () => {
+    expect(RANKING_SEED.some((person) => person.userId === 'fa-rank-13')).toBe(true);
+    expect(fixtureBlocks.list()).toEqual(['fa-rank-13']);
+    expect(buildFanProfileFixture('fa-rank-13')).toMatchObject({
+      restricted: false,
+      blockedByMe: true,
+    });
+    // Nenhum autor de comentário de exemplo é a fa-rank-13, por nenhum id.
+    const authors = buildPostsFixture(NOW)
+      .flatMap((post) => commentsOf(post.id))
+      .map((comment) => canonicalFanId(comment.authorId));
+    expect(authors).not.toContain('fa-rank-13');
+    expect(Object.values(COMMENT_AUTHOR_ALIASES)).not.toContain('fa-rank-13');
+  });
+
+  it('o canonicalFanId leva o autor de comentário ao id do ranking; o resto fica como veio', () => {
+    expect(canonicalFanId('fa-thalita')).toBe('fa-rank-01');
+    expect(canonicalFanId('fa-rank-01')).toBe('fa-rank-01');
+    expect(canonicalFanId('fa-eduarda')).toBe('fa-eduarda');
+    for (const [alias, rankId] of Object.entries(COMMENT_AUTHOR_ALIASES)) {
+      expect(canonicalFanId(alias)).toBe(rankId);
+    }
+  });
+
+  it('o bloqueio por um id vale para o outro, na completa e na fechada, e o fim da sessão desfaz', () => {
+    fixtureBlocks.add(canonicalFanId('fa-thalita'));
+    expect(buildFanProfileFixture('fa-rank-01').blockedByMe).toBe(true);
+    expect(buildFanProfileFixture('fa-thalita').blockedByMe).toBe(true);
+    fixtureBlocks.add('fa-rank-05');
+    expect(buildFanProfileFixture('fa-rank-05')).toMatchObject({
+      restricted: true,
+      blockedByMe: true,
+    });
+    resetFixtureSession();
+    expect(buildFanProfileFixture('fa-thalita').blockedByMe).toBe(false);
+    expect(buildFanProfileFixture('fa-rank-13').blockedByMe).toBe(true);
   });
 });

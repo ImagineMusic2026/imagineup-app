@@ -1,24 +1,21 @@
-import { blockFan, parseReportReason, reportComment, unblockFan } from '../../moderation';
+import { blockFan, readBlockedFans, reportComment, unblockFan } from '../../moderation';
 import { isContentId } from '../../page-cursor';
-import type { BlockFanResult, ReportCommentResult } from '../contract';
+import type { BlockedFansPage, BlockFanResult, ReportCommentResult } from '../contract';
 import { apiError } from '../errors';
 import type { ApiRoute, RouteInput } from '../types';
-import { fanParam } from './params';
+import { blocksQuery } from './paging';
+import { fanParam, reportReason } from './params';
 
 // Rotas da moderação mínima (bloco 6, provisória até a UP-48): denunciar o
 // comentário de outro fã e bloquear ou desbloquear um fã. Gravam no
 // runIdempotent, com o perfil exigido. docs/arquitetura-api.md, 21.2 e 21.8.
+// Desde as exigências das lojas (seção 29, 29.2), a lista de bloqueados, só
+// lendo; a denúncia de perfil mora em fans.ts.
 
 function commentParams(input: RouteInput): void {
   if (!isContentId(input.params.postId) || !isContentId(input.params.commentId)) {
     throw apiError('comment_not_found');
   }
-}
-
-function reasonOf(input: RouteInput) {
-  const reason = parseReportReason(input.body);
-  if (reason === undefined) throw apiError('invalid_request', { field: 'reason' });
-  return reason;
 }
 
 export const moderationRoutes: ApiRoute[] = [
@@ -28,7 +25,7 @@ export const moderationRoutes: ApiRoute[] = [
     writes: true,
     validate: (input) => {
       commentParams(input);
-      reasonOf(input);
+      reportReason(input);
     },
     async handle(ctx) {
       const commentId = ctx.params.commentId!;
@@ -37,10 +34,24 @@ export const moderationRoutes: ApiRoute[] = [
         award: ctx.award,
         postId: ctx.params.postId!,
         commentId,
-        reason: reasonOf(ctx),
+        reason: reportReason(ctx),
       });
       const body: ReportCommentResult = { commentId, status };
       return { body, plan };
+    },
+  },
+  {
+    // A lista para desbloquear (seção 29, decisão 8): só lê, sem chave e sem
+    // exigir o perfil (a conta só da equipe recebe a lista vazia) nem olhar a
+    // suspensão (desbloquear é livre). Do mais novo ao mais antigo.
+    method: 'GET',
+    pattern: '/me/blocks',
+    writes: false,
+    validate: (input) => {
+      blocksQuery(input);
+    },
+    async handle({ deps, uid, query, params, body }): Promise<BlockedFansPage> {
+      return readBlockedFans(deps.db, uid, blocksQuery({ query, params, body }));
     },
   },
   {
@@ -61,7 +72,7 @@ export const moderationRoutes: ApiRoute[] = [
     },
   },
   {
-    // Desbloquear: ainda sem tela no app (pergunta 8 de 21.16).
+    // Desbloquear: a tela "Fãs bloqueados" e o perfil público (seção 29).
     method: 'DELETE',
     pattern: '/me/blocks/:fanId',
     writes: true,

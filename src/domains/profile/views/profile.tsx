@@ -23,6 +23,7 @@ import { CentralRow, CentralRowsSkeleton } from '../components/central-row';
 import { PointsCard, PointsCardSkeleton } from '../components/points-card';
 import { ProfileHero } from '../components/profile-hero';
 import { FanStatsRow, FanStatsSkeleton } from '../components/stat-tile';
+import { SuspendedNotice } from '../components/suspended-notice';
 import { levelFraction } from '../describe-profile';
 import { useFanIdentity } from '../hooks/use-fan-identity';
 import { useLevelUp } from '../hooks/use-level-up';
@@ -316,6 +317,8 @@ export function ProfileScreen() {
         showsVerticalScrollIndicator={false}
       >
         <ProfileHeader />
+        {/* A conta suspensa: o aviso fixo no topo (seção 29, frente E). */}
+        <SuspendedNotice style={styles.suspended} />
         <ProfileHero
           uid={identity.uid}
           name={identity.name}
@@ -359,6 +362,9 @@ const styles = StyleSheet.create({
     height: layout.minTouchTarget,
     alignItems: 'flex-end',
     justifyContent: 'center',
+  },
+  suspended: {
+    marginTop: spacing.sm,
   },
   // 18 do título ao anel no protótipo, descontada a sobra da linha de 44.
   hero: {

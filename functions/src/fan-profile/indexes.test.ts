@@ -94,6 +94,20 @@ const COMPOSITE: CompositeShape[] = [
     queryScope: 'COLLECTION',
     fields: [asc('authorUid'), desc('lastReportedAt')],
   },
+  // Exigências das lojas (seção 29, 29.8): a fila das denúncias de perfil,
+  // separada da moderationQueue; a página do fã lê o item dele pelo id.
+  {
+    name: 'Moderação: os perfis denunciados abertos, da última denúncia, e o "Carregar mais"',
+    collectionGroup: 'profileReportQueue',
+    queryScope: 'COLLECTION',
+    fields: [asc('status'), desc('lastReportedAt')],
+  },
+  {
+    name: 'Moderação: os perfis denunciados resolvidos, do mais novo',
+    collectionGroup: 'profileReportQueue',
+    queryScope: 'COLLECTION',
+    fields: [asc('status'), desc('resolvedAt')],
+  },
   {
     name: 'Moderação: os comentários ocultos, do mais novo',
     collectionGroup: 'postComments',

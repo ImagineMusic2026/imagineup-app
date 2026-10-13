@@ -3,19 +3,23 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Stack } from 'expo-router';
 import { Tabs } from 'expo-router/js-tabs';
 import { act, fireEvent, renderRouter, screen, waitFor, within } from 'expo-router/testing-library';
-import { AccessibilityInfo, ScrollView, Text } from 'react-native';
+import { AccessibilityInfo, Alert, ScrollView, Text } from 'react-native';
 
 import AgendaRoute from '@/app/(tabs)/(explorar,ranking)/agenda';
 import ExploreRoute from '@/app/(tabs)/(explorar)/explorar';
+import { agendaKeys, agendaMutationKeys, registerAgendaMutationDefaults } from '@/domains/agenda';
 import { buildAgendaPageFixture, rsvpFixture } from '@/domains/agenda/fixtures';
 import type { AgendaListItem } from '@/domains/agenda/group-by-month';
 import type { AgendaPage } from '@/domains/agenda/types';
+import { buildArtistsFixture } from '@/domains/artists/fixtures';
 import { missionsFixture } from '@/domains/missions';
 import { t } from '@/i18n';
 import { api } from '@/services/api';
 import { ApiError } from '@/services/api/errors';
 import { fixtureWallet, setFixtureNow } from '@/services/fixtures';
 import { haptics } from '@/services/haptics';
+import { createQueryClient } from '@/services/query/client';
+import { resetRefusalAlerts } from '@/services/refusal-alert';
 
 // O build do Firebase que o Jest resolve é ESM; a presença invalida a carteira
 // do domínio de perfil, que lê o Firestore.
@@ -121,9 +125,15 @@ const listChip = (name: string) =>
 const FEATURED =
   'Show em destaque. 21 de outubro, São João de Irará, Netto Brito e Nenho, Irará, Bahia, 22 horas';
 
-/** A FlashList da 1m e os itens que ela mostra. */
+/**
+ * A FlashList da 1m e os itens que ela mostra. A vitrine da Explorar fica
+ * montada embaixo, com a lista dela: a da 1m é a do `testID`.
+ */
 function agendaList() {
-  const list = screen.UNSAFE_getByType(FlashList);
+  const list = screen
+    .UNSAFE_getAllByType(FlashList)
+    .find((node) => node.props.testID === 'agenda-list');
+  if (!list) throw new Error('a lista da agenda não está na tela');
   const items = list.props.data as AgendaListItem[];
   return {
     props: list.props,
@@ -169,13 +179,18 @@ const focused = () =>
       return props.accessibilityLabel ?? props.children;
     });
 
-/** A API responde a agenda pedida e as presenças vazias. */
+/**
+ * A API responde a agenda pedida e as presenças vazias, e a vitrine da
+ * Explorar, montada embaixo da 1m, recebe os artistas e as centrais do fã.
+ */
 function mockApi(agenda: (cursor: string | null) => Promise<AgendaPage>): void {
   mockDataSource = 'api';
   get.mockImplementation(async (url, config) => {
     const params = config?.params as { cursor?: string | null } | undefined;
     if (url === '/agenda') return { data: await agenda(params?.cursor ?? null) } as never;
     if (url === '/me/rsvps') return { data: { eventIds: [] } } as never;
+    if (url === '/artists') return { data: buildArtistsFixture() } as never;
+    if (url === '/me/centrals') return { data: [] } as never;
     throw new Error(`rota sem resposta no teste: ${url}`);
   });
 }
@@ -209,11 +224,10 @@ describe('agenda de shows (1m)', () => {
   it('abre pela Explorar, com o voltar na linha do título, e o voltar devolve à Explorar', async () => {
     const view = renderRouter(appTree, { initialUrl: '/explorar' });
 
-    fireEvent.press(screen.getByRole('button', { name: t('explore.agenda') }));
+    fireEvent.press(await screen.findByRole('button', { name: t('explore.seeAgenda') }));
     await waitFor(() => expect(view.getPathname()).toBe('/agenda'));
     expect(view.getSegments()).toEqual(['(tabs)', '(explorar)', 'agenda']);
     expect(screen.getByRole('header', { name: 'Agenda' })).toBeTruthy();
-    expect(screen.getByLabelText(t('agenda.loading'))).toBeTruthy();
     expect(await screen.findByLabelText(FEATURED)).toBeTruthy();
 
     fireEvent.press(screen.getByRole('button', { name: t('common.back') }));
@@ -445,5 +459,83 @@ describe('agenda de shows (1m)', () => {
       await screen.findByLabelText('13 de fevereiro, Carnaval do Nenho, Recife, Pernambuco'),
     ).toBeTruthy();
     expect(screen.queryByLabelText(t('agenda.moreError'))).toBeNull();
+  });
+});
+
+describe('o teto do dia do "Eu vou" com o cliente do app (seção 29, frente F)', () => {
+  const GO = 'Eu vou, São João de Irará';
+  const GOING = 'Confirmado, São João de Irará';
+  const DAILY_RSVP = 'Você chegou ao limite de presenças de hoje. Tente amanhã.';
+  const dailyLimit = () =>
+    new ApiError(
+      'dailyLimit',
+      'Tentativas demais por hoje.',
+      429,
+      'too_many_requests',
+      { limit: 20, action: 'rsvp' },
+      43_200_000,
+    );
+
+  // O hook anuncia pelo `announceForAccessibility` (o `announced()` do arquivo
+  // lê só o `announceForAccessibilityWithOptions`, o da tela).
+  const spoken = () =>
+    jest.mocked(AccessibilityInfo.announceForAccessibility).mock.calls.map(([text]) => text);
+
+  beforeEach(() => {
+    client = createQueryClient({ queries: { gcTime: Infinity }, mutations: { gcTime: Infinity } });
+    resetRefusalAlerts();
+    jest.spyOn(Alert, 'alert').mockImplementation(() => undefined);
+  });
+
+  it('abre o "Limite de hoje", um só para duas recusas, desfaz; a segunda anuncia a frase do teto', async () => {
+    const rsvp = jest.spyOn(rsvpFixture, 'set').mockImplementation(() => {
+      throw dailyLimit();
+    });
+    renderRouter(appTree, { initialUrl: '/agenda' });
+
+    fireEvent.press(await screen.findByRole('button', { name: GO }));
+    await waitFor(() => expect(Alert.alert).toHaveBeenCalledTimes(1));
+    expect(Alert.alert).toHaveBeenCalledWith('Limite de hoje', DAILY_RSVP, [
+      { text: 'Entendi', style: 'cancel' },
+    ]);
+    expect(spoken()).not.toContain(DAILY_RSVP);
+
+    // A segunda, com a trava de 30 s segurando o `Alert`, anuncia a frase do
+    // teto, que desmente o "Presença confirmada" do toque.
+    fireEvent.press(await screen.findByRole('button', { name: GO }));
+    await waitFor(() => expect(rsvp).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(client.isMutating()).toBe(0));
+    expect(Alert.alert).toHaveBeenCalledTimes(1);
+    expect(await screen.findByRole('button', { name: GO })).toBeTruthy();
+    expect(spoken().slice(-2)).toEqual([t('agenda.rsvp.confirmed'), DAILY_RSVP]);
+    expect(spoken()).not.toContain(t('agenda.rsvp.error'));
+  });
+
+  it('a presença restaurada do disco (só a default) recusada no teto desfaz o "Eu vou"', async () => {
+    registerAgendaMutationDefaults(client);
+    renderRouter(appTree, { initialUrl: '/agenda' });
+    await screen.findByRole('button', { name: GO });
+    // O cache que voltou do disco com a presença da fila: o show marcado.
+    act(() => {
+      client.setQueryData(agendaKeys.rsvps(), { eventIds: ['sao-joao-irara'] });
+    });
+    expect(await screen.findByRole('button', { name: GOING })).toBeTruthy();
+
+    jest.spyOn(rsvpFixture, 'set').mockImplementation(() => {
+      throw dailyLimit();
+    });
+    await act(async () => {
+      const restored = client.getMutationCache().build(client, {
+        mutationKey: agendaMutationKeys.rsvp,
+      });
+      await restored
+        .execute({ eventId: 'sao-joao-irara', going: true, idempotencyKey: 'rsvp-da-fila' })
+        .catch(() => undefined);
+    });
+
+    expect(await screen.findByRole('button', { name: GO })).toBeTruthy();
+    expect(Alert.alert).toHaveBeenCalledWith('Limite de hoje', DAILY_RSVP, [
+      { text: 'Entendi', style: 'cancel' },
+    ]);
   });
 });

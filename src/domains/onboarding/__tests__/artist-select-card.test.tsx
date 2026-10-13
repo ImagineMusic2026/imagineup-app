@@ -10,6 +10,22 @@ import { ArtistSelectCard } from '../components/artist-select-card';
 import { MoreArtistsCard } from '../components/more-artists-card';
 import { SearchArtistsCard } from '../components/search-artists-card';
 
+// O build do Firebase que o Jest resolve é ESM. O card não fala com ele, mas os
+// textos do card vêm do index do domínio de artistas, que chega à API.
+jest.mock('firebase/app', () => ({ FirebaseError: class FirebaseError extends Error {} }));
+jest.mock('firebase/auth', () => ({}));
+jest.mock('firebase/firestore', () => ({}));
+jest.mock('@/firebase', () => ({
+  getFirebaseAuth: () => ({}),
+  getDb: () => ({}),
+  isFirebaseConfigured: true,
+}));
+jest.mock('@/config/env', () => ({
+  firebaseEnv: null,
+  apiUrl: undefined,
+  firebaseEmulatorHost: undefined,
+}));
+
 const netto: Artist = {
   id: 'nettobrito',
   name: 'Netto Brito',

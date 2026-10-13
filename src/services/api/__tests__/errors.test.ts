@@ -1,6 +1,6 @@
 import { AxiosError, AxiosHeaders, type InternalAxiosRequestConfig } from 'axios';
 
-import { ApiError, toApiError } from '../errors';
+import { ApiError, isAccountSuspended, toApiError } from '../errors';
 
 // O erro da API como o app lê: o tipo pelo status, o código e, desde o perfil
 // novo (seção 28 de docs/arquitetura-api.md), o `details` do corpo.
@@ -71,5 +71,115 @@ describe('toApiError', () => {
     const error = new ApiError('timeout', 'prazo');
     expect(error.details).toBeNull();
     expect(toApiError(error)).toBe(error);
+  });
+});
+
+// Os dois 429 (seção 29, frente F): o ritmo tenta de novo, o teto do dia nunca.
+function limitedError(status: number, data: unknown, headers: Record<string, string>): AxiosError {
+  return new AxiosError(
+    `Request failed with status code ${status}`,
+    'ERR_BAD_REQUEST',
+    config,
+    null,
+    { data, status, statusText: '', headers, config },
+  );
+}
+
+describe('toApiError: o 429 e o Retry-After', () => {
+  it('o rate_limited é o ritmo, com o Retry-After em ms', () => {
+    const error = toApiError(
+      limitedError(
+        429,
+        { code: 'rate_limited', message: 'Muitos pedidos.' },
+        { 'retry-after': '3' },
+      ),
+    );
+    expect(error.kind).toBe('rateLimited');
+    expect(error.isRateLimited).toBe(true);
+    expect(error.isDailyLimit).toBe(false);
+    expect(error.retryAfterMs).toBe(3000);
+    expect(error.code).toBe('rate_limited');
+  });
+
+  it('o 429 sem corpo JSON (a cota do Cloud Run) também é o ritmo', () => {
+    const html = toApiError(limitedError(429, '<html>Rate exceeded.</html>', {}));
+    expect(html.kind).toBe('rateLimited');
+    expect(html.code).toBeNull();
+    expect(html.retryAfterMs).toBeNull();
+    const empty = toApiError(limitedError(429, undefined, { 'retry-after': '1' }));
+    expect(empty.kind).toBe('rateLimited');
+    expect(empty.retryAfterMs).toBe(1000);
+  });
+
+  it('o too_many_requests é o teto do dia, com o Retry-After até a meia-noite', () => {
+    const error = toApiError(
+      limitedError(
+        429,
+        { code: 'too_many_requests', details: { limit: 30, action: 'like' } },
+        { 'retry-after': '43200' },
+      ),
+    );
+    expect(error.kind).toBe('dailyLimit');
+    expect(error.isDailyLimit).toBe(true);
+    expect(error.isRateLimited).toBe(false);
+    expect(error.retryAfterMs).toBe(43_200_000);
+    expect(error.details).toEqual({ limit: 30, action: 'like' });
+  });
+
+  it.each([
+    ['data HTTP', 'Wed, 21 Oct 2026 07:28:00 GMT'],
+    ['fração', '1.5'],
+    ['negativo', '-1'],
+    ['vazio', ''],
+    ['texto', 'logo'],
+  ])('o Retry-After fora do formato (%s) vira null', (_, value) => {
+    const error = toApiError(limitedError(429, { code: 'rate_limited' }, { 'retry-after': value }));
+    expect(error.retryAfterMs).toBeNull();
+  });
+
+  it('lê o Retry-After dos AxiosHeaders e do 503', () => {
+    const headers = new AxiosHeaders({ 'Retry-After': '1' });
+    const error = toApiError(
+      new AxiosError('x', 'ERR_BAD_RESPONSE', config, null, {
+        data: { code: 'unavailable' },
+        status: 503,
+        statusText: '',
+        headers,
+        config,
+      }),
+    );
+    expect(error.kind).toBe('server');
+    expect(error.retryAfterMs).toBe(1000);
+  });
+
+  it('o isRetryable continua sendo só o resultado incerto: nem o ritmo nem o teto entram', () => {
+    expect(new ApiError('network', 'x').isRetryable).toBe(true);
+    expect(new ApiError('timeout', 'x').isRetryable).toBe(true);
+    expect(new ApiError('server', 'x', 503).isRetryable).toBe(true);
+    expect(new ApiError('rateLimited', 'x', 429, 'rate_limited').isRetryable).toBe(false);
+    expect(new ApiError('dailyLimit', 'x', 429, 'too_many_requests').isRetryable).toBe(false);
+    expect(new ApiError('forbidden', 'x', 403, 'account_suspended').isRetryable).toBe(false);
+    expect(new ApiError('validation', 'x', 400).isRetryable).toBe(false);
+    expect(new ApiError('unknown', 'x').isRetryable).toBe(false);
+  });
+
+  it('o ApiError criado à mão fica sem Retry-After', () => {
+    expect(new ApiError('rateLimited', 'x', 429).retryAfterMs).toBeNull();
+  });
+});
+
+describe('isAccountSuspended', () => {
+  it('só o 403 account_suspended da API', () => {
+    expect(
+      isAccountSuspended(
+        toApiError(responseError(403, { code: 'account_suspended', message: 'Suspensa.' })),
+      ),
+    ).toBe(true);
+    expect(isAccountSuspended(new ApiError('forbidden', 'x', 403, 'not_fan'))).toBe(false);
+    expect(isAccountSuspended(new ApiError('forbidden', 'x', 403, null))).toBe(false);
+    expect(isAccountSuspended(new ApiError('validation', 'x', 400, 'account_suspended'))).toBe(
+      false,
+    );
+    expect(isAccountSuspended(new Error('account_suspended'))).toBe(false);
   });
 });

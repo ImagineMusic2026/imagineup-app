@@ -19,10 +19,12 @@ import {
 import { seedCamilaInvite } from '../src/invites';
 import { SEED_SEASON_GOAL, seedGoalReached, seedMissionsCatalog } from '../src/missions';
 import {
+  runResolveProfileReport,
   SEED_HIDDEN_SPAM_COMMENT,
   SEED_SPAM_COMMENTS,
   SEED_SUSPENSION_NOTE,
   seedModeration,
+  seedProfileModeration,
   seedSuspension,
 } from '../src/moderation';
 import { seedCamilaWallet } from '../src/points';
@@ -67,7 +69,9 @@ import { localApi, signIn, useEmulators } from './support';
  * passar pelo gatilho de cadastro; os claims e as visitas do convite, que só
  * gravam no dia de hoje, ficam com os testes do bloco 5 e do bloco 7. Desde o
  * perfil novo (28.10), também os detalhes da tabela (bio, gênero, conta
- * privada e redes), no fim, antes dos números, como o script.
+ * privada e redes), no fim, antes dos números, como o script. Desde as
+ * exigências das lojas (29.10), logo depois deles, o bloqueio da Camila e a
+ * denúncia de perfil da Bia contra o Promo.
  */
 const env = useEmulators('painel-seed', ['api', 'createUserProfile']);
 const { db, bucket } = env;
@@ -170,6 +174,8 @@ async function seed(ranking: Map<string, string>): Promise<void> {
       now: T0,
     });
   }
+  // As exigências das lojas (29.10), depois dos detalhes do perfil.
+  await seedProfileModeration(db, (email) => uidOf(ranking, email), T0);
   await seedPanelStats(db, T0);
   await seedPanelClose(db, T0, quiet);
 }
@@ -185,6 +191,9 @@ async function dump(): Promise<Record<string, [string, DocumentData][]>> {
     'statsMeta',
     'moderationQueue',
     'commentReports',
+    'profileReportQueue',
+    'profileReports',
+    'blockLists',
     'redemptions',
     'wallets',
     'config',
@@ -260,6 +269,27 @@ describe('o seed das telas do painel (26.13)', () => {
       reportCount: 2,
       reasons: { spam: 2 },
     });
+
+    // As exigências das lojas (29.10): a Camila bloqueia o rank-13, e a Bia
+    // denuncia o perfil do Promo (o item aberto na fila separada; a fila de
+    // comentários segue com os três abertos).
+    expect(await read('blockLists/camila')).toMatchObject({ blocked: ['rank13'] });
+    expect(await read('profileReportQueue/spam')).toMatchObject({
+      uid: 'spam',
+      status: 'open',
+      resolution: null,
+      round: 1,
+      reportCount: 1,
+      reasons: { spam: 1, offensive: 0, harassment: 0, other: 0, none: 0 },
+      resolvedDigest: null,
+    });
+    expect(await read('profileReports/spam_bia')).toMatchObject({
+      targetUid: 'spam',
+      reporterUid: 'bia',
+      reason: 'spam',
+      round: 1,
+    });
+    expect((await db.collection('profileReportQueue').get()).size).toBe(1);
 
     // A suspensão: o perfil, e a api recusa o que grava e responde ao que lê.
     expect(await read('users/rank48')).toMatchObject({
@@ -440,5 +470,26 @@ describe('o seed das telas do painel (26.13)', () => {
     const before = await dump();
     await seed(ranking);
     expect(await dump()).toEqual(before);
+
+    // Resolvido o item no painel local e apagada a bio do Promo depois, o seed
+    // não reabre: a denúncia só vai sem o item (sem a trava, a Bia reabriria,
+    // porque o perfil mudou desde a resolução). Só o passo da denúncia: o seed
+    // inteiro gravaria a bio de novo antes dele.
+    await runResolveProfileReport(
+      db,
+      { uid: 'spam', resolution: 'kept', round: 1 },
+      { actor: ACTOR, now: T0 },
+    );
+    await db.doc('users/spam').update({ bio: null });
+    expect(await seedProfileModeration(db, (email) => uidOf(ranking, email), T0)).toEqual({
+      blocks: 0,
+      reports: 0,
+    });
+    expect(await read('profileReportQueue/spam')).toMatchObject({
+      status: 'resolved',
+      resolution: 'kept',
+      round: 1,
+      reportCount: 1,
+    });
   }, 600_000);
 });

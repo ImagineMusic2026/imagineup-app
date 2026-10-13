@@ -8,11 +8,14 @@ import { ChipGroup, type ChipItem } from '@/components/chip';
 import { BackButton } from '@/components/header';
 import { SheetGrabber } from '@/components/sheet-grabber';
 import { Text } from '@/components/text';
+import { SuspensionContact } from '@/domains/profile';
 import { useIsOnline } from '@/hooks/use-is-online';
 import { useStayOnScreen } from '@/hooks/use-stay-on-screen';
-import { t } from '@/i18n';
+import { t, type TranslationKey } from '@/i18n';
+import { actionRefusal, type RefusalAction } from '@/services/api/refusal';
 import { haptics } from '@/services/haptics';
 import { colors, spacing } from '@/theme';
+import { nameBeforePeriod } from '@/utils/text';
 
 import { useBlockFanMutation, useCachedComment, useReportCommentMutation } from '../queries';
 import type { CommentReportReason } from '../types';
@@ -32,8 +35,11 @@ const REASON_ITEMS: readonly ChipItem<ReasonChoice>[] = REASONS.map((value) => (
   label: t(`post.moderation.reasons.${value}`),
 }));
 
-/** Qual pedido falhou por último: o aviso acima dos botões diz o dele. */
-type Failure = 'report' | 'block' | null;
+/**
+ * O pedido que falhou por último: o aviso acima dos botões diz a frase dele
+ * (`actionRefusal`), com o link "Escrever para a equipe" na conta suspensa.
+ */
+type Failure = { key: TranslationKey; contact: boolean } | null;
 
 /**
  * Sheet "Opções do comentário" (moderação provisória, UP-48): abre pelo botão
@@ -47,10 +53,15 @@ type Failure = 'report' | 'block' | null;
  *
  * Não é otimista: o botão tocado fica "carregando" até o servidor responder,
  * os dois ficam desligados sem internet e enquanto um pedido vai, e o voltar
- * fica preso (`useStayOnScreen`). Sucesso: fecha e anuncia, com o toque de
- * sucesso. Erro: fica, com o aviso acima dos botões, anunciado, e o toque de
- * erro. A resposta que chega com a sheet fechada só anuncia (os hooks
- * conferem se ela está montada).
+ * fica preso (`useStayOnScreen`). A denúncia que dá certo fecha e anuncia,
+ * com o toque de sucesso. O bloqueio que dá certo não fecha (seção 29,
+ * decisão 13): o bloqueio não chega à equipe, e o botão "Bloquear" dá lugar à
+ * frase que diz isso, anunciada, com "Denunciar comentário" ainda à mão (o
+ * comentário fica na sheet, lido na abertura); o "×" fecha. Erro: fica, com o
+ * aviso acima dos botões, anunciado, e o toque de erro: a frase da recusa (o
+ * teto do dia, o ritmo, o 404, a conta suspensa com o link "Escrever para a
+ * equipe", seção 29) ou a genérica. A resposta que chega com a sheet fechada
+ * só anuncia (os hooks conferem se ela está montada).
  */
 export function CommentOptionsSheetScreen() {
   const params = useLocalSearchParams<{ comentarioId: string; post: string }>();
@@ -62,12 +73,18 @@ export function CommentOptionsSheetScreen() {
   const [standalone] = useState(() => !router.canGoBack());
   const [reason, setReason] = useState<ReasonChoice>('none');
   const [failure, setFailure] = useState<Failure>(null);
+  const [blocked, setBlocked] = useState(false);
   const name = comment?.authorName ?? '';
+  // "Você bloqueou Thalita S." sem dois pontos.
+  const blockedInvite = t('post.moderation.blockedReportInvite', {
+    name: nameBeforePeriod(name),
+  });
 
-  const fail = (which: Exclude<Failure, null>, message: string) => {
-    setFailure(which);
+  const fail = (error: unknown, action: RefusalAction) => {
+    const refusal = actionRefusal(error, action);
+    setFailure({ key: refusal.key, contact: refusal.type === 'suspended' });
     haptics.trigger('error');
-    AccessibilityInfo.announceForAccessibility(message);
+    AccessibilityInfo.announceForAccessibility(t(refusal.key));
   };
 
   const report = useReportCommentMutation(postId, commentId, {
@@ -76,15 +93,15 @@ export function CommentOptionsSheetScreen() {
       closeSheet();
       AccessibilityInfo.announceForAccessibility(t('post.moderation.reported'));
     },
-    onError: () => fail('report', t('post.moderation.reportError')),
+    onError: (error) => fail(error, 'report'),
   });
   const block = useBlockFanMutation(comment?.authorId ?? '', {
     onDone: () => {
       haptics.trigger('success');
-      closeSheet();
-      AccessibilityInfo.announceForAccessibility(t('post.moderation.blocked', { name }));
+      setBlocked(true);
+      AccessibilityInfo.announceForAccessibility(blockedInvite);
     },
-    onError: () => fail('block', t('post.moderation.blockError')),
+    onError: (error) => fail(error, 'block'),
   });
   const busy = report.isPending || block.isPending;
   useStayOnScreen(busy);
@@ -95,13 +112,6 @@ export function CommentOptionsSheetScreen() {
   }, [comment]);
 
   if (!comment) return null;
-
-  const error =
-    failure === 'report'
-      ? t('post.moderation.reportError')
-      : failure === 'block'
-        ? t('post.moderation.blockError')
-        : null;
 
   return (
     <View style={styles.root}>
@@ -133,10 +143,13 @@ export function CommentOptionsSheetScreen() {
           {t('post.moderation.blockBody', { name })}
         </Text>
         <View style={styles.actions}>
-          {error ? (
-            <Text variant="caption" color={colors.danger} style={styles.error}>
-              {error}
-            </Text>
+          {failure ? (
+            <View>
+              <Text variant="caption" color={colors.danger} style={styles.error}>
+                {t(failure.key)}
+              </Text>
+              {failure.contact ? <SuspensionContact align="center" /> : null}
+            </View>
           ) : null}
           <Button
             label={t('post.moderation.report')}
@@ -149,18 +162,29 @@ export function CommentOptionsSheetScreen() {
             haptic="confirm"
             testID="comment-report"
           />
-          <Button
-            label={t('post.moderation.block', { name })}
-            variant="secondary"
-            onPress={() => {
-              setFailure(null);
-              block.block();
-            }}
-            loading={block.isPending}
-            disabled={!online || busy || !comment.authorId}
-            haptic="confirm"
-            testID="comment-block"
-          />
+          {blocked ? (
+            <Text
+              variant="body"
+              color={colors.textSecondary}
+              style={styles.blocked}
+              testID="comment-blocked"
+            >
+              {blockedInvite}
+            </Text>
+          ) : (
+            <Button
+              label={t('post.moderation.block', { name })}
+              variant="secondary"
+              onPress={() => {
+                setFailure(null);
+                block.block();
+              }}
+              loading={block.isPending}
+              disabled={!online || busy || !comment.authorId}
+              haptic="confirm"
+              testID="comment-block"
+            />
+          )}
         </View>
       </View>
     </View>
@@ -203,6 +227,10 @@ const styles = StyleSheet.create({
     gap: spacing.listGap,
   },
   error: {
+    textAlign: 'center',
+  },
+  // A frase fica no lugar do botão: a altura da sheet muda pouco.
+  blocked: {
     textAlign: 'center',
   },
 });

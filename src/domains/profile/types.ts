@@ -1,6 +1,9 @@
 /** O gênero do fã: só ele e a equipe veem. Sem escolha (`null`), "Não informado". */
 export type Gender = 'woman' | 'man' | 'nonbinary' | 'undisclosed';
 
+/** O motivo da suspensão (o `REPORT_REASONS` do servidor). */
+export type SuspensionReason = 'spam' | 'offensive' | 'harassment' | 'other';
+
 /** As redes sociais do perfil, na ordem da tela, das respostas e do mapa gravado. */
 export type SocialNetwork = 'instagram' | 'tiktok' | 'linkedin' | 'x';
 
@@ -40,6 +43,11 @@ export interface FanProfile {
    * nem cria nada pela API (403 `account_suspended`).
    */
   suspendedAt?: string | null;
+  /**
+   * O motivo da suspensão que a equipe escolheu (`SUSPENSION_REASONS` do
+   * servidor), só com `suspendedAt`; fora dos quatro, `null` (29.11, frente E).
+   */
+  suspensionReason?: SuspensionReason | null;
   // Os campos do perfil novo (seção 28) são opcionais: o perfil salvo no disco
   // antes dele não os tem, e o `QUERY_CACHE_VERSION` não sobe. O ausente vale
   // o padrão (null, `false`).
@@ -103,6 +111,13 @@ export interface FanPublicProfile {
   restricted: boolean;
   bio: string | null;
   socials: FanSocials | null;
+  /**
+   * Quem vê bloqueou este fã (seção 29, decisão 7): a tela mostra
+   * "Desbloquear" no lugar de "Bloquear". Depende só de quem pede, e nunca
+   * conta nada ao bloqueado. Opcional: a `api` de antes não manda, e vale
+   * `false`.
+   */
+  blockedByMe?: boolean;
 }
 
 /**

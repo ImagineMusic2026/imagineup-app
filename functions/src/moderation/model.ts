@@ -114,20 +114,27 @@ export function dailyCapProblem(
 }
 
 export type ModerationErrorReason =
-  'comment_not_found' | 'fan_not_found' | 'own_comment' | 'self' | 'block_list_full';
+  | 'comment_not_found'
+  | 'fan_not_found'
+  | 'own_comment'
+  | 'own_profile'
+  | 'self'
+  | 'block_list_full';
 
 const MODERATION_MESSAGES: Record<ModerationErrorReason, string> = {
   comment_not_found: 'Comentário não encontrado.',
   fan_not_found: 'Fã não encontrado.',
   own_comment: 'O próprio comentário não se denuncia.',
+  own_profile: 'O próprio perfil não se denuncia.',
   self: 'Não dá para bloquear a própria conta.',
   block_list_full: 'Você chegou ao limite de fãs bloqueados.',
 };
 
 /**
  * Recusa da moderação. A API traduz `comment_not_found` e `fan_not_found`
- * para os 404, `block_list_full` para o 409, e `own_comment` e `self` para o
- * 400 `invalid_request` com `details.reason`.
+ * para os 404, `block_list_full` para o 409, e `own_comment`, `own_profile`
+ * (a denúncia de perfil, seção 29) e `self` para o 400 `invalid_request` com
+ * `details.reason`.
  */
 export class ModerationError extends Error {
   readonly reason: ModerationErrorReason;
@@ -167,6 +174,15 @@ export function reportId(commentId: string, reporterUid: string): string {
   return `${commentId}_${reporterUid}`;
 }
 
+/**
+ * Id da denúncia de perfil (seção 29, 29.3): uma por alvo e fã, regravada a
+ * cada rodada do item. O `_` separa os dois uids sem ambiguidade (uid não tem
+ * `_`).
+ */
+export function profileReportId(targetUid: string, reporterUid: string): string {
+  return `${targetUid}_${reporterUid}`;
+}
+
 /** A lista de bloqueios lida (só uids no formato), sem repetir. */
 export function blockedOf(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
@@ -197,4 +213,57 @@ export function reasonsOf(value: unknown): ReasonCounts {
     counts[key] = typeof n === 'number' && Number.isFinite(n) && n > 0 ? Math.floor(n) : 0;
   }
   return counts;
+}
+
+// --- A lista de bloqueados (GET /me/blocks, seção 29, decisão 8) ------------------
+
+/** Fãs por página da lista de bloqueados (o teto do `limit` de 27.2). */
+export const BLOCKED_PAGE_MAX = 20;
+
+/**
+ * O cursor da lista de bloqueados: o índice do último fã visto, contado na
+ * ordem da inclusão (do mais antigo, 0), e o uid dele. A lista não guarda a
+ * data de cada bloqueio, então o cursor é pela posição, com o uid para achar
+ * a posição de novo quando a lista mudou.
+ */
+export type BlockCursor = { index: number; uid: string };
+
+const BLOCK_CURSOR_PATTERN = /^(0|[1-9]\d{0,2}):([A-Za-z0-9]{1,128})$/;
+
+/** `<índice>:<uid>`, com o índice de 0 a 999 e o uid no formato; senão null (400 na rota). */
+export function parseBlockCursor(text: string): BlockCursor | null {
+  const match = BLOCK_CURSOR_PATTERN.exec(text);
+  if (!match) return null;
+  const index = Number(match[1]);
+  if (index >= BLOCK_LIST_MAX) return null;
+  return { index, uid: match[2]! };
+}
+
+export function formatBlockCursor(cursor: BlockCursor): string {
+  return `${cursor.index}:${cursor.uid}`;
+}
+
+/**
+ * Uma página da lista de bloqueados (puro), do mais novo ao mais antigo. Sem
+ * cursor, o fim da lista; com cursor, os fãs de índice menor que o dele: o
+ * índice do uid, se ele ainda está na lista, ou o guardado (limitado ao
+ * tamanho), se ele saiu. Assim, desbloquear na própria tela (só fãs já vistos,
+ * de índice igual ou maior) e bloquear em outro aparelho (entra no fim) não
+ * mudam o índice de quem falta ver. O próximo cursor é o do último da página,
+ * ou null quando a página chega ao índice 0.
+ */
+export function blockedPage(
+  list: readonly string[],
+  cursor: BlockCursor | null,
+  limit: number,
+): { uids: string[]; next: BlockCursor | null } {
+  let end = list.length;
+  if (cursor) {
+    const found = list.indexOf(cursor.uid);
+    end = found >= 0 ? found : Math.min(cursor.index, list.length);
+  }
+  const start = Math.max(0, end - limit);
+  const uids = list.slice(start, end).reverse();
+  const next = start > 0 && uids.length > 0 ? { index: start, uid: list[start]! } : null;
+  return { uids, next };
 }

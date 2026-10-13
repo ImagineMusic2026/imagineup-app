@@ -1023,8 +1023,22 @@ describe('Editar perfil: as recusas', () => {
     expect(announced()).toContain(text);
   });
 
-  it('o resto (o ritmo da API) diz que não deu para salvar', async () => {
-    put.mockRejectedValueOnce(new ApiError('unknown', 'ritmo', 429, 'rate_limited'));
+  it('o ritmo da API (pedidos seguidos demais) tem a frase própria embaixo do header', async () => {
+    put.mockRejectedValueOnce(
+      new ApiError('rateLimited', 'ritmo', 429, 'rate_limited', null, 3000),
+    );
+    await openEditProfile();
+    fireEvent.changeText(bioInput(), 'Salvador.');
+    fireEvent.press(saveButton());
+    const text = 'Muitos pedidos seguidos. Espere alguns segundos e tente de novo.';
+    expect(await screen.findByTestId('edit-profile-message')).toHaveTextContent(text);
+    expect(announced()).toContain(text);
+    // A recusa do ✓ não tenta sozinha: o fã toca de novo.
+    expect(put).toHaveBeenCalledTimes(1);
+  });
+
+  it('o resto da recusa diz que não deu para salvar', async () => {
+    put.mockRejectedValueOnce(new ApiError('validation', 'outra', 400, 'invalid_request'));
     await openEditProfile();
     fireEvent.changeText(bioInput(), 'Salvador.');
     fireEvent.press(saveButton());
@@ -1366,7 +1380,7 @@ describe('Editar perfil: a foto (com a API)', () => {
   });
 
   it('o teto do dia das vagas: diz que trocou muitas vezes e não envia', async () => {
-    post.mockRejectedValue(new ApiError('unknown', 'teto', 429, 'too_many_requests'));
+    post.mockRejectedValue(new ApiError('dailyLimit', 'teto', 429, 'too_many_requests'));
     await openEditProfile();
     pickFromGallery();
     const text = 'Você trocou a foto muitas vezes hoje. Tente amanhã.';
@@ -1375,13 +1389,13 @@ describe('Editar perfil: a foto (com a API)', () => {
     expect(put).not.toHaveBeenCalled();
   });
 
-  it('pedidos seguidos demais (rate_limited) ficam com o aviso genérico', async () => {
-    post.mockRejectedValue(new ApiError('unknown', 'ritmo', 429, 'rate_limited'));
+  it('pedidos seguidos demais (rate_limited) dizem a frase do ritmo', async () => {
+    post.mockRejectedValue(new ApiError('rateLimited', 'ritmo', 429, 'rate_limited', null, 2000));
     await openEditProfile();
     pickFromGallery();
-    await waitFor(() =>
-      expect(announced()).toContain('Não deu para trocar a foto. Tente de novo.'),
-    );
+    const text = 'Muitos pedidos seguidos. Espere alguns segundos e tente de novo.';
+    expect(await screen.findByText(text)).toBeTruthy();
+    expect(announced()).toContain(text);
     expect(uploadLocalFile).not.toHaveBeenCalled();
   });
 

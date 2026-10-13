@@ -1,3 +1,3 @@
-import { SettingsScreen } from '@/domains/profile';
+import { SettingsScreen } from '@/domains/settings';
 
 export default SettingsScreen;

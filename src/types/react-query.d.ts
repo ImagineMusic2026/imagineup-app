@@ -14,5 +14,14 @@ declare module '@tanstack/react-query' {
        */
       realData?: boolean;
     };
+    mutationMeta: {
+      /**
+       * `false` na mutação cuja tela mostra a frase da conta suspensa (o
+       * comentário, as denúncias, o resgate, o perfil, a foto, o link do
+       * convite): o 403 `account_suspended` não abre o `Alert` "Conta
+       * suspensa", um canal só por recusa (29.1, decisão 19).
+       */
+      suspendedAlert?: boolean;
+    };
   }
 }

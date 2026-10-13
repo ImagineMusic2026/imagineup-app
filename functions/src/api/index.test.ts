@@ -29,6 +29,9 @@ const emptyDb = {
     }),
     where: () => zeroCount,
   }),
+  // O perfil público lê o alvo e a lista de quem pede num getAll (seção 29).
+  getAll: async (...refs: unknown[]) =>
+    refs.map(() => ({ exists: false, data: () => undefined, get: () => undefined })),
 } as unknown as Firestore;
 
 // Firestore que lança na primeira leitura (e não tem transação): a rota que
@@ -586,6 +589,12 @@ describe('mural, agenda e moderação (bloco 6)', () => {
       400,
       { code: 'invalid_request', message: 'Pedido inválido.', details: { reason: 'self' } },
     ],
+    // A denúncia de perfil (seção 29): o próprio perfil.
+    [
+      new ModerationError('own_profile'),
+      400,
+      { code: 'invalid_request', message: 'Pedido inválido.', details: { reason: 'own_profile' } },
+    ],
   ])('%s vira o código combinado', async (error, status, body) => {
     const sent = await call(request('GET', '/teste/bloco6'), thrower(error));
     expect(sent.status).toBe(status);
@@ -692,6 +701,88 @@ describe('mural, agenda e moderação (bloco 6)', () => {
       expect(sent.status).toBe(400);
       expect(sent.body).toMatchObject({ code: 'idempotency_key_required' });
     }
+  });
+});
+
+describe('denúncia de perfil e lista de bloqueados (seção 29)', () => {
+  /** O handler com o Firestore que lança na primeira leitura: a resposta veio sem ler. */
+  async function withoutReads(req: ApiRequest) {
+    const handler = createApiHandler({
+      db: noReads,
+      auth,
+      now: () => NOW,
+      random: () => 0,
+      config: staticConfigSource(),
+    });
+    const { res, sent } = response();
+    await handler(req, res);
+    return sent;
+  }
+
+  const key = { 'Idempotency-Key': 'chave-denuncia-perfil-1' };
+
+  it('POST /fans/:fanId/report com o id fora do formato: 404 fan_not_found, sem ler nada', async () => {
+    for (const fanId of ['fa-rank-01', 'a'.repeat(129), 'uid%20com%20espaco']) {
+      const sent = await withoutReads(
+        request('POST', `/fans/${fanId}/report`, { headers: key, body: { reason: 'spam' } }),
+      );
+      expect(sent.status, fanId).toBe(404);
+      expect(sent.body).toEqual({ code: 'fan_not_found', message: 'Fã não encontrado.' });
+    }
+    expect(logger.error).not.toHaveBeenCalled();
+  });
+
+  it('POST /fans/:fanId/report com o motivo fora da lista: 400 com o campo, sem ler nada', async () => {
+    for (const body of [{ reason: 'chato' }, { reason: 1 }, 'spam', []]) {
+      const sent = await withoutReads(
+        request('POST', '/fans/uidPromo/report', { headers: key, body }),
+      );
+      expect(sent.status).toBe(400);
+      expect(sent.body).toMatchObject({ code: 'invalid_request', details: { field: 'reason' } });
+    }
+  });
+
+  it('POST /fans/:fanId/report exige a Idempotency-Key, antes de ler', async () => {
+    const sent = await withoutReads(
+      request('POST', '/fans/uidPromo/report', { body: { reason: 'spam' } }),
+    );
+    expect(sent.status).toBe(400);
+    expect(sent.body).toMatchObject({ code: 'idempotency_key_required' });
+  });
+
+  it('GET /me/blocks com o cursor e o limit fora do formato: 400 com o campo, sem ler nada', async () => {
+    for (const [query, field] of [
+      [{ limit: '0' }, 'limit'],
+      [{ limit: '21' }, 'limit'],
+      [{ limit: 'dez' }, 'limit'],
+      [{ cursor: 'uidEnzo' }, 'cursor'],
+      [{ cursor: '1000:uidEnzo' }, 'cursor'],
+      [{ cursor: '-1:uidEnzo' }, 'cursor'],
+      [{ cursor: '3:uid-com-hifen' }, 'cursor'],
+      // O cursor das outras listas não vale aqui.
+      [{ cursor: Buffer.from('[1,"p-1"]').toString('base64url') }, 'cursor'],
+    ] as const) {
+      const sent = await withoutReads(request('GET', '/me/blocks', { query }));
+      expect(sent.status).toBe(400);
+      expect(sent.body).toMatchObject({ code: 'invalid_request', details: { field } });
+    }
+  });
+
+  it('GET /me/blocks só lê: sem chave; sem lista, a página vazia', async () => {
+    const sent = await call(request('GET', '/me/blocks'));
+    expect(sent).toMatchObject({ status: 200, body: { items: [], nextCursor: null } });
+  });
+
+  it('a denúncia de perfil grava e não aceita o suspenso; a lista de bloqueados só lê', () => {
+    const report = API_ROUTES.find(
+      (route) => route.method === 'POST' && route.pattern === '/fans/:fanId/report',
+    );
+    expect(report).toMatchObject({ writes: true });
+    expect(report && 'allowSuspended' in report).toBe(false);
+    const list = API_ROUTES.find(
+      (route) => route.method === 'GET' && route.pattern === '/me/blocks',
+    );
+    expect(list).toMatchObject({ writes: false });
   });
 });
 

@@ -1,13 +1,20 @@
 import { missionsFixture } from '@/domains/missions';
 import { buildMissionsFixture } from '@/domains/missions/fixtures';
-import { fixtureWallet, resetFixtureSession, setFixtureNow } from '@/services/fixtures';
+import {
+  fixtureBlocks,
+  fixtureWallet,
+  resetFixtureSession,
+  setFixtureNow,
+} from '@/services/fixtures';
 
 import { addComment, fetchComments, fetchPost, setPostLike } from '../api';
 import {
+  BLOCKED_PAGE_SIZE,
   buildCommentsPageFixture,
   buildPostsFixture,
   COMMENT_POINTS,
   COMMENTS_PAGE_SIZE,
+  moderationFixture,
   postsFixture,
 } from '../fixtures';
 import type { CommentAuthor, PostComment } from '../types';
@@ -205,5 +212,114 @@ describe('curtir nas fixtures', () => {
       expect(likeMission()).toMatchObject({ status: 'completed', progress: { current: 5 } });
       expect(fixtureWallet.get().balance).toBe(before + 10);
     });
+  });
+});
+
+describe('bloqueio e denúncia de perfil nas fixtures (seção 29, 29.10)', () => {
+  beforeEach(() => resetFixtureSession());
+
+  /** Os autores de todos os comentários do clipe, página a página. */
+  function clipAuthors(): string[] {
+    const authors: string[] = [];
+    let cursor: string | null = null;
+    do {
+      const page = buildCommentsPageFixture(NOW, 'p-clipe', cursor);
+      authors.push(...page.items.map((comment) => comment.authorId));
+      cursor = page.nextCursor;
+    } while (cursor !== null);
+    return authors;
+  }
+
+  it('a fa-rank-13 começa bloqueada e não comenta: a lista do clipe sai inteira', () => {
+    expect(fixtureBlocks.list()).toEqual(['fa-rank-13']);
+    const authors = clipAuthors();
+    expect(authors).toHaveLength(327);
+    expect(authors).not.toContain('fa-rank-13');
+  });
+
+  it('bloquear a fa-rank-01 pelo ranking esconde os comentários de fa-thalita, e o contrário', () => {
+    moderationFixture.block('fa-rank-01', 'bloq-1');
+    expect(clipAuthors()).not.toContain('fa-thalita');
+    moderationFixture.unblock('fa-thalita', 'desbloq-1');
+    expect(clipAuthors()).toContain('fa-thalita');
+
+    moderationFixture.block('fa-thalita', 'bloq-2');
+    expect(fixtureBlocks.list()).toEqual(['fa-rank-13', 'fa-rank-01']);
+    expect(clipAuthors()).not.toContain('fa-thalita');
+  });
+
+  it('desbloquear quem não está na lista é sucesso sem efeito; a mesma chave repete a resposta', () => {
+    expect(moderationFixture.unblock('fa-rank-04', 'k1')).toEqual({
+      fanId: 'fa-rank-04',
+      blocked: false,
+    });
+    expect(fixtureBlocks.list()).toEqual(['fa-rank-13']);
+    expect(moderationFixture.block('fa-rank-04', 'k2')).toEqual({
+      fanId: 'fa-rank-04',
+      blocked: true,
+    });
+    expect(moderationFixture.block('fa-rank-04', 'k2')).toEqual({
+      fanId: 'fa-rank-04',
+      blocked: true,
+    });
+    expect(fixtureBlocks.list()).toEqual(['fa-rank-13', 'fa-rank-04']);
+  });
+
+  it('a denúncia de perfil: reported, already_reported na segunda vez da mesma pessoa por outro id, e 404 como a API', () => {
+    expect(moderationFixture.reportFan('fa-thalita', 'spam', 'r1')).toEqual({
+      fanId: 'fa-thalita',
+      status: 'reported',
+    });
+    expect(moderationFixture.reportFan('fa-thalita', 'spam', 'r1')).toEqual({
+      fanId: 'fa-thalita',
+      status: 'reported',
+    });
+    expect(moderationFixture.reportFan('fa-rank-01', null, 'r2')).toEqual({
+      fanId: 'fa-rank-01',
+      status: 'already_reported',
+    });
+    for (const id of ['me', 'nettobrito', 'fa-ninguem']) {
+      expect(() => moderationFixture.reportFan(id, null, `r-${id}`)).toThrow(
+        expect.objectContaining({ status: 404, code: 'fan_not_found' }),
+      );
+    }
+  });
+
+  it('a lista de bloqueados pagina de 6 em 6, do mais novo ao mais antigo, com o nome do perfil de exemplo', () => {
+    const ids = ['01', '02', '03', '04', '05', '06', '07'].map((n) => `fa-rank-${n}`);
+    ids.forEach((id, index) => moderationFixture.block(id, `b-${index}`));
+
+    const first = moderationFixture.blockedPage(null);
+    expect(BLOCKED_PAGE_SIZE).toBe(6);
+    expect(first.items.map((fan) => fan.uid)).toEqual([
+      'fa-rank-07',
+      'fa-rank-06',
+      'fa-rank-05',
+      'fa-rank-04',
+      'fa-rank-03',
+      'fa-rank-02',
+    ]);
+    expect(first.items[5]).toEqual({
+      uid: 'fa-rank-02',
+      displayName: 'Davi Lima',
+      username: 'davilim',
+      photoURL: null,
+    });
+    expect(first.nextCursor).toBe('2:fa-rank-02');
+
+    // Desbloquear dois já vistos, um deles o do cursor, não pula ninguém.
+    moderationFixture.unblock('fa-rank-02', 'u-1');
+    moderationFixture.unblock('fa-rank-05', 'u-2');
+    const second = moderationFixture.blockedPage(first.nextCursor);
+    expect(second.items.map((fan) => fan.uid)).toEqual(['fa-rank-01', 'fa-rank-13']);
+    expect(second.nextCursor).toBeNull();
+  });
+
+  it('o id que nenhum perfil de exemplo tem sai da página, e o cursor fora do formato dá 400', () => {
+    moderationFixture.block('uid-sem-perfil', 'b-x');
+    expect(moderationFixture.blockedPage(null).items.map((fan) => fan.uid)).toEqual(['fa-rank-13']);
+    expect(() => moderationFixture.blockedPage('sem-indice')).toThrow(
+      expect.objectContaining({ status: 400 }),
+    );
   });
 });

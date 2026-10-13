@@ -6,7 +6,7 @@ import {
   useQueryClient,
   type QueryClient,
 } from '@tanstack/react-query';
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import { sourceOf } from '@/config/data-source';
 import { refreshRanking } from '@/domains/ranking/queries';
@@ -42,6 +42,7 @@ import { PhotoPickError, preparePhoto, type PickedPhoto } from './photo';
 import type {
   EditableProfile,
   FanProfile,
+  FanPublicProfile,
   PhotoChange,
   ProfileChanges,
   UsernameAvailability,
@@ -170,7 +171,9 @@ export type RegisterInviteLinkVariables = {
  * Conta o link compartilhado quando a folha de compartilhar voltou
  * compartilhada. Sem fila offline e sem aviso na tela: o fã já compartilhou,
  * e um link que não contou não muda nada para ele. Link novo faz o Perfil
- * buscar os números de novo ("links criados").
+ * buscar os números de novo ("links criados"). As novas tentativas são as do
+ * padrão (o ritmo e a falha incerta, com a mesma chave); a conta suspensa não
+ * abre o `Alert`: a sheet do convite já diz que o link sai sem os pontos.
  */
 export function useRegisterInviteLinkMutation() {
   const queryClient = useQueryClient();
@@ -178,7 +181,7 @@ export function useRegisterInviteLinkMutation() {
     mutationFn: ({ linkId, idempotencyKey }: RegisterInviteLinkVariables) =>
       registerInviteLink(linkId, idempotencyKey),
     networkMode: 'always',
-    retry: 2,
+    meta: { suspendedAlert: false },
     onSuccess: (result) => {
       if (result.created) void queryClient.invalidateQueries({ queryKey: profileKeys.progress() });
     },
@@ -221,6 +224,21 @@ export function useFanProfileQuery(fanId: string) {
     staleTime: 30_000,
     meta: { ...options.meta, persist: false },
   });
+}
+
+/**
+ * O perfil público que a sheet "Denunciar perfil" mostra (seção 29, 29.11),
+ * lido do cache do perfil na abertura (o conteúdo fica fixo, para a altura da
+ * sheet não mudar), no molde do `useCachedComment` dos posts. Aberta a frio,
+ * sem o perfil no cache: `undefined`, e a sheet fecha. A view não lê o cache
+ * direto.
+ */
+export function useCachedFanProfile(fanId: string): FanPublicProfile | undefined {
+  const client = useQueryClient();
+  const [profile] = useState(() =>
+    fanId ? client.getQueryData<FanPublicProfile>(fanKeys.profile(fanId)) : undefined,
+  );
+  return profile;
 }
 
 /** Põe no perfil em cache o que a resposta do servidor já trouxe, antes da escuta. */
@@ -303,6 +321,8 @@ export function useUpdateProfileMutation() {
     },
     networkMode: 'always',
     retry: false,
+    // A tela mostra a frase do suspenso, com o link: sem o `Alert` por cima.
+    meta: { suspendedAlert: false },
     onSuccess: (edited, changes) => {
       attempt.current = null;
       if (uid) {
@@ -435,6 +455,8 @@ export function useChangePhotoMutation() {
     },
     networkMode: 'always',
     retry: false,
+    // A tela mostra a frase do suspenso, com o link: sem o `Alert` por cima.
+    meta: { suspendedAlert: false },
     onSuccess: (change) => {
       attempt.current = null;
       if (uid) patchPhoto(queryClient, uid, change);

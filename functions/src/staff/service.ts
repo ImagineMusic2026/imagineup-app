@@ -153,6 +153,7 @@ export type AuditAction =
   | 'fan.suspended'
   | 'fan.unsuspended'
   | 'fan.comments.hidden'
+  | 'fan.profile.report.resolved'
   | 'config.seeded';
 
 /**

@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   fanPhotoFiles,
+  profileDigest,
   SEED_FAN_DETAILS,
   seedFanDetails,
   seedFanDetailsChanges,
@@ -37,7 +38,10 @@ import {
  * de segurança respondem), o convite do dono suspenso, o código novo recusado,
  * a devolução de um pedido do suspenso, o `hideFanComments` em páginas, o
  * `resetFanUsername` e o `clearFanPhoto` (com o gatilho e a fila das cópias)
- * e, desde o perfil novo (28.6), o `clearFanProfileText`.
+ * e, desde o perfil novo (28.6), o `clearFanProfileText`. Desde as exigências
+ * das lojas (seção 29, 29.6 e 29.12), o `resolveProfileReport`, que fecha o
+ * item da `profileReportQueue`, e a regressão do lote parcial (nenhuma das
+ * ferramentas de antes toca no item de perfil).
  * A regra do perfil e a do Storage com o suspenso ficam nos testes de regras
  * (tests/firestore-rules.test.ts e tests/storage-rules.test.ts).
  */
@@ -47,6 +51,7 @@ const MODERATION_FUNCTIONS = [
   'resetFanUsername',
   'clearFanPhoto',
   'clearFanProfileText',
+  'resolveProfileReport',
 ];
 const env = useEmulators('moderacao-fas', [
   'api',
@@ -62,6 +67,10 @@ const { db, bucket } = env;
 const files = fanPhotoFiles(() => bucket);
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+const JPEG = readFileSync(resolve(__dirname, '../../scripts/seed-assets/foto-teste.jpg'));
+const save = async (path: string, bytes: Uint8Array) => {
+  await bucket.file(path).save(Buffer.from(bytes), { resumable: false, contentType: 'image/jpeg' });
+};
 const read = async (path: string) => (await db.doc(path).get()).data();
 const exists = async (path: string) => (await db.doc(path).get()).exists;
 
@@ -229,6 +238,8 @@ describe('a api com o fã suspenso', () => {
       // O perfil novo (seção 28, decisão 11): o suspenso não edita nada, nem o que esconde.
       await send('PUT', '/me/profile', { bio: 'Sigam meu perfil' }),
       await send('PUT', '/me/profile', { privateAccount: true, bio: null }),
+      // A denúncia de perfil (seção 29): o suspenso não denuncia.
+      await send('POST', `/fans/${other.uid}/report`, { reason: 'spam' }),
       await send('POST', '/invites/visit', {
         code: 'ABCD2345',
         link: { path: '/' },
@@ -251,6 +262,8 @@ describe('a api com o fã suspenso', () => {
 
     expect((await call('GET', '/me/wallet', { token: fan.token })).status).toBe(200);
     expect((await call('GET', '/feed', { token: fan.token })).status).toBe(200);
+    // A lista de bloqueados só lê (seção 29): o suspenso lê.
+    expect((await call('GET', '/me/blocks', { token: fan.token })).status).toBe(200);
 
     const allowed = [
       await send('DELETE', `/posts/${postId}/like`),
@@ -622,13 +635,6 @@ describe('resetFanUsername', () => {
 });
 
 describe('clearFanPhoto', () => {
-  const JPEG = readFileSync(resolve(__dirname, '../../scripts/seed-assets/foto-teste.jpg'));
-  const save = async (path: string, bytes: Uint8Array) => {
-    await bucket
-      .file(path)
-      .save(Buffer.from(bytes), { resumable: false, contentType: 'image/jpeg' });
-  };
-
   it('tira a foto: o arquivo sai pelo gatilho e as cópias nos comentários pela fila', async () => {
     const editor = await seedMember(env, 'Editora', 'editor', ['moderation']);
     const self = await staffFan(['moderation']);
@@ -818,5 +824,254 @@ describe('clearFanProfileText', () => {
     expect(after.updateTime!.isEqual(before.updateTime!)).toBe(true);
     expect(after.get('bio')).toBe(SPAM.bio);
     expect(await audits('fan.profile.cleared')).toEqual([]);
+  });
+});
+
+describe('resolveProfileReport (seção 29, 29.6)', () => {
+  const SPAM = SEED_FAN_DETAILS.find((details) => details.email === 'spam@teste.imagineup')!;
+
+  /** O fã de propaganda do seed, com a bio de spam e duas redes. */
+  async function spamFan(): Promise<Fan> {
+    const fan = await signUpFan(db, 'Promo Seguidores');
+    expect(await seedFanDetails(db, fan.uid, seedFanDetailsChanges(SPAM))).toBe('written');
+    return fan;
+  }
+
+  /** A denúncia de perfil pela api, como o app. */
+  async function reportProfile(reporter: Fan, fanId: string, reason: string | null = 'spam') {
+    const call = localApi(env, { now: () => Date.now() });
+    const result = await call('POST', `/fans/${fanId}/report`, {
+      token: reporter.token,
+      key: unique('chave-perfil-'),
+      body: { reason },
+    });
+    expect(result.status).toBe(200);
+    return result.body.status as string;
+  }
+
+  const item = (uid: string) => db.doc(`profileReportQueue/${uid}`).get();
+
+  it('kept e actioned com o resumo do perfil; a mesma resolução não grava nem audita; a auditoria sem texto nem resumo', async () => {
+    const editor = await seedMember(env, 'Editora', 'editor', ['moderation']);
+    const promo = await spamFan();
+    const [bia, duda] = [await signUpFan(db, 'Bia Santos'), await signUpFan(db, 'Duda Lima')];
+    expect(await reportProfile(bia, promo.uid)).toBe('reported');
+    expect(await reportProfile(duda, promo.uid, null)).toBe('reported');
+
+    expect(
+      await ok('resolveProfileReport', { uid: promo.uid, resolution: 'kept', round: 1 }, editor),
+    ).toEqual({ ok: true, resolution: 'kept' });
+    const kept = await item(promo.uid);
+    const profile = (await read(`users/${promo.uid}`))!;
+    expect(kept.data()).toMatchObject({
+      status: 'resolved',
+      resolution: 'kept',
+      round: 1,
+      reportCount: 2,
+      resolvedBy: { uid: editor.uid, name: 'Editora' },
+      resolvedDigest: profileDigest(profile),
+    });
+    expect(kept.get('resolvedAt')).toBeInstanceOf(Timestamp);
+
+    // A mesma resolução de novo: ok, sem gravar nem auditar.
+    expect(
+      await ok('resolveProfileReport', { uid: promo.uid, resolution: 'kept', round: 1 }, editor),
+    ).toEqual({ ok: true, resolution: 'kept' });
+    expect((await item(promo.uid)).updateTime!.isEqual(kept.updateTime!)).toBe(true);
+    expect(await audits('fan.profile.report.resolved')).toHaveLength(1);
+
+    // A equipe muda de ideia na mesma rodada: de "Manter" para "Resolver", e fica nos Logs.
+    expect(
+      await ok(
+        'resolveProfileReport',
+        { uid: promo.uid, resolution: 'actioned', round: 1 },
+        editor,
+      ),
+    ).toEqual({ ok: true, resolution: 'actioned' });
+    expect((await item(promo.uid)).data()).toMatchObject({
+      status: 'resolved',
+      resolution: 'actioned',
+      resolvedDigest: profileDigest(profile),
+    });
+
+    const entries = await audits('fan.profile.report.resolved');
+    expect(entries).toHaveLength(2);
+    expect(entries).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          actorUid: editor.uid,
+          targetUid: promo.uid,
+          targetEmail: '',
+          section: 'moderation',
+          targets: [`fan:${promo.uid}`],
+          details: { uid: promo.uid, resolution: 'kept', reportCount: 2, round: 1 },
+        }),
+        expect.objectContaining({
+          details: { uid: promo.uid, resolution: 'actioned', reportCount: 2, round: 1 },
+        }),
+      ]),
+    );
+    // Nunca o texto do perfil nem o resumo.
+    const logged = JSON.stringify(entries);
+    expect(logged).not.toContain('Seguidores reais');
+    expect(logged).not.toContain('promo.teste.up');
+    expect(logged).not.toContain(profileDigest(profile)!);
+  });
+
+  it('o resumo é o do perfil na resolução: a equipe age antes de "Resolver"', async () => {
+    const editor = await seedMember(env, 'Editora', 'editor', ['moderation']);
+    const promo = await spamFan();
+    const bia = await signUpFan(db, 'Bia Santos');
+    expect(await reportProfile(bia, promo.uid)).toBe('reported');
+    expect(
+      await ok('clearFanProfileText', { uid: promo.uid, fields: ['bio', 'socials'] }, editor),
+    ).toEqual({ ok: true, cleared: ['bio', 'socials'] });
+    // Apagar a bio não fecha o item sozinho.
+    expect((await item(promo.uid)).get('status')).toBe('open');
+    await ok('resolveProfileReport', { uid: promo.uid, resolution: 'actioned', round: 1 }, editor);
+    const cleared = (await read(`users/${promo.uid}`))!;
+    expect((await item(promo.uid)).get('resolvedDigest')).toBe(profileDigest(cleared));
+    // A Bia, com o perfil igual ao da resolução: não reabre.
+    expect(await reportProfile(bia, promo.uid)).toBe('already_reported');
+    expect((await item(promo.uid)).get('status')).toBe('resolved');
+  });
+
+  it('recusas: a rodada velha (stale-report) e o round fora do formato não gravam; profile-not-reported sem item e com withdrawn', async () => {
+    const editor = await seedMember(env, 'Editora', 'editor', ['moderation']);
+    const promo = await spamFan();
+    const [bia, duda] = [await signUpFan(db, 'Bia Santos'), await signUpFan(db, 'Duda Lima')];
+    expect(await reportProfile(bia, promo.uid)).toBe('reported');
+    await ok('resolveProfileReport', { uid: promo.uid, resolution: 'kept', round: 1 }, editor);
+    // Outra pessoa reabre (rodada 2) depois de o card da rodada 1 abrir.
+    expect(await reportProfile(duda, promo.uid)).toBe('reported');
+    const reopened = await item(promo.uid);
+    expect(reopened.get('round')).toBe(2);
+
+    const stale = await failure(
+      'resolveProfileReport',
+      { uid: promo.uid, resolution: 'actioned', round: 1 },
+      editor,
+    );
+    expect(stale).toMatchObject({
+      status: 'FAILED_PRECONDITION',
+      message: 'A denúncia mudou desde que o card abriu. Abra de novo.',
+      details: { reason: 'stale-report' },
+    });
+    for (const [fields, field] of [
+      [{ resolution: 'kept', round: 0 }, 'round'],
+      [{ resolution: 'kept', round: '2' }, 'round'],
+      [{ resolution: 'kept' }, 'round'],
+      [{ resolution: 'hidden', round: 2 }, 'resolution'],
+      [{ round: 2 }, 'resolution'],
+    ] as const) {
+      expect(
+        (await failure('resolveProfileReport', { uid: promo.uid, ...fields }, editor)).details,
+      ).toEqual({ reason: 'invalid-request', field });
+    }
+    expect((await item(promo.uid)).updateTime!.isEqual(reopened.updateTime!)).toBe(true);
+
+    // Sem item.
+    const clean = await signUpFan(db, 'Sem Denúncia');
+    expect(
+      (
+        await failure(
+          'resolveProfileReport',
+          { uid: clean.uid, resolution: 'kept', round: 1 },
+          editor,
+        )
+      ).details?.reason,
+    ).toBe('profile-not-reported');
+    // Com withdrawn (quem denunciou excluiu a conta) e com author_deleted.
+    for (const resolution of ['withdrawn', 'author_deleted']) {
+      await db
+        .doc(`profileReportQueue/${promo.uid}`)
+        .update({ status: 'resolved', resolution, resolvedBy: null });
+      expect(
+        (
+          await failure(
+            'resolveProfileReport',
+            { uid: promo.uid, resolution: 'kept', round: 2 },
+            editor,
+          )
+        ).details?.reason,
+      ).toBe('profile-not-reported');
+    }
+    expect(await audits('fan.profile.report.resolved')).toHaveLength(1);
+  });
+
+  it('recusas de acesso: self, sem a seção, o Leitor e sem login', async () => {
+    const viewer = await seedMember(env, 'Leitor', 'viewer', ['moderation']);
+    const fansOnly = await seedMember(env, 'Fãs', 'editor', ['fans']);
+    const self = await staffFan(['moderation']);
+    const promo = await spamFan();
+    const bia = await signUpFan(db, 'Bia Santos');
+    expect(await reportProfile(bia, promo.uid)).toBe('reported');
+    expect(await reportProfile(promo, self.uid)).toBe('reported');
+    const data = { uid: promo.uid, resolution: 'kept', round: 1 };
+
+    expect(
+      (await failure('resolveProfileReport', { uid: self.uid, resolution: 'kept', round: 1 }, self))
+        .details?.reason,
+    ).toBe('self');
+    expect(
+      (await failure('resolveProfileReport', { ...data, uid: 'com espaço' }, viewer)).details,
+    ).toEqual({ reason: 'invalid-request', field: 'uid' });
+    for (const member of [viewer, fansOnly]) {
+      expect((await failure('resolveProfileReport', data, member)).details?.reason).toBe(
+        'no-section',
+      );
+    }
+    expect((await failure('resolveProfileReport', data)).status).toBe('UNAUTHENTICATED');
+    expect((await item(promo.uid)).get('status')).toBe('open');
+    expect(await audits('fan.profile.report.resolved')).toEqual([]);
+  });
+
+  it('regressão do lote parcial: nada vai à moderationQueue; o moderateComment e as cinco ferramentas do fã não tocam no item de perfil', async () => {
+    const editor = await seedMember(env, 'Editora', 'editor', ['moderation']);
+    const promo = await spamFan();
+    expect(await seedFanPhoto(db, files, save, promo.uid, JPEG)).toBe('created');
+    const bia = await signUpFan(db, 'Bia Santos');
+    const postId = await post(env, await central(env));
+    const call = localApi(env, { now: () => Date.now() });
+    const commented = await call('POST', `/posts/${postId}/comments`, {
+      token: promo.token,
+      key: unique('chave-comentario-'),
+      body: { text: 'Sigam meu perfil' },
+    });
+    expect(commented.status).toBe(200);
+    expect(await reportProfile(bia, promo.uid)).toBe('reported');
+    // A denúncia de perfil não grava nada na fila de comentários.
+    expect((await db.collection('moderationQueue').get()).size).toBe(0);
+    const before = await item(promo.uid);
+
+    // O moderateComment com o uid do fã denunciado no lugar do comentário: comment-not-found.
+    await expect(
+      moderate({ db }, callerOf(editor), { postId, commentId: promo.uid, action: 'keep' }),
+    ).rejects.toMatchObject({ details: { reason: 'comment-not-found' } });
+    const untouched = async (tool: string) => {
+      const now = await item(promo.uid);
+      expect(now.updateTime!.isEqual(before.updateTime!), tool).toBe(true);
+      expect(now.get('status'), tool).toBe('open');
+    };
+    // O hideFanComments do fã com o item de perfil aberto oculta o comentário e não mexe no item.
+    expect(
+      await hideFanComments({ db, random: () => 0 }, callerOf(editor), { uid: promo.uid }),
+    ).toEqual({ hidden: 1, more: false });
+    await untouched('hideFanComments');
+    // As outras quatro, pela callable, como o painel publicado chama.
+    expect(await suspend(editor, promo)).toEqual({ ok: true, suspended: true });
+    await untouched('setFanSuspended (suspender)');
+    expect(await unsuspend(editor, promo)).toEqual({ ok: true, suspended: false });
+    await untouched('setFanSuspended (tirar)');
+    expect(await ok('clearFanPhoto', { uid: promo.uid }, editor)).toEqual({ ok: true });
+    await untouched('clearFanPhoto');
+    const previous = (await read(`users/${promo.uid}`))!.username as string;
+    await ok('resetFanUsername', { uid: promo.uid, username: previous }, editor);
+    await untouched('resetFanUsername');
+    expect(
+      await ok('clearFanProfileText', { uid: promo.uid, fields: ['bio', 'socials'] }, editor),
+    ).toEqual({ ok: true, cleared: ['bio', 'socials'] });
+    await untouched('clearFanProfileText');
+    expect((await db.collection('moderationQueue').get()).size).toBe(0);
   });
 });

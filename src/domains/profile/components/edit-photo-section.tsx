@@ -10,6 +10,7 @@ import { PressableScale } from '@/components/pressable-scale';
 import { Text } from '@/components/text';
 import { TextLink } from '@/components/text-link';
 import { t, type TranslationKey } from '@/i18n';
+import { actionRefusal } from '@/services/api/refusal';
 import { haptics } from '@/services/haptics';
 import { borderWidths, colors, layout, spacing } from '@/theme';
 
@@ -22,8 +23,10 @@ import {
   useRemovePhotoMutation,
 } from '../queries';
 import { Expandable } from './expandable';
+import { SuspensionContact } from './suspended-notice';
 
-type PhotoMessage = { text: string; action: 'settings' | 'retry' | null };
+/** O link embaixo do aviso: os ajustes do aparelho, tentar de novo ou escrever à equipe. */
+type PhotoMessage = { text: string; action: 'settings' | 'retry' | 'contact' | null };
 
 /** O texto da falha da troca de foto: o motivo que o fã entende, ou o genérico. */
 function photoErrorKey(error: unknown): TranslationKey {
@@ -33,10 +36,9 @@ function photoErrorKey(error: unknown): TranslationKey {
     return 'editProfile.photo.cameraDenied';
   }
   if (apiErrorCode(error) === 'photo_invalid') return 'editProfile.photo.invalid';
-  // O teto do dia das vagas e das trocas; o 429 `rate_limited` (pedidos
-  // seguidos demais, 27.3) fica com o genérico.
-  if (apiErrorCode(error) === 'too_many_requests') return 'editProfile.photo.tooMany';
-  return 'editProfile.photo.error';
+  // O teto do dia das vagas e das trocas, o ritmo (pedidos seguidos demais,
+  // 27.3) e a conta suspensa, pela peça comum das recusas (seção 29).
+  return actionRefusal(error, 'photo').key;
 }
 
 /**
@@ -132,7 +134,16 @@ export function EditPhotoSection({
       },
       // "Tentar de novo" só quando o hook guardou a tentativa (o mesmo arquivo e a
       // mesma chave): a recusa do Storage (perfil ausente, sessão trocada) não.
-      onError: (error) => fail(error, isUncertainFailure(error) ? 'retry' : null),
+      // A conta suspensa leva o link "Escrever para a equipe".
+      onError: (error) =>
+        fail(
+          error,
+          actionRefusal(error, 'photo').type === 'suspended'
+            ? 'contact'
+            : isUncertainFailure(error)
+              ? 'retry'
+              : null,
+        ),
     });
   };
 
@@ -185,11 +196,7 @@ export function EditPhotoSection({
           accessibilityLabel={t(busy ? 'editProfile.photo.busy' : 'editProfile.photo.change')}
           accessibilityHint={busy || locked ? undefined : t('editProfile.photo.changeHint')}
           accessibilityState={
-            busy
-              ? { busy: true, disabled: true }
-              : locked
-                ? { disabled: true }
-                : { expanded: open }
+            busy ? { busy: true, disabled: true } : locked ? { disabled: true } : { expanded: open }
           }
           style={styles.avatar}
           testID="edit-profile-photo-button"
@@ -252,6 +259,7 @@ export function EditPhotoSection({
               testID="edit-profile-open-settings"
             />
           ) : null}
+          {message.action === 'contact' ? <SuspensionContact align="center" /> : null}
           {message.action === 'retry' && lastPhoto ? (
             <TextLink
               label={t('common.retry')}
