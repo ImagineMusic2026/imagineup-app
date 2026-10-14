@@ -1,0 +1,28 @@
+{
+  "displayName": "ImagineUP: closeStatsDays sem fechar o dia",
+  "userLabels": {"app": "imagineup"},
+  "severity": "ERROR",
+  "combiner": "OR",
+  "conditions": [
+    {
+      "displayName": "Nenhum \"dias fechados\" do closeStatsDays em 24 h 30 min",
+      "conditionAbsent": {
+        "filter": "metric.type=\"logging.googleapis.com/user/close_stats_days_ok\" AND resource.type=\"cloud_run_revision\"",
+        "aggregations": [
+          {
+            "alignmentPeriod": "88200s",
+            "perSeriesAligner": "ALIGN_SUM",
+            "crossSeriesReducer": "REDUCE_SUM"
+          }
+        ],
+        "duration": "300s",
+        "trigger": {"count": 1}
+      }
+    }
+  ],
+  "documentation": {
+    "subject": "ImagineUP: closeStatsDays sem fechar o dia",
+    "mimeType": "text/markdown",
+    "content": "O closeStatsDays não fechou nenhum dia nas últimas 24 h 30 min. Ele roda às 00:20 (horário de Brasília) e fecha o dia anterior dos contadores do painel.\n\nO que fazer:\n\n1. Veja o job firebase-schedule-closeStatsDays-southamerica-east1 com `gcloud scheduler jobs describe firebase-schedule-closeStatsDays-southamerica-east1 --location=southamerica-east1 --project=imagine-up-app`.\n2. Veja os logs do serviço closestatsdays no Logs Explorer.\n3. A rodada seguinte fecha os dias atrasados sozinha, até 31 por rodada. Para rodar agora: `gcloud scheduler jobs run firebase-schedule-closeStatsDays-southamerica-east1 --location=southamerica-east1 --project=imagine-up-app`."
+  }
+}

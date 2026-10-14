@@ -1,0 +1,58 @@
+{
+  "displayName": "ImagineUP: api com erro 5xx",
+  "userLabels": {"app": "imagineup"},
+  "severity": "ERROR",
+  "combiner": "AND",
+  "conditions": [
+    {
+      "displayName": "Mais de 5% dos pedidos da api com 5xx em 10 min",
+      "conditionThreshold": {
+        "filter": "metric.type=\"run.googleapis.com/request_count\" AND resource.type=\"cloud_run_revision\" AND resource.labels.service_name=\"api\" AND metric.labels.response_code_class=\"5xx\"",
+        "aggregations": [
+          {
+            "alignmentPeriod": "600s",
+            "perSeriesAligner": "ALIGN_SUM",
+            "crossSeriesReducer": "REDUCE_SUM"
+          }
+        ],
+        "denominatorFilter": "metric.type=\"run.googleapis.com/request_count\" AND resource.type=\"cloud_run_revision\" AND resource.labels.service_name=\"api\"",
+        "denominatorAggregations": [
+          {
+            "alignmentPeriod": "600s",
+            "perSeriesAligner": "ALIGN_SUM",
+            "crossSeriesReducer": "REDUCE_SUM"
+          }
+        ],
+        "comparison": "COMPARISON_GT",
+        "thresholdValue": 0.05,
+        "duration": "60s",
+        "evaluationMissingData": "EVALUATION_MISSING_DATA_INACTIVE",
+        "trigger": {"count": 1}
+      }
+    },
+    {
+      "displayName": "Mais de 4 respostas 5xx da api em 10 min",
+      "conditionThreshold": {
+        "filter": "metric.type=\"run.googleapis.com/request_count\" AND resource.type=\"cloud_run_revision\" AND resource.labels.service_name=\"api\" AND metric.labels.response_code_class=\"5xx\"",
+        "aggregations": [
+          {
+            "alignmentPeriod": "600s",
+            "perSeriesAligner": "ALIGN_SUM",
+            "crossSeriesReducer": "REDUCE_SUM"
+          }
+        ],
+        "comparison": "COMPARISON_GT",
+        "thresholdValue": 4,
+        "duration": "60s",
+        "evaluationMissingData": "EVALUATION_MISSING_DATA_INACTIVE",
+        "trigger": {"count": 1}
+      }
+    }
+  ],
+  "alertStrategy": {"autoClose": "3600s"},
+  "documentation": {
+    "subject": "ImagineUP: api com erro 5xx",
+    "mimeType": "text/markdown",
+    "content": "A api do app respondeu com erro 5xx em mais de 5% dos pedidos, e pelo menos 5 vezes, em 10 minutos. Enquanto isso dura, o fã vê erro no app.\n\nO que fazer:\n\n1. No Logs Explorer do projeto imagine-up-app, use o filtro `resource.labels.service_name=\"api\" httpRequest.status>=500`.\n2. Resposta 503 de cota de CPU acontece em deploy. Fora de deploy, veja a mensagem nos logs da api (`log_id(\"run.googleapis.com/stdout\")`).\n3. O teto da api é de 8 instâncias. Muitos 429 ou 503 com tráfego alto apontam para esse teto."
+  }
+}

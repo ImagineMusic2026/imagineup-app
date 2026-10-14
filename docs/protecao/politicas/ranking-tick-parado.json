@@ -1,0 +1,28 @@
+{
+  "displayName": "ImagineUP: rankingTick parado",
+  "userLabels": {"app": "imagineup"},
+  "severity": "ERROR",
+  "combiner": "OR",
+  "conditions": [
+    {
+      "displayName": "Nenhuma rodada do rankingTick com HTTP 200 por uns 40 min",
+      "conditionAbsent": {
+        "filter": "metric.type=\"logging.googleapis.com/user/ranking_tick_ok\" AND resource.type=\"cloud_run_revision\"",
+        "aggregations": [
+          {
+            "alignmentPeriod": "1200s",
+            "perSeriesAligner": "ALIGN_SUM",
+            "crossSeriesReducer": "REDUCE_SUM"
+          }
+        ],
+        "duration": "1200s",
+        "trigger": {"count": 1}
+      }
+    }
+  ],
+  "documentation": {
+    "subject": "ImagineUP: rankingTick parado",
+    "mimeType": "text/markdown",
+    "content": "O rankingTick não termina uma rodada com HTTP 200 há uns 40 minutos. Ele roda a cada 10 minutos pelo Cloud Scheduler e cuida do ranking e da virada das temporadas.\n\nO que fazer:\n\n1. `gcloud scheduler jobs describe firebase-schedule-rankingTick-southamerica-east1 --location=southamerica-east1 --project=imagine-up-app` mostra o estado e a última tentativa.\n2. Veja os logs do serviço rankingtick no Logs Explorer.\n3. Job pausado volta com `gcloud scheduler jobs resume firebase-schedule-rankingTick-southamerica-east1 --location=southamerica-east1 --project=imagine-up-app`. Função apagada volta com um deploy."
+  }
+}

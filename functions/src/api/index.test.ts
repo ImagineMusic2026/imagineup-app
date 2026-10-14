@@ -79,6 +79,7 @@ function request(
     query: extra.query ?? {},
     body: extra.body,
     rawBody: extra.rawBody,
+    ip: extra.ip,
   };
 }
 
@@ -1604,5 +1605,88 @@ describe('filtro do que o fã publica (seção 30)', () => {
     expect(Object.keys(lastLine()).sort()).toEqual(
       ['method', 'ms', 'replayed', 'route', 'status', 'uid'].sort(),
     );
+  });
+});
+
+describe('registro de acesso: a linha `acesso` (31.6)', () => {
+  /** O cabeçalho forjado: o cliente escreve o primeiro item, o Google acrescenta o último. */
+  const forged = { 'X-Forwarded-For': '203.0.113.7, 198.51.100.4' };
+  /** O `req.ip` do Express que confia no proxy: o primeiro item, o forjado. */
+  const forgedIp = '203.0.113.7';
+
+  const messages = () => vi.mocked(logger.info).mock.calls.map(([message]) => message);
+  const accessLines = () =>
+    vi.mocked(logger.info).mock.calls.filter(([message]) => message === 'acesso');
+
+  it('o 401 sem token: o último item do cabeçalho e o uid null', async () => {
+    const sent = await call(
+      request('GET', '/me/wallet', {
+        headers: { ...forged, Authorization: '' },
+        ip: forgedIp,
+      }),
+    );
+    expect(sent.status).toBe(401);
+    expect(accessLines()).toEqual([['acesso', { ip: '198.51.100.4', uid: null }]]);
+  });
+
+  it('o token inválido também sai com o uid null', async () => {
+    const sent = await call(
+      request('GET', '/me/wallet', {
+        headers: { ...forged, Authorization: 'Bearer token-falso' },
+        ip: forgedIp,
+      }),
+    );
+    expect(sent.status).toBe(401);
+    expect(accessLines()).toEqual([['acesso', { ip: '198.51.100.4', uid: null }]]);
+  });
+
+  it('com login, o uid de quem chamou; só as chaves ip e uid, sem rota nem status', async () => {
+    const sent = await call(request('GET', '/me/wallet', { headers: forged, ip: forgedIp }));
+    expect(sent.status).toBe(200);
+    expect(accessLines()).toEqual([['acesso', { ip: '198.51.100.4', uid: 'uid-camila' }]]);
+    expect(Object.keys(accessLines()[0][1] as object)).toEqual(['ip', 'uid']);
+  });
+
+  it('o 404 e o 500 também escrevem a linha; o 404 vem antes do token, com o uid null', async () => {
+    // O pedido leva o token da Camila, mas a rota é conferida antes dele (31.6).
+    expect((await call(request('GET', '/me/carteira', { headers: forged }))).status).toBe(404);
+    const broken: ApiRoute[] = [
+      {
+        method: 'GET',
+        pattern: '/teste/acesso',
+        writes: false,
+        handle: async () => {
+          throw new Error('quebrou');
+        },
+      },
+    ];
+    expect((await call(request('GET', '/teste/acesso', { headers: forged }), broken)).status).toBe(
+      500,
+    );
+    expect(accessLines()).toEqual([
+      ['acesso', { ip: '198.51.100.4', uid: null }],
+      ['acesso', { ip: '198.51.100.4', uid: 'uid-camila' }],
+    ]);
+  });
+
+  it('sem o cabeçalho, o req.ip; com o último item fora do formato, null, nunca o texto', async () => {
+    await call(request('GET', '/me/wallet', { ip: '198.51.100.9' }));
+    await call(
+      request('GET', '/me/wallet', {
+        headers: { 'X-Forwarded-For': '198.51.100.4, {"uid":"outro"}' },
+        ip: '198.51.100.4',
+      }),
+    );
+    expect(accessLines()).toEqual([
+      ['acesso', { ip: '198.51.100.9', uid: 'uid-camila' }],
+      ['acesso', { ip: null, uid: 'uid-camila' }],
+    ]);
+    expect(JSON.stringify(vi.mocked(logger.info).mock.calls)).not.toContain('outro');
+  });
+
+  it('a `acesso` vem logo antes da `api`, que continua a última do pedido', async () => {
+    await call(request('GET', '/me/wallet', { headers: forged }));
+    await call(request('GET', '/nao/existe', { headers: forged }));
+    expect(messages()).toEqual(['acesso', 'api', 'acesso', 'api']);
   });
 });

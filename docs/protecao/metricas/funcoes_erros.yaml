@@ -1,0 +1,6 @@
+description: 'Erros nas funções do ImagineUP: linhas ERROR no stderr, no stdout e no log de sistema (falta de memória), e respostas 500 ou 504 de toda função menos a api (gatilho ou fila que lançou). Sem o ruído "Invalid request" das sondas de deploy nas callables.'
+filter: |-
+  resource.type="cloud_run_revision"
+  severity>=ERROR
+  (log_id("run.googleapis.com/stderr") OR log_id("run.googleapis.com/stdout") OR log_id("run.googleapis.com/varlog/system") OR (log_id("run.googleapis.com/requests") AND (httpRequest.status=500 OR httpRequest.status=504) AND NOT resource.labels.service_name="api"))
+  NOT textPayload:"Invalid request, unable to process"

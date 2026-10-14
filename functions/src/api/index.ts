@@ -1,5 +1,6 @@
 import * as logger from 'firebase-functions/logger';
 
+import { clientIp, logAccess } from '../access-log';
 import { MISSING_FAN_PHOTO_FILES } from '../fan-profile/files';
 import { createConfigSource } from '../points/config';
 import { APP_CHECK_HEADER, checkAppCheck, type AppCheckConfig } from './app-check';
@@ -131,6 +132,8 @@ export function createApiHandler(deps: ApiDeps, routes: readonly ApiRoute[] = AP
   return async (req: ApiRequest, res: ApiResponse): Promise<void> => {
     const started = Date.now();
     const method = req.method.toUpperCase();
+    // O IP da linha `acesso` (31.6), antes de tudo: o pedido recusado também sai.
+    const ip = clientIp(req);
     let route = 'unmatched';
     let uid: string | null = null;
     let status = 500;
@@ -205,6 +208,11 @@ export function createApiHandler(deps: ApiDeps, routes: readonly ApiRoute[] = AP
       }
       send(res, status, apiFailure.body(), apiFailure.headers);
     } finally {
+      // Todo pedido que chega ao handler escreve a linha `acesso` (31.6), com
+      // o uid só depois do token: a recusa que vem antes dele sai com null,
+      // mesmo com login. O que o runtime ou o Cloud Run respondem antes do
+      // handler fica sem ela (31.9). Ela vem antes da `api`, a última do pedido.
+      logAccess(ip, uid);
       logger.info('api', {
         method,
         route,

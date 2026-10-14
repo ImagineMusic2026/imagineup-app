@@ -1,0 +1,23 @@
+{
+  "displayName": "ImagineUP: função agendada falhou ou job parado",
+  "userLabels": {"app": "imagineup"},
+  "severity": "ERROR",
+  "combiner": "OR",
+  "conditions": [
+    {
+      "displayName": "Erro do closeStatsDays, tentativa falha no Scheduler, ou job pausado ou apagado",
+      "conditionMatchedLog": {
+        "filter": "(resource.type=\"cloud_run_revision\" AND resource.labels.service_name=\"closestatsdays\" AND severity>=ERROR AND (log_id(\"run.googleapis.com/stderr\") OR log_id(\"run.googleapis.com/stdout\") OR log_id(\"run.googleapis.com/requests\"))) OR (resource.type=\"cloud_scheduler_job\" AND resource.labels.job_id=\"firebase-schedule-closeStatsDays-southamerica-east1\" AND severity>=ERROR) OR (log_id(\"cloudaudit.googleapis.com/activity\") AND protoPayload.serviceName=\"cloudscheduler.googleapis.com\" AND protoPayload.methodName=(\"google.cloud.scheduler.v1.CloudScheduler.PauseJob\" OR \"google.cloud.scheduler.v1.CloudScheduler.DeleteJob\"))"
+      }
+    }
+  ],
+  "alertStrategy": {
+    "notificationRateLimit": {"period": "3600s"},
+    "autoClose": "1800s"
+  },
+  "documentation": {
+    "subject": "ImagineUP: função agendada falhou ou job parado",
+    "mimeType": "text/markdown",
+    "content": "Uma destas coisas aconteceu: o closeStatsDays registrou erro, o Cloud Scheduler marcou uma tentativa dele como falha, ou alguém pausou ou apagou o job do rankingTick ou do closeStatsDays.\n\nO Scheduler pode marcar HTTP 200 mesmo com erro dentro da função. Por isso este alerta também olha os logs da função.\n\nO que fazer:\n\n1. Abra o incidente e veja a linha de log que disparou.\n2. Job pausado volta com `gcloud scheduler jobs resume NOME_DO_JOB --location=southamerica-east1 --project=imagine-up-app`.\n3. Erro do closeStatsDays: a rodada seguinte fecha os dias atrasados sozinha. Se o erro se repetir, veja `statsMeta/close` no Firestore."
+  }
+}
