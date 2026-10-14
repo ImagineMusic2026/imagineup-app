@@ -11,8 +11,10 @@ import {
   Alert,
   BackHandler,
   Dimensions,
+  Linking,
   StyleSheet,
   Text,
+  TextInput as NativeTextInput,
   type AlertButton,
 } from 'react-native';
 
@@ -24,6 +26,7 @@ import { storageFileExists, uploadLocalFile } from '@/firebase';
 import { api, ApiError } from '@/services/api';
 import { fixtureWallet, setFixtureNow } from '@/services/fixtures';
 import { haptics } from '@/services/haptics';
+import { supportEmailUrl } from '@/services/web-page';
 import { usePreferencesStore } from '@/stores/preferences';
 import { useSessionStore } from '@/stores/session';
 
@@ -996,6 +999,146 @@ describe('Editar perfil: as recusas', () => {
     await waitFor(() => expect(announced()).toContain('Confira este campo.'));
     expect(nameInput()).toHaveProp('accessibilityHint', 'Confira este campo.');
     expect(haptics.trigger).toHaveBeenCalledWith('error');
+  });
+
+  // O filtro do que o fã publica (seção 30): a recusa vem de um `ApiError`
+  // falso, como o servidor responde, e nenhum termo da lista entra no teste.
+  describe('o texto recusado pelo filtro (seção 30)', () => {
+    const REFUSED = 'Conforme os Termos de uso do ImagineUP, este texto não pode ser usado.';
+    const NOTICE = 'Se for um engano, fale com a equipe.';
+    const CONTACT = 'Escrever para a equipe';
+    /** Os campos que receberam o foco (o `focus` do `TextInput` mockado, com o `testID`). */
+    const focusedFields = () =>
+      (
+        jest.mocked(NativeTextInput.prototype.focus).mock.contexts as {
+          props: { testID?: string };
+        }[]
+      ).map((field) => field.props.testID);
+    const contentRefused = (field: string) =>
+      new ApiError('validation', 'fora', 400, 'profile_invalid', {
+        field,
+        reason: 'not_allowed',
+      });
+
+    it('na bio: a frase no campo, anunciada, e o aviso com o link embaixo do header até o próximo ✓', async () => {
+      jest.spyOn(Linking, 'openURL').mockResolvedValue(true);
+      put.mockRejectedValueOnce(contentRefused('bio'));
+      await openEditProfile();
+      fireEvent.changeText(bioInput(), 'Texto de teste.');
+      fireEvent.press(saveButton());
+
+      await waitFor(() => expect(announced()).toContain(REFUSED));
+      expect(bioInput().props.accessibilityHint).toContain(REFUSED);
+      expect(focusedFields()).toEqual(['edit-profile-bio']);
+      expect(screen.getByText(REFUSED, hidden)).toBeTruthy();
+      expect(screen.queryByText('Confira este campo.', hidden)).toBeNull();
+      expect(haptics.trigger).toHaveBeenCalledWith('error');
+      expect(screen.getByTestId('edit-profile-message')).toHaveTextContent(NOTICE);
+      expect(announced()).not.toContain(NOTICE);
+      // O link abre o e-mail com o assunto do texto recusado.
+      fireEvent.press(screen.getByRole('link', { name: CONTACT }));
+      await waitFor(() =>
+        expect(Linking.openURL).toHaveBeenCalledWith(
+          supportEmailUrl('Texto recusado no ImagineUP'),
+        ),
+      );
+
+      // O ✓ seguinte tira o aviso: outra recusa diz a frase dela, sem o link.
+      put.mockRejectedValueOnce(new ApiError('network', 'sem rede'));
+      fireEvent.changeText(bioInput(), 'Outro texto de teste.');
+      fireEvent.press(saveButton());
+      expect(await screen.findByTestId('edit-profile-message')).toHaveTextContent(
+        'Não deu para confirmar se o perfil foi salvo. Tente de novo.',
+      );
+      expect(screen.queryByRole('link', { name: CONTACT })).toBeNull();
+    });
+
+    it('numa rede: a frase no campo dela, com o aviso e o link', async () => {
+      put.mockRejectedValueOnce(contentRefused('socials.instagram'));
+      await openEditProfile();
+      const instagram = screen.getByTestId('edit-profile-social-instagram');
+      fireEvent.changeText(instagram, 'camila.teste.up');
+      fireEvent(instagram, 'blur');
+      fireEvent.press(saveButton());
+
+      await waitFor(() => expect(announced()).toContain(REFUSED));
+      expect(screen.getByTestId('edit-profile-social-instagram')).toHaveProp(
+        'accessibilityHint',
+        REFUSED,
+      );
+      expect(bioInput().props.accessibilityHint).not.toContain(REFUSED);
+      expect(focusedFields()).toEqual(['edit-profile-social-instagram']);
+      expect(screen.getByTestId('edit-profile-message')).toHaveTextContent(NOTICE);
+      expect(screen.getByRole('link', { name: CONTACT })).toBeTruthy();
+
+      // Sair do campo não apaga a frase (o aparelho não conhece a lista); no
+      // emulador, o campo focado no ✓ perdia a frase quando o blur chegava
+      // depois da resposta. Ela sai quando o fã mexe no campo.
+      fireEvent(screen.getByTestId('edit-profile-social-instagram'), 'blur');
+      await act(async () => {});
+      expect(screen.getByTestId('edit-profile-social-instagram')).toHaveProp(
+        'accessibilityHint',
+        REFUSED,
+      );
+      fireEvent.changeText(screen.getByTestId('edit-profile-social-instagram'), 'camila.outra');
+      await waitFor(() =>
+        expect(screen.getByTestId('edit-profile-social-instagram')).not.toHaveProp(
+          'accessibilityHint',
+          REFUSED,
+        ),
+      );
+    });
+
+    it.each([
+      ['o link colado', 'https://www.instagram.com/camila.teste.up/'],
+      ['o @ na frente', '@Camila.Teste.Up'],
+    ])(
+      'numa rede com %s, tocado o ✓ sem sair do campo, a frase fica quando o blur chega depois da recusa',
+      async (_, typed) => {
+        put.mockRejectedValueOnce(contentRefused('socials.instagram'));
+        await openEditProfile();
+        fireEvent.changeText(screen.getByTestId('edit-profile-social-instagram'), typed);
+        fireEvent.press(saveButton());
+
+        await waitFor(() => expect(announced()).toContain(REFUSED));
+        // O blur chega depois da resposta: o texto é normalizado, sem apagar a frase.
+        fireEvent(screen.getByTestId('edit-profile-social-instagram'), 'blur');
+        await act(async () => {});
+        expect(screen.getByTestId('edit-profile-social-instagram')).toHaveProp(
+          'value',
+          'camila.teste.up',
+        );
+        expect(screen.getByTestId('edit-profile-social-instagram')).toHaveProp(
+          'accessibilityHint',
+          REFUSED,
+        );
+        fireEvent.changeText(screen.getByTestId('edit-profile-social-instagram'), 'camila.outra');
+        await waitFor(() =>
+          expect(screen.getByTestId('edit-profile-social-instagram')).not.toHaveProp(
+            'accessibilityHint',
+            REFUSED,
+          ),
+        );
+      },
+    );
+
+    it('outro motivo do profile_invalid continua com "Confira este campo.", sem o aviso', async () => {
+      put.mockRejectedValueOnce(
+        new ApiError('validation', 'fora', 400, 'profile_invalid', {
+          field: 'bio',
+          reason: 'too_long',
+        }),
+      );
+      await openEditProfile();
+      fireEvent.changeText(bioInput(), 'Salvador.');
+      fireEvent.press(saveButton());
+
+      await waitFor(() => expect(announced()).toContain('Confira este campo.'));
+      expect(bioInput().props.accessibilityHint).toContain('Confira este campo.');
+      expect(announced()).not.toContain(REFUSED);
+      expect(screen.queryByTestId('edit-profile-message')).toBeNull();
+      expect(screen.queryByRole('link', { name: CONTACT })).toBeNull();
+    });
   });
 
   it('o 429 do nome fica no campo do nome', async () => {

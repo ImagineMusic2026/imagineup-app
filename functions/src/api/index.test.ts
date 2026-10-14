@@ -10,11 +10,18 @@ import { DailyCapError, ModerationError } from '../moderation/model';
 import { staticConfigSource } from '../points/config';
 import { PostError } from '../posts/model';
 import { RewardError } from '../rewards/model';
-import { API_ROUTES, APP_CHECK_MODE, createApiHandler, createRateLimiter } from './index';
+import { API_ROUTES, APP_CHECK_MODE, apiError, createApiHandler, createRateLimiter } from './index';
 import type { ApiDeps, ApiRequest, ApiRoute } from './types';
 
 // O vi.mock sobe para antes dos imports: o logger acima já é o falso.
 vi.mock('firebase-functions/logger', () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn() }));
+
+// O filtro do que o fã publica (seção 30) trocado por um de palavras neutras:
+// nenhum termo da lista de verdade entra no repositório (30.11).
+vi.mock('../content-filter', async (importOriginal) => {
+  const { fakeContentFilter } = await import('../../test/content-filter-fake.js');
+  return fakeContentFilter(await importOriginal());
+});
 
 const NOW = Date.parse('2026-10-05T15:00:00.000Z');
 
@@ -555,7 +562,8 @@ describe('mural, agenda e moderação (bloco 6)', () => {
       400,
       {
         code: 'comment_invalid',
-        message: 'Comentário vazio, longo demais ou com caracteres invisíveis.',
+        message:
+          'Comentário vazio, longo demais, com caracteres invisíveis ou fora dos Termos de uso do ImagineUP.',
         details: { reason: 'invisible' },
       },
     ],
@@ -1423,5 +1431,178 @@ describe('suspensão do fã (bloco 11)', () => {
       message: 'Sua conta está suspensa. Fale com a equipe do ImagineUP.',
     });
     expect(logger.error).not.toHaveBeenCalled();
+  });
+});
+
+describe('filtro do que o fã publica (seção 30)', () => {
+  const commentKey = { 'Idempotency-Key': 'chave-filtro-comentario-1' };
+  const profileKey = { 'Idempotency-Key': 'chave-filtro-perfil-0001' };
+
+  /** A última linha `api` do log. */
+  const lastLine = () => vi.mocked(logger.info).mock.calls.at(-1)?.[1] as Record<string, unknown>;
+
+  it('o comentário barrado: 400 comment_invalid com not_allowed, sem ler nada nem abrir transação', async () => {
+    // Com o `noReads` (sem `runTransaction`), qualquer leitura ou transação daria 500.
+    for (const text of ['Que pepino, Netto', 'Abacaxi!', 'chuchu azedo']) {
+      const sent = await call(
+        request('POST', '/posts/p-clipe/comments', { body: { text }, headers: commentKey }),
+        API_ROUTES,
+        noReads,
+      );
+      expect(sent.status, text).toBe(400);
+      expect(sent.body).toEqual({
+        code: 'comment_invalid',
+        message:
+          'Comentário vazio, longo demais, com caracteres invisíveis ou fora dos Termos de uso do ImagineUP.',
+        details: { reason: 'not_allowed' },
+      });
+    }
+    expect(logger.error).not.toHaveBeenCalled();
+  });
+
+  it('também para o suspenso: a recusa vem antes do runIdempotent, que é quem dá o 403', async () => {
+    // A transação recusa como o runIdempotent recusa o perfil suspenso.
+    const runTransaction = vi.fn(async () => {
+      throw apiError('account_suspended');
+    });
+    const suspended = {
+      collection: () => ({ doc: () => ({}) }),
+      runTransaction,
+    } as unknown as Firestore;
+    const send = (text: string) =>
+      call(
+        request('POST', '/posts/p-clipe/comments', { body: { text }, headers: commentKey }),
+        API_ROUTES,
+        suspended,
+      );
+
+    const barred = await send('Que pepino');
+    expect(barred.status).toBe(400);
+    expect(barred.body).toMatchObject({
+      code: 'comment_invalid',
+      details: { reason: 'not_allowed' },
+    });
+    expect(runTransaction).not.toHaveBeenCalled();
+
+    const clean = await send('Que show');
+    expect(clean.status).toBe(403);
+    expect(clean.body).toMatchObject({ code: 'account_suspended' });
+    expect(runTransaction).toHaveBeenCalledOnce();
+  });
+
+  it('o perfil barrado: 400 profile_invalid com o campo, sem ler nada nem abrir transação', async () => {
+    for (const [body, field] of [
+      [{ displayName: 'Abacaxi' }, 'displayName'],
+      [{ bio: 'Fã do Netto. Que pepino.' }, 'bio'],
+      [{ city: 'Altoberinjela' }, 'city'],
+      [{ socials: { instagram: 'camila.pepino' } }, 'socials.instagram'],
+      [{ socials: { x: 'pepino' } }, 'socials.x'],
+    ] as const) {
+      const sent = await call(
+        request('PUT', '/me/profile', { body, headers: profileKey }),
+        API_ROUTES,
+        noReads,
+      );
+      expect(sent.status, field).toBe(400);
+      expect(sent.body).toEqual({
+        code: 'profile_invalid',
+        message: 'Perfil fora do formato. Confira os campos.',
+        details: { field, reason: 'not_allowed' },
+      });
+    }
+    expect(logger.error).not.toHaveBeenCalled();
+  });
+
+  it('a linha do log da recusa ganha o code e o reason, nunca o texto nem o field', async () => {
+    await call(
+      request('POST', '/posts/p-clipe/comments', {
+        body: { text: 'Que pepino, Netto' },
+        headers: commentKey,
+      }),
+      API_ROUTES,
+      noReads,
+    );
+    expect(lastLine()).toEqual({
+      method: 'POST',
+      route: 'POST /posts/:postId/comments',
+      status: 400,
+      ms: expect.any(Number),
+      uid: 'uid-camila',
+      replayed: false,
+      code: 'comment_invalid',
+      reason: 'not_allowed',
+    });
+
+    await call(
+      request('PUT', '/me/profile', { body: { bio: 'Que pepino' }, headers: profileKey }),
+      API_ROUTES,
+      noReads,
+    );
+    expect(lastLine()).toEqual({
+      method: 'PUT',
+      route: 'PUT /me/profile',
+      status: 400,
+      ms: expect.any(Number),
+      uid: 'uid-camila',
+      replayed: false,
+      code: 'profile_invalid',
+      reason: 'not_allowed',
+    });
+    const logged = JSON.stringify(vi.mocked(logger.info).mock.calls);
+    expect(logged).not.toContain('pepino');
+    expect(logged).not.toContain('"field"');
+    expect(logged).not.toContain('bio');
+  });
+
+  it('o reason só entra no formato fechado; o field e os outros detalhes nunca entram', async () => {
+    const thrower = (error: unknown): ApiRoute[] => [
+      {
+        method: 'GET',
+        pattern: '/teste/log',
+        writes: false,
+        handle: async () => {
+          throw error;
+        },
+      },
+    ];
+    for (const [error, expected] of [
+      [apiError('invalid_request', { field: 'qualquer.chave' }), { code: 'invalid_request' }],
+      [
+        apiError('invalid_request', { reason: 'own_profile' }),
+        { code: 'invalid_request', reason: 'own_profile' },
+      ],
+      [apiError('invalid_request', { reason: 'Texto do fã' }), { code: 'invalid_request' }],
+      [apiError('invalid_request', { reason: 'a'.repeat(41) }), { code: 'invalid_request' }],
+      [apiError('invalid_request', { reason: 'not-allowed' }), { code: 'invalid_request' }],
+      [apiError('invalid_request', { reason: 42 }), { code: 'invalid_request' }],
+      [
+        new PostError('comment_invalid', { reason: 'not_allowed' }),
+        { code: 'comment_invalid', reason: 'not_allowed' },
+      ],
+      [new DailyCapError('comment', 100, 600), { code: 'too_many_requests' }],
+      [new Error('quebrou'), { code: 'internal' }],
+    ] as const) {
+      await call(request('GET', '/teste/log'), thrower(error));
+      expect(lastLine(), JSON.stringify(expected)).toEqual({
+        method: 'GET',
+        route: 'GET /teste/log',
+        status: expect.any(Number),
+        ms: expect.any(Number),
+        uid: 'uid-camila',
+        replayed: false,
+        ...expected,
+      });
+    }
+    // A rota que não existe também leva o código.
+    await call(request('GET', '/nao/existe'));
+    expect(lastLine()).toMatchObject({ route: 'unmatched', status: 404, code: 'not_found' });
+    expect(lastLine()).not.toHaveProperty('reason');
+  });
+
+  it('a linha de sucesso não muda: só method, route, status, ms, uid e replayed', async () => {
+    expect((await call(request('GET', '/me/wallet'))).status).toBe(200);
+    expect(Object.keys(lastLine()).sort()).toEqual(
+      ['method', 'ms', 'replayed', 'route', 'status', 'uid'].sort(),
+    );
   });
 });

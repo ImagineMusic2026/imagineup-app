@@ -25,7 +25,7 @@ import { useFocusBorder } from '@/components/text-input';
 import { SuspensionContact } from '@/domains/profile';
 import { useAnnounceWhen } from '@/hooks/use-announce-when';
 import { usePrefersReducedMotion } from '@/hooks/use-prefers-reduced-motion';
-import { t } from '@/i18n';
+import { t, type TranslationKey } from '@/i18n';
 import { borderWidths, colors, layout, motion, radii, spacing, typography } from '@/theme';
 
 import type { CommentAward } from '../queries';
@@ -81,9 +81,16 @@ export interface CommentComposerProps {
   suspended?: boolean;
   /**
    * A recusa do último envio (o teto do dia, a conta suspensa que o perfil
-   * ainda não mostrava), embaixo do campo; anunciada pelo hook de comentar.
+   * ainda não mostrava, o texto fora dos Termos de uso), embaixo do campo;
+   * anunciada pelo hook de comentar. Com o `contact`, o link "Escrever para a
+   * equipe", com esse assunto.
    */
-  refusal?: { text: string; contact: boolean } | null;
+  refusal?: { text: string; contact: TranslationKey | null } | null;
+  /**
+   * O fã digitou com a recusa à vista: a tela apaga a de conteúdo (a do teto
+   * e a do suspenso ficam até o próximo envio, seção 30).
+   */
+  onEditAfterRefusal?: () => void;
   ref?: Ref<CommentComposerHandle>;
 }
 
@@ -185,6 +192,7 @@ export function CommentComposer({
   keyboardVisible,
   suspended = false,
   refusal = null,
+  onEditAfterRefusal,
   ref,
 }: CommentComposerProps) {
   const [value, setValue] = useState('');
@@ -205,6 +213,18 @@ export function CommentComposer({
   const paddingBottom = keyboardVisible
     ? FIELD_PADDING_VERTICAL
     : Math.max(insets.bottom, spacing.md);
+  // A frase embaixo do campo (o erro ou a recusa) vai também na dica dele: o
+  // foco que a recusa de conteúdo leva ao campo corta o anúncio da frase, e o
+  // leitor de tela lê a dica do campo focado (seção 30).
+  const fieldHint =
+    [
+      error ?? refusal?.text,
+      showCounter
+        ? t('post.composer.counterLabel', { count: length, max: COMMENT_MAX_LENGTH })
+        : undefined,
+    ]
+      .filter((part): part is string => !!part)
+      .join(' ') || undefined;
 
   // O mais novo, para quem chama depois de o fã digitar (o erro chega depois).
   const latest = useRef(value);
@@ -253,6 +273,7 @@ export function CommentComposer({
   const change = (text: string): void => {
     setValue(text);
     if (error) setError(null);
+    if (refusal) onEditAfterRefusal?.();
   };
 
   if (suspended) {
@@ -304,11 +325,7 @@ export function CommentComposer({
               cursorColor={colors.accent}
               maxFontSizeMultiplier={MAX_FONT_SCALE}
               accessibilityLabel={t('post.commentPlaceholder')}
-              accessibilityHint={
-                showCounter
-                  ? t('post.composer.counterLabel', { count: length, max: COMMENT_MAX_LENGTH })
-                  : undefined
-              }
+              accessibilityHint={fieldHint}
               onFocus={() => setFocused(true)}
               onBlur={() => setFocused(false)}
               textAlignVertical="center"
@@ -334,7 +351,9 @@ export function CommentComposer({
             >
               {refusal.text}
             </Text>
-            {refusal.contact ? <SuspensionContact style={styles.contact} /> : null}
+            {refusal.contact ? (
+              <SuspensionContact subject={refusal.contact} style={styles.contact} />
+            ) : null}
           </View>
         ) : null}
       </View>

@@ -1,6 +1,7 @@
 import type { DocumentData, Firestore } from 'firebase-admin/firestore';
 import * as logger from 'firebase-functions/logger';
 
+import { FILTERED_NAME, isBlockedText } from '../content-filter';
 import { windowTask } from '../window-task';
 import type { FanPhotoFiles } from './files';
 import {
@@ -11,7 +12,7 @@ import {
   profileSyncNeeded,
   type ProfileSyncPlan,
 } from './model';
-import { sameSearchKeys, searchKeysOf } from './search';
+import { fanSearchKeys, sameSearchKeys } from './search';
 import { removeReplacedPhoto, syncFanProfile, type FanProfileSyncResult } from './service';
 
 // A fila das cópias do perfil (bloco 9, 24.7): o gatilho de users/{uid} apaga
@@ -54,16 +55,17 @@ export type QueueFanProfileSyncResult = {
   searchKeys?: 'written' | 'unchanged' | 'no-profile';
 };
 
-/** O nome ou o @ do evento mudaram: as chaves da busca podem ter mudado. */
-function searchFieldsChanged(
+/** O campo do evento mudou (com os dois lados): o nome ou o @, que mudam as chaves da busca. */
+function fieldChanged(
   before: DocumentData | undefined,
   after: DocumentData | undefined,
+  field: 'displayName' | 'username',
 ): boolean {
   if (!before || !after) return false;
-  return (['displayName', 'username'] as const).some(
-    (field) => (before[field] ?? null) !== (after[field] ?? null),
-  );
+  return (before[field] ?? null) !== (after[field] ?? null);
 }
+
+const stringOrNull = (value: unknown): string | null => (typeof value === 'string' ? value : null);
 
 /**
  * As chaves da busca de fãs do painel (bloco 11, 26.7) a partir do perfil de
@@ -73,15 +75,39 @@ function searchFieldsChanged(
  * carimbo da gravação do primeiro nome pelo fã, a única que a regra deixa
  * desde o perfil novo, seção 28; o servidor nunca grava). A gravação dispara o
  * gatilho de novo, que não vê nome nem @ mudados e não abre a transação.
+ *
+ * Com `checkName` (o nome do evento mudou), o filtro do que o fã publica
+ * (seção 30, decisão 11, opção (b') do dono): o nome de agora que bate na
+ * lista vira "Fã" (`FILTERED_NAME`), com as chaves dele, na mesma gravação.
+ * Cobre o nome que o app grava pela regra `firstProfileName` (o cadastro
+ * lento) e o de quem cria a conta pela REST do Auth e grava direto. Nunca
+ * null, que reabriria a regra. O "Fã" não é conferido de novo (a gravação dele
+ * dispara o gatilho, que acha as chaves certas e para), e a troca só do @ não
+ * confere o nome que já estava (sem retroatividade, decisão 10). Nada do nome
+ * barrado vai para log.
  */
 export function syncFanSearchKeys(
   db: Firestore,
   uid: string,
+  options: { checkName?: boolean } = {},
 ): Promise<'written' | 'unchanged' | 'no-profile'> {
   return db.runTransaction(async (tx) => {
     const profile = await tx.get(db.collection('users').doc(uid));
     if (!profile.exists) return 'no-profile';
-    const keys = searchKeysOf(profile);
+    const name = stringOrNull(profile.get('displayName'));
+    const filtered =
+      options.checkName === true &&
+      name !== null &&
+      name !== FILTERED_NAME &&
+      isBlockedText(name, 'displayName');
+    const keys = fanSearchKeys(
+      filtered ? FILTERED_NAME : name,
+      stringOrNull(profile.get('username')),
+    );
+    if (filtered) {
+      tx.update(profile.ref, { displayName: FILTERED_NAME, searchKeys: keys });
+      return 'written';
+    }
     if (sameSearchKeys(profile.get('searchKeys'), keys)) return 'unchanged';
     tx.update(profile.ref, { searchKeys: keys });
     return 'written';
@@ -92,7 +118,8 @@ export function syncFanSearchKeys(
  * Gatilho `queueFanProfileSync` (`onDocumentUpdated` em users/{uid}):
  * 1. foto trocada ou tirada: apaga o arquivo antigo (`removeReplacedPhoto`);
  *    nome ou @ trocados: o `searchKeys` do perfil de agora (bloco 11,
- *    `syncFanSearchKeys`); mudar só o `searchKeys` não põe tarefa na fila;
+ *    `syncFanSearchKeys`) e, com o nome trocado, o nome barrado pelo filtro
+ *    vira "Fã" (seção 30); mudar só o `searchKeys` não põe tarefa na fila;
  * 2. sem mudança no nome, na foto ou no caminho dela: termina;
  * 3. o orçamento do dia, numa transação que exige o perfil (o gatilho
  *    atrasado de uma conta excluída não o recria);
@@ -125,9 +152,11 @@ export async function queueFanProfileSync(
   if (oldPath && oldPath !== text(after?.photoPath)) {
     photo = await removeReplacedPhoto(db, files, uid, oldPath, log);
   }
-  const searchKeys = searchFieldsChanged(before, after)
-    ? await syncFanSearchKeys(db, uid)
-    : undefined;
+  const nameChanged = fieldChanged(before, after, 'displayName');
+  const searchKeys =
+    nameChanged || fieldChanged(before, after, 'username')
+      ? await syncFanSearchKeys(db, uid, { checkName: nameChanged })
+      : undefined;
   if (!profileSyncNeeded(before, after)) return { photo, task: 'unchanged', searchKeys };
 
   const plan = await db.runTransaction(async (tx): Promise<ProfileSyncPlan | null> => {

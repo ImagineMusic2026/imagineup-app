@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest';
 
 import { seedEvents } from '../src/agenda';
 import { seedCamilaCentrals, seedCentrals } from '../src/centrals';
+import { FILTER_ENTRIES } from '../src/content-filter/terms';
 import { dayKey, shiftDay } from '../src/day';
 import {
   editableProfileOf,
@@ -217,6 +218,11 @@ function numbers(value: unknown, path = ''): [string, number][] {
 
 describe('o seed das telas do painel (26.13)', () => {
   it('equipe, catálogos, moderação, suspensão, pedidos, meta, auditoria e 60 dias fechados; rodar de novo não muda nada', async () => {
+    // O seed inteiro roda com a lista de verdade do filtro do que o fã publica
+    // (seção 30, 30.9), por chaves, também no CI: os detalhes do perfil passam
+    // pelo `parseProfileChanges`, que confere o filtro, e nenhum texto do seed
+    // pode bater.
+    expect(FILTER_ENTRIES.length).toBeGreaterThan(0);
     for (const [uid, fan] of Object.entries(FANS)) await profile(uid, fan.name);
     const ranking = await rankingProfiles();
     // O rank-48 entra pela API (a conta vem depois do perfil: o gatilho não grava nada).

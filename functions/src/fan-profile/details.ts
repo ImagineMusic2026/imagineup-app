@@ -9,6 +9,7 @@ import type {
   ProfileChanges,
   SocialNetwork,
 } from '../api/contract';
+import { isBlockedSocial, isBlockedText } from '../content-filter';
 import { DISPLAY_NAME_MAX } from '../profile';
 import { cleanLine, cleanMultiline, isVisibleLine, isVisibleMultiline } from '../visible-line';
 import { normalizeUsername, ProfileEditError, USERNAME_INPUT_MAX, USERNAME_PATTERN } from './model';
@@ -263,9 +264,12 @@ export const PROFILE_CHANGE_KEYS = [
 export type ProfileInvalidField =
   'displayName' | 'bio' | 'city' | 'gender' | `socials.${SocialNetwork}`;
 
-/** O motivo do `profile_invalid` (`details.reason`). */
+/**
+ * O motivo do `profile_invalid` (`details.reason`). O `not_allowed` é o filtro
+ * do que o fã publica (seção 30), sempre o último motivo do campo.
+ */
 export type ProfileInvalidReason =
-  'empty' | 'too_long' | 'too_many_lines' | 'invisible' | 'unknown' | SocialProblem;
+  'empty' | 'too_long' | 'too_many_lines' | 'invisible' | 'unknown' | 'not_allowed' | SocialProblem;
 
 /** O corpo conferido, ou o campo que recusou com 400 `invalid_request` (`body` sem chave). */
 export type ParsedProfileChanges =
@@ -274,16 +278,24 @@ export type ParsedProfileChanges =
 const profileInvalid = (field: ProfileInvalidField, reason: ProfileInvalidReason) =>
   new ProfileEditError('profile_invalid', { field, reason });
 
-/** O nome limpo e conferido: de 1 a 60 em UTF-16, numa linha visível. */
+/**
+ * O nome limpo e conferido: de 1 a 60 em UTF-16, numa linha visível e, por
+ * último, fora da lista do filtro (seção 30, 30.5). Devolve o texto limpo,
+ * nunca o esqueleto do filtro.
+ */
 function cleanName(raw: string): string {
   const name = cleanLine(raw);
   if (name === '') throw profileInvalid('displayName', 'empty');
   if (name.length > DISPLAY_NAME_MAX) throw profileInvalid('displayName', 'too_long');
   if (!isVisibleLine(name)) throw profileInvalid('displayName', 'invisible');
+  if (isBlockedText(name, 'displayName')) throw profileInvalid('displayName', 'not_allowed');
   return name;
 }
 
-/** A bio limpa (vazia vira null): até 200 em UTF-16 e 6 linhas, toda linha visível. */
+/**
+ * A bio limpa (vazia vira null): até 200 em UTF-16 e 6 linhas, toda linha
+ * visível e, por último, fora da lista do filtro (seção 30).
+ */
 function cleanBio(raw: string | null): string | null {
   if (raw === null) return null;
   const bio = cleanMultiline(raw);
@@ -291,16 +303,21 @@ function cleanBio(raw: string | null): string | null {
   if (bio.length > BIO_MAX) throw profileInvalid('bio', 'too_long');
   if (bio.split('\n').length > BIO_MAX_LINES) throw profileInvalid('bio', 'too_many_lines');
   if (!isVisibleMultiline(bio)) throw profileInvalid('bio', 'invisible');
+  if (isBlockedText(bio, 'bio')) throw profileInvalid('bio', 'not_allowed');
   return bio;
 }
 
-/** A cidade limpa (vazia vira null): até 80 em UTF-16, numa linha visível. */
+/**
+ * A cidade limpa (vazia vira null): até 80 em UTF-16, numa linha visível e,
+ * por último, fora da lista do filtro (seção 30).
+ */
 function cleanCity(raw: string | null): string | null {
   if (raw === null) return null;
   const city = cleanLine(raw);
   if (city === '') return null;
   if (city.length > FAN_CITY_MAX) throw profileInvalid('city', 'too_long');
   if (!isVisibleLine(city)) throw profileInvalid('city', 'invisible');
+  if (isBlockedText(city, 'city')) throw profileInvalid('city', 'not_allowed');
   return city;
 }
 
@@ -384,6 +401,11 @@ export function parseProfileChanges(body: unknown): ParsedProfileChanges {
       const value = rawSocials[network] as string | null;
       const result = normalizeSocialHandle(network, value ?? '');
       if (!result.ok) throw profileInvalid(`socials.${network}`, result.reason);
+      // O filtro (seção 30) vem depois do `normalizeSocialHandle`, que é espelho
+      // do app e não muda, e só com o usuário que não é vazio.
+      if (result.handle !== null && isBlockedSocial(result.handle)) {
+        throw profileInvalid(`socials.${network}`, 'not_allowed');
+      }
       socials[network] = result.handle;
     }
     changes.socials = socials;

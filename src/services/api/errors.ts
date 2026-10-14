@@ -34,7 +34,17 @@ export const API_ERROR_CODES = {
   rateLimited: 'rate_limited',
   /** O teto do dia da ação (429), com `details.action` e o `Retry-After` até a meia-noite. */
   tooManyRequests: 'too_many_requests',
+  /** O comentário fora da regra (400): vazio, longo, invisível ou fora dos Termos de uso. */
+  commentInvalid: 'comment_invalid',
+  /** Um campo do `PUT /me/profile` fora da regra (400), com o `details.field`. */
+  profileInvalid: 'profile_invalid',
 } as const;
+
+/**
+ * O `details.reason` do texto recusado pelo filtro do que o fã publica (seção
+ * 30 de docs/arquitetura-api.md), no `comment_invalid` e no `profile_invalid`.
+ */
+export const CONTENT_NOT_ALLOWED = 'not_allowed';
 
 /** O `details` do corpo do erro: o campo do `profile_invalid`, a ação do teto do dia (429). */
 export type ApiErrorDetails = Readonly<Record<string, unknown>>;
@@ -102,6 +112,31 @@ export function isAccountSuspended(error: unknown): boolean {
     error.status === 403 &&
     error.code === API_ERROR_CODES.accountSuspended
   );
+}
+
+/**
+ * O texto recusado pelo filtro do que o fã publica (400 `comment_invalid` ou
+ * `profile_invalid` com o `details.reason` `not_allowed`, seção 30). Sem
+ * `instanceof`: lê o `status`, o `code` e o `details` de qualquer objeto,
+ * porque o erro do comentário que volta do disco é um objeto do JSON, com os
+ * campos do `ApiError`, e não um `ApiError`.
+ */
+export function isContentRefusal(error: unknown): boolean {
+  if (typeof error !== 'object' || error === null) return false;
+  const { status, code, details } = error as {
+    status?: unknown;
+    code?: unknown;
+    details?: unknown;
+  };
+  if (status !== 400) return false;
+  if (code !== API_ERROR_CODES.commentInvalid && code !== API_ERROR_CODES.profileInvalid) {
+    return false;
+  }
+  const reason =
+    typeof details === 'object' && details !== null
+      ? (details as { reason?: unknown }).reason
+      : undefined;
+  return reason === CONTENT_NOT_ALLOWED;
 }
 
 function kindFromStatus(status: number, code: string | null): ApiErrorKind {

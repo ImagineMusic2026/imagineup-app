@@ -22,6 +22,12 @@ declare module '@tanstack/react-query' {
        * suspensa", um canal só por recusa (29.1, decisão 19).
        */
       suspendedAlert?: boolean;
+      /**
+       * `true` no comentário: recusado pelo filtro do que o fã publica, ele
+       * vai para o disco com o erro (o persister), e a linha "Não publicado"
+       * sobrevive ao app fechado (seção 30).
+       */
+      keepRefused?: boolean;
     };
   }
 }

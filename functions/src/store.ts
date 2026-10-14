@@ -1,7 +1,9 @@
 import { FieldValue, type Firestore } from 'firebase-admin/firestore';
 
 import { leaveAllCentrals } from './centrals/service';
+import { FILTERED_NAME, isBlockedHandle, isBlockedText } from './content-filter';
 import type { FanPhotoFiles } from './fan-profile/files';
+import { isAutomaticUsername } from './fan-profile/model';
 import { fanSearchKeys } from './fan-profile/search';
 import { purgeFanPhotos } from './fan-profile/service';
 import { detachReferrals, referralRef, removeInviteData } from './invites/service';
@@ -23,6 +25,9 @@ const FAILED_PRECONDITION = 9;
 
 export type CreateProfileResult = { status: 'created'; username: string } | { status: 'exists' };
 
+/** A base do @ automático (o "fa"): a que o `usernameBase` dá a quem não tem nome. */
+const AUTOMATIC_BASE = usernameBase(null);
+
 /** Relógio e sorteio do shard do cadastro do dia; os testes fixam. */
 export type SignupCountOptions = { now?: () => number; shardRandom?: () => number };
 
@@ -37,6 +42,15 @@ export type SignupCountOptions = { now?: () => number; shardRandom?: () => numbe
  * deixa desde o perfil novo, seção 28; o servidor nunca grava). O perfil
  * nasce com o `searchKeys` do nome e do @ (a busca de fãs do painel, bloco 11,
  * 26.7).
+ *
+ * O filtro do que o fã publica (seção 30, decisão 11, opção (b') do dono):
+ * depois do `profileDisplayName`, e nunca dentro dele (o `hasName` do gatilho
+ * leria o nome barrado como ausente e esperaria à toa), o nome que bate na
+ * lista vira "Fã" (`FILTERED_NAME`, nunca null: com null, a regra
+ * `firstProfileName` deixaria o cliente gravar de novo). A base do @ que bate
+ * vira a do automático, e o @ com os dígitos sorteados que bate fica fora dos
+ * candidatos (os dígitos viram letras na normalização). O automático nunca
+ * passa pelo filtro. Nada do nome barrado vai para log.
  */
 export async function createProfile(
   db: Firestore,
@@ -47,16 +61,20 @@ export async function createProfile(
   const now = (options.now ?? Date.now)();
   const shardRandom = options.shardRandom ?? Math.random;
   const profileRef = db.collection('users').doc(user.uid);
-  const displayName = profileDisplayName(user.displayName);
-  const base = usernameBase(displayName);
+  const signupName = profileDisplayName(user.displayName);
+  const displayName =
+    signupName !== null && isBlockedText(signupName, 'displayName') ? FILTERED_NAME : signupName;
+  const nameBase = usernameBase(displayName);
+  const base = nameBase !== AUTOMATIC_BASE && isBlockedHandle(nameBase) ? AUTOMATIC_BASE : nameBase;
 
   return db.runTransaction(async (tx) => {
     const profile = await tx.get(profileRef);
     if (profile.exists) return { status: 'exists' };
 
-    const candidates = usernameCandidates(base, random).map((username) =>
-      db.collection('usernames').doc(username),
-    );
+    // O último candidato é sempre o automático: a lista nunca fica vazia.
+    const candidates = usernameCandidates(base, random)
+      .filter((username) => isAutomaticUsername(username) || !isBlockedHandle(username))
+      .map((username) => db.collection('usernames').doc(username));
     const reservations = await tx.getAll(...candidates);
     const free = reservations.find((reservation) => !reservation.exists);
     // Só acontece se todos os sorteados estiverem tomados: a nova tentativa sorteia outros.

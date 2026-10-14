@@ -1,5 +1,6 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
+import { isBlockedHandle } from '../content-filter';
 import {
   ABANDONED_UPLOAD_MS,
   authorCopies,
@@ -24,6 +25,13 @@ import {
   usernameRefusal,
   type ProfileSyncBudget,
 } from './model';
+
+// O filtro do que o fã publica (seção 30) trocado por um de palavras neutras:
+// nenhum termo da lista de verdade entra no repositório (30.11).
+vi.mock('../content-filter', async (importOriginal) => {
+  const { fakeContentFilter } = await import('../../test/content-filter-fake.js');
+  return fakeContentFilter(await importOriginal());
+});
 
 // Relógio fixo: 15:00 em UTC, meio-dia em São Paulo.
 const NOW = Date.parse('2026-10-07T15:00:00.000Z');
@@ -74,6 +82,41 @@ describe('usernameRefusal', () => {
       expect(usernameRefusal(username)).toBeNull();
     },
   );
+});
+
+describe('usernameRefusal: o filtro do que o fã publica (seção 30)', () => {
+  it.each([
+    'pepino',
+    'pepinas',
+    'abacaxi',
+    'camilaberinjela',
+    'berinjela99',
+    'p3pino',
+    'chuchuazedo',
+  ])('o @ %s, que bate na lista, é reserved', (username) => {
+    expect(usernameRefusal(username)).toBe('reserved');
+  });
+
+  it.each(['pepinada', 'camilaribeiro', 'chuchu', 'abacaxizeiro'])('o @ %s passa', (username) => {
+    expect(usernameRefusal(username)).toBeNull();
+  });
+
+  it('o formato, o automático e o reservado da marca vêm antes e nem chegam ao filtro', () => {
+    vi.mocked(isBlockedHandle).mockClear();
+    expect(usernameRefusal('pepino_fa')).toBe('format');
+    expect(usernameRefusal('fa123456')).toBe('automatic');
+    expect(usernameRefusal('adm1n')).toBe('reserved');
+    expect(isBlockedHandle).not.toHaveBeenCalled();
+    expect(usernameRefusal('pepino')).toBe('reserved');
+    expect(isBlockedHandle).toHaveBeenCalledWith('pepino');
+  });
+
+  it('o usernameChangeProblem recusa o @ barrado com username_invalid (reserved)', () => {
+    const problem = usernameChangeProblem('pepino', null, NOW);
+    expect(problem).toBeInstanceOf(ProfileEditError);
+    expect(problem?.reason).toBe('username_invalid');
+    expect(problem?.details).toEqual({ reason: 'reserved' });
+  });
 });
 
 describe('prazo da troca do @', () => {

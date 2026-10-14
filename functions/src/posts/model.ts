@@ -2,6 +2,7 @@ import { Timestamp } from 'firebase-admin/firestore';
 
 import type { Post, PostComment, PostEvent, PostMedia } from '../api/contract';
 import { isPublished, safeCount, exactMillis, type ArtistRecord } from '../centrals/model';
+import { isBlockedText } from '../content-filter';
 import { isContentId } from '../page-cursor';
 import { cleanMultiline, isVisibleMultiline } from '../visible-line';
 import { postPanelError } from './errors';
@@ -341,17 +342,20 @@ export function commentView(comment: CommentRecord): PostComment {
   };
 }
 
-export type CommentTextProblem = 'empty' | 'too_long' | 'invisible';
+export type CommentTextProblem = 'empty' | 'too_long' | 'invisible' | 'not_allowed';
 
 /**
  * O texto do comentário limpo (`cleanMultiline`) e conferido, igual ao app
  * (21.1, decisão 20): vazio depois da limpeza, acima de 500 unidades de
- * UTF-16 ou com uma linha que não é visível.
+ * UTF-16 ou com uma linha que não é visível. Por último, o filtro do que o
+ * fã publica (seção 30, 30.5): o texto que bate na lista é `not_allowed`,
+ * sem leitura, e o motivo nunca diz o termo nem a categoria.
  */
 export function commentTextProblem(cleaned: string): CommentTextProblem | null {
   if (cleaned.length === 0) return 'empty';
   if (cleaned.length > COMMENT_MAX) return 'too_long';
   if (!isVisibleMultiline(cleaned)) return 'invisible';
+  if (isBlockedText(cleaned, 'comment')) return 'not_allowed';
   return null;
 }
 

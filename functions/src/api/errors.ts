@@ -53,7 +53,8 @@ export const API_ERRORS: Record<ApiErrorCode, { status: number; message: string 
   idempotency_key_required: { status: 400, message: 'Falta a chave de idempotência.' },
   comment_invalid: {
     status: 400,
-    message: 'Comentário vazio, longo demais ou com caracteres invisíveis.',
+    message:
+      'Comentário vazio, longo demais, com caracteres invisíveis ou fora dos Termos de uso do ImagineUP.',
   },
   username_invalid: {
     status: 400,

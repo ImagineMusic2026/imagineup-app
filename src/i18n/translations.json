@@ -291,6 +291,13 @@
       "failedLabel": "{{author}}, não enviado: {{text}}",
       "retryHint": "Tenta enviar de novo",
       "failedAnnouncement": "Comentário não enviado. Toque nele para tentar de novo.",
+      "refused": "Não publicado. Toque para editar o texto",
+      "refusedLabel": "{{author}}, não publicado: {{text}}",
+      "refusedHint": "Volta o texto para o campo",
+      "refusedAnnouncement": "Comentário não publicado, conforme os Termos de uso. Toque nele para editar o texto.",
+      "refusedBusy": "Esvazie o campo para editar o comentário não publicado.",
+      "refusedLocked": "Não publicado, conforme os Termos de uso",
+      "refusedLockedAnnouncement": "Comentário não publicado, conforme os Termos de uso.",
       "fallbackName": "Fã",
       "you": "Você",
       "optionsLabel": "Opções do comentário de {{name}}"
@@ -323,6 +330,7 @@
       "sent": "Comentário enviado.",
       "sentWithPoints": "Comentário enviado. {{points}}",
       "error": "Não deu para enviar o comentário. O texto voltou para o campo.",
+      "contentRefused": "Conforme os Termos de uso do ImagineUP, este comentário não pode ser publicado. Revise o texto.",
       "queued": "Sem internet. O comentário vai quando a rede voltar.",
       "limitReached": "Chegou ao limite de {{max}} caracteres."
     },
@@ -774,6 +782,8 @@
     "tooManySaves": "Você salvou o perfil muitas vezes hoje. Tente amanhã.",
     "tooManyNames": "Você trocou o nome muitas vezes hoje. Tente amanhã.",
     "fieldInvalid": "Confira este campo.",
+    "contentRefused": "Conforme os Termos de uso do ImagineUP, este texto não pode ser usado.",
+    "contentRefusedNotice": "Se for um engano, fale com a equipe.",
     "readOnly": "Nesta versão do app, o perfil é só para ver.",
     "readOnlyEmpty": "Não preenchido",
     "discard": {
@@ -1055,6 +1065,9 @@
     "redeem": "Sua conta está suspensa. Você não pode resgatar.",
     "invite": "Sua conta está suspensa. O link sai sem os pontos.",
     "mailSubject": "Conta suspensa no ImagineUP"
+  },
+  "contentFilter": {
+    "mailSubject": "Texto recusado no ImagineUP"
   },
   "errors": {
     "title": "Algo deu errado",

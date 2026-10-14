@@ -147,3 +147,57 @@ describe('actionRefusal', () => {
     expect(phrase(new ApiError('unknown', 'x', 429, 'too_many_requests'), 'like').type).toBeNull();
   });
 });
+
+// O filtro do que o fã publica (seção 30): o tipo `content`, primeiro, só nas
+// ações com a frase; o erro que volta do disco é um objeto do JSON.
+describe('actionRefusal: o texto recusado pelo filtro', () => {
+  const commentRefused = new ApiError('validation', 'fora', 400, 'comment_invalid', {
+    reason: 'not_allowed',
+  });
+  const profileRefused = new ApiError('validation', 'fora', 400, 'profile_invalid', {
+    field: 'bio',
+    reason: 'not_allowed',
+  });
+  const fromDisk = (error: ApiError): unknown => JSON.parse(JSON.stringify(error));
+
+  it('o comentário: a frase dos Termos de uso, também com o erro do disco', () => {
+    const text =
+      'Conforme os Termos de uso do ImagineUP, este comentário não pode ser publicado. Revise o texto.';
+    expect(phrase(commentRefused, 'comment')).toEqual({ type: 'content', text });
+    expect(phrase(fromDisk(commentRefused), 'comment')).toEqual({ type: 'content', text });
+  });
+
+  it('o perfil: a frase dos Termos de uso, também com o objeto do JSON', () => {
+    const text = 'Conforme os Termos de uso do ImagineUP, este texto não pode ser usado.';
+    expect(phrase(profileRefused, 'profile')).toEqual({ type: 'content', text });
+    expect(phrase(fromDisk(profileRefused), 'profile')).toEqual({ type: 'content', text });
+  });
+
+  it('as ações sem a frase ficam com o genérico', () => {
+    expect(phrase(commentRefused, 'like')).toEqual({
+      type: null,
+      text: 'Não deu para curtir o post. Tente de novo.',
+    });
+    expect(phrase(profileRefused, 'photo')).toEqual({
+      type: null,
+      text: 'Não deu para trocar a foto. Tente de novo.',
+    });
+  });
+
+  it('outro motivo do mesmo código fica com o genérico, e o suspenso com a frase dele', () => {
+    expect(
+      phrase(
+        new ApiError('validation', 'longo', 400, 'comment_invalid', { reason: 'too_long' }),
+        'comment',
+      ),
+    ).toEqual({
+      type: null,
+      text: 'Não deu para enviar o comentário. O texto voltou para o campo.',
+    });
+    expect(phrase(suspended, 'comment')).toEqual({
+      type: 'suspended',
+      text: 'Sua conta está suspensa. Você não pode comentar.',
+    });
+    expect(phrase(suspended, 'profile')).toEqual({ type: 'suspended', text: SHORT });
+  });
+});
