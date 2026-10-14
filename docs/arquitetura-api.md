@@ -7156,7 +7156,7 @@ O `closeStatsDays` rodou à 00:20 de 08/10, antes de a carga criar o `statsMeta/
 
 No mesmo dia, o painel ganhou o perfil novo (PR #2 do `imagineup-admin`) e a lista "Perfis denunciados" (PR #3), publicados pela Vercel. Ficam a conferência com as duas contas de teste do dono (29.14, passo 5, com os passos do filtro de 30.13, passo 6) e o console do Auth (29.14, passo 6).
 
-**Produção desde 14/10/2026:** 66 funções (as 56 chamáveis com o `allUsers`), 44 índices compostos, as regras da `main` `f258ca2` e o EAS Update do canal preview na runtime `310056fd`. As cinco do lote rodam o código de `f258ca2`, e as outras 61, o de `7b87a48`. O próximo deploy publica todas ("Publicar", no `CLAUDE.md`). Se o dono abrir outra exceção, o diff conta desde o código de cada função: `f258ca2` nas cinco do lote e `7b87a48` nas outras 61.
+**Produção desde 14/10/2026:** 66 funções (as 56 chamáveis com o `allUsers`), 44 índices compostos, as regras da `main` `f258ca2` e o EAS Update do canal preview na runtime `310056fd`. No mesmo dia, mais tarde, as 66 funções saíram de novo, da `main` `8faeccf`, com o registro de acesso da seção 31 (como foi, em 31.12): desde então todas rodam o mesmo código, e o diff da próxima publicação conta desde `8faeccf`.
 
 **Como publicar daqui em diante:** a receita está em "Publicar", na seção "API do app e pontos" do `CLAUDE.md`: a pasta do deploy na `main` nova com o `functions/.env.imagine-up-app`; `npm run rules:deploy` e a espera dos índices; as funções em lotes de até 15, com 20 min entre eles, rodados pelo dono no PowerShell; o gatilho que falhou na criação apagado e recriado minutos depois; as cargas com as Application Default Credentials, `--dry-run` antes e o `revoke` no fim; e a conferência com `functions:list`, um teste da `api` sem login e os logs do `rankingTick`. As armadilhas estão em 26.22.
 
@@ -9402,7 +9402,7 @@ O bloco protege o que já está no ar. São três frentes: recuperar o banco dep
 
 Origem: o pedido do dono de 14/10/2026 para proteger a produção e o plano do mesmo dia, feito sobre um levantamento só de leitura do projeto e revisto por uma crítica. O plano e o levantamento ficam fora do repositório, em `Projetos/protecao-imagineup/` (`protecao-plano.md` e `protecao-estado.txt`), com as ajudas do gcloud conferidas e os filtros testados nos logs reais de 07 a 14/10/2026. O pedido fixou as respostas às perguntas do plano: o e-mail do dono no canal; o backup com 14 dias; o registro de acesso pela saída (a), uma linha de log própria, só com o IP e o uid, no lugar de guardar o log de pedido, que leva também a URL e o aparelho; a mesma linha nas callables do painel; e os 184 dias. Depois, no mesmo dia: "pode seguir com tudo, as 66 em lotes".
 
-Estado: as medidas de 31.1 foram ligadas em 14/10/2026, com o ok do dono, e conferidas pelo gcloud, só leitura, no mesmo dia; falta a 5ª política, depois da rodada das 00:20 de 15/10/2026 (31.4). O registro de acesso está construído na branch `registro-acesso`, criada da `docs-publicacao` em `01f5537` (o PR #21, aberto), que parte da `main` `f258ca2`, nas duas etapas do plano de construção (`Projetos/protecao-imagineup/registro-acesso-plano.md`, fora do repositório), ambas de 14/10/2026: o código com os testes (a linha `acesso` na `api` e nas 55 callables do painel, e as duas frases de log que a configuração lê presas por teste, dos dois lados, 31.11); e a documentação com os arquivos (`docs/protecao/`, esta seção, o `CLAUDE.md` e o `AGENTS.md`). Depois veio uma revisão, no mesmo dia, com os achados conferidos e aplicados (31.14), e tudo foi num commit só da branch, sem push. Nada disso está no ar: faltam o merge, as 66 funções em lotes e, depois delas, o bucket e o sink (31.12). O que o código decidiu diferente do desenho está em 31.14.
+Estado: as medidas de 31.1 foram ligadas em 14/10/2026, com o ok do dono, e conferidas pelo gcloud, só leitura, no mesmo dia; falta a 5ª política, depois da rodada das 00:20 de 15/10/2026 (31.4). O registro de acesso está construído na branch `registro-acesso`, criada da `docs-publicacao` em `01f5537` (o PR #21, aberto), que parte da `main` `f258ca2`, nas duas etapas do plano de construção (`Projetos/protecao-imagineup/registro-acesso-plano.md`, fora do repositório), ambas de 14/10/2026: o código com os testes (a linha `acesso` na `api` e nas 55 callables do painel, e as duas frases de log que a configuração lê presas por teste, dos dois lados, 31.11); e a documentação com os arquivos (`docs/protecao/`, esta seção, o `CLAUDE.md` e o `AGENTS.md`). Depois veio uma revisão, no mesmo dia, com os achados conferidos e aplicados (31.14), e tudo foi num commit só da branch, sem push. O registro de acesso entrou na `main` pelo merge `8faeccf` (PR #22) e foi publicado em 14/10/2026: as 66 funções em 5 lotes, a linha `acesso` conferida com o IP forjado, o bucket `registros-de-acesso` e o sink, com a primeira linha no bucket (como foi, em 31.12). O que o código decidiu diferente do desenho está em 31.14.
 
 Trava do bloco: só servidor e documentação. Nada muda o fingerprint do app (`310056fd840b5459416c9926e46846b8c208aa76`): nenhum pacote novo (o IP é conferido pelo `node:net`), nada no app, no `app.config.ts`, no `package.json` nem no `.gitignore`. Nenhuma regra, índice, fila, rota, callable ou chave de teto nova. O que as funções respondem não muda: só entra uma linha de log.
 
@@ -9591,7 +9591,7 @@ gcloud monitoring policies create --policy-from-file=docs/protecao/politicas/ran
 
 Todo deploy de funções sobe revisões novas e pode bater na cota de CPU da região (os 503 e as sondas). Antes do primeiro lote, silenciar todas as políticas pela janela do deploy, com folga; no fim, conferir. O `rules:deploy` sozinho não pede silenciamento. Quem roda é o Claude, no Git Bash, com o ok do dono, ou o dono.
 
-1. **Silenciar.** Trocar as duas datas, no fuso de Brasília (`-03:00`): o início um ou dois minutos à frente do relógio, o fim depois da janela. A janela cobre os lotes e as conferências, com folga (3 horas para os 5 lotes de 31.12: o lote 1 espera a conferência da linha `acesso`, e um lote que falha pela cota só vai de novo depois de uns 30 minutos sem deploy).
+1. **Silenciar.** Trocar as duas datas, no fuso de Brasília (`-03:00`) escrito à mão, ou em UTC (`Z`): o início um ou dois minutos à frente do relógio, o fim depois da janela. Nunca gerar a data com `TZ=America/Sao_Paulo date` no Git Bash desta máquina: ele não tem a base de fusos, devolve a hora UTC, e o `-03:00` colado nela empurra o silenciamento 3 horas para o futuro (aconteceu em 14/10/2026: o primeiro silenciamento só começaria depois dos lotes). Para gerar, `date -u -d '+1 minute' +%Y-%m-%dT%H:%M:00Z`. A janela cobre os lotes e as conferências, com folga (3 horas para os 5 lotes de 31.12: o lote 1 espera a conferência da linha `acesso`, e um lote que falha pela cota só vai de novo depois de uns 30 minutos sem deploy).
 
    ```bash
    gcloud monitoring snoozes create --display-name="Deploy do servidor" --criteria-policies="$(gcloud monitoring policies list --filter='userLabels.app=imagineup' --format='value(name)' --project=imagine-up-app | tr -d '\r' | paste -sd, -)" --start-time=AAAA-MM-DDTHH:MM:00-03:00 --end-time=AAAA-MM-DDTHH:MM:00-03:00 --project=imagine-up-app
@@ -9780,14 +9780,25 @@ Só servidor: nenhuma regra, índice, EAS Update nem mudança no painel. As fun�
 9. **Conferir no bucket:** um pedido novo sem login à `api` (401), com o cabeçalho forjado; o `buckets describe` (`retentionDays: 184`, `lifecycleState: ACTIVE`), o `sinks describe` (o filtro igual ao arquivo) e o `logging read` no bucket (31.7), com a linha do pedido e o `trace` dela; com esse trace no segundo `logging read` do passo 4, o `httpRequest.remoteIp` do mesmo pedido no `_Default`, igual ao `ip` da linha.
 10. **Registrar** como foi, aqui e em 26.21.
 
-O registro de acesso precisa estar no ar antes das lojas: com fã de verdade, o art. 15 já vale. Hoje não há fã em produção, e nada se perde até lá.
+O registro de acesso precisa estar no ar antes das lojas: com fã de verdade, o art. 15 já vale.
+
+**Como foi (14/10/2026):** com o ok do dono, da `main` `8faeccf` (o PR #21 e o PR #22 juntados por ele, o CI do #22 verde), na pasta `imagineup-app-deploy`.
+
+1. O diff desde `7b87a48` só trouxe os arquivos das seções 29, 30 e 31.
+2. O primeiro silenciamento saiu 3 horas adiantado (a armadilha do fuso, em 31.5) e foi cancelado. O certo, em UTC, cobriu os lotes 4 e 5 e as conferências. Os lotes 2 e 3 rodaram sem ele, sem e-mail: os únicos erros da janela foram as linhas "Invalid request, unable to process" das sondas do deploy, que a `funcoes_erros` não conta.
+3. Lote 1, pelo dono: "Deploy complete!". A conferência com o `X-Forwarded-For: 203.0.113.7` deu 401 na `api` e na `checkArtistHandle`, e as duas linhas `acesso` com o IP real (o mesmo `httpRequest.remoteIp` dos dois pedidos pelo trace, o IP da máquina que pediu), nunca o forjado, e o `uid` vazio.
+4. Lotes 2 a 5, pelo dono, sem erro de cota.
+5. Conferência: as 66 funções ativas, todas atualizadas no dia; o `check-public-functions.mjs` com 56 chamáveis, nenhuma barrada; a CPU como antes (a `api` com `1` e `80`, o `rankingTick` e o `createUserProfile` com `0.3333` e `1`, as outras com `0.1666` e `1`); as três filas com `maxConcurrentDispatches: 5`; o 401 sem login e o 404 `not_found`.
+6. Silenciamento cancelado no fim.
+7. O bucket `registros-de-acesso` (184 dias, southamerica-east1, `ACTIVE`) e o sink com o filtro de `docs/protecao/registro-acesso/filtro-linha-acesso.txt`, criados pelo Claude. O sink levou uns 5 minutos para começar a encaminhar: as linhas dos primeiros 20 segundos ficaram só no `_Default`. A primeira linha no bucket chegou às 18:32 UTC, com o IP real e o `uid` vazio.
+
+Desde então as 66 funções rodam o código de `8faeccf`.
 
 ### 31.13 Pendências e perguntas
 
 Pendências:
 
 - **A 5ª política** (`close-stats-days-parado`), depois da rodada das 00:20 de 15/10/2026 (31.4), e, no primeiro mês, conferir que ela não dispara à toa.
-- **O registro de acesso:** a linha e os testes estão na branch `registro-acesso`; faltam o merge, as 66 funções em lotes e o bucket com o sink (31.12), antes das lojas.
 - **O orçamento de R$ 50 por mês**, pela cliente (UP-38), com avisos em 50%, 90% e 100% do gasto real e em 100% do previsto (o passo a passo está no plano, item 4). O orçamento só avisa: não corta gasto nem desliga nada. Conferir com ela quem administra a conta de faturamento.
 - **O roteiro de restauração** (31.3): o script que copia os documentos de volta com `--dry-run` e reexclui quem saiu depois da cópia. Ainda não escrito.
 - **A política de privacidade** (UP-45): citar que as cópias de segurança são apagadas em até 14 dias e que as fotos ficam nos Estados Unidos (o bucket de fotos em US-EAST1).
