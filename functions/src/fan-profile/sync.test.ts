@@ -1,6 +1,7 @@
 import type { DocumentData, Firestore } from 'firebase-admin/firestore';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { FILTERED_NAME, isBlockedText } from '../content-filter';
 import { FAN_PROFILE_SYNC_WINDOW_MS } from './model';
 import { fanSearchKeys } from './search';
 import {
@@ -13,6 +14,13 @@ import {
 // O gatilho do perfil e a fila das cópias (24.7) com um Firestore falso: o
 // perfil existe ou não, o orçamento guardado, e as gravações anotadas (as do
 // `searchKeys`, bloco 11, em `updates`).
+
+// O filtro do que o fã publica (seção 30) trocado por um de palavras neutras:
+// nenhum termo da lista de verdade entra no repositório (30.11).
+vi.mock('../content-filter', async (importOriginal) => {
+  const { fakeContentFilter } = await import('../../test/content-filter-fake.js');
+  return fakeContentFilter(await importOriginal());
+});
 
 const UID = 'uidCamila';
 // 15:04:03 em UTC, meio-dia em São Paulo.
@@ -288,6 +296,107 @@ describe('gatilho queueFanProfileSync', () => {
     ).toEqual({ photo: null, task: 'invalid' });
     expect(queue.enqueue).not.toHaveBeenCalled();
     expect(log.error).toHaveBeenCalledOnce();
+  });
+});
+
+// Pela opção (b') do dono (seção 30, decisão 11), com o filtro falso: o
+// "pepino" e a forma "pepina" são palavra, e o "chuchu azedo" é frase.
+describe('o nome barrado no gatilho do perfil (seção 30, decisão 11)', () => {
+  const NO_NAME = { ...BEFORE, displayName: null, username: 'fa123456' };
+
+  beforeEach(() => {
+    vi.mocked(isBlockedText).mockClear();
+  });
+
+  it('o nome barrado gravado pela regra vira "Fã", com o searchKeys e sem updatedAt', async () => {
+    for (const name of ['Camila Pepino', 'Pepina', 'Bia Chuchu Azedo']) {
+      // O primeiro nome, como a regra firstProfileName grava: com o updatedAt.
+      const after = { ...NO_NAME, displayName: name, updatedAt: 1 };
+      const { db, updates } = fakeDb({ profile: after });
+      const queue = fakeQueue();
+      const result = await queueFanProfileSync(
+        db,
+        queue,
+        noFiles,
+        { uid: UID, before: NO_NAME, after, eventTime: EVENT_TIME },
+        { emulator: false, log: quiet() },
+      );
+      // A tarefa das cópias vai como em toda troca de nome, e lê o "Fã" de agora.
+      expect(result, name).toEqual({ photo: null, task: 'queued', searchKeys: 'written' });
+      expect(updates, name).toEqual([
+        {
+          path: `users/${UID}`,
+          data: {
+            displayName: FILTERED_NAME,
+            searchKeys: fanSearchKeys(FILTERED_NAME, 'fa123456'),
+          },
+        },
+      ]);
+      expect(isBlockedText).toHaveBeenLastCalledWith(name, 'displayName');
+    }
+  });
+
+  it('o "Fã" gravado dispara o gatilho, que não troca de novo nem confere o "Fã"', async () => {
+    const now = {
+      ...NO_NAME,
+      displayName: FILTERED_NAME,
+      searchKeys: fanSearchKeys(FILTERED_NAME, 'fa123456'),
+    };
+    const { db, updates } = fakeDb({ profile: now });
+    const result = await queueFanProfileSync(
+      db,
+      fakeQueue(),
+      noFiles,
+      {
+        uid: UID,
+        before: { ...NO_NAME, displayName: 'Camila Pepino' },
+        after: now,
+        eventTime: EVENT_TIME,
+      },
+      { emulator: false },
+    );
+    expect(result.searchKeys).toBe('unchanged');
+    expect(updates).toEqual([]);
+    expect(isBlockedText).not.toHaveBeenCalled();
+  });
+
+  it('a troca só do @ não confere o nome que já estava (sem retroatividade)', async () => {
+    const before = { ...BEFORE, displayName: 'Camila Pepino', username: 'camila' };
+    const after = { ...before, username: 'camilanova' };
+    const { db, updates } = fakeDb({ profile: after });
+    const result = await queueFanProfileSync(
+      db,
+      fakeQueue(),
+      noFiles,
+      { uid: UID, before, after, eventTime: EVENT_TIME },
+      { emulator: false },
+    );
+    expect(result).toEqual({ photo: null, task: 'unchanged', searchKeys: 'written' });
+    expect(updates).toEqual([
+      { path: `users/${UID}`, data: { searchKeys: fanSearchKeys('Camila Pepino', 'camilanova') } },
+    ]);
+    expect(isBlockedText).not.toHaveBeenCalled();
+  });
+
+  it('o nome conferido é o do perfil de agora, nunca o do evento', async () => {
+    // Evento velho com um nome barrado, entregue depois de o fã trocar o nome pela API.
+    const now = { ...AFTER, searchKeys: fanSearchKeys('Camila Ribeiro', undefined) };
+    const { db, updates } = fakeDb({ profile: now });
+    const result = await queueFanProfileSync(
+      db,
+      fakeQueue(),
+      noFiles,
+      {
+        uid: UID,
+        before: BEFORE,
+        after: { ...BEFORE, displayName: 'Camila Pepino' },
+        eventTime: EVENT_TIME,
+      },
+      { emulator: false },
+    );
+    expect(result.searchKeys).toBe('unchanged');
+    expect(updates).toEqual([]);
+    expect(isBlockedText).toHaveBeenCalledWith('Camila Ribeiro', 'displayName');
   });
 });
 

@@ -30,20 +30,31 @@ export interface SuspensionContactProps {
   style?: StyleProp<ViewStyle>;
   /** O alinhamento do link e do endereço: no centro nos avisos das sheets. */
   align?: 'start' | 'center';
+  /**
+   * O assunto do e-mail: o da conta suspensa, por padrão, ou o do texto
+   * recusado pelo filtro (`contentFilter.mailSubject`, seção 30).
+   */
+  subject?: TranslationKey;
 }
 
 /**
  * "Escrever para a equipe": o link irmão das frases da conta suspensa (o
  * aviso fixo, o compositor, as sheets, o resgate, o convite e a edição do
- * perfil). Abre o app de e-mail com o assunto e nenhum dado do fã; sem app de
- * e-mail, mostra o endereço (selecionável) e o anuncia (29.1, decisão 15).
+ * perfil) e das do texto recusado pelo filtro (o compositor e a edição do
+ * perfil, seção 30). Abre o app de e-mail com o assunto e nenhum dado do fã;
+ * sem app de e-mail, mostra o endereço (selecionável) e o anuncia (29.1,
+ * decisão 15).
  */
-export function SuspensionContact({ style, align = 'start' }: SuspensionContactProps) {
+export function SuspensionContact({
+  style,
+  align = 'start',
+  subject = 'suspension.mailSubject',
+}: SuspensionContactProps) {
   const [failed, setFailed] = useState(false);
   const fallback = t('settings.contactError', { email: SUPPORT_EMAIL });
 
   const write = async (): Promise<void> => {
-    const opened = await openSupportEmail(t('suspension.mailSubject'));
+    const opened = await openSupportEmail(t(subject));
     setFailed(!opened);
     if (!opened) AccessibilityInfo.announceForAccessibility(fallback);
   };

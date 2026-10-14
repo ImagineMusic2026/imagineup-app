@@ -66,9 +66,11 @@ export interface Post {
 
 /**
  * Comentário do próprio fã que ainda não chegou ao servidor: indo (ou
- * esperando a rede) ou recusado. Só existe no app, nunca vem da API.
+ * esperando a rede), não enviado (`failed`, o toque tenta de novo) ou não
+ * publicado (`refused`, o texto fora dos Termos de uso, seção 30: o toque
+ * nunca manda de novo). Só existe no app, nunca vem da API.
  */
-export type CommentStatus = 'pending' | 'failed';
+export type CommentStatus = 'pending' | 'failed' | 'refused';
 
 export interface PostComment {
   id: string;

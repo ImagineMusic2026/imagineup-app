@@ -2,6 +2,7 @@ import { Timestamp } from 'firebase-admin/firestore';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { describe, expect, it } from 'vitest';
 
+import { isBlockedHandle, isBlockedSocial, isBlockedText } from '../src/content-filter';
 import {
   fanPhotoFiles,
   releaseUsername,
@@ -15,7 +16,9 @@ import {
   type FanPhotoFiles,
 } from '../src/fan-profile';
 import { DEFAULT_POINTS_CONFIG, dayKey, nextDayStart, staticConfigSource } from '../src/points';
+import { isReservedUsername } from '../src/profile';
 import { deleteUserData } from '../src/store';
+import { barredWordOf, readLegibleList, warnWithoutList } from './content-filter-list';
 import {
   callable,
   central,
@@ -1548,5 +1551,119 @@ describe('seed do perfil novo (28.10)', () => {
     await expect(seedFanDetails(db, fan.uid, { bio: 'x'.repeat(201) })).rejects.toMatchObject({
       reason: 'profile_invalid',
     });
+  });
+});
+
+// --- O filtro do que o fã publica (seção 30) ----------------------------------
+
+// O termo barrado, escolhido por regra na lista legível, fora de todo
+// repositório; sem ela (o CI), os casos são pulados com aviso. As funções do
+// emulador carregam a lista de verdade, por chaves. O termo só vive em
+// memória: as conferências comparam códigos, números e booleanos, e nenhuma
+// mensagem de falha mostra o texto.
+const BARRED = barredWordOf(readLegibleList());
+if (!BARRED) warnWithoutList('profile-edit.emulator.test.ts (o perfil e o @ barrados)');
+
+const putProfileHttp = (fan: Fan, body: unknown) =>
+  http(env, '/me/profile', {
+    method: 'PUT',
+    token: fan.token,
+    key: unique('chave-filtro-perfil-'),
+    body,
+  });
+
+describe.skipIf(!BARRED)('o filtro do que o fã publica (seção 30, só com a lista legível)', () => {
+  it('a bio e a rede barradas: 400 profile_invalid com o campo, e o perfil igual; sem o termo, salva', async () => {
+    const barred = BARRED!;
+    const fan = await signUpFan(db, 'Camila Ribeiro');
+    const before = await db.doc(`users/${fan.uid}`).get();
+    const bio = `Fã do Netto. ${barred.text}`;
+    const instagram = `camila.${barred.handle}`;
+    expect(isBlockedText(bio, 'bio')).toBe(true);
+    expect(isBlockedSocial(instagram)).toBe(true);
+
+    for (const [body, field] of [
+      [{ bio, city: 'Irará, BA' }, 'bio'],
+      [{ city: 'Irará, BA', socials: { instagram } }, 'socials.instagram'],
+    ] as const) {
+      const refused = await putProfileHttp(fan, body);
+      expect(refused.status, field).toBe(400);
+      expect(refused.body.code).toBe('profile_invalid');
+      expect(refused.body.details).toEqual({ field, reason: 'not_allowed' });
+    }
+    // Nada gravado: nem o perfil, nem a chave, nem o teto do dia.
+    const after = await db.doc(`users/${fan.uid}`).get();
+    expect(after.updateTime!.isEqual(before.updateTime!)).toBe(true);
+    expect((await db.collection('idempotency').where('uid', '==', fan.uid).get()).size).toBe(0);
+    expect((await dayCounts(fan.uid, Date.now())).profile_save).toBeUndefined();
+
+    const saved = await putProfileHttp(fan, { bio: 'Fã do Netto.', city: 'Irará, BA' });
+    expect(saved.status).toBe(200);
+    expect(await read(`users/${fan.uid}`)).toMatchObject({
+      bio: 'Fã do Netto.',
+      city: 'Irará, BA',
+    });
+  });
+
+  it('o @ barrado: reserved na disponibilidade e username_invalid (reserved) no PUT /me/username e no PUT /me/profile', async () => {
+    const barred = BARRED!;
+    const handles = [barred.handle];
+    // O trecho também vale no @ (o termo escolhido é `inHandle`), colado a outro texto.
+    if (barred.handle.length <= 18) handles.push(`eu${barred.handle}`);
+    const fan = await signUpFan(db, 'Camila Ribeiro');
+    const before = await db.doc(`users/${fan.uid}`).get();
+
+    for (const [index, handle] of handles.entries()) {
+      // A recusa é do filtro, e não da marca e da equipe.
+      expect(isReservedUsername(handle), `@ ${index}`).toBe(false);
+      expect(isBlockedHandle(handle), `@ ${index}`).toBe(true);
+
+      const availability = await http(
+        env,
+        `/me/username/availability?username=${encodeURIComponent(handle)}`,
+        { token: fan.token },
+      );
+      expect(availability.status, `@ ${index}`).toBe(200);
+      expect(availability.body.status, `@ ${index}`).toBe('reserved');
+
+      const viaUsername = await http(env, '/me/username', {
+        method: 'PUT',
+        token: fan.token,
+        key: unique('chave-filtro-arroba-'),
+        body: { username: handle },
+      });
+      expect(viaUsername.status, `@ ${index}`).toBe(400);
+      expect(viaUsername.body.code).toBe('username_invalid');
+      expect(viaUsername.body.details).toEqual({ reason: 'reserved' });
+
+      const viaProfile = await putProfileHttp(fan, { username: handle, bio: 'Não grava' });
+      expect(viaProfile.status, `@ ${index}`).toBe(400);
+      expect(viaProfile.body.code).toBe('username_invalid');
+      expect(viaProfile.body.details).toEqual({ reason: 'reserved' });
+      expect(await exists(`usernames/${handle}`), `@ ${index}`).toBe(false);
+    }
+    // O perfil não mudou (nem a bio que ia junto), e nada contou.
+    const after = await db.doc(`users/${fan.uid}`).get();
+    expect(after.updateTime!.isEqual(before.updateTime!)).toBe(true);
+    expect((await db.collection('idempotency').where('uid', '==', fan.uid).get()).size).toBe(0);
+  });
+
+  it('uma bio barrada gravada antes pelo Admin SDK não impede salvar a cidade (só o que muda é conferido)', async () => {
+    const barred = BARRED!;
+    const fan = await signUpFan(db, 'Camila Ribeiro');
+    const bio = `Fã do Netto. ${barred.text}`;
+    await db.doc(`users/${fan.uid}`).update({ bio });
+
+    const saved = await putProfileHttp(fan, { city: 'Irará, BA' });
+    expect(saved.status).toBe(200);
+    expect(saved.body.city).toBe('Irará, BA');
+    const after = await read(`users/${fan.uid}`);
+    expect(after!.city).toBe('Irará, BA');
+    expect(after!.bio === bio).toBe(true);
+    // O cliente que manda a mesma bio de novo recebe a recusa dela (decisão 10: aceito).
+    const again = await putProfileHttp(fan, { bio, city: 'Feira de Santana, BA' });
+    expect(again.status).toBe(400);
+    expect(again.body.details).toEqual({ field: 'bio', reason: 'not_allowed' });
+    expect((await read(`users/${fan.uid}`))!.city).toBe('Irará, BA');
   });
 });

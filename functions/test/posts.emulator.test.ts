@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 
 import { seedEvents } from '../src/agenda';
 import { seedCentrals } from '../src/centrals';
+import { isBlockedText } from '../src/content-filter';
 import { COMMENTS_PER_DAY, LIKES_PER_DAY, runResolveProfileReport } from '../src/moderation';
 import {
   DEFAULT_POINTS_CONFIG,
@@ -12,6 +13,7 @@ import {
 } from '../src/points';
 import { seedCamilaLikes, seedEngagement, seedPosts } from '../src/posts';
 import { deleteUserData } from '../src/store';
+import { barredWordOf, readLegibleList, warnWithoutList } from './content-filter-list';
 import {
   central,
   countShardSum,
@@ -76,6 +78,12 @@ const unlike = (fan: Fan, postId: string, key = unique('chave-descurtir-')) =>
   http(env, `/posts/${postId}/like`, { method: 'DELETE', token: fan.token, key });
 
 const ago = (minutes: number) => Timestamp.fromMillis(Date.now() - minutes * 60_000);
+
+// O termo barrado do filtro (seção 30), escolhido por regra na lista legível,
+// fora de todo repositório; sem ela (o CI), o caso é pulado com aviso. As
+// funções do emulador carregam a lista de verdade, por chaves.
+const BARRED = barredWordOf(readLegibleList());
+if (!BARRED) warnWithoutList('posts.emulator.test.ts (o comentário barrado)');
 
 describe('mural (GET /feed), grade e detalhe', () => {
   it('só as centrais do fã, em ordem, sem rascunho nem central fora do ar, de 2 em 2', async () => {
@@ -407,6 +415,54 @@ describe('comentar e a lista de comentários', () => {
       COMMENTS_PER_DAY,
     );
   });
+
+  it.skipIf(!BARRED)(
+    'o comentário barrado pelo filtro (seção 30): 400 not_allowed sem gravar nada; o mesmo texto sem o termo passa',
+    async () => {
+      // O termo só vive em memória: as conferências abaixo comparam códigos,
+      // números e booleanos, e nenhuma mensagem de falha mostra o texto.
+      const barred = BARRED!;
+      const fan = await signUpFan(db, 'Camila Ribeiro');
+      const postId = await post(env, await central(env));
+      const day = dayKey(Date.now());
+      const clean = 'Que show, Netto';
+      const text = `${clean} ${barred.text}`;
+      expect(isBlockedText(text, 'comment')).toBe(true);
+      expect(isBlockedText(clean, 'comment')).toBe(false);
+      const send = (body: string) =>
+        http(env, `/posts/${postId}/comments`, {
+          method: 'POST',
+          token: fan.token,
+          key: unique('chave-filtro-'),
+          body: { text: body },
+        });
+      const stats = async () =>
+        (await db.collection(`statsDaily/${day}/statsShards`).get()).docs.map((doc) => [
+          doc.id,
+          doc.data(),
+        ]);
+      const walletBefore = await read(`wallets/${fan.uid}`);
+      const statsBefore = await stats();
+
+      const refused = await send(text);
+      expect(refused.status).toBe(400);
+      expect(refused.body.code).toBe('comment_invalid');
+      expect(refused.body.details).toEqual({ reason: 'not_allowed' });
+      // Nada gravado: nem comentário, nem chave, nem shard do post, nem o teto
+      // do dia e a marca de ativo da carteira, nem os agregados do dia.
+      expect((await db.collection(`posts/${postId}/postComments`).get()).size).toBe(0);
+      expect((await db.collection('idempotency').where('uid', '==', fan.uid).get()).size).toBe(0);
+      expect(await countShardSum(db, postId, 'comments')).toBe(0);
+      expect(await read(`wallets/${fan.uid}`)).toEqual(walletBefore);
+      expect(await stats()).toEqual(statsBefore);
+
+      const accepted = await send(clean);
+      expect(accepted.status).toBe(200);
+      expect(accepted.body.text).toBe(clean);
+      expect((await db.collection(`posts/${postId}/postComments`).get()).size).toBe(1);
+      expect((await read(`wallets/${fan.uid}`))?.days?.[day]?.count?.comment_sent).toBe(1);
+    },
+  );
 
   it('os comentários do bloqueado somem para quem bloqueou, atravessando páginas, e não para os outros', async () => {
     const [reader, blocked, other, third] = [

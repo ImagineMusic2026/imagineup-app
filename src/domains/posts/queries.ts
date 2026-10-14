@@ -89,6 +89,14 @@ export const postMutationKeys = {
  */
 const COMMENT_MUTATION_GC_TIME = Infinity;
 
+/**
+ * O `meta` do comentário, no hook e na default da fila: a tela diz a recusa da
+ * conta suspensa embaixo do compositor (sem o `Alert`), e o recusado pelo
+ * filtro vai para o disco com o erro, para a linha "Não publicado" sobreviver
+ * ao app fechado (o persister, seção 30).
+ */
+const COMMENT_MUTATION_META = { suspendedAlert: false, keepRefused: true };
+
 function countComment(client: QueryClient, postId: string, delta: number): void {
   patchPostEverywhere(client, postId, (post) => withCommentDelta(post, delta));
 }
@@ -266,8 +274,7 @@ export function registerPostMutationDefaults(client: QueryClient): void {
     {
       mutationFn: (variables) => addComment(variables),
       gcTime: COMMENT_MUTATION_GC_TIME,
-      // A tela do post diz a recusa embaixo do compositor: sem o `Alert`.
-      meta: { suspendedAlert: false },
+      meta: COMMENT_MUTATION_META,
       onSuccess: (result, variables) => {
         commitComment(client, variables, result);
         forgetComment(client, variables.localId);
@@ -425,6 +432,16 @@ function localComment(variables: AddCommentVariables, status: CommentStatus): Po
   };
 }
 
+/**
+ * O estado da linha pelo da mutação: o erro de conteúdo (o filtro, seção 30)
+ * é "Não publicado", e o resto dos erros, "Não enviado". Pelo `actionRefusal`,
+ * que lê também o erro que volta do disco (um objeto do JSON).
+ */
+function localCommentStatus(state: { status: string; error: unknown }): CommentStatus {
+  if (state.status !== 'error') return 'pending';
+  return actionRefusal(state.error, 'comment').type === 'content' ? 'refused' : 'failed';
+}
+
 export interface LocalComments {
   /** Indo, esperando a rede ou recusados, do mais novo ao mais antigo. */
   comments: PostComment[];
@@ -448,7 +465,7 @@ export function useLocalComments(postId: string): LocalComments {
     },
     select: (mutation) => ({
       variables: commentVariables(mutation) as AddCommentVariables,
-      status: (mutation.state.status === 'error' ? 'failed' : 'pending') as CommentStatus,
+      status: localCommentStatus(mutation.state),
       sending: mutation.state.status === 'pending' && !mutation.state.isPaused,
     }),
   });
@@ -473,19 +490,31 @@ export interface AddCommentOptions {
   /**
    * O servidor recusou o comentário com a tela aberta: devolve o texto ao
    * campo se o fã não começou outro. `true` quando devolveu (a linha some);
-   * senão ela fica como "Não enviado", para tocar e tentar de novo.
+   * senão ela fica como "Não enviado" ou "Não publicado".
    */
   restoreDraft?: (text: string) => boolean;
+  /**
+   * Leva o foco ao campo (e o do leitor de tela junto): o texto recusado pelo
+   * filtro volta para o fã revisar (seção 30).
+   */
+  focusDraft?: () => void;
+  /**
+   * A conta suspensa: o compositor não tem campo, e o texto recusado pelo
+   * filtro não tem para onde voltar. O anúncio só diz o motivo.
+   */
+  suspended?: boolean;
 }
 
 /**
  * Por que o último comentário foi recusado, para a frase embaixo do
- * compositor: o teto do dia ou a conta suspensa (com o link "Escrever para a
- * equipe"). Sai no envio seguinte.
+ * compositor: o teto do dia, a conta suspensa ou o texto fora dos Termos de
+ * uso (seção 30). A tela tira do tipo o link "Escrever para a equipe" e o
+ * assunto dele. Sai no envio seguinte; a de conteúdo sai também quando o fã
+ * digita (`dismissContentRefusal`).
  */
 export interface CommentRefusal {
   key: TranslationKey;
-  suspended: boolean;
+  type: 'suspended' | 'dailyLimit' | 'content';
 }
 
 /**
@@ -516,18 +545,32 @@ function announceIfQueued(): void {
  * comentário e os pontos), com chave nova depois de recusa. O teto do dia e a
  * conta suspensa têm a frase embaixo do compositor (`refusal`), anunciada;
  * sem `Alert` (`meta: { suspendedAlert: false }`).
+ *
+ * Recusado pelo filtro do que o fã publica (seção 30), o comentário é
+ * definitivo: com o campo vazio, o texto volta para ele, com a frase e o link
+ * embaixo do compositor, o toque de erro, o anúncio e o foco no campo; com o
+ * campo ocupado, a linha fica "Não publicado", sem frase embaixo de outro
+ * texto. Tocar nela nunca manda de novo: devolve o texto ao campo vazio, do
+ * mesmo jeito, ou pede para esvaziar o campo.
  */
-export function useAddCommentMutation(postId: string, { restoreDraft }: AddCommentOptions = {}) {
+export function useAddCommentMutation(
+  postId: string,
+  { restoreDraft, focusDraft, suspended = false }: AddCommentOptions = {},
+) {
   const queryClient = useQueryClient();
   const identity = useFanIdentity();
   const [award, setAward] = useState<CommentAward | null>(null);
   const [refusal, setRefusal] = useState<CommentRefusal | null>(null);
   const restoreRef = useRef(restoreDraft);
+  const focusRef = useRef(focusDraft);
+  const suspendedRef = useRef(suspended);
   const mounted = useRef(false);
 
   useEffect(() => {
     restoreRef.current = restoreDraft;
-  }, [restoreDraft]);
+    focusRef.current = focusDraft;
+    suspendedRef.current = suspended;
+  }, [restoreDraft, focusDraft, suspended]);
 
   useEffect(() => {
     mounted.current = true;
@@ -536,11 +579,44 @@ export function useAddCommentMutation(postId: string, { restoreDraft }: AddComme
     };
   }, []);
 
+  /**
+   * O texto recusado pelo filtro, no `onError` e no toque da linha "Não
+   * publicado" (`retrying`). Com o campo vazio, o texto volta para ele: a
+   * linha sai, e a frase fica embaixo do compositor, com o toque de erro, o
+   * anúncio e o foco no campo. Com o campo ocupado, a linha fica: no
+   * `onError`, o anúncio fala da linha; no toque, pede para esvaziar o campo,
+   * com o toque de aviso. Com a conta suspensa não há campo: a linha fica sem
+   * toque (`refusedLocked`), e o anúncio só diz o motivo.
+   */
+  const refuseContent = (
+    variables: AddCommentVariables,
+    key: TranslationKey,
+    retrying: boolean,
+  ): void => {
+    if (suspendedRef.current) {
+      haptics.trigger('error');
+      AccessibilityInfo.announceForAccessibility(t('post.comments.refusedLockedAnnouncement'));
+      return;
+    }
+    if (restoreRef.current?.(variables.text)) {
+      forgetComment(queryClient, variables.localId);
+      setRefusal({ key, type: 'content' });
+      haptics.trigger('error');
+      AccessibilityInfo.announceForAccessibility(t(key));
+      focusRef.current?.();
+      return;
+    }
+    haptics.trigger(retrying ? 'warning' : 'error');
+    AccessibilityInfo.announceForAccessibility(
+      t(retrying ? 'post.comments.refusedBusy' : 'post.comments.refusedAnnouncement'),
+    );
+  };
+
   const mutation = useMutation({
     mutationKey: postMutationKeys.comment,
     scope: { id: `posts-comment-${postId}` },
     gcTime: COMMENT_MUTATION_GC_TIME,
-    meta: { suspendedAlert: false },
+    meta: COMMENT_MUTATION_META,
     mutationFn: (variables: AddCommentVariables) => addComment(variables),
     onSuccess: (result, variables) => {
       commitComment(queryClient, variables, result);
@@ -567,10 +643,15 @@ export function useAddCommentMutation(postId: string, { restoreDraft }: AddComme
     onError: (error, variables) => {
       if (isNotFound(error)) refreshAfterGonePost(queryClient);
       if (!mounted.current) return;
-      haptics.trigger('error');
       const refused = actionRefusal(error, 'comment');
-      const told = refused.type === 'dailyLimit' || refused.type === 'suspended';
-      if (told) setRefusal({ key: refused.key, suspended: refused.type === 'suspended' });
+      if (refused.type === 'content') {
+        refuseContent(variables, refused.key, false);
+        return;
+      }
+      haptics.trigger('error');
+      const { type } = refused;
+      const told = type === 'dailyLimit' || type === 'suspended';
+      if (told) setRefusal({ key: refused.key, type });
       if (!keepsAttempt(error) && restoreRef.current?.(variables.text)) {
         forgetComment(queryClient, variables.localId);
         AccessibilityInfo.announceForAccessibility(t(told ? refused.key : 'post.composer.error'));
@@ -603,7 +684,11 @@ export function useAddCommentMutation(postId: string, { restoreDraft }: AddComme
     return localId;
   };
 
-  /** Toque na linha "Não enviado". */
+  /**
+   * Toque na linha "Não enviado" ou "Não publicado". A recusa de conteúdo
+   * nunca manda de novo (a mesma recusa voltaria em laço): decide pelo
+   * `actionRefusal`, que lê também o erro que voltou do disco.
+   */
   const retry = (localId: string): void => {
     const failed = queryClient.getMutationCache().findAll({
       mutationKey: postMutationKeys.comment,
@@ -613,6 +698,11 @@ export function useAddCommentMutation(postId: string, { restoreDraft }: AddComme
     const last = failed.at(-1);
     const variables = last && commentVariables(last);
     if (!last || !variables) return;
+    const refused = actionRefusal(last.state.error, 'comment');
+    if (refused.type === 'content') {
+      refuseContent(variables, refused.key, true);
+      return;
+    }
     forgetComment(queryClient, localId);
     setRefusal(null);
     mutation.mutate({
@@ -624,7 +714,12 @@ export function useAddCommentMutation(postId: string, { restoreDraft }: AddComme
     announceIfQueued();
   };
 
-  return { send, retry, award, refusal };
+  /** O fã digitou: a frase de conteúdo sai (a do teto e a do suspenso ficam até o próximo envio). */
+  const dismissContentRefusal = (): void => {
+    setRefusal((current) => (current?.type === 'content' ? null : current));
+  };
+
+  return { send, retry, award, refusal, dismissContentRefusal };
 }
 
 /**

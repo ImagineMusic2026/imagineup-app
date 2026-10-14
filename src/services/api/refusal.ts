@@ -1,6 +1,6 @@
 import type { TranslationKey } from '@/i18n';
 
-import { ApiError, isAccountSuspended } from './errors';
+import { ApiError, isAccountSuspended, isContentRefusal } from './errors';
 
 /**
  * A superfície que recusou: a frase sai dela, e nunca do `details.action` do
@@ -33,12 +33,14 @@ export type RefusalAction =
  * - `suspended`: 403 `account_suspended` (26.6);
  * - `dailyLimit`: o teto do dia da ação (429 `too_many_requests`);
  * - `rateLimited`: pedidos seguidos demais (429 `rate_limited` ou sem código),
- *   depois das novas tentativas.
+ *   depois das novas tentativas;
+ * - `content`: o texto fora dos Termos de uso (400 `comment_invalid` ou
+ *   `profile_invalid` com `not_allowed`, seção 30), só nas ações com a frase.
  */
-export type RefusalType = 'suspended' | 'dailyLimit' | 'rateLimited';
+export type RefusalType = 'suspended' | 'dailyLimit' | 'rateLimited' | 'content';
 
 export interface ActionRefusal {
-  /** `null`: nenhuma das três; a frase é a da ação (o 404 dela, ou a genérica). */
+  /** `null`: nenhuma das quatro; a frase é a da ação (o 404 dela, ou a genérica). */
   type: RefusalType | null;
   key: TranslationKey;
 }
@@ -50,6 +52,8 @@ interface ActionPhrases {
   suspended?: TranslationKey;
   /** O 404 com frase própria; sem ela, o genérico. */
   notFound?: TranslationKey;
+  /** O texto recusado pelo filtro (seção 30); sem ela, o genérico. */
+  content?: TranslationKey;
   generic: TranslationKey;
 }
 
@@ -58,6 +62,7 @@ const PHRASES: Record<RefusalAction, ActionPhrases> = {
   comment: {
     dailyLimit: 'errors.dailyLimit.comment',
     suspended: 'suspension.comment',
+    content: 'post.composer.contentRefused',
     generic: 'post.composer.error',
   },
   rsvp: { dailyLimit: 'errors.dailyLimit.rsvp', generic: 'agenda.rsvp.error' },
@@ -81,7 +86,11 @@ const PHRASES: Record<RefusalAction, ActionPhrases> = {
     suspended: 'suspension.redeem',
     generic: 'rewards.errors.failed',
   },
-  profile: { dailyLimit: 'editProfile.tooManySaves', generic: 'editProfile.error' },
+  profile: {
+    dailyLimit: 'editProfile.tooManySaves',
+    content: 'editProfile.contentRefused',
+    generic: 'editProfile.error',
+  },
   photo: { dailyLimit: 'editProfile.photo.tooMany', generic: 'editProfile.photo.error' },
   invite: { suspended: 'suspension.invite', generic: 'invite.noCode' },
 };
@@ -95,10 +104,14 @@ export function dailyLimitKey(action: RefusalAction): TranslationKey {
  * Por que a ação foi recusada, e a frase: a peça comum de toda superfície
  * (29.11, frentes E e F), que não escolhe pelo `kind` e pelo `code` soltos.
  * O teto do dia de uma ação sem teto, como o do suspenso numa ação livre para
- * ele, fica com o genérico.
+ * ele, fica com o genérico. O conteúdo vem primeiro e sem `instanceof`: o erro
+ * do comentário que volta do disco é um objeto do JSON (seção 30).
  */
 export function actionRefusal(error: unknown, action: RefusalAction): ActionRefusal {
   const phrases = PHRASES[action];
+  if (phrases.content && isContentRefusal(error)) {
+    return { type: 'content', key: phrases.content };
+  }
   if (isAccountSuspended(error)) {
     return { type: 'suspended', key: phrases.suspended ?? 'suspension.short' };
   }

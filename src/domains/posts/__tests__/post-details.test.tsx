@@ -8,7 +8,7 @@ import {
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 import { getDoc, onSnapshot } from 'firebase/firestore';
 import type { ReactNode } from 'react';
-import { AccessibilityInfo } from 'react-native';
+import { AccessibilityInfo, Linking } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { artistKeys } from '@/domains/artists';
@@ -21,6 +21,7 @@ import { api } from '@/services/api';
 import { ApiError } from '@/services/api/errors';
 import { fixtureWallet } from '@/services/fixtures';
 import { haptics } from '@/services/haptics';
+import { supportEmailUrl } from '@/services/web-page';
 import { usePreferencesStore } from '@/stores/preferences';
 import { useSessionStore } from '@/stores/session';
 import { colors } from '@/theme';
@@ -932,6 +933,176 @@ describe('bloco 6: texto limpo, invisíveis e páginas de bloqueados', () => {
         (config?.params as { cursor?: string | null }).cursor === '0',
     );
     expect(calls).toHaveLength(1);
+    await settle();
+  });
+});
+
+// O filtro do que o fã publica (seção 30). A recusa vem de um `ApiError`
+// falso, como o servidor responde: nenhum termo da lista entra no teste.
+describe('seção 30: o comentário recusado pelo filtro', () => {
+  const CONTENT = t('post.composer.contentRefused');
+  const CONTACT = t('suspension.contact');
+  const refusedLabel = (text: string) => `Você, não publicado: ${text}`;
+  const contentRefused = () =>
+    new ApiError(
+      'validation',
+      'Comentário vazio, longo demais, com caracteres invisíveis ou fora dos Termos de uso do ImagineUP.',
+      400,
+      'comment_invalid',
+      { reason: 'not_allowed' },
+    );
+  const dailyLimit = () =>
+    new ApiError('dailyLimit', 'Limite do dia.', 429, 'too_many_requests', {
+      limit: 30,
+      action: 'comment',
+    });
+  const focusEvents = () =>
+    jest
+      .mocked(AccessibilityInfo.sendAccessibilityEvent)
+      .mock.calls.filter(([, event]) => event === 'focus').length;
+
+  it('com o campo vazio, o texto volta com a frase e o link embaixo do compositor, anunciada e com o foco; a linha sai', async () => {
+    mockApi();
+    const reply = deferred<never>();
+    post.mockReturnValueOnce(reply.promise);
+    jest.spyOn(Linking, 'openURL').mockResolvedValue(true);
+    await renderPost();
+
+    sendComment('Texto de teste');
+    await screen.findByLabelText(pendingLabel('Texto de teste'));
+    await act(async () => reply.reject(contentRefused()));
+
+    expect(await screen.findByTestId('comment-refusal')).toHaveTextContent(CONTENT);
+    expect(input().props.value).toBe('Texto de teste');
+    expect(screen.queryByLabelText(pendingLabel('Texto de teste'))).toBeNull();
+    expect(screen.queryByLabelText(refusedLabel('Texto de teste'))).toBeNull();
+    expect(commentMutations()).toHaveLength(0);
+    expect(screen.getByRole('header', { name: COMMENTS_TITLE('327') })).toBeTruthy();
+    expect(announcements()).toContain(CONTENT);
+    expect(announcements()).not.toContain(t('post.composer.error'));
+    expect(haptics.trigger).toHaveBeenCalledWith('error');
+    // O foco do teclado e o do leitor de tela vão ao campo, para revisar. O
+    // foco corta o anúncio da frase, então ela vai também na dica do campo.
+    await waitFor(() => expect(focusEvents()).toBe(1));
+    expect(input().props.accessibilityHint).toBe(CONTENT);
+
+    // O link abre o e-mail com o assunto do texto recusado.
+    fireEvent.press(screen.getByRole('link', { name: CONTACT }));
+    await waitFor(() =>
+      expect(Linking.openURL).toHaveBeenCalledWith(supportEmailUrl(t('contentFilter.mailSubject'))),
+    );
+    expect(post).toHaveBeenCalledTimes(1);
+  });
+
+  it('com o campo ocupado, a linha fica "Não publicado", sem frase embaixo do compositor; o toque nunca manda de novo', async () => {
+    mockApi();
+    const reply = deferred<never>();
+    post.mockReturnValueOnce(reply.promise);
+    await renderPost();
+
+    sendComment('Primeiro');
+    const pending = await screen.findByLabelText(pendingLabel('Primeiro'));
+    type('Segundo, ainda escrevendo');
+    await act(async () => reply.reject(contentRefused()));
+
+    const row = await screen.findByRole('button', { name: refusedLabel('Primeiro') });
+    // A mesma view nativa: o foco do leitor de tela não se perde na troca.
+    expect(row).toBe(pending);
+    expect(row.props.accessibilityHint).toBe(t('post.comments.refusedHint'));
+    expect(screen.getByText(t('post.comments.refused'))).toBeTruthy();
+    expect(screen.queryByText(t('post.comments.failed'))).toBeNull();
+    // Nenhuma frase embaixo de outro texto: o anúncio fala da linha.
+    expect(screen.queryByTestId('comment-refusal')).toBeNull();
+    expect(input().props.value).toBe('Segundo, ainda escrevendo');
+    expect(screen.getByRole('header', { name: COMMENTS_TITLE('327') })).toBeTruthy();
+    expect(announcements()).toContain(t('post.comments.refusedAnnouncement'));
+    expect(announcements()).not.toContain(CONTENT);
+
+    // O toque com o campo ocupado só pede para esvaziá-lo, com o toque de aviso.
+    fireEvent.press(row);
+    expect(announcements()).toContain(t('post.comments.refusedBusy'));
+    expect(haptics.trigger).toHaveBeenCalledWith('warning');
+    expect(screen.getByRole('button', { name: refusedLabel('Primeiro') })).toBe(row);
+    expect(input().props.value).toBe('Segundo, ainda escrevendo');
+
+    // Com o campo vazio, o toque devolve o texto, com a frase, o anúncio e o foco.
+    type('');
+    fireEvent.press(row);
+    expect(await screen.findByTestId('comment-refusal')).toHaveTextContent(CONTENT);
+    expect(input().props.value).toBe('Primeiro');
+    expect(screen.queryByLabelText(refusedLabel('Primeiro'))).toBeNull();
+    expect(announcements()).toContain(CONTENT);
+    await waitFor(() => expect(focusEvents()).toBe(1));
+    expect(screen.getByRole('link', { name: CONTACT })).toBeTruthy();
+    // Nenhum pedido novo: a mesma recusa voltaria em laço.
+    expect(post).toHaveBeenCalledTimes(1);
+    expect(commentMutations()).toHaveLength(0);
+  });
+
+  it('digitar apaga a frase de conteúdo', async () => {
+    mockApi();
+    post.mockRejectedValueOnce(contentRefused());
+    await renderPost();
+
+    sendComment('Primeiro');
+    expect(await screen.findByTestId('comment-refusal')).toHaveTextContent(CONTENT);
+    expect(input().props.accessibilityHint).toBe(CONTENT);
+    type('Primeiro revisto');
+    expect(screen.queryByTestId('comment-refusal')).toBeNull();
+    expect(screen.queryByRole('link', { name: CONTACT })).toBeNull();
+    expect(input().props.value).toBe('Primeiro revisto');
+    expect(input().props.accessibilityHint).toBeUndefined();
+  });
+
+  it('com a conta suspensa, a linha só diz o motivo, sem toque e sem prometer edição', async () => {
+    mockApi();
+    const reply = deferred<never>();
+    post.mockReturnValueOnce(reply.promise);
+    await renderPost();
+
+    sendComment('Texto de teste');
+    await screen.findByLabelText(pendingLabel('Texto de teste'));
+    // A equipe suspende a conta enquanto o comentário vai: o campo dá lugar à frase.
+    act(() => {
+      client.setQueryData(profileKeys.me('uid-camila'), (current: object | undefined) => ({
+        ...current,
+        suspendedAt: '2026-10-10T12:00:00.000Z',
+      }));
+    });
+    await screen.findByTestId('comment-suspended');
+    await act(async () => reply.reject(contentRefused()));
+
+    const row = await screen.findByLabelText(refusedLabel('Texto de teste'));
+    expect(screen.queryByRole('button', { name: refusedLabel('Texto de teste') })).toBeNull();
+    expect(row.props.accessibilityHint).toBeUndefined();
+    expect(screen.getByText(t('post.comments.refusedLocked'))).toBeTruthy();
+    expect(screen.queryByText(t('post.comments.refused'))).toBeNull();
+    expect(announcements()).toContain(t('post.comments.refusedLockedAnnouncement'));
+    expect(announcements()).not.toContain(t('post.comments.refusedAnnouncement'));
+    expect(haptics.trigger).toHaveBeenCalledWith('error');
+    // Sem toque: nada pede para esvaziar um campo que não existe, nada é mandado.
+    fireEvent.press(row);
+    expect(announcements()).not.toContain(t('post.comments.refusedBusy'));
+    expect(post).toHaveBeenCalledTimes(1);
+  });
+
+  it('a frase do teto do dia fica com o fã digitando, sem o link, até o próximo envio', async () => {
+    mockApi();
+    post.mockRejectedValueOnce(dailyLimit());
+    await renderPost();
+
+    sendComment('Primeiro');
+    const DAILY = t('errors.dailyLimit.comment');
+    expect(await screen.findByTestId('comment-refusal')).toHaveTextContent(DAILY);
+    expect(screen.queryByRole('link', { name: CONTACT })).toBeNull();
+    type('Outro texto');
+    expect(screen.getByTestId('comment-refusal')).toHaveTextContent(DAILY);
+
+    // O envio seguinte tira a frase.
+    post.mockResolvedValueOnce({ data: savedComment('Outro texto') } as never);
+    fireEvent.press(sendButton());
+    expect(screen.queryByTestId('comment-refusal')).toBeNull();
+    expect(await screen.findByLabelText(sentLabel('Outro texto'))).toBeTruthy();
     await settle();
   });
 });

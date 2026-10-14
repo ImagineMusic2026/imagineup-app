@@ -30,6 +30,7 @@ import { useIsOnline } from '@/hooks/use-is-online';
 import { useNow } from '@/hooks/use-now';
 import { useStayOnScreen, type StayOnScreenMode } from '@/hooks/use-stay-on-screen';
 import { t, type TranslationKey } from '@/i18n';
+import { API_ERROR_CODES } from '@/services/api/errors';
 import { actionRefusal } from '@/services/api/refusal';
 import { haptics } from '@/services/haptics';
 import { colors, spacing } from '@/theme';
@@ -81,13 +82,19 @@ const STATUS_ICON_SIZE = 18;
 const ALL_FIELDS: readonly EditProfileField[] = [...EDIT_PROFILE_FIELD_ORDER, 'privateAccount'];
 
 /**
- * O aviso embaixo do header: a falha do ✓, o suspenso (com o link "Escrever
- * para a equipe", `contact`), o só leitura.
+ * O aviso embaixo do header: a falha do ✓, o suspenso e o texto recusado pelo
+ * filtro (com o link "Escrever para a equipe" e o assunto do e-mail,
+ * `contact`), o só leitura.
  */
-type Notice = { text: string; tone: 'error' | 'info'; contact?: boolean };
+type Notice = { text: string; tone: 'error' | 'info'; contact?: TranslationKey };
 
-/** A falha do ✓ que fica embaixo do header; a incerta some quando a escuta mostra o perfil salvo. */
-type SaveMessage = { key: TranslationKey; uncertain: boolean };
+/**
+ * A falha do ✓ que fica embaixo do header; a incerta some quando a escuta
+ * mostra o perfil salvo. Com o `contact` (o texto recusado pelo filtro, seção
+ * 30), é a saída do falso positivo: o aviso informativo com o link, até o
+ * próximo ✓.
+ */
+type SaveMessage = { key: TranslationKey; uncertain: boolean; contact?: TranslationKey };
 
 interface HeaderProps {
   onClose?: () => void;
@@ -132,7 +139,9 @@ function EditProfileHeader({ onClose, closeDisabled = false, save, notice }: Hea
           {notice.text}
         </Text>
       ) : null}
-      {notice?.contact ? <SuspensionContact align="center" style={styles.contact} /> : null}
+      {notice?.contact ? (
+        <SuspensionContact align="center" subject={notice.contact} style={styles.contact} />
+      ) : null}
     </View>
   );
 }
@@ -344,9 +353,11 @@ function ProfileForm({ profile, fallbackName, online }: ProfileFormProps) {
     ) : null;
 
   const notice: Notice | null = suspended
-    ? { text: t('suspension.short'), tone: 'info', contact: true }
+    ? { text: t('suspension.short'), tone: 'info', contact: 'suspension.mailSubject' }
     : message && (pending || !message.uncertain)
-      ? { text: t(message.key), tone: 'error' }
+      ? message.contact
+        ? { text: t(message.key), tone: 'info', contact: message.contact }
+        : { text: t(message.key), tone: 'error' }
       : null;
 
   const askLeave = (): void => {
@@ -408,7 +419,7 @@ function ProfileForm({ profile, fallbackName, online }: ProfileFormProps) {
       failWith(lockedText(changeableAt));
       return;
     }
-    if (code === 'profile_invalid') {
+    if (code === API_ERROR_CODES.profileInvalid) {
       const field = SERVER_FIELD_TO_FORM[apiErrorDetail(error, 'field') ?? ''];
       // O gênero não tem texto de erro na linha: o aviso fica embaixo do header.
       if (field === 'gender') {
@@ -417,12 +428,20 @@ function ProfileForm({ profile, fallbackName, online }: ProfileFormProps) {
         return;
       }
       if (field) {
-        setError(
-          field,
-          { type: 'server', message: t('editProfile.fieldInvalid') },
-          { shouldFocus: true },
-        );
-        failWith(t('editProfile.fieldInvalid'));
+        // O texto recusado pelo filtro (seção 30): a frase dos Termos de uso no
+        // campo, e a saída do falso positivo embaixo do header, com o link.
+        const refused = actionRefusal(error, 'profile');
+        const content = refused.type === 'content';
+        const text = t(content ? refused.key : 'editProfile.fieldInvalid');
+        setError(field, { type: 'server', message: text }, { shouldFocus: true });
+        if (content) {
+          setMessage({
+            key: 'editProfile.contentRefusedNotice',
+            uncertain: false,
+            contact: 'contentFilter.mailSubject',
+          });
+        }
+        failWith(text);
         return;
       }
     }
@@ -490,9 +509,17 @@ function ProfileForm({ profile, fallbackName, online }: ProfileFormProps) {
       return;
     }
     const handle = result.handle ?? '';
-    if (handle !== raw) setValue(network, handle, { shouldDirty: true, shouldValidate: true });
-    // O erro de antes sai quando o fã corrige o campo.
-    else if (getFieldState(network).error) void trigger(network);
+    // A recusa do servidor (o filtro, seção 30, que o aparelho não conhece)
+    // fica ao sair do campo, também quando o texto ainda vai ser normalizado
+    // (o link colado, o @, a maiúscula): validar pelo zod do aparelho a
+    // apagaria. Ela só sai quando o fã mexe no campo, pela validação da
+    // mudança. O erro de antes sai quando o fã corrige o campo.
+    const serverError = getFieldState(network).error?.type === 'server';
+    if (handle !== raw) {
+      setValue(network, handle, { shouldDirty: true, shouldValidate: !serverError });
+    } else if (getFieldState(network).error && !serverError) {
+      void trigger(network);
+    }
   };
 
   return (

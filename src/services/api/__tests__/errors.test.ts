@@ -1,6 +1,6 @@
 import { AxiosError, AxiosHeaders, type InternalAxiosRequestConfig } from 'axios';
 
-import { ApiError, isAccountSuspended, toApiError } from '../errors';
+import { ApiError, isAccountSuspended, isContentRefusal, toApiError } from '../errors';
 
 // O erro da API como o app lê: o tipo pelo status, o código e, desde o perfil
 // novo (seção 28 de docs/arquitetura-api.md), o `details` do corpo.
@@ -181,5 +181,47 @@ describe('isAccountSuspended', () => {
       false,
     );
     expect(isAccountSuspended(new Error('account_suspended'))).toBe(false);
+  });
+});
+
+// O filtro do que o fã publica (seção 30): o motivo `not_allowed` nos dois
+// códigos de texto, também no erro que volta do disco como objeto do JSON.
+describe('isContentRefusal', () => {
+  const refused = (code: string, details: Record<string, unknown> | null) =>
+    toApiError(responseError(400, { code, message: 'Fora dos Termos de uso.', details }));
+
+  it.each([
+    ['comment_invalid', { reason: 'not_allowed' }],
+    ['profile_invalid', { field: 'bio', reason: 'not_allowed' }],
+    ['profile_invalid', { field: 'socials.instagram', reason: 'not_allowed' }],
+  ])('o 400 %s com not_allowed, no ApiError e no objeto do JSON', (code, details) => {
+    const error = refused(code, details);
+    expect(isContentRefusal(error)).toBe(true);
+    // O erro do comentário salvo no disco volta assim: sem a classe, com os campos.
+    const fromDisk: unknown = JSON.parse(JSON.stringify(error));
+    expect(fromDisk).not.toBeInstanceOf(ApiError);
+    expect(isContentRefusal(fromDisk)).toBe(true);
+  });
+
+  it('outro motivo, outro status, outro código ou sem details: não é', () => {
+    expect(isContentRefusal(refused('comment_invalid', { reason: 'too_long' }))).toBe(false);
+    expect(
+      isContentRefusal(refused('profile_invalid', { field: 'bio', reason: 'invisible' })),
+    ).toBe(false);
+    expect(isContentRefusal(refused('comment_invalid', null))).toBe(false);
+    expect(isContentRefusal(refused('username_invalid', { reason: 'not_allowed' }))).toBe(false);
+    expect(isContentRefusal(refused('invalid_request', { reason: 'not_allowed' }))).toBe(false);
+    expect(
+      isContentRefusal(
+        new ApiError('validation', 'x', 422, 'comment_invalid', { reason: 'not_allowed' }),
+      ),
+    ).toBe(false);
+    expect(isContentRefusal({ status: 400, code: 'comment_invalid', details: 'not_allowed' })).toBe(
+      false,
+    );
+    expect(isContentRefusal({ status: 400, code: 'comment_invalid' })).toBe(false);
+    expect(isContentRefusal(new Error('not_allowed'))).toBe(false);
+    expect(isContentRefusal(null)).toBe(false);
+    expect(isContentRefusal('comment_invalid')).toBe(false);
   });
 });

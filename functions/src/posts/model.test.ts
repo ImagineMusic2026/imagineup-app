@@ -1,12 +1,14 @@
 import { Timestamp } from 'firebase-admin/firestore';
 import { HttpsError } from 'firebase-functions/https';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { artistRecord, fanCountSyncTask } from '../centrals/model';
+import { isBlockedText } from '../content-filter';
 import { decodePageCursor, encodePageCursor } from '../page-cursor';
 import { windowTask } from '../window-task';
 import {
   commentRecord,
+  commentTextProblem,
   commentView,
   isRetriedDraft,
   mergePostBlocks,
@@ -24,6 +26,14 @@ import {
   viewCounts,
   type PostRecord,
 } from './model';
+
+// O filtro do que o fã publica (seção 30) trocado por um de palavras neutras:
+// nenhum termo da lista de verdade entra no repositório (30.11). O `abacaxi`
+// faz o papel do palavrão. O vi.mock sobe para antes dos imports.
+vi.mock('../content-filter', async (importOriginal) => {
+  const { fakeContentFilter } = await import('../../test/content-filter-fake.js');
+  return fakeContentFilter(await importOriginal());
+});
 
 const NOW = Date.parse('2026-10-05T15:00:00.000Z');
 const ts = (ms: number) => Timestamp.fromMillis(ms);
@@ -80,6 +90,54 @@ describe('texto do comentário (parseCommentText)', () => {
     expect(parseCommentText({ text: 42 })).toBeUndefined();
     expect(parseCommentText(null)).toBeUndefined();
     expect(parseCommentText([])).toBeUndefined();
+  });
+});
+
+describe('o filtro no comentário (seção 30)', () => {
+  it.each([
+    ['o termo', 'Que pepino esse show'],
+    ['a forma, em maiúsculas', 'PEPINA'],
+    ['o palavrão', 'Que abacaxi, Netto!'],
+    ['a frase', 'chuchu azedo'],
+    ['o termo seguido de !', 'pepino!!!'],
+  ])('recusa %s com not_allowed', (_, text) => {
+    expect(reasonOf(() => parseCommentText({ text }))).toBe('comment_invalid:not_allowed');
+  });
+
+  it('o details leva só o motivo, nunca o termo nem a categoria', () => {
+    let refused: unknown;
+    try {
+      parseCommentText({ text: 'que pepino' });
+    } catch (error) {
+      refused = error;
+    }
+    expect(refused).toBeInstanceOf(PostError);
+    expect((refused as PostError).details).toEqual({ reason: 'not_allowed' });
+  });
+
+  it('o not_allowed vem depois dos outros três motivos', () => {
+    expect(commentTextProblem('pepino '.repeat(80).trim())).toBe('too_long');
+    expect(commentTextProblem('pepino\nㅤ')).toBe('invisible');
+    expect(commentTextProblem('')).toBe('empty');
+    expect(commentTextProblem('pepino')).toBe('not_allowed');
+    // O vazio, o longo e o invisível nem chegam ao filtro.
+    vi.mocked(isBlockedText).mockClear();
+    commentTextProblem('');
+    commentTextProblem('a'.repeat(501));
+    commentTextProblem('oi\nㅤ');
+    expect(isBlockedText).not.toHaveBeenCalled();
+  });
+
+  it('o filtro recebe o texto limpo, no campo do comentário; o que passa sai igual', () => {
+    vi.mocked(isBlockedText).mockClear();
+    expect(parseCommentText({ text: '  ⁦Pepinada⁩ boa  \r\n\r\n\r\n  chuchu ' })).toBe(
+      'Pepinada boa\n\nchuchu',
+    );
+    expect(isBlockedText).toHaveBeenCalledWith('Pepinada boa\n\nchuchu', 'comment');
+    // Palavra inteira, nunca trecho, e a frase só com os pedaços seguidos.
+    for (const text of ['pepinada', 'abacaxizeiro', 'chuchu bem azedo', 'azedo chuchu']) {
+      expect(parseCommentText({ text }), text).toBe(text);
+    }
   });
 });
 

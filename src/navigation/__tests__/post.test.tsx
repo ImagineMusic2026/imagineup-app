@@ -1,4 +1,11 @@
-import { onlineManager, QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import {
+  dehydrate,
+  hydrate,
+  onlineManager,
+  QueryClient,
+  QueryClientProvider,
+  type DehydratedState,
+} from '@tanstack/react-query';
 import { router, Stack } from 'expo-router';
 import { Tabs } from 'expo-router/js-tabs';
 import {
@@ -28,6 +35,7 @@ import { fanKeys, type FanPublicProfile } from '@/domains/profile';
 import { ApiError } from '@/services/api/errors';
 import { haptics } from '@/services/haptics';
 import { createQueryClient } from '@/services/query/client';
+import { persistOptions } from '@/services/query/persister';
 import { resetRefusalAlerts } from '@/services/refusal-alert';
 import { usePreferencesStore } from '@/stores/preferences';
 import { useSessionStore } from '@/stores/session';
@@ -511,6 +519,78 @@ describe('o 429 com o cliente do app (seção 29, frente F)', () => {
     expect(retried.mock.calls[0]?.[0].idempotencyKey).toBe(firstKey);
     await waitFor(() =>
       expect(screen.queryByRole('button', { name: 'Você, não enviado: Que clipe!' })).toBeNull(),
+    );
+  });
+});
+
+// O filtro do que o fã publica (seção 30), com o cliente do app: o espião da
+// fixture faz o papel do servidor (as fixtures não filtram), e nenhum termo da
+// lista entra no teste.
+describe('o comentário da fila recusado pelo filtro (seção 30)', () => {
+  const TEXT = 'Texto de teste da fila';
+  const contentRefused = () =>
+    new ApiError('validation', 'Fora dos Termos de uso.', 400, 'comment_invalid', {
+      reason: 'not_allowed',
+    });
+
+  /** O cliente do app, com as defaults da fila, como o `AppProviders` monta. */
+  function appClient(): QueryClient {
+    const created = createQueryClient({
+      queries: { gcTime: Infinity },
+      mutations: { gcTime: Infinity },
+    });
+    registerPostMutationDefaults(created);
+    return created;
+  }
+
+  beforeEach(() => {
+    client = appClient();
+  });
+
+  it('a recusa com a tela fechada vai para o disco e volta "Não publicado"; o toque devolve o texto sem mandar de novo', async () => {
+    const add = jest.spyOn(postsFixture, 'addComment').mockImplementation(() => {
+      throw contentRefused();
+    });
+    // A mutação que volta do disco roda só com a default da fila, sem a tela.
+    await act(async () => {
+      await client
+        .getMutationCache()
+        .build(client, { mutationKey: postMutationKeys.comment })
+        .execute({
+          postId: 'p-clipe',
+          text: TEXT,
+          idempotencyKey: 'comentario-da-fila',
+          localId: 'local-da-fila',
+          sentAt: new Date().toISOString(),
+          author: { id: 'uid-camila', name: 'Camila Ribeiro', photoURL: null },
+        })
+        .catch(() => undefined);
+    });
+    expect(add).toHaveBeenCalledTimes(1);
+
+    // O app fecha (o persister grava, pelo JSON) e abre de novo com o cache do disco.
+    const saved = JSON.parse(
+      JSON.stringify(dehydrate(client, persistOptions.dehydrateOptions)),
+    ) as DehydratedState;
+    client.clear();
+    client = appClient();
+    hydrate(client, saved);
+    renderRouter(appTree, { initialUrl: '/post/p-clipe' });
+
+    const row = await screen.findByRole('button', { name: `Você, não publicado: ${TEXT}` });
+    expect(row.props.accessibilityHint).toBe('Volta o texto para o campo');
+    expect(screen.getByText('Não publicado. Toque para editar o texto')).toBeTruthy();
+
+    // O erro voltou do disco como objeto do JSON: o toque não manda de novo.
+    fireEvent.press(row);
+    expect(await screen.findByTestId('comment-refusal')).toHaveTextContent(
+      'Conforme os Termos de uso do ImagineUP, este comentário não pode ser publicado. Revise o texto.',
+    );
+    expect(screen.getByTestId('comment-input')).toHaveProp('value', TEXT);
+    expect(screen.queryByRole('button', { name: `Você, não publicado: ${TEXT}` })).toBeNull();
+    expect(add).toHaveBeenCalledTimes(1);
+    expect(client.getMutationCache().findAll({ mutationKey: postMutationKeys.comment })).toEqual(
+      [],
     );
   });
 });
