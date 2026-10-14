@@ -3,7 +3,8 @@ import { describe, expect, it } from 'vitest';
 
 import { seedEvents } from '../src/agenda';
 import { seedCentrals } from '../src/centrals';
-import { COMMENTS_PER_DAY, LIKES_PER_DAY } from '../src/moderation';
+import { isBlockedText } from '../src/content-filter';
+import { COMMENTS_PER_DAY, LIKES_PER_DAY, runResolveProfileReport } from '../src/moderation';
 import {
   DEFAULT_POINTS_CONFIG,
   dayKey,
@@ -12,6 +13,7 @@ import {
 } from '../src/points';
 import { seedCamilaLikes, seedEngagement, seedPosts } from '../src/posts';
 import { deleteUserData } from '../src/store';
+import { barredWordOf, readLegibleList, warnWithoutList } from './content-filter-list';
 import {
   central,
   countShardSum,
@@ -76,6 +78,12 @@ const unlike = (fan: Fan, postId: string, key = unique('chave-descurtir-')) =>
   http(env, `/posts/${postId}/like`, { method: 'DELETE', token: fan.token, key });
 
 const ago = (minutes: number) => Timestamp.fromMillis(Date.now() - minutes * 60_000);
+
+// O termo barrado do filtro (seção 30), escolhido por regra na lista legível,
+// fora de todo repositório; sem ela (o CI), o caso é pulado com aviso. As
+// funções do emulador carregam a lista de verdade, por chaves.
+const BARRED = barredWordOf(readLegibleList());
+if (!BARRED) warnWithoutList('posts.emulator.test.ts (o comentário barrado)');
 
 describe('mural (GET /feed), grade e detalhe', () => {
   it('só as centrais do fã, em ordem, sem rascunho nem central fora do ar, de 2 em 2', async () => {
@@ -408,6 +416,54 @@ describe('comentar e a lista de comentários', () => {
     );
   });
 
+  it.skipIf(!BARRED)(
+    'o comentário barrado pelo filtro (seção 30): 400 not_allowed sem gravar nada; o mesmo texto sem o termo passa',
+    async () => {
+      // O termo só vive em memória: as conferências abaixo comparam códigos,
+      // números e booleanos, e nenhuma mensagem de falha mostra o texto.
+      const barred = BARRED!;
+      const fan = await signUpFan(db, 'Camila Ribeiro');
+      const postId = await post(env, await central(env));
+      const day = dayKey(Date.now());
+      const clean = 'Que show, Netto';
+      const text = `${clean} ${barred.text}`;
+      expect(isBlockedText(text, 'comment')).toBe(true);
+      expect(isBlockedText(clean, 'comment')).toBe(false);
+      const send = (body: string) =>
+        http(env, `/posts/${postId}/comments`, {
+          method: 'POST',
+          token: fan.token,
+          key: unique('chave-filtro-'),
+          body: { text: body },
+        });
+      const stats = async () =>
+        (await db.collection(`statsDaily/${day}/statsShards`).get()).docs.map((doc) => [
+          doc.id,
+          doc.data(),
+        ]);
+      const walletBefore = await read(`wallets/${fan.uid}`);
+      const statsBefore = await stats();
+
+      const refused = await send(text);
+      expect(refused.status).toBe(400);
+      expect(refused.body.code).toBe('comment_invalid');
+      expect(refused.body.details).toEqual({ reason: 'not_allowed' });
+      // Nada gravado: nem comentário, nem chave, nem shard do post, nem o teto
+      // do dia e a marca de ativo da carteira, nem os agregados do dia.
+      expect((await db.collection(`posts/${postId}/postComments`).get()).size).toBe(0);
+      expect((await db.collection('idempotency').where('uid', '==', fan.uid).get()).size).toBe(0);
+      expect(await countShardSum(db, postId, 'comments')).toBe(0);
+      expect(await read(`wallets/${fan.uid}`)).toEqual(walletBefore);
+      expect(await stats()).toEqual(statsBefore);
+
+      const accepted = await send(clean);
+      expect(accepted.status).toBe(200);
+      expect(accepted.body.text).toBe(clean);
+      expect((await db.collection(`posts/${postId}/postComments`).get()).size).toBe(1);
+      expect((await read(`wallets/${fan.uid}`))?.days?.[day]?.count?.comment_sent).toBe(1);
+    },
+  );
+
   it('os comentários do bloqueado somem para quem bloqueou, atravessando páginas, e não para os outros', async () => {
     const [reader, blocked, other, third] = [
       await signUpFan(db, 'Leitora'),
@@ -567,6 +623,127 @@ describe('exclusão de conta (21.12)', () => {
       body: { text: 'Tarde demais' },
     });
     expect(late).toMatchObject({ status: 503, body: { code: 'profile_not_ready' } });
+  });
+
+  it('as denúncias de perfil (seção 29, 29.9): as que ele fez descontam a rodada aberta; o item dele vai a author_deleted; as contra ele ficam', async () => {
+    const [fan, other, third] = [
+      await signUpFan(db, 'Excluída'),
+      await signUpFan(db, 'Outra'),
+      await signUpFan(db, 'Terceira'),
+    ];
+    const [a, b, c] = [
+      await signUpFan(db, 'Alvo A'),
+      await signUpFan(db, 'Alvo B'),
+      await signUpFan(db, 'Alvo C'),
+    ];
+    const call = localApi(env, { now: () => Date.now() });
+    const report = async (who: Fan, target: Fan, reason: string | null = 'spam') => {
+      const result = await call('POST', `/fans/${target.uid}/report`, {
+        token: who.token,
+        key: unique('chave-perfil-'),
+        body: { reason },
+      });
+      expect(result.status).toBe(200);
+    };
+    const actor = { uid: 'equipe-de-teste', name: 'Equipe de Teste' };
+    const item = (uid: string) => read(`profileReportQueue/${uid}`);
+
+    // A: ela e outra pessoa, na rodada aberta (2 denúncias).
+    await report(fan, a, 'offensive');
+    await report(other, a);
+    // B: só ela, na rodada aberta.
+    await report(fan, b, null);
+    // C: ela na rodada 1, resolvida; outra pessoa reabre a rodada 2.
+    await report(fan, c);
+    await runResolveProfileReport(db, { uid: c.uid, resolution: 'kept', round: 1 }, { actor });
+    await report(other, c);
+    // Contra ela: um item aberto, com o comentário dela na fila de comentários também.
+    await report(other, fan);
+    await report(third, fan, 'harassment');
+    const postId = await post(env, await central(env));
+    const comment = await call('POST', `/posts/${postId}/comments`, {
+      token: fan.token,
+      key: unique('chave-comentario-'),
+      body: { text: 'Comentário dela' },
+    });
+    const commentId = comment.body.id as string;
+    await call('POST', `/posts/${postId}/comments/${commentId}/report`, {
+      token: other.token,
+      key: unique('chave-denuncia-'),
+      body: { reason: 'spam' },
+    });
+
+    await deleteUserData(db, fan.uid);
+
+    expect(
+      (await db.collection('profileReports').where('reporterUid', '==', fan.uid).get()).size,
+    ).toBe(0);
+    expect(await item(a.uid)).toMatchObject({
+      status: 'open',
+      round: 1,
+      reportCount: 1,
+      reasons: { spam: 1, offensive: 0 },
+    });
+    expect(await item(b.uid)).toMatchObject({
+      status: 'resolved',
+      resolution: 'withdrawn',
+      resolvedBy: null,
+      reportCount: 0,
+      reasons: { none: 0 },
+    });
+    // A denúncia dela era da rodada 1: o item da rodada 2 não muda.
+    expect(await item(c.uid)).toMatchObject({ status: 'open', round: 2, reportCount: 1 });
+    // O item dela: author_deleted, sem resumo; as denúncias contra ela ficam.
+    expect(await item(fan.uid)).toMatchObject({
+      status: 'resolved',
+      resolution: 'author_deleted',
+      resolvedBy: null,
+      resolvedDigest: null,
+      reportCount: 2,
+    });
+    expect(await exists(`profileReports/${fan.uid}_${other.uid}`)).toBe(true);
+    expect(await exists(`profileReports/${fan.uid}_${third.uid}`)).toBe(true);
+    // O passo de comentários resolve o item do comentário na moderationQueue, e nada nela tem o id do fã.
+    expect(await read(`moderationQueue/${commentId}`)).toMatchObject({
+      status: 'resolved',
+      resolution: 'author_deleted',
+    });
+    expect(await exists(`moderationQueue/${fan.uid}`)).toBe(false);
+
+    // Rodar de novo não muda nada.
+    const before = await db.collection('profileReportQueue').get();
+    await deleteUserData(db, fan.uid);
+    const after = await db.collection('profileReportQueue').get();
+    for (const doc of after.docs) {
+      const was = before.docs.find((item) => item.id === doc.id)!;
+      expect(doc.updateTime.isEqual(was.updateTime), doc.id).toBe(true);
+    }
+  });
+
+  it('o item resolvido do fã excluído perde o resumo do perfil e fica com a resolução', async () => {
+    const [fan, other] = [await signUpFan(db, 'Excluída'), await signUpFan(db, 'Outra')];
+    const call = localApi(env, { now: () => Date.now() });
+    const reported = await call('POST', `/fans/${fan.uid}/report`, {
+      token: other.token,
+      key: unique('chave-perfil-'),
+      body: { reason: 'spam' },
+    });
+    expect(reported.status).toBe(200);
+    await runResolveProfileReport(
+      db,
+      { uid: fan.uid, resolution: 'kept', round: 1 },
+      { actor: { uid: 'equipe-de-teste', name: 'Equipe de Teste' } },
+    );
+    expect((await read(`profileReportQueue/${fan.uid}`))!.resolvedDigest).toMatch(/^[0-9a-f]{64}$/);
+
+    await deleteUserData(db, fan.uid);
+
+    expect(await read(`profileReportQueue/${fan.uid}`)).toMatchObject({
+      status: 'resolved',
+      resolution: 'kept',
+      resolvedBy: { uid: 'equipe-de-teste', name: 'Equipe de Teste' },
+      resolvedDigest: null,
+    });
   });
 });
 

@@ -1,0 +1,3 @@
+resource.type="cloud_run_revision"
+log_id("run.googleapis.com/stdout")
+jsonPayload.message="acesso"

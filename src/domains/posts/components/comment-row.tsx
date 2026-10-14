@@ -41,8 +41,17 @@ export interface CommentRowProps {
    * servidor só acerta depois (bloco 9, 24.6) e que nas fixtures nunca muda.
    */
   me?: { name: string | null; photoURL: string | null };
-  /** Toque na linha que não foi enviada. */
+  /**
+   * Toque na linha que não foi enviada (tenta de novo) ou não foi publicada
+   * (devolve o texto ao campo, seção 30).
+   */
   onRetry?: () => void;
+  /**
+   * A conta suspensa: o compositor não tem campo, e o texto recusado pelo
+   * filtro não tem para onde voltar. A linha "Não publicado" só diz o motivo,
+   * sem toque e sem prometer edição.
+   */
+  refusedLocked?: boolean;
   /**
    * Abre as opções do comentário (denunciar, bloquear). Só no comentário de
    * outro fã: não no "Você", não no do artista, não no que ainda vai.
@@ -69,6 +78,7 @@ function rowLabel(comment: PostComment, now: Date, mine: boolean): string {
   const params = { author: authorOf(comment, mine), text: comment.text };
   if (comment.status === 'pending') return t('post.comments.pendingLabel', params);
   if (comment.status === 'failed') return t('post.comments.failedLabel', params);
+  if (comment.status === 'refused') return t('post.comments.refusedLabel', params);
   return t('post.comments.rowLabel', {
     ...params,
     time: formatRelativeAgoSpoken(comment.createdAt, now),
@@ -80,7 +90,10 @@ function rowLabel(comment: PostComment, now: Date, mine: boolean): string {
  * e o texto. Os do próprio fã dizem "Você", com as iniciais dele no avatar.
  * Para o leitor de tela, a linha é um elemento só ("Thalita S., há 1 hora:
  * ..."). O do fã que ainda vai fica apagado com "enviando…"; o que falhou diz
- * "Não enviado" em laranja e vira um botão que tenta de novo. Sem curtida em
+ * "Não enviado" em laranja e vira um botão que tenta de novo. O recusado pelo
+ * filtro (seção 30) é igual, com "Não publicado", o rótulo e a dica dele: o
+ * toque devolve o texto ao campo, e nunca manda de novo. Com a conta suspensa,
+ * sem campo, ele só diz o motivo, sem toque. Sem curtida em
  * comentário: o fã só curte o post.
  *
  * Toda linha é o mesmo pressável, ligado quando falhou (tenta de novo) e no
@@ -111,11 +124,18 @@ export function CommentRow({
   mine = false,
   me,
   onRetry,
+  refusedLocked = false,
   onOptions,
   onOpenProfile,
 }: CommentRowProps) {
   const pending = comment.status === 'pending';
-  const failed = comment.status === 'failed';
+  const refused = comment.status === 'refused';
+  // Com a conta suspensa, o recusado fica sem toque: não há campo para o texto.
+  const lockedRefusal = refused && refusedLocked;
+  // Sem entrega: nem hora, e a frase embaixo do texto.
+  const undelivered = comment.status === 'failed' || refused;
+  // A linha "Não publicado" se comporta como a "Não enviado", menos nos textos.
+  const failed = undelivered && !lockedRefusal;
   const key = comment.localId ?? comment.id;
   const largeText = useWindowDimensions().fontScale >= LARGE_TEXT_SCALE;
   // O comentário entregue de outro fã: as opções e o perfil público.
@@ -145,7 +165,7 @@ export function CommentRow({
             {nameOf(comment, mine)}
           </Text>
           {comment.authorIsArtist ? <VerifiedBadge size={13} /> : null}
-          {failed ? null : (
+          {undelivered ? null : (
             <Text variant="metaSmall" color={pending ? colors.textSecondary : colors.textMuted}>
               {pending
                 ? t('post.comments.sending')
@@ -160,9 +180,15 @@ export function CommentRow({
         >
           {comment.text}
         </Text>
-        {failed ? (
+        {undelivered ? (
           <Text variant="caption" color={colors.danger} style={styles.text}>
-            {t('post.comments.failed')}
+            {t(
+              lockedRefusal
+                ? 'post.comments.refusedLocked'
+                : refused
+                  ? 'post.comments.refused'
+                  : 'post.comments.failed',
+            )}
           </Text>
         ) : null}
       </View>
@@ -182,7 +208,7 @@ export function CommentRow({
         accessibilityLabel={rowLabel(comment, now, mine)}
         accessibilityHint={
           failed
-            ? t('post.comments.retryHint')
+            ? t(refused ? 'post.comments.refusedHint' : 'post.comments.retryHint')
             : openable
               ? t('fanProfile.openHint', { name: comment.authorName })
               : undefined

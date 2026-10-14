@@ -10,6 +10,7 @@ import { SectionLabel } from '@/components/section-label';
 import { Skeleton, SkeletonGroup } from '@/components/skeleton';
 import { Text } from '@/components/text';
 import { TextLink } from '@/components/text-link';
+import { SuspensionContact } from '@/domains/profile';
 import { t } from '@/i18n';
 import { colors, layout, radii, spacing, typography } from '@/theme';
 import { formatNumber, formatPointsSpoken } from '@/utils/number';
@@ -18,6 +19,7 @@ import {
   isOpenRedemption,
   limitReachedText,
   missingSpoken,
+  redeemFailureKey,
   redemptionStatusSpoken,
   redemptionStatusText,
   rewardMeta,
@@ -240,8 +242,10 @@ export function DetailsActions({ notice, noticeRef, ...buttons }: DetailsActions
   return (
     <>
       {notice ? (
-        <Notice ref={noticeRef} text={t(`rewards.errors.${notice}`)} style={styles.above} />
+        <Notice ref={noticeRef} text={t(redeemFailureKey(notice))} style={styles.above} />
       ) : null}
+      {/* A conta suspensa: o link irmão do aviso (seção 29, frente E). */}
+      {notice === 'suspended' ? <SuspensionContact align="center" style={styles.above} /> : null}
       <DetailsButtons {...buttons} />
     </>
   );

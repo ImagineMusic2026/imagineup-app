@@ -26,6 +26,7 @@ import type {
   PhotoChange,
   PhotoUploadSlot,
   ProfileChanges,
+  SuspensionReason,
   UsernameAvailability,
   Wallet,
 } from './types';
@@ -60,6 +61,18 @@ function isoOrNull(value: unknown): string | null {
   return date && !Number.isNaN(date.getTime()) ? date.toISOString() : null;
 }
 
+const SUSPENSION_REASONS: readonly SuspensionReason[] = [
+  'spam',
+  'offensive',
+  'harassment',
+  'other',
+];
+
+/** O motivo da suspensão, só dos quatro valores; o resto vira `null`. */
+function suspensionReasonOf(value: unknown): SuspensionReason | null {
+  return SUSPENSION_REASONS.find((reason) => reason === value) ?? null;
+}
+
 /**
  * O documento como o app usa. Só os campos conhecidos, cada um conferido: um
  * valor do servidor fora do formato vira `null` em vez de quebrar a tela, e o
@@ -69,7 +82,8 @@ function isoOrNull(value: unknown): string | null {
  * redes rede a rede pela lista fixa, com a fora do padrão como vazia.
  */
 export function toFanProfile(uid: string, data: DocumentData): FanProfile {
-  // A suspensão (bloco 11) só aparece quando existe: o perfil de sempre fica igual.
+  // A suspensão (bloco 11) só aparece quando existe, com o motivo (seção 29):
+  // o perfil de sempre fica igual.
   const suspendedAt = isoOrNull(data.suspendedAt);
   return {
     uid,
@@ -83,7 +97,9 @@ export function toFanProfile(uid: string, data: DocumentData): FanProfile {
     gender: genderOf(data.gender),
     privateAccount: data.privateAccount === true,
     socials: socialsOf(data.socials),
-    ...(suspendedAt ? { suspendedAt } : {}),
+    ...(suspendedAt
+      ? { suspendedAt, suspensionReason: suspensionReasonOf(data.suspensionReason) }
+      : {}),
   };
 }
 
@@ -337,6 +353,8 @@ export function toFanPublicProfile(fanId: string, data: unknown): FanPublicProfi
     restricted,
     bio: restricted ? null : textOrNull(body.bio),
     socials: restricted ? null : socialsOf(body.socials),
+    // Só o `true` vale: a `api` de antes da seção 29 não manda o campo.
+    blockedByMe: body.blockedByMe === true,
   };
 }
 

@@ -1,0 +1,52 @@
+{
+  "displayName": "ImagineUP: erros nas funções",
+  "userLabels": {"app": "imagineup"},
+  "severity": "ERROR",
+  "combiner": "OR",
+  "conditions": [
+    {
+      "displayName": "Rajada: mais de 4 erros em 10 min na mesma função",
+      "conditionThreshold": {
+        "filter": "metric.type=\"logging.googleapis.com/user/funcoes_erros\" AND resource.type=\"cloud_run_revision\"",
+        "aggregations": [
+          {
+            "alignmentPeriod": "600s",
+            "perSeriesAligner": "ALIGN_SUM",
+            "crossSeriesReducer": "REDUCE_SUM",
+            "groupByFields": ["resource.label.service_name"]
+          }
+        ],
+        "comparison": "COMPARISON_GT",
+        "thresholdValue": 4,
+        "duration": "60s",
+        "evaluationMissingData": "EVALUATION_MISSING_DATA_INACTIVE",
+        "trigger": {"count": 1}
+      }
+    },
+    {
+      "displayName": "Repetição: mais de 9 erros em 6 h na mesma função",
+      "conditionThreshold": {
+        "filter": "metric.type=\"logging.googleapis.com/user/funcoes_erros\" AND resource.type=\"cloud_run_revision\"",
+        "aggregations": [
+          {
+            "alignmentPeriod": "21600s",
+            "perSeriesAligner": "ALIGN_SUM",
+            "crossSeriesReducer": "REDUCE_SUM",
+            "groupByFields": ["resource.label.service_name"]
+          }
+        ],
+        "comparison": "COMPARISON_GT",
+        "thresholdValue": 9,
+        "duration": "60s",
+        "evaluationMissingData": "EVALUATION_MISSING_DATA_INACTIVE",
+        "trigger": {"count": 1}
+      }
+    }
+  ],
+  "alertStrategy": {"autoClose": "3600s"},
+  "documentation": {
+    "subject": "ImagineUP: erros nas funções",
+    "mimeType": "text/markdown",
+    "content": "Uma função do ImagineUP registrou erros acima do limite: mais de 4 em 10 minutos, ou mais de 9 em 6 horas, na mesma função.\n\nO que fazer:\n\n1. No console do Google Cloud, abra o Logs Explorer do projeto imagine-up-app.\n2. Use o filtro `resource.type=\"cloud_run_revision\" severity>=ERROR` e veja qual função e qual mensagem.\n3. Em deploy, erro de cota de CPU é esperado. Antes do próximo deploy, silencie os alertas (nota do app, seção Proteção da produção).\n4. Um 500 no log de pedido de um gatilho, de uma fila ou de uma agendada quer dizer que a função lançou. Os gatilhos com `retry: true` tentam de novo, e um `deleteUserProfile` que falha sempre deixa a exclusão da conta parada.\n5. Falta de memória aparece no log `run.googleapis.com/varlog/system` do serviço.\n\nO ruído \"Invalid request, unable to process\" das sondas de deploy nas callables fica de fora, e a api fica com o alerta de 5xx dela."
+  }
+}

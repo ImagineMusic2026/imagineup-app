@@ -1,6 +1,13 @@
 import { t } from '@/i18n';
 
-import { DISPLAY_NAME_MAX, resetEmailSchema, signInSchema, signUpSchema } from '../schemas';
+import {
+  changeEmailSchema,
+  changePasswordSchema,
+  DISPLAY_NAME_MAX,
+  resetEmailSchema,
+  signInSchema,
+  signUpSchema,
+} from '../schemas';
 
 const parseEmail = (email: string) => signInSchema.safeParse({ email, password: '123456' });
 
@@ -123,4 +130,60 @@ describe('código de convite do cadastro (opcional)', () => {
       expect(result.error?.issues[0]?.message).toBe(t('validation.inviteCodeInvalid'));
     },
   );
+});
+
+describe('trocar senha (seção 29, frente D)', () => {
+  const parse = (current: string, next: string) =>
+    changePasswordSchema.safeParse({ current, next });
+  const issues = (current: string, next: string) =>
+    parse(current, next).error?.issues.map((issue) => [issue.path[0], issue.message]);
+
+  it('a atual só não pode ir vazia: conta antiga pode ter senha mais curta que a regra', () => {
+    expect(parse('123', 'senha-nova').success).toBe(true);
+    expect(issues('', 'senha-nova')).toEqual([['current', t('deleteAccount.passwordRequired')]]);
+  });
+
+  it('a nova segue a regra do cadastro', () => {
+    expect(issues('senha-atual', '12345')).toEqual([
+      ['next', t('validation.passwordMin', { min: 6 })],
+    ]);
+  });
+
+  it('a nova igual à atual é recusada no campo da nova', () => {
+    expect(issues('senha-atual', 'senha-atual')).toEqual([
+      ['next', 'A senha nova precisa ser diferente da atual.'],
+    ]);
+  });
+});
+
+describe('trocar e-mail (seção 29, frente D)', () => {
+  const schema = changeEmailSchema('Camila@Teste.ImagineUP');
+  const parse = (email: string, password = 'senha-atual') => schema.safeParse({ email, password });
+
+  it('o e-mail novo sai normalizado, como no login', () => {
+    expect(parse(' Camila.Nova@Teste.ImagineUP ').data).toEqual({
+      email: 'camila.nova@teste.imagineup',
+      password: 'senha-atual',
+    });
+  });
+
+  it.each(['camila@teste.imagineup', ' CAMILA@teste.imagineup '])(
+    '%j é o e-mail de agora depois de normalizar: recusado no aparelho',
+    (email) => {
+      expect(parse(email).error?.issues[0]?.message).toBe('Este já é o e-mail da sua conta.');
+    },
+  );
+
+  it('e-mail fora do formato e senha vazia', () => {
+    expect(parse('nope').error?.issues[0]?.message).toBe(t('validation.emailInvalid'));
+    expect(parse('nova@x.com', '').error?.issues[0]?.message).toBe(
+      t('deleteAccount.passwordRequired'),
+    );
+  });
+
+  it('sem o e-mail da sessão, qualquer e-mail válido passa', () => {
+    expect(changeEmailSchema(null).safeParse({ email: 'a@x.com', password: 'x' }).success).toBe(
+      true,
+    );
+  });
 });

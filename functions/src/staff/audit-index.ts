@@ -40,6 +40,7 @@ const SECTION_BY_ACTION: Record<string, AuditSection> = {
   'fan.suspended': 'moderation',
   'fan.unsuspended': 'moderation',
   'fan.comments.hidden': 'moderation',
+  'fan.profile.report.resolved': 'moderation',
   'wallet.adjusted': 'fans',
   'fan.email.lookup': 'fans',
 };

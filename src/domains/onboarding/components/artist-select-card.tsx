@@ -14,14 +14,13 @@ import { PressableScale } from '@/components/pressable-scale';
 import { RemoteImage } from '@/components/remote-image';
 import { Scrim } from '@/components/scrim';
 import { Text } from '@/components/text';
-import type { Artist } from '@/domains/artists';
+import { artistCardLabel, fansText, type Artist } from '@/domains/artists';
 import { usePrefersReducedMotion } from '@/hooks/use-prefers-reduced-motion';
 import { borderWidths, colors, gradients, layout, motion, radii, spacing } from '@/theme';
 import { withAlpha } from '@/utils/color';
 import { selectionAccessibility } from '@/utils/selection-accessibility';
 
 import { useArtistSelection, useIsArtistSelected } from '../hooks/use-artist-selection';
-import { artistCardLabel, fansText } from '../selection';
 
 export interface ArtistSelectCardProps {
   artist: Artist;

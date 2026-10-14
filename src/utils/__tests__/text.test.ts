@@ -1,4 +1,10 @@
-import { firstNameAndInitial, initialsOf, matchesSearch, searchKey } from '../text';
+import {
+  firstNameAndInitial,
+  initialsOf,
+  matchesSearch,
+  nameBeforePeriod,
+  searchKey,
+} from '../text';
 
 describe('iniciais do avatar sem foto', () => {
   it.each([
@@ -73,5 +79,14 @@ describe('busca sem acento e sem maiúscula', () => {
     ['Nenho', '   ', true],
   ])('"%s" com a busca "%s" casa: %s', (text, query, expected) => {
     expect(matchesSearch(text, query)).toBe(expected);
+  });
+});
+
+describe('nome antes do ponto final (seção 29)', () => {
+  it('tira os pontos do fim e deixa o resto como veio', () => {
+    expect(nameBeforePeriod('Thalita S.')).toBe('Thalita S');
+    expect(nameBeforePeriod('Thalita Santos')).toBe('Thalita Santos');
+    expect(nameBeforePeriod('@jean.p')).toBe('@jean.p');
+    expect(nameBeforePeriod('Fã...')).toBe('Fã');
   });
 });

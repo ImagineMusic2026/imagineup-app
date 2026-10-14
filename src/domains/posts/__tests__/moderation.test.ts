@@ -2,7 +2,15 @@ import { followFixture } from '@/domains/artists/fixtures';
 import { api } from '@/services/api';
 import { resetFixtureSession, setFixtureNow } from '@/services/fixtures';
 
-import { blockFan, fetchComments, fetchFeed, reportComment } from '../api';
+import {
+  blockFan,
+  fetchBlockedFans,
+  fetchComments,
+  fetchFeed,
+  reportComment,
+  reportFan,
+  unblockFan,
+} from '../api';
 import { buildCommentsPageFixture, moderationFixture } from '../fixtures';
 
 // O perfil (Firestore) entra pelo domínio de missões; nada aqui fala com ele.
@@ -15,7 +23,7 @@ jest.mock('@/firebase', () => ({
   isFirebaseConfigured: true,
 }));
 jest.mock('@/services/api', () => ({
-  api: { get: jest.fn(), post: jest.fn(), put: jest.fn(), request: jest.fn() },
+  api: { get: jest.fn(), post: jest.fn(), put: jest.fn(), delete: jest.fn(), request: jest.fn() },
 }));
 
 // Lido na hora da chamada: cada teste escolhe a fonte.
@@ -25,8 +33,10 @@ jest.mock('@/config/data-source', () => ({
   usesFixtures: () => mockDataSource === 'fixtures',
 }));
 
+const get = jest.mocked(api.get);
 const post = jest.mocked(api.post);
 const put = jest.mocked(api.put);
+const del = jest.mocked(api.delete);
 
 // Terça, 29 de setembro de 2026, 20 h.
 const NOW = new Date(2026, 8, 29, 20, 0);
@@ -73,6 +83,49 @@ describe('denunciar e bloquear pela API', () => {
       headers: { 'Idempotency-Key': 'k3' },
     });
   });
+
+  it('o desbloqueio vai em DELETE /me/blocks/<uid> com a chave (seção 29)', async () => {
+    del.mockResolvedValue({ data: { fanId: 'uid Enzo', blocked: false } });
+    await expect(unblockFan({ fanId: 'uid Enzo', idempotencyKey: 'unblock-k4' })).resolves.toEqual({
+      fanId: 'uid Enzo',
+      blocked: false,
+    });
+    expect(del).toHaveBeenCalledWith('/me/blocks/uid%20Enzo', {
+      headers: { 'Idempotency-Key': 'unblock-k4' },
+    });
+  });
+
+  it('a denúncia de perfil vai em POST /fans/<uid>/report com o motivo (ou null) e a chave', async () => {
+    post.mockResolvedValue({ data: { fanId: 'uidEnzo', status: 'already_reported' } });
+    await expect(
+      reportFan({ fanId: 'uidEnzo', reason: 'harassment', idempotencyKey: 'report-fan-k5' }),
+    ).resolves.toEqual({ fanId: 'uidEnzo', status: 'already_reported' });
+    expect(post).toHaveBeenCalledWith(
+      '/fans/uidEnzo/report',
+      { reason: 'harassment' },
+      { headers: { 'Idempotency-Key': 'report-fan-k5' } },
+    );
+    await reportFan({ fanId: 'a/b', reason: null, idempotencyKey: 'report-fan-k6' });
+    expect(post).toHaveBeenLastCalledWith(
+      '/fans/a%2Fb/report',
+      { reason: null },
+      {
+        headers: { 'Idempotency-Key': 'report-fan-k6' },
+      },
+    );
+  });
+
+  it('a lista de bloqueados vai em GET /me/blocks com o cursor, sem o limit', async () => {
+    const page = {
+      items: [{ uid: 'uidEnzo', displayName: 'Enzo', username: 'enzo', photoURL: null }],
+      nextCursor: '3:uidEnzo',
+    };
+    get.mockResolvedValue({ data: page });
+    await expect(fetchBlockedFans(null)).resolves.toEqual(page);
+    expect(get).toHaveBeenCalledWith('/me/blocks', { params: { cursor: null } });
+    await fetchBlockedFans('3:uidEnzo');
+    expect(get).toHaveBeenLastCalledWith('/me/blocks', { params: { cursor: '3:uidEnzo' } });
+  });
 });
 
 describe('moderação de exemplo (fixtures)', () => {
@@ -115,6 +168,45 @@ describe('moderação de exemplo (fixtures)', () => {
         (item) => item.authorId === 'fa-thalita',
       ),
     ).toBe(true);
+  });
+
+  it('a denúncia de perfil (seção 29): already_reported na segunda vez da mesma pessoa, pelo outro id', async () => {
+    await expect(
+      reportFan({ fanId: 'fa-rank-01', reason: 'spam', idempotencyKey: 'report-fan-1' }),
+    ).resolves.toEqual({ fanId: 'fa-rank-01', status: 'reported' });
+    await expect(
+      reportFan({ fanId: 'fa-thalita', reason: null, idempotencyKey: 'report-fan-2' }),
+    ).resolves.toEqual({ fanId: 'fa-thalita', status: 'already_reported' });
+    await expect(
+      reportFan({ fanId: 'me', reason: null, idempotencyKey: 'report-fan-3' }),
+    ).rejects.toMatchObject({ status: 404, code: 'fan_not_found' });
+  });
+
+  it('a lista de bloqueados: a fa-rank-13 do seed, páginas de 6, e desbloquear pelo alias tira a pessoa', async () => {
+    await expect(fetchBlockedFans(null)).resolves.toEqual({
+      items: [
+        { uid: 'fa-rank-13', displayName: 'Bruno Santana', username: 'brunosan', photoURL: null },
+      ],
+      nextCursor: null,
+    });
+    for (const [index, id] of ['01', '02', '03', '04', '05', '06'].entries()) {
+      await blockFan({ fanId: `fa-rank-${id}`, idempotencyKey: `bloq-${index}` });
+    }
+    const first = await fetchBlockedFans(null);
+    expect(first.items).toHaveLength(6);
+    expect(first.items[0]?.uid).toBe('fa-rank-06');
+    expect(first.nextCursor).toBe('1:fa-rank-01');
+    await expect(fetchBlockedFans(first.nextCursor)).resolves.toMatchObject({
+      items: [{ uid: 'fa-rank-13' }],
+      nextCursor: null,
+    });
+
+    // fa-thalita é a fa-rank-01 (o alias do comentário).
+    await unblockFan({ fanId: 'fa-thalita', idempotencyKey: 'unblock-1' });
+    const after = await fetchBlockedFans(null);
+    expect(after.items.map((fan) => fan.uid)).not.toContain('fa-rank-01');
+    expect(after.items).toHaveLength(6);
+    expect(after.nextCursor).toBeNull();
   });
 });
 

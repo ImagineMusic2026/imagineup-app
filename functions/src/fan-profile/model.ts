@@ -1,3 +1,4 @@
+import { isBlockedHandle } from '../content-filter';
 import { dayKey } from '../day';
 import { isReservedUsername, USERNAME_PATTERN } from '../profile';
 
@@ -126,12 +127,16 @@ export type UsernameRefusal = 'format' | 'automatic' | 'reserved';
  * Por que o @ (já normalizado) não pode ser escolhido, ou null: fora do
  * formato do cadastro, no padrão do automático ou reservado (os mesmos
  * reservados do gerador, com os números no lugar de letras e o "rn", e os das
- * centrais, exatos). Quem tem dono é a reserva em `usernames/` que diz.
+ * centrais, exatos). Por último, o @ que bate na lista do filtro também é
+ * `reserved` (seção 30, decisão 6): sem status novo, e o automático nunca
+ * chega ao filtro (os dígitos do `fa` virariam letras). Quem tem dono é a
+ * reserva em `usernames/` que diz.
  */
 export function usernameRefusal(username: string): UsernameRefusal | null {
   if (!USERNAME_PATTERN.test(username)) return 'format';
   if (AUTOMATIC_USERNAME.test(username)) return 'automatic';
   if (isReservedUsername(username)) return 'reserved';
+  if (isBlockedHandle(username)) return 'reserved';
   return null;
 }
 

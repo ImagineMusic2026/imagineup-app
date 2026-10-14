@@ -1,4 +1,5 @@
 export { DateBadge, type DateBadgeProps } from './components/date-badge';
+export { EventHeroCard, type EventHeroCardProps } from './components/event-hero-card';
 export { EventRow, type EventRowProps } from './components/event-row';
 export {
   RsvpButton,
@@ -7,7 +8,7 @@ export {
   type RsvpChipProps,
   type RsvpLook,
 } from './components/rsvp-button';
-export { groupUpcomingByMonth, type AgendaMonth } from './group-by-month';
+export { groupUpcomingByMonth, isUpcoming, type AgendaMonth } from './group-by-month';
 export {
   agendaKeys,
   agendaMutationKeys,

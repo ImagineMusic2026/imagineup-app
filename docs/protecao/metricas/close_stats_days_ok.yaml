@@ -1,0 +1,6 @@
+description: 'Fechamentos do dia feitos pelo closeStatsDays (a linha "closeStatsDays: dias fechados").'
+filter: |-
+  resource.type="cloud_run_revision"
+  resource.labels.service_name="closestatsdays"
+  log_id("run.googleapis.com/stdout")
+  jsonPayload.message="closeStatsDays: dias fechados"

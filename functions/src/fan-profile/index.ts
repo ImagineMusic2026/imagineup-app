@@ -10,6 +10,7 @@
 export {
   BIO_MAX,
   BIO_MAX_LINES,
+  blockedFanOf,
   editableProfileOf,
   FAN_CITY_MAX,
   GENDERS,
@@ -20,6 +21,7 @@ export {
   parseProfileChanges,
   PROFILE_CHANGE_KEYS,
   profileDiff,
+  profileDigest,
   profileUpdateOf,
   publicProfileOf,
   SOCIAL_INPUT_MAX,

@@ -4,6 +4,8 @@ export { useAuthListener } from './hooks/use-auth-listener';
 export { useInviteSync } from './hooks/use-invite-sync';
 export { useSignOut } from './hooks/use-sign-out';
 export { AuthStack } from './views/auth-stack';
+export { ChangeEmailScreen } from './views/change-email';
+export { ChangePasswordScreen } from './views/change-password';
 export { DeleteAccountScreen } from './views/delete-account';
 export { SignInScreen } from './views/sign-in';
 export { SignUpScreen } from './views/sign-up';

@@ -112,7 +112,8 @@ describe('convite amarrado (o claim)', () => {
   it.each([
     ['o getIdToken que falhou antes de sair (unknown sem status)', new ApiError('unknown', 'x')],
     ['sem rede', new ApiError('network', 'x')],
-    ['429', new ApiError('unknown', 'x', 429, 'too_many_requests')],
+    ['429 do teto do dia', new ApiError('dailyLimit', 'x', 429, 'too_many_requests')],
+    ['429 do ritmo', new ApiError('rateLimited', 'x', 429, 'rate_limited')],
     ['404 sem o código do convite', new ApiError('notFound', 'x', 404, 'not_found')],
     ['503 do perfil que ainda nasce', new ApiError('server', 'x', 503, 'profile_not_ready')],
   ])('falha incerta (%s): o convite fica, com a mesma chave', async (_, error) => {

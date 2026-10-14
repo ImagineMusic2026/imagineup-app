@@ -10,7 +10,7 @@ import {
   testRouter,
   waitFor,
 } from 'expo-router/testing-library';
-import { AccessibilityInfo, Share, Text } from 'react-native';
+import { AccessibilityInfo, Alert, Share, Text } from 'react-native';
 
 import ArtistRoute from '@/app/(tabs)/(inicio,explorar,ranking,perfil)/artista/[artistaId]';
 import LeaveCentralRoute from '@/app/sair-da-central/[artistaId]';
@@ -34,6 +34,8 @@ import { api } from '@/services/api';
 import { ApiError } from '@/services/api/errors';
 import { fixtureWallet, setFixtureNow } from '@/services/fixtures';
 import { haptics } from '@/services/haptics';
+import { createQueryClient } from '@/services/query/client';
+import { resetRefusalAlerts } from '@/services/refusal-alert';
 import { motion } from '@/theme';
 
 // O build do Firebase que o Jest resolve é ESM; a página lê o nome do fã no perfil.
@@ -629,5 +631,58 @@ describe('página do artista (1d)', () => {
       await screen.findByLabelText('Nenho, artista verificado, gestão oficial Imagine'),
     ).toBeTruthy();
     expect(selected('Mural')).toBe(true);
+  });
+});
+
+describe('o teto do dia de entrar com o cliente do app (seção 29, frente F)', () => {
+  const DAILY_JOIN = 'Você chegou ao limite de entradas em centrais de hoje. Tente amanhã.';
+  const JOIN = 'Entrar na central de Rock Salles';
+  const dailyLimit = () =>
+    new ApiError(
+      'dailyLimit',
+      'Tentativas demais por hoje.',
+      429,
+      'too_many_requests',
+      { limit: 30 },
+      43_200_000,
+    );
+
+  beforeEach(() => {
+    client = createQueryClient({
+      queries: { gcTime: Infinity, networkMode: 'always' },
+      mutations: { gcTime: Infinity },
+    });
+    resetRefusalAlerts();
+    jest.spyOn(Alert, 'alert').mockImplementation(() => undefined);
+  });
+
+  it('abre o "Limite de hoje", um só para duas recusas, desfaz; a segunda anuncia a frase do teto', async () => {
+    jest.mocked(joinCentral).mockRejectedValue(dailyLimit());
+    await openArtist('rocksalles');
+
+    fireEvent.press(await screen.findByLabelText(JOIN));
+    await waitFor(() => expect(Alert.alert).toHaveBeenCalledTimes(1));
+    expect(Alert.alert).toHaveBeenCalledWith('Limite de hoje', DAILY_JOIN, [
+      { text: 'Entendi', style: 'cancel' },
+    ]);
+    // O botão volta a "Entrar" quando a entrada recusada termina (os avisos do
+    // Query saem num setTimeout, preso no relógio falso deste arquivo).
+    await waitFor(() => expect(client.isMutating()).toBe(0));
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(0);
+    });
+
+    expect(AccessibilityInfo.announceForAccessibility).not.toHaveBeenCalledWith(DAILY_JOIN);
+
+    // A segunda, com a trava de 30 s segurando o `Alert`, anuncia a frase do teto.
+    fireEvent.press(await screen.findByLabelText(JOIN));
+    await waitFor(() => expect(joinCentral).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(client.isMutating()).toBe(0));
+    expect(Alert.alert).toHaveBeenCalledTimes(1);
+    expect(await screen.findByLabelText(JOIN)).toBeTruthy();
+    expect(AccessibilityInfo.announceForAccessibility).toHaveBeenCalledWith(DAILY_JOIN);
+    expect(AccessibilityInfo.announceForAccessibility).not.toHaveBeenCalledWith(
+      t('artist.join.error'),
+    );
   });
 });

@@ -174,6 +174,40 @@ describe('rotas do mural, da agenda e da moderação (bloco 6)', () => {
     });
   });
 
+  it('a lista de bloqueados e a denúncia de perfil (seção 29) não colidem com as rotas de antes', () => {
+    expect(matchRoute(API_ROUTES, 'GET', '/me/blocks')).toMatchObject({
+      kind: 'match',
+      route: { method: 'GET', pattern: '/me/blocks', writes: false },
+      params: {},
+    });
+    expect(matchRoute(API_ROUTES, 'PUT', '/me/blocks')).toEqual({
+      kind: 'method_not_allowed',
+      allow: ['GET'],
+    });
+    // O GET /me/blocks/x segue 405.
+    expect(matchRoute(API_ROUTES, 'GET', '/me/blocks/uidEnzo')).toEqual({
+      kind: 'method_not_allowed',
+      allow: ['PUT', 'DELETE'],
+    });
+    expect(matchRoute(API_ROUTES, 'POST', '/fans/uidPromo/report')).toMatchObject({
+      kind: 'match',
+      route: { method: 'POST', pattern: '/fans/:fanId/report', writes: true },
+      params: { fanId: 'uidPromo' },
+    });
+    expect(matchRoute(API_ROUTES, 'GET', '/fans/uidPromo/report')).toEqual({
+      kind: 'method_not_allowed',
+      allow: ['POST'],
+    });
+    // O perfil público continua no GET /fans/:fanId, e o PUT dele segue 405.
+    expect(matchRoute(API_ROUTES, 'GET', '/fans/uidPromo')).toMatchObject({
+      route: { pattern: '/fans/:fanId' },
+    });
+    expect(matchRoute(API_ROUTES, 'PUT', '/fans/uidPromo')).toEqual({
+      kind: 'method_not_allowed',
+      allow: ['GET'],
+    });
+  });
+
   it('/artists/:artistId e /artists/:artistId/posts não se confundem', () => {
     expect(matchRoute(API_ROUTES, 'GET', '/artists/nettobrito')).toMatchObject({
       route: { pattern: '/artists/:artistId' },

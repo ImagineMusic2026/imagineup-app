@@ -1,5 +1,7 @@
 import { FieldValue, Timestamp, type Firestore, type Transaction } from 'firebase-admin/firestore';
 
+import type { BlockedFansPage } from '../api/contract';
+import { blockedFanOf, profileDigest } from '../fan-profile/details';
 import {
   addEngagementCounts,
   planAwards,
@@ -15,17 +17,28 @@ import { countDailyAction, enforceDailyCap } from './caps';
 import {
   BLOCK_LIST_MAX,
   blockedOf,
+  blockedPage,
   emptyReasons,
+  formatBlockCursor,
   ModerationError,
   reasonKey,
+  type BlockCursor,
   type ReportReason,
 } from './model';
-import { blockListRef, queueItemRef, reportRef } from './store';
+import {
+  blockListRef,
+  profileQueueItemRef,
+  profileReportRef,
+  queueItemRef,
+  reportRef,
+} from './store';
 
 // Moderação mínima do bloco 6 no Firestore (provisória, UP-48): denunciar o
 // comentário de outro fã, com a fila da seção Moderação, e bloquear um fã
 // (os comentários dele somem para quem bloqueou). A ordem de uma rota que
-// grava é a de sempre. docs/arquitetura-api.md, 21.4 e 21.8.
+// grava é a de sempre. docs/arquitetura-api.md, 21.4 e 21.8. Desde as
+// exigências das lojas (seção 29, 29.4): denunciar um perfil, na fila
+// separada `profileReportQueue`, e ler a lista de bloqueados.
 
 const tsOf = (ms: number) => Timestamp.fromMillis(ms);
 
@@ -122,6 +135,116 @@ export async function reportComment(
   return { plan, status: 'reported' };
 }
 
+export type ReportFanOutcome = { plan: AwardPlan; status: 'reported' | 'already_reported' };
+
+/** A rodada guardada (inteiro de 1 em diante), ou 0 quando falta ou está torta. */
+const roundOf = (value: unknown): number =>
+  typeof value === 'number' && Number.isSafeInteger(value) && value >= 1 ? value : 0;
+
+/**
+ * Denunciar um perfil (`POST /fans/:fanId/report`, seção 29, 29.4), na
+ * transação do runIdempotent: o próprio uid é 400 (`own_profile`, sem ler);
+ * um `getAll` do perfil do alvo, da denúncia de quem pede e do item da fila
+ * (`profileReportQueue/{fanId}`, separada da `moderationQueue`); sem o perfil,
+ * 404. A mesma pessoa na mesma rodada (o `round` do item na denúncia) responde
+ * `already_reported` sem contar no teto: com o item aberto, sempre; com o
+ * item resolvido, só se o perfil não mudou desde a resolução (o
+ * `profileDigest` de agora igual ao `resolvedDigest`). Senão, o teto do dia
+ * (`report`, somando comentário e perfil); o item nasce com a rodada 1, soma
+ * 1, ou reabre com a rodada seguinte, a contagem do zero e o `openedAt` novo
+ * (o `firstReportedAt` fica); a denúncia é regravada com a rodada em que
+ * contou. A rodada é sempre o inteiro, nunca o `reportedAt` comparado com o
+ * `openedAt` (relógios de instâncias diferentes). A denúncia não olha a conta
+ * privada, a suspensão nem a lista de bloqueios do alvo: a resposta é a mesma
+ * (o bloqueado não fica sabendo).
+ */
+export async function reportFan(
+  tx: Transaction,
+  db: Firestore,
+  options: { fan: FanContext; award: AwardContext; fanId: string; reason: ReportReason | null },
+): Promise<ReportFanOutcome> {
+  const { fan, award, fanId, reason } = options;
+  if (fanId === fan.uid) throw new ModerationError('own_profile');
+  const reportDoc = profileReportRef(db, fanId, fan.uid);
+  const itemDoc = profileQueueItemRef(db, fanId);
+  const [target, report, item] = await tx.getAll(
+    db.collection('users').doc(fanId),
+    reportDoc,
+    itemDoc,
+  );
+  if (!target!.exists) throw new ModerationError('fan_not_found');
+  const round = item!.exists ? roundOf(item!.get('round')) : 0;
+  const open = item!.exists && item!.get('status') === 'open';
+  const sameRound = report!.exists && round > 0 && roundOf(report!.get('round')) === round;
+  const unchanged =
+    item!.exists &&
+    !open &&
+    item!.get('resolvedDigest') === profileDigest(target!.data() as Record<string, unknown>);
+  if (sameRound && (open || unchanged)) {
+    return {
+      plan: await planAwards(tx, db, [{ uid: fan.uid, fan, entries: [] }], award),
+      status: 'already_reported',
+    };
+  }
+  enforceDailyCap(fan, award, 'report');
+  const plan = await planAwards(tx, db, [{ uid: fan.uid, fan, entries: [] }], award);
+  const at = tsOf(award.now);
+  const key = reasonKey(reason);
+  let reportRound: number;
+  if (!item!.exists) {
+    reportRound = 1;
+    tx.create(itemDoc, {
+      uid: fanId,
+      reportCount: 1,
+      reasons: { ...emptyReasons(), [key]: 1 },
+      status: 'open',
+      resolution: null,
+      round: reportRound,
+      openedAt: at,
+      firstReportedAt: at,
+      lastReportedAt: at,
+      resolvedAt: null,
+      resolvedBy: null,
+      resolvedDigest: null,
+      schemaVersion: 1,
+    });
+  } else if (open) {
+    reportRound = round;
+    tx.update(itemDoc, {
+      reportCount: FieldValue.increment(1),
+      [`reasons.${key}`]: FieldValue.increment(1),
+      lastReportedAt: at,
+    });
+  } else {
+    // Resolvido (qualquer resolução): reabre na rodada seguinte, com a contagem do zero.
+    reportRound = round + 1;
+    tx.update(itemDoc, {
+      status: 'open',
+      resolution: null,
+      resolvedAt: null,
+      resolvedBy: null,
+      resolvedDigest: null,
+      round: reportRound,
+      reportCount: 1,
+      reasons: { ...emptyReasons(), [key]: 1 },
+      openedAt: at,
+      lastReportedAt: at,
+    });
+  }
+  tx.set(reportDoc, {
+    targetUid: fanId,
+    reporterUid: fan.uid,
+    reason,
+    round: reportRound,
+    reportedAt: at,
+    day: plan.day,
+    schemaVersion: 1,
+  });
+  addEngagementCounts(plan, [{ kind: 'reports', artistIds: [] }]);
+  countDailyAction(plan, fan, award, 'report');
+  return { plan, status: 'reported' };
+}
+
 export type BlockOutcome = { plan: AwardPlan; blocked: boolean };
 
 /**
@@ -188,6 +311,33 @@ export async function unblockFan(
   return { plan, blocked: false };
 }
 
+/**
+ * A lista de bloqueados (`GET /me/blocks`, seção 29, 29.4), fora de transação:
+ * a lista de quem pede (sem ela, a página vazia: nunca bloqueou, ou a conta é
+ * só da equipe), a página pelo `blockedPage` (do mais novo ao mais antigo,
+ * com o cursor pela posição na ordem da inclusão) e um `getAll` dos perfis da
+ * página. O fã sem perfil sai (a exclusão já tira o uid das listas; sobra só
+ * numa corrida), e a página pode vir menor, com o cursor. Cada item traz só o
+ * uid, o nome, o @ e a foto.
+ */
+export async function readBlockedFans(
+  db: Firestore,
+  uid: string,
+  query: { cursor: BlockCursor | null; limit: number },
+): Promise<BlockedFansPage> {
+  const list = await blockListRef(db, uid).get();
+  if (!list.exists) return { items: [], nextCursor: null };
+  const { uids, next } = blockedPage(blockedOf(list.get('blocked')), query.cursor, query.limit);
+  const profiles =
+    uids.length > 0 ? await db.getAll(...uids.map((id) => db.collection('users').doc(id))) : [];
+  const items = profiles.flatMap((profile) =>
+    profile.exists
+      ? [blockedFanOf(profile.id, (profile.data() ?? {}) as Record<string, unknown>)]
+      : [],
+  );
+  return { items, nextCursor: next ? formatBlockCursor(next) : null };
+}
+
 /** Denunciar fora da API (seed). Rodar de novo responde `already_reported`. */
 export function runReport(
   db: Firestore,
@@ -198,4 +348,26 @@ export function runReport(
   return runAsFan(db, uid, options, (tx, fan, award) =>
     reportComment(tx, db, { fan, award, ...input }),
   );
+}
+
+/** Denunciar um perfil fora da API (seed, 29.10). Na mesma rodada, `already_reported`. */
+export function runReportFan(
+  db: Firestore,
+  uid: string,
+  input: { fanId: string; reason: ReportReason | null },
+  options: RunOptions,
+): Promise<ReportFanOutcome> {
+  return runAsFan(db, uid, options, (tx, fan, award) =>
+    reportFan(tx, db, { fan, award, ...input }),
+  );
+}
+
+/** Bloquear fora da API (seed, 29.10). Quem já está na lista fica, sem efeito. */
+export function runBlockFan(
+  db: Firestore,
+  uid: string,
+  input: { fanId: string },
+  options: RunOptions,
+): Promise<BlockOutcome> {
+  return runAsFan(db, uid, options, (tx, fan, award) => blockFan(tx, db, { fan, award, ...input }));
 }

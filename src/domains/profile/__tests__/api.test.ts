@@ -203,6 +203,26 @@ describe('perfil do Firestore', () => {
     );
   });
 
+  it('o motivo da suspensão (seção 29) só com os quatro valores, e só com a suspensão', () => {
+    const suspended = (reason: unknown) =>
+      toFanProfile('uid-camila', {
+        ...CAMILA,
+        suspendedAt: timestamp('2026-10-07T12:00:00.000Z'),
+        suspensionReason: reason,
+      }).suspensionReason;
+    expect(suspended('spam')).toBe('spam');
+    expect(suspended('offensive')).toBe('offensive');
+    expect(suspended('harassment')).toBe('harassment');
+    expect(suspended('other')).toBe('other');
+    expect(suspended('fraude')).toBeNull();
+    expect(suspended(3)).toBeNull();
+    expect(suspended(undefined)).toBeNull();
+    // Sem a suspensão, o perfil de sempre fica igual, sem o campo.
+    expect(toFanProfile('uid-camila', { ...CAMILA, suspensionReason: 'spam' })).not.toHaveProperty(
+      'suspensionReason',
+    );
+  });
+
   it('campo fora do formato vira null em vez de quebrar a tela', () => {
     expect(
       toFanProfile('uid', { displayName: 42, username: '', city: ['x'], createdAt: 'não é data' }),
@@ -486,6 +506,7 @@ describe('perfil público de outro fã (seção 28)', () => {
       linkedin: 'thalita-teste-imagineup',
       x: 'thalitatesteup',
     },
+    blockedByMe: false,
   };
 
   it('com a API, pede /fans/:fanId com o id codificado e confere a resposta', async () => {
@@ -530,6 +551,7 @@ describe('perfil público de outro fã (seção 28)', () => {
       'restricted',
       'bio',
       'socials',
+      'blockedByMe',
     ]);
 
     // Nenhuma rede no padrão: sem redes.
@@ -557,7 +579,23 @@ describe('perfil público de outro fã (seção 28)', () => {
       restricted: false,
       bio: null,
       socials: null,
+      blockedByMe: false,
     });
+  });
+
+  it('o blockedByMe (seção 29) nas duas visões; só o true vale, e a api de antes, sem o campo, dá false', () => {
+    expect(toFanPublicProfile('fa-rank-01', { ...THALITA, blockedByMe: true })).toEqual({
+      ...THALITA,
+      blockedByMe: true,
+    });
+    expect(
+      toFanPublicProfile('fa-rank-05', { ...THALITA, restricted: true, blockedByMe: true }),
+    ).toMatchObject({ restricted: true, bio: null, socials: null, blockedByMe: true });
+    const { blockedByMe: _blocked, ...before } = THALITA;
+    expect(toFanPublicProfile('fa-rank-01', before).blockedByMe).toBe(false);
+    expect(toFanPublicProfile('fa-rank-01', { ...THALITA, blockedByMe: 'sim' }).blockedByMe).toBe(
+      false,
+    );
   });
 
   it('com a API, o 404 passa como veio', async () => {
@@ -569,6 +607,8 @@ describe('perfil público de outro fã (seção 28)', () => {
 
   it('nas fixtures, o perfil de exemplo sem chamar a API; o desconhecido dá 404 fan_not_found', async () => {
     await expect(fetchFanProfile('fa-rank-01')).resolves.toEqual(THALITA);
+    // A fa-rank-13 começa bloqueada, como no seed (29.10).
+    await expect(fetchFanProfile('fa-rank-13')).resolves.toMatchObject({ blockedByMe: true });
     await expect(fetchFanProfile('fa-rank-05')).resolves.toMatchObject({
       restricted: true,
       bio: null,

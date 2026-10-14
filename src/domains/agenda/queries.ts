@@ -21,8 +21,10 @@ import { rewardsToast } from '@/domains/profile/action-rewards';
 import { refreshRanking } from '@/domains/ranking';
 import { t } from '@/i18n';
 import { ApiError } from '@/services/api/errors';
+import { actionRefusal } from '@/services/api/refusal';
 import { haptics, type HapticEvent } from '@/services/haptics';
 import { queryOptionsFor } from '@/services/query/client';
+import { alertActionRefusal, showRefusalAlert } from '@/services/refusal-alert';
 import { createIdempotencyKey } from '@/utils/id';
 
 import { fetchAgenda, fetchArtistAgenda, fetchMyRsvps, setEventRsvp } from './api';
@@ -68,6 +70,9 @@ function refreshPointsAfterRsvp(client: QueryClient, result: RsvpResult): void {
 const isNotFound = (error: unknown): boolean =>
   error instanceof ApiError && error.kind === 'notFound';
 
+/** Falha de resultado incerto (rede, prazo, servidor): o servidor pode ter gravado. */
+const isUncertain = (error: unknown): boolean => !(error instanceof ApiError) || error.isRetryable;
+
 /**
  * O show saiu do ar ou encerrou entre a lista e o toque (o servidor recusa o
  * "Eu vou" com 404): a agenda e o mural buscam de novo, e o show some da
@@ -82,6 +87,10 @@ function refreshAfterGoneEvent(client: QueryClient): void {
  * A presença feita offline fica salva e volta a rodar quando o app reabre.
  * Para isso a função precisa estar registrada aqui, fora do componente, com o
  * que ela muda nas outras telas (a do componente só vale com ele montado).
+ * Recusada sem dúvida (o teto do dia, o suspenso, o ritmo depois das novas
+ * tentativas), o "Eu vou" que veio marcado com o cache do disco desfaz: a
+ * lista de presenças busca de novo (29.11, frente F); o teto do dia abre o
+ * "Limite de hoje".
  */
 export function registerAgendaMutationDefaults(client: QueryClient): void {
   client.setMutationDefaults(agendaMutationKeys.rsvp, {
@@ -89,6 +98,11 @@ export function registerAgendaMutationDefaults(client: QueryClient): void {
     onSuccess: (result: RsvpResult) => refreshPointsAfterRsvp(client, result),
     onError: (error: unknown) => {
       if (isNotFound(error)) refreshAfterGoneEvent(client);
+      if (isUncertain(error)) return;
+      void client.invalidateQueries({ queryKey: agendaKeys.rsvps() });
+      if (actionRefusal(error, 'rsvp').type === 'dailyLimit') {
+        showRefusalAlert('dailyLimit', 'rsvp');
+      }
     },
   });
 }
@@ -251,7 +265,14 @@ export function useRsvpMutation(eventId: string) {
         );
       }
       haptics.trigger('error');
-      AccessibilityInfo.announceForAccessibility(t('agenda.rsvp.error'));
+      // O teto do dia abre o "Limite de hoje", e a conta suspensa, o "Conta
+      // suspensa" (pelo `MutationCache`): com o `Alert`, sem anúncio. Com a
+      // trava de 30 s segurando o `Alert`, anuncia a frase da recusa, que
+      // desmente o "Presença confirmada" do `onMutate`. O ritmo que esgotou as
+      // tentativas diz a frase dele.
+      const refusal = actionRefusal(error, 'rsvp');
+      if (alertActionRefusal(refusal.type, 'rsvp')) return;
+      AccessibilityInfo.announceForAccessibility(t(refusal.key));
     },
     onSettled: () => {
       // Com outra presença ainda indo, a busca traria a lista sem ela, e o

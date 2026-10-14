@@ -17,6 +17,11 @@ export interface ApiRequest {
   query: Record<string, unknown>;
   body: unknown;
   rawBody?: Buffer;
+  /**
+   * O `req.ip` do Express. Só vale sem o X-Forwarded-For: com ele, a linha
+   * `acesso` usa o último item do cabeçalho (clientIp, em access-log.ts).
+   */
+  ip?: string;
 }
 
 /** O que o handler usa da resposta (o Response do Express cabe aqui). */

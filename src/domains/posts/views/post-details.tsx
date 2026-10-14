@@ -16,12 +16,17 @@ import { EmptyState } from '@/components/empty-state';
 import { BackHeader } from '@/components/header';
 import { Screen } from '@/components/screen';
 import { SectionHeader } from '@/components/section-header';
-import { fanProfileHref, useFanIdentity, useWatchMyProfile } from '@/domains/profile';
+import {
+  fanProfileHref,
+  useFanIdentity,
+  useSuspension,
+  useWatchMyProfile,
+} from '@/domains/profile';
 import { useAnnounceWhen } from '@/hooks/use-announce-when';
 import { useKeyboardVisible } from '@/hooks/use-keyboard-visible';
 import { useNow } from '@/hooks/use-now';
 import { usePrefersReducedMotion } from '@/hooks/use-prefers-reduced-motion';
-import { t } from '@/i18n';
+import { t, type TranslationKey } from '@/i18n';
 import { ApiError } from '@/services/api/errors';
 import { borderWidths, colors, spacing } from '@/theme';
 import { formatNumber } from '@/utils/number';
@@ -37,11 +42,23 @@ import {
   useLocalComments,
   usePostQuery,
   useToggleLikeMutation,
+  type CommentRefusal,
   type LikeAward,
 } from '../queries';
 import type { Post, PostComment } from '../types';
 
 const isIOS = Platform.OS === 'ios';
+
+/**
+ * O link "Escrever para a equipe" embaixo da frase da recusa, com o assunto do
+ * e-mail: a conta suspensa e o texto recusado pelo filtro (seção 30) têm; o
+ * teto do dia não.
+ */
+const REFUSAL_CONTACT: Record<CommentRefusal['type'], TranslationKey | null> = {
+  suspended: 'suspension.mailSubject',
+  content: 'contentFilter.mailSubject',
+  dailyLimit: null,
+};
 
 /** A mesma linha antes e depois de chegar ao servidor: o id local fica. */
 export function commentKey(comment: PostComment): string {
@@ -158,8 +175,12 @@ export function PostDetailsScreen() {
   const local = useLocalComments(postId);
   const like = useToggleLikeMutation();
   const composer = useRef<CommentComposerHandle>(null);
+  // A conta suspensa: o compositor dá lugar à frase (seção 29, frente E).
+  const { suspended } = useSuspension();
   const commenting = useAddCommentMutation(postId, {
     restoreDraft: (text) => composer.current?.restore(text) ?? false,
+    focusDraft: () => composer.current?.focus(),
+    suspended,
   });
   const listRef = useRef<FlashListRef<PostComment>>(null);
   const scrollY = useRef(0);
@@ -345,6 +366,7 @@ export function PostDetailsScreen() {
               me={me}
               animateIn={item.status === 'pending' && sentKeys.has(commentKey(item))}
               onRetry={() => commenting.retry(item.id)}
+              refusedLocked={suspended}
               onOptions={() => openOptions(item)}
               onOpenProfile={() => router.push(fanProfileHref(item.authorId))}
             />
@@ -379,6 +401,16 @@ export function PostDetailsScreen() {
           sending={local.sending}
           award={commenting.award}
           keyboardVisible={keyboardVisible}
+          suspended={suspended}
+          refusal={
+            commenting.refusal
+              ? {
+                  text: t(commenting.refusal.key),
+                  contact: REFUSAL_CONTACT[commenting.refusal.type],
+                }
+              : null
+          }
+          onEditAfterRefusal={commenting.dismissContentRefusal}
         />
       </Screen>
     </KeyboardAvoidingView>

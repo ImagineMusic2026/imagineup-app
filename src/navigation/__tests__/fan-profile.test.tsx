@@ -1,4 +1,4 @@
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { onlineManager, QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { router, Stack } from 'expo-router';
 import { Tabs } from 'expo-router/js-tabs';
 import {
@@ -10,10 +10,11 @@ import {
   waitFor,
 } from 'expo-router/testing-library';
 import { getDoc, onSnapshot } from 'firebase/firestore';
-import { AccessibilityInfo, Linking, Text } from 'react-native';
+import { AccessibilityInfo, Alert, Linking, Text, type AlertButton } from 'react-native';
 
 import ArtistRoute from '@/app/(tabs)/(inicio,explorar,ranking,perfil)/artista/[artistaId]';
 import RankingRoute from '@/app/(tabs)/(ranking)/ranking';
+import ReportFanRoute from '@/app/denunciar-perfil/[fanId]';
 import FanProfileRoute from '@/app/fa/[fanId]';
 import PostRoute from '@/app/post/[postId]';
 import { followFixture } from '@/domains/artists/fixtures';
@@ -21,7 +22,7 @@ import { missionsFixture } from '@/domains/missions';
 import { moderationFixture, postsFixture } from '@/domains/posts/fixtures';
 import { api } from '@/services/api';
 import { ApiError } from '@/services/api/errors';
-import { fixtureWallet, setFixtureNow } from '@/services/fixtures';
+import { fixtureBlocks, fixtureWallet, setFixtureNow } from '@/services/fixtures';
 import { haptics } from '@/services/haptics';
 import { useSessionStore } from '@/stores/session';
 import { usePreferencesStore } from '@/stores/preferences';
@@ -40,7 +41,7 @@ jest.mock('@/firebase', () => ({
   isFirebaseConfigured: true,
 }));
 jest.mock('@/services/api', () => ({
-  api: { get: jest.fn(), post: jest.fn(), request: jest.fn() },
+  api: { get: jest.fn(), post: jest.fn(), put: jest.fn(), delete: jest.fn(), request: jest.fn() },
 }));
 jest.mock('@/config/env', () => ({
   firebaseEnv: null,
@@ -123,6 +124,7 @@ const appTree = {
   'comentario/[comentarioId]': label('comment-options'),
   'sair-da-central/[artistaId]': label('leave-central'),
   'fa/[fanId]': FanProfileRoute,
+  'denunciar-perfil/[fanId]': ReportFanRoute,
 };
 
 type Router = ReturnType<typeof renderRouter>;
@@ -243,9 +245,11 @@ describe('perfil público aberto por link (seção 28)', () => {
 
     fireEvent.press(screen.getByLabelText(SOCIAL_LABELS[0]!));
     expect(Linking.openURL).not.toHaveBeenCalled();
-    // Sem botão de bloquear nem de denunciar (decisão 22): só o voltar.
+    // Os botões: o voltar e, depois das redes, o bloco "Segurança" (seção 29).
     expect(screen.getAllByRole('button').map((node) => node.props.accessibilityLabel)).toEqual([
       'Voltar',
+      'Denunciar perfil',
+      'Bloquear Thalita Santos',
     ]);
   });
 
@@ -273,11 +277,13 @@ describe('perfil público aberto por link (seção 28)', () => {
     expect(screen.getByLabelText(CLOSED)).toBeTruthy();
   });
 
-  it('o fã que saiu do ImagineUP (404): o aviso, anunciado, sem "Tentar de novo"', async () => {
+  it('o fã que saiu do ImagineUP (404): o aviso, anunciado, sem "Tentar de novo" nem as ações', async () => {
     renderRouter(appTree, { initialUrl: '/fa/nettobrito' });
 
     expect(await screen.findByLabelText('Este fã não está mais no ImagineUP.')).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Tentar de novo' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Denunciar perfil' })).toBeNull();
+    expect(screen.queryByText('Segurança', hidden)).toBeNull();
     await waitFor(() => expect(announced()).toContain('Este fã não está mais no ImagineUP.'));
   });
 
@@ -349,6 +355,190 @@ describe('perfil público aberto por link (seção 28)', () => {
     fireEvent.press(screen.getByRole('button', { name: 'Tentar de novo' }));
     expect(await screen.findByRole('header', { name: 'Thalita Santos' })).toBeTruthy();
     expect(api.get).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('denunciar e bloquear pelo perfil público (seção 29, frente A)', () => {
+  const BLOCK_MESSAGE =
+    'Os comentários de Thalita Santos somem para você, em todos os posts. Thalita Santos não fica sabendo. A equipe só fica sabendo se você denunciar.';
+  const spoken = () =>
+    jest.mocked(AccessibilityInfo.announceForAccessibility).mock.calls.map(([text]) => text);
+  const alert = () => jest.mocked(Alert.alert);
+
+  /** Toca uma escolha do último `Alert` pelo texto. */
+  function choose(text: string): void {
+    const buttons = (alert().mock.calls.at(-1)?.[2] ?? []) as AlertButton[];
+    const button = buttons.find((item) => item.text === text);
+    if (!button) throw new Error(`sem a escolha "${text}"`);
+    act(() => button.onPress?.());
+  }
+
+  beforeEach(() => {
+    jest.spyOn(Alert, 'alert').mockImplementation(() => undefined);
+  });
+
+  it('o bloco "Segurança" com os dois botões irmãos; "Denunciar perfil" abre a sheet', async () => {
+    const view = renderRouter(appTree, { initialUrl: '/fa/fa-rank-01' });
+
+    expect(await screen.findByRole('header', { name: 'Segurança' })).toBeTruthy();
+    const report = screen.getByRole('button', { name: 'Denunciar perfil' });
+    expect(report.props.accessibilityHint).toBe('Abre os motivos da denúncia');
+    expect(
+      screen.getByRole('button', { name: 'Bloquear Thalita Santos' }).props.accessibilityHint,
+    ).toBe('Pede confirmação antes de bloquear');
+
+    fireEvent.press(report);
+    await waitFor(() => expect(view.getPathname()).toBe('/denunciar-perfil/fa-rank-01'));
+    expect(rootRoutes(view)).toEqual(['fa/[fanId]', 'denunciar-perfil/[fanId]']);
+    expect(await screen.findByRole('header', { name: 'Denunciar Thalita Santos' })).toBeTruthy();
+    expect(alert()).not.toHaveBeenCalled();
+  });
+
+  it('"Bloquear" pede confirmação: "Cancelar" não bloqueia; "Bloquear" bloqueia, anuncia e vira "Desbloquear"', async () => {
+    renderRouter(appTree, { initialUrl: '/fa/fa-rank-01' });
+    fireEvent.press(await screen.findByRole('button', { name: 'Bloquear Thalita Santos' }));
+
+    expect(alert()).toHaveBeenCalledWith(
+      'Bloquear Thalita Santos?',
+      BLOCK_MESSAGE,
+      expect.any(Array),
+    );
+    const buttons = alert().mock.calls[0]?.[2] as AlertButton[];
+    expect(buttons.map((item) => [item.text, item.style])).toEqual([
+      ['Cancelar', 'cancel'],
+      ['Bloquear', 'destructive'],
+      ['Bloquear e denunciar', undefined],
+    ]);
+
+    choose('Cancelar');
+    expect(fixtureBlocks.has('fa-rank-01')).toBe(false);
+    expect(screen.getByRole('button', { name: 'Bloquear Thalita Santos' })).toBeTruthy();
+
+    fireEvent.press(screen.getByRole('button', { name: 'Bloquear Thalita Santos' }));
+    choose('Bloquear');
+
+    expect(await screen.findByRole('button', { name: 'Desbloquear Thalita Santos' })).toBeTruthy();
+    expect(fixtureBlocks.has('fa-rank-01')).toBe(true);
+    expect(spoken()).toContain('Você bloqueou Thalita Santos. Os comentários somem para você.');
+    expect(haptics.trigger).toHaveBeenCalledWith('success');
+    // Bloquear não abre a sheet da denúncia.
+    expect(screen.queryByRole('header', { name: 'Denunciar Thalita Santos' })).toBeNull();
+  });
+
+  it('"Bloquear e denunciar" bloqueia e só então abre a sheet da denúncia', async () => {
+    const view = renderRouter(appTree, { initialUrl: '/fa/fa-rank-01' });
+    fireEvent.press(await screen.findByRole('button', { name: 'Bloquear Thalita Santos' }));
+
+    choose('Bloquear e denunciar');
+
+    await waitFor(() => expect(view.getPathname()).toBe('/denunciar-perfil/fa-rank-01'));
+    expect(fixtureBlocks.has('fa-rank-01')).toBe(true);
+    expect(await screen.findByRole('header', { name: 'Denunciar Thalita Santos' })).toBeTruthy();
+  });
+
+  it('o bloqueio que falha não abre a sheet: a frase embaixo dos botões, anunciada, com o toque de erro', async () => {
+    jest.spyOn(moderationFixture, 'block').mockImplementation(() => {
+      throw new ApiError('server', 'fora do ar', 500);
+    });
+    const view = renderRouter(appTree, { initialUrl: '/fa/fa-rank-01' });
+    fireEvent.press(await screen.findByRole('button', { name: 'Bloquear Thalita Santos' }));
+
+    choose('Bloquear e denunciar');
+
+    expect(await screen.findByText('Não deu para bloquear. Tente de novo.')).toBeTruthy();
+    expect(spoken()).toContain('Não deu para bloquear. Tente de novo.');
+    expect(haptics.trigger).toHaveBeenCalledWith('error');
+    expect(view.getPathname()).toBe('/fa/fa-rank-01');
+    expect(screen.getByRole('button', { name: 'Bloquear Thalita Santos' })).toBeTruthy();
+  });
+
+  it.each([
+    [
+      'o teto do dia',
+      () => new ApiError('dailyLimit', 'teto', 429, 'too_many_requests', { action: 'block' }),
+      'Você chegou ao limite de bloqueios de hoje. Tente amanhã.',
+    ],
+    [
+      'o ritmo',
+      () => new ApiError('rateLimited', 'ritmo', 429, 'rate_limited', null, 2000),
+      'Muitos pedidos seguidos. Espere alguns segundos e tente de novo.',
+    ],
+    [
+      'o 404',
+      () => new ApiError('notFound', 'sumiu', 404, 'fan_not_found'),
+      'Este fã não está mais no ImagineUP.',
+    ],
+  ])('%s: a frase própria embaixo dos botões', async (_case, error, text) => {
+    jest.spyOn(moderationFixture, 'block').mockImplementation(() => {
+      throw error();
+    });
+    renderRouter(appTree, { initialUrl: '/fa/fa-rank-01' });
+    fireEvent.press(await screen.findByRole('button', { name: 'Bloquear Thalita Santos' }));
+
+    choose('Bloquear');
+
+    expect(await screen.findByText(text)).toBeTruthy();
+    expect(spoken()).toContain(text);
+  });
+
+  it('nas fixtures, a fa-rank-13 do seed abre com "Desbloquear", que sai direto, sem confirmação', async () => {
+    renderRouter(appTree, { initialUrl: '/fa/fa-rank-13' });
+
+    fireEvent.press(await screen.findByRole('button', { name: 'Desbloquear Bruno Santana' }));
+
+    expect(await screen.findByRole('button', { name: 'Bloquear Bruno Santana' })).toBeTruthy();
+    expect(alert()).not.toHaveBeenCalled();
+    expect(fixtureBlocks.has('fa-rank-13')).toBe(false);
+    expect(spoken()).toContain('Você desbloqueou Bruno Santana.');
+    expect(haptics.trigger).toHaveBeenCalledWith('success');
+  });
+
+  it('o desbloqueio que falha diz a frase embaixo dos botões e fica em "Desbloquear"', async () => {
+    jest.spyOn(moderationFixture, 'unblock').mockImplementation(() => {
+      throw new ApiError('network', 'sem rede');
+    });
+    renderRouter(appTree, { initialUrl: '/fa/fa-rank-13' });
+
+    fireEvent.press(await screen.findByRole('button', { name: 'Desbloquear Bruno Santana' }));
+
+    expect(await screen.findByText('Não deu para desbloquear. Tente de novo.')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Desbloquear Bruno Santana' })).toBeTruthy();
+  });
+
+  it('a fechada (a conta privada) traz as mesmas ações: o bloqueado não fica sabendo', async () => {
+    renderRouter(appTree, { initialUrl: '/fa/fa-rank-05' });
+
+    expect(await screen.findByLabelText(CLOSED)).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Denunciar perfil' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Bloquear Aline Ferreira' })).toBeTruthy();
+  });
+
+  it('o próprio perfil não tem as ações', async () => {
+    mockFanApi(async (url) => {
+      if (url === '/fans/uid-camila') {
+        return { ...THALITA, uid: 'uid-camila', displayName: 'Camila Ribeiro', blockedByMe: false };
+      }
+      throw new Error(`rota sem resposta no teste: ${url}`);
+    });
+    renderRouter(appTree, { initialUrl: '/fa/uid-camila' });
+
+    expect(await screen.findByRole('header', { name: 'Camila Ribeiro' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Denunciar perfil' })).toBeNull();
+    expect(screen.queryByText('Segurança', hidden)).toBeNull();
+  });
+
+  it('sem internet, as duas ações ficam desligadas', async () => {
+    renderRouter(appTree, { initialUrl: '/fa/fa-rank-01' });
+    await screen.findByRole('button', { name: 'Denunciar perfil' });
+
+    act(() => onlineManager.setOnline(false));
+    expect(
+      screen.getByRole('button', { name: 'Denunciar perfil' }).props.accessibilityState,
+    ).toMatchObject({ disabled: true });
+    expect(
+      screen.getByRole('button', { name: 'Bloquear Thalita Santos' }).props.accessibilityState,
+    ).toMatchObject({ disabled: true });
+    act(() => onlineManager.setOnline(true));
   });
 });
 

@@ -6,6 +6,7 @@ import {
   useMutationState,
   useQuery,
   useQueryClient,
+  type InfiniteData,
   type QueryClient,
 } from '@tanstack/react-query';
 import { useEffect, useRef, useState } from 'react';
@@ -15,30 +16,36 @@ import { AccessibilityInfo } from 'react-native';
 // posts, e pelo index seria um ciclo.
 import { artistKeys } from '@/domains/artists/queries';
 import { describeRewards, missionKeys, rewardsRefresh } from '@/domains/missions';
-import { profileKeys, useFanIdentity } from '@/domains/profile';
+import { fanKeys, profileKeys, useFanIdentity, type FanPublicProfile } from '@/domains/profile';
 // O "+N" das recompensas e o festejo das ações pelos arquivos, fora do index.
 import { rewardsToast } from '@/domains/profile/action-rewards';
 import { noteActionCelebrated } from '@/domains/profile/level-celebrated';
 import { refreshRanking } from '@/domains/ranking';
-import { t } from '@/i18n';
+import { t, type TranslationKey } from '@/i18n';
 import { ApiError } from '@/services/api/errors';
+import { actionRefusal } from '@/services/api/refusal';
 import { haptics, type HapticEvent } from '@/services/haptics';
 import { queryOptionsFor } from '@/services/query/client';
+import { alertActionRefusal, showRefusalAlert } from '@/services/refusal-alert';
 import { createIdempotencyKey } from '@/utils/id';
 
 import {
   addComment,
   blockFan,
   fetchArtistPosts,
+  fetchBlockedFans,
   fetchComments,
   fetchFeed,
   fetchPost,
   reportComment,
+  reportFan,
   setPostLike,
+  unblockFan,
   type AddCommentResult,
   type AddCommentVariables,
   type BlockFanVariables,
   type ReportCommentVariables,
+  type ReportFanVariables,
   type SetLikeVariables,
 } from './api';
 import {
@@ -50,23 +57,28 @@ import {
   withCommentDelta,
   withLike,
 } from './cache';
-import { postKeys } from './keys';
+import { moderationKeys, postKeys } from './keys';
 import type {
+  BlockedFansPage,
   BlockFanResult,
   CommentReportReason,
   CommentStatus,
   PointsAward,
   PostComment,
   ReportCommentResult,
+  ReportFanResult,
 } from './types';
 
-export { postKeys };
+export { moderationKeys, postKeys };
 
 export const postMutationKeys = {
   like: ['posts', 'like'] as const,
   comment: ['posts', 'comment'] as const,
   report: ['posts', 'report'] as const,
   block: ['posts', 'block'] as const,
+  /** A denúncia de perfil e o desbloqueio (seção 29). */
+  reportFan: ['posts', 'report-fan'] as const,
+  unblock: ['posts', 'unblock'] as const,
 };
 
 /**
@@ -76,6 +88,14 @@ export const postMutationKeys = {
  * dão certo saem na hora (`forgetComment`), e sair da conta limpa o resto.
  */
 const COMMENT_MUTATION_GC_TIME = Infinity;
+
+/**
+ * O `meta` do comentário, no hook e na default da fila: a tela diz a recusa da
+ * conta suspensa embaixo do compositor (sem o `Alert`), e o recusado pelo
+ * filtro vai para o disco com o erro, para a linha "Não publicado" sobreviver
+ * ao app fechado (o persister, seção 30).
+ */
+const COMMENT_MUTATION_META = { suspendedAlert: false, keepRefused: true };
 
 function countComment(client: QueryClient, postId: string, delta: number): void {
   patchPostEverywhere(client, postId, (post) => withCommentDelta(post, delta));
@@ -101,6 +121,17 @@ function forgetComment(client: QueryClient, localId: string): void {
  */
 function isUncertain(error: unknown): boolean {
   return !(error instanceof ApiError) || error.isRetryable;
+}
+
+/**
+ * O comentário fica com a tentativa (a linha "Não enviado" e a mesma chave na
+ * nova tentativa): na falha incerta, que pode ter gravado, e no ritmo depois
+ * das novas tentativas (429 `rate_limited`, 27.3), que não gravou nada. Sem o
+ * ritmo aqui, o texto voltaria ao campo e a chave seria nova (29.1, decisão 20).
+ * O `isRetryable` continua sendo só "resultado incerto".
+ */
+export function keepsAttempt(error: unknown): boolean {
+  return isUncertain(error) || (error instanceof ApiError && error.isRateLimited);
 }
 
 /**
@@ -217,11 +248,25 @@ function refreshPostAfterComment(client: QueryClient, variables: AddCommentVaria
  * "+N", texto de volta ao campo).
  */
 export function registerPostMutationDefaults(client: QueryClient): void {
-  client.setMutationDefaults(postMutationKeys.like, {
-    mutationFn: (variables: SetLikeVariables) => setPostLike(variables),
-    onSuccess: (result: PointsAward) => refreshAfterPoints(client, result),
-    onError: (error: unknown) => {
-      if (isNotFound(error)) refreshAfterGonePost(client);
+  client.setMutationDefaults<PointsAward, ApiError, SetLikeVariables>(postMutationKeys.like, {
+    mutationFn: (variables) => setPostLike(variables),
+    onSuccess: (result) => refreshAfterPoints(client, result),
+    onError: (error, { postId, liked }) => {
+      if (isNotFound(error)) {
+        refreshAfterGonePost(client);
+        return;
+      }
+      if (isUncertain(error)) return;
+      // A curtida restaurada do disco foi recusada (o teto do dia, o suspenso,
+      // o ritmo depois das novas tentativas): o coração aceso que veio com o
+      // cache do disco apaga, e o post busca de novo (29.11, frente F).
+      if (readPost(client, postId)?.likedByMe === liked) {
+        patchPostEverywhere(client, postId, (post) => withLike(post, !liked));
+      }
+      void client.invalidateQueries({ queryKey: postKeys.detail(postId) });
+      if (actionRefusal(error, 'like').type === 'dailyLimit') {
+        showRefusalAlert('dailyLimit', 'like');
+      }
     },
   });
   client.setMutationDefaults<AddCommentResult, ApiError, AddCommentVariables>(
@@ -229,6 +274,7 @@ export function registerPostMutationDefaults(client: QueryClient): void {
     {
       mutationFn: (variables) => addComment(variables),
       gcTime: COMMENT_MUTATION_GC_TIME,
+      meta: COMMENT_MUTATION_META,
       onSuccess: (result, variables) => {
         commitComment(client, variables, result);
         forgetComment(client, variables.localId);
@@ -347,7 +393,14 @@ export function useToggleLikeMutation() {
       }
       if (isNotFound(error)) refreshAfterGonePost(queryClient);
       haptics.trigger('error');
-      AccessibilityInfo.announceForAccessibility(t('post.likeError'));
+      // O teto do dia abre o "Limite de hoje", e a conta suspensa, o "Conta
+      // suspensa" (pelo `MutationCache`): com o `Alert`, sem anúncio. Com a
+      // trava de 30 s segurando o `Alert`, anuncia a frase da recusa (sem ela,
+      // a curtida recusada ficava só com o toque de erro). O ritmo que esgotou
+      // as tentativas diz a frase dele.
+      const refusal = actionRefusal(error, 'like');
+      if (alertActionRefusal(refusal.type, 'like')) return;
+      AccessibilityInfo.announceForAccessibility(t(refusal.key));
     },
     onSettled: (_data, _error, { postId }) => {
       // Com outra curtida na fila, a busca traria o post sem ela, e o coração piscaria.
@@ -379,6 +432,16 @@ function localComment(variables: AddCommentVariables, status: CommentStatus): Po
   };
 }
 
+/**
+ * O estado da linha pelo da mutação: o erro de conteúdo (o filtro, seção 30)
+ * é "Não publicado", e o resto dos erros, "Não enviado". Pelo `actionRefusal`,
+ * que lê também o erro que volta do disco (um objeto do JSON).
+ */
+function localCommentStatus(state: { status: string; error: unknown }): CommentStatus {
+  if (state.status !== 'error') return 'pending';
+  return actionRefusal(state.error, 'comment').type === 'content' ? 'refused' : 'failed';
+}
+
 export interface LocalComments {
   /** Indo, esperando a rede ou recusados, do mais novo ao mais antigo. */
   comments: PostComment[];
@@ -402,7 +465,7 @@ export function useLocalComments(postId: string): LocalComments {
     },
     select: (mutation) => ({
       variables: commentVariables(mutation) as AddCommentVariables,
-      status: (mutation.state.status === 'error' ? 'failed' : 'pending') as CommentStatus,
+      status: localCommentStatus(mutation.state),
       sending: mutation.state.status === 'pending' && !mutation.state.isPaused,
     }),
   });
@@ -427,9 +490,31 @@ export interface AddCommentOptions {
   /**
    * O servidor recusou o comentário com a tela aberta: devolve o texto ao
    * campo se o fã não começou outro. `true` quando devolveu (a linha some);
-   * senão ela fica como "Não enviado", para tocar e tentar de novo.
+   * senão ela fica como "Não enviado" ou "Não publicado".
    */
   restoreDraft?: (text: string) => boolean;
+  /**
+   * Leva o foco ao campo (e o do leitor de tela junto): o texto recusado pelo
+   * filtro volta para o fã revisar (seção 30).
+   */
+  focusDraft?: () => void;
+  /**
+   * A conta suspensa: o compositor não tem campo, e o texto recusado pelo
+   * filtro não tem para onde voltar. O anúncio só diz o motivo.
+   */
+  suspended?: boolean;
+}
+
+/**
+ * Por que o último comentário foi recusado, para a frase embaixo do
+ * compositor: o teto do dia, a conta suspensa ou o texto fora dos Termos de
+ * uso (seção 30). A tela tira do tipo o link "Escrever para a equipe" e o
+ * assunto dele. Sai no envio seguinte; a de conteúdo sai também quando o fã
+ * digita (`dismissContentRefusal`).
+ */
+export interface CommentRefusal {
+  key: TranslationKey;
+  type: 'suspended' | 'dailyLimit' | 'content';
 }
 
 /**
@@ -453,21 +538,39 @@ function announceIfQueued(): void {
  *
  * Recusado pelo servidor, com o campo vazio, o texto volta para ele (a linha
  * some) e o próximo envio leva chave nova. Falha de resultado incerto (rede,
- * servidor), ou recusa com outro texto no campo, deixa a linha "Não enviado",
- * e tocar tenta de novo: com a mesma chave de idempotência depois da falha
- * incerta (o servidor pode ter gravado, e mandar de novo com chave nova
- * duplicaria o comentário e os pontos), com chave nova depois de recusa.
+ * servidor) e o ritmo depois das novas tentativas (`keepsAttempt`), ou recusa
+ * com outro texto no campo, deixam a linha "Não enviado", e tocar tenta de
+ * novo: com a mesma chave de idempotência depois da falha incerta e do ritmo
+ * (o servidor pode ter gravado, e mandar de novo com chave nova duplicaria o
+ * comentário e os pontos), com chave nova depois de recusa. O teto do dia e a
+ * conta suspensa têm a frase embaixo do compositor (`refusal`), anunciada;
+ * sem `Alert` (`meta: { suspendedAlert: false }`).
+ *
+ * Recusado pelo filtro do que o fã publica (seção 30), o comentário é
+ * definitivo: com o campo vazio, o texto volta para ele, com a frase e o link
+ * embaixo do compositor, o toque de erro, o anúncio e o foco no campo; com o
+ * campo ocupado, a linha fica "Não publicado", sem frase embaixo de outro
+ * texto. Tocar nela nunca manda de novo: devolve o texto ao campo vazio, do
+ * mesmo jeito, ou pede para esvaziar o campo.
  */
-export function useAddCommentMutation(postId: string, { restoreDraft }: AddCommentOptions = {}) {
+export function useAddCommentMutation(
+  postId: string,
+  { restoreDraft, focusDraft, suspended = false }: AddCommentOptions = {},
+) {
   const queryClient = useQueryClient();
   const identity = useFanIdentity();
   const [award, setAward] = useState<CommentAward | null>(null);
+  const [refusal, setRefusal] = useState<CommentRefusal | null>(null);
   const restoreRef = useRef(restoreDraft);
+  const focusRef = useRef(focusDraft);
+  const suspendedRef = useRef(suspended);
   const mounted = useRef(false);
 
   useEffect(() => {
     restoreRef.current = restoreDraft;
-  }, [restoreDraft]);
+    focusRef.current = focusDraft;
+    suspendedRef.current = suspended;
+  }, [restoreDraft, focusDraft, suspended]);
 
   useEffect(() => {
     mounted.current = true;
@@ -476,10 +579,44 @@ export function useAddCommentMutation(postId: string, { restoreDraft }: AddComme
     };
   }, []);
 
+  /**
+   * O texto recusado pelo filtro, no `onError` e no toque da linha "Não
+   * publicado" (`retrying`). Com o campo vazio, o texto volta para ele: a
+   * linha sai, e a frase fica embaixo do compositor, com o toque de erro, o
+   * anúncio e o foco no campo. Com o campo ocupado, a linha fica: no
+   * `onError`, o anúncio fala da linha; no toque, pede para esvaziar o campo,
+   * com o toque de aviso. Com a conta suspensa não há campo: a linha fica sem
+   * toque (`refusedLocked`), e o anúncio só diz o motivo.
+   */
+  const refuseContent = (
+    variables: AddCommentVariables,
+    key: TranslationKey,
+    retrying: boolean,
+  ): void => {
+    if (suspendedRef.current) {
+      haptics.trigger('error');
+      AccessibilityInfo.announceForAccessibility(t('post.comments.refusedLockedAnnouncement'));
+      return;
+    }
+    if (restoreRef.current?.(variables.text)) {
+      forgetComment(queryClient, variables.localId);
+      setRefusal({ key, type: 'content' });
+      haptics.trigger('error');
+      AccessibilityInfo.announceForAccessibility(t(key));
+      focusRef.current?.();
+      return;
+    }
+    haptics.trigger(retrying ? 'warning' : 'error');
+    AccessibilityInfo.announceForAccessibility(
+      t(retrying ? 'post.comments.refusedBusy' : 'post.comments.refusedAnnouncement'),
+    );
+  };
+
   const mutation = useMutation({
     mutationKey: postMutationKeys.comment,
     scope: { id: `posts-comment-${postId}` },
     gcTime: COMMENT_MUTATION_GC_TIME,
+    meta: COMMENT_MUTATION_META,
     mutationFn: (variables: AddCommentVariables) => addComment(variables),
     onSuccess: (result, variables) => {
       commitComment(queryClient, variables, result);
@@ -506,12 +643,22 @@ export function useAddCommentMutation(postId: string, { restoreDraft }: AddComme
     onError: (error, variables) => {
       if (isNotFound(error)) refreshAfterGonePost(queryClient);
       if (!mounted.current) return;
+      const refused = actionRefusal(error, 'comment');
+      if (refused.type === 'content') {
+        refuseContent(variables, refused.key, false);
+        return;
+      }
       haptics.trigger('error');
-      if (!isUncertain(error) && restoreRef.current?.(variables.text)) {
+      const { type } = refused;
+      const told = type === 'dailyLimit' || type === 'suspended';
+      if (told) setRefusal({ key: refused.key, type });
+      if (!keepsAttempt(error) && restoreRef.current?.(variables.text)) {
         forgetComment(queryClient, variables.localId);
-        AccessibilityInfo.announceForAccessibility(t('post.composer.error'));
+        AccessibilityInfo.announceForAccessibility(t(told ? refused.key : 'post.composer.error'));
       } else {
-        AccessibilityInfo.announceForAccessibility(t('post.comments.failedAnnouncement'));
+        AccessibilityInfo.announceForAccessibility(
+          t(told ? refused.key : 'post.comments.failedAnnouncement'),
+        );
       }
     },
     onSettled: (_data, _error, variables) => refreshPostAfterComment(queryClient, variables),
@@ -519,6 +666,7 @@ export function useAddCommentMutation(postId: string, { restoreDraft }: AddComme
 
   /** Manda o texto (já validado); devolve o id local da linha nova. */
   const send = (text: string): string => {
+    setRefusal(null);
     const localId = createIdempotencyKey();
     mutation.mutate({
       postId,
@@ -536,7 +684,11 @@ export function useAddCommentMutation(postId: string, { restoreDraft }: AddComme
     return localId;
   };
 
-  /** Toque na linha "Não enviado". */
+  /**
+   * Toque na linha "Não enviado" ou "Não publicado". A recusa de conteúdo
+   * nunca manda de novo (a mesma recusa voltaria em laço): decide pelo
+   * `actionRefusal`, que lê também o erro que voltou do disco.
+   */
   const retry = (localId: string): void => {
     const failed = queryClient.getMutationCache().findAll({
       mutationKey: postMutationKeys.comment,
@@ -546,17 +698,28 @@ export function useAddCommentMutation(postId: string, { restoreDraft }: AddComme
     const last = failed.at(-1);
     const variables = last && commentVariables(last);
     if (!last || !variables) return;
+    const refused = actionRefusal(last.state.error, 'comment');
+    if (refused.type === 'content') {
+      refuseContent(variables, refused.key, true);
+      return;
+    }
     forgetComment(queryClient, localId);
+    setRefusal(null);
     mutation.mutate({
       ...variables,
-      idempotencyKey: isUncertain(last.state.error)
+      idempotencyKey: keepsAttempt(last.state.error)
         ? variables.idempotencyKey
         : createIdempotencyKey(),
     });
     announceIfQueued();
   };
 
-  return { send, retry, award };
+  /** O fã digitou: a frase de conteúdo sai (a do teto e a do suspenso ficam até o próximo envio). */
+  const dismissContentRefusal = (): void => {
+    setRefusal((current) => (current?.type === 'content' ? null : current));
+  };
+
+  return { send, retry, award, refusal, dismissContentRefusal };
 }
 
 /**
@@ -597,6 +760,53 @@ const holdsCommentLists = (query: { queryKey: readonly unknown[] }) =>
   query.queryKey[0] === postKeys.all[0] && query.queryKey[1] === 'comments';
 
 /**
+ * Bloquear e desbloquear mudam o perfil público em cache na hora (o botão vira
+ * "Desbloquear" ou "Bloquear" sem esperar a busca), e os perfis buscam de novo:
+ * o prefixo inteiro, e não só o deste id, porque nas fixtures a mesma pessoa
+ * abre por dois ids (`fa-thalita` e `fa-rank-01`, 29.10). Só o perfil na tela
+ * busca; os outros ficam velhos e buscam quando abrirem. As listas de
+ * comentários também buscam de novo: os do bloqueado saem, os do desbloqueado
+ * voltam.
+ */
+function settleBlock(client: QueryClient, fanId: string, blocked: boolean): void {
+  client.setQueryData<FanPublicProfile>(fanKeys.profile(fanId), (profile) =>
+    profile ? { ...profile, blockedByMe: blocked } : profile,
+  );
+  void client.invalidateQueries({ queryKey: fanKeys.all });
+  void client.invalidateQueries({ predicate: holdsCommentLists });
+}
+
+/**
+ * O desbloqueado sai das páginas carregadas da lista, sem buscar de novo: o
+ * cursor do servidor é o uid do último visto, com o índice dele como reserva, e
+ * tirar quem já foi visto não pula ninguém (29.1, decisão 8). Sem a linha dele
+ * nas páginas carregadas (nas fixtures, a mesma pessoa desbloqueada pelo id do
+ * comentário, `fa-thalita`, e listada pelo do ranking, `fa-rank-01`; no
+ * servidor, um fã de página ainda não lida), a lista volta à primeira página,
+ * como no bloqueio: tirar só pelo id da resposta deixaria a linha velha.
+ */
+function dropBlockedFan(client: QueryClient, fanId: string): void {
+  const data = client.getQueryData<InfiniteData<BlockedFansPage>>(moderationKeys.blocked());
+  if (!data) return;
+  const listed = data.pages.some((page) => page.items.some((item) => item.uid === fanId));
+  if (!listed) {
+    void client.resetQueries({ queryKey: moderationKeys.blocked() });
+    return;
+  }
+  client.setQueryData<InfiniteData<BlockedFansPage>>(moderationKeys.blocked(), (current) =>
+    current
+      ? {
+          ...current,
+          pages: current.pages.map((page) => ({
+            ...page,
+            items: page.items.filter((item) => item.uid !== fanId),
+          })),
+        }
+      : current,
+  );
+}
+
+/**
  * Denunciar o comentário de outro fã (a sheet "Opções do comentário",
  * provisória até a UP-48). Não é otimista e não entra na fila offline
  * (`networkMode: 'always'`, sem tentar de novo sozinha), como o sair da
@@ -618,6 +828,8 @@ export function useReportCommentMutation(
     mutationFn: (variables) => reportComment(variables),
     networkMode: 'always',
     retry: false,
+    // A sheet diz a frase do suspenso, com o link: sem o `Alert` por cima.
+    meta: { suspendedAlert: false },
     onSuccess: (result) => {
       if (mounted.current) {
         onDone?.(result);
@@ -631,7 +843,7 @@ export function useReportCommentMutation(
         return;
       }
       haptics.trigger('error');
-      AccessibilityInfo.announceForAccessibility(t('post.moderation.reportError'));
+      AccessibilityInfo.announceForAccessibility(t(actionRefusal(error, 'report').key));
     },
   });
 
@@ -657,10 +869,13 @@ export function useReportCommentMutation(
 }
 
 /**
- * Bloquear um fã (a mesma sheet). Como a denúncia: não é otimista, não entra
- * na fila, a chave é da tentativa. No sucesso, os comentários do bloqueado
- * saem de todo cache de comentários na hora, e as listas buscam de novo (já
- * sem ele, do servidor), com a sheet montada ou não.
+ * Bloquear um fã (a sheet do comentário e o perfil público, seção 29). Como a
+ * denúncia: não é otimista, não entra na fila, a chave é da tentativa. No
+ * sucesso, os comentários do bloqueado saem de todo cache de comentários na
+ * hora, e as listas buscam de novo (já sem ele, do servidor); o perfil público
+ * em cache passa a `blockedByMe`; e a lista de bloqueados volta à primeira
+ * página (`resetQueries`: buscar de novo cada página já carregada custaria até
+ * 50 leituras com a lista cheia). Com a sheet montada ou não.
  */
 export function useBlockFanMutation(
   fanId: string,
@@ -675,7 +890,8 @@ export function useBlockFanMutation(
     retry: false,
     onSuccess: (result) => {
       removeAuthorComments(queryClient, result.fanId);
-      void queryClient.invalidateQueries({ predicate: holdsCommentLists });
+      settleBlock(queryClient, result.fanId, true);
+      void queryClient.resetQueries({ queryKey: moderationKeys.blocked() });
       if (mounted.current) {
         onDone?.(result);
         return;
@@ -688,7 +904,7 @@ export function useBlockFanMutation(
         return;
       }
       haptics.trigger('error');
-      AccessibilityInfo.announceForAccessibility(t('post.moderation.blockError'));
+      AccessibilityInfo.announceForAccessibility(t(actionRefusal(error, 'block').key));
     },
   });
 
@@ -708,4 +924,133 @@ export function useBlockFanMutation(
     isError: mutation.isError,
     reset: mutation.reset,
   };
+}
+
+/**
+ * Desbloquear um fã (o perfil público e a tela "Fãs bloqueados", seção 29).
+ * Como o bloqueio: não é otimista, não entra na fila, a chave é da tentativa
+ * (`unblock-<fanId>-<id>`). No sucesso, o perfil em cache volta a "Bloquear",
+ * o fã sai das páginas carregadas da lista sem buscar de novo, e as listas de
+ * comentários buscam de novo (os dele voltam). Livre para o suspenso.
+ */
+export function useUnblockFanMutation(
+  fanId: string,
+  { onDone, onError }: ModerationCallbacks<BlockFanResult> = {},
+) {
+  const queryClient = useQueryClient();
+  const mounted = useMounted();
+  const mutation = useMutation<BlockFanResult, Error, BlockFanVariables>({
+    mutationKey: postMutationKeys.unblock,
+    mutationFn: (variables) => unblockFan(variables),
+    networkMode: 'always',
+    retry: false,
+    onSuccess: (result) => {
+      settleBlock(queryClient, result.fanId, false);
+      dropBlockedFan(queryClient, result.fanId);
+      if (mounted.current) {
+        onDone?.(result);
+        return;
+      }
+      AccessibilityInfo.announceForAccessibility(t('fanPage.unblockedShort'));
+    },
+    onError: (error) => {
+      if (mounted.current) {
+        onError?.(error);
+        return;
+      }
+      haptics.trigger('error');
+      AccessibilityInfo.announceForAccessibility(t(actionRefusal(error, 'unblock').key));
+    },
+  });
+
+  const unblock = (): void => {
+    if (mutation.isPending) return;
+    const failed = mutation.isError ? mutation.variables : undefined;
+    const idempotencyKey =
+      failed && failed.fanId === fanId && isUncertain(mutation.error)
+        ? failed.idempotencyKey
+        : `unblock-${fanId}-${createIdempotencyKey()}`;
+    mutation.mutate({ fanId, idempotencyKey });
+  };
+
+  return {
+    unblock,
+    isPending: mutation.isPending,
+    isError: mutation.isError,
+    reset: mutation.reset,
+  };
+}
+
+/**
+ * Denunciar o perfil de outro fã (a sheet "Denunciar perfil", seção 29), no
+ * molde da denúncia de comentário: não é otimista, não entra na fila
+ * (`networkMode: 'always'`, sem tentar de novo sozinha) e a chave é da
+ * tentativa (`report-fan-<fanId>-<id>`: a mesma depois de uma falha incerta
+ * com o mesmo motivo, nova depois de uma recusa ou com outro motivo). Não muda
+ * cache nenhum. A sheet diz a frase da conta suspensa, com o link: sem o
+ * `Alert` por cima (`suspendedAlert: false`). A resposta que chega com a sheet
+ * fechada só avisa.
+ */
+export function useReportFanMutation(
+  fanId: string,
+  { onDone, onError }: ModerationCallbacks<ReportFanResult> = {},
+) {
+  const mounted = useMounted();
+  const mutation = useMutation<ReportFanResult, Error, ReportFanVariables>({
+    mutationKey: postMutationKeys.reportFan,
+    mutationFn: (variables) => reportFan(variables),
+    networkMode: 'always',
+    retry: false,
+    meta: { suspendedAlert: false },
+    onSuccess: (result) => {
+      if (mounted.current) {
+        onDone?.(result);
+        return;
+      }
+      AccessibilityInfo.announceForAccessibility(t('fanPage.reportSheet.sent'));
+    },
+    onError: (error) => {
+      if (mounted.current) {
+        onError?.(error);
+        return;
+      }
+      haptics.trigger('error');
+      AccessibilityInfo.announceForAccessibility(t(actionRefusal(error, 'reportFan').key));
+    },
+  });
+
+  const report = (reason: CommentReportReason | null): void => {
+    if (mutation.isPending) return;
+    const failed = mutation.isError ? mutation.variables : undefined;
+    const idempotencyKey =
+      failed && failed.fanId === fanId && failed.reason === reason && isUncertain(mutation.error)
+        ? failed.idempotencyKey
+        : `report-fan-${fanId}-${createIdempotencyKey()}`;
+    mutation.mutate({ fanId, reason, idempotencyKey });
+  };
+
+  return {
+    report,
+    isPending: mutation.isPending,
+    isError: mutation.isError,
+    reset: mutation.reset,
+  };
+}
+
+/**
+ * Quem o fã bloqueou (`GET /me/blocks`, seção 29), do mais novo ao mais
+ * antigo, uma página por vez, para a tela "Fãs bloqueados". Fora do disco
+ * (`persist: false`): a lista traz nome, @ e foto de outros fãs, como o perfil
+ * público no `useFanProfileQuery`.
+ */
+export function useBlockedFansInfiniteQuery() {
+  const options = queryOptionsFor('posts');
+  return useInfiniteQuery({
+    ...options,
+    queryKey: moderationKeys.blocked(),
+    queryFn: ({ pageParam }) => fetchBlockedFans(pageParam),
+    initialPageParam: null as string | null,
+    getNextPageParam: (lastPage) => lastPage.nextCursor,
+    meta: { ...options.meta, persist: false },
+  });
 }

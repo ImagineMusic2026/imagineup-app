@@ -1,5 +1,6 @@
 import * as logger from 'firebase-functions/logger';
 
+import { clientIp, logAccess } from '../access-log';
 import { MISSING_FAN_PHOTO_FILES } from '../fan-profile/files';
 import { createConfigSource } from '../points/config';
 import { APP_CHECK_HEADER, checkAppCheck, type AppCheckConfig } from './app-check';
@@ -78,6 +79,21 @@ const APP_CHECK_OFF: AppCheckConfig = {
 /** Corpo até 16 KiB, medido em req.rawBody. */
 export const MAX_BODY_BYTES = 16 * 1024;
 
+/**
+ * O `details.reason` que vai para a linha do log (seção 30, decisão 13): só no
+ * formato fechado dos motivos, para nem no futuro um texto do cliente chegar
+ * ao log.
+ */
+const LOGGED_REASON = /^[a-z_]{1,40}$/;
+
+/** O código e o motivo da recusa para a linha do log; nunca o texto nem o `details.field`. */
+function refusalOf(failure: ApiHttpError): { code: string; reason?: string } {
+  const reason = failure.details?.reason;
+  return typeof reason === 'string' && LOGGED_REASON.test(reason)
+    ? { code: failure.code, reason }
+    : { code: failure.code };
+}
+
 function send(
   res: ApiResponse,
   status: number,
@@ -116,10 +132,14 @@ export function createApiHandler(deps: ApiDeps, routes: readonly ApiRoute[] = AP
   return async (req: ApiRequest, res: ApiResponse): Promise<void> => {
     const started = Date.now();
     const method = req.method.toUpperCase();
+    // O IP da linha `acesso` (31.6), antes de tudo: o pedido recusado também sai.
+    const ip = clientIp(req);
     let route = 'unmatched';
     let uid: string | null = null;
     let status = 500;
     let replayed = false;
+    // Só na resposta de erro: a linha de sucesso fica como era.
+    let refusal: { code: string; reason?: string } | null = null;
 
     try {
       const match = matchRoute(routes, method, req.path);
@@ -177,6 +197,7 @@ export function createApiHandler(deps: ApiDeps, routes: readonly ApiRoute[] = AP
     } catch (error) {
       const { error: apiFailure, unexpected } = toApiHttpError(error);
       status = apiFailure.status;
+      refusal = refusalOf(apiFailure);
       if (unexpected) {
         // Nunca o token, o corpo nem texto do fã: rota, uid e a mensagem do erro.
         logger.error('api: erro inesperado', {
@@ -187,7 +208,20 @@ export function createApiHandler(deps: ApiDeps, routes: readonly ApiRoute[] = AP
       }
       send(res, status, apiFailure.body(), apiFailure.headers);
     } finally {
-      logger.info('api', { method, route, status, ms: Date.now() - started, uid, replayed });
+      // Todo pedido que chega ao handler escreve a linha `acesso` (31.6), com
+      // o uid só depois do token: a recusa que vem antes dele sai com null,
+      // mesmo com login. O que o runtime ou o Cloud Run respondem antes do
+      // handler fica sem ela (31.9). Ela vem antes da `api`, a última do pedido.
+      logAccess(ip, uid);
+      logger.info('api', {
+        method,
+        route,
+        status,
+        ms: Date.now() - started,
+        uid,
+        replayed,
+        ...refusal,
+      });
     }
   };
 }

@@ -14,3 +14,12 @@ export const postKeys = {
   detail: (postId: string) => [...postKeys.all, 'detail', postId] as const,
   comments: (postId: string) => [...postKeys.all, 'comments', postId] as const,
 };
+
+/**
+ * A moderação do fã fora do `postKeys` (seção 29): invalidar os posts não
+ * busca de novo a lista de bloqueados, que pagina por um cursor próprio.
+ */
+export const moderationKeys = {
+  all: ['moderation'] as const,
+  blocked: () => [...moderationKeys.all, 'blocked'] as const,
+};

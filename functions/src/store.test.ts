@@ -2,6 +2,7 @@ import { FieldValue, type Firestore } from 'firebase-admin/firestore';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { leaveAllCentrals } from './centrals/service';
+import { FILTERED_NAME, isBlockedHandle, isBlockedText } from './content-filter';
 import type { FanPhotoFiles } from './fan-profile/files';
 import { detachReferrals, removeInviteData } from './invites/service';
 import { removeFanEngagement } from './posts/service';
@@ -30,6 +31,12 @@ vi.mock('./invites/service', () => ({
   detachReferrals: vi.fn(),
   referralRef: (db: Firestore, uid: string) => db.collection('referrals').doc(uid),
 }));
+// O filtro do que o fã publica (seção 30) trocado por um de palavras neutras:
+// nenhum termo da lista de verdade entra no repositório (30.11).
+vi.mock('./content-filter', async (importOriginal) => {
+  const { fakeContentFilter } = await import('../test/content-filter-fake.js');
+  return fakeContentFilter(await importOriginal());
+});
 
 const UID = 'uid-camila';
 
@@ -108,7 +115,7 @@ describe('exclusão de conta (deleteUserData)', () => {
     });
     vi.mocked(removeFanEngagement).mockImplementation(async (_db, uid) => {
       steps.push(`removeFanEngagement ${uid}`);
-      return { likes: 0, comments: 0, reports: 0, blocks: 0 };
+      return { likes: 0, comments: 0, reports: 0, profileReports: 0, blocks: 0 };
     });
     vi.mocked(cancelFanRedemptions).mockImplementation(async (_db, uid) => {
       steps.push(`cancelFanRedemptions ${uid}`);
@@ -202,7 +209,7 @@ describe('exclusão de conta (deleteUserData)', () => {
     vi.mocked(removeFanEngagement).mockImplementation(async () => {
       await new Promise((resolve) => setTimeout(resolve, 5));
       steps.push('removeFanEngagement terminou');
-      return { likes: 1, comments: 1, reports: 0, blocks: 0 };
+      return { likes: 1, comments: 1, reports: 0, profileReports: 0, blocks: 0 };
     });
 
     await deleteUserData(fakeDb(steps), UID);
@@ -219,7 +226,7 @@ describe('exclusão de conta (deleteUserData)', () => {
     const steps: string[] = [];
     vi.mocked(removeFanEngagement).mockImplementation(async () => {
       steps.push('removeFanEngagement');
-      return { likes: 0, comments: 0, reports: 0, blocks: 0 };
+      return { likes: 0, comments: 0, reports: 0, profileReports: 0, blocks: 0 };
     });
     vi.mocked(cancelFanRedemptions).mockImplementation(async () => {
       await new Promise((resolve) => setTimeout(resolve, 5));
@@ -263,9 +270,16 @@ describe('exclusão de conta (deleteUserData)', () => {
 
 type Write = { op: 'create' | 'set'; path: string; data: Record<string, unknown> };
 
-/** Firestore falso com uma transação: o perfil existe ou não, e os @ estão livres. */
-function profileDb(profileExists: boolean): { db: Firestore; writes: Write[] } {
+/**
+ * Firestore falso com uma transação: o perfil existe ou não, e os @ estão
+ * livres, menos os de `taken`. As reservas lidas ficam em `reads`.
+ */
+function profileDb(
+  profileExists: boolean,
+  taken: readonly string[] = [],
+): { db: Firestore; writes: Write[]; reads: string[] } {
   const writes: Write[] = [];
+  const reads: string[] = [];
   const ref = (path: string) => ({
     path,
     id: path.split('/').at(-1)!,
@@ -278,15 +292,21 @@ function profileDb(profileExists: boolean): { db: Firestore; writes: Write[] } {
         get: async (target: { path: string }) => ({
           exists: profileExists && target.path.startsWith('users/'),
         }),
-        getAll: async (...targets: { path: string; id: string }[]) =>
-          targets.map((target) => ({ exists: false, ref: target, id: target.id })),
+        getAll: async (...targets: { path: string; id: string }[]) => {
+          reads.push(...targets.map((target) => target.path));
+          return targets.map((target) => ({
+            exists: taken.includes(target.id),
+            ref: target,
+            id: target.id,
+          }));
+        },
         create: (target: { path: string }, data: Record<string, unknown>) =>
           writes.push({ op: 'create', path: target.path, data }),
         set: (target: { path: string }, data: Record<string, unknown>) =>
           writes.push({ op: 'set', path: target.path, data }),
       }),
   } as unknown as Firestore;
-  return { db, writes };
+  return { db, writes, reads };
 }
 
 // Segunda-feira, meio-dia em São Paulo.
@@ -326,5 +346,101 @@ describe('cadastro do dia no createProfile', () => {
     });
     expect(result).toEqual({ status: 'exists' });
     expect(writes).toEqual([]);
+  });
+});
+
+// --- O nome do cadastro e o @ automático (seção 30, decisão 11) -------------------
+
+// Pela opção (b') do dono, com o filtro falso de palavras neutras: o "pepino" e
+// a forma "pepina" são palavra, a "berinjela" vale como trecho, e o "chuchu
+// azedo" é frase.
+describe('o filtro do que o fã publica no createProfile (seção 30, decisão 11)', () => {
+  const sevens = (count: number) => '7'.repeat(count);
+
+  beforeEach(() => {
+    vi.mocked(isBlockedText).mockClear();
+    vi.mocked(isBlockedHandle).mockClear();
+  });
+
+  it('o nome barrado vira "Fã" e o @ vai para o automático, com o searchKeys deles', async () => {
+    for (const name of ['Camila Pepino', 'Pepina', 'Bia Chuchu Azedo']) {
+      const { db, writes } = profileDb(false);
+      const result = await createProfile(db, { uid: UID, displayName: name }, sevens, {
+        now: () => NOW,
+      });
+      expect(result, name).toEqual({ status: 'created', username: 'fa777777' });
+      const profile = writes.find((write) => write.path === `users/${UID}`)?.data;
+      expect(profile, name).toMatchObject({
+        displayName: FILTERED_NAME,
+        username: 'fa777777',
+        searchKeys: fanSearchKeys(FILTERED_NAME, 'fa777777'),
+      });
+      expect(profile, name).not.toHaveProperty('updatedAt');
+      expect(writes.some((write) => write.path === 'usernames/fa777777')).toBe(true);
+      expect(isBlockedText).toHaveBeenLastCalledWith(name, 'displayName');
+    }
+    // O automático nunca passa pelo filtro (os dígitos do "fa" virariam letras).
+    expect(isBlockedHandle).not.toHaveBeenCalled();
+  });
+
+  it('o nome limpo com a base do @ barrada: o nome fica, e o @ vai para o automático', async () => {
+    // "Pepi No" dá a base "pepino" (a palavra inteira); "Berinjel Ana", a
+    // "berinjelana" (o trecho). Nenhum pedaço do nome bate.
+    for (const name of ['Pepi No', 'Berinjel Ana']) {
+      const { db, writes } = profileDb(false);
+      const result = await createProfile(db, { uid: UID, displayName: name }, sevens, {
+        now: () => NOW,
+      });
+      expect(result, name).toEqual({ status: 'created', username: 'fa777777' });
+      expect(writes.find((write) => write.path === `users/${UID}`)?.data, name).toMatchObject({
+        displayName: name,
+        username: 'fa777777',
+        searchKeys: fanSearchKeys(name, 'fa777777'),
+      });
+    }
+    expect(vi.mocked(isBlockedText).mock.results.map((call) => call.value)).toEqual([false, false]);
+    expect(vi.mocked(isBlockedHandle).mock.calls).toEqual([['pepino'], ['berinjelana']]);
+  });
+
+  it('o @ com os dígitos sorteados que bate fica fora dos candidatos; o automático fica no fim', async () => {
+    // "pepin" é limpo, mas "pepin05" e "pepin0055" viram "pepinos" (os dígitos
+    // no lugar de letras e as letras repetidas): com o "pepin" tomado, nenhum
+    // dos dois é lido nem reservado.
+    const digits = (count: number) => ({ 2: '05', 4: '0055' })[count] ?? sevens(count);
+    const { db, writes, reads } = profileDb(false, ['pepin']);
+    const result = await createProfile(db, { uid: UID, displayName: 'Pepin' }, digits, {
+      now: () => NOW,
+    });
+    expect(result).toEqual({ status: 'created', username: 'fa77777777' });
+    expect(reads).toEqual(['usernames/pepin', 'usernames/fa77777777']);
+    expect(writes.find((write) => write.path === `users/${UID}`)?.data).toMatchObject({
+      displayName: 'Pepin',
+      username: 'fa77777777',
+    });
+    expect(vi.mocked(isBlockedHandle).mock.calls.flat()).not.toContain('fa77777777');
+  });
+
+  it('o nome limpo fica, com o @ dele; o nome sem letra visível continua null e nem chega ao filtro', async () => {
+    const clean = profileDb(false);
+    expect(
+      await createProfile(clean.db, { uid: UID, displayName: 'Vila Berinjela' }, sevens, {
+        now: () => NOW,
+      }),
+    ).toEqual({ status: 'created', username: 'vilaber' });
+    expect(clean.writes.find((write) => write.path === `users/${UID}`)?.data).toMatchObject({
+      displayName: 'Vila Berinjela',
+    });
+
+    vi.mocked(isBlockedText).mockClear();
+    const empty = profileDb(false);
+    expect(
+      await createProfile(empty.db, { uid: UID, displayName: '\u034F' }, sevens, {
+        now: () => NOW,
+      }),
+    ).toEqual({ status: 'created', username: 'fa777777' });
+    expect(empty.writes.find((write) => write.path === `users/${UID}`)?.data).toMatchObject({
+      displayName: null,
+    });
+    expect(isBlockedText).not.toHaveBeenCalled();
   });
 });

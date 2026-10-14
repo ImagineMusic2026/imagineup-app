@@ -75,11 +75,17 @@ export default function RootLayout() {
           {/* Post fica fora das abas: a tela de comentários tem teclado e não leva tab bar. */}
           <Stack.Screen name="post/[postId]" />
           {/* Perfil público de outro fã, aberto pelo ranking e pelos comentários:
-              tela empilhada, sem tab bar, no modelo do post. */}
+              tela empilhada, sem tab bar, no modelo do post, com denunciar e
+              bloquear (seção 29). */}
           <Stack.Screen name="fa/[fanId]" />
           {/* "Editar perfil" fora das abas, com o header fixo (X, título e ✓). Push
               padrão: o "sem animação" de reduzir movimento vem da pilha. */}
           <Stack.Screen name="editar-perfil" />
+          {/* "Trocar senha" e "Trocar e-mail", abertas pelos Ajustes (seção 29):
+              formulários com teclado, fora das abas e com push padrão, como o
+              "Editar perfil". */}
+          <Stack.Screen name="trocar-senha" />
+          <Stack.Screen name="trocar-email" />
           {/* "Gerar meu link" na altura do conteúdo: o link, as regras e o botão
               aparecem sem o fã puxar a sheet. */}
           <Stack.Screen
@@ -108,6 +114,18 @@ export default function RootLayout() {
               (UP-48), na altura do conteúdo, no visual das outras sheets. */}
           <Stack.Screen
             name="comentario/[comentarioId]"
+            options={{
+              presentation: 'formSheet',
+              sheetAllowedDetents: 'fitToContents',
+              sheetGrabberVisible: true,
+              sheetCornerRadius: radii.sheet,
+              contentStyle: { backgroundColor: colors.surface },
+            }}
+          />
+          {/* "Denunciar perfil", aberta pelo perfil público (seção 29), na altura
+              do conteúdo, no molde da "Opções do comentário". */}
+          <Stack.Screen
+            name="denunciar-perfil/[fanId]"
             options={{
               presentation: 'formSheet',
               sheetAllowedDetents: 'fitToContents',

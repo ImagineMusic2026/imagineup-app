@@ -24,7 +24,14 @@ import {
 import { artistRef, membershipsRef } from '../centrals/service';
 import { countDailyAction, enforceDailyCap } from '../moderation/caps';
 import { blockedOf, reasonKey, reasonsOf, withoutBlocked } from '../moderation/model';
-import { blockListRef, blockListsRef, queueItemRef, reportsRef } from '../moderation/store';
+import {
+  blockListRef,
+  blockListsRef,
+  profileQueueItemRef,
+  profileReportsRef,
+  queueItemRef,
+  reportsRef,
+} from '../moderation/store';
 import { encodePageCursor, type PageCursor } from '../page-cursor';
 import {
   addEngagementCounts,
@@ -656,6 +663,15 @@ async function drain(
   }
 }
 
+/** A chave da contagem por motivo de uma denúncia guardada (motivo estranho vale `none`). */
+function storedReasonKey(reason: unknown) {
+  return reasonKey(
+    reason === 'spam' || reason === 'offensive' || reason === 'harassment' || reason === 'other'
+      ? reason
+      : null,
+  );
+}
+
 /**
  * Exclusão de conta (21.12), depois de o perfil sair (deleteUserData), nesta
  * ordem e em páginas de 100, cada uma numa transação que relê cada documento
@@ -667,7 +683,14 @@ async function drain(
  *    denunciou);
  * 3. denúncias que ele fez: apaga e desconta do item da fila (nunca abaixo de
  *    0); o item aberto que fica sem denúncia vai a `resolved` com `withdrawn`;
- * 4. bloqueios: a lista dele e o uid dele nas listas dos outros.
+ * 4. denúncias de perfil que ele fez (seção 29, 29.9): apaga; a da rodada
+ *    aberta do item (o mesmo `round`) desconta dele, e o item que chega a 0
+ *    vai a `resolved` com `withdrawn`; a de uma rodada antiga sai sem mexer no
+ *    item;
+ * 5. o item dele na `profileReportQueue`: aberto, vai a `resolved` com
+ *    `author_deleted`; aberto ou resolvido, perde o `resolvedDigest`. As
+ *    denúncias contra ele ficam (são de quem denunciou);
+ * 6. bloqueios: a lista dele e o uid dele nas listas dos outros.
  * As presenças, sem contador, saem no recursiveDelete do perfil. Os agregados
  * do painel não descontam (seção 12).
  */
@@ -675,7 +698,13 @@ export async function removeFanEngagement(
   db: Firestore,
   uid: string,
   options: { random?: () => number; now?: () => number } = {},
-): Promise<{ likes: number; comments: number; reports: number; blocks: number }> {
+): Promise<{
+  likes: number;
+  comments: number;
+  reports: number;
+  profileReports: number;
+  blocks: number;
+}> {
   const random = options.random ?? Math.random;
   const now = options.now ?? Date.now;
 
@@ -791,6 +820,80 @@ export async function removeFanEngagement(
     }),
   );
 
+  const profileReports = await drain(
+    profileReportsRef(db).where('reporterUid', '==', uid),
+    (refs) =>
+      db.runTransaction(async (tx) => {
+        const reportSnaps = await tx.getAll(...refs);
+        const targets = [
+          ...new Set(
+            reportSnaps
+              .filter((snap) => snap.exists)
+              .map((snap) => snap.get('targetUid'))
+              .filter((id): id is string => typeof id === 'string' && id !== ''),
+          ),
+        ];
+        const itemSnaps =
+          targets.length > 0
+            ? await tx.getAll(...targets.map((id) => profileQueueItemRef(db, id)))
+            : [];
+        const items = new Map(targets.map((id, index) => [id, itemSnaps[index]!]));
+        const updates = new Map<
+          string,
+          { reportCount: number; reasons: ReturnType<typeof reasonsOf> }
+        >();
+        let count = 0;
+        for (const snap of reportSnaps) {
+          if (!snap.exists) continue;
+          tx.delete(snap.ref);
+          count += 1;
+          const target = snap.get('targetUid');
+          const item = typeof target === 'string' ? items.get(target) : undefined;
+          // Só a denúncia da rodada aberta conta no item; a de uma rodada antiga sai sem mexer nele.
+          if (!item?.exists || item.get('status') !== 'open') continue;
+          if (item.get('round') !== snap.get('round')) continue;
+          const current = updates.get(item.id) ?? {
+            reportCount: safeCount(item.get('reportCount')),
+            reasons: reasonsOf(item.get('reasons')),
+          };
+          const key = storedReasonKey(snap.get('reason'));
+          current.reportCount = Math.max(0, current.reportCount - 1);
+          current.reasons[key] = Math.max(0, current.reasons[key] - 1);
+          updates.set(item.id, current);
+        }
+        const at = tsOf(now());
+        for (const [id, update] of updates) {
+          tx.update(profileQueueItemRef(db, id), {
+            reportCount: update.reportCount,
+            reasons: update.reasons,
+            ...(update.reportCount === 0
+              ? { status: 'resolved', resolution: 'withdrawn', resolvedAt: at, resolvedBy: null }
+              : {}),
+          });
+        }
+        return count;
+      }),
+  );
+
+  // O item do próprio fã: o aberto vai a `author_deleted`; o resumo do perfil sai sempre.
+  await db.runTransaction(async (tx) => {
+    const item = await tx.get(profileQueueItemRef(db, uid));
+    if (!item.exists) return;
+    const open = item.get('status') === 'open';
+    if (!open && item.get('resolvedDigest') === null) return;
+    tx.update(item.ref, {
+      resolvedDigest: null,
+      ...(open
+        ? {
+            status: 'resolved',
+            resolution: 'author_deleted',
+            resolvedAt: tsOf(now()),
+            resolvedBy: null,
+          }
+        : {}),
+    });
+  });
+
   await blockListRef(db, uid).delete();
   let blocks = 0;
   for (;;) {
@@ -808,5 +911,5 @@ export async function removeFanEngagement(
     if (snap.size < ENGAGEMENT_DELETE_PAGE) break;
   }
 
-  return { likes, comments, reports, blocks };
+  return { likes, comments, reports, profileReports, blocks };
 }

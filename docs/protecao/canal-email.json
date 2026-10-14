@@ -1,0 +1,6 @@
+{
+  "type": "email",
+  "displayName": "ImagineUP: alertas do servidor",
+  "description": "E-mail do dono para os alertas da produção do ImagineUP (projeto imagine-up-app).",
+  "userLabels": {"app": "imagineup"}
+}

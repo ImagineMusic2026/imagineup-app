@@ -3,7 +3,7 @@
 // importa nada do perfil.
 import { RANKING_SEED } from '@/domains/ranking/fixtures';
 import { ApiError } from '@/services/api/errors';
-import { fixtureDelay } from '@/services/fixtures';
+import { fixtureBlocks, fixtureDelay } from '@/services/fixtures';
 
 import { SOCIAL_NETWORKS } from './details';
 import type { FanPublicProfile, FanSocials, Gender } from './types';
@@ -21,9 +21,10 @@ import type { FanPublicProfile, FanSocials, Gender } from './types';
  * O nome do comentário de exemplo continua o do protótipo ("Thalita S."), e o
  * perfil mostra o do ranking ("Thalita Santos"): diferença aceita só aqui (no
  * servidor, a fila de 24.7 acerta a cópia do comentário). As fixtures não
- * modelam "o outro me bloqueou" (o `moderationFixture` só sabe quem o fã
- * bloqueou). `__tests__/fan-fixtures.test.ts` trava a coerência; mudou a
- * tabela do seed (`functions/src/fan-profile/seed.ts`), mude aqui.
+ * modelam "o outro me bloqueou": o `blockedByMe` sai do `fixtureBlocks`
+ * (`services/fixtures`), que só sabe quem o fã bloqueou (seção 29, 29.10).
+ * `__tests__/fan-fixtures.test.ts` trava a coerência; mudou a tabela do seed
+ * (`functions/src/fan-profile/seed.ts`), mude aqui.
  */
 
 /** O corte do @ que o gerador do servidor dá (`BASE_MAX` de `functions/src/profile.ts`). */
@@ -117,9 +118,20 @@ export const COMMENT_ONLY_AUTHORS: Readonly<Record<string, string>> = {
 const has = (record: object, key: string): boolean =>
   Object.prototype.hasOwnProperty.call(record, key);
 
+/**
+ * A pessoa por trás de um id de exemplo: o autor de comentário que é gente do
+ * ranking vira o id do ranking (`fa-thalita` vale `fa-rank-01`); o resto fica
+ * como veio. Bloquear e denunciar nas fixtures guardam por ele (seção 29,
+ * 29.10): bloquear a Thalita pelo ranking esconde os comentários dela, e o
+ * contrário. O `posts/fixtures.ts` importa por este arquivo, nunca pelo index.
+ */
+export function canonicalFanId(fanId: string): string {
+  return has(COMMENT_AUTHOR_ALIASES, fanId) ? COMMENT_AUTHOR_ALIASES[fanId]! : fanId;
+}
+
 /** O nome do perfil por trás de um id, ou `null` quando ninguém tem esse id. */
 function displayNameOf(fanId: string): string | null {
-  const rankId = has(COMMENT_AUTHOR_ALIASES, fanId) ? COMMENT_AUTHOR_ALIASES[fanId]! : fanId;
+  const rankId = canonicalFanId(fanId);
   const person = RANKING_SEED.find((seed) => seed.userId === rankId);
   if (person) return person.displayName;
   return has(COMMENT_ONLY_AUTHORS, fanId) ? COMMENT_ONLY_AUTHORS[fanId]! : null;
@@ -136,16 +148,17 @@ function socialsOf(socials: Partial<FanSocials>): FanSocials | null {
 /**
  * O perfil público como o `GET /fans/:fanId` responde, montado campo a campo
  * (nunca o gênero nem a conta privada). Fechado na privada e na suspensa, com
- * o mesmo corpo. Id que ninguém tem, o do próprio fã (`me`, a linha dele no
- * ranking de exemplo) e o de uma central (o comentário do artista): 404
- * `fan_not_found`, como a API.
+ * o mesmo corpo. O `blockedByMe` (seção 29) diz se o fã de exemplo bloqueou a
+ * pessoa, por qualquer um dos ids dela. Id que ninguém tem, o do próprio fã
+ * (`me`, a linha dele no ranking de exemplo) e o de uma central (o comentário
+ * do artista): 404 `fan_not_found`, como a API.
  */
 export function buildFanProfileFixture(fanId: string): FanPublicProfile {
   const displayName = displayNameOf(fanId);
   if (displayName === null) {
     throw new ApiError('notFound', `Fã ${fanId} não existe nas fixtures.`, 404, 'fan_not_found');
   }
-  const rankId = has(COMMENT_AUTHOR_ALIASES, fanId) ? COMMENT_AUTHOR_ALIASES[fanId]! : fanId;
+  const rankId = canonicalFanId(fanId);
   const details = has(FAN_FIXTURE_DETAILS, rankId) ? FAN_FIXTURE_DETAILS[rankId] : undefined;
   const base = {
     uid: fanId,
@@ -153,14 +166,16 @@ export function buildFanProfileFixture(fanId: string): FanPublicProfile {
     username: fixtureUsername(displayName),
     photoURL: null,
   };
+  const blockedByMe = fixtureBlocks.has(rankId);
   if (details && (details.privateAccount || details.suspended)) {
-    return { ...base, restricted: true, bio: null, socials: null };
+    return { ...base, restricted: true, bio: null, socials: null, blockedByMe };
   }
   return {
     ...base,
     restricted: false,
     bio: details?.bio ?? null,
     socials: details ? socialsOf(details.socials) : null,
+    blockedByMe,
   };
 }
 

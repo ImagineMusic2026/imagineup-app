@@ -1,12 +1,15 @@
 import { initializeApp } from 'firebase-admin/app';
 import { getAuth } from 'firebase-admin/auth';
-import { getFirestore, Timestamp } from 'firebase-admin/firestore';
+import { FieldValue, getFirestore, Timestamp } from 'firebase-admin/firestore';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { beforeAll, describe, expect, it } from 'vitest';
 
+import { FILTERED_NAME, isBlockedText } from '../src/content-filter';
+import { fanSearchKeys } from '../src/fan-profile';
 import { handleUserCreated, NAME_WAIT_MS, type FindUser } from '../src/handlers';
 import { dayKey } from '../src/points';
 import { createProfile, deleteUserData } from '../src/store';
+import { barredWordOf, readLegibleList, warnWithoutList } from './content-filter-list';
 import { useCleanEmulators } from './support';
 
 /**
@@ -35,7 +38,7 @@ beforeAll(async () => {
     backends: { functionTriggers: { entryPoint: string }[] }[];
   };
   const loaded = backends.flatMap((backend) => backend.functionTriggers.map((t) => t.entryPoint));
-  const missing = ['createUserProfile', 'deleteUserProfile'].filter(
+  const missing = ['createUserProfile', 'deleteUserProfile', 'queueFanProfileSync'].filter(
     (name) => !loaded.includes(name),
   );
   if (missing.length > 0) {
@@ -398,5 +401,98 @@ describe('cadastros do dia (bloco 5, signups.total)', () => {
     });
     expect(result).toEqual({ status: 'staff' });
     expect(await signupsSince(from)).toBe(0);
+  });
+});
+
+// --- O filtro do que o fã publica (seção 30, decisão 11) ----------------------
+
+// O termo barrado, escolhido por regra na lista legível, fora de todo
+// repositório; sem ela (o CI), os casos são pulados com aviso. As funções do
+// emulador carregam a lista de verdade, por chaves. O termo só vive em
+// memória: as conferências comparam booleanos, e nenhuma mensagem de falha
+// mostra o nome barrado nem um @ feito dele.
+const BARRED = barredWordOf(readLegibleList());
+if (!BARRED) warnWithoutList('profile.emulator.test.ts (o nome do cadastro barrado)');
+
+/** O perfil ficou com o "Fã", o @ automático e as chaves dos dois. */
+function expectFilteredProfile(profile: Record<string, unknown> | undefined): void {
+  const username = typeof profile?.username === 'string' ? profile.username : '';
+  expect(profile?.displayName === FILTERED_NAME, 'o nome é o "Fã"').toBe(true);
+  expect(/^fa\d{6}$/.test(username), 'o @ é o automático').toBe(true);
+  expect(
+    JSON.stringify(profile?.searchKeys) === JSON.stringify(fanSearchKeys(FILTERED_NAME, username)),
+    'as chaves da busca são as do "Fã" e do @',
+  ).toBe(true);
+}
+
+describe.skipIf(!BARRED)('o nome do cadastro barrado (seção 30, só com a lista legível)', () => {
+  it('a conta com o nome barrado nasce com "Fã" e o @ fa, sem esperar o nome', async () => {
+    const barred = BARRED!;
+    const names = [`Camila ${barred.text}`, barred.text];
+    for (const [index, name] of names.entries()) {
+      expect(isBlockedText(name, 'displayName'), `nome ${index}`).toBe(true);
+    }
+
+    // Pelo gatilho de verdade (createUserProfile, o lib compilado com a lista).
+    const user = await auth.createUser({
+      email: newEmail(),
+      password: 'segredo123',
+      displayName: names[0],
+    });
+    const profile = await profileOf(user.uid);
+    expectFilteredProfile(profile);
+    // O servidor nunca grava o updatedAt (seção 28).
+    expect('updatedAt' in profile).toBe(false);
+    const reservations = await reservationsOf(user.uid);
+    expect(reservations.length === 1 && reservations[0] === profile.username).toBe(true);
+
+    // O nome barrado é um nome: o `hasName` não muda, e o perfil nasce sem a espera.
+    for (const [index, name] of names.entries()) {
+      const uid = `nomeBarrado${index}`;
+      const waits: number[] = [];
+      const result = await handleUserCreated(
+        db,
+        async () => ({ displayName: name }),
+        { uid },
+        (ms) => {
+          waits.push(ms);
+          return Promise.resolve();
+        },
+      );
+      expect(waits, `nome ${index}`).toEqual([]);
+      expect(result.status, `nome ${index}`).toBe('created');
+      expectFilteredProfile((await db.doc(`users/${uid}`).get()).data());
+    }
+  });
+
+  it('o nome barrado gravado depois no perfil sem nome vira "Fã" pelo gatilho, sem laço', async () => {
+    const barred = BARRED!;
+    // O perfil sem nome, como o do cadastro lento. Sem conta no Auth, nada
+    // dispara na criação; o gatilho do perfil (queueFanProfileSync) dispara na troca.
+    const uid = 'semNomeBarrado';
+    await createProfile(db, { uid, displayName: null });
+    const ref = db.doc(`users/${uid}`);
+    expect((await ref.get()).get('displayName')).toBeNull();
+
+    // O primeiro nome como a regra firstProfileName grava (com o updatedAt),
+    // pelo Admin SDK: o teste é do gatilho, e não do caminho.
+    await ref.update({
+      displayName: `Camila ${barred.text}`,
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+    const written = (await ref.get()).get('updatedAt') as Timestamp;
+    await waitFor('o nome virar "Fã"', async () =>
+      (await ref.get()).get('displayName') === FILTERED_NAME ? true : undefined,
+    );
+    const first = await ref.get();
+    expectFilteredProfile(first.data());
+    // O servidor não mexe no updatedAt: fica o da gravação do fã.
+    expect((first.get('updatedAt') as Timestamp).isEqual(written)).toBe(true);
+
+    // Sem laço: a gravação do "Fã" dispara o gatilho de novo, que acha as
+    // chaves certas e não grava nada.
+    await sleep(3_000);
+    const later = await ref.get();
+    expect(later.updateTime!.isEqual(first.updateTime!)).toBe(true);
   });
 });

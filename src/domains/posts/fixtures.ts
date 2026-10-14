@@ -4,11 +4,16 @@ import { nextSaturday, set } from 'date-fns';
 // artists/fixtures.ts não importa posts, então não há ciclo.
 import { followFixture } from '@/domains/artists/fixtures';
 import { missionsFixture } from '@/domains/missions';
+// O perfil público de exemplo pelo arquivo, nunca pelo index (29.17): o index
+// do perfil traz as telas e o Firebase, e este arquivo só lê o ranking de
+// exemplo.
+import { buildFanProfileFixture, canonicalFanId } from '@/domains/profile/fan-fixtures';
 import { ApiError } from '@/services/api/errors';
-import { earnFixturePoints, onFixtureSessionEnd } from '@/services/fixtures';
+import { earnFixturePoints, fixtureBlocks, onFixtureSessionEnd } from '@/services/fixtures';
 
 import { COMMENT_MAX_LENGTH } from './schemas';
 import type {
+  BlockedFansPage,
   BlockFanResult,
   CommentAuthor,
   CommentReportReason,
@@ -19,6 +24,7 @@ import type {
   PostComment,
   PostMedia,
   ReportCommentResult,
+  ReportFanResult,
 } from './types';
 
 /**
@@ -436,9 +442,10 @@ function buildBaseComments(now: Date, post: Post): PostComment[] {
 
 /**
  * Uma página de comentários, do mais novo ao mais antigo: os do fã primeiro
- * (os mais novos), depois os do servidor, sem os de autores que o fã bloqueou.
- * O cursor é a posição do primeiro da página, e post que não existe dá 404,
- * como a API.
+ * (os mais novos), depois os do servidor, sem os de autores que o fã bloqueou
+ * (pelo id normalizado: bloquear a `fa-rank-01` pelo ranking esconde os
+ * comentários de `fa-thalita`). O cursor é a posição do primeiro da página, e
+ * post que não existe dá 404, como a API.
  */
 export function buildCommentsPageFixture(
   now: Date,
@@ -447,7 +454,7 @@ export function buildCommentsPageFixture(
 ): Page<PostComment> {
   const post = findBasePost(now, postId);
   const all = [...(fanComments.get(postId) ?? []), ...buildBaseComments(now, post)].filter(
-    (comment) => !blockedAuthors.has(comment.authorId),
+    (comment) => !fixtureBlocks.has(canonicalFanId(comment.authorId)),
   );
   return pageOf(all, cursor, COMMENTS_PAGE_SIZE);
 }
@@ -529,16 +536,35 @@ export const postsFixture = {
 
 onFixtureSessionEnd(() => postsFixture.reset());
 
-// Moderação de exemplo: as denúncias do fã e quem ele bloqueou.
-let reports = new Set<string>();
-let blockedAuthors = new Set<string>();
-let moderationAnswers = new Map<string, ReportCommentResult | BlockFanResult>();
+/** Páginas da lista de bloqueados de exemplo, como as outras fixtures. */
+export const BLOCKED_PAGE_SIZE = 6;
 
 /**
- * O servidor da moderação nas fixtures (provisória, UP-48): denunciar guarda
- * a resposta pela chave e devolve `already_reported` na segunda vez; bloquear
- * guarda o autor, e os comentários dele somem da lista
- * (`buildCommentsPageFixture`). Volta ao início com a sessão.
+ * O cursor da lista de bloqueados, como o do servidor (`<índice>:<uid>`, o
+ * índice contado do mais antigo, 29.4); fora do formato, 400 como a API.
+ */
+function parseBlockCursor(cursor: string): { index: number; uid: string } {
+  const at = cursor.indexOf(':');
+  const index = Number(cursor.slice(0, at));
+  if (at <= 0 || !Number.isInteger(index) || index < 0) {
+    throw new ApiError('validation', 'Cursor da lista fora do formato.', 400, 'invalid_request');
+  }
+  return { index, uid: cursor.slice(at + 1) };
+}
+
+// Moderação de exemplo: as denúncias do fã, de comentário e de perfil (pelo id
+// normalizado da pessoa). Quem ele bloqueou mora no `fixtureBlocks`.
+let reports = new Set<string>();
+let fanReports = new Set<string>();
+let moderationAnswers = new Map<string, ReportCommentResult | BlockFanResult | ReportFanResult>();
+
+/**
+ * O servidor da moderação nas fixtures (provisória, UP-48, e seção 29):
+ * denunciar guarda a resposta pela chave e devolve `already_reported` na
+ * segunda vez; bloquear e desbloquear mudam o `fixtureBlocks`, com o id
+ * normalizado pelo `canonicalFanId`, e os comentários do bloqueado somem da
+ * lista (`buildCommentsPageFixture`); a lista de bloqueados pagina como a do
+ * servidor, do mais novo ao mais antigo. Volta ao início com a sessão.
  */
 export const moderationFixture = {
   report(
@@ -560,20 +586,83 @@ export const moderationFixture = {
     return { ...result };
   },
 
+  /**
+   * A denúncia de perfil: o 404 do perfil de exemplo (`me`, uma central, um
+   * id que ninguém tem) e `already_reported` na segunda vez da mesma pessoa,
+   * por qualquer um dos ids dela.
+   */
+  reportFan(
+    fanId: string,
+    _reason: CommentReportReason | null,
+    idempotencyKey: string,
+  ): ReportFanResult {
+    const previous = moderationAnswers.get(idempotencyKey);
+    if (previous && 'status' in previous && 'fanId' in previous) return { ...previous };
+    buildFanProfileFixture(fanId);
+    const person = canonicalFanId(fanId);
+    const status: ReportFanResult['status'] = fanReports.has(person)
+      ? 'already_reported'
+      : 'reported';
+    fanReports.add(person);
+    const result: ReportFanResult = { fanId, status };
+    moderationAnswers.set(idempotencyKey, result);
+    return { ...result };
+  },
+
   block(fanId: string, idempotencyKey: string): BlockFanResult {
     const previous = moderationAnswers.get(idempotencyKey);
-    if (previous && 'fanId' in previous) return { ...previous };
-    blockedAuthors.add(fanId);
+    if (previous && 'blocked' in previous && previous.blocked) return { ...previous };
+    fixtureBlocks.add(canonicalFanId(fanId));
     const result: BlockFanResult = { fanId, blocked: true };
     moderationAnswers.set(idempotencyKey, result);
     return { ...result };
   },
 
-  /** Volta ao início (fim da sessão e testes). */
+  /** Quem não está na lista: sucesso sem efeito, como a API. */
+  unblock(fanId: string, idempotencyKey: string): BlockFanResult {
+    const previous = moderationAnswers.get(idempotencyKey);
+    if (previous && 'blocked' in previous && !previous.blocked) return { ...previous };
+    fixtureBlocks.remove(canonicalFanId(fanId));
+    const result: BlockFanResult = { fanId, blocked: false };
+    moderationAnswers.set(idempotencyKey, result);
+    return { ...result };
+  },
+
+  /**
+   * Uma página da lista de bloqueados, do mais novo ao mais antigo, com o
+   * nome, o @ e a foto do perfil de exemplo. O cursor é o do servidor: o uid
+   * do último visto, com o índice dele como reserva, e desbloquear na própria
+   * tela não pula ninguém. O id que nenhum perfil de exemplo tem sai da
+   * página, como o fã sem perfil no servidor.
+   */
+  blockedPage(cursor: string | null): BlockedFansPage {
+    const list = fixtureBlocks.list();
+    let end = list.length;
+    if (cursor) {
+      const { index, uid } = parseBlockCursor(cursor);
+      const found = list.indexOf(uid);
+      end = found >= 0 ? found : Math.min(index, list.length);
+    }
+    const start = Math.max(0, end - BLOCKED_PAGE_SIZE);
+    const uids = list.slice(start, end).reverse();
+    const items = uids.flatMap((uid) => {
+      try {
+        const { displayName, username, photoURL } = buildFanProfileFixture(uid);
+        return [{ uid, displayName, username, photoURL }];
+      } catch {
+        return [];
+      }
+    });
+    const nextCursor = start > 0 && uids.length > 0 ? `${start}:${list[start]}` : null;
+    return { items, nextCursor };
+  },
+
+  /** Volta ao início (fim da sessão e testes), com o bloqueio de exemplo da `fa-rank-13`. */
   reset(): void {
     reports = new Set();
-    blockedAuthors = new Set();
+    fanReports = new Set();
     moderationAnswers = new Map();
+    fixtureBlocks.reset();
   },
 };
 

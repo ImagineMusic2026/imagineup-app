@@ -1,9 +1,10 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createAsyncStoragePersister } from '@tanstack/query-async-storage-persister';
-import type { Query } from '@tanstack/react-query';
+import { defaultShouldDehydrateMutation, type Mutation, type Query } from '@tanstack/react-query';
 import type { PersistQueryClientOptions } from '@tanstack/react-query-persist-client';
 
 import { usesFixtures } from '@/config/data-source';
+import { isContentRefusal } from '@/services/api/errors';
 import { StorageKeys } from '@/storage/storage/keys';
 
 import { PERSIST_MAX_AGE_MS } from './client';
@@ -35,6 +36,23 @@ export function shouldPersistQuery(query: Query, fixturesInUse: boolean = usesFi
   return !fixturesInUse || query.meta?.realData === true;
 }
 
+/**
+ * As mutações que vão para o disco: as pausadas, como no padrão do TanStack (a
+ * fila offline), e a que pediu para ficar quando o servidor recusou o texto
+ * pelo filtro (`meta: { keepRefused: true }` e o erro de conteúdo, seção 30):
+ * o comentário da fila que volta recusado com o app fechado não some sem aviso,
+ * e a linha "Não publicado" volta com o app reaberto. Quem marca é o `meta`,
+ * para o `services` não conhecer o domínio dos posts.
+ */
+export function shouldPersistMutation(mutation: Mutation): boolean {
+  if (defaultShouldDehydrateMutation(mutation)) return true;
+  return (
+    mutation.meta?.keepRefused === true &&
+    mutation.state.status === 'error' &&
+    isContentRefusal(mutation.state.error)
+  );
+}
+
 /** Mudou o formato salvo? Suba QUERY_CACHE_VERSION (`buster`). */
 export const persistOptions: Omit<PersistQueryClientOptions, 'queryClient'> = {
   persister: queryPersister,
@@ -42,5 +60,6 @@ export const persistOptions: Omit<PersistQueryClientOptions, 'queryClient'> = {
   buster: String(QUERY_CACHE_VERSION),
   dehydrateOptions: {
     shouldDehydrateQuery: (query) => shouldPersistQuery(query),
+    shouldDehydrateMutation: (mutation) => shouldPersistMutation(mutation),
   },
 };

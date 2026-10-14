@@ -1,6 +1,8 @@
 # Arquitetura da API do app
 
-Nota de arquitetura do servidor do ImagineUP. Ela diz como o app fala com as Cloud Functions, onde moram os pontos, como o ponto é lançado e como o painel lê os números. Vale para o bloco 1 (base do servidor e núcleo de pontos) e deixa a estrutura pronta para os blocos seguintes. O bloco 4 (centrais de verdade) está na seção 19, o bloco 5 (convite com atribuição e origem do fã), na seção 20, o bloco 6 (mural e agenda com conteúdo real), na seção 21, o bloco 7 (missões, níveis, conquistas e extrato), na seção 22, o bloco 8 (ranking e temporadas), na seção 23, o bloco 9 (perfil editável), na seção 24, o bloco 10 (loja e resgate), na seção 25, o bloco 11 (telas do painel), na seção 26, a proteção contra abuso, na seção 27, e o perfil novo (bio, gênero, conta privada, redes, a edição pela API e o perfil público), na seção 28.
+Nota de arquitetura do servidor do ImagineUP. Ela diz como o app fala com as Cloud Functions, onde moram os pontos, como o ponto é lançado e como o painel lê os números. Vale para o bloco 1 (base do servidor e núcleo de pontos) e deixa a estrutura pronta para os blocos seguintes. O bloco 4 (centrais de verdade) está na seção 19, o bloco 5 (convite com atribuição e origem do fã), na seção 20, o bloco 6 (mural e agenda com conteúdo real), na seção 21, o bloco 7 (missões, níveis, conquistas e extrato), na seção 22, o bloco 8 (ranking e temporadas), na seção 23, o bloco 9 (perfil editável), na seção 24, o bloco 10 (loja e resgate), na seção 25, o bloco 11 (telas do painel), na seção 26, a proteção contra abuso, na seção 27, o perfil novo (bio, gênero, conta privada, redes, a edição pela API e o perfil público), na seção 28, as exigências das lojas (denúncia de perfil, bloqueados, Sobre, conta, suspensão, 429 e Explorar), na seção 29, o filtro do que o fã publica, na seção 30, e a proteção da produção (cópias do banco, alertas e o registro de acesso), na seção 31.
+
+Em produção desde 14/10/2026: o servidor de todas as seções (66 funções e 44 índices compostos), e o app delas no canal preview da EAS. Os blocos 1 e 4 a 10 saíram em 07/10/2026, o servidor do bloco 11 em 08/10/2026, as seções 27 e 28 de 08 a 09/10/2026 e as seções 29 e 30 em 14/10/2026. O relato de cada publicação está em 26.21.
 
 Origem: decisão do dono em 05/10/2026 (API HTTP numa função `onRequest`, pontos calculados na transação da ação) e o levantamento de 05/10/2026 (13 blocos, 26 endpoints, perguntas técnicas em aberto).
 
@@ -29,6 +31,9 @@ Quem mexe no servidor lê esta nota antes. Mudou uma decisão daqui? Mude a nota
 19. Bloco 10 (seção 25): catálogo em `rewards/{rewardId}` e pedidos em `redemptions/{código}`, com o código de retirada (`UP-` mais 6 caracteres sorteados com `crypto.randomInt`) como id; o resgate numa transação só, que confere o teto do dia (10), a recompensa no ar, o estoque, o show aberto (quando ela tem show), o custo que o fã viu (`expectedCost`) e o limite por fã (padrão 1, configurável), baixa o estoque e desconta só o saldo pelo núcleo (`redeem:<código>`); a disputa pelo estoque fica num documento só, a recompensa; status solicitado, aprovado, entregue e recusado (o entregue pode pular o aprovado, e o aprovado pode ser recusado), com a recusa devolvendo os pontos por um tipo novo do núcleo (`refund`, `redeem_refund:<código>`) e, por padrão, a vaga, uma vez; 8 callables do painel na seção `rewards`, com o e-mail do fã só por callable auditada e só dos pedidos abertos; contadores por recompensa nos shards do dia; a exclusão de conta cancela os pedidos abertos (status `canceled`, só no servidor) e tira o dado pessoal do resto; no app, a loja e o resgate do servidor (a tentativa guarda a chave com o custo, e a confirmação congela o custo), o status de cada pedido no detalhe da recompensa, o limite atingido, a devolução no extrato e o aviso da regra 5.3 da Apple, com o regulamento pelo `rulesUrl` da loja.
 20. Bloco 11 (seção 26): as telas do painel (Visão geral, Crescimento com o Comparativo, Ranking e temporadas, Fãs, Missões e régua, Recompensas e resgates, Moderação, Logs e o Mural e a Agenda dentro de Artistas) sobre uma fundação comum, construídas em trilhas paralelas; o fechamento do dia às 00:20 (`closeStatsDays`), que só começa depois da carga dos cadastros antigos e guarda o retrato da noite (fãs, membros e "PTS DA CENTRAL" por central, fãs da temporada), com a rede de segurança do `fanCount`; os números do painel fechados até ontem, com o hoje só sob pedido; as seções Fãs e Moderação lendo os perfis, com a busca por nome e @ pelo `searchKeys` gravado no servidor; o `adjustFanPoints` com teto por papel e orçamento do dia, o `findFanByEmail` auditado e com teto, e o ranking ao vivo pelo `getPanelRanking`; suspender a conta de um fã (as gravações pela API, menos desfazer e as de segurança, e os pontos do convite, sem mexer no login), ocultar os comentários dele em lote, trocar o @ e tirar a foto, na Moderação; a auditoria com seção e alvos para os filtros dos Logs; a carga da versão 1 da régua e das conquistas; o id do painel no `createPost` e no `createEvent`; e o merge do painel na `main` só depois do deploy do servidor dos blocos 1 e 4 a 11.
 21. Perfil novo (seção 28): bio, gênero, conta privada e redes sociais em `users/{uid}`, gravados só pelo servidor, com o ausente valendo o padrão; as redes guardam só o usuário, normalizado igual no servidor e no app, e quem mostra monta o link com domínio fixo e confere o usuário de novo; a edição inteira (nome, @, bio, cidade, gênero, conta privada e redes) vai pelo `PUT /me/profile`, num pedido só e numa transação, com os tetos do dia `profile_save` (20) e `name_change` (5), e o `PUT /me/username` fica para o APK de antes; as regras fecham a edição direta, salvo o primeiro nome do perfil que nasceu sem nome, e o fã suspenso não edita nada; o perfil público (`GET /fans/:fanId`) mostra foto, nome, @, bio e redes, ou só os três quando o alvo tem conta privada, está suspenso ou bloqueou quem pede, com o mesmo corpo nos três casos; o gênero nunca sai para outro fã; a Moderação apaga a bio e as redes pela callable `clearFanProfileText`, com a auditoria sem o texto; no app, "Editar perfil" sai das abas para a pilha raiz, com o header fixo, o ✓ único e os grupos novos, e fica só leitura sem a API; o perfil público (`/fa/[fanId]`) abre pelo ranking, pelo pódio, pelos top fãs e pelos comentários, e os links das redes não abrem nas fixtures nem no emulador.
+22. Exigências das lojas (seção 29): a denúncia de perfil (`POST /fans/:fanId/report`, com os motivos e o teto da denúncia de comentário) numa coleção separada, `profileReportQueue/{uid}`, um item por fã denunciado, com a rodada (`round`) e o resumo do perfil na resolução (`resolvedDigest`), para a mesma pessoa só reabrir com o perfil mudado; a `moderationQueue`, o `moderateComment` e o painel publicado não mudam; a equipe fecha o item pela callable `resolveProfileReport` (66 funções e 44 índices compostos); a lista para desbloquear (`GET /me/blocks`, com o cursor pelo índice da inclusão) e o `blockedByMe` no perfil público; a exclusão de conta tira as denúncias de perfil do fã e fecha o item dele; no app, "Denunciar perfil" e "Bloquear" (com "Bloquear e denunciar") no perfil público, a tela "Fãs bloqueados", os Ajustes com Segurança, Conta (trocar o e-mail e a senha pelo Firebase Auth) e Sobre (privacidade, termos, regulamento, contato e versão), o aviso de conta suspensa com um canal por recusa, o 429 separado em ritmo (tenta de novo sozinho) e teto do dia (nunca), e a Explorar como vitrine das centrais; tudo por EAS Update, sem mudar o fingerprint.
+23. Filtro do que o fã publica (seção 30): uma lista de termos no servidor, em `functions/src/content-filter/` (código puro, sem dependência nova), conferida antes de publicar no comentário, no nome, no @, na bio, na cidade e nas redes, dentro das funções puras que o `validate` e a transação já chamam, sem leitura nova; o texto e cada termo passam pela mesma normalização (acentos, homóglifos, letras soltas, números e símbolos no lugar de letras e letras repetidas), com palavra inteira e frase no texto livre e trecho só dentro de um pedaço dos campos de identidade; o repositório, público, guarda só as chaves (o SHA-256 de cada pedaço normalizado), e a lista legível fica fora de todo repositório, com o dono; toda categoria barrada em todo campo até a aprovação das lojas; a recusa usa os códigos de hoje com o motivo `not_allowed` (`comment_invalid` e `profile_invalid`), e o @ barrado sai como reservado, sem gravar nada e sem dizer o termo; o nome do cadastro barrado vira "Fã", e o @ dele, o `fa`, no `createUserProfile` e no gatilho do perfil; a linha do log da `api` ganha o `code` e o `reason`; nenhuma regra, índice, fila, callable nem teto novo; no app, a frase com o link "Escrever para a equipe" embaixo do compositor e no campo do perfil, e o comentário recusado com o campo ocupado vira a linha "Não publicado", que sobrevive ao app fechado; o app vai por EAS Update, sem mudar o fingerprint, e a publicação saiu junto com a da seção 29, em 14/10/2026, num lote só de cinco funções.
+24. Proteção da produção (seção 31): o Firestore com o PITR de 7 dias, a proteção contra apagar e um backup diário com 14 dias, todos dentro dos 30 dias da política; alertas por e-mail no Cloud Monitoring (erros nas funções, a `api` com 5xx, as agendadas falhando ou paradas), silenciados em todo deploy de funções; e o registro de acesso por 184 dias numa linha de log própria, `acesso`, só com o IP (o último item do `X-Forwarded-For`) e o uid, escrita a cada pedido da `api` e a cada chamada das callables do painel (pelo `onPanelCall`), levada por um sink a um bucket de log em southamerica-east1; nenhuma regra, rota, callable ou pacote novo, e o fingerprint do app não muda.
 
 ## 1. Formato da API
 
@@ -37,7 +42,7 @@ Quem mexe no servidor lê esta nota antes. Mudou uma decisão daqui? Mude a nota
 - Função `api`, exportada em `functions/src/index.ts`, depois do `setGlobalOptions` (região `southamerica-east1`, `maxInstances: 10` e, desde 08/10/2026, `cpu: 'gcf_gen1'` e `concurrency: 1`, a CPU fracionada de 26.22).
 - Produção: `https://southamerica-east1-imagine-up-app.cloudfunctions.net/api`. A `api` está no ar desde 07/10/2026 (26.21). Esse valor está no `EXPO_PUBLIC_API_URL` das variáveis da EAS desde 08/10/2026: no ambiente preview (o APK interno, 28.14) e, pela resposta 10 de 28.15, também em development e production. A variável entra no bundle quando ele é gerado: valem as builds e os EAS Updates gerados com o ambiente depois dela, e no dev client, que puxa o JS do Metro, o `.env` da máquina. Vazia, só no Expo Go ou no dev client sem a variável no `.env` e sem emulador.
 - Emuladores: `http://<EXPO_PUBLIC_FIREBASE_EMULATOR_HOST>:5001/demo-imagine-up-app/southamerica-east1/api`. O app monta essa URL sozinho (seção 13). O alcance é o mesmo dos outros emuladores: `10.0.2.2` no emulador Android; aparelho na rede local precisaria dos emuladores ouvindo fora do 127.0.0.1, o que hoje nenhum faz.
-- Opções: `invoker: 'public'` (quem protege é o ID token), `cors: false` (app nativo não faz preflight; o painel não usa esta API, usa callables; a visita ao link de convite conta no app, pela própria `api`, seção 20), `timeoutSeconds: 30`, `memory: '512MiB'`, `cpu: 1`, `concurrency: 80`. Confira na doc do firebase-functions 7 os padrões de cpu e concorrência antes de fixar: concorrência acima de 1 pede cpu 1. Desde 08/10/2026 (decisão do dono), é a única função com 1 vCPU: as outras 63 (64 desde a `clearFanProfileText` do perfil novo, 28.6) usam a CPU fracionada, por causa da cota de 20 vCPU do Cloud Run na região (26.22). A `api` fica inteira porque atende os fãs: uma instância serve 80 pedidos de uma vez, e a fracionada serviria um por instância, 10 ao mesmo tempo no máximo.
+- Opções: `invoker: 'public'` (quem protege é o ID token), `cors: false` (app nativo não faz preflight; o painel não usa esta API, usa callables; a visita ao link de convite conta no app, pela própria `api`, seção 20), `timeoutSeconds: 30`, `memory: '512MiB'`, `cpu: 1`, `concurrency: 80`. Confira na doc do firebase-functions 7 os padrões de cpu e concorrência antes de fixar: concorrência acima de 1 pede cpu 1. Desde 08/10/2026 (decisão do dono), é a única função com 1 vCPU: as outras 63 (64 desde a `clearFanProfileText` do perfil novo, 28.6, e 65 desde a `resolveProfileReport` das exigências das lojas, 29.6) usam a CPU fracionada, por causa da cota de 20 vCPU do Cloud Run na região (26.22). A `api` fica inteira porque atende os fãs: uma instância serve 80 pedidos de uma vez, e a fracionada serviria um por instância, 10 ao mesmo tempo no máximo.
 - `minInstances` fica 0. Ligar 1 no lançamento é decisão de custo, para cortar a partida a frio (1 a 3 s; o axios espera 15 s), e de cota: a instância mínima prende 1 dos 20 vCPU da região o tempo todo (26.22).
 - Sem prefixo de versão. App instalado não pode quebrar: campo novo na resposta é sempre opcional para o app, e rota que muda de formato ganha endereço novo.
 
@@ -179,9 +184,9 @@ Corpo de erro, sempre:
 | -------------------------- | ------ | ------------ | ------------------------------------------------------------------------------------- |
 | `invalid_request`          | 400    | validation   | parâmetro, corpo ou cursor fora do formato                                            |
 | `idempotency_key_required` | 400    | validation   | rota que grava sem `Idempotency-Key`, ou fora do formato                              |
-| `comment_invalid`          | 400    | validation   | comentário vazio, longo demais ou com invisível (bloco 6)                             |
-| `username_invalid`         | 400    | validation   | @ fora do formato, reservado ou no padrão do automático (bloco 9)                     |
-| `profile_invalid`          | 400    | validation   | um campo do `PUT /me/profile` fora da regra (seção 28)                                |
+| `comment_invalid`          | 400    | validation   | comentário vazio, longo demais, com invisível ou fora dos Termos de uso (bloco 6 e seção 30) |
+| `username_invalid`         | 400    | validation   | @ fora do formato, reservado (a marca, a equipe ou a lista da seção 30) ou no padrão do automático (bloco 9) |
+| `profile_invalid`          | 400    | validation   | um campo do `PUT /me/profile` fora da regra ou das regras de conteúdo (seções 28 e 30) |
 | `photo_invalid`            | 400    | validation   | foto de outro fã, fora do tipo, do tamanho, das dimensões ou que não é JPEG (bloco 9) |
 | `unauthenticated`          | 401    | unauthorized | sem token, token inválido, vencido ou de outro projeto                                |
 | `not_fan`                  | 403    | forbidden    | conta só da equipe tentando gravar                                                    |
@@ -193,7 +198,7 @@ Corpo de erro, sempre:
 | `post_not_found`           | 404    | notFound     | post que não existe ou não está visível (bloco 6)                                     |
 | `event_not_found`          | 404    | notFound     | show que não existe, fora do ar ou encerrado (bloco 6)                                |
 | `comment_not_found`        | 404    | notFound     | comentário que não existe ou oculto (bloco 6)                                         |
-| `fan_not_found`            | 404    | notFound     | fã que não existe, no bloqueio (bloco 6) e no perfil público (seção 28)               |
+| `fan_not_found`            | 404    | notFound     | fã que não existe, no bloqueio (bloco 6), no perfil público (seção 28) e na denúncia de perfil (seção 29) |
 | `photo_not_found`          | 404    | notFound     | arquivo da foto que não existe, velho ou de antes da última troca (bloco 9)           |
 | `reward_not_found`         | 404    | notFound     | recompensa que não existe, em rascunho ou com id fora do formato (bloco 10)           |
 | `method_not_allowed`       | 405    | unknown      | rota existe, método não                                                               |
@@ -207,19 +212,19 @@ Corpo de erro, sempre:
 | `username_change_too_soon` | 409    | validation   | troca do @ antes do prazo de 30 dias (bloco 9)                                        |
 | `payload_too_large`        | 413    | unknown      | corpo acima de 16 KiB                                                                 |
 | `idempotency_key_reused`   | 422    | validation   | mesma chave com outro pedido                                                          |
-| `too_many_requests`        | 429    | unknown      | ação acima do teto do dia (blocos 4, 6, 9 e 10: 19.5, 21.7, 24.8 e 25.7; 27.4; 28.5)  |
-| `rate_limited`             | 429    | unknown      | pedidos seguidos demais do mesmo fã na instância, com `Retry-After` (27.3)            |
+| `too_many_requests`        | 429    | dailyLimit   | ação acima do teto do dia (blocos 4, 6, 9 e 10: 19.5, 21.7, 24.8 e 25.7; 27.4; 28.5; 29.5); o app nunca tenta de novo (29.11) |
+| `rate_limited`             | 429    | rateLimited  | pedidos seguidos demais do mesmo fã na instância, com `Retry-After` (27.3); o app tenta de novo sozinho, como no 429 sem código da cota do Cloud Run (29.11) |
 | `internal`                 | 500    | server       | erro inesperado                                                                       |
 | `profile_not_ready`        | 503    | server       | gravação sem `users/{uid}` (perfil nascendo ou conta excluída)                        |
 | `unavailable`              | 503    | server       | disputa, Firestore fora ou falha ao conferir o token                                  |
 
-Mensagens: `invalid_request` "Pedido inválido."; `idempotency_key_required` "Falta a chave de idempotência."; `unauthenticated` "Entre na sua conta para continuar."; `not_fan` "Esta conta não é de fã."; `not_found` "Não encontrado."; `artist_not_found` "Central não encontrada."; `invite_not_found` "Convite não encontrado."; `invite_not_allowed` "Este convite não vale para esta conta."; `method_not_allowed` "Método não aceito nesta rota."; `insufficient_points` "Saldo insuficiente."; `payload_too_large` "Pedido grande demais."; `idempotency_key_reused` "Esta chave já foi usada em outro pedido."; `too_many_requests` "Tentativas demais por hoje. Tente amanhã."; `internal` "Algo deu errado. Tente de novo."; `profile_not_ready` "Seu perfil ainda está sendo criado. Tente de novo em instantes."; `unavailable` "Serviço ocupado. Tente de novo."; do bloco 6, `post_not_found` "Post não encontrado.", `event_not_found` "Show não encontrado.", `comment_not_found` "Comentário não encontrado.", `fan_not_found` "Fã não encontrado.", `comment_invalid` "Comentário vazio, longo demais ou com caracteres invisíveis." e `block_list_full` "Você chegou ao limite de fãs bloqueados."; do bloco 9 (24.2), `username_invalid` "Este @ não vale. Use de 3 a 20 letras minúsculas e números.", `photo_invalid` "Foto fora do formato. Escolha outra.", `photo_not_found` "Foto não encontrada. Envie de novo.", `username_taken` "Este @ já tem dono." e `username_change_too_soon` "Você trocou o @ há pouco. Tente de novo mais tarde."; do bloco 10 (25.2), `reward_not_found` "Recompensa não encontrada.", `sold_out` "Recompensa esgotada.", `redeem_limit_reached` "Você chegou ao limite de resgates desta recompensa." e `reward_changed` "O custo desta recompensa mudou. Confira antes de resgatar."; do bloco 11 (26.5), `account_suspended` "Sua conta está suspensa. Fale com a equipe do ImagineUP."; da proteção contra abuso (27.3 e 27.5), `rate_limited` "Muitos pedidos seguidos. Espere alguns segundos e tente de novo." e `app_check_failed` "Não deu para confirmar este aparelho. Atualize o app e tente de novo."; do perfil novo (28.2), `profile_invalid` "Perfil fora do formato. Confira os campos.", com `details: { field, reason }`.
+Mensagens: `invalid_request` "Pedido inválido."; `idempotency_key_required` "Falta a chave de idempotência."; `unauthenticated` "Entre na sua conta para continuar."; `not_fan` "Esta conta não é de fã."; `not_found` "Não encontrado."; `artist_not_found` "Central não encontrada."; `invite_not_found` "Convite não encontrado."; `invite_not_allowed` "Este convite não vale para esta conta."; `method_not_allowed` "Método não aceito nesta rota."; `insufficient_points` "Saldo insuficiente."; `payload_too_large` "Pedido grande demais."; `idempotency_key_reused` "Esta chave já foi usada em outro pedido."; `too_many_requests` "Tentativas demais por hoje. Tente amanhã."; `internal` "Algo deu errado. Tente de novo."; `profile_not_ready` "Seu perfil ainda está sendo criado. Tente de novo em instantes."; `unavailable` "Serviço ocupado. Tente de novo."; do bloco 6, `post_not_found` "Post não encontrado.", `event_not_found` "Show não encontrado.", `comment_not_found` "Comentário não encontrado.", `fan_not_found` "Fã não encontrado.", `comment_invalid` "Comentário vazio, longo demais, com caracteres invisíveis ou fora dos Termos de uso do ImagineUP." (o "fora dos Termos de uso" desde o filtro, 30.2) e `block_list_full` "Você chegou ao limite de fãs bloqueados."; do bloco 9 (24.2), `username_invalid` "Este @ não vale. Use de 3 a 20 letras minúsculas e números.", `photo_invalid` "Foto fora do formato. Escolha outra.", `photo_not_found` "Foto não encontrada. Envie de novo.", `username_taken` "Este @ já tem dono." e `username_change_too_soon` "Você trocou o @ há pouco. Tente de novo mais tarde."; do bloco 10 (25.2), `reward_not_found` "Recompensa não encontrada.", `sold_out` "Recompensa esgotada.", `redeem_limit_reached` "Você chegou ao limite de resgates desta recompensa." e `reward_changed` "O custo desta recompensa mudou. Confira antes de resgatar."; do bloco 11 (26.5), `account_suspended` "Sua conta está suspensa. Fale com a equipe do ImagineUP."; da proteção contra abuso (27.3 e 27.5), `rate_limited` "Muitos pedidos seguidos. Espere alguns segundos e tente de novo." e `app_check_failed` "Não deu para confirmar este aparelho. Atualize o app e tente de novo."; do perfil novo (28.2), `profile_invalid` "Perfil fora do formato. Confira os campos.", com `details: { field, reason }`. O filtro do que o fã publica (30.2) não cria código: o motivo `not_allowed` no `details.reason` do `comment_invalid` e do `profile_invalid`, e o @ barrado como `username_invalid` com `reserved`.
 
 Códigos que os próximos blocos vão criar entram nesta tabela quando nascerem. Não há limite de pedidos por minuto no bloco 1: o `maxInstances` segura o custo, e os limites de pontos não são erro (seção 5). A exceção, do bloco 4, é o teto diário de entradas em centrais (19.5), com 429 e `Retry-After`: sem ele, um script que entra e sai sem parar gravaria sem teto e inflaria os fluxos do painel. O bloco 6 faz o mesmo com curtidas, comentários, presenças, denúncias e bloqueios (21.7), o bloco 9, com as trocas de foto (24.8), o bloco 10, com os resgates (25.7), e o perfil novo, com os salvamentos do perfil e as trocas de nome (28.5).
 
-## 2. Mapa das 42 rotas
+## 2. Mapa das 44 rotas
 
-Os 26 endpoints que os `api.ts` do app já chamavam no levantamento de 05/10/2026, na tabela, e as rotas que os blocos seguintes trouxeram, nos parágrafos "Fora dos 26" embaixo dela. Na tabela, curtir e "Eu vou" contam como um endpoint cada, com `PUT` para fazer e `DELETE` para desfazer. Contando cada método e caminho, a `API_ROUTES` tem hoje 42 rotas, com as duas do perfil novo (seção 28).
+Os 26 endpoints que os `api.ts` do app já chamavam no levantamento de 05/10/2026, na tabela, e as rotas que os blocos seguintes trouxeram, nos parágrafos "Fora dos 26" embaixo dela. Na tabela, curtir e "Eu vou" contam como um endpoint cada, com `PUT` para fazer e `DELETE` para desfazer. Contando cada método e caminho, a `API_ROUTES` tem hoje 44 rotas, com as duas do perfil novo (seção 28) e as duas das exigências das lojas (seção 29).
 
 | #   | Método e caminho                         | Função do app                                       | Bloco |
 | --- | ---------------------------------------- | --------------------------------------------------- | ----- |
@@ -256,13 +261,15 @@ Fora dos 26, nova no bloco 4: `DELETE /me/centrals/:artistId` (sair da central, 
 
 Fora dos 26, novas no bloco 5: `POST /invites/visit` (visita ao link no app, `auth/api.ts` `sendInviteVisit`) e `PUT /me/invite/links/:linkId` (link compartilhado, `profile/api.ts` `registerInviteLink`), seção 20.
 
-Fora dos 26, novas no bloco 6: `POST /posts/:postId/comments/:commentId/report` (denunciar comentário, `posts/api.ts` `reportComment`) e `PUT` e `DELETE /me/blocks/:fanId` (bloquear e desbloquear um fã, `posts/api.ts` `blockFan`; o desbloquear ainda sem tela), seção 21. Os endpoints 10 a 18 são os do bloco 6.
+Fora dos 26, novas no bloco 6: `POST /posts/:postId/comments/:commentId/report` (denunciar comentário, `posts/api.ts` `reportComment`) e `PUT` e `DELETE /me/blocks/:fanId` (bloquear e desbloquear um fã, `posts/api.ts` `blockFan`; o desbloquear ganhou tela na seção 29), seção 21. Os endpoints 10 a 18 são os do bloco 6.
 
 Fora dos 26, novas no bloco 9: `GET /me/username/availability` (o @ livre enquanto o fã digita, `profile/api.ts` `fetchUsernameAvailability`), `PUT /me/username` (trocar o @, `changeUsername`) e `PUT` e `DELETE /me/photo` (gravar e tirar a foto, `setMyPhoto` e `removeMyPhoto`), seção 24. O nome e a cidade continuam direto no Firestore, e o arquivo da foto vai direto ao Storage. (Perfil novo, seção 28: o nome, a cidade e o @ vão no `PUT /me/profile`, e o app novo não chama mais o `PUT /me/username`, que fica para o APK de antes.)
 
 Fora dos 26, nova na proteção contra abuso: `POST /me/photo/upload` (a vaga do envio da foto, `profile/api.ts` `reservePhotoUpload`), 27.4.
 
 Fora dos 26, novas no perfil novo: `PUT /me/profile` (a edição inteira num pedido só, `profile/api.ts` `updateMyProfile`) e `GET /fans/:fanId` (o perfil público de outro fã, `profile/api.ts` `fetchFanProfile`), seção 28.
+
+Fora dos 26, novas nas exigências das lojas: `POST /fans/:fanId/report` (denunciar o perfil de outro fã, `posts/api.ts` `reportFan`) e `GET /me/blocks` (a lista de quem o fã bloqueou, `posts/api.ts` `fetchBlockedFans`), seção 29. O `DELETE /me/blocks/:fanId` do bloco 6 ganhou tela (`posts/api.ts` `unblockFan`, na tela "Fãs bloqueados" e no perfil público), e o `GET /fans/:fanId` ganhou o `blockedByMe`.
 
 Os endpoints 25 e 26 são os do bloco 10 (seção 25). O 26 passa a mandar o corpo `{ expectedCost }`, e a resposta dos dois ganha o status de cada pedido.
 
@@ -954,6 +961,7 @@ Ponto existe num lugar só. Com a carteira na API, a `fixtureWallet` para nos va
 - O ranking (card "Você" da 1f) e o "você é #12" da home continuam lendo a `fixtureWallet`, parada no exemplo (temporada 4.120), para qualquer fã: a Camila do seed tem 4.120 também no servidor, e o Alan, com 0 no servidor, aparece com 4.120 no ranking. São dados de exemplo até o bloco 8. Zerar a temporada do ranking nesse modo (`buildMyRankFixture` com 0) só trocaria a diferença do Alan pela da Camila. O mesmo vale para os pontos e a posição de "Suas centrais" na 1b e na 1e (`FanCentral`, do `buildMyRankFixture`: Netto 4.120 e Nenho 2.980, para qualquer fã), até os blocos 4 e 8; na conferência de 2026-10-05, a conta nova criada pelo cadastro mostrou 0 ponto e nível 1 do servidor e essas centrais de exemplo. Com o bloco 4, "Suas centrais" vêm do servidor sem posição, e o ranking de exemplo ao lado de dado de verdade leva um aviso na tela (seção 19, 19.13).
 - Quando o domínio da ação passa para a API, o servidor volta a dar os pontos.
 - Com a carteira em fixtures (builds sem API e sem emulador), tudo fica como hoje.
+- Bloqueio (seção 29): quem o fã bloqueou mora num lugar só, o `fixtureBlocks` de `services/fixtures`, com o id normalizado pelo `canonicalFanId` do perfil público (`fa-thalita` vale `fa-rank-01`). Os comentários de exemplo, o `blockedByMe` do perfil público e a lista "Fãs bloqueados" leem o mesmo conjunto, que começa com `fa-rank-13`, como o seed, e volta a ele no `resetFixtureSession`.
 
 Implementação em `src/services/fixtures/index.ts`: `earnFixturePoints(points): number` soma na `fixtureWallet` e devolve os pontos quando `sourceOf('wallet') === 'fixtures'`, e devolve 0 sem somar quando ela está na API. Os três que hoje chamam `fixtureWallet.earn` passam a usar o retorno no `pointsAwarded`: o comentário (`posts/fixtures.ts`), a entrada na central (`artists/fixtures.ts`) e a conclusão de missão (`missionsFixture.record`). `fixtureWallet.spend` recusa com `points_unavailable` quando a carteira está na API. Testes dos dois modos em `src/services/fixtures/__tests__`.
 
@@ -1048,7 +1056,7 @@ Regras: `tests/points-rules.test.ts` (seção 11). App: seção 13.
 - **Bloco 10 (loja):** desenhado na seção 25. As telas da seção Recompensas e resgates ficam para o bloco 11, e o que ele deixa para os blocos seguintes está em 25.16.
 - **Bloco 11 (painel):** desenhado na seção 26: as telas sobre uma fundação comum, em trilhas paralelas; o fechamento do dia (o bloco 4 não fez); a regra de `users/{uid}` para Fãs e Moderação; o `adjustFanPoints`; a suspensão e as ferramentas do fã; a auditoria filtrável; e as cargas. O que fica de fora está em 26.20, e a ordem da publicação, em 26.21.
 - **Ambiente de testes:** quando a cliente aprovar (seção 15).
-- **Publicação:** a `api`, as regras e os índices estão no ar desde 07/10/2026 (26.21); `minInstances`, só com o ok do dono (prende 1 dos 20 vCPU da cota da região, 26.22). A CPU fracionada das outras funções (08/10/2026, 26.22) espera o deploy das 64 em lotes. `EXPO_PUBLIC_API_URL` nas variáveis da EAS só depois dos blocos 4, 6, 7, 8 e 10, quando nenhuma ação que rende ou gasta pontos ficar nas fixtures (seção 13); antes disso a cliente perderia a demonstração de pontos. (Feito em 08/10/2026: o preview, com o APK interno, e development e production pela resposta 10 de 28.15.)
+- **Publicação:** a `api`, as regras e os índices estão no ar desde 07/10/2026 (26.21); `minInstances`, só com o ok do dono (prende 1 dos 20 vCPU da cota da região, 26.22). A CPU fracionada das outras funções (08/10/2026, 26.22) foi publicada no mesmo dia, com as 64 em 5 lotes (26.21). `EXPO_PUBLIC_API_URL` nas variáveis da EAS só depois dos blocos 4, 6, 7, 8 e 10, quando nenhuma ação que rende ou gasta pontos ficar nas fixtures (seção 13); antes disso a cliente perderia a demonstração de pontos. (Feito em 08/10/2026: o preview, com o APK interno, e development e production pela resposta 10 de 28.15.)
 
 ## 19. Bloco 4: centrais de verdade
 
@@ -2170,7 +2178,7 @@ Cada item traz a recomendação e o motivo. As perguntas para a cliente e para o
 17. **O fã continua sem apagar o próprio comentário (decisão de 30/09).** Nada aqui pede mudar: as lojas não exigem, e apagar abriria comentar, ganhar os pontos e apagar, além de sumir com a prova de uma denúncia. Quem quer um comentário fora pede à equipe (que oculta pela Moderação) ou exclui a conta.
 18. **A exclusão de conta apaga os comentários do fã** (decisão do dono em 05/10/2026), descontando as contagens sem deixar negativo. Anonimizar ("Fã excluído") guardaria um texto que pode ter dado pessoal. Saem também as curtidas (com desconto), as presenças, as denúncias que ele fez (descontadas da fila), a lista de bloqueios dele e o uid dele nas listas dos outros. Os agregados do painel não descontam (seção 12).
 19. **Mural de exemplo filtrado pelas centrais seguidas.** Nas fixtures, o mural mostra só as centrais do `followFixture` (de início, as três do protótipo, as mesmas de todos os posts de exemplo: a demonstração não muda), e a sheet "Sair da central" volta a dizer que os posts saem do mural, verdade nos dois modos.
-20. **Texto do comentário limpo e validado igual no app e no servidor** (`cleanMultiline`, nos dois lados, nesta ordem): tira os isolantes bidi colados (U+2066 a U+2069); normaliza em NFC; troca `\r\n` e `\r` por `\n`; tira os espaços das pontas de cada linha; junta as linhas vazias seguidas numa e tira as das pontas. Depois, cada linha não vazia precisa ser visível (`isVisibleLine`), e o texto tem de 1 a 500 unidades de UTF-16, como o `maxLength` do campo. É a regra da bio das centrais (`parseBio`, que já faz o NFC e a troca do `\r`), com a limpeza dos isolantes do `cleanLine`. Sem o NFC e a troca do `\r`, o app e o servidor contariam tamanho e acentos de forma diferente, e um `\r` colado viraria `invisible`.
+20. **Texto do comentário limpo e validado igual no app e no servidor** (`cleanMultiline`, nos dois lados, nesta ordem): tira os isolantes bidi colados (U+2066 a U+2069); normaliza em NFC; troca `\r\n` e `\r` por `\n`; tira os espaços das pontas de cada linha; junta as linhas vazias seguidas numa e tira as das pontas. Depois, cada linha não vazia precisa ser visível (`isVisibleLine`), e o texto tem de 1 a 500 unidades de UTF-16, como o `maxLength` do campo. É a regra da bio das centrais (`parseBio`, que já faz o NFC e a troca do `\r`), com a limpeza dos isolantes do `cleanLine`. Sem o NFC e a troca do `\r`, o app e o servidor contariam tamanho e acentos de forma diferente, e um `\r` colado viraria `invisible`. Desde a seção 30, o `commentTextProblem` confere por último o filtro do que o fã publica, com o motivo `not_allowed` (30.5).
 21. **Link de convite de um post só nasce com o post visível** (fecha o pendente de 20.2): o `PUT /me/invite/links/post:<id>` passa a ler o post e a central dele, como já lê a central no link `artist:<id>`.
 22. **Quem lê pelo painel.** Posts e shows: as seções `artists` (quem publica), `moderation` (a fila mostra o post do comentário) e `fans` (as curtidas e presenças de um fã e quem vai a um show mostram o texto do post e o título do show). É conteúdo que o app mostra a qualquer fã logado; só os rascunhos ficam à vista dessas seções a mais. Comentários: `artists` ou `moderation`. Denúncias e fila: `moderation`. Curtidas e presenças, que dizem o que cada fã fez: `fans`, como o vínculo do bloco 4. Listas de bloqueio: ninguém pelo cliente, nem a equipe: dizem quem bloqueou quem, e nenhuma tela do painel as usa (se a Moderação precisar, abre com a tela e o teste). Shards das contagens: ninguém pelo cliente.
 23. **`deleteArtist` recusa central com post ou show (`has-content`).** Única mudança de comportamento numa callable que já existe. Sem ela, apagar uma central sem fãs deixaria posts e shows apontando para um @ que outra central pode tomar depois, e a central nova herdaria a grade da antiga. A equipe tira do ar em vez de apagar, como já faz com `has-fans`. O rascunho que nunca foi ao ar não prende a central: a equipe o apaga antes (`deletePost`, `deleteEvent`) ou tira a central do show (`updateEvent`). Os testes de hoje do `deleteArtist` seguem verdes (eles não criam posts).
@@ -2210,7 +2218,7 @@ Os tipos das respostas entram em `api/contract.ts`, espelho de `src/domains/post
 
 **Ids na rota.** `postId`, `eventId` e `commentId` seguem `^[A-Za-z0-9_-]{1,128}$`, fora dos ids `__.*__`. Fora disso, o recurso não existe: 404 `post_not_found`, `event_not_found` ou `comment_not_found`, como o `artistParam` do bloco 4. `fanId` segue `^[A-Za-z0-9]{1,128}$` (o uid do Auth); fora disso, 404 `fan_not_found`.
 
-**Códigos novos** (já na tabela da seção 1): `post_not_found` 404 "Post não encontrado."; `event_not_found` 404 "Show não encontrado."; `comment_not_found` 404 "Comentário não encontrado."; `fan_not_found` 404 "Fã não encontrado."; `comment_invalid` 400 "Comentário vazio, longo demais ou com caracteres invisíveis.", com `details.reason` `empty`, `too_long` ou `invisible`; `block_list_full` 409 "Você chegou ao limite de fãs bloqueados.". O 429 `too_many_requests` passa a valer também para os tetos de 21.7, com `details: { limit, action }`.
+**Códigos novos** (já na tabela da seção 1): `post_not_found` 404 "Post não encontrado."; `event_not_found` 404 "Show não encontrado."; `comment_not_found` 404 "Comentário não encontrado."; `fan_not_found` 404 "Fã não encontrado."; `comment_invalid` 400 "Comentário vazio, longo demais ou com caracteres invisíveis.", com `details.reason` `empty`, `too_long` ou `invisible` (desde o filtro da seção 30, a mensagem é "Comentário vazio, longo demais, com caracteres invisíveis ou fora dos Termos de uso do ImagineUP.", e o motivo `not_allowed` vem por último, 30.2); `block_list_full` 409 "Você chegou ao limite de fãs bloqueados.". O 429 `too_many_requests` passa a valer também para os tetos de 21.7, com `details: { limit, action }`.
 
 #### `GET /feed`
 
@@ -2294,7 +2302,7 @@ O `Post`, igual nas três rotas:
 
 #### `POST /posts/:postId/comments`
 
-Corpo `{ "text": "..." }`. O `validate` da rota limpa e confere o texto (`parseCommentText`, 21.1 decisão 20): sem texto depois da limpeza, 400 `comment_invalid` com `reason: 'empty'`; acima de 500, `too_long`; linha com invisível ou controle, `invisible`. Responde o comentário gravado, no formato da lista, com `pointsAwarded` (o `AddCommentResult` do app). O nome e a foto saem do perfil do fã, lido na transação, e nunca do corpo; perfil sem nome grava `authorName: 'Fã'`, o mesmo `post.comments.fallbackName` do app.
+Corpo `{ "text": "..." }`. O `validate` da rota limpa e confere o texto (`parseCommentText`, 21.1 decisão 20): sem texto depois da limpeza, 400 `comment_invalid` com `reason: 'empty'`; acima de 500, `too_long`; linha com invisível ou controle, `invisible`; desde a seção 30, o texto com um termo da lista, `not_allowed` (30.5). Responde o comentário gravado, no formato da lista, com `pointsAwarded` (o `AddCommentResult` do app). O nome e a foto saem do perfil do fã, lido na transação, e nunca do corpo; perfil sem nome grava `authorName: 'Fã'`, o mesmo `post.comments.fallbackName` do app.
 
 #### `PUT` e `DELETE /posts/:postId/like`
 
@@ -2605,7 +2613,7 @@ Provisória até as regras da cliente (UP-48). O que existe neste bloco:
 - **Denúncia** de um comentário de outro fã, uma vez por fã, com motivo opcional (`spam`, `offensive`, `harassment`, `other` ou nenhum). A denúncia não esconde o comentário de ninguém. A tela oferece também bloquear o autor, que esconde os comentários dele para quem denunciou.
 - **Fila** em `moderationQueue/{commentId}`: um item por comentário, com a cópia do texto, quantas denúncias e por qual motivo, e o estado. A seção Moderação do painel lista os itens `open` por `lastReportedAt`, decrescente (índice em 21.11), lê as denúncias de um item (`commentReports` com `commentId == ...`) e o comentário e o post (as regras de 21.11 abrem `posts` para a seção `moderation`). (Bloco 11, 26.10: `commentReports` fecha para a equipe, porque guarda o `reporterUid` e a Moderação passa a ler os perfis; a tela usa a contagem por motivo do item.)
 - **Ação da equipe** pela callable `moderateComment` (21.9), com a seção `moderation`: `hide` (o comentário some para todos, sai da contagem, e o item vai a `resolved` com `hidden`), `keep` (só em comentário visível: o item vai a `resolved` com `kept`; uma denúncia nova o reabre; em comentário oculto é recusado com `comment-hidden`, porque deixaria o item "mantido" com o comentário escondido, e para isso existe o `restore`) e `restore` (o oculto volta, entra na contagem de novo, e o item fica `resolved` com `kept`). Ocultar não tira os pontos do comentário: o ajuste manual da seção Fãs (seção 9) cobre os casos graves.
-- **Bloqueio** unilateral: some para quem bloqueou, em todos os posts, inclusive os comentários antigos; o bloqueado não sabe e continua vendo os comentários de quem o bloqueou. A contagem do post continua a de todos. A lista não aparece no app neste bloco (pergunta 8 de 21.16); a rota de desbloquear já existe. A equipe também não lê as listas (21.1, decisão 22).
+- **Bloqueio** unilateral: some para quem bloqueou, em todos os posts, inclusive os comentários antigos; o bloqueado não sabe e continua vendo os comentários de quem o bloqueou. A contagem do post continua a de todos. A lista não aparece no app neste bloco (pergunta 8 de 21.16); a rota de desbloquear já existe. (Seção 29: a tela "Fãs bloqueados", nos Ajustes, lista pelo `GET /me/blocks` e desbloqueia, e o perfil público também bloqueia e desbloqueia.) A equipe também não lê as listas (21.1, decisão 22).
 - **O que as lojas pedem e não é código:** a equipe olhar a fila todo dia (a App Store fala em agir em até 24 h), os termos de uso com a regra de conteúdo e o contato da equipe (UP-45). Vai na lista para a cliente.
 
 ### 21.9 Callables do painel (contrato para o bloco 11)
@@ -2975,7 +2983,7 @@ Comentários: apagados, e não anonimizados (21.1, decisão 18, confirmada pelo 
 **Fixtures**
 
 - `buildFeedPageFixture` filtra pelas centrais do `followFixture.followedIds()`, importado direto de `@/domains/artists/fixtures` (o `artists/fixtures.ts` não importa `posts`, então não há ciclo).
-- `moderationFixture`, em `posts/fixtures.ts`: denunciar guarda a resposta pela chave e devolve `already_reported` na segunda vez; bloquear guarda o autor, e `buildCommentsPageFixture` tira os comentários dele. Volta ao início com a sessão (`onFixtureSessionEnd`).
+- `moderationFixture`, em `posts/fixtures.ts`: denunciar guarda a resposta pela chave e devolve `already_reported` na segunda vez; bloquear guarda o autor (desde a seção 29, no `fixtureBlocks` de `services/fixtures`, com o id normalizado, seção 13), e `buildCommentsPageFixture` tira os comentários dele. Volta ao início com a sessão (`onFixtureSessionEnd`).
 - Regra de coerência (seção 13): com os posts e a agenda na API, curtir, comentar e "Eu vou" rendem do servidor. **As missões continuam de exemplo até o bloco 7: a ação de verdade não anda missão nenhuma.** O `missionsFixture.record` só roda nos caminhos das fixtures; a "Curta 5 posts do Nenho" da 1g fica em 2 de 5 com o emulador, e nenhuma curtida de verdade sobe o "+N" de missão. As missões continuam buscando de novo depois de cada ação, sem efeito. O servidor já guarda o que o bloco 7 vai contar: a primeira curtida de cada post e a primeira presença de cada show (21.5). Desde o bloco 7 isso mudou: as missões e as conquistas vêm do servidor, toda ação de verdade anda as missões que casam, e as missões só buscam de novo quando a resposta diz que alguma andou (22.12, que vale no lugar desta parte).
 
 **O que é de verdade e o que é de exemplo** (desenvolvimento com emulador, do bloco 6 ao 7)
@@ -6144,7 +6152,7 @@ O painel administrativo (`imagineup-admin`) troca o "Em construção" das oito s
 
 Origem: as tarefas do Notion UP-31 (Visão geral: fãs, cadastros, pontos distribuídos e engajamento por período, dos contadores agregados), UP-32 (Artistas: publicações do mural; decisão provisória do dono, a equipe publica mural e agenda pelo painel, dentro da seção `artists`), UP-33 (Fãs: pronto quando a ficha do fã mostra histórico e origem), UP-34 (Missões e régua, cláusula 2.4 do contrato), UP-35 (Recompensas: estoque e pedidos), UP-36 (Moderação: a moderação do dia a dia é da cliente, o painel entrega as ferramentas), UP-39 (Comparativo: pronto com dados de teste de pelo menos dois artistas) e a de Logs e auditoria; os contratos "para o bloco 11" de 21.9, 22.8, 23.10 e 25.8; as notas do desenho do painel em `vault/ImagineUP/Screens And UI.md` (desktop de 1440 px ou mais, só escuro, tabelas densas, carga diária em vez de tempo real, lima só para pontos, ciano como destaque secundário, rosa para ação); e o pedido do dono de 07/10/2026 ("pode fazer o merge e seguir para o bloco 11"). Fora do contrato, como sempre: playlists, notificações (push ou no app), posts de fãs e pagamentos. A passada com leitor de tela e fonte grande foi dispensada pelo dono; as regras de acessibilidade do código continuam valendo.
 
-Estado: desenho de 07/10/2026, conferido contra o código de `a89d201` (branch `painel-telas`, com os blocos 1 e 4 a 10) e o painel de `e42221f` (branch `bloco-11`, igual à `main` do `imagineup-admin`). O desenho visual do painel mora num projeto do Claude Design que não foi aberto nesta etapa: as telas seguem a linguagem que o painel já tem (Equipe e Artistas, os componentes de `src/components/ui` e `src/components/painel`) e as notas do desenho. Revisado no mesmo dia por duas revisões contra o código (servidor, segurança e custo; telas e construção), que mudaram as decisões 3, 4, 8 a 12, 19 e 23, o fechamento, a suspensão, as regras, o seed e o plano das trilhas. Ainda em 07/10/2026, o dono respondeu as perguntas dele (26.19): aprovou as propostas, com uma mudança (nenhuma escuta em tempo real nas telas novas, decisão 19), disse quem roda as cargas em produção (26.9 e 26.21) e guardou as perguntas para a cliente, com o código seguindo as propostas padrão. A construção começou no mesmo dia, em etapas no worktree `imagineup-app-design`, e duas revisões do código construído trouxeram quatro consertos e uma pergunta nova para o dono (26.23 e a pergunta 23 de 26.19). O servidor do bloco 11 foi publicado em 08/10/2026, com as quatro cargas; as telas do painel ainda não (26.21).
+Estado: desenho de 07/10/2026, conferido contra o código de `a89d201` (branch `painel-telas`, com os blocos 1 e 4 a 10) e o painel de `e42221f` (branch `bloco-11`, igual à `main` do `imagineup-admin`). O desenho visual do painel mora num projeto do Claude Design que não foi aberto nesta etapa: as telas seguem a linguagem que o painel já tem (Equipe e Artistas, os componentes de `src/components/ui` e `src/components/painel`) e as notas do desenho. Revisado no mesmo dia por duas revisões contra o código (servidor, segurança e custo; telas e construção), que mudaram as decisões 3, 4, 8 a 12, 19 e 23, o fechamento, a suspensão, as regras, o seed e o plano das trilhas. Ainda em 07/10/2026, o dono respondeu as perguntas dele (26.19): aprovou as propostas, com uma mudança (nenhuma escuta em tempo real nas telas novas, decisão 19), disse quem roda as cargas em produção (26.9 e 26.21) e guardou as perguntas para a cliente, com o código seguindo as propostas padrão. A construção começou no mesmo dia, em etapas no worktree `imagineup-app-design`, e duas revisões do código construído trouxeram quatro consertos e uma pergunta nova para o dono (26.23 e a pergunta 23 de 26.19). O servidor do bloco 11 foi publicado em 08/10/2026, com as quatro cargas, e as telas do painel entraram na `main` do `imagineup-admin` no mesmo dia (PR #1; 26.21).
 
 Como era antes do bloco:
 
@@ -6352,7 +6360,7 @@ users/{uid} {
 }
 ```
 
-- O fã lê o próprio perfil, então vê que está suspenso e o motivo; quem suspendeu e a nota ficam só na auditoria. O app muda só em dois pontos (26.5): o `account_suspended` é recusa definitiva do convite, e a tela "Editar perfil" desliga o "Salvar" com a frase própria. As outras ações recusadas mostram o erro de cada tela (o 403 vira o `kind` `forbidden` do `toApiError`, com a frase do servidor). Uma frase própria em cada tela do app fica para depois (26.20).
+- O fã lê o próprio perfil, então vê que está suspenso e o motivo; quem suspendeu e a nota ficam só na auditoria. O app muda só em dois pontos (26.5): o `account_suspended` é recusa definitiva do convite, e a tela "Editar perfil" desliga o "Salvar" com a frase própria. As outras ações recusadas mostram o erro de cada tela (o 403 vira o `kind` `forbidden` do `toApiError`, com a frase do servidor). Uma frase própria em cada tela do app fica para depois (26.20). (Feito na seção 29, frente E: o aviso fixo na 1b, na 1e e nos Ajustes, o `Alert` "Conta suspensa" nas ações sem texto na tela e a frase com "Escrever para a equipe" nas que mostram erro.)
 - Bloqueado: as rotas que gravam pela API e criam ou somam algo (curtir, comentar, "Eu vou", entrar na central, seguir na 1l, convite: claim, visita, links e o código novo do `GET /me/invite`, o @, a foto nova, resgate, denunciar); a edição de nome e cidade direto no Firestore (regra de 26.10); o envio de foto para `fans/{uid}/` (regra do Storage, 26.10).
 - Livre: ler o app, sair da central, descurtir, desfazer o "Eu vou", tirar a própria foto, bloquear e desbloquear outro fã (as rotas com `allowSuspended`, 26.5), sair da conta e excluir a conta (o Auth).
 - Os pontos que outros fãs renderiam a ele (a visita e o cadastro pelo código dele, as missões de convite) saem sem pontos enquanto a suspensão dura: o plano de quem chama marca os ganhos do suspenso como `skipped` (26.5). A devolução de um pedido recusado entra normalmente.
@@ -7065,7 +7073,7 @@ Para o dono, em aberto (de uma revisão do código, 07/10/2026):
 - A recusa em lote no servidor (o laço do painel basta) e o `updateReward` recusando a troca para um show fechado (o painel avisa).
 - O e-mail do fã na ficha (uma `getFanAccount` auditada) e o e-mail dos pedidos entregues por alguns dias (25.15, pergunta 8).
 - A leitura dos lançamentos de todos os fãs (o grupo `ledger`), a posição final do fã em cada temporada na ficha (`standings` para `fans`) e a ordem dos fãs pela última atividade.
-- Uma nota na decisão de moderação (`resolutionNote`), limpar o nome de um fã, a frase própria do fã suspenso nas outras telas do app, a tela de desbloquear do app e a contagem de confirmados para quem só tem Artistas (`goingCount`).
+- Uma nota na decisão de moderação (`resolutionNote`), limpar o nome de um fã e a contagem de confirmados para quem só tem Artistas (`goingCount`). A frase própria do fã suspenso nas outras telas do app e a tela de desbloquear saíram na seção 29.
 - A suspensão que sobrevive à exclusão de conta (um marcador pela chave da pessoa, o HMAC do e-mail do convite, conferido no cadastro) e os pedidos de um fã para quem tem Fãs sem Recompensas (uma `getFanRedemptions` com o código mascarado).
 - A fila da Moderação do mais antigo para o mais novo (`firstReportedAt` crescente, com índice novo): o item reaberto por uma denúncia nova guarda a primeira data e iria para o topo como o mais antigo.
 - Um documento de configuração da loja editável pelo painel (o endereço do regulamento continua no servidor, 25.1, decisão 19) e exportar planilhas.
@@ -7074,7 +7082,7 @@ Para o dono, em aberto (de uma revisão do código, 07/10/2026):
 
 ### 26.21 Publicação
 
-Plano aprovado pelo dono. Passos 1 a 6 feitos na noite de 07/10 e em 08/10/2026, com uma diferença: as funções foram todas as 64, em cinco lotes, e não só as que mudam. Ficam pendentes a conferência do dia seguinte, no passo 6 (depois da 00:20 de 09/10/2026), e os passos 7 e 8. O relato está em "Como foi a publicação (07 e 08/10/2026)", no fim desta seção. Ponto de partida: desde 07/10/2026, a produção tem as 56 funções dos blocos 1 e 4 a 10, com as regras e os 24 índices compostos deles ("Como era antes do bloco"). O plano publicava só o que muda, antes do merge do painel:
+Plano aprovado pelo dono. Passos 1 a 6 feitos na noite de 07/10 e em 08/10/2026, com uma diferença: as funções foram todas as 64, em cinco lotes, e não só as que mudam. A conferência do dia seguinte, no passo 6, foi feita em 09/10/2026, e o passo 7 (o merge do painel, PR #1 do `imagineup-admin`) em 08/10/2026; fica o passo 8. O relato está em "Como foi a publicação (07 e 08/10/2026)", no fim desta seção. Ponto de partida: desde 07/10/2026, a produção tem as 56 funções dos blocos 1 e 4 a 10, com as regras e os 24 índices compostos deles ("Como era antes do bloco"). O plano publicava só o que muda, antes do merge do painel:
 
 1. **Merge do servidor.** A branch `painel-telas` entra na `main` do `imagineup-app` (não publica nada sozinha).
 2. **Pré-requisitos.** O `functions/.env.imagine-up-app` na pasta de onde sai o deploy (fica fora do git: um worktree novo não tem). Para as cargas do passo 5, o Google Cloud CLI com as Application Default Credentials (`gcloud auth application-default login` com a conta colaboradora), instalado em 08/10/2026 para as cargas, com as credenciais revogadas no fim (26.9). Os pré-requisitos dos blocos anteriores (o Storage ligado, o papel IAM da conta de serviço do Storage, o secret `INVITE_KEY_SECRET`) já foram feitos no deploy de 07/10.
@@ -7124,7 +7132,31 @@ O `closeStatsDays` rodou à 00:20 de 08/10, antes de a carga criar o `statsMeta/
 
 **Produção hoje (08/10/2026):** 64 funções ativas, 42 índices compostos, nenhum perfil de fã, sem temporada, missões nem recompensas cadastradas. O app instalado não chama a API: o `EXPO_PUBLIC_API_URL` está vazio e precisa de build nova, por causa dos módulos nativos do bloco 9, depois das contas das lojas. O painel publicado (Equipe e Artistas) segue igual. (Depois deste retrato, no mesmo dia: o APK interno do canal preview, com a variável, passou a chamar a produção, e development e production ganharam a variável pela resposta 10 de 28.15; 28.14.)
 
-**O que fica:** conferir, depois da 00:20 de 09/10/2026, que o `closeStatsDays` fechou de 29/09 a 08/10 sem erro (o erro da 00:20 de 08/10 era esperado; passo 6); as telas do bloco 11 no `imagineup-admin` (outra conversa, guiada por `Projetos/painel-bloco11/README.md`) e o merge delas na `main` do painel (passo 7); a pergunta 23 do dono (o @ que a Moderação troca: 30 dias de espera, a proposta, ou o @ antigo bloqueado) e as 10 perguntas da cliente (26.19); cadastrar a temporada, as missões e a loja de verdade (passo 8); o `EXPO_PUBLIC_API_URL` numa build futura (feito no mesmo dia, nos três ambientes da EAS: acima); conferir contas do Auth sem perfil, se existirem (a produção não tem nenhum `users` hoje).
+**O que fica:** conferir, depois da 00:20 de 09/10/2026, que o `closeStatsDays` fechou de 29/09 a 08/10 sem erro (o erro da 00:20 de 08/10 era esperado; passo 6; feito em 09/10/2026, abaixo); as telas do bloco 11 no `imagineup-admin` (outra conversa, guiada por `Projetos/painel-bloco11/README.md`) e o merge delas na `main` do painel (passo 7; feito em 08/10/2026, PR #1); a pergunta 23 do dono (o @ que a Moderação troca: 30 dias de espera, a proposta, ou o @ antigo bloqueado) e as 10 perguntas da cliente (26.19); cadastrar a temporada, as missões e a loja de verdade (passo 8); o `EXPO_PUBLIC_API_URL` numa build futura (feito no mesmo dia, nos três ambientes da EAS: acima); conferir contas do Auth sem perfil, se existirem (a produção não tem nenhum `users` hoje).
+
+#### Como foi a publicação (08 e 09/10/2026)
+
+**08/10/2026, a CPU fracionada** (PR #15, 26.22): as 64 funções em 5 lotes, todas, porque a CPU nova só chega à função no deploy dela. Depois, as 19 callables do painel cuja criação tinha falhado pela cota em 07/10 ganharam o `allUsers` (passo 6 do "Publicar", no `CLAUDE.md`).
+
+**De 08 a 09/10/2026, a proteção contra abuso e o perfil novo** (seções 27 e 28; a `main` em `7b87a48`, PRs #16 e #17), na ordem de 27.8 e 28.14: as 65 funções em 5 lotes, com poucos minutos entre eles, sem erro de cota; as 55 chamáveis (as callables e a `api`) com o `allUsers`, a nova `clearFanProfileText` inclusive; o EAS Update do canal preview na runtime `310056fd`; e só então o `rules:deploy`, que fechou a edição direta do perfil (28.8) e passou a exigir a vaga da foto no Storage (27.4). Um `--project imagine-up-app` redigitado sem o hífen deu 403: o comando sai copiado do arquivo conferido.
+
+**Fechamento do dia conferido:** a rodada da 00:20 de 09/10/2026 fechou de 29/09 a 08/10 sem erro, com o `statsMeta/close.lastClosedDay` em `2026-10-08`. O passo 6 está feito.
+
+**Produção de 09 a 14/10/2026:** 65 funções, 42 índices compostos, as regras das seções 27 e 28 e o EAS Update do canal preview na runtime `310056fd`.
+
+#### Como foi a publicação (14/10/2026)
+
+**14/10/2026, as exigências das lojas e o filtro do que o fã publica** (seções 29 e 30; a `main` em `f258ca2`, PRs #19 e #20), juntos, por decisão do dono de 13/10/2026, na ordem de 29.14 e 30.13:
+
+- `npm run rules:deploy`: as regras com a `profileReportQueue` e a `profileReports`, e os 44 índices compostos prontos, com os dois novos da `profileReportQueue`.
+- O lote de cinco, rodado pelo dono: a `api`, a nova `resolveProfileReport`, o `deleteUserProfile`, o `createUserProfile` e o `queueFanProfileSync`.
+- O `allUsers` da `resolveProfileReport`: o `check-public-functions.mjs` deu 56 chamáveis, nenhuma barrada. A CPU dela, `0.1666` com concorrência `1`.
+- Sem login, 401 em `POST /fans/x/report` e em `GET /me/blocks`, e 404 numa rota que não existe.
+- O EAS Update do canal preview, com o app dos dois blocos: o grupo Android `e5247c6a-13a6-40b4-b142-a21ab004626b`, na runtime `310056fd`, a do APK interno.
+
+No mesmo dia, o painel ganhou o perfil novo (PR #2 do `imagineup-admin`) e a lista "Perfis denunciados" (PR #3), publicados pela Vercel. Ficam a conferência com as duas contas de teste do dono (29.14, passo 5, com os passos do filtro de 30.13, passo 6) e o console do Auth (29.14, passo 6).
+
+**Produção desde 14/10/2026:** 66 funções (as 56 chamáveis com o `allUsers`), 44 índices compostos, as regras da `main` `f258ca2` e o EAS Update do canal preview na runtime `310056fd`. No mesmo dia, mais tarde, as 66 funções saíram de novo, da `main` `8faeccf`, com o registro de acesso da seção 31 (como foi, em 31.12): desde então todas rodam o mesmo código, e o diff da próxima publicação conta desde `8faeccf`.
 
 **Como publicar daqui em diante:** a receita está em "Publicar", na seção "API do app e pontos" do `CLAUDE.md`: a pasta do deploy na `main` nova com o `functions/.env.imagine-up-app`; `npm run rules:deploy` e a espera dos índices; as funções em lotes de até 15, com 20 min entre eles, rodados pelo dono no PowerShell; o gatilho que falhou na criação apagado e recriado minutos depois; as cargas com as Application Default Credentials, `--dry-run` antes e o `revoke` no fim; e a conferência com `functions:list`, um teste da `api` sem login e os logs do `rankingTick`. As armadilhas estão em 26.22.
 
@@ -7247,6 +7279,8 @@ Integração (duas revisões do código construído, em 07/10/2026):
 
 Pedido do dono em 08/10/2026, depois da revisão de custo (o texto do custo esperado para a cliente). A revisão achou caminhos em que uma pessoa com uma conta de fã, ou sem conta, gastaria leituras, gravações ou Storage do projeto sem teto. Este bloco fecha os que dependem só do servidor e deixa o App Check pronto para a build das lojas. Nenhuma tela nova; no app, só a troca de foto muda (27.4).
 
+Estado: feito em 08/10/2026 (PR #16) e publicado de 08 a 09/10/2026, junto com o perfil novo, na ordem de 27.8 (como foi, no fim de 27.8 e em 26.21). O App Check segue pronto e desligado até a build das lojas (27.5).
+
 ### 27.1 O que entra e o que fica fora
 
 | Item                                                     | O que faz                                                                                     | Seção |
@@ -7278,7 +7312,7 @@ O pior caso dos comentários passa a ser 5 rodadas de 21 leituras (era de 51). O
 - **Onde conta:** no `createApiHandler`, depois do token (o pedido sem login é 401 e não gasta ficha) e antes da rota. Vale para as rotas que leem e as que gravam. O relógio é o `Date.now()` de verdade, e não o `now` das dependências, que alguns testes deixam parado.
 - **Quanto segura:** a abertura do app pede uns 15 pedidos de uma vez, e o toque no card "Você" busca até 10 páginas; 60 de folga e 1 por segundo nunca barram um fã de verdade. Um script com uma conta passa a no máximo 1 pedido por segundo em cada instância: com as 8 da `api` (`maxInstances`), 8 por segundo, contra centenas antes. Não é um teto entre instâncias nem por dia (esse é o `actionCaps`, na carteira).
 - **Emulador:** sem o teto (`rateLimiter: null` com `FUNCTIONS_EMULATOR`), porque os testes e o seed fazem centenas de pedidos seguidos com a mesma conta. O `createApiHandler` sem `rateLimiter` nas dependências também não barra nada (os testes no processo).
-- **App:** o 429 é o kind `unknown`, que não tenta de novo sozinho; cada tela mostra o erro genérico dela. Na troca de foto, o `rate_limited` fica com o genérico, e só o `too_many_requests` diz "Você trocou a foto muitas vezes hoje" (27.4).
+- **App:** o 429 é o kind `unknown`, que não tenta de novo sozinho; cada tela mostra o erro genérico dela. Na troca de foto, o `rate_limited` fica com o genérico, e só o `too_many_requests` diz "Você trocou a foto muitas vezes hoje" (27.4). (Seção 29, frente F: o `rate_limited` e o 429 sem código viram o kind `rateLimited`, que tenta de novo sozinho até 3 vezes, com o `Retry-After` entre 1 e 10 s, nas consultas e nas mutações da fila; o `too_many_requests` vira `dailyLimit`, que nunca tenta de novo; a foto ganhou a frase do ritmo.)
 
 ### 27.4 Vaga de envio da foto
 
@@ -7337,6 +7371,8 @@ As regras do Storage que leem `artists/{id}` (`artistExists`, nas fotos da equip
 - **Painel:** o `updatePointsConfig` aceita o `actionCaps.photo_upload`; o painel só mostra os tetos que conhece (`ACTION_CAP_KEYS` em `src/lib/points-config.ts` do `imagineup-admin`) e só manda os que mudaram, então nada quebra. Para a equipe ver e mudar o teto novo, o painel ganha a chave com o rótulo "Envios de foto".
 - **Conferir:** `GET /feed?limit=21` sem login dá 401 (o token vem antes); com login, 400 com o campo `limit`.
 
+**Como foi (de 08 a 09/10/2026):** junto com o perfil novo (28.14), da `main` `7b87a48`: as 65 funções em 5 lotes, o EAS Update do canal preview na runtime `310056fd` e só então o `rules:deploy`, com o `storage.rules` da vaga e o `artists` fechado (26.21). O painel ganhou o teto "Envios de foto" em 14/10/2026 (PR #2 do `imagineup-admin`). A conferência do `limit` não ficou registrada.
+
 ### 27.9 Testes
 
 - Puros: `api/rate-limit.test.ts` (o padrão, o balde por fã, o `Retry-After`, o teto de fichas, o relógio que volta e o teto de baldes), `api/app-check.test.ts` (os três modos e o 403), o `api/index.test.ts` (o 429 `rate_limited` antes da rota e só depois do token, os modos do App Check no handler, o `limit=21`, o corpo da vaga conferido antes da transação e a chave exigida), e as tabelas dos tetos em `moderation/model.test.ts` e `points/config.test.ts` com o `photo_upload`.
@@ -7350,7 +7386,7 @@ O fã ganha bio, gênero, conta privada e redes sociais no perfil; a tela "Edita
 
 Origem: o pedido do dono de 08/10/2026, com as imagens de um app de referência (header com X, título e ✓; foto grande com um botão no canto; os grupos "Informações básicas", "Detalhes" e "Redes sociais"), sem "Academia" e sem "Links"; as quatro decisões do dono do mesmo dia (perfil público com conta privada; gênero só para a equipe; Instagram, TikTok, LinkedIn e X; a cidade mantida); e o item da edição a cada 10 s que a 27.1 deixou para cá. O perfil público é tela fora do protótipo, aprovada pelo dono. A passada com leitor de tela e fonte a 200% segue dispensada; as regras de acessibilidade do código valem.
 
-Estado: desenho de 08/10/2026, conferido contra o código da branch `perfil-novo` (a partir de `9bb4f35`, que já traz a seção 27) e revisado no mesmo dia por três críticas (segurança, app e coerência; o que mudou está em 28.18). Implementado no mesmo dia nessa branch, nas quatro etapas de 28.13: funções, regras, seed, app, testes e documentos; depois, revisado, com as correções no fim de 28.19. Falta a conferência no emulador Android pelo Expo Go da etapa 4 (28.13), que o Jest não substitui. Ainda não publicado (a ordem está em 28.14). O dono respondeu as perguntas de 28.15 no mesmo dia. O que o código fez diferente do desenho está em 28.19.
+Estado: desenho de 08/10/2026, conferido contra o código da branch `perfil-novo` (a partir de `9bb4f35`, que já traz a seção 27) e revisado no mesmo dia por três críticas (segurança, app e coerência; o que mudou está em 28.18). Implementado no mesmo dia nessa branch, nas quatro etapas de 28.13: funções, regras, seed, app, testes e documentos; depois, revisado, com as correções no fim de 28.19. A conferência no emulador Android pelo Expo Go da etapa 4 (28.13) foi feita em 08/10/2026 (as correções no fim de 28.19), e o bloco foi publicado de 08 a 09/10/2026, na ordem de 28.14 (o relato no fim de 28.14 e em 26.21). O dono respondeu as perguntas de 28.15 no mesmo dia. O painel do perfil novo entrou na `main` do `imagineup-admin` em 14/10/2026 (PR #2). O que o código fez diferente do desenho está em 28.19.
 
 Como era antes:
 
@@ -7421,7 +7457,7 @@ Código novo na tabela da seção 1:
 | --- | --- | --- | --- |
 | `profile_invalid` | 400 | validation | um campo do `PUT /me/profile` fora da regra |
 
-Mensagem: "Perfil fora do formato. Confira os campos.". `details: { field, reason }`. `field`: `displayName`, `bio`, `city`, `gender`, `socials.instagram`, `socials.tiktok`, `socials.linkedin` ou `socials.x`. `reason`: no nome, `empty`, `too_long` ou `invisible`; na bio, `too_long`, `too_many_lines` ou `invisible`; na cidade, `too_long` ou `invisible`; no gênero, `unknown`; nas redes, `format` ou `host` (link de outro domínio). Corpo que não é objeto, chave desconhecida (no topo ou dentro de `socials`, `__proto__` e `constructor` inclusive), nenhuma chave ou tipo errado (o nome que não é texto, `privateAccount` que não é booleano, `socials` que não é objeto ou vem vazio, uma rede que não é texto nem `null`): 400 `invalid_request` com o `field` (`body` sem chave; `socials.<chave>` dentro das redes). Os outros já existem: `username_invalid`, `username_taken`, `username_change_too_soon`, `too_many_requests` (com `details.action` `profile` ou `name`), `account_suspended`, `profile_not_ready`, `not_fan` e `fan_not_found`, cuja linha na seção 1 passa a dizer "no bloqueio (bloco 6) e no perfil público (seção 28)".
+Mensagem: "Perfil fora do formato. Confira os campos.". `details: { field, reason }`. `field`: `displayName`, `bio`, `city`, `gender`, `socials.instagram`, `socials.tiktok`, `socials.linkedin` ou `socials.x`. `reason`: no nome, `empty`, `too_long` ou `invisible`; na bio, `too_long`, `too_many_lines` ou `invisible`; na cidade, `too_long` ou `invisible`; no gênero, `unknown`; nas redes, `format` ou `host` (link de outro domínio). Desde a seção 30, o nome, a bio, a cidade e as redes também recusam com `not_allowed` (um termo da lista do filtro), depois das outras regras do campo (30.5). Corpo que não é objeto, chave desconhecida (no topo ou dentro de `socials`, `__proto__` e `constructor` inclusive), nenhuma chave ou tipo errado (o nome que não é texto, `privateAccount` que não é booleano, `socials` que não é objeto ou vem vazio, uma rede que não é texto nem `null`): 400 `invalid_request` com o `field` (`body` sem chave; `socials.<chave>` dentro das redes). Os outros já existem: `username_invalid`, `username_taken`, `username_change_too_soon`, `too_many_requests` (com `details.action` `profile` ou `name`), `account_suspended`, `profile_not_ready`, `not_fan` e `fan_not_found`, cuja linha na seção 1 passa a dizer "no bloqueio (bloco 6) e no perfil público (seção 28)".
 
 #### `PUT /me/profile`
 
@@ -7563,7 +7599,7 @@ O `changeUsername` do `PUT /me/username` passa a ser os passos 3, 5 e 7 com o `t
 
 - A chave do ✓ é da tentativa: `profile-<id>`, criada no toque e guardada com o corpo que foi. Depois de uma falha incerta (rede, 5xx, prazo do axios, o prazo de 20 s da tentativa), o mesmo corpo vai com a mesma chave; o fã mexeu num campo, chave nova. Recusa definitiva fecha a tentativa.
 - A repetição pela mesma chave devolve a resposta guardada. A idempotência do negócio vem do estado: o mesmo valor não grava nem conta.
-- Tetos: `profile_save` 20 e `name_change` 5 (decisão 9), além do ritmo por fã da `api` (27.3) e dos 30 dias do @. O `GET /fans/:fanId` não tem teto próprio: uma ou duas leituras, sob o ritmo.
+- Tetos: `profile_save` 20 e `name_change` 5 (decisão 9), além do ritmo por fã da `api` (27.3) e dos 30 dias do @. O `GET /fans/:fanId` não tem teto próprio: uma ou duas leituras (duas ou três desde a seção 29, com o `blockedByMe`), sob o ritmo.
 - A fila das cópias: o teto do nome limita as trocas de nome a 5 por dia; a foto segue como antes (10 trocas pelo `photo_set`, e a remoção sem teto, pelo app e pelo `clearFanPhoto`, as duas mudando `photoURL` e `photoPath`). O limite das tarefas continua sendo o orçamento de 24.7: até 12 janelas de 5 min e depois no máximo uma por hora no resto do dia, umas 35 tarefas por fã e dia, qualquer que seja a mudança. Cada tarefa regrava só os comentários do fã com a cópia velha, em páginas de 200, e o custo dela cresce com o número de comentários do fã (até 100 novos por dia). O ganho deste bloco está antes da fila: as gravações diretas a cada 10 s (até 8.640 por dia, cada uma com uma execução do gatilho e a transação do orçamento) viram no máximo 20 salvamentos do perfil por dia, mais os da foto.
 
 ### 28.6 Callable do painel: `clearFanProfileText`
@@ -7624,7 +7660,7 @@ Agregados: nada novo. Auditoria: só a callable; a edição do fã não audita (
 
 ### 28.9 Exclusão de conta
 
-Nada muda no servidor: os campos novos moram em `users/{uid}`, que o `deleteUserData` apaga. A exclusão também tira o uid do fã das listas de quem o bloqueou (o passo do `arrayRemove` no `removeFanEngagement`, `posts/service.ts:795-809`) e apaga a lista dele; o `GET /fans/:fanId` desse uid responde 404 porque o perfil sumiu. O texto da tela "Excluir conta" (`deleteAccount.losses.profile`) passa a citar a bio e as redes: "Seu perfil: nome, foto, @, bio, cidade e redes. O @ fica livre para outra pessoa.".
+Nada muda no servidor: os campos novos moram em `users/{uid}`, que o `deleteUserData` apaga. A exclusão também tira o uid do fã das listas de quem o bloqueou (o passo do `arrayRemove`, o último do `removeFanEngagement`, em `posts/service.ts`) e apaga a lista dele; o `GET /fans/:fanId` desse uid responde 404 porque o perfil sumiu. O texto da tela "Excluir conta" (`deleteAccount.losses.profile`) passa a citar a bio e as redes: "Seu perfil: nome, foto, @, bio, cidade e redes. O @ fica livre para outra pessoa.".
 
 ### 28.10 Seed dos emuladores e fixtures
 
@@ -7655,7 +7691,7 @@ Por que essas: no seed, quem comenta são a Bia, a Duda, o Enzo, o Alan e o fã 
 - `FAN_FIXTURE_DETAILS`: as linhas da Thalita, da Aline e da Renata, copiadas da tabela, por `fa-rank-NN`.
 - `fixtureUsername(name)`: a regra do gerador (o primeiro nome mais as 3 primeiras letras do último, sem acento, minúsculas, cortado como o `BASE_MAX` do servidor), que dá o @ do servidor para os nomes do seed (o teste do servidor prova que não há colisão).
 - `COMMENT_AUTHOR_ALIASES`: os autores dos comentários de exemplo (`posts/fixtures.ts`) que são gente do ranking: `fa-thalita` 01, `fa-davi` 02, `fa-jean` 03, `fa-maria-clara` 04, `fa-bruna` 06, `fa-igor` 07, `fa-leila` 08, `fa-rafael` 09, `fa-julia` 10 e `fa-pedro` 11. Os sem par ganham entrada própria, sem bio nem redes: `fa-alan` (Alan Ferreira, `alanfer`), `fa-carla` (Carla M., `carlam`), `fa-diego` (Diego S., `diegos`) e `fa-eduarda` (Duda Rocha, `dudaroc`).
-- `fanProfileFixture(fanId)`: a forma do `GET /fans/:fanId`, com `fixtureDelay`; fechada na privada e na suspensa; id desconhecido, `me` e o id de uma central: `ApiError('notFound', ..., 404, 'fan_not_found')`. As fixtures não modelam "o outro me bloqueou" (o `moderationFixture` só sabe quem o fã bloqueou).
+- `fanProfileFixture(fanId)`: a forma do `GET /fans/:fanId`, com `fixtureDelay`; fechada na privada e na suspensa; id desconhecido, `me` e o id de uma central: `ApiError('notFound', ..., 404, 'fan_not_found')`. As fixtures não modelam "o outro me bloqueou" (quem o fã bloqueou mora no `fixtureBlocks` desde a seção 29, e o `fanProfileFixture` lê dele o `blockedByMe`).
 - O nome do comentário de exemplo continua o do protótipo ("Thalita S."), e o perfil mostra o do ranking ("Thalita Santos"). Diferença aceita só nas fixtures: no servidor, o comentário traz o nome do perfil pela fila (24.7). Trocar os ids dos comentários pelos `fa-rank-NN` foi descartado: mexe nos testes de moderação e do detalhe que prendem `fa-thalita` (`posts/__tests__/fixtures.test.ts:51-57`, `moderation.test.ts:107-115`, `post-details.test.tsx:300`) sem ganho para a tela.
 
 ### 28.11 App
@@ -7750,7 +7786,7 @@ O que cada estado mostra:
 - **Completa:** a bio (`body`, com as quebras de linha) e, com alguma rede de `socialUrl` não nulo, "Redes sociais" com uma linha por rede: `ListRow` pressável, `IconTile` com o glifo, o nome da rede, a meta ("@thalita.teste.up" ou "in/thalita-teste-imagineup") e o `ExternalLink` à direita; rótulo "Instagram, @thalita.teste.up", dica "Abre o perfil no Instagram, fora do app"; `Linking.openURL(socialUrl(...))`. A falha mostra "Não deu para abrir o link." embaixo da lista, anunciado uma vez e com o toque `error`. Nas fixtures e no emulador (decisão 25), as linhas não são pressáveis (sem o `ExternalLink`), e embaixo da lista fica "Perfil de exemplo: os links não abrem nesta versão.". Sem bio e sem rede: "Este fã ainda não escreveu nada aqui.".
 - **Fechada:** um bloco com `Lock`, "Perfil fechado" e "Só a foto, o nome e o @ ficam à vista.", igual nos três casos.
 - Carregando: o indicador. 404: `EmptyState` "Este fã não está mais no ImagineUP.", sem tentar de novo. Outro erro: "Não deu para carregar o perfil." com "Tentar de novo". Sem internet: a consulta pausa, com o aviso de sempre.
-- Sem botão de bloquear nem de denunciar (decisão 22, pergunta 1).
+- Sem botão de bloquear nem de denunciar (decisão 22, pergunta 1). (Seção 29: o bloco "Segurança", com "Denunciar perfil" e "Bloquear", entrou no `FanPageScreen`, do domínio `fan-page`.)
 
 **Entradas**
 
@@ -7865,6 +7901,8 @@ O APK interno de 08/10/2026 (canal preview) chama a produção e, com o JS de ho
 5. **Painel por último** (outra conversa): o merge na `main` do `imagineup-admin` depois da callable no ar e com o `allUsers` (26.21, passo 7).
 6. **Conferir em produção** (não há perfil de fã hoje; com o APK e uma conta de teste do dono, com o ok dele): salvar bio, nome e uma rede do próprio dono pelo ✓; o documento com os campos novos e o `updatedAt` intocado; o `queueFanProfileSync` terminando em `unchanged` na troca só da bio; o perfil público dessa conta aberto por outra conta de teste, com o link da rede abrindo fora do app (o caminho que as fixtures e o emulador não abrem).
 
+**Como foi (de 08 a 09/10/2026):** com a seção 27 junto (passo 0), da `main` `7b87a48` (PR #17): as 65 funções em 5 lotes, com poucos minutos entre eles; a `clearFanProfileText` com o `allUsers`, nas 55 chamáveis liberadas; o EAS Update do canal preview na runtime `310056fd`; e só então o `rules:deploy`. O passo 5 veio em 14/10/2026 (PR #2 do `imagineup-admin`). O passo 6 não ficou registrado (26.21).
+
 ### 28.15 Perguntas
 
 Para o dono. Respondidas em 08/10/2026: a 1, a 6, a 8 e a 10 com resposta própria, e as outras com a proposta. Cada uma traz a pergunta, a proposta e a resposta.
@@ -7884,10 +7922,10 @@ Ainda dependem da cliente: a pergunta 2 de 24.15 (volta com os dados da 7), a id
 
 ### 28.16 Fora deste bloco (só documentado)
 
-- Denunciar ou bloquear pelo perfil público (resposta 1 de 28.15: um bloco curto antes da build das lojas); ver posição, pontos, nível ou conquistas no perfil público; seguir outros fãs.
+- Denunciar ou bloquear pelo perfil público (resposta 1 de 28.15; feito na seção 29); ver posição, pontos, nível ou conquistas no perfil público; seguir outros fãs.
 - Um selo que diferencie fã de artista no perfil público (o @ de artista sem central, pergunta 7).
 - A bio e as redes na 1e e um "ver como os outros veem" (pergunta 5).
-- A tela "Fãs bloqueados" (a rota de desbloquear existe desde o bloco 6).
+- A tela "Fãs bloqueados" (feita na seção 29, com o `GET /me/blocks`).
 - Abrir as redes dentro do app; conferir que a conta da rede é do fã (seria integração com as redes, fora do contrato).
 - A Moderação apagar ou trocar o nome (segue pela suspensão, 26.19); guardar o texto apagado (pergunta 1).
 - Um filtro "com bio ou redes" na seção Fãs do painel (precisaria de índice; alternativa da pergunta 1).
@@ -8025,6 +8063,1788 @@ Implementado em 08/10/2026 na branch `perfil-novo`, nas quatro etapas de 28.13. 
 - **Testes:** o caso da fonte grande do `edit-profile.test.tsx` roda com 2 e com `Math.fround(1.3)` e confere o recuo; a tabela da linha da agenda e o caso do destaque em `event-cards.test.tsx` ganharam o `Math.fround(1.3)`.
 
 **Recusados na conferência:** a linha de status do @ embaixo do card, depois da bio (é o que a 28.11 pede: "Embaixo do card, uma linha"; levar para logo abaixo do campo do @ é decisão do dono), e o sucesso do ✓ sem confirmação visível (a 28.11 pede anúncio, toque `success` e `goBack()`; um aviso visível nos Ajustes é pergunta de desenho para o dono).
+
+## 29. Exigências das lojas no app: denúncia de perfil, bloqueados, Sobre, conta, suspensão, 429 e Explorar
+
+O bloco fecha a parte das exigências das lojas que não depende da cliente, e tira o último `Placeholder` do app. Não fecha tudo o que as lojas pedem: o filtro do que é publicado (regra 1.2) fica fora e é pergunta ao dono (29.15; virou a seção 30), os termos com tolerância zero e a privacidade fiel ao app dependem da cliente (a pergunta 3 dela), e o preparo da revisão (conta de demonstração, conteúdo no ar, notas de revisão e o endereço de exclusão do Google Play) está em 29.14, passo 7. São oito frentes: (A) denunciar e bloquear pelo perfil público; (B) a tela "Fãs bloqueados" nos Ajustes; (C) a seção "Sobre" nos Ajustes, com privacidade, termos, regulamento, contato e versão; (D) trocar a senha e o e-mail dentro do app; (E) o aviso de conta suspensa em todas as ações; (F) o 429 separado em ritmo e teto do dia, sem perder ação da fila; (G) a aba Explorar como vitrine das centrais; (H) a documentação. Esta seção é o contrato: decisões, rotas, campos, transações, a callable da Moderação, o que o painel precisa, regras, exclusão de conta, seed e fixtures, o app tela a tela, testes, o plano de construção e a publicação. Segue os padrões das seções 1 a 28 e só diz o que muda ou acrescenta.
+
+Origem: o pedido do dono de 13/10/2026 ("o restante das demandas que faltam no app", começando pelo que é exigência das lojas e não depende da cliente); a resposta 1 de 28.15 (08/10/2026: "Denunciar perfil" na fila da Moderação com o tipo `profile`, os motivos da lista fechada e o teto `report`, e "Bloquear" pela rota que já existe; o texto que a Moderação apaga não fica guardado), com a fila trocada por uma coleção separada nas respostas do dono de 13/10/2026 (29.15); a decisão do dono de 13/10/2026 para a Explorar ("vitrine das centrais"); a proposta da revisão de 08/10 (a lista "Todos os artistas" com os próximos shows, e o fim do beco do card "+"); e a aprovação de 28/09 ("as telas sem desenho seguem o visual das outras"). As regras das lojas: App Store 1.2 (para conteúdo de usuário: filtrar o que é publicado, denunciar com resposta rápida, bloquear com aviso à equipe, um contato publicado e termos aceitos com tolerância zero a abuso; este bloco entrega denunciar, bloquear com a escolha de denunciar junto e o contato, e o filtro e os termos ficam para a pergunta 3 do dono e a 3 da cliente, em 29.15); 5.1.1 (a política de privacidade dentro do app; a exclusão de conta já existe); 5.3 (o aviso de que a Apple não patrocina está no pé da 1h; o regulamento aparece quando a cliente entregar, e um prêmio de temporada ou do pódio pede o regulamento antes de entrar no ar); e a política de conteúdo gerado por usuário do Google Play, com o endereço web para pedir a exclusão da conta (29.14, passo 7).
+
+Estado: desenho de 13/10/2026, conferido contra o código da branch `exigencias-lojas`, criada da `main` `7b87a48` (o que estava em produção desde 09/10/2026: 65 funções, as regras e o EAS Update do canal preview na runtime `310056fd`). O plano está em 29.13, e a ordem de publicação, em 29.14. Revisado pela crítica de 13/10/2026 (29.19) e pelas respostas do dono de 13/10/2026 (29.15): a denúncia de perfil numa coleção separada (`profileReportQueue`), a callable nova `resolveProfileReport` e a reabertura pelo resumo do perfil. Implementado no mesmo dia nessa branch, nas seis etapas de 29.13 (servidor, regras, índices, seed, app, testes e documentos), com o fingerprint igual ao do APK em todas, e conferido no emulador Android pelo Expo Go com o seed (29.20). Depois, uma revisão final de 13/10/2026, com dois céticos, entrou no mesmo commit local da branch, sem push: a recusa que a trava do `Alert` deixava calada, a linha velha da lista de bloqueados nas fixtures, os testes de regressão das cinco ferramentas do fã, a justificativa do `createUserProfile` fora do lote, e os termos e a privacidade como bloqueios do envio às lojas (29.20). Entrou na `main` pelo merge `a48335b` (PR #19) e foi publicado em 14/10/2026, junto com o filtro da seção 30, por decisão do dono de 13/10/2026 (como foi, no fim de 29.14 e em 26.21); o painel, com a lista "Perfis denunciados", entrou na `main` do `imagineup-admin` no mesmo dia (PR #3). O que o código fez diferente do desenho está em 29.20.
+
+Trava do bloco: nada muda o fingerprint nativo (`runtimeVersion` por fingerprint no `app.config.ts`). Nenhum pacote nativo novo, nada no `app.config.ts` (nem a `version`), nenhum script novo no `package.json`, e `.gitignore`, `eas.json`, ícones e splash intocados. O bloco inteiro chega ao APK interno por EAS Update. Usa só o que já está instalado: `expo-web-browser`, o `Linking` do React Native, `expo-constants` e `expo-updates`. Uma frente que só desse certo com nativo sairia do bloco e viraria pergunta; nenhuma precisou. O critério de pronto de cada etapa do app inclui o fingerprint local igual ao do APK (29.13).
+
+Como era antes:
+
+- O perfil público (`/fa/[fanId]`, seção 28) só tinha o voltar, sem denunciar nem bloquear (28.1, decisão 22, com o risco aceito por escrito até este bloco). A bio e as redes só chegavam à Moderação por um comentário denunciado, pela lista dos suspensos ou pela busca da seção Fãs.
+- Bloquear existia só na sheet "Opções do comentário" (`PUT /me/blocks/:fanId`, bloco 6). O `DELETE` existia sem tela, e não havia rota para listar (`GET /me/blocks/x` dá 405). O `GET /fans/:fanId` não diz se quem pede bloqueou o alvo.
+- Os Ajustes tinham Perfil ("Editar perfil") e Conta ("Sair" e "Excluir conta"). Termos e privacidade só abriam na abertura e no cadastro (`auth/consts.ts`, sem exportar), e o app não tinha contato nem versão. Trocar a senha só pelo "Esqueci minha senha" do login; o e-mail, nunca.
+- O suspenso (26.6) recebia 403 `account_suspended` e, fora da edição do perfil e da foto, o app mostrava o erro genérico da tela ou nada: curtir, "Eu vou" e entrar desfaziam calados, o comentário recusado voltava ao campo sem frase, e o resgate dizia "Não deu para confirmar o resgate". O onboarding num aparelho novo prendia o suspenso na 1l.
+- O 429 virava o kind `unknown` (`src/services/api/errors.ts`): sem nova tentativa e sem ler o `Retry-After`. A mutação da fila offline ia direto a `error` e sumia (`src/services/query/client.ts`).
+- A aba Explorar era o único `Placeholder` do app, com um botão "Agenda". O card "+" da 1b ("Entrar numa central", com o fã fora de todas) e o "Explorar artistas" do Perfil levavam a ela: um beco sem caminho para entrar numa central.
+- O `CLAUDE.md` e o `AGENTS.md` ainda diziam "falta publicar" para a proteção contra abuso, o perfil novo e a CPU fracionada (publicados em 08 e 09/10/2026) e davam como pendente a conferência do primeiro fechamento do dia (feita: a rodada da 00:20 de 09/10/2026 fechou de 29/09 a 08/10 sem erro).
+
+### 29.1 Decisões
+
+Cada item traz a escolha e o motivo, e a alternativa trocada quando há. As perguntas estão em 29.15.
+
+**Servidor (frentes A e B)**
+
+1. **A denúncia de perfil mora numa coleção separada, `profileReportQueue/{uid}`.** Um item por fã denunciado, com o id igual ao uid dele; o tipo é a própria coleção, sem campo `type`. A `moderationQueue` (21.3) continua só com os comentários e não muda, nem o `moderateComment`. A equipe lê com a seção `moderation` (regra nova, 29.8), e a fila dos abertos e a dos resolvidos têm os índices compostos delas. Motivo (resposta do dono de 13/10/2026, a pergunta "fila" de 29.15): o painel publicado quebra com um item de perfil na `moderationQueue` (o `QueueCard` lê post e comentário de todo item, 29.7), e com a coleção separada o app e as funções saem sem esperar a outra conversa do painel. Custo: uma regra nova e dois índices (e o `rules:deploy`, 29.14), e uma lista nova no painel; a equipe só vê as denúncias de perfil quando o painel ganhar a lista. Troca a mesma fila com `type: 'profile'` e o id `profile:<uid>` (o primeiro desenho, pela resposta 1 de 28.15), que obrigava o painel novo a entrar antes das funções.
+2. **O item não guarda texto do perfil.** Nem nome, @, foto, bio ou redes: o painel mostra o perfil vivo (`users/{uid}`, que a seção `moderation` já lê, 26.10). Motivo: a resposta 1 de 28.15 (o texto que a Moderação apaga não fica guardado) e a minimização (LGPD, a linha de 28.1, decisão 21). Custo aceito: se o fã denunciado editar o perfil antes de a equipe olhar, a prova some; a reincidência aparece nos Logs (alvo `fan:<uid>`) e na contagem do item.
+3. **Uma denúncia por fã e alvo em cada rodada do item, e a mesma pessoa só reabre com o perfil mudado.** A rodada é um inteiro, `round` (1 ao criar, mais 1 a cada reabertura), guardado no item e na denúncia; o `openedAt` só mostra quando ela começou. Com o item aberto, a segunda denúncia da mesma pessoa na rodada responde `already_reported`, sem contar no teto. Depois de resolvido, a denúncia de outra pessoa reabre o item, e a contagem recomeça do zero. A de quem já denunciou na rodada resolvida só reabre se o perfil mudou desde a resolução: a callable grava no item o `resolvedDigest`, um sha256 do nome, do @, da foto, da bio e das redes (o que o perfil público mostra; um resumo, nunca o texto), e a denúncia compara com o perfil de agora; igual, `already_reported`. Motivo: o perfil muda e o comentário não; a bio nova depois de um "Manter" precisa poder chegar de novo à equipe, e a contagem da rodada é a que diz algo sobre o perfil de agora. Sem a trava do resumo, um fã sozinho devolvia à fila cada perfil que a equipe manteve, e a diferença entre `reported` e `already_reported` dizia a ele se a equipe já tinha resolvido. O inteiro, e não o `reportedAt` comparado com o `openedAt`, porque os dois instantes vêm do relógio de instâncias diferentes (`award.now`): um atraso de milissegundos contaria a mesma pessoa duas vezes, e a exclusão de conta deixaria de descontar (29.9). Troca "uma denúncia por fã e alvo para sempre", que barraria a bio nova; a contagem somada de sempre do item de comentário, que a exclusão não saberia descontar depois de uma reabertura; e "a mesma pessoa só depois de N dias", mais simples, que deixaria a bio nova esperar e não pararia quem denuncia toda semana o mesmo perfil igual. Resposta do dono de 13/10/2026 à pergunta 2 (29.15): esta, a opção (a).
+4. **Motivos e teto da denúncia de comentário.** O corpo é o mesmo `{ reason }` (`spam`, `offensive`, `harassment`, `other` ou `null`, pelo `parseReportReason`), e o teto é o `report` (chave `comment_report`, 30 por dia, somando comentário e perfil). Motivo: sem chave nova no `actionCaps`, o `updatePointsConfig` e o painel não mudam (no painel de hoje, a chave ausente vira 0 e trava o bloco dos tetos, 28.7). O rótulo "Denúncias" do painel já é genérico.
+5. **Perfil fechado aceita a denúncia com a mesma resposta.** A rota não lê a lista de bloqueios do alvo nem olha a conta privada ou a suspensão dele: denunciar um perfil fechado responde igual a um aberto (28.17: o bloqueado não fica sabendo). O próprio perfil é 400 `invalid_request` com `details.reason: 'own_profile'`; sem `users/{fanId}` (conta excluída, conta só da equipe, id desconhecido), 404 `fan_not_found`. O suspenso que denuncia recebe 403 (a rota não leva `allowSuspended`, e a lista travada em `api/index.test.ts` não muda).
+6. **Resolver o item: callable nova `resolveProfileReport`.** `{ uid, resolution: 'kept' | 'actioned', round }`, com a seção `moderation` e edição, e a auditoria `fan.profile.report.resolved` (29.6). O `round` é a rodada que o card mostrou: mudou (o item reabriu depois que o card abriu, e o painel não escuta em tempo real), a callable recusa com `stale-report`, e o painel lê o card de novo. "Manter" (`kept`): o perfil está dentro das regras. "Resolver" (`actioned`): a equipe agiu com as ferramentas que já existem (apagar bio e redes, trocar o @, tirar a foto, suspender, ocultar os comentários), que não mudam e não fecham o item sozinhas; a equipe age antes de "Resolver", porque o resumo do perfil (decisão 3) é o da resolução. Motivo: o `moderateComment` exige um comentário, e fazer as quatro callables do fã fecharem o item obrigaria a republicar as quatro e mudaria o contrato delas, que o painel já chama. Custo: 66 funções, 1/6 de vCPU a mais na conta do `cpu.test.ts` (de uns 19,00 para uns 19,16 dos 20, sobra de 0,84, que vai às Pendências) e o `allUsers` depois do deploy. A alternativa sem função nova era um ramo no `moderateComment` pela chave `{ profileUid, action, round }`, que daria dois formatos ao contrato da moderação de comentário, que funciona hoje; com a coleção separada (decisão 1), ela também faria o `moderateComment` ler uma coleção que não é dele. Resposta do dono de 13/10/2026 à pergunta 1 (29.15): a callable nova, que isola a mudança.
+7. **`blockedByMe` no `GET /fans/:fanId`.** Booleano novo nas duas visões: quem pede bloqueou o alvo. A lista de quem pede (`blockLists/{uid}`) vai no mesmo `getAll` do perfil do alvo: duas leituras, ou três quando o perfil não sai fechado por si (a lista do alvo, como hoje). O próprio fã recebe `false` sem ler lista. Motivo: a tela sabe se mostra "Bloquear" ou "Desbloquear" sem paginar a lista inteira. Não conta nada ao bloqueado: o campo depende só de quem pede, e os três casos fechados seguem com o mesmo corpo para o mesmo leitor. Campo novo, opcional para o app (seção 1: o app instalado não quebra).
+8. **`GET /me/blocks`: a lista para desbloquear, só lendo.** Sem chave e sem `requireFan` (a conta só da equipe recebe a lista vazia; o suspenso lê, porque desbloquear é livre, 26.6). Do mais novo ao mais antigo, em páginas de até 20, com o `limit` de 27.2. A lista não guarda a data de cada bloqueio: a ordem é a da inclusão, invertida, e o cursor é `<índice>:<uid>` do último fã visto, com o índice contado na ordem da inclusão, do mais antigo (0) ao mais novo. A página seguinte são os fãs de índice menor que o do cursor: o índice é o do uid, se ele ainda está na lista, ou o guardado, se ele saiu (desbloqueado no meio). Desbloquear na própria tela tira só fãs já vistos, de índice igual ou maior, e o bloqueio novo, feito em outro aparelho, entra no fim: nenhum dos dois muda o índice de quem falta ver. Cada item traz uid, nome, @ e foto, os campos que a visão fechada já mostra a qualquer fã; o fã sem perfil (a exclusão já tira o uid das listas; sobra só numa corrida) sai da página, que pode vir menor, com o cursor. Custo: uma leitura da lista e um `getAll` de até 20 perfis por página. Troca o cursor pela posição pura, que pularia um fã a cada desbloqueio feito na própria tela, e a posição contada do mais novo como reserva, que pulava um fã quando o desbloqueio de uma página já lida vinha junto com o do próprio fã do cursor, e repetia um quando outro aparelho bloqueava alguém no meio.
+9. **Uma regra nova e dois índices, só para a coleção separada.** A `profileReportQueue` ganha a regra da `moderationQueue`: a seção `moderation` lê, ninguém grava pelo cliente. A `profileReports` ganha a regra fechada explícita, como a `commentReports` (guarda quem denunciou). Índices compostos: a fila dos abertos (`status` com `lastReportedAt`, decrescente) e a dos resolvidos (`status` com `resolvedAt`, decrescente), os mesmos da `moderationQueue`; a página do fã lê o item dele pelo id, sem índice. Isenções: `reasons` (como na `moderationQueue`) e `resolvedDigest` (um resumo que ninguém consulta). As consultas do servidor são por id ou de igualdade num campo só (`profileReports` por `reporterUid`, com o índice automático). Motivo: a coleção separada da decisão 1. Por isso a publicação começa pelo `rules:deploy`, esperando os índices ficarem prontos (29.14).
+10. **A exclusão de conta cuida das denúncias de perfil.** As que o fã fez saem e descontam o item da rodada; o item aberto do próprio fã vai a `author_deleted`; as denúncias contra ele ficam (são de quem denunciou, como as de comentário, 21.12). Mora no `removeFanEngagement`, que o `deleteUserData` já chama: o `deleteUserProfile` vai no deploy. O `createUserProfile` também chega a esse código, no desfazer da conta já excluída no Auth (nos milissegundos do cadastro, ou numa reentrega tardia, porque o gatilho tem `retry: true`), e fica fora do deploy: toda exclusão no Auth dispara o `deleteUserProfile`, que vai no deploy e limpa as denúncias de perfil, e o desfazer velho só não repete esses passos, que são idempotentes (29.14, passo 2).
+
+**App (frentes A a G)**
+
+11. **Dois domínios de composição: `fan-page` e `settings`.** O perfil público ganha as ações de moderação, que moram no `posts`; os Ajustes ganham o regulamento (`rewards`), os links e as telas de conta (`auth`) e a lista de bloqueados (`posts`). O `posts` e o `rewards` já importam o `profile`, então nada disso cabe dentro do `profile` sem fechar ciclo. O `fan-page` monta a rota `fa/[fanId]` em volta do `FanProfileScreen`, que fica no `profile` e ganha um encaixe para as ações; os Ajustes saem do `profile` para o `settings`, que também guarda a tela "Fãs bloqueados". É o molde do `home` e do `artist-page`: o domínio de composição importa só pelos index, e ninguém o importa. Troca importar arquivos do `posts` pelo caminho dentro do `profile`, que funcionaria, mas espalharia a exceção por vários arquivos.
+12. **As mutações de moderação ficam no `posts`, e o estado das fixtures num lugar só.** `useReportFanMutation`, `useBlockFanMutation` (a de hoje, usada pelo comentário e pelo perfil), `useUnblockFanMutation` e `useBlockedFansInfiniteQuery`, exportadas pelo index. O conjunto dos bloqueados das fixtures sai do `moderationFixture` para `fixtureBlocks` (`services/fixtures`), com os ids dos autores de comentário normalizados pelos aliases do perfil público (`fa-thalita` vale `fa-rank-01`, 28.10). Motivo: bloquear pelo ranking esconde os comentários de exemplo da mesma pessoa, como no servidor (coerência, seção 13), e o perfil das fixtures sabe o `blockedByMe`.
+13. **Bloquear pelo perfil pede confirmação, com a escolha de denunciar junto; desbloquear não.** O `Alert.alert` "Bloquear {{name}}?" (o sistema foca e anuncia, como o "Descartar alterações?" de 28.11) tem "Cancelar", "Bloquear" e "Bloquear e denunciar", que bloqueia e abre a sheet da denúncia. Na sheet do comentário, o bloqueio não fecha mais a sheet: ela diz que a equipe só fica sabendo pela denúncia e deixa "Denunciar comentário" à mão. Motivo: o bloqueio grava só a `blockLists` e o contador, e nada chega à `moderationQueue`; o texto com que a App Review recusa pela 1.2 diz "Blocking should also notify the developer of the inappropriate content". O bloqueio continua na rota de hoje (resposta 1 de 28.15), e o aviso à equipe vem da denúncia que o fã escolhe mandar. O botão fica solto na tela, e no comentário a própria sheet é a confirmação. Desbloquear desfaz sem perda. Troca transformar todo bloqueio num sinal na fila, que mudaria o contrato do `PUT /me/blocks/:fanId` e encheria a fila de bloqueios por antipatia (pergunta 4 do dono).
+14. **A denúncia de perfil abre uma `formSheet` própria** (`/denunciar-perfil/[fanId]`), no molde da "Opções do comentário": os motivos numa `ChipGroup` e "Enviar denúncia". O nome vem do cache do perfil público, pelo `useCachedFanProfile` (novo no `profile`, no molde do `useCachedComment` de `posts/queries.ts`); aberta a frio, sem ele, fecha. Motivo: os motivos não cabem soltos no perfil, e a sheet do comentário já ensinou o caminho.
+15. **"Sobre" com links constantes no app.** Privacidade e termos (`imagineup-painel.vercel.app` até a UP-46) saem de `auth/consts.ts` para `src/config/links.ts`, com o e-mail de contato, que é a fonte única: nenhum texto do `translations.json` escreve o endereço, e as frases que o mostram usam `{{email}}`; um helper só abre as páginas (`openWebPage`, o `WebBrowser.openBrowserAsync` que hoje se repete na abertura e no pé da 1h). A troca de domínio segue por EAS Update. O contato é `mailto:` pelo `Linking.openURL` com `catch` e, na falha, o e-mail na tela, selecionável; sem `canOpenURL` (no Android 11 ou mais ele pede `<queries>` no manifesto, que é nativo) e sem copiar (o `expo-clipboard` não está instalado). Troca servir os links pela API: o bloco publica a `api`, mas o ganho só apareceria na UP-46, e o EAS Update já resolve.
+16. **O regulamento aparece só com o `rulesUrl` da loja.** Os Ajustes leem pelo `useRewardsRulesUrl`, a mesma consulta da 1h com `enabled: false`: só o cache (o do disco inclusive), sem buscar. Sem a loja no cache, a linha não aparece; o regulamento continua no pé da 1h. Motivo: o `GET /rewards` lê até 100 recompensas, até 200 pedidos do fã e os shows ligados, e buscar tudo para saber um endereço que hoje é sempre `null` custaria leituras a cada Ajustes aberto com o cache vazio. Hoje o servidor manda `null` (`REWARDS_RULES_URL` vazio até a cliente, UP-45), e a linha não aparece, como o link do pé da 1h (25.1, decisão 19). Pendência das lojas: o `REWARDS_RULES_URL` preenchido antes de qualquer prêmio de temporada, do pódio ou sorteio entrar no ar (5.3.2 da App Store).
+17. **Versão: a do app e a do update, sem o número da build.** `Constants.expoConfig.version` e, fora do binário embutido, a data e o id curto do EAS Update (`Updates.createdAt` e `Updates.updateId`; no Expo Go os dois vêm `null`). Motivo: o número da build (`appVersionSource: remote`) só sai pelo `expo-application`, que é nativo; a data e o id do update são o que separa um JS do outro no mesmo APK.
+18. **Trocar senha e e-mail só pelo Firebase Auth, sem servidor.** Sempre reautenticar com a senha atual antes (`reauthenticateWithCredential`), sem esperar o `requires-recent-login`. A senha pelo `updatePassword`; o e-mail pelo `verifyBeforeUpdateEmail`, nunca o `updateEmail` (com a proteção contra enumeração de e-mails ligada, ele é barrado com `operation-not-allowed`): nada muda até o fã abrir o link no e-mail novo, e então o Firebase revoga as sessões: cada aparelho sai quando o SDK renova o token, em até 1 hora. A `api` não confere a revogação (`verifyIdToken` sem `checkRevoked`, `api/auth.ts`): o token antigo vale nela até vencer, em até 1 hora, também depois de trocar a senha porque a conta vazou (limite aceito por escrito, pergunta 7; a alternativa é o `checkRevoked` só no resgate, uma chamada ao Auth por resgate). Telas na pilha raiz, sem tab bar (`trocar-senha` e `trocar-email`), porque são formulários de dois campos com teclado, como o `editar-perfil` (a tab bar própria não some com o teclado). O servidor não sabe da troca e não precisa: nada de fã guarda o e-mail no Firestore, e o painel lê o e-mail ao vivo (`getRedemptionContacts`, `findFanByEmail`). Os limites aceitos estão em 29.11 (a chave do convite, a cópia `staff.email` e a sessão antiga na `api`).
+19. **Suspensão: o app diz, com o contato, em toda ação recusada, por um canal só em cada tela.** Um ponto que sabe (`useSuspension`, do perfil lido do Firestore, com o `suspensionReason` mapeado); um aviso fixo no topo da 1b, da 1e e dos Ajustes; e, para cada recusa com 403 `account_suspended`, um canal só. As ações sem texto na tela (curtir, "Eu vou", entrar na central e seguir na 1l) abrem o `Alert.alert` "Conta suspensa", com "Escrever para a equipe" (pelo `MutationCache` global, no máximo um a cada 30 s). As telas que já mostram texto de erro (o compositor, as duas sheets de denúncia, o resgate, a sheet do convite, a edição do perfil e a foto) mostram a frase própria com o link irmão "Escrever para a equipe", e as mutações delas levam `meta: { suspendedAlert: false }`. Motivo do canal só: o `Alert` por cima da frase tirava o foco do leitor de tela do aviso da sheet, e o fã recebia dois avisos para uma recusa. O compositor de comentário, que hoje recusa calado, troca o campo pela frase. O onboarding do suspenso conclui sem seguir as centrais, em vez de prender. O servidor não muda: o contrato de 26.6 basta. Troca desligar cada botão antes de tentar: seriam umas 12 superfícies, e o aviso fixo com o `Alert` já dizem tudo.
+20. **429: o ritmo tenta de novo sozinho; o teto do dia nunca.** O `toApiError` lê o `Retry-After` (`retryAfterMs`) e separa dois kinds novos: `rateLimited` (o `rate_limited` e o 429 sem código, da cota do Cloud Run) e `dailyLimit` (o `too_many_requests`). O `shouldRetry` global repete o `rateLimited` até 3 vezes, com o atraso do `Retry-After` entre 1 e 10 s, nas consultas e nas mutações sem `retry` próprio: a fila offline (curtir, comentar, "Eu vou", entrar na central) repete com a mesma chave, que é seguro porque nada foi gravado (27.3). O `dailyLimit` não repete e mostra a frase da ação. O `isRetryable` não muda de sentido (resultado incerto: rede, prazo, 5xx), porque quatro lugares o leem como "o servidor pode ter gravado" (`posts/queries.ts`, `artists/queries.ts`, `rewards/describe-reward.ts` e o `isUncertainFailure` do perfil). O comentário tem regra própria: o `isUncertain` de `posts/queries.ts` decide se o texto volta ao campo (`onError`) e se a nova tentativa leva a mesma chave (`retry`), e o ritmo precisa ficar com a tentativa, então os dois pontos passam a ler `keepsAttempt(error)` (`isUncertain(error)` ou `isRateLimited`). Uma peça comum escolhe a frase de toda recusa (`actionRefusal(error, action)`, pura, em `services/api/refusal.ts`), e um helper só abre os `Alert` de recusa, com a trava de 30 s por tipo e ação (`services/refusal-alert.ts`): sem ela, as cerca de 12 superfícies repetiriam a regra, e a fila que volta com várias curtidas no teto abriria um `Alert` por curtida. Nada muda no servidor: a ação vem da superfície, e não do `details.action`, que falta no teto de entrar em central.
+21. **Explorar: a vitrine das centrais.** Busca, "Próximos shows" (o destaque e mais três, com "Ver agenda"; o "Chamar amigos" do destaque abre o convite do show, como na 1m) e "Todas as centrais" em grade de duas colunas, com a marca "Na central"; tocar abre a central dentro da pilha da Explorar. Só com rotas que já estão no ar (`GET /artists`, `/me/centrals`, `/agenda` e `/me/rsvps`), sem domínio novo no seletor e sem publicar nada. O card "+" e o "Explorar artistas" passam a cair nela.
+22. **A documentação vai junto.** A nota (esta seção e as que ela toca), o `CLAUDE.md` e o `AGENTS.md` (29.18, com as pendências de antes das lojas de 29.14, passo 7) e o README de passagem do painel (`Projetos/painel-exigencias-lojas/README.md`, 29.7), no último commit do bloco.
+
+### 29.2 Rotas
+
+| Método e caminho | Grava | Função do app | Resposta |
+| --- | --- | --- | --- |
+| `POST /fans/:fanId/report` | sim | `posts/api.ts` `reportFan` | `ReportFanResult` |
+| `GET /me/blocks` | não | `posts/api.ts` `fetchBlockedFans` | `BlockedFansPage` |
+| `GET /fans/:fanId` (muda) | não | `profile/api.ts` `fetchFanProfile` | `FanPublicProfile`, com `blockedByMe` |
+| `DELETE /me/blocks/:fanId` (ganha tela) | sim | `posts/api.ts` `unblockFan` (novo no app) | `BlockFanResult` |
+
+Ficam como estão: `PUT /me/blocks/:fanId` e `POST /posts/:postId/comments/:commentId/report`. A `API_ROUTES` passa de 42 a 44. `POST /fans/:fanId/report` não colide com o `GET /fans/:fanId` (o `PUT /fans/:fanId` continua 405), e `GET /me/blocks` não colide com `/me/blocks/:fanId` (o `GET /me/blocks/x` continua 405).
+
+Arquivos nas funções:
+
+- `moderation/model.ts`: `own_profile` no `ModerationErrorReason` ("O próprio perfil não se denuncia."); `profileReportId(targetUid, reporterUid)`; `BLOCKED_PAGE_MAX` (20); `parseBlockCursor`, `formatBlockCursor` e `blockedPage(list, cursor, limit)`, puros.
+- `moderation/store.ts`: `profileReportsRef`, `profileReportRef`, `profileQueueRef` (`profileReportQueue`) e `profileQueueItemRef(uid)`.
+- `moderation/service.ts`: `reportFan` (29.4), `readBlockedFans` (fora de transação) e, para o seed, `runReportFan` e `runBlockFan`.
+- `moderation/profile-panel.ts` (novo): o núcleo `resolveProfileReport(deps, caller, data)` e o `runResolveProfileReport` dos testes. `moderation/errors.ts` ganha `profile-not-reported` ("Esse perfil não está na fila da Moderação.") e `stale-report` (`failed-precondition`, "A denúncia mudou desde que o card abriu. Abra de novo."). `moderation/index.ts` exporta.
+- `fan-profile/service.ts` (`readFanPublicProfile` lê a lista de quem pede) e `fan-profile/details.ts` (`publicProfileOf(uid, data, restricted, blockedByMe)` e `profileDigest(data)`, puro: o sha256 de um JSON com o nome, o @, a foto, a bio e as redes, em ordem fixa e lidos como o `publicProfileOf` os lê; a conta privada, a cidade e o gênero ficam fora, porque o perfil público não os mostra).
+- `posts/service.ts`: os passos novos do `removeFanEngagement` (29.9).
+- `api/routes/fans.ts`: `POST /fans/:fanId/report`. `api/routes/moderation.ts`: `GET /me/blocks`, e sai o comentário "ainda sem tela no app" do `DELETE`. `api/routes/paging.ts`: o `limit` sai do `pageQuery` para um `limitQuery` que as duas leituras usam; o cursor da lista é o do `parseBlockCursor`, e não o `decodePageCursor` (`[instante, id]`), porque a lista não guarda datas. `api/contract.ts`: `ReportFanBody`, `ReportFanResult`, `BlockedFan`, `BlockedFansPage` e o `blockedByMe` do `FanPublicProfile`. `api/errors.ts`: o `own_profile` na tradução do `ModerationError` para o 400 com `details.reason`.
+- `staff/service.ts` (`AuditAction`), `staff/audit-index.ts` (`SECTION_BY_ACTION`), `staff/panel-errors.ts` (o comentário da lista de callables) e `functions/src/index.ts` (o `onCall` depois do `clearFanProfileText`, com o import renomeado e o `logger.info('Denúncia de perfil resolvida pela equipe.', { actorUid })`).
+- `moderation/seed.ts` e `scripts/seed-emulators.mjs` (29.10).
+- Fora das funções: `firestore.rules` e `firestore.indexes.json` (29.8).
+
+Nenhum código novo na tabela da seção 1: o `own_profile` é um `details.reason` do `invalid_request`, como o `own_comment` e o `self`. A coluna "kind no app" muda nos dois 429 (frente F): `too_many_requests` passa a `dailyLimit`, e `rate_limited`, a `rateLimited`. A linha do `fan_not_found` passa a dizer "no bloqueio (bloco 6), no perfil público (seção 28) e na denúncia de perfil (seção 29)".
+
+#### `POST /fans/:fanId/report`
+
+Corpo, com `Idempotency-Key`: `{ "reason": "spam" }` (ou `null`, ou sem corpo, que vale `null`). Resposta:
+
+```json
+{ "fanId": "Kq3vZ8wQb1TnUe0aRk5pL2mXy7Fd", "status": "reported" }
+```
+
+- `validate`, sem leitura: o `fanParam` (fora do formato, 404 `fan_not_found`) e o `parseReportReason` (outro valor, 400 `invalid_request` com `field: 'reason'`).
+- Recusas, na ordem: antes de tudo, o ritmo de 27.3 (429 `rate_limited`); a chave (400 `idempotency_key_required`); 403 `not_fan`, 503 `profile_not_ready` e 403 `account_suspended` (o `runIdempotent`, como toda rota que grava); 400 `invalid_request` com `reason: 'own_profile'` (o próprio uid, antes de ler); 404 `fan_not_found` (sem `users/{fanId}`); 429 `too_many_requests` com `details: { limit, action: 'report' }` e o `Retry-After` até a meia-noite de São Paulo.
+- `already_reported` não conta no teto e só marca o fã ativo do dia, como na denúncia de comentário.
+- O app mostra o mesmo "Denúncia enviada" para os dois status.
+
+#### `GET /me/blocks`
+
+`?cursor=<índice>:<uid>&limit=<1 a 20>` (o app nunca manda o `limit`). Resposta, o `Page` de sempre:
+
+```json
+{
+  "items": [
+    {
+      "uid": "Kq3vZ8wQb1TnUe0aRk5pL2mXy7Fd",
+      "displayName": "Thalita Santos",
+      "username": "thalitasan",
+      "photoURL": null
+    }
+  ],
+  "nextCursor": null
+}
+```
+
+- Cursor fora do formato (índice inteiro de 0 a 999, `:` e um uid no padrão do `fanParam`): 400 `invalid_request` com `field: 'cursor'`. O `limit`, como em 27.2 (`field: 'limit'`).
+- Sem `blockLists/{uid}` (nunca bloqueou, ou a conta é só da equipe): `{ "items": [], "nextCursor": null }`.
+- Os uids repetidos ou fora do formato saem antes (o `blockedOf` de hoje).
+- O item nunca traz bio, redes, gênero, cidade, conta privada nem suspensão.
+
+#### `GET /fans/:fanId` (muda)
+
+As duas visões ganham `"blockedByMe": true | false`. O resto de 28.2 não muda: a visão fechada continua com o mesmo corpo nos três casos para o mesmo leitor.
+
+#### `DELETE /me/blocks/:fanId` (ganha tela)
+
+Sem mudança no servidor. O app passa a chamar (29.11).
+
+### 29.3 Coleções e campos
+
+```
+profileReportQueue/{uid} {               // um item por fã denunciado (decisão 1); o tipo é a coleção
+  uid: string                             // o fã denunciado (o mesmo do id)
+  reportCount: number                     // denúncias da rodada
+  reasons: { spam, offensive, harassment, other, none }   // da rodada
+  status: 'open' | 'resolved'
+  resolution: null | 'kept' | 'actioned' | 'withdrawn' | 'author_deleted'
+  round: number                           // a rodada: 1 ao criar, mais 1 a cada reabertura (decisão 3)
+  openedAt: Timestamp                     // começo da rodada, só para mostrar
+  firstReportedAt: Timestamp              // a primeira denúncia de todas
+  lastReportedAt: Timestamp               // a última (a ordem da fila)
+  resolvedAt: Timestamp | null
+  resolvedBy: { uid, name } | null        // null no withdrawn e no author_deleted
+  resolvedDigest: string | null           // o profileDigest na resolução; null aberto, no withdrawn e depois da exclusão do fã
+  schemaVersion: 1
+}
+```
+
+Sem `type`, `postId`, `commentId`, `artistId`, `commentText` nem `commentCreatedAt`. O `status` é o da `moderationQueue` (`open` ou `resolved`), e a resolução vai no `resolution`, como no item de comentário: as duas filas do painel têm a mesma forma e os mesmos índices (29.8). A `moderationQueue` e o item de comentário (21.3) não mudam.
+
+```
+profileReports/{targetUid}_{reporterUid} {   // uma por fã e alvo, regravada a cada rodada
+  targetUid: string
+  reporterUid: string
+  reason: 'spam' | 'offensive' | 'harassment' | 'other' | null
+  round: number                           // a rodada do item em que esta denúncia contou
+  reportedAt: Timestamp                   // só informação; a rodada é o round
+  day: string                             // o dia de São Paulo
+  schemaVersion: 1
+}
+```
+
+O `_` separa os dois uids sem ambiguidade (uid não tem `_`). Só o servidor lê e grava. O item de perfil não leva o `reporterUid`: a Moderação não mostra quem denunciou (26.19).
+
+`blockLists/{uid}` não muda.
+
+### 29.4 Transações passo a passo
+
+**`reportFan`**, na transação do `runIdempotent`, depois do `requireFan`:
+
+1. O próprio uid: `own_profile`, sem ler.
+2. Um `getAll`: `users/{fanId}`, `profileReports/{fanId}_{uid}` e `profileReportQueue/{fanId}`.
+3. Sem o perfil do alvo: `fan_not_found`.
+4. `already_reported`, com o plano sem entradas (marca o fã ativo do dia), em dois casos: o item aberto e a denúncia de quem pede com o mesmo `round` do item; ou o item resolvido, a denúncia de quem pede com o mesmo `round` do item (denunciou na rodada que a equipe resolveu) e o `profileDigest` do perfil de agora igual ao `resolvedDigest` (o perfil não mudou desde a resolução).
+5. `enforceDailyCap(fan, award, 'report')`.
+6. `planAwards` sem entradas (lê a carteira; todas as leituras antes das gravações).
+7. O item. Sem ele: `tx.create` com o `uid` do alvo, `reportCount: 1`, o motivo em `reasons`, `open`, `round: 1`, `resolvedDigest: null`, e `openedAt`, `firstReportedAt` e `lastReportedAt` iguais a agora. Aberto: `reportCount` e `reasons.<motivo>` mais 1 e o `lastReportedAt`. Resolvido (qualquer resolução): reabre com `status: 'open'`, `resolution`, `resolvedAt`, `resolvedBy` e `resolvedDigest` nulos, `round` mais 1, `reportCount: 1`, `reasons` só com o motivo, e `openedAt` e `lastReportedAt` de agora (o `firstReportedAt` fica). O `author_deleted` não reabre na prática: o alvo sem perfil dá 404 no passo 3.
+8. `tx.set` da denúncia, com o `round` do item depois do passo 7 e o `reportedAt` e o `day` de agora.
+9. `addEngagementCounts(plan, [{ kind: 'reports', artistIds: [] }])`: só o `totals.reports` dos agregados, sem central.
+10. `countDailyAction(plan, fan, award, 'report')`.
+
+**`readBlockedFans(db, uid, { cursor, limit })`**, fora de transação:
+
+1. Lê `blockLists/{uid}`; sem ele, a página vazia.
+2. `blockedPage(blockedOf(list), cursor, limit)`: sem cursor, `j` é o tamanho da lista; com cursor, `j` é o índice do uid dele na lista, ou, sem o uid, o índice guardado, limitado ao tamanho da lista. A página é `lista.slice(max(0, j - limit), j)` invertida (o mais novo primeiro); o próximo cursor é `<índice do último da página>:<uid>`, ou `null` quando a página chega ao índice 0.
+3. Um `getAll` dos perfis; o que não existe sai; cada item pelo `textOf` do nome, do @ e da foto.
+
+**`readFanPublicProfile`** (muda): o próprio fã, uma leitura, a completa e `blockedByMe: false`. Outro fã: um `getAll` de `users/{fanId}` e `blockLists/{uid}`; sem o perfil, `null` (404); `blockedByMe` é o alvo na lista de quem pede; privada ou suspensa, a fechada; senão, a lista do alvo decide, como hoje.
+
+**`resolveProfileReport`**: 29.6.
+
+### 29.5 Idempotência e tetos
+
+- Denunciar perfil: a chave da tentativa (`report-fan-<fanId>-<id>`), como a do comentário: a mesma depois de falha incerta, nova depois de recusa. A unicidade de negócio vem da denúncia da rodada.
+- Desbloquear: a chave da tentativa (`unblock-<fanId>-<id>`); quem não está na lista responde `blocked: false` sem gravar. Bloquear segue como hoje.
+- Tetos: `report` (30, comentário e perfil juntos) e `block` (30); desbloquear não tem teto. O `GET /me/blocks` e o `GET /fans/:fanId` só leem, sob o ritmo de 27.3.
+
+### 29.6 Callable do painel: `resolveProfileReport`
+
+O núcleo `resolveProfileReport(deps, caller, data)` fica em `moderation/profile-panel.ts`, exportado pelo `moderation/index.ts`; o `onCall({ cors: PANEL_ORIGINS })` fica em `functions/src/index.ts`. Contrato para o painel:
+
+- **Entrada:** `{ uid: string, resolution: 'kept' | 'actioned', round: number }`. O uid passa pelo `targetFanUid`: sem login, `unauthenticated`; fora do formato, `invalid-request` com `field: 'uid'`; o próprio, `self`. A `resolution` fora da lista: `invalid-request` com `field: 'resolution'`. O `round` que não é inteiro de 1 em diante: `invalid-request` com `field: 'round'`.
+- **Acesso:** `readPanelActor(..., 'moderation', 'edit')` direto e de novo na transação: `not-staff` e `no-section` (o Leitor não resolve).
+- **Transação:** lê `profileReportQueue/{uid}` e `users/{uid}`. Sem o item, ou resolvido com `withdrawn` ou `author_deleted`: `profile-not-reported`. O `round` diferente do do item: `stale-report` (o item reabriu depois que o card abriu). Já resolvido com a mesma resolução: `{ ok: true, resolution }`, sem gravar e sem auditar. Senão, `tx.update` com `status: 'resolved'`, `resolution`, `resolvedAt`, `resolvedBy` (`{ uid, name }` de quem resolveu) e `resolvedDigest` (o `profileDigest` do perfil lido; `null` sem ele) e, na mesma transação, a auditoria `fan.profile.report.resolved` com `details: { uid, resolution, reportCount, round }` (nunca texto do perfil nem o resumo). Trocar `kept` por `actioned`, ou o contrário, num item resolvido da mesma rodada vale: a equipe muda de ideia e fica nos Logs.
+- **Saída:** `{ ok: true, resolution }`.
+- A ação entra no `AuditAction`, no `SECTION_BY_ACTION` (`moderation`) e nas `ROWS` do `audit-index.test.ts`; o prefixo `fan.` já põe o alvo `fan:<uid>`.
+- Uma denúncia nova depois de resolvido reabre o item (29.4, passos 4 e 7), sem a callable.
+- Nunca lê nem grava a `moderationQueue`; o `moderateComment` e as ferramentas do fã nunca leem nem gravam a `profileReportQueue`.
+
+### 29.7 Efeitos no painel e o README de passagem
+
+**O painel publicado não muda e não quebra.** Ele só lê a `moderationQueue`, que continua só com comentários: o `QueueCard` (`components/moderacao/queue-card.tsx:60-65` do `imagineup-admin`) lê `posts/{postId}/postComments/{commentId}` e `posts/{postId}` de cada item, e um item sem `postId` faria o `doc()` lançar fora do que o `useLoad` captura, derrubando a Moderação, os resolvidos e a página do fã. Com a coleção separada (decisão 1), nenhum item de perfil chega lá, mesmo com a `api` pública (`invoker: 'public'`), o App Check desligado (`APP_CHECK_MODE = 'off'`) e o cadastro aberto, em que qualquer conta cria um item com um `POST /fans/<uid>/report`. O custo é de produto: até o painel ganhar a lista nova, a equipe não vê as denúncias de perfil (elas esperam na `profileReportQueue`, abertas). Por isso a lista nova no ar é condição para mandar às lojas (29.14, passo 7), e não para publicar as funções. O seed dos emuladores cria um item, para o painel conferir.
+
+O que o painel precisa (outra conversa, no `imagineup-admin`) vai em `C:/Users/User/Desktop/Projetos/painel-exigencias-lojas/README.md`, fora de repositório, no molde do `painel-perfil-novo/README.md` (objetivo, onde está o contrato, decisões, estado, regras de trabalho, emuladores, item por item, ordem, critério de pronto, ao terminar), escrito na etapa 6 de 29.13. Ele descreve a coleção, a lista, o card e a callable:
+
+1. O contrato de 29.3 (a `profileReportQueue`, com o `status` e a `resolution` na forma da `moderationQueue`) e o de 29.6.
+2. Pré-requisito: o README do perfil novo (`painel-perfil-novo/README.md`: a bio e as redes no `parseFanProfile`, o "Apagar bio e redes" com a `clearFanProfileText` no `moderation-api.ts` e os tetos novos). Sem ele, a equipe vê a denúncia de perfil sem a bio e as redes, que são o que mais se denuncia. Se ainda não estiver na `main`, os dois entram juntos.
+3. A leitura (`src/lib/moderation.ts`, ou um arquivo novo ao lado): os abertos (`status == 'open'`, por `lastReportedAt` decrescente) e os resolvidos (`status == 'resolved'`, por `resolvedAt` decrescente), com o "Carregar mais" pelo cursor, como a fila de comentários (os dois índices de 29.8). A `moderationQueue` e o `QueueCard` de comentário não mudam.
+4. A lista nova na Moderação, "Perfis denunciados", ao lado da fila de comentários (aba ou seção, a critério do painel), com a contagem dos abertos e o "o mais antigo há..." pelo `openedAt`.
+5. O card de perfil: lê `users/{uid}` (foto, nome, @, bio e redes, pelo `parseFanProfile`); mostra os motivos e a contagem da rodada, com o `openedAt` como início dela ("Desde", no lugar do "Primeira:" do `firstReportedAt`, que num item reaberto mostraria a primeira denúncia de todas ao lado da contagem só da rodada); tem "Manter" (`kept`), "Resolver" (`actioned`, com `ConfirmDialog`, que lembra de agir antes com as ferramentas do fã, porque o resumo do perfil é o da resolução) e "Abrir página do fã". Sem `users/{uid}` (o `author_deleted`, e o `kept` ou o `actioned` de quem excluiu a conta depois): "Conta excluída", sem ações e sem link.
+6. Rótulos das resoluções: `kept` "Mantido", `actioned` "Resolvido com ação", `withdrawn` "Denúncias retiradas" e `author_deleted` "Conta excluída".
+7. A página do fã lê `profileReportQueue/{uid}` pelo id e mostra o card de perfil junto com os itens de comentário dele (a consulta por `authorUid` da `moderationQueue` não muda).
+8. Logs: o rótulo de `fan.profile.report.resolved` ("Denúncia de perfil resolvida") e o `detailLines` com a resolução e a contagem.
+9. A callable no `moderation-api.ts`, com o `round` que o card leu, e os erros `profile-not-reported`, `stale-report` (o card lê o item de novo e avisa que a denúncia mudou), `invalid-request`, `self`, `no-section` e `not-staff`.
+10. Nada de ler `profileReports` (fechada) nem `blockLists`, e nada de escuta em tempo real (decisão de 07/10/2026). Tetos: nada novo (o `report` já tem o rótulo "Denúncias").
+11. Ordem: sem ordem obrigatória com o resto (29.14, passo 4). As regras e os índices chegam no passo 1, e a callable no passo 2, com o `allUsers`; o painel que entrar antes do passo 2 vê a lista vazia (nenhum item existe ainda) e não chama a callable. Antes de mandar às lojas, a lista precisa estar no ar.
+12. Emuladores: o seed traz a denúncia de perfil da Bia contra o Promo, aberta, para conferir a lista, o card, "Manter", "Resolver" e a página do Promo com os três itens de comentário e o de perfil.
+
+Agregados: a denúncia de perfil soma em `totals.reports`, sem central; a Visão geral já mostra o total.
+
+### 29.8 Regras e índices
+
+- **Firestore:** duas regras novas, ao lado das da Moderação. `match /profileReportQueue/{uid}`: `allow read: if canSeeSection('moderation')` (editora e leitora, e o admin) e `allow write: if false`, como a `moderationQueue`. `match /profileReports/{reportId}`: `allow read, write: if false`, fechada para todos, a equipe inclusive, como a `commentReports` desde 26.10 (guarda quem denunciou). A `moderationQueue` não muda. O teste de regras ganha os casos (29.12).
+- **Storage:** sem mudança.
+- **Índices:** dois compostos novos, na `profileReportQueue` (escopo da coleção): `status` com `lastReportedAt` decrescente (os abertos e o "Carregar mais") e `status` com `resolvedAt` decrescente (os resolvidos). A página do fã lê o item pelo id. Isenções novas: `reasons` (um mapa de contagens) e `resolvedDigest` (o resumo, que ninguém consulta). `profileReports` por `reporterUid` (a exclusão de conta) é igualdade num campo só (automático). O `fan-profile/indexes.test.ts` confere as duas formas. São 44 índices compostos com estes.
+- **Publicar:** o `rules:deploy` antes das funções, esperando os dois índices ficarem prontos no console (29.14, passo 1). Nada no ar depende deles até o painel ganhar a lista, mas a ordem deixa a coleção pronta antes do primeiro item.
+
+### 29.9 Exclusão de conta
+
+O `removeFanEngagement` (`posts/service.ts`) ganha dois passos, depois das denúncias de comentário e antes dos bloqueios, os dois só na `profileReportQueue` e na `profileReports` (os passos de antes, na `moderationQueue`, não mudam):
+
+- **As denúncias de perfil que o fã fez:** `profileReports` por `reporterUid`, em páginas de 100, cada uma numa transação que relê as denúncias e os itens. Cada uma sai. Se o item está aberto e a denúncia é da rodada (o mesmo `round`), o `reportCount` e o motivo perdem 1 (nunca abaixo de 0), e o item aberto que chega a 0 vai a `resolved` com `withdrawn`, sem `resolvedBy`. A denúncia de uma rodada antiga sai sem mexer no item.
+- **O item do próprio fã:** `profileReportQueue/{uid}`, numa transação: se aberto, vai a `resolved` com `author_deleted` e o `resolvedAt` de agora, sem `resolvedBy`; aberto ou resolvido, o `resolvedDigest` vira `null`. Sem o item, nada.
+- As denúncias contra ele ficam: são de quem denunciou, como as de comentário (21.12).
+
+O resultado do `removeFanEngagement` ganha `profileReports`. O `store.test.ts` não muda (a ordem do `deleteUserData` é a mesma). O texto da tela "Excluir conta" não muda. Publicar o `deleteUserProfile` (29.14).
+
+### 29.10 Seed dos emuladores e fixtures
+
+**Seed** (`moderation/seed.ts`, chamado pelo `scripts/seed-emulators.mjs` depois dos detalhes do perfil de 28.10):
+
+- A Camila bloqueia a conta `rank-13@teste.imagineup` (`SEED_BLOCKS`), uma pessoa genérica do ranking que não comenta no seed nem nas fixtures: a tela "Fãs bloqueados" tem uma linha, e o perfil dessa pessoa, aberto pelo ranking, mostra "Desbloquear". Troca bloquear o Promo, que sumiria com os comentários de spam das conferências da Moderação.
+- A Bia denuncia o perfil do Promo como spam (`SEED_PROFILE_REPORTS`): o item `profileReportQueue/<uid do Promo>` aberto, além dos três itens de comentário dele na `moderationQueue` (um oculto).
+- Pelo `runAsFan` com o `SEED_ACTOR` (o teto não conta). A denúncia só vai quando o item `profileReportQueue/<uid do Promo>` não existe: rodar de novo não muda nada, nem depois de um "Manter" ou "Resolver" no painel local (sem a trava, a Bia reabriria o item sempre que o perfil do Promo mudasse depois da resolução). O bloqueio já estando, fica. O script imprime "Moderação: a Camila bloqueou um fã do ranking, e a Bia denunciou o perfil do Promo.".
+- `moderation/seed.test.ts` (ou o arquivo de seed que já testa a moderação): o `rank-13` existe no `RANKING_SEED`, não está no `SEED_ENGAGEMENT`, e não é o suspenso; o `COMMENT_AUTHOR_ALIASES` é do app, e o teste das fixtures dele confere (etapa 3).
+
+**Fixtures do app:**
+
+- `fixtureBlocks` (`src/services/fixtures`): os ids bloqueados, em ordem de inclusão, começando com `fa-rank-13` (o mesmo do seed) e voltando a ele no `resetFixtureSession`. O `moderationFixture` (posts) e o `fanProfileFixture` (profile) leem e gravam por ele, com o id normalizado pelo `canonicalFanId` (novo em `profile/fan-fixtures.ts`, o `COMMENT_AUTHOR_ALIASES` aplicado; o `posts/fixtures.ts` importa pelo arquivo, nunca pelo index).
+- `moderationFixture`: `reportFan(fanId, reason, key)` (`already_reported` na segunda; o 404 do `fanProfileFixture` para `me`, uma central ou um id desconhecido), `block`, `unblock` e `blockedPage(cursor)` (páginas de 6, como as outras fixtures, com o nome, o @ e a foto do `buildFanProfileFixture`). O filtro dos comentários compara o id normalizado: bloquear `fa-rank-01` pelo ranking esconde os comentários de `fa-thalita`, e o contrário.
+- `fanProfileFixture` traz o `blockedByMe`.
+- `posts/__tests__/fixtures.test.ts` e `profile/__tests__/fan-fixtures.test.ts`: o `fa-rank-13` começa bloqueado, não comenta, e o bloqueio por um alias vale para o outro.
+
+### 29.11 App
+
+**Seletor, domínios e peças comuns**
+
+- Nenhum `DataDomain` novo. A denúncia de perfil, desbloquear e a lista leem `sourceOf('posts')`; o `blockedByMe`, `sourceOf('profile')`. Os dois domínios estão no `SERVER_DOMAINS` e andam sempre juntos (API ou fixtures). A ordem de publicação (funções antes do EAS Update) garante que o app novo nunca fala com uma `api` sem as rotas.
+- Domínios de composição novos: `fan-page` (`FanPageScreen` e `ReportFanSheetScreen`) e `settings` (`SettingsScreen`, movido de `profile/views/settings.tsx`, e `BlockedFansScreen`). O `explore` vira composição (importa `artists` e `agenda`). Os três importam só pelos index, e ninguém os importa.
+- `src/config/links.ts` (novo): `TERMS_URL`, `PRIVACY_URL` e `SUPPORT_EMAIL` (`music@imaginegroup.com.br`, o único e-mail do site, pergunta 1 da cliente). O `auth/consts.ts` passa a importar daqui. O `SUPPORT_EMAIL` é a fonte única: as frases que mostram o endereço usam `{{email}}`, preenchido por ele, e um teste confere que o `translations.json` não tem nenhum endereço de e-mail.
+- `src/services/web-page.ts` (novo): `openWebPage(url)` (o `openBrowserAsync` com as cores e o `catch` de hoje) e `openSupportEmail(subject)` (o `mailto:` com o assunto codificado, sem dado do fã; devolve se abriu). O `TermsNotice` e o `RewardsLegal` passam a usar o helper, na etapa 2, junto com ele.
+- `src/services/api/refusal.ts` (novo, puro): `actionRefusal(error, action)` devolve `{ type: 'suspended' | 'dailyLimit' | 'rateLimited' | null, key }`, com a chave da frase da ação (frentes E e F). Toda superfície escolhe a frase por ele, e não pelo kind e pelo code soltos.
+- `src/services/refusal-alert.ts` (novo): `showRefusalAlert(type, action)`, o único que abre os `Alert` "Conta suspensa" e "Limite de hoje", com a trava de 30 s por tipo e ação (o relógio injetado no teste).
+- `services/query/client.ts` passa a exportar `createQueryClient(overrides?)`, com o `shouldRetry`, o `retryDelay` e o `MutationCache`; o `queryClient` do app sai dela, e os testes que provam o `Alert`, o teto e o ritmo usam a mesma fábrica (os testes de navegação de hoje criam um `QueryClient` próprio, com `retry: false` e sem `MutationCache`, e não enxergariam nada disso).
+- `QUERY_CACHE_VERSION` não sobe: os campos novos (`blockedByMe`, `suspensionReason`) entram opcionais nos tipos.
+
+**Rotas**
+
+- `src/app/denunciar-perfil/[fanId].tsx` (`ReportFanSheetScreen`), declarada no `Stack.Protected guard={signedIn && onboarded}` depois de `comentario/[comentarioId]`, com as mesmas opções de `formSheet` (`fitToContents`).
+- `src/app/trocar-senha.tsx` e `src/app/trocar-email.tsx` (`ChangePasswordScreen` e `ChangeEmailScreen`, do `auth`), no mesmo `Stack.Protected`, depois de `editar-perfil`, com push padrão.
+- `src/app/(tabs)/(perfil)/fas-bloqueados.tsx` (`BlockedFansScreen`), na pilha do Perfil, com a tab bar (lista, sem teclado).
+- `src/app/fa/[fanId].tsx` passa a exportar o `FanPageScreen`; `src/app/(tabs)/(perfil)/ajustes.tsx`, o `SettingsScreen` do `settings`.
+- Rotas tipadas geradas de novo (`npx expo customize tsconfig.json`) antes de cada `npm run check`. Rota que não está num `Stack.Screen` fica fora do guard, e nenhum teste carrega o `_layout` de verdade: a revisão confere, e a cópia do `guards.test.tsx` ganha as rotas novas.
+
+**Frente A: perfil público (`FanPageScreen`, `fan-page/views/fan-page.tsx`)**
+
+- O `FanProfileScreen` do `profile` ganha a prop `actions?: (profile: FanPublicProfile) => ReactNode`, desenhada depois da bio e das redes (ou do bloco "Perfil fechado"), só com o perfil carregado. O `FanPageScreen` é ele com as ações do `FanModerationActions`.
+- As ações somem no próprio perfil (`fanId` igual ao uid da sessão), carregando, no 404 e no erro. São iguais nas visões completa e fechada (o bloqueado não fica sabendo).
+- Um bloco com a sobrelinha "Segurança" e dois botões irmãos, um embaixo do outro, nunca dentro de outro pressável: "Denunciar perfil" (`Button` `secondary`, ícone `Flag`, dica "Abre os motivos da denúncia") e "Bloquear" (`Button` `ghost`, ícone `Ban`, rótulo "Bloquear {{name}}", dica "Pede confirmação antes de bloquear") ou, com `blockedByMe`, "Desbloquear" (rótulo "Desbloquear {{name}}"). Desligados sem internet e com um pedido indo (`loading` no tocado).
+- "Bloquear": `Alert.alert` com o título "Bloquear {{name}}?", a mensagem "Os comentários de {{name}} somem para você, em todos os posts. {{name}} não fica sabendo. A equipe só fica sabendo se você denunciar." e os botões "Cancelar" (`cancel`), "Bloquear" (`destructive`) e "Bloquear e denunciar". Confirmado, a mutação. Sucesso: o botão vira "Desbloquear", anuncia "Você bloqueou {{name}}. Os comentários somem para você." e toca `success`; com "Bloquear e denunciar", em seguida abre `/denunciar-perfil/[fanId]` (a sheet anuncia o título dela). O bloqueio que falha não abre a sheet.
+- "Desbloquear" sai direto. Sucesso: volta a "Bloquear", anuncia "Você desbloqueou {{name}}." e toca `success`.
+- Erro: o aviso embaixo dos botões, anunciado, com o toque `error`, escolhido pelo `actionRefusal`: o teto ("Você chegou ao limite de bloqueios de hoje. Tente amanhã."), o ritmo ("Muitos pedidos seguidos. Espere alguns segundos e tente de novo."), o 404 ("Este fã não está mais no ImagineUP.") e o genérico ("Não deu para bloquear. Tente de novo." ou "Não deu para desbloquear. Tente de novo."). Bloquear e desbloquear são livres para o suspenso.
+- Sheet "Opções do comentário" (`comment-options-sheet.tsx`, decisão 13): o bloqueio que dá certo não fecha mais a sheet. O botão "Bloquear {{name}}" dá lugar a "Você bloqueou {{name}}. A equipe só fica sabendo se você denunciar o comentário.", anunciado, e "Denunciar comentário" continua ali, com o motivo escolhido; o "×" fecha. O comentário fica na sheet porque o `useCachedComment` lê na abertura (o bloqueio tira o comentário do cache da lista). A altura muda pouco: a frase ocupa o lugar do botão.
+- O nome nas frases: o `displayName`; sem ele, "@{{username}}"; sem os dois, "este fã".
+
+**Frente A: sheet "Denunciar perfil" (`ReportFanSheetScreen`, `/denunciar-perfil/[fanId]`)**
+
+- No visual da "Opções do comentário": título "Denunciar {{name}}" com o "×"; o texto "A equipe do ImagineUP analisa a foto, o nome, o @, a bio e as redes. O motivo é opcional."; os motivos na `ChipGroup` de escolha única, com os rótulos de hoje (`post.moderation.reasons`: "Sem motivo", "Spam", "Ofensivo", "Assédio" e "Outro"; "Sem motivo" manda `null`); "Enviar denúncia" (`primary`).
+- O perfil vem do cache (`fanKeys.profile(fanId)`) pelo `useCachedFanProfile(fanId)` do `profile`, lido na abertura (o conteúdo é fixo, para a altura não mudar); aberta a frio, sem ele, a sheet fecha. A view não lê o cache direto.
+- O botão fica desligado sem internet e enquanto vai; o voltar fica preso (`useStayOnScreen`).
+- Sucesso (os dois status): fecha, anuncia "Denúncia enviada. A equipe vai analisar." e toca `success`; a resposta que chega com a sheet fechada só anuncia.
+- Erro: fica, com o aviso acima do botão, anunciado, e o toque `error`, pelo `actionRefusal`: o suspenso ("Sua conta está suspensa. Fale com a equipe do ImagineUP.", com o link irmão "Escrever para a equipe"), o teto ("Você chegou ao limite de denúncias de hoje. Tente amanhã."), o ritmo, o 404 ("Este fã não está mais no ImagineUP.") e o genérico ("Não deu para enviar a denúncia. Tente de novo.").
+- `useReportFanMutation`: `networkMode: 'always'`, `retry: false`, `meta: { suspendedAlert: false }`, fora da fila, a chave da tentativa (29.5).
+
+**Frente A: mutações e cache (`posts/queries.ts`)**
+
+- `moderationKeys` em `posts/keys.ts`: `all: ['moderation']` e `blocked()`, fora do `postKeys` (invalidar os posts não busca a lista).
+- `useBlockFanMutation` (a de hoje) e `useUnblockFanMutation`, com `networkMode: 'always'`, `retry: false` e a chave da tentativa. No sucesso: o `fanKeys.profile(fanId)` recebe o `blockedByMe` novo e é invalidado; bloquear zera a lista (`resetQueries` de `moderationKeys.blocked()`: volta à primeira página, em vez de buscar de novo cada página já carregada, até 50 de 21 leituras com 1.000 bloqueios), e desbloquear tira o fã das páginas carregadas sem buscar de novo (sem a linha dele nelas, zera a lista como o bloqueio); bloquear tira os comentários do autor (`removeAuthorComments`), e os dois invalidam as listas de comentários (`holdsCommentLists`).
+- As frases das sheets, do perfil e da lista saem do `actionRefusal` (frentes E e F).
+
+**Frente B: "Fãs bloqueados" (`BlockedFansScreen`, `/fas-bloqueados`)**
+
+- `LargeTitleHeader` "Fãs bloqueados" com o voltar, `useTabBarInset`, e uma FlashList pelo `useBlockedFansInfiniteQuery` (`queryOptionsFor('posts')`, chave `moderationKeys.blocked()`, com `meta: { ...meta, persist: false }`: a lista traz nome, @ e foto de outros fãs e fica fora do disco, como o perfil público de outro fã no `useFanProfileQuery`).
+- Embaixo do título: "Os comentários de quem está aqui não aparecem para você. Ninguém fica sabendo do bloqueio."
+- Cada linha: o `Avatar`, o nome ("Fã" sem nome) e o @ num `View` acessível (rótulo "{{name}}, @{{username}}"), e o botão irmão "Desbloquear" (`Button` `secondary` `sm`, rótulo "Desbloquear {{name}}"). A linha não abre o perfil.
+- Desbloquear: o botão com `loading`. Sucesso: a linha sai, anuncia "Você desbloqueou {{name}}." e toca `success`. Erro, embaixo da linha, anunciado, pelo `actionRefusal` (o mesmo do perfil público): o ritmo ou "Não deu para desbloquear. Tente de novo.".
+- Vazio: `EmptyState` "Você não bloqueou ninguém." com "Para bloquear, abra o perfil de um fã ou as opções de um comentário.". Erro: `EmptyState tone="error"` "Não deu para carregar a lista." com "Tentar de novo". A página seguinte que falha: "Não deu para carregar mais." no pé, com "Tentar de novo", que busca só ela (como o extrato). Carregando: o esqueleto de linhas.
+- Anúncios só com a tela em foco (`focused && isError && !isFetching`).
+
+**Frente C: Ajustes (`SettingsScreen`, `settings/views/settings.tsx`)**
+
+De cima para baixo:
+
+- O aviso de conta suspensa (frente E), só com a suspensão.
+- **Perfil:** "Editar perfil" (como hoje).
+- **Segurança:** "Fãs bloqueados" (ícone `Ban`, meta "Veja e desbloqueie", dica "Abre a lista de fãs bloqueados"). A mesma palavra do bloco do perfil público, onde o fã leigo já viu o assunto.
+- **Conta:** "Trocar e-mail" (ícone `Mail`, meta "Manda um link para o e-mail novo", dica "Abre a troca de e-mail"; o e-mail de agora já aparece no "Entrou como {{email}}" do "Sair") e "Trocar senha" (ícone `KeyRound`, meta "Pede a senha atual", dica "Abre a troca de senha"), as duas só para a conta com o provedor de senha e com o Firebase configurado (`isFirebaseConfigured`); depois, "Sair" e "Excluir conta", como hoje. O provedor vem da sessão: o `toSessionUser` (`auth/api.ts`) ganha `hasPassword?: boolean` (`password` no `providerData`) no `SessionUser`, opcional para os `setState({ user })` dos testes de hoje; a view do `settings` lê do `useSessionStore` e nunca chama o Firebase. Sem o campo, as duas linhas não aparecem.
+- **Sobre:** "Política de privacidade" (`Shield`) e "Termos de uso" (`FileText`), com o `ExternalLink` à direita e a dica "Abre a página no navegador"; "Regulamento das recompensas" (`ScrollText`, a mesma dica), só com o `rulesUrl` (decisão 16); "Fale com a equipe" (`Mail`, meta o `SUPPORT_EMAIL`, sem chave de texto, dica "Abre o seu app de e-mail"); e "Versão do app" (`Info`), sem toque, com a meta "Versão 0.1.0" ou, num EAS Update, "Versão 0.1.0, atualização de 13 out (a1b2c3d4)" (a data pelo `@/utils/date`, o id com 8 caracteres).
+- O contato que não abre: "Não deu para abrir o e-mail. Escreva para {{email}}." embaixo da lista, com o texto selecionável, anunciado.
+- Cada linha com toque é um `ListRow` pressável, sem nada tocável dentro; a da versão é um `View` acessível, com o rótulo "Versão do app, 0.1.0".
+- `useRewardsRulesUrl` (novo no `rewards`, exportado): `useQuery` com as opções da loja, `enabled: false` e `select: (data) => data.rulesUrl`: só o cache, sem buscar (decisão 16); sem cache, com erro ou `null`, a linha não aparece.
+- "Sair": o `useSignOut` do `auth` passa a limpar o e-mail guardado para o login (`clearHandedOffEmail`, frente D) antes do `signOut`.
+- `appVersionInfo` (`settings/version.ts`, puro, com os valores injetados no teste): a versão do `Constants.expoConfig`, e a data e o id do update só fora do `isEmbeddedLaunch`.
+
+**Frente D: "Trocar senha" (`ChangePasswordScreen`, `auth/views/change-password.tsx`)**
+
+- `LargeTitleHeader` "Trocar senha" com o voltar (aberta a frio, o voltar vai ao início pelo `goBack` do `BackButton`), `bottomInset={insets.bottom}`.
+- Texto: "Digite a senha atual e a nova. Nos outros aparelhos, você sai da conta em até 1 hora."
+- Campos (`PasswordField`): "Senha atual" e "Nova senha" (placeholder "Pelo menos 6 caracteres"). Schema: a atual não vazia (`reauthSchema`: conta antiga pode ter senha mais curta que a regra de hoje); a nova com `PASSWORD_MIN_LENGTH` e diferente da atual ("A senha nova precisa ser diferente da atual.").
+- "Trocar senha" (`primary`): desligado sem internet, sem o Firebase configurado e enquanto vai; a tela presa enquanto vai (`useStayOnScreen`).
+- "Esqueci minha senha" (`TextLink`): o `sendPasswordReset` com o e-mail da sessão; depois, "Se existir uma conta com esse e-mail, enviamos um link para criar uma senha nova." (o `auth.signIn.resetSent`).
+- `changePassword(current, next)` em `auth/api.ts`: espera o `authStateReady`; sem `currentUser` ou sem e-mail, `SessionEndedError`; o `reauthenticateWithCredential` com `EmailAuthProvider.credential` e o `updatePassword`. O SDK renova o token deste aparelho, e a sessão continua.
+- Sucesso: anuncia "Senha trocada.", toca `success` e volta.
+- Falhas (`changePasswordFailure`, no molde do `deleteAccountFailure`): `auth/invalid-credential` e `auth/wrong-password`, "Senha incorreta." no campo da atual; `auth/weak-password` e `auth/password-does-not-meet-requirements`, "Escolha uma senha mais forte." no campo da nova; `auth/too-many-requests`, "Muitas tentativas. Espere um pouco e tente de novo."; `auth/network-request-failed`, "Sem conexão. Confira a internet e tente de novo."; `auth/user-token-expired`, `auth/user-not-found` e `auth/user-disabled`, "Sua sessão terminou. Entre de novo." e o `signOut()`; o resto, "Não deu para trocar a senha. Tente de novo.".
+
+**Frente D: "Trocar e-mail" (`ChangeEmailScreen`, `auth/views/change-email.tsx`)**
+
+- O mesmo molde. Texto: "Hoje sua conta usa {{email}}. Mandamos um link para o e-mail novo, e a troca só vale quando você abrir o link."
+- Campos: "Novo e-mail" (o `emailField`, que normaliza antes de validar) e "Senha atual". O e-mail novo igual ao de agora, depois de normalizar: "Este já é o e-mail da sua conta."
+- "Mandar o link" (`primary`). `requestEmailChange(current, newEmail)` em `auth/api.ts`: reautentica e chama `verifyBeforeUpdateEmail(user, newEmail)` sem `actionCodeSettings` (o link abre o tratador padrão do Firebase; os e-mails saem em pt-BR pelo `languageCode` de `src/firebase/auth.ts`).
+- Enviado: a tela troca o formulário por "Mandamos o link para {{email}}. Depois de abrir o link, o app pede para você entrar de novo com o e-mail novo. Pode levar até 1 hora." e "O e-mail de agora recebe um aviso com um link para desfazer a troca.", com "Voltar aos ajustes" (`secondary`); anuncia "Link enviado para {{email}}.". O `handOffEmail` guarda o e-mail novo em memória para o login, se a sessão cair sozinha com o app aberto; o "Sair" de dentro do app limpa (frente C), porque, antes de o fã abrir o link, o e-mail novo ainda não entra.
+- Até a sessão cair, o "Entrou como" mostra o e-mail antigo: o `onAuthStateChanged` não dispara com a troca. Quando o fã abre o link, o Firebase revoga as sessões; este aparelho sai quando o SDK renova o token (em até 1 hora) ou recarrega o usuário, e o app volta à entrada. Não há 401 antes disso: a `api` aceita o token antigo até ele vencer (decisão 18).
+- Falhas: as da senha e da sessão, como acima; `auth/email-already-in-use`, "Este e-mail já tem uma conta no ImagineUP."; `auth/invalid-new-email`, `auth/invalid-email` e `auth/missing-new-email`, "Digite um e-mail válido."; `auth/operation-not-allowed`, "Não deu para trocar o e-mail agora. Fale com a equipe do ImagineUP."; o resto, "Não deu para mandar o link. Tente de novo.". Com a proteção contra enumeração ligada, o e-mail que já tem conta pode não dar erro aqui e só falhar ao abrir o link: a etapa 4 confere no emulador do Auth e registra o que viu na seção de diferenças do código.
+- Limites aceitos, sem código: (1) convite: o `ownerKey` do código do fã fica com o e-mail antigo, então o autoconvite pelo apelido do e-mail novo deixa de ser pego, e a visita da mesma conta a quem a convidou paga de novo uma vez, com a chave nova; os dois cabem nos tetos (20 visitas mandadas e 50 pagas por dia) e custam um e-mail confirmado, como o "e-mail diferente paga de novo" de 20.6. (2) Equipe: a conta que é fã e da equipe fica com o `staff/{uid}.email` antigo (a lista da Equipe e o `createStaffInvite`), e o login do painel usa o e-mail novo. (3) Suspensão: o suspenso troca senha e e-mail (é só o Auth, 26.6). (4) Sessão: depois de trocar a senha ou de abrir o link, quem tem a sessão antiga ainda grava na `api` por até 1 hora, o resgate inclusive (decisão 18, pergunta 7).
+
+**Frente E: suspensão**
+
+- `toFanProfile` mapeia `suspensionReason` (só os quatro motivos; o resto vira `null`), opcional no `FanProfile`.
+- `useSuspension()` (`profile`, exportado): `{ suspended, reason }` do `useMyProfileQuery`.
+- `src/stores/suspension.ts` (novo, Zustand, fora do disco): o contador `refusals` e o `noteRefusal(alert)`. O `MutationCache` da `createQueryClient` tem um `onError` que, no 403 `account_suspended` (`isAccountSuspended(error)`, novo em `services/api/errors.ts`), chama o `noteRefusal(alert)`, com `alert` falso na mutação com `meta: { suspendedAlert: false }`. Zera no fim da sessão, pelo `use-auth-listener.ts` (o mesmo ponto que limpa o cache).
+- Um canal por recusa (decisão 19). Levam `meta: { suspendedAlert: false }`, porque a tela delas mostra a frase: o comentário (o hook e a default da fila), a denúncia de comentário, a denúncia de perfil, o resgate, a edição do perfil, a foto e o registro do link do convite. Ficam com o `Alert`: curtir, "Eu vou" e entrar na central (as defaults da fila) e seguir na 1l.
+- `SuspensionWatcher` (`profile`, exportado, montado no `AppProviders`, dentro do provedor do Query; nenhum teste carrega o `_layout.tsx` de verdade, e o `suspension.test.tsx` renderiza o mesmo componente na árvore dele, com o cliente da `createQueryClient`): a cada `noteRefusal`, invalida o perfil (`profileKeys.me(uid)`, para o aviso fixo aparecer) e, com `alert`, chama o `showRefusalAlert('suspended', ...)`: o `Alert.alert` "Conta suspensa" com "A equipe do ImagineUP suspendeu sua conta. Você continua vendo o app, mas não pode curtir, comentar, confirmar presença, entrar em centrais, resgatar, denunciar nem mudar o perfil. Para entender ou pedir revisão, escreva para {{email}}." e os botões "Escrever para a equipe" (o `openSupportEmail` com o assunto "Conta suspensa no ImagineUP") e "Entendi", no máximo um a cada 30 s.
+- `SuspendedNotice` (`profile`, exportado): um `Card` no topo da 1b, da 1e e dos Ajustes, só com a suspensão: ícone `ShieldAlert`, "Sua conta está suspensa" (papel de cabeçalho), "Você continua vendo o app, mas não pode curtir, comentar, confirmar presença, entrar em centrais, resgatar, denunciar nem mudar o perfil.", "Motivo: {{reason}}." (os textos próprios de `suspension.reasons`: "envio de spam", "conteúdo ofensivo" e "assédio"; o `SUSPENSION_REASONS` do servidor é o `REPORT_REASONS`, e os rótulos da denúncia dariam "Motivo: Ofensivo."; com `other` ou sem motivo, a linha some) e o link irmão "Escrever para a equipe". O card não é pressável.
+- A frase própria nas telas que mostram texto de erro, sempre com o link irmão "Escrever para a equipe" (`TextLink`, o `openSupportEmail`), e sem o `Alert`:
+  - compositor de comentário: com a suspensão, o campo dá lugar a "Sua conta está suspensa. Você não pode comentar."; a recusa que chegar mesmo assim (perfil ainda sem o campo) volta o texto ao campo e mostra a frase;
+  - sheet do comentário (denunciar) e sheet da denúncia de perfil: "Sua conta está suspensa. Fale com a equipe do ImagineUP.";
+  - resgate: o 403 vira o estado `suspended` do `describe-reward.ts`, com "Sua conta está suspensa. Você não pode resgatar.", definitivo;
+  - sheet do convite: sem código e suspenso, "Sua conta está suspensa. O link sai sem os pontos.", sem "Tentar de novo"; o `retry: 2` numérico da mutação que registra o link (`useRegisterInviteLinkMutation`, `profile/queries.ts:181`) sai, para valer o global;
+  - edição do perfil e foto: a frase de hoje, que passa a `suspension.short` ("Sua conta está suspensa. Fale com a equipe do ImagineUP."), no lugar do `editProfile.info.suspended`, e ganha o link.
+- Limite aceito: o comentário feito offline antes da suspensão e restaurado do disco, recusado com o compositor fora da tela, fica "Não enviado" sem `Alert`; o aviso fixo da 1b explica.
+- Onboarding: o 403 `account_suspended` do `POST /me/artists` conclui o onboarding sem seguir (o `useFinishOnboarding` segue como no sucesso, sem pontos), e o `SuspensionWatcher` explica. Antes, a 1l prendia o suspenso num aparelho novo.
+- Fixtures: as ações das fixtures não imitam a recusa; o aviso fixo aparece pelo perfil de verdade mesmo assim. Diferença aceita, só no Expo Go sem API. O aviso e o `Alert` não dependem de `sourceOf`.
+
+**Frente F: o 429**
+
+- `ApiError` (`services/api/errors.ts`): o `kind` ganha `rateLimited` e `dailyLimit`; o construtor ganha o 6º parâmetro `retryAfterMs` (padrão `null`); os getters `isRateLimited` e `isDailyLimit`; o `API_ERROR_CODES` ganha `accountSuspended`, `rateLimited` e `tooManyRequests`. O `toApiError` lê `error.response.headers['retry-after']` (segundos inteiros; outro formato vira `null`) e classifica o 429 pelo `code`: `too_many_requests` é `dailyLimit`; `rate_limited` e o 429 sem código (a cota do Cloud Run, sem corpo JSON) são `rateLimited`. O `isRetryable` não muda.
+- `services/query/client.ts`, na `createQueryClient`: `shouldRetry(failureCount, error)`: `rateLimited` até 3 tentativas a mais; `isRetryable` até 2; o resto, nenhuma. `retryDelay(failureCount, error)`: no `rateLimited` e no 5xx com `Retry-After`, o `retryAfterMs` entre 1 e 10 s (sem ele, 1 s, 2 s e 4 s); senão, o padrão do TanStack (1 s dobrando até 30 s). Valem nas consultas e nas mutações do padrão. As mutações com `retry: false` (o fã espera: resgatar, salvar o perfil, a foto, seguir na 1l, sair da central, denunciar, bloquear e desbloquear) seguem sem repetir e mostram a frase do ritmo.
+- A fila: curtir, comentar, "Eu vou" e entrar na central já usam o padrão, então o ritmo repete com a mesma chave (nada foi gravado). O comentário que esgota as tentativas no ritmo fica "Não enviado", como a falha incerta (o toque repete com a mesma chave), e não volta ao campo: o `onError` e o `retry` do `useAddCommentMutation` trocam o `isUncertain` pelo `keepsAttempt` (decisão 20); sem isso, o código de hoje devolveria o texto ao campo e geraria chave nova. O teto do dia nunca repete.
+- As defaults da fila desfazem o otimista na recusa que não é incerta (o teto do dia, o suspenso, o ritmo depois das tentativas): a curtida invalida `postKeys.detail(postId)` e o "Eu vou" invalida `agendaKeys.rsvps()`, como o `refreshAfterJoinFailed` já faz na entrada (`artists/queries.ts:273`). Hoje elas só tratam o 404, e a mutação restaurada do disco deixava o coração aceso e o "Eu vou" marcado, com o cache do disco.
+- Frases do teto do dia, escolhidas pela superfície (nunca pelo `details.action`):
+  - curtir: "Você chegou ao limite de curtidas de hoje. Tente amanhã."
+  - comentar: "Você chegou ao limite de comentários de hoje. Tente amanhã."
+  - "Eu vou": "Você chegou ao limite de presenças de hoje. Tente amanhã."
+  - entrar na central: "Você chegou ao limite de entradas em centrais de hoje. Tente amanhã."
+  - denunciar (comentário e perfil): "Você chegou ao limite de denúncias de hoje. Tente amanhã."
+  - bloquear: "Você chegou ao limite de bloqueios de hoje. Tente amanhã."
+  - resgate, perfil, nome e foto: as frases de hoje.
+- Onde aparecem: curtir, "Eu vou" e entrar, que não têm texto na tela, abrem o `Alert.alert` "Limite de hoje" com a frase e "Entendi", pelo `showRefusalAlert('dailyLimit', action)`, no máximo um a cada 30 s por ação (no `onError` do hook e no da default da fila, que é o que roda na mutação restaurada do disco; sem a trava, a fila que volta com dez curtidas no teto empilharia dez `Alert`). Quando o `Alert` abre (teto ou suspenso), o hook não anuncia nada, nem o erro genérico de hoje (`post.likeError`, `agenda.rsvp.error`, `artist.join.error`). Quando a trava de 30 s segura o `Alert`, o hook anuncia a frase da recusa (a do teto, ou `suspension.short`), pelo `alertActionRefusal` de `services/refusal-alert.ts`: sem isso, a segunda recusa ficava calada, e o leitor de tela, só com o anúncio otimista do toque ("Presença confirmada", "Você entrou na central de..."). As defaults da fila não anunciam: a fila que volta com dez recusas diria dez vezes a mesma frase. O comentário mostra a frase embaixo do compositor, anunciada; as sheets, a 1l (`choose-artists.tsx`, hoje fixo no `saveError`) e a sheet de sair da central (`leave-central-sheet.tsx`), no aviso delas.
+- A frase do ritmo, onde a tela mostra erro: "Muitos pedidos seguidos. Espere alguns segundos e tente de novo." (a mesma do servidor). Em curtir, "Eu vou" e entrar, o ritmo que esgota as tentativas troca o anúncio genérico pela frase do ritmo, sem `Alert`. Nas consultas, cada tela continua com o erro dela, depois das tentativas.
+- Limites que ficam: a mutação esperando a próxima tentativa não é `isPaused` e não vai para o disco, então o app fechado nesse intervalo perde a ação, como hoje perde a que está em voo; e o "Não enviado" não volta com o app reaberto (21.13).
+
+**Frente G: Explorar (`ExploreScreen`, `explore/views/explore.tsx`)**
+
+- `LargeTitleHeader` "Explorar", sem voltar; `useTabBarInset`; uma FlashList de duas colunas (o truque `HALF_GAP` da 1l) com o cabeçalho e as centrais como itens, com `keyboardShouldPersistTaps="handled"` e `keyboardDismissMode="on-drag"`, como a sheet de todos os artistas (`all-artists-sheet.tsx:117-118`). A busca fica dentro da aba, com a tab bar por cima da grade enquanto o fã digita: é o precedente do `excluir-conta`, que tem campo de senha na pilha do Perfil, e a etapa 6 confere a busca com o teclado no Android.
+- Cabeçalho, de cima para baixo: a busca (`TextInput` `glass`, ícone `Search`, placeholder "Buscar artista", rótulo "Buscar artista pelo nome"; local, pelo `filterArtists`); "Próximos shows" (`SectionHeader` com o link "Ver agenda", dica "Abre a agenda completa", que faz `router.push('/agenda')` dentro da Explorar), com o destaque (`EventHeroCard`, de `pages[0].featured`, só com `isUpcoming`; o `onInvite` obrigatório dele, o "Chamar amigos +N", faz `router.push({ pathname: '/convidar', params: { eventId } })`, como o `openInvite` da 1m) e até três `EventRow` dos próximos shows sem o destaque, com o `RsvpButton`; e a sobrelinha "Todas as centrais". Sem destaque e com shows, só as linhas. Com a busca preenchida, os shows somem e fica só a grade.
+- Item: `CentralTile` (novo em `artists`, exportado): o `PhotoCard` pressável com a foto (o `RemoteImage` com `fallback brand`), o nome, "N fãs" (`fansText`) e, nas centrais do fã, a pílula "Na central". Um alvo só, com o rótulo do `artistCardLabel` (e ", você está na central") e a dica "Abre a central"; `router.push({ pathname: '/artista/[artistaId]', params: { artistaId } })`, que abre na pilha da Explorar. Nada pressável dentro. O número das centrais do fã vem do `/me/centrals` (o corrigido, que soma o próprio fã); o resto, do `/artists`.
+- Dados: `useArtistsQuery` com o `sortByOrder`, `useFanCentralsQuery` para a marca, `useAgendaQuery` (a primeira página, o mesmo cache da 1m: o "Eu vou" fica igual nas duas telas) e `useMyRsvpsQuery`. `sortByOrder`, `filterArtists`, `fansText`, `artistCardLabel` e o `ArtistGridSkeleton` saem do `onboarding` para o `artists` (exportados), e o `onboarding` importa de lá. O esqueleto ganha a prop `count` (a 1l passa o `FEATURED_COUNT`): hoje ele importa o `FEATURED_COUNT` de `onboarding/consts` (`artist-grid-skeleton.tsx:8`), e movido sem a prop criaria o import `artists` para `onboarding`, que fecha ciclo. O `agenda` passa a exportar o `EventHeroCard` e o `isUpcoming`.
+- Estados: carregando, o esqueleto da grade e do destaque; nenhuma central publicada, "Nenhuma central no ar por enquanto." (estado vazio, não erro: o `useArtistsLoad` da 1l trata o vazio como erro e não serve aqui); a busca sem resultado, "Nenhum artista com “{{query}}”."; erro das centrais, `EmptyState tone="error"` "Não deu para carregar as centrais." com "Tentar de novo"; nenhum show, "Nenhum show marcado por enquanto." no lugar do destaque e das linhas, só quando a primeira página não tem nenhum show com `isUpcoming` (o destaque incluído); erro dos shows, "Não deu para carregar os shows." com "Tentar de novo", sem derrubar a grade.
+- Puxar para atualizar: artistas, centrais do fã, agenda e presenças, com o `RefreshControl` da 1b (`colors.accent`).
+- Anúncios só com a tela em foco: a raiz da aba fica montada embaixo da agenda e do artista, também no link frio de `/agenda`.
+- Saem: o `Placeholder` (`src/components/placeholder`), o `common.comingSoon` e o `explore.agenda`, sem outro uso. O card "+" (`JoinCentralCard`) e o "Explorar artistas" do Perfil seguem com `navigate('/explorar')` e passam a cair na vitrine.
+
+**Textos (`translations.json`)**
+
+Os textos exatos estão nas telas acima. As chaves:
+
+- `fanPage`: `security`, `report`, `reportHint`, `block`, `blockLabel`, `blockHint`, `unblock`, `unblockLabel`, `thisFan`, `blockTitle`, `blockMessage`, `blockConfirm`, `blockAndReport` ("Bloquear e denunciar"), `cancel`, `blocked`, `unblocked`, `blockError`, `unblockError`; `fanPage.reportSheet`: `title`, `body`, `submit`, `sent`, `error`.
+- `post.moderation.blockedReportInvite` ("Você bloqueou {{name}}. A equipe só fica sabendo se você denunciar o comentário.").
+- `blockedFans`: `title`, `intro`, `rowLabel`, `unblock`, `unblockLabel`, `unblocked`, `unblockError`, `empty`, `emptyText`, `loadError`, `moreError`, `loading`.
+- `settings`: `security` ("Segurança"), `blockedFans`, `blockedFansMeta`, `blockedFansHint`, `changeEmail`, `changeEmailMeta`, `changeEmailHint`, `changePassword`, `changePasswordMeta`, `changePasswordHint`, `about` ("Sobre"), `privacy`, `terms`, `rules`, `pageHint`, `contact`, `contactHint`, `contactError` (com `{{email}}`), `version`, `versionMeta`, `versionMetaUpdate`, `versionLabel`. A meta do contato é o `SUPPORT_EMAIL`, sem chave.
+- `changePassword` e `changeEmail`: título, texto, campos, botão, sucesso e as falhas; as que já existem em `auth.errors` e `deleteAccount.errors` são reaproveitadas quando o texto é o mesmo.
+- `suspension`: `short`, `title`, `text`, `reason`, `reasons.spam` ("envio de spam"), `reasons.offensive` ("conteúdo ofensivo"), `reasons.harassment` ("assédio"), `contact`, `alertTitle`, `alertMessage` (com `{{email}}`), `alertOk`, `comment`, `redeem`, `invite`, `mailSubject`. Sem `reasons.other`: com `other`, a linha do motivo some.
+- Nenhuma chave escreve o e-mail de contato: as que o mostram usam `{{email}}`, preenchido pelo `SUPPORT_EMAIL`.
+- `errors`: `rateLimited`, `dailyLimitTitle` ("Limite de hoje"), `dailyLimit.like`, `dailyLimit.comment`, `dailyLimit.rsvp`, `dailyLimit.join`, `dailyLimit.report`, `dailyLimit.block`, `ok` ("Entendi").
+- `explore`: `searchPlaceholder`, `searchLabel`, `shows`, `seeAgenda`, `seeAgendaHint`, `showsEmpty`, `showsError`, `centrals`, `member`, `memberLabel`, `tileHint`, `centralsEmpty`, `centralsError`, `searchEmpty`, `loading`.
+- Saem `explore.agenda`, `common.comingSoon` e `editProfile.info.suspended` (vira `suspension.short`).
+- Nenhum texto com travessão nem meia-risca, e frases curtas. As seções usam a `SectionLabel` que os Ajustes e o perfil público já usam.
+
+### 29.12 Testes
+
+**Funções, puros (vitest, relógio fixo):**
+
+- `moderation/model.test.ts`: `profileReportId` (o `_` separa os dois uids sem ambiguidade); `parseBlockCursor` e `formatBlockCursor` (tabela: índice 0 e 999 valem, -1, 1.000, não inteiro, sem `:`, uid fora do padrão); `blockedPage` (a ordem invertida, a página de 20, o cursor achado, o cursor com o uid que saiu usa o índice guardado, dois desbloqueios juntos, um deles o fã do cursor, sem pular ninguém, um bloqueio novo no fim sem repetir ninguém, o índice maior que a lista, o fim com `null`, a lista vazia); a mensagem do `own_profile`.
+- `fan-profile/details.test.ts`: o `publicProfileOf` com o `blockedByMe` nas duas visões, e a fechada com o mesmo corpo nos três casos para o mesmo `blockedByMe`; o `profileDigest` (igual com os mesmos campos, muda com cada um dos cinco, não muda com a cidade, o gênero nem a conta privada, `null` sem perfil).
+- `moderation/errors.test.ts` (ou o teste que já confere os motivos): `profile-not-reported` e `stale-report` com o código e a mensagem. `moderation/profile-panel.test.ts`: a entrada da callable (o `uid`, a `resolution` e o `round`) em tabela.
+- `fan-profile/indexes.test.ts`: os dois índices da `profileReportQueue` (os abertos e os resolvidos).
+- `api/index.test.ts`: `POST /fans/:fanId/report` com o id fora do formato (404 sem leitura) e o motivo errado (400 com `field: 'reason'`, sem leitura); a chave exigida; a rota fora da lista travada do `allowSuspended` (a lista não muda); `GET /me/blocks` com o cursor e o `limit` fora do formato (400 sem leitura); o `own_profile` no formato combinado do 400.
+- `api/router.test.ts`: `PUT /me/blocks` e `GET /fans/x/report` são 405; o `GET /me/blocks/x` segue 405.
+- `staff/audit-index.test.ts`: a linha de `fan.profile.report.resolved`.
+- `cpu.test.ts`: sem mudança de código; passa com as 66 (a soma abaixo dos 20).
+
+**Funções, nos emuladores:**
+
+- `moderation.emulator.test.ts`, denúncia de perfil: `reported`; a segunda da mesma pessoa com o item aberto, `already_reported`, sem contar no teto; outra pessoa soma; depois do `resolveProfileReport`, a mesma pessoa com o perfil igual recebe `already_reported` (sem contar no teto e sem reabrir), e com a bio mudada pelo `PUT /me/profile` reabre com o `round` 2, a contagem do zero e o `firstReportedAt` mantido; outra pessoa reabre com o perfil igual; a denúncia guarda o `round` da rodada em que contou; o perfil privado, o suspenso e o que bloqueou quem pede aceitam com o mesmo corpo; o próprio perfil, 400 `own_profile`; o alvo sem perfil e a conta só da equipe, 404; o teto somado com a denúncia de comentário (o `report` em 2 na configuração do teste: o 429 com `action` e `Retry-After`); o suspenso, 403 sem gravar; o `totals.reports` mais 1, sem central; a mesma chave devolve a resposta guardada.
+- `moderation.emulator.test.ts`, `GET /me/blocks`: as páginas do mais novo ao mais antigo; o desbloqueio de um fã de uma página já lida junto com o do próprio fã do cursor não pula ninguém; um bloqueio novo entre uma página e outra não repete ninguém; o perfil que sumiu (apagado pelo Admin SDK) sai da página; a conta só da equipe recebe a lista vazia; o suspenso lê; o item sem bio, redes, gênero nem cidade.
+- `profile-edit.emulator.test.ts`, `GET /fans/:fanId`: o `blockedByMe` verdadeiro e falso, na completa e na fechada; o próprio fã com `false`; os três fechados com o mesmo corpo (fora uid, nome, @ e foto).
+- `moderation-fans.emulator.test.ts` (ou um arquivo novo pelo `useEmulators`): `resolveProfileReport` com `kept` e `actioned`, com o `resolvedDigest` gravado; a mesma resolução de novo, sem gravar e sem auditar; a troca de `kept` para `actioned`; o `round` velho (o item reabriu depois), `stale-report` sem gravar; o `round` fora do formato, `invalid-request` com `field: 'round'`; `profile-not-reported` sem item e com `withdrawn`; `self`; sem a seção e o Leitor recusados; a auditoria com a resolução, a contagem e o `round`, sem texto nem resumo.
+- Regressão do que o lote parcial (29.14) e a decisão 1 supõem, nos arquivos de hoje: a denúncia de perfil não grava nada na `moderationQueue`; o `moderateComment` com o uid do fã denunciado no `commentId` responde `comment-not-found` sem tocar no item de perfil, e as cinco ferramentas do fã (`hideFanComments`, `setFanSuspended` ao suspender e ao tirar, `clearFanPhoto`, `resetFanUsername` e `clearFanProfileText`), chamadas com o item de perfil aberto, não mudam o `updateTime` dele (`moderation-fans.emulator.test.ts`); o passo de comentários do `removeFanEngagement` resolve o item do comentário e não cria nada com o id do fã na `moderationQueue` (`posts.emulator.test.ts`). Os testes rodam o código novo; o código de `7b87a48`, que fica no ar, não cita a `profileReportQueue` nem a `profileReports`.
+- `posts.emulator.test.ts`, exclusão de conta: quem denunciou sai e o item da rodada (o mesmo `round`) perde 1 (o que chega a 0 vai a `withdrawn`); a denúncia de uma rodada antiga sai sem mexer no item; o fã denunciado sai e o item aberto vai a `author_deleted`, com o `resolvedDigest` nulo; as denúncias contra ele ficam.
+- `panel-seed.emulator.test.ts`: o bloqueio da Camila e o item de perfil do Promo gravados; rodar duas vezes não muda nada; resolver o item, apagar a bio do Promo depois e rodar de novo não reabre.
+
+**Regras** (`tests/moderation-rules.test.ts`): o fã não lê nem grava `profileReports`, nem o dele; a equipe com `moderation` e o admin também não; a seção `moderation` (editora e leitora) e o admin leem a `profileReportQueue` (o item pelo id, os abertos e os resolvidos), e o fã (nem o próprio denunciado), outras seções e a desativada não; ninguém grava nela, nem o admin.
+
+**App:**
+
+- `services/api/__tests__/errors.test.ts`: o 429 `rate_limited` e o 429 sem corpo viram `rateLimited`; o `too_many_requests`, `dailyLimit`; o `retryAfterMs` lido do header (e `null` fora do formato); o `isRetryable` igual ao de hoje; o `isAccountSuspended`.
+- `services/query/__tests__/client.test.ts` (novo): o `shouldRetry` e o `retryDelay` em tabela (ritmo com e sem `Retry-After`, o teto mínimo e máximo, o teto do dia sem repetir, o 5xx); o `MutationCache` chama o `noteRefusal(true)` no 403 suspenso e o `noteRefusal(false)` com `suspendedAlert: false`; o `queryClient` do app sai da `createQueryClient` (as mesmas opções e o mesmo `MutationCache`).
+- `services/api/__tests__/refusal.test.ts` (novo): o `actionRefusal` em tabela (cada ação com o teto, o ritmo, o suspenso, o 404 e o genérico). `services/__tests__/refusal-alert.test.ts` (novo): a trava de 30 s por tipo e ação, com o relógio injetado (duas curtidas no teto, um `Alert`; curtida e "Eu vou", dois).
+- `i18n/__tests__/translations.test.ts` (ou o teste que já varre o arquivo): nenhum endereço de e-mail no `translations.json`.
+- Testes que mudam com a classificação do 429: `edit-profile.test.tsx:1026-1033` e `:1378-1385` (o ritmo passa a ter frase própria), `auth/__tests__/api.test.ts:145` e `auth/__tests__/invite-sync.test.tsx:115` (o kind do 429).
+- `src/navigation/__tests__/fan-profile.test.tsx`: o caso de `:246-249` (só o "Voltar") muda; novos: "Denunciar perfil" abre a sheet; "Bloquear" com o `Alert.alert` espionado, as três escolhas, o botão virando "Desbloquear" e o anúncio; "Bloquear e denunciar" bloqueia e abre a sheet, e o bloqueio que falha não abre; "Desbloquear" direto; as ações somem no próprio perfil e no 404; iguais na fechada; o erro do teto e do ritmo; nas fixtures, o `fa-rank-13` abre com "Desbloquear".
+- `src/navigation/__tests__/report-fan-sheet.test.tsx` (novo): os motivos, o envio com o motivo e com `null`, o anúncio e o fechamento, o `already_reported` com a mesma frase, os erros (suspenso, teto, ritmo, 404, genérico), aberta a frio sem o perfil fecha, o voltar preso.
+- `src/navigation/__tests__/blocked-fans.test.tsx` (novo): a entrada pelos Ajustes, na seção "Segurança"; as linhas com o botão irmão; desbloquear tira a linha e anuncia; o erro na linha, com a frase do ritmo; o vazio, o erro e o "Tentar de novo"; a página seguinte; nas fixtures, a linha do `fa-rank-13`.
+- `src/navigation/__tests__/settings.test.tsx`: a chave do tree e o import (`@/domains/settings`); as linhas novas e a seção "Segurança"; "Trocar senha" e "Trocar e-mail" só com o `hasPassword` da sessão; "Sair" limpa o e-mail guardado para o login; os links abrindo pelo `openBrowserAsync` (mock do `expo-web-browser`); o regulamento só com o `rulesUrl` no cache, sem buscar a loja; o contato pelo `Linking.openURL` e a falha com o e-mail na tela; a versão com e sem update (mock do `expo-constants` e do `expo-updates`, que o `jest-expo` já mocka).
+- `src/navigation/__tests__/change-password.test.tsx` e `change-email.test.tsx` (novos, com o `firebase/auth` mockado como no `settings.test.tsx`): a reautenticação antes; o sucesso; cada falha no lugar certo; a sessão que caiu chama o `signOut`; o e-mail igual recusado no aparelho; o estado "Enviado" com o e-mail novo; "Sair" depois do "Enviado" abre o login sem o e-mail novo; o "Esqueci minha senha".
+- `src/navigation/__tests__/suspension.test.tsx` (novo, com o cliente da `createQueryClient` e o `SuspensionWatcher` na árvore): o aviso fixo na 1b, na 1e e nos Ajustes com o motivo pelos textos de `suspension.reasons` (com `other`, sem a linha); o `Alert` numa curtida recusada com 403, uma vez só em 30 s (relógio falso), sem o anúncio genérico, e a segunda recusa, com a trava, anunciando a frase do suspenso; a sheet de denúncia, o resgate e a edição do perfil recusados mostram a frase com "Escrever para a equipe" e não abrem o `Alert`; o compositor trocado pela frase; o onboarding que conclui sem seguir; a sheet do convite sem "Tentar de novo".
+- `post.test.tsx`, `agenda.test.tsx` e `artist.test.tsx`, com o cliente da `createQueryClient`: o teto do dia de curtir, "Eu vou" e entrar com o `Alert`, um só para duas recusas seguidas, e a segunda anunciando a frase do teto; a mutação restaurada (só a default) recusada no teto desfaz o coração e o "Eu vou"; o comentário no ritmo vira "Não enviado" com a mesma chave na nova tentativa (o `keepsAttempt`). Em `post.test.tsx`, a sheet do comentário: bloquear não fecha, mostra o convite para denunciar, e "Denunciar comentário" ainda envia; bloquear atualiza o perfil em cache e zera a lista de bloqueados.
+- `posts/__tests__/moderation.test.ts`: `reportFan`, `unblockFan` e `fetchBlockedFans` pela API (a URL, a `Idempotency-Key`, o cursor) e pelas fixtures (`already_reported`, as páginas de 6, o alias normalizado). `posts/__tests__/moderation-queries.test.tsx`: desbloquear tira o fã das páginas carregadas sem buscar de novo, e zera a lista quando ele não está nelas (nas fixtures, o desbloqueio pelo id do comentário tira a linha do id do ranking); bloquear muda o `blockedByMe` de `fanKeys.profile(...)` e zera `moderationKeys.blocked()`; a lista de bloqueados fica fora do disco (`persist: false`).
+- `profile/__tests__/api.test.ts`: o `suspensionReason` só com os quatro valores; o `blockedByMe` no `toFanPublicProfile`. `services/fixtures/__tests__/coherence.test.ts`: o `fixtureBlocks` volta a `fa-rank-13` no `resetFixtureSession`. `auth/__tests__/api.test.ts`: o `hasPassword` do `toSessionUser`.
+- `src/navigation/__tests__/explore.test.tsx` (novo): a vitrine nas fixtures e na API (mock do `@/config/data-source`); a grade com a marca "Na central" e o número das centrais do fã; a busca (o foco fica no campo ao digitar); os shows com o destaque e o "Ver agenda" na pilha da Explorar; o "Chamar amigos" do destaque abre `/convidar` com o `eventId`; sem destaque, só as linhas; abrir um artista e voltar; o "Eu vou" igual ao da 1m; o vazio sem centrais, e o vazio dos shows só sem nenhum show por vir; os erros separados.
+- `agenda.test.tsx` monta o `ExploreRoute` de verdade (`:9`, `:93`), e quase todo caso abre `/agenda` com a raiz da Explorar embaixo: a vitrine passa a buscar artistas, centrais, agenda e presenças pelos mesmos mocks e a desenhar o mesmo destaque (`FEATURED`, `:121`) e as mesmas linhas com "Eu vou". O arquivo ganha os mocks de `/artists` e `/me/centrals`, e as consultas passam a mirar a tela da agenda (`within` com testID). O caso de `:209-221` aperta o "Ver agenda", e o `agenda.loading` de `:215` sai dele (a agenda pode já estar no cache da vitrine). O `home.test.tsx` segue com o `label('explore')` (`:157`): o caso de `:380-386` prova só a ida a `/explorar`, e a vitrine fica no `explore.test.tsx`.
+- `routes.test.tsx` (a frio `/fas-bloqueados`, `/trocar-senha`, `/trocar-email` e `/denunciar-perfil/x`, antes dos testes que navegam) e `guards.test.tsx` (as rotas novas no `Stack.Protected` da cópia; sem sessão, caem na entrada).
+- `posts/__tests__/fixtures.test.ts`, `profile/__tests__/fan-fixtures.test.ts` e `artists/__tests__` (as funções movidas do onboarding, com a tabela de antes).
+- No Jest, a FlashList da vitrine e da lista de bloqueados precisa do mock de `measureLayout` (`agenda.test.tsx:44-54`).
+
+### 29.13 Plano de construção em etapas
+
+Em ordem, no worktree `imagineup-app-design`, branch `exigencias-lojas`. Uma etapa só começa com a anterior fechada: várias dividem o `translations.json`, o `_layout.tsx`, o `posts/queries.ts` e os testes de navegação. Toda etapa do app fecha com o fingerprint local (`npx --no-install expo-updates fingerprint:generate --platform android`) igual a `310056fd840b5459416c9926e46846b8c208aa76`; diferente, a etapa não fecha.
+
+1. **Servidor (A e B).** Começa com as respostas do dono de 13/10/2026 (29.15). Entrega: os modelos, refs e o `reportFan` (com o `round` e o `profileDigest`), na `profileReportQueue`; o `GET /me/blocks` com o cursor pelo índice da inclusão; o `blockedByMe`; a callable `resolveProfileReport` com o `round`, o `stale-report`, o `resolvedDigest` e a auditoria; a exclusão de conta; a regra e os dois índices da coleção nova; o seed (a denúncia só sem o item); os tipos do `contract.ts`; os testes de 29.12 (puros, índices, emuladores, regras e a regressão do lote parcial). Fecha com `npm --prefix functions run typecheck`, `npm --prefix functions test`, `npm run test:functions`, `npm run test:rules` e o `npm run emulators:seed` rodado duas vezes com os emuladores abertos (a segunda sem mudar nada). Os emuladores de outra sessão não podem estar no ar (o `useCleanEmulators` apaga tudo).
+2. **Erros e suspensão no app (F e E).** Entrega: o `ApiError` com os kinds e o `retryAfterMs`; a `createQueryClient` com o `shouldRetry`, o `retryDelay` e o `MutationCache`, e o `queryClient` saindo dela; o `actionRefusal` e o `showRefusalAlert` com a trava; o `keepsAttempt` do comentário; as defaults da fila desfazendo o otimista; as frases do teto e do ritmo nas superfícies de hoje (curtir, comentar, "Eu vou", entrar, sheets do comentário, resgate, 1l, sair da central, edição do perfil e foto), sem o anúncio genérico quando o `Alert` abre; o `src/stores/suspension.ts`, o `useSuspension`, o `SuspensionWatcher` (no `AppProviders`) e o `SuspendedNotice` (na 1b e na 1e; os Ajustes ganham na etapa 3); o `suspendedAlert: false` e o link "Escrever para a equipe" nas telas que mostram a frase; o onboarding; o zerar da suspensão no `use-auth-listener.ts`; o `src/config/links.ts` e o `src/services/web-page.ts` (o contato do aviso precisa), com o `TermsNotice` e o `RewardsLegal` já pelo helper. Fecha com `npm run check`.
+3. **Denúncia, bloqueio e Ajustes (A, B e o esqueleto de C).** Entrega: o `fan-page` com o `FanPageScreen`, as ações (com "Bloquear e denunciar") e a sheet; o `useCachedFanProfile` no `profile`; a sheet do comentário que não fecha no bloqueio; as mutações e a consulta no `posts`, com o `fixtureBlocks`, o `resetQueries` no bloqueio e a lista fora do disco; o `settings` com o `SettingsScreen` movido (com o aviso do suspenso e a seção "Segurança"; sai o `profile/views/settings.tsx`) e a `BlockedFansScreen`; as rotas novas no `_layout.tsx`. Fecha gerando as rotas tipadas e com `npm run check`.
+4. **Sobre e conta (C e D).** Entrega: a seção "Sobre" (links, regulamento pelo `useRewardsRulesUrl` só do cache, contato, versão); o `hasPassword` no `SessionUser`; as telas "Trocar senha" e "Trocar e-mail" com as funções do `auth/api.ts`; o `useSignOut` limpando o e-mail guardado; a conferência no emulador do Auth do `verifyBeforeUpdateEmail` com um e-mail que já tem conta (o que voltou vai para a seção de diferenças). Fecha gerando as rotas tipadas e com `npm run check`.
+5. **Explorar (G).** Entrega: as funções e o esqueleto (com a prop `count`) movidos do `onboarding` para o `artists`, o `CentralTile`, as exportações do `agenda`, a vitrine (com o convite do destaque e as props de teclado), o `agenda.test.tsx` ajustado à vitrine embaixo, e a saída do `Placeholder`. Fecha com `npm run check`.
+6. **Documentação, passagem e conferência (H).** Entrega: a nota (29.18), o `CLAUDE.md` e o `AGENTS.md` iguais (o `diff <(tail -n +3 AGENTS.md) CLAUDE.md` vazio), o `README.md:55`, o `Projetos/painel-exigencias-lojas/README.md` (29.7) e a conferência no emulador Android pelo Expo Go com o seed rodado, com a Camila: pelos três pontos do comentário da Duda no clipe, bloqueia (a sheet fica, com o convite para denunciar, e o comentário some do clipe); abre o perfil da Thalita (rank-01, pelo ranking), denuncia, e depois usa "Bloquear e denunciar" (a sheet abre de novo, e a denúncia é `already_reported`, com a mesma frase); vê a Duda e a Thalita em "Fãs bloqueados", na seção "Segurança", com o `rank-13`, e desbloqueia; o perfil da Aline (fechado) com as mesmas ações; os Ajustes com o Sobre (os links abrem, o contato abre o e-mail, a versão aparece); a Explorar com a busca, com o teclado aberto e a tab bar, os shows, o "Chamar amigos" e uma central; o aviso e o `Alert` com a Renata (suspensa), e a sheet de denúncia dela com a frase e o link, sem `Alert`; por último, trocar a senha e o e-mail com a conta do Alan no emulador do Auth (uma conta descartável, para não quebrar os logins da Camila na conferência); o leitor de tela pelo `uiautomator dump` e a fonte em 1,3 nas telas novas. Fecha com `npm run check` e os testes das funções e das regras de novo. Sugestão para o vault (só com o ok do dono): a vitrine e as telas novas em `vault/ImagineUP/App.md`, e em `Deploy.md` o lote mínimo deste bloco (a regra geral só se o dono responder a pergunta 12).
+
+### 29.14 Publicação
+
+Só o dono publica, com o ok dele, do PowerShell, a partir de uma pasta na `main` nova com o `functions/.env.imagine-up-app` copiado ("Publicar", no `CLAUDE.md`). A ordem é a da resposta do dono de 13/10/2026: regras e índices, funções e EAS Update, e o painel sem ordem obrigatória com o resto (entrou em 14/10/2026, PRs #2 e #3 do `imagineup-admin`). As regras e os índices vêm primeiro porque nada no ar depende deles e a coleção nova fica pronta antes do primeiro item; as funções vêm antes do app porque o app novo chamaria rotas que a `api` publicada responde 404 `not_found`. O painel publicado não quebra com a denúncia de perfil: ela mora na `profileReportQueue`, que ele não lê (29.7).
+
+Decisão do dono de 13/10/2026: publicar tudo junto. Este bloco saiu junto com o filtro do que o fã publica (seção 30), numa vez só, em 14/10/2026: o `rules:deploy` daqui, um lote só de cinco funções no lugar do de três e um EAS Update com o app dos dois blocos (como foi, no fim desta seção). A 30.13 diz o mesmo pelo lado do filtro. Os passos de conferência daqui continuam todos.
+
+0. **Merge** na `main` (com o ok do dono): a `exigencias-lojas` entrou pelo merge `a48335b` (PR #19), e a `filtro-publicacao`, pelo `f258ca2` (PR #20), depois da conferência da etapa 6 da seção 30.
+1. **Regras e índices:** `npm run rules:deploy`, com o ok do dono: o `firestore.rules` com a `profileReportQueue` e a `profileReports` (29.8), os dois índices compostos novos e as duas isenções; o `storage.rules` não muda, e o filtro não muda regra nem índice. Esperar os dois índices da `profileReportQueue` ficarem prontos no console (Firestore, Índices) antes do passo 2.
+2. **Funções, num lote só de cinco** (as três deste bloco e as duas do filtro): `$env:FUNCTIONS_DISCOVERY_TIMEOUT = "60"; npx --yes firebase-tools@15.32.0 deploy --only functions:api,functions:resolveProfileReport,functions:deleteUserProfile,functions:createUserProfile,functions:queueFanProfileSync --project imagine-up-app`. O comando sai copiado deste arquivo ou da 30.13, nunca redigitado (um `--project imagine-up-app` redigitado sem o hífen deu 403 em 09/10). Antes, o diff desde o que está no ar: `git diff --stat 7b87a48 HEAD -- functions/src` (30.13, passo 1).
+   - Por que o lote parcial é seguro: as outras 61 ficam com o código de `7b87a48`, e nenhuma delas precisa do código novo. O código delas não lê nem grava a `profileReportQueue` nem a `profileReports`, e os testes de regressão de 29.12 provam, no código novo, que o `moderateComment` e as cinco ferramentas do fã (`hideFanComments`, `setFanSuspended`, `clearFanPhoto`, `resetFanUsername` e `clearFanProfileText`) não tocam no item de perfil. O `SECTION_BY_ACTION` novo só acrescenta uma ação que o código velho não grava. Nenhuma fila, gatilho ou chave de teto muda, então o `updatePointsConfig` e as três filas ficam.
+   - As duas a mais, do filtro: o `createUserProfile` e o `queueFanProfileSync` são os únicos que chamam o `createProfile` e o `syncFanSearchKeys`, que trocam por "Fã" o nome barrado (a opção (b') de 30.14), e precisam valer a mesma lista da `api`. O filtro da `api` mora no `commentTextProblem`, no `parseProfileChanges` e no `usernameRefusal`, que só a `api` e o seed chamam (30.13, passo 3). O lote de três deixava o `createUserProfile` fora: o desfazer dele (a conta já excluída no Auth, no meio do cadastro ou numa reentrega tardia, porque o gatilho tem `retry: true`) chama o `deleteUserData` e só não repetiria a limpeza das denúncias de perfil, que o `deleteUserProfile` do lote faz (decisão 10). Com ele no lote, o desfazer também limpa. O `deleteUserProfile` usa do `store.ts` só o `deleteUserData`, que o filtro não muda.
+   - Depois: `node scripts/check-public-functions.mjs` (a callable nova precisa do `allUsers`: `gcloud functions add-invoker-policy-binding resolveProfileReport --region=southamerica-east1 --member=allUsers --project=imagine-up-app`) e o `gcloud functions describe` dela (CPU `0.1666`, concorrência `1`); o `createUserProfile` segue com `0.3333` e `1`.
+   - Conferir sem login: `POST /posts/x/comments`, `POST /fans/x/report` e `GET /me/blocks` dão 401; uma rota que não existe dá 404 `not_found`.
+   - Se o dono mudar de ideia e este bloco sair antes, sozinho, do código de antes do filtro: o lote de três (`$env:FUNCTIONS_DISCOVERY_TIMEOUT = "60"; npx --yes firebase-tools@15.32.0 deploy --only functions:api,functions:resolveProfileReport,functions:deleteUserProfile --project imagine-up-app`), com o motivo de cima, e o filtro depois, no lote de três da 30.13.
+3. **EAS Update do canal preview** (`npm run update:preview`, com o ok do dono), um só, com o app dos dois blocos (este e o filtro, 30.13, passo 4). Antes, o fingerprint igual a `310056fd840b5459416c9926e46846b8c208aa76`: a runtime version que o `eas update` mostra precisa ser a do APK. No aparelho com o APK: abrir, fechar e abrir de novo (o update baixa numa abertura e entra na seguinte) e ver a Explorar com a vitrine e os Ajustes com o Sobre.
+4. **Painel** (outra conversa, no `imagineup-admin`): o merge na `main` com o README de 29.7 (e o do perfil novo, que ainda não tinha entrado: a `main` do painel estava em `2af8933`, sem a `clearFanProfileText`), quando a outra conversa terminar, sem ordem obrigatória com os passos 1 a 3. Antes do passo 1, a lista nova cai na regra fechada da `profileReportQueue`; antes do passo 2, fica vazia; depois, mostra as denúncias que já esperam. Conferir na Moderação publicada a lista nova, os resolvidos e a página do fã, e que a fila de comentários segue igual. Até este passo, a equipe não vê as denúncias de perfil (29.7). Feito em 14/10/2026: o perfil novo pelo PR #2 e a lista pelo PR #3 do `imagineup-admin`.
+5. **Conferir em produção** (com o APK e duas contas de teste do dono, com o ok dele). Antes, pelo menos uma central publicada pelo painel (sem ela, a 1l mostra erro, e as contas não chegam às abas) e um caminho da B até o perfil da A, porque em produção não há temporada, nem ranking nem pódio: a A comenta num post publicado de uma central no ar, e a B abre o perfil dela pelo comentário; ou o dono abre no aparelho da B o link `imagineup://fa/<uid da A>` (o uid no console do Auth), com `adb shell am start -W -a android.intent.action.VIEW -d "imagineup://fa/<uid da A>"`. Então a conta B denuncia e bloqueia a A pelo perfil público; o item `profileReportQueue/<uid da A>` aparece (no console do Firestore até o passo 4; na lista "Perfis denunciados" depois dele, onde "Manter" o fecha); "Fãs bloqueados" mostra a A, e desbloquear a tira; os links do Sobre abrem e o contato abre o e-mail; trocar a senha da conta de teste; trocar o e-mail para outro endereço do dono, abrir o link e ver a sessão cair (esperar até 1 hora, ou sair e entrar) e entrar com o e-mail novo. Na mesma ida, os passos do filtro (30.13, passo 6), com os termos tirados da lista fora do repositório.
+6. **Console do Auth, pelo dono:** os modelos de e-mail (verificar o e-mail novo, o aviso de troca ao e-mail antigo e a redefinição de senha) em português, o nome do remetente, e se a proteção contra enumeração de e-mails está ligada (fica ligada: o app usa o `verifyBeforeUpdateEmail`).
+7. **Antes de mandar às lojas** (fora deste bloco; vai às Pendências do `CLAUDE.md`, 29.18). Em produção, não há fã de verdade nem temporada; o `/fa/<uid>` só abre pela linha do ranking, pelo pódio, pelos top fãs ou pelo comentário de outro fã; e sem nenhuma central no ar a 1l mostra erro. Sem o que vem abaixo, o revisor não chega a "Denunciar" nem a "Bloquear", e a 2.1 da App Store pede conta de demonstração e notas de revisão:
+   - uma conta de demonstração com o onboarding feito, com a senha só nas notas de revisão;
+   - uma segunda conta de fã com bio, um comentário num post publicado e pontos numa temporada ativa;
+   - centrais no ar (pelo menos uma; três deixam a 1l como desenhada) e um show marcado;
+   - as notas de revisão: o bloco "Segurança" do perfil público ("Denunciar perfil", "Bloquear" e "Bloquear e denunciar"), os três pontos do comentário (denunciar e bloquear), "Fãs bloqueados" em Perfil > Ajustes > Segurança, o contato em Ajustes > Sobre, "Excluir conta" em Perfil > Ajustes > Conta, o prazo da equipe na fila (pergunta 4 da cliente) e o filtro (seção 30): onde ele vale (o comentário, o nome, o @, a bio, a cidade e as redes), que a recusa vem com uma frase e o link para a equipe e nada é publicado, e um texto de exemplo para o revisor tentar, tirado da lista legível (`filtro-lista/termos.json`) e escrito só nas notas de revisão das lojas, nunca no repositório;
+   - no Play Console, o endereço web para pedir a exclusão da conta: `https://imagineup-painel.vercel.app/privacidade/#exclusao` (o `contato/` do site já aponta para lá; muda na UP-46), com o texto da seção acertado pela cliente (o caminho real no app e o e-mail para quem não consegue entrar, pergunta 3 da cliente);
+   - o painel com a lista "Perfis denunciados" no ar (passo 4): sem ela, a denúncia de perfil não chega à equipe, e a 1.2 pede ação rápida sobre as denúncias. No ar desde 14/10/2026 (PR #3 do `imagineup-admin`);
+   - o filtro do que é publicado (pergunta 3 do dono): feito na seção 30 e publicado junto com este bloco em 14/10/2026 (passo 2). Para as lojas, faltam a lista revisada pela cliente (pergunta 2 da cliente em 30.14) e o palavrão barrado em todo campo até a aprovação (pergunta 1 da cliente em 30.14);
+   - os termos de uso revisados (pergunta 3 da cliente, seções 8 e 9), com tolerância zero a conteúdo ofensivo e a abuso e o prazo de ação da equipe, e a decisão da pergunta 11 do dono (o aviso passivo do cadastro com os termos novos, ou a caixa "Li e aceito"): bloqueiam a build das lojas, como a lista do filtro revisada (1.2 da App Store e a política de conteúdo gerado por usuário do Google Play). Hoje a seção 9 dos termos do site diz "de acordo com a gravidade", e a 8, "quando o recurso existir";
+   - a política de privacidade fiel ao app (pergunta 3 da cliente, seções 2 e 5): sem a data de nascimento, que o app não pede, e sem o login com Apple e Google, e com a bio, as redes, o gênero, as denúncias de perfil e os bloqueios. Bloqueia a build das lojas (5.1.1 da App Store): hoje a privacidade do site declara a data de nascimento e diz que não acessa as redes sociais;
+   - o `REWARDS_RULES_URL` preenchido antes de qualquer prêmio de temporada, do pódio ou sorteio entrar no ar (decisão 16).
+
+**Como foi (14/10/2026):** com o filtro (30.13), da `main` `f258ca2`. Passo 0: os merges `a48335b` (PR #19) e `f258ca2` (PR #20). Passo 1: o `rules:deploy`, com os 44 índices compostos prontos, os dois novos da `profileReportQueue`. Passo 2: o lote de cinco, rodado pelo dono; o `allUsers` da `resolveProfileReport` (o `check-public-functions.mjs` com 56 chamáveis, nenhuma barrada), a CPU dela `0.1666` com concorrência `1`, o 401 sem login em `POST /fans/x/report` e `GET /me/blocks` e o 404 numa rota que não existe. Passo 3: o EAS Update do canal preview, o grupo Android `e5247c6a-13a6-40b4-b142-a21ab004626b`, na runtime `310056fd`, a do APK interno. Passo 4: o painel no mesmo dia (PRs #2 e #3 do `imagineup-admin`). Os passos 5 e 6 não ficaram registrados. O 401 de `POST /posts/x/comments` (passo 2) não foi conferido: os logs da `api` de 14/10/2026 só mostram os outros dois. A conferência no aparelho do passo 3 (a Explorar com a vitrine e o Sobre) não ficou registrada. As outras 61 funções seguem com o código de `7b87a48` (26.21).
+
+### 29.15 Perguntas
+
+**Para o dono, antes da construção: respondidas em 13/10/2026.** As três mudam o contrato da API e o do painel, e a etapa 1 (o servidor) e o README de passagem dependem delas.
+
+- **Fila** (levantada depois da crítica): a denúncia de perfil entra na `moderationQueue`, com `type: 'profile'`, ou numa coleção separada? Resposta: numa coleção separada, `profileReportQueue/{uid}`, um item por fã denunciado, com o mesmo espírito do item de 29.3 (o tipo implícito na coleção, o `round`, o `openedAt`, o `resolvedDigest`, a contagem e os motivos da rodada, o `status` com a `resolution`, o `lastReportedAt` e o `resolvedAt`), lida pela equipe com a seção `moderation` (regra nova, com os testes de regras) e com os índices compostos da fila dos abertos e da dos resolvidos. Motivo do dono: o painel publicado (`QueueCard`) quebra com um item de perfil na `moderationQueue`, e com a coleção separada o app e as funções saem sem esperar a outra conversa do painel. Consequências: a `moderationQueue`, o `moderateComment` e o painel publicado não mudam; o painel vê as denúncias de perfil só quando ganhar a lista nova (29.7); a publicação vira regras e índices, funções, EAS Update e o painel sem ordem obrigatória (29.14). Aplicada nas decisões 1 e 9 e em 29.3, 29.4, 29.6 a 29.10, 29.12, 29.14 e 29.17.
+1. Como a equipe fecha a denúncia de perfil? Opções: (a) a callable nova `resolveProfileReport({ uid, resolution, round })`, com "Manter" e "Resolver" (com ação), as ferramentas do fã sem fechar o item (decisão 6): 66 funções, 0,84 vCPU de sobra na cota de 20, e o `allUsers` depois do deploy; (b) um ramo no `moderateComment`, pela chave `{ profileUid, action, round }`: nenhuma função nova, nenhum `allUsers` novo, sem CPU a mais, mas a moderação de comentário, que o painel publicado usa, muda de código e passa a ter dois formatos; (c) cada ferramenta do fã fecha o item, republicando as quatro callables e mudando o contrato delas. Resposta: (a), como proposto, com 66 funções, a soma de CPU do `cpu.test.ts` atualizada e o `allUsers` depois do deploy.
+2. Como a denúncia de perfil reabre depois de resolvida? Opções: (a) outra pessoa reabre sempre, com a contagem do zero, e quem já denunciou na rodada resolvida só reabre se o perfil mudou desde a resolução (o resumo da decisão 3); (b) a mesma pessoa reabre depois de N dias do `resolvedAt`, sem resumo; (c) a mesma pessoa nunca reabre; (d) qualquer pessoa reabre sempre, como no primeiro desenho, e um fã sozinho devolve à fila cada perfil mantido. Nas quatro, a rodada é o `round` e a callable recusa a rodada velha. Resposta: (a), como proposto: outra pessoa reabre sempre; quem já denunciou na rodada resolvida só reabre com o perfil mudado desde a resolução (`resolvedDigest`).
+
+**Para o dono, que seguem com a proposta: respondidas em 13/10/2026.** Resposta do dono: as perguntas 3 a 14 seguem as propostas abaixo. Também em 13/10/2026: o preparo da build das lojas (os 8 pacotes da SDK 57 em dia e o `android.blockedPermissions` de `READ_MEDIA_IMAGES` e `READ_MEDIA_VIDEO`) está no PR #18 (branch `preparo-build`, rascunho), que fica sem merge até a primeira build nativa das lojas, porque muda o fingerprint; este bloco não toca nisso (29.16).
+
+3. O filtro do que é publicado, que a 1.2 da App Store pede e que bloqueia a build das lojas: hoje comentários de até 500 caracteres, o nome, o @, a bio e as redes chegam aos outros fãs sem filtro. Proposta: um bloco curto logo depois deste, com uma lista curta de termos no servidor, conferida na validação do comentário e no `parseProfileChanges` (nome, @, bio e redes), recusando com o 400 que as rotas já usam; é código puro, sem nativo, e só a `api` publica. O primeiro nome do cadastro entra pelo `createUserProfile` e pela regra `firstProfileName`, e fica com a Moderação. Alternativa: entrar neste bloco, na etapa 1. Resposta (13/10/2026): a proposta, que virou a seção 30, com uma troca: o primeiro nome do cadastro não fica com a Moderação, que não tem como tirá-lo, e o nome barrado vira "Fã" no servidor (a (b') de 30.14, aprovada pelo dono no mesmo dia). O filtro foi feito na branch `filtro-publicacao` e saiu junto com este bloco, em 14/10/2026 (29.14).
+4. Bloquear avisa a equipe? Proposta: pela escolha do fã, só no app: "Bloquear e denunciar" no `Alert` do perfil, e o convite para denunciar na sheet do comentário depois do bloqueio (decisão 13). Alternativa: todo bloqueio vira um sinal na fila, o que muda o `PUT /me/blocks/:fanId` (a resposta 1 de 28.15 o deixou como está) e enche a fila de bloqueios por antipatia.
+5. O suspenso: o aviso fixo na 1b, na 1e e nos Ajustes, e um canal por recusa: o `Alert` com o contato nas ações sem texto na tela (curtir, "Eu vou", entrar e seguir na 1l, no máximo um a cada 30 s), e a frase com "Escrever para a equipe" nas telas que já mostram erro? Proposta: sim (decisão 19). Alternativa: só o aviso fixo e os botões desligados de antemão (umas 12 superfícies).
+6. O suspenso que entra num aparelho novo conclui o onboarding sem seguir as centrais? Proposta: sim; hoje ele fica preso na 1l.
+7. Trocar senha e e-mail em telas fora das abas, com estes limites aceitos por escrito: a chave do convite fica com o e-mail antigo (o autoconvite pelo e-mail novo deixa de ser pego, e a visita paga de novo uma vez); o `staff.email` antigo de quem é fã e equipe; e a sessão antiga, que ainda grava na `api` por até 1 hora depois da troca (a `api` não confere a revogação). Proposta: sim aos três. Alternativa para o último: o `checkRevoked` só no resgate, com uma chamada ao Auth por resgate (a `api` publica de novo).
+8. A versão nos Ajustes sem o número da build, que pediria o `expo-application` (nativo)? Proposta: a versão, a data e o id curto do EAS Update; o número da build entra com a primeira build das lojas, se o dono quiser.
+9. A vitrine da Explorar com a busca, os próximos shows (o destaque e mais três, com "Ver agenda") e todas as centrais em grade, nessa ordem? Proposta: sim (decisão 21), sem rota nova.
+10. O seed com a Camila bloqueando a `rank-13` e a Bia denunciando o perfil do Promo, só quando o item não existe? Proposta: sim (29.10).
+11. O cadastro troca o aviso passivo ("Ao criar a conta, você aceita os Termos de uso e a Política de privacidade.") por uma caixa marcada pelo fã, só em JS? A App Review pede termos aceitos, com tolerância zero a abuso. Proposta: manter o aviso até a cliente revisar os termos (pergunta 3 da cliente) e decidir junto com o filtro (pergunta 3).
+12. O lote mínimo de funções vira a regra geral do "Publicar" no `CLAUDE.md`? Proposta: não agora. O lote de três vale como exceção deste bloco, com o motivo por escrito (29.14), e a regra "Publique todas as funções" fica até o dono decidir. Com a publicação conjunta (29.14), a exceção passa a ser o lote de cinco, com o filtro.
+13. Para o retrato de produção no `CLAUDE.md`: o passo 6 de 28.14 (a conta de teste do dono em produção) aconteceu, e há `users` em produção? O painel do `painel-perfil-novo` já entrou na `main` do `imagineup-admin`? O TTL de `staffLimits.expiresAt` está ativo no console? Proposta: a etapa 6 escreve as Pendências com o que o dono responder, e "situação não conferida" sem resposta.
+14. A revisão das lojas (29.14, passo 7): quem cria as duas contas em produção e o conteúdo que o revisor precisa (centrais, um show, a temporada, um post com comentário)? Proposta: o dono cria as duas contas depois do EAS Update; o conteúdo vem da equipe da cliente pelo painel, e as cargas de exemplo (22.16 e 25.16) só com o ok do dono.
+
+**Para a cliente** (abertas; o código segue a proposta, e o `SUPPORT_EMAIL` provisório é `music@imaginegroup.com.br`, o único do site):
+
+1. O e-mail oficial de contato do app para os fãs. Proposta: `music@imaginegroup.com.br`, o único do site (12 links), que já recebe mensagens. A Apple pede um contato publicado (1.2), e o e-mail aparece no Sobre e no aviso do suspenso; trocar é mudar o `SUPPORT_EMAIL` e publicar um EAS Update.
+2. O regulamento das recompensas (texto e página). Proposta: uma página `/regulamento/` no site, com o endereço no `REWARDS_RULES_URL` do servidor; até lá, o link fica escondido no pé da 1h e no Sobre (UP-45). Um prêmio de temporada, do pódio ou um sorteio só entra no ar com o regulamento (5.3.2 da App Store).
+3. Os termos de uso e a política de privacidade do site contradizem o app em vários pontos. Os termos (seções 8 e 9) e a privacidade (seções 2 e 5) revisados bloqueiam o envio às lojas (29.14, passo 7). Proposta, na revisão jurídica (UP-45):
+   - termos, seção 8: os comentários, a bio e as redes como conteúdo do fã que já existe (hoje: "quando o recurso existir", sem bio nem redes);
+   - termos, seção 9: tolerância zero a conteúdo ofensivo e a abuso, com ação da equipe em até 24 h (hoje: "de acordo com a gravidade"), como pede a App Review;
+   - privacidade, seção 2: sem a data de nascimento e sem o login com Apple e Google enquanto o app não tiver os dois;
+   - privacidade, seção 5: a bio e as redes (visíveis para qualquer fã sem a conta privada), o gênero (só para a equipe), as denúncias de perfil e os bloqueios;
+   - termos, seção 13, privacidade, seção 9, e o FAQ: o caminho real, "Perfil > Ajustes > Excluir conta" (hoje "Configurações"), e o que acontece com os resgates (o app e o servidor cancelam os solicitados e os aprovados, 25.11; o site diz que os aprovados continuam valendo). A seção 9 da privacidade (`#exclusao`) é o endereço que vai no Play Console (29.14, passo 7).
+4. Quem olha a fila da Moderação e em quanto tempo. Proposta: a equipe da cliente, todo dia útil, em até 24 h (a App Store pede ação rápida sobre denúncias; 21.8).
+5. O domínio próprio (UP-46): os links do Sobre e da abertura mudam por EAS Update quando ele existir, e o endereço de exclusão do Play Console muda junto.
+
+### 29.16 Fora deste bloco (só documentado)
+
+- Entrar com Apple e com Google (o dono decide depois), o login automático, o vídeo e os links que abrem o app (Universal Links e App Links).
+- O filtro do que é publicado (1.2): fora deste bloco, feito na seção 30 e publicado junto com ele (29.14). Bloqueia a build das lojas até estar no ar, com a lista revisada pela cliente (29.14, passo 7).
+- O preparo da revisão das lojas: as contas, o conteúdo no ar, as notas de revisão e o endereço de exclusão do Play Console (29.14, passo 7, e pergunta 14 do dono).
+- A caixa "Li e aceito" no cadastro (pergunta 11 do dono) e o texto novo dos termos e da privacidade (pergunta 3 da cliente): fora deste bloco, mas os termos e a privacidade revisados bloqueiam o envio às lojas (29.14, passo 7).
+- O painel em si: só o README de passagem (29.7).
+- O preparo da build das lojas: os 8 pacotes da SDK 57 em dia e o `android.blockedPermissions` de `READ_MEDIA_IMAGES` e `READ_MEDIA_VIDEO` estão no PR #18 (branch `preparo-build`, rascunho), sem merge até a primeira build nativa das lojas, porque muda o fingerprint.
+- O número da build na versão (`expo-application`), copiar o e-mail (`expo-clipboard`) e o compositor de e-mail (`expo-mail-composer`): todos nativos.
+- Guardar o texto do perfil denunciado; juntar as duas filas (comentários e perfis) numa lista só do painel; as ferramentas do fã fechando a denúncia de perfil (pergunta 1); todo bloqueio virando sinal na fila (pergunta 4).
+- A data de cada bloqueio, o bloqueio mútuo e ver quem bloqueou o fã.
+- Desligar de antemão cada botão do suspenso (pergunta 5) e uma notificação da suspensão.
+- O `checkRevoked` na `api`, mesmo só no resgate (pergunta 7).
+- Guardar no disco a mutação esperando nova tentativa e o comentário "Não enviado".
+- Servir os links legais pela API; uma página de regulamento no app.
+- Na vitrine: selo de verificado, "gestão oficial", capa grande, posts de todas as centrais, "em alta", busca no servidor, página de um show (todos pediriam rota ou campo novo, e a publicação da `api`).
+- Seguir outros fãs, a posição ou os pontos no perfil público e um selo que separe fã de artista (28.16).
+
+### 29.17 Armadilhas
+
+- O item de perfil nunca vai à `moderationQueue`: o `QueueCard` publicado lê post e comentário de todo item dela e lança com um item sem `postId`, e qualquer conta cria uma denúncia com um pedido direto à `api` (pública, sem App Check). A denúncia de perfil mora só na `profileReportQueue`, com o id igual ao uid.
+- Até o painel ganhar a lista nova, as denúncias de perfil esperam sem ninguém ver: a lista no ar é condição para mandar às lojas (29.14, passo 7).
+- A rodada do item de perfil é o `round`, nunca o `reportedAt` comparado com o `openedAt` (relógios de instâncias diferentes): o `already_reported`, a exclusão e a callable comparam o `round`. A reabertura zera `reportCount` e `reasons` e sobe o `round`.
+- A mesma pessoa só reabre com o perfil mudado: o `resolvedDigest` é o resumo do perfil na resolução, nunca o texto, e sai no `author_deleted`. A equipe age com as ferramentas antes de "Resolver".
+- A callable recebe o `round` que o card mostrou: sem ele, um card aberto antes de uma reabertura fecharia a rodada nova sem ninguém olhar (o painel não escuta em tempo real).
+- A denúncia de perfil não lê a lista de bloqueios do alvo nem olha a privada ou a suspensão: qualquer diferença na resposta conta ao bloqueado.
+- O `blockedByMe` depende só de quem pede; o teste dos três fechados compara o corpo com o mesmo `blockedByMe`.
+- O cursor do `GET /me/blocks` é pelo uid, com o índice na ordem da inclusão (do mais antigo) como reserva: a posição pura pulava um fã a cada desbloqueio na própria tela, e a posição contada do mais novo pulava ou repetia. O app tira o fã desbloqueado das páginas carregadas sem buscar de novo (sem a linha dele nelas, zera a lista), e o bloqueio zera a lista (`resetQueries`), em vez de buscar de novo cada página.
+- A lista de bloqueados traz nome, @ e foto de outros fãs: `persist: false`, como o perfil público.
+- O `own_profile` vai no `ModerationError` e precisa da tradução no `api/errors.ts`; sem ela, o 400 sai sem o `details.reason`.
+- A callable nova sem o `allUsers` recebe 403 do Cloud Run, que o painel lê como `functions/internal`.
+- O lote parcial só vale porque nenhuma das funções que ficam precisa do código novo. Na publicação conjunta (29.14, passo 2, e 30.13), o `createUserProfile` vai no lote de cinco: o `createProfile` dele troca por "Fã" o nome barrado pelo filtro (a (b') de 30.14), e o desfazer dele, que chega ao `removeFanEngagement` mudado, passa a limpar também as denúncias de perfil. Só no plano B, o lote de três desta seção com o código de antes do filtro, ele fica fora, porque toda conta que ele desfaz já foi excluída no Auth, e o `deleteUserProfile` do lote limpa as denúncias de perfil dela. Módulo mudado que uma das que ficam use num caminho que o lote não cubra pede a função no lote.
+- A `profileReportQueue` e a `profileReports` têm regra própria (29.8), e os dois índices da fila só existem em produção depois do `rules:deploy`: o emulador não exige índice, e a falta só aparece no painel publicado (o código 9). O `rules:deploy` vem antes das funções, esperando os índices.
+- Domínio de composição importa só pelos index; o `profile` nunca importa `posts`, `rewards` nem `settings`. O `posts/fixtures.ts` importa o `profile/fan-fixtures.ts` pelo arquivo, nunca pelo index.
+- O estado das fixtures de bloqueio mora no `fixtureBlocks`, com o id normalizado: um conjunto em cada domínio deixaria o comentário da Thalita à vista depois de bloquear a `fa-rank-01`.
+- Rota nova fora do `Stack.Protected` fica fora do guard; as rotas tipadas geradas antes do `npm run check`.
+- `isRetryable` continua sendo "resultado incerto": o `rateLimited` entra no `shouldRetry` e, no comentário, no `keepsAttempt` (o `onError` e o `retry` do `useAddCommentMutation`), que tem regra própria; nunca no `isRetryable` nem nos outros lugares que decidem a mesma chave e a frase de incerteza.
+- O `Retry-After` do teto do dia vai até a meia-noite (mais de 80 mil segundos): nunca vira atraso de nova tentativa.
+- O `retry` numérico ou `false` de uma mutação passa por cima do `shouldRetry`: as da fila não podem ter `retry` próprio.
+- A mutação restaurada do disco roda só com as defaults: o aviso do teto de curtir, "Eu vou" e entrar e o desfazer do otimista moram também na default, e o do suspenso no `MutationCache`.
+- Os `Alert` do suspenso e do teto do dia têm trava de 30 s por tipo e ação, num helper só: a fila que volta com várias ações recusadas abriria um por ação. Com a trava segurando o `Alert`, o hook anuncia a frase da recusa (`alertActionRefusal`), senão a segunda recusa ficava calada; as defaults da fila não anunciam.
+- Um canal por recusa: a mutação cuja tela mostra a frase leva `suspendedAlert: false`; o `Alert` por cima tirava o foco do leitor de tela do aviso da sheet. O hook que deixa o `Alert` abrir não anuncia o erro genérico.
+- Os testes que provam o `Alert`, o teto e o ritmo usam a `createQueryClient`: um `QueryClient` próprio, com `retry: false` e sem `MutationCache`, provaria uma montagem que não é a do app.
+- O e-mail de contato mora só no `SUPPORT_EMAIL`: texto do `translations.json` com o endereço escrito à mão fica velho na primeira troca.
+- O `canOpenURL` pede `<queries>` no manifesto do Android: o contato usa o `openURL` com `catch`.
+- O `expo-updates` e o `expo-constants` já estão instalados: usar no JS não muda o fingerprint; instalar o `expo-application` mudaria.
+- Trocar o e-mail sempre pelo `verifyBeforeUpdateEmail`; reautenticar antes de cada troca; o "Entrou como" fica com o e-mail antigo até a sessão cair. A sessão revogada não leva 401 na `api` (sem `checkRevoked`): o aparelho sai quando o SDK renova o token, em até 1 hora. O "Sair" limpa o e-mail guardado para o login, que antes do link ainda não entra.
+- A busca da vitrine mora no cabeçalho da FlashList: o campo não pode remontar a cada letra (o cabeçalho com identidade estável, e o teste confere o foco), e a lista leva `keyboardShouldPersistTaps` e `keyboardDismissMode`, porque a tab bar fica por cima com o teclado aberto.
+- O `EventHeroCard` exige o `onInvite`: na vitrine, o convite do show, como na 1m. O `ArtistGridSkeleton` movido para o `artists` recebe o `count` por prop, para não importar o `onboarding`.
+- Lista vazia de centrais é estado vazio na vitrine; o `useArtistsLoad` da 1l trata como erro e não serve.
+- O `refetch` da agenda infinita busca de novo todas as páginas que a 1m carregou; a vitrine mostra só os shows com `isUpcoming`, porque o cache do disco pode trazer shows passados.
+- A raiz da Explorar fica montada embaixo da agenda e do artista: anúncio de erro só com a tela em foco.
+- Nada de rota nova chamada `artistas` ou `todos-artistas`: a URL ignora o grupo e colidiria com as do onboarding.
+
+### 29.18 Documentação (frente H)
+
+**Nota** (`docs/arquitetura-api.md`), no mesmo commit da etapa 6:
+
+- O cabeçalho (linha 3): "e as exigências das lojas (denúncia de perfil, bloqueados, Sobre, conta, suspensão, 429 e Explorar), na seção 29".
+- "Decisões em uma página": um item 22 para este bloco.
+- Seção 1: o kind dos dois 429 (`dailyLimit` e `rateLimited`) e a linha do `fan_not_found`.
+- Seção 2: o título passa a "Mapa das 44 rotas", a contagem do parágrafo de abertura, e um parágrafo "Fora dos 26, novas nas exigências das lojas" com as duas rotas e o `DELETE /me/blocks/:fanId` com tela.
+- Seção 18 (linha 1051): a CPU fracionada publicada em 08/10/2026.
+- Seção 13: o `fixtureBlocks` em `services/fixtures`, com o id normalizado, entra na regra de coerência.
+- 21.8: a lista de bloqueados passa a existir no app (29.11). A linha do `moderationFixture` ("bloquear guarda o autor") passa a dizer que o conjunto mora no `fixtureBlocks`.
+- 26.6 e 26.20: a frase própria do suspenso feita (29.11, frente E).
+- 26.21: um "Como foi" da publicação de 08 a 09/10/2026 (a CPU fracionada em 08/10, PR #15, 64 funções em 5 lotes, com as 19 callables liberadas; a proteção contra abuso e o perfil novo de 08 a 09/10, da `main` `7b87a48`, PRs #16 e #17: as 65 funções em 5 lotes, com poucos minutos entre eles, as 55 chamáveis com `allUsers`, o EAS Update do canal preview na runtime `310056fd` e só então o `rules:deploy`; e o 403 do `--project` redigitado sem o hífen), e o fechamento do dia conferido (a rodada da 00:20 de 09/10/2026 fechou de 29/09 a 08/10 sem erro, com o `statsMeta/close.lastClosedDay` em `2026-10-08`).
+- 27.3, item "App": o 429 com os kinds novos e a nova tentativa do ritmo.
+- 28, "Estado": conferido no emulador Android em 08/10 e publicado de 08 a 09/10/2026. 28.10: o `fanProfileFixture` lê o `fixtureBlocks`. 28.11: o "Sem botão de bloquear nem de denunciar" passa a apontar para a seção 29. 28.16: a denúncia, o bloqueio e a tela "Fãs bloqueados" passam para a seção 29.
+- Ao fim desta seção, a 29.20 "O que o código fez diferente do desenho", como a 28.19.
+
+**`CLAUDE.md` e `AGENTS.md`** (o `AGENTS.md` é o cabeçalho de 2 linhas mais a cópia do `CLAUDE.md`: a linha N de um é a N+2 do outro, e o `diff <(tail -n +3 AGENTS.md) CLAUDE.md` fica vazio), no mesmo commit:
+
+- Estrutura: os domínios `fan-page` e `settings`, o `explore` como composição, as rotas `denunciar-perfil/[fanId]`, `trocar-senha`, `trocar-email` e `(perfil)/fas-bloqueados`, o `src/config/links.ts`, o `src/services/web-page.ts` e o `src/stores/suspension.ts`; sai o `placeholder` dos componentes.
+- Navegação: o perfil público com as ações e a sheet; "Fãs bloqueados"; os Ajustes com a Segurança, o Sobre e as telas de conta; a Explorar. A linha 191 troca o `editProfile.info.suspended` pelo `suspension.short`, com o link "Escrever para a equipe"; a 192 perde o "Sem botão de bloquear nem de denunciar por enquanto"; a 201 perde o "o `rate_limited` (27.3) fica com o aviso genérico" (a foto passa a ter a frase do ritmo).
+- Dados: o `fixtureBlocks`; o 429 (o `ApiError` com os kinds novos, o `retryAfterMs`, a `createQueryClient` com o `shouldRetry` e o `retryDelay`, o `actionRefusal` e o `showRefusalAlert`) e a fila (linhas 203 e 204, com o `keepsAttempt` do comentário e o desfazer do otimista nas defaults); a suspensão no app, com um canal por recusa.
+- API do app e pontos: as rotas novas; na linha 258, o "desbloquear ainda sem tela" vira a tela "Fãs bloqueados"; na linha 263, o suspenso no app; na linha 264, tirar o "Publicar a `api` e um EAS Update (...) antes do `storage.rules`" (publicado de 08 a 09/10 na ordem de 27.8) e o `rate_limited` no app; na 265, o `blockedByMe`; 66 funções.
+- Equipe do painel: a callable `resolveProfileReport` e a `profileReportQueue` (a regra da seção `moderation` e os dois índices; 44 índices compostos).
+- Publicar (linhas 271 e 274): o servidor do perfil novo e da proteção contra abuso no ar desde 09/10/2026, com 65 funções e as 55 chamáveis com `allUsers` (a frase do TTL de `staffLimits` fica, sem registro de conferência); o passo 3 fica com "Publique todas as funções" e ganha só a exceção deste bloco (o lote de três de 29.14, com o motivo por escrito, depois do `rules:deploy` e sem ordem obrigatória com o painel); a regra geral do lote mínimo entra só se o dono responder sim à pergunta 12; sai "os lotes ficam como estão até um deploy mostrar" (o de 09/10 mostrou: lotes com poucos minutos entre eles passaram) e o "primeiro deploy da troca" (feito); entra a armadilha do comando redigitado (copiar do arquivo conferido; o `--project` sem o hífen deu 403). O passo 6 ganha "em 09/10, as 55 chamáveis com `allUsers`".
+- Aprovações de 2026-09-28: a linha 367 anota a decisão de 13/10/2026 (a vitrine das centrais).
+- Pendências: sai a 388 (Explorar); a 394 (termos e privacidade) passa a citar o `src/config/links.ts`; a 395 perde o fechamento pendente; a 400, "65 funções desde 09/10, com as seções 27 e 28" (66 depois deste bloco); a 401, o retrato de produção com a resposta da pergunta 13 do dono; a 402 (CPU fracionada) fica só com olhar a partida a frio nos logs; a 404 (proteção contra abuso) fica com o teto `photo_upload` no painel e o App Check na build das lojas; a 405 perde "a tela 'Fãs bloqueados' para desbloquear não existe"; a 411 perde a conferência e a publicação pendentes e o "Fora do bloco (...) a tela 'Fãs bloqueados'", e ganha a situação do passo 6 de 28.14 e do merge do `painel-perfil-novo`; entram este bloco (as respostas e as perguntas de 29.15 e o README do painel), o PR #18 (o preparo da build das lojas, sem merge até a primeira build nativa, porque muda o fingerprint), uma pendência "Antes de mandar às lojas" com os itens de 29.14, passo 7 (as duas contas, o conteúdo no ar, as notas de revisão, o endereço de exclusão do Play Console, o painel com a lista "Perfis denunciados", o filtro do que é publicado como bloqueio da build e o `REWARDS_RULES_URL` antes de qualquer prêmio), a margem de CPU (66 funções, uns 19,16 dos 20 vCPU, sobra de 0,84 para as próximas) e as pendências da cliente (o e-mail de contato, o regulamento, os pontos dos termos e da privacidade da pergunta 3 e o prazo da fila).
+- `README.md:55` deixa de apresentar o `npm run functions:deploy` como a forma de publicar e aponta para "Publicar".
+- O vault (`vault/ImagineUP/App.md`, linhas 3, 17, 20, 23, 26 e 92; `Deploy.md`, linha 38 e o histórico das linhas 49 a 52) só com o ok do dono, como sugestão no fim da etapa.
+
+### 29.19 O que mudou com a crítica
+
+Três revisões de 13/10/2026 (lojas e produto; servidor, segurança e custo; app e coerência), conferidas no código. O que entrou:
+
+- Lojas: a seção deixou de dizer que fecha tudo o que as lojas pedem (o filtro da 1.2 virou a pergunta 3 e bloqueio da build); o passo 7 de 29.14 com as contas, o conteúdo, as notas de revisão e o endereço de exclusão do Play Console; o "Bloquear e denunciar" e o convite na sheet do comentário (o bloqueio não avisava a equipe); a pergunta 3 da cliente com todos os pontos dos termos e da privacidade, e a caixa do cadastro na pergunta 11; a 5.3 corrigida (o regulamento ainda escondido) e o `REWARDS_RULES_URL` antes de qualquer prêmio.
+- Servidor: a ordem de publicação invertida (o painel antes das funções, porque qualquer conta cria item de perfil com um pedido direto à `api`; depois, a coleção separada das respostas do dono tirou essa ordem); o `round` no item, na denúncia e na callable, com o `stale-report`; a mesma pessoa só reabre com o perfil mudado (o `resolvedDigest`); o cursor dos bloqueados pelo índice da inclusão; o README com a conta excluída, o `openedAt` no lugar do `firstReportedAt` e o passo certo; o seed que só denuncia sem o item; os testes de regressão do lote parcial; a sessão antiga na `api` por até 1 hora, por escrito; os Ajustes sem buscar a loja e o bloqueio com `resetQueries`; a margem de CPU nas Pendências.
+- App: o `keepsAttempt` do comentário; a `createQueryClient` e o `SuspensionWatcher` no `AppProviders`, para os testes verem o que o app monta; o `actionRefusal` e o `showRefusalAlert` com a trava de 30 s; um canal por recusa do suspenso; as defaults da fila desfazendo o otimista; o `hasPassword` na sessão; os testes nos arquivos que já testam; o `agenda.test.tsx` com a vitrine embaixo; as linhas velhas do `CLAUDE.md` e da nota em 29.18; a lista do plano igual à desta seção; a lista de bloqueados fora do disco; o `handOffEmail` limpo no "Sair"; as props de teclado da busca; o `onInvite` do destaque e o vazio dos shows; o `useCachedFanProfile`; o e-mail só pelo `SUPPORT_EMAIL`; os motivos da suspensão com texto próprio; os textos da troca de senha e de e-mail; a seção "Segurança" nos Ajustes; a conferência da etapa 6 com quem comenta no clipe de verdade e a troca de senha numa conta descartável.
+
+O que não entrou: o ramo no `moderateComment` no lugar da callable nova virou a opção (b) da pergunta 1, e a proposta segue com a callable, que isola a moderação de comentário que já funciona; o `checkRevoked` no resgate virou alternativa da pergunta 7, e a proposta aceita o limite por escrito; e a regra geral do lote mínimo virou a pergunta 12, em vez de mudar o "Publicar" de uma vez.
+
+Depois da crítica, as respostas do dono de 13/10/2026 (29.15): a denúncia de perfil saiu da `moderationQueue` para a coleção separada `profileReportQueue` (a regra nova, os dois índices e o `rules:deploy` antes das funções; o painel sem ordem obrigatória, e a lista dele no ar antes de mandar às lojas), a callable nova (pergunta 1) e a reabertura pelo resumo (pergunta 2); as perguntas 3 a 14 seguem as propostas.
+
+### 29.20 O que o código fez diferente do desenho
+
+Implementado em 13/10/2026 na branch `exigencias-lojas`, nas seis etapas de 29.13. O contrato acima vale; estes são os pontos em que o código decidiu um detalhe que o desenho deixava aberto, ou fez diferente do que ele dizia, com o motivo. No fim, a conferência no emulador Android.
+
+**Servidor (etapa 1)**
+
+- **Forma do item:** o "status open, kept, actioned, withdrawn, author_deleted" da resposta do dono virou `status: 'open' | 'resolved'` mais a `resolution`, a forma da `moderationQueue` (29.3): as duas filas usam os mesmos índices, e o painel reaproveita as consultas. O item também guarda o `uid`, igual ao id. Um campo só de status mudaria os índices e as consultas.
+- **Isenções a mais:** `reasons` e `resolvedDigest` (29.8), que a resposta do dono não citava.
+- **`store.test.ts` mudou:** os três mocks ganharam `profileReports: 0`, por causa do tipo do resultado. A ordem do `deleteUserData` não mudou (a 29.9 dizia que o teste não mudaria).
+- **Regressão do lote parcial:** sem o id `profile:<uid>`, o `moderateComment` é testado com o uid do fã denunciado no `commentId`. O teste confere que a `moderationQueue` fica vazia e que o item de perfil não muda.
+- **Ordem das recusas da callable:** o uid pelo `targetFanUid`, o acesso, e só então a `resolution` e o `round`, como no `resetFanUsername`. Na transação, `profile-not-reported` (sem item, ou resolvido com `withdrawn` ou `author_deleted`) vem antes de `stale-report`.
+- **Item do próprio fã na exclusão:** o passo não regrava o item já resolvido e sem resumo, para rodar duas vezes sem mudar nada.
+- **Teste do seed:** "resolver, apagar a bio e rodar de novo não reabre" roda só o passo da denúncia. O seed inteiro regravaria a bio antes dele, e o teste não provaria a trava.
+- **Fake do Firestore:** o `emptyDb` de `api/index.test.ts` ganhou um `getAll`, porque o perfil público passou a ler o alvo e a lista de quem pede num `getAll`.
+
+**Erros e suspensão (etapa 2)**
+
+- **Chaves da etapa 4 criadas antes:** `settings.contactHint` e `settings.contactError` entraram na etapa 2, porque o link "Escrever para a equipe" precisa da dica e do endereço na tela quando o e-mail não abre (decisão 15). A etapa 4 reaproveitou as duas.
+- **Onde mora o link:** o `SuspensionContact` fica em `profile/components/suspended-notice.tsx`, exportado pelo index. Todas as telas da frente E usam o mesmo componente.
+- **Trava do `Alert` da suspensão:** o watcher chama `showRefusalAlert('suspended')` sem ação, porque a mensagem é uma só. A trava de 30 s da suspensão vale para todas as ações juntas.
+- **Ações do `actionRefusal`:** `like`, `comment`, `rsvp`, `join`, `follow` (a 1l, com a frase de entrar), `leave`, `report`, `block`, `redeem`, `profile`, `photo` e `invite`; a etapa 3 pôs `reportFan`, `unblock` e o 404 do `block`.
+- **Classificação só pelo kind:** o `actionRefusal` lê só o kind; um `ApiError('unknown', ..., 429, 'too_many_requests')` montado à mão não conta como teto do dia. O resgate continua mapeando o teto pelo código, e a edição do perfil pelo `details.action`, como antes.
+- **`shouldRetry` com erro que não é da API:** o Firestore e as fixtures continuam com 2 novas tentativas. "O resto, nenhuma" vale para as outras recusas da API.
+- **Default da curtida:** além de invalidar `postKeys.detail`, desfaz o coração em todo cache de posts, como o hook. Só a invalidação deixaria o mural com o coração aceso. A default de entrar também abre o "Limite de hoje".
+- **Resgate:** o `rateLimited` é recusa definitiva, ao lado do `suspended`, e volta ao detalhe com a frase do ritmo. As frases saem do `redeemFailureKey`.
+- **Retornos novos dos hooks:** o `useLeaveCentralMutation` devolve `error`, para a frase, e o hook de comentar devolve `refusal`.
+- **Compositor da conta suspensa:** o `restore` devolve `false`, e a linha fica "Não enviado".
+- **Onboarding do suspenso:** a mutação fica em estado de erro, mas a 1l não mostra o erro de salvar.
+- **Import do `isAccountSuspended`:** só de `@/services/api/errors`, fora do index de `@/services/api`, porque vários testes mockam o index só com `api`.
+- **Invalidação do watcher:** o prefixo `['profile', 'me']`, e não `profileKeys.me(uid)`, para cobrir também o uid presumido da abertura sem rede.
+- **Travas no fim da sessão:** o `resetRefusalAlerts` também roda no fim da sessão, junto com o store.
+- **Testes:** o `suspension.test.tsx` usa as fixtures, com os pontos de falha espionados (`postsFixture`, `moderationFixture`, `rewardsFixture` e `followFixture`).
+
+**Denúncia, bloqueio e Ajustes (etapa 3)**
+
+- **Perfis em cache:** bloquear e desbloquear mudam o `fanKeys.profile(fanId)` na hora e invalidam o prefixo `fanKeys.all`, e não só aquele id, porque nas fixtures a mesma pessoa abre por dois ids (`fa-thalita` e `fa-rank-01`). Só o perfil na tela busca de novo.
+- **Cursor das fixtures:** a lista de bloqueados de exemplo pagina com o cursor do servidor (`<índice>:<uid>`), em páginas de 6, e não pela posição das outras fixtures, que pularia um fã ao desbloquear na própria tela.
+- **Reset do `moderationFixture`:** também volta o `fixtureBlocks`, porque os testes que o zeram esperam o estado do seed.
+- **Nome antes do ponto final:** o `nameBeforePeriod` (`utils/text`). O "Thalita S." dos comentários dava "Você bloqueou Thalita S.." com dois pontos. Vale no convite da sheet, em "Você bloqueou" e em "Você desbloqueou".
+- **Chaves de texto:** sem `fanPage.blockError` nem `blockedFans.unblockError`, porque as frases vêm do `actionRefusal` (`post.moderation.blockError` e `fanPage.unblockError`, iguais nas duas telas); com `fanPage.unblockedShort` ("Desbloqueio feito."), para a resposta que chega com a tela fechada; o `blockedFans.empty` sem ponto final, porque o `EmptyState` junta título e mensagem com ". ".
+- **O 404 no bloqueio:** o `block` ganhou a frase de 404, então a sheet do comentário também diz "Este fã não está mais no ImagineUP.". O `unblock` também tem a frase, mas o servidor só dá 404 com o id fora do formato.
+- **Chaves de idempotência:** `report-fan-<fanId>-<id>` e `unblock-<fanId>-<id>` (29.5). O bloqueio segue com a chave sem prefixo, como antes.
+- **"Fãs bloqueados" sem linhas:** quando todas as linhas carregadas foram desbloqueadas, ou a página veio vazia com cursor, a tela busca a página seguinte sozinha e mostra o esqueleto, em vez do vazio. Sem puxar para atualizar.
+- **Linha da lista:** leva `key={uid}` dentro do `renderItem`; com a reciclagem da FlashList, o pedido e o erro de um fã passariam para outro.
+- **Bloqueio sem 404 nas fixtures:** o `block` das fixtures continua sem conferir o perfil, como antes. Só o `reportFan` dá 404.
+- **Um botão só:** "Bloquear" e "Desbloquear" são o mesmo botão, para o foco do leitor de tela ficar nele. O "Desbloquear" não tem dica e usa o toque `confirm`.
+
+**Sobre e conta (etapa 4)**
+
+- **Regra da senha nova:** fica na dica do campo, como no cadastro, e não no placeholder, pela regra de acessibilidade do `CLAUDE.md`.
+- **Chaves que não estavam na lista de 29.11:** `settings.contactSubject` (o assunto do `openSupportEmail`), `settings.versionLabelUpdate` (o rótulo com a data e o id do update), `changePassword.offline`, `changeEmail.offline`, as dicas dos botões, `changeEmail.sentAnnounce` e o `changeEmail.current` separado do `lead`, para o texto funcionar quando a sessão não tem e-mail.
+- **Chaves reaproveitadas:** as de `deleteAccount.errors` e `auth.errors`, o `validation.emailInvalid`, o `auth.signIn.forgot`, o `resetSent` e o `auth.signUp.passwordHint`; "Senha atual" usa o `changePassword.current` nas duas telas, e o `changePassword.errors.sessionEnded` serve às duas.
+- **Papel `link` nas linhas do Sobre:** privacidade, termos, regulamento e contato, porque abrem algo fora do app. O regulamento também leva a seta de link externo.
+- **`hasPassword` com `providerData?.`:** sem a lista, o campo vale `false`. Os testes do listener e do cadastro montam usuários sem ela.
+- **Forma da versão:** o `appVersionInfo` devolve `{ version, update: { date, id } | null }`, e a tela monta a meta e o rótulo. Sem `expoConfig`, a linha mostra só "Versão do app".
+- **Mock do `expo-constants`:** o `expoConfig` do jest-expo é um getter que não se troca, e o `jest.replaceProperty` falha. O mock herda do objeto real e só sobrepõe o `expoConfig`; o `expo-updates` é mockado com getters.
+- **`requires-recent-login` vira `unknown`:** a reautenticação sempre vem antes da troca.
+- **Onde as falhas aparecem:** na troca de e-mail, `emailInUse` e `invalidEmail` ficam no campo do e-mail novo. O "Esqueci minha senha" só aparece com e-mail na sessão.
+- **Erro do "Sair":** fica logo abaixo da seção Conta, e não mais no fim da tela, porque o Sobre vem depois.
+
+Conferência do `verifyBeforeUpdateEmail` no emulador do Auth (pedida em 29.11), com o SDK JS do app, no projeto `demo-imagine-up-app`, com e sem o `emailPrivacyConfig.enableImprovedEmailPrivacy`:
+
+| Caso | O que voltou |
+| --- | --- |
+| `verifyBeforeUpdateEmail` para um e-mail que já tem conta | `auth/email-already-in-use` na hora, sem link |
+| O mesmo para um e-mail livre | o link sai; abrir o link troca o e-mail (`emailVerified: true`) |
+| Outra conta pega o e-mail antes de o fã abrir o link | abrir o link dá 400 `EMAIL_EXISTS`, e a conta fica com o e-mail antigo |
+| `updateEmail` direto, com a proteção ligada | passou |
+
+A última linha mostra que o emulador não imita a proteção contra enumeração; em produção, o `updateEmail` é barrado com `operation-not-allowed`. Por isso o emulador não garante o comportamento de produção: lá, o e-mail que já tem conta pode passar sem erro e só falhar ao abrir o link (29.14, passo 5, confere com uma conta do dono).
+
+**Explorar (etapa 5)**
+
+- **Chave nova `explore.showsLoading`** ("Carregando os shows"): o esqueleto do destaque fica no cabeçalho e o da grade na lista, cada um com um foco; o `explore.loading` diz "Carregando as centrais".
+- **O esqueleto recebe o rótulo por prop,** além do `count`: o domínio `artists` não sabe o texto de cada tela.
+- **As chaves dos cards não mudaram de lugar:** o `fansText` e o `artistCardLabel` foram para o `artists`, mas seguem com as chaves `onboarding.chooseArtists.*`.
+- **Dica no "Ver agenda":** o `SectionHeaderAction` ganhou um `accessibilityHint` opcional, para "Abre a agenda completa".
+- **Sem `within` no `agenda.test.tsx`:** a vitrine embaixo da 1m já fica fora do leitor de tela e das consultas do Testing Library. O único choque era o `UNSAFE_getByType(FlashList)`, e a FlashList da 1m ganhou `testID="agenda-list"` (`agenda/views/agenda.tsx`, fora da lista de arquivos).
+- **Três testes com os mocks do Firebase e do `@/config/env`:** `onboarding/__tests__/selection.test.ts`, `onboarding/__tests__/artist-select-card.test.tsx` e `explore/__tests__/showcase.test.ts`, que agora carregam o index de `artists` ou de `agenda`, que chega à API.
+- **Arquivos além da lista:** `explore/showcase.ts` (puro, com teste em tabela), `explore/hooks/use-explore-refresh.ts` e `explore/components/shows-section.tsx`.
+- **A busca sem resultado é anunciada uma vez,** quando a grade zera e só em foco, como na sheet de todos os artistas.
+- **Falhas e falta de rede:** o erro só aparece sem dado; a atualização que falha com o cache na tela fica calada, sem o "Não deu para atualizar" da 1m. Sem rede e sem cache, a consulta pausa e o esqueleto fica, como na 1b.
+- **No iOS, a lista leva `automaticallyAdjustKeyboardInsets`,** como a sheet de todos os artistas.
+- **Desenho do card e do esqueleto:** a pílula "Na central" é a `Pill` `neutral` `xs` com o check, e o card tem a borda `borderStrong` do card da 1l; o esqueleto da grade mostra 6 cards.
+- **Sem destaque marcado, a vitrine mostra só as linhas,** como o desenho manda. A 1m promove o próximo show a destaque nesse caso, então as duas telas ficam diferentes.
+
+**Documentação (etapa 6)**
+
+- A seção 1 também passou a contar as fracionadas de agora (65 das 66), fora da lista de 29.18.
+- O "Como foi" de 08 e 09/10/2026 entrou no fim de 26.21, antes de "Como publicar daqui em diante".
+- A pergunta 13 do dono ficou sem resposta: as Pendências do `CLAUDE.md` diziam "situação não conferida" para a conta de teste do dono em produção, os `users` de produção, o painel do perfil novo na `main` do `imagineup-admin` (a `main` de lá seguia em `2af8933`, sem a branch `perfil-novo`) e o TTL de `staffLimits.expiresAt` (em 14/10/2026, o painel entrou pelo PR #2 e os dois TTL foram conferidos ativos).
+- A regra geral "Publique todas as funções" ficou no `CLAUDE.md`, com o lote de três deste bloco só como exceção (pergunta 12).
+- O README de passagem do painel está em `Projetos/painel-exigencias-lojas/README.md`, com os 12 itens de 29.7.
+
+**Conferência no emulador Android (etapa 6, 13/10/2026)**
+
+O emulador Android (Medium Phone, API 36), o Expo Go com o Metro e os emuladores do Firebase subiram em uns 3 minutos; o seed rodou com eles no ar. O leitor de tela foi conferido pelo `uiautomator dump`, e a fonte, com o `font_scale` em 1,3.
+
+- **Sheet do comentário (Camila):** nos três pontos do comentário da Duda no clipe, "Bloquear Duda Lima" deixou a sheet aberta, trocou o botão por "Você bloqueou Duda Lima. A equipe só fica sabendo se você denunciar o comentário." e manteve "Denunciar comentário"; fechada a sheet, o comentário da Duda não estava mais no clipe. A sheet encolhe um pouco com a frase no lugar do botão (a decisão 13 previa).
+- **Perfil da Thalita (pelo pódio da 1f):** o bloco "Segurança" com "Denunciar perfil" e "Bloquear Thalita Santos", dois botões irmãos. A sheet "Denunciar Thalita Santos" com o motivo "Ofensivo" criou o item `profileReportQueue/<uid>` aberto, com o `round` 1 e o `offensive` 1. "Bloquear" abriu o `Alert` "Bloquear Thalita Santos?" com os três botões; "Bloquear e denunciar" bloqueou (o botão virou "Desbloquear") e abriu a sheet, e a segunda denúncia fechou a sheet com o item ainda em `reportCount` 1 (`already_reported`). "Desbloquear" no perfil voltou o botão a "Bloquear".
+- **"Fãs bloqueados" (Perfil, Ajustes, Segurança):** Thalita, Duda e Bruno Santana (o `rank-13` do seed), do mais novo ao mais antigo, cada linha um foco ("Thalita Santos, @thalitasan") com o botão irmão "Desbloquear Thalita Santos". Desbloquear a Duda tirou a linha.
+- **Perfil da Aline (fechado):** "Perfil fechado" com o mesmo bloco "Segurança".
+- **Ajustes:** Perfil, Segurança, Conta (com "Trocar e-mail" e "Trocar senha") e Sobre, sem a linha do regulamento (sem a loja no cache). A privacidade e os termos abriram na aba do Chrome (`/privacidade/` e `/termos/`). "Fale com a equipe" abriu o Gmail do emulador (no primeiro toque, logo depois de fechar a aba do Chrome, nada apareceu, nem a frase de falha; o segundo abriu). A versão: "Versão 0.1.0, atualização de 13 out (a0efbb52)".
+- **Explorar:** "nen" na busca, com o campo focado, deixou só o Nenho; "xyz" mostrou "Nenhum artista com “xyz”."; os shows com o São João de Irará em destaque e as três linhas; "Chamar amigos +10" abriu o convite com o link da agenda e o show; o card do Netto abriu a central na pilha da Explorar, com a tab bar, e o voltar devolveu à vitrine; "Ver agenda" abriu a 1m na mesma pilha.
+- **Renata (`rank-48`, suspensa com o motivo `other`):** o aviso no topo da 1b, da 1e e dos Ajustes, sem a linha do motivo; o "Eu vou" do post de show abriu o `Alert` "Conta suspensa", com "Escrever para a equipe" e "Entendi", e o botão voltou ao estado de antes; o segundo toque, dentro dos 30 s, não abriu outro. A sheet "Denunciar Thalita Santos" mostrou "Sua conta está suspensa. Fale com a equipe do ImagineUP." com o link, sem `Alert`.
+- **Alan (conta descartável):** "Trocar senha" com a senha errada mostrou "Senha incorreta." no campo; com a certa, trocou e voltou aos Ajustes, com a sessão de pé. "Trocar e-mail" para o e-mail da Camila mostrou "Este e-mail já tem uma conta no ImagineUP." no campo; para um e-mail livre, o estado "Enviado" com as duas frases e "Voltar aos ajustes". O link, aberto pelo emulador do Auth, trocou o e-mail; o "Entrou como" seguiu com o e-mail antigo, e a sessão não caiu no minuto seguinte (a `api` aceita o token até ele vencer, decisão 18). Depois do "Sair", o e-mail do login veio vazio, e a entrada com o e-mail e a senha novos deu certo.
+- **Fonte em 1,3:** a Explorar (o "Eu vou" das linhas desce para baixo do título, a regra da 1m), a grade, o perfil público, a sheet da denúncia, os Ajustes e "Fãs bloqueados" sem corte nem sobreposição.
+
+O que a conferência mostrou diferente do desenho, sem mudar código:
+
+- **A versão no Expo Go mostra a data e o id:** o Expo Go carrega o JS como um update (`isEmbeddedLaunch` falso), com a data e o id do manifesto de desenvolvimento, e não só "Versão 0.1.0", como a decisão 17 e a etapa 4 esperavam. No APK com EAS Update, a linha mostra o update de verdade.
+- **O `Alert` de três botões no Android:** empilha "Bloquear e denunciar", "Bloquear" e "Cancelar", nessa ordem, em caixa alta e sem o vermelho do `destructive` (só o iOS pinta). É o desenho do sistema.
+
+Ficou para o dono conferir, porque o emulador não reproduz:
+
+- A busca da Explorar com o teclado virtual cheio e a tab bar por cima (29.17): o emulador usa o teclado flutuante de teclado físico, que não cobre o pé.
+- A frase "Não deu para abrir o e-mail. Escreva para ..." nos Ajustes: o emulador tem o Gmail, e o `mailto:` abriu.
+- A sessão caindo depois de abrir o link do e-mail novo, em até 1 hora, quando o SDK renova o token.
+- O teto do dia e o ritmo nas telas: o emulador não tem o ritmo (27.3), e o teto pede dezenas de ações; os dois estão nos testes de navegação.
+- A 1l do suspenso num aparelho novo (o onboarding que conclui sem seguir): a Renata já tinha centrais no seed.
+
+**Revisão final (13/10/2026)**
+
+Dez achados de uma revisão com dois céticos, conferidos de novo no código antes do commit. Todos entraram:
+
+- **A recusa calada pela trava:** com a trava de 30 s segurando o `Alert`, curtir, "Eu vou" e entrar saíam sem dizer nada, e o "Eu vou" e o entrar deixavam de pé o anúncio otimista do toque. O `alertActionRefusal` (`services/refusal-alert.ts`) abre o "Limite de hoje" ou lê o que o `SuspensionWatcher` fez com o "Conta suspensa" (o `onError` do `MutationCache` roda antes do da mutação), e o hook anuncia a frase da recusa quando nenhum `Alert` abriu. As defaults da fila seguem sem anunciar. Os testes da segunda recusa (`post.test.tsx`, `agenda.test.tsx`, `artist.test.tsx` e `suspension.test.tsx`) passaram a exigir o anúncio; no `agenda.test.tsx`, a conferência antiga lia só o `announceForAccessibilityWithOptions`, que o hook não usa, e passava sem provar nada.
+- **A linha velha da lista de bloqueados:** nas fixtures, desbloquear pelo id do comentário (`fa-thalita`) não tirava a linha do id do ranking (`fa-rank-01`), porque a resposta traz o id pedido. Sem a linha do id da resposta nas páginas carregadas, a lista volta à primeira página (`resetQueries`), como no bloqueio; no servidor, isso só acontece com um fã de página ainda não lida.
+- **Comentários velhos:** o `SuspendedNotice`, o `SuspensionWatcher` e o store da suspensão ainda diziam que só a 1b e a 1e tinham o aviso.
+- **A regressão do lote parcial:** só o `moderateComment` e o `hideFanComments` tinham teste. O caso de `moderation-fans.emulator.test.ts` passou a chamar também o `setFanSuspended` (suspender e tirar), o `clearFanPhoto`, o `resetFanUsername` e a `clearFanProfileText` com o item de perfil aberto, e confere o `updateTime` dele depois de cada um. O caso de `posts.emulator.test.ts` prova só que o passo de comentários não cria nada com o id do fã na `moderationQueue`, e a 29.12 passou a dizer isso.
+- **O `createUserProfile` fora do lote de três:** a justificativa dizia que ele só desfaz a conta excluída "no mesmo instante". O gatilho tem `retry: true`, e o desfazer pode vir depois de o fã usar o app. Ele ficava fora porque toda exclusão no Auth dispara o `deleteUserProfile` do lote (decisão 10). Essa é a justificativa do lote de três, que ficou como plano B: na publicação conjunta com o filtro, decidida pelo dono em 13/10/2026, o lote é de cinco, e o `createUserProfile` vai nele (29.14, passo 2, 29.17, 30.13 e o `CLAUDE.md`).
+- **Documentos:** as leituras do `GET /fans/:fanId` (duas ou três) no `CLAUDE.md` e em 28.5; as exceções do `actionRefusal` (a edição do perfil e o resgate) no `CLAUDE.md`; a faixa de linhas de 28.9, que envelheceu com os passos novos; os termos com tolerância zero e a privacidade fiel ao app como bloqueios do envio às lojas (29.14, passo 7, 29.15, 29.16 e o `CLAUDE.md`); e os pré-requisitos da conferência em produção (29.14, passo 5): uma central no ar e o caminho até o perfil da conta A.
+
+Depois da revisão, tudo verde: `npm run check` (166 suítes, 2.689 testes), `npm --prefix functions run typecheck`, `npm --prefix functions test` (58 arquivos, 1.830 testes), `npm run test:functions` (24 arquivos, 426 testes) e `npm run test:rules` (13 suítes, 186 testes), com o fingerprint Android igual ao do APK (`310056fd840b5459416c9926e46846b8c208aa76`).
+
+## 30. Filtro do que o fã publica
+
+O bloco põe um filtro de termos no servidor, conferido antes de o texto do fã chegar aos outros fãs: no comentário, no nome, no @, na bio, na cidade e nas redes. É a exigência que faltava da regra 1.2 da App Store ("a method for filtering objectionable material from being posted to the app") e parte da moderação que a política de conteúdo gerado por usuário do Google Play pede. Esta seção é o contrato: decisões, códigos de erro, a normalização e o casamento, a lista, onde a conferência entra, o app com os textos, testes, o plano de construção e a publicação. Segue os padrões das seções 1 a 29 e só diz o que muda ou acrescenta.
+
+Origem: o pedido do dono de 13/10/2026 ("seguir pro filtro") e a pergunta 3 do dono em 29.15, respondida no mesmo dia com a proposta: um bloco curto depois das exigências das lojas, com uma lista de termos no servidor, conferida na validação do comentário e no `parseProfileChanges` (nome, @, bio e redes), recusando com o 400 que as rotas já usam, em código puro, sem nativo, e só a `api` publicando; o primeiro nome do cadastro ficava com a Moderação (a crítica mostrou que a Moderação não tem como tirá-lo, e o dono aprovou a troca em 13/10/2026, decisão 11). O filtro bloqueia a build das lojas (29.14, passo 7). A decisão 16 de 21.1 deixou a moderação mínima (denunciar, bloquear e a equipe agir), sem nada ocultado sozinho; o filtro não muda isso, porque recusa antes de publicar e não esconde nada que já esteja no ar.
+
+Estado: desenho de 13/10/2026, conferido contra o código da branch `filtro-publicacao`, criada da `exigencias-lojas` em `4ac6e99` (o PR #19, que entrou na `main` pelo merge `a48335b`; o que estava no ar era o `7b87a48`). Revisado no mesmo dia por três críticas (lojas e produto; servidor e segurança; app e coerência), conferidas no código; o que mudou e o que ficou de fora estão em 30.18. Respostas do dono de 13/10/2026 às perguntas de 30.14: a lista por chaves, com a lista legível fora de todo repositório (pergunta 1, opção (a')); o nome do cadastro barrado vira "Fã" no servidor (pergunta 2, opção (b')); a lista dos municípios do IBGE, baixada da API oficial com o ok dele (pergunta 3); e as perguntas 4 a 7 com a proposta. A publicação foi junto com a da seção 29, em 14/10/2026 (30.13). Construção: as seis etapas de 30.12 estão feitas (o motor, a lista e o teste de colisão, os ganchos no servidor, o app, o nome do cadastro e o @ automático, e a documentação com a conferência), e a revisão do bloco por dois céticos também, com todos os achados aplicados (30.19, revisão). Tudo entrou na `main` pelo merge `f258ca2` (PR #20) e foi publicado em 14/10/2026 (como foi, no fim de 30.13 e em 26.21). O plano está em 30.12, a publicação em 30.13 e as perguntas em 30.14.
+
+Trava do bloco: nada muda o fingerprint nativo. Nenhum pacote novo (nem nas funções, que seguem só com `firebase-admin` e `firebase-functions`), nada no `app.config.ts`, nenhum script novo no `package.json`, e `.gitignore`, `eas.json`, ícones e splash intocados. A parte do app chega ao APK interno por EAS Update. Toda etapa do app fecha com o fingerprint local igual a `310056fd840b5459416c9926e46846b8c208aa76`.
+
+Como era antes:
+
+- O comentário recusava só o vazio, o longo demais (acima de 500) e o invisível (`commentTextProblem`, 21.1, decisão 20). O nome, a bio e a cidade passavam só pelo formato e pela visibilidade (`cleanName`, `cleanBio` e `cleanCity`), e as redes, pelo padrão de cada rede (`normalizeSocialHandle`). Nenhum termo era conferido.
+- O @ escolhido recusava só a marca e a equipe (`isReservedUsername`, com os números no lugar de letras e o "rn" no lugar de "m") e os reservados das centrais.
+- O nome do cadastro vem do Auth e passa só pela visibilidade (`profileDisplayName`), e o @ automático sai dele (`usernameBase`). O perfil que nasce sem nome recebe o primeiro nome pela regra `firstProfileName`, gravado pelo próprio app (`fillMissingProfileName`).
+- A regra `firstProfileName` deixa gravar qualquer nome visível num perfil que nasceu sem nome: o `fillMissingProfileName` do cadastro lento e qualquer cliente que crie a conta pela REST do Auth sem nome e grave direto no Firestore. E o @ automático de um nome de uma palavra só é a própria palavra (`usernameBase`, até 15 letras).
+- A Moderação só chegava a um texto ofensivo depois de publicado, por denúncia (de comentário, desde o bloco 6, e de perfil, desde a seção 29). Não há ferramenta para apagar o nome nem a cidade (o `PROFILE_TEXT_FIELDS` do `fan-profile/panel.ts` só tem `bio` e `socials`): nome ofensivo segue pela suspensão (28.6), e o suspenso continua mostrando nome, @ e foto no perfil, e nome e cidade no ranking.
+
+### 30.1 Decisões
+
+Cada item traz a escolha e o motivo, e a alternativa trocada quando há. As perguntas estão em 30.14.
+
+**Servidor**
+
+1. **Recusar antes de publicar, com os códigos de hoje e um motivo novo, `not_allowed`.** O comentário recusa com `comment_invalid`, e o nome, a bio, a cidade e as redes, com `profile_invalid` e o `field` (400 nos dois). O @ recusa como reservado (decisão 6). Motivo: a 1.2 pede filtrar antes de publicar; a recusa no `validate` não grava nada, nem a chave; e o JS instalado já põe o `profile_invalid` no campo certo e o @ como reservado (30.10). Trocas: aceitar e ocultar para revisão, que reaproveitaria o `status: 'hidden'` e a aba "Comentários ocultos", mas guardaria o texto, somaria o comentário nos shards, pagaria os pontos e mostraria ao autor o comentário sumindo, o que ensina a burlar; mascarar com asteriscos, que mostra exatamente o trecho barrado, deixa asteriscos dentro de palavras normais e não serve para o @; e um código novo (`content_not_allowed`, por exemplo), que o JS instalado leria como o genérico "Não deu para salvar. Tente de novo.", mandando tentar de novo à toa.
+2. **O motor e a lista moram no código das funções, em `functions/src/content-filter/`, e a lista vai por chaves.** É a resposta 3 de 29.15 (a lista no servidor, conferida na validação, em código puro, só a `api` publicando). Motivo: a conferência é síncrona e sem leitura, então cabe no `validate`, antes da chave, dos tetos e de qualquer leitura; o teste de colisão roda no CI (30.11); a mudança passa por PR. O repositório é público e da cliente: a lista legível lá poria xingamentos e termos de ódio no GitHub dela, sem ela ter sido ouvida. Por isso a opção (a'), a resposta do dono à pergunta 1 (13/10/2026): o `terms.ts` guarda, de cada termo, o SHA-256 de cada pedaço normalizado e das frases com os pedaços juntos (as chaves), com a categoria e os tamanhos dos `inHandle`, gerado por `node scripts/content-filter-keys.mjs` (fora do `package.json`) a partir da lista legível fora de todo repositório, em `C:/Users/User/Desktop/Projetos/filtro-lista/termos.json`, com a cópia para a cliente revisar em `C:/Users/User/Desktop/Projetos/filtro-lista/lista-para-revisao.md`. As exceções (`FILTER_EXCEPTIONS`) ficam legíveis no código, porque são palavras comuns. Nenhum termo ofensivo legível entra no repositório: nem em teste, nem em comentário, nem em fixture, nem nesta nota, nem em mensagem de commit. Os testes que precisam de um termo barrado o leem da lista fora do repositório quando ela existe; sem ela (o CI), usam só termos falsos de teste, injetados no motor, ou pulam com um aviso claro, e o CI fica verde sem a pasta `filtro-lista` (30.11). A chave não é segredo (quem tiver um dicionário refaz o resumo): só tira o texto do repositório. Custos aceitos: a lista legível fica com o dono, fora do git; o teste das variantes de cada termo roda só na máquina dele (30.11); mudar a normalização pede gerar as chaves de novo (a `FILTER_NORMALIZATION_VERSION` do `normalize.ts` vai junto no `terms.ts`, e o teste recusa a diferença). Trocadas: (a) a lista legível no `terms.ts`, mais simples, só com o ok da cliente; (b) a base no código, sempre ligada, mais os termos da equipe num documento `config/contentFilter`, lido por uma fonte com cache de 60 s usada só pela `api`. O editor no painel fica fora (30.15).
+3. **Onde confere** (30.5): no comentário, no fim do `commentTextProblem`, depois de `empty`, `too_long` e `invisible`; no nome, na bio e na cidade, no fim do `cleanName`, do `cleanBio` e do `cleanCity`; nas redes, depois do `normalizeSocialHandle`, que é espelho do app e fica igual; no @, no `usernameRefusal`, depois do `automatic` e dos reservados. São funções puras que o `validate` e a transação já chamam: nenhuma leitura nova e nenhuma rota nova. Pela (b') da pergunta 2 do dono, também no `createProfile` e no gatilho `queueFanProfileSync` (decisão 11).
+4. **A cidade entra.** A pergunta 3 de 29.15 não a citava, mas o ranking mostra a cidade a todos os fãs (`profileView`), também a da conta privada e a do suspenso. Ela passa pelo `parseProfileChanges` como o nome, e o custo é uma linha.
+5. **Normalização só para comparar.** O texto e cada termo passam pelos mesmos passos (30.3): os espaços estreitos apagados, compatibilidade Unicode, sem acentos, homóglifos (com as maiúsculas), minúsculas, letras soltas, números e símbolos no lugar de letras e letras repetidas. O texto gravado continua o limpo de hoje (NFC), e o esqueleto nunca sai da função.
+6. **O @ filtrado é "reservado".** O `usernameRefusal` devolve `reserved` para o @ que bate na lista, sem distinguir da marca: o `PUT /me/profile` e o `PUT /me/username` recusam com `username_invalid` (`reason: 'reserved'`), e a disponibilidade responde `reserved`. Motivo: um status novo na disponibilidade derruba a tela "Editar perfil" no JS no ar (o `USERNAME_STATUS_TEXT` sem a chave leva um `undefined` ao `t()`, que quebra no `key.split`), e "Indisponível: este @ é reservado." é neutra. O @ no padrão do automático (`^fa[0-9]+$`) é recusado antes, como hoje, e nunca chega ao filtro.
+7. **Palavra inteira no texto livre, nunca trecho; flexões escritas; exceções.** No comentário e na bio, um termo só bate com o pedaço inteiro (ou com `s` ou `es` no fim) e, nas frases, com os pedaços seguidos. Trecho só para os termos marcados `inHandle` (5 letras ou mais, sem colisão no teste), e só dentro de um pedaço dos campos de identidade: o nome, a cidade, o @ e cada pedaço das redes, nunca o esqueleto colado das redes (30.3). Motivo: o problema de Scunthorpe. Por trecho, termos curtos bateriam dentro de palavras comuns, de nomes de cidade e do @ automático de nomes comuns (as palavras estão no corpus, 30.11); e nomes comuns colados com "do" e "da" formam trechos ofensivos no `usernameBase`. O português flexiona: o feminino, o plural em -ões e -ães (o NFKD dá "oes", que não é "ao" com `s`), o diminutivo, o aumentativo e as formas verbais vão escritos nas `forms` de cada entrada (30.4). E uma lista de exceções (`FILTER_EXCEPTIONS`) cobre o falso positivo que o termo não evita, como o nome de um município (Ponta Porã, MS). Qual termo cada exceção evita fica só na cópia para revisão, fora do repositório.
+8. **Uma política só no começo: toda categoria é barrada em todo campo.** O palavrão também é recusado no comentário e na bio. Motivo: o revisor da 1.2 escreve um palavrão comum num comentário e na bio; com ele publicado, o filtro não existe para ele. Com o palavrão livre, o xingamento dirigido também só seria pego por frase ("seu" ou "vai se" com o palavrão), uma combinação escrita para cada caso. Custo aceito: o elogio com palavrão de exclamação, comum entre fãs de arrocha, pagode e piseiro, é recusado. A categoria `profanity` continua separada, e o conjunto do que cada campo barra fica num lugar só (`FIELD_BLOCKS`): liberar o palavrão no comentário e na bio depois da aprovação é mudar um conjunto e publicar a `api`, com a cliente e com o questionário de classificação etária das lojas (pergunta 1 da cliente).
+9. **A recusa não ensina a burlar, não acusa e dá uma saída.** O `details` leva só o `reason` (e o `field`, no perfil): nunca o termo, a categoria nem a posição. A frase do app é a mesma para toda categoria, cita o documento que existe no app ("Termos de uso", em Ajustes, Sobre; "regras do ImagineUP" não existe) e vem com o link "Escrever para a equipe", porque o falso positivo acontece (30.10). O `message` do `comment_invalid` passa a "Comentário vazio, longo demais, com caracteres invisíveis ou fora dos Termos de uso do ImagineUP."; os do `profile_invalid` e do `username_invalid` não mudam.
+10. **Só o que muda é conferido, e sem retroatividade.** O app manda no `PUT /me/profile` só o que o fã mexeu (`changesOf`), e o @ só passa pelo `usernameRefusal` quando difere do de agora. Assim, um valor guardado antes de o termo entrar na lista não trava a edição dos outros campos. Um cliente que mande um campo igual ao guardado recebe a recusa dele: aceito. Nada do que já está publicado é conferido nem marcado: produção não tinha `users` em 08/10/2026 (situação não conferida, pergunta 13 de 29.15), e uma carga que marcasse não teria fila onde entrar (o item da `moderationQueue` exige um comentário denunciado, e o da `profileReportQueue`, quem denunciou).
+11. **O nome do cadastro que bate vira "Fã", e o @ dele vai para o `fa`, só no servidor (opção (b') da pergunta 2 do dono, aprovada em 13/10/2026).** A resposta 3 de 29.15 deixou o nome do cadastro com a Moderação, mas a Moderação não tem como tirá-lo (só apaga bio e redes), e a suspensão não o tira do ranking: na prática, o nome fica no ar. O revisor que se cadastra com um nome ofensivo o vê no ranking, e a equipe não o tira. O desenho anterior só olhou anular o nome para `null`, que não adianta: a regra `firstProfileName` exige o nome de antes `null` e deixa o app e qualquer cliente gravarem de novo. Um nome neutro que não é `null` fecha a regra. Então:
+    - no `createProfile`, depois do `profileDisplayName` (fora dele, para o `hasName` do gatilho não mudar), o nome barrado por `isBlockedText(nome, 'displayName')` vira "Fã" (`FILTERED_NAME`, o mesmo texto que o app mostra para o perfil sem nome), e a base do @ barrada por `isBlockedHandle(base)` vira `fa`;
+    - no gatilho `queueFanProfileSync`, quando o `displayName` do evento mudou, a transação do `syncFanSearchKeys` (que já relê o perfil) troca o nome barrado por "Fã", com o `searchKeys` recalculado e sem `updatedAt`. Isso cobre o cadastro lento (`fillMissingProfileName`) e quem cria a conta pela REST sem nome e grava o nome pela regra. O nome fica à vista por alguns segundos, até o gatilho; as cópias nos comentários se acertam pela fila de hoje.
+    - Nunca `null`: com `null`, a regra reabre e o cliente regrava em laço (cada volta, dois gatilhos e uma transação).
+    Sem mudança de regra nem de app. Custos: o `createUserProfile` e o `queueFanProfileSync` publicam junto com a `api`, do mesmo commit, para valer a mesma lista (30.13); o painel mostra "Fã" como nome, sem dizer que foi o filtro. O filtro continua fora do `profileDisplayName` (o `hasName` leria o nome barrado como "nome ainda não chegou" e esperaria os 3,75 s à toa) e do `isReservedUsername`. A (a), a resposta de antes, e a (b), que tiraria a regra, ficaram de fora (30.14).
+12. **Nada na Moderação, no painel, nas regras, nos índices, nas filas ou nos tetos.** Nenhuma função nova (66 funções, a conta de CPU do `cpu.test.ts` igual; pela (b'), duas que já existem mudam), nenhuma ação de auditoria, nenhum rótulo novo no painel e nenhum README de passagem (30.7). O filtro não cria item em fila nenhuma: o texto recusado não existe para a equipe.
+13. **A linha do log da `api` ganha o `code` e o `reason` da recusa.** Hoje ela tem `method`, `route`, `status`, `ms`, `uid` e `replayed`; na resposta de erro, entram o `code` e o `reason`, este só quando o `details.reason` casa com `^[a-z_]{1,40}$` (assim, nem no futuro um texto do cliente chega ao log). Com eles o dono conta no Cloud Logging as recusas do filtro no comentário e no perfil (`not_allowed`). As do @ não se contam: saem como `reserved`, iguais às da marca, e a disponibilidade é um 200. Nunca o texto, o termo nem o `details.field` (no `invalid_request`, o `field` pode ser uma chave qualquer que o cliente mandou). A linha de sucesso não muda.
+14. **Sem teto novo.** A recusa no `validate` não conta nos tetos do dia nem grava nada; quem repete tentativas para descobrir a lista fica só com o ritmo de 27.3 (60 de uma vez e 1 por segundo, por instância). Contar a recusa num teto pediria uma gravação fora da transação, que a recusa aborta. Com a lista no repositório público, mesmo por chaves que um dicionário refaz (decisão 2), sondar ensina pouco que o repositório não diga.
+
+**App**
+
+15. **Nenhuma lista no aparelho.** O app não espelha a lista nem a normalização: a recusa vem do servidor, como a do @ reservado (o `profile/username.ts` também não espelha os reservados). As fixtures não filtram (30.9).
+16. **Um tipo novo de recusa, `content`, pela peça comum.** Um helper em `services/api/errors.ts`, `isContentRefusal(error)` (400 com o `code` `comment_invalid` ou `profile_invalid` e o `details.reason` `not_allowed`), fora do index de `@/services/api` (os testes mockam o index), como o `isAccountSuspended`, mas sem `instanceof`: lê o `status`, o `code` e o `details` de qualquer objeto, porque o erro do comentário que volta do disco é um objeto do JSON, e não um `ApiError`. O `actionRefusal(error, action)` confere o conteúdo primeiro, por ele, e devolve `{ type: 'content', key }` com a frase da ação, que fica num campo opcional novo, `content`, das `ActionPhrases`: o comentário e o perfil têm. Toda decisão de conteúdo no app sai do `actionRefusal`. Nenhum `Alert`: a recusa aparece na tela onde o fã escreveu.
+17. **O comentário recusado é definitivo, e a linha diz isso.** Com o campo vazio, o texto volta a ele, a linha sai, e a frase aparece embaixo do compositor com o link "Escrever para a equipe", anunciada, com o toque de erro e o foco no campo. Com o campo ocupado (o fã já escreve outro, ou o comentário voltou da fila offline), a linha fica num estado próprio, `refused`: "Não publicado. Toque para editar o texto", sem frase embaixo do compositor (ela ficaria embaixo de outro texto), com um anúncio que fala da linha. Tocar nela nunca manda de novo: com o campo vazio, faz o mesmo que o `onError` com o campo vazio (um helper só para os dois caminhos); com o campo ocupado, anuncia "Esvazie o campo para editar o comentário não publicado.", com o toque de aviso. Digitar apaga a frase de conteúdo (a do teto e a do suspenso ficam até o próximo envio). O comentário recusado sobrevive ao app fechado: o persister guarda a mutação dele com o erro (30.10). Com a conta suspensa não há campo: a linha diz "Não publicado, conforme os Termos de uso", sem toque e sem prometer edição (30.19, revisão). Troca o laço de hoje, em que o toque manda com chave nova e a recusa volta igual.
+18. **O perfil mostra a frase no campo e a saída embaixo do header.** O `profile_invalid` com `not_allowed` põe "Conforme os Termos de uso do ImagineUP, este texto não pode ser usado." no campo do `details.field`, com o foco e o anúncio de hoje, no lugar do "Confira este campo.", e embaixo do header "Se for um engano, fale com a equipe." com o link "Escrever para a equipe". O @ não muda: "Indisponível: este @ é reservado.".
+19. **Só JS.** `errors.ts`, `refusal.ts`, `persister.ts`, `posts/types.ts`, `posts/queries.ts`, a linha do comentário, o compositor e a tela do post, o link do contato (`suspended-notice.tsx`), `edit-profile.tsx` e o `translations.json`, com os testes. Nada nativo; chega por EAS Update depois da `api` (30.13).
+
+### 30.2 Contrato: rotas e erros
+
+Nenhuma rota nova (a `API_ROUTES` continua com 44), nenhum código novo na tabela da seção 1 e nenhum status novo na disponibilidade do @. Mudam as recusas de quatro rotas:
+
+| Rota | Recusa nova | Onde |
+| --- | --- | --- |
+| `POST /posts/:postId/comments` | 400 `comment_invalid`, `details: { reason: 'not_allowed' }` | `validate` (`parseCommentText`), sem leitura |
+| `PUT /me/profile` | 400 `profile_invalid`, `details: { field, reason: 'not_allowed' }`, com o `field` `displayName`, `bio`, `city` ou `socials.<rede>` | `validate` (`parseProfileChanges`), sem leitura |
+| `PUT /me/profile` e `PUT /me/username` (o @) | 400 `username_invalid`, `details: { reason: 'reserved' }` | transação (`usernameChangeProblem`), como o reservado de hoje |
+| `GET /me/username/availability` | 200 `{ "username": "...", "status": "reserved" }` | `readUsernameAvailability`, depois da leitura da reserva e do `current`: uma leitura, como hoje |
+
+Exemplo:
+
+```json
+{
+  "code": "comment_invalid",
+  "message": "Comentário vazio, longo demais, com caracteres invisíveis ou fora dos Termos de uso do ImagineUP.",
+  "details": { "reason": "not_allowed" }
+}
+```
+
+- **Ordem do comentário:** o ritmo (429 `rate_limited`), a chave (400 `idempotency_key_required`), o post fora do formato (404 `post_not_found`), o corpo sem texto (400 `invalid_request`) e então `empty`, `too_long`, `invisible` e `not_allowed`, nessa ordem. Tudo isso vem antes do `runIdempotent`: o suspenso que manda um texto barrado recebe o 400, e não o 403.
+- **Ordem do perfil:** a de hoje, um campo por resposta, na ordem do `parseProfileChanges` (nome, o formato do @, bio, cidade, gênero e redes); o `not_allowed` de cada campo vem depois das outras regras dele. O @ reservado continua na transação, depois do `validate`: um corpo com a bio barrada e o @ reservado recusa a bio primeiro, como hoje acontece com o formato da bio.
+- **Tipos:** `CommentTextProblem` e `ProfileInvalidReason` ganham `'not_allowed'`; o `UsernameRefusal` não muda.
+- **Tabela da seção 1:** a linha do `comment_invalid` passa a "comentário vazio, longo demais, com invisível ou fora dos Termos de uso (bloco 6 e seção 30)"; a do `profile_invalid`, "um campo do `PUT /me/profile` fora da regra ou das regras de conteúdo (seções 28 e 30)"; a do `username_invalid`, "@ fora do formato, reservado (a marca, a equipe ou a lista da seção 30) ou no padrão do automático". A mensagem nova do `comment_invalid` entra na linha das mensagens.
+
+### 30.3 Normalização e casamento
+
+O motor fica em `functions/src/content-filter/` (`normalize.ts`, `match.ts`, `terms.ts` e `index.ts`), puro e sem dependência nova: o Node 24 das funções tem o ICU completo e o `node:crypto` (o SHA-256 das chaves), e o Hermes não entra, porque o app não roda o filtro.
+
+**Passos**, os mesmos para o texto, para cada termo, forma e exceção, nesta ordem:
+
+0. Espaços estreitos apagados, sem separar: U+2006, U+2008, U+2009, U+200A, U+202F e U+205F. Antes do NFKD, que os troca pelo espaço comum: depois dele, não há como distinguir. O teclado do celular não digita nenhum deles, e o `isVisibleLine` e o `isVisibleMultiline` aceitam todos (conferido no `visible-line.ts`): um termo com um U+200A no meio aparece quase inteiro na tela. O espaço comum, o NBSP e o U+3000 continuam separando.
+1. `normalize('NFKD')` e tirar `\p{M}`: acentos, tachado e sublinhado de combinação, letras largas, matemáticas, em círculo, sobrescritas e ligaduras.
+2. Homóglifos, por um mapa explícito (`HOMOGLYPHS`) só com alvo de `a` a `z`, antes das minúsculas e com as maiúsculas escritas: o cirílico que parece latino (А, В, Е, К, М, Н, О, Р, С, Т, У, Х, Ѕ, І, Ј e а, в, е, к, м, н, о, р, с, т, у, х, і, ј, ѕ, һ, ԁ), o grego (Α, Β, Ε, Ζ, Η, Ι, Κ, Μ, Ν, Ο, Ρ, Τ, Υ, Χ e α, β, ε, η, ι, κ, ν, ο, ρ, τ, υ, χ, ϲ), as versaletes (ᴀ, ʙ, ᴄ, ᴅ, ᴇ, ɢ, ʜ, ɪ, ᴊ, ᴋ, ʟ, ᴍ, ɴ, ᴏ, ᴘ, ʀ, ꜱ, ᴛ, ᴜ, ᴠ, ᴡ, ʏ, ᴢ), as letras em quadrado e em círculo negativos (🅰 a 🆉 e 🅐 a 🅩) e os indicadores regionais (🇦 a 🇿). Antes das minúsculas porque a maiúscula grega muda de desenho ao baixar: Η (H) vira η (n), Ν (N) vira ν (v), Υ (Y) vira υ (u), e Μ e Ζ viram μ e ζ, fora do mapa. Não usar o `confusables` inteiro do UTS #39: ele junta "rn" com "m" e "l" com "I", e criaria colisões.
+3. `toLowerCase()` sem local e o mapa das letras que o NFKD não decompõe: ß vira ss, æ vira ae, œ vira oe, ø vira o, ł vira l, đ vira d, ħ vira h e ı vira i.
+4. Pedaços: o texto é cortado em sequências de `[a-z0-9@$!|]`; todo o resto separa (espaço, quebra de linha, pontuação, símbolo, emoji e o que sobrou de `\p{Cf}`, como o ZWJ entre emoji).
+5. Letras soltas: três ou mais pedaços seguidos de um caractere só também entram juntos, como um pedaço a mais (as letras separadas por espaço, ponto, hífen ou quebra de linha, que o comentário e a bio aceitam uma por linha). Os pedaços soltos ficam.
+6. Números e símbolos no lugar de letras, só nos pedaços com pelo menos uma letra de `a` a `z` (o pedaço junto do passo 5 inclusive): 4 e @ viram a; 3, e; 1, ! e |, i; 0, o; 5 e $, s; 7, t. No miolo do pedaço (da primeira letra à última), os números e `@ $ ! |` trocam, e o miolo gera também a versão sem `@ $ ! |` (as letras separadas por "|" ou "!" formam um pedaço só). Nas pontas, os números e os símbolos geram duas versões, a aparada (sem eles) e a trocada, e o pedaço bate se uma das versões bater. O 1 é lido como "i" e também como "l", numa versão a mais. Sem isso, um termo seguido de "!", de "!!!", de "1" ou de "2024" vira outro pedaço e escapa (o seed já tem "hoje!" e "privado!!!", e o @ só aceita letras e números, então o termo com dígitos é a variação natural), e o "@" de uma menção cola um "a" na frente. O pedaço só de números ou de símbolos fica como está, e nenhum termo é número.
+7. Letras repetidas: duas ou mais iguais seguidas viram uma.
+
+O resultado é a lista de pedaços do texto (`filterTokens`). O esqueleto de um identificador (`handleSkeleton`, para o @ e as redes) é o mesmo caminho com os pedaços juntos, sem separador. Os termos, as formas e as exceções passam pelos passos 0 a 7 (os termos e as formas no `content-filter-keys.mjs`, pela (a'), e o `terms.ts` já chega com as chaves; as exceções, legíveis, na compilação). A compilação acontece na primeira conferência e fica guardada na instância, com o resultado ou com a falha: as funções que não conferem texto nunca pagam a compilação na partida a frio, e uma entrada fora da forma não compila de novo a cada pedido. A mensagem da falha diz só o índice da entrada, nunca o termo, porque o `logger.error` da `api` leva a `error.message`.
+
+**Casamento:**
+
+- **Palavra** (entrada de um pedaço): o pedaço igual ao termo ou a uma das formas, ou a eles com `s` ou `es` no fim. Nunca trecho no texto livre.
+- **Frase** (entrada de 2 a 5 pedaços): os pedaços seguidos, cada um pela regra da palavra. O pedaço junto do passo 5 também é comparado às frases com os pedaços juntos (a frase soletrada letra a letra). Serve para o insulto dirigido, a ameaça e a incitação, cujas palavras sozinhas são comuns.
+- **Trecho** (`inHandle`): um pedaço que contém o termo. Só nos campos de identidade e só dentro de um pedaço.
+- **Exceções** (`FILTER_EXCEPTIONS`): palavras e frases inocentes, normalizadas pelos mesmos passos. Os pedaços de uma exceção achada no texto (e o trecho do esqueleto que ela cobre) não batem com nada. Ponta Porã e Cunha Porã entram aqui.
+- **@:** o esqueleto inteiro igual a uma palavra (com `s` ou `es`) ou a uma frase com os pedaços juntos, ou contendo um termo `inHandle` (o @ é um pedaço só).
+- **Redes:** cada pedaço separado por `.`, `_` e `-` pela regra da palavra, da frase e do trecho; o esqueleto colado só por igualdade (palavra ou frase junta), nunca por trecho, porque nomes comuns colados com "do" e "da" formam trechos ofensivos, e o fã não troca o usuário da rede.
+- **Por dentro:** cada pedaço vira uma chave (`pieceKey`): o SHA-256 dele, pela (a'); nos testes do motor, também o próprio pedaço. Um `Map` das palavras pela chave (com a categoria), um `Map` das frases pela chave do primeiro pedaço, um `Map` das frases juntas e, para os `inHandle`, as chaves dos trechos do pedaço em cada tamanho que a lista tem (o pedaço do @ e das redes tem até umas 30 letras; o do nome e o da cidade, até 60). Nada de expressão regular montada com termo (ReDoS). O custo é linear no texto, que já tem teto (500 no comentário; o NFKD cresce no máximo 18 vezes num caractere, no U+FDFA), com algumas centenas de SHA-256 por comentário na (a'), abaixo de 1 ms.
+
+**Por campo** (o `FIELD_BLOCKS`, decisão 8):
+
+| Campo | Regra | Categorias barradas |
+| --- | --- | --- |
+| Comentário (`comment`) | palavra e frase | todas |
+| Bio (`bio`) | palavra e frase | todas |
+| Nome (`displayName`) | palavra, frase e trecho em cada pedaço | todas |
+| Cidade (`city`) | palavra, frase e trecho em cada pedaço | todas |
+| Redes (`socials.<rede>`) | palavra, frase e trecho em cada pedaço; o esqueleto colado só por igualdade | todas |
+| @ (`username`) | o esqueleto: igualdade e trecho | todas |
+
+O nome e a cidade ganharam o trecho porque "Fulano" colado a um termo, num pedaço só, passava no nome e era recusado como @. Os termos `inHandle` já passam pelo teste de colisão contra os nomes colados e os municípios inteiros (30.11).
+
+**Funções**, exportadas pelo `content-filter/index.ts`: `isBlockedText(text, field)`, com o `field` `'comment' | 'bio' | 'displayName' | 'city'`; `isBlockedHandle(username)`; `isBlockedSocial(handle)`; e `FILTERED_NAME`, o "Fã" da decisão 11. Para os testes, também `filterTokens(text)`, `handleSkeleton(value)` e `createFilter(terms, options)`, que monta as três funções com uma lista legível qualquer, exceções e um `FIELD_BLOCKS` qualquer (a lista falsa dos testes do motor). Devolvem só sim ou não: a categoria e o termo nunca saem do módulo.
+
+### 30.4 A lista
+
+```ts
+type FilterCategory = 'insult' | 'profanity' | 'hate' | 'sexual' | 'violence';
+
+// A lista legível: filtro-lista/termos.json, fora de todo repositório (a').
+type FilterTerm = {
+  term: string;             // como se escreve, com acento; a frase com espaço entre as palavras
+  category: FilterCategory;
+  forms?: string[];         // feminino, plural em -ões e -ães, diminutivo, aumentativo, formas verbais
+  inHandle?: true;          // vale como trecho nos campos de identidade (5 letras ou mais, sem colisão)
+};
+
+// O que o terms.ts guarda: as chaves, nunca o texto.
+type FilterEntryKeys = {
+  category: FilterCategory;
+  forms: string[][];        // o termo e cada forma, como as chaves dos pedaços
+  joined: string[];         // a chave de cada um com os pedaços juntos
+  handleLengths?: number[]; // com inHandle: o tamanho de cada um junto, para os trechos
+};
+
+export const FILTER_NORMALIZATION_VERSION: number;       // normalize.ts, copiada no terms.ts
+export const FILTER_ENTRIES: readonly FilterEntryKeys[]; // content-filter/terms.ts, gerado
+export const FILTER_EXCEPTIONS: readonly string[];       // content-filter/terms.ts, legível
+```
+
+- **Categorias:** `insult`, xingamento dirigido a alguém; `profanity`, palavrão solto, de exclamação; `hate`, ódio por raça e cor, gênero (misoginia e transfobia), orientação sexual, religião (com as de matriz africana), deficiência e origem (o preconceito contra o Nordeste quase só em frases, porque os gentílicos são palavras neutras); `sexual`, sexual explícito e assédio; `violence`, ameaça, incitação ao suicídio e à automutilação, e apologia ao nazismo.
+- **A lista inicial é nossa**, escrita na etapa 2 (30.12), sem copiar listas prontas (elas trazem muitos termos ambíguos): uma base mínima em português do Brasil, de 100 a 250 entradas com as frases, e uma base curta em inglês (insulto, ódio, sexual e os palavrões mais comuns), porque o revisor das lojas testa em inglês e o app só tem português. O corpus confere a colisão do inglês com o português. Cada termo de insulto e de ódio vem com as formas que o português usa. As abreviações comuns de xingamento entram; as de duplo sentido (como "fds", que também é "fim de semana") ficam fora e entram no corpus. A cliente revisa antes de mandar às lojas (pergunta 2 da cliente), sem travar a construção nem a publicação: a revisão só tira, acrescenta ou muda de categoria.
+- **Fica fora da lista:** o termo que tem sentido inocente comum (nome de bicho, cor, peixe, cidade, apelido de família, parte do corpo de uso comum: veado, macaco, galinha, piranha, cobra, preto, nego, bicha, pinto, pau, rola), que fica com a denúncia; números puros (24, 171, 88), que nunca batem; nomes de pessoas; marcas e nomes de artistas.
+- **Frase no lugar da palavra** quando a palavra sozinha é comum e só a combinação ofende, conferida contra as expressões do dia a dia (30.11).
+- **Exceções:** as palavras e frases inocentes que, normalizadas, têm um pedaço igual a um termo ou a uma forma (como Ponta Porã), achadas pelo corpus (30.11). Ficam legíveis no `terms.ts`, porque são palavras comuns e não ofendem, e nem o código nem esta nota dizem qual termo cada uma evita.
+- **Tetos**, conferidos pelo teste: até 400 entradas (as formas não contam), até 12 formas por entrada e até 200 exceções; termo e forma de 2 a 40 caracteres depois de normalizados; frase de 2 a 5 pedaços; `inHandle` só com 5 letras ou mais no esqueleto. Entrada fora da forma lança na compilação (30.3), e o `terms.test.ts` pega antes do deploy.
+- **Onde fica** (resposta 1 do dono, opção (a'); esta nota não repete a lista): a lista legível em `C:/Users/User/Desktop/Projetos/filtro-lista/termos.json`, fora de todo repositório e guardada pelo dono, e o `terms.ts` com as chaves, gerado por `node scripts/content-filter-keys.mjs` (fora do `package.json`, depois do `npm --prefix functions run build`, porque usa o `normalize` compilado). A cópia para a cliente revisar (termo, formas, categoria e onde vale) sai da etapa 2 em `C:/Users/User/Desktop/Projetos/filtro-lista/lista-para-revisao.md`, também fora de repositório.
+- **Nada legível no repositório:** nenhum termo ofensivo escrito em teste, comentário, fixture, nesta nota ou em mensagem de commit. O teste que precisa de um termo barrado o lê do `filtro-lista/termos.json` quando ele existe; sem ele (o CI), usa termos falsos de teste injetados no motor (`createFilter`, ou o módulo trocado pelo `vi.mock`) ou pula com um aviso claro.
+- **Mudar a lista:** mudar o `termos.json` e gerar o `terms.ts` de novo, um PR com o teste de colisão verde e a publicação da `api` (e do `createUserProfile` e do `queueFanProfileSync`, pela (b'); 30.13). Mudar a normalização muda o sentido de todos os termos: sobe a `FILTER_NORMALIZATION_VERSION`, as chaves são geradas de novo, e o teste recusa o `terms.ts` com a versão velha.
+
+### 30.5 Onde a conferência entra, passo a passo
+
+**`POST /posts/:postId/comments`:** o `validate` chama o `commentText`, que chama o `parseCommentText`: o `cleanMultiline` e depois o `commentTextProblem`, que confere `empty`, `too_long`, `invisible` e, por último, `isBlockedText(cleaned, 'comment')`, que devolve `'not_allowed'`. O `handle` chama o `commentText` de novo, como hoje, antes do `commentOnPost`. O seed grava pelo `runComment` e pelo `commentOnPost`, sem passar pelo `parseCommentText` (30.9).
+
+**`PUT /me/profile`:** o `validate` chama o `bodyChanges`, que chama o `parseProfileChanges`, na ordem dos campos:
+
+1. `cleanName`: depois do `invisible`, `isBlockedText(name, 'displayName')` lança `profile_invalid` (`displayName`, `not_allowed`).
+2. O @: só o formato, como hoje.
+3. `cleanBio`: com a bio não vazia, depois do `invisible`, `isBlockedText(bio, 'bio')`.
+4. `cleanCity`: com a cidade não vazia, depois do `invisible`, `isBlockedText(city, 'city')`.
+5. Redes: em cada rede do corpo, depois do `normalizeSocialHandle` que deu certo e com o usuário não nulo, `isBlockedSocial(handle)` lança `profile_invalid` (`socials.<rede>`, `not_allowed`). O `normalizeSocialHandle` é espelho do app (28.1, decisão 4) e não muda.
+
+Na transação, o `updateFanProfile` segue igual: o `profileDiff`, o `usernameChangeProblem` do @ que mudou (que chega ao `usernameRefusal`), os tetos e o `tx.update`. O seed do perfil passa pelo `parseProfileChanges` (`seedFanDetails`).
+
+**`PUT /me/username` e o @ do `PUT /me/profile`:** o `usernameRefusal(username)` fica `format`, `automatic`, `reserved` pelo `isReservedUsername` e, por último, `reserved` pelo `isBlockedHandle(username)`. O `usernameChangeProblem` não muda e só roda com o @ diferente do de agora.
+
+**`GET /me/username/availability`:** o `readUsernameAvailability` lê a reserva, como hoje, responde `current` para o @ de agora antes de qualquer conferência, e `reserved` para toda recusa do `usernameRefusal`, sem leitura a mais.
+
+**Pela (b') da pergunta 2 do dono** (decisão 11):
+
+- `createProfile` (`store.ts`): depois do `profileDisplayName`, `isBlockedText(nome, 'displayName')` troca o nome por `FILTERED_NAME`; depois do `usernameBase`, `isBlockedHandle(base)` troca a base por `fa`. O `searchKeys` sai do nome e do @ já trocados. Os candidatos com os dígitos sorteados que batem no `isBlockedHandle` saem da lista antes de ler as reservas (o passo 6 de 30.3 troca os dígitos por letras); o automático nunca é conferido e fica sempre por último (30.19, etapa 5).
+- `queueFanProfileSync` (`fan-profile/sync.ts`): com o `displayName` do evento mudado, a transação do `syncFanSearchKeys` relê o perfil e, com o nome de agora barrado, grava `FILTERED_NAME` e o `searchKeys` dele, sem `updatedAt`. Só a mudança do nome confere o nome: a troca do @ pela Moderação ou pelo fã não confere de novo o nome que já estava lá (sem retroatividade, decisão 10).
+
+**Nada muda em:** `profileDisplayName`, `usernameBase`, `usernameCandidates`, `isReservedUsername` (a lista da marca e da equipe continua só dele), `handleUserCreated` (o `hasName`), a regra `firstProfileName`, o `fillMissingProfileName` e as ferramentas da Moderação. O `resetFanUsername` continua com o `fa`.
+
+### 30.6 Idempotência, tetos, privacidade e logs
+
+- **Idempotência:** a recusa no `validate` vem antes do `runIdempotent`, então não grava a chave, e o app manda chave nova depois de recusa (`keepsAttempt` falso). Limite aceito por escrito: o `validate` roda antes de a resposta guardada voltar, e o reenvio com a mesma chave (depois de uma falha incerta) de um comentário que já foi gravado é recusado se, no meio, uma publicação da `api` mudou a lista e passou a barrar o texto. O comentário fica gravado, e o app mostra a recusa. A lista só muda por deploy, e a mesma chave só volta depois de falha incerta, então o caso é raro. Conferir no `handle`, depois da resposta guardada, custaria duas leituras por recusa e tiraria a recusa do `validate`.
+- **Tetos:** nenhum novo, e a recusa não conta (decisão 14).
+- **Privacidade:** o texto recusado nunca é guardado pelo código do servidor: nem na chave (não há chave), nem na linha `api` do log (decisão 13), nem no `details` (decisão 9), nem em fila. Limite aceito: o @ da disponibilidade (`GET /me/username/availability`) vai na URL, e o log de pedidos que o Cloud Run grava sozinho para a `api` guarda a URL com a busca. Isso existe desde o bloco 9, e com esta seção o @ recusado como `reserved` inclui os da lista (o app chama 400 ms depois da última tecla, então o @ e os começos dele). Mudar a rota pede o app novo, porque o JS no ar chama o GET; uma rota com o @ no corpo fica para um bloco seguinte, se o dono quiser (30.15). O nome trocado por "Fã" (b') não vai para log nem auditoria. A lista não tem nome de pessoa. No aparelho, o comentário recusado fica no cache do próprio fã até ele tocar na linha (30.10), como o "Não enviado" de hoje.
+- **Logs:** a linha `api` ganha `code` e `reason` só nas respostas de erro (decisão 13). O `logger.error` do erro inesperado não muda; a falha da compilação da lista leva só o índice da entrada (30.3).
+
+### 30.7 Efeitos no painel e na Moderação
+
+O painel publicado não muda e não quebra: nenhuma coleção, regra, callable, ação de auditoria, rótulo ou teto novo. Não há README de passagem (`C:/Users/User/Desktop/Projetos/painel-filtro/README.md` não é escrito): sem tela de lista e sem rótulo novo, a outra conversa não tem o que fazer. A opção (b) da pergunta 1 do dono, que pediria uma ação de auditoria da carga da lista e o README, ficou de fora.
+
+A Moderação não vê nada novo: o texto barrado não é publicado, não entra em fila e não fica guardado. Ela continua com a denúncia (de comentário e de perfil), o bloqueio e as ferramentas do fã (ocultar comentários, apagar bio e redes, trocar o @, tirar a foto e suspender). Pela (b') da pergunta 2 do dono, o nome do cadastro que bate aparece como "Fã" na ficha, sem marca de que foi o filtro (decisão 11). O que passar pelo filtro (palavra fora da lista, termo ambíguo, escrita criativa) segue pela denúncia. As recusas do filtro no comentário e no perfil aparecem só no Cloud Logging, para o dono contar (`code` e `reason`); as do @ não se separam das da marca (decisão 13).
+
+### 30.8 Regras, índices e exclusão de conta
+
+Nada muda: nenhuma regra (a `firstProfileName` fica; a (b') a fecha pelo nome que não é `null`, decisão 11), nenhum índice, nenhuma isenção e nenhum passo novo na exclusão de conta (o filtro não guarda nada do fã).
+
+### 30.9 Seed dos emuladores e fixtures
+
+- **Seed:** não muda. No emulador, as funções carregam a lista de verdade, e nenhum texto do seed pode bater: os comentários (`SEED_ENGAGEMENT` e `SEED_SPAM_COMMENTS`), os nomes, as cidades e os @ (`SEED_FANS` e `RANKING_SEED`, cujos nomes, pela (b'), passam pelo `createProfile` do gatilho de cadastro), e a bio e as redes de `SEED_FAN_DETAILS`, que passam pelo `parseProfileChanges` (a bio de propaganda do Promo inclusive). Os comentários do seed não passam pelo `parseCommentText`, mas o `terms.test.ts` confere todos (30.11), para o seed continuar sendo o que as rotas aceitariam.
+- **Fixtures do app:** não filtram. Sem a lista no aparelho, o `postsFixture.addComment` e as fixtures do perfil aceitam qualquer texto. É uma diferença aceita da regra de coerência (seção 13): o caminho da recusa é provado no Jest com um `ApiError` falso e nos testes do emulador.
+
+### 30.10 App
+
+**Peças comuns:**
+
+- `services/api/errors.ts`: o `API_ERROR_CODES` ganha `commentInvalid` (`comment_invalid`) e `profileInvalid` (`profile_invalid`), mais a constante `CONTENT_NOT_ALLOWED` (`not_allowed`); o helper `isContentRefusal(error)`: um objeto com `status` 400, o `code` de um dos dois e o `details.reason` igual a `not_allowed`, sem `instanceof` (decisão 16).
+- `services/api/refusal.ts`: o `RefusalType` ganha `'content'`; as `ActionPhrases` ganham `content?: TranslationKey`; o `actionRefusal` confere o `isContentRefusal` primeiro e devolve `{ type: 'content', key: phrases.content }` quando a ação tem a frase. O `comment` ganha `content: 'post.composer.contentRefused'`, e o `profile`, `content: 'editProfile.contentRefused'`. As outras ações não mudam (a recusa de conteúdo não chega a elas).
+- `services/query/persister.ts`: o `dehydrateOptions` ganha o `shouldDehydrateMutation`: o padrão do TanStack (`defaultShouldDehydrateMutation`, só a pausada) ou a mutação com `meta.keepRefused` que terminou em erro de conteúdo (`isContentRefusal`). Sem isso, o comentário da fila offline que volta recusado fica em erro só na memória e sai do disco no salvamento seguinte: com o app fechado antes de o fã abrir o post, o texto some sem aviso (vale também para o comentário mandado sem rede de uma tela que já fechou). Quem marca é o `meta` da mutação, para o `services` não importar o domínio dos posts. O `QUERY_CACHE_VERSION` não sobe: nada salvo antes muda de forma.
+- `profile/components/suspended-notice.tsx`: o `SuspensionContact` ganha a prop `subject` (o padrão continua `suspension.mailSubject`), para o link da recusa de conteúdo abrir o e-mail com o assunto dela.
+- `services/refusal-alert.ts` não muda: a recusa de conteúdo nunca abre `Alert`.
+
+**Comentário** (`posts/types.ts`, `posts/queries.ts`, `comment-row.tsx`, `comment-composer.tsx` e `post-details.tsx`):
+
+- O `CommentStatus` ganha `'refused'`, e o `useLocalComments` dá esse estado ao erro de conteúdo (pelo `actionRefusal`). A linha `refused` se comporta como a `failed`, menos no texto ("Não publicado. Toque para editar o texto"), no rótulo, na dica ("Volta o texto para o campo") e no toque.
+- `useAddCommentMutation`: o `meta` passa a `{ suspendedAlert: false, keepRefused: true }`, também na default da fila (`registerPostMutationDefaults`), que não muda em mais nada. O `CommentRefusal` vira `{ key, type: 'suspended' | 'dailyLimit' | 'content' }`, sem os dois booleanos, e a tela tira do tipo o link do contato (suspenso e conteúdo) e o assunto dele. O hook ganha a opção `focusDraft` (a tela passa o `composer.current?.focus()`).
+- O `onError` e o `retry` decidem pelo `actionRefusal` e dividem um helper (`refuseContent`). Com o campo vazio (o `restoreDraft` aceitou): a linha sai (`forgetComment`), a frase de conteúdo fica no `refusal`, com o toque de erro, o anúncio da frase e o foco no campo (`focusDraft`, que já leva o foco do leitor de tela).
+- Com o campo ocupado, no `onError`: a linha fica `refused`, sem `refusal` embaixo do compositor, com o anúncio "Comentário não publicado, conforme os Termos de uso. Toque nele para editar o texto.". No `retry`: nada é mandado, e o anúncio é "Esvazie o campo para editar o comentário não publicado.", com o toque de aviso.
+- Com a conta suspensa (o compositor sem campo): o hook recebe o `suspended` e anuncia só "Comentário não publicado, conforme os Termos de uso.", e a linha (`refusedLocked`) diz "Não publicado, conforme os Termos de uso", sem toque e sem dica (30.19, revisão).
+- A frase embaixo do compositor (a recusa ou o erro) vai também na dica do campo: o foco que a recusa de conteúdo leva ao campo corta o anúncio dela (30.19, revisão).
+- O hook devolve também `dismissContentRefusal()`, que limpa só o `refusal` de conteúdo, e o compositor chama no `change` (digitar), pela tela do post. A frase do teto e a do suspenso não mudam.
+- O compositor mostra a frase de conteúdo no mesmo lugar da do teto (`testID="comment-refusal"`), com o `SuspensionContact` embaixo e o assunto `contentFilter.mailSubject`.
+- Fila offline: a mutação que volta do disco e é recusada roda só com a default, sem tela. A linha fica `refused` no post e sobrevive ao app fechado (o persister). O toque passa pelo `retry` do hook, também com o erro que voltou do disco como objeto do JSON.
+
+**Editar perfil** (`edit-profile.tsx`): no ramo do `profile_invalid` (pelo `API_ERROR_CODES.profileInvalid`, no lugar do literal), a mensagem do campo sai do `actionRefusal(error, 'profile')`. Com o tipo `content`: "Conforme os Termos de uso do ImagineUP, este texto não pode ser usado." no campo, com o foco e o anúncio, e embaixo do header "Se for um engano, fale com a equipe." com o `SuspensionContact` (o `Notice` com o `contact` e o assunto, como o do suspenso), até o próximo ✓. Senão, "Confira este campo.", como hoje. O campo continua saindo do `details.field`, pelo `SERVER_FIELD_TO_FORM` (a exceção de antes, 29.20). O @ não muda: o `refusedUsernameStatus` já leva todo motivo que não é `format` a `reserved`, e a disponibilidade responde `reserved`.
+
+**Perfil sem nome:** o JS novo manda o nome da sessão no primeiro ✓ (`changesOf`). Se esse nome bate na lista, o ✓ recusa no campo do nome com a frase até o fã trocar o nome. Pela (b') da pergunta 2 do dono, o perfil cujo nome do cadastro bateu não fica sem nome: nasce com "Fã", e o campo começa com "Fã".
+
+**Textos novos** (`translations.json`):
+
+| Chave | Texto |
+| --- | --- |
+| `post.composer.contentRefused` | "Conforme os Termos de uso do ImagineUP, este comentário não pode ser publicado. Revise o texto." |
+| `post.comments.refused` | "Não publicado. Toque para editar o texto" |
+| `post.comments.refusedLabel` | "{{author}}, não publicado: {{text}}" |
+| `post.comments.refusedHint` | "Volta o texto para o campo" |
+| `post.comments.refusedAnnouncement` | "Comentário não publicado, conforme os Termos de uso. Toque nele para editar o texto." |
+| `post.comments.refusedBusy` | "Esvazie o campo para editar o comentário não publicado." |
+| `post.comments.refusedLocked` | "Não publicado, conforme os Termos de uso" |
+| `post.comments.refusedLockedAnnouncement` | "Comentário não publicado, conforme os Termos de uso." |
+| `editProfile.contentRefused` | "Conforme os Termos de uso do ImagineUP, este texto não pode ser usado." |
+| `editProfile.contentRefusedNotice` | "Se for um engano, fale com a equipe." |
+| `contentFilter.mailSubject` | "Texto recusado no ImagineUP" |
+
+Sem citar o termo nem a categoria, sem travessão nem meia-risca e sem e-mail escrito (o link usa o `SUPPORT_EMAIL`). "Termos de uso" é o nome do documento em Ajustes, Sobre.
+
+**Com o servidor do filtro no ar**, em cada geração de JS (o JS novo só entra na segunda abertura depois do update, 29.14, passo 3):
+
+| Superfície | Embutido no APK (perto de `3e1f2ae`) | `7b87a48` (o EAS Update de 09/10/2026) e `4ac6e99` | JS novo |
+| --- | --- | --- | --- |
+| Comentário, campo vazio | o texto volta ao campo e o celular vibra; só o anúncio genérico, sem frase na tela | igual | a frase embaixo do compositor, com o link, anunciada; o texto volta ao campo, com o foco |
+| Comentário, campo ocupado ou da fila | "Não enviado"; tocar recusa de novo; o da fila some com o app fechado | igual | "Não publicado"; tocar devolve o texto ao campo vazio, com a frase, ou pede para esvaziar o campo; sobrevive ao app fechado |
+| Nome, bio, cidade e redes | nome e cidade já não salvam (regra fechada); sem bio nem redes | "Confira este campo." no campo, com foco e anúncio; numa rede, a frase sai quando o fã deixa o campo (o `settleSocial` de lá revalida pelo zod do aparelho), e ficam o anúncio e o toque de erro | a frase nova no campo, também numa rede depois de sair dele, e a saída embaixo do header |
+| @ (troca e disponibilidade) | "Este @ não está disponível." | "Indisponível: este @ é reservado." | igual |
+| Nome do cadastro | o nome barrado vira "Fã" e o @ `fa`, pelo servidor (b') | igual | igual |
+
+Nenhuma geração quebra: nenhum código novo, nenhum status novo e nenhuma chave que falte no `translations.json` do JS no ar.
+
+**Fingerprint:** nenhum arquivo nativo, nenhum pacote e nada no `app.config.ts` nem no `package.json`.
+
+### 30.11 Testes
+
+**Funções, puros (vitest):**
+
+- `content-filter/normalize.test.ts`, em tabela: acento, maiúscula, letra larga, matemática, em círculo, sobrescrita e ligadura; tachado e sublinhado de combinação; os homóglifos do cirílico, do grego e das versaletes, com as maiúsculas (Α, Η, Μ, Ν, Υ, Ζ e as do cirílico); toda maiúscula cuja minúscula está no `HOMOGLYPHS` também está nele, com o alvo do desenho dela; os indicadores regionais e as letras em quadrado; ß, æ, œ, ø, ł, đ, ħ e ı; os espaços estreitos (U+2006, U+2008, U+2009, U+200A, U+202F e U+205F) no meio de uma palavra, que fica inteira; os separadores (pontuação, emoji, quebra de linha, espaço comum, NBSP, U+3000 e o ZWJ entre emoji); letras soltas por espaço, ponto, hífen e quebra de linha, e duas soltas que não juntam; números no lugar de letras só nos pedaços com letra (o pedaço junto inclusive), e o pedaço só de números intacto ("24", "3x1" e "1º" não viram termo); `@ $ ! |` trocados no meio e com as duas versões nas pontas (a palavra seguida de "!", "!!!" e "!?" e precedida de "@"; "tod@s" e "amig@" com o "a"); letras repetidas; o texto de 500 caracteres no pior caso de expansão.
+- `content-filter/match.test.ts`, com uma lista falsa de palavras neutras (uma palavra com formas, uma frase, uma `inHandle`, uma exceção e uma de cada categoria), com a chave legível e com a de SHA-256: a palavra inteira e as formas, com `s` e `es`; nunca trecho no comentário e na bio; a frase só com os pedaços seguidos, e soletrada no pedaço junto; a palavra seguida de "!" e de "!!!" barrada; o trecho `inHandle` dentro de um pedaço do nome, da cidade, do @ e das redes, e nunca no esqueleto colado das redes; a exceção que cobre o pedaço; a política por campo, com o `FIELD_BLOCKS` de verdade (toda categoria em todo campo) e com um falso que libera o palavrão no comentário e na bio; o retorno só booleano; a entrada fora da forma lança na compilação, com só o índice na mensagem, e a falha fica guardada (a segunda chamada não compila de novo).
+- `content-filter/terms.test.ts`, com a lista de verdade:
+  - no CI, a forma: categoria válida, os tetos de 30.4, nenhuma chave repetida, nenhum termo que vire número puro, `inHandle` só com 5 letras ou mais e a `FILTER_NORMALIZATION_VERSION` do `terms.ts` igual à do `normalize.ts`;
+  - no CI, o corpus de inocentes (`functions/test/content-filter-corpus.ts`, fora do build) nunca barrado: as palavras comuns com trechos curtos de termos (as da decisão 7 e outras); as abreviações de duplo sentido ("fds"); os números com letra que a troca transforma ("3x1", "1º" e "2ª", com as versões aparadas e trocadas das pontas); os 5.571 municípios do IBGE (`functions/test/ibge-municipios.tsv`, uma linha por município, "Nome", tabulação e a UF, em UTF-8: o arquivo que o dono autorizou e que foi baixado da API oficial, `servicodados.ibge.gov.br`, copiado como veio) na `city` e num comentário ("show em" e o nome); o produto dos 200 prenomes e dos 100 sobrenomes mais comuns, os dois escritos à mão no corpus (o dono autorizou só a lista dos municípios, e nada mais é baixado): o `usernameBase` de cada par no `isBlockedHandle`, o nome inteiro no `displayName` e as colagens com e sem "do", "da", "dos", "das" e "de", com `.`, `_` e `-`, no `isBlockedSocial`; os artistas das fixtures e do seed; gírias e elogios comuns entre fãs de arrocha, pagode e piseiro; palavras do português que colidem com a base em inglês; expressões do dia a dia com palavras de violência ("morri de rir", "matar a saudade"); e o elogio ao bicho de estimação de alguém (30.19, revisão);
+  - no CI, todo texto do seed passa no campo dele (30.9);
+  - as variantes de cada termo e forma, sem escrever termo no teste, todas barradas em todo campo: maiúsculas, acento trocado, letras repetidas, letras soltas com espaço só nas palavras de 3 letras ou mais (a frase inteira soletrada inclusive), números no lugar de letras deixando ao menos uma letra em cada pedaço, o 1 no lugar do "l", as letras separadas por "|" e por " | ", o "!", o "!!1", o "1" e o "2024" no fim, e, só no comentário e na bio, a frase soletrada ao lado de "é o", "é a" e "e o"; e o plural em -ões de toda palavra em -ão da lista (30.19, revisão). Só na máquina do dono, lendo o `C:/Users/User/Desktop/Projetos/filtro-lista/termos.json`; sem o arquivo (o CI), o bloco é pulado com um aviso claro, e o CI fica verde sem a pasta `filtro-lista` (resposta 1 do dono).
+- `posts/model.test.ts`: o `commentTextProblem` devolve `not_allowed` só depois dos outros três motivos (um texto vazio, longo ou invisível que também tem um termo continua com o motivo de antes); o `parseCommentText` lança `comment_invalid` com o `details` só `{ reason }`.
+- `fan-profile/details.test.ts`: `not_allowed` no nome, na bio, na cidade e em cada rede, com o `field` certo e o `details` só `{ field, reason }`; dois campos barrados recusam o primeiro na ordem do `parseProfileChanges`; o palavrão barrado na bio e no nome; o valor limpo do campo que passa não muda (o texto gravado nunca é o esqueleto).
+- `fan-profile/model.test.ts`: o `usernameRefusal` com `reserved` para o @ barrado, o `automatic` antes, e o `usernameChangeProblem` com `username_invalid` (`reserved`).
+- `api/index.test.ts`: o comentário barrado responde 400 `comment_invalid` com `reason: 'not_allowed'`, sem leitura e sem transação, também para o suspenso; o perfil barrado, 400 `profile_invalid` com o `field`; a linha do log com `code` e `reason` na recusa, sem o texto nem o `field`, sem o `reason` fora de `^[a-z_]{1,40}$`, e a de sucesso igual à de hoje.
+- Os testes puros dos ganchos (o `posts/model.test.ts`, o `fan-profile/details.test.ts`, o `fan-profile/model.test.ts`, o `api/index.test.ts`, o `store.test.ts` e o `sync.test.ts`) nunca escrevem termo de verdade: trocam o `content-filter` pelo `vi.mock` por um filtro do `createFilter` com termos falsos de teste (palavras neutras), e o palavrão da lista falsa é uma palavra neutra na categoria `profanity`.
+- Pela (b') da pergunta 2 do dono: `store.test.ts` (o `createProfile` com o nome barrado grava "Fã" e o @ `fa`, com o `searchKeys` deles; com o nome limpo e a base barrada, o nome fica e o @ vai para o `fa`) e `fan-profile/sync.test.ts` (o nome barrado gravado pela regra vira "Fã", com o `searchKeys` e sem `updatedAt`; a troca só do @ não confere o nome; o "Fã" gravado não dispara outra troca).
+
+**Funções, nos emuladores** (as funções do emulador carregam a lista de verdade, por chaves; o caso que precisa de um termo barrado o lê do `filtro-lista/termos.json` quando ele existe e, sem ele, pula com um aviso claro; o resto roda no CI):
+
+- `posts.emulator.test.ts`: o comentário barrado responde 400 e não grava nada (nem comentário, nem chave, nem shard, nem o teto do dia, nem a marca de ativo); o mesmo texto sem o termo passa.
+- `profile-edit.emulator.test.ts`: a bio barrada responde 400, com o perfil igual; o @ barrado é `reserved` na disponibilidade e `username_invalid` (`reserved`) no `PUT /me/username` e no `PUT /me/profile`; uma bio barrada gravada antes pelo Admin SDK não impede salvar a cidade (só o que muda é conferido).
+- `panel-seed.emulator.test.ts`: o seed inteiro roda com a lista de verdade.
+- Pela (b'): `profile.emulator.test.ts`: a conta com o nome barrado nasce com "Fã" e o @ `fa`, sem esperar o nome; o nome barrado gravado depois no perfil sem nome vira "Fã" pelo gatilho.
+
+**Regras:** nenhuma mudança e nenhum teste novo (a (b') usa a regra de hoje, que já nega o nome que não é `null`).
+
+**App** (a recusa vem de um `ApiError` falso; nenhum teste do app escreve termo da lista):
+
+- `services/api/__tests__/errors.test.ts`: o `isContentRefusal` verdadeiro no `ApiError` 400 de cada código com `not_allowed` e no mesmo erro como objeto do JSON (o que volta do disco); falso com outro motivo, outro status, outro código e sem `details`.
+- `services/api/__tests__/refusal.test.ts`: o `content` do comentário e do perfil, também com o objeto do JSON; nas ações sem a frase, o genérico; o suspenso continua com a frase dele.
+- `src/services/query/__tests__/cache.test.ts`: a mutação do comentário recusada por conteúdo vai para o disco e volta (`dehydrate` e `hydrate`) como `refused`; a recusada por outro motivo e a que deu certo não vão.
+- `src/domains/posts/__tests__/post-details.test.tsx`, com o `mockApi()` e o `post.mockReturnValueOnce` rejeitando o `ApiError` 400 `comment_invalid` com `not_allowed` (o arquivo que já prova o "Não enviado" com a API mockada): com o campo vazio, a frase e o link embaixo do compositor, anunciada, o texto de volta no campo, com o foco, e a linha fora; com o campo ocupado, a linha "Não publicado" com o rótulo e a dica dela, sem frase embaixo do compositor, com o anúncio da linha; o toque com o campo vazio devolve o texto, com a frase, o anúncio e o foco (`sendAccessibilityEvent`), sem novo pedido; com o campo ocupado, só o anúncio de esvaziar o campo; digitar apaga a frase; o teto do dia continua com a frase até o próximo envio; a frase de conteúdo na dica do campo; e, com a conta suspensa, a linha sem toque, com a frase dela e o anúncio sem a edição.
+- `src/navigation/__tests__/post.test.tsx`: só o que precisa da `createQueryClient` de verdade (a recusa de um comentário da fila com a tela fechada, que volta "Não publicado"), com o espião do `postsFixture.addComment` lançando o `ApiError`: o espião faz o papel do servidor, e as fixtures continuam sem filtrar.
+- `src/navigation/__tests__/edit-profile.test.tsx`: o `profile_invalid` com `not_allowed` na bio e numa rede põe a frase nova no campo, com foco e anúncio, e "Se for um engano, fale com a equipe." com o link embaixo do header; numa rede, a frase fica depois do blur, também com o link colado e com o @ na frente; outro motivo continua com "Confira este campo.".
+- O teste que varre o `translations.json` (nenhum e-mail) continua passando com as chaves novas.
+
+### 30.12 Plano de construção em etapas
+
+Em ordem, no worktree `imagineup-app-design`, branch `filtro-publicacao`. Uma etapa só começa com a anterior fechada. As etapas do app fecham com o fingerprint local (`npx --no-install expo-updates fingerprint:generate --platform android`) igual a `310056fd840b5459416c9926e46846b8c208aa76`. Os emuladores de outra sessão não podem estar no ar nas etapas que rodam `npm run test:functions` (o `useCleanEmulators` apaga tudo).
+
+1. **Motor do filtro.** `content-filter/normalize.ts` (os passos 0 a 7 de 30.3 e a `FILTER_NORMALIZATION_VERSION`), `match.ts` (as chaves, as formas, as exceções, o trecho por pedaço nos campos de identidade, o `FIELD_BLOCKS` e a compilação guardada com a falha) e `index.ts`, com o `terms.ts` ainda vazio e a lista falsa nos testes (`normalize.test.ts` e `match.test.ts`). Nenhum gancho ainda. Fecha com `npm --prefix functions run typecheck` e `npm --prefix functions test`.
+2. **A lista inicial e o teste de colisão.** Com as respostas 1 e 3 do dono: o `filtro-lista/termos.json`, fora de todo repositório, o `scripts/content-filter-keys.mjs`, fora do `package.json`, e o `terms.ts` gerado (as chaves, com as exceções legíveis). A base em português e a curta em inglês, com as formas e as exceções (30.4). O corpus (`functions/test/content-filter-corpus.ts`, com os prenomes e os sobrenomes escritos à mão, e o `functions/test/ibge-municipios.tsv`, cópia do arquivo baixado com o ok do dono, sem baixar mais nada), o `terms.test.ts` e a cópia para a cliente revisar, fora de repositório. Nenhum termo legível no repositório (30.4). Fecha como a 1, com as variantes do `terms.test.ts` rodadas na máquina do dono, o CI verde sem a pasta `filtro-lista` e o fingerprint igual (o script é arquivo novo em `scripts/`, fora do `package.json`, como as cargas de antes).
+3. **Ganchos no servidor.** O `commentTextProblem` e o tipo dele (`posts/model.ts`), o `cleanName`, o `cleanBio`, o `cleanCity` e as redes (`fan-profile/details.ts`), o `usernameRefusal` (`fan-profile/model.ts`), a mensagem do `comment_invalid` (`api/errors.ts`) e a linha do log com o `reason` conferido (`api/index.ts`), com os testes puros (o `content-filter` trocado por um filtro de termos falsos) e os do emulador de 30.11 (o termo barrado lido do `filtro-lista/termos.json`, ou o caso pulado com aviso). Fecha com o `typecheck`, `npm --prefix functions test`, `npm run test:functions`, `npm run test:rules` (sem mudança, para provar) e o `npm run emulators:seed` com os emuladores abertos.
+4. **App.** `errors.ts`, `refusal.ts`, `persister.ts`, `posts/types.ts`, `posts/queries.ts`, `comment-row.tsx`, `comment-composer.tsx`, `post-details.tsx`, `suspended-notice.tsx`, `edit-profile.tsx` e o `translations.json`, com os testes de 30.11 (`errors.test.ts`, `refusal.test.ts`, `cache.test.ts`, `post-details.test.tsx`, `post.test.tsx` e `edit-profile.test.tsx`). Fecha com `npm run check` e o fingerprint.
+5. **Nome do cadastro e @ automático, pela (b') da pergunta 2 do dono.** O `createProfile` (`store.ts`): o nome barrado vira "Fã" (`FILTERED_NAME`, nunca `null`) e a base do @ barrada vira o `fa`; o `syncFanSearchKeys` do gatilho (`fan-profile/sync.ts`) troca por "Fã" o nome barrado gravado pela regra; como em 30.5, com o `store.test.ts`, o `sync.test.ts` e o `profile.emulator.test.ts`; nenhuma regra nem app. Fecha com os comandos da etapa 3.
+6. **Documentação e conferência.** A nota (30.17), o `CLAUDE.md` e o `AGENTS.md` iguais (o `diff <(tail -n +3 AGENTS.md) CLAUDE.md` vazio) e a conferência no emulador Android pelo Expo Go, com o seed: a Camila comenta no clipe um texto com um termo da lista (a frase e o link embaixo do compositor, o texto de volta no campo) e depois o mesmo sem o termo (entra); o termo seguido de "!" também é recusado; um palavrão comum é recusado no comentário e na bio; "show em Ponta Porã" no comentário e Ponta Porã na cidade entram; um termo na bio e numa rede recusa no campo, com a frase, e com o link embaixo do header; um @ com um termo fica "Indisponível: este @ é reservado."; uma conta nova cadastrada pelo app com um nome da lista aparece como "Fã" e com o @ `fa`; o leitor de tela pelo `uiautomator dump` na frase do compositor e na linha "Não publicado". O campo ocupado, a fila e o app fechado ficam provados no Jest. Fecha com `npm run check`, os testes das funções e das regras de novo e o fingerprint. Sugestão para o vault, só com o ok do dono: o filtro em `vault/ImagineUP/App.md`, na seção das exigências das lojas.
+
+### 30.13 Publicação
+
+Só o dono publica, com o ok dele, do PowerShell, de uma pasta na `main` nova com o `functions/.env.imagine-up-app` copiado ("Publicar", no `CLAUDE.md`). Decisão do dono de 13/10/2026: publicar tudo junto. A publicação da seção 29 (29.14) ainda não tinha sido feita, então este bloco foi com ela, numa vez só, em 14/10/2026: o `rules:deploy` da seção 29, um lote só de cinco funções e um EAS Update com o app dos dois blocos. Deste bloco, mudam de comportamento a `api`, o `createUserProfile` e o `queueFanProfileSync` (b'), sem nenhuma regra, índice, fila, callable ou chave de teto nova. As funções vêm antes do EAS Update; o JS no ar degrada sem quebrar até o update chegar (30.10).
+
+0. **Merge**, com o ok do dono: a `exigencias-lojas` entrou pelo merge `a48335b` (PR #19), e a `filtro-publicacao`, pelo `f258ca2` (PR #20), depois da conferência da etapa 6.
+1. **Antes de qualquer comando, o diff desde o que está no ar:** `git diff --stat 7b87a48 HEAD -- functions/src` (`7b87a48` era a última publicação das funções; desde 14/10/2026, as cinco do lote estão em `f258ca2`, e as outras 61 seguem em `7b87a48`). O que conta é o diff desde a publicação, e não só o deste bloco. Fora dos arquivos da seção 29, só podem aparecer `content-filter/`, `posts/model.ts`, `fan-profile/details.ts`, `fan-profile/model.ts`, `api/errors.ts`, `api/index.ts`, `store.ts`, `fan-profile/sync.ts` e testes. Outro arquivo pede no lote a função que o usa, ou todas.
+2. **Regras e índices** (29.14, passo 1): `npm run rules:deploy`, com o ok do dono: o `firestore.rules` com a `profileReportQueue` e a `profileReports`, os dois índices compostos da `profileReportQueue` e as duas isenções. Este bloco não muda regra nem índice. Esperar os dois índices ficarem prontos no console (Firestore, Índices) antes do passo 3.
+3. **Funções, num lote só de cinco:** `$env:FUNCTIONS_DISCOVERY_TIMEOUT = "60"; npx --yes firebase-tools@15.32.0 deploy --only functions:api,functions:resolveProfileReport,functions:deleteUserProfile,functions:createUserProfile,functions:queueFanProfileSync --project imagine-up-app`. O comando sai copiado deste arquivo, nunca redigitado (um `--project imagine-up-app` redigitado sem o hífen deu 403 em 09/10).
+   - Por que o lote parcial é seguro: o lote de três da 29.14 (`api`, `resolveProfileReport` e `deleteUserProfile`), com o motivo de lá, mais as duas deste bloco. O `commentTextProblem` e o `parseProfileChanges` só são chamados pela `api` e pelo seed, e o `usernameRefusal`, só pela `api` (a troca do @, a disponibilidade e o `PUT /me/profile`). O `createProfile` e o `syncFanSearchKeys` (b') só são chamados pelo `createUserProfile` e pelo `queueFanProfileSync`, que vão no lote; o `deleteUserProfile` importa o `store.ts` só pelo `deleteUserData`, que este bloco não muda. Com o `createUserProfile` no lote, o desfazer dele também passa a limpar as denúncias de perfil da seção 29, que a 29.14 deixava só com o `deleteUserProfile`. O `resetFanUsername` fica igual. As outras 61 funções ficam com o código de `7b87a48`.
+   - Depois: `node scripts/check-public-functions.mjs` (a `resolveProfileReport` precisa do `allUsers`: `gcloud functions add-invoker-policy-binding resolveProfileReport --region=southamerica-east1 --member=allUsers --project=imagine-up-app`) e o `gcloud functions describe` dela (CPU `0.1666`, concorrência `1`); o `createUserProfile` segue com `0.3333` e `1`.
+   - Conferir sem login: `POST /posts/x/comments`, `POST /fans/x/report` e `GET /me/blocks` dão 401; uma rota que não existe dá 404 `not_found`.
+   - Se o dono mudar de ideia e a seção 29 sair antes, sozinha, este bloco vai depois num lote de três (`api`, `createUserProfile` e `queueFanProfileSync`), como exceção à regra "Publique todas as funções" (pergunta 4), com o diff conferido desde o sha publicado: `$env:FUNCTIONS_DISCOVERY_TIMEOUT = "60"; npx --yes firebase-tools@15.32.0 deploy --only functions:api,functions:createUserProfile,functions:queueFanProfileSync --project imagine-up-app`.
+4. **EAS Update do canal preview** (`npm run update:preview`, com o ok do dono), um só, com o app dos dois blocos (29.14, passo 3). Antes, o fingerprint igual a `310056fd840b5459416c9926e46846b8c208aa76`: a runtime version que o `eas update` mostra precisa ser a do APK. No aparelho com o APK: abrir, fechar e abrir de novo (o update baixa numa abertura e entra na seguinte).
+5. **Painel e console do Auth** (29.14, passos 4 e 6): seguem como lá. Este bloco não muda nenhum dos dois.
+6. **Conferir em produção** (com o ok do dono), com as duas contas de teste e a central com um post no ar da 29.14, passo 5, que segue inteiro, e mais estes passos do filtro: um comentário com um termo da lista é recusado com a frase e o link, e nada aparece no post; o mesmo sem o termo entra; o termo seguido de "!" ou de um número colado também é recusado; um palavrão comum é recusado no comentário e na bio; a bio com um termo recusa no campo; um @ com um termo aparece reservado; uma conta nova com um nome da lista nasce como "Fã", com o @ `fa`. Nos logs da `api`, a linha da recusa com `code` e `reason`, sem o texto. Os termos para conferir saem da lista fora do repositório, nunca desta nota.
+7. **Antes de mandar às lojas** (29.14, passo 7): a lista revisada pela cliente (pergunta 2 da cliente); o palavrão barrado em todo campo até a aprovação, com a resposta do questionário de classificação etária acertada com ela (pergunta 1 da cliente); os termos de uso dizendo que há filtro e tolerância zero (pergunta 3 da cliente em 29.15); e as notas de revisão com o item do filtro (30.17). A `api` com o filtro está no ar desde 14/10/2026. Para as lojas, faltam os itens acima.
+
+**Como foi (14/10/2026):** junto com a seção 29 (o relato no fim de 29.14 e em 26.21): o merge `f258ca2` (PR #20), o `rules:deploy` da seção 29, o lote de cinco rodado pelo dono e o EAS Update do canal preview (o grupo Android `e5247c6a-13a6-40b4-b142-a21ab004626b`, na runtime `310056fd`). O passo 6, a conferência do filtro em produção, não ficou registrado. O 401 de `POST /posts/x/comments` (passo 3) não foi conferido, e a conferência no aparelho do passo 4 não ficou registrada.
+
+### 30.14 Perguntas
+
+**Para o dono, antes da construção** (respondidas em 13/10/2026):
+
+1. **Onde a lista fica, com o repositório público e da cliente.** Resposta: (a'), a proposta. O repositório só guarda as chaves (o SHA-256 de cada pedaço normalizado e das frases com os pedaços juntos, com a categoria e os tamanhos dos `inHandle`), em `functions/src/content-filter/terms.ts`, gerado por `node scripts/content-filter-keys.mjs` (fora do `package.json`). A lista legível fica fora de todo repositório, em `C:/Users/User/Desktop/Projetos/filtro-lista/termos.json`, com a cópia para a cliente revisar em `C:/Users/User/Desktop/Projetos/filtro-lista/lista-para-revisao.md`. As exceções (`FILTER_EXCEPTIONS`) ficam legíveis no código, porque são palavras comuns. Nenhum termo ofensivo legível entra no repositório: nem em teste, nem em comentário, nem em fixture, nem nesta nota, nem em mensagem de commit. O teste que precisa de um termo barrado o lê da lista fora do repositório quando ela existe; sem ela (o CI), usa só termos falsos de teste injetados no motor ou pula com um aviso claro, e o CI fica verde sem a pasta `filtro-lista` (decisão 2, 30.4 e 30.11). Ficaram de fora:
+   - (a) a lista legível no `terms.ts`: o mais simples, com todos os testes no CI, mas os xingamentos e os termos de ódio no GitHub público da cliente;
+   - (b) híbrida: a base no código mais os termos da equipe em `config/contentFilter`, com uma carga, uma auditoria nova, uma fonte com cache de 60 s só da `api` e um README do painel;
+   - (c) a (b) com um editor no painel: fora deste bloco.
+2. **O nome do cadastro e o @ automático.** Resposta: (b'), a proposta (decisão 11), que troca a resposta 3 de 29.15. O nome do cadastro barrado vira "Fã" no `createProfile` e no gatilho do perfil (`queueFanProfileSync`, pelo `syncFanSearchKeys`), nunca `null`, e a base do @ barrada vira o automático `fa`. Sem mudar regra nem app; o `createUserProfile` e o `queueFanProfileSync` vão no lote com a `api` (30.13). Ficaram de fora a (a) (o nome com a Moderação, que não tem como tirá-lo), a (b) (a regra `firstProfileName` fora e o primeiro nome pelo `PUT /me/profile`) e a (c) (uma ferramenta da Moderação para o nome e a cidade, fora deste bloco).
+3. **Baixar os dados públicos do IBGE para o corpus.** Resposta: sim, para a lista dos municípios. O arquivo foi baixado da API oficial do IBGE (`servicodados.ibge.gov.br`): 5.571 municípios, uma linha por município, "Nome", tabulação e a UF, em UTF-8. Entra no repositório como fixture de teste (dado público), em `functions/test/ibge-municipios.tsv`, copiado como veio, e serve ao teste de falso positivo (30.11). Nada mais é baixado: os prenomes mais comuns, como os 100 sobrenomes (o IBGE não publica sobrenomes, e entram Domingues e Dourado), são escritos à mão no corpus.
+
+**Para o dono, com a proposta** (resposta de 13/10/2026: seguem a proposta):
+
+4. **O lote pequeno como exceção**, se a 29.14 já estivesse no ar: a `api`, o `createUserProfile` e o `queueFanProfileSync`, com o diff conferido desde o sha publicado. Proposta mantida (sim; a regra "Publique todas as funções" continua), mas o caso não deve acontecer: o dono decidiu publicar tudo junto, e a seção 29 não tinha sido publicada, então valeu o lote único de cinco (30.13, passo 3), rodado em 14/10/2026.
+5. **A linha do log com `code` e `reason`** (decisão 13), com o `reason` só no formato fechado e só as recusas do comentário e do perfil contadas. Sim.
+6. **O palavrão barrado em todo campo até a aprovação** (decisão 8), no lugar da proposta de antes (livre no comentário e na bio). Barrado; liberar depois é a pergunta 1 da cliente.
+7. **A base curta em inglês na lista** (30.4). Sim.
+
+**Para a cliente** (nenhuma trava a construção nem a publicação; o código segue a proposta):
+
+1. **Liberar o palavrão no comentário e na bio depois da aprovação das lojas?** Proposta: fica barrado em todo campo até a aprovação; depois, ela decide junto com o questionário de classificação etária, porque o palavrão liberado muda a resposta sobre linguagem. Antes de responder o questionário.
+2. **A lista inicial.** Proposta: a base nossa em português e a curta em inglês, com as formas e as exceções (30.4), que ela revisa pela cópia em `filtro-lista/lista-para-revisao.md` (tirar, acrescentar, mudar de categoria, apontar exceções), com atenção ao vocabulário dos fãs e dos gêneros dos artistas (títulos e gírias que pareceriam ofensivos fora do contexto) e aos nomes do elenco. Antes de mandar às lojas; a revisão não trava a publicação.
+3. **Quem pede um termo novo e quem trata um engano.** Proposta: a equipe dela manda ao dono o termo novo ou o engano que o fã contou pelo "Escrever para a equipe", e o dono muda a lista (um termo a menos ou uma exceção) e publica a `api` (com o `createUserProfile` e o `queueFanProfileSync`).
+4. **A lista legível no GitHub público dela.** Não se aplica: o dono escolheu a (a'), e nenhum termo legível vai ao repositório.
+
+### 30.15 Fora deste bloco (só documentado)
+
+- Moderação automática por IA ou por serviço externo pago, e qualquer classificador que leia o sentido do texto.
+- Filtro de imagem: a foto do perfil segue pela Moderação (`clearFanPhoto`).
+- O painel em si: o editor da lista, uma contagem das recusas na Visão geral, uma tela de textos barrados (que exigiria guardar o texto) e uma marca na ficha para o nome trocado por "Fã".
+- Conferir o que já está publicado, ou marcar numa carga (decisão 10).
+- Espelhar a lista no app ou nas regras do Firestore (o motor de regras usa o Unicode 6.0, sem NFKD).
+- Outros idiomas além do português e da base curta em inglês.
+- Spam e links: endereço, telefone, @ de outra rede e propaganda no comentário (o Promo do seed) seguem pela denúncia.
+- Os textos da equipe (posts, centrais, recompensas e o motivo da recusa de um pedido), o motivo da denúncia (lista fechada), o `utm` e o código do convite: nenhum é texto livre de fã mostrado a outro fã.
+- As cópias congeladas: o arquivo das temporadas fechadas (`seasons/{id}/standings`), o `fanName` dos pedidos e o `commentText` da fila da Moderação ficam como foram gravados.
+- Contar as recusas num teto do dia, ou suspender sozinho quem insiste.
+- Uma ferramenta da Moderação para o nome e a cidade.
+- A escrita criativa que separa a palavra em pedaços de duas letras ou troca uma letra por outra que não está no mapa: fica com a denúncia.
+- Uma rota de disponibilidade do @ com o @ no corpo, para ele não ficar no log de pedidos do Cloud Run (30.6): pede o app novo, e o GET fica para o JS no ar.
+
+### 30.16 Armadilhas
+
+- **Trecho só onde não há Scunthorpe.** O `inHandle` vale só nos campos de identidade, só dentro de um pedaço; nunca no comentário, na bio nem no esqueleto colado das redes (decisão 7). Todo `inHandle` passa pelo teste de colisão contra os nomes colados e os municípios.
+- **O esqueleto nunca é gravado nem devolvido.** O texto gravado é o limpo de hoje; o esqueleto vive só dentro do `content-filter`.
+- **A ordem da normalização importa:** os espaços estreitos saem antes do NFKD (depois dele, são o espaço comum); os homóglifos vêm antes das minúsculas (a maiúscula grega muda de desenho ao baixar); as letras soltas juntadas antes dos números no lugar de letras; esses só nos pedaços com letra (senão "24" e "171" virariam letras); as letras repetidas por último. Os termos passam pelos mesmos passos, senão a lista para de bater; mudou a ordem, sobe a `FILTER_NORMALIZATION_VERSION`.
+- **Os números e `@ $ ! |` na ponta do pedaço geram duas versões.** Trocados em toda posição, o "!" ou o "1" depois de um termo vira "i", o "2024" colado vira letras, e o termo escapa. No miolo, a versão sem `@ $ ! |` pega as letras separadas por "|" e "!".
+- **O termo é escrito com letras.** O 1 no miolo de um termo daria duas leituras ("i" e "l") e fica fora da forma; nenhuma entrada da lista tem número nem símbolo.
+- **`toLowerCase()` sem local** (o `toLocaleLowerCase` do turco troca o "I").
+- **Nada de expressão regular montada com termo**, para não abrir ReDoS com uma lista que cresce.
+- **A compilação é preguiçosa e guardada com a falha:** a lista compila na primeira conferência, e não na carga do módulo (as 66 funções dividem o mesmo pacote, e as fracionadas não podem pagar isso na partida a frio); a falha fica guardada, e a mensagem leva só o índice da entrada.
+- **O `normalizeSocialHandle` é espelho do app** (`profile/details.ts`): o filtro fica fora dele, depois dele, só no servidor.
+- **O filtro não entra no `profileDisplayName` nem no `isReservedUsername`.** Pela (b'), ele vem depois deles, no `createProfile`: dentro do `profileDisplayName`, o `hasName` do gatilho leria o nome barrado como ausente e esperaria os 3,75 s à toa.
+- **O nome barrado vira "Fã", nunca `null`.** Com `null`, a regra `firstProfileName` reabre, e o cliente regrava em laço.
+- **O gatilho confere o nome só quando o nome muda.** A troca do @ não confere de novo o nome que já estava (sem retroatividade).
+- **Nenhum código novo e nenhum status novo.** O JS no ar põe o `profile_invalid` no campo e o @ como reservado; um código novo cairia no genérico do perfil, e um status novo na disponibilidade derruba a tela "Editar perfil" (`USERNAME_STATUS_TEXT` sem a chave, `t(undefined)` e o `key.split`).
+- **O `details` só com `reason` e `field`.** Nem o termo, nem a categoria, nem a posição; e a linha do log nunca leva o `details.field`, que no `invalid_request` pode ser uma chave do corpo, e só leva o `reason` no formato fechado.
+- **A recusa vem no `validate`, antes da resposta guardada:** o reenvio com a mesma chave depois de uma publicação que mudou a lista é recusado mesmo com o comentário gravado (limite aceito, 30.6).
+- **O @ automático não passa pelo filtro:** o `automatic` vem antes no `usernameRefusal`, e os números no lugar de letras transformariam os dígitos do `fa` em letras.
+- **Os candidatos do @ do cadastro são conferidos com os dígitos.** A base limpa com os 2 ou 4 dígitos sorteados pode formar um termo (0, 1, 3, 4, 5 e 7 viram letras); o `createProfile` tira esses candidatos antes de ler as reservas, e o automático fica sempre por último, então a lista nunca fica vazia.
+- **O seed passa pelo `parseProfileChanges`** (e, pela (b'), pelo `createProfile`): um termo que bata num texto do seed derruba o `emulators:seed` e os testes do emulador. O `terms.test.ts` confere todos os textos do seed.
+- **O comentário recusado por conteúdo não volta a ser mandado:** o `retry` do hook decide pelo `actionRefusal` antes de mandar, senão a linha vira um laço de recusas; e o `isContentRefusal` não usa `instanceof`, senão o erro que volta do disco, objeto do JSON, seria mandado de novo.
+- **A recusa do servidor numa rede fica no campo ao sair dele.** O `settleSocial` revalida a rede pelo zod do aparelho, que não conhece a lista, e apagaria a frase: o erro do tipo `server` só sai quando o fã mexe no campo (30.19, etapa 6). Isso vale também quando o blur normaliza o texto (o link colado, o @ na frente, a maiúscula): com o erro do servidor, a normalização grava o usuário sem validar (30.19, revisão).
+- **O @ da disponibilidade vai na URL.** O log de pedidos do Cloud Run guarda a busca, então o @ recusado fica lá, mesmo sem entrar na linha `api` (30.6).
+- **Com a conta suspensa, o comentário recusado não tem para onde voltar.** O hook recebe o `suspended`, e a linha fica sem toque (`refusedLocked`): senão ela prometia edição, e o toque pedia para esvaziar um campo que não existe.
+- **Nenhuma frase embaixo de outro texto.** Com o campo ocupado, a recusa fica na linha `refused`, e não embaixo do compositor.
+- **A frase de conteúdo sai pelo `actionRefusal`**, nunca do `code` e do `reason` soltos na tela (a regra de "429 e recusas" do `CLAUDE.md`); o `isContentRefusal` mora em `errors.ts`, fora do index de `@/services/api`.
+- **As fixtures não filtram:** o teste de recusa usa a API mockada com o `ApiError` (`post-details.test.tsx`) ou o espião da fixture lançando o `ApiError` (`post.test.tsx`), nunca as fixtures filtrando.
+- **Mudar a lista é publicar a `api`** (e o `createUserProfile` e o `queueFanProfileSync`, do mesmo commit, pela (b')). Sem a publicação, a lista nova não vale.
+- **O lote parcial confere o diff desde o sha publicado**, e não só o deste bloco (30.13).
+- **Nenhum termo legível no repositório** (resposta 1 do dono): nem em teste, comentário, fixture, nesta nota ou em mensagem de commit. O teste do motor usa palavras neutras como termos falsos; o que precisa de um termo de verdade o lê do `filtro-lista/termos.json` e, sem ele, pula com aviso. O CI roda sem a pasta `filtro-lista` e fica verde.
+
+### 30.17 Documentação
+
+**Nota** (`docs/arquitetura-api.md`), no commit da etapa 6:
+
+- O cabeçalho (linha 3): "e o filtro do que o fã publica, na seção 30".
+- "Decisões em uma página": um item 23 para este bloco.
+- Seção 1: as linhas do `comment_invalid`, do `profile_invalid` e do `username_invalid`, e a mensagem nova do `comment_invalid` (30.2), também na lista de códigos novos da seção 21.
+- 21.1, decisão 20, e 28.2 (o `profile_invalid`): o motivo `not_allowed`, com remissão a esta seção.
+- 29.14: a publicação conjunta (decisão do dono de 13/10/2026, 30.13): o `rules:deploy` como está, o lote único de cinco funções (`api`, `resolveProfileReport`, `deleteUserProfile`, `createUserProfile` e `queueFanProfileSync`) no lugar do de três, com o motivo das duas a mais, o `allUsers` da `resolveProfileReport` e um EAS Update com o app dos dois blocos, sem perder os passos de conferência de lá (o `check-public-functions.mjs`, a CPU, o 401 sem login, o fingerprint, o abrir e fechar no aparelho e a conferência em produção com as duas contas).
+- 29.14, passo 7, a pergunta 3 de 29.15 e 29.16: o filtro feito na seção 30; a pendência passa a ser a publicação e a revisão da lista. Nas notas de revisão do passo 7, um item do filtro: onde ele vale (comentário, nome, @, bio, cidade e redes), que a recusa vem com uma frase e nada é publicado, e um texto de exemplo para o revisor tentar, tirado da lista e escrito só nas notas de revisão das lojas, nunca no repositório.
+- 30.19, com o que o código fez diferente.
+
+**`CLAUDE.md` e `AGENTS.md`** (iguais, com o cabeçalho de duas linhas do `AGENTS.md`):
+
+- Estrutura: o `src/content-filter/` nas funções.
+- API do app e pontos: um item "Filtro do que o fã publica (seção 30 da nota)".
+- Dados, "429 e recusas": o tipo `content` do `actionRefusal`, o comentário recusado por conteúdo e o persister que o guarda.
+- Pendências, "Antes de mandar às lojas": o filtro feito (faltam a publicação, a revisão da lista pela cliente e o item nas notas de revisão) e as perguntas de 30.14.
+
+**Vault** (`vault/ImagineUP/App.md`): só com o ok do dono, como sugestão no fim da etapa 6.
+
+### 30.18 O que mudou com a crítica
+
+Três revisões de 13/10/2026 (lojas e produto; servidor e segurança; app e coerência), conferidas no código. O que entrou:
+
+- Lojas e produto: o palavrão barrado em todo campo até a aprovação (decisão 8); a base curta em inglês e o item do filtro nas notas de revisão (30.4 e 30.17); o nome do cadastro pela (b') (decisão 11); as formas do português e as abreviações, com o teto contando entradas (30.4); as exceções e o corpus com todos os municípios (Ponta Porã, Pica-Pau); o corpus com os nomes colados, e o trecho nunca no esqueleto colado das redes; as frases citando os "Termos de uso" (o nome do documento no app) e o link "Escrever para a equipe" no compositor e no perfil.
+- Servidor e segurança: `@ $ ! |` trocados só no meio do pedaço, com as duas versões nas pontas (o "!" depois do termo escapava); o nome e o @ que vêm do Auth, pelo `createProfile` e pelo gatilho (decisão 11); os espaços estreitos apagados; os homóglifos com as maiúsculas, antes das minúsculas; o trecho dentro de cada pedaço do nome e da cidade; a (b) da pergunta 1 descrita como híbrida, antes do `runIdempotent` e sem desligar o filtro; a lista por chaves (a') e a pergunta 4 da cliente; as formas no lugar de uma entrada por flexão; o diff desde o sha publicado no lote pequeno; o log só com o `reason` fechado e só o comentário e o perfil contados; a disponibilidade com a leitura de hoje; a compilação guardada com a falha e a mensagem só com o índice.
+- App e coerência: a linha `refused`, com texto, rótulo e dica próprios, e nenhuma frase embaixo de outro texto; o comentário recusado guardado no disco (o persister); o toque que devolve o texto com a frase, o anúncio e o foco, num helper só com o `onError`; os testes do compositor em `post-details.test.tsx`; as variantes geradas só onde a normalização junta, e o pedaço junto comparado às frases juntas; a etapa 5 (b) com o teste do cadastro certo e os tetos do primeiro nome; o `retry` pelo `actionRefusal`, a constante do `profile_invalid` e o `CommentRefusal` com o tipo.
+
+O que entrou diferente do pedido, com o motivo:
+
+- O nome barrado como `null` no gatilho (servidor e segurança): reabre a regra `firstProfileName` e abre o laço de regravação; "Fã" fecha sem mudar regra nem app.
+- Os espaços estreitos apagados "antes do passo 4" (servidor e segurança): depois do NFKD, eles já são o espaço comum; saem antes do passo 1.
+- A frase com `s` e `es` só no último pedaço, na lista por chaves (servidor e segurança): a chave por pedaço mantém a regra de cada pedaço sem multiplicar as combinações.
+- A chave `postMutationKeys.comment` no persister (app e coerência): o `services` não importa o domínio dos posts; quem marca é o `meta` da mutação.
+- A escolha da lista pública levada direto à cliente (servidor e segurança): a proposta (a') tira o texto do repositório e não depende dela; ela só é ouvida com a (a).
+- O texto das frases: a ideia da crítica de lojas (sem acusar, com a saída), com as palavras "Conforme os Termos de uso" e o link que já existe no app.
+
+### 30.19 O que o código fez diferente do desenho
+
+Cada etapa de 30.12 acrescenta aqui o ponto em que o código decidiu um detalhe que o desenho deixava aberto, ou fez diferente do que ele diz, com o motivo.
+
+**Etapa 1, o motor** (`functions/src/content-filter/`, 13/10/2026):
+
+- **O `filterTokens` devolve `{ pieces, runs }`.** Cada pedaço vem com as versões dele (de 1 a 4), e as letras soltas juntadas do passo 5 vêm à parte, com onde o grupo começa e termina (`runs`). O casamento roda numa segunda sequência, com cada grupo trocado pelo pedaço junto. Motivo: assim a frase com uma palavra só soletrada também bate, e não só a frase inteira soletrada.
+- **Cada ponta do pedaço gera as duas versões sozinha** (até 4 versões, e não 2): a menção com o "@" na frente e o "@" no fim no lugar do "a" ("@amig@") vira "amiga". O resultado é o mesmo do desenho quando só uma ponta tem símbolo.
+- **Os indicadores regionais seguidos viram um pedaço à parte.** A bandeira colada a uma palavra ("gol" e a bandeira do Brasil) não cola o "br" nela, e um termo seguido de uma bandeira continua batendo.
+- **O mapa entra antes da decomposição, caractere por caractere, e de novo depois dela.** O sigma lunado (ϲ) vira ς no NFKD, e o Α matemático vira Α: os dois casos passam. O mapa tem também o ς e as maiúsculas que a regra "toda maiúscula cuja minúscula está no mapa" pede e a lista de 30.3 não trazia: Һ, Ԁ, Ϲ, Ɪ e Ʀ.
+- **Um mapa só para a palavra e a frase junta.** A chave junta de uma palavra é a dela, então o `Map` das palavras e o das frases juntas viraram um (`wholes`). Todo pedaço é comparado a ele por igualdade, e não só o pedaço junto do passo 5: a frase escrita colada num pedaço só também é recusada no comentário e na bio. É igualdade, nunca trecho, e o corpus da etapa 2 confere a colisão.
+- **O trecho `inHandle` vale também no pedaço junto do passo 5**, nos campos de identidade (o nome e a cidade, e cada pedaço das redes), porque ele é um pedaço a mais. Continua nunca no esqueleto colado das redes.
+- **A exceção:** os pedaços dela não batem nem começam ou continuam uma frase; o pedaço igual ao esqueleto dela (a exceção escrita junta) também fica coberto; no @ e nos pedaços, o trecho que fica inteiro dentro dela não bate, e o que sai dela bate. A comparação é com o texto normalizado da exceção, que é legível.
+- **As letras repetidas colapsam só de a a z.** "88" fica "88".
+- **"3x1", "1º" e "2ª" têm letra** (o "x"; o "º" e o "ª" viram "o" e "a" no NFKD) e passam pela troca: "exi", "io" e "2a" (o 2 não está no mapa). O teste diz o que viram, e o corpus da etapa 2 confere que nenhum vira termo.
+- **A forma da lista, na compilação:** a entrada do `terms.ts` é conferida só pela forma (a categoria, de 1 a 13 listas de 1 a 5 chaves, a `joined` do mesmo tamanho e os `handleLengths` de 5 a 40), porque a chave não diz o tamanho do termo. O tamanho de 2 a 40, o pedaço com letra (nenhum termo é número) e o símbolo na ponta são conferidos no `entryKeysOf`, que o `content-filter-keys.mjs` da etapa 2 usa, e no teste. A chave repetida em duas entradas não lança: as categorias se juntam, e o `terms.test.ts` recusa a repetição no CI.
+- **A versão da normalização também é conferida na compilação:** o `terms.ts` com outra `FILTER_NORMALIZATION_VERSION` faz a conferência lançar, além do teste. Motivo: chaves de outra normalização deixariam o filtro desligado em silêncio. Pela mesma razão, um campo sem conjunto no `FIELD_BLOCKS` barra toda categoria.
+- **As mensagens das falhas** levam só o índice: "Filtro de conteúdo: a entrada N está fora da forma." e "a exceção N", e as dos tetos e da versão não levam número nenhum.
+- **O que mais o módulo exporta:** o `entryKeysOf` (para o script da etapa 2), o `createFilterFromKeys`, o `plainKey`, o `sha256Key`, o `FILTER_LIMITS`, o `FILTER_CATEGORIES` e, no `normalize.ts`, o `HOMOGLYPHS` (para o teste). O `createFilter` usa a chave de SHA-256 por padrão, a de produção, e os testes do motor rodam com as duas.
+- **Os testes não têm termo de verdade:** a lista falsa do `match.test.ts` é de palavras neutras (legumes e frutas), uma de cada categoria, com uma frase, uma `inHandle` e duas exceções.
+
+**Etapa 2, a lista e o teste de colisão** (13/10/2026):
+
+- **A lista inicial:** 138 entradas, 106 em português e 32 em inglês, nas cinco categorias, com 60 `inHandle` e 3 exceções (`Ponta Porã`, `Cunha Porã` e `fagotes`). A lista legível está em `C:/Users/User/Desktop/Projetos/filtro-lista/termos.json`, num objeto com `terms` (o `FilterTerm` com uma `note` a mais, só para a revisão, que o script não leva ao código) e `exceptions`. A cópia para a cliente está em `filtro-lista/lista-para-revisao.md`, com o termo, as formas, a categoria, onde vale, a observação, as exceções e uma tabela do que ficou fora de propósito e por quê.
+- **Onde o script e o teste acham a lista:** em `filtro-lista/termos.json`, na pasta que guarda o repositório (assim vale no clone e no worktree, os dois em `Projetos`), ou no caminho da variável `CONTENT_FILTER_LIST`; o script aceita também `--lista <caminho>`. Nenhum caminho de máquina no código.
+- **O `scripts/content-filter-keys.mjs`** carrega o build pelo `createRequire` (como o `scripts/lib/admin-script.mjs`), passa cada entrada pelo `entryKeysOf` com o `sha256Key`, recusa a forma repetida (os mesmos pedaços, na mesma entrada ou em outra), compila as exceções com a lista pelo `createFilter` e escreve o `terms.ts`. A mensagem de erro do script diz o termo, porque fica só no terminal de quem gera. Depois dele, o `npx prettier --write` no `terms.ts` (cerca de 96 KB, só chaves).
+- **"Nenhuma chave repetida" é nenhuma forma repetida.** A chave junta pode se repetir entre uma palavra e uma frase com os mesmos pedaços colados, porque a frase acrescenta o casamento dos pedaços seguidos; a forma igual (os mesmos pedaços) não.
+- **"Nenhum termo vira número puro", no CI,** confere que nenhuma chave é o SHA-256 de um número de 1 a 5 algarismos. O pedaço com letra já é conferido pelo `entryKeysOf`, na geração.
+- **O casamento ganhou o grupo sem a letra da ponta** (`match.ts`, com o `joinSingles` exportado do `normalize.ts`). A palavra soletrada ao lado de uma palavra de uma letra ("a", "e", "o", "é" e o "i" do inglês) juntava a letra dela ao grupo do passo 5, e a frase escapava: "volta para a" seguido do lugar soletrado, ou o termo inglês soletrado depois do "a". Agora, depois do grupo inteiro, o casamento tenta de novo com a letra da cabeça fora, com a do rabo fora e com as duas, quando sobram 3 letras ou mais, um modo de cada vez em todos os grupos do texto. O teste das variantes pegou a falha, e o `match.test.ts` ganhou o caso com as palavras neutras.
+- **O que o corpus achou e como ficou:** palavras e nomes inocentes que batiam em termos depois da normalização viraram as três exceções do `FILTER_EXCEPTIONS`; dois termos do inglês perderam o trecho, porque palavras comuns do português os contêm. Antes do corpus, quatro termos do português ficaram sem trecho pelo motivo da decisão 7: nomes comuns colados e um bairro colado os conteriam. Qual termo cada caso envolve fica só na cópia para revisão, fora do repositório (30.19, revisão).
+- **O que ficou fora da lista, além do que 30.4 já dizia:** uma palavra que também é verbo de uso comum, e por isso a exceção do Pica-Pau não foi precisa; as palavras de duplo sentido que aparecem nas letras de arrocha, pagode, forró e sofrência; e três palavrões curtos do inglês que, normalizados, ficam iguais a palavras e siglas comuns do português. Um termo de ódio do inglês, normalizado, colide com um nome próprio: ficou barrado, e a cópia para revisão avisa. Os casos estão na tabela "Ficaram fora de propósito" da cópia para revisão.
+- **O corpus foi além do pedido** em dois pontos: o usuário das redes colado sem separador (um pedaço só, onde o trecho vale), além do `.`, do `_` e do `-`; e cada prenome e cada sobrenome sozinhos em todo campo. Os municípios entram na cidade como "Nome" e como "Nome, UF", e no comentário como "show em" e o nome.
+- **O tempo do corpus:** as 480 mil colagens dos nomes nas redes custam uns 13 s na máquina do dono. O teste usa um filtro com a mesma lista e o SHA-256 de uma chamada só do Node (`crypto.hash`, conferido igual ao `sha256Key`) e guarda as chaves curtas no caso separado, em que os pedaços são os nomes. Os testes pesados têm prazo de 60 s e 120 s.
+- **O teste das variantes** (só com a lista legível) confere também que o `terms.ts` está em dia com o `termos.json` e que cada termo `inHandle` colado no meio de outro texto é barrado no nome, na cidade, no @ e nas redes. As letras soltas vão numa palavra de 3 letras ou mais de cada vez, com espaço e com ponto, e a frase inteira soletrada; os números trocam as letras menos a primeira de cada palavra, e o `@` e o `$` entram no meio. Sem a lista, os três testes são pulados, e o aviso vai direto ao stderr, porque o vitest esconde o console dos testes que passam.
+- **O CI sem a pasta:** com a `filtro-lista` fora do lugar, `npm --prefix functions test` deu 2.008 testes passando e 3 pulados, com o aviso; com ela, 2.011 passando.
+
+**Etapa 3, os ganchos no servidor** (13/10/2026):
+
+- **Onde entrou, como em 30.5:** o `commentTextProblem` confere o filtro por último (o `CommentTextProblem` ganhou `not_allowed`); o `cleanName`, o `cleanBio` e o `cleanCity` conferem depois do `invisible`, e a bio e a cidade vazias viram `null` antes, sem chegar ao filtro; cada rede, depois do `normalizeSocialHandle` que deu certo e só com o usuário que não é vazio; o `usernameRefusal` devolve `reserved` pelo `isBlockedHandle` depois do `isReservedUsername`. O `ProfileInvalidReason` ganhou `not_allowed`; o `UsernameRefusal` não muda, e o `contract.ts` também não, porque não tem os tipos dos motivos.
+- **A linha do log:** o `code` entra em toda resposta de erro, também no 404 da rota que não existe e no 500 (`internal`); o `reason`, só quando o `details.reason` é texto no formato fechado. A linha de sucesso sai com as mesmas seis chaves de antes, sem chave nenhuma com `undefined`, e o teste confere as chaves.
+- **O filtro falso dos testes puros mora num arquivo só,** `functions/test/content-filter-fake.ts`, fora do build como o corpus: a lista neutra (`pepino` com uma forma, `abacaxi` no papel do palavrão, `berinjela` com trecho, a frase `chuchu azedo` e a exceção "Vila Berinjela") e o `fakeContentFilter`, que devolve o módulo de verdade com as três conferências trocadas por `vi.fn`. Cada teste chama o `vi.mock('../content-filter', ...)` com o `import()` do helper com a extensão `.js`, que o `tsc` com o `NodeNext` exige no `import()` dinâmico (o `missions/load.test.ts` já fazia assim). Com os `vi.fn`, o teste prova também que o vazio, o longo, o invisível, o formato, o automático e o reservado da marca nem chegam ao filtro.
+- **A lista legível também é lida num arquivo só,** `functions/test/content-filter-list.ts`: o `readLegibleList` (saiu do `terms.test.ts`, que agora o importa), o `barredWordOf` e o `warnWithoutList`, que escreve o aviso no stderr. O termo dos testes de emulador é escolhido por regra: a primeira entrada de uma palavra só, da categoria `insult`, com `inHandle`, que sem acento cabe num @ (só letras, de 3 a 20). Ele serve ao comentário, à bio, à rede (colado depois de "camila.") e ao @, inteiro e colado depois de "eu". Nenhuma conferência mostra o termo numa falha: só códigos, números e booleanos.
+- **"Também para o suspenso",** no `api/index.test.ts`: um Firestore falso cuja transação recusa com o 403, como o `runIdempotent` recusa o perfil suspenso. O texto barrado volta 400 sem abrir a transação, e o limpo, 403.
+- **Os casos do filtro nos testes de emulador passam pela `api` do emulador,** o `lib` compilado com a lista de verdade, e não pelo handler no processo. Conferem também a rede barrada e o @ colado. O caso da bio gravada pelo Admin SDK confere ainda o limite aceito na decisão 10: o cliente que manda a mesma bio de novo recebe a recusa dela.
+- **O `panel-seed.emulator.test.ts`** ganhou só a conferência de que o `terms.ts` tem a lista de verdade: o seed já passava pelo `parseProfileChanges`, que agora confere o filtro, e roda inteiro com ela, também no CI.
+- **O CI sem a lista** foi conferido com a `CONTENT_FILTER_LIST` apontando para um arquivo que não existe, o mesmo caminho do código sem a pasta: `npm --prefix functions test` deu 2.052 testes passando e 3 pulados; o `posts`, o `profile-edit` e o `panel-seed` nos emuladores, 68 passando e os 4 casos do filtro pulados, com o aviso. Com a lista, 2.055 e 430 (os 24 arquivos de emulador) passando, e o `emulators:seed` rodou inteiro.
+
+**Etapa 4, o app** (13/10/2026):
+
+- **O `meta` do comentário é uma constante só** (`COMMENT_MUTATION_META`, em `posts/queries.ts`), usada pelo hook e pela default da fila. O `keepRefused` entrou também no tipo do `mutationMeta` (`src/types/react-query.d.ts`), que a lista de arquivos de 30.10 não citava.
+- **O persister exporta o `shouldPersistMutation`**, para o teste: a pausada, como no padrão do TanStack, ou a do `meta.keepRefused` em erro de conteúdo.
+- **O `actionRefusal` só confere o conteúdo na ação que tem a frase** (`phrases.content`). Nas outras, a recusa de conteúdo segue o caminho de antes e cai no genérico, como 30.10 pede.
+- **A linha sai do `localCommentStatus`**, no `useLocalComments`: o erro de conteúdo dá `refused`, e o resto dos erros, `failed`.
+- **O compositor:** o `refusal.contact` deixou de ser booleano e passou a ser o assunto do e-mail (`TranslationKey` ou `null`). A tela tira o assunto do tipo pelo `REFUSAL_CONTACT`: o suspenso com o `suspension.mailSubject`, o conteúdo com o `contentFilter.mailSubject` e o teto sem link. Digitar chama a prop nova `onEditAfterRefusal` só com uma frase à vista, e a tela passa o `dismissContentRefusal`. Motivo: digitar sem recusa à vista não mexe no estado da tela.
+- **Os toques do hook:** com o campo ocupado, o `onError` dá o toque de erro, como a falha de antes; o toque na linha com o campo ocupado dá o de aviso (`warning`).
+- **Editar perfil:** o `Notice.contact` e o `SaveMessage.contact` passaram a ser o assunto do e-mail. O aviso de conteúdo sai no tom informativo, como o do suspenso, porque a frase de erro já está no campo. O gênero continua com "Confira este campo." embaixo do header: a recusa de conteúdo não chega a ele.
+- **Limite aceito:** o comentário que ficou na fila antes do update guarda no disco o `meta` de antes, sem o `keepRefused`, e o `meta` do disco vale mais que o da default. Recusado depois do update, ele aparece "Não publicado", mas não sobrevive ao app fechado. Só vale para a fila que atravessa o update.
+- **Os testes:** o `cache.test.ts` grava pelo `dehydrate` com as opções do persister e pelo JSON, e lê pelo `hydrate`. As mutações dele usam `gcTime: Infinity`, porque o `clear` não para o relógio de coleta das mutações e o Jest esperaria os 5 min. O `post.test.tsx` faz o mesmo para fechar e abrir o app, com a mutação rodando só com a default da fila e o espião do `postsFixture.addComment` no papel do servidor. O `edit-profile.test.tsx` confere o foco pelo `focus` do `TextInput` mockado. Nenhum teste escreve termo da lista: o texto recusado é sempre um texto neutro de teste.
+- **O `npm run check` com a máquina ocupada:** com um jogo aberto, as três rodadas inteiras passaram nos tipos e no lint, mas deram tempo esgotado (5 s) em testes antigos de tela, de fora do bloco (de 3 a 7 suítes: `onboarding`, `settings`, `artist`, `agenda`, `change-password` e casos antigos do `post` e do `edit-profile`). Todos passaram sozinhos ou em grupo pequeno, e o `npm test -- --maxWorkers=3` passou inteiro (166 suítes, 2.708 testes).
+
+**Etapa 5, o nome do cadastro e o @ automático** (13/10/2026):
+
+- **Onde entrou, como em 30.5:** no `createProfile`, o nome que sai do `profileDisplayName` passa pelo `isBlockedText(nome, 'displayName')` e, barrado, vira "Fã"; a base do `usernameBase` passa pelo `isBlockedHandle` e, barrada, vira o `fa`. O `searchKeys` sai do nome e do @ já trocados. O nome sem letra visível continua `null` e nem chega ao filtro. A base do automático vem do próprio `usernameBase(null)`, e o `profile.ts` não muda: o diff do passo 1 de 30.13 continua só com os arquivos de lá.
+- **Os candidatos com dígitos também são conferidos.** O desenho só conferia a base, mas o `usernameCandidates` cola 2 ou 4 dígitos sorteados nela, e a troca dos números por letras (30.3, passo 6) pode formar um termo que a base sozinha não forma. O `createProfile` tira dos candidatos, antes de ler as reservas, o @ que bate no `isBlockedHandle`. O automático (`^fa[0-9]+$`) nunca é conferido e fica sempre no fim, então a lista nunca fica vazia. Motivo: o fã que escolhesse esse @ seria recusado pelo `usernameRefusal`, e o gerador o daria a ele. O `usernameCandidates` não muda; o custo é de até seis conferências por cadastro, com a lista já compilada.
+- **No gatilho, o `syncFanSearchKeys` ganhou a opção `checkName`,** que o `queueFanProfileSync` liga só quando o `displayName` do evento mudou. Na transação, o nome de agora (relido, nunca o do evento) que bate vira "Fã" na mesma gravação do `searchKeys` dele, sem `updatedAt`, e a resposta é `written`, como a das chaves. O "Fã" não é conferido de novo: a gravação dele dispara o gatilho, que acha as chaves certas e para. A troca só do @ não confere o nome.
+- **Logs:** nada novo. O "Perfil do fã." do cadastro e o "Perfil do fã alterado." do gatilho saem como antes, sem o nome; o @ que o primeiro leva já é o trocado.
+- **Limite aceito:** o nome no Auth fica como o fã mandou. O app e o painel mostram o nome do perfil; só a tela do próprio fã usa o nome da sessão, e só enquanto o perfil não chega (`useFanIdentity`). Nenhum outro fã o vê.
+- **Os testes puros** (`store.test.ts` e `fan-profile/sync.test.ts`) trocam o `content-filter` pelo filtro falso da etapa 3. Os nomes barrados são palavras neutras ("Camila Pepino", a forma "Pepina" e a frase em "Bia Chuchu Azedo"). A base barrada sai de "Pepi No" (a palavra) e de "Berinjel Ana" (o trecho). Os dígitos saem de "Pepin" com "05" e "0055", que viram a palavra com "s". Os `vi.fn` provam também que o automático nunca chega ao filtro, e que o "Fã" e a troca só do @ não chamam o `isBlockedText`.
+- **O `profile.emulator.test.ts`** lê o termo da lista legível (o `barredWordOf` da etapa 3) e só compara booleanos, para nenhuma falha mostrar o nome nem um @ feito dele. A conta criada no Auth com o nome barrado depois de um prenome nasce pelo `createUserProfile` com "Fã", o @ `fa` e as chaves dos dois. O `handleUserCreated`, com o nome barrado sozinho e depois de um prenome, não espera nada. O nome gravado pelo Admin SDK no perfil sem nome, como a regra grava (com o `updatedAt`), vira "Fã" pelo gatilho, com o `updatedAt` do fã e sem gravação nova em 3 s. O `beforeAll` dele passou a exigir também o `queueFanProfileSync` carregado. Sem a lista, os dois casos são pulados com o aviso.
+- **O `store.ts` e o `store.test.ts`** estavam com CRLF na cópia de trabalho e foram para LF (o Git já guarda LF, pelo `eol=lf`).
+- **Os resultados:** o `typecheck` das funções passou. O `npm --prefix functions test` deu 2.063 testes passando com a lista, e 2.060 passando e 3 pulados sem ela (a `CONTENT_FILTER_LIST` num arquivo que não existe). O `npm run test:functions` deu 432 testes passando nos 24 arquivos, com os 2 casos novos. O `profile.emulator.test.ts` sem a lista deu 22 passando e os 2 casos do filtro pulados, com o aviso. O `npm run test:rules` deu 186 passando, sem mudança. O `npm run check` deu 166 suítes e 2.708 testes, e o fingerprint ficou igual.
+
+**Etapa 6, a documentação e a conferência** (13/10/2026):
+
+- **Na nota, fora da seção 30:** o cabeçalho; o item 23 de "Decisões em uma página"; as linhas do `comment_invalid`, do `username_invalid` e do `profile_invalid` na tabela da seção 1, e a mensagem nova do `comment_invalid` nas mensagens; a decisão 20 de 21.1, os códigos novos da seção 21 e a rota do comentário; o `not_allowed` em 28.2; na seção 29, o começo, o estado, a 29.14 reescrita para a publicação conjunta, o item do filtro nas notas de revisão do passo 7, as perguntas 3 (com a resposta) e 12 de 29.15 e a 29.16. A 29.14 ficou com o lote de cinco, o motivo das duas funções a mais, o plano B do lote de três e todos os passos de conferência de antes, com o 401 do comentário a mais e os passos do filtro na conferência em produção. Na seção 30: o estado, os candidatos com dígitos em 30.5 e duas armadilhas em 30.16.
+- **O `CLAUDE.md` e o `AGENTS.md`**, iguais (o `diff <(tail -n +3 AGENTS.md) CLAUDE.md` vazio): o `src/content-filter/` na estrutura das funções; o item "Filtro do que o fã publica" em "API do app e pontos", com os testes; o tipo `content`, o comentário recusado e o persister em "429 e recusas" e no "Offline"; a frase do perfil em "Perfil editável"; o "Fã" no `createUserProfile` e no `queueFanProfileSync`; a publicação conjunta em "Publicar" e na exceção do passo 3; e as Pendências: o item das exigências das lojas, um item do filtro com as respostas e as perguntas de 30.14, e o filtro em "Antes de mandar às lojas".
+- **Nenhum termo legível no repositório.** Conferido com a lista legível, por um script fora do repositório que não imprime termo, em todo arquivo rastreado e em todo arquivo novo que vai no commit (849 de texto; os 6 binários ficaram de fora), por três caminhos: o filtro de verdade (o `lib`, com as chaves do `terms.ts`) no modo do comentário, em cada linha e em cada par de linhas seguidas; a palavra inteira, sem acento e em minúsculas, contra o termo e as formas (com `s` e `es`), e as frases como palavras seguidas; e o termo colado dentro de outra palavra, só contado. Os achados são todos inocentes. O filtro e a palavra inteira acharam duas palavras inocentes da própria nota, que colidem com termos depois da normalização (as duas avisadas na cópia para revisão; a revisão do bloco tirou da nota as frases que explicavam a colisão), e um pedaço do `integrity` em base64 de um pacote no `package-lock.json` e no `functions/package-lock.json`, que esta branch não muda. O colado achou 230 ocorrências em 33 palavras diferentes: palavras comuns do português, identificadores de código, entradas do corpus de inocentes e dois hashes do `package-lock.json`. As 1.225 linhas das mensagens de commit do repositório também passaram pelo filtro, sem nenhuma recusada.
+- **A conferência no emulador Android pelo Expo Go, com o seed:** o emulador, os emuladores do Firebase, o seed e o Metro subiram em uns 2 minutos. Os termos foram digitados por um script fora do repositório, que os lê da lista legível e nunca os escreve no terminal (o `uiautomator dump` sai com os termos mascarados). Conferido:
+  - a Camila comenta no clipe "show demais seu" com um insulto da lista: a frase e "Escrever para a equipe" embaixo do compositor, o texto de volta no campo, com o foco, e a contagem do post igual; o mesmo texto sem o termo entra, e digitar apaga a frase;
+  - o termo seguido de "!" é recusado, e um palavrão comum é recusado no comentário e na bio;
+  - "show em Ponta Pora" no comentário e "Ponta Pora, MS" na cidade entram. Foram sem o til, porque o `adb shell input text` não digita acento; a normalização tira o acento antes de comparar, então a conferência é a mesma;
+  - um insulto na bio e no Instagram recusa no campo, com a frase, e com "Se for um engano, fale com a equipe." e o link embaixo do header;
+  - o @ com o termo colado depois de "eu" fica "Indisponível: este @ é reservado.";
+  - uma conta nova cadastrada pelo app com "Ana" e o termo como nome nasce "Fã", com o @ `fa` e 6 dígitos: a 1b diz "Boa noite, Fã", e o Perfil mostra "Fã" e o @;
+  - a linha "Não publicado": o comentário com o termo mandado sem rede (o Wi-Fi e os dados do emulador desligados), o campo ocupado com outro texto e a rede de volta. A linha ficou "Não publicado. Toque para editar o texto", com a contagem igual; o toque com o campo ocupado não mandou nada, e com o campo vazio o texto voltou com a frase;
+  - o leitor de tela pelo `uiautomator dump`: a frase do compositor é um texto da árvore, e a linha tem o rótulo "Você, não publicado: …". A dica e os anúncios não aparecem no dump e ficam provados no Jest;
+  - os logs: as linhas `api` das recusas com `code` e `reason` (`comment_invalid` e `not_allowed`), e nenhum termo no log dos emuladores nem no do Metro.
+- **O que a conferência achou, e o código mudou** (`src/domains/profile/views/edit-profile.tsx`): numa rede, a frase sumia do campo quando ele estava com o foco no ✓. O `editable` desligado durante o salvamento tira o foco, o blur chega depois da resposta (rápida no emulador), e o `settleSocial` revalidava o campo pelo zod do aparelho, que não conhece a lista, apagando o erro do servidor. Ficavam só o aviso embaixo do header e o anúncio. Agora o `settleSocial` não revalida o erro do tipo `server` ao sair do campo, e ele sai quando o fã mexe no campo (a validação da mudança, depois do ✓). Conferido de novo no emulador. O caso da rede no `edit-profile.test.tsx` ganhou o blur e a mudança, e falha sem a correção. A bio, o nome e a cidade não passam por esse caminho.
+- **O que ficou de fora da conferência:** com a rede desligada, o Firestore do SDK JS solta avisos em série, e a caixa de avisos do modo de desenvolvimento e o botão de ferramentas do Expo Go cobriam o botão de enviar; com o botão de ferramentas arrastado para o lado, o envio sem rede deu certo. A fila com o app fechado e aberto de novo fica provada no Jest (`post.test.tsx`), como 30.12 previa.
+- **Processos:** os dois do Jest que a etapa 4 deixou parados foram encerrados. No fim, o emulador, o Metro e os emuladores do Firebase deste worktree pararam (os órfãos do `npm run emulators` inclusive), e as portas ficaram livres.
+- **Os resultados:** o `typecheck` das funções passou. O `npm --prefix functions test` deu 2.063 testes passando com a lista, e 2.060 passando e 3 pulados sem ela (a `CONTENT_FILTER_LIST` num arquivo que não existe), com o aviso. O `npm run test:functions` deu 432 testes passando nos 24 arquivos, e o `npm run test:rules`, 186 nas 13 suítes, sem mudança. O `npm run check` deu 166 suítes e 2.708 testes passando, com os tipos e o lint. O fingerprint do Android ficou igual (`310056fd840b5459416c9926e46846b8c208aa76`).
+- **Sem commit:** a etapa 6 de 30.12 fecha com um commit local na branch, mas esta rodada não faz commit; ele fica para quem fecha o bloco, sem `Co-Authored-By` e sem termo na mensagem.
+- **Sugestão para o vault** (`vault/ImagineUP/App.md`, na seção das exigências das lojas): ficou para o ok do dono.
+
+**Revisão do bloco, depois da etapa 6** (13/10/2026): dois céticos revisaram o bloco inteiro (burla e falso positivo, servidor, app, testes e documentação, lista e publicação), e cada achado foi conferido de novo no código antes de mudar. Todos se sustentaram e foram aplicados; nenhum foi recusado.
+
+- **O motor, com a normalização na versão 2** (`normalize.ts` e `match.ts`):
+  - os números das pontas do pedaço geram a versão aparada e a trocada, como `@ $ ! |`. Antes, o termo com "1", "!!1", "2024" ou "88" colado passava em todo campo: o "1" virava "i", o "2" ficava, e o @ só aceita letras e números, então o termo com dígitos é a variação natural;
+  - o miolo gera também a versão sem `@ $ ! |`: as letras separadas por "|" ou "!", com ou sem espaço, viravam "i" e passavam;
+  - o 1 é lido também como "l", no miolo e nas pontas;
+  - o grupo das letras soltas tira até duas letras de cada ponta (8 modos; antes, 3 com uma letra): a palavra soletrada depois de "é o" ou "é a", ou antes de "e o", passava;
+  - a `FILTER_NORMALIZATION_VERSION` subiu para 2, e o `terms.ts` saiu de novo pelo script. As chaves dos termos não mudam com a versão, porque nenhum termo tem número nem símbolo. O termo com o 1 ou um símbolo no miolo passaria a ter duas versões e fica fora da forma: a lista é escrita com letras, e o teste das 400 entradas passou a usar o índice em letras;
+  - o pedaço com número ou símbolo tem até 36 versões, e o comentário de 500 caracteres no pior caso segue em poucos milissegundos;
+  - limite que fica: a última letra trocada por número seguida de outros números não bate, porque a ponta inteira vira uma versão só. Fica com a denúncia, como a escrita criativa de 30.15.
+- **A lista** (`filtro-lista/termos.json`, fora do repositório), editada por um script que não imprime termo: o plural em -ões de nove formas e de uma frase, que o corte do "es" não cobre; quatro diminutivos (dois no feminino e dois no masculino); o plural em -ies de um termo do inglês; e uma entrada nova com as formas verbais de um verbo da lista (os dois radicais dele com -e, -em, -am, -o, -ia e -eria), porque a entrada do verbo já tinha 9 formas. Uma frase de insulto saiu, porque é também o elogio ao bicho de estimação de alguém, comum em post de artista com o cachorro, e não tinha a marca de decisão da cliente que as frases parecidas têm. Ficou com 138 entradas (uma saiu e uma entrou). A cópia para revisão saiu de novo, com a frase na tabela "Ficaram fora de propósito".
+- **Os testes do motor e da lista:** o `normalize.test.ts` com as versões novas (o "3x1", o "1º" e o "2ª" ganham as aparadas, e o "b0l0", a "bol"); o `match.test.ts` com o número colado, as letras separadas por "|" e "!", as duas palavras de uma letra junto da soletrada e o 1 no lugar do "l", só com as palavras neutras; o `terms.test.ts` com as variantes "!!1", "1", "2024", o 1 no lugar do "l" e as letras separadas por "|" e " | ", a frase soletrada depois de "ele é o" e "isso é a" e antes de "e o resto" (só no comentário e na bio), e um teste novo que exige o plural em -ões de toda palavra em -ão da lista; e o corpus com o grupo `PET_PHRASES`, o elogio ao bicho de estimação, no comentário e na bio, para a frase que saiu não voltar sem o CI ver.
+- **O corpus inteiro segue sem recusa nova:** os municípios, os pares de nomes (com os dígitos sorteados do @), o seed e os grupos do corpus, no CI; e, por scripts fora do repositório, as palavras e linhas em português dos textos da máquina e os 5.940 pedaços com número ou símbolo deles, que o motor novo não barra. As recusas da máquina são as mesmas de antes da revisão.
+- **O app:**
+  - `edit-profile.tsx`: a correção da etapa 6 só cobria o usuário já normalizado. Com o link colado ou o @ na frente, o blur normalizava o campo com `shouldValidate`, e o zod do aparelho apagava a frase. Agora, com o erro do servidor no campo, a normalização grava o usuário sem validar. O `edit-profile.test.tsx` ganhou os dois casos, que falham sem a correção.
+  - `comment-composer.tsx`: a frase embaixo do campo (a recusa ou o erro) vai também na dica dele. O foco que a recusa de conteúdo leva ao campo cortava o anúncio da frase, e o campo focado não a tinha.
+  - Com a conta suspensa, a linha "Não publicado" prometia edição, e o toque pedia para esvaziar um campo que não existe (o servidor confere o filtro antes do `runIdempotent`, então o comentário da fila mandado depois da suspensão volta com o 400 de conteúdo). Agora o `useAddCommentMutation` recebe o `suspended` e só anuncia "Comentário não publicado, conforme os Termos de uso.", e a linha (`refusedLocked`, no `comment-row.tsx`) diz "Não publicado, conforme os Termos de uso", sem toque e sem dica. Duas chaves novas no `translations.json`. O `post-details.test.tsx` ganhou o caso, que falha sem a correção, e a dica do campo com a frase.
+- **A nota, o `CLAUDE.md` e o `AGENTS.md`:**
+  - a armadilha do lote parcial em 29.17 e o item do `createUserProfile` em 29.20 diziam que ele fica fora do lote, contra a 29.14 e a 30.13; agora isso vale só no plano B do lote de três, e na publicação conjunta ele vai no lote de cinco;
+  - o @ da disponibilidade vai na URL e fica no log de pedidos do Cloud Run, desde o bloco 9: limite aceito em 30.6, com a rota pelo corpo em 30.15 e a armadilha em 30.16; a 30.6 dizia "nem no log";
+  - a tabela de compatibilidade de 30.10 dizia que, com o JS no ar, a rede fica com "Confira este campo."; lá, a frase sai no blur;
+  - o passo 6 de 30.3, a armadilha das pontas e o retrato do filtro no `CLAUDE.md`, com os números e o 1;
+  - a decisão 7, 30.3, 30.4 e os blocos das etapas 2 e 6 diziam qual palavra inocente fica igual a qual termo depois da normalização, e como. Isso bastava para refazer quatro termos, sem nenhum escrito. Agora a nota só diz que há colisões, e os casos ficam na cópia para revisão, fora do repositório. As exceções continuam legíveis no `terms.ts`, sem dizer qual termo cada uma evita;
+  - o estado da seção, que dizia "sem commit".
+- **A varredura dos termos legíveis**, de novo depois da revisão, com o script da etapa 6 (fora do repositório, sem imprimir termo) em todo arquivo rastreado e novo, no diff desde `4ac6e99` e na mensagem do commit: nenhum termo escrito, e nenhuma linha barrada pelo filtro além do `integrity` dos dois `package-lock.json`, que esta branch não muda.
+- **Os resultados:**
+  - `npm --prefix functions run typecheck`: passou.
+  - `npm --prefix functions test`: com a lista, 61 arquivos e 2.084 testes passando; com a pasta `filtro-lista` renomeada durante a rodada (o CI), 2.080 passando e os 4 da lista legível pulados, com o aviso.
+  - `npm run test:functions` (Java 21): com a lista, 24 arquivos e 432 testes passando; sem a pasta, 426 passando e os 6 casos do filtro pulados, com os avisos.
+  - `npm run test:rules`: 13 suítes e 186 testes passando, sem mudança.
+  - O Jest do app: com 3 workers, 166 suítes e 2.711 testes passando, com a lista e sem ela. O `npm run check` passou nos tipos e no lint nas duas rodadas; com os 15 workers e a máquina ocupada (um jogo aberto, CPU perto de 60%), de 4 a 8 suítes antigas de tela, de fora do bloco, estouraram o prazo de 5 s (`onboarding`, `agenda`, `artist`, `change-password`, `fan-profile`, `settings`, `post` e casos antigos do `edit-profile`), e todas passaram rodadas de novo e na rodada com 3 workers, como na etapa 4.
+  - O prettier nos arquivos de código tocados, e o fingerprint do Android igual (`310056fd840b5459416c9926e46846b8c208aa76`); o `package.json`, o `app.config.ts` e o `eas.json` sem diferença desde `4ac6e99`.
+
+## 31. Proteção da produção
+
+O bloco protege o que já está no ar. São três frentes: recuperar o banco depois de um erro, saber por e-mail quando o servidor falha e guardar o registro de acesso por 6 meses, como pede o Marco Civil da Internet (Lei 12.965/2014, art. 15) e como promete a seção 8 da política de privacidade. Quase tudo é configuração do projeto `imagine-up-app`, feita pelo gcloud, fora do código. O código ganha só a linha de log `acesso` (31.6) e os testes que prendem os dois textos de log que a configuração lê: o `acesso` e a frase do `closeStatsDays` (31.4). Esta seção é o contrato: o que está ligado, como recuperar, o que cada alerta olha, o registro de acesso, os custos, os testes, a publicação e as pendências. Segue os padrões das seções 1 a 30 e só diz o que muda ou acrescenta.
+
+Origem: o pedido do dono de 14/10/2026 para proteger a produção e o plano do mesmo dia, feito sobre um levantamento só de leitura do projeto e revisto por uma crítica. O plano e o levantamento ficam fora do repositório, em `Projetos/protecao-imagineup/` (`protecao-plano.md` e `protecao-estado.txt`), com as ajudas do gcloud conferidas e os filtros testados nos logs reais de 07 a 14/10/2026. O pedido fixou as respostas às perguntas do plano: o e-mail do dono no canal; o backup com 14 dias; o registro de acesso pela saída (a), uma linha de log própria, só com o IP e o uid, no lugar de guardar o log de pedido, que leva também a URL e o aparelho; a mesma linha nas callables do painel; e os 184 dias. Depois, no mesmo dia: "pode seguir com tudo, as 66 em lotes".
+
+Estado: as medidas de 31.1 foram ligadas em 14/10/2026, com o ok do dono, e conferidas pelo gcloud, só leitura, no mesmo dia; falta a 5ª política, depois da rodada das 00:20 de 15/10/2026 (31.4). O registro de acesso está construído na branch `registro-acesso`, criada da `docs-publicacao` em `01f5537` (o PR #21, aberto), que parte da `main` `f258ca2`, nas duas etapas do plano de construção (`Projetos/protecao-imagineup/registro-acesso-plano.md`, fora do repositório), ambas de 14/10/2026: o código com os testes (a linha `acesso` na `api` e nas 55 callables do painel, e as duas frases de log que a configuração lê presas por teste, dos dois lados, 31.11); e a documentação com os arquivos (`docs/protecao/`, esta seção, o `CLAUDE.md` e o `AGENTS.md`). Depois veio uma revisão, no mesmo dia, com os achados conferidos e aplicados (31.14), e tudo foi num commit só da branch, sem push. O registro de acesso entrou na `main` pelo merge `8faeccf` (PR #22) e foi publicado em 14/10/2026: as 66 funções em 5 lotes, a linha `acesso` conferida com o IP forjado, o bucket `registros-de-acesso` e o sink, com a primeira linha no bucket (como foi, em 31.12). O que o código decidiu diferente do desenho está em 31.14.
+
+Trava do bloco: só servidor e documentação. Nada muda o fingerprint do app (`310056fd840b5459416c9926e46846b8c208aa76`): nenhum pacote novo (o IP é conferido pelo `node:net`), nada no app, no `app.config.ts`, no `package.json` nem no `.gitignore`. Nenhuma regra, índice, fila, rota, callable ou chave de teto nova. O que as funções respondem não muda: só entra uma linha de log.
+
+Como era antes:
+
+- O banco guardava só 1 hora de versões (`versionRetentionPeriod` de 3600 s), sem backup e sem proteção contra apagar. Um script errado, um bug ou uma exclusão no console, vistos horas depois, não tinham volta.
+- Nenhum alerta, canal nem métrica de log. O Cloud Scheduler marca HTTP 200 mesmo quando a função loga erro: em 08/10/2026, o `closeStatsDays` falhou ("statsMeta/close não existe") e o Scheduler registrou sucesso.
+- O log de pedido do Cloud Run guarda a data, a hora, o IP, a URL com a query, o aparelho (`userAgent`) e o `referer` de cada pedido. A linha `api` (`functions/src/api/index.ts`) guarda a rota em molde e o uid, com o mesmo trace do pedido. Os dois ficam 30 dias no `_Default`, e nada ficava 6 meses.
+- As callables do painel tinham o log de pedido com o IP, sem o uid de quem chamou. O `staffAudit` guarda quem fez o quê, sem o IP.
+
+### 31.1 O que está ligado e desde quando
+
+Ligado em 14/10/2026, a partir das 10h44 de Brasília, na ordem do plano:
+
+| Medida | Estado em 14/10/2026 |
+| --- | --- |
+| PITR de 7 dias no Firestore `(default)` | ligado (`versionRetentionPeriod: 604800s`); o `earliestVersionTime` recua até ficar 7 dias atrás, em 21/10/2026 |
+| Proteção contra apagar o banco | ligada (`DELETE_PROTECTION_ENABLED`) |
+| Backup diário | uma agenda diária com retenção de 14 dias (`1209600s`), na mesma região; o primeiro backup sai até 15/10/2026 |
+| Canal de e-mail "ImagineUP: alertas do servidor" | o e-mail do dono, testado pela política de teste (31.4), que foi apagada depois |
+| Métricas de log `funcoes_erros`, `ranking_tick_ok` e `close_stats_days_ok` | criadas; contam só a partir da criação, sem olhar o passado |
+| Políticas de alerta com o rótulo `app=imagineup` | 4: erros nas funções, `api` com 5xx, função agendada falhou ou job parado, `rankingTick` parado |
+| 5ª política, `close-stats-days-parado` | pendente: entra depois da rodada das 00:20 de 15/10/2026, a primeira com a métrica (31.4) |
+| Registro de acesso (bucket `registros-de-acesso` com 184 dias, e o sink) | não criado: espera a linha `acesso` no ar (31.12) |
+| Silenciamento de alerta | nenhum |
+| Orçamento de R$ 50 | não criado: é da cliente (31.13) |
+
+Conferir, no Git Bash:
+
+```bash
+gcloud firestore databases describe --database="(default)" --format="yaml(pointInTimeRecoveryEnablement,deleteProtectionState,versionRetentionPeriod,earliestVersionTime)" --project=imagine-up-app
+gcloud firestore backups schedules list --database="(default)" --project=imagine-up-app
+gcloud firestore backups list --location=southamerica-east1 --format="table(name.basename(),state,snapshotTime,expireTime)" --project=imagine-up-app
+gcloud beta monitoring channels list --filter='displayName="ImagineUP: alertas do servidor"' --format="table(name.basename(),displayName,enabled)" --project=imagine-up-app
+gcloud logging metrics list --format="table(name,description)" --project=imagine-up-app
+gcloud monitoring policies list --filter='userLabels.app=imagineup' --format="table(name.basename(),displayName,enabled)" --project=imagine-up-app
+gcloud monitoring snoozes list --format="table(name.basename(),displayName,interval.startTime,interval.endTime)" --project=imagine-up-app
+gcloud logging buckets list --location=- --format="table(name.basename(),retentionDays,lifecycleState)" --project=imagine-up-app
+gcloud logging sinks list --format="table(name,destination)" --project=imagine-up-app
+```
+
+Esperado hoje: PITR e proteção ligados; uma agenda; o canal numa linha só; as 3 métricas; 4 políticas (5 depois da 5ª); só o `_Default` (30 dias) e o `_Required` nos buckets e nos sinks. No dia 7 depois de ligar, o `earliestVersionTime` 7 dias atrás; no dia 14, uns 14 backups `READY`, sempre.
+
+### 31.2 Os arquivos e os comandos
+
+Os arquivos da proteção ficam em `docs/protecao/`: os aplicados em 14/10/2026 e os que esperam a vez (a 5ª política, 31.4, e o filtro do sink, 31.7). São cópias byte a byte dos de `Projetos/protecao-imagineup/`, sem e-mail, sem id de canal, de política ou de conta e sem segredo. Não passam pelo prettier: a pasta está no `.prettierignore`, porque ele reescreveria os JSON, e a cópia deixaria de ser igual ao que está ligado.
+
+| Arquivo | O que é |
+| --- | --- |
+| `canal-email.json` | o canal de e-mail; o endereço entra pelo comando, nunca no arquivo |
+| `metricas/funcoes_erros.yaml` | conta os erros das funções, sem o ruído das sondas do deploy |
+| `metricas/ranking_tick_ok.yaml` | conta as rodadas do `rankingTick` com HTTP 200 |
+| `metricas/close_stats_days_ok.yaml` | conta as linhas "closeStatsDays: dias fechados" |
+| `politicas/funcoes-erros.json` | alerta (a): erros nas funções |
+| `politicas/api-5xx.json` | alerta (b): `api` com 5xx |
+| `politicas/agendadas-falha.json` | alerta (c): falha do `closeStatsDays`, ou job pausado ou apagado |
+| `politicas/ranking-tick-parado.json` | alerta (c): `rankingTick` sem rodar |
+| `politicas/close-stats-days-parado.json` | alerta (c): `closeStatsDays` sem fechar o dia |
+| `politicas/teste-canal.json` | a política de teste do canal, criada e apagada a cada teste (31.4) |
+| `registro-acesso/filtro-linha-acesso.txt` | o filtro do sink: só a linha `acesso` (31.7) |
+
+Regras dos comandos desta seção:
+
+- Rodam no Git Bash, da raiz do repositório (os caminhos de `docs/protecao/` são relativos), com `--project=imagine-up-app` escrito. Copie da nota, nunca redigite: em 09/10/2026, um `--project` sem o hífen deu 403. No PowerShell, o `$(...)` e o `cat` não funcionam igual.
+- Os blocos entre parênteses rodam inteiros numa chamada só. Eles guardam o canal numa variável que só vale dentro da chamada e param no `exit 1` se o canal vier vazio ou duplicado, antes de criar qualquer política.
+- Sem terminal, como no shell do Claude, o gcloud aceita a resposta padrão de toda pergunta: um `delete` sem `--quiet` executa direto. Nenhum passo conta com a pergunta como trava.
+- O grupo `channels` só existe no beta (`gcloud beta monitoring channels`).
+- O `=` do `--filter` vai passar a casar por palavra numa versão próxima do gcloud (hoje ele avisa). Por isso a política de teste leva outro rótulo, `teste=canal`, e não um valor parecido com `imagineup`.
+- Mudou um arquivo daqui? Mude a configuração no projeto no mesmo dia, e o contrário também: o repositório é a fonte do que está ligado.
+
+### 31.3 Recuperar dados
+
+O que cada cópia cobre:
+
+- **PITR:** qualquer minuto cheio dos últimos 7 dias, de todos os documentos. Pega o script errado (as cargas rodam com as credenciais do dono e gravam em produção), o bug que apaga ou corrompe e a exclusão manual. Não sobrevive ao banco apagado; a proteção contra apagar cuida disso.
+- **Backup:** uma cópia inteira por dia, guardada 14 dias. Pega o problema visto depois de 7 dias (um erro nos pontos que só aparece no fechamento de uma semana) e sobrevive ao banco apagado.
+- **Nenhum dos dois** leva as contas do Auth nem as fotos do Storage.
+
+As duas saídas criam um banco novo ao lado do `(default)`; o app continua no `(default)`. Os documentos perdidos voltam por um script do Admin SDK, com `--dry-run` antes e o ok do dono, como as cargas. O horário do `clone` é em UTC, com minuto cheio, dentro dos últimos 7 dias.
+
+```bash
+gcloud firestore databases clone --source-database="projects/imagine-up-app/databases/(default)" --snapshot-time=AAAA-MM-DDTHH:MM:00Z --destination-database=recuperacao-AAAAMMDD --project=imagine-up-app
+gcloud firestore backups list --location=southamerica-east1 --format="table(name.basename(),state,snapshotTime,expireTime)" --project=imagine-up-app
+gcloud firestore databases restore --source-backup=projects/imagine-up-app/locations/southamerica-east1/backups/<ID_DO_BACKUP> --destination-database=recuperacao-AAAAMMDD --project=imagine-up-app
+gcloud firestore databases delete --database=recuperacao-AAAAMMDD --project=imagine-up-app
+gcloud firestore databases list --format="value(name)" --project=imagine-up-app
+```
+
+- **O prazo do banco de recuperação.** Ele traz de volta quem excluiu a conta depois da cópia e não tem validade. A política promete eliminar os dados em até 30 dias depois da exclusão; por isso o banco de recuperação some em até 30 dias menos a idade da cópia. Na prática: apagar até 7 dias depois de criado (a cópia mais velha tem 14 dias). No fim, o `databases list` mostra só o `(default)`. O `delete` do `(default)` falha enquanto a proteção estiver ligada.
+- **Reexcluir quem saiu depois da cópia.** Antes de copiar qualquer documento de volta, tirar do que vai voltar todo `users/{uid}` que não existe mais no Auth e tudo o que o `deleteUserProfile` apagaria dele (seção 12 e 24.11). Esse roteiro ainda não existe (31.13).
+- **A promessa dos 30 dias, com as cópias:** o `deleteUserProfile` apaga do banco na hora, como antes; as versões antigas somem do PITR em até 7 dias; a última cópia com o fã some em até 14 dias, mais as horas até o backup do dia. Fica dentro dos 30 dias, com folga. Backup semanal mais longo ou exportação para um bucket com retenção maior passam desse prazo, ou chegam perto, e pedem outro texto na política.
+- **Banco com nome não tem cota grátis.** Restaurar custa US$ 0,30 por GiB e clonar, US$ 0,3176 por GiB, uma vez, só quando usar.
+
+Desligar, se um dia for preciso (o PITR desligado no mesmo dia ainda cobra até 1 dia):
+
+```bash
+gcloud firestore databases update --database="(default)" --no-enable-pitr --project=imagine-up-app
+gcloud firestore databases update --database="(default)" --no-delete-protection --project=imagine-up-app
+gcloud firestore backups schedules delete --database="(default)" --backup-schedule="$(gcloud firestore backups schedules list --database="(default)" --format='value(name.basename())' --project=imagine-up-app)" --project=imagine-up-app
+```
+
+### 31.4 Alertas
+
+Todos mandam e-mail ao canal "ImagineUP: alertas do servidor", com o rótulo `app=imagineup`, que serve para listar, silenciar e desfazer de uma vez. O e-mail traz o que fazer, escrito na `documentation` de cada política. Nos 8 dias do levantamento (07 a 14/10/2026), os filtros teriam mandado 1 e-mail: o erro do `closeStatsDays` de 08/10, pelo alerta de falha das agendadas.
+
+**(a) Erros nas funções** (`funcoes-erros.json`, sobre a `funcoes_erros`):
+
+- Conta, em todos os serviços do Cloud Run das funções, as linhas com severidade ERROR ou mais no stderr, no stdout (o logger do firebase) e no log de sistema (`run.googleapis.com/varlog/system`, onde aparece a instância que morre por falta de memória), e as respostas 500 e 504 no log de pedido de todo serviço menos a `api`.
+- O log de pedido entra porque os gatilhos do Auth e do Firestore e as filas não têm `catch` no firebase-functions: o erro sobe para a plataforma e vira um 500. O `deleteUserProfile` tem `retry: true` e lança de propósito quando sobra arquivo da foto; se ele falhar sempre, a exclusão dos dados para calada, e a promessa dos 30 dias cai.
+- Fica de fora: o ruído "Invalid request, unable to process" que as sondas do deploy deixam em cada callable, os logs de auditoria do deploy, e as respostas 503 da cota de CPU e as 429 (a `api` inteira fica com o alerta (b) e com a linha "api: erro inesperado").
+- Dispara, por função (as revisões somam), com mais de 4 erros em 10 minutos ou mais de 9 em 6 horas. Um erro isolado não dispara; uma callable, fila ou agendada que falha pode contar 2 (a linha de erro e o 500). Fecha sozinho quando os erros param.
+- O que fazer: no Logs Explorer, `resource.type="cloud_run_revision" severity>=ERROR`, para achar a função e a mensagem. Erro de cota de CPU em deploy é esperado (por isso o silenciamento, 31.5). Falta de memória aparece no `varlog/system` do serviço.
+
+**(b) `api` com 5xx** (`api-5xx.json`, sobre a métrica do Cloud Run `run.googleapis.com/request_count`):
+
+- Dispara quando, numa janela de 10 minutos, mais de 5% dos pedidos da `api` voltam 5xx e há pelo menos 5 respostas 5xx. As duas condições juntas: com pouco tráfego, 1 erro em 2 pedidos já é 50%; com muito, 5 erros podem ser 0,1%.
+- Não cobre a `api` fora do ar sem nenhum pedido chegando: isso pede um teste de disponibilidade (uptime check), que não está ligado (31.13).
+- O que fazer: `resource.labels.service_name="api" httpRequest.status>=500` no Logs Explorer. O 503 de cota de CPU vem em deploy; fora dele, a mensagem está no stdout da `api`. Muitos 429 ou 503 com tráfego alto apontam para o teto de 8 instâncias.
+
+**(c) Função agendada falhou ou parada.** O Scheduler marca 200 mesmo com erro dentro da função, então os alertas olham os logs da função, e não só o Scheduler. As condições de ausência somam as revisões, para um deploy não parecer função parada.
+
+- `agendadas-falha.json`, por linha de log: um ERROR no serviço `closestatsdays`, uma tentativa do job dele marcada como falha no Scheduler, ou um `PauseJob` ou `DeleteJob` na auditoria do Scheduler, para qualquer um dos dois jobs. O deploy usa `UpdateJob` e `CreateJob`, que ficam de fora. No máximo 1 e-mail por hora, por causa das 3 novas tentativas do job. O que fazer: ver a linha que disparou; job pausado volta com `gcloud scheduler jobs resume <JOB> --location=southamerica-east1 --project=imagine-up-app`; o `closeStatsDays` que errou fecha os dias atrasados sozinho na rodada seguinte, e o erro repetido pede olhar o `statsMeta/close`.
+- `ranking-tick-parado.json`, por ausência: nenhuma rodada do `rankingTick` com HTTP 200 por uns 40 minutos (janela de 20 minutos e mais 20 de espera). Pega job pausado, função apagada, 500 ou 403 em toda rodada e falha do próprio Scheduler. O erro lógico com HTTP 200 fica com o alerta (a). O que fazer: `gcloud scheduler jobs describe firebase-schedule-rankingTick-southamerica-east1 --location=southamerica-east1 --project=imagine-up-app`, os logs do serviço `rankingtick`; função apagada volta com um deploy.
+- `close-stats-days-parado.json`, por ausência: nenhum "closeStatsDays: dias fechados" em 24 h 30 min, uns 35 minutos depois da rodada das 00:20 que faltou. O Google limita a espera de um alerta de ausência a 23,5 horas, então a parte longa fica na janela da condição (88.200 s, abaixo do teto de 90.000 s) e a espera fica em 5 minutos. O que fazer: `gcloud scheduler jobs describe firebase-schedule-closeStatsDays-southamerica-east1 --location=southamerica-east1 --project=imagine-up-app`; para rodar agora, `gcloud scheduler jobs run` com o mesmo job; cada rodada fecha até 31 dias atrasados.
+
+**Contrato do texto.** A `close_stats_days_ok` casa com o texto exato "closeStatsDays: dias fechados", no stdout do serviço `closestatsdays` (`functions/src/points/close.ts`, no nível info). A linha só sai quando a rodada fecha algum dia. Mudar a frase, ou o nível para `warn`, faz o alerta disparar todo dia. A frase fica numa constante com o comentário de contrato, e os testes de 31.11 a prendem dos dois lados: no código e no arquivo da métrica. Mudar o texto pede mudar a métrica (`metricas/close_stats_days_ok.yaml`) no mesmo dia.
+
+**A 5ª política** (o passo pendente), depois das 00:20 de 15/10/2026, com uns 15 minutos de folga. Antes, conferir que a linha da rodada saiu depois da criação da métrica (14/10/2026, 13:45 UTC):
+
+```bash
+gcloud logging read 'resource.type="cloud_run_revision" AND resource.labels.service_name="closestatsdays" AND jsonPayload.message="closeStatsDays: dias fechados"' --freshness=1d --limit=1 --format="value(timestamp)" --project=imagine-up-app
+(
+CANAL=$(gcloud beta monitoring channels list --filter='displayName="ImagineUP: alertas do servidor"' --format='value(name)' --project=imagine-up-app)
+echo "canal: $CANAL"
+[ -n "$CANAL" ] && [ "$(printf '%s\n' "$CANAL" | wc -l)" -eq 1 ] || { echo "canal vazio ou duplicado: parar"; exit 1; }
+gcloud monitoring policies create --policy-from-file=docs/protecao/politicas/close-stats-days-parado.json --notification-channels="$CANAL" --project=imagine-up-app
+)
+```
+
+O `echo` mostra um nome só, `projects/imagine-up-app/notificationChannels/<NUMERO>`. Depois, o `policies list` de 31.1 mostra 5, e o console (Monitoring, Alertas) nenhuma condição inválida. No primeiro mês, conferir que este alerta não dispara à toa.
+
+**Testar o canal de novo** (e-mail trocado no console, ou dúvida se chega): uma política temporária que dispara com uma linha escrita à mão. O dono confirma o e-mail (olhar também o spam), e a política sai.
+
+```bash
+(
+CANAL=$(gcloud beta monitoring channels list --filter='displayName="ImagineUP: alertas do servidor"' --format='value(name)' --project=imagine-up-app)
+[ -n "$CANAL" ] && [ "$(printf '%s\n' "$CANAL" | wc -l)" -eq 1 ] || { echo "canal vazio ou duplicado: parar"; exit 1; }
+gcloud monitoring policies create --policy-from-file=docs/protecao/politicas/teste-canal.json --notification-channels="$CANAL" --project=imagine-up-app
+)
+gcloud logging write teste-alerta-imagineup "Teste do alerta por e-mail do ImagineUP" --severity=ERROR --project=imagine-up-app
+gcloud monitoring policies delete "$(gcloud monitoring policies list --filter='userLabels.teste=canal' --format='value(name)' --project=imagine-up-app)" --quiet --project=imagine-up-app
+```
+
+O `logging write` vai uns 2 minutos depois do `create`; o `delete`, com o e-mail recebido.
+
+**Desfazer**, se um dia for preciso: as políticas antes, depois as métricas, depois o canal (o `--force` tira o canal das políticas que o usam). O gcloud do Windows termina cada linha com `\r\n`, e o `\r` não separa palavras no laço: sem o `tr -d '\r'`, só a última política sairia. O `list` depois do laço tem de voltar vazio antes de apagar as métricas, senão sobra política olhando métrica que não existe.
+
+```bash
+for p in $(gcloud monitoring policies list --filter='userLabels.app=imagineup' --format='value(name)' --project=imagine-up-app | tr -d '\r'); do gcloud monitoring policies delete "$p" --quiet --project=imagine-up-app; done
+gcloud monitoring policies list --filter='userLabels.app=imagineup' --format='value(name)' --project=imagine-up-app
+gcloud logging metrics delete funcoes_erros --project=imagine-up-app
+gcloud logging metrics delete ranking_tick_ok --project=imagine-up-app
+gcloud logging metrics delete close_stats_days_ok --project=imagine-up-app
+gcloud beta monitoring channels delete "$(gcloud beta monitoring channels list --filter='displayName="ImagineUP: alertas do servidor"' --format='value(name)' --project=imagine-up-app)" --force --project=imagine-up-app
+```
+
+**Criar de novo**, depois de um desfazer, na ordem de 14/10/2026: o canal, com o e-mail do dono no lugar do marcador; as 3 métricas; uns 10 minutos de espera, para o `rankingTick` rodar uma vez; o bloco das 4 políticas; a 5ª política só depois de uma rodada das 00:20 com a métrica já criada (o bloco acima); e o teste do canal.
+
+```bash
+gcloud beta monitoring channels create --channel-content-from-file=docs/protecao/canal-email.json --channel-labels=email_address=<EMAIL_DO_DONO> --project=imagine-up-app
+gcloud logging metrics create funcoes_erros --config-from-file=docs/protecao/metricas/funcoes_erros.yaml --project=imagine-up-app
+gcloud logging metrics create ranking_tick_ok --config-from-file=docs/protecao/metricas/ranking_tick_ok.yaml --project=imagine-up-app
+gcloud logging metrics create close_stats_days_ok --config-from-file=docs/protecao/metricas/close_stats_days_ok.yaml --project=imagine-up-app
+(
+CANAL=$(gcloud beta monitoring channels list --filter='displayName="ImagineUP: alertas do servidor"' --format='value(name)' --project=imagine-up-app)
+echo "canal: $CANAL"
+[ -n "$CANAL" ] && [ "$(printf '%s\n' "$CANAL" | wc -l)" -eq 1 ] || { echo "canal vazio ou duplicado: parar"; exit 1; }
+gcloud monitoring policies create --policy-from-file=docs/protecao/politicas/funcoes-erros.json --notification-channels="$CANAL" --project=imagine-up-app
+gcloud monitoring policies create --policy-from-file=docs/protecao/politicas/api-5xx.json --notification-channels="$CANAL" --project=imagine-up-app
+gcloud monitoring policies create --policy-from-file=docs/protecao/politicas/agendadas-falha.json --notification-channels="$CANAL" --project=imagine-up-app
+gcloud monitoring policies create --policy-from-file=docs/protecao/politicas/ranking-tick-parado.json --notification-channels="$CANAL" --project=imagine-up-app
+)
+```
+
+### 31.5 Silenciar os alertas no deploy de funções
+
+Todo deploy de funções sobe revisões novas e pode bater na cota de CPU da região (os 503 e as sondas). Antes do primeiro lote, silenciar todas as políticas pela janela do deploy, com folga; no fim, conferir. O `rules:deploy` sozinho não pede silenciamento. Quem roda é o Claude, no Git Bash, com o ok do dono, ou o dono.
+
+1. **Silenciar.** Trocar as duas datas, no fuso de Brasília (`-03:00`) escrito à mão, ou em UTC (`Z`): o início um ou dois minutos à frente do relógio, o fim depois da janela. Nunca gerar a data com `TZ=America/Sao_Paulo date` no Git Bash desta máquina: ele não tem a base de fusos, devolve a hora UTC, e o `-03:00` colado nela empurra o silenciamento 3 horas para o futuro (aconteceu em 14/10/2026: o primeiro silenciamento só começaria depois dos lotes). Para gerar, `date -u -d '+1 minute' +%Y-%m-%dT%H:%M:00Z`. A janela cobre os lotes e as conferências, com folga (3 horas para os 5 lotes de 31.12: o lote 1 espera a conferência da linha `acesso`, e um lote que falha pela cota só vai de novo depois de uns 30 minutos sem deploy).
+
+   ```bash
+   gcloud monitoring snoozes create --display-name="Deploy do servidor" --criteria-policies="$(gcloud monitoring policies list --filter='userLabels.app=imagineup' --format='value(name)' --project=imagine-up-app | tr -d '\r' | paste -sd, -)" --start-time=AAAA-MM-DDTHH:MM:00-03:00 --end-time=AAAA-MM-DDTHH:MM:00-03:00 --project=imagine-up-app
+   ```
+
+   O `tr -d '\r'` é obrigatório no Git Bash: o gcloud do Windows termina cada linha com `\r\n`, o `paste` junta as linhas e deixa o `\r` no fim de cada nome menos o último, e o `--criteria-policies` não apara. Sem ele, o `create` falha ou silencia só a última política.
+
+2. **Conferir o intervalo e as políticas logo depois de criar.** Um silenciamento não se apaga (o grupo `snoozes` só tem `cancel`, `create`, `describe`, `list` e `update`), e uma data errada, com o ano trocado, calaria todos os alertas. O `list` dá o ID e as datas (em UTC, 3 horas a mais que Brasília); o `describe` dá as políticas, que são as mesmas do `policies list` de 31.1, uma por linha: 4 hoje, 5 depois da 5ª. Errado, cancelar e criar de novo.
+
+   ```bash
+   gcloud monitoring snoozes list --filter='displayName="Deploy do servidor"' --format="table(name.basename(),interval.startTime,interval.endTime)" --project=imagine-up-app
+   gcloud monitoring snoozes describe <ID> --format="yaml(criteria.policies,interval)" --project=imagine-up-app
+   gcloud monitoring snoozes cancel <ID> --project=imagine-up-app
+   ```
+
+3. **No fim do deploy e das conferências:** cancelar o silenciamento se ele ainda estiver valendo, e conferir no mesmo `list` que nenhum termina no futuro. No console (Monitoring, Alertas), nenhum incidente aberto. Um incidente aberto depois do silenciamento é de verdade: seguir o e-mail dele.
+
+O `list` mostra também os silenciamentos antigos, que ficam para sempre; o que importa é o `endTime`.
+
+### 31.6 Registro de acesso: a linha `acesso`
+
+**A promessa.** A seção 8 da política de privacidade publicada elimina os dados pessoais em até 30 dias depois da exclusão da conta, com uma exceção que cabe aqui: "os registros de acesso (data, hora e endereço IP)", guardados por 6 meses (Marco Civil, art. 15). O log de pedido e a linha `api` levariam a URL (os perfis visitados, quem denunciou quem, o @ digitado na disponibilidade) e o aparelho para esses 6 meses, além do que a seção 8 permite. Um sink não tira campos de uma linha. Por isso a linha própria.
+
+**A linha.** `logger.info('acesso', { ip, uid })`, do `firebase-functions/logger`. No Cloud Logging, vira uma entrada do stdout com severidade INFO e o `jsonPayload` `{ message: "acesso", ip, uid }`. A data e a hora são as da entrada. Nada mais: sem rota, URL, query, aparelho, corpo, e-mail nem o motivo da recusa.
+
+- **`ip`:** o último item do `X-Forwarded-For`, o que o front-end do Google acrescenta no Cloud Run sem balanceador, nunca o primeiro, que o cliente escreve como quiser. O item é aparado e só vale se o `isIP` do `node:net` aceitar; o último item que não é um IP vira `null`, e nenhum texto do cliente chega à linha. Sem o cabeçalho, o `req.ip`, se for um IP, ou `null`. Com o cabeçalho, nunca o `req.ip`: atrás de um proxy confiado, o Express tira o `req.ip` do primeiro item. Que o último item é o IP de quem chamou, a publicação confere (31.12, passo 4) contra o `httpRequest.remoteIp` do log de pedido, com um cabeçalho forjado.
+- **`uid`:** o uid do Firebase Auth de quem chamou, ou `null` sem login. Na `api`, o uid só é conhecido depois do token, e a linha sai com `null` também no token inválido ou vencido e em toda recusa que vem antes do token, mesmo com login: o 404, o 405 (o `OPTIONS` inclusive), o 400 do caminho fora do formato, o 413 do corpo grande e o 403 do App Check. A consulta por uid não acha esses pedidos (31.8 e 31.9).
+
+**Na `api`.** No `finally` do `createApiHandler` (`functions/src/api/index.ts`), logo antes da linha `api`, que continua a última do pedido. Vale para todo pedido que chega ao handler: os de sucesso, o 401, o 404, o 405, o 429 do ritmo e o 500. O IP é calculado no começo do handler. O `ApiRequest` (`api/types.ts`) ganha o `ip?: string`, que o `Request` do Express já tem.
+
+- Não chegam ao handler, e ficam só no log de pedido, 30 dias (31.9): o corpo JSON malformado (400) e o `/favicon.ico` e o `/robots.txt` (404, também em `api/favicon.ico`, porque o caminho chega sem o nome da função), que o runtime das funções responde antes dele; o corpo acima de 32 MB, recusado antes da função; e o 429 com as instâncias no teto e o 503 da cota de CPU, que o Cloud Run responde sem chamar a função. Nenhum desses pedidos chega aos dados. O teste de emulador do JSON malformado prende o primeiro caso (31.11).
+
+**Nas callables do painel.** Um embrulho comum, o `onPanelCall` (`functions/src/access-log.ts`), recebe as mesmas opções e o mesmo handler do `onCall` e passa as opções ao `onCall` sem tocar nelas. Ficam iguais o `cors` (`PANEL_ORIGINS`), a região, a memória, a CPU, a concorrência, os `secrets`, o `timeoutSeconds` e o `__endpoint`, o manifesto que o firebase-tools lê no deploy e que o `cpu.test.ts` confere. As 55 callables do `functions/src/index.ts` só trocam o nome da função (`onCall(` vira `onPanelCall(`), e o import do `onCall` sai. Callable nova entra sempre pelo `onPanelCall`: um teste falha se alguma callable exportada vier sem ele (31.11).
+
+- A linha sai no começo do handler, antes de chamar o de verdade, com o uid que o SDK já conferiu em `request.auth`. No começo, e não num `finally`, porque o uid já é conhecido e a linha sai mesmo quando a chamada estoura o tempo. Na `api`, o uid só existe depois do token, e por isso o `finally`.
+- O que não chega ao handler fica sem a linha: o preflight do CORS (`OPTIONS`), o pedido fora do formato de callable ("Invalid request") e o token inválido ou vencido, que o firebase-functions responde antes. Esses ficam só no log de pedido, 30 dias (31.9). A chamada sem token nenhum chega ao handler e sai com o `uid` `null`.
+
+**Fora da linha:** as agendadas (`rankingTick` e `closeStatsDays`), os gatilhos do Auth e do Firestore e as filas. Não são acesso de quem usa o app.
+
+**Contrato.** O filtro do sink (`docs/protecao/registro-acesso/filtro-linha-acesso.txt`) lê o `log_id("run.googleapis.com/stdout")` e o `jsonPayload.message="acesso"`, e a consulta judicial (31.8) lê o `jsonPayload.ip` e o `jsonPayload.uid`. Só o `info` (ou o `log`) escreve no stdout: o `warn` e o `error` vão ao stderr e sairiam do bucket. O texto, os dois campos e o nível são contrato, com um comentário no código (na constante `ACCESS_LOG_MESSAGE` e na frase do `closeStatsDays`, que diz que os dois textos são contrato) e os testes de 31.11.
+
+**O envelope.** O bucket guarda a entrada inteira: além do `ip` e do `uid`, a data e a hora, a severidade, o trace, a instância e o recurso, com o nome da função. Na `api`, o nome é sempre `api`, e não diz a rota. Nas callables, é o nome da ação do painel (`setFanSuspended`, `adjustFanPoints`), de quem é da equipe, que o `staffAudit` já guarda. O trace liga a linha ao log de pedido só enquanto ele está no `_Default` (30 dias). As sondas do deploy também deixam a linha (o 404 da `api`), com o IP de quem sonda.
+
+**O que não muda:** a linha `api` e o log de pedido continuam 30 dias no `_Default`, como antes. A linha `acesso` também entra no `_Default` (31.10).
+
+### 31.7 Registro de acesso: o bucket e o sink
+
+- **Bucket** `registros-de-acesso`, de log, em southamerica-east1, com 184 dias. Guarda só o que o sink manda. O `_Default` continua igual, com 30 dias.
+- **Por que 184 dias:** 6 meses têm de 181 a 184 dias (de 31/08 a 28/02 são 181; de julho a dezembro, 184). Com 180, faltariam até 4 dias. Com 184, qualquer janela de 6 meses fica coberta, e a linha passa de 0 a 3 dias do que a política promete.
+- **Sink** `registros-de-acesso`, com o filtro de `docs/protecao/registro-acesso/filtro-linha-acesso.txt`: só a linha `acesso`, de qualquer função. Callable nova com a linha entra sozinha. O bucket fica no mesmo projeto, então o sink não pede permissão a mais.
+- **Quando:** só depois da linha no ar e conferida (31.12, passos 4 e 8). Antes disso, o bucket guardaria nada, e a linha com o IP errado ficaria 6 meses.
+
+```bash
+gcloud logging buckets create registros-de-acesso --location=southamerica-east1 --retention-days=184 --description="Registros de acesso (IP, data e hora, uid) por 6 meses, Marco Civil art. 15" --project=imagine-up-app
+gcloud logging sinks create registros-de-acesso logging.googleapis.com/projects/imagine-up-app/locations/southamerica-east1/buckets/registros-de-acesso --log-filter="$(cat docs/protecao/registro-acesso/filtro-linha-acesso.txt)" --description="Linha de acesso das funções: IP e uid" --project=imagine-up-app
+```
+
+Conferir (com um pedido feito depois do sink):
+
+```bash
+gcloud logging buckets describe registros-de-acesso --location=southamerica-east1 --project=imagine-up-app
+gcloud logging sinks describe registros-de-acesso --project=imagine-up-app
+gcloud logging read 'jsonPayload.message="acesso"' --bucket=registros-de-acesso --location=southamerica-east1 --view=_AllLogs --freshness=1h --limit=5 --format="table(timestamp,resource.labels.service_name,trace,jsonPayload.ip,jsonPayload.uid)" --project=imagine-up-app
+```
+
+Esperado: `retentionDays: 184`, `lifecycleState: ACTIVE`, o filtro do sink igual ao arquivo e o pedido no bucket. O `trace` da linha leva ao log de pedido do mesmo pedido no `_Default` (o segundo `logging read` de 31.12, passo 4).
+
+- **Quem lê:** quem tem papel de leitura de logs no projeto (Owner, Editor, Logs Viewer). O art. 15 pede sigilo e ambiente controlado: conferir com a cliente quem tem esses papéis (31.13). Dá para restringir campos (`--restricted-fields`), mas os mesmos dados ficam 30 dias no `_Default`, e o ganho é pequeno.
+- **Travar o bucket** (`gcloud logging buckets update registros-de-acesso --location=southamerica-east1 --locked --project=imagine-up-app`) impede apagar o bucket e mudar a retenção, e não tem volta. Só depois do jurídico.
+- **Desfazer:** apagar o sink para de copiar e não perde nada. Apagar o bucket apaga os registros guardados: só com o ok do jurídico. O bucket apagado fica 7 dias recuperável.
+
+```bash
+gcloud logging sinks delete registros-de-acesso --project=imagine-up-app
+gcloud logging buckets delete registros-de-acesso --location=southamerica-east1 --project=imagine-up-app
+gcloud logging buckets undelete registros-de-acesso --location=southamerica-east1 --project=imagine-up-app
+```
+
+### 31.8 Como responder a um pedido judicial
+
+O registro só é entregue com ordem judicial (Marco Civil, art. 15, § 3º). O que entregar e como é decisão do jurídico (UP-45); os comandos abaixo só acham as linhas.
+
+- **O horário.** O log é em UTC. Brasília é UTC-3, sem horário de verão: converter o horário da ordem antes de consultar, e responder no fuso que a ordem pede.
+- **O IP.** O IPv6 vai na forma que o log escreve (a curta, em minúsculas, como `2804:214:...`): um IPv6 escrito por extenso na ordem não bate, e tem de ser convertido antes.
+
+De um IP e um horário ao uid (os dois limites em UTC):
+
+```bash
+gcloud logging read 'jsonPayload.message="acesso" AND jsonPayload.ip="IP_PEDIDO" AND timestamp>="AAAA-MM-DDTHH:MM:00Z" AND timestamp<"AAAA-MM-DDTHH:MM:00Z"' --bucket=registros-de-acesso --location=southamerica-east1 --view=_AllLogs --format="value(timestamp,jsonPayload.uid,resource.labels.service_name)" --project=imagine-up-app
+```
+
+De um uid aos IPs, com a data e a hora de cada acesso:
+
+```bash
+gcloud logging read 'jsonPayload.message="acesso" AND jsonPayload.uid="UID"' --bucket=registros-de-acesso --location=southamerica-east1 --view=_AllLogs --freshness=185d --format="value(timestamp,jsonPayload.ip)" --project=imagine-up-app
+```
+
+Essa consulta não acha os pedidos da `api` recusados antes do token, que saem com o `uid` `null` mesmo com login (31.6): deles, só ficam o IP e o horário.
+
+- **Do uid à conta:** o uid leva à conta no console do Firebase (Authentication, busca pelo uid) e ao `users/{uid}`. Conta excluída: a linha continua com o uid por 184 dias, mas a conta e o perfil já foram apagados (seção 12, e os 30 dias da política). O registro liga o IP ao uid, e mais nada.
+- **IP compartilhado:** em IPv4 com CGNAT, o IP sozinho pode não identificar a pessoa, e não há a porta de origem (31.9).
+- **Pedido de guarda por mais tempo** (art. 15, § 2º: a autoridade policial ou administrativa e o Ministério Público podem pedir que os registros sejam guardados além do prazo): o bucket tem uma retenção só, para todos. Para guardar as linhas daquele uid ou IP, exportar a consulta (o mesmo `logging read` com `--format=json`) para um arquivo num lugar controlado, fora de todo repositório, antes de vencerem, com o ok do jurídico.
+- **Só a linha `acesso` fica 6 meses.** O log de pedido (com a URL e o aparelho) e a linha `api` ficam 30 dias no `_Default`.
+
+### 31.9 Lacunas (para o jurídico, UP-45)
+
+A palavra final é do jurídico. Ficam registradas:
+
+1. **Porta de origem.** O Cloud Run não entrega a porta do cliente. Em IPv4 compartilhado (CGNAT), o IP sozinho pode não identificar a pessoa, e há decisões do STJ pedindo a porta lógica. Resolver pede outra arquitetura na frente da `api`. Fica para avaliar.
+2. **Login do Firebase Auth.** Não deixa log nenhum (nenhuma entrada do `identitytoolkit` nos 8 dias do levantamento). O IP do login pediria o Identity Platform, com os logs de atividade ligados. Fica para avaliar.
+3. **Acesso direto ao Firestore e ao Storage** pelo SDK do app (o perfil `users/{uid}` e a foto). Não deixa log: os logs de Data Access estão desligados, ligar custa, e não está claro se cobre o SDK do celular. Fica para avaliar.
+4. **Pedidos que não chegam ao handler** (31.6): na `api`, o corpo JSON malformado, o `/favicon.ico` e o `/robots.txt`, que o runtime das funções responde antes dela, o corpo acima de 32 MB e o 429 e o 503 que o Cloud Run responde sem chamar a função; nas callables, o preflight, o pedido fora do formato e o token inválido ou vencido. Ficam só no log de pedido, 30 dias. Nenhum deles chega aos dados, e quem usa as callables é a equipe.
+5. **O `uid` `null` nas recusas da `api` antes do token** (31.6): o 404, o 405, o 400 do caminho, o 413 e o 403 do App Check saem sem o uid, mesmo com login. A consulta por uid (31.8) não os acha; o IP e o horário ficam.
+6. **O nome da função no envelope** (31.6): nas callables, 184 dias com a ação do painel que a equipe usou.
+
+### 31.10 Custos
+
+Premissas (as do plano): R$ 5,50 por dólar; os preços de tabela do Google lidos em 14/10/2026, em dólar (a conta paga em real, e o valor pode variar um pouco); o banco de hoje com uns 195 KB; com 10 mil fãs (hipótese, não medida), banco de 1 GiB (de 0,5 a 2 GiB), 3 mil fãs abrindo o app por dia e 40 pedidos à `api` por fã nesse dia, uns 120 mil pedidos por dia.
+
+| Medida | Hoje (sem fã) | Com 10 mil fãs |
+| --- | --- | --- |
+| PITR de 7 dias | menos de R$ 0,01 | R$ 0,74 (R$ 0,37 a R$ 1,49) |
+| Proteção contra apagar o banco | R$ 0 | R$ 0 |
+| Backup diário com 14 dias | menos de R$ 0,01 | R$ 3,47 (R$ 1,73 a R$ 6,93) |
+| Canal, 3 métricas e 5 alertas | R$ 0 | R$ 0 |
+| O mesmo, a partir de 01/09/2027 | uns R$ 15 | uns R$ 15 |
+| Registro de acesso por 184 dias | R$ 0,00 | R$ 1,16 |
+| Total até 08/2027 | perto de R$ 0 | uns R$ 5,40 |
+| Total a partir de 09/2027 | uns R$ 15 | uns R$ 20,40 |
+
+- **Firestore STANDARD em São Paulo:** o PITR custa o mesmo que o armazenamento (US$ 0,135 por GiB por mês) e fica perto do tamanho do banco; o backup, US$ 0,045 por GiB por mês, com 14 cópias guardadas. Nenhum dos dois tem cota grátis. Restaurar e clonar só custam quando usados (31.3).
+- **Alertas:** grátis até 31/08/2027. A partir de 01/09/2027 (a data mínima anunciada pelo Google), US$ 0,35 por mês por métrica citada numa condição, mais US$ 0,50 por milhão de pontos lidos: uns R$ 15 por mês, que não mudam com o número de fãs. As 3 métricas de log ficam longe dos 150 MiB grátis.
+- **Registro de acesso:** uma linha de uns 1,2 KB por pedido (o envelope pesa mais que os dois campos), uns 4,1 GiB por mês com 10 mil fãs. A retenção além de 30 dias, com os 6 meses cheios, guarda uns 21 GiB: uns R$ 1,16 por mês. A linha também entra no `_Default`, e o projeto todo fica perto de 16 GiB por mês, dentro dos 50 GiB grátis de entrada. Se o uso triplicar, o projeto chega perto dos 50 GiB: aí vale tirar do `_Default` o que já vai ao bucket. As callables somam pouco, e o volume delas não cresce com os fãs.
+
+### 31.11 Testes
+
+- **`functions/src/access-log.test.ts`** (novo, com o logger falso do `api/index.test.ts`):
+  - O IP com cabeçalhos forjados: `203.0.113.7, 198.51.100.4` dá `198.51.100.4`; um item só; espaços e itens vazios; IPv6; o último item que não é IP (texto, JSON, quebra de linha) dá `null`; sem o cabeçalho, o `req.ip` válido, ou `null`; com o cabeçalho, nunca o `req.ip`.
+  - A linha: exatamente `('acesso', { ip, uid })`, só com as duas chaves, e o `uid` `null` sem login.
+  - O outro lado do contrato: o teste lê `docs/protecao/registro-acesso/filtro-linha-acesso.txt` e confere que ele tem exatamente as três linhas, com o `log_id` do stdout e o `jsonPayload.message` igual à `ACCESS_LOG_MESSAGE`, sem filtro de serviço. Trocar a constante sem trocar o filtro quebra o teste.
+  - O `onPanelCall`, pelo `.run`: a linha antes do handler, com o IP do `rawRequest` e o uid do `auth`; o resultado e o erro do handler passam iguais; sem `auth`, o `uid` `null`; sem `rawRequest`, o `ip` `null`. O `__endpoint` é igual ao do `onCall` com as mesmas opções (`cors`, `secrets` e `timeoutSeconds`).
+  - O manifesto: todo export com `callableTrigger` (as 55 callables de hoje) veio do `onPanelCall`; a `api`, as agendadas, os gatilhos e as filas não.
+- **`functions/src/api/index.test.ts`:** o 401 sem token escreve `acesso` com o último item do cabeçalho forjado e o `uid` `null`; com login, o uid; o 404 também, com o `uid` `null` mesmo com o token, porque a rota é conferida antes dele; a `acesso` vem antes da `api` (o `lastLine` do filtro continua lendo a `api`).
+- **`functions/test/access-log.emulator.test.ts`:** a `api` e uma callable de verdade no emulador, com e sem login, o preflight sem a linha e o POST com o JSON malformado, que o runtime recusa com 400 antes do handler, também sem a linha (31.6).
+- **O `cors`:** o preflight de uma callable com a origem do painel volta com o `Access-Control-Allow-Origin` dela, e com outra origem, sem ele. No emulador, se ele responder o preflight pela própria função; senão, um teste puro que chama a função HTTP com um pedido falso (31.14).
+- **`functions/src/points/close.test.ts`:** a constante com a frase "closeStatsDays: dias fechados", e o outro lado do contrato: o teste lê `docs/protecao/metricas/close_stats_days_ok.yaml` e confere o serviço `closestatsdays`, o `log_id` do stdout e o `jsonPayload.message` igual à `STATS_DAYS_CLOSED_LOG`.
+- **`functions/test/stats-close.emulator.test.ts`:** a rodada que fecha dois dias escreve, no nível info, "closeStatsDays: dias fechados" com `{ days }`, com a frase escrita por extenso no teste, e não a constante. É o caminho de verdade que a métrica lê.
+- **`functions/src/cpu.test.ts`** passa sem mudança: a prova de que o manifesto não mudou.
+
+### 31.12 Publicação
+
+Só servidor: nenhuma regra, índice, EAS Update nem mudança no painel. As funções saem do terminal do dono, no PowerShell; o silenciamento, o bucket e o sink, do Git Bash do Claude. Cada passo com o ok do dono.
+
+0. **Merge**, com o ok do dono: o PR #21 (`docs-publicacao`) e depois o desta branch, na `main`.
+1. **Pasta do deploy:** um worktree na `main` nova, com o `functions/.env.imagine-up-app` copiado ("Publicar", passo 1, no `CLAUDE.md`).
+2. **O diff desde o que está no ar:** `git diff --stat 7b87a48 HEAD -- functions/src`. Hoje, cinco funções rodam o código de `f258ca2` e as outras 61, o de `7b87a48`: este deploy leva às 61 também o código das seções 29 e 30 (o "próximo deploy publica todas" de "Publicar"). Fora delas e deste bloco (`access-log.ts`, `api/index.ts`, `api/types.ts`, `index.ts`, `points/close.ts` e testes), nada pode aparecer.
+3. **Silenciar os alertas** (31.5, passos 1 e 2), com 3 horas de janela.
+4. **Lote 1, com a `api`**, e a conferência da linha antes dos outros lotes:
+
+   ```powershell
+   $env:FUNCTIONS_DISCOVERY_TIMEOUT = "60"; npx --yes firebase-tools@15.32.0 deploy --only functions:api,functions:createUserProfile,functions:deleteUserProfile,functions:createStaffInvite,functions:resendStaffInvite,functions:cancelStaffInvite,functions:getStaffInvite,functions:acceptStaffInvite,functions:linkStaffInvite,functions:updateStaffMember,functions:setStaffMemberActive,functions:removeStaffMember,functions:checkArtistHandle,functions:createArtist,functions:updateArtist --project imagine-up-app
+   ```
+
+   Depois, no Git Bash, um pedido sem login à `api` e outro a uma callable do lote, os dois com um `X-Forwarded-For` forjado (o `203.0.113.7` é de um bloco reservado para documentação):
+
+   ```bash
+   curl -s -o /dev/null -w "%{http_code}\n" -H "X-Forwarded-For: 203.0.113.7" https://southamerica-east1-imagine-up-app.cloudfunctions.net/api/me/wallet
+   curl -s -X POST -H "Content-Type: application/json" -H "X-Forwarded-For: 203.0.113.7" -d '{"data":{}}' https://southamerica-east1-imagine-up-app.cloudfunctions.net/checkArtistHandle
+   gcloud logging read 'log_id("run.googleapis.com/stdout") AND jsonPayload.message="acesso"' --freshness=15m --limit=5 --format="table(timestamp,resource.labels.service_name,trace,jsonPayload.ip,jsonPayload.uid)" --project=imagine-up-app
+   gcloud logging read 'log_id("run.googleapis.com/requests") AND trace="TRACE_DA_LINHA_ACIMA"' --freshness=15m --format="value(httpRequest.remoteIp,httpRequest.status)" --project=imagine-up-app
+   ```
+
+   Esperado: o 401 da `api` e o `unauthenticated` da callable; as duas linhas `acesso` com o `uid` vazio e o `ip` igual ao `remoteIp` do mesmo pedido, nunca o `203.0.113.7`. Sem o trace na linha, o pedido sai pelo horário. Se o IP não bater: parar. Os lotes seguintes esperam, o código é corrigido e o lote 1 vai de novo; o sink não é criado.
+5. **Lotes 2 a 5**, com uns minutos entre um e o seguinte. Um lote que falhar pela cota de CPU vai de novo depois de uns 30 minutos sem deploy ("Publicar", passo 3).
+
+   ```powershell
+   $env:FUNCTIONS_DISCOVERY_TIMEOUT = "60"; npx --yes firebase-tools@15.32.0 deploy --only functions:setArtistStatus,functions:reorderArtists,functions:deleteArtist,functions:createPost,functions:updatePost,functions:setPostStatus,functions:deletePost,functions:createEvent,functions:updateEvent,functions:setEventStatus,functions:deleteEvent,functions:moderateComment,functions:updatePointsConfig,functions:updateSeason,functions:scheduleNextSeason --project imagine-up-app
+   $env:FUNCTIONS_DISCOVERY_TIMEOUT = "60"; npx --yes firebase-tools@15.32.0 deploy --only functions:endSeason,functions:closeSeasonNow,functions:rankingTick,functions:closeStatsDays,functions:createMission,functions:updateMission,functions:setMissionStatus,functions:reorderMissions,functions:updateSeasonGoal,functions:createAchievement,functions:updateAchievement,functions:setAchievementStatus,functions:reorderAchievements,functions:createReward,functions:updateReward --project imagine-up-app
+   $env:FUNCTIONS_DISCOVERY_TIMEOUT = "60"; npx --yes firebase-tools@15.32.0 deploy --only functions:setRewardStatus,functions:setRewardStock,functions:reorderRewards,functions:deleteReward,functions:setRedemptionStatus,functions:getRedemptionContacts,functions:adjustFanPoints,functions:findFanByEmail,functions:getPanelRanking,functions:resetFanUsername,functions:clearFanPhoto,functions:clearFanProfileText,functions:resolveProfileReport,functions:setFanSuspended,functions:hideFanComments --project imagine-up-app
+   $env:FUNCTIONS_DISCOVERY_TIMEOUT = "60"; npx --yes firebase-tools@15.32.0 deploy --only functions:queueArtistFanCountSync,functions:syncArtistFanCount,functions:queuePostCountSync,functions:syncPostCounts,functions:queueFanProfileSync,functions:syncFanProfile --project imagine-up-app
+   ```
+
+   Os cinco lotes somam as 66 funções, na ordem do `index.ts`, com a `api` no primeiro (15, 15, 15, 15 e 6). A etapa 2 conferiu a lista contra os exports do `index.ts` em 14/10/2026: 66, sem repetição, as 55 do `onPanelCall`, a `api`, as 2 agendadas, os 2 gatilhos do Auth, os 3 do Firestore e as 3 filas. Função nova até a publicação entra num lote. Os mesmos comandos, com o `cd` da pasta do deploy na frente, o silenciamento antes e o cancelamento e a conferência depois, estão em `Projetos/protecao-imagineup/lotes-registro-acesso.txt`, fora do repositório, para o dono copiar sem redigitar.
+6. **Conferir** ("Publicar", passo 6): o `functions:list` com as 66; o `node scripts/check-public-functions.mjs` com as 56 chamáveis com o `allUsers`; a CPU de cada função como antes (`0.1666` e `1`; o `rankingTick` e o `createUserProfile`, `0.3333` e `1`; a `api`, `1` e `80`); o 401 da `api` sem login e o 404 `not_found` numa rota que não existe; os logs do `rankingTick`.
+7. **Fim do silenciamento** (31.5, passo 3): cancelado se ainda valer, nenhum terminando no futuro, nenhum incidente aberto.
+8. **Bucket e sink** (31.7), pelo Claude, com o ok do dono.
+9. **Conferir no bucket:** um pedido novo sem login à `api` (401), com o cabeçalho forjado; o `buckets describe` (`retentionDays: 184`, `lifecycleState: ACTIVE`), o `sinks describe` (o filtro igual ao arquivo) e o `logging read` no bucket (31.7), com a linha do pedido e o `trace` dela; com esse trace no segundo `logging read` do passo 4, o `httpRequest.remoteIp` do mesmo pedido no `_Default`, igual ao `ip` da linha.
+10. **Registrar** como foi, aqui e em 26.21.
+
+O registro de acesso precisa estar no ar antes das lojas: com fã de verdade, o art. 15 já vale.
+
+**Como foi (14/10/2026):** com o ok do dono, da `main` `8faeccf` (o PR #21 e o PR #22 juntados por ele, o CI do #22 verde), na pasta `imagineup-app-deploy`.
+
+1. O diff desde `7b87a48` só trouxe os arquivos das seções 29, 30 e 31.
+2. O primeiro silenciamento saiu 3 horas adiantado (a armadilha do fuso, em 31.5) e foi cancelado. O certo, em UTC, cobriu os lotes 4 e 5 e as conferências. Os lotes 2 e 3 rodaram sem ele, sem e-mail: os únicos erros da janela foram as linhas "Invalid request, unable to process" das sondas do deploy, que a `funcoes_erros` não conta.
+3. Lote 1, pelo dono: "Deploy complete!". A conferência com o `X-Forwarded-For: 203.0.113.7` deu 401 na `api` e na `checkArtistHandle`, e as duas linhas `acesso` com o IP real (o mesmo `httpRequest.remoteIp` dos dois pedidos pelo trace, o IP da máquina que pediu), nunca o forjado, e o `uid` vazio.
+4. Lotes 2 a 5, pelo dono, sem erro de cota.
+5. Conferência: as 66 funções ativas, todas atualizadas no dia; o `check-public-functions.mjs` com 56 chamáveis, nenhuma barrada; a CPU como antes (a `api` com `1` e `80`, o `rankingTick` e o `createUserProfile` com `0.3333` e `1`, as outras com `0.1666` e `1`); as três filas com `maxConcurrentDispatches: 5`; o 401 sem login e o 404 `not_found`.
+6. Silenciamento cancelado no fim.
+7. O bucket `registros-de-acesso` (184 dias, southamerica-east1, `ACTIVE`) e o sink com o filtro de `docs/protecao/registro-acesso/filtro-linha-acesso.txt`, criados pelo Claude. O sink levou uns 5 minutos para começar a encaminhar: as linhas dos primeiros 20 segundos ficaram só no `_Default`. A primeira linha no bucket chegou às 18:32 UTC, com o IP real e o `uid` vazio.
+
+Desde então as 66 funções rodam o código de `8faeccf`.
+
+### 31.13 Pendências e perguntas
+
+Pendências:
+
+- **A 5ª política** (`close-stats-days-parado`), depois da rodada das 00:20 de 15/10/2026 (31.4), e, no primeiro mês, conferir que ela não dispara à toa.
+- **O orçamento de R$ 50 por mês**, pela cliente (UP-38), com avisos em 50%, 90% e 100% do gasto real e em 100% do previsto (o passo a passo está no plano, item 4). O orçamento só avisa: não corta gasto nem desliga nada. Conferir com ela quem administra a conta de faturamento.
+- **O roteiro de restauração** (31.3): o script que copia os documentos de volta com `--dry-run` e reexclui quem saiu depois da cópia. Ainda não escrito.
+- **A política de privacidade** (UP-45): citar que as cópias de segurança são apagadas em até 14 dias e que as fotos ficam nos Estados Unidos (o bucket de fotos em US-EAST1).
+- **O bucket de fotos** `imagine-up-app.firebasestorage.app`, em US-EAST1, sem versionamento e com 7 dias de exclusão reversível: uma foto apagada por engano some em 7 dias. Avaliar o versionamento com regra de vida curta, ou uma exclusão reversível maior. A região não muda sem um bucket novo.
+- **O uptime check da `api`** (31.4, alerta (b)), se o dono quiser.
+- **Quem lê os registros:** conferir com a cliente quem tem os papéis de leitura de logs no projeto (31.7). Travar o bucket só depois do jurídico.
+- **As lacunas de 31.9**, para o jurídico (UP-45).
+
+Pergunta ao dono, com a proposta seguida até a resposta:
+
+1. **Callables recusadas antes do handler** (o preflight do CORS, o pedido fora do formato e o token inválido ou vencido) ficam sem a linha, só no log de pedido de 30 dias (31.6 e 31.9, lacuna 4)? Proposta: sim. Cobrir esses pedidos pede embrulhar a função HTTP que o `onCall` devolve, por fora do firebase-functions (copiar o `__endpoint`, o `__trigger`, o `run` e o `stream`, e escrever a linha no fim da resposta, com o uid passado pelo handler). É mais frágil a cada versão do pacote, e o preflight dobraria as linhas sem trazer quem chamou. O uid só existe com o token válido, que já chega ao handler.
+
+As decisões que o código pode rever (o lugar da linha nas callables e o teste do `cors`) voltam em 31.14.
+
+### 31.14 O que o código fez diferente do desenho
+
+Cada etapa do plano de construção acrescenta aqui o ponto em que o código decidiu um detalhe que o desenho deixava aberto, ou fez diferente do que ele diz, com o motivo.
+
+**Etapa 1, o código e os testes** (`functions/src/access-log.ts`, 14/10/2026):
+
+- **O IPv6 com zona é recusado.** O `isIP` do `node:net` aceita `fe80::1%` seguido de letras e números, de qualquer tamanho. O `clientIp` recusa todo item com `%`: nenhum IP de quem chama pela internet tem zona, e assim nenhum texto do cliente chega à linha, nem pela zona.
+- **Item vazio.** O último item vazio (`198.51.100.4,`) dá `null`: o código nunca volta a um item anterior, que pode ter vindo do cliente. O cabeçalho presente e vazio também dá `null`, sem o `req.ip`. Os itens vazios do meio não contam, porque só o último é lido.
+- **O pedido sem `get`** usa o `req.ip`, e o `.run` sem `rawRequest` dá `null`. A linha nunca derruba a chamada por causa de um pedido incompleto.
+- **O teste do manifesto** confere que as callables exportadas e as do `onPanelCall` são o mesmo conjunto, com pelo menos 55, e não exatamente 55: a callable nova pelo `onPanelCall` não quebra o teste, e um `__endpoint` perdido, que tiraria as callables do manifesto, quebra. O teste do embrulho compara também o `__trigger`, além do `__endpoint`, com três jogos de opções.
+- **O `cors` é testado fora do emulador, em todas as callables.** O emulador de Functions repassa o `OPTIONS` à própria função, mas liga o `enableCors` no `FIREBASE_DEBUG_FEATURES` das funções, e com ele o `cors` de toda callable devolve qualquer origem (a primeira rodada do teste no emulador pegou isso). Por isso o `access-log.test.ts` põe cada callable exportada, a função HTTP de verdade, atrás de um servidor do `node:http` e manda o preflight: com a origem do painel, 204 com o `Access-Control-Allow-Origin` dela e o `Access-Control-Allow-Methods: POST`; com outra origem, 204 sem o cabeçalho; e nenhuma linha `acesso`. O teste de emulador confere só que o preflight não escreve a linha.
+- **O emulador também escreve a linha, e o teste lê o `firebase-debug.log`.** O emulador não entrega o log das funções aos testes: ele vai ao terminal e ao `firebase-debug.log`, que o firebase-tools escreve na raiz do app durante o `npm run test:functions` e apaga no fim, quando tudo passa. O emulador de logs só sobe com a interface ou com `START_LOGGING_EMULATOR=true`, e pôr a variável no script do `package.json` mudaria o fingerprint. O `functions/test/access-log.emulator.test.ts` lê o arquivo a partir do tamanho de antes do pedido e acha a linha pelo IP, um IPv6 único do bloco de documentação (`2001:db8::/32`). Depende do formato do log do firebase-tools 15.32.0, a versão que o script fixa.
+- **O runtime do emulador confia no proxy** (`trust proxy`): com o cabeçalho, o `req.ip` dele é o primeiro item, o forjado. O teste manda o `203.0.113.7` no primeiro item e confere o último na linha, então prova também que o `req.ip` não é usado. Sem o cabeçalho, o runtime fala com o emulador por um pipe, o `req.ip` vem vazio, e as linhas dos outros testes de emulador saem com o `ip` `null`. Em produção, o front-end do Google acrescenta o cabeçalho a todo pedido; a publicação confere (31.12, passo 4).
+- **Os testes da `api` cobrem também** o token inválido (401, `uid` `null`) e o 500 inesperado, além do 401 sem token, do login, do 404, do cabeçalho forjado e da ordem.
+- **A frase do `closeStatsDays`** virou a constante `STATS_DAYS_CLOSED_LOG`, com o comentário de contrato, e o `log.info` ganhou uma linha curta que aponta para ela.
+
+**Etapa 2, a documentação e os arquivos** (`docs/protecao/`, 14/10/2026):
+
+- **Os 11 arquivos entraram, com a política de teste** (`teste-canal.json`), que serve para testar o canal de novo (31.4). A cópia foi conferida com o `cmp`, arquivo por arquivo, contra `Projetos/protecao-imagineup/`, e nenhum arquivo tem `@`, id de canal, de política ou de conta.
+- **O `.prettierignore` ganhou `docs/protecao`.** O `prettier --check` acusava os 7 JSON: um `npm run format` os reescreveria, e a cópia deixaria de ser igual ao que está ligado. O `.prettierignore` não entra no fingerprint, que continua o mesmo.
+- **A janela do silenciamento passou de 2 para 3 horas** (31.5 e 31.12): o lote 1 espera a conferência da linha antes do lote 2, e um lote que falha pela cota só vai de novo depois de uns 30 minutos sem deploy.
+- **"Publicar" não foi renumerado.** No `CLAUDE.md`, o silenciamento entrou no começo do passo 3 (os lotes) e a conferência no fim do passo 6 (conferir), porque esta nota cita os passos 1, 3 e 6 de "Publicar" pelo número.
+- **O arquivo dos lotes** (`Projetos/protecao-imagineup/lotes-registro-acesso.txt`) fica fora do repositório, porque leva o caminho da pasta do deploy desta máquina. Cada linha começa com `cd <pasta do deploy> -ErrorAction Stop;`: se a pasta não existir, o PowerShell para a linha antes do deploy (sem o `-ErrorAction Stop`, ele segue para o comando seguinte), e nenhum lote sai de outra pasta.
+
+**Revisão** (14/10/2026), com cada achado conferido antes de aplicar; nenhum foi recusado:
+
+- **O `\r` do gcloud no Git Bash.** O `policies list` de 14/10/2026, só leitura, saiu com `\r\n` em cada linha. O `$(...)` do Git Bash tira o `\r\n` do fim, e o `CANAL` de uma linha só não tem o problema (por isso as 4 políticas foram criadas). Com várias linhas, o `\r` fica no meio: o `paste` do silenciamento juntaria 3 dos 4 nomes com o `\r`, e o laço do "Desfazer" apagaria só a última política. Os dois ganharam o `tr -d '\r'` (31.4 e 31.5); com ele, o valor sai sem `\r` e com os 4 nomes. O passo 2 de 31.5 confere também as políticas do silenciamento (`describe`), e o "Desfazer" confere a lista vazia antes das métricas. A mesma correção foi para o arquivo dos lotes e para o plano (2.7 e 2.8), fora do repositório.
+- **Os dois lados do contrato no mesmo teste.** Os testes prendiam cada constante a um texto escrito no próprio teste, e quem trocasse os dois passaria com o filtro e a métrica velhos. Agora o `access-log.test.ts` lê o filtro do sink e o `close.test.ts` lê a métrica, em `docs/protecao/` (31.11).
+- **O que não chega ao handler da `api`.** O runtime das funções responde o JSON malformado, o `/favicon.ico` e o `/robots.txt` antes do handler (no emulador, o `bodyParser` e a rota própria do `functionsEmulatorRuntime.js` do firebase-tools 15.32.0), e o Cloud Run responde o corpo acima de 32 MB, o 429 do teto de instâncias e o 503 da cota sem chamar a função. A 31.6 dizia "todo pedido": passou a dizer "todo pedido que chega ao handler", com a lista, e a lacuna 4 de 31.9 passou a citar a `api`. O 429 e o 503 do Cloud Run entraram além do achado. O comentário do `finally` mudou junto, e um teste de emulador manda o JSON malformado e confere que não sai a linha.
+- **O `uid` `null` antes do token.** O 404, o 405, o 400 do caminho, o 413 e o 403 do App Check vêm antes do `authenticate` e saem com o `uid` `null`, mesmo com login (o próprio teste do 404 mandava o token). Entrou na 31.6, na 31.8 (a consulta por uid não os acha) e como a lacuna 5 de 31.9; o teste do 404 diz isso no nome.
+- **O trace na leitura do bucket.** O passo 9 de 31.12 pedia o trace da linha, e a leitura de 31.7 não o mostrava: o formato ganhou o `trace`, na ordem do passo 4.
+- **"Iguais ao que está ligado".** O `CLAUDE.md` e o `AGENTS.md` diziam isso de todo `docs/protecao/`, mas a 5ª política, a de teste e o filtro do sink não estão no ar (o gcloud de 14/10/2026 mostra 4 políticas e nenhum sink além dos dois padrão). O texto passou a separar os aplicados dos que esperam a vez, como a 31.2.
 
 ## Armadilhas
 

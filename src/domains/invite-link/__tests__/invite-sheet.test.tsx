@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react-native';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 import type { ReactNode } from 'react';
 import { Share } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -167,6 +167,18 @@ describe('sheet "Gerar meu link"', () => {
   });
 });
 
+/**
+ * O registro do link termina depois da asserção: sem as novas tentativas
+ * próprias (seção 29), o aviso do Query à tela chega num `setTimeout` logo
+ * depois, ainda com o teste aberto.
+ */
+async function settleRegister(): Promise<void> {
+  await waitFor(() => expect(client.isMutating()).toBe(0));
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
+}
+
 describe('o link nos "links criados" do Perfil', () => {
   beforeEach(() => {
     mockDataSource = 'api';
@@ -207,6 +219,7 @@ describe('o link nos "links criados" do Perfil', () => {
     expect(put).toHaveBeenCalledWith('/me/invite/links/invite', undefined, {
       headers: { 'Idempotency-Key': expect.any(String) },
     });
+    await settleRegister();
   });
 
   it('do show, o link conta como agenda', async () => {
@@ -218,6 +231,7 @@ describe('o link nos "links criados" do Perfil', () => {
     await waitFor(() =>
       expect(put).toHaveBeenCalledWith('/me/invite/links/agenda', undefined, expect.anything()),
     );
+    await settleRegister();
   });
 
   it('a folha fechada sem compartilhar (iOS) não conta', async () => {

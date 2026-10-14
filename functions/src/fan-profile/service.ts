@@ -276,24 +276,31 @@ export async function updateFanProfile(
  * `GET /fans/:fanId` (28.4), fora de transação: o perfil público de outro fã
  * (ou o próprio), ou null sem `users/{fanId}` (conta excluída, só da equipe ou
  * id que não existe: 404 na rota). O próprio fã vê o completo, mesmo com a
- * conta privada. A conta privada ou suspensa sai fechada sem mais leitura;
- * senão, a lista de quem o alvo bloqueou: quem pede está nela, fechada (o
- * mesmo corpo, sem o motivo). Uma ou duas leituras.
+ * conta privada, com `blockedByMe` false, numa leitura. De outro fã, um
+ * `getAll` do perfil dele e da lista de quem pede (o `blockedByMe`, seção 29,
+ * decisão 7). A conta privada ou suspensa sai fechada sem mais leitura; senão,
+ * a lista de quem o alvo bloqueou: quem pede está nela, fechada (o mesmo
+ * corpo, sem o motivo). Duas ou três leituras.
  */
 export async function readFanPublicProfile(
   db: Firestore,
   uid: string,
   fanId: string,
 ): Promise<FanPublicProfile | null> {
-  const profile = await profileRef(db, fanId).get();
-  if (!profile.exists) return null;
-  const data = (profile.data() ?? {}) as Record<string, unknown>;
-  if (fanId === uid) return publicProfileOf(fanId, data, false);
-  if (data.privateAccount === true || isSuspendedProfile(profile)) {
-    return publicProfileOf(fanId, data, true);
+  if (fanId === uid) {
+    const own = await profileRef(db, fanId).get();
+    if (!own.exists) return null;
+    return publicProfileOf(fanId, (own.data() ?? {}) as Record<string, unknown>, false, false);
+  }
+  const [profile, mine] = await db.getAll(profileRef(db, fanId), blockListRef(db, uid));
+  if (!profile!.exists) return null;
+  const data = (profile!.data() ?? {}) as Record<string, unknown>;
+  const blockedByMe = blockedOf(mine!.get('blocked')).includes(fanId);
+  if (data.privateAccount === true || isSuspendedProfile(profile!)) {
+    return publicProfileOf(fanId, data, true, blockedByMe);
   }
   const list = await blockListRef(db, fanId).get();
-  return publicProfileOf(fanId, data, blockedOf(list.get('blocked')).includes(uid));
+  return publicProfileOf(fanId, data, blockedOf(list.get('blocked')).includes(uid), blockedByMe);
 }
 
 export type UsernameRelease = { uid: string; previous: string; username: string };

@@ -281,6 +281,13 @@ describe('o retrato da noite e a rede do fanCount', () => {
     });
     expect((await read(`artists/${netto}`))?.fanCount).toBe(1);
     expect(entries.some((entry) => entry.level === 'warn')).toBe(true);
+    // Contrato da métrica close_stats_days_ok e do alerta (31.4): a frase
+    // exata, por extenso e não pela constante, no info (o stdout).
+    expect(entries).toContainEqual({
+      level: 'info',
+      message: 'closeStatsDays: dias fechados',
+      data: { days: ['2026-10-05', '2026-10-06'] },
+    });
   });
 
   it('a temporada que terminou à meia-noite, com a virada já feita, fica no retrato do último dia dela', async () => {

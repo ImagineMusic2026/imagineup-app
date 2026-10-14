@@ -1,9 +1,19 @@
-import { onlineManager, QueryClient, type Query } from '@tanstack/react-query';
+import {
+  dehydrate,
+  hydrate,
+  onlineManager,
+  QueryClient,
+  type DehydratedState,
+  type MutationMeta,
+  type Query,
+} from '@tanstack/react-query';
 
 import { usesFixtures } from '@/config/data-source';
+import { ApiError } from '@/services/api/errors';
+import { actionRefusal } from '@/services/api/refusal';
 
 import { queryClient, queryNetworkMode, queryOptionsFor } from '../client';
-import { persistOptions, shouldPersistQuery } from '../persister';
+import { persistOptions, shouldPersistMutation, shouldPersistQuery } from '../persister';
 
 // Sem API e sem emulador, em vez de lidos do ambiente: com EXPO_PUBLIC_API_URL
 // preenchida (CI, depois do deploy), estes testes continuam falando do modo
@@ -75,6 +85,114 @@ describe('cache salvo no aparelho', () => {
     const failed = await settledQuery(client, 'quebrada', { fails: true });
     expect(shouldPersistQuery(sensitive, false)).toBe(false);
     expect(shouldPersistQuery(failed, false)).toBe(false);
+  });
+});
+
+// O comentário recusado pelo filtro (seção 30): a mutação vai para o disco com
+// o erro, e a linha "Não publicado" volta com o app reaberto. O `services` não
+// conhece os posts: a chave e o `meta` aqui são os do comentário, escritos à mão.
+describe('mutações salvas no aparelho', () => {
+  const COMMENT_KEY = ['posts', 'comment'];
+  const META: MutationMeta = { suspendedAlert: false, keepRefused: true };
+  const variables = {
+    postId: 'p-clipe',
+    text: 'Que clipe!',
+    idempotencyKey: 'chave-1',
+    localId: 'local-1',
+  };
+  const contentRefused = () =>
+    new ApiError('validation', 'Fora dos Termos de uso.', 400, 'comment_invalid', {
+      reason: 'not_allowed',
+    });
+
+  let client: QueryClient;
+
+  // Sem o tempo de coleta (como o comentário do app, `gcTime: Infinity`): o
+  // `clear` não apaga o relógio das mutações, e o Jest esperaria os 5 min.
+  const newClient = () => new QueryClient({ defaultOptions: { mutations: { gcTime: Infinity } } });
+
+  beforeEach(() => {
+    client = newClient();
+  });
+
+  afterEach(() => client.clear());
+
+  /** Uma mutação do comentário que terminou: recusada com o erro dado, ou gravada. */
+  async function settledComment(error: unknown, meta: MutationMeta = META): Promise<void> {
+    await client
+      .getMutationCache()
+      .build(client, {
+        mutationKey: COMMENT_KEY,
+        meta,
+        retry: false,
+        mutationFn: async () => {
+          if (error) throw error;
+          return { id: 'c-servidor' };
+        },
+      })
+      .execute(variables)
+      .catch(() => undefined);
+  }
+
+  /** O que o persister grava, pelo JSON (o `createAsyncStoragePersister` usa o `JSON.stringify`). */
+  const savedToDisk = (): DehydratedState =>
+    JSON.parse(
+      JSON.stringify(dehydrate(client, persistOptions.dehydrateOptions)),
+    ) as DehydratedState;
+
+  it('a recusada por conteúdo vai para o disco e volta como recusa de conteúdo', async () => {
+    await settledComment(contentRefused());
+    const saved = savedToDisk();
+    expect(saved.mutations).toHaveLength(1);
+
+    const reopened = newClient();
+    hydrate(reopened, saved);
+    const [restored, ...others] = reopened.getMutationCache().getAll();
+    expect(others).toHaveLength(0);
+    expect(restored?.state.status).toBe('error');
+    expect(restored?.state.variables).toEqual(variables);
+    expect(restored?.meta).toEqual(META);
+    // Um objeto do JSON, e não um `ApiError`: a linha sai "Não publicado" pelo
+    // `actionRefusal`, que é o que o `useLocalComments` lê.
+    expect(restored?.state.error).not.toBeInstanceOf(ApiError);
+    expect(actionRefusal(restored?.state.error, 'comment')).toEqual({
+      type: 'content',
+      key: 'post.composer.contentRefused',
+    });
+    // O salvamento seguinte, com o app reaberto, continua guardando.
+    expect(restored && shouldPersistMutation(restored)).toBe(true);
+    reopened.clear();
+  });
+
+  it('a recusada por outro motivo, a que deu certo e a sem o meta não vão', async () => {
+    await settledComment(
+      new ApiError('validation', 'Longo.', 400, 'comment_invalid', { reason: 'too_long' }),
+    );
+    await settledComment(new ApiError('network', 'sem rede'));
+    await settledComment(null);
+    await settledComment(contentRefused(), { suspendedAlert: false });
+    expect(client.getMutationCache().getAll()).toHaveLength(4);
+    expect(savedToDisk().mutations).toEqual([]);
+  });
+
+  it('a pausada (a fila offline) continua indo, como no padrão do TanStack', () => {
+    const paused = client.getMutationCache().build<unknown, ApiError, unknown, unknown>(
+      client,
+      { mutationKey: COMMENT_KEY, meta: META },
+      {
+        context: undefined,
+        data: undefined,
+        error: null,
+        failureCount: 0,
+        failureReason: null,
+        isPaused: true,
+        status: 'pending',
+        variables,
+        submittedAt: Date.now(),
+      },
+    );
+    expect(shouldPersistMutation(paused)).toBe(true);
+    expect(savedToDisk().mutations).toHaveLength(1);
   });
 });
 

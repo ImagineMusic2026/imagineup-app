@@ -5,13 +5,14 @@ import { getFirestore } from 'firebase-admin/firestore';
 import { getFunctions } from 'firebase-admin/functions';
 import { getStorage } from 'firebase-admin/storage';
 import { onDocumentUpdated, onDocumentWritten } from 'firebase-functions/firestore';
-import { onCall, onRequest } from 'firebase-functions/https';
+import { onRequest } from 'firebase-functions/https';
 import { onUserCreated, onUserDeleted } from 'firebase-functions/identity';
 import * as logger from 'firebase-functions/logger';
 import { setGlobalOptions } from 'firebase-functions/options';
 import { onSchedule } from 'firebase-functions/scheduler';
 import { onTaskDispatched } from 'firebase-functions/tasks';
 
+import { onPanelCall } from './access-log';
 import {
   addAchievement,
   changeAchievementStatus,
@@ -63,6 +64,7 @@ import {
 import {
   hideFanComments as hideCommentsOfFan,
   moderate,
+  resolveProfileReport as resolveReportOfFan,
   setFanSuspended as suspendFan,
 } from './moderation';
 import {
@@ -207,6 +209,11 @@ const findUser: FindUser = async (uid) => {
 // 'southamerica-east1')). Quem é da equipe e o que pode ver moram em
 // staff/{uid}, lido a cada chamada; nada vem de custom claims. Os logs levam
 // ids, nunca o link do convite nem a chave do EmailJS.
+//
+// Toda callable do painel nasce pelo onPanelCall (access-log.ts), nunca pelo
+// onCall puro: ele escreve a linha `acesso` do registro de acesso, com o IP e
+// o uid de quem chamou (docs/arquitetura-api.md, 31.6), e passa as opções ao
+// onCall sem mudança. O access-log.test.ts confere todas.
 
 const staffDeps = (): StaffDeps => ({
   db: getFirestore(),
@@ -217,7 +224,7 @@ const staffDeps = (): StaffDeps => ({
 });
 
 /** Admin convida alguém para a equipe: grava o convite e manda o e-mail pelo EmailJS. */
-export const createStaffInvite = onCall(
+export const createStaffInvite = onPanelCall(
   { cors: PANEL_ORIGINS, secrets: [EMAILJS_PRIVATE_KEY] },
   async (request) => {
     const result = await createInvite(staffDeps(), request.auth, request.data);
@@ -231,7 +238,7 @@ export const createStaffInvite = onCall(
 );
 
 /** Admin reenvia um convite pendente: link novo, o antigo para de valer. */
-export const resendStaffInvite = onCall(
+export const resendStaffInvite = onPanelCall(
   { cors: PANEL_ORIGINS, secrets: [EMAILJS_PRIVATE_KEY] },
   async (request) => {
     const result = await resendInvite(staffDeps(), request.auth, request.data);
@@ -245,47 +252,47 @@ export const resendStaffInvite = onCall(
 );
 
 /** Admin cancela um convite pendente. */
-export const cancelStaffInvite = onCall({ cors: PANEL_ORIGINS }, async (request) => {
+export const cancelStaffInvite = onPanelCall({ cors: PANEL_ORIGINS }, async (request) => {
   const result = await cancelInvite(staffDeps(), request.auth, request.data);
   logger.info('Convite da equipe cancelado.', { actorUid: request.auth?.uid });
   return result;
 });
 
 /** Página do convite (sem login): mostra o convite de quem tem o link. */
-export const getStaffInvite = onCall({ cors: PANEL_ORIGINS }, (request) =>
+export const getStaffInvite = onPanelCall({ cors: PANEL_ORIGINS }, (request) =>
   getInvite(staffDeps(), request.data),
 );
 
 /** Página do convite (sem login): cria a conta nova e dá o acesso ao painel. */
-export const acceptStaffInvite = onCall({ cors: PANEL_ORIGINS }, async (request) => {
+export const acceptStaffInvite = onPanelCall({ cors: PANEL_ORIGINS }, async (request) => {
   const result = await acceptInvite(staffDeps(), request.data);
   logger.info('Convite da equipe aceito.', { uid: result.uid, accountCreatedByInvite: true });
   return result;
 });
 
 /** Página do convite (logado): liga o acesso ao painel numa conta que já existe. */
-export const linkStaffInvite = onCall({ cors: PANEL_ORIGINS }, async (request) => {
+export const linkStaffInvite = onPanelCall({ cors: PANEL_ORIGINS }, async (request) => {
   const result = await linkInvite(staffDeps(), request.auth, request.data);
   logger.info('Convite da equipe aceito.', { uid: result.uid, accountCreatedByInvite: false });
   return result;
 });
 
 /** Admin muda papel e seções de alguém da equipe. */
-export const updateStaffMember = onCall({ cors: PANEL_ORIGINS }, async (request) => {
+export const updateStaffMember = onPanelCall({ cors: PANEL_ORIGINS }, async (request) => {
   const result = await updateMember(staffDeps(), request.auth, request.data);
   logger.info('Acesso da equipe alterado.', { actorUid: request.auth?.uid });
   return result;
 });
 
 /** Admin desativa ou reativa alguém da equipe (a conta do Auth continua). */
-export const setStaffMemberActive = onCall({ cors: PANEL_ORIGINS }, async (request) => {
+export const setStaffMemberActive = onPanelCall({ cors: PANEL_ORIGINS }, async (request) => {
   const result = await setMemberActive(staffDeps(), request.auth, request.data);
   logger.info('Acesso da equipe ligado ou desligado.', { actorUid: request.auth?.uid });
   return result;
 });
 
 /** Admin tira alguém da equipe; a conta sai junto só se nasceu no convite e não é de fã. */
-export const removeStaffMember = onCall({ cors: PANEL_ORIGINS }, async (request) => {
+export const removeStaffMember = onPanelCall({ cors: PANEL_ORIGINS }, async (request) => {
   const result = await removeMember(staffDeps(), request.auth, request.data);
   logger.info('Membro removido da equipe.', { actorUid: request.auth?.uid });
   return result;
@@ -304,40 +311,40 @@ const artistDeps = (): ArtistDeps => ({
 });
 
 /** Formulário da central: o @ está livre? (formato, reservados, fãs e outras centrais). */
-export const checkArtistHandle = onCall({ cors: PANEL_ORIGINS }, (request) =>
+export const checkArtistHandle = onPanelCall({ cors: PANEL_ORIGINS }, (request) =>
   checkHandle(artistDeps(), request.auth, request.data),
 );
 
 /** Cria a central como rascunho e reserva o @ no mesmo espaço dos @ dos fãs. */
-export const createArtist = onCall({ cors: PANEL_ORIGINS }, async (request) => {
+export const createArtist = onPanelCall({ cors: PANEL_ORIGINS }, async (request) => {
   const result = await addArtist(artistDeps(), request.auth, request.data);
   logger.info('Central criada.', { actorUid: request.auth?.uid, artistId: result.artistId });
   return result;
 });
 
 /** Edita a central: textos, gestor, contato, selo, autorização e fotos já enviadas. */
-export const updateArtist = onCall({ cors: PANEL_ORIGINS }, async (request) => {
+export const updateArtist = onPanelCall({ cors: PANEL_ORIGINS }, async (request) => {
   const result = await editArtist(artistDeps(), request.auth, request.data);
   logger.info('Central alterada.', { actorUid: request.auth?.uid });
   return result;
 });
 
 /** Publica ou tira do ar. Publicar exige foto e autorização de uso de imagem. */
-export const setArtistStatus = onCall({ cors: PANEL_ORIGINS }, async (request) => {
+export const setArtistStatus = onPanelCall({ cors: PANEL_ORIGINS }, async (request) => {
   const result = await changeArtistStatus(artistDeps(), request.auth, request.data);
   logger.info('Status da central alterado.', { actorUid: request.auth?.uid });
   return result;
 });
 
 /** Nova ordem das centrais (os 4 primeiros publicados são os destaques). */
-export const reorderArtists = onCall({ cors: PANEL_ORIGINS }, async (request) => {
+export const reorderArtists = onPanelCall({ cors: PANEL_ORIGINS }, async (request) => {
   const result = await reorderArtistList(artistDeps(), request.auth, request.data);
   logger.info('Ordem das centrais alterada.', { actorUid: request.auth?.uid });
   return result;
 });
 
 /** Admin apaga uma central sem fãs, em qualquer status, com as fotos e a reserva do @. */
-export const deleteArtist = onCall({ cors: PANEL_ORIGINS }, async (request) => {
+export const deleteArtist = onPanelCall({ cors: PANEL_ORIGINS }, async (request) => {
   const result = await removeArtist(artistDeps(), request.auth, request.data);
   logger.info('Central apagada.', { actorUid: request.auth?.uid });
   return result;
@@ -356,63 +363,63 @@ const contentDeps = (): ContentDeps => ({
 });
 
 /** Cria o post como rascunho (texto, foto, vídeo ou show) numa central. */
-export const createPost = onCall({ cors: PANEL_ORIGINS }, async (request) => {
+export const createPost = onPanelCall({ cors: PANEL_ORIGINS }, async (request) => {
   const result = await addPost(contentDeps(), request.auth, request.data);
   logger.info('Post criado.', { actorUid: request.auth?.uid, postId: result.postId });
   return result;
 });
 
 /** Edita o texto, o show ou a mídia já enviada de um post. */
-export const updatePost = onCall({ cors: PANEL_ORIGINS }, async (request) => {
+export const updatePost = onPanelCall({ cors: PANEL_ORIGINS }, async (request) => {
   const result = await editPost(contentDeps(), request.auth, request.data);
   logger.info('Post alterado.', { actorUid: request.auth?.uid });
   return result;
 });
 
 /** Publica ou tira do ar um post. Publicar exige a mídia e, no post de show, o show no ar. */
-export const setPostStatus = onCall({ cors: PANEL_ORIGINS }, async (request) => {
+export const setPostStatus = onPanelCall({ cors: PANEL_ORIGINS }, async (request) => {
   const result = await changePostStatus(contentDeps(), request.auth, request.data);
   logger.info('Status do post alterado.', { actorUid: request.auth?.uid });
   return result;
 });
 
 /** Apaga o post que nunca foi ao ar (o rascunho criado por engano), com a mídia. */
-export const deletePost = onCall({ cors: PANEL_ORIGINS }, async (request) => {
+export const deletePost = onPanelCall({ cors: PANEL_ORIGINS }, async (request) => {
   const result = await removePost(contentDeps(), request.auth, request.data);
   logger.info('Post apagado.', { actorUid: request.auth?.uid });
   return result;
 });
 
 /** Cadastra um show como rascunho, com a data local e o fuso do lugar. */
-export const createEvent = onCall({ cors: PANEL_ORIGINS }, async (request) => {
+export const createEvent = onPanelCall({ cors: PANEL_ORIGINS }, async (request) => {
   const result = await addEvent(contentDeps(), request.auth, request.data);
   logger.info('Show criado.', { actorUid: request.auth?.uid, eventId: result.eventId });
   return result;
 });
 
 /** Edita um show: textos, centrais, data, fuso, destaque e foto já enviada. */
-export const updateEvent = onCall({ cors: PANEL_ORIGINS }, async (request) => {
+export const updateEvent = onPanelCall({ cors: PANEL_ORIGINS }, async (request) => {
   const result = await editEvent(contentDeps(), request.auth, request.data);
   logger.info('Show alterado.', { actorUid: request.auth?.uid });
   return result;
 });
 
 /** Publica ou tira do ar um show. */
-export const setEventStatus = onCall({ cors: PANEL_ORIGINS }, async (request) => {
+export const setEventStatus = onPanelCall({ cors: PANEL_ORIGINS }, async (request) => {
   const result = await changeEventStatus(contentDeps(), request.auth, request.data);
   logger.info('Status do show alterado.', { actorUid: request.auth?.uid });
   return result;
 });
 
 /** Apaga o show que nunca foi ao ar e para o qual nenhum post aponta. */
-export const deleteEvent = onCall({ cors: PANEL_ORIGINS }, async (request) => {
+export const deleteEvent = onPanelCall({ cors: PANEL_ORIGINS }, async (request) => {
   const result = await removeEvent(contentDeps(), request.auth, request.data);
   logger.info('Show apagado.', { actorUid: request.auth?.uid });
   return result;
 });
 
 /** Oculta, mantém ou reexibe um comentário (seção Moderação, provisória até a UP-48). */
-export const moderateComment = onCall({ cors: PANEL_ORIGINS }, async (request) => {
+export const moderateComment = onPanelCall({ cors: PANEL_ORIGINS }, async (request) => {
   const result = await moderate({ db: getFirestore() }, request.auth, request.data);
   logger.info('Comentário moderado.', { actorUid: request.auth?.uid, status: result.status });
   return result;
@@ -429,7 +436,7 @@ export const moderateComment = onCall({ cors: PANEL_ORIGINS }, async (request) =
 const gameDeps = (): ConfigPanelDeps => ({ db: getFirestore() });
 
 /** Valores, limites, tetos do dia e níveis (a régua). */
-export const updatePointsConfig = onCall({ cors: PANEL_ORIGINS }, async (request) => {
+export const updatePointsConfig = onPanelCall({ cors: PANEL_ORIGINS }, async (request) => {
   const result = await changePointsConfig(gameDeps(), request.auth, request.data);
   logger.info('Régua alterada.', { actorUid: request.auth?.uid, version: result.version });
   return result;
@@ -439,7 +446,7 @@ export const updatePointsConfig = onCall({ cors: PANEL_ORIGINS }, async (request
  * A temporada atual: o id não muda depois que ela começa, e a começada não
  * sai nem muda de início (bloco 8: sai pela virada, no fim ou pelo endSeason).
  */
-export const updateSeason = onCall({ cors: PANEL_ORIGINS }, async (request) => {
+export const updateSeason = onPanelCall({ cors: PANEL_ORIGINS }, async (request) => {
   const result = await changeSeason(gameDeps(), request.auth, request.data);
   logger.info('Temporada alterada.', { actorUid: request.auth?.uid, version: result.version });
   return result;
@@ -450,7 +457,7 @@ export const updateSeason = onCall({ cors: PANEL_ORIGINS }, async (request) => {
 // na hora, quando a função agendada não roda. As telas são do bloco 11.
 
 /** Cadastra (ou tira, com null) a próxima temporada, que a virada promove. */
-export const scheduleNextSeason = onCall({ cors: PANEL_ORIGINS }, async (request) => {
+export const scheduleNextSeason = onPanelCall({ cors: PANEL_ORIGINS }, async (request) => {
   const result = await scheduleNext(gameDeps(), request.auth, request.data);
   logger.info('Próxima temporada alterada.', {
     actorUid: request.auth?.uid,
@@ -460,7 +467,7 @@ export const scheduleNextSeason = onCall({ cors: PANEL_ORIGINS }, async (request
 });
 
 /** Encerra agora a temporada em andamento; a virada fecha na rodada seguinte. */
-export const endSeason = onCall({ cors: PANEL_ORIGINS }, async (request) => {
+export const endSeason = onPanelCall({ cors: PANEL_ORIGINS }, async (request) => {
   const result = await endCurrent(gameDeps(), request.auth, request.data);
   logger.info('Temporada encerrada antes da hora.', {
     actorUid: request.auth?.uid,
@@ -475,7 +482,7 @@ export const endSeason = onCall({ cors: PANEL_ORIGINS }, async (request) => {
  * de 90 s (CLOSE_NOW_BUDGET_MS), e o painel chama de novo enquanto vier
  * `running`; os 30 s até os 120 s cobrem a última página.
  */
-export const closeSeasonNow = onCall(
+export const closeSeasonNow = onPanelCall(
   { cors: PANEL_ORIGINS, timeoutSeconds: 120 },
   async (request) => {
     const result = await closeNow(gameDeps(), request.auth, request.data);
@@ -543,42 +550,42 @@ export const closeStatsDays = onSchedule(
 );
 
 /** Cria uma missão como rascunho no catálogo, com o id gerado pelo servidor. */
-export const createMission = onCall({ cors: PANEL_ORIGINS }, async (request) => {
+export const createMission = onPanelCall({ cors: PANEL_ORIGINS }, async (request) => {
   const result = await addMission(gameDeps(), request.auth, request.data);
   logger.info('Missão criada.', { actorUid: request.auth?.uid, missionId: result.missionId });
   return result;
 });
 
 /** Edita uma missão (depois do início, só título, recompensa, destaque e fim). */
-export const updateMission = onCall({ cors: PANEL_ORIGINS }, async (request) => {
+export const updateMission = onPanelCall({ cors: PANEL_ORIGINS }, async (request) => {
   const result = await editMission(gameDeps(), request.auth, request.data);
   logger.info('Missão alterada.', { actorUid: request.auth?.uid, version: result.version });
   return result;
 });
 
 /** Publica, arquiva ou traz de volta do arquivo uma missão. */
-export const setMissionStatus = onCall({ cors: PANEL_ORIGINS }, async (request) => {
+export const setMissionStatus = onPanelCall({ cors: PANEL_ORIGINS }, async (request) => {
   const result = await changeMissionStatus(gameDeps(), request.auth, request.data);
   logger.info('Status da missão alterado.', { actorUid: request.auth?.uid });
   return result;
 });
 
 /** Nova ordem das missões (a da 1g e da aba Missões da 1d). */
-export const reorderMissions = onCall({ cors: PANEL_ORIGINS }, async (request) => {
+export const reorderMissions = onPanelCall({ cors: PANEL_ORIGINS }, async (request) => {
   const result = await reorderMissionList(gameDeps(), request.auth, request.data);
   logger.info('Ordem das missões alterada.', { actorUid: request.auth?.uid });
   return result;
 });
 
 /** A meta da temporada (missões concluídas ou pontos da temporada), ou null para tirar. */
-export const updateSeasonGoal = onCall({ cors: PANEL_ORIGINS }, async (request) => {
+export const updateSeasonGoal = onPanelCall({ cors: PANEL_ORIGINS }, async (request) => {
   const result = await changeSeasonGoal(gameDeps(), request.auth, request.data);
   logger.info('Meta da temporada alterada.', { actorUid: request.auth?.uid });
   return result;
 });
 
 /** Cria uma conquista como rascunho (regra de nível, de primeira vez ou de ranking). */
-export const createAchievement = onCall({ cors: PANEL_ORIGINS }, async (request) => {
+export const createAchievement = onPanelCall({ cors: PANEL_ORIGINS }, async (request) => {
   const result = await addAchievement(gameDeps(), request.auth, request.data);
   logger.info('Conquista criada.', {
     actorUid: request.auth?.uid,
@@ -588,21 +595,21 @@ export const createAchievement = onCall({ cors: PANEL_ORIGINS }, async (request)
 });
 
 /** Edita uma conquista (a regra não muda depois de publicada). */
-export const updateAchievement = onCall({ cors: PANEL_ORIGINS }, async (request) => {
+export const updateAchievement = onPanelCall({ cors: PANEL_ORIGINS }, async (request) => {
   const result = await editAchievement(gameDeps(), request.auth, request.data);
   logger.info('Conquista alterada.', { actorUid: request.auth?.uid });
   return result;
 });
 
 /** Publica ou arquiva uma conquista. */
-export const setAchievementStatus = onCall({ cors: PANEL_ORIGINS }, async (request) => {
+export const setAchievementStatus = onPanelCall({ cors: PANEL_ORIGINS }, async (request) => {
   const result = await changeAchievementStatus(gameDeps(), request.auth, request.data);
   logger.info('Status da conquista alterado.', { actorUid: request.auth?.uid });
   return result;
 });
 
 /** Nova ordem das conquistas. */
-export const reorderAchievements = onCall({ cors: PANEL_ORIGINS }, async (request) => {
+export const reorderAchievements = onPanelCall({ cors: PANEL_ORIGINS }, async (request) => {
   const result = await reorderAchievementList(gameDeps(), request.auth, request.data);
   logger.info('Ordem das conquistas alterada.', { actorUid: request.auth?.uid });
   return result;
@@ -627,49 +634,49 @@ const rewardsDeps = (): RewardsPanelDeps => ({
 });
 
 /** Cria a recompensa como rascunho, no fim da ordem (o id pode vir do painel). */
-export const createReward = onCall({ cors: PANEL_ORIGINS }, async (request) => {
+export const createReward = onPanelCall({ cors: PANEL_ORIGINS }, async (request) => {
   const result = await addReward(rewardsDeps(), request.auth, request.data);
   logger.info('Recompensa criada.', { actorUid: request.auth?.uid, rewardId: result.rewardId });
   return result;
 });
 
 /** Edita os textos, o custo, o limite, o show, o destaque e a foto já enviada. */
-export const updateReward = onCall({ cors: PANEL_ORIGINS }, async (request) => {
+export const updateReward = onPanelCall({ cors: PANEL_ORIGINS }, async (request) => {
   const result = await editReward(rewardsDeps(), request.auth, request.data);
   logger.info('Recompensa alterada.', { actorUid: request.auth?.uid });
   return result;
 });
 
 /** Publica (ou reabre, no fim da ordem) ou encerra uma recompensa. */
-export const setRewardStatus = onCall({ cors: PANEL_ORIGINS }, async (request) => {
+export const setRewardStatus = onPanelCall({ cors: PANEL_ORIGINS }, async (request) => {
   const result = await changeRewardStatus(rewardsDeps(), request.auth, request.data);
   logger.info('Status da recompensa alterado.', { actorUid: request.auth?.uid });
   return result;
 });
 
 /** Muda o total oferecido, nunca abaixo do já resgatado. */
-export const setRewardStock = onCall({ cors: PANEL_ORIGINS }, async (request) => {
+export const setRewardStock = onPanelCall({ cors: PANEL_ORIGINS }, async (request) => {
   const result = await changeRewardStock(rewardsDeps(), request.auth, request.data);
   logger.info('Estoque da recompensa alterado.', { actorUid: request.auth?.uid });
   return result;
 });
 
 /** Nova ordem dos rascunhos e das recompensas no ar (a da loja). */
-export const reorderRewards = onCall({ cors: PANEL_ORIGINS }, async (request) => {
+export const reorderRewards = onPanelCall({ cors: PANEL_ORIGINS }, async (request) => {
   const result = await reorderRewardList(rewardsDeps(), request.auth, request.data);
   logger.info('Ordem das recompensas alterada.', { actorUid: request.auth?.uid });
   return result;
 });
 
 /** Apaga o rascunho que nunca foi ao ar e não tem pedido, com a foto. */
-export const deleteReward = onCall({ cors: PANEL_ORIGINS }, async (request) => {
+export const deleteReward = onPanelCall({ cors: PANEL_ORIGINS }, async (request) => {
   const result = await removeReward(rewardsDeps(), request.auth, request.data);
   logger.info('Recompensa apagada.', { actorUid: request.auth?.uid });
   return result;
 });
 
 /** Aprova, marca entregue ou recusa um pedido (a recusa devolve os pontos). */
-export const setRedemptionStatus = onCall({ cors: PANEL_ORIGINS }, async (request) => {
+export const setRedemptionStatus = onPanelCall({ cors: PANEL_ORIGINS }, async (request) => {
   const result = await changeRedemptionStatus(rewardsDeps(), request.auth, request.data);
   logger.info('Status do pedido alterado.', {
     actorUid: request.auth?.uid,
@@ -679,7 +686,7 @@ export const setRedemptionStatus = onCall({ cors: PANEL_ORIGINS }, async (reques
 });
 
 /** O nome, o @ e o e-mail de quem fez os pedidos abertos, para a entrega. */
-export const getRedemptionContacts = onCall({ cors: PANEL_ORIGINS }, async (request) => {
+export const getRedemptionContacts = onPanelCall({ cors: PANEL_ORIGINS }, async (request) => {
   const result = await readRedemptionContacts(rewardsDeps(), request.auth, request.data);
   logger.info('Contatos de pedidos consultados.', {
     actorUid: request.auth?.uid,
@@ -707,7 +714,7 @@ const fanPanelDeps = (): FanPanelDeps => ({ db: getFirestore(), auth: getAuth() 
  * com o motivo (no extrato e na auditoria), o teto do papel e o orçamento do
  * dia do editor. 30 s: dentro da folga da virada (23.6).
  */
-export const adjustFanPoints = onCall(
+export const adjustFanPoints = onPanelCall(
   { cors: PANEL_ORIGINS, timeoutSeconds: 30 },
   async (request) => {
     const result = await adjustPoints(
@@ -724,7 +731,7 @@ export const adjustFanPoints = onCall(
 );
 
 /** Acha o uid do fã pelo e-mail (só quem edita Fãs, até 50 por dia, auditado sem o e-mail). */
-export const findFanByEmail = onCall({ cors: PANEL_ORIGINS }, async (request) => {
+export const findFanByEmail = onPanelCall({ cors: PANEL_ORIGINS }, async (request) => {
   const result = await lookupFanByEmail(fanPanelDeps(), request.auth, request.data);
   logger.info('Fã buscado por e-mail.', {
     actorUid: request.auth?.uid,
@@ -734,19 +741,19 @@ export const findFanByEmail = onCall({ cors: PANEL_ORIGINS }, async (request) =>
 });
 
 /** O ranking ao vivo (geral ou de uma central em qualquer status), para a seção Ranking. */
-export const getPanelRanking = onCall({ cors: PANEL_ORIGINS }, (request) =>
+export const getPanelRanking = onPanelCall({ cors: PANEL_ORIGINS }, (request) =>
   readPanelRanking(gameDeps(), request.auth, request.data),
 );
 
 /** Troca o @ de um fã por um automático novo; o antigo fica livre na hora. */
-export const resetFanUsername = onCall({ cors: PANEL_ORIGINS }, async (request) => {
+export const resetFanUsername = onPanelCall({ cors: PANEL_ORIGINS }, async (request) => {
   const result = await resetUsernameOfFan(fanPanelDeps(), request.auth, request.data);
   logger.info('@ de um fã trocado pela equipe.', { actorUid: request.auth?.uid });
   return result;
 });
 
 /** Tira a foto do perfil de um fã (o arquivo sai pelo gatilho do perfil). */
-export const clearFanPhoto = onCall({ cors: PANEL_ORIGINS }, async (request) => {
+export const clearFanPhoto = onPanelCall({ cors: PANEL_ORIGINS }, async (request) => {
   const result = await removeFanPhotoByStaff(fanPanelDeps(), request.auth, request.data);
   logger.info('Foto de um fã removida pela equipe.', { actorUid: request.auth?.uid });
   return result;
@@ -756,14 +763,26 @@ export const clearFanPhoto = onCall({ cors: PANEL_ORIGINS }, async (request) => 
  * Apaga a bio, as redes ou as duas do perfil de um fã (28.6). A auditoria
  * guarda os campos que saíram, nunca o texto.
  */
-export const clearFanProfileText = onCall({ cors: PANEL_ORIGINS }, async (request) => {
+export const clearFanProfileText = onPanelCall({ cors: PANEL_ORIGINS }, async (request) => {
   const result = await clearFanTextByStaff(fanPanelDeps(), request.auth, request.data);
   logger.info('Bio e redes de um fã apagadas pela equipe.', { actorUid: request.auth?.uid });
   return result;
 });
 
+/**
+ * Fecha a denúncia de perfil de um fã (29.6): "Manter" (`kept`) ou "Resolver"
+ * (`actioned`), com a rodada que o card mostrou. O item mora na
+ * `profileReportQueue`, separada da fila de comentários; a auditoria leva a
+ * resolução, a contagem e a rodada, nunca o texto do perfil.
+ */
+export const resolveProfileReport = onPanelCall({ cors: PANEL_ORIGINS }, async (request) => {
+  const result = await resolveReportOfFan({ db: getFirestore() }, request.auth, request.data);
+  logger.info('Denúncia de perfil resolvida pela equipe.', { actorUid: request.auth?.uid });
+  return result;
+});
+
 /** Suspende (ou tira a suspensão de) um fã: as rotas do app que gravam passam a recusar. */
-export const setFanSuspended = onCall({ cors: PANEL_ORIGINS }, async (request) => {
+export const setFanSuspended = onPanelCall({ cors: PANEL_ORIGINS }, async (request) => {
   const result = await suspendFan({ db: getFirestore() }, request.auth, request.data);
   logger.info('Suspensão de um fã alterada.', {
     actorUid: request.auth?.uid,
@@ -777,7 +796,7 @@ export const setFanSuspended = onCall({ cors: PANEL_ORIGINS }, async (request) =
  * (HIDE_FAN_COMMENTS_PAGE; o painel chama de novo enquanto vier `more`), com
  * uma auditoria por chamada. O painel espera até 130 s.
  */
-export const hideFanComments = onCall(
+export const hideFanComments = onPanelCall(
   { cors: PANEL_ORIGINS, timeoutSeconds: 120 },
   async (request) => {
     const result = await hideCommentsOfFan({ db: getFirestore() }, request.auth, request.data);

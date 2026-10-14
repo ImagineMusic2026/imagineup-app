@@ -4,18 +4,23 @@ import { usesFixtures } from '@/config/data-source';
 import { playStackExit } from '@/hooks/use-stack-fade';
 import { resetFixtureSession } from '@/services/fixtures';
 import { queryClient, queryPersister } from '@/services/query';
+import { resetRefusalAlerts } from '@/services/refusal-alert';
 import { usePreferencesStore } from '@/stores/preferences';
 import { useSessionStore } from '@/stores/session';
+import { useSuspensionStore } from '@/stores/suspension';
 
 import { listenToAuth } from '../api';
 
 /**
- * Tudo o que ficou do fã que saiu: o cache do React Query (também o do disco)
- * e, no modo fixtures, o "servidor" em memória (saldo, resgates, centrais,
- * presenças, missões), que não separa um fã do outro.
+ * Tudo o que ficou do fã que saiu: o cache do React Query (também o do disco),
+ * as recusas de conta suspensa e as travas dos `Alert` de recusa (29.11,
+ * frente E) e, no modo fixtures, o "servidor" em memória (saldo, resgates,
+ * centrais, presenças, missões), que não separa um fã do outro.
  */
 async function clearSessionData(): Promise<void> {
   queryClient.clear();
+  useSuspensionStore.getState().reset();
+  resetRefusalAlerts();
   if (usesFixtures()) resetFixtureSession();
   await Promise.resolve(queryPersister.removeClient()).catch(() => undefined);
 }

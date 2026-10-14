@@ -1,5 +1,6 @@
 import { t, type TranslationKey } from '@/i18n';
 import { ApiError } from '@/services/api/errors';
+import { actionRefusal } from '@/services/api/refusal';
 import { formatDayMonth, formatLongDate } from '@/utils/date';
 import { formatNumber, formatPointsSpoken } from '@/utils/number';
 
@@ -229,6 +230,9 @@ export function buildRewardGrid(rewards: readonly Reward[]): RewardGrid {
  * - `changed`: o custo de agora não é o que o fã viu na confirmação;
  * - `dailyLimit`: o teto de resgates do dia;
  * - `alreadyRedeemed`: a chave da tentativa já gravou um pedido (25.5);
+ * - `suspended`: a conta suspensa pela equipe (403 `account_suspended`, 26.6);
+ * - `rateLimited`: pedidos seguidos demais (429 `rate_limited`, 27.3): nada
+ *   foi gravado;
  * - `failed`: o resto (rede, servidor); o resultado pode ser incerto.
  */
 export type RedeemFailure =
@@ -239,6 +243,8 @@ export type RedeemFailure =
   | 'changed'
   | 'dailyLimit'
   | 'alreadyRedeemed'
+  | 'suspended'
+  | 'rateLimited'
   | 'failed';
 
 const FAILURES: Readonly<Record<string, Exclude<RedeemFailure, 'failed'>>> = {
@@ -252,8 +258,22 @@ const FAILURES: Readonly<Record<string, Exclude<RedeemFailure, 'failed'>>> = {
 };
 
 export function redeemFailure(error: unknown): RedeemFailure {
+  // A conta suspensa e o ritmo pela peça comum das recusas (seção 29).
+  const refusal = actionRefusal(error, 'redeem').type;
+  if (refusal === 'suspended' || refusal === 'rateLimited') return refusal;
   if (!(error instanceof ApiError) || error.code === null) return 'failed';
   return FAILURES[error.code] ?? 'failed';
+}
+
+/**
+ * A frase de cada recusa do resgate: as da loja e, desde a seção 29, a da
+ * conta suspensa (`suspension.redeem`, com o link "Escrever para a equipe") e
+ * a do ritmo (`errors.rateLimited`).
+ */
+export function redeemFailureKey(failure: RedeemFailure): TranslationKey {
+  if (failure === 'suspended') return 'suspension.redeem';
+  if (failure === 'rateLimited') return 'errors.rateLimited';
+  return `rewards.errors.${failure}`;
 }
 
 /**

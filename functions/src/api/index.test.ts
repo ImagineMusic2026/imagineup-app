@@ -10,11 +10,18 @@ import { DailyCapError, ModerationError } from '../moderation/model';
 import { staticConfigSource } from '../points/config';
 import { PostError } from '../posts/model';
 import { RewardError } from '../rewards/model';
-import { API_ROUTES, APP_CHECK_MODE, createApiHandler, createRateLimiter } from './index';
+import { API_ROUTES, APP_CHECK_MODE, apiError, createApiHandler, createRateLimiter } from './index';
 import type { ApiDeps, ApiRequest, ApiRoute } from './types';
 
 // O vi.mock sobe para antes dos imports: o logger acima já é o falso.
 vi.mock('firebase-functions/logger', () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn() }));
+
+// O filtro do que o fã publica (seção 30) trocado por um de palavras neutras:
+// nenhum termo da lista de verdade entra no repositório (30.11).
+vi.mock('../content-filter', async (importOriginal) => {
+  const { fakeContentFilter } = await import('../../test/content-filter-fake.js');
+  return fakeContentFilter(await importOriginal());
+});
 
 const NOW = Date.parse('2026-10-05T15:00:00.000Z');
 
@@ -29,6 +36,9 @@ const emptyDb = {
     }),
     where: () => zeroCount,
   }),
+  // O perfil público lê o alvo e a lista de quem pede num getAll (seção 29).
+  getAll: async (...refs: unknown[]) =>
+    refs.map(() => ({ exists: false, data: () => undefined, get: () => undefined })),
 } as unknown as Firestore;
 
 // Firestore que lança na primeira leitura (e não tem transação): a rota que
@@ -69,6 +79,7 @@ function request(
     query: extra.query ?? {},
     body: extra.body,
     rawBody: extra.rawBody,
+    ip: extra.ip,
   };
 }
 
@@ -552,7 +563,8 @@ describe('mural, agenda e moderação (bloco 6)', () => {
       400,
       {
         code: 'comment_invalid',
-        message: 'Comentário vazio, longo demais ou com caracteres invisíveis.',
+        message:
+          'Comentário vazio, longo demais, com caracteres invisíveis ou fora dos Termos de uso do ImagineUP.',
         details: { reason: 'invisible' },
       },
     ],
@@ -585,6 +597,12 @@ describe('mural, agenda e moderação (bloco 6)', () => {
       new ModerationError('self'),
       400,
       { code: 'invalid_request', message: 'Pedido inválido.', details: { reason: 'self' } },
+    ],
+    // A denúncia de perfil (seção 29): o próprio perfil.
+    [
+      new ModerationError('own_profile'),
+      400,
+      { code: 'invalid_request', message: 'Pedido inválido.', details: { reason: 'own_profile' } },
     ],
   ])('%s vira o código combinado', async (error, status, body) => {
     const sent = await call(request('GET', '/teste/bloco6'), thrower(error));
@@ -692,6 +710,88 @@ describe('mural, agenda e moderação (bloco 6)', () => {
       expect(sent.status).toBe(400);
       expect(sent.body).toMatchObject({ code: 'idempotency_key_required' });
     }
+  });
+});
+
+describe('denúncia de perfil e lista de bloqueados (seção 29)', () => {
+  /** O handler com o Firestore que lança na primeira leitura: a resposta veio sem ler. */
+  async function withoutReads(req: ApiRequest) {
+    const handler = createApiHandler({
+      db: noReads,
+      auth,
+      now: () => NOW,
+      random: () => 0,
+      config: staticConfigSource(),
+    });
+    const { res, sent } = response();
+    await handler(req, res);
+    return sent;
+  }
+
+  const key = { 'Idempotency-Key': 'chave-denuncia-perfil-1' };
+
+  it('POST /fans/:fanId/report com o id fora do formato: 404 fan_not_found, sem ler nada', async () => {
+    for (const fanId of ['fa-rank-01', 'a'.repeat(129), 'uid%20com%20espaco']) {
+      const sent = await withoutReads(
+        request('POST', `/fans/${fanId}/report`, { headers: key, body: { reason: 'spam' } }),
+      );
+      expect(sent.status, fanId).toBe(404);
+      expect(sent.body).toEqual({ code: 'fan_not_found', message: 'Fã não encontrado.' });
+    }
+    expect(logger.error).not.toHaveBeenCalled();
+  });
+
+  it('POST /fans/:fanId/report com o motivo fora da lista: 400 com o campo, sem ler nada', async () => {
+    for (const body of [{ reason: 'chato' }, { reason: 1 }, 'spam', []]) {
+      const sent = await withoutReads(
+        request('POST', '/fans/uidPromo/report', { headers: key, body }),
+      );
+      expect(sent.status).toBe(400);
+      expect(sent.body).toMatchObject({ code: 'invalid_request', details: { field: 'reason' } });
+    }
+  });
+
+  it('POST /fans/:fanId/report exige a Idempotency-Key, antes de ler', async () => {
+    const sent = await withoutReads(
+      request('POST', '/fans/uidPromo/report', { body: { reason: 'spam' } }),
+    );
+    expect(sent.status).toBe(400);
+    expect(sent.body).toMatchObject({ code: 'idempotency_key_required' });
+  });
+
+  it('GET /me/blocks com o cursor e o limit fora do formato: 400 com o campo, sem ler nada', async () => {
+    for (const [query, field] of [
+      [{ limit: '0' }, 'limit'],
+      [{ limit: '21' }, 'limit'],
+      [{ limit: 'dez' }, 'limit'],
+      [{ cursor: 'uidEnzo' }, 'cursor'],
+      [{ cursor: '1000:uidEnzo' }, 'cursor'],
+      [{ cursor: '-1:uidEnzo' }, 'cursor'],
+      [{ cursor: '3:uid-com-hifen' }, 'cursor'],
+      // O cursor das outras listas não vale aqui.
+      [{ cursor: Buffer.from('[1,"p-1"]').toString('base64url') }, 'cursor'],
+    ] as const) {
+      const sent = await withoutReads(request('GET', '/me/blocks', { query }));
+      expect(sent.status).toBe(400);
+      expect(sent.body).toMatchObject({ code: 'invalid_request', details: { field } });
+    }
+  });
+
+  it('GET /me/blocks só lê: sem chave; sem lista, a página vazia', async () => {
+    const sent = await call(request('GET', '/me/blocks'));
+    expect(sent).toMatchObject({ status: 200, body: { items: [], nextCursor: null } });
+  });
+
+  it('a denúncia de perfil grava e não aceita o suspenso; a lista de bloqueados só lê', () => {
+    const report = API_ROUTES.find(
+      (route) => route.method === 'POST' && route.pattern === '/fans/:fanId/report',
+    );
+    expect(report).toMatchObject({ writes: true });
+    expect(report && 'allowSuspended' in report).toBe(false);
+    const list = API_ROUTES.find(
+      (route) => route.method === 'GET' && route.pattern === '/me/blocks',
+    );
+    expect(list).toMatchObject({ writes: false });
   });
 });
 
@@ -1332,5 +1432,261 @@ describe('suspensão do fã (bloco 11)', () => {
       message: 'Sua conta está suspensa. Fale com a equipe do ImagineUP.',
     });
     expect(logger.error).not.toHaveBeenCalled();
+  });
+});
+
+describe('filtro do que o fã publica (seção 30)', () => {
+  const commentKey = { 'Idempotency-Key': 'chave-filtro-comentario-1' };
+  const profileKey = { 'Idempotency-Key': 'chave-filtro-perfil-0001' };
+
+  /** A última linha `api` do log. */
+  const lastLine = () => vi.mocked(logger.info).mock.calls.at(-1)?.[1] as Record<string, unknown>;
+
+  it('o comentário barrado: 400 comment_invalid com not_allowed, sem ler nada nem abrir transação', async () => {
+    // Com o `noReads` (sem `runTransaction`), qualquer leitura ou transação daria 500.
+    for (const text of ['Que pepino, Netto', 'Abacaxi!', 'chuchu azedo']) {
+      const sent = await call(
+        request('POST', '/posts/p-clipe/comments', { body: { text }, headers: commentKey }),
+        API_ROUTES,
+        noReads,
+      );
+      expect(sent.status, text).toBe(400);
+      expect(sent.body).toEqual({
+        code: 'comment_invalid',
+        message:
+          'Comentário vazio, longo demais, com caracteres invisíveis ou fora dos Termos de uso do ImagineUP.',
+        details: { reason: 'not_allowed' },
+      });
+    }
+    expect(logger.error).not.toHaveBeenCalled();
+  });
+
+  it('também para o suspenso: a recusa vem antes do runIdempotent, que é quem dá o 403', async () => {
+    // A transação recusa como o runIdempotent recusa o perfil suspenso.
+    const runTransaction = vi.fn(async () => {
+      throw apiError('account_suspended');
+    });
+    const suspended = {
+      collection: () => ({ doc: () => ({}) }),
+      runTransaction,
+    } as unknown as Firestore;
+    const send = (text: string) =>
+      call(
+        request('POST', '/posts/p-clipe/comments', { body: { text }, headers: commentKey }),
+        API_ROUTES,
+        suspended,
+      );
+
+    const barred = await send('Que pepino');
+    expect(barred.status).toBe(400);
+    expect(barred.body).toMatchObject({
+      code: 'comment_invalid',
+      details: { reason: 'not_allowed' },
+    });
+    expect(runTransaction).not.toHaveBeenCalled();
+
+    const clean = await send('Que show');
+    expect(clean.status).toBe(403);
+    expect(clean.body).toMatchObject({ code: 'account_suspended' });
+    expect(runTransaction).toHaveBeenCalledOnce();
+  });
+
+  it('o perfil barrado: 400 profile_invalid com o campo, sem ler nada nem abrir transação', async () => {
+    for (const [body, field] of [
+      [{ displayName: 'Abacaxi' }, 'displayName'],
+      [{ bio: 'Fã do Netto. Que pepino.' }, 'bio'],
+      [{ city: 'Altoberinjela' }, 'city'],
+      [{ socials: { instagram: 'camila.pepino' } }, 'socials.instagram'],
+      [{ socials: { x: 'pepino' } }, 'socials.x'],
+    ] as const) {
+      const sent = await call(
+        request('PUT', '/me/profile', { body, headers: profileKey }),
+        API_ROUTES,
+        noReads,
+      );
+      expect(sent.status, field).toBe(400);
+      expect(sent.body).toEqual({
+        code: 'profile_invalid',
+        message: 'Perfil fora do formato. Confira os campos.',
+        details: { field, reason: 'not_allowed' },
+      });
+    }
+    expect(logger.error).not.toHaveBeenCalled();
+  });
+
+  it('a linha do log da recusa ganha o code e o reason, nunca o texto nem o field', async () => {
+    await call(
+      request('POST', '/posts/p-clipe/comments', {
+        body: { text: 'Que pepino, Netto' },
+        headers: commentKey,
+      }),
+      API_ROUTES,
+      noReads,
+    );
+    expect(lastLine()).toEqual({
+      method: 'POST',
+      route: 'POST /posts/:postId/comments',
+      status: 400,
+      ms: expect.any(Number),
+      uid: 'uid-camila',
+      replayed: false,
+      code: 'comment_invalid',
+      reason: 'not_allowed',
+    });
+
+    await call(
+      request('PUT', '/me/profile', { body: { bio: 'Que pepino' }, headers: profileKey }),
+      API_ROUTES,
+      noReads,
+    );
+    expect(lastLine()).toEqual({
+      method: 'PUT',
+      route: 'PUT /me/profile',
+      status: 400,
+      ms: expect.any(Number),
+      uid: 'uid-camila',
+      replayed: false,
+      code: 'profile_invalid',
+      reason: 'not_allowed',
+    });
+    const logged = JSON.stringify(vi.mocked(logger.info).mock.calls);
+    expect(logged).not.toContain('pepino');
+    expect(logged).not.toContain('"field"');
+    expect(logged).not.toContain('bio');
+  });
+
+  it('o reason só entra no formato fechado; o field e os outros detalhes nunca entram', async () => {
+    const thrower = (error: unknown): ApiRoute[] => [
+      {
+        method: 'GET',
+        pattern: '/teste/log',
+        writes: false,
+        handle: async () => {
+          throw error;
+        },
+      },
+    ];
+    for (const [error, expected] of [
+      [apiError('invalid_request', { field: 'qualquer.chave' }), { code: 'invalid_request' }],
+      [
+        apiError('invalid_request', { reason: 'own_profile' }),
+        { code: 'invalid_request', reason: 'own_profile' },
+      ],
+      [apiError('invalid_request', { reason: 'Texto do fã' }), { code: 'invalid_request' }],
+      [apiError('invalid_request', { reason: 'a'.repeat(41) }), { code: 'invalid_request' }],
+      [apiError('invalid_request', { reason: 'not-allowed' }), { code: 'invalid_request' }],
+      [apiError('invalid_request', { reason: 42 }), { code: 'invalid_request' }],
+      [
+        new PostError('comment_invalid', { reason: 'not_allowed' }),
+        { code: 'comment_invalid', reason: 'not_allowed' },
+      ],
+      [new DailyCapError('comment', 100, 600), { code: 'too_many_requests' }],
+      [new Error('quebrou'), { code: 'internal' }],
+    ] as const) {
+      await call(request('GET', '/teste/log'), thrower(error));
+      expect(lastLine(), JSON.stringify(expected)).toEqual({
+        method: 'GET',
+        route: 'GET /teste/log',
+        status: expect.any(Number),
+        ms: expect.any(Number),
+        uid: 'uid-camila',
+        replayed: false,
+        ...expected,
+      });
+    }
+    // A rota que não existe também leva o código.
+    await call(request('GET', '/nao/existe'));
+    expect(lastLine()).toMatchObject({ route: 'unmatched', status: 404, code: 'not_found' });
+    expect(lastLine()).not.toHaveProperty('reason');
+  });
+
+  it('a linha de sucesso não muda: só method, route, status, ms, uid e replayed', async () => {
+    expect((await call(request('GET', '/me/wallet'))).status).toBe(200);
+    expect(Object.keys(lastLine()).sort()).toEqual(
+      ['method', 'ms', 'replayed', 'route', 'status', 'uid'].sort(),
+    );
+  });
+});
+
+describe('registro de acesso: a linha `acesso` (31.6)', () => {
+  /** O cabeçalho forjado: o cliente escreve o primeiro item, o Google acrescenta o último. */
+  const forged = { 'X-Forwarded-For': '203.0.113.7, 198.51.100.4' };
+  /** O `req.ip` do Express que confia no proxy: o primeiro item, o forjado. */
+  const forgedIp = '203.0.113.7';
+
+  const messages = () => vi.mocked(logger.info).mock.calls.map(([message]) => message);
+  const accessLines = () =>
+    vi.mocked(logger.info).mock.calls.filter(([message]) => message === 'acesso');
+
+  it('o 401 sem token: o último item do cabeçalho e o uid null', async () => {
+    const sent = await call(
+      request('GET', '/me/wallet', {
+        headers: { ...forged, Authorization: '' },
+        ip: forgedIp,
+      }),
+    );
+    expect(sent.status).toBe(401);
+    expect(accessLines()).toEqual([['acesso', { ip: '198.51.100.4', uid: null }]]);
+  });
+
+  it('o token inválido também sai com o uid null', async () => {
+    const sent = await call(
+      request('GET', '/me/wallet', {
+        headers: { ...forged, Authorization: 'Bearer token-falso' },
+        ip: forgedIp,
+      }),
+    );
+    expect(sent.status).toBe(401);
+    expect(accessLines()).toEqual([['acesso', { ip: '198.51.100.4', uid: null }]]);
+  });
+
+  it('com login, o uid de quem chamou; só as chaves ip e uid, sem rota nem status', async () => {
+    const sent = await call(request('GET', '/me/wallet', { headers: forged, ip: forgedIp }));
+    expect(sent.status).toBe(200);
+    expect(accessLines()).toEqual([['acesso', { ip: '198.51.100.4', uid: 'uid-camila' }]]);
+    expect(Object.keys(accessLines()[0][1] as object)).toEqual(['ip', 'uid']);
+  });
+
+  it('o 404 e o 500 também escrevem a linha; o 404 vem antes do token, com o uid null', async () => {
+    // O pedido leva o token da Camila, mas a rota é conferida antes dele (31.6).
+    expect((await call(request('GET', '/me/carteira', { headers: forged }))).status).toBe(404);
+    const broken: ApiRoute[] = [
+      {
+        method: 'GET',
+        pattern: '/teste/acesso',
+        writes: false,
+        handle: async () => {
+          throw new Error('quebrou');
+        },
+      },
+    ];
+    expect((await call(request('GET', '/teste/acesso', { headers: forged }), broken)).status).toBe(
+      500,
+    );
+    expect(accessLines()).toEqual([
+      ['acesso', { ip: '198.51.100.4', uid: null }],
+      ['acesso', { ip: '198.51.100.4', uid: 'uid-camila' }],
+    ]);
+  });
+
+  it('sem o cabeçalho, o req.ip; com o último item fora do formato, null, nunca o texto', async () => {
+    await call(request('GET', '/me/wallet', { ip: '198.51.100.9' }));
+    await call(
+      request('GET', '/me/wallet', {
+        headers: { 'X-Forwarded-For': '198.51.100.4, {"uid":"outro"}' },
+        ip: '198.51.100.4',
+      }),
+    );
+    expect(accessLines()).toEqual([
+      ['acesso', { ip: '198.51.100.9', uid: 'uid-camila' }],
+      ['acesso', { ip: null, uid: 'uid-camila' }],
+    ]);
+    expect(JSON.stringify(vi.mocked(logger.info).mock.calls)).not.toContain('outro');
+  });
+
+  it('a `acesso` vem logo antes da `api`, que continua a última do pedido', async () => {
+    await call(request('GET', '/me/wallet', { headers: forged }));
+    await call(request('GET', '/nao/existe', { headers: forged }));
+    expect(messages()).toEqual(['acesso', 'api', 'acesso', 'api']);
   });
 });

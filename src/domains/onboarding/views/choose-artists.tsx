@@ -8,17 +8,17 @@ import { EmptyState } from '@/components/empty-state';
 import { Screen } from '@/components/screen';
 import { StepProgress } from '@/components/step-progress';
 import { Text } from '@/components/text';
-import type { Artist } from '@/domains/artists';
+import { ArtistGridSkeleton, type Artist } from '@/domains/artists';
 import { ENTRY_STEP_COUNT } from '@/domains/auth';
 import { t } from '@/i18n';
+import { actionRefusal } from '@/services/api/refusal';
 import { colors, motion, spacing } from '@/theme';
 
-import { ArtistGridSkeleton } from '../components/artist-grid-skeleton';
 import { SelectableArtistCard } from '../components/artist-select-card';
 import { CascadeIn } from '../components/cascade-in';
 import { MoreArtistsCard } from '../components/more-artists-card';
 import { SearchArtistsCard } from '../components/search-artists-card';
-import { ARTISTS_STEP, MIN_ARTISTS, MORE_PREVIEW_COUNT } from '../consts';
+import { ARTISTS_STEP, FEATURED_COUNT, MIN_ARTISTS, MORE_PREVIEW_COUNT } from '../consts';
 import { useArtistSelection } from '../hooks/use-artist-selection';
 import { useArtistsLoad, useFocusAfterRecovery } from '../hooks/use-artists-load';
 import { useFinishOnboarding } from '../hooks/use-finish-onboarding';
@@ -139,6 +139,10 @@ export function ChooseArtistsScreen() {
   }, [selectedIds, saveFailed, resetSave]);
 
   const saving = finish.isPending;
+  // A frase do erro de salvar: o teto do dia de entrar, o ritmo ou a genérica.
+  // A conta suspensa não tem frase aqui: conclui o onboarding sem seguir.
+  const saveRefusal = saveFailed ? actionRefusal(finish.error, 'follow') : null;
+  const saveMessage = saveRefusal && saveRefusal.type !== 'suspended' ? saveRefusal.key : null;
   const count = selectedIds.length;
   // O mínimo é 3, ou todas as publicadas quando o painel publicou menos que isso.
   const minimum = artists ? minimumArtists(artists.length) : MIN_ARTISTS;
@@ -175,15 +179,18 @@ export function ChooseArtistsScreen() {
               actionLoading={retrying}
             />
           ) : (
-            <ArtistGridSkeleton />
+            <ArtistGridSkeleton
+              count={FEATURED_COUNT}
+              accessibilityLabel={t('onboarding.chooseArtists.loading')}
+            />
           )}
         </View>
       </ScrollView>
 
       <BottomActionBar onHeightChange={setBarHeight}>
-        {saveFailed ? (
+        {saveMessage ? (
           <Text variant="caption" color={colors.danger} style={styles.error}>
-            {t('onboarding.chooseArtists.saveError')}
+            {t(saveMessage)}
           </Text>
         ) : null}
         <Button

@@ -3,14 +3,23 @@ import { act, renderHook, waitFor } from '@testing-library/react-native';
 import type { ReactNode } from 'react';
 import { AccessibilityInfo } from 'react-native';
 
+import { fanKeys, type FanPublicProfile } from '@/domains/profile';
 import { ApiError } from '@/services/api/errors';
 import { haptics } from '@/services/haptics';
+import { shouldPersistQuery } from '@/services/query/persister';
 
-import { blockFan, reportComment } from '../api';
+import { blockFan, fetchBlockedFans, reportComment, reportFan, unblockFan } from '../api';
 import { moderationFixture } from '../fixtures';
-import { postKeys } from '../keys';
-import { useBlockFanMutation, useCachedComment, useReportCommentMutation } from '../queries';
-import type { Page, PostComment } from '../types';
+import { moderationKeys, postKeys } from '../keys';
+import {
+  useBlockedFansInfiniteQuery,
+  useBlockFanMutation,
+  useCachedComment,
+  useReportCommentMutation,
+  useReportFanMutation,
+  useUnblockFanMutation,
+} from '../queries';
+import type { BlockedFan, BlockedFansPage, Page, PostComment } from '../types';
 
 // O perfil (Firestore) entra pelo domínio de perfil; nada aqui fala com ele.
 jest.mock('firebase/app', () => ({ FirebaseError: class FirebaseError extends Error {} }));
@@ -33,6 +42,9 @@ jest.mock('../api', () => {
     ...actual,
     reportComment: jest.fn(actual.reportComment),
     blockFan: jest.fn(actual.blockFan),
+    unblockFan: jest.fn(actual.unblockFan),
+    reportFan: jest.fn(actual.reportFan),
+    fetchBlockedFans: jest.fn(actual.fetchBlockedFans),
   };
 });
 
@@ -185,5 +197,191 @@ describe('o comentário da sheet (useCachedComment)', () => {
     expect(found.result.current).toMatchObject({ id: 'c2', authorId: 'uidBia' });
     const missing = renderHook(() => useCachedComment('p-g1', 'c2'), { wrapper });
     expect(missing.result.current).toBeUndefined();
+  });
+});
+
+const blockedFan = (uid: string): BlockedFan => ({
+  uid,
+  displayName: uid,
+  username: uid.toLowerCase(),
+  photoURL: null,
+});
+
+const THALITA: FanPublicProfile = {
+  uid: 'uidThalita',
+  displayName: 'Thalita Santos',
+  username: 'thalitasan',
+  photoURL: null,
+  restricted: false,
+  bio: null,
+  socials: null,
+  blockedByMe: false,
+};
+
+const blockedUids = () =>
+  client
+    .getQueryData<InfiniteData<BlockedFansPage>>(moderationKeys.blocked())
+    ?.pages.flatMap((p) => p.items.map((item) => item.uid));
+
+describe('bloquear e desbloquear pelo perfil público e pela lista (seção 29)', () => {
+  beforeEach(() => {
+    client.setQueryData(fanKeys.profile('uidThalita'), THALITA);
+    client.setQueryData<InfiniteData<BlockedFansPage>>(moderationKeys.blocked(), {
+      pages: [
+        { items: [blockedFan('uidC'), blockedFan('uidThalita')], nextCursor: '1:uidThalita' },
+        { items: [blockedFan('uidA')], nextCursor: null },
+      ],
+      pageParams: [null, '1:uidThalita'],
+    });
+  });
+
+  it('bloquear muda o blockedByMe do perfil em cache e zera a lista (volta à primeira página)', async () => {
+    jest.mocked(blockFan).mockResolvedValueOnce({ fanId: 'uidThalita', blocked: true });
+    const onDone = jest.fn();
+    const { result } = renderHook(() => useBlockFanMutation('uidThalita', { onDone }), {
+      wrapper,
+    });
+    act(() => result.current.block());
+    await waitFor(() => expect(onDone).toHaveBeenCalled());
+    expect(client.getQueryData<FanPublicProfile>(fanKeys.profile('uidThalita'))).toMatchObject({
+      blockedByMe: true,
+    });
+    expect(client.getQueryState(fanKeys.profile('uidThalita'))?.isInvalidated).toBe(true);
+    // A lista inativa sai do cache: a próxima abertura começa da primeira página.
+    expect(client.getQueryData(moderationKeys.blocked())).toBeUndefined();
+  });
+
+  it('desbloquear tira o fã das páginas carregadas sem buscar de novo, e o perfil volta a "Bloquear"', async () => {
+    client.setQueryData(fanKeys.profile('uidThalita'), { ...THALITA, blockedByMe: true });
+    const onDone = jest.fn();
+    const { result } = renderHook(() => useUnblockFanMutation('uidThalita', { onDone }), {
+      wrapper,
+    });
+    act(() => result.current.unblock());
+    await waitFor(() =>
+      expect(onDone).toHaveBeenCalledWith({ fanId: 'uidThalita', blocked: false }),
+    );
+    expect(blockedUids()).toEqual(['uidC', 'uidA']);
+    expect(
+      client.getQueryData<InfiniteData<BlockedFansPage>>(moderationKeys.blocked())?.pages[0]
+        ?.nextCursor,
+    ).toBe('1:uidThalita');
+    expect(client.getQueryState(moderationKeys.blocked())?.isInvalidated).toBe(false);
+    expect(fetchBlockedFans).not.toHaveBeenCalled();
+    expect(client.getQueryData<FanPublicProfile>(fanKeys.profile('uidThalita'))).toMatchObject({
+      blockedByMe: false,
+    });
+    // Os comentários do desbloqueado voltam: as listas buscam de novo.
+    expect(client.getQueryState(postKeys.comments('p-clipe'))?.isInvalidated).toBe(true);
+  });
+
+  it('desbloquear um fã sem linha nas páginas carregadas zera a lista (volta à primeira página)', async () => {
+    jest.mocked(unblockFan).mockResolvedValueOnce({ fanId: 'uidB', blocked: false });
+    const onDone = jest.fn();
+    const { result } = renderHook(() => useUnblockFanMutation('uidB', { onDone }), { wrapper });
+    act(() => result.current.unblock());
+    await waitFor(() => expect(onDone).toHaveBeenCalled());
+    // A lista inativa sai do cache: a próxima abertura começa da primeira página.
+    expect(client.getQueryData(moderationKeys.blocked())).toBeUndefined();
+  });
+
+  it('nas fixtures, desbloquear pelo id do comentário (fa-thalita) tira a linha do id do ranking (fa-rank-01)', async () => {
+    client.removeQueries({ queryKey: moderationKeys.blocked() });
+    const list = renderHook(() => useBlockedFansInfiniteQuery(), { wrapper });
+    const listed = () =>
+      list.result.current.data?.pages.flatMap((p) => p.items.map((item) => item.uid));
+    const block = renderHook(() => useBlockFanMutation('fa-thalita'), { wrapper });
+    act(() => block.result.current.block());
+    await waitFor(() => expect(listed()).toEqual(['fa-rank-01', 'fa-rank-13']));
+
+    const unblock = renderHook(() => useUnblockFanMutation('fa-thalita'), { wrapper });
+    act(() => unblock.result.current.unblock());
+    await waitFor(() => expect(listed()).toEqual(['fa-rank-13']));
+  });
+
+  it('desbloquear: a mesma chave depois de falha incerta, nova depois de recusa, com o prefixo unblock-', async () => {
+    const unblock = jest.mocked(unblockFan);
+    unblock
+      .mockRejectedValueOnce(new ApiError('network', 'Sem rede.', null))
+      .mockRejectedValueOnce(new ApiError('validation', 'Recusado.', 400));
+    const { result } = renderHook(() => useUnblockFanMutation('uidThalita'), { wrapper });
+    for (let attempt = 1; attempt <= 3; attempt += 1) {
+      act(() => result.current.unblock());
+      await waitFor(() => expect(unblock).toHaveBeenCalledTimes(attempt));
+      await waitFor(() => expect(result.current.isPending).toBe(false));
+    }
+    const keys = unblock.mock.calls.map(([variables]) => variables.idempotencyKey);
+    expect(keys[0]).toMatch(/^unblock-uidThalita-/);
+    expect(keys[1]).toBe(keys[0]);
+    expect(keys[2]).not.toBe(keys[1]);
+  });
+
+  it('desbloquear com o hook desmontado tira da lista do mesmo jeito e só avisa', async () => {
+    let resolve: (value: { fanId: string; blocked: boolean }) => void = () => undefined;
+    jest.mocked(unblockFan).mockImplementationOnce(
+      () =>
+        new Promise((done) => {
+          resolve = done;
+        }),
+    );
+    const hook = renderHook(() => useUnblockFanMutation('uidThalita'), { wrapper });
+    act(() => hook.result.current.unblock());
+    await waitFor(() => expect(hook.result.current.isPending).toBe(true));
+    hook.unmount();
+    await act(async () => resolve({ fanId: 'uidThalita', blocked: false }));
+    await waitFor(() => expect(blockedUids()).toEqual(['uidC', 'uidA']));
+    expect(AccessibilityInfo.announceForAccessibility).toHaveBeenCalledWith('Desbloqueio feito.');
+  });
+});
+
+describe('denunciar um perfil (seção 29)', () => {
+  it('não muda cache nenhum; o resultado chega à sheet', async () => {
+    jest.mocked(reportFan).mockResolvedValueOnce({ fanId: 'uidThalita', status: 'reported' });
+    const onDone = jest.fn();
+    const { result } = renderHook(() => useReportFanMutation('uidThalita', { onDone }), {
+      wrapper,
+    });
+    act(() => result.current.report(null));
+    await waitFor(() =>
+      expect(onDone).toHaveBeenCalledWith({ fanId: 'uidThalita', status: 'reported' }),
+    );
+    expect(jest.mocked(reportFan).mock.calls[0]?.[0]).toMatchObject({
+      fanId: 'uidThalita',
+      reason: null,
+    });
+    expect(ids('p-clipe')).toEqual(['c1', 'c2', 'c3']);
+    expect(client.getQueryState(postKeys.comments('p-clipe'))?.isInvalidated).toBe(false);
+  });
+
+  it('a mesma chave depois de falha incerta com o mesmo motivo; nova com outro motivo ou depois de recusa', async () => {
+    const report = jest.mocked(reportFan);
+    report
+      .mockRejectedValueOnce(new ApiError('network', 'Sem rede.', null))
+      .mockRejectedValueOnce(new ApiError('network', 'Sem rede.', null))
+      .mockRejectedValueOnce(new ApiError('notFound', 'Sumiu.', 404, 'fan_not_found'));
+    const { result } = renderHook(() => useReportFanMutation('uidThalita'), { wrapper });
+    for (const reason of ['spam', 'spam', 'offensive', 'offensive'] as const) {
+      const before = report.mock.calls.length;
+      act(() => result.current.report(reason));
+      await waitFor(() => expect(report.mock.calls.length).toBe(before + 1));
+      await waitFor(() => expect(result.current.isPending).toBe(false));
+    }
+    const keys = report.mock.calls.map(([variables]) => variables.idempotencyKey);
+    expect(keys[0]).toMatch(/^report-fan-uidThalita-/);
+    expect(keys[1]).toBe(keys[0]);
+    expect(keys[2]).not.toBe(keys[1]);
+    expect(keys[3]).not.toBe(keys[2]);
+  });
+});
+
+describe('a lista de bloqueados (seção 29)', () => {
+  it('pagina pelo cursor do servidor e fica fora do disco (persist: false)', async () => {
+    const { result } = renderHook(() => useBlockedFansInfiniteQuery(), { wrapper });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    // Nas fixtures, a fa-rank-13 do seed.
+    expect(result.current.data?.pages[0]?.items.map((fan) => fan.uid)).toEqual(['fa-rank-13']);
+    const query = client.getQueryCache().find({ queryKey: moderationKeys.blocked() });
+    expect(query?.meta).toMatchObject({ persist: false });
+    expect(shouldPersistQuery(query!, false)).toBe(false);
   });
 });

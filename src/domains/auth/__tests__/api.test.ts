@@ -1,3 +1,12 @@
+import { FirebaseError } from 'firebase/app';
+import {
+  EmailAuthProvider,
+  reauthenticateWithCredential,
+  updatePassword,
+  verifyBeforeUpdateEmail,
+  type User,
+} from 'firebase/auth';
+
 import { sourceOf } from '@/config/data-source';
 import type { BoundInvite, PendingInvite } from '@/domains/invites';
 import { api, ApiError, type ApiErrorKind } from '@/services/api';
@@ -5,18 +14,45 @@ import { api, ApiError, type ApiErrorKind } from '@/services/api';
 import {
   buildClaimBody,
   buildVisitBody,
+  changeEmailFailure,
+  changePassword,
+  changePasswordFailure,
   isFinalInviteRejection,
+  requestEmailChange,
   sendInviteClaim,
   sendInviteVisit,
+  SessionEndedError,
+  toSessionUser,
   typedInviteRejection,
 } from '../api';
 
-// O build do Firebase que o Jest resolve é ESM; aqui nada chega a ele.
-jest.mock('firebase/app', () => ({ FirebaseError: class FirebaseError extends Error {} }));
-jest.mock('firebase/auth', () => ({}));
+// O build do Firebase que o Jest resolve é ESM; aqui só chegam estas peças.
+jest.mock('firebase/app', () => ({
+  FirebaseError: class FirebaseError extends Error {
+    code: string;
+    constructor(code: string, message: string) {
+      super(message);
+      this.code = code;
+    }
+  },
+}));
+jest.mock('firebase/auth', () => ({
+  EmailAuthProvider: {
+    credential: jest.fn((email: string, password: string) => ({ email, password })),
+  },
+  reauthenticateWithCredential: jest.fn(),
+  updatePassword: jest.fn(),
+  verifyBeforeUpdateEmail: jest.fn(),
+}));
 jest.mock('firebase/firestore', () => ({}));
+// A conta da sessão que troca a senha e o e-mail.
+const mockUser = { uid: 'uid-alan', email: 'alan@teste.imagineup' };
+const mockAuth = {
+  authStateReady: jest.fn(() => Promise.resolve()),
+  currentUser: mockUser as { uid: string; email: string | null } | null,
+};
 jest.mock('@/firebase', () => ({
-  getFirebaseAuth: () => ({}),
+  getFirebaseAuth: () => mockAuth,
   getDb: () => ({}),
   isFirebaseConfigured: true,
 }));
@@ -63,6 +99,7 @@ const pending: PendingInvite = {
 
 beforeEach(() => {
   jest.clearAllMocks();
+  mockAuth.currentUser = mockUser;
   source.mockReturnValue('api');
   post.mockResolvedValue({ data: { status: 'claimed' } });
 });
@@ -142,7 +179,8 @@ describe('recusa definitiva do convite (isFinalInviteRejection)', () => {
     ['rede, sem status', error(null, null)],
     ['o getIdToken que falhou antes de sair (unknown sem status)', error(null, null, 'unknown')],
     ['401', error(401, 'unauthenticated')],
-    ['429', error(429, 'too_many_requests')],
+    ['429 do teto do dia', error(429, 'too_many_requests', 'dailyLimit')],
+    ['429 do ritmo', error(429, 'rate_limited', 'rateLimited')],
     ['503 profile_not_ready', error(503, 'profile_not_ready')],
     ['500', error(500, 'internal')],
     ['404 sem código (servidor sem a rota)', error(404, 'not_found')],
@@ -157,5 +195,107 @@ describe('recusa definitiva do convite (isFinalInviteRejection)', () => {
     expect(typedInviteRejection(error(409, 'invite_not_allowed'))).toBe('notAllowed');
     expect(typedInviteRejection(error(400, 'invalid_request'))).toBeNull();
     expect(typedInviteRejection(error(null, 'invite_not_found'))).toBeNull();
+  });
+});
+
+describe('a sessão sabe se a conta tem senha (toSessionUser, seção 29)', () => {
+  const user = (providerData: { providerId: string }[] | undefined) =>
+    ({ uid: 'u', email: 'u@x.com', displayName: null, photoURL: null, providerData }) as User;
+
+  it.each([
+    ['e-mail e senha', [{ providerId: 'password' }], true],
+    ['senha e Google', [{ providerId: 'google.com' }, { providerId: 'password' }], true],
+    ['só Google', [{ providerId: 'google.com' }], false],
+    ['sem provedor', [], false],
+    ['sem a lista (usuário montado à mão)', undefined, false],
+  ])('%s: hasPassword %s', (_, providerData, expected) => {
+    expect(toSessionUser(user(providerData)).hasPassword).toBe(expected);
+  });
+});
+
+const firebaseError = (code: string) => new FirebaseError(code, code);
+
+describe('trocar a senha e o e-mail (seção 29, frente D)', () => {
+  it('a senha: espera a sessão, reautentica com a senha atual e só então troca', async () => {
+    await changePassword('senha-atual', 'senha-nova');
+
+    expect(mockAuth.authStateReady).toHaveBeenCalled();
+    expect(EmailAuthProvider.credential).toHaveBeenCalledWith(
+      'alan@teste.imagineup',
+      'senha-atual',
+    );
+    expect(reauthenticateWithCredential).toHaveBeenCalledWith(mockUser, {
+      email: 'alan@teste.imagineup',
+      password: 'senha-atual',
+    });
+    expect(updatePassword).toHaveBeenCalledWith(mockUser, 'senha-nova');
+    const reauth = jest.mocked(reauthenticateWithCredential).mock.invocationCallOrder[0] ?? 0;
+    const update = jest.mocked(updatePassword).mock.invocationCallOrder[0] ?? 0;
+    expect(reauth).toBeLessThan(update);
+  });
+
+  it('o e-mail: reautentica e manda o link pelo verifyBeforeUpdateEmail, sem actionCodeSettings', async () => {
+    await requestEmailChange('senha-atual', 'alan.novo@teste.imagineup');
+
+    expect(reauthenticateWithCredential).toHaveBeenCalled();
+    expect(verifyBeforeUpdateEmail).toHaveBeenCalledWith(mockUser, 'alan.novo@teste.imagineup');
+    expect(jest.mocked(verifyBeforeUpdateEmail).mock.calls[0]).toHaveLength(2);
+  });
+
+  it('senha atual errada: nada é trocado', async () => {
+    jest
+      .mocked(reauthenticateWithCredential)
+      .mockRejectedValueOnce(firebaseError('auth/invalid-credential'));
+    await expect(changePassword('errada', 'senha-nova')).rejects.toThrow();
+    expect(updatePassword).not.toHaveBeenCalled();
+  });
+
+  it('sem conta logada, ou sem e-mail para reautenticar, a sessão terminou', async () => {
+    mockAuth.currentUser = null;
+    await expect(changePassword('a', 'b')).rejects.toBeInstanceOf(SessionEndedError);
+    mockAuth.currentUser = { uid: 'uid-alan', email: null };
+    await expect(requestEmailChange('a', 'b@x.com')).rejects.toBeInstanceOf(SessionEndedError);
+    expect(reauthenticateWithCredential).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['auth/invalid-credential', 'wrongPassword'],
+    ['auth/wrong-password', 'wrongPassword'],
+    ['auth/weak-password', 'weakPassword'],
+    ['auth/password-does-not-meet-requirements', 'weakPassword'],
+    ['auth/too-many-requests', 'tooManyRequests'],
+    ['auth/network-request-failed', 'network'],
+    ['auth/user-token-expired', 'sessionEnded'],
+    ['auth/user-not-found', 'sessionEnded'],
+    ['auth/user-disabled', 'sessionEnded'],
+    ['auth/requires-recent-login', 'unknown'],
+    ['auth/email-already-in-use', 'unknown'],
+  ])('troca de senha: %s vira %s', (code, failure) => {
+    expect(changePasswordFailure(firebaseError(code))).toBe(failure);
+  });
+
+  it.each([
+    ['auth/invalid-credential', 'wrongPassword'],
+    ['auth/wrong-password', 'wrongPassword'],
+    ['auth/email-already-in-use', 'emailInUse'],
+    ['auth/invalid-new-email', 'invalidEmail'],
+    ['auth/invalid-email', 'invalidEmail'],
+    ['auth/missing-new-email', 'invalidEmail'],
+    ['auth/operation-not-allowed', 'notAllowed'],
+    ['auth/too-many-requests', 'tooManyRequests'],
+    ['auth/network-request-failed', 'network'],
+    ['auth/user-token-expired', 'sessionEnded'],
+    ['auth/user-not-found', 'sessionEnded'],
+    ['auth/user-disabled', 'sessionEnded'],
+    ['auth/weak-password', 'unknown'],
+  ])('troca de e-mail: %s vira %s', (code, failure) => {
+    expect(changeEmailFailure(firebaseError(code))).toBe(failure);
+  });
+
+  it('a sessão que acabou e o erro que não é do Firebase', () => {
+    expect(changePasswordFailure(new SessionEndedError())).toBe('sessionEnded');
+    expect(changeEmailFailure(new SessionEndedError())).toBe('sessionEnded');
+    expect(changePasswordFailure(new Error('x'))).toBe('unknown');
+    expect(changeEmailFailure(new Error('x'))).toBe('unknown');
   });
 });

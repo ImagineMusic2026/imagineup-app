@@ -5,16 +5,19 @@ import { SEED_ACTOR } from '../points/seed';
 import { SEED_ENGAGEMENT_CONFIG } from '../posts/seed';
 import { runComment } from '../posts/service';
 import { parseSuspensionInput, runFanSuspension } from './fans';
+import { blockedOf, type ReportReason } from './model';
 import { runModeration } from './panel';
-import { runReport } from './service';
-import { reportRef } from './store';
+import { runBlockFan, runReport, runReportFan } from './service';
+import { blockListRef, profileQueueItemRef, reportRef } from './store';
 
 // A Moderação do seed dos emuladores (scripts/seed-emulators.mjs, que carrega
 // este build; docs/arquitetura-api.md, 26.13): o fã de propaganda com três
 // comentários no clipe do Netto, denunciados pela Bia e pela Duda, um deles
 // ocultado pela equipe de teste pelo núcleo do moderateComment (grava o
 // `comment.hidden` de verdade), e a suspensão do rank-48 pelo núcleo do
-// setFanSuspended. Nunca roda em produção: o script fixa o emulador.
+// setFanSuspended. Nunca roda em produção: o script fixa o emulador. Desde as
+// exigências das lojas (29.10), o bloqueio da Camila e a denúncia de perfil da
+// Bia contra o Promo, depois dos detalhes do perfil de 28.10.
 
 const MINUTE_MS = 60 * 1000;
 
@@ -125,4 +128,65 @@ export async function seedSuspension(
   });
   const { changed } = await runFanSuspension(db, input, { actor, now });
   return changed;
+}
+
+/**
+ * O bloqueio do seed (29.10): a Camila bloqueia uma pessoa genérica do
+ * ranking, que não comenta no seed nem nas fixtures (bloquear o Promo sumiria
+ * com os comentários de spam das conferências da Moderação). A tela "Fãs
+ * bloqueados" tem uma linha, e o perfil dela mostra "Desbloquear".
+ */
+export const SEED_BLOCKS: readonly { blocker: string; blocked: string }[] = [
+  { blocker: 'camila@teste.imagineup', blocked: 'rank-13@teste.imagineup' },
+];
+
+/**
+ * A denúncia de perfil do seed (29.10): a Bia denuncia o perfil do Promo como
+ * spam, e o item da `profileReportQueue` dele fica aberto para o painel
+ * conferir a lista, o card, "Manter" e "Resolver".
+ */
+export const SEED_PROFILE_REPORTS: readonly {
+  reporter: string;
+  target: string;
+  reason: ReportReason;
+}[] = [{ reporter: 'bia@teste.imagineup', target: SEED_SPAM_FAN.email, reason: 'spam' }];
+
+export type SeedProfileModerationResult = { blocks: number; reports: number };
+
+/**
+ * O bloqueio e a denúncia de perfil do seed (29.10), pelos núcleos das rotas
+ * (`runAsFan` com o ator de sistema: o teto não conta). O bloqueio que já
+ * está fica. A denúncia só vai quando o item do alvo não existe: rodar de
+ * novo não muda nada, nem depois de um "Manter" ou "Resolver" no painel local
+ * (sem a trava, a Bia reabriria o item sempre que o perfil do Promo mudasse
+ * depois da resolução). `uidOf` dá o uid de cada e-mail. Devolve o que entrou
+ * agora.
+ */
+export async function seedProfileModeration(
+  db: Firestore,
+  uidOf: (email: string) => string,
+  now: number = Date.now(),
+): Promise<SeedProfileModerationResult> {
+  const options = { now, config: SEED_ENGAGEMENT_CONFIG, actor: SEED_ACTOR, game: NO_GAME };
+  const result: SeedProfileModerationResult = { blocks: 0, reports: 0 };
+  for (const block of SEED_BLOCKS) {
+    const blocker = uidOf(block.blocker);
+    const blocked = uidOf(block.blocked);
+    const list = await blockListRef(db, blocker).get();
+    if (blockedOf(list.get('blocked')).includes(blocked)) continue;
+    await runBlockFan(db, blocker, { fanId: blocked }, options);
+    result.blocks += 1;
+  }
+  for (const report of SEED_PROFILE_REPORTS) {
+    const target = uidOf(report.target);
+    if ((await profileQueueItemRef(db, target).get()).exists) continue;
+    const outcome = await runReportFan(
+      db,
+      uidOf(report.reporter),
+      { fanId: target, reason: report.reason },
+      options,
+    );
+    if (outcome.status === 'reported') result.reports += 1;
+  }
+  return result;
 }

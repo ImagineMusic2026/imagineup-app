@@ -1,4 +1,7 @@
+import { createHash } from 'node:crypto';
+
 import type {
+  BlockedFan,
   EditableProfile,
   FanPublicProfile,
   FanSocials,
@@ -6,6 +9,7 @@ import type {
   ProfileChanges,
   SocialNetwork,
 } from '../api/contract';
+import { isBlockedSocial, isBlockedText } from '../content-filter';
 import { DISPLAY_NAME_MAX } from '../profile';
 import { cleanLine, cleanMultiline, isVisibleLine, isVisibleMultiline } from '../visible-line';
 import { normalizeUsername, ProfileEditError, USERNAME_INPUT_MAX, USERNAME_PATTERN } from './model';
@@ -260,9 +264,12 @@ export const PROFILE_CHANGE_KEYS = [
 export type ProfileInvalidField =
   'displayName' | 'bio' | 'city' | 'gender' | `socials.${SocialNetwork}`;
 
-/** O motivo do `profile_invalid` (`details.reason`). */
+/**
+ * O motivo do `profile_invalid` (`details.reason`). O `not_allowed` é o filtro
+ * do que o fã publica (seção 30), sempre o último motivo do campo.
+ */
 export type ProfileInvalidReason =
-  'empty' | 'too_long' | 'too_many_lines' | 'invisible' | 'unknown' | SocialProblem;
+  'empty' | 'too_long' | 'too_many_lines' | 'invisible' | 'unknown' | 'not_allowed' | SocialProblem;
 
 /** O corpo conferido, ou o campo que recusou com 400 `invalid_request` (`body` sem chave). */
 export type ParsedProfileChanges =
@@ -271,16 +278,24 @@ export type ParsedProfileChanges =
 const profileInvalid = (field: ProfileInvalidField, reason: ProfileInvalidReason) =>
   new ProfileEditError('profile_invalid', { field, reason });
 
-/** O nome limpo e conferido: de 1 a 60 em UTF-16, numa linha visível. */
+/**
+ * O nome limpo e conferido: de 1 a 60 em UTF-16, numa linha visível e, por
+ * último, fora da lista do filtro (seção 30, 30.5). Devolve o texto limpo,
+ * nunca o esqueleto do filtro.
+ */
 function cleanName(raw: string): string {
   const name = cleanLine(raw);
   if (name === '') throw profileInvalid('displayName', 'empty');
   if (name.length > DISPLAY_NAME_MAX) throw profileInvalid('displayName', 'too_long');
   if (!isVisibleLine(name)) throw profileInvalid('displayName', 'invisible');
+  if (isBlockedText(name, 'displayName')) throw profileInvalid('displayName', 'not_allowed');
   return name;
 }
 
-/** A bio limpa (vazia vira null): até 200 em UTF-16 e 6 linhas, toda linha visível. */
+/**
+ * A bio limpa (vazia vira null): até 200 em UTF-16 e 6 linhas, toda linha
+ * visível e, por último, fora da lista do filtro (seção 30).
+ */
 function cleanBio(raw: string | null): string | null {
   if (raw === null) return null;
   const bio = cleanMultiline(raw);
@@ -288,16 +303,21 @@ function cleanBio(raw: string | null): string | null {
   if (bio.length > BIO_MAX) throw profileInvalid('bio', 'too_long');
   if (bio.split('\n').length > BIO_MAX_LINES) throw profileInvalid('bio', 'too_many_lines');
   if (!isVisibleMultiline(bio)) throw profileInvalid('bio', 'invisible');
+  if (isBlockedText(bio, 'bio')) throw profileInvalid('bio', 'not_allowed');
   return bio;
 }
 
-/** A cidade limpa (vazia vira null): até 80 em UTF-16, numa linha visível. */
+/**
+ * A cidade limpa (vazia vira null): até 80 em UTF-16, numa linha visível e,
+ * por último, fora da lista do filtro (seção 30).
+ */
 function cleanCity(raw: string | null): string | null {
   if (raw === null) return null;
   const city = cleanLine(raw);
   if (city === '') return null;
   if (city.length > FAN_CITY_MAX) throw profileInvalid('city', 'too_long');
   if (!isVisibleLine(city)) throw profileInvalid('city', 'invisible');
+  if (isBlockedText(city, 'city')) throw profileInvalid('city', 'not_allowed');
   return city;
 }
 
@@ -381,6 +401,11 @@ export function parseProfileChanges(body: unknown): ParsedProfileChanges {
       const value = rawSocials[network] as string | null;
       const result = normalizeSocialHandle(network, value ?? '');
       if (!result.ok) throw profileInvalid(`socials.${network}`, result.reason);
+      // O filtro (seção 30) vem depois do `normalizeSocialHandle`, que é espelho
+      // do app e não muda, e só com o usuário que não é vazio.
+      if (result.handle !== null && isBlockedSocial(result.handle)) {
+        throw profileInvalid(`socials.${network}`, 'not_allowed');
+      }
       socials[network] = result.handle;
     }
     changes.socials = socials;
@@ -494,18 +519,29 @@ export function editableProfileOf(data: Record<string, unknown>): EditableProfil
  * completa. A fechada tem o mesmo corpo seja qual for o motivo (conta privada,
  * suspensa ou que bloqueou quem pede), para o bloqueado não ficar sabendo.
  * Nunca o gênero, a cidade, a conta privada, a suspensão, o `searchKeys`, o
- * prazo do @ nem os outros campos da foto.
+ * prazo do @ nem os outros campos da foto. O `blockedByMe` (seção 29, decisão
+ * 7) diz se quem pede bloqueou o alvo, e depende só de quem pede.
  */
 export function publicProfileOf(
   uid: string,
   data: Record<string, unknown>,
   restricted: boolean,
+  blockedByMe: boolean,
 ): FanPublicProfile {
   const displayName = textOf(data.displayName);
   const username = textOf(data.username);
   const photoURL = textOf(data.photoURL);
   if (restricted) {
-    return { uid, displayName, username, photoURL, restricted: true, bio: null, socials: null };
+    return {
+      uid,
+      displayName,
+      username,
+      photoURL,
+      restricted: true,
+      bio: null,
+      socials: null,
+      blockedByMe,
+    };
   }
   const socials = socialsOf(data.socials);
   return {
@@ -516,5 +552,40 @@ export function publicProfileOf(
     restricted: false,
     bio: textOf(data.bio),
     socials: hasAnySocial(socials) ? socials : null,
+    blockedByMe,
   };
+}
+
+/**
+ * Um fã da lista de bloqueados (`GET /me/blocks`, seção 29): o uid, o nome, o
+ * @ e a foto, lidos como o perfil público os lê. Nada mais do documento.
+ */
+export function blockedFanOf(uid: string, data: Record<string, unknown>): BlockedFan {
+  return {
+    uid,
+    displayName: textOf(data.displayName),
+    username: textOf(data.username),
+    photoURL: textOf(data.photoURL),
+  };
+}
+
+/**
+ * O resumo do que o perfil público mostra (seção 29, decisão 3): o sha256 de
+ * um JSON com o nome, o @, a foto, a bio e as quatro redes, em ordem fixa e
+ * lidos como o `publicProfileOf` os lê. A conta privada, a cidade e o gênero
+ * ficam fora (o perfil público não os mostra). Sem perfil, null. A callable da
+ * Moderação grava o resumo na resolução, e a denúncia de quem já denunciou na
+ * rodada resolvida só reabre o item com um resumo diferente. Nunca o texto.
+ */
+export function profileDigest(data: Record<string, unknown> | null | undefined): string | null {
+  if (!data) return null;
+  const socials = socialsOf(data.socials);
+  const shown = [
+    textOf(data.displayName),
+    textOf(data.username),
+    textOf(data.photoURL),
+    textOf(data.bio),
+    SOCIAL_NETWORKS.map((network) => socials[network]),
+  ];
+  return createHash('sha256').update(JSON.stringify(shown), 'utf8').digest('hex');
 }

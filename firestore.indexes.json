@@ -357,6 +357,22 @@
         { "fieldPath": "authorUid", "order": "ASCENDING" },
         { "fieldPath": "lastReportedAt", "order": "DESCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "profileReportQueue",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "lastReportedAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "profileReportQueue",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "resolvedAt", "order": "DESCENDING" }
+      ]
     }
   ],
   "fieldOverrides": [
@@ -408,6 +424,8 @@
     { "collectionGroup": "postComments", "fieldPath": "text", "indexes": [] },
     { "collectionGroup": "moderationQueue", "fieldPath": "commentText", "indexes": [] },
     { "collectionGroup": "moderationQueue", "fieldPath": "reasons", "indexes": [] },
+    { "collectionGroup": "profileReportQueue", "fieldPath": "reasons", "indexes": [] },
+    { "collectionGroup": "profileReportQueue", "fieldPath": "resolvedDigest", "indexes": [] },
     { "collectionGroup": "events", "fieldPath": "photo", "indexes": [] },
     { "collectionGroup": "wallets", "fieldPath": "rankWeek", "indexes": [] },
     { "collectionGroup": "wallets", "fieldPath": "stats", "indexes": [] },
