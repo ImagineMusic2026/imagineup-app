@@ -1,6 +1,6 @@
 # Arquitetura da API do app
 
-Nota de arquitetura do servidor do ImagineUP. Ela diz como o app fala com as Cloud Functions, onde moram os pontos, como o ponto é lançado e como o painel lê os números. Vale para o bloco 1 (base do servidor e núcleo de pontos) e deixa a estrutura pronta para os blocos seguintes. O bloco 4 (centrais de verdade) está na seção 19, o bloco 5 (convite com atribuição e origem do fã), na seção 20, o bloco 6 (mural e agenda com conteúdo real), na seção 21, o bloco 7 (missões, níveis, conquistas e extrato), na seção 22, o bloco 8 (ranking e temporadas), na seção 23, o bloco 9 (perfil editável), na seção 24, o bloco 10 (loja e resgate), na seção 25, o bloco 11 (telas do painel), na seção 26, a proteção contra abuso, na seção 27, o perfil novo (bio, gênero, conta privada, redes, a edição pela API e o perfil público), na seção 28, as exigências das lojas (denúncia de perfil, bloqueados, Sobre, conta, suspensão, 429 e Explorar), na seção 29, e o filtro do que o fã publica, na seção 30.
+Nota de arquitetura do servidor do ImagineUP. Ela diz como o app fala com as Cloud Functions, onde moram os pontos, como o ponto é lançado e como o painel lê os números. Vale para o bloco 1 (base do servidor e núcleo de pontos) e deixa a estrutura pronta para os blocos seguintes. O bloco 4 (centrais de verdade) está na seção 19, o bloco 5 (convite com atribuição e origem do fã), na seção 20, o bloco 6 (mural e agenda com conteúdo real), na seção 21, o bloco 7 (missões, níveis, conquistas e extrato), na seção 22, o bloco 8 (ranking e temporadas), na seção 23, o bloco 9 (perfil editável), na seção 24, o bloco 10 (loja e resgate), na seção 25, o bloco 11 (telas do painel), na seção 26, a proteção contra abuso, na seção 27, o perfil novo (bio, gênero, conta privada, redes, a edição pela API e o perfil público), na seção 28, as exigências das lojas (denúncia de perfil, bloqueados, Sobre, conta, suspensão, 429 e Explorar), na seção 29, o filtro do que o fã publica, na seção 30, e a proteção da produção (cópias do banco, alertas e o registro de acesso), na seção 31.
 
 Em produção desde 14/10/2026: o servidor de todas as seções (66 funções e 44 índices compostos), e o app delas no canal preview da EAS. Os blocos 1 e 4 a 10 saíram em 07/10/2026, o servidor do bloco 11 em 08/10/2026, as seções 27 e 28 de 08 a 09/10/2026 e as seções 29 e 30 em 14/10/2026. O relato de cada publicação está em 26.21.
 
@@ -33,6 +33,7 @@ Quem mexe no servidor lê esta nota antes. Mudou uma decisão daqui? Mude a nota
 21. Perfil novo (seção 28): bio, gênero, conta privada e redes sociais em `users/{uid}`, gravados só pelo servidor, com o ausente valendo o padrão; as redes guardam só o usuário, normalizado igual no servidor e no app, e quem mostra monta o link com domínio fixo e confere o usuário de novo; a edição inteira (nome, @, bio, cidade, gênero, conta privada e redes) vai pelo `PUT /me/profile`, num pedido só e numa transação, com os tetos do dia `profile_save` (20) e `name_change` (5), e o `PUT /me/username` fica para o APK de antes; as regras fecham a edição direta, salvo o primeiro nome do perfil que nasceu sem nome, e o fã suspenso não edita nada; o perfil público (`GET /fans/:fanId`) mostra foto, nome, @, bio e redes, ou só os três quando o alvo tem conta privada, está suspenso ou bloqueou quem pede, com o mesmo corpo nos três casos; o gênero nunca sai para outro fã; a Moderação apaga a bio e as redes pela callable `clearFanProfileText`, com a auditoria sem o texto; no app, "Editar perfil" sai das abas para a pilha raiz, com o header fixo, o ✓ único e os grupos novos, e fica só leitura sem a API; o perfil público (`/fa/[fanId]`) abre pelo ranking, pelo pódio, pelos top fãs e pelos comentários, e os links das redes não abrem nas fixtures nem no emulador.
 22. Exigências das lojas (seção 29): a denúncia de perfil (`POST /fans/:fanId/report`, com os motivos e o teto da denúncia de comentário) numa coleção separada, `profileReportQueue/{uid}`, um item por fã denunciado, com a rodada (`round`) e o resumo do perfil na resolução (`resolvedDigest`), para a mesma pessoa só reabrir com o perfil mudado; a `moderationQueue`, o `moderateComment` e o painel publicado não mudam; a equipe fecha o item pela callable `resolveProfileReport` (66 funções e 44 índices compostos); a lista para desbloquear (`GET /me/blocks`, com o cursor pelo índice da inclusão) e o `blockedByMe` no perfil público; a exclusão de conta tira as denúncias de perfil do fã e fecha o item dele; no app, "Denunciar perfil" e "Bloquear" (com "Bloquear e denunciar") no perfil público, a tela "Fãs bloqueados", os Ajustes com Segurança, Conta (trocar o e-mail e a senha pelo Firebase Auth) e Sobre (privacidade, termos, regulamento, contato e versão), o aviso de conta suspensa com um canal por recusa, o 429 separado em ritmo (tenta de novo sozinho) e teto do dia (nunca), e a Explorar como vitrine das centrais; tudo por EAS Update, sem mudar o fingerprint.
 23. Filtro do que o fã publica (seção 30): uma lista de termos no servidor, em `functions/src/content-filter/` (código puro, sem dependência nova), conferida antes de publicar no comentário, no nome, no @, na bio, na cidade e nas redes, dentro das funções puras que o `validate` e a transação já chamam, sem leitura nova; o texto e cada termo passam pela mesma normalização (acentos, homóglifos, letras soltas, números e símbolos no lugar de letras e letras repetidas), com palavra inteira e frase no texto livre e trecho só dentro de um pedaço dos campos de identidade; o repositório, público, guarda só as chaves (o SHA-256 de cada pedaço normalizado), e a lista legível fica fora de todo repositório, com o dono; toda categoria barrada em todo campo até a aprovação das lojas; a recusa usa os códigos de hoje com o motivo `not_allowed` (`comment_invalid` e `profile_invalid`), e o @ barrado sai como reservado, sem gravar nada e sem dizer o termo; o nome do cadastro barrado vira "Fã", e o @ dele, o `fa`, no `createUserProfile` e no gatilho do perfil; a linha do log da `api` ganha o `code` e o `reason`; nenhuma regra, índice, fila, callable nem teto novo; no app, a frase com o link "Escrever para a equipe" embaixo do compositor e no campo do perfil, e o comentário recusado com o campo ocupado vira a linha "Não publicado", que sobrevive ao app fechado; o app vai por EAS Update, sem mudar o fingerprint, e a publicação saiu junto com a da seção 29, em 14/10/2026, num lote só de cinco funções.
+24. Proteção da produção (seção 31): o Firestore com o PITR de 7 dias, a proteção contra apagar e um backup diário com 14 dias, todos dentro dos 30 dias da política; alertas por e-mail no Cloud Monitoring (erros nas funções, a `api` com 5xx, as agendadas falhando ou paradas), silenciados em todo deploy de funções; e o registro de acesso por 184 dias numa linha de log própria, `acesso`, só com o IP (o último item do `X-Forwarded-For`) e o uid, escrita a cada pedido da `api` e a cada chamada das callables do painel (pelo `onPanelCall`), levada por um sink a um bucket de log em southamerica-east1; nenhuma regra, rota, callable ou pacote novo, e o fingerprint do app não muda.
 
 ## 1. Formato da API
 
@@ -9394,6 +9395,445 @@ Cada etapa de 30.12 acrescenta aqui o ponto em que o código decidiu um detalhe 
   - `npm run test:rules`: 13 suítes e 186 testes passando, sem mudança.
   - O Jest do app: com 3 workers, 166 suítes e 2.711 testes passando, com a lista e sem ela. O `npm run check` passou nos tipos e no lint nas duas rodadas; com os 15 workers e a máquina ocupada (um jogo aberto, CPU perto de 60%), de 4 a 8 suítes antigas de tela, de fora do bloco, estouraram o prazo de 5 s (`onboarding`, `agenda`, `artist`, `change-password`, `fan-profile`, `settings`, `post` e casos antigos do `edit-profile`), e todas passaram rodadas de novo e na rodada com 3 workers, como na etapa 4.
   - O prettier nos arquivos de código tocados, e o fingerprint do Android igual (`310056fd840b5459416c9926e46846b8c208aa76`); o `package.json`, o `app.config.ts` e o `eas.json` sem diferença desde `4ac6e99`.
+
+## 31. Proteção da produção
+
+O bloco protege o que já está no ar. São três frentes: recuperar o banco depois de um erro, saber por e-mail quando o servidor falha e guardar o registro de acesso por 6 meses, como pede o Marco Civil da Internet (Lei 12.965/2014, art. 15) e como promete a seção 8 da política de privacidade. Quase tudo é configuração do projeto `imagine-up-app`, feita pelo gcloud, fora do código. O código ganha só a linha de log `acesso` (31.6) e os testes que prendem os dois textos de log que a configuração lê: o `acesso` e a frase do `closeStatsDays` (31.4). Esta seção é o contrato: o que está ligado, como recuperar, o que cada alerta olha, o registro de acesso, os custos, os testes, a publicação e as pendências. Segue os padrões das seções 1 a 30 e só diz o que muda ou acrescenta.
+
+Origem: o pedido do dono de 14/10/2026 para proteger a produção e o plano do mesmo dia, feito sobre um levantamento só de leitura do projeto e revisto por uma crítica. O plano e o levantamento ficam fora do repositório, em `Projetos/protecao-imagineup/` (`protecao-plano.md` e `protecao-estado.txt`), com as ajudas do gcloud conferidas e os filtros testados nos logs reais de 07 a 14/10/2026. O pedido fixou as respostas às perguntas do plano: o e-mail do dono no canal; o backup com 14 dias; o registro de acesso pela saída (a), uma linha de log própria, só com o IP e o uid, no lugar de guardar o log de pedido, que leva também a URL e o aparelho; a mesma linha nas callables do painel; e os 184 dias. Depois, no mesmo dia: "pode seguir com tudo, as 66 em lotes".
+
+Estado: as medidas de 31.1 foram ligadas em 14/10/2026, com o ok do dono, e conferidas pelo gcloud, só leitura, no mesmo dia; falta a 5ª política, depois da rodada das 00:20 de 15/10/2026 (31.4). O registro de acesso está construído na branch `registro-acesso`, criada da `docs-publicacao` em `01f5537` (o PR #21, aberto), que parte da `main` `f258ca2`, nas duas etapas do plano de construção (`Projetos/protecao-imagineup/registro-acesso-plano.md`, fora do repositório), ambas de 14/10/2026: o código com os testes (a linha `acesso` na `api` e nas 55 callables do painel, e as duas frases de log que a configuração lê presas por teste, dos dois lados, 31.11); e a documentação com os arquivos (`docs/protecao/`, esta seção, o `CLAUDE.md` e o `AGENTS.md`). Depois veio uma revisão, no mesmo dia, com os achados conferidos e aplicados (31.14), e tudo foi num commit só da branch, sem push. Nada disso está no ar: faltam o merge, as 66 funções em lotes e, depois delas, o bucket e o sink (31.12). O que o código decidiu diferente do desenho está em 31.14.
+
+Trava do bloco: só servidor e documentação. Nada muda o fingerprint do app (`310056fd840b5459416c9926e46846b8c208aa76`): nenhum pacote novo (o IP é conferido pelo `node:net`), nada no app, no `app.config.ts`, no `package.json` nem no `.gitignore`. Nenhuma regra, índice, fila, rota, callable ou chave de teto nova. O que as funções respondem não muda: só entra uma linha de log.
+
+Como era antes:
+
+- O banco guardava só 1 hora de versões (`versionRetentionPeriod` de 3600 s), sem backup e sem proteção contra apagar. Um script errado, um bug ou uma exclusão no console, vistos horas depois, não tinham volta.
+- Nenhum alerta, canal nem métrica de log. O Cloud Scheduler marca HTTP 200 mesmo quando a função loga erro: em 08/10/2026, o `closeStatsDays` falhou ("statsMeta/close não existe") e o Scheduler registrou sucesso.
+- O log de pedido do Cloud Run guarda a data, a hora, o IP, a URL com a query, o aparelho (`userAgent`) e o `referer` de cada pedido. A linha `api` (`functions/src/api/index.ts`) guarda a rota em molde e o uid, com o mesmo trace do pedido. Os dois ficam 30 dias no `_Default`, e nada ficava 6 meses.
+- As callables do painel tinham o log de pedido com o IP, sem o uid de quem chamou. O `staffAudit` guarda quem fez o quê, sem o IP.
+
+### 31.1 O que está ligado e desde quando
+
+Ligado em 14/10/2026, a partir das 10h44 de Brasília, na ordem do plano:
+
+| Medida | Estado em 14/10/2026 |
+| --- | --- |
+| PITR de 7 dias no Firestore `(default)` | ligado (`versionRetentionPeriod: 604800s`); o `earliestVersionTime` recua até ficar 7 dias atrás, em 21/10/2026 |
+| Proteção contra apagar o banco | ligada (`DELETE_PROTECTION_ENABLED`) |
+| Backup diário | uma agenda diária com retenção de 14 dias (`1209600s`), na mesma região; o primeiro backup sai até 15/10/2026 |
+| Canal de e-mail "ImagineUP: alertas do servidor" | o e-mail do dono, testado pela política de teste (31.4), que foi apagada depois |
+| Métricas de log `funcoes_erros`, `ranking_tick_ok` e `close_stats_days_ok` | criadas; contam só a partir da criação, sem olhar o passado |
+| Políticas de alerta com o rótulo `app=imagineup` | 4: erros nas funções, `api` com 5xx, função agendada falhou ou job parado, `rankingTick` parado |
+| 5ª política, `close-stats-days-parado` | pendente: entra depois da rodada das 00:20 de 15/10/2026, a primeira com a métrica (31.4) |
+| Registro de acesso (bucket `registros-de-acesso` com 184 dias, e o sink) | não criado: espera a linha `acesso` no ar (31.12) |
+| Silenciamento de alerta | nenhum |
+| Orçamento de R$ 50 | não criado: é da cliente (31.13) |
+
+Conferir, no Git Bash:
+
+```bash
+gcloud firestore databases describe --database="(default)" --format="yaml(pointInTimeRecoveryEnablement,deleteProtectionState,versionRetentionPeriod,earliestVersionTime)" --project=imagine-up-app
+gcloud firestore backups schedules list --database="(default)" --project=imagine-up-app
+gcloud firestore backups list --location=southamerica-east1 --format="table(name.basename(),state,snapshotTime,expireTime)" --project=imagine-up-app
+gcloud beta monitoring channels list --filter='displayName="ImagineUP: alertas do servidor"' --format="table(name.basename(),displayName,enabled)" --project=imagine-up-app
+gcloud logging metrics list --format="table(name,description)" --project=imagine-up-app
+gcloud monitoring policies list --filter='userLabels.app=imagineup' --format="table(name.basename(),displayName,enabled)" --project=imagine-up-app
+gcloud monitoring snoozes list --format="table(name.basename(),displayName,interval.startTime,interval.endTime)" --project=imagine-up-app
+gcloud logging buckets list --location=- --format="table(name.basename(),retentionDays,lifecycleState)" --project=imagine-up-app
+gcloud logging sinks list --format="table(name,destination)" --project=imagine-up-app
+```
+
+Esperado hoje: PITR e proteção ligados; uma agenda; o canal numa linha só; as 3 métricas; 4 políticas (5 depois da 5ª); só o `_Default` (30 dias) e o `_Required` nos buckets e nos sinks. No dia 7 depois de ligar, o `earliestVersionTime` 7 dias atrás; no dia 14, uns 14 backups `READY`, sempre.
+
+### 31.2 Os arquivos e os comandos
+
+Os arquivos da proteção ficam em `docs/protecao/`: os aplicados em 14/10/2026 e os que esperam a vez (a 5ª política, 31.4, e o filtro do sink, 31.7). São cópias byte a byte dos de `Projetos/protecao-imagineup/`, sem e-mail, sem id de canal, de política ou de conta e sem segredo. Não passam pelo prettier: a pasta está no `.prettierignore`, porque ele reescreveria os JSON, e a cópia deixaria de ser igual ao que está ligado.
+
+| Arquivo | O que é |
+| --- | --- |
+| `canal-email.json` | o canal de e-mail; o endereço entra pelo comando, nunca no arquivo |
+| `metricas/funcoes_erros.yaml` | conta os erros das funções, sem o ruído das sondas do deploy |
+| `metricas/ranking_tick_ok.yaml` | conta as rodadas do `rankingTick` com HTTP 200 |
+| `metricas/close_stats_days_ok.yaml` | conta as linhas "closeStatsDays: dias fechados" |
+| `politicas/funcoes-erros.json` | alerta (a): erros nas funções |
+| `politicas/api-5xx.json` | alerta (b): `api` com 5xx |
+| `politicas/agendadas-falha.json` | alerta (c): falha do `closeStatsDays`, ou job pausado ou apagado |
+| `politicas/ranking-tick-parado.json` | alerta (c): `rankingTick` sem rodar |
+| `politicas/close-stats-days-parado.json` | alerta (c): `closeStatsDays` sem fechar o dia |
+| `politicas/teste-canal.json` | a política de teste do canal, criada e apagada a cada teste (31.4) |
+| `registro-acesso/filtro-linha-acesso.txt` | o filtro do sink: só a linha `acesso` (31.7) |
+
+Regras dos comandos desta seção:
+
+- Rodam no Git Bash, da raiz do repositório (os caminhos de `docs/protecao/` são relativos), com `--project=imagine-up-app` escrito. Copie da nota, nunca redigite: em 09/10/2026, um `--project` sem o hífen deu 403. No PowerShell, o `$(...)` e o `cat` não funcionam igual.
+- Os blocos entre parênteses rodam inteiros numa chamada só. Eles guardam o canal numa variável que só vale dentro da chamada e param no `exit 1` se o canal vier vazio ou duplicado, antes de criar qualquer política.
+- Sem terminal, como no shell do Claude, o gcloud aceita a resposta padrão de toda pergunta: um `delete` sem `--quiet` executa direto. Nenhum passo conta com a pergunta como trava.
+- O grupo `channels` só existe no beta (`gcloud beta monitoring channels`).
+- O `=` do `--filter` vai passar a casar por palavra numa versão próxima do gcloud (hoje ele avisa). Por isso a política de teste leva outro rótulo, `teste=canal`, e não um valor parecido com `imagineup`.
+- Mudou um arquivo daqui? Mude a configuração no projeto no mesmo dia, e o contrário também: o repositório é a fonte do que está ligado.
+
+### 31.3 Recuperar dados
+
+O que cada cópia cobre:
+
+- **PITR:** qualquer minuto cheio dos últimos 7 dias, de todos os documentos. Pega o script errado (as cargas rodam com as credenciais do dono e gravam em produção), o bug que apaga ou corrompe e a exclusão manual. Não sobrevive ao banco apagado; a proteção contra apagar cuida disso.
+- **Backup:** uma cópia inteira por dia, guardada 14 dias. Pega o problema visto depois de 7 dias (um erro nos pontos que só aparece no fechamento de uma semana) e sobrevive ao banco apagado.
+- **Nenhum dos dois** leva as contas do Auth nem as fotos do Storage.
+
+As duas saídas criam um banco novo ao lado do `(default)`; o app continua no `(default)`. Os documentos perdidos voltam por um script do Admin SDK, com `--dry-run` antes e o ok do dono, como as cargas. O horário do `clone` é em UTC, com minuto cheio, dentro dos últimos 7 dias.
+
+```bash
+gcloud firestore databases clone --source-database="projects/imagine-up-app/databases/(default)" --snapshot-time=AAAA-MM-DDTHH:MM:00Z --destination-database=recuperacao-AAAAMMDD --project=imagine-up-app
+gcloud firestore backups list --location=southamerica-east1 --format="table(name.basename(),state,snapshotTime,expireTime)" --project=imagine-up-app
+gcloud firestore databases restore --source-backup=projects/imagine-up-app/locations/southamerica-east1/backups/<ID_DO_BACKUP> --destination-database=recuperacao-AAAAMMDD --project=imagine-up-app
+gcloud firestore databases delete --database=recuperacao-AAAAMMDD --project=imagine-up-app
+gcloud firestore databases list --format="value(name)" --project=imagine-up-app
+```
+
+- **O prazo do banco de recuperação.** Ele traz de volta quem excluiu a conta depois da cópia e não tem validade. A política promete eliminar os dados em até 30 dias depois da exclusão; por isso o banco de recuperação some em até 30 dias menos a idade da cópia. Na prática: apagar até 7 dias depois de criado (a cópia mais velha tem 14 dias). No fim, o `databases list` mostra só o `(default)`. O `delete` do `(default)` falha enquanto a proteção estiver ligada.
+- **Reexcluir quem saiu depois da cópia.** Antes de copiar qualquer documento de volta, tirar do que vai voltar todo `users/{uid}` que não existe mais no Auth e tudo o que o `deleteUserProfile` apagaria dele (seção 12 e 24.11). Esse roteiro ainda não existe (31.13).
+- **A promessa dos 30 dias, com as cópias:** o `deleteUserProfile` apaga do banco na hora, como antes; as versões antigas somem do PITR em até 7 dias; a última cópia com o fã some em até 14 dias, mais as horas até o backup do dia. Fica dentro dos 30 dias, com folga. Backup semanal mais longo ou exportação para um bucket com retenção maior passam desse prazo, ou chegam perto, e pedem outro texto na política.
+- **Banco com nome não tem cota grátis.** Restaurar custa US$ 0,30 por GiB e clonar, US$ 0,3176 por GiB, uma vez, só quando usar.
+
+Desligar, se um dia for preciso (o PITR desligado no mesmo dia ainda cobra até 1 dia):
+
+```bash
+gcloud firestore databases update --database="(default)" --no-enable-pitr --project=imagine-up-app
+gcloud firestore databases update --database="(default)" --no-delete-protection --project=imagine-up-app
+gcloud firestore backups schedules delete --database="(default)" --backup-schedule="$(gcloud firestore backups schedules list --database="(default)" --format='value(name.basename())' --project=imagine-up-app)" --project=imagine-up-app
+```
+
+### 31.4 Alertas
+
+Todos mandam e-mail ao canal "ImagineUP: alertas do servidor", com o rótulo `app=imagineup`, que serve para listar, silenciar e desfazer de uma vez. O e-mail traz o que fazer, escrito na `documentation` de cada política. Nos 8 dias do levantamento (07 a 14/10/2026), os filtros teriam mandado 1 e-mail: o erro do `closeStatsDays` de 08/10, pelo alerta de falha das agendadas.
+
+**(a) Erros nas funções** (`funcoes-erros.json`, sobre a `funcoes_erros`):
+
+- Conta, em todos os serviços do Cloud Run das funções, as linhas com severidade ERROR ou mais no stderr, no stdout (o logger do firebase) e no log de sistema (`run.googleapis.com/varlog/system`, onde aparece a instância que morre por falta de memória), e as respostas 500 e 504 no log de pedido de todo serviço menos a `api`.
+- O log de pedido entra porque os gatilhos do Auth e do Firestore e as filas não têm `catch` no firebase-functions: o erro sobe para a plataforma e vira um 500. O `deleteUserProfile` tem `retry: true` e lança de propósito quando sobra arquivo da foto; se ele falhar sempre, a exclusão dos dados para calada, e a promessa dos 30 dias cai.
+- Fica de fora: o ruído "Invalid request, unable to process" que as sondas do deploy deixam em cada callable, os logs de auditoria do deploy, e as respostas 503 da cota de CPU e as 429 (a `api` inteira fica com o alerta (b) e com a linha "api: erro inesperado").
+- Dispara, por função (as revisões somam), com mais de 4 erros em 10 minutos ou mais de 9 em 6 horas. Um erro isolado não dispara; uma callable, fila ou agendada que falha pode contar 2 (a linha de erro e o 500). Fecha sozinho quando os erros param.
+- O que fazer: no Logs Explorer, `resource.type="cloud_run_revision" severity>=ERROR`, para achar a função e a mensagem. Erro de cota de CPU em deploy é esperado (por isso o silenciamento, 31.5). Falta de memória aparece no `varlog/system` do serviço.
+
+**(b) `api` com 5xx** (`api-5xx.json`, sobre a métrica do Cloud Run `run.googleapis.com/request_count`):
+
+- Dispara quando, numa janela de 10 minutos, mais de 5% dos pedidos da `api` voltam 5xx e há pelo menos 5 respostas 5xx. As duas condições juntas: com pouco tráfego, 1 erro em 2 pedidos já é 50%; com muito, 5 erros podem ser 0,1%.
+- Não cobre a `api` fora do ar sem nenhum pedido chegando: isso pede um teste de disponibilidade (uptime check), que não está ligado (31.13).
+- O que fazer: `resource.labels.service_name="api" httpRequest.status>=500` no Logs Explorer. O 503 de cota de CPU vem em deploy; fora dele, a mensagem está no stdout da `api`. Muitos 429 ou 503 com tráfego alto apontam para o teto de 8 instâncias.
+
+**(c) Função agendada falhou ou parada.** O Scheduler marca 200 mesmo com erro dentro da função, então os alertas olham os logs da função, e não só o Scheduler. As condições de ausência somam as revisões, para um deploy não parecer função parada.
+
+- `agendadas-falha.json`, por linha de log: um ERROR no serviço `closestatsdays`, uma tentativa do job dele marcada como falha no Scheduler, ou um `PauseJob` ou `DeleteJob` na auditoria do Scheduler, para qualquer um dos dois jobs. O deploy usa `UpdateJob` e `CreateJob`, que ficam de fora. No máximo 1 e-mail por hora, por causa das 3 novas tentativas do job. O que fazer: ver a linha que disparou; job pausado volta com `gcloud scheduler jobs resume <JOB> --location=southamerica-east1 --project=imagine-up-app`; o `closeStatsDays` que errou fecha os dias atrasados sozinho na rodada seguinte, e o erro repetido pede olhar o `statsMeta/close`.
+- `ranking-tick-parado.json`, por ausência: nenhuma rodada do `rankingTick` com HTTP 200 por uns 40 minutos (janela de 20 minutos e mais 20 de espera). Pega job pausado, função apagada, 500 ou 403 em toda rodada e falha do próprio Scheduler. O erro lógico com HTTP 200 fica com o alerta (a). O que fazer: `gcloud scheduler jobs describe firebase-schedule-rankingTick-southamerica-east1 --location=southamerica-east1 --project=imagine-up-app`, os logs do serviço `rankingtick`; função apagada volta com um deploy.
+- `close-stats-days-parado.json`, por ausência: nenhum "closeStatsDays: dias fechados" em 24 h 30 min, uns 35 minutos depois da rodada das 00:20 que faltou. O Google limita a espera de um alerta de ausência a 23,5 horas, então a parte longa fica na janela da condição (88.200 s, abaixo do teto de 90.000 s) e a espera fica em 5 minutos. O que fazer: `gcloud scheduler jobs describe firebase-schedule-closeStatsDays-southamerica-east1 --location=southamerica-east1 --project=imagine-up-app`; para rodar agora, `gcloud scheduler jobs run` com o mesmo job; cada rodada fecha até 31 dias atrasados.
+
+**Contrato do texto.** A `close_stats_days_ok` casa com o texto exato "closeStatsDays: dias fechados", no stdout do serviço `closestatsdays` (`functions/src/points/close.ts`, no nível info). A linha só sai quando a rodada fecha algum dia. Mudar a frase, ou o nível para `warn`, faz o alerta disparar todo dia. A frase fica numa constante com o comentário de contrato, e os testes de 31.11 a prendem dos dois lados: no código e no arquivo da métrica. Mudar o texto pede mudar a métrica (`metricas/close_stats_days_ok.yaml`) no mesmo dia.
+
+**A 5ª política** (o passo pendente), depois das 00:20 de 15/10/2026, com uns 15 minutos de folga. Antes, conferir que a linha da rodada saiu depois da criação da métrica (14/10/2026, 13:45 UTC):
+
+```bash
+gcloud logging read 'resource.type="cloud_run_revision" AND resource.labels.service_name="closestatsdays" AND jsonPayload.message="closeStatsDays: dias fechados"' --freshness=1d --limit=1 --format="value(timestamp)" --project=imagine-up-app
+(
+CANAL=$(gcloud beta monitoring channels list --filter='displayName="ImagineUP: alertas do servidor"' --format='value(name)' --project=imagine-up-app)
+echo "canal: $CANAL"
+[ -n "$CANAL" ] && [ "$(printf '%s\n' "$CANAL" | wc -l)" -eq 1 ] || { echo "canal vazio ou duplicado: parar"; exit 1; }
+gcloud monitoring policies create --policy-from-file=docs/protecao/politicas/close-stats-days-parado.json --notification-channels="$CANAL" --project=imagine-up-app
+)
+```
+
+O `echo` mostra um nome só, `projects/imagine-up-app/notificationChannels/<NUMERO>`. Depois, o `policies list` de 31.1 mostra 5, e o console (Monitoring, Alertas) nenhuma condição inválida. No primeiro mês, conferir que este alerta não dispara à toa.
+
+**Testar o canal de novo** (e-mail trocado no console, ou dúvida se chega): uma política temporária que dispara com uma linha escrita à mão. O dono confirma o e-mail (olhar também o spam), e a política sai.
+
+```bash
+(
+CANAL=$(gcloud beta monitoring channels list --filter='displayName="ImagineUP: alertas do servidor"' --format='value(name)' --project=imagine-up-app)
+[ -n "$CANAL" ] && [ "$(printf '%s\n' "$CANAL" | wc -l)" -eq 1 ] || { echo "canal vazio ou duplicado: parar"; exit 1; }
+gcloud monitoring policies create --policy-from-file=docs/protecao/politicas/teste-canal.json --notification-channels="$CANAL" --project=imagine-up-app
+)
+gcloud logging write teste-alerta-imagineup "Teste do alerta por e-mail do ImagineUP" --severity=ERROR --project=imagine-up-app
+gcloud monitoring policies delete "$(gcloud monitoring policies list --filter='userLabels.teste=canal' --format='value(name)' --project=imagine-up-app)" --quiet --project=imagine-up-app
+```
+
+O `logging write` vai uns 2 minutos depois do `create`; o `delete`, com o e-mail recebido.
+
+**Desfazer**, se um dia for preciso: as políticas antes, depois as métricas, depois o canal (o `--force` tira o canal das políticas que o usam). O gcloud do Windows termina cada linha com `\r\n`, e o `\r` não separa palavras no laço: sem o `tr -d '\r'`, só a última política sairia. O `list` depois do laço tem de voltar vazio antes de apagar as métricas, senão sobra política olhando métrica que não existe.
+
+```bash
+for p in $(gcloud monitoring policies list --filter='userLabels.app=imagineup' --format='value(name)' --project=imagine-up-app | tr -d '\r'); do gcloud monitoring policies delete "$p" --quiet --project=imagine-up-app; done
+gcloud monitoring policies list --filter='userLabels.app=imagineup' --format='value(name)' --project=imagine-up-app
+gcloud logging metrics delete funcoes_erros --project=imagine-up-app
+gcloud logging metrics delete ranking_tick_ok --project=imagine-up-app
+gcloud logging metrics delete close_stats_days_ok --project=imagine-up-app
+gcloud beta monitoring channels delete "$(gcloud beta monitoring channels list --filter='displayName="ImagineUP: alertas do servidor"' --format='value(name)' --project=imagine-up-app)" --force --project=imagine-up-app
+```
+
+**Criar de novo**, depois de um desfazer, na ordem de 14/10/2026: o canal, com o e-mail do dono no lugar do marcador; as 3 métricas; uns 10 minutos de espera, para o `rankingTick` rodar uma vez; o bloco das 4 políticas; a 5ª política só depois de uma rodada das 00:20 com a métrica já criada (o bloco acima); e o teste do canal.
+
+```bash
+gcloud beta monitoring channels create --channel-content-from-file=docs/protecao/canal-email.json --channel-labels=email_address=<EMAIL_DO_DONO> --project=imagine-up-app
+gcloud logging metrics create funcoes_erros --config-from-file=docs/protecao/metricas/funcoes_erros.yaml --project=imagine-up-app
+gcloud logging metrics create ranking_tick_ok --config-from-file=docs/protecao/metricas/ranking_tick_ok.yaml --project=imagine-up-app
+gcloud logging metrics create close_stats_days_ok --config-from-file=docs/protecao/metricas/close_stats_days_ok.yaml --project=imagine-up-app
+(
+CANAL=$(gcloud beta monitoring channels list --filter='displayName="ImagineUP: alertas do servidor"' --format='value(name)' --project=imagine-up-app)
+echo "canal: $CANAL"
+[ -n "$CANAL" ] && [ "$(printf '%s\n' "$CANAL" | wc -l)" -eq 1 ] || { echo "canal vazio ou duplicado: parar"; exit 1; }
+gcloud monitoring policies create --policy-from-file=docs/protecao/politicas/funcoes-erros.json --notification-channels="$CANAL" --project=imagine-up-app
+gcloud monitoring policies create --policy-from-file=docs/protecao/politicas/api-5xx.json --notification-channels="$CANAL" --project=imagine-up-app
+gcloud monitoring policies create --policy-from-file=docs/protecao/politicas/agendadas-falha.json --notification-channels="$CANAL" --project=imagine-up-app
+gcloud monitoring policies create --policy-from-file=docs/protecao/politicas/ranking-tick-parado.json --notification-channels="$CANAL" --project=imagine-up-app
+)
+```
+
+### 31.5 Silenciar os alertas no deploy de funções
+
+Todo deploy de funções sobe revisões novas e pode bater na cota de CPU da região (os 503 e as sondas). Antes do primeiro lote, silenciar todas as políticas pela janela do deploy, com folga; no fim, conferir. O `rules:deploy` sozinho não pede silenciamento. Quem roda é o Claude, no Git Bash, com o ok do dono, ou o dono.
+
+1. **Silenciar.** Trocar as duas datas, no fuso de Brasília (`-03:00`): o início um ou dois minutos à frente do relógio, o fim depois da janela. A janela cobre os lotes e as conferências, com folga (3 horas para os 5 lotes de 31.12: o lote 1 espera a conferência da linha `acesso`, e um lote que falha pela cota só vai de novo depois de uns 30 minutos sem deploy).
+
+   ```bash
+   gcloud monitoring snoozes create --display-name="Deploy do servidor" --criteria-policies="$(gcloud monitoring policies list --filter='userLabels.app=imagineup' --format='value(name)' --project=imagine-up-app | tr -d '\r' | paste -sd, -)" --start-time=AAAA-MM-DDTHH:MM:00-03:00 --end-time=AAAA-MM-DDTHH:MM:00-03:00 --project=imagine-up-app
+   ```
+
+   O `tr -d '\r'` é obrigatório no Git Bash: o gcloud do Windows termina cada linha com `\r\n`, o `paste` junta as linhas e deixa o `\r` no fim de cada nome menos o último, e o `--criteria-policies` não apara. Sem ele, o `create` falha ou silencia só a última política.
+
+2. **Conferir o intervalo e as políticas logo depois de criar.** Um silenciamento não se apaga (o grupo `snoozes` só tem `cancel`, `create`, `describe`, `list` e `update`), e uma data errada, com o ano trocado, calaria todos os alertas. O `list` dá o ID e as datas (em UTC, 3 horas a mais que Brasília); o `describe` dá as políticas, que são as mesmas do `policies list` de 31.1, uma por linha: 4 hoje, 5 depois da 5ª. Errado, cancelar e criar de novo.
+
+   ```bash
+   gcloud monitoring snoozes list --filter='displayName="Deploy do servidor"' --format="table(name.basename(),interval.startTime,interval.endTime)" --project=imagine-up-app
+   gcloud monitoring snoozes describe <ID> --format="yaml(criteria.policies,interval)" --project=imagine-up-app
+   gcloud monitoring snoozes cancel <ID> --project=imagine-up-app
+   ```
+
+3. **No fim do deploy e das conferências:** cancelar o silenciamento se ele ainda estiver valendo, e conferir no mesmo `list` que nenhum termina no futuro. No console (Monitoring, Alertas), nenhum incidente aberto. Um incidente aberto depois do silenciamento é de verdade: seguir o e-mail dele.
+
+O `list` mostra também os silenciamentos antigos, que ficam para sempre; o que importa é o `endTime`.
+
+### 31.6 Registro de acesso: a linha `acesso`
+
+**A promessa.** A seção 8 da política de privacidade publicada elimina os dados pessoais em até 30 dias depois da exclusão da conta, com uma exceção que cabe aqui: "os registros de acesso (data, hora e endereço IP)", guardados por 6 meses (Marco Civil, art. 15). O log de pedido e a linha `api` levariam a URL (os perfis visitados, quem denunciou quem, o @ digitado na disponibilidade) e o aparelho para esses 6 meses, além do que a seção 8 permite. Um sink não tira campos de uma linha. Por isso a linha própria.
+
+**A linha.** `logger.info('acesso', { ip, uid })`, do `firebase-functions/logger`. No Cloud Logging, vira uma entrada do stdout com severidade INFO e o `jsonPayload` `{ message: "acesso", ip, uid }`. A data e a hora são as da entrada. Nada mais: sem rota, URL, query, aparelho, corpo, e-mail nem o motivo da recusa.
+
+- **`ip`:** o último item do `X-Forwarded-For`, o que o front-end do Google acrescenta no Cloud Run sem balanceador, nunca o primeiro, que o cliente escreve como quiser. O item é aparado e só vale se o `isIP` do `node:net` aceitar; o último item que não é um IP vira `null`, e nenhum texto do cliente chega à linha. Sem o cabeçalho, o `req.ip`, se for um IP, ou `null`. Com o cabeçalho, nunca o `req.ip`: atrás de um proxy confiado, o Express tira o `req.ip` do primeiro item. Que o último item é o IP de quem chamou, a publicação confere (31.12, passo 4) contra o `httpRequest.remoteIp` do log de pedido, com um cabeçalho forjado.
+- **`uid`:** o uid do Firebase Auth de quem chamou, ou `null` sem login. Na `api`, o uid só é conhecido depois do token, e a linha sai com `null` também no token inválido ou vencido e em toda recusa que vem antes do token, mesmo com login: o 404, o 405 (o `OPTIONS` inclusive), o 400 do caminho fora do formato, o 413 do corpo grande e o 403 do App Check. A consulta por uid não acha esses pedidos (31.8 e 31.9).
+
+**Na `api`.** No `finally` do `createApiHandler` (`functions/src/api/index.ts`), logo antes da linha `api`, que continua a última do pedido. Vale para todo pedido que chega ao handler: os de sucesso, o 401, o 404, o 405, o 429 do ritmo e o 500. O IP é calculado no começo do handler. O `ApiRequest` (`api/types.ts`) ganha o `ip?: string`, que o `Request` do Express já tem.
+
+- Não chegam ao handler, e ficam só no log de pedido, 30 dias (31.9): o corpo JSON malformado (400) e o `/favicon.ico` e o `/robots.txt` (404, também em `api/favicon.ico`, porque o caminho chega sem o nome da função), que o runtime das funções responde antes dele; o corpo acima de 32 MB, recusado antes da função; e o 429 com as instâncias no teto e o 503 da cota de CPU, que o Cloud Run responde sem chamar a função. Nenhum desses pedidos chega aos dados. O teste de emulador do JSON malformado prende o primeiro caso (31.11).
+
+**Nas callables do painel.** Um embrulho comum, o `onPanelCall` (`functions/src/access-log.ts`), recebe as mesmas opções e o mesmo handler do `onCall` e passa as opções ao `onCall` sem tocar nelas. Ficam iguais o `cors` (`PANEL_ORIGINS`), a região, a memória, a CPU, a concorrência, os `secrets`, o `timeoutSeconds` e o `__endpoint`, o manifesto que o firebase-tools lê no deploy e que o `cpu.test.ts` confere. As 55 callables do `functions/src/index.ts` só trocam o nome da função (`onCall(` vira `onPanelCall(`), e o import do `onCall` sai. Callable nova entra sempre pelo `onPanelCall`: um teste falha se alguma callable exportada vier sem ele (31.11).
+
+- A linha sai no começo do handler, antes de chamar o de verdade, com o uid que o SDK já conferiu em `request.auth`. No começo, e não num `finally`, porque o uid já é conhecido e a linha sai mesmo quando a chamada estoura o tempo. Na `api`, o uid só existe depois do token, e por isso o `finally`.
+- O que não chega ao handler fica sem a linha: o preflight do CORS (`OPTIONS`), o pedido fora do formato de callable ("Invalid request") e o token inválido ou vencido, que o firebase-functions responde antes. Esses ficam só no log de pedido, 30 dias (31.9). A chamada sem token nenhum chega ao handler e sai com o `uid` `null`.
+
+**Fora da linha:** as agendadas (`rankingTick` e `closeStatsDays`), os gatilhos do Auth e do Firestore e as filas. Não são acesso de quem usa o app.
+
+**Contrato.** O filtro do sink (`docs/protecao/registro-acesso/filtro-linha-acesso.txt`) lê o `log_id("run.googleapis.com/stdout")` e o `jsonPayload.message="acesso"`, e a consulta judicial (31.8) lê o `jsonPayload.ip` e o `jsonPayload.uid`. Só o `info` (ou o `log`) escreve no stdout: o `warn` e o `error` vão ao stderr e sairiam do bucket. O texto, os dois campos e o nível são contrato, com um comentário no código (na constante `ACCESS_LOG_MESSAGE` e na frase do `closeStatsDays`, que diz que os dois textos são contrato) e os testes de 31.11.
+
+**O envelope.** O bucket guarda a entrada inteira: além do `ip` e do `uid`, a data e a hora, a severidade, o trace, a instância e o recurso, com o nome da função. Na `api`, o nome é sempre `api`, e não diz a rota. Nas callables, é o nome da ação do painel (`setFanSuspended`, `adjustFanPoints`), de quem é da equipe, que o `staffAudit` já guarda. O trace liga a linha ao log de pedido só enquanto ele está no `_Default` (30 dias). As sondas do deploy também deixam a linha (o 404 da `api`), com o IP de quem sonda.
+
+**O que não muda:** a linha `api` e o log de pedido continuam 30 dias no `_Default`, como antes. A linha `acesso` também entra no `_Default` (31.10).
+
+### 31.7 Registro de acesso: o bucket e o sink
+
+- **Bucket** `registros-de-acesso`, de log, em southamerica-east1, com 184 dias. Guarda só o que o sink manda. O `_Default` continua igual, com 30 dias.
+- **Por que 184 dias:** 6 meses têm de 181 a 184 dias (de 31/08 a 28/02 são 181; de julho a dezembro, 184). Com 180, faltariam até 4 dias. Com 184, qualquer janela de 6 meses fica coberta, e a linha passa de 0 a 3 dias do que a política promete.
+- **Sink** `registros-de-acesso`, com o filtro de `docs/protecao/registro-acesso/filtro-linha-acesso.txt`: só a linha `acesso`, de qualquer função. Callable nova com a linha entra sozinha. O bucket fica no mesmo projeto, então o sink não pede permissão a mais.
+- **Quando:** só depois da linha no ar e conferida (31.12, passos 4 e 8). Antes disso, o bucket guardaria nada, e a linha com o IP errado ficaria 6 meses.
+
+```bash
+gcloud logging buckets create registros-de-acesso --location=southamerica-east1 --retention-days=184 --description="Registros de acesso (IP, data e hora, uid) por 6 meses, Marco Civil art. 15" --project=imagine-up-app
+gcloud logging sinks create registros-de-acesso logging.googleapis.com/projects/imagine-up-app/locations/southamerica-east1/buckets/registros-de-acesso --log-filter="$(cat docs/protecao/registro-acesso/filtro-linha-acesso.txt)" --description="Linha de acesso das funções: IP e uid" --project=imagine-up-app
+```
+
+Conferir (com um pedido feito depois do sink):
+
+```bash
+gcloud logging buckets describe registros-de-acesso --location=southamerica-east1 --project=imagine-up-app
+gcloud logging sinks describe registros-de-acesso --project=imagine-up-app
+gcloud logging read 'jsonPayload.message="acesso"' --bucket=registros-de-acesso --location=southamerica-east1 --view=_AllLogs --freshness=1h --limit=5 --format="table(timestamp,resource.labels.service_name,trace,jsonPayload.ip,jsonPayload.uid)" --project=imagine-up-app
+```
+
+Esperado: `retentionDays: 184`, `lifecycleState: ACTIVE`, o filtro do sink igual ao arquivo e o pedido no bucket. O `trace` da linha leva ao log de pedido do mesmo pedido no `_Default` (o segundo `logging read` de 31.12, passo 4).
+
+- **Quem lê:** quem tem papel de leitura de logs no projeto (Owner, Editor, Logs Viewer). O art. 15 pede sigilo e ambiente controlado: conferir com a cliente quem tem esses papéis (31.13). Dá para restringir campos (`--restricted-fields`), mas os mesmos dados ficam 30 dias no `_Default`, e o ganho é pequeno.
+- **Travar o bucket** (`gcloud logging buckets update registros-de-acesso --location=southamerica-east1 --locked --project=imagine-up-app`) impede apagar o bucket e mudar a retenção, e não tem volta. Só depois do jurídico.
+- **Desfazer:** apagar o sink para de copiar e não perde nada. Apagar o bucket apaga os registros guardados: só com o ok do jurídico. O bucket apagado fica 7 dias recuperável.
+
+```bash
+gcloud logging sinks delete registros-de-acesso --project=imagine-up-app
+gcloud logging buckets delete registros-de-acesso --location=southamerica-east1 --project=imagine-up-app
+gcloud logging buckets undelete registros-de-acesso --location=southamerica-east1 --project=imagine-up-app
+```
+
+### 31.8 Como responder a um pedido judicial
+
+O registro só é entregue com ordem judicial (Marco Civil, art. 15, § 3º). O que entregar e como é decisão do jurídico (UP-45); os comandos abaixo só acham as linhas.
+
+- **O horário.** O log é em UTC. Brasília é UTC-3, sem horário de verão: converter o horário da ordem antes de consultar, e responder no fuso que a ordem pede.
+- **O IP.** O IPv6 vai na forma que o log escreve (a curta, em minúsculas, como `2804:214:...`): um IPv6 escrito por extenso na ordem não bate, e tem de ser convertido antes.
+
+De um IP e um horário ao uid (os dois limites em UTC):
+
+```bash
+gcloud logging read 'jsonPayload.message="acesso" AND jsonPayload.ip="IP_PEDIDO" AND timestamp>="AAAA-MM-DDTHH:MM:00Z" AND timestamp<"AAAA-MM-DDTHH:MM:00Z"' --bucket=registros-de-acesso --location=southamerica-east1 --view=_AllLogs --format="value(timestamp,jsonPayload.uid,resource.labels.service_name)" --project=imagine-up-app
+```
+
+De um uid aos IPs, com a data e a hora de cada acesso:
+
+```bash
+gcloud logging read 'jsonPayload.message="acesso" AND jsonPayload.uid="UID"' --bucket=registros-de-acesso --location=southamerica-east1 --view=_AllLogs --freshness=185d --format="value(timestamp,jsonPayload.ip)" --project=imagine-up-app
+```
+
+Essa consulta não acha os pedidos da `api` recusados antes do token, que saem com o `uid` `null` mesmo com login (31.6): deles, só ficam o IP e o horário.
+
+- **Do uid à conta:** o uid leva à conta no console do Firebase (Authentication, busca pelo uid) e ao `users/{uid}`. Conta excluída: a linha continua com o uid por 184 dias, mas a conta e o perfil já foram apagados (seção 12, e os 30 dias da política). O registro liga o IP ao uid, e mais nada.
+- **IP compartilhado:** em IPv4 com CGNAT, o IP sozinho pode não identificar a pessoa, e não há a porta de origem (31.9).
+- **Pedido de guarda por mais tempo** (art. 15, § 2º: a autoridade policial ou administrativa e o Ministério Público podem pedir que os registros sejam guardados além do prazo): o bucket tem uma retenção só, para todos. Para guardar as linhas daquele uid ou IP, exportar a consulta (o mesmo `logging read` com `--format=json`) para um arquivo num lugar controlado, fora de todo repositório, antes de vencerem, com o ok do jurídico.
+- **Só a linha `acesso` fica 6 meses.** O log de pedido (com a URL e o aparelho) e a linha `api` ficam 30 dias no `_Default`.
+
+### 31.9 Lacunas (para o jurídico, UP-45)
+
+A palavra final é do jurídico. Ficam registradas:
+
+1. **Porta de origem.** O Cloud Run não entrega a porta do cliente. Em IPv4 compartilhado (CGNAT), o IP sozinho pode não identificar a pessoa, e há decisões do STJ pedindo a porta lógica. Resolver pede outra arquitetura na frente da `api`. Fica para avaliar.
+2. **Login do Firebase Auth.** Não deixa log nenhum (nenhuma entrada do `identitytoolkit` nos 8 dias do levantamento). O IP do login pediria o Identity Platform, com os logs de atividade ligados. Fica para avaliar.
+3. **Acesso direto ao Firestore e ao Storage** pelo SDK do app (o perfil `users/{uid}` e a foto). Não deixa log: os logs de Data Access estão desligados, ligar custa, e não está claro se cobre o SDK do celular. Fica para avaliar.
+4. **Pedidos que não chegam ao handler** (31.6): na `api`, o corpo JSON malformado, o `/favicon.ico` e o `/robots.txt`, que o runtime das funções responde antes dela, o corpo acima de 32 MB e o 429 e o 503 que o Cloud Run responde sem chamar a função; nas callables, o preflight, o pedido fora do formato e o token inválido ou vencido. Ficam só no log de pedido, 30 dias. Nenhum deles chega aos dados, e quem usa as callables é a equipe.
+5. **O `uid` `null` nas recusas da `api` antes do token** (31.6): o 404, o 405, o 400 do caminho, o 413 e o 403 do App Check saem sem o uid, mesmo com login. A consulta por uid (31.8) não os acha; o IP e o horário ficam.
+6. **O nome da função no envelope** (31.6): nas callables, 184 dias com a ação do painel que a equipe usou.
+
+### 31.10 Custos
+
+Premissas (as do plano): R$ 5,50 por dólar; os preços de tabela do Google lidos em 14/10/2026, em dólar (a conta paga em real, e o valor pode variar um pouco); o banco de hoje com uns 195 KB; com 10 mil fãs (hipótese, não medida), banco de 1 GiB (de 0,5 a 2 GiB), 3 mil fãs abrindo o app por dia e 40 pedidos à `api` por fã nesse dia, uns 120 mil pedidos por dia.
+
+| Medida | Hoje (sem fã) | Com 10 mil fãs |
+| --- | --- | --- |
+| PITR de 7 dias | menos de R$ 0,01 | R$ 0,74 (R$ 0,37 a R$ 1,49) |
+| Proteção contra apagar o banco | R$ 0 | R$ 0 |
+| Backup diário com 14 dias | menos de R$ 0,01 | R$ 3,47 (R$ 1,73 a R$ 6,93) |
+| Canal, 3 métricas e 5 alertas | R$ 0 | R$ 0 |
+| O mesmo, a partir de 01/09/2027 | uns R$ 15 | uns R$ 15 |
+| Registro de acesso por 184 dias | R$ 0,00 | R$ 1,16 |
+| Total até 08/2027 | perto de R$ 0 | uns R$ 5,40 |
+| Total a partir de 09/2027 | uns R$ 15 | uns R$ 20,40 |
+
+- **Firestore STANDARD em São Paulo:** o PITR custa o mesmo que o armazenamento (US$ 0,135 por GiB por mês) e fica perto do tamanho do banco; o backup, US$ 0,045 por GiB por mês, com 14 cópias guardadas. Nenhum dos dois tem cota grátis. Restaurar e clonar só custam quando usados (31.3).
+- **Alertas:** grátis até 31/08/2027. A partir de 01/09/2027 (a data mínima anunciada pelo Google), US$ 0,35 por mês por métrica citada numa condição, mais US$ 0,50 por milhão de pontos lidos: uns R$ 15 por mês, que não mudam com o número de fãs. As 3 métricas de log ficam longe dos 150 MiB grátis.
+- **Registro de acesso:** uma linha de uns 1,2 KB por pedido (o envelope pesa mais que os dois campos), uns 4,1 GiB por mês com 10 mil fãs. A retenção além de 30 dias, com os 6 meses cheios, guarda uns 21 GiB: uns R$ 1,16 por mês. A linha também entra no `_Default`, e o projeto todo fica perto de 16 GiB por mês, dentro dos 50 GiB grátis de entrada. Se o uso triplicar, o projeto chega perto dos 50 GiB: aí vale tirar do `_Default` o que já vai ao bucket. As callables somam pouco, e o volume delas não cresce com os fãs.
+
+### 31.11 Testes
+
+- **`functions/src/access-log.test.ts`** (novo, com o logger falso do `api/index.test.ts`):
+  - O IP com cabeçalhos forjados: `203.0.113.7, 198.51.100.4` dá `198.51.100.4`; um item só; espaços e itens vazios; IPv6; o último item que não é IP (texto, JSON, quebra de linha) dá `null`; sem o cabeçalho, o `req.ip` válido, ou `null`; com o cabeçalho, nunca o `req.ip`.
+  - A linha: exatamente `('acesso', { ip, uid })`, só com as duas chaves, e o `uid` `null` sem login.
+  - O outro lado do contrato: o teste lê `docs/protecao/registro-acesso/filtro-linha-acesso.txt` e confere que ele tem exatamente as três linhas, com o `log_id` do stdout e o `jsonPayload.message` igual à `ACCESS_LOG_MESSAGE`, sem filtro de serviço. Trocar a constante sem trocar o filtro quebra o teste.
+  - O `onPanelCall`, pelo `.run`: a linha antes do handler, com o IP do `rawRequest` e o uid do `auth`; o resultado e o erro do handler passam iguais; sem `auth`, o `uid` `null`; sem `rawRequest`, o `ip` `null`. O `__endpoint` é igual ao do `onCall` com as mesmas opções (`cors`, `secrets` e `timeoutSeconds`).
+  - O manifesto: todo export com `callableTrigger` (as 55 callables de hoje) veio do `onPanelCall`; a `api`, as agendadas, os gatilhos e as filas não.
+- **`functions/src/api/index.test.ts`:** o 401 sem token escreve `acesso` com o último item do cabeçalho forjado e o `uid` `null`; com login, o uid; o 404 também, com o `uid` `null` mesmo com o token, porque a rota é conferida antes dele; a `acesso` vem antes da `api` (o `lastLine` do filtro continua lendo a `api`).
+- **`functions/test/access-log.emulator.test.ts`:** a `api` e uma callable de verdade no emulador, com e sem login, o preflight sem a linha e o POST com o JSON malformado, que o runtime recusa com 400 antes do handler, também sem a linha (31.6).
+- **O `cors`:** o preflight de uma callable com a origem do painel volta com o `Access-Control-Allow-Origin` dela, e com outra origem, sem ele. No emulador, se ele responder o preflight pela própria função; senão, um teste puro que chama a função HTTP com um pedido falso (31.14).
+- **`functions/src/points/close.test.ts`:** a constante com a frase "closeStatsDays: dias fechados", e o outro lado do contrato: o teste lê `docs/protecao/metricas/close_stats_days_ok.yaml` e confere o serviço `closestatsdays`, o `log_id` do stdout e o `jsonPayload.message` igual à `STATS_DAYS_CLOSED_LOG`.
+- **`functions/test/stats-close.emulator.test.ts`:** a rodada que fecha dois dias escreve, no nível info, "closeStatsDays: dias fechados" com `{ days }`, com a frase escrita por extenso no teste, e não a constante. É o caminho de verdade que a métrica lê.
+- **`functions/src/cpu.test.ts`** passa sem mudança: a prova de que o manifesto não mudou.
+
+### 31.12 Publicação
+
+Só servidor: nenhuma regra, índice, EAS Update nem mudança no painel. As funções saem do terminal do dono, no PowerShell; o silenciamento, o bucket e o sink, do Git Bash do Claude. Cada passo com o ok do dono.
+
+0. **Merge**, com o ok do dono: o PR #21 (`docs-publicacao`) e depois o desta branch, na `main`.
+1. **Pasta do deploy:** um worktree na `main` nova, com o `functions/.env.imagine-up-app` copiado ("Publicar", passo 1, no `CLAUDE.md`).
+2. **O diff desde o que está no ar:** `git diff --stat 7b87a48 HEAD -- functions/src`. Hoje, cinco funções rodam o código de `f258ca2` e as outras 61, o de `7b87a48`: este deploy leva às 61 também o código das seções 29 e 30 (o "próximo deploy publica todas" de "Publicar"). Fora delas e deste bloco (`access-log.ts`, `api/index.ts`, `api/types.ts`, `index.ts`, `points/close.ts` e testes), nada pode aparecer.
+3. **Silenciar os alertas** (31.5, passos 1 e 2), com 3 horas de janela.
+4. **Lote 1, com a `api`**, e a conferência da linha antes dos outros lotes:
+
+   ```powershell
+   $env:FUNCTIONS_DISCOVERY_TIMEOUT = "60"; npx --yes firebase-tools@15.32.0 deploy --only functions:api,functions:createUserProfile,functions:deleteUserProfile,functions:createStaffInvite,functions:resendStaffInvite,functions:cancelStaffInvite,functions:getStaffInvite,functions:acceptStaffInvite,functions:linkStaffInvite,functions:updateStaffMember,functions:setStaffMemberActive,functions:removeStaffMember,functions:checkArtistHandle,functions:createArtist,functions:updateArtist --project imagine-up-app
+   ```
+
+   Depois, no Git Bash, um pedido sem login à `api` e outro a uma callable do lote, os dois com um `X-Forwarded-For` forjado (o `203.0.113.7` é de um bloco reservado para documentação):
+
+   ```bash
+   curl -s -o /dev/null -w "%{http_code}\n" -H "X-Forwarded-For: 203.0.113.7" https://southamerica-east1-imagine-up-app.cloudfunctions.net/api/me/wallet
+   curl -s -X POST -H "Content-Type: application/json" -H "X-Forwarded-For: 203.0.113.7" -d '{"data":{}}' https://southamerica-east1-imagine-up-app.cloudfunctions.net/checkArtistHandle
+   gcloud logging read 'log_id("run.googleapis.com/stdout") AND jsonPayload.message="acesso"' --freshness=15m --limit=5 --format="table(timestamp,resource.labels.service_name,trace,jsonPayload.ip,jsonPayload.uid)" --project=imagine-up-app
+   gcloud logging read 'log_id("run.googleapis.com/requests") AND trace="TRACE_DA_LINHA_ACIMA"' --freshness=15m --format="value(httpRequest.remoteIp,httpRequest.status)" --project=imagine-up-app
+   ```
+
+   Esperado: o 401 da `api` e o `unauthenticated` da callable; as duas linhas `acesso` com o `uid` vazio e o `ip` igual ao `remoteIp` do mesmo pedido, nunca o `203.0.113.7`. Sem o trace na linha, o pedido sai pelo horário. Se o IP não bater: parar. Os lotes seguintes esperam, o código é corrigido e o lote 1 vai de novo; o sink não é criado.
+5. **Lotes 2 a 5**, com uns minutos entre um e o seguinte. Um lote que falhar pela cota de CPU vai de novo depois de uns 30 minutos sem deploy ("Publicar", passo 3).
+
+   ```powershell
+   $env:FUNCTIONS_DISCOVERY_TIMEOUT = "60"; npx --yes firebase-tools@15.32.0 deploy --only functions:setArtistStatus,functions:reorderArtists,functions:deleteArtist,functions:createPost,functions:updatePost,functions:setPostStatus,functions:deletePost,functions:createEvent,functions:updateEvent,functions:setEventStatus,functions:deleteEvent,functions:moderateComment,functions:updatePointsConfig,functions:updateSeason,functions:scheduleNextSeason --project imagine-up-app
+   $env:FUNCTIONS_DISCOVERY_TIMEOUT = "60"; npx --yes firebase-tools@15.32.0 deploy --only functions:endSeason,functions:closeSeasonNow,functions:rankingTick,functions:closeStatsDays,functions:createMission,functions:updateMission,functions:setMissionStatus,functions:reorderMissions,functions:updateSeasonGoal,functions:createAchievement,functions:updateAchievement,functions:setAchievementStatus,functions:reorderAchievements,functions:createReward,functions:updateReward --project imagine-up-app
+   $env:FUNCTIONS_DISCOVERY_TIMEOUT = "60"; npx --yes firebase-tools@15.32.0 deploy --only functions:setRewardStatus,functions:setRewardStock,functions:reorderRewards,functions:deleteReward,functions:setRedemptionStatus,functions:getRedemptionContacts,functions:adjustFanPoints,functions:findFanByEmail,functions:getPanelRanking,functions:resetFanUsername,functions:clearFanPhoto,functions:clearFanProfileText,functions:resolveProfileReport,functions:setFanSuspended,functions:hideFanComments --project imagine-up-app
+   $env:FUNCTIONS_DISCOVERY_TIMEOUT = "60"; npx --yes firebase-tools@15.32.0 deploy --only functions:queueArtistFanCountSync,functions:syncArtistFanCount,functions:queuePostCountSync,functions:syncPostCounts,functions:queueFanProfileSync,functions:syncFanProfile --project imagine-up-app
+   ```
+
+   Os cinco lotes somam as 66 funções, na ordem do `index.ts`, com a `api` no primeiro (15, 15, 15, 15 e 6). A etapa 2 conferiu a lista contra os exports do `index.ts` em 14/10/2026: 66, sem repetição, as 55 do `onPanelCall`, a `api`, as 2 agendadas, os 2 gatilhos do Auth, os 3 do Firestore e as 3 filas. Função nova até a publicação entra num lote. Os mesmos comandos, com o `cd` da pasta do deploy na frente, o silenciamento antes e o cancelamento e a conferência depois, estão em `Projetos/protecao-imagineup/lotes-registro-acesso.txt`, fora do repositório, para o dono copiar sem redigitar.
+6. **Conferir** ("Publicar", passo 6): o `functions:list` com as 66; o `node scripts/check-public-functions.mjs` com as 56 chamáveis com o `allUsers`; a CPU de cada função como antes (`0.1666` e `1`; o `rankingTick` e o `createUserProfile`, `0.3333` e `1`; a `api`, `1` e `80`); o 401 da `api` sem login e o 404 `not_found` numa rota que não existe; os logs do `rankingTick`.
+7. **Fim do silenciamento** (31.5, passo 3): cancelado se ainda valer, nenhum terminando no futuro, nenhum incidente aberto.
+8. **Bucket e sink** (31.7), pelo Claude, com o ok do dono.
+9. **Conferir no bucket:** um pedido novo sem login à `api` (401), com o cabeçalho forjado; o `buckets describe` (`retentionDays: 184`, `lifecycleState: ACTIVE`), o `sinks describe` (o filtro igual ao arquivo) e o `logging read` no bucket (31.7), com a linha do pedido e o `trace` dela; com esse trace no segundo `logging read` do passo 4, o `httpRequest.remoteIp` do mesmo pedido no `_Default`, igual ao `ip` da linha.
+10. **Registrar** como foi, aqui e em 26.21.
+
+O registro de acesso precisa estar no ar antes das lojas: com fã de verdade, o art. 15 já vale. Hoje não há fã em produção, e nada se perde até lá.
+
+### 31.13 Pendências e perguntas
+
+Pendências:
+
+- **A 5ª política** (`close-stats-days-parado`), depois da rodada das 00:20 de 15/10/2026 (31.4), e, no primeiro mês, conferir que ela não dispara à toa.
+- **O registro de acesso:** a linha e os testes estão na branch `registro-acesso`; faltam o merge, as 66 funções em lotes e o bucket com o sink (31.12), antes das lojas.
+- **O orçamento de R$ 50 por mês**, pela cliente (UP-38), com avisos em 50%, 90% e 100% do gasto real e em 100% do previsto (o passo a passo está no plano, item 4). O orçamento só avisa: não corta gasto nem desliga nada. Conferir com ela quem administra a conta de faturamento.
+- **O roteiro de restauração** (31.3): o script que copia os documentos de volta com `--dry-run` e reexclui quem saiu depois da cópia. Ainda não escrito.
+- **A política de privacidade** (UP-45): citar que as cópias de segurança são apagadas em até 14 dias e que as fotos ficam nos Estados Unidos (o bucket de fotos em US-EAST1).
+- **O bucket de fotos** `imagine-up-app.firebasestorage.app`, em US-EAST1, sem versionamento e com 7 dias de exclusão reversível: uma foto apagada por engano some em 7 dias. Avaliar o versionamento com regra de vida curta, ou uma exclusão reversível maior. A região não muda sem um bucket novo.
+- **O uptime check da `api`** (31.4, alerta (b)), se o dono quiser.
+- **Quem lê os registros:** conferir com a cliente quem tem os papéis de leitura de logs no projeto (31.7). Travar o bucket só depois do jurídico.
+- **As lacunas de 31.9**, para o jurídico (UP-45).
+
+Pergunta ao dono, com a proposta seguida até a resposta:
+
+1. **Callables recusadas antes do handler** (o preflight do CORS, o pedido fora do formato e o token inválido ou vencido) ficam sem a linha, só no log de pedido de 30 dias (31.6 e 31.9, lacuna 4)? Proposta: sim. Cobrir esses pedidos pede embrulhar a função HTTP que o `onCall` devolve, por fora do firebase-functions (copiar o `__endpoint`, o `__trigger`, o `run` e o `stream`, e escrever a linha no fim da resposta, com o uid passado pelo handler). É mais frágil a cada versão do pacote, e o preflight dobraria as linhas sem trazer quem chamou. O uid só existe com o token válido, que já chega ao handler.
+
+As decisões que o código pode rever (o lugar da linha nas callables e o teste do `cors`) voltam em 31.14.
+
+### 31.14 O que o código fez diferente do desenho
+
+Cada etapa do plano de construção acrescenta aqui o ponto em que o código decidiu um detalhe que o desenho deixava aberto, ou fez diferente do que ele diz, com o motivo.
+
+**Etapa 1, o código e os testes** (`functions/src/access-log.ts`, 14/10/2026):
+
+- **O IPv6 com zona é recusado.** O `isIP` do `node:net` aceita `fe80::1%` seguido de letras e números, de qualquer tamanho. O `clientIp` recusa todo item com `%`: nenhum IP de quem chama pela internet tem zona, e assim nenhum texto do cliente chega à linha, nem pela zona.
+- **Item vazio.** O último item vazio (`198.51.100.4,`) dá `null`: o código nunca volta a um item anterior, que pode ter vindo do cliente. O cabeçalho presente e vazio também dá `null`, sem o `req.ip`. Os itens vazios do meio não contam, porque só o último é lido.
+- **O pedido sem `get`** usa o `req.ip`, e o `.run` sem `rawRequest` dá `null`. A linha nunca derruba a chamada por causa de um pedido incompleto.
+- **O teste do manifesto** confere que as callables exportadas e as do `onPanelCall` são o mesmo conjunto, com pelo menos 55, e não exatamente 55: a callable nova pelo `onPanelCall` não quebra o teste, e um `__endpoint` perdido, que tiraria as callables do manifesto, quebra. O teste do embrulho compara também o `__trigger`, além do `__endpoint`, com três jogos de opções.
+- **O `cors` é testado fora do emulador, em todas as callables.** O emulador de Functions repassa o `OPTIONS` à própria função, mas liga o `enableCors` no `FIREBASE_DEBUG_FEATURES` das funções, e com ele o `cors` de toda callable devolve qualquer origem (a primeira rodada do teste no emulador pegou isso). Por isso o `access-log.test.ts` põe cada callable exportada, a função HTTP de verdade, atrás de um servidor do `node:http` e manda o preflight: com a origem do painel, 204 com o `Access-Control-Allow-Origin` dela e o `Access-Control-Allow-Methods: POST`; com outra origem, 204 sem o cabeçalho; e nenhuma linha `acesso`. O teste de emulador confere só que o preflight não escreve a linha.
+- **O emulador também escreve a linha, e o teste lê o `firebase-debug.log`.** O emulador não entrega o log das funções aos testes: ele vai ao terminal e ao `firebase-debug.log`, que o firebase-tools escreve na raiz do app durante o `npm run test:functions` e apaga no fim, quando tudo passa. O emulador de logs só sobe com a interface ou com `START_LOGGING_EMULATOR=true`, e pôr a variável no script do `package.json` mudaria o fingerprint. O `functions/test/access-log.emulator.test.ts` lê o arquivo a partir do tamanho de antes do pedido e acha a linha pelo IP, um IPv6 único do bloco de documentação (`2001:db8::/32`). Depende do formato do log do firebase-tools 15.32.0, a versão que o script fixa.
+- **O runtime do emulador confia no proxy** (`trust proxy`): com o cabeçalho, o `req.ip` dele é o primeiro item, o forjado. O teste manda o `203.0.113.7` no primeiro item e confere o último na linha, então prova também que o `req.ip` não é usado. Sem o cabeçalho, o runtime fala com o emulador por um pipe, o `req.ip` vem vazio, e as linhas dos outros testes de emulador saem com o `ip` `null`. Em produção, o front-end do Google acrescenta o cabeçalho a todo pedido; a publicação confere (31.12, passo 4).
+- **Os testes da `api` cobrem também** o token inválido (401, `uid` `null`) e o 500 inesperado, além do 401 sem token, do login, do 404, do cabeçalho forjado e da ordem.
+- **A frase do `closeStatsDays`** virou a constante `STATS_DAYS_CLOSED_LOG`, com o comentário de contrato, e o `log.info` ganhou uma linha curta que aponta para ela.
+
+**Etapa 2, a documentação e os arquivos** (`docs/protecao/`, 14/10/2026):
+
+- **Os 11 arquivos entraram, com a política de teste** (`teste-canal.json`), que serve para testar o canal de novo (31.4). A cópia foi conferida com o `cmp`, arquivo por arquivo, contra `Projetos/protecao-imagineup/`, e nenhum arquivo tem `@`, id de canal, de política ou de conta.
+- **O `.prettierignore` ganhou `docs/protecao`.** O `prettier --check` acusava os 7 JSON: um `npm run format` os reescreveria, e a cópia deixaria de ser igual ao que está ligado. O `.prettierignore` não entra no fingerprint, que continua o mesmo.
+- **A janela do silenciamento passou de 2 para 3 horas** (31.5 e 31.12): o lote 1 espera a conferência da linha antes do lote 2, e um lote que falha pela cota só vai de novo depois de uns 30 minutos sem deploy.
+- **"Publicar" não foi renumerado.** No `CLAUDE.md`, o silenciamento entrou no começo do passo 3 (os lotes) e a conferência no fim do passo 6 (conferir), porque esta nota cita os passos 1, 3 e 6 de "Publicar" pelo número.
+- **O arquivo dos lotes** (`Projetos/protecao-imagineup/lotes-registro-acesso.txt`) fica fora do repositório, porque leva o caminho da pasta do deploy desta máquina. Cada linha começa com `cd <pasta do deploy> -ErrorAction Stop;`: se a pasta não existir, o PowerShell para a linha antes do deploy (sem o `-ErrorAction Stop`, ele segue para o comando seguinte), e nenhum lote sai de outra pasta.
+
+**Revisão** (14/10/2026), com cada achado conferido antes de aplicar; nenhum foi recusado:
+
+- **O `\r` do gcloud no Git Bash.** O `policies list` de 14/10/2026, só leitura, saiu com `\r\n` em cada linha. O `$(...)` do Git Bash tira o `\r\n` do fim, e o `CANAL` de uma linha só não tem o problema (por isso as 4 políticas foram criadas). Com várias linhas, o `\r` fica no meio: o `paste` do silenciamento juntaria 3 dos 4 nomes com o `\r`, e o laço do "Desfazer" apagaria só a última política. Os dois ganharam o `tr -d '\r'` (31.4 e 31.5); com ele, o valor sai sem `\r` e com os 4 nomes. O passo 2 de 31.5 confere também as políticas do silenciamento (`describe`), e o "Desfazer" confere a lista vazia antes das métricas. A mesma correção foi para o arquivo dos lotes e para o plano (2.7 e 2.8), fora do repositório.
+- **Os dois lados do contrato no mesmo teste.** Os testes prendiam cada constante a um texto escrito no próprio teste, e quem trocasse os dois passaria com o filtro e a métrica velhos. Agora o `access-log.test.ts` lê o filtro do sink e o `close.test.ts` lê a métrica, em `docs/protecao/` (31.11).
+- **O que não chega ao handler da `api`.** O runtime das funções responde o JSON malformado, o `/favicon.ico` e o `/robots.txt` antes do handler (no emulador, o `bodyParser` e a rota própria do `functionsEmulatorRuntime.js` do firebase-tools 15.32.0), e o Cloud Run responde o corpo acima de 32 MB, o 429 do teto de instâncias e o 503 da cota sem chamar a função. A 31.6 dizia "todo pedido": passou a dizer "todo pedido que chega ao handler", com a lista, e a lacuna 4 de 31.9 passou a citar a `api`. O 429 e o 503 do Cloud Run entraram além do achado. O comentário do `finally` mudou junto, e um teste de emulador manda o JSON malformado e confere que não sai a linha.
+- **O `uid` `null` antes do token.** O 404, o 405, o 400 do caminho, o 413 e o 403 do App Check vêm antes do `authenticate` e saem com o `uid` `null`, mesmo com login (o próprio teste do 404 mandava o token). Entrou na 31.6, na 31.8 (a consulta por uid não os acha) e como a lacuna 5 de 31.9; o teste do 404 diz isso no nome.
+- **O trace na leitura do bucket.** O passo 9 de 31.12 pedia o trace da linha, e a leitura de 31.7 não o mostrava: o formato ganhou o `trace`, na ordem do passo 4.
+- **"Iguais ao que está ligado".** O `CLAUDE.md` e o `AGENTS.md` diziam isso de todo `docs/protecao/`, mas a 5ª política, a de teste e o filtro do sink não estão no ar (o gcloud de 14/10/2026 mostra 4 políticas e nenhum sink além dos dois padrão). O texto passou a separar os aplicados dos que esperam a vez, como a 31.2.
 
 ## Armadilhas
 

@@ -4,3 +4,4 @@ dist
 coverage
 functions/lib
 package-lock.json
+docs/protecao

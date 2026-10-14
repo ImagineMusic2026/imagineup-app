@@ -27,6 +27,20 @@ import { pruneZeros } from './stats';
 /** O primeiro dia com perfil de fã: o createUserProfile foi publicado em 29/09/2026. */
 export const STATS_FIRST_DAY = '2026-09-29';
 
+/**
+ * A linha da rodada que fechou algum dia. É contrato: a métrica de log
+ * close_stats_days_ok (docs/protecao/metricas/close_stats_days_ok.yaml) conta
+ * este texto exato no stdout do serviço closestatsdays, e o alerta
+ * close-stats-days-parado dispara quando ele some por 24 h 30 min
+ * (docs/arquitetura-api.md, 31.4). Por isso sai no nível info: o `warn` e o
+ * `error` vão ao stderr. Mudar o texto ou o nível faz o alerta disparar todo
+ * dia; a métrica muda no mesmo dia. O outro texto de log que é contrato é o
+ * `acesso` (ACCESS_LOG_MESSAGE, em access-log.ts), lido pelo sink do registro
+ * de acesso. Os dois são presos por teste (31.11), que lê também o arquivo
+ * da métrica.
+ */
+export const STATS_DAYS_CLOSED_LOG = 'closeStatsDays: dias fechados';
+
 /** Dias fechados no máximo por rodada; o resto fica para a próxima. */
 export const CLOSE_MAX_DAYS = 31;
 
@@ -421,7 +435,8 @@ export async function runStatsClose(
       });
     }
   }
-  if (closed.length > 0) log.info('closeStatsDays: dias fechados', { days: closed });
+  // Contrato da métrica do alerta (STATS_DAYS_CLOSED_LOG): o texto e o info.
+  if (closed.length > 0) log.info(STATS_DAYS_CLOSED_LOG, { days: closed });
   return { status: 'closed', closed, skipped, synced, lastClosedDay };
 }
 

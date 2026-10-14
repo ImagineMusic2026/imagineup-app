@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+
 import { Timestamp } from 'firebase-admin/firestore';
 import { describe, expect, it } from 'vitest';
 
@@ -10,6 +13,7 @@ import {
   ORIGIN_KEYS_MAX,
   ORIGIN_OTHER,
   seasonOfDay,
+  STATS_DAYS_CLOSED_LOG,
   STATS_FIRST_DAY,
   sumStatsDocs,
   type StatsTree,
@@ -262,5 +266,24 @@ describe('seasonOfDay', () => {
       seasonOfDay({ season: next, lastClosed: closed(ended, '2026-10-06T15:10:00') }, '2026-10-06')
         ?.id,
     ).toBe('primavera');
+  });
+});
+
+describe('a linha "closeStatsDays: dias fechados"', () => {
+  it('o texto é contrato da métrica close_stats_days_ok e do alerta (31.4), escrito por extenso aqui', () => {
+    // Mudar a frase faz o alerta close-stats-days-parado disparar todo dia.
+    expect(STATS_DAYS_CLOSED_LOG).toBe('closeStatsDays: dias fechados');
+  });
+
+  it('a métrica, no repositório, conta o mesmo texto no stdout do serviço closestatsdays', () => {
+    // O outro lado do contrato (31.2 e 31.4): trocar a constante e o texto
+    // acima sem mudar a métrica quebra aqui, e não no alerta, todo dia.
+    const metric = readFileSync(
+      resolve(__dirname, '../../../docs/protecao/metricas/close_stats_days_ok.yaml'),
+      'utf8',
+    );
+    expect(metric).toContain('resource.labels.service_name="closestatsdays"');
+    expect(metric).toContain('log_id("run.googleapis.com/stdout")');
+    expect(metric).toContain(`jsonPayload.message="${STATS_DAYS_CLOSED_LOG}"`);
   });
 });

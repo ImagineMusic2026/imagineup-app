@@ -1,0 +1,23 @@
+{
+  "displayName": "ImagineUP: TESTE do canal de e-mail (apagar)",
+  "userLabels": {"teste": "canal"},
+  "severity": "WARNING",
+  "combiner": "OR",
+  "conditions": [
+    {
+      "displayName": "Linha de teste no log teste-alerta-imagineup",
+      "conditionMatchedLog": {
+        "filter": "log_id(\"teste-alerta-imagineup\")"
+      }
+    }
+  ],
+  "alertStrategy": {
+    "notificationRateLimit": {"period": "300s"},
+    "autoClose": "1800s"
+  },
+  "documentation": {
+    "subject": "ImagineUP: teste do canal de e-mail",
+    "mimeType": "text/markdown",
+    "content": "Teste do canal de e-mail dos alertas do ImagineUP. Se este e-mail chegou, o canal funciona. A política de teste é apagada logo depois."
+  }
+}
