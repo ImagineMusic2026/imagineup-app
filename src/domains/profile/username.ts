@@ -1,3 +1,5 @@
+import type { FanProfile, UsernameLockReason } from './types';
+
 /**
  * O @ do fã como o servidor confere (espelho de `normalizeUsername`,
  * `USERNAME_PATTERN` e `AUTOMATIC_USERNAME` de `functions/src/fan-profile/model.ts`;
@@ -26,4 +28,37 @@ export const isUsernameFormat = (username: string): boolean => USERNAME_PATTERN.
 /** O @ é o automático do cadastro: a tela destaca e convida a trocar. */
 export function isAutomaticUsername(username: string | null | undefined): boolean {
   return !!username && AUTOMATIC_USERNAME.test(username);
+}
+
+/**
+ * Quem pôs o prazo do @, como o servidor grava (espelho do `lockReasonOf` de
+ * `functions/src/fan-profile/details.ts`, seção 32, decisão 2): só
+ * `moderation`; o ausente (o perfil de antes), `null` e qualquer outro valor
+ * valem `null`.
+ */
+export const lockReasonOf = (value: unknown): UsernameLockReason | null =>
+  value === 'moderation' ? 'moderation' : null;
+
+/** O prazo do @ que ainda corre: até quando (ISO) e se foi a equipe que o pôs. */
+export interface UsernameLock {
+  until: string;
+  byTeam: boolean;
+}
+
+/**
+ * O @ está travado agora? O prazo do perfil no futuro, pelo relógio do
+ * aparelho, com quem o pôs (`moderation`: a equipe trocou o @, seção 32); sem
+ * prazo, com ele vencido ou fora do formato, `null`. A tela "Editar perfil" e
+ * os Ajustes leem daqui. A recusa 409 do servidor (o relógio do aparelho
+ * adiantado, ou o cache sem o prazo) a tela trata à parte.
+ */
+export function usernameLock(
+  profile: Pick<FanProfile, 'usernameChangeableAt' | 'usernameLockReason'> | null | undefined,
+  now: Date,
+): UsernameLock | null {
+  const until = profile?.usernameChangeableAt ?? null;
+  if (!until) return null;
+  const at = Date.parse(until);
+  if (Number.isNaN(at) || at <= now.getTime()) return null;
+  return { until, byTeam: lockReasonOf(profile?.usernameLockReason) === 'moderation' };
 }

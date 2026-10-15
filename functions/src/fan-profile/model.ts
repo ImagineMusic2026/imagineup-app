@@ -436,6 +436,15 @@ export class ProfileEditError extends Error {
   }
 }
 
+/**
+ * Por que a equipe troca o @ de um fã (`resetFanUsername`, seção 32, decisão
+ * 1): `moderation`, o @ ofensivo ou impróprio, com o prazo de 30 dias até a
+ * próxima troca pelo fã; `central`, o @ de um artista sem central, sem prazo
+ * (o fã não fez nada de errado). O ausente vale `moderation`.
+ */
+export const USERNAME_RESET_REASONS = ['moderation', 'central'] as const;
+export type UsernameResetReason = (typeof USERNAME_RESET_REASONS)[number];
+
 export type UsernameReleaseReason = 'not_found' | 'central' | 'mismatch';
 
 const RELEASE_MESSAGES: Record<UsernameReleaseReason, string> = {

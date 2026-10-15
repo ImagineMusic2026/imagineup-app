@@ -52,8 +52,12 @@ const SECTION_LABELS: Partial<Record<SectionId, string>> = {
   audit: 'Logs e auditoria',
 };
 
-/** Motivos de recusa de acesso, iguais aos das funções de artistas. */
-export type PanelAccessReason = 'unauthenticated' | 'not-staff' | 'no-section';
+/**
+ * Motivos de recusa de acesso, iguais aos das funções de artistas. O
+ * `admin-only` é das callables só de admin, sem seção (os pedidos de dados,
+ * seção 32, decisão 6), pelo `readPanelAdmin`.
+ */
+export type PanelAccessReason = 'unauthenticated' | 'not-staff' | 'no-section' | 'admin-only';
 
 export function panelAccessError(reason: PanelAccessReason, section?: SectionId): HttpsError {
   if (reason === 'unauthenticated') {
@@ -61,6 +65,11 @@ export function panelAccessError(reason: PanelAccessReason, section?: SectionId)
   }
   if (reason === 'not-staff') {
     return new HttpsError('permission-denied', 'Só a equipe ativa do painel pode fazer isso.', {
+      reason,
+    });
+  }
+  if (reason === 'admin-only') {
+    return new HttpsError('permission-denied', 'Só um admin do painel pode fazer isso.', {
       reason,
     });
   }
@@ -105,4 +114,27 @@ export async function readPanelActor(
     throw panelAccessError('no-section', section);
   }
   return { uid: caller.uid, name: nameOf(member), role: roleOf(member) };
+}
+
+/**
+ * Quem chamou uma callable só de admin (os pedidos de dados, seção 32,
+ * decisão 6), lido de staff/{uid} no molde do `readPanelActor`, sem seção:
+ * fora da equipe ativa (ou sessão de antes do `authValidAfter`) é
+ * `not-staff`; ativo com outro papel, `admin-only` (o editor com todas as
+ * seções também). A callable chama de novo dentro da transação: quem perde o
+ * papel no meio não grava.
+ */
+export async function readPanelAdmin(
+  read: PanelReader,
+  db: Firestore,
+  caller: CallerAuth | undefined,
+): Promise<PanelActor> {
+  if (!caller) throw panelAccessError('unauthenticated');
+  const member = (await read(db.collection('staff').doc(caller.uid))).data() as
+    StaffMember | undefined;
+  if (!member || !isActiveMember(member, caller.token.auth_time)) {
+    throw panelAccessError('not-staff');
+  }
+  if (member.role !== 'admin') throw panelAccessError('admin-only');
+  return { uid: caller.uid, name: nameOf(member), role: 'admin' };
 }

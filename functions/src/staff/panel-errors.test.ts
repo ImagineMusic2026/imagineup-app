@@ -2,7 +2,8 @@ import type { DocumentReference, DocumentSnapshot, Firestore } from 'firebase-ad
 import { describe, expect, it } from 'vitest';
 
 import { panelOrigins } from './config';
-import { readPanelActor } from './panel-actor';
+import { SECTION_IDS } from './model';
+import { panelAccessError, readPanelActor, readPanelAdmin } from './panel-actor';
 import {
   aboveLimitError,
   dailyLimitError,
@@ -14,7 +15,8 @@ import {
 
 // O que as callables do bloco 11 dividem (26.4 e 26.5): o fã alvo e a recusa
 // da própria conta, as mensagens com o número em pt-BR, o papel no PanelActor
-// e as portas do painel local no emulador.
+// e as portas do painel local no emulador. Desde os pedidos de dados (seção
+// 32, 32.2), os motivos novos e o acesso só de admin (`readPanelAdmin`).
 
 const caller = { uid: 'uidEquipe', token: { auth_time: 100 } };
 
@@ -118,6 +120,115 @@ describe('o papel de quem chama', () => {
       ).rejects.toMatchObject({
         message: `Seu acesso ao painel não permite fazer isso em ${label}.`,
       });
+    }
+  });
+});
+
+describe('os motivos dos pedidos de dados (32.2)', () => {
+  it.each([
+    [
+      'recent-login-required',
+      'failed-precondition',
+      'Entre de novo com a sua senha para continuar.',
+    ],
+    [
+      'email-mismatch',
+      'failed-precondition',
+      'Este e-mail não é o da conta deste fã. Confira o e-mail do pedido.',
+    ],
+    [
+      'fan-is-staff',
+      'failed-precondition',
+      'Esta conta também é da equipe do painel. Tire a pessoa da Equipe antes de excluir a conta.',
+    ],
+    [
+      'export-daily-limit',
+      'resource-exhausted',
+      'Você chegou ao limite de 20 exportações de dados hoje.',
+    ],
+    [
+      'deletion-daily-limit',
+      'resource-exhausted',
+      'Você chegou ao limite de 5 exclusões de conta hoje.',
+    ],
+  ] as const)('%s: %s, com a mensagem de 32.2', (reason, code, message) => {
+    expect(panelError(reason)).toMatchObject({ code, message, details: { reason } });
+  });
+
+  it('o admin-only é um motivo de acesso', () => {
+    expect(panelAccessError('admin-only')).toMatchObject({
+      code: 'permission-denied',
+      message: 'Só um admin do painel pode fazer isso.',
+      details: { reason: 'admin-only' },
+    });
+  });
+});
+
+describe('só admin (readPanelAdmin)', () => {
+  const reader =
+    (data: Record<string, unknown> | undefined) =>
+    async (_ref: DocumentReference): Promise<DocumentSnapshot> =>
+      ({ data: () => data }) as unknown as DocumentSnapshot;
+  const read: string[] = [];
+  const db = {
+    collection: (name: string) => ({
+      doc: (id: string) => {
+        read.push(`${name}/${id}`);
+        return { id };
+      },
+    }),
+  } as unknown as Firestore;
+  const member = (fields: Record<string, unknown>) => ({
+    status: 'active',
+    role: 'admin',
+    sections: [...SECTION_IDS],
+    displayName: 'Admin',
+    ...fields,
+  });
+  const reasonOf = async (promise: Promise<unknown>) => {
+    try {
+      await promise;
+    } catch (error) {
+      return (error as { details: { reason: string } }).details.reason;
+    }
+    throw new Error('Deveria ter falhado.');
+  };
+
+  it('o admin ativo passa, lido de staff/{uid}, com o papel', async () => {
+    read.length = 0;
+    await expect(readPanelAdmin(reader(member({})), db, caller)).resolves.toEqual({
+      uid: 'uidEquipe',
+      name: 'Admin',
+      role: 'admin',
+    });
+    expect(read).toEqual(['staff/uidEquipe']);
+  });
+
+  it('sem login, unauthenticated, sem ler nada', async () => {
+    read.length = 0;
+    expect(await reasonOf(readPanelAdmin(reader(member({})), db, undefined))).toBe(
+      'unauthenticated',
+    );
+    expect(read).toEqual([]);
+  });
+
+  it('fora da equipe ativa, not-staff: sem o documento, pendente, desativado ou sessão de antes do vínculo', async () => {
+    expect(await reasonOf(readPanelAdmin(reader(undefined), db, caller))).toBe('not-staff');
+    for (const status of ['pending', 'disabled']) {
+      expect(await reasonOf(readPanelAdmin(reader(member({ status })), db, caller))).toBe(
+        'not-staff',
+      );
+    }
+    expect(
+      await reasonOf(readPanelAdmin(reader(member({ authValidAfter: 101 })), db, caller)),
+    ).toBe('not-staff');
+  });
+
+  it('ativo sem ser admin, admin-only: o editor com todas as seções e o Leitor também', async () => {
+    for (const role of ['editor', 'viewer', 'dono', undefined]) {
+      expect(await reasonOf(readPanelAdmin(reader(member({ role })), db, caller))).toBe(
+        'admin-only',
+      );
     }
   });
 });

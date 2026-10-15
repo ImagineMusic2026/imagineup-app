@@ -9,7 +9,7 @@ import {
  * O filtro do que o fã publica (docs/arquitetura-api.md, seção 30): o
  * comentário, o nome, o @, a bio, a cidade e as redes. Tudo puro e sem
  * leitura. A lista compila na primeira conferência, nunca na carga do módulo
- * (as 66 funções dividem o pacote, e as fracionadas não pagam isso na partida
+ * (as 68 funções dividem o pacote, e as fracionadas não pagam isso na partida
  * a frio), e as respostas são só sim ou não.
  */
 

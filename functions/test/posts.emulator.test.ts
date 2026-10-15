@@ -776,7 +776,8 @@ describe('seed do mural e da agenda (21.14)', () => {
     const clip = await http(env, '/posts/p-clipe', { token: camila.token });
     expect(clip.body).toMatchObject({
       kind: 'video',
-      media: { url: null, thumbnailUrl: null, width: 1920, height: 1080 },
+      // O vídeo do seed sem mídia: o posterUrl null (33.2, decisão 25 da seção 32).
+      media: { url: null, thumbnailUrl: null, posterUrl: null, width: 1920, height: 1080 },
       likeCount: 3,
       commentCount: 4,
       likedByMe: false,
