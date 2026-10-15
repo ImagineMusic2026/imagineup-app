@@ -322,10 +322,10 @@ describe('mídia dos posts (posts/{id}/)', () => {
     const mp4 = { contentType: 'video/mp4' };
     await assertSucceeds(upload(as('editora'), postPath('p-video'), {}));
     await assertSucceeds(
-      upload(as('editora'), postPath('p-video', 'mp4'), { ...mp4, size: 50 * MB }),
+      upload(as('editora'), postPath('p-video', 'mp4'), { ...mp4, size: 20 * MB }),
     );
     await assertFails(
-      upload(as('editora'), postPath('p-video', 'mp4'), { ...mp4, size: 50 * MB + 1 }),
+      upload(as('editora'), postPath('p-video', 'mp4'), { ...mp4, size: 20 * MB + 1 }),
     );
     await assertFails(upload(as('editora'), postPath('p-photo', 'mp4'), mp4));
     for (const postId of ['p-text', 'p-event']) {
