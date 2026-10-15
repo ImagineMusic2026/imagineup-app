@@ -10,6 +10,7 @@ Contrato assinado com a IMAGINE MUSIC LTDA, 10 entregas mensais. O painel admin 
 - O protótipo é `Projetos/imagineup/ImagineUP.dc.html`. Os códigos de tela (1b, 1d, 1e...) usados nos comentários vêm dele.
 - A Expo muda API a cada SDK. Antes de escrever código que toca Expo, EAS ou React Native, confira a doc da versão instalada: `https://docs.expo.dev/versions/v57.0.0/` e `https://docs.expo.dev/llms.txt`. Não confie em memória.
 - Instale dependência sempre com `npx expo install <pacote>`: o npm puro puxa majors incompatíveis (gesture-handler 3, async-storage 3, reanimated 4.7, RN 0.87).
+- Pacote novo com script de instalação (`npm install-scripts ls` mostra) entra no `allowScripts` do `package.json` da raiz ou de `functions/`, só pelo nome: `npm install-scripts approve --no-allow-scripts-pin <pacote>`. O npm 11 só avisa, e o script roda; o npm 12 bloqueia o que não está na lista, e o da `@shopify/react-native-skia` copia os binários que a build nativa local usa. O lock foi gravado pelo npm 11, que deixa de fora 22 pares opcionais (o `react-native-web` e os dele) que o npm 10 punha; o npm 10 do CI e da EAS aceita o lock assim.
 
 ## Escopo do contrato
 

@@ -93,5 +93,11 @@
         "@shopify/flash-list"
       ]
     }
+  },
+  "allowScripts": {
+    "@shopify/react-native-skia": true,
+    "@firebase/util": true,
+    "protobufjs": true,
+    "unrs-resolver": true
   }
 }
