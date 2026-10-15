@@ -6,7 +6,7 @@ As decisões de arquitetura, a estrutura de pastas e as regras do projeto estão
 
 ## Requisitos
 
-- Node 22.13 ou mais novo.
+- Node 24.20 ou mais novo, com o npm 11.18 ou mais novo, para instalar e mudar dependências: o `package-lock.json` é o do npm 11, e o `allowScripts` pede o `npm install-scripts`. O CI e a EAS seguem no Node 22, com o npm 10, que aceita o lock.
 - EAS CLI 18 ou mais novo: `npm i -g eas-cli@latest`, depois `eas login`.
 - Para Android: um aparelho com o APK de desenvolvimento, ou o emulador do Android Studio.
 - Para iPhone, enquanto não houver conta Apple Developer nem Mac: o app Expo Go.
