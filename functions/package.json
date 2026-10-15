@@ -24,6 +24,7 @@
   },
   "allowScripts": {
     "@firebase/util": true,
+    "fsevents": true,
     "protobufjs": true
   }
 }

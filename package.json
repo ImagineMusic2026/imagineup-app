@@ -96,6 +96,7 @@
   },
   "allowScripts": {
     "@shopify/react-native-skia": true,
+    "fsevents": true,
     "@firebase/util": true,
     "protobufjs": true,
     "unrs-resolver": true
