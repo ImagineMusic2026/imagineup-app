@@ -35,7 +35,7 @@ import { CommentComposer, type CommentComposerHandle } from '../components/comme
 import { CommentRow, CommentRowsSkeleton } from '../components/comment-row';
 import { PostActions } from '../components/post-actions';
 import { PostAuthorRow } from '../components/post-author-row';
-import { PostContent, PostSkeleton } from '../components/post-content';
+import { PostContent, PostSkeleton, type MediaBox } from '../components/post-content';
 import {
   useAddCommentMutation,
   useCommentsQuery,
@@ -97,24 +97,54 @@ export function unsentCount(local: readonly PostComment[], server: readonly Post
   return local.filter((comment) => comment.status === 'pending' && !saved.has(comment.id)).length;
 }
 
-/** Autor, texto, mídia, ações e o título dos comentários, antes da lista. */
+/**
+ * Mais da metade da mídia saiu da parte da lista à vista (`top` e `height` no
+ * conteúdo da lista, `scrollY` e `viewport` da rolagem). Sem altura, nunca.
+ */
+export function isMediaMostlyOffscreen(
+  media: MediaBox,
+  scrollY: number,
+  viewport: number,
+): boolean {
+  if (media.height <= 0) return false;
+  const visible =
+    Math.min(media.top + media.height, scrollY + viewport) - Math.max(media.top, scrollY);
+  return Math.max(0, visible) < media.height / 2;
+}
+
+/**
+ * Autor, texto, mídia, ações e o título dos comentários, antes da lista. É um
+ * componente estável, passado à lista como elemento: remontado, ele tiraria o
+ * player, e o vídeo voltaria ao começo a cada curtida.
+ */
 function PostHeader({
   post,
   now,
   onToggleLike,
   likeAward,
   onComment,
+  mediaOffscreen,
+  onMediaLayout,
+  onVideoError,
 }: {
   post: Post;
   now: Date;
   onToggleLike: () => void;
   likeAward: LikeAward | null;
   onComment: () => void;
+  mediaOffscreen: boolean;
+  onMediaLayout: (box: MediaBox) => void;
+  onVideoError: () => void;
 }) {
   return (
     <View>
       <PostAuthorRow post={post} now={now} />
-      <PostContent post={post} />
+      <PostContent
+        post={post}
+        mediaOffscreen={mediaOffscreen}
+        onMediaLayout={onMediaLayout}
+        onVideoError={onVideoError}
+      />
       <PostActions
         post={post}
         onToggleLike={onToggleLike}
@@ -186,6 +216,10 @@ export function PostDetailsScreen() {
   const scrollY = useRef(0);
   const pendingReveal = useRef<string | null>(null);
   const [sentKeys, setSentKeys] = useState<ReadonlySet<string>>(() => new Set());
+  // A caixa da mídia no conteúdo da lista: o post é o cabeçalho dela, que começa
+  // no topo do conteúdo, e a mídia mede a posição dela dentro do post.
+  const mediaBox = useRef<MediaBox | null>(null);
+  const [mediaOffscreen, setMediaOffscreen] = useState(false);
 
   const serverComments = comments.data?.pages.flatMap((page) => page.items) ?? [];
   const items = mergeComments(local.comments, serverComments);
@@ -272,8 +306,25 @@ export function PostDetailsScreen() {
     void comments.fetchNextPage({ cancelRefetch: false });
   };
 
+  // O vídeo pausa quando mais da metade dele sai da tela (seção 33, decisão 19).
+  // O estado só muda na virada, e não a cada quadro da rolagem.
   const handleScroll = (event: NativeSyntheticEvent<NativeScrollEvent>): void => {
-    scrollY.current = event.nativeEvent.contentOffset.y;
+    const { contentOffset, layoutMeasurement } = event.nativeEvent;
+    scrollY.current = contentOffset.y;
+    const box = mediaBox.current;
+    if (box) {
+      setMediaOffscreen(isMediaMostlyOffscreen(box, contentOffset.y, layoutMeasurement.height));
+    }
+  };
+
+  const measureMedia = (box: MediaBox): void => {
+    mediaBox.current = box;
+  };
+
+  // O mp4 trocado no painel some na hora, e a URL guardada dá 404: o post vem
+  // de novo, e o "Tentar de novo" do vídeo toca a URL que chegar.
+  const refetchAfterVideoError = (): void => {
+    void post.refetch();
   };
 
   const header = (
@@ -379,6 +430,9 @@ export function PostDetailsScreen() {
               onToggleLike={() => like.toggle(current.id, !current.likedByMe)}
               likeAward={like.award}
               onComment={() => composer.current?.focus()}
+              mediaOffscreen={mediaOffscreen}
+              onMediaLayout={measureMedia}
+              onVideoError={refetchAfterVideoError}
             />
           }
           ListEmptyComponent={renderPlaceholder()}

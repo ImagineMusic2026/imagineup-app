@@ -6,9 +6,13 @@ import * as WebBrowser from 'expo-web-browser';
 import { FirebaseError } from 'firebase/app';
 import {
   createUserWithEmailAndPassword,
+  getAdditionalUserInfo,
+  linkWithCredential,
   sendPasswordResetEmail,
+  signInWithCredential,
   signInWithEmailAndPassword,
   updateProfile,
+  type AdditionalUserInfo,
   type UserCredential,
 } from 'firebase/auth';
 import { onSnapshot } from 'firebase/firestore';
@@ -16,14 +20,18 @@ import { AccessibilityInfo } from 'react-native';
 
 import AuthLayout from '@/app/(auth)/_layout';
 import SignUpRoute from '@/app/(auth)/cadastro';
+import SocialInviteRoute from '@/app/(auth)/codigo-de-convite';
 import WelcomeRoute from '@/app/(auth)/entrar';
 import SignInRoute from '@/app/(auth)/entrar-com-email';
 import InviteRoute from '@/app/convite/[codigo]';
 import { sendInviteClaim } from '@/domains/auth/api';
+import { releaseHeldSignUp } from '@/domains/auth/hooks/use-sign-up';
 import { readBoundInvite, savePendingInvite } from '@/domains/invites';
 import { t } from '@/i18n';
 import { ApiError } from '@/services/api';
+import { googleIdToken, signOutGoogle } from '@/services/google-sign-in';
 import { haptics } from '@/services/haptics';
+import { usePreferencesStore } from '@/stores/preferences';
 import { useSessionStore } from '@/stores/session';
 
 // O build do Firebase que o Jest resolve é ESM; as telas só precisam destas peças.
@@ -44,11 +52,31 @@ jest.mock('firebase/auth', () => ({
   signInWithEmailAndPassword: jest.fn(),
   signOut: jest.fn(),
   onAuthStateChanged: jest.fn(),
+  // A entrada pela Apple e pelo Google (seção 33): a credencial e o resto.
+  OAuthProvider: jest.fn((providerId: string) => ({
+    credential: (options: Record<string, unknown>) => ({ providerId, ...options }),
+  })),
+  GoogleAuthProvider: {
+    credential: jest.fn((idToken: string) => ({ providerId: 'google.com', idToken })),
+  },
+  signInWithCredential: jest.fn(),
+  getAdditionalUserInfo: jest.fn(),
+  linkWithCredential: jest.fn(),
 }));
 
 jest.mock('firebase/firestore', () => ({
   doc: jest.fn((_db: unknown, ...path: string[]) => path.join('/')),
   onSnapshot: jest.fn(() => () => undefined),
+  updateDoc: jest.fn(() => Promise.resolve()),
+  serverTimestamp: jest.fn(() => 'agora-do-servidor'),
+}));
+
+// O Google ligado neste aparelho, com a folha falsa: o teste escolhe a conta.
+jest.mock('@/services/google-sign-in', () => ({
+  ...jest.requireActual('@/services/google-sign-in'),
+  isGoogleSignInAvailable: () => true,
+  googleIdToken: jest.fn(),
+  signOutGoogle: jest.fn(() => Promise.resolve()),
 }));
 
 // Sem .env no Jest: a API fica de fora (fixtures) e o aviso de configuração não polui a saída.
@@ -99,22 +127,39 @@ const appTree = {
   '(auth)/entrar': WelcomeRoute,
   '(auth)/entrar-com-email': SignInRoute,
   '(auth)/cadastro': SignUpRoute,
+  '(auth)/codigo-de-convite': SocialInviteRoute,
   'convite/[codigo]': InviteRoute,
 };
 
 const announce = () => jest.mocked(AccessibilityInfo.announceForAccessibility);
+
+/** O que o Firebase devolve ao entrar com e-mail e senha: a conta da Camila. */
+const SIGNED_IN = {
+  user: { uid: 'camila', email: 'camila@x.com', providerData: [{ providerId: 'password' }] },
+} as unknown as UserCredential;
+
+/** Abre a rota e espera o sistema responder se a Apple está disponível na 1k. */
+async function open(initialUrl: string): Promise<ReturnType<typeof renderRouter>> {
+  const view = renderRouter(appTree, { initialUrl });
+  await act(async () => undefined);
+  return view;
+}
 
 beforeEach(async () => {
   await AsyncStorage.clear();
   jest.clearAllMocks();
   jest.spyOn(haptics, 'trigger').mockImplementation(() => undefined);
   jest.spyOn(AccessibilityInfo, 'announceForAccessibility').mockImplementation(() => undefined);
+  jest
+    .spyOn(AccessibilityInfo, 'announceForAccessibilityWithOptions')
+    .mockImplementation(() => undefined);
   useSessionStore.setState({ status: 'signedOut', user: null, authHolds: 0 });
+  usePreferencesStore.setState({ lastSignInMethod: null, hasCompletedOnboarding: false });
 });
 
 describe('entrada no app', () => {
   it('a abertura leva ao cadastro e a entrar com e-mail, e os rodapés trocam entre eles', async () => {
-    const view = renderRouter(appTree, { initialUrl: '/entrar' });
+    const view = await open('/entrar');
     expect(screen.getByRole('header', { name: t('auth.welcome.title') })).toBeTruthy();
 
     fireEvent.press(screen.getByRole('button', { name: t('auth.welcome.createAccount') }));
@@ -132,16 +177,18 @@ describe('entrada no app', () => {
   });
 
   it('formulário aberto a frio: o voltar leva à abertura', async () => {
-    const view = renderRouter(appTree, { initialUrl: '/entrar-com-email' });
+    const view = await open('/entrar-com-email');
 
-    fireEvent.press(screen.getByRole('button', { name: t('common.back') }));
+    await act(async () => {
+      fireEvent.press(screen.getByRole('button', { name: t('common.back') }));
+    });
 
     await waitFor(() => expect(view.getPathname()).toBe('/entrar'));
     expect(screen.getByRole('header', { name: t('auth.welcome.title') })).toBeTruthy();
   });
 
-  it('os termos e a privacidade abrem as páginas do site, como links', () => {
-    renderRouter(appTree, { initialUrl: '/entrar' });
+  it('os termos e a privacidade abrem as páginas do site, como links', async () => {
+    await open('/entrar');
 
     const terms = screen.getByRole('link', { name: t('auth.terms.termsLink') });
     fireEvent.press(terms);
@@ -177,7 +224,7 @@ describe('entrar com e-mail', () => {
     let heldWhileSigningIn = false;
     jest.mocked(signInWithEmailAndPassword).mockImplementation(async () => {
       heldWhileSigningIn = useSessionStore.getState().authHolds > 0;
-      return {} as UserCredential;
+      return SIGNED_IN;
     });
     renderRouter(appTree, { initialUrl: '/entrar-com-email' });
 
@@ -228,7 +275,7 @@ describe('entrar com e-mail', () => {
 
   it('o aviso da redefinição de senha sai quando o fã tenta entrar', async () => {
     jest.mocked(sendPasswordResetEmail).mockResolvedValue(undefined);
-    jest.mocked(signInWithEmailAndPassword).mockResolvedValue({} as UserCredential);
+    jest.mocked(signInWithEmailAndPassword).mockResolvedValue(SIGNED_IN);
     renderRouter(appTree, { initialUrl: '/entrar-com-email' });
 
     fireEvent.changeText(screen.getByLabelText(t('auth.email')), 'camila@x.com');
@@ -524,6 +571,7 @@ describe('cadastro', () => {
       await act(async () => {
         router.replace('/entrar');
       });
+      await act(async () => undefined);
       await waitFor(() => expect(view.getPathname()).toBe('/entrar'));
       expect(useSessionStore.getState().authHolds).toBe(0);
     });
@@ -576,5 +624,211 @@ describe('esqueci minha senha', () => {
 
     expect(await screen.findByText(t('auth.signIn.resetSent'))).toBeTruthy();
     expect(sendPasswordResetEmail).toHaveBeenCalledWith({}, 'camila@x.com');
+  });
+});
+
+describe('entrar pela Apple e pelo Google (seção 33)', () => {
+  const credentialSignIn = jest.mocked(signInWithCredential);
+  const newAccount = { uid: 'social', email: 'bia@gmail.com', displayName: 'Bia Souza' };
+  const claim = jest.mocked(sendInviteClaim);
+
+  /** A credencial do provedor entra no Firebase: a conta nasce agora, ou já existia. */
+  function providerSignsIn(isNewUser: boolean, providerId = 'apple.com'): void {
+    credentialSignIn.mockResolvedValueOnce({
+      user: { ...newAccount, photoURL: null, providerData: [{ providerId, uid: 'p-1' }] },
+    } as unknown as UserCredential);
+    jest
+      .mocked(getAdditionalUserInfo)
+      .mockReturnValueOnce({ isNewUser } as unknown as AdditionalUserInfo);
+  }
+
+  /** O perfil nasce na hora em que a entrada passa a esperar por ele. */
+  function profileArrivesAtOnce(): void {
+    jest.mocked(onSnapshot).mockImplementation(((_ref: unknown, next: (snap: unknown) => void) => {
+      next({ exists: () => true, data: () => ({ displayName: 'Bia Souza' }) });
+      return () => undefined;
+    }) as unknown as typeof onSnapshot);
+  }
+
+  afterEach(() => {
+    jest.mocked(onSnapshot).mockImplementation(() => () => undefined);
+    // A trava que um teste deixou estacionada no passo do convite não passa ao seguinte.
+    releaseHeldSignUp();
+    useSessionStore.setState({ authHolds: 0 });
+  });
+
+  it('a 1k mostra a Apple e o Google acima dos de e-mail, com a linha da última entrada', async () => {
+    usePreferencesStore.setState({ lastSignInMethod: 'google' });
+    await open('/entrar');
+
+    expect(screen.getByText(t('auth.welcome.lastMethod.google'))).toBeTruthy();
+    const names = screen
+      .getAllByRole('button')
+      .map((node) => node.props.accessibilityLabel as string | undefined)
+      .filter((name) => name !== undefined);
+    expect(names).toEqual([
+      'Continuar com a Apple',
+      t('auth.welcome.google'),
+      t('auth.welcome.createAccount'),
+      t('auth.welcome.haveAccount'),
+    ]);
+  });
+
+  it('a conta nova sem convite de link para no passo do convite, ainda segura, e "Pular" solta', async () => {
+    providerSignsIn(true);
+    profileArrivesAtOnce();
+    const view = await open('/entrar');
+
+    await act(async () => {
+      fireEvent.press(screen.getByRole('button', { name: 'Continuar com a Apple' }));
+    });
+
+    await waitFor(() => expect(view.getPathname()).toBe('/codigo-de-convite'));
+    expect(screen.getByRole('header', { name: t('auth.socialInvite.title') })).toBeTruthy();
+    expect(screen.getByText(t('auth.socialInvite.lead'))).toBeTruthy();
+    // O campo e a regra do cadastro.
+    expect(screen.getByLabelText(t('auth.signUp.inviteCode'))).toHaveProp(
+      'accessibilityHint',
+      t('auth.signUp.inviteCodeHint'),
+    );
+    // A conta já existe: sem voltar, e o fã segue seguro.
+    expect(screen.getByRole('button', { name: t('common.back') })).toBeDisabled();
+    expect(useSessionStore.getState().authHolds).toBe(1);
+    expect(useSessionStore.getState().user).toMatchObject({
+      uid: 'social',
+      signInProvider: 'apple',
+    });
+    expect(usePreferencesStore.getState().lastSignInMethod).toBe('apple');
+
+    await act(async () => {
+      fireEvent.press(screen.getByRole('button', { name: t('auth.socialInvite.skip') }));
+    });
+    await waitFor(() => expect(useSessionStore.getState().authHolds).toBe(0));
+    expect(claim).not.toHaveBeenCalled();
+  });
+
+  it('no passo do convite, o código recusado fica no campo, e o corrigido segue e solta', async () => {
+    providerSignsIn(true);
+    profileArrivesAtOnce();
+    claim.mockRejectedValueOnce(
+      new ApiError('notFound', 'Convite não encontrado.', 404, 'invite_not_found'),
+    );
+    const view = await open('/entrar');
+    await act(async () => {
+      fireEvent.press(screen.getByRole('button', { name: 'Continuar com a Apple' }));
+    });
+    await waitFor(() => expect(view.getPathname()).toBe('/codigo-de-convite'));
+
+    fireEvent.changeText(screen.getByLabelText(t('auth.signUp.inviteCode')), 'errado12');
+    await act(async () => {
+      fireEvent.press(screen.getByRole('button', { name: t('auth.signUp.continue') }));
+    });
+
+    const message = t('auth.signUp.inviteRejected.notFound');
+    await waitFor(() => expect(announce()).toHaveBeenCalledWith(message));
+    expect(screen.getByLabelText(t('auth.signUp.inviteCode'))).toHaveProp(
+      'accessibilityHint',
+      `${message} ${t('auth.signUp.inviteCodeHint')}`,
+    );
+    expect(useSessionStore.getState().authHolds).toBe(1);
+    expect(haptics.trigger).toHaveBeenCalledWith('error');
+
+    claim.mockResolvedValueOnce({ status: 'claimed' });
+    fireEvent.changeText(screen.getByLabelText(t('auth.signUp.inviteCode')), 'certo-123');
+    await act(async () => {
+      fireEvent.press(screen.getByRole('button', { name: t('auth.signUp.continue') }));
+    });
+    await waitFor(() => expect(useSessionStore.getState().authHolds).toBe(0));
+    expect(claim).toHaveBeenLastCalledWith(
+      expect.objectContaining({ uid: 'social', code: 'CERTO123', via: 'code' }),
+    );
+  });
+
+  it('o passo do convite aberto a frio, sem fã seguro, volta à abertura', async () => {
+    const view = await open('/codigo-de-convite');
+
+    await waitFor(() => expect(view.getPathname()).toBe('/entrar'));
+  });
+
+  it('a conta que já existia não passa pelo passo do convite', async () => {
+    providerSignsIn(false, 'google.com');
+    jest.mocked(googleIdToken).mockResolvedValueOnce({ idToken: 'id-1', email: 'bia@gmail.com' });
+    const view = await open('/entrar');
+
+    await act(async () => {
+      fireEvent.press(screen.getByRole('button', { name: t('auth.welcome.google') }));
+    });
+
+    await waitFor(() => expect(useSessionStore.getState().authHolds).toBe(0));
+    expect(view.getPathname()).toBe('/entrar');
+    expect(usePreferencesStore.getState().lastSignInMethod).toBe('google');
+  });
+
+  describe('o modo "ligar"', () => {
+    const LINK_EMAIL = 'bia@empresa.com';
+
+    /** O Google fora do Gmail esbarra numa conta de senha com o mesmo e-mail. */
+    async function reachLinkMode(): Promise<ReturnType<typeof renderRouter>> {
+      jest.mocked(googleIdToken).mockResolvedValueOnce({ idToken: 'id-1', email: LINK_EMAIL });
+      credentialSignIn.mockRejectedValueOnce(
+        new FirebaseError('auth/account-exists-with-different-credential', 'outro método'),
+      );
+      const view = await open('/entrar');
+      await act(async () => {
+        fireEvent.press(screen.getByRole('button', { name: t('auth.welcome.google') }));
+      });
+      await waitFor(() => expect(view.getPathname()).toBe('/entrar-com-email'));
+      return view;
+    }
+
+    it('abre o entrar com o e-mail do Google preenchido e a frase da ligação', async () => {
+      await reachLinkMode();
+
+      expect(screen.getByLabelText(t('auth.email'))).toHaveProp('value', LINK_EMAIL);
+      expect(screen.getByText(`${t('auth.link.lead')} ${t('auth.link.noPassword')}`)).toBeTruthy();
+      expect(screen.queryByText(t('auth.signIn.lead'))).toBeNull();
+      expect(useSessionStore.getState().authHolds).toBe(0);
+    });
+
+    it('entrar com a senha liga o Google à conta e anuncia', async () => {
+      jest.mocked(signInWithEmailAndPassword).mockResolvedValueOnce({
+        user: { uid: 'camila', email: LINK_EMAIL, providerData: [{ providerId: 'password' }] },
+      } as unknown as UserCredential);
+      jest.mocked(linkWithCredential).mockResolvedValueOnce({} as UserCredential);
+      await reachLinkMode();
+
+      fireEvent.changeText(screen.getByLabelText(t('auth.password')), 'senha-123');
+      await act(async () => {
+        fireEvent.press(screen.getByRole('button', { name: t('auth.signIn.submit') }));
+      });
+
+      await waitFor(() =>
+        expect(AccessibilityInfo.announceForAccessibilityWithOptions).toHaveBeenCalledWith(
+          t('auth.link.done'),
+          { queue: true },
+        ),
+      );
+      expect(linkWithCredential).toHaveBeenCalledWith(expect.objectContaining({ uid: 'camila' }), {
+        providerId: 'google.com',
+        idToken: 'id-1',
+      });
+    });
+
+    it('sair da tela sem entrar esquece a ligação e sai do Google', async () => {
+      await reachLinkMode();
+      jest.mocked(signOutGoogle).mockClear();
+
+      await act(async () => {
+        fireEvent.press(screen.getByRole('button', { name: t('common.back') }));
+      });
+
+      expect(signOutGoogle).toHaveBeenCalledTimes(1);
+      // A próxima entrada com e-mail não liga nada.
+      await act(async () => {
+        fireEvent.press(screen.getByRole('button', { name: t('auth.welcome.haveAccount') }));
+      });
+      expect(screen.getByLabelText(t('auth.email'))).toHaveProp('value', '');
+      expect(screen.getByText(t('auth.signIn.lead'))).toBeTruthy();
+    });
   });
 });

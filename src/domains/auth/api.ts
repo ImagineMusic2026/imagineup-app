@@ -1,7 +1,6 @@
 import { FirebaseError } from 'firebase/app';
 import {
   createUserWithEmailAndPassword,
-  deleteUser,
   EmailAuthProvider,
   onAuthStateChanged,
   reauthenticateWithCredential,
@@ -31,26 +30,56 @@ import {
 import { getDb, getFirebaseAuth, isFirebaseConfigured } from '@/firebase';
 import type { TranslationKey } from '@/i18n';
 import { api, ApiError } from '@/services/api';
-import type { SessionUser } from '@/stores/session';
+import type { SessionUser, SignInMethod } from '@/stores/session';
 import { displayNameOrNull } from '@/utils/visible-line';
 
 import { PROFILE_WAIT_MS } from './consts';
 
+const METHOD_BY_PROVIDER: Readonly<Record<string, SignInMethod>> = {
+  password: 'password',
+  'google.com': 'google',
+  'apple.com': 'apple',
+};
+
+/** O jeito de entrar de um `providerId` do Firebase; outro provedor (o Admin SDK, o seed), `null`. */
+export function signInMethodOf(providerId: string | null | undefined): SignInMethod | null {
+  return providerId ? (METHOD_BY_PROVIDER[providerId] ?? null) : null;
+}
+
 export function toSessionUser(user: User): SessionUser {
+  // Sem a lista (usuário montado à mão), conta como sem senha: as linhas de
+  // trocar senha e e-mail só aparecem com certeza.
+  const providers: SignInMethod[] = [];
+  for (const info of user.providerData ?? []) {
+    const method = signInMethodOf(info.providerId);
+    if (method && !providers.includes(method)) providers.push(method);
+  }
   return {
     uid: user.uid,
     email: user.email,
     displayName: user.displayName,
     photoURL: user.photoURL,
-    // Sem a lista (usuário montado à mão), conta como sem senha: as linhas de
-    // trocar senha e e-mail só aparecem com certeza.
-    hasPassword: user.providerData?.some((info) => info.providerId === 'password') ?? false,
+    hasPassword: providers.includes('password'),
+    providers,
   };
 }
 
-/** Por enquanto, só e-mail e senha; Apple, Google e o login automático vêm depois (aprovado). */
-export async function signInWithEmail(email: string, password: string): Promise<void> {
-  await signInWithEmailAndPassword(getFirebaseAuth(), email, password);
+/**
+ * Por onde a sessão entrou: o `signInProvider` do token (seção 33, decisões 9,
+ * 12 e 14), e não a lista de provedores, porque a mesma conta pode ter a Apple
+ * e o Google. Lê o token em cache; vencido, o SDK renova pela rede, e a falha
+ * (sem rede) rejeita. Outro provedor (o Admin SDK, o seed), `null`. Quem chama
+ * não espera por ele para abrir o app.
+ */
+export async function sessionProvider(user: User): Promise<SignInMethod | null> {
+  const { signInProvider } = await user.getIdTokenResult();
+  return signInMethodOf(signInProvider);
+}
+
+/** Entra com e-mail e senha e devolve a conta (a entrada social mora em `social.ts`). */
+export async function signInWithEmail(email: string, password: string): Promise<User> {
+  const { user } = await signInWithEmailAndPassword(getFirebaseAuth(), email, password);
+  return user;
 }
 
 export interface SignUpInput {
@@ -329,49 +358,74 @@ export class SessionEndedError extends Error {
 }
 
 /**
- * Exclui a conta no Firebase Auth. Com `password`, reautentica antes com a
- * credencial de e-mail: o Firebase recusa a exclusão
- * (`auth/requires-recent-login`) quando o login foi há muito tempo. O perfil
- * (`users/{uid}`) e a reserva do @ são apagados no servidor, pela função
- * `deleteUserProfile`; o app não apaga nada no Firestore. A exclusão é uma
- * só chamada ao Auth: ou a conta some, ou fica como estava.
- *
- * Espera a sessão confirmada (o app abre com a sessão presumida). Sem conta
- * logada, ou sem e-mail para reautenticar, devolve `SessionEndedError`: o fã
- * entra de novo e a exclusão passa.
+ * A conta da sessão, confirmada pelo Auth (o app abre com a sessão presumida,
+ * e o SDK pode levar segundos para confirmá-la). Sem conta logada,
+ * `SessionEndedError`.
  */
-export async function deleteAccount(password?: string): Promise<void> {
+export async function confirmedUser(): Promise<User> {
   const auth = getFirebaseAuth();
   await auth.authStateReady();
   const user = auth.currentUser;
   if (!user) throw new SessionEndedError();
-  if (password !== undefined) {
-    // Só e-mail e senha por enquanto; Apple e Google vão reautenticar pelo provedor deles.
-    if (!user.email) throw new SessionEndedError('Conta sem e-mail para reautenticar.');
-    await reauthenticateWithCredential(user, EmailAuthProvider.credential(user.email, password));
+  return user;
+}
+
+/**
+ * A exclusão precisa da sessão confirmada agora, pelo provedor dela (`method`):
+ * o Firebase pediu o login recente (`auth/requires-recent-login`) ou a Apple
+ * ligada pede a confirmação antes da tentativa de revogação (seção 33,
+ * decisão 12). A exclusão em `social.ts` lança este erro.
+ */
+export class RecentLoginRequiredError extends Error {
+  constructor(readonly method: SignInMethod) {
+    super(`A exclusão pede o login recente (${method}).`);
+    this.name = 'RecentLoginRequiredError';
   }
-  await deleteUser(user);
 }
 
 /**
  * Por que a exclusão não passou:
  * - `needsPassword`: o login é antigo, e o Firebase pede a senha de novo;
+ * - `needsGoogle`: o mesmo, na sessão do Google, que confirma pela folha do Google;
  * - `wrongPassword`: a senha da reautenticação não confere;
+ * - `wrongAccount`: a folha do Google ou da Apple voltou com outra conta (`auth/user-mismatch`);
  * - `sessionEnded`: a conta já não está logada (ou sumiu, ou foi desativada);
  * - `network`, `tooManyRequests` e `unknown`: a conta continua como estava.
+ *
+ * O `auth/invalid-credential` só é senha errada no pedido da senha (`method`).
+ * Na reautenticação pelo Google ou pela Apple, é o token da folha que o
+ * Firebase recusou (vencido, de outro público): `unknown`, que a tela mostra,
+ * e não "Senha incorreta.", que só o campo de senha mostra.
  */
 export type DeleteAccountFailure =
-  'needsPassword' | 'wrongPassword' | 'network' | 'tooManyRequests' | 'sessionEnded' | 'unknown';
+  | 'needsPassword'
+  | 'needsGoogle'
+  | 'wrongPassword'
+  | 'wrongAccount'
+  | 'network'
+  | 'tooManyRequests'
+  | 'sessionEnded'
+  | 'unknown';
 
-export function deleteAccountFailure(error: unknown): DeleteAccountFailure {
+export function deleteAccountFailure(
+  error: unknown,
+  method: SignInMethod = 'password',
+): DeleteAccountFailure {
   if (error instanceof SessionEndedError) return 'sessionEnded';
+  if (error instanceof RecentLoginRequiredError) {
+    // A sessão da Apple sempre abre a folha dela: não há estágio a mostrar.
+    if (error.method === 'apple') return 'unknown';
+    return error.method === 'google' ? 'needsGoogle' : 'needsPassword';
+  }
   if (!(error instanceof FirebaseError)) return 'unknown';
   switch (error.code) {
     case 'auth/requires-recent-login':
       return 'needsPassword';
+    case 'auth/user-mismatch':
+      return 'wrongAccount';
     case 'auth/invalid-credential':
     case 'auth/wrong-password':
-      return 'wrongPassword';
+      return method === 'password' ? 'wrongPassword' : 'unknown';
     case 'auth/network-request-failed':
       return 'network';
     case 'auth/too-many-requests':
@@ -393,10 +447,7 @@ export function deleteAccountFailure(error: unknown): DeleteAccountFailure {
  * `SessionEndedError`.
  */
 async function reauthenticatedUser(currentPassword: string): Promise<User> {
-  const auth = getFirebaseAuth();
-  await auth.authStateReady();
-  const user = auth.currentUser;
-  if (!user) throw new SessionEndedError();
+  const user = await confirmedUser();
   if (!user.email) throw new SessionEndedError('Conta sem e-mail para reautenticar.');
   await reauthenticateWithCredential(
     user,
@@ -488,15 +539,32 @@ export function changeEmailFailure(error: unknown): ChangeEmailFailure {
   }
 }
 
-/** Avisa a cada mudança de sessão. Sem Firebase configurado, responde "deslogado". */
-export function listenToAuth(callback: (user: SessionUser | null) => void): () => void {
+/**
+ * Avisa a cada mudança de sessão. Sem Firebase configurado, responde
+ * "deslogado". O provedor da sessão (`sessionProvider`) chega depois, pelo
+ * `onSignInProvider`, só se a conta ainda for a da sessão: ler o token não
+ * segura a abertura.
+ */
+export function listenToAuth(
+  callback: (user: SessionUser | null) => void,
+  onSignInProvider?: (uid: string, provider: SignInMethod | null) => void,
+): () => void {
   if (!isFirebaseConfigured) {
     callback(null);
     return () => undefined;
   }
-  return onAuthStateChanged(getFirebaseAuth(), (user) =>
-    callback(user ? toSessionUser(user) : null),
-  );
+  const auth = getFirebaseAuth();
+  return onAuthStateChanged(auth, (user) => {
+    callback(user ? toSessionUser(user) : null);
+    if (!user || !onSignInProvider) return;
+    // Sem rede com o token vencido, fica sem o provedor, e vale o último
+    // jeito de entrar do aparelho; a próxima mudança de sessão lê de novo.
+    sessionProvider(user)
+      .then((provider) => {
+        if (auth.currentUser?.uid === user.uid) onSignInProvider(user.uid, provider);
+      })
+      .catch(() => undefined);
+  });
 }
 
 /** Qual das ações de conta falhou: muda a mensagem de erro genérica. */

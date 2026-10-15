@@ -12,6 +12,39 @@ const EAS_PROJECT_ID = '6984e734-3efc-40bc-8b9b-4d65bffbe085';
 const BUNDLE_ID = 'br.com.imaginegroup.imagineup';
 const BACKGROUND_COLOR = '#0B0B10';
 
+/**
+ * ID do cliente iOS do Google: o CLIENT_ID do GoogleService-Info.plist do app
+ * iOS no Firebase (33.9 de docs/arquitetura-api.md), e não o REVERSED_CLIENT_ID:
+ * o esquema de volta sai deste. Não é segredo, porque vai dentro do app. Fica
+ * vazio até o dono ligar o Google nos consoles. Vazio, o plugin do Google fica
+ * de fora e o iOS fica sem o Google; o Android não usa o plugin. Preencher muda
+ * o fingerprint: tem de ser antes da build das lojas.
+ */
+const GOOGLE_IOS_CLIENT_ID: string = '';
+
+/** O formato do ID de um cliente do Google, o mesmo que o `src/config/env.ts` confere no do cliente Web. */
+const GOOGLE_CLIENT_ID_PATTERN = /^[\w-]+\.apps\.googleusercontent\.com$/;
+
+/**
+ * O Google no iOS a partir do ID do cliente: o ID e o esquema que devolve o
+ * Google ao app (o ID ao contrário), ou `null` com o ID vazio. Fora do formato
+ * (o REVERSED_CLIENT_ID, `com.googleusercontent.apps...`, colado no lugar, ou um
+ * espaço), lança, e o `expo config` e o `eas build` param: o prebuild passaria
+ * calado, o botão apareceria no iOS com o esquema invertido duas vezes, e o
+ * Google só falharia no TestFlight, com outra build para consertar.
+ */
+export function googleIosSignIn(clientId: string): { clientId: string; urlScheme: string } | null {
+  if (!clientId) return null;
+  if (!GOOGLE_CLIENT_ID_PATTERN.test(clientId)) {
+    throw new Error(
+      'GOOGLE_IOS_CLIENT_ID fora do formato <id>.apps.googleusercontent.com: use o CLIENT_ID do GoogleService-Info.plist, e não o REVERSED_CLIENT_ID.',
+    );
+  }
+  return { clientId, urlScheme: clientId.split('.').reverse().join('.') };
+}
+
+const googleIos = googleIosSignIn(GOOGLE_IOS_CLIENT_ID);
+
 export default ({ config }: ConfigContext): ExpoConfig => ({
   ...config,
   name: 'ImagineUP',
@@ -37,6 +70,8 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   ios: {
     bundleIdentifier: BUNDLE_ID,
     supportsTablet: false,
+    // Entrar com a Apple (seção 33 da nota): a capacidade no App ID.
+    usesAppleSignIn: true,
     infoPlist: {
       CFBundleDevelopmentRegion: 'pt-BR',
       ITSAppUsesNonExemptEncryption: false,
@@ -79,6 +114,20 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
         microphonePermission: false,
       },
     ],
+    // Entrar com a Apple, só no iOS: o entitlement e o texto do botão no idioma do aparelho.
+    'expo-apple-authentication',
+    // Entrar com o Google sem os arquivos do Firebase: com o iosUrlScheme, o
+    // plugin só põe o esquema de volta no Info.plist do iOS. Sem opções, ele
+    // pede o google-services.json e o GoogleService-Info.plist, que o app não
+    // usa. Por isso fica de fora até a constante ser preenchida.
+    ...(googleIos
+      ? [
+          [
+            '@react-native-google-signin/google-signin',
+            { iosUrlScheme: googleIos.urlScheme },
+          ] satisfies [string, { iosUrlScheme: string }],
+        ]
+      : []),
   ],
   experiments: {
     typedRoutes: true,
@@ -86,5 +135,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   },
   extra: {
     eas: EAS_PROJECT_ID ? { projectId: EAS_PROJECT_ID } : {},
+    // O app lê pelo expo-constants. Ausente, o iOS fica sem o Google.
+    ...(googleIos ? { googleIosClientId: googleIos.clientId } : {}),
   },
 });

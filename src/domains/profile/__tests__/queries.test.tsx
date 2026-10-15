@@ -215,6 +215,31 @@ describe('nome e foto das telas', () => {
     });
   });
 
+  it('a foto da sessão (a do Google) não aparece: nem antes do perfil, nem sem ele (seção 33, decisão 13)', async () => {
+    signIn();
+    useSessionStore.setState({
+      user: { ...SESSION_CAMILA, photoURL: 'https://lh3.googleusercontent.com/a/foto-do-google' },
+    });
+    let answer: (snapshot: typeof missing) => void = () => undefined;
+    getDocMock.mockReturnValue(
+      new Promise((resolve) => {
+        answer = resolve;
+      }) as never,
+    );
+
+    const { result } = renderHook(() => useFanIdentity(), { wrapper });
+
+    expect(result.current).toEqual({
+      uid: 'uid-camila',
+      name: 'Camila da Sessão',
+      photoURL: null,
+      loading: true,
+    });
+    await act(async () => answer(missing));
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(result.current.photoURL).toBeNull();
+  });
+
   it('perfil que não existe no servidor fica com o nome da sessão e para de carregar', async () => {
     signIn();
     getDocMock.mockResolvedValue(missing as never);

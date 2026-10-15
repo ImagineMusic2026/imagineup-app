@@ -23,14 +23,21 @@ export interface PostArtist {
 }
 
 /**
- * Uma mídia por post (foto ou vídeo, pelo `kind` do post). O app não toca
- * vídeo: o detalhe mostra a miniatura com um selo de play.
+ * Uma mídia por post (foto ou vídeo, pelo `kind` do post). O vídeo com o mp4
+ * toca no detalhe, ao toque (seção 33); o mural e a grade mostram a capa com a
+ * marca de vídeo.
  */
 export interface PostMedia {
   /** A foto inteira ou o arquivo do vídeo; `null` até existir. */
   url: string | null;
   /** `null` até a foto existir: a miniatura mostra o placeholder de marca pelo id do post. */
   thumbnailUrl: string | null;
+  /**
+   * Só no vídeo: a capa grande (até 1080 de largura), para o detalhe; `null`
+   * sem mídia gravada. Ausente na foto e na `api` de antes do campo (o cache
+   * salvo no aparelho inclusive): o detalhe cai na miniatura (seção 33).
+   */
+  posterUrl?: string | null;
   /** Medidas da mídia em px, para a proporção do detalhe; `null` quando a API não mandar. */
   width: number | null;
   height: number | null;

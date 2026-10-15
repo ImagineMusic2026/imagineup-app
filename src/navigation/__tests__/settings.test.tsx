@@ -21,10 +21,11 @@ import { useAuthListener } from '@/domains/auth';
 import { handOffEmail, readHandedOffEmail } from '@/domains/auth/email-handoff';
 import { useSessionGate } from '@/hooks/use-session-gate';
 import { api } from '@/services/api';
+import { signOutGoogle } from '@/services/google-sign-in';
 import { queryClient, queryPersister } from '@/services/query';
 import { haptics } from '@/services/haptics';
 import { usePreferencesStore } from '@/stores/preferences';
-import { useSessionStore } from '@/stores/session';
+import { useSessionStore, type SignInMethod } from '@/stores/session';
 
 jest.mock('firebase/app', () => ({
   FirebaseError: class FirebaseError extends Error {
@@ -74,6 +75,11 @@ jest.mock('@/config/env', () => ({
   firebaseEmulatorHost: undefined,
 }));
 jest.mock('expo-web-browser', () => ({ openBrowserAsync: jest.fn(() => Promise.resolve()) }));
+// Sair também sai do Google no aparelho (seção 33, decisão 10).
+jest.mock('@/services/google-sign-in', () => ({
+  ...jest.requireActual('@/services/google-sign-in'),
+  signOutGoogle: jest.fn(() => Promise.resolve()),
+}));
 // A config do app que está rodando. O `expoConfig` do jest-expo é um getter
 // que não se troca (null sem manifesto); o resto das constantes segue o real.
 jest.mock('expo-constants', () => {
@@ -227,6 +233,7 @@ beforeEach(() => {
     hydrated: true,
     hasCompletedOnboarding: true,
     lastSessionUid: 'uid-descarte',
+    lastSignInMethod: null,
   });
   queryClient.setQueryData(['profile', 'me', 'uid-descarte'], { username: 'fa711224' });
   jest.spyOn(haptics, 'trigger').mockImplementation(() => undefined);
@@ -434,6 +441,84 @@ describe('Ajustes', () => {
     fireEvent.press(screen.getByRole('button', { name: 'Manter minha conta' }));
     await waitFor(() => expect(view.getPathname()).toBe('/ajustes'));
     expect(deleteUser).not.toHaveBeenCalled();
+  });
+});
+
+describe('a linha "Sair" pelo jeito como a sessão entrou (seção 33, decisão 14)', () => {
+  const EMAIL = 'descarte@teste.imagineup';
+
+  /** A sessão com as contas ligadas e o provedor do token (`undefined`: ainda não chegou). */
+  function setSession(
+    providers: SignInMethod[],
+    signInProvider: SignInMethod | null | undefined,
+  ): void {
+    useSessionStore.setState({
+      user: {
+        uid: 'uid-descarte',
+        email: EMAIL,
+        displayName: null,
+        photoURL: null,
+        hasPassword: providers.includes('password'),
+        providers,
+        ...(signInProvider === undefined ? {} : { signInProvider }),
+      },
+    });
+  }
+
+  it.each([
+    ['com a senha', ['password'], 'password', `Entrou como ${EMAIL}`],
+    ['com o Google', ['google'], 'google', `Entrou com o Google como ${EMAIL}`],
+    // Sem o e-mail, que pode ser o de retransmissão da Apple.
+    ['com a Apple', ['apple'], 'apple', 'Entrou com a Apple'],
+    // A conta com a Apple e o Google diz por onde a sessão entrou, e não a lista.
+    [
+      'com a Apple e o Google, pela sessão do Google',
+      ['apple', 'google'],
+      'google',
+      `Entrou com o Google como ${EMAIL}`,
+    ],
+    [
+      'com a Apple e o Google, pela sessão da Apple',
+      ['apple', 'google'],
+      'apple',
+      'Entrou com a Apple',
+    ],
+    // O token de outro jeito (o Admin SDK, o seed): o texto de sempre.
+    ['por outro jeito', [], null, `Entrou como ${EMAIL}`],
+  ] as const)('%s: %s', (_, providers, provider, meta) => {
+    setSession([...providers], provider);
+    renderRouter(appTree, { initialUrl: '/ajustes' });
+
+    expect(screen.getByText(meta)).toBeTruthy();
+    expect(screen.getByRole('button', { name: `Sair da conta. ${meta}` })).toBeTruthy();
+  });
+
+  it('sem o provedor do token (ainda não chegou, ou sem rede), vale o último jeito de entrar do aparelho', () => {
+    setSession(['apple', 'google'], undefined);
+    usePreferencesStore.setState({ lastSignInMethod: 'apple' });
+    renderRouter(appTree, { initialUrl: '/ajustes' });
+
+    expect(screen.getByRole('button', { name: 'Sair da conta. Entrou com a Apple' })).toBeTruthy();
+  });
+
+  it('a conta só com a Apple e o Google não mostra "Trocar e-mail" nem "Trocar senha"', () => {
+    setSession(['apple', 'google'], 'google');
+    renderRouter(appTree, { initialUrl: '/ajustes' });
+
+    expect(screen.queryByTestId('settings-change-email')).toBeNull();
+    expect(screen.queryByTestId('settings-change-password')).toBeNull();
+  });
+
+  it('Sair também sai do Google no aparelho, e o último jeito de entrar fica', async () => {
+    setSession(['google'], 'google');
+    usePreferencesStore.setState({ lastSignInMethod: 'google' });
+    renderRouter(appTree, { initialUrl: '/ajustes' });
+
+    fireEvent.press(screen.getByTestId('settings-sign-out'));
+
+    await waitFor(() => expect(firebaseSignOut).toHaveBeenCalled());
+    expect(signOutGoogle).toHaveBeenCalledTimes(1);
+    expect(usePreferencesStore.getState().lastSignInMethod).toBe('google');
   });
 });
 

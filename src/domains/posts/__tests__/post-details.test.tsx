@@ -5,10 +5,11 @@ import {
   QueryClientProvider,
   type InfiniteData,
 } from '@tanstack/react-query';
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react-native';
+import { Image } from 'expo-image';
 import { getDoc, onSnapshot } from 'firebase/firestore';
 import type { ReactNode } from 'react';
-import { AccessibilityInfo, Linking } from 'react-native';
+import { AccessibilityInfo, Linking, ScrollView } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { artistKeys } from '@/domains/artists';
@@ -34,8 +35,13 @@ import {
   postsFixture,
 } from '../fixtures';
 import { postKeys, postMutationKeys, registerPostMutationDefaults } from '../queries';
-import type { Page, Post, PostComment } from '../types';
-import { mergeComments, PostDetailsScreen, unsentCount } from '../views/post-details';
+import type { Page, Post, PostComment, PostMedia } from '../types';
+import {
+  isMediaMostlyOffscreen,
+  mergeComments,
+  PostDetailsScreen,
+  unsentCount,
+} from '../views/post-details';
 
 // O nome e a foto de quem comenta vêm do perfil (Firestore).
 jest.mock('firebase/app', () => ({ FirebaseError: class FirebaseError extends Error {} }));
@@ -67,11 +73,22 @@ jest.mock('@/config/data-source', () => ({
 }));
 
 let mockPostId = 'p-clipe';
+// A tela renderiza sem navegador, e o `useIsFocused` de verdade lança fora
+// dele: o foco é um valor que o teste troca (`setFocused`), e o player ouve.
+const mockFocus = { focused: true, listeners: new Set<() => void>() };
 jest.mock('expo-router', () => ({
   ...jest.requireActual('expo-router'),
   router: { push: jest.fn(), back: jest.fn(), canGoBack: () => true, replace: jest.fn() },
   useLocalSearchParams: () => ({ postId: mockPostId }),
   useNavigationContainerRef: () => ({ getRootState: () => undefined }),
+  useIsFocused: () =>
+    jest.requireActual<typeof import('react')>('react').useSyncExternalStore(
+      (listener: () => void) => {
+        mockFocus.listeners.add(listener);
+        return () => mockFocus.listeners.delete(listener);
+      },
+      () => mockFocus.focused,
+    ),
 }));
 
 // Sem layout nativo no Jest, a FlashList não mede nada e não desenha item nenhum.
@@ -1104,5 +1121,281 @@ describe('seção 30: o comentário recusado pelo filtro', () => {
     expect(screen.queryByTestId('comment-refusal')).toBeNull();
     expect(await screen.findByLabelText(sentLabel('Outro texto'))).toBeTruthy();
     await settle();
+  });
+});
+
+describe('seção 33: o vídeo no detalhe', () => {
+  const VIDEO_URL =
+    'https://firebasestorage.googleapis.com/v0/b/imagine-up-app.firebasestorage.app/o/posts%2Fp-clipe%2Fvideo-1.mp4?alt=media&token=v';
+  const NEW_VIDEO_URL =
+    'https://firebasestorage.googleapis.com/v0/b/imagine-up-app.firebasestorage.app/o/posts%2Fp-clipe%2Fvideo-2.mp4?alt=media&token=w';
+  const THUMB_URL =
+    'https://firebasestorage.googleapis.com/v0/b/imagine-up-app.firebasestorage.app/o/posts%2Fp-clipe%2Fthumb-1-480.webp?alt=media&token=t';
+  const POSTER_URL =
+    'https://firebasestorage.googleapis.com/v0/b/imagine-up-app.firebasestorage.app/o/posts%2Fp-clipe%2Fphoto-1-1080.webp?alt=media&token=p';
+  const CLIP_MEDIA: PostMedia = {
+    url: VIDEO_URL,
+    thumbnailUrl: THUMB_URL,
+    posterUrl: POSTER_URL,
+    width: 1080,
+    height: 608,
+  };
+  const PLAY = t('post.details.playVideo', { artist: 'Netto Brito' });
+  const VIDEO_ERROR = t('post.details.videoError');
+
+  /** O player falso do `jest.setup.js`, com o que os testes leem. */
+  interface MockPlayer {
+    source: { uri?: string; useCaching?: boolean };
+    play: jest.Mock;
+    pause: jest.Mock;
+    release: jest.Mock;
+    emit: (event: string, payload: unknown) => void;
+  }
+  const players = () => jest.requireMock<{ mockPlayers: MockPlayer[] }>('expo-video').mockPlayers;
+
+  /**
+   * A API mandando o clipe com estas mídias, uma por busca do detalhe (a
+   * última fica), e o resto como as fixtures.
+   */
+  function clipFromApi(...medias: PostMedia[]): void {
+    mockApi();
+    const answer = get.getMockImplementation();
+    let calls = 0;
+    get.mockImplementation(async (url, config) => {
+      if (url === '/posts/p-clipe') {
+        const media = medias[Math.min(calls, medias.length - 1)];
+        calls += 1;
+        return { data: { ...findPostFixture(new Date(), 'p-clipe'), media } } as never;
+      }
+      return answer?.(url, config) as never;
+    });
+  }
+
+  const detailFetches = () => get.mock.calls.filter(([url]) => url === '/posts/p-clipe').length;
+
+  /** A imagem que a capa do vídeo mostra (a camada fica fora do leitor de tela). */
+  const cover = () =>
+    within(screen.getByTestId('post-video-cover', hidden)).UNSAFE_getByType(Image).props.source;
+  const coverLayer = () => screen.getByTestId('post-video-cover-layer', hidden);
+  const playButton = () => screen.getByRole('button', { name: PLAY });
+
+  function setFocused(focused: boolean): void {
+    act(() => {
+      mockFocus.focused = focused;
+      for (const listener of [...mockFocus.listeners]) listener();
+    });
+  }
+
+  const layoutEvent = (y: number, height: number) => ({
+    nativeEvent: { layout: { x: 0, y, width: 402, height } },
+  });
+
+  /** Rola a lista: o evento vai à rolagem de dentro da FlashList, que o repassa à tela. */
+  function scrollListTo(y: number): void {
+    const [scroller] = screen
+      .UNSAFE_getByType(FlashList)
+      .findAll((node) => node.type === ScrollView && node.props.horizontal !== true);
+    if (!scroller) throw new Error('lista sem rolagem');
+    fireEvent.scroll(scroller, {
+      nativeEvent: {
+        contentOffset: { x: 0, y },
+        contentSize: { width: 402, height: 3000 },
+        layoutMeasurement: { width: 402, height: 600 },
+      },
+    });
+  }
+
+  beforeEach(() => {
+    players().length = 0;
+    mockFocus.focused = true;
+  });
+
+  it('o vídeo mostra a capa grande (posterUrl) no lugar da miniatura', async () => {
+    clipFromApi(CLIP_MEDIA);
+    await renderPost();
+    expect(cover()).toEqual({ uri: POSTER_URL });
+    await settle();
+  });
+
+  it('sem o posterUrl (a api de antes do campo ou o cache salvo), a miniatura de hoje', async () => {
+    clipFromApi({ ...CLIP_MEDIA, posterUrl: undefined });
+    await renderPost();
+    expect(cover()).toEqual({ uri: THUMB_URL });
+    await settle();
+  });
+
+  it('o vídeo sem arquivo fica como antes: a capa lida como vídeo, a marca e nenhum botão de tocar', async () => {
+    clipFromApi({ url: null, thumbnailUrl: null, posterUrl: null, width: 1080, height: 608 });
+    await renderPost();
+    const media = screen.getByLabelText(t('post.details.videoLabel', { artist: 'Netto Brito' }));
+    // Sem mídia gravada, o placeholder de marca, sem imagem.
+    expect(within(media).UNSAFE_queryByType(Image)).toBeNull();
+    expect(screen.queryByRole('button', { name: PLAY })).toBeNull();
+    expect(players()).toHaveLength(0);
+    await settle();
+  });
+
+  it('antes do toque, o botão de tocar é o único foco da mídia, com a dica, e nada do vídeo baixa', async () => {
+    clipFromApi(CLIP_MEDIA);
+    await renderPost();
+    expect(playButton().props.accessibilityHint).toBe('Toca aqui mesmo, com som');
+    // A capa vai sem rótulo: com ele, a `RemoteImage` seria outro foco, de imagem.
+    const focusable = screen
+      .getByTestId('post-media')
+      .findAll((node) => typeof node.type === 'string' && node.props.accessible === true);
+    expect(focusable.map((node) => node.props.accessibilityLabel)).toEqual([PLAY]);
+    expect(
+      screen.queryByLabelText(t('post.details.videoLabel', { artist: 'Netto Brito' })),
+    ).toBeNull();
+    expect(players()).toHaveLength(0);
+    expect(screen.queryByTestId('post-video-player', hidden)).toBeNull();
+    await settle();
+  });
+
+  it('o toque monta o player com o mp4, o cache e o play, nos controles nativos, com a capa por cima até o primeiro quadro', async () => {
+    clipFromApi(CLIP_MEDIA);
+    await renderPost();
+    fireEvent.press(playButton());
+
+    expect(haptics.trigger).toHaveBeenCalledWith('tap');
+    expect(players()).toHaveLength(1);
+    const [player] = players();
+    expect(player?.source).toEqual({ uri: VIDEO_URL, useCaching: true });
+    expect(player?.play).toHaveBeenCalledTimes(1);
+    const view = screen.getByTestId('post-video-player');
+    expect(view.props).toMatchObject({
+      player,
+      nativeControls: true,
+      contentFit: 'contain',
+      fullscreenOptions: { enable: true },
+      allowsPictureInPicture: false,
+    });
+    expect(screen.queryByRole('button', { name: PLAY })).toBeNull();
+    // A capa cobre o player até o primeiro quadro, sem tirar o toque dos controles.
+    expect(coverLayer().props.pointerEvents).toBe('none');
+    expect(coverLayer()).toHaveStyle({ opacity: 1 });
+
+    fireEvent(view, 'firstFrameRender');
+    expect(coverLayer()).toHaveStyle({ opacity: 0 });
+    await settle();
+  });
+
+  it('o erro volta à capa com a frase e "Tentar de novo", anunciado, busca o post de novo e toca a URL que chegou', async () => {
+    clipFromApi(CLIP_MEDIA, { ...CLIP_MEDIA, url: NEW_VIDEO_URL });
+    await renderPost();
+    expect(detailFetches()).toBe(1);
+    fireEvent.press(playButton());
+    const [first] = players();
+    fireEvent(screen.getByTestId('post-video-player'), 'firstFrameRender');
+
+    act(() => first?.emit('statusChange', { status: 'error', error: { message: 'x' } }));
+
+    expect(screen.getByText(VIDEO_ERROR)).toBeTruthy();
+    expect(screen.queryByTestId('post-video-player', hidden)).toBeNull();
+    expect(first?.release).toHaveBeenCalled();
+    expect(coverLayer()).toHaveStyle({ opacity: 1 });
+    expect(announcements()).toContain(VIDEO_ERROR);
+    expect(haptics.trigger).toHaveBeenCalledWith('error');
+    // O mp4 trocado no painel some na hora: o post vem de novo, uma vez.
+    await waitFor(() => expect(detailFetches()).toBe(2));
+    // A resposta chega à tela antes do toque.
+    await settle();
+
+    fireEvent.press(screen.getByRole('button', { name: t('common.retry') }));
+    expect(players()).toHaveLength(2);
+    expect(players()[1]?.source).toEqual({ uri: NEW_VIDEO_URL, useCaching: true });
+    expect(players()[1]?.play).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText(VIDEO_ERROR)).toBeNull();
+    expect(detailFetches()).toBe(2);
+    await settle();
+  });
+
+  it('pausa quando mais da metade do vídeo sai da tela na rolagem, e não volta a tocar sozinho', async () => {
+    clipFromApi(CLIP_MEDIA);
+    await renderPost();
+    // A mídia a 100 do topo da lista (o autor e o texto em cima), com 226 de altura.
+    fireEvent(screen.getByTestId('post-content'), 'layout', layoutEvent(60, 300));
+    fireEvent(screen.getByTestId('post-media'), 'layout', layoutEvent(40, 226));
+    fireEvent.press(playButton());
+    const [player] = players();
+
+    scrollListTo(213);
+    expect(player?.pause).not.toHaveBeenCalled();
+    scrollListTo(214);
+    expect(player?.pause).toHaveBeenCalledTimes(1);
+    scrollListTo(0);
+    expect(player?.play).toHaveBeenCalledTimes(1);
+    await settle();
+  });
+
+  it('pausa fora de foco (o perfil de um fã por cima do post) e não volta a tocar sozinho', async () => {
+    clipFromApi(CLIP_MEDIA);
+    await renderPost();
+    fireEvent.press(playButton());
+    const [player] = players();
+
+    setFocused(false);
+    expect(player?.pause).toHaveBeenCalledTimes(1);
+    setFocused(true);
+    expect(player?.play).toHaveBeenCalledTimes(1);
+    expect(player?.pause).toHaveBeenCalledTimes(1);
+    await settle();
+  });
+
+  it('o erro fora de foco não vibra nem fala por cima da tela de cima: a frase sai quando o fã volta ao post', async () => {
+    clipFromApi(CLIP_MEDIA);
+    await renderPost();
+    fireEvent.press(playButton());
+    const [player] = players();
+    setFocused(false);
+
+    act(() => player?.emit('statusChange', { status: 'error', error: { message: 'x' } }));
+
+    expect(screen.getByText(VIDEO_ERROR, hidden)).toBeTruthy();
+    expect(announcements()).not.toContain(VIDEO_ERROR);
+    expect(haptics.trigger).not.toHaveBeenCalledWith('error');
+    // A busca do post continua: o mp4 trocado no painel chega antes de o fã voltar.
+    await waitFor(() => expect(detailFetches()).toBe(2));
+
+    setFocused(true);
+    expect(announcements()).toContain(VIDEO_ERROR);
+    expect(haptics.trigger).not.toHaveBeenCalledWith('error');
+    await settle();
+  });
+
+  it('com o emulador, o player recebe o mp4 pelo mediaUrl, com o host que o aparelho alcança', async () => {
+    const server = jest.requireMock<typeof import('@/config/server')>('@/config/server');
+    const { resolveMediaUrl } =
+      jest.requireActual<typeof import('@/config/server')>('@/config/server');
+    jest
+      .spyOn(server, 'mediaUrl')
+      .mockImplementation((url: string) => resolveMediaUrl(url, '10.0.2.2'));
+    const path =
+      'v0/b/demo-imagine-up-app.appspot.com/o/posts%2Fp-clipe%2Fvideo-seed.mp4?alt=media';
+    clipFromApi({ ...CLIP_MEDIA, url: `http://127.0.0.1:9199/${path}` });
+    await renderPost();
+
+    fireEvent.press(playButton());
+
+    expect(players()[0]?.source).toEqual({ uri: `http://10.0.2.2:9199/${path}`, useCaching: true });
+    await settle();
+  });
+
+  it.each([
+    [0, 800, false],
+    [200, 800, false],
+    [201, 800, true],
+    [0, 200, false],
+    [0, 199, true],
+    [400, 800, true],
+  ])(
+    'a mídia de 100 a 300 com a rolagem em %d e %d à vista: fora da tela = %s',
+    (scrollY, viewport, expected) => {
+      expect(isMediaMostlyOffscreen({ top: 100, height: 200 }, scrollY, viewport)).toBe(expected);
+    },
+  );
+
+  it('a mídia sem altura nunca fica fora da tela', () => {
+    expect(isMediaMostlyOffscreen({ top: 100, height: 0 }, 5000, 600)).toBe(false);
   });
 });

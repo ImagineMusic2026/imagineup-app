@@ -28,7 +28,12 @@ import {
 } from '../api';
 import { INVITE_CLAIM_WAIT_MS } from '../consts';
 import { usePasswordReset } from '../hooks/use-password-reset';
-import { useFinishSignUp, useSignUp } from '../hooks/use-sign-up';
+import {
+  parkSignUpHold,
+  releaseHeldSignUp,
+  useFinishSignUp,
+  useSignUp,
+} from '../hooks/use-sign-up';
 
 // O build do Firebase que o Jest resolve é ESM; o app só precisa da classe de erro.
 jest.mock('firebase/app', () => ({
@@ -245,6 +250,19 @@ describe('cadastro (useSignUp)', () => {
     expect(usePreferencesStore.getState().hasCompletedOnboarding).toBe(false);
   });
 
+  it('a conta criada fica como a última entrada do aparelho, com e-mail e senha', async () => {
+    usePreferencesStore.setState({ lastSignInMethod: 'google' });
+    const firebase = fakeFirebase();
+    const { result } = renderHook(() => useSignUp(), { wrapper });
+
+    act(() => result.current.mutate(form));
+    await waitFor(() => expect(listen).toHaveBeenCalled());
+    expect(usePreferencesStore.getState().lastSignInMethod).toBe('password');
+
+    act(() => firebase.profileArrives());
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+  });
+
   it('e-mail com conta: mostra o erro e solta o guard, sem mexer em nome nem perfil', async () => {
     usePreferencesStore.setState({ hasCompletedOnboarding: true });
     fakeFirebase();
@@ -422,6 +440,23 @@ describe('código de convite digitado no cadastro', () => {
   });
 });
 
+describe('a trava estacionada (parkSignUpHold, seção 33)', () => {
+  it('solta uma vez só, e estacionar outra solta a de antes', () => {
+    const first = useSessionStore.getState().holdAuth();
+    const second = useSessionStore.getState().holdAuth();
+    expect(useSessionStore.getState().authHolds).toBe(2);
+
+    parkSignUpHold(first);
+    parkSignUpHold(second);
+    // A primeira não fica presa quando outra entrada estaciona a dela.
+    expect(useSessionStore.getState().authHolds).toBe(1);
+
+    releaseHeldSignUp();
+    releaseHeldSignUp();
+    expect(useSessionStore.getState().authHolds).toBe(0);
+  });
+});
+
 describe('espera do perfil (waitForProfile)', () => {
   it('passado o prazo, libera sem o perfil e desliga o listener', async () => {
     jest.useFakeTimers();
@@ -593,6 +628,7 @@ describe('criar a conta (signUpWithEmail)', () => {
       displayName: 'Beatriz Santos',
       photoURL: null,
       hasPassword: true,
+      providers: ['password'],
     });
     expect(createUser).toHaveBeenCalledWith({}, form.email, form.password);
   });

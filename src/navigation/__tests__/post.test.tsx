@@ -30,7 +30,7 @@ import {
   registerPostMutationDefaults,
   type Post,
 } from '@/domains/posts';
-import { moderationFixture, postsFixture } from '@/domains/posts/fixtures';
+import { findPostFixture, moderationFixture, postsFixture } from '@/domains/posts/fixtures';
 import { fanKeys, type FanPublicProfile } from '@/domains/profile';
 import { ApiError } from '@/services/api/errors';
 import { haptics } from '@/services/haptics';
@@ -401,6 +401,45 @@ describe('perfil público pelo comentário (seção 28)', () => {
     act(() => testRouter.back());
     await waitFor(() => expect(view.getPathname()).toBe('/post/p-clipe'));
     expect(rootRoutes(view)).toEqual(['(tabs)', 'post/[postId]']);
+  });
+});
+
+describe('o vídeo do post (seção 33)', () => {
+  const THALITA_ROW =
+    'Thalita S., há 1 hora: Já mandei pro grupo da família inteira, Irará em peso! 💃';
+  const VIDEO_URL =
+    'https://firebasestorage.googleapis.com/v0/b/imagine-up-app.firebasestorage.app/o/posts%2Fp-clipe%2Fvideo-1.mp4?alt=media&token=v';
+
+  /** O player falso do `jest.setup.js`. */
+  const players = () =>
+    jest.requireMock<{ mockPlayers: { play: jest.Mock; pause: jest.Mock }[] }>('expo-video')
+      .mockPlayers;
+
+  it('abrir o perfil de um fã por um comentário pausa o vídeo, e o voltar não o toca de novo', async () => {
+    players().length = 0;
+    // As fixtures não têm o mp4: o detalhe do clipe vem do cache, com ele, e não busca de novo.
+    client.setQueryDefaults(postKeys.detail('p-clipe'), { staleTime: Infinity });
+    client.setQueryData<Post>(postKeys.detail('p-clipe'), {
+      ...findPostFixture(new Date(), 'p-clipe'),
+      media: { url: VIDEO_URL, thumbnailUrl: null, posterUrl: null, width: 1080, height: 608 },
+    });
+    const view = renderRouter(appTree, { initialUrl: '/' });
+    fireEvent.press(await screen.findByRole('button', { name: CLIP_ROW }));
+
+    fireEvent.press(await screen.findByRole('button', { name: 'Tocar o vídeo de Netto Brito' }));
+    const [player] = players();
+    expect(player?.play).toHaveBeenCalledTimes(1);
+    expect(player?.pause).not.toHaveBeenCalled();
+
+    fireEvent.press(await screen.findByRole('button', { name: THALITA_ROW }));
+    await waitFor(() => expect(view.getPathname()).toBe('/fa/fa-thalita'));
+    await waitFor(() => expect(player?.pause).toHaveBeenCalledTimes(1));
+
+    act(() => testRouter.back());
+    await waitFor(() => expect(view.getPathname()).toBe('/post/p-clipe'));
+    // O mesmo player, parado: o fã toca de novo pelos controles.
+    expect(players()).toHaveLength(1);
+    expect(player?.play).toHaveBeenCalledTimes(1);
   });
 });
 

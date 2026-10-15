@@ -28,8 +28,14 @@
     "welcome": {
       "title": "ImagineUP",
       "lead": "A central de fãs oficial dos artistas da Imagine. Siga, comente e ganhe pontos levando gente nova pro fandom.",
-      "createAccount": "Criar minha conta",
-      "haveAccount": "Já tenho conta"
+      "google": "Continuar com o Google",
+      "createAccount": "Criar conta com e-mail",
+      "haveAccount": "Entrar com e-mail",
+      "lastMethod": {
+        "apple": "Da última vez, você entrou com a Apple.",
+        "google": "Da última vez, você entrou com o Google.",
+        "password": "Da última vez, você entrou com e-mail e senha."
+      }
     },
     "terms": {
       "continue": "Ao continuar, você aceita os {{terms}} e a {{privacy}} da Imagine Music.",
@@ -70,7 +76,7 @@
       "skipInvite": "Continuar sem código"
     },
     "errors": {
-      "invalidCredentials": "E-mail ou senha incorretos.",
+      "invalidCredentials": "E-mail ou senha incorretos. Se você criou a conta com outro botão da abertura, entre por ele.",
       "tooManyRequests": "Muitas tentativas. Espere um pouco e tente de novo.",
       "network": "Sem conexão. Confira a internet e tente de novo.",
       "unknown": "Não foi possível entrar agora.",
@@ -79,6 +85,27 @@
       "notAllowed": "Cadastro indisponível agora. Tente mais tarde.",
       "signUpUnknown": "Não foi possível criar a conta agora.",
       "resetUnknown": "Não foi possível enviar o link agora."
+    },
+    "social": {
+      "signingInApple": "Entrando com a Apple",
+      "signingInGoogle": "Entrando com o Google",
+      "errors": {
+        "unknown": "Não deu para entrar agora. Tente de novo.",
+        "unavailable": "Esse jeito de entrar está indisponível agora. Entre com o e-mail.",
+        "playServices": "Para entrar com o Google, atualize o Google Play Services."
+      }
+    },
+    "socialInvite": {
+      "title": "Tem um código de convite?",
+      "lead": "Sua conta já foi criada. Se alguém te chamou para o ImagineUP, digite o código. Quem te convidou ganha pontos.",
+      "skip": "Pular"
+    },
+    "link": {
+      "lead": "Esse e-mail já tem conta no ImagineUP. Entre com a senha dela, e o Google passa a entrar na mesma conta.",
+      "noPassword": "Se a conta não tem senha, toque em “Esqueci minha senha”.",
+      "done": "Pronto. O Google também entra nesta conta.",
+      "failed": "Você entrou, mas o Google não foi ligado a esta conta.",
+      "inUse": "Essa conta do Google já entra em outra conta do ImagineUP."
     }
   },
   "onboarding": {
@@ -344,6 +371,9 @@
       "authorHint": "Abre a central do artista",
       "photoLabel": "Foto do post de {{artist}}",
       "videoLabel": "Vídeo do post de {{artist}}",
+      "playVideo": "Tocar o vídeo de {{artist}}",
+      "playVideoHint": "Toca aqui mesmo, com som",
+      "videoError": "Não deu para tocar o vídeo.",
       "likeLabel": "Curtir, {{likes}}",
       "commentLabel": "Comentar, {{comments}}",
       "shareLabel": "Compartilhar o post, ganha {{points}} por pessoa que abre o link no app",
@@ -732,6 +762,8 @@
     "account": "Conta",
     "signOut": "Sair",
     "signOutMeta": "Entrou como {{email}}",
+    "signOutMetaGoogle": "Entrou com o Google como {{email}}",
+    "signOutMetaApple": "Entrou com a Apple",
     "signOutLabel": "Sair da conta",
     "signOutHint": "Sai da conta neste aparelho",
     "signOutError": "Não deu para sair agora. Tente de novo.",
@@ -947,11 +979,17 @@
     "passwordLead": "Por segurança, confirme sua senha para excluir a conta.",
     "password": "Sua senha",
     "confirm": "Confirmar e excluir",
+    "appleNotice": "Para excluir, a Apple pede a sua confirmação. Depois, o ImagineUP perde o acesso ao seu ID Apple.",
+    "appleLinkedNotice": "Sua conta também entra pela Apple. Depois de confirmar, a Apple pede a sua confirmação para o ImagineUP perder o acesso ao seu ID Apple. Se você cancelar, a conta é excluída do mesmo jeito.",
+    "googleLead": "Por segurança, confirme com o Google para excluir a conta.",
+    "confirmGoogle": "Confirmar com o Google",
     "offline": "Sem internet. Conecte-se para excluir a conta.",
     "done": "Sua conta foi excluída.",
     "errors": {
       "needsPassword": "Por segurança, confirme sua senha para excluir a conta.",
+      "needsGoogle": "Por segurança, confirme com o Google para excluir a conta.",
       "wrongPassword": "Senha incorreta.",
+      "wrongAccount": "Use a mesma conta com que você entrou no ImagineUP.",
       "network": "Sem conexão. Sua conta continua como estava. Confira a internet e tente de novo.",
       "tooManyRequests": "Muitas tentativas. Espere um pouco e tente de novo.",
       "sessionEnded": "Sua sessão terminou. Entre de novo para excluir a conta.",

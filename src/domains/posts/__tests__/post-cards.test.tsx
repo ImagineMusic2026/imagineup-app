@@ -278,7 +278,7 @@ describe('PostAuthorRow', () => {
 });
 
 describe('PostContent', () => {
-  it('post de vídeo mostra a miniatura, lida como vídeo, com a marca no canto e sem botão de tocar', () => {
+  it('post de vídeo sem o arquivo mostra a capa, lida como vídeo, com a marca no canto e sem botão de tocar', () => {
     render(<PostContent post={CLIP} />);
     expect(screen.getByLabelText('Vídeo do post de Netto Brito')).toBeTruthy();
     expect(screen.getByText(CLIP.text)).toBeTruthy();

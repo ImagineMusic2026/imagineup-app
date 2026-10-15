@@ -1,5 +1,6 @@
 import { CalendarDays, Play } from 'lucide-react-native';
-import { StyleSheet, View } from 'react-native';
+import { useRef } from 'react';
+import { StyleSheet, View, type LayoutChangeEvent } from 'react-native';
 
 import { Icon } from '@/components/icon';
 import { RemoteImage } from '@/components/remote-image';
@@ -10,6 +11,7 @@ import { borderWidths, colors, layout, radii, spacing, typography } from '@/them
 import { formatDayMonth, formatLongDate, formatShowTime, formatShowTimeSpoken } from '@/utils/date';
 
 import type { Post, PostEvent, PostMedia } from '../types';
+import { PostVideo } from './post-video';
 
 // A proporção real da mídia fica entre 4:5 (em pé) e 16:9 (deitada); fora
 // disso, o recorte: uma foto muito alta empurraria os comentários para longe.
@@ -34,21 +36,54 @@ export function mediaAspectRatio(media: Pick<PostMedia, 'width' | 'height'>): nu
   return Math.min(MAX_MEDIA_ASPECT, Math.max(MIN_MEDIA_ASPECT, width / height));
 }
 
+/** A caixa da mídia no conteúdo do post: o topo (relativo ao pai do conteúdo) e a altura. */
+export interface MediaBox {
+  top: number;
+  height: number;
+}
+
+interface PostMediaBlockProps {
+  post: Post;
+  media: PostMedia;
+  offscreen: boolean;
+  onVideoError?: () => void;
+  onLayout?: (event: LayoutChangeEvent) => void;
+}
+
 /**
- * A mídia de ponta a ponta, sem raio. O app não toca vídeo: o post de vídeo
- * mostra a miniatura com a marca pequena de vídeo no canto de cima, a mesma da
- * grade da 1d, e não um botão de play no meio, que prometeria tocar. Para o
- * leitor de tela, a mídia é uma imagem com o que ela é e de quem é o post.
+ * A mídia de ponta a ponta, sem raio. O vídeo com o mp4 toca ali mesmo, ao
+ * toque (`PostVideo`, seção 33), sobre a capa grande (a miniatura, sem ela).
+ * O vídeo sem arquivo fica com a capa e a marca pequena de vídeo no canto de
+ * cima, a mesma da grade da 1d, e não um botão de play no meio, que prometeria
+ * tocar: para o leitor de tela, ele e a foto são uma imagem com o que ela é e
+ * de quem é o post.
  */
-function PostMediaBlock({ post, media }: { post: Post; media: PostMedia }) {
+function PostMediaBlock({ post, media, offscreen, onVideoError, onLayout }: PostMediaBlockProps) {
   const video = post.kind === 'video';
-  const uri = video ? media.thumbnailUrl : (media.url ?? media.thumbnailUrl);
+  // A capa grande só vem da `api` com o campo (seção 33); sem ela, a miniatura de 480.
+  const uri = video ? (media.posterUrl ?? media.thumbnailUrl) : (media.url ?? media.thumbnailUrl);
+  const box = [styles.media, { aspectRatio: mediaAspectRatio(media) }];
+
+  if (video && media.url) {
+    return (
+      <View style={box} onLayout={onLayout} testID="post-media">
+        <PostVideo
+          post={post}
+          videoUrl={media.url}
+          coverUrl={uri}
+          offscreen={offscreen}
+          onError={onVideoError}
+        />
+      </View>
+    );
+  }
+
   const label = t(video ? 'post.details.videoLabel' : 'post.details.photoLabel', {
     artist: post.artist.name,
   });
 
   return (
-    <View style={[styles.media, { aspectRatio: mediaAspectRatio(media) }]}>
+    <View style={box} onLayout={onLayout} testID="post-media">
       <RemoteImage
         uri={uri}
         fallback={{ kind: 'brand', seed: post.id }}
@@ -98,22 +133,64 @@ function PostEventLine({ event }: { event: PostEvent }) {
 
 export interface PostContentProps {
   post: Post;
+  /** Mais da metade da mídia fora da tela: o vídeo que toca pausa (seção 33, decisão 19). */
+  mediaOffscreen?: boolean;
+  /**
+   * A caixa da mídia, com o topo relativo ao pai do conteúdo: o `onLayout` da
+   * mídia dá a posição dela dentro do conteúdo, e o do conteúdo, a dele no pai.
+   */
+  onMediaLayout?: (box: MediaBox) => void;
+  /** O vídeo não tocou. */
+  onVideoError?: () => void;
 }
 
 /**
  * O corpo do post no detalhe: o texto inteiro (dá para selecionar e copiar),
  * o show (post de show) e a mídia. Um post tem uma mídia só.
  */
-export function PostContent({ post }: PostContentProps) {
+export function PostContent({
+  post,
+  mediaOffscreen = false,
+  onMediaLayout,
+  onVideoError,
+}: PostContentProps) {
+  // Os dois `onLayout` chegam em qualquer ordem; a caixa sai quando os dois chegaram.
+  const contentTop = useRef<number | null>(null);
+  const mediaFrame = useRef<{ y: number; height: number } | null>(null);
+
+  const reportMedia = (): void => {
+    const frame = mediaFrame.current;
+    if (contentTop.current === null || frame === null) return;
+    onMediaLayout?.({ top: contentTop.current + frame.y, height: frame.height });
+  };
+
   return (
-    <View>
+    <View
+      onLayout={(event) => {
+        contentTop.current = event.nativeEvent.layout.y;
+        reportMedia();
+      }}
+      testID="post-content"
+    >
       {post.text ? (
         <Text variant="body" color={colors.textBody} selectable style={styles.text}>
           {post.text}
         </Text>
       ) : null}
       {post.event ? <PostEventLine event={post.event} /> : null}
-      {post.media ? <PostMediaBlock post={post} media={post.media} /> : null}
+      {post.media ? (
+        <PostMediaBlock
+          post={post}
+          media={post.media}
+          offscreen={mediaOffscreen}
+          onVideoError={onVideoError}
+          onLayout={(event) => {
+            const { y, height } = event.nativeEvent.layout;
+            mediaFrame.current = { y, height };
+            reportMedia();
+          }}
+        />
+      ) : null}
     </View>
   );
 }

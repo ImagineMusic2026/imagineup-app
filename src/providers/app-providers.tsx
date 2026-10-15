@@ -12,12 +12,17 @@ import { SuspensionWatcher } from '@/domains/profile';
 import { useAnnounceOffline } from '@/hooks/use-announce-offline';
 import { usePrefersReducedMotion } from '@/hooks/use-prefers-reduced-motion';
 import { persistOptions, queryClient, setupReactQueryForReactNative } from '@/services/query';
+import { configureVideoCache } from '@/services/video-cache';
 import { colors, navigationTheme } from '@/theme';
 
 // As funções das mutações offline precisam existir antes do cache ser restaurado.
 registerPostMutationDefaults(queryClient);
 registerAgendaMutationDefaults(queryClient);
 registerArtistMutationDefaults(queryClient);
+
+// O teto de 200 MB do cache de vídeo, uma vez, antes de qualquer tela com
+// player (o `expo-video` recusa com um player vivo; o serviço não lança).
+void configureVideoCache();
 
 // O `ReducedMotionConfig` abaixo é de propósito, mas o Reanimated avisa a cada
 // abertura em desenvolvimento, e o aviso cobria a tab bar em toda conferência

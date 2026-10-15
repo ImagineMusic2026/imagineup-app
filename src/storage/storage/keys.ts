@@ -11,4 +11,10 @@ export enum StorageKeys {
   LegacyPendingInvite = '@imagineup/pending-invite/v1',
   /** Os convites amarrados às contas criadas no aparelho, por uid. */
   InviteClaims = '@imagineup/invite-claims/v1',
+  /**
+   * O nome que a Apple mandou na primeira entrada, com o `user` da Apple,
+   * guardado antes de a conta existir: a Apple não manda de novo (seção 33,
+   * decisão 6).
+   */
+  ApplePendingName = '@imagineup/apple-pending-name/v1',
 }

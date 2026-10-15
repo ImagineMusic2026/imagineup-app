@@ -184,6 +184,63 @@ export async function signIn(email: string, password: string): Promise<string> {
   return body.idToken;
 }
 
+/**
+ * As claims do token do provedor. O emulador do Auth aceita o JSON no lugar
+ * do JWT e não confere nada: nem a assinatura, nem o público, nem o nonce.
+ * Ele trata como confiável qualquer `email_verified` verdadeiro (em produção,
+ * o Google só é confiável no Gmail): o Google fora do Gmail se imita com ele
+ * falso (docs/arquitetura-api.md, 33.3).
+ */
+export type IdpClaims = {
+  sub: string;
+  email?: string;
+  email_verified?: boolean;
+  name?: string;
+  picture?: string;
+};
+
+/** A resposta do `accounts:signInWithIdp`, só com o que os testes leem. */
+export type IdpResult = {
+  localId?: string;
+  idToken?: string;
+  refreshToken?: string;
+  email?: string;
+  isNewUser?: boolean;
+  /** A conta do e-mail é de outro método: o SDK JS lança `auth/account-exists-with-different-credential`. */
+  needConfirmation?: boolean;
+  error?: { message: string };
+};
+
+/**
+ * Entra pelo Google ou pela Apple como o `signInWithCredential` do SDK JS (o
+ * `buildRequest` do `OAuthCredential`): o `accounts:signInWithIdp` com o token
+ * e o provedor no `postBody`, o nonce bruto da Apple junto e o `requestUri`
+ * do SDK. Com `idToken`, liga o provedor à conta desse token (o
+ * `linkWithCredential` do modo "ligar").
+ */
+export async function signInWithIdp(
+  providerId: 'google.com' | 'apple.com',
+  claims: IdpClaims,
+  options: { nonce?: string; idToken?: string } = {},
+): Promise<IdpResult> {
+  const postBody = new URLSearchParams({ id_token: JSON.stringify(claims), providerId });
+  if (options.nonce) postBody.set('nonce', options.nonce);
+  const response = await fetch(
+    `http://${process.env.FIREBASE_AUTH_EMULATOR_HOST}/identitytoolkit.googleapis.com/v1/accounts:signInWithIdp?key=chave-falsa`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        requestUri: 'http://localhost',
+        returnSecureToken: true,
+        postBody: postBody.toString(),
+        ...(options.idToken ? { idToken: options.idToken } : {}),
+      }),
+    },
+  );
+  return (await response.json()) as IdpResult;
+}
+
 export type HttpResult = { status: number; body: Record<string, unknown>; headers: Headers };
 
 /** A função `api` de verdade, pelo HTTP do emulador de Functions. */

@@ -40,6 +40,13 @@
  * no show, que abre a fila da Moderação. A Camila não curte, não comenta e não
  * vai a show nenhum: a primeira ação dela no app mostra os pontos do servidor.
  *
+ * O vídeo do clipe (docs/arquitetura-api.md, 33.5): depois da equipe do
+ * painel, o clipe do Netto (p-clipe) ganha o mp4, a capa e a miniatura de
+ * teste (scripts/seed-assets), enviados ao emulador do Storage e gravados pelo
+ * mesmo núcleo da callable updatePost, com a conta admin da equipe de teste
+ * (fica na auditoria, como o painel). O vídeo do Nenho (p-nenho-2) fica sem
+ * arquivo, como o vídeo que o app mostra só com a capa.
+ *
  * Missões, conquistas e meta da temporada (functions/lib/missions, bloco 7,
  * docs/arquitetura-api.md, 22.13): a carteira da Camila leva 12 lançamentos
  * de missão (a meta da temporada, "Semana do arrocha", fica em 12 de 20) e as
@@ -274,6 +281,83 @@ async function seedPhoto(uid, fileName) {
   );
 }
 
+/** O post de vídeo que ganha o arquivo de teste (o p-nenho-2 fica sem). */
+const CLIP_POST_ID = 'p-clipe';
+
+/**
+ * O mp4, a capa e a miniatura do clipe, de scripts/seed-assets, com os nomes
+ * na pasta do post e as medidas que o painel mandaria no metadado. Os três
+ * saíram do ffmpeg desta máquina (C:/ffmpeg/bin), sem rosto e sem texto: o
+ * degradê rosa para roxo da marca com as listras andando, 6 s em 640 × 360,
+ * H.264 com o moov no começo (o +faststart) e um tom baixo de áudio. A capa é
+ * o quadro de 1 s em 1080 de largura, e a miniatura, o mesmo quadro em 480:
+ *
+ *   P='st(0,clip((X+Y)/(W+H)+0.35*sin(2*PI*T/6)-0.1,0,1));st(1,lt(mod((X+Y)*0.7071+T*30,40),13))'
+ *   ffmpeg -f lavfi -i "color=c=black:s=640x360:r=30:d=6,format=rgb24,geq=r='$P;(255*(1-ld(0))+106*ld(0))*(1-0.12*ld(1))+30.6*ld(1)':g='$P;(45*(1-ld(0))+27*ld(0))*(1-0.12*ld(1))+30.6*ld(1)':b='$P;(111*(1-ld(0))+154*ld(0))*(1-0.12*ld(1))+30.6*ld(1)'" \
+ *     -f lavfi -i "sine=frequency=220:sample_rate=44100:duration=6" -af "volume=0.1" \
+ *     -c:v libx264 -profile:v main -pix_fmt yuv420p -crf 26 -preset slow -g 60 \
+ *     -c:a aac -b:a 64k -movflags +faststart -shortest video-teste.mp4
+ *   ffmpeg -ss 1 -i video-teste.mp4 -frames:v 1 -vf scale=1080:-2 -q:v 3 capa-teste.jpg
+ *   ffmpeg -ss 1 -i video-teste.mp4 -frames:v 1 -vf scale=480:-2 -q:v 3 capa-teste-480.jpg
+ */
+const CLIP_MEDIA = {
+  video: { asset: 'video-teste.mp4', name: 'video-seed.mp4', contentType: 'video/mp4' },
+  photo: {
+    asset: 'capa-teste.jpg',
+    name: 'photo-seed-1080.jpg',
+    contentType: 'image/jpeg',
+    size: { width: 1080, height: 608 },
+  },
+  thumb: {
+    asset: 'capa-teste-480.jpg',
+    name: 'thumb-seed-480.jpg',
+    contentType: 'image/jpeg',
+    size: { width: 480, height: 270 },
+  },
+};
+
+/**
+ * O vídeo do clipe pelo mesmo núcleo da callable updatePost (o editPost do
+ * build, que confere os arquivos no bucket, grava a mídia, audita e limpa a
+ * pasta), com a conta admin da equipe de teste. Só com o `media` ainda nulo:
+ * rodar de novo não sobe nada nem grava.
+ */
+async function seedClipMedia() {
+  const { editPost, postRef } = functionsBuild('posts');
+  const { bucketFiles } = functionsBuild('artists');
+  const { SEED_STAFF_ADMIN } = functionsFile('staff/seed');
+  return withStorage(async (db, bucket) => {
+    const post = await postRef(db, CLIP_POST_ID).get();
+    if (!post.exists) throw new Error(`O post ${CLIP_POST_ID} não existe: o seed dos posts rodou?`);
+    if (post.get('media') != null) return 'exists';
+    const paths = {};
+    for (const [key, item] of Object.entries(CLIP_MEDIA)) {
+      const path = `posts/${CLIP_POST_ID}/${item.name}`;
+      const bytes = readFileSync(new URL(`./seed-assets/${item.asset}`, import.meta.url));
+      await bucket.file(path).save(bytes, {
+        contentType: item.contentType,
+        ...(item.size
+          ? {
+              metadata: {
+                metadata: { width: String(item.size.width), height: String(item.size.height) },
+              },
+            }
+          : {}),
+      });
+      paths[key] = path;
+    }
+    const caller = {
+      uid: SEED_STAFF_ADMIN.uid,
+      token: { email: SEED_STAFF_ADMIN.email, auth_time: Math.floor(Date.now() / 1000) },
+    };
+    await editPost({ db, files: bucketFiles(() => bucket) }, caller, {
+      postId: CLIP_POST_ID,
+      media: { photoPath: paths.photo, thumbPath: paths.thumb, videoPath: paths.video },
+    });
+    return 'created';
+  });
+}
+
 /** As centrais de teste, como o painel publicaria (só as que ainda não existem). */
 async function seedCentrals() {
   const { seedCentrals: seed } = functionsBuild('centrals');
@@ -436,6 +520,12 @@ for (const { member, status } of await seedStaff()) {
     `Equipe do painel: ${member.email} (${ROLE_NAMES[member.role]}, ${status === 'created' ? 'criada agora' : 'já existia'}).`,
   );
 }
+
+// O vídeo do clipe pela conta admin da equipe, que acabou de existir (33.5).
+const clipMedia = await seedClipMedia();
+console.log(
+  `Vídeo do clipe do Netto: ${clipMedia === 'created' ? 'o mp4, a capa e a miniatura enviados e gravados agora' : 'já tinha mídia'} (o vídeo do Nenho fica sem arquivo).`,
+);
 
 // A versão 1 de config/points e config/achievements, antes do catálogo de missões (26.13).
 const gameConfig = await withFirestore((db) =>

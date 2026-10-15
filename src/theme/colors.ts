@@ -143,3 +143,20 @@ export const photoFallbackPairs = [
   [palette.violet, palette.pink],
   [palette.cyan, palette.pink],
 ] as const;
+
+/**
+ * O botão "Continuar com o Google" da 1k, no tema claro das diretrizes de marca
+ * do Google (developers.google.com/identity/branding-guidelines, conferidas em
+ * 14/10/2026): fundo branco, borda de 1 por dentro e o texto quase preto. O G
+ * vai nas quatro cores dele, sem trocar nenhuma. Fora da paleta do app de
+ * propósito: são as cores da marca do Google, e só este botão as usa.
+ */
+export const googleBrand = {
+  buttonFill: '#FFFFFF',
+  buttonStroke: '#747775',
+  buttonText: '#1F1F1F',
+  blue: '#4285F4',
+  red: '#EA4335',
+  yellow: '#FBBC05',
+  green: '#34A853',
+} as const;

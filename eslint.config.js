@@ -35,8 +35,30 @@ const restrictedImports = {
       group: ['@react-navigation/*'],
       message: 'Desde a SDK 56 o Expo Router não aceita @react-navigation. Importe de expo-router.',
     },
+    {
+      group: ['@react-native-google-signin/*'],
+      message:
+        'Use @/services/google-sign-in: o pacote do Google derruba o Expo Go no import. Os tipos vêm por typeof import(...).',
+    },
   ],
 };
+
+// O pacote do Google (seção 33 da nota) só entra pelo @/services/google-sign-in,
+// com require fora do Expo Go. O no-restricted-imports acima não vê require nem
+// import(), por isso as duas formas também viram erro fora do serviço.
+const GOOGLE_SIGN_IN_SOURCE = '/^@react-native-google-signin/';
+const googleSignInMessage =
+  'Só o @/services/google-sign-in carrega o pacote do Google, e só fora do Expo Go.';
+const googleSignInSyntax = [
+  {
+    selector: `CallExpression[callee.name='require'][arguments.0.value=${GOOGLE_SIGN_IN_SOURCE}]`,
+    message: googleSignInMessage,
+  },
+  {
+    selector: `ImportExpression[source.value=${GOOGLE_SIGN_IN_SOURCE}]`,
+    message: googleSignInMessage,
+  },
+];
 
 // O SDK do Storage só em src/firebase (bloco 9): importado por um api.ts, o
 // build ESM dele quebraria no Jest quase toda suíte, que só mocka o @/firebase.
@@ -59,6 +81,7 @@ module.exports = defineConfig([
   {
     rules: {
       'no-restricted-imports': ['error', restrictedWithStorage],
+      'no-restricted-syntax': ['error', ...googleSignInSyntax],
       '@typescript-eslint/no-unused-vars': [
         'error',
         { argsIgnorePattern: '^_', varsIgnorePattern: '^_', ignoreRestSiblings: true },
@@ -79,6 +102,12 @@ module.exports = defineConfig([
       '**/__tests__/**',
     ],
     rules: { 'no-restricted-imports': 'off' },
+  },
+  {
+    // O único lugar que carrega o pacote do Google (por require), e os testes,
+    // que o mocam. O import estático continua barrado no serviço.
+    files: ['src/services/google-sign-in.ts', '**/__tests__/**'],
+    rules: { 'no-restricted-syntax': 'off' },
   },
   {
     files: ['**/__tests__/**', 'jest.setup.js', 'jest.after-env.js'],
