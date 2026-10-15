@@ -1,0 +1,33 @@
+{
+  "displayName": "ImagineUP: api fora do ar",
+  "userLabels": {"app": "imagineup"},
+  "severity": "CRITICAL",
+  "combiner": "OR",
+  "conditions": [
+    {
+      "displayName": "O teste da api falhou em 2 ou mais regiões por 5 min",
+      "conditionThreshold": {
+        "filter": "metric.type=\"monitoring.googleapis.com/uptime_check/check_passed\" AND resource.type=\"uptime_url\" AND resource.labels.host=\"southamerica-east1-imagine-up-app.cloudfunctions.net\"",
+        "aggregations": [
+          {
+            "alignmentPeriod": "1200s",
+            "perSeriesAligner": "ALIGN_NEXT_OLDER",
+            "crossSeriesReducer": "REDUCE_COUNT_FALSE",
+            "groupByFields": ["resource.label.host"]
+          }
+        ],
+        "comparison": "COMPARISON_GT",
+        "thresholdValue": 1,
+        "duration": "300s",
+        "evaluationMissingData": "EVALUATION_MISSING_DATA_INACTIVE",
+        "trigger": {"count": 1}
+      }
+    }
+  ],
+  "alertStrategy": {"autoClose": "3600s"},
+  "documentation": {
+    "subject": "ImagineUP: api fora do ar",
+    "mimeType": "text/markdown",
+    "content": "A api do app não passou no teste de disponibilidade em 2 ou mais regiões por 5 minutos. Enquanto isso dura, o app não carrega nada do servidor.\n\nO que fazer:\n\n1. Abra `https://southamerica-east1-imagine-up-app.cloudfunctions.net/api/health` no navegador. O esperado é `{\"ok\":true}`.\n2. Se há deploy de funções agora, o silenciamento do deploy devia cobrir esta janela (31.5 da nota). Confira com `gcloud monitoring snoozes list --project=imagine-up-app`.\n3. No Logs Explorer do projeto imagine-up-app, use o filtro `resource.labels.service_name=\"api\"`. Resposta 503 sem log da função aponta para a cota de CPU da região.\n4. Confira a função: `gcloud functions describe api --region=southamerica-east1 --project=imagine-up-app`.\n5. Veja o status do Google Cloud em https://status.cloud.google.com, na região southamerica-east1."
+  }
+}

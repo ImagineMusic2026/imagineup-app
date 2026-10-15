@@ -236,6 +236,8 @@ describe('troca do @ (PUT /me/username)', () => {
     expect(profile.username).toBe(chosen);
     expect((profile.usernameChangedAt as Timestamp).toMillis()).toBe(start);
     expect((profile.usernameChangeableAt as Timestamp).toMillis()).toBe(start + 30 * DAY);
+    // O prazo é do próprio fã: o motivo vai null (seção 32, decisão 2).
+    expect(profile.usernameLockReason).toBeNull();
     // O servidor nunca grava o carimbo de edição do fã.
     expect(profile.updatedAt).toBeUndefined();
 
@@ -411,6 +413,8 @@ describe('troca do @ (PUT /me/username)', () => {
     const { call } = clockApi(Date.now());
     const handle = unique('trioforro');
     expect((await putUsername(call, fan, handle)).status).toBe(200);
+    // O perfil com o motivo da equipe (seção 32): o script, sempre com central, destrava.
+    await db.doc(`users/${fan.uid}`).update({ usernameLockReason: 'moderation' });
     const admin = await seedMember(env, 'Admin', 'admin');
     const blocked = await callable(
       env,
@@ -421,11 +425,12 @@ describe('troca do @ (PUT /me/username)', () => {
     expect(blocked.error?.details?.reason).toBe('handle-taken');
 
     const released = await releaseUsername(db, handle);
-    expect(released).toMatchObject({ uid: fan.uid, previous: handle });
+    expect(released).toMatchObject({ uid: fan.uid, previous: handle, changeableAt: null });
     expect(released.username).toMatch(/^fa\d+$/);
     const profile = (await read(`users/${fan.uid}`))!;
     expect(profile.username).toBe(released.username);
     expect(profile.usernameChangeableAt).toBeNull();
+    expect(profile.usernameLockReason).toBeNull();
     expect(profile.usernameChangedAt).toBeInstanceOf(Timestamp);
     expect(await exists(`usernames/${handle}`)).toBe(false);
     expect(await read(`usernames/${released.username}`)).toMatchObject({ uid: fan.uid });
@@ -1010,6 +1015,7 @@ describe('perfil novo: PUT /me/profile', () => {
         displayName: 'Camila Ribeiro',
         username: before.username,
         usernameChangeableAt: null,
+        usernameLockReason: null,
         bio: 'Feira de Santana.\nFã do Netto desde o primeiro show.',
         city: null,
         gender: 'woman',
@@ -1062,6 +1068,7 @@ describe('perfil novo: PUT /me/profile', () => {
         displayName: 'Camila Nova',
         username: chosen,
         usernameChangeableAt: new Date(start + 30 * DAY).toISOString(),
+        usernameLockReason: null,
         bio: 'Oi!',
         city: 'Irará, BA',
         gender: null,
@@ -1075,6 +1082,7 @@ describe('perfil novo: PUT /me/profile', () => {
     expect(profile).toMatchObject({
       displayName: 'Camila Nova',
       username: chosen,
+      usernameLockReason: null,
       bio: 'Oi!',
       city: 'Irará, BA',
       privateAccount: true,

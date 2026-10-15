@@ -154,6 +154,8 @@ export type AuditAction =
   | 'fan.unsuspended'
   | 'fan.comments.hidden'
   | 'fan.profile.report.resolved'
+  | 'fan.data.exported'
+  | 'fan.account.deleted'
   | 'config.seeded';
 
 /**
@@ -161,7 +163,9 @@ export type AuditAction =
  * de outras seções (artistas, posts, shows, moderação e, desde o bloco 10, a
  * loja), targetEmail fica '' e targetUid null, e o alvo vai em details. A
  * auditoria nunca leva o texto de um comentário, nem o uid, o nome, o @ ou o
- * e-mail de quem resgatou (25.8).
+ * e-mail de quem resgatou (25.8). Os pedidos de dados (`fan.data.exported` e
+ * `fan.account.deleted`, seção 32, decisão 12) levam só `details: { uid }`,
+ * com o targetEmail vazio: nunca o e-mail digitado nem o da conta.
  */
 export type AuditEntry = {
   action: AuditAction;

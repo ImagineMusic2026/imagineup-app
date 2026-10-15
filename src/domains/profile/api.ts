@@ -30,6 +30,7 @@ import type {
   UsernameAvailability,
   Wallet,
 } from './types';
+import { lockReasonOf } from './username';
 
 // Chamadas cruas ao Firestore e à API. Sem React: quem cacheia é o queries.ts.
 // O Firestore aqui só lê: toda a edição do perfil vai pela API (seção 28).
@@ -79,7 +80,8 @@ function suspensionReasonOf(value: unknown): SuspensionReason | null {
  * `Timestamp` vira ISO, porque o cache do React Query vai para o disco em JSON.
  * Os campos do perfil novo (seção 28): a bio texto ou `null`, o gênero só dos
  * quatro valores, a conta privada só booleano (o ausente vale `false`) e as
- * redes rede a rede pela lista fixa, com a fora do padrão como vazia.
+ * redes rede a rede pela lista fixa, com a fora do padrão como vazia. Quem pôs
+ * o prazo do @ (seção 32): só `moderation`; o resto, `null`.
  */
 export function toFanProfile(uid: string, data: DocumentData): FanProfile {
   // A suspensão (bloco 11) só aparece quando existe, com o motivo (seção 29):
@@ -93,6 +95,7 @@ export function toFanProfile(uid: string, data: DocumentData): FanProfile {
     photoURL: textOrNull(data.photoURL),
     createdAt: isoOrNull(data.createdAt),
     usernameChangeableAt: isoOrNull(data.usernameChangeableAt),
+    usernameLockReason: lockReasonOf(data.usernameLockReason),
     bio: textOrNull(data.bio),
     gender: genderOf(data.gender),
     privateAccount: data.privateAccount === true,
@@ -106,7 +109,9 @@ export function toFanProfile(uid: string, data: DocumentData): FanProfile {
 /**
  * A resposta do `PUT /me/profile` como o perfil em cache guarda, com a mesma
  * conferência da leitura do Firestore (as redes pela lista fixa). Os campos
- * que a resposta não traz (foto, cadastro, suspensão) ficam como estão.
+ * que a resposta não traz (foto, cadastro, suspensão) ficam como estão. O
+ * motivo do prazo do @ vem junto do prazo (seção 32): a resposta de antes,
+ * sem o campo, vale `null`, como o prazo dela, que é o do fã.
  */
 export function applyEditableProfile(profile: FanProfile, edited: EditableProfile): FanProfile {
   return {
@@ -114,6 +119,7 @@ export function applyEditableProfile(profile: FanProfile, edited: EditableProfil
     displayName: textOrNull(edited.displayName),
     username: textOrNull(edited.username),
     usernameChangeableAt: isoOrNull(edited.usernameChangeableAt),
+    usernameLockReason: lockReasonOf(edited.usernameLockReason),
     bio: textOrNull(edited.bio),
     city: textOrNull(edited.city),
     gender: genderOf(edited.gender),

@@ -1,7 +1,7 @@
 import { HttpsError, type FunctionsErrorCode } from 'firebase-functions/https';
 
 import { isFanId } from '../moderation/model';
-import type { AdjustCounter } from './limits';
+import { ACCOUNT_DELETIONS_DAILY_MAX, DATA_EXPORTS_DAILY_MAX, type AdjustCounter } from './limits';
 import { panelAccessError } from './panel-actor';
 import type { CallerAuth } from './service';
 
@@ -10,11 +10,12 @@ import type { CallerAuth } from './service';
  * que mexem num fã ou leem o ranking ao vivo (docs/arquitetura-api.md, 26.4):
  * `adjustFanPoints`, `findFanByEmail`, `getPanelRanking`, `resetFanUsername`,
  * `clearFanPhoto`, `setFanSuspended` e `hideFanComments`, a do perfil novo
- * (28.6), `clearFanProfileText`, e a das exigências das lojas (29.6),
+ * (28.6), `clearFanProfileText`, a das exigências das lojas (29.6),
  * `resolveProfileReport` (com os motivos próprios dela no
- * `moderationPanelError`). A mensagem em pt-BR
- * vai junto e pode ser mostrada como está. Os de acesso (`unauthenticated`,
- * `not-staff`, `no-section`) vêm do `readPanelActor`.
+ * `moderationPanelError`), e as dos pedidos de dados, só de admin (32.2),
+ * `exportFanData` e `deleteFanAccount`. A mensagem em pt-BR vai junto e pode
+ * ser mostrada como está. Os de acesso (`unauthenticated`, `not-staff`,
+ * `no-section`) vêm do `readPanelActor`, e o `admin-only`, do `readPanelAdmin`.
  */
 export type PanelErrorReason =
   | 'invalid-request'
@@ -28,7 +29,12 @@ export type PanelErrorReason =
   | 'adjustment-id-reused'
   | 'lookup-daily-limit'
   | 'username-changed'
-  | 'username-of-central';
+  | 'username-of-central'
+  | 'recent-login-required'
+  | 'email-mismatch'
+  | 'fan-is-staff'
+  | 'export-daily-limit'
+  | 'deletion-daily-limit';
 
 const ERRORS: Record<PanelErrorReason, [FunctionsErrorCode, string]> = {
   'invalid-request': ['invalid-argument', 'Pedido inválido.'],
@@ -55,6 +61,24 @@ const ERRORS: Record<PanelErrorReason, [FunctionsErrorCode, string]> = {
     'O @ deste fã mudou. Confira o @ de agora antes de trocar.',
   ],
   'username-of-central': ['failed-precondition', 'Este @ é de uma central, não de um fã.'],
+  // Os pedidos de dados (32.2): o e-mail nunca vai na mensagem nem nos detalhes.
+  'recent-login-required': ['failed-precondition', 'Entre de novo com a sua senha para continuar.'],
+  'email-mismatch': [
+    'failed-precondition',
+    'Este e-mail não é o da conta deste fã. Confira o e-mail do pedido.',
+  ],
+  'fan-is-staff': [
+    'failed-precondition',
+    'Esta conta também é da equipe do painel. Tire a pessoa da Equipe antes de excluir a conta.',
+  ],
+  'export-daily-limit': [
+    'resource-exhausted',
+    `Você chegou ao limite de ${DATA_EXPORTS_DAILY_MAX} exportações de dados hoje.`,
+  ],
+  'deletion-daily-limit': [
+    'resource-exhausted',
+    `Você chegou ao limite de ${ACCOUNT_DELETIONS_DAILY_MAX} exclusões de conta hoje.`,
+  ],
 };
 
 /** Erro das callables do bloco 11: código do Firebase, mensagem em pt-BR e `details: { reason, ... }`. */
