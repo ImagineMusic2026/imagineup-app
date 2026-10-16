@@ -42,10 +42,16 @@ export type {
   SocialNetwork,
   SuspensionReason,
   UsernameAvailability,
+  UsernameLockReason,
   UsernameStatus,
   Wallet,
 } from './types';
-export { isAutomaticUsername, normalizeUsername } from './username';
+export {
+  isAutomaticUsername,
+  normalizeUsername,
+  usernameLock,
+  type UsernameLock,
+} from './username';
 export { EditProfileScreen } from './views/edit-profile';
 export { FanProfileScreen, type FanProfileScreenProps } from './views/fan-profile';
 export { LedgerScreen } from './views/ledger';

@@ -9,9 +9,10 @@ import { PROJECT_ID, REGION, seedMember, signUpFan, useEmulators, waitFor } from
  * O registro de acesso nos emuladores (docs/arquitetura-api.md, 31.6 e
  * 31.11): a `api` e uma callable do painel de verdade, pelo HTTP do emulador,
  * escrevem a linha `acesso` com o último item do X-Forwarded-For forjado e o
- * uid, e o preflight não escreve a linha. A lista de origens do `cors` fica
- * no access-log.test.ts: o emulador abre o CORS de toda função (o `enableCors`
- * que ele liga no FIREBASE_DEBUG_FEATURES) e devolveria qualquer origem.
+ * uid, e o preflight e o GET /health da api (32.1, decisão 18) não escrevem
+ * a linha. A lista de origens do `cors` fica no access-log.test.ts: o
+ * emulador abre o CORS de toda função (o `enableCors` que ele liga no
+ * FIREBASE_DEBUG_FEATURES) e devolveria qualquer origem.
  *
  * O emulador não entrega o log das funções aos testes: ele vai ao terminal e
  * ao firebase-debug.log, que o firebase-tools do `npm run test:functions`
@@ -177,6 +178,26 @@ describe('a linha `acesso` na api', () => {
     });
     await waitForAccess(mark, after);
     expect(accessLinesWith(logSince(mark), malformedIp)).toEqual([]);
+  });
+
+  it('o GET /health responde {"ok":true} sem login e não escreve a linha (32.1, decisão 18)', async () => {
+    const healthIp = uniqueIp();
+    const mark = logMark();
+    const health = await fetch(functionUrl('api', '/health'), {
+      headers: { 'X-Forwarded-For': `${FORGED_IP}, ${healthIp}` },
+    });
+    expect(health.status).toBe(200);
+    expect(health.headers.get('content-type')).toBe('application/json; charset=utf-8');
+    expect(health.headers.get('cache-control')).toBe('no-store');
+    // O texto exato é o que o teste de disponibilidade confere (32.7).
+    expect(await health.text()).toBe('{"ok":true}');
+    // O pedido seguinte, na mesma função, prova que o log já andou depois do /health.
+    const after = uniqueIp();
+    await fetch(functionUrl('api', '/me/wallet'), {
+      headers: { 'X-Forwarded-For': `${FORGED_IP}, ${after}` },
+    });
+    await waitForAccess(mark, after);
+    expect(accessLinesWith(logSince(mark), healthIp)).toEqual([]);
   });
 });
 

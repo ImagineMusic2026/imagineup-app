@@ -296,6 +296,12 @@ export type PostMedia = {
   url: string | null;
   /** A miniatura (da foto ou da capa do vídeo); null sem arquivo. */
   thumbnailUrl: string | null;
+  /**
+   * Só no vídeo: a capa grande (`media.photo.url`, até 1080), ou null sem
+   * mídia gravada; a foto sai sem o campo. O contrato é o de 33.2, publicado
+   * com a seção 32 (decisão 25).
+   */
+  posterUrl?: string | null;
   width: number | null;
   height: number | null;
 };
@@ -519,12 +525,21 @@ export type ProfileChanges = {
   socials?: Partial<FanSocials>;
 };
 
+/**
+ * `UsernameLockReason` do app: quem pôs o prazo do @ (seção 32, decisão 2).
+ * `moderation` é o `resetFanUsername` da equipe; o prazo da troca feita pelo
+ * próprio fã, e o perfil sem prazo, vão como null.
+ */
+export type UsernameLockReason = 'moderation';
+
 /** `EditableProfile` do app (`PUT /me/profile`): o perfil editável depois da mudança. */
 export type EditableProfile = {
   displayName: string | null;
   username: string | null;
   /** ISO; null sem prazo. */
   usernameChangeableAt: string | null;
+  /** Quem pôs o prazo: `moderation` (a equipe) ou null (o fã, ou sem prazo). Seção 32. */
+  usernameLockReason: UsernameLockReason | null;
   bio: string | null;
   city: string | null;
   gender: Gender | null;

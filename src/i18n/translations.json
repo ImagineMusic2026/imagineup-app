@@ -874,7 +874,10 @@
       "reserved": "Indisponível: este @ é reservado.",
       "invalid": "Indisponível: use de 3 a 20 letras minúsculas e números.",
       "lockedUntil": "Você troca o @ de novo em {{date}}.",
-      "tooSoon": "Você trocou o @ há menos de 30 dias."
+      "tooSoon": "Você trocou o @ há menos de 30 dias.",
+      "lockedByTeam": "A equipe trocou seu @. Você escolhe outro a partir de {{date}}.",
+      "lockedByTeamSoon": "A equipe trocou seu @ há menos de 30 dias.",
+      "lockedMailSubject": "Troca do @ no ImagineUP"
     },
     "details": {
       "section": "Detalhes",

@@ -127,8 +127,9 @@ describe('CPU e concorrência das funções', () => {
   it('uma instância de cada função, todas acordadas ao mesmo tempo, cabe na cota de 20 vCPU', () => {
     const total = [...endpoints.values()].reduce((sum, endpoint) => sum + vcpuOf(endpoint), 0);
     // Com 1 vCPU em todas, eram 64 (65 desde o clearFanProfileText, seção 28;
-    // 66 desde o resolveProfileReport, seção 29). Hoje: a api, o rankingTick e
-    // o createUserProfile a 1/3 e as outras 63 a 1/6, uns 12,2.
+    // 66 desde o resolveProfileReport, seção 29; 68 desde o exportFanData e o
+    // deleteFanAccount, seção 32). Hoje: a api a 1, o rankingTick e o
+    // createUserProfile a 1/3 e as outras 65 a 1/6, uns 12,5.
     expect(total).toBeLessThan(REGION_CPU_QUOTA);
   });
 
@@ -137,8 +138,8 @@ describe('CPU e concorrência das funções', () => {
       .filter(([name]) => name !== 'api')
       .reduce((sum, [, endpoint]) => sum + vcpuOf(endpoint), 0);
     const api = endpointOf('api');
-    // As 8 instâncias da api a 1 vCPU mais uns 11,2 das outras: uns 19,16
-    // (66 funções desde a seção 29; a sobra de uns 0,84 fica nas Pendências).
+    // As 8 instâncias da api a 1 vCPU mais uns 11,5 das outras: uns 19,49
+    // (68 funções desde a seção 32; a sobra de uns 0,51 fica nas Pendências).
     expect((api.maxInstances as number) * vcpuOf(api) + others).toBeLessThan(REGION_CPU_QUOTA);
   });
 

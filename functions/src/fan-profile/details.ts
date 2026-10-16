@@ -8,6 +8,7 @@ import type {
   Gender,
   ProfileChanges,
   SocialNetwork,
+  UsernameLockReason,
 } from '../api/contract';
 import { isBlockedSocial, isBlockedText } from '../content-filter';
 import { DISPLAY_NAME_MAX } from '../profile';
@@ -217,6 +218,13 @@ const textOf = (value: unknown): string | null =>
 /** O gênero guardado, ou null (ausente, null ou fora da lista). */
 export const genderOf = (value: unknown): Gender | null =>
   (GENDERS as readonly unknown[]).includes(value) ? (value as Gender) : null;
+
+/**
+ * O motivo do prazo do @ guardado (seção 32, decisão 2): só `moderation`; o
+ * ausente (os perfis de antes), null e qualquer outro valor valem null.
+ */
+export const lockReasonOf = (value: unknown): UsernameLockReason | null =>
+  value === 'moderation' ? 'moderation' : null;
 
 /**
  * As redes guardadas, lidas do mapa pela lista fixa: chave estranha no
@@ -498,13 +506,15 @@ export function profileUpdateOf(
 /**
  * O perfil editável (`EditableProfile`, a resposta do `PUT /me/profile`), do
  * retrato com a diferença aplicada: o ausente vale o padrão (null, `false`), as
- * quatro redes sempre presentes, e o prazo do @ em ISO (null sem prazo).
+ * quatro redes sempre presentes, e o prazo do @ em ISO (null sem prazo), com o
+ * motivo dele (`moderation` ou null, seção 32).
  */
 export function editableProfileOf(data: Record<string, unknown>): EditableProfile {
   return {
     displayName: textOf(data.displayName),
     username: textOf(data.username),
     usernameChangeableAt: isoOf(data.usernameChangeableAt),
+    usernameLockReason: lockReasonOf(data.usernameLockReason),
     bio: textOf(data.bio),
     city: textOf(data.city),
     gender: genderOf(data.gender),

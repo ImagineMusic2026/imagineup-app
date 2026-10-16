@@ -154,9 +154,11 @@ describe('o Post do app (postView)', () => {
       width: 1080,
       height: 1350,
     });
+    // O vídeo sem mídia gravada leva o posterUrl null (33.2); a foto, nunca o campo.
     expect(view(post('p-clipe', { kind: 'video' })).media).toEqual({
       url: null,
       thumbnailUrl: null,
+      posterUrl: null,
       ...POST_MEDIA_SIZES.video.photo,
     });
   });
@@ -173,9 +175,12 @@ describe('o Post do app (postView)', () => {
       width: 1440,
       height: 1800,
     });
-    expect(view(post('p2', { kind: 'video', media })).media).toMatchObject({
+    expect(view(post('p2', { kind: 'video', media })).media).toEqual({
       url: null,
       thumbnailUrl: 'https://f/t.webp',
+      posterUrl: 'https://f/p.webp',
+      width: 1440,
+      height: 1800,
     });
     expect(
       view(
@@ -183,8 +188,46 @@ describe('o Post do app (postView)', () => {
           kind: 'video',
           media: { ...media, video: { url: 'https://f/v.mp4', path: 'posts/p/v.mp4', size: 9 } },
         }),
-      ).media?.url,
-    ).toBe('https://f/v.mp4');
+      ).media,
+    ).toEqual({
+      url: 'https://f/v.mp4',
+      thumbnailUrl: 'https://f/t.webp',
+      posterUrl: 'https://f/p.webp',
+      width: 1440,
+      height: 1800,
+    });
+  });
+
+  it('o posterUrl (33.2): só no vídeo, a capa grande, ou null sem mídia; a foto sem o campo', () => {
+    const media = {
+      photo: { url: 'https://f/capa-1080.webp', path: 'posts/p/c.webp', width: 1080, height: 608 },
+      thumb: { url: 'https://f/capa-480.webp', path: 'posts/p/t.webp', width: 480, height: 270 },
+      video: { url: 'https://f/v.mp4', path: 'posts/p/v.mp4', size: 9 },
+    };
+    const rows: [string, PostRecord, string | null | undefined][] = [
+      ['o vídeo com a capa', post('v1', { kind: 'video', media }), 'https://f/capa-1080.webp'],
+      ['o vídeo sem mídia gravada', post('v2', { kind: 'video' }), null],
+      [
+        'a foto com mídia',
+        post('f1', { kind: 'photo', media: { ...media, video: null } }),
+        undefined,
+      ],
+      ['a foto sem mídia', post('f2', { kind: 'photo' }), undefined],
+    ];
+    for (const [label, record, poster] of rows) {
+      const result = view(record).media!;
+      if (poster === undefined) expect('posterUrl' in result, label).toBe(false);
+      else expect(result.posterUrl, label).toBe(poster);
+    }
+    // A capa sem a miniatura: a miniatura cai na capa, e o posterUrl é a mesma.
+    expect(
+      view(post('v3', { kind: 'video', media: { ...media, thumb: null } })).media,
+    ).toMatchObject({
+      thumbnailUrl: 'https://f/capa-1080.webp',
+      posterUrl: 'https://f/capa-1080.webp',
+    });
+    expect(view(post('t1')).media).toBeNull();
+    expect(view(post('s1', { kind: 'event' })).media).toBeNull();
   });
 
   it('a central, o "há N" pela primeira publicação, likedByMe e o compartilhar', () => {

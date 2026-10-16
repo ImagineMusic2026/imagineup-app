@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   callable,
   central,
+  localApi,
   post,
   seedMember,
   show,
@@ -16,7 +17,8 @@ import {
  * As callables de conteúdo do bloco 6 nos emuladores (docs/arquitetura-api.md,
  * 21.9 e 21.15): posts e shows com a seção artists, a mídia conferida no
  * emulador do Storage e a auditoria em staffAudit; e o has-content do
- * deleteArtist.
+ * deleteArtist. Desde a seção 32 (decisão 25), a mídia do vídeo que a `api`
+ * manda, com o `posterUrl` (33.2), pelo handler no processo.
  */
 const POST_FUNCTIONS = ['createPost', 'updatePost', 'setPostStatus', 'deletePost'];
 const EVENT_FUNCTIONS = ['createEvent', 'updateEvent', 'setEventStatus', 'deleteEvent'];
@@ -185,6 +187,34 @@ describe('posts (createPost, updatePost, setPostStatus, deletePost)', () => {
     const published = await read(`posts/${postId}`);
     expect(published).toMatchObject({ status: 'published' });
 
+    // A api manda a capa grande no vídeo (o posterUrl, 33.2, decisão 25 da seção 32)
+    // no detalhe, no mural e na grade da central, que montam o post pelo mesmo postView.
+    const fan = await signUpFan(db);
+    const call = localApi(env, { now: () => Date.now() });
+    const joined = await call('PUT', `/me/centrals/${artistId}`, {
+      token: fan.token,
+      key: unique('entrar-na-central-'),
+    });
+    expect(joined.status).toBe(200);
+    const mediaOf = async () => {
+      const detail = await call('GET', `/posts/${postId}`, { token: fan.token });
+      const feed = await call('GET', '/feed', { token: fan.token });
+      const grid = await call('GET', `/artists/${artistId}/posts`, { token: fan.token });
+      expect([detail.status, feed.status, grid.status]).toEqual([200, 200, 200]);
+      const inList = (body: Record<string, unknown>) =>
+        (body.items as { id: string; media: unknown }[]).find((item) => item.id === postId)?.media;
+      expect(inList(feed.body)).toEqual(detail.body.media);
+      expect(inList(grid.body)).toEqual(detail.body.media);
+      return detail.body.media;
+    };
+    expect(await mediaOf()).toEqual({
+      url: stored?.media?.video?.url,
+      thumbnailUrl: stored?.media?.thumb?.url,
+      posterUrl: stored?.media?.photo?.url,
+      width: 1920,
+      height: 1080,
+    });
+
     const next = {
       photoPath: `posts/${postId}/photo-${unique('')}-1440.webp`,
       thumbPath: `posts/${postId}/thumb-${unique('')}-480.webp`,
@@ -208,7 +238,14 @@ describe('posts (createPost, updatePost, setPostStatus, deletePost)', () => {
     expect(await auditOf('post.updated')).toHaveLength(2);
     // `videoPath: null` tira o vídeo.
     await ok('updatePost', { postId, media: { ...next, videoPath: null } }, editor);
-    expect((await read(`posts/${postId}`))?.media?.video).toBeNull();
+    const withoutVideo = (await read(`posts/${postId}`))?.media;
+    expect(withoutVideo?.video).toBeNull();
+    // Sem o mp4, a url nula e a capa grande ainda no posterUrl.
+    expect(await mediaOf()).toMatchObject({
+      url: null,
+      thumbnailUrl: withoutVideo?.thumb?.url,
+      posterUrl: withoutVideo?.photo?.url,
+    });
     expect(await folder(`posts/${postId}/`)).toEqual([next.photoPath, next.thumbPath].sort());
     expect(await fails('updatePost', { postId, media: null }, editor)).toBe(
       'published-needs-media',

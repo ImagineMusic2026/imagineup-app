@@ -8,6 +8,14 @@ export type SuspensionReason = 'spam' | 'offensive' | 'harassment' | 'other';
 export type SocialNetwork = 'instagram' | 'tiktok' | 'linkedin' | 'x';
 
 /**
+ * Quem pôs o prazo do @ (espelho do `UsernameLockReason` do
+ * `functions/src/api/contract.ts`, seção 32): `moderation` é a equipe, pelo
+ * `resetFanUsername`. O prazo da troca feita pelo próprio fã, e o perfil sem
+ * prazo, vêm como `null`.
+ */
+export type UsernameLockReason = 'moderation';
+
+/**
  * O usuário de cada rede, já normalizado (nunca o link: quem mostra monta o
  * link com o domínio fixo), ou `null` na rede vazia.
  */
@@ -37,6 +45,13 @@ export interface FanProfile {
    * bloco 9 não tem o campo.
    */
   usernameChangeableAt?: string | null;
+  /**
+   * Quem pôs o prazo do @: `moderation` quando a equipe trocou o @ (seção
+   * 32); `null` no prazo da troca feita pelo fã e sem prazo. Opcional: o
+   * perfil salvo no disco antes da seção 32 não tem o campo, e o ausente vale
+   * `null` (o `QUERY_CACHE_VERSION` não sobe).
+   */
+  usernameLockReason?: UsernameLockReason | null;
   /**
    * ISO: desde quando a conta está suspensa pela equipe (bloco 11); ausente
    * sem suspensão. O fã suspenso continua lendo o app, mas não edita o perfil
@@ -87,6 +102,11 @@ export interface EditableProfile {
   username: string | null;
   /** ISO; `null` sem prazo. */
   usernameChangeableAt: string | null;
+  /**
+   * Quem pôs o prazo (seção 32). Opcional: a `api` de antes da seção 32 não
+   * manda, e o ausente vale `null`.
+   */
+  usernameLockReason?: UsernameLockReason | null;
   bio: string | null;
   city: string | null;
   gender: Gender | null;

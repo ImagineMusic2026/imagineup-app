@@ -4,7 +4,7 @@ import { ImageManipulator } from 'expo-image-manipulator';
 import * as ImagePicker from 'expo-image-picker';
 import { router, Stack } from 'expo-router';
 import { Tabs } from 'expo-router/js-tabs';
-import { act, fireEvent, renderRouter, screen, waitFor } from 'expo-router/testing-library';
+import { act, fireEvent, renderRouter, screen, waitFor, within } from 'expo-router/testing-library';
 import { getDoc, onSnapshot } from 'firebase/firestore';
 import {
   AccessibilityInfo,
@@ -26,7 +26,7 @@ import { storageFileExists, uploadLocalFile } from '@/firebase';
 import { api, ApiError } from '@/services/api';
 import { fixtureWallet, setFixtureNow } from '@/services/fixtures';
 import { haptics } from '@/services/haptics';
-import { supportEmailUrl } from '@/services/web-page';
+import * as webPage from '@/services/web-page';
 import { usePreferencesStore } from '@/stores/preferences';
 import { useSessionStore } from '@/stores/session';
 
@@ -195,6 +195,8 @@ function deferred<T>() {
 }
 
 const saveButton = () => screen.getByTestId('edit-profile-save');
+/** O link "Escrever para a equipe" (o `SuspensionContact`). */
+const CONTACT_TEAM = 'Escrever para a equipe';
 const nameInput = () => screen.getByTestId('edit-profile-name');
 const usernameInput = () => screen.getByTestId('edit-profile-username-input');
 const bioInput = () => screen.getByTestId('edit-profile-bio');
@@ -707,6 +709,116 @@ describe('Editar perfil: o @', () => {
       'accessibilityHint',
       'Você troca o @ de novo em 6 de novembro.',
     );
+    // O prazo do próprio fã nunca traz o link da equipe (seção 32).
+    expect(screen.queryByRole('link', { name: CONTACT_TEAM })).toBeNull();
+  });
+
+  describe('o @ trocado pela equipe (seção 32)', () => {
+    const TEAM_LOCKED = 'A equipe trocou seu @. Você escolhe outro a partir de 6 de novembro.';
+    /** O perfil depois do `resetFanUsername`: o automático novo, o prazo e o motivo. */
+    const RESET_BY_TEAM: ProfileData = {
+      ...CAMILA,
+      username: 'fa123456',
+      usernameChangeableAt: { toDate: () => new Date('2026-11-06T15:00:00.000Z') },
+      usernameLockReason: 'moderation',
+    };
+    const tooSoon = (details: Record<string, unknown> | null = null) =>
+      new ApiError('validation', 'cedo', 409, 'username_change_too_soon', details);
+
+    it('a frase da equipe com a data, o campo só leitura, a pílula "Automático" e o link irmão da linha, com o assunto da troca do @', async () => {
+      const openEmail = jest.spyOn(webPage, 'openSupportEmail').mockResolvedValue(true);
+      await openEditProfile(RESET_BY_TEAM);
+
+      expect(usernameInput()).toHaveProp('editable', false);
+      expect(usernameInput()).toHaveProp('value', 'fa123456');
+      expect(usernameLine()).toHaveTextContent(TEAM_LOCKED);
+      expect(usernameInput()).toHaveProp('accessibilityHint', TEAM_LOCKED);
+      // O prazo vence a dica do @ automático, e a pílula continua.
+      expect(usernameLine()).not.toHaveTextContent('Este @ foi criado sozinho.');
+      expect(screen.getByTestId('edit-profile-username-automatic', hidden)).toBeTruthy();
+
+      // O link fica fora do card e da linha do @ (a linha sai do leitor; o link, não).
+      const link = screen.getByRole('link', { name: CONTACT_TEAM });
+      expect(within(screen.getByTestId('edit-profile-basic')).queryByRole('link')).toBeNull();
+      expect(within(usernameLine()).queryByText(CONTACT_TEAM, hidden)).toBeNull();
+      fireEvent.press(link);
+      await waitFor(() => expect(openEmail).toHaveBeenCalledWith('Troca do @ no ImagineUP'));
+      expect(openEmail).toHaveBeenCalledTimes(1);
+    });
+
+    it('o suspenso com o @ trocado pela equipe fica com um link só, o do aviso de cima', async () => {
+      await openEditProfile({
+        ...RESET_BY_TEAM,
+        suspendedAt: { toDate: () => new Date('2026-10-06T15:00:00.000Z') },
+      });
+      expect(usernameLine()).toHaveTextContent(TEAM_LOCKED);
+      expect(screen.getAllByRole('link', { name: CONTACT_TEAM })).toHaveLength(1);
+    });
+
+    it('com o prazo vencido, o motivo sozinho não trava nem mostra o link', async () => {
+      await openEditProfile({
+        ...RESET_BY_TEAM,
+        usernameChangeableAt: { toDate: () => new Date('2026-10-07T14:59:00.000Z') },
+      });
+      expect(usernameInput()).toHaveProp('editable', true);
+      expect(usernameLine()).toHaveTextContent(
+        'Este @ foi criado sozinho. Escolha um com a sua cara.',
+      );
+      expect(screen.queryByRole('link', { name: CONTACT_TEAM })).toBeNull();
+    });
+
+    it('o 409 com o cache sem prazo usa a data do details.changeableAt, na frase do fã', async () => {
+      get.mockResolvedValue({ data: { username: 'camilaribeiro', status: 'available' } } as never);
+      put.mockRejectedValueOnce(tooSoon({ changeableAt: '2026-11-06T15:00:00.000Z' }));
+      await openEditProfile();
+      fireEvent.changeText(usernameInput(), 'camilaribeiro');
+      act(() => jest.advanceTimersByTime(400));
+      await waitFor(() => expect(saveButton()).toBeEnabled());
+      fireEvent.press(saveButton());
+
+      const text = 'Você troca o @ de novo em 6 de novembro.';
+      await waitFor(() => expect(usernameLine()).toHaveTextContent(text));
+      expect(announced()).toContain(text);
+      expect(announced()).not.toContain('Você trocou o @ há menos de 30 dias.');
+      expect(usernameInput()).toHaveProp('value', 'camilarib');
+      expect(usernameInput()).toHaveProp('editable', false);
+      expect(screen.queryByRole('link', { name: CONTACT_TEAM })).toBeNull();
+    });
+
+    it('o 409 com o moderation no perfil (o relógio do aparelho adiantado): a frase da equipe com a data do 409, e o link', async () => {
+      // O aparelho acha que o prazo passou; o 409 traz a data do servidor.
+      await openEditProfile({
+        ...RESET_BY_TEAM,
+        usernameChangeableAt: { toDate: () => new Date('2026-10-07T14:59:00.000Z') },
+      });
+      get.mockResolvedValue({ data: { username: 'camilaribeiro', status: 'available' } } as never);
+      put.mockRejectedValueOnce(tooSoon({ changeableAt: '2026-11-06T15:00:00.000Z' }));
+      fireEvent.changeText(usernameInput(), 'camilaribeiro');
+      act(() => jest.advanceTimersByTime(400));
+      await waitFor(() => expect(saveButton()).toBeEnabled());
+      fireEvent.press(saveButton());
+
+      await waitFor(() => expect(usernameLine()).toHaveTextContent(TEAM_LOCKED));
+      expect(announced()).toContain(TEAM_LOCKED);
+      expect(usernameInput()).toHaveProp('value', 'fa123456');
+      expect(usernameInput()).toHaveProp('editable', false);
+      expect(screen.getByRole('link', { name: CONTACT_TEAM })).toBeTruthy();
+    });
+
+    it('sem data nenhuma (nem no perfil, nem no 409), a frase da equipe sem data', async () => {
+      get.mockResolvedValue({ data: { username: 'camilaribeiro', status: 'available' } } as never);
+      put.mockRejectedValueOnce(tooSoon());
+      await openEditProfile({ ...CAMILA, usernameLockReason: 'moderation' });
+      fireEvent.changeText(usernameInput(), 'camilaribeiro');
+      act(() => jest.advanceTimersByTime(400));
+      await waitFor(() => expect(saveButton()).toBeEnabled());
+      fireEvent.press(saveButton());
+
+      const text = 'A equipe trocou seu @ há menos de 30 dias.';
+      await waitFor(() => expect(usernameLine()).toHaveTextContent(text));
+      expect(announced()).toContain(text);
+      expect(screen.getByRole('link', { name: CONTACT_TEAM })).toBeTruthy();
+    });
   });
 
   it('o 409 de dono segura o ✓ e não grava a bio; voltar ao @ de agora solta o resto', async () => {
@@ -1039,7 +1151,7 @@ describe('Editar perfil: as recusas', () => {
       fireEvent.press(screen.getByRole('link', { name: CONTACT }));
       await waitFor(() =>
         expect(Linking.openURL).toHaveBeenCalledWith(
-          supportEmailUrl('Texto recusado no ImagineUP'),
+          webPage.supportEmailUrl('Texto recusado no ImagineUP'),
         ),
       );
 

@@ -73,7 +73,7 @@ import {
   type TouchedFields,
 } from '../schemas';
 import type { FanProfile, ProfileChanges, SocialNetwork } from '../types';
-import { isAutomaticUsername, normalizeUsername } from '../username';
+import { isAutomaticUsername, normalizeUsername, usernameLock } from '../username';
 
 const ICON_SIZE = 18;
 const STATUS_ICON_SIZE = 18;
@@ -240,7 +240,8 @@ function ProfileForm({ profile, fallbackName, online }: ProfileFormProps) {
   const saving = update.isPending || pendingSaves > 0;
   const photoBusy = pendingPhotos + pendingRemovals > 0;
   const [message, setMessage] = useState<SaveMessage | null>(null);
-  const [tooSoon, setTooSoon] = useState(false);
+  // A recusa 409 do prazo do @, com a data que ela trouxe (`null` sem data).
+  const [refusedLock, setRefusedLock] = useState<{ until: string | null } | null>(null);
   const [refusedSuspended, setRefusedSuspended] = useState(false);
   const [photoSaved, setPhotoSaved] = useState(false);
   const suspended = Boolean(profile.suspendedAt) || refusedSuspended;
@@ -289,12 +290,14 @@ function ProfileForm({ profile, fallbackName, online }: ProfileFormProps) {
     }
   });
 
-  // O @: o prazo de 30 dias pelo perfil e pelo relógio do aparelho, ou pela
-  // recusa do servidor (o relógio do aparelho adiantado).
+  // O @: o prazo de 30 dias pelo perfil e pelo relógio do aparelho
+  // (`usernameLock`), ou pela recusa do servidor (o relógio do aparelho
+  // adiantado, ou o cache sem o prazo), com a data do 409 e, sem ela, a do
+  // perfil. Quem pôs o prazo vem sempre do perfil: o 409 não diz (seção 32).
   const changeableAt = profile.usernameChangeableAt ?? null;
-  const lockedUntil =
-    changeableAt && Date.parse(changeableAt) > now.getTime() ? changeableAt : null;
-  const usernameLocked = Boolean(lockedUntil) || tooSoon;
+  const lock = usernameLock(profile, now);
+  const lockedByTeam = profile.usernameLockReason === 'moderation';
+  const usernameLocked = Boolean(lock) || refusedLock !== null;
   const currentUsername = profile.username ?? '';
   const automatic = isAutomaticUsername(currentUsername);
   const check = useUsernameCheck({
@@ -320,14 +323,24 @@ function ProfileForm({ profile, fallbackName, online }: ProfileFormProps) {
   // indisponível) também pergunta: sair fecharia sem aviso o que o fã digitou.
   const leaveAsks = isDirty && (pending || (Boolean(touched.username) && check.changed));
 
-  const lockedText = (date: string | null): string =>
-    date
+  /**
+   * A frase do prazo: a da equipe quando ela trocou o @ (seção 32), senão a do
+   * fã; sem data nenhuma (nem no perfil, nem no 409), as frases sem data.
+   */
+  const lockedText = (date: string | null): string => {
+    if (lockedByTeam) {
+      return date
+        ? t('editProfile.username.lockedByTeam', { date: formatLongDate(date) })
+        : t('editProfile.username.lockedByTeamSoon');
+    }
+    return date
       ? t('editProfile.username.lockedUntil', { date: formatLongDate(date) })
       : t('editProfile.username.tooSoon');
-  const usernameLine: { text: string; error: boolean } = lockedUntil
-    ? { text: lockedText(lockedUntil), error: false }
-    : tooSoon
-      ? { text: lockedText(changeableAt), error: false }
+  };
+  const usernameLine: { text: string; error: boolean } = lock
+    ? { text: lockedText(lock.until), error: false }
+    : refusedLock
+      ? { text: lockedText(refusedLock.until ?? changeableAt), error: false }
       : check.changed && check.status && check.status !== 'current'
         ? {
             text: t(USERNAME_STATUS_TEXT[check.status]),
@@ -414,9 +427,11 @@ function ProfileForm({ profile, fallbackName, online }: ProfileFormProps) {
       return;
     }
     if (code === 'username_change_too_soon') {
-      // O efeito do prazo volta o campo ao @ de agora.
-      setTooSoon(true);
-      failWith(lockedText(changeableAt));
+      // O efeito do prazo volta o campo ao @ de agora. A data é a do 409 e,
+      // sem ela, a do perfil: com o cache velho, a frase sai com a data.
+      const until = apiErrorDetail(error, 'changeableAt');
+      setRefusedLock({ until });
+      failWith(lockedText(until ?? changeableAt));
       return;
     }
     if (code === API_ERROR_CODES.profileInvalid) {
@@ -654,6 +669,15 @@ function ProfileForm({ profile, fallbackName, online }: ProfileFormProps) {
           />
         ) : null}
       </View>
+      {/* Com o prazo da equipe (seção 32), o canal de quem discorda da troca:
+          irmão da linha e do card, nunca filho. Nunca com o prazo do próprio
+          fã, e não para o suspenso, que já tem o link no aviso de cima. */}
+      {usernameLocked && lockedByTeam && !suspended ? (
+        <SuspensionContact
+          subject="editProfile.username.lockedMailSubject"
+          style={styles.usernameContact}
+        />
+      ) : null}
 
       <SectionLabel>{t('editProfile.details.section')}</SectionLabel>
       <FormGroup testID="edit-profile-details">
@@ -944,6 +968,9 @@ const styles = StyleSheet.create({
   },
   usernameText: {
     flexShrink: 1,
+  },
+  usernameContact: {
+    paddingHorizontal: spacing.lg,
   },
   footnote: {
     paddingHorizontal: spacing.lg,

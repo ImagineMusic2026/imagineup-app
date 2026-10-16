@@ -221,8 +221,8 @@ describe('o manifesto: toda callable exportada vem do onPanelCall', () => {
     )
     .map(([name]) => name);
 
-  it('as callables do painel são todas do onPanelCall (55 em 14/10/2026)', () => {
-    expect(callables.length).toBeGreaterThanOrEqual(55);
+  it('as callables do painel são todas do onPanelCall (57 desde a seção 32)', () => {
+    expect(callables.length).toBeGreaterThanOrEqual(57);
     expect(callables).toEqual(expect.arrayContaining(['createStaffInvite', 'hideFanComments']));
     const plain = callables.filter((name) => !isPanelCall(exported[name as keyof typeof exported]));
     expect(plain).toEqual([]);
@@ -287,7 +287,7 @@ describe('o cors das callables: só as origens do painel', () => {
   });
 
   it('o preflight de toda callable devolve a origem do painel, e nada a outra origem', async () => {
-    expect(callables.length).toBeGreaterThanOrEqual(55);
+    expect(callables.length).toBeGreaterThanOrEqual(57);
     for (const name of callables) {
       const panel = await preflight(name, PANEL_ORIGIN);
       expect(panel.status, name).toBe(204);

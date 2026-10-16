@@ -336,6 +336,35 @@ describe('Ajustes', () => {
     expect(screen.queryByText('Só leitura nesta versão do app')).toBeNull();
   });
 
+  it('com a API e o @ automático travado pelo prazo (seção 32), a meta não convida a trocar o @', async () => {
+    mockDataSource = 'api';
+    const inTenDays = new Date(Date.now() + 10 * 24 * 60 * 60 * 1000).toISOString();
+    // O @ trocado pela equipe: o automático novo, com o prazo de 30 dias correndo.
+    queryClient.setQueryData(['profile', 'me', 'uid-descarte'], {
+      username: 'fa711224',
+      usernameChangeableAt: inTenDays,
+      usernameLockReason: 'moderation',
+    });
+    renderRouter(appTree, { initialUrl: '/ajustes' });
+    expect(
+      await screen.findByRole('button', { name: 'Editar perfil. Foto, nome, @, bio e redes' }),
+    ).toBeTruthy();
+    expect(screen.queryByText('Seu @ ainda é automático')).toBeNull();
+  });
+
+  it('com a API e o prazo do @ vencido, o @ automático volta a ser avisado', async () => {
+    mockDataSource = 'api';
+    queryClient.setQueryData(['profile', 'me', 'uid-descarte'], {
+      username: 'fa711224',
+      usernameChangeableAt: '2026-01-01T12:00:00.000Z',
+      usernameLockReason: 'moderation',
+    });
+    renderRouter(appTree, { initialUrl: '/ajustes' });
+    expect(
+      await screen.findByRole('button', { name: 'Editar perfil. Seu @ ainda é automático' }),
+    ).toBeTruthy();
+  });
+
   it('com a API e o @ escolhido, a meta é "Foto, nome, @, bio e redes"', async () => {
     mockDataSource = 'api';
     queryClient.setQueryData(['profile', 'me', 'uid-descarte'], { username: 'camilarib' });
