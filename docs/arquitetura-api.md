@@ -1,8 +1,8 @@
 # Arquitetura da API do app
 
-Nota de arquitetura do servidor do ImagineUP. Ela diz como o app fala com as Cloud Functions, onde moram os pontos, como o ponto é lançado e como o painel lê os números. Vale para o bloco 1 (base do servidor e núcleo de pontos) e deixa a estrutura pronta para os blocos seguintes. O bloco 4 (centrais de verdade) está na seção 19, o bloco 5 (convite com atribuição e origem do fã), na seção 20, o bloco 6 (mural e agenda com conteúdo real), na seção 21, o bloco 7 (missões, níveis, conquistas e extrato), na seção 22, o bloco 8 (ranking e temporadas), na seção 23, o bloco 9 (perfil editável), na seção 24, o bloco 10 (loja e resgate), na seção 25, o bloco 11 (telas do painel), na seção 26, a proteção contra abuso, na seção 27, o perfil novo (bio, gênero, conta privada, redes, a edição pela API e o perfil público), na seção 28, as exigências das lojas (denúncia de perfil, bloqueados, Sobre, conta, suspensão, 429 e Explorar), na seção 29, o filtro do que o fã publica, na seção 30, a proteção da produção (cópias do banco, alertas e o registro de acesso), na seção 31, e a moderação do @, os pedidos de dados e o aviso de api fora do ar, na seção 32.
+Nota de arquitetura do servidor do ImagineUP. Ela diz como o app fala com as Cloud Functions, onde moram os pontos, como o ponto é lançado e como o painel lê os números. Vale para o bloco 1 (base do servidor e núcleo de pontos) e deixa a estrutura pronta para os blocos seguintes. O bloco 4 (centrais de verdade) está na seção 19, o bloco 5 (convite com atribuição e origem do fã), na seção 20, o bloco 6 (mural e agenda com conteúdo real), na seção 21, o bloco 7 (missões, níveis, conquistas e extrato), na seção 22, o bloco 8 (ranking e temporadas), na seção 23, o bloco 9 (perfil editável), na seção 24, o bloco 10 (loja e resgate), na seção 25, o bloco 11 (telas do painel), na seção 26, a proteção contra abuso, na seção 27, o perfil novo (bio, gênero, conta privada, redes, a edição pela API e o perfil público), na seção 28, as exigências das lojas (denúncia de perfil, bloqueados, Sobre, conta, suspensão, 429 e Explorar), na seção 29, o filtro do que o fã publica, na seção 30, a proteção da produção (cópias do banco, alertas e o registro de acesso), na seção 31, a moderação do @, os pedidos de dados e o aviso de api fora do ar, na seção 32, e o fã-clube gerido pelo fã, com o prêmio ao gestor, na seção 34 (só o desenho, de 16/10/2026).
 
-Em produção desde 15/10/2026 (UTC): o servidor de todas as seções (68 funções e 44 índices compostos), e o app delas no canal preview da EAS. Os blocos 1 e 4 a 10 saíram em 07/10/2026, o servidor do bloco 11 em 08/10/2026, as seções 27 e 28 de 08 a 09/10/2026, as seções 29, 30 e 31 em 14/10/2026 e a seção 32 em 15/10/2026 (UTC; a noite de 14/10 em Brasília). O relato de cada publicação está em 26.21.
+Em produção desde 15/10/2026 (UTC): o servidor de todas as seções (68 funções e 44 índices compostos), e o app delas no canal preview da EAS. Os blocos 1 e 4 a 10 saíram em 07/10/2026, o servidor do bloco 11 em 08/10/2026, as seções 27 e 28 de 08 a 09/10/2026, as seções 29, 30 e 31 em 14/10/2026 e a seção 32 em 15/10/2026 (UTC; a noite de 14/10 em Brasília). O relato de cada publicação está em 26.21. A seção 34 é só o desenho: nada dela está no código nem no ar.
 
 Origem: decisão do dono em 05/10/2026 (API HTTP numa função `onRequest`, pontos calculados na transação da ação) e o levantamento de 05/10/2026 (13 blocos, 26 endpoints, perguntas técnicas em aberto).
 
@@ -35,6 +35,7 @@ Quem mexe no servidor lê esta nota antes. Mudou uma decisão daqui? Mude a nota
 23. Filtro do que o fã publica (seção 30): uma lista de termos no servidor, em `functions/src/content-filter/` (código puro, sem dependência nova), conferida antes de publicar no comentário, no nome, no @, na bio, na cidade e nas redes, dentro das funções puras que o `validate` e a transação já chamam, sem leitura nova; o texto e cada termo passam pela mesma normalização (acentos, homóglifos, letras soltas, números e símbolos no lugar de letras e letras repetidas), com palavra inteira e frase no texto livre e trecho só dentro de um pedaço dos campos de identidade; o repositório, público, guarda só as chaves (o SHA-256 de cada pedaço normalizado), e a lista legível fica fora de todo repositório, com o dono; toda categoria barrada em todo campo até a aprovação das lojas; a recusa usa os códigos de hoje com o motivo `not_allowed` (`comment_invalid` e `profile_invalid`), e o @ barrado sai como reservado, sem gravar nada e sem dizer o termo; o nome do cadastro barrado vira "Fã", e o @ dele, o `fa`, no `createUserProfile` e no gatilho do perfil; a linha do log da `api` ganha o `code` e o `reason`; nenhuma regra, índice, fila, callable nem teto novo; no app, a frase com o link "Escrever para a equipe" embaixo do compositor e no campo do perfil, e o comentário recusado com o campo ocupado vira a linha "Não publicado", que sobrevive ao app fechado; o app vai por EAS Update, sem mudar o fingerprint, e a publicação saiu junto com a da seção 29, em 14/10/2026, num lote só de cinco funções.
 24. Proteção da produção (seção 31): o Firestore com o PITR de 7 dias, a proteção contra apagar e um backup diário com 14 dias, todos dentro dos 30 dias da política; alertas por e-mail no Cloud Monitoring (erros nas funções, a `api` com 5xx, as agendadas falhando ou paradas), silenciados em todo deploy de funções; e o registro de acesso por 184 dias numa linha de log própria, `acesso`, só com o IP (o último item do `X-Forwarded-For`) e o uid, escrita a cada pedido da `api` e a cada chamada das callables do painel (pelo `onPanelCall`), levada por um sink a um bucket de log em southamerica-east1; nenhuma regra, rota, callable ou pacote novo, e o fingerprint do app não muda.
 25. Moderação do @, pedidos de dados e aviso de api fora do ar (seção 32): o `resetFanUsername` ganha o motivo (`reason`); o `moderation`, o padrão, deixa o fã com o @ automático por 30 dias, com o `usernameLockReason` no perfil para o app dizer que foi a equipe, e o `central`, para o @ de um artista, fica sem prazo; duas callables só de admin, sem seção nova: `exportFanData` (o arquivo em JSON, pela resposta da callable, em partes que o painel junta e baixa) e `deleteFanAccount` (a exclusão do Auth, que o gatilho de sempre completa), com o e-mail da conta conferido, o login de até 10 minutos, o teto do dia de 20 exportações e 5 exclusões por pessoa e a auditoria só com o uid; a lista das fontes do fã (`FAN_DATA_SOURCES`) diz o que vai ao arquivo e o que a exclusão faz com cada uma, presa ao `deleteUserData` por teste; o `GET /health` na `api`, sem login e sem as linhas `acesso` e `api`, pedido a cada 5 minutos por um teste de disponibilidade, com o alerta por e-mail no canal de 31.4; o `posterUrl` na mídia do vídeo, a capa grande que o app do bloco B lê; 68 funções, nenhuma regra, índice, fila ou TTL novo, e o fingerprint do app não muda.
+27. Fã-clube gerido pelo fã, com o prêmio ao gestor (seção 34, só o desenho, de 16/10/2026; o dono decidiu construir sem aditivo): o Modelo A, um espaço não oficial ligado à central oficial, em `fanClubs/{clubId}`; a candidatura nos Ajustes, para quem tem o @ escolhido e está na central de um artista com "Aceita fã-clubes", com o 18+ declarado e até 3 rodadas; a seção nova `fanClubs` no painel e uma callable só, `decideFanClub` (69 funções, sobra de CPU de uns 0,34 vCPU), em que o editor da seção decide e só o admin encerra; o gestor publica texto, ou texto com foto da galeria, sempre revisado antes de ir ao ar, fora de `posts/{id}`, com a denúncia numa fila própria e o motivo novo "Uso indevido de imagem"; seguir também faz entrar na central, conta por `count()` com a cópia noturna, rende 0 ponto e acaba ao sair da central, ao bloquear o gestor e na suspensão; o tipo de link `fanclub` e a entrada trazida só na primeira da vida, com o marcador `fanClubCredits`; o Destaque com prazo de até 31 dias e o prêmio ao gestor como um pedido da loja a partir de uma recompensa "Só para prêmios de fã-clube", com os pontos na mesma ação, só no saldo, e "Prêmio do fã-clube" no extrato; a exclusão do gestor apaga as publicações e deixa o fã-clube como lápide; nada nativo, tudo por EAS Update, e nada aparece aos fãs até o regulamento do fã-clube estar publicado (as caixas por artista nascem ligadas para toda central com o `imageRightsConfirmed`, e o texto do reconhecimento nasce ligado, com o parecer do jurídico dispensado pelo dono e o risco aceito).
 
 ## 1. Formato da API
 
@@ -10696,6 +10697,858 @@ Ficaram de fora, com o motivo:
 - **O comentário do `SuspensionContact`** cita o terceiro uso, o link do @ trocado pela equipe na "Editar perfil", com o assunto `editProfile.username.lockedMailSubject`.
 
 Os dois achados do número do projeto eram o mesmo, e contam como um. Nenhum foi recusado.
+
+## 34. Fã-clube gerido pelo fã, com o prêmio ao gestor
+
+O fã comum cria o fã-clube de um artista da Imagine para gerar engajamento para ele. O fã-clube é um espaço não oficial, com página própria, ligado à central oficial do artista: o gestor aprovado publica texto, ou texto com foto, sempre revisado pela equipe antes de ir ao ar; os outros fãs seguem, e seguir também faz entrar na central oficial; a equipe acompanha os números no painel e reconhece os melhores com o selo Destaque, com pontos e com prêmios de verdade (ingressos, descontos e outros), que viram pedidos da loja. São oito frentes: (A) a candidatura nos Ajustes e a aprovação; (B) o fã-clube, a página pública e as publicações com pré-moderação, denúncia e bloqueio; (C) os seguidores; (D) a atribuição (o tipo de link `fanclub` e as entradas trazidas); (E) o acompanhamento e o Destaque; (F) o prêmio ao gestor; (G) a seção nova "Fã-clubes" do painel; (H) a documentação. Esta seção é o contrato: decisões, as respostas do dono uma a uma, rotas e a callable, dados, o passo a passo, regras e índices, a exclusão de conta e o pedido de dados, o app e o painel tela a tela, a moderação e as lojas, seed e fixtures, testes, o plano de construção, a publicação, as perguntas para a cliente, as pendências, o que fica fora e as armadilhas. Segue os padrões das seções 1 a 32 e só diz o que muda ou acrescenta.
+
+Origem: a ideia do dono de 16/10/2026 (o usuário comum cria o fã-clube de um artista nos Ajustes, "Tenha seu fã-clube", publica conteúdo do artista e tem seguidores, e a equipe acompanha no painel e recompensa os mais engajados; afiliados ficam para depois) e a proposta escrita no mesmo dia a partir do código e do contrato de 23/09/2026, na página "Proposta: Fã-clube gerido pelo fã" do Notion (filha da página ImagineUP; a tarefa é a UP-65). A proposta comparou três modelos (A, um espaço não oficial ligado à central oficial; B, uma central própria do fã, com membros; C, o fã como colaborador da central oficial), foi revista no mesmo dia com os seguidores e o acompanhamento, e ganhou o desenho do "Prêmio de verdade ao gestor" sobre o código da loja e dos resgates. O dono respondeu as 30 decisões da proposta e as 12 do prêmio em 16/10/2026 (34.2) e, no mesmo dia, respondeu pela cliente quatro das cinco perguntas que seguravam a ida ao ar (34.16; falta o regulamento); onde a página e as respostas divergem, valem as respostas. O site já manda `/fa-clube/*` para a página Baixar desde 16/10/2026 (a UP-49, `imagineup-LP` `2447ca2`, `site/vercel.json:7-10`, redirecionamento temporário).
+
+Estado: só o desenho, de 16/10/2026, conferido contra o código da `main` do app em `66c277a` (o que está no ar desde 15/10/2026 roda o código de `c4c25ff`, que só difere dele na documentação e no módulo do roteiro de restauração, `functions/src/restore/`, que o `index.ts` não exporta), da `main` do painel em `ab0de7f` e da `main` do site em `2447ca2`. Nada foi construído: esta seção, o `CLAUDE.md` e o `AGENTS.md` entram num PR só de documentação. A seção passou por três críticas independentes no mesmo dia (produto e lojas; servidor, segurança e custo; app, painel e coerência), com cada achado conferido no código antes de entrar (34.21). O plano está em 34.14, a publicação em 34.15 e as perguntas para a cliente em 34.16.
+
+Escopo e contrato: o fã-clube gerido pelo fã está fora do Anexo I. O 2.c prevê "centrais de fãs por artista, com mural de publicações do artista", o escopo é fechado (2.6), e o que não está no Anexo I pede aditivo escrito (11.1 e 11.2). O post criado por fã saiu com o ok da cliente em 28/09/2026 (UP-10) e estava registrado como fora do contrato no `CLAUDE.md`. Em 16/10/2026, o dono decidiu construir sem aditivo (decisão 1). Fazer por liberalidade não amplia o escopo (11.3): a decisão fica registrada aqui com a data e o motivo (9.3), e o `CLAUDE.md` e o `AGENTS.md` passam a dizer o estado de agora (34.20). O que já estava no escopo e serve à ideia continua igual: o link de convite com atribuição, a campanha, os pontos por visita e por cadastro, a origem do cadastro no painel (Anexo I 2.e, 2.j, 3.c e 4.d) e o Ajuste de pontos da ficha do fã (3.c).
+
+Trava do bloco: nada muda o fingerprint nativo (`310056fd840b5459416c9926e46846b8c208aa76`). A foto da publicação vem só da galeria, pelo seletor do sistema, que não pede permissão (`src/domains/profile/photo.ts:49-53` e `:65`), com o `expo-image-picker` e o `expo-image-manipulator` que já estão instalados (bloco 9); a câmera pediria trocar o texto nativo de `app.config.ts:70` numa build nova, e fica fora (decisão 15). Nenhum pacote novo, nada no `app.config.ts`, no `package.json`, no `.gitignore` nem no `eas.json`. Todo o app chega ao APK interno por EAS Update. No servidor: uma callable nova (69 funções), rotas novas na `api`, coleções, regras, índices, uma política TTL, uma pasta no Storage e mudanças em funções que existem (34.5 e 34.8).
+
+Como era antes:
+
+- O `CLAUDE.md:17` e o `AGENTS.md` punham o "post criado por fã (o fã só curte e comenta)" na lista do fora do contrato e mandavam perguntar antes de construir tela fora do Anexo I. O "+" do meio nasceu para substituir o post de fã do protótipo (aprovação de 28/09/2026).
+- O Mural é só da equipe: os posts nascem pelas callables do painel, com a seção `artists` (`functions/src/posts/panel.ts:42`, o `PANEL_CONTENT_SECTION`). Nenhuma rota de fã cria conteúdo além do comentário.
+- A entrada na central guarda só a via (`users/{uid}/centrals/{artistId}`: `uid`, `artistId`, `via`, `joinedAt` e `schemaVersion`, `centrals/service.ts:220-226`; o `JoinVia` de `centrals/model.ts:28` é `onboarding`, `page` ou `seed`). Não há como dizer quem trouxe a pessoa para a central.
+- O convite conhece os tipos de link `invite`, `post`, `artist`, `agenda` e `other`, mais o `code` do código digitado (`classifyInvitePath`, `invites/model.ts:223-241`; o `OriginKind`, `points/stats.ts:288`).
+- A loja só cria pedido pelo resgate do fã (`redeemReward`, `rewards/service.ts:218`) e pelo seed, que passa pelo mesmo núcleo. O custo vai de 1 a 1.000.000 (`parseRewardCost`, `rewards/model.ts:530-533`), o status da recompensa é `draft`, `published` ou `closed` (`model.ts:25`), os tipos são `ticket`, `videocall`, `merch`, `screen` e `meet` (`model.ts:21`), e o pedido não tem origem, cupom nem mensagem (`service.ts:218-242`). O fã vê os pedidos só dentro do detalhe de cada recompensa ("Seus resgates", `src/domains/rewards/components/redeem-steps.tsx:202-210`), e o `GET /rewards` só mostra a recompensa no ar ou a encerrada com pedido dele (`isVisibleToFan`, `model.ts:390-396`).
+- A equipe dá pontos pelo Ajuste da ficha do fã (`adjustFanPoints`, `points/adjust.ts`), com a seção `fans`, o teto por contador (50.000 para o editor e 1.000.000 para o admin, `adjust.ts:41-44`) e o orçamento do dia do editor (`staffLimits`). O lançamento é `adjust`, com a origem `adjustment`, sem assunto nem título (`points/model.ts:913-914`), e aparece no extrato do app como um ajuste.
+- O painel tem 9 seções (`SECTION_IDS`, `functions/src/staff/model.ts:5-15`), e o `parseSections` recusa id desconhecido (`:113-124`). O painel publicado descarta a seção que não conhece (`orderSections`, `imagineup-admin` `src/lib/staff.ts:157-160`).
+- O site manda `/post/*`, `/artista/*`, `/agenda/*` e `/fa-clube/*` para a página Baixar, que mostra o código do `?ref=` (`site/vercel.json:7-10` e `site/baixar/index.html:70`, desde 16/10/2026). O app ainda não compartilha nenhum link `/fa-clube/`.
+- CPU: 68 funções; as 8 instâncias da `api` e uma de cada outra somam uns 19,49 dos 20 vCPU da região, uma sobra de uns 0,51 (`cpu.test.ts`, 32.1, decisão 24).
+
+### 34.1 Decisões
+
+Cada item traz a escolha, o motivo e a alternativa trocada, e diz onde entra no código. "Resposta do dono" é a de 16/10/2026; a lista das 42 respostas, com o item daqui de cada uma, está em 34.2.
+
+**Escopo, modelo e nome**
+
+1. **Sem aditivo: o dono decidiu construir.** Resposta do dono à primeira decisão da proposta ("não vai ser aditivo, pode fazer"). Motivo do dono: gerar engajamento para os artistas e motivar o fã a ter um fã-clube. Trocadas: o aditivo próprio, com descrição, prazo e valor (11.2), e a ida dentro da proposta da Fase 2 (UP-42). Consequências: a nota registra a decisão com a data (9.3); o `CLAUDE.md:17` e o `AGENTS.md` deixam de dizer que o post de fã está fora do contrato e passam a dizer que ele entra só no fã-clube, por decisão do dono de 16/10/2026 (34.20); o risco do 11.3 (a liberalidade não amplia o escopo nem obriga a cliente) fica nas pendências (34.17). O post de fã tinha saído com o ok da cliente em 28/09/2026 (UP-10); o ok dela para reabrir não veio por escrito, e a decisão de construir é do dono, que respondeu por ela, em 16/10/2026, as perguntas que seguravam a ida ao ar (34.16).
+2. **Modelo A: um espaço não oficial ligado à central oficial.** Resposta do dono. O fã-clube é um objeto próprio, `fanClubs/{clubId}`, com id automático: não usa @, não entra em `usernames/` e não disputa o @ do artista nem o dos fãs. A central oficial continua sendo `artists/{id}` e `artistPrivate/{id}`, uma por artista, e o Mural oficial continua só da equipe, como diz o Anexo I 2.c. Motivo: dos três modelos, é o único que entrega o "ter uma central" sem mexer em `artists/{id}` nem em `posts/{id}`. Do Modelo B entram as caixas por artista (decisão 9) e os seguidores, em forma leve (decisões 26 a 34); do Modelo C, o crédito pelo código de convite do gestor (decisão 23), a foto só da galeria (decisão 15) e o 18+ declarado (decisão 52). Trocados: o B (central própria, com membros, papéis e publicação de seguidor) e o C (o fã como colaborador da central oficial, que mexeria no Mural).
+3. **O primeiro bloco é completo, com foto e seguidores, mais o prêmio.** Resposta do dono ("o recomendado, completo com foto e seguidores, uns 6,5 a 7 blocos, mais a recompensa com prêmios"). Com o prêmio (uns 1,5 bloco), são uns 8 a 8,5 blocos de código, construídos nas etapas de 34.14, e só vão aos fãs juntos (decisão 56). Trocados: só texto (uns 4 blocos), o MVP 0 sem publicações (uns 2,5, ou uns 4 com os seguidores), que não entrega o "criar conteúdo".
+4. **O nome é Fã-clube no app, no painel e no site.** Resposta do dono. No dado, `fanClub`; no app, as rotas `/fa-clube/[clubeId]` e `/meu-fa-clube`; no painel, a seção "Fã-clubes" em `/fa-clubes`; no site, o `/fa-clube/*` que já cai na Baixar. Nunca "oficial": o nome com "oficial" é recusado (decisão 10), a faixa "Fã-clube, não oficial" aparece em toda tela do fã-clube, o selo diz "Destaque", e a pílula "gestão oficial" (`managedByImagine`) nunca aparece nele. Trocado: "Central de fã", que se confundia com as centrais de fãs por artista do contrato.
+
+**Painel e quem decide**
+
+5. **Uma seção nova do painel, "Fã-clubes" (`SectionId` `fanClubs`, grupo `community`, rota `/fa-clubes`).** Resposta do dono. Entra primeiro no servidor, porque o `parseSections` recusa id desconhecido (`functions/src/staff/model.ts:5-15` e `:113-124`), com o rótulo no `SECTION_LABELS` (`staff/panel-actor.ts:43-53`), e depois no `SECTION_IDS` e no `SECTIONS` do painel (`imagineup-admin` `src/lib/staff.ts:10-20` e `:39-49`, ao lado de `fans` e `artists`). O admin vê a seção sem regravar (o `sectionAccess` dá edição ao admin pelo papel, `staff/model.ts:231-241`); o editor e o Leitor ganham a seção pela tela Equipe. Trocada: uma página filha de Artistas, como o Mural, que dispensava o `SectionId`, mas abria as candidaturas, as redes e o texto de divulgação a todo editor de `artists`.
+6. **Uma callable só: `decideFanClub`.** Resposta do dono (gastar uma callable da sobra de CPU). Recebe o assunto (`application`, `club`, `post` ou `report`), o id, a decisão e o estado que a tela mostrou, e decide numa transação, com a auditoria na mesma transação (34.3). Nasce pelo `onPanelCall` com o `PANEL_ORIGINS` (`functions/src/access-log.ts:82-92`), como as 57 de hoje. Motivo: a sobra de CPU cai de uns 0,51 para uns 0,34 vCPU (decisão 55), e cada callable a mais come 1/6. Trocadas: uma callable por assunto (quatro, que levariam a sobra a uns 0) e gatilhos.
+7. **Quem decide: o editor da seção aprova, recusa, pausa, reativa, oculta e destaca; só o admin encerra; cada parte do Recompensar pede a seção dona dela.** Respostas do dono ("sim, as duas"; e a quinta do prêmio). O `readPanelActor(..., 'fanClubs', 'edit')` direto e de novo na transação (`staff/panel-actor.ts:100-117`) vale para tudo; o Leitor vê tudo sem botões. Encerrar pede o papel `admin` (`admin-only`, no molde do `readPanelAdmin` de 32.1, decisão 6). No Recompensar (decisão 44): o Destaque pede só `fanClubs`; os pontos pedem `fanClubs` e `fans` com edição, a seção do Ajuste (`points/adjust.ts:266`); o prêmio pede `fanClubs` e `rewards` com edição, a seção da loja (`rewards/panel.ts:83-87`); o admin faz tudo. Trocado: o Recompensar só com `fanClubs`, que daria pontos e pedidos da loja a quem a equipe não liberou para isso. Quem revisa as candidaturas e as publicações é a equipe com a seção Fã-clubes com edição (resposta do dono pela cliente, 16/10/2026); o dono não deu prazo, e a meta de agir em até 24 h, a das lojas, vai nas notas de revisão (34.11).
+
+**Candidatura**
+
+8. **A candidatura fica nos Ajustes, e só quem já é da central pode se candidatar.** No bloco novo "Fã-clube", a linha "Tenha seu fã-clube" abre a apresentação de 5 passos, sem dinheiro, e depois a candidatura: o artista (só as centrais em que o fã já entrou e que aceitam fã-clubes), o nome proposto, Instagram e TikTok (pelo menos um, já preenchidos com as redes do perfil), "Como e onde você vai divulgar o fã-clube?" (20 a 1.000), "Tenho 18 anos ou mais" e "Li e aceito o Regulamento do Fã-clube", com o link e a versão vindos do servidor (`FAN_CLUB_RULES_URL` e `FAN_CLUB_RULES_VERSION` em `fan-clubs/model.ts`, como o `REWARDS_RULES_URL`, `rewards/model.ts:70`; sem o endereço, a candidatura não envia; quando a versão muda, o gestor aceita de novo pelo "Meu fã-clube", e o publicar espera o aceite). O servidor recusa o @ automático (`isAutomaticUsername`, `fan-profile/model.ts:144`), quem não está na central, o artista fora do ar ou sem "Aceita fã-clubes", a candidatura pendente e o fã-clube ativo ou pausado. Não há notificação (3.1.i): o fã vê o resultado quando abre os Ajustes. Motivo: o @ escolhido e o vínculo com a central são o mínimo de compromisso com o artista, e o gestor precisa de um @ que a equipe reconheça.
+9. **As caixas por artista nascem ligadas, e a ida ao ar é o regulamento publicado.** No diálogo do artista, no bloco privado, ficam "Aceita fã-clubes" e "Fãs podem postar fotos deste artista": o `artistPrivate/{id}.fanClubs { enabled, photosAllowed }`, gravado pelo `updateArtist` (o `editArtist`, `artists/service.ts:415-508`, pelo `touchPrivate`, `:347-357`, com o campo novo no `PRIVATE_FIELDS` do painel), sem função nova. Resposta do dono pela cliente (16/10/2026): todos os artistas assinam, ao entrar no app, um documento que autoriza o uso de imagem dentro do app, e essa autorização (o `imageRightsConfirmed`, 10.1.b, `artists/model.ts:316-320`) cobre também as fotos postadas por fãs no fã-clube. Por isso as duas caixas valem ligadas para toda central com o `imageRightsConfirmed`: o campo ausente segue o `imageRightsConfirmed`, e só o `false` gravado desliga, para a equipe fechar uma central se precisar. O limite fica registrado: a autorização é do artista sobre a imagem dele; a foto de fotógrafo, de imprensa ou de terceiros continua barrada pelo regulamento e pela pré-moderação (decisão 16). Desligar `enabled` fecha a candidatura e esconde do app os fã-clubes do artista (o vínculo de quem segue fica, sem efeito); desligar `photosAllowed` fecha só os envios novos de foto. Com as caixas ligadas, o portão da ida ao ar é o regulamento: o programa abre (o `open` do `GET /me/fan-club`) quando o `FAN_CLUB_RULES_URL` do servidor tem o endereço, e a linha "Tenha seu fã-clube" só aparece com ele, ou para quem já tem candidatura. Motivo: tudo pode ser publicado antes do regulamento sem aparecer para os fãs, e o endereço é o mesmo que a candidatura já exige (decisão 8). Trocadas: a equipe marcar as caixas uma a uma (a proposta), que deixaria de fora a central que ela esquecesse, e uma constante só para abrir o programa.
+10. **O nome é proposto pelo fã, de 3 a 40 caracteres, e revisado pela equipe, sem edição no primeiro bloco.** Resposta do dono. Limpo, passado no filtro (o campo `fanClubName`, 34.8) e recusado com "oficial" (a palavra inteira, depois da normalização do filtro). Na aprovação, a equipe confirma ou ajusta o nome (3 a 40, as mesmas regras). Depois, nem o gestor nem a equipe editam: um nome que precise mudar é pausa e conversa, e a edição com nova revisão fica para depois (34.18). Não há descrição livre. Trocado: o nome fixo "Fã-clube de {Artista} por @fulano".
+11. **Os tetos: 3 candidaturas por dia, 3 rodadas com 30 dias entre elas, 3 publicações em análise, 5 publicações por dia e 10 envios de foto por dia.** Resposta do dono ("sim"). As chaves novas do dia, `fanclub_apply` (3), `fanclub_post` (5) e `fanclub_upload` (10), entram no `DailyActionKey` (`points/model.ts:205-218`), no `DAILY_CAPS` (`moderation/model.ts:68-79`), no `ACTION_CAP_KEYS` e no `DEFAULT_ACTION_CAPS` do servidor (`points/config.ts:61-75` e `:84-98`) e do painel (`src/lib/points-config.ts:25-39` e `:64-78`), editáveis como as outras (1 a 10.000), com as `CapAction` novas `club_apply`, `club_post` e `club_upload` no `DAILY_CAPS` (`moderation/model.ts:56-79`; o 429 leva a `CapAction` no `details.action`, que o app não lê, `src/services/api/refusal.ts:6`). As rodadas (`round` de 1 a 3) e o `canReapplyAt` (30 dias depois da recusa) ficam na candidatura; as 3 em análise, no `pendingPosts` do fã-clube.
+12. **Um fã-clube ativo ou pausado por fã, e vários por artista.** A candidatura tem o uid como id (`fanClubApplications/{uid}`), e a aprovação grava o `clubId` nela. Não há limite por artista no primeiro bloco. Motivo: um gestor por fã-clube e um fã-clube por gestor deixam a responsabilidade clara e a moderação simples. Trocados: vários fã-clubes por fã e um limite por artista, que esperam a cliente (34.16, pergunta 7).
+13. **Encerrado pela equipe, o fã nunca mais se candidata.** Resposta do dono ("nunca mais, pela recomendação"). O encerramento grava na candidatura `closedByStaff: true`, e o `POST /me/fan-club/application` recusa com `not_allowed` para sempre (a conta excluída e recriada começa do zero, como na suspensão, 26.6). Pausar é a medida para o resto. Trocado: a nova candidatura depois do `canReapplyAt`. O gestor que quer parar ou trocar de artista não fica preso: encerrar pelo app fica para depois (34.18), e até lá ele pede pelo contato (a linha "Quero encerrar meu fã-clube" do "Meu fã-clube", que abre o e-mail do Sobre), e o admin encerra com o motivo `owner_request`, sem o `closedByStaff`: a candidatura ganha o `canReapplyAt` de 30 dias e pode voltar numa rodada 1 nova, para o mesmo ou outro artista.
+14. **O privado da candidatura fica num documento à parte, com TTL.** `fanClubApplicationPrivate/{uid}` guarda as redes, o texto de divulgação e, se a cliente mantiver, o WhatsApp (pergunta 6 de 34.16; até lá, o campo não aparece). Só quem edita a seção lê (o Leitor vê "visível só para quem edita"). É apagado na mesma transação da recusa, da desistência, do encerramento e da exclusão da conta. Na aprovação, ganha o `expiresAt` de 90 dias, com a política TTL do Firestore (o `fieldOverride` com `ttl`, como `idempotency` e `staffLimits`, `firestore.indexes.json:379` e `:458`). Nada dele vai ao `staffAudit`. Motivo: a minimização (LGPD) e um teto de guarda sem função agendada.
+
+**Publicações e moderação**
+
+15. **Só o gestor publica, no próprio fã-clube: texto de 1 a 1.000, ou texto com uma foto da galeria, e a foto só em artista com `photosAllowed`.** Os outros fãs seguem, compartilham, denunciam e bloqueiam; não publicam nem comentam no primeiro bloco. Vídeo e câmera ficam fora: o app não toca vídeo (`src/domains/posts/types.ts:26-27`) e a câmera muda o nativo. O app recorta em 4:5 (o recorte do sistema é sempre quadrado no iOS, `photo.ts:5-7`) e gera a foto em 1080x1350 e a miniatura em 480x600, em JPEG sem EXIF, numa função de preparo nova ao lado do `preparePhoto` (`profile/photo.ts:103-130`, que recorta, reduz e tenta de novo acima de 1 MiB), com os tetos de 2 MiB e 300 KiB, exportada pelo index do `profile` com o `pickPhoto` (`:54-70`). O servidor confere os bytes, no molde da foto do perfil: o `photoProblem` (`fan-profile/model.ts:249-265`) com o `readStart` (`fan-profile/files.ts:32-39`), generalizado para receber o teto (2 MiB e 1350 px na foto, 300 KiB e 600 px na miniatura). Não serve o `storedImage` do painel, que só confere se o arquivo existe e o `contentType` (`posts/panel.ts:180-190`).
+16. **Toda publicação nasce em análise e só vai ao ar com Aprovar.** É isso que segura a imagem de fã, porque o filtro só confere texto (30.15). O app mostra "Enviado para revisão", e a equipe vê a fila em "Publicações para revisar", da mais antiga para a mais nova. Trocadas: publicar e moderar depois (a imagem sem filtro chegaria aos fãs) e a publicação direta para o gestor de confiança, que fica para depois (34.18).
+17. **As publicações moram fora de `posts/{id}`, em `fanClubPosts/{postId}`.** Por isso não entram no `/feed`, na grade da 1d, no `countArtistPosts`, no `has-content` nem nas missões, e o conteúdo de fã nunca se mistura com o Mural oficial. Na auditoria, o id da publicação vai em `fanClubPostId`, nunca em `postId`, que vira o alvo `post:` do Mural (`staff/audit-index.ts:64`).
+18. **Denúncia: os 4 motivos de hoje mais "Uso indevido de imagem", só nas publicações de fã-clube, numa fila própria.** Resposta do dono. O motivo novo, `image_misuse`, entra num parser próprio (`parseFanClubReportReason`, ao lado do `parseReportReason`, `moderation/model.ts:162-170`); o `REPORT_REASONS` (`:15`) da denúncia de comentário e de perfil não muda. Uma denúncia por fã e publicação por rodada, em `fanClubReports/{reporterUid}_{postId}`, e a fila `fanClubReportQueue/{postId}`, com a rodada, no molde da `profileReportQueue` (29.1, decisões 1 e 3). Nada some sozinho pelo número de denúncias; a equipe decide Manter ou Ocultar. O teto é o de hoje, `report` (30 por dia, somados com as denúncias de comentário e de perfil). A fila fica fora da `moderationQueue`, porque o `QueueCard` publicado quebra com item sem `postId` e `commentId` (`imagineup-admin` `src/components/moderacao/queue-card.tsx:60-65`).
+19. **Bloqueio: quem bloqueou o gestor deixa de ver o fã-clube e as publicações dele.** A página responde 404, e as listas e a Início tiram o fã-clube (o `withoutBlocked`, `moderation/model.ts:193-198`, mapeando o `ownerUid`). O menu da página tem "Bloquear e denunciar" o gestor, que leva a denúncia de perfil de hoje (`profileReportQueue`), como a App Review pede (29.1, decisão 13).
+20. **O gestor retira a publicação em análise e tira do ar a publicada, sem editar nem apagar o registro.** A retirada (`withdrawn`) apaga os arquivos; a tirada do ar (`removed`) os guarda para a equipe até a exclusão da conta, como prova. É a linha da decisão de 30/09 sobre comentários (o fã não apaga o próprio comentário).
+21. **Na exclusão da conta do gestor, as publicações são apagadas e o fã-clube vira lápide.** Resposta do dono. As publicações e os arquivos de `fanClubMedia/{uid}/` saem, na linha da decisão de 05/10/2026 sobre comentários (apagar, e não anonimizar). O fã-clube fica encerrado, com `statusReason: 'account_deleted'` e `accountDeleted: true`, sem `ownerUid`, nome, @, foto nem o nome do fã-clube, para o `referrals.link.targetId` e o `fanClubId` dos vínculos de outros fãs não apontarem para o nada (34.7).
+
+**Atribuição**
+
+22. **Um tipo de link novo, `fanclub`, nos três repositórios.** O `classifyInvitePath` ganha `/fa-clube/<id>` (`invites/model.ts:223-241`); o `LINK_ID` e o `parseLinkId`, o id `fanclub:<clubId>` (`:411` e `:417-423`); o `OriginKind`, `fanclub` (`points/stats.ts:288`); o `recordInviteLink` só registra o link de fã-clube ativo (`invites/service.ts:522-556`); o `linkOn` e o `readMarker` levam o `artistId` do clube, como hoje fazem com o do post (`model.ts:391-397` e `service.ts:125-137`). No app, o id em `invites/link.ts:44-53`; no painel, o rótulo "Fã-clube" no `ORIGIN_KIND_LABELS` (`src/lib/stats.ts:442-449`), no `LINK_KIND_LABELS` (`src/components/fas/fan-tabs.tsx:282`) e no `referralPath` (`src/lib/fans.ts:235-249`). O `closeStatsDays` soma a folha nova `byOrigin.kind.fanclub` sem mudar código (`points/close.ts:123-133`). O site já manda `/fa-clube/*` para a Baixar (o redirecionamento leva o `?ref=`, e a Baixar mostra o código). Um teste lista os tipos nos três lugares do servidor, porque o tipo esquecido vira `other` sem erro.
+23. **A entrada trazida conta só na primeira entrada da vida na central e, pelo código do gestor, até 30 dias depois do cadastro.** Resposta do dono ("sim"). Dois caminhos: o "Seguir o fã-clube" (decisão 26) e a pessoa trazida pelo código do gestor (o `referrals/{uid}.inviterUid` é o gestor de um fã-clube ativo daquele artista e o cadastro tem até 30 dias), na entrada (`PUT /me/centrals/:artistId` e `POST /me/artists`) ou no claim que chega depois (o `use-invite-sync` tenta de novo em 30 s, 2 min e 10 min, `src/domains/auth/consts.ts:32`). A entrada creditada grava o `fanClubId` no vínculo e soma `joins` num shard do clube. "Primeira da vida" fica no próprio vínculo: o `joinCentrals` grava `firstJoin: true` quando o `central_join` daquela entrada não sai `duplicate` no `planAwards` (o id `central_join:<artistId>`, que o núcleo usa para pagar a entrada uma vez, `points/model.ts:444-446` e `:783`). O crédito pede o `firstJoin` e nenhum crédito anterior no marcador novo `users/{uid}/fanClubCredits/{artistId}`. Assim o claim que chega depois da entrada do onboarding credita: o extrato já tem o `central_join` dessa entrada, e o vínculo diz que ela foi a primeira. O marcador é preciso porque o extrato não é gravado quando a entrada sai com valor 0 ou no teto do dia (`points/model.ts:796` e `:897-924`; o `central_join` tem 10 por dia, `points/config.ts:115`): sem ele, com o `central_join` em 0, sair e seguir de novo creditaria a mesma pessoa a cada volta. Limite aceito: quem entrou antes com o valor 0 ou no teto, saiu e voltou pelo fã-clube conta como trazido, uma vez por pessoa e artista.
+24. **Os números do fã-clube somam em 16 shards, na transação da ação.** `fanClubStats/{clubId}/fanClubShards/{0..15}`, com `links`, `visits`, `signups`, `joins` e `updatedAt`, por `increment` num shard sorteado (o `award.shard` com o `fanShardOf`, `centrals/model.ts:274-276`). Sem documento quente, gatilho nem fila. Quem mostra soma os 16: a `api` para o gestor e o painel na ficha. Os seguidores não entram nos shards (decisão 28).
+25. **Nenhum ponto novo pela atribuição.** As entradas trazidas e as publicações aprovadas não rendem pontos no primeiro bloco: ninguém ganha nada criando contas falsas ou postando volume que a equipe ainda vai revisar. Continuam os de hoje: +2 por visita e +10 por cadastro para o dono do código, fora das centrais (decisão 11 de 20.1), com a antifraude de hoje. Quando outro fã compartilha o fã-clube com o próprio código, ele ganha os pontos do convite, e o clube ganha a métrica pelo `targetId`. O ranking da central oficial não muda.
+
+**Seguidores**
+
+26. **Seguir o fã-clube também faz entrar na central oficial quando falta, com o botão avisando.** Resposta do dono ("sim, com o botão avisando"). O botão "Seguir o fã-clube" traz a linha "Você também entra na central do {Artista}" para quem não é membro. A rota de seguir chama o `joinCentrals` com a via `page` (`centrals/service.ts:170-236`, a mesma do `PUT /me/centrals/:artistId`): o `central_join` de sempre, uma vez na vida, a missão, o ranking e a comemoração, com o teto `central_entry` (30 pedidos por dia, `centrals/service.ts:185`). O `via` continua `page`, e o `VIA_LABELS` do painel não muda (`src/lib/fans.ts:286-290`). Deixar de seguir não tira da central nem tira pontos. Trocado: seguir e entrar separados, com dois toques.
+27. **Sair da central oficial faz deixar de seguir os fã-clubes daquele artista.** Resposta do dono ("sim"). O `leaveCentral` (`centrals/service.ts:309-326`) lê os seguimentos do fã naquele artista antes do `planAwards` e os apaga na mesma transação; sair continua nunca recusado. A sheet "Sair da central" ganha a frase "Você também deixa de seguir os fã-clubes deste artista." (`src/i18n/translations.json:203-209`; a sheet não usa o nome da central e só recebe o `artistaId`) e, para o gestor de um fã-clube desse artista, "Seu fã-clube fica sem publicar até você voltar à central." O fã-clube dele continua no ar; o "Meu fã-clube" mostra o `not_member`.
+28. **Os seguidores contam por `count()`, com a cópia noturna para as listas.** Resposta do dono. A página e o "Meu fã-clube" mostram o número exato (`count()` no grupo `fanClubFollows` pelo `clubId`); as listas do painel e o card da 1d ordenam pela cópia da noite (`counts`, decisão 37). Seguir e deixar de seguir em laço não infla nada, porque o `count()` conta só quem segue agora. Trocado: os shards com o -1 em cada saída, que pediriam um passo novo na exclusão de conta e na suspensão.
+29. **Quem segue: a lista só para a seção Fãs, no painel; o gestor vê só o número.** Respostas do dono ("só a seção Fãs, no painel" e "só o número, pela recomendação"). O vínculo `users/{uid}/fanClubFollows/{clubId}` tem as regras do `centrals` (`firestore.rules:164-167` e `:197-199`): a regra aninhada e uma de grupo, com leitura só para `canSeeSection('fans')` e escrita `false`. A seção Fã-clubes vê números e proporções; os "Seguidores recentes" da ficha aparecem só para quem tem também a seção Fãs. A `api` nunca devolve quem segue. Trocadas: a lista para o gestor e para a seção Fã-clubes.
+30. **"Dos seus fã-clubes" entra já na Início.** Resposta do dono ("entra já"). Entre as Suas centrais (`src/domains/home/views/home.tsx:39`) e o título do mural (`:40`), só quando há publicação, com os 20 vínculos mais novos e a faixa "Fã-clube, não oficial" em cada cartão. O `/feed` oficial não muda.
+31. **Seguir rende 0 ponto, e o gestor não ganha ponto automático por seguidor.** Resposta do dono ("sim"). Quem segue ganha só o `central_join` de sempre, quando o seguir faz a entrada. A recompensa do gestor é decisão da equipe (decisões 38 e 44).
+32. **Bloquear o gestor desfaz o seguir; o bloqueio feito pelo gestor não impede ninguém de seguir.** Resposta do dono ("sim, as duas"). O `blockFan` (`moderation/service.ts:257-286`) lê a candidatura do bloqueado e, se ele é gestor de um fã-clube ativo ou pausado que quem bloqueia segue, apaga o vínculo na mesma transação. O bloqueio feito pelo gestor só grava a lista dele, como hoje, e ninguém fica sabendo (`:254-255`). A página avisa no "Bloquear e denunciar" que você deixa de seguir.
+33. **Suspender um fã apaga os seguimentos dele, sem devolver quando a suspensão sai, e pausa o fã-clube dele.** Resposta do dono ("sim"). O `applyFanSuspension` (`moderation/fans.ts:79-115`) apaga, na mesma transação, os seguimentos do suspenso (até 50) e, se ele é gestor, pausa o fã-clube (`statusReason: 'suspended'`) e tira o destaque. Tirar a suspensão não reativa o fã-clube nem devolve os seguimentos. É a limpeza da fazenda de seguidores: suspender as contas falsas tira os seguidores delas.
+34. **Os tetos de seguir: 30 seguimentos por dia e 50 fã-clubes seguidos por fã.** Resposta do dono ("sim"). A chave nova `fanclub_follow` (30) entra com as outras da decisão 11, com a `CapAction` `club_follow`, com o rótulo "Seguir fã-clubes" no painel. O 51º seguir responde 409 `fan_club_refused` com `reason: 'follow_limit'`. O `central_entry` de sempre vale quando o seguir faz a entrada.
+
+**Acompanhamento e Destaque**
+
+35. **O Destaque tem fim obrigatório, de até 31 dias, e no máximo 3 por artista ao mesmo tempo.** Resposta do dono ("sim"). O `featuredUntil` vai de amanhã a 31 dias, pela data de São Paulo; o quarto destaque do mesmo artista recusa `feature-limit`. Pausar, encerrar, suspender o gestor e a lápide tiram o destaque. O destaque vencido sai na leitura (a `api` confere o prazo) e vira `false` na cópia da noite.
+36. **Sem nota de engajamento: só colunas que dá para ordenar.** Resposta do dono ("sem nota, só colunas"). A lista mostra Seguidores, Novos em 30 dias, Entradas trazidas, Cadastros, Publicações no ar, Destaque e Último prêmio, e ordena por seguidores, por novos em 30 dias ou pela aprovação. O critério de "muito engajado" é da cliente (2.4, UP-9). Trocada: a nota com pesos fixos no código.
+37. **Os retratos do mês entram na cópia noturna já no primeiro bloco.** Resposta do dono ("sim"). A cópia é um passo próprio do handler do `closeStatsDays` (`functions/src/index.ts:545-555`), num `finally` depois do `runStatsClose` e com `try/catch` próprio: ela não pode morar dentro dele, que volta antes quando não há dia a fechar (`points/close.ts:361-375`), e não pode ficar depois dele sem o `finally`, porque ele lança quando um dia falha (`:345-354`). Ela tem prazo próprio (para perto dos 270 s do handler, que tem 300 s) e lê os fã-clubes com concorrência limitada (10 de cada vez); o que sobra fica para a noite seguinte, que começa pelos de cópia mais antiga. Copia até 500 fã-clubes ativos ou pausados por noite, começando pelos de cópia mais antiga, grava os `counts`, o `monthStart` e o `lastMonth` (o mês anterior fecha na primeira cópia do mês) e vira `false` o destaque vencido numa transação curta, que relê o `featuredUntil` (um Destaque dado às 00:20 não é desfeito). Os fluxos por dia de cada fã-clube ficam para depois (34.18).
+38. **A recompensa não é fixa nem tem ciclo: a equipe dá quando quiser, e o checklist só avisa.** Resposta do dono (a recompensa "não é fixa; um fã-clube pode receber ou não, a critério da equipe, sem ciclo nem prazo; o checklist fica só como aviso no diálogo Recompensar, sem impedir"). O diálogo mostra o checklist (fã-clube ativo há 30 dias, gestor sem suspensão e na central do artista, o regulamento aceito na versão de agora, nenhuma denúncia aceita nos últimos 30 dias e pelo menos uma publicação aprovada), com cada item marcado ou não, e deixa confirmar de qualquer jeito. As travas de verdade do prêmio são outras, poucas (decisão 46). Trocado: o ciclo mensal, decidido até o dia 10 do mês seguinte.
+39. **Os sinais de qualidade vão no vínculo, na hora de seguir.** `newAccount` (o perfil tinha menos de 7 dias), `chosenUsername` (o @ não é o automático) e `byOwnerCode` (o `referrals.inviterUid` de quem segue é o gestor). A cópia da noite soma as proporções, e a ficha avisa quando uma delas passa da metade (o limite é proposta, fácil de trocar). Muitos seguidores novos, de @ automático e trazidos pelo próprio gestor são o retrato da fazenda de seguidores.
+
+**Prêmio ao gestor**
+
+40. **O prêmio é um pedido da loja, feito a partir de uma recompensa "Só para prêmios de fã-clube".** Resposta do dono (a primeira do prêmio). A recompensa ganha o status novo `prize` (`rewards/model.ts:25`), que nunca aparece na loja nem entra na ordem do catálogo, e custo 0 (o `parseRewardCost` aceita 0 só com esse status). O pedido (`redemptions/{código}`) nasce com `origin: 'prize'`, 0 ponto e o código `UP-` de sempre (`drawRedemptionCode`), e a entrega usa a aba Pedidos que já existe: o código na bilheteria, o "Ver contatos", o Entregar, o Recusar (decisão 49) e o estoque como cota de cortesias. Motivo: hoje a equipe não consegue criar pedido (só o `redeemReward` do fã e o seed criam, `rewards/service.ts:218`), e um registro próprio, com fila e código `FC-` próprios, duplicaria a aba Pedidos, o código de retirada e a exclusão de conta. Trocado: esse registro próprio.
+41. **No primeiro bloco, só recompensas "Só para prêmios", sem usar como prêmio uma recompensa que está na loja.** Resposta do dono. Motivo: a recompensa da loja tem custo, limite por fã e estoque disputado pelos fãs; dar uma delas de graça mexeria na conta da vaga e no que a loja promete. Fica para depois (34.18).
+42. **O tipo novo Desconto, só nos prêmios, com o ícone de reserva no app.** Resposta do dono. `discount` entra no `REWARD_KINDS` (`rewards/model.ts:21`) e no espelho (`api/contract.ts:573`), aceito só com o status `prize`; o rótulo "Desconto" no painel (`src/lib/rewards.ts:16-22`). O app ganha só o ícone de `discount` (o app não tem rótulo por tipo, `src/domains/rewards/consts.ts:20-26`) e um ícone de reserva para tipo desconhecido: hoje o tipo sem ícone quebra a tela (`src/domains/rewards/components/reward-icon.tsx:35` e `:57`). O servidor já troca tipo desconhecido do documento por `merch` (`model.ts:198`), e o prêmio só chega ao app num campo novo (decisão 51), que o JS de hoje não lê.
+43. **O prêmio leva o cupom do parceiro (até 60) e a mensagem ao gestor (até 140), e o pedido nasce Aprovado por padrão.** Resposta do dono. Os dois campos são novos no pedido (`coupon` e `message`, `null` quando faltam), limpos e escritos pela equipe; o gestor os vê no pedido, no app. O pedido nasce `approved` (a equipe entrega, e a transição para `delivered` ou `refused` é a de hoje, `rewards/model.ts:258-262`) ou, se a equipe marcar "O cupom já é o prêmio", `delivered`, que é final: esse não se cancela depois. O cupom nunca vai ao registro do fã-clube, à auditoria nem ao log.
+44. **Quem dá é a ação `reward` da `decideFanClub`, no diálogo Recompensar.** Resposta do dono (a quinta do prêmio e a decisão 6). O diálogo da ficha do fã-clube tem três partes, cada uma com a seção dela (decisão 7): o Destaque (a decisão `feature`, com o fim), os pontos e o prêmio (a decisão `reward`, com um ou os dois). O painel manda o Destaque e o `reward` em chamadas separadas, cada uma numa transação com a auditoria dela; a repetição é segura (o mesmo fim não muda nada, e o mesmo `grantId` com os mesmos campos responde o que já foi feito; com outros campos, recusa `grant-id-reused`, como o `adjustment-id-reused` do Ajuste, `points/adjust.ts:297-302`). Nenhuma função nova: a sobra de CPU fica nos uns 0,34 da decisão 55.
+45. **Os pontos vêm na mesma ação, com "Prêmio do fã-clube" no extrato, só no saldo, com os tetos do Ajuste.** Respostas do dono (a sexta do prêmio, que substitui o Ajuste separado da proposta, e "só para o saldo"). O lançamento é um `adjust` com a origem nova `fanclub_prize` e o id `fanclub_prize:<grantId>`: o núcleo aceita a origem nova no `adjust` (hoje só `adjustment` e `seed`, `points/model.ts:511`), e o `adjust` mexe só nos contadores mandados (aqui, só o saldo), fora do XP, da temporada e da central. Os tetos e o orçamento do dia são os do `adjustFanPoints` (50.000 por lançamento para o editor e 1.000.000 para o admin; 100.000 por dia para o editor, no `staffLimits`, `points/adjust.ts:41-47`), somados com os ajustes da mesma pessoa no dia. Nos agregados, conta em `totals.adjusted`, como o ajuste (`points/stats.ts:203-235`). No app, "Prêmio do fã-clube" no extrato (`describe-ledger.ts:41-84`, com o texto em `translations.json:694-706`); no painel, o rótulo no `sourceLabel` (`src/lib/stats.ts:423-439`) e na aba Pontos da ficha do fã, que hoje diz "Ajuste de {nome}" para todo lançamento da equipe (`src/components/fas/fan-tabs.tsx:123-127`). O JS de hoje mostra a origem desconhecida como "Pontos" (`describe-ledger.ts:86-95`), sem quebrar. Trocados: o Ajuste separado, com o registro no fã-clube conferindo o lançamento (o desenho da proposta antes do prêmio), e o saldo com o XP.
+46. **As travas do prêmio são só três: o fã-clube ativo, o 18+ declarado e o gestor sem suspensão.** Resposta do dono. A transação lê o fã-clube (`active`), a candidatura (`adultDeclared: true`) e o perfil do gestor (sem `suspendedAt`); falhou uma, `prize-not-allowed` com o motivo. Não há teto de um prêmio a cada 30 dias: o checklist só avisa (decisão 38).
+47. **O texto do reconhecimento nasce ligado, numa chave do servidor que desliga sem build.** Resposta do dono: o texto ficava desligado até o parecer do jurídico; no mesmo dia, 16/10/2026, o dono dispensou o parecer pela cliente ("pode fazer, está certo; qualquer coisa a gente refaz"), com o risco aceito por ele: a leitura do prêmio pela Lei 5.768/1971 e pelo Decreto 70.951/1972 e a regra 5.3 da App Store. A constante `FAN_CLUB_PRIZE_NOTICE` (em `functions/src/fan-clubs/model.ts`) nasce com o texto genérico: "A equipe pode reconhecer os fã-clubes com pontos e prêmios, como ingressos, descontos, produtos e encontros, a critério da equipe, sem inscrição, ranking, prazo nem prêmio garantido", com o link do regulamento e o aviso de que a Apple não patrocina. O `GET /me/fan-club` a devolve, e a apresentação e o "Meu fã-clube" a mostram; trocá-la por `null` desliga o texto num deploy, sem build. Ao lado, o app mostra o Destaque e as condições de conduta (18+, ativo, sem suspensão). Continua valendo o "nunca": sorteio, ranking ligado a prêmio, meta que paga prêmio, prêmio fixo por período, item prometido, cadastros ou downloads como critério anunciado (3.2.2 da App Store). Concurso anunciado é outro bloco (34.18): um prêmio anunciado por desempenho pode ser concurso da Lei 5.768/1971, e a isenção do concurso só cultural (art. 3º, II) não vale quando a disputa depende do uso de um serviço, como aqui depende do app.
+48. **A página pública mostra só o Destaque, nunca o prêmio, e nenhum ganhador é divulgado sem o consentimento do gestor.** Resposta do dono (que pedia também o parecer, dispensado depois, decisão 47). O `GET /fan-clubs/:clubId` não devolve prêmios nem pontos. A divulgação fora do app, se houver, pede o consentimento escrito do gestor, que a equipe guarda com o pedido (o e-mail); o desenho não guarda nada disso no app.
+49. **Cancelar o prêmio é o Recusar da aba Pedidos, sem desfazer os pontos sozinho.** Resposta do dono. O `setRedemptionStatus` (`rewards/panel.ts:480`) recusa o pedido de prêmio como qualquer outro: com 0 ponto, não lança nada (`rewards/service.ts:360`), e a vaga volta (ou não, com o "não devolver a vaga" de hoje). Os pontos do prêmio são outro lançamento e ficam; tirá-los é um Ajuste negativo, se o saldo ainda os tiver. O pedido entregue não se cancela (decisão 43).
+50. **O registro fica numa subcoleção do fã-clube: `fanClubs/{clubId}/prizes/{grantId}`.** Resposta do dono. Uma linha por concessão (pontos, prêmio ou os dois), sem o código do pedido nem o cupom: o registro é lido por toda a seção Fã-clubes, o Leitor inclusive, e o código de retirada só a seção `rewards` vê (25.1, decisão 2); o painel com `rewards` acha o pedido pelo `grantId`, gravado nele; sem coleção na raiz nem índice composto novo (a ficha lê pela data, com o índice automático). O fã-clube guarda só o resumo do último (`lastReward`), para a coluna da lista e o aviso do gestor.
+51. **O gestor vê os prêmios na fileira "Seus prêmios" no topo da loja e no card Prêmios de "Meu fã-clube".** Resposta do dono. O `GET /rewards` ganha o campo `prizes` (os pedidos de prêmio do fã, com a recompensa resumida), que o JS de hoje ignora; a recompensa de prêmio nunca entra em `rewards`. A fileira fica no `RewardsHeader` (`src/domains/rewards/views/rewards.tsx:42-60`), entre o título e o destaque; o toque abre o detalhe da recompensa em modo prêmio, sem custo e sem Resgatar, com o código, o cupom, a mensagem e o status. O card Prêmios do "Meu fã-clube" mostra o último reconhecimento (a data e os pontos, do `lastReward`) e "Ver meus prêmios", que abre a loja. Os Ajustes mostram "Novo prêmio" na linha do fã-clube até o gestor abrir o "Meu fã-clube" (a marca de visto fica no aparelho).
+
+**LGPD, idade e geral**
+
+52. **Ter fã-clube pede 18 anos ou mais declarados; qualquer fã segue, e só o gestor recebe prêmio.** Resposta do dono pela cliente (16/10/2026): 18 anos para ter fã-clube, declarados na candidatura, como na proposta. A candidatura pede "Tenho 18 anos ou mais", gravado com a data e a versão do regulamento (`adultDeclared`, `rulesVersion` e `rulesAcceptedAt`). Seguir continua livre para qualquer fã do app. Isso não decide a idade mínima do app em geral, que segue em aberto com a cliente (o relatório de 09/10/2026, decisão 4; o app não pede idade, e o rascunho dos termos fala em 13 anos ou mais, com autorização do responsável até os 17).
+53. **As fontes novas entram na `FAN_DATA_SOURCES` e no `deleteUserData`, presas pelo teste.** Cada fonte com o lugar no arquivo, o `omit` e o efeito da exclusão (34.7); o teste de emulador que prende as duas pontas (`functions/test/fan-data.emulator.test.ts:486-773`) quebra sem elas, porque o `listCollections()` de `users/{uid}` acha as subcoleções novas (`:733-743`).
+54. **Nada nativo, tudo por EAS Update.** A trava do bloco (acima).
+55. **CPU: 69 funções, com a sobra de uns 0,34 vCPU.** A `decideFanClub` a 256 MiB (1/6 de vCPU) leva a conta de uns 19,49 para uns 19,66 dos 20 vCPU (o `cpu.test.ts` lê o `__endpoint` de cada export, `:48-53`, e confere menos de 20, `:133` e `:143`). Cabe mais uma função a 1/6 com folga; a segunda encosta a conta nos 20 (uns 19,995), e com o `closeStatsDays` a 512 MiB não cabe. Além disso, só baixando o `maxInstances` da `api` ou com mais cota. Nenhum gatilho, fila ou agendada nova: os contadores vão nos shards, as cópias pelo `syncFanProfile`, a guarda pelo TTL e a cópia noturna no `closeStatsDays`. Se a cópia pesar (300 s a 1/6 de vCPU), o `closeStatsDays` a 512 MiB custa 1/6 da sobra.
+56. **Publicar tudo, e abrir aos fãs pelo regulamento.** Todas as 69 funções, em lotes de até 15, porque o `SectionId` novo está no código compartilhado (a regra de "Publicar"). As regras, os índices e o TTL antes; o painel e o EAS Update depois. Nada aparece aos fãs até o `FAN_CLUB_RULES_URL` ganhar o endereço do regulamento (decisão 9), num deploy que também segue a regra de "Publicar" (as 69, porque a constante mora no código compartilhado), quando a cliente publicar o regulamento (34.16, pergunta 5).
+57. **A documentação vai neste PR, antes do código.** Esta seção, o cabeçalho e as decisões em uma página da nota, e o `CLAUDE.md` e o `AGENTS.md` com o escopo de agora (34.20). O código começa depois do merge, nas etapas de 34.14.
+
+### 34.2 As respostas do dono, uma a uma
+
+Todas de 16/10/2026, nas seções "Decisões do dono" e "Decisões do dono sobre o prêmio" da proposta no Notion. A coluna "Item" aponta a decisão de 34.1; a última diz onde entra no código (servidor em `functions/src`, painel no `imagineup-admin`).
+
+**As 30 decisões da proposta:**
+
+| # | Pergunta | Resposta | Item | Onde entra |
+| --- | --- | --- | --- | --- |
+| 1 | Aditivo próprio, ou dentro da UP-42? | Sem aditivo: pode fazer | 1 | `CLAUDE.md:17` e `AGENTS.md` (34.20) |
+| 2 | Modelo A, B ou C? | O A, com prêmios de verdade ao gestor | 2, 40 | `fan-clubs/` (módulo novo) e `rewards/` |
+| 3 | O corte do primeiro bloco | Completo com foto e seguidores, mais o prêmio | 3 | as etapas de 34.14 |
+| 4 | Seção nova ou página filha de Artistas? | Seção nova | 5 | `staff/model.ts:5-15`, `staff/panel-actor.ts:43-53`, painel `src/lib/staff.ts:10-49` |
+| 5 | Gastar uma callable da sobra de CPU? | Sim, uma só | 6, 55 | `index.ts` (`decideFanClub`), `cpu.test.ts` |
+| 6 | O editor aprova, e só o admin encerra? | Sim, as duas | 7 | `fan-clubs/panel.ts` (`readPanelActor` e `admin-only`) |
+| 7 | O nome livre, revisado, ou fixo? | Proposto pelo fã (3 a 40), revisado, sem edição | 10 | `fan-clubs/model.ts` (`parseClubName`), `content-filter/match.ts:58` |
+| 8 | Os tetos (3, 3 rodadas com 30 dias, 3, 5 e 10) | Sim | 11 | `points/model.ts:205-218`, `moderation/model.ts:68-79`, `points/config.ts:61-98`, painel `points-config.ts:25-78` |
+| 9 | A entrada trazida: primeira da vida e, pelo código, até 30 dias | Sim | 23 | `centrals/service.ts` (`joinCentrals`), `invites/service.ts` (`claimInvite`), `users/{uid}/fanClubCredits` |
+| 10 | O motivo de denúncia "uso indevido de imagem" | Sim, nas publicações de fã-clube | 18 | `moderation/model.ts` (`parseFanClubReportReason`), `fan-clubs/reports.ts` |
+| 11 | Na exclusão do gestor, apagar as publicações e a lápide | Sim | 21 | `store.ts:205-237` (`removeFanClubData`) e `fan-data/sources.ts:130` |
+| 12 | A UP-49 junto | Sim, feita no mesmo dia (`imagineup-LP` `2447ca2`) | 22 | o site (`site/vercel.json:7-10`) e o `classifyInvitePath` |
+| 13 | Depois de encerrado, nova candidatura? | Nunca mais | 13 | `fanClubApplications.closedByStaff` |
+| 14 | Seguir também entra na central? | Sim, com o botão avisando | 26 | `PUT /me/fan-club-follows/:clubId` com o `joinCentrals` |
+| 15 | Sair da central deixa de seguir? | Sim | 27 | `centrals/service.ts:309-326` (`leaveCentral`) |
+| 16 | `count()` com a cópia noturna, ou shards? | `count()` com a cópia | 28, 37 | rotas da `api` e o passo novo no `closeStatsDays` (`index.ts:545-555`) |
+| 17 | Quem lê a lista de quem segue | Só a seção Fãs, no painel | 29 | `firestore.rules` (o vínculo com `canSeeSection('fans')`) |
+| 18 | "Dos seus fã-clubes" na Início já? | Entra já | 30 | `GET /me/fan-club-feed`, `home.tsx:39-40` |
+| 19 | Seguir rende 0 e nada por seguidor? | Sim | 31 | nenhum ponto novo no `planAwards` |
+| 20 | A recompensa pelo Ajuste ou com título no extrato? | Substituída pelo prêmio: os pontos na mesma ação, com "Prêmio do fã-clube" | 45 | `points/model.ts:511` (a origem `fanclub_prize`), `fan-clubs/panel.ts` |
+| 21 | Os pontos do prêmio no saldo, ou no saldo e no XP? | Só no saldo | 45 | o `adjust` só com o `balance` |
+| 22 | Destaque até 31 dias e até 3 por artista? | Sim | 35 | `fan-clubs/panel.ts` (`feature`), a cópia noturna |
+| 23 | Sem nota, só colunas? | Sem nota, só colunas | 36 | painel, aba Fã-clubes, e os índices de 34.6 |
+| 24 | Os retratos do mês na cópia já? | Sim | 37 | `fan-clubs/copy.ts`, chamado pelo `closeStatsDays` |
+| 25 | Bloquear o gestor desfaz o seguir; o bloqueio dele não impede ninguém | Sim, as duas | 32 | `moderation/service.ts:257-286` (`blockFan`) |
+| 26 | Suspender apaga os seguimentos, sem devolver? | Sim | 33 | `moderation/fans.ts:79-115` (`applyFanSuspension`) |
+| 27 | 30 seguimentos por dia e 50 seguidos? | Sim | 34 | `fanclub_follow` (decisão 11) e o `follow_limit` |
+| 28 | O gestor vê o número ou a lista? | Só o número | 29 | `GET /me/fan-club` (só `followers` e `followers30d`) |
+| 29 | Fã-clube no app, nas rotas, no painel e no site? | Sim | 4 | `src/app/fa-clube/[clubeId].tsx`, `src/app/meu-fa-clube/`, painel `/fa-clubes` |
+| 30 | Ciclo mensal com o checklist? | Não: sem ciclo nem prazo, a critério da equipe; o checklist só avisa | 38 | o diálogo Recompensar do painel |
+
+**As 12 do prêmio** ("segue as recomendadas, nas doze"):
+
+| # | Pergunta | Resposta | Item | Onde entra |
+| --- | --- | --- | --- | --- |
+| P1 | Um pedido da loja, a partir de uma recompensa "Só para prêmios"? | Sim | 40 | `rewards/model.ts:25` (`prize`) e `:121-246`, `rewards/service.ts` (`grantPrize`) |
+| P2 | Só recompensas "Só para prêmios" no primeiro bloco? | Sim | 41 | `grantPrize` recusa a recompensa sem o status `prize` |
+| P3 | O tipo novo Desconto, só nos prêmios, com o ícone de reserva? | Sim | 42 | `rewards/model.ts:21`, `api/contract.ts:573`, app `rewards/consts.ts:20-26` e `reward-icon.tsx` |
+| P4 | O cupom e a mensagem, com o pedido nascendo Aprovado? | Sim | 43 | `redemptions` (`coupon`, `message`, `origin`), `redeem-steps.tsx:106-153` |
+| P5 | Cada parte do Recompensar pede a seção dona dela? | Sim | 7, 44 | `fan-clubs/panel.ts` (`fanClubs`, `fans` e `rewards`) |
+| P6 | Os pontos na mesma ação, com "Prêmio do fã-clube"? | Sim | 45 | `points/model.ts`, `describe-ledger.ts:41-84`, painel `stats.ts:423-439` |
+| P7 | Só três travas, sem teto de um a cada 30 dias? | Sim | 46 | `grantPrize` (`prize-not-allowed`) |
+| P8 | O texto do anúncio desligado até o parecer? | Sim; depois, o parecer foi dispensado, e o texto nasce ligado | 47 | `FAN_CLUB_PRIZE_NOTICE`, com o texto e a troca por `null` para desligar |
+| P9 | A página pública só com o Destaque, sem divulgar ganhadores? | Sim | 48 | `GET /fan-clubs/:clubId` sem prêmio |
+| P10 | Cancelar pelo Recusar de Pedidos, sem desfazer os pontos? | Sim | 49 | `rewards/panel.ts:480` (`setRedemptionStatus`) |
+| P11 | O registro numa subcoleção do fã-clube? | Sim | 50 | `fanClubs/{clubId}/prizes/{grantId}` |
+| P12 | A fileira "Seus prêmios" na loja, além do card? | Sim | 51 | `GET /rewards` (`prizes`), `rewards.tsx:42-60` |
+
+**As quatro perguntas da cliente que seguravam a ida ao ar,** respondidas pelo dono por ela no mesmo dia (registradas na proposta e na UP-65), entram como decisões:
+
+| Pergunta | Resposta | Item | Onde entra |
+| --- | --- | --- | --- |
+| Os artistas e as fotos | Todos assinam, ao entrar, o documento que autoriza o uso de imagem no app; as caixas nascem ligadas para toda central com o `imageRightsConfirmed` | 9 | `artistPrivate.fanClubs` (o ausente segue o `imageRightsConfirmed`) e o diálogo do artista |
+| A idade | 18 anos para ter fã-clube, declarados; seguir é livre; a idade do app segue em aberto | 52 | `adultDeclared` na candidatura |
+| Quem revisa | A equipe com a seção Fã-clubes com edição; a meta de 24 h vai nas notas de revisão | 7 | `readPanelActor(..., 'fanClubs', 'edit')` e 34.11 |
+| O parecer sobre os prêmios | Dispensado, com o risco aceito; o texto nasce ligado e desliga sem build | 47 | `FAN_CLUB_PRIZE_NOTICE` |
+
+Falta o regulamento (34.16, pergunta 5), que é o portão da ida ao ar (decisão 9).
+
+### 34.3 Contrato: rotas, a callable e os erros
+
+#### Rotas novas na `api`
+
+Não custam cota de CPU. Todas usam o ritmo de 27.3. As que gravam passam pelo `runIdempotent` (a `Idempotency-Key`, o `requireFan` e o 403 do suspenso, menos as marcadas "desfazer", que levam o `allowSuspended`) e, quando recebem texto, pelo filtro antes de gravar. O módulo novo é `functions/src/fan-clubs/` (`model.ts`, `store.ts`, `service.ts`, `follows.ts`, `posts.ts`, `reports.ts`, `panel.ts`, `copy.ts`, `seed.ts` e `index.ts`), e as rotas ficam em `api/routes/fan-clubs.ts`. A `API_ROUTES` passa de 44 a 62.
+
+| Método e caminho | Grava | Função do app | Resposta |
+| --- | --- | --- | --- |
+| `GET /me/fan-club` | não | `fan-club/api.ts` `fetchMyFanClub` | `MyFanClub` |
+| `GET /me/fan-club/numbers` | não | `fetchMyFanClubNumbers` | `FanClubNumbers` |
+| `GET /me/fan-club/artists` | não | `fetchFanClubArtists` | `{ items: FanClubArtist[] }` |
+| `POST /me/fan-club/application` | sim | `applyForFanClub` | `MyFanClub` |
+| `DELETE /me/fan-club/application` | sim, desfazer | `withdrawApplication` | `MyFanClub` |
+| `PUT /me/fan-club/rules` | sim | `acceptFanClubRules` | `MyFanClub` |
+| `GET /me/fan-club/posts` | não | `fetchMyFanClubPosts` | `Page<OwnFanClubPost>` |
+| `POST /me/fan-club/upload` | sim | `openFanClubUpload` | `FanClubUploadSlot` |
+| `POST /me/fan-club/posts` | sim | `createFanClubPost` | `OwnFanClubPost` |
+| `DELETE /me/fan-club/posts/:postId` | sim, desfazer | `removeFanClubPost` | `OwnFanClubPost` |
+| `GET /artists/:artistId/fan-clubs` | não | `fetchArtistFanClubs` | `Page<FanClubCard>` |
+| `GET /fan-clubs/:clubId` | não | `fetchFanClub` | `FanClubPage` |
+| `GET /fan-clubs/:clubId/posts` | não | `fetchFanClubPosts` | `Page<FanClubPost>` |
+| `POST /fan-club-posts/:postId/report` | sim | `reportFanClubPost` | `{ postId, status: 'reported' \| 'already_reported' }` |
+| `PUT /me/fan-club-follows/:clubId` | sim | `followFanClub` | `FollowFanClubResult` |
+| `DELETE /me/fan-club-follows/:clubId` | sim, desfazer | `unfollowFanClub` | `{ clubId, following: false }` |
+| `GET /me/fan-club-follows` | não | `fetchFollowedFanClubs` | `{ items: FollowedFanClub[] }` |
+| `GET /me/fan-club-feed` | não | `fetchFanClubFeed` | `Page<FanClubPost>` |
+
+O que cada uma faz (os passos em 34.5):
+
+- **`GET /me/fan-club`:** leve, porque os Ajustes o leem a cada abertura: a candidatura (`status`, `round`, `rejectReason`, `canReapplyAt`, `history`, `closedByStaff` como `canApply: false`) e o fã-clube (nome, artista, `status`, `postCount`, `pendingPosts`, `photosAllowed`, `featuredUntil` dentro do prazo e o `lastReward` sem a nota), o `available` e o `unavailableReason` (`paused`, `artist_off`, `program_closed` ou `not_member`, quando ele não aparece para os fãs ou o gestor não publica), o `rulesOutdated` (o regulamento aceito numa versão velha), o `open` (o regulamento publicado, decisão 9), o `rulesUrl` e a `rulesVersion` (decisão 8) e o `notice` (`FAN_CLUB_PRIZE_NOTICE`, decisão 47). Sem candidatura e sem programa aberto: `{ open: false, application: null, club: null }`, com uma leitura, e os Ajustes escondem a linha. São de 1 a 5 leituras (a candidatura, o fã-clube, o artista, o `artistPrivate` e o vínculo).
+- **`GET /me/fan-club/numbers`:** só no "Meu fã-clube": a soma dos 16 shards (uma consulta), `followers` e `followers30d` por `count()`.
+- **`GET /me/fan-club/artists`:** as centrais do fã com o artista no ar e os fã-clubes ligados (decisão 9), para a candidatura. Lida só ao abrir a candidatura, para não ler os `artistPrivate` a cada Ajustes aberto.
+- **`POST /me/fan-club/application`:** `{ artistId, name, instagram, tiktok, pitch, adult: true, rulesVersion }`. As recusas, nesta ordem, estão em 34.5.
+- **`DELETE /me/fan-club/application`:** desiste da pendente e apaga o privado. Sem pendente, responde o estado de agora sem gravar.
+- **`PUT /me/fan-club/rules`:** `{ rulesVersion }`, igual à do servidor: grava na candidatura aprovada a versão e o `rulesAcceptedAt` novos. É o novo aceite quando o regulamento muda (a parte dos prêmios, as regras contra fraude).
+- **`POST /me/fan-club/upload`:** abre a vaga de 10 minutos, no molde do `POST /me/photo/upload` (27.4): os dois nomes (`club-photo-<id>.jpg` e `club-thumb-<id>.jpg`) em `users/{uid}/uploads/fanClubPost`, com o `expiresAt`. Só para o gestor de fã-clube ativo de artista com `photosAllowed`. Apaga os arquivos da vaga anterior que não viraram publicação (a limpeza sem função nova). Teto `fanclub_upload`.
+- **`POST /me/fan-club/posts`:** `{ text, photo: boolean }`. Cria a publicação `pending`. Com `photo`, confere a vaga e os bytes dos dois arquivos. Teto `fanclub_post`, no máximo 3 em análise.
+- **`DELETE /me/fan-club/posts/:postId`:** a pendente vira `withdrawn` (os arquivos saem); a publicada vira `removed` (os arquivos ficam). Outro status, ou de outro autor: 404.
+- **`GET /artists/:artistId/fan-clubs`:** 20 por página. Primeiro os destacados dentro do prazo (até 3), depois o resto por `counts.followers`, sem os de gestor bloqueado por quem pede. O artista fora do ar ou sem `enabled`: a página vazia. Cada item com o nome, o gestor (nome, @ e foto), o número de seguidores da cópia (arredondado no app), `featured`, `postCount` e `isFollowing`.
+- **`GET /fan-clubs/:clubId`:** o fã-clube ativo de artista no ar e com `enabled`, com `followerCount` (`count()`, exato), `isFollowing`, `isOwner`, `isMember` (a central oficial), `featured` (com o prazo conferido) e o artista. 404 `fan_club_not_found` para o pausado, o encerrado, o do artista fora do ar ou sem `enabled` e o de gestor que quem pede bloqueou. Nunca prêmio nem pontos (decisão 48).
+- **`GET /fan-clubs/:clubId/posts`:** as publicações no ar, da mais nova para a mais antiga, 10 por página, com as mesmas condições do fã-clube.
+- **`POST /fan-club-posts/:postId/report`:** `{ reason }`, com o `parseFanClubReportReason` (`spam`, `offensive`, `harassment`, `image_misuse`, `other` ou `null`). Teto `report`. A própria publicação: 400 `invalid_request` com `reason: 'own_post'`.
+- **`PUT /me/fan-club-follows/:clubId`:** segue e, quando falta, entra na central. Recusa com 409 `fan_club_refused` (`own_fan_club` ou `follow_limit`) e aplica o teto `fanclub_follow`. Responde no molde do `JoinCentralResult` (`{ clubId, following: true, joined: boolean, pointsAwarded, ... }`, com as recompensas da entrada). Já seguindo: `following: true` sem gravar e sem contar no teto.
+- **`DELETE /me/fan-club-follows/:clubId`:** deixa de seguir em qualquer status do fã-clube; nunca recusa.
+- **`GET /me/fan-club-follows`:** até 50, do mais novo ao mais antigo, cada um com `available` (o fã-clube ativo, de artista no ar e com `enabled`, e o gestor não bloqueado) e, indisponível, o nome quando ele ainda existe (o pausado ou o de artista fora do ar; a lápide fica sem nome). O `follow_limit` aponta para essa lista, onde o fã libera vagas: os indisponíveis contam nos 50.
+- **`GET /me/fan-club-feed`:** a seção "Dos seus fã-clubes" da Início: os 20 vínculos mais novos, as publicações no ar dos disponíveis (em blocos de 30, o `FEED_IN_BLOCK`), sem os gestores bloqueados, 10 por página. Sem vínculo, para depois de uma leitura; cada artista e cada `artistPrivate` são lidos uma vez só, para todos os fã-clubes dele.
+
+#### Rotas que já existem e mudam
+
+- **`POST /rewards/:rewardId/redeem`:** a recompensa `prize` responde 404 `reward_not_found`, como o rascunho: ninguém resgata um prêmio.
+- **`GET /rewards`** ganha `prizes`: os pedidos de prêmio do fã (`origin: 'prize'`), do mais novo ao mais antigo, até 20, cada um com o pedido (código, status, cupom, mensagem e datas) e a recompensa resumida (id, tipo, título, foto e instruções). A recompensa de prêmio nunca entra em `rewards` (o `isVisibleToFan` a deixa de fora, `rewards/model.ts:390-396`). O JS de hoje ignora o campo.
+- **As callables da loja** (`rewards/panel.ts`): o `createReward` ganha o campo `prize: true`, que faz a recompensa nascer com o status `prize` e custo 0 (o `addReward` cria sempre o `draft`, `:161`); o `updateReward` e o `setRewardStatus` não trocam esse status (`:302`, recusa `reward-is-prize`), e o `reorderRewards` a deixa fora da ordem; o `deleteReward` vale como hoje (só a que não tem pedido). O `setRedemptionStatus` trata o pedido de prêmio como os outros, com o passo do agregado da origem (34.4).
+- **`PUT /me/centrals/:artistId`** e **`POST /me/artists`:** a entrada sem `fanClubId` confere o crédito pelo código do gestor (decisão 23). O contrato de resposta não muda.
+- **`POST /invites/claim`, `POST /invites/visit`** e **`PUT /me/invite/links/:linkId`:** o tipo `fanclub` e o id `fanclub:<clubId>` (decisão 22); o claim confere o crédito pelo código do gestor para o vínculo que já existe sem `fanClubId`.
+- **`DELETE /me/centrals/:artistId`:** apaga os seguimentos daquele artista (decisão 27). A resposta não muda.
+- **`PUT /me/blocks/:fanId`:** apaga o seguimento do fã-clube do bloqueado (decisão 32). A resposta não muda.
+
+#### Códigos de erro novos na `api`
+
+| Código | Status | Quando | Kind no app |
+| --- | --- | --- | --- |
+| `fan_club_not_found` | 404 | fã-clube que não existe ou que a pessoa não pode ver | `notFound` |
+| `fan_club_post_not_found` | 404 | publicação que não existe, fora do ar ou de outro autor | `notFound` |
+| `fan_club_invalid` | 400 | campo fora do formato, com `details: { field, reason: 'format' \| 'not_allowed' \| 'official' }` | `validation` |
+| `fan_club_refused` | 409 | recusa de negócio, com `details: { reason }` (abaixo) | `validation` |
+
+Os `details.reason` do `fan_club_refused`: `username_required` (o @ automático), `not_member` (fora da central do artista), `artist_closed` (fora do ar ou sem `enabled`), `already_applied`, `has_fan_club`, `cooldown` (com `canReapplyAt`), `too_many_rounds`, `not_allowed` (encerrado pela equipe), `club_not_active`, `photos_not_allowed`, `rules_outdated` (o regulamento aceito numa versão velha, só no publicar), `upload_missing` (a vaga vencida ou os arquivos que não chegaram), `too_many_pending`, `own_fan_club` e `follow_limit`. Os tetos do dia saem no 429 `too_many_requests` de sempre, com o `details.action` da `CapAction` nova (`club_apply`, `club_post`, `club_upload` ou `club_follow`), que o app não lê: a frase sai da superfície (`src/services/api/refusal.ts:6`). O app mostra uma frase por motivo, no campo da tela (34.9). A tabela da seção 1 ganha as quatro linhas. No app, os códigos ficam no domínio (`FAN_CLUB_ERROR_CODES` em `fan-club/consts.ts`, como o `REDEEM_ERROR_CODES`, `rewards/consts.ts:35-40`), porque o `API_ERROR_CODES` guarda só os que mais de um domínio trata (`src/services/api/errors.ts:21-25`); o `isContentRefusal` (`:118-140`) passa a aceitar o `fan_club_invalid`, para o texto barrado ganhar a frase da seção 30.
+
+#### Callable do painel: `decideFanClub`
+
+O núcleo fica em `fan-clubs/panel.ts`, exportado pelo `fan-clubs/index.ts`; o `onPanelCall({ cors: PANEL_ORIGINS }, ...)` fica em `functions/src/index.ts`, depois do `resolveProfileReport`, com 256 MiB. O molde é o do `resolveProfileReport` (`moderation/profile-panel.ts`): o estado que a tela mostrou (`expected`) diferente do de agora recusa `stale-decision`, e o painel lê de novo; nada muda, `ok` sem gravar e sem auditar.
+
+- **Entrada comum:** `{ subject, id, decision, expected }`. O `subject` é `application`, `club`, `post` ou `report`; fora da lista, `invalid-request` com `field: 'subject'`. O `id` é o uid (na candidatura, pelo `targetFanUid`, `staff/panel-errors.ts:100-105`) ou o id do documento.
+- **Acesso:** `readPanelActor(..., 'fanClubs', 'edit')` direto e de novo na transação: `not-staff` e `no-section` (o Leitor não decide). Quem é o candidato, o gestor ou o autor recebe `self`.
+
+| `subject` | `decision` | `expected` | Campos | Seção a mais |
+| --- | --- | --- | --- | --- |
+| `application` | `approve` | a rodada (`round`) | `name?` (3 a 40; sem ele, o proposto) | nenhuma |
+| `application` | `reject` | a rodada | `reason`: `incomplete`, `not_fit`, `artist_limit`, `image_rights`, `rules` ou `other` | nenhuma |
+| `club` | `pause`, `resume` | o status | nenhum | nenhuma |
+| `club` | `close` | o status | `reason`: `staff` (o padrão) ou `owner_request` (decisão 13) | o papel `admin` |
+| `club` | `feature` | o status | `featuredUntil` (`AAAA-MM-DD`, de amanhã a 31 dias) | nenhuma |
+| `club` | `unfeature` | o status | nenhum | nenhuma |
+| `club` | `reward` | o status | `grantId`, `points?`, `prize?`, `note` (1 a 200) | `fans` com `points`, `rewards` com `prize` |
+| `post` | `approve`, `hide`, `restore` | o status | nenhum | nenhuma |
+| `post` | `reject` | o status | `reason`: `image_rights`, `off_topic`, `quality`, `rules` ou `other` | nenhuma |
+| `report` | `keep`, `action` | a rodada | nenhum | nenhuma |
+
+- **O `reward`:** `grantId` no formato do `adjustmentId` (o painel sorteia, como o `newAdjustmentId`, `imagineup-admin` `src/lib/fans.ts:537`); pelo menos um de `points` e `prize`. `points`: inteiro de 1 ao teto do papel (decisão 45). `prize`: `{ rewardId, delivered: boolean, coupon: string | null, message: string | null }`, com o cupom até 60 (limpo, sem quebra de linha) e a mensagem até 140 (limpa). O mesmo `grantId` de novo, com o registro já gravado e os mesmos campos: `{ ok: true }` com o que foi feito, sem gravar; com outros campos, `grant-id-reused`.
+- **Saída:** `{ ok: true, subject, id, status }`, e no `reward`, `{ ok: true, grantId, code: string | null, points: number | null }`.
+- **Motivos novos** (`PanelErrorReason` e `ERRORS` de `staff/panel-errors.ts`):
+
+| Motivo | Código | Mensagem |
+| --- | --- | --- |
+| `fan-club-not-found` | `not-found` | "Esse fã-clube não existe mais." |
+| `application-not-found` | `not-found` | "Essa candidatura não existe mais." |
+| `fan-club-post-not-found` | `not-found` | "Essa publicação não existe mais." |
+| `fan-club-report-not-found` | `not-found` | "Essa publicação não está na fila de denúncias." |
+| `stale-decision` | `failed-precondition` | "Isso mudou desde que a tela abriu. Abra de novo." |
+| `artist-not-open` | `failed-precondition` | "O artista está fora do ar ou não aceita fã-clubes." |
+| `feature-limit` | `failed-precondition` | "Este artista já tem 3 fã-clubes em destaque." |
+| `prize-not-allowed` | `failed-precondition` | "O prêmio pede o fã-clube ativo, o gestor com 18 anos ou mais declarados e sem suspensão." (com `details.reason`: `club_not_active`, `not_adult` ou `owner_suspended`) |
+| `owner-suspended` | `failed-precondition` | "O gestor está suspenso. Tire a suspensão antes de reativar o fã-clube." |
+| `grant-id-reused` | `failed-precondition` | "Esse reconhecimento já foi dado com outros valores. Abra o diálogo de novo." |
+| `reward-not-prize` | `failed-precondition` | "Essa recompensa não é só para prêmios de fã-clube." |
+
+Os de hoje que ela usa: `invalid-request`, `self`, `admin-only` (32.1, decisão 6), `not-staff` e `no-section`, as recusas de estoque da loja (`rewards/errors.ts`) e as de teto do Ajuste (`points/adjust.ts`).
+
+### 34.4 Dados: coleções e campos
+
+Ninguém grava pelo cliente (`allow write: if false` em tudo). O fã lê só pela `api`; a equipe lê pelas regras, com a seção `fanClubs` (34.6). Nenhuma coleção nova se chama `centrals`, `postLikes`, `eventRsvps` ou `postComments`, os nomes com regra de grupo aberta (`firestore.rules:186`, `:190`, `:197-199` e `:404`), e nenhuma outra pode se chamar `fanClubFollows`. Os nomes das subcoleções são próprios.
+
+```
+fanClubApplications/{uid} {               // a candidatura, uma por fã (decisão 12)
+  uid: string
+  artistId: string
+  artistName: string                       // cópia
+  program: 'fanclub'                       // a porta para 'affiliate' na Fase 2 (UP-42)
+  status: 'pending' | 'approved' | 'rejected' | 'withdrawn'
+  round: number                            // 1 a 3 (decisão 11)
+  proposedName: string                     // 3 a 40, filtrado, sem "oficial"
+  rulesVersion: string
+  rulesAcceptedAt: Timestamp
+  adultDeclared: true                      // decisão 52
+  submittedAt: Timestamp
+  decidedAt: Timestamp | null
+  decidedBy: { uid, name } | null
+  rejectReason: 'incomplete' | 'not_fit' | 'artist_limit' | 'image_rights' | 'rules' | 'other' | null
+  canReapplyAt: Timestamp | null           // 30 dias depois da recusa
+  clubId: string | null                    // gravado na aprovação
+  closedByStaff: boolean                   // decisão 13
+  history: [{ round, decision, reason, at }]   // até 3; a ficha mostra as rodadas sem os Logs
+  fanName: string | null                   // cópias, para a seção não ler users/{uid}
+  fanUsername: string | null
+  fanPhotoURL: string | null
+  schemaVersion: 1
+}
+
+fanClubApplicationPrivate/{uid} {          // só quem edita a seção lê (decisão 14)
+  instagram: string | null                 // pelo normalizeSocialHandle (fan-profile/details.ts:170)
+  tiktok: string | null
+  pitch: string                            // 20 a 1.000
+  whatsapp: string | null                  // só se a cliente mantiver (34.16, pergunta 6)
+  expiresAt: Timestamp | null              // TTL: 90 dias depois da aprovação
+  schemaVersion: 1
+}
+
+fanClubs/{clubId} {                        // id automático
+  artistId: string
+  artistName: string                       // cópia
+  ownerUid: string | null                  // null na lápide (decisão 21)
+  ownerName: string | null                 // cópias, regravadas pelo syncFanProfile
+  ownerUsername: string | null
+  ownerPhotoURL: string | null
+  name: string | null                      // null na lápide
+  status: 'active' | 'paused' | 'closed'
+  statusReason: 'staff' | 'owner_request' | 'suspended' | 'account_deleted' | null
+  accountDeleted: boolean
+  applicationRound: number
+  approvedAt: Timestamp
+  approvedBy: { uid, name }
+  pausedAt: Timestamp | null
+  closedAt: Timestamp | null
+  closedBy: { uid, name } | null
+  postCount: number                        // no ar
+  pendingPosts: number                     // em análise, para o teto de 3
+  lastPostAt: Timestamp | null
+  counts: {                                // a cópia da noite (decisão 37)
+    followers, followers30d, newAccounts, automaticUsername, byOwnerCode,
+    joins, retained, signups, visits, links,
+    at: Timestamp | null                   // null até a primeira cópia
+  }
+  monthStart: { month, followers, joins, signups, visits, links } | null
+  lastMonth: { month, followers, joins, signups, visits, links } | null
+  featured: boolean
+  featuredAt: Timestamp | null
+  featuredUntil: string | null             // AAAA-MM-DD de São Paulo
+  featuredBy: { uid, name } | null
+  lastReward: { at, points: number | null, prize: boolean } | null
+  createdAt: Timestamp
+  updatedAt: Timestamp
+  schemaVersion: 1
+}
+```
+
+A aprovação grava `counts` zerado com `at: null` e `featured: false`: sem eles, o fã-clube some das listas ordenadas e fica fora da cópia.
+
+```
+fanClubs/{clubId}/prizes/{grantId} {       // uma por concessão (decisão 50)
+  grantId: string
+  clubId: string
+  artistId: string
+  points: number | null
+  ledgerId: string | null                  // fanclub_prize:<grantId>
+  prize: { rewardId, rewardTitle, rewardKind, delivered: boolean } | null   // sem o código nem o cupom (decisão 50)
+  note: string                             // interna, 1 a 200
+  by: { uid, name }
+  at: Timestamp
+  schemaVersion: 1
+}
+
+fanClubStats/{clubId}/fanClubShards/{0..15} {   // decisão 24
+  links: number, visits: number, signups: number, joins: number, updatedAt: Timestamp
+}
+
+fanClubPosts/{postId} {                    // fora de posts/{id} (decisão 17)
+  clubId: string
+  artistId: string
+  authorUid: string
+  authorName: string | null                // cópias
+  authorUsername: string | null
+  authorPhotoURL: string | null
+  kind: 'text' | 'photo'
+  text: string                             // 1 a 1.000, pelo cleanMultiline e pelo filtro
+  media: { photo: { url, path, width, height }, thumb: { url, path, width, height } } | null
+  status: 'pending' | 'published' | 'rejected' | 'withdrawn' | 'hidden' | 'removed'
+  rejectReason: 'image_rights' | 'off_topic' | 'quality' | 'rules' | 'other' | null
+  submittedAt: Timestamp
+  publishedAt: Timestamp | null
+  reviewedAt: Timestamp | null
+  reviewedBy: { uid, name } | null
+  schemaVersion: 1
+}
+
+fanClubReports/{reporterUid}_{postId} {    // fechada para todos, como a commentReports
+  postId, clubId, reporterUid, reason, round, reportedAt, day, schemaVersion: 1
+}
+
+fanClubReportQueue/{postId} {              // no molde da profileReportQueue (29.3)
+  postId, clubId, artistId, authorUid,
+  reportCount, reasons: { spam, offensive, harassment, image_misuse, other, none },
+  status: 'open' | 'resolved',
+  resolution: null | 'kept' | 'actioned' | 'withdrawn' | 'author_deleted',
+  round, openedAt, firstReportedAt, lastReportedAt, resolvedAt, resolvedBy, schemaVersion: 1
+}
+
+users/{uid}/fanClubFollows/{clubId} {      // o vínculo de seguir (decisões 26 a 34)
+  uid, clubId, artistId,
+  followedAt: Timestamp,
+  newAccount: boolean,                     // perfil com menos de 7 dias
+  chosenUsername: boolean,                 // o @ não é o automático
+  byOwnerCode: boolean,                    // o referrals.inviterUid é o gestor
+  schemaVersion: 1
+}
+
+users/{uid}/fanClubCredits/{artistId} {    // o crédito de entrada, uma vez por pessoa e artista (decisão 23)
+  artistId, clubId, via: 'follow' | 'owner_code', at: Timestamp, schemaVersion: 1
+}
+```
+
+O vínculo de seguir não guarda nome, foto nem o uid do gestor: nasce ao seguir e sai ao deixar de seguir. O vínculo e o crédito moram em `users/{uid}`, e o `recursiveDelete` da exclusão os leva (`store.ts:229`).
+
+**Campos novos em coleções que existem:**
+
+- `artistPrivate/{id}.fanClubs`: `{ enabled?: boolean, photosAllowed?: boolean }`; o ausente vale o `imageRightsConfirmed` (decisão 9), e só o `false` gravado desliga.
+- `users/{uid}/centrals/{artistId}`: `firstJoin` (a entrada em que o `central_join` não saiu `duplicate`, decisão 23) e `fanClubId` (o fã-clube que trouxe a pessoa), os dois ausentes nos vínculos de antes. O `via` continua `onboarding` ou `page`.
+- `referrals/{uid}.link`: `{ kind: 'fanclub', targetId: clubId }`; `fanInvites/{uid}/inviteLinks/fanclub:<clubId>`.
+- `statsDaily/{dia}/statsShards/*`: `byOrigin.kind.fanclub`; e o passo novo `prize` do `addRedemptionToShard` (`points/stats.ts:359-400`), que soma `byReward.<id>.prizes` e nunca os totais `redeem*` da Loja da Visão geral (o prêmio não é resgate). A entrega e a recusa do pedido de prêmio somam no `byReward` dele, como as outras, também fora dos totais.
+- `rewards/{rewardId}`: o status `prize` e o tipo `discount` (decisões 40 e 42); custo 0 só com `prize`.
+- `redemptions/{código}`: `origin: 'store' | 'prize'` (ausente vale `store`), `fanClubId`, `grantId`, `coupon` e `message` (`null` fora do prêmio). O pedido de prêmio grava também o `requestedAt` e o `statusAt` (o agora), porque as listas de pedidos ordenam por `requestedAt` (`rewards/service.ts:91-95` e os índices do painel), e o `redemptionRecord` lê o ausente como 0 (`rewards/model.ts:222`).
+- `wallets/{uid}/ledger/fanclub_prize:<grantId>`: o `adjust` com a origem `fanclub_prize` (decisão 45).
+
+### 34.5 Passo a passo
+
+A ordem é a de sempre (seção 5): a chave e o fã (`runIdempotent`), as leituras do domínio, o `planAwards`, as gravações. Todas as leituras antes de qualquer gravação.
+
+**Candidatar (`POST /me/fan-club/application`).** O `validate`, sem leitura, confere o formato e o filtro: o nome (3 a 40, limpo, `fanClubName`, sem "oficial"), o texto de divulgação (20 a 1.000, `cleanMultiline`, `fanClubPitch`), as redes (o `normalizeSocialHandle` e o campo `socials`, pelo menos uma), o `adult: true` e a `rulesVersion` igual à do servidor (`FAN_CLUB_RULES_VERSION`). Na transação, depois do `requireFan`, nesta ordem: o @ escolhido (`username_required`); um `getAll` do vínculo `users/{uid}/centrals/{artistId}`, do `artists/{artistId}`, do `artistPrivate/{artistId}` e da candidatura (`not_member`, depois `artist_closed`); a candidatura: `closedByStaff` (`not_allowed`), `pending` (`already_applied`), `approved` com o fã-clube ativo ou pausado (`has_fan_club`), `canReapplyAt` no futuro (`cooldown`) e a 3ª rodada já usada (`too_many_rounds`); o teto `fanclub_apply`; o `planAwards` sem entradas; e grava a candidatura (`pending`, as cópias do perfil, o `history` de antes e o `round`: 1 na primeira, o mesmo depois de desistir, mais 1 depois de recusada) e o privado, juntos.
+
+**Desistir (`DELETE /me/fan-club/application`, desfazer).** A pendente vira `withdrawn` (sem mudar a rodada, sem `canReapplyAt`), e o privado sai.
+
+**Aprovar (`decideFanClub`, `application`, `approve`).** Na transação: o ator; a candidatura (`application-not-found`; `round` diferente do `expected`, `stale-decision`; já `approved`, `ok` sem gravar); o perfil do candidato (suspenso, `owner-suspended`: a suspensão segura a pendente); o artista e o `artistPrivate` (`artist-not-open`); o nome (o `name`, ou o proposto, pelas mesmas regras). Grava o `fanClubs/{novo id}` (`active`, o nome, as cópias do gestor, `counts` zerado com `at: null`, `featured: false`, `postCount` e `pendingPosts` 0), a candidatura (`approved`, `decidedAt`, `decidedBy`, `clubId`, o `history`), o `expiresAt` do privado (90 dias) e a auditoria `fanClub.application.approved` com `details: { clubId, artistId, fanUid, round, nameChanged }`. Os shards nascem com a primeira soma (o `increment` cria o documento).
+
+**Recusar (`reject`).** A candidatura vira `rejected`, com o motivo, o `canReapplyAt` (30 dias) e o `history`; o privado sai; a auditoria `fanClub.application.rejected` com `{ artistId, fanUid, round, reason }`.
+
+**Pausar, reativar e encerrar (`club`).** Pausar: `paused`, `statusReason: 'staff'`, `pausedAt`, e o destaque sai. Reativar: `active`, só do `paused`, lendo sempre o perfil do gestor (suspenso, `owner-suspended`, também quando a equipe pausou antes da suspensão), e o `artist-not-open` vale. Encerrar (admin): `closed`, `closedAt`, `closedBy`, o `statusReason` (`staff` ou `owner_request`), o destaque sai e o privado sai; com `staff`, a candidatura ganha `closedByStaff: true`; com `owner_request`, o `canReapplyAt` de 30 dias e o `round` volta a 0, para a próxima ser a rodada 1. As publicações em análise ficam na fila e a equipe as resolve (o fã-clube encerrado não as mostra). Auditoria `fanClub.paused`, `fanClub.resumed` e `fanClub.closed`, com `{ clubId, artistId, fanUid }`.
+
+**Destacar (`feature`).** O fã-clube `active`; o `featuredUntil` de amanhã a 31 dias; uma consulta dos destacados do artista (`artistId`, `status: 'active'`, `featured: true`), contando só os de prazo em dia: com 3 outros, `feature-limit`. Grava `featured`, `featuredAt`, `featuredUntil` e `featuredBy`. O mesmo prazo de novo: `ok` sem gravar. Auditoria `fanClub.featured` com `{ clubId, artistId, fanUid, featuredUntil }`. `unfeature`: `featured: false` e `featuredUntil: null`, com `fanClub.unfeatured`.
+
+**Recompensar (`reward`).** As seções a mais primeiro, fora e dentro da transação (`fans` com `points`, `rewards` com `prize`; `no-section`). Na transação, num `getAll`: o fã-clube, `fanClubs/{clubId}/prizes/{grantId}`, a candidatura e o perfil do gestor, a carteira dele, com pontos o `staffLimits/{uid}_{dia}` de quem dá e, com prêmio, a recompensa (todas as leituras antes das gravações). O registro já existe: com os mesmos campos, `ok` com o que ele diz, sem gravar; com outros, `grant-id-reused`. As travas da decisão 46 (`prize-not-allowed`). Com prêmio: a recompensa com o status `prize` (`reward-not-prize`) e com vaga (a conta do estoque do `redeemReward`, sem o custo nem o limite por fã); o `drawRedemptionCode`. Com pontos: o teto do papel e o orçamento do dia do `adjustFanPoints` (o mesmo `staffLimits/{uid}_{dia}` e as mesmas funções de `points/adjust.ts`, com o `addStaffLimit` que grava todos os campos). O `planAwards` com o `adjust` (`source: 'fanclub_prize'`, `eventId: grantId`, só `balance`). Grava: o pedido (`origin: 'prize'`, `points: 0`, `approved` ou `delivered`, com o `requestedAt`, o `statusAt` e o `approvedAt` ou o `deliveredAt`, o cupom e a mensagem, as cópias do gestor e o `updatedBy`), o `redeemedCount` mais 1 na recompensa, o passo novo `prize` nos shards do dia (34.4), o registro em `prizes`, o `lastReward` do fã-clube e a auditoria `fanClub.rewarded` com `{ clubId, artistId, fanUid, grantId, points, rewardId, code, note }`, nunca o cupom nem a mensagem. O `staffLimits` soma os pontos, como no ajuste.
+
+**Cancelar o prêmio.** O Recusar da aba Pedidos (`setRedemptionStatus`, `rewards/panel.ts:480`) vale para o pedido de prêmio como para outro: do `approved` para `refused`, com o motivo e a vaga; com 0 ponto, nenhum lançamento (`rewards/service.ts:360`). O registro em `prizes` não muda (o status mora no pedido, que o painel com `rewards` acha pelo `grantId` e o app lê no `prizes` do `GET /rewards`), e os pontos ficam (decisão 49).
+
+**Publicar (`POST /me/fan-club/posts`).** O `validate`: o texto (1 a 1.000, `cleanMultiline`, `fanClubPost`) e o `photo`. Na transação: a candidatura e o fã-clube (`club_not_active`), o vínculo com a central (`not_member`), o artista e o `artistPrivate` (`artist_closed`, e `photos_not_allowed` com foto), a versão do regulamento (`rules_outdated`), o `pendingPosts` (`too_many_pending` com 3), o teto `fanclub_post` e, com foto, a vaga (`upload_missing` sem ela ou vencida). Fora da transação, antes dela, a conferência dos bytes dos dois arquivos pelo `photoProblem` com os tetos da decisão 15, como o `PUT /me/photo` faz (24.4). Grava a publicação `pending`, o `pendingPosts` mais 1 e apaga a vaga.
+
+**Decidir a publicação (`post`).** `approve`: do `pending` para `published`, `publishedAt`, `pendingPosts` menos 1, `postCount` mais 1, `lastPostAt`. `reject`: do `pending` para `rejected`, com o motivo, `pendingPosts` menos 1, e os arquivos apagados depois da transação, no molde do `prunePostFiles` (`posts/panel.ts:233-253`; a falha vai só ao log). `hide`: do `published` para `hidden`, `postCount` menos 1. `restore`: do `hidden` para `published`, `postCount` mais 1. Depois do `hide` e da tirada do ar pelo gestor, o servidor troca o token de download dos dois arquivos (o `firebaseStorageDownloadTokens`), porque a URL com token passa por cima da regra do Storage e ficaria no cache dos aparelhos; o `restore` grava as URLs novas na `media`. Auditoria `fanClub.post.approved`, `rejected`, `hidden` e `restored`, com `{ fanClubPostId, clubId, artistId, authorUid, reason }`, nunca o texto.
+
+**Retirar e tirar do ar (`DELETE /me/fan-club/posts/:postId`, desfazer).** A pendente vira `withdrawn`, com o `pendingPosts` menos 1 e os arquivos apagados depois da transação; a publicada vira `removed`, com o `postCount` menos 1 e a troca do token. O item aberto da `fanClubReportQueue` dela vai a `resolved` com `withdrawn`. Outro status, ou de outro autor: 404.
+
+**Denunciar (`POST /fan-club-posts/:postId/report`).** No molde do `reportFan` (29.4): a publicação no ar (`fan_club_post_not_found`); a própria (`own_post`); a denúncia e o item num `getAll`; o `already_reported` da mesma rodada; o teto `report`; o item criado, somado ou reaberto com a rodada nova; a denúncia com o `round`. Decidir a denúncia (`report`): `keep` resolve com `kept`; `action` resolve com `actioned` e, se a publicação ainda está `published`, a oculta na mesma transação (`hidden`, `postCount` menos 1, e a troca do token); em outro status, só resolve. Auditoria `fanClub.report.resolved` com `{ fanClubPostId, clubId, resolution, reportCount, round }`.
+
+**Seguir (`PUT /me/fan-club-follows/:clubId`).** O `validate`: o id no formato. Na transação, depois do `requireFan`, num `getAll`: o fã-clube, o artista, o `artistPrivate`, o vínculo de seguir, o vínculo com a central, o crédito `fanClubCredits/{artistId}`, o `blockLists/{uid}` e o `referrals/{uid}`; e o `count()` dos seguimentos do fã (a transação aceita a consulta de agregação). Recusas, nesta ordem: o fã-clube que não está ativo, de artista fora do ar ou sem `enabled`, ou de gestor bloqueado por quem pede (`fan_club_not_found`); o próprio (`own_fan_club`); já seguindo (resposta sem gravar); 50 seguidos (`follow_limit`); o teto `fanclub_follow`. Fora da central: o `joinCentrals` com a via `page` e o `fanClubId` (decisão 26), que lê o que ele lê hoje (o `readJoin`, `centrals/service.ts:129-147`) e paga o `central_join` de sempre. O crédito (decisão 23): com a entrada feita agora e com `firstJoin` (o `central_join` dela não saiu `duplicate`) e sem o marcador, grava o `fanClubId` no vínculo novo, o marcador (`via: 'follow'`) e `joins` mais 1 num shard. As leituras do crédito (o marcador) vêm no `getAll`, antes do `joinCentrals`, que já grava. Grava o vínculo de seguir com os três sinais (decisão 39) e conta o teto.
+
+**Deixar de seguir (`DELETE`, desfazer).** Apaga o vínculo se existe. Não mexe na central, nos pontos nem no crédito.
+
+**O crédito pelo código do gestor.** Na entrada sem `fanClubId` (`PUT /me/centrals/:artistId` e `POST /me/artists`), a transação lê, antes do `joinCentrals` (que já grava, `centrals/service.ts:220-227`), o `referrals/{uid}` e, com `inviterUid`, a candidatura dele, o fã-clube dele e o marcador: o `inviterUid` é gestor de um fã-clube ativo daquele artista, o perfil de quem entra tem até 30 dias (`createdAt`), a entrada sai com `firstJoin` e não há marcador: grava o `fanClubId` no vínculo, o marcador (`via: 'owner_code'`) e `joins` mais 1. No `POST /me/artists`, que entra em várias centrais de uma vez (`readFollow`, `centrals/service.ts:255-282`), só a central do fã-clube do gestor leva o crédito. No claim que chega depois da entrada (`claimInvite`, `invites/service.ts:286-371`), o mesmo teste sobre o vínculo que já existe, com `firstJoin`, sem `fanClubId` e sem marcador, sem olhar o extrato (a entrada do onboarding já pagou o `central_join`, e o `firstJoin` diz que ela foi a primeira): credita uma vez. Custo: uma leitura a mais em toda entrada (o `referrals`) e mais três só quando há `inviterUid`; no claim, uma (a candidatura de quem convidou) e mais três (o fã-clube dele, o vínculo e o marcador) só quando ela tem fã-clube.
+
+**Sair da central (`leaveCentral`, muda).** Antes do `planAwards`, a consulta `users/{uid}/fanClubFollows` com `artistId` igual (índice automático) e o `tx.delete` de cada um. O crédito e o marcador ficam: voltar e seguir de novo não credita outra vez.
+
+**Bloquear (`blockFan`, muda).** Lê também `fanClubApplications/{alvo}` e, com `clubId`, `users/{uid}/fanClubFollows/{clubId}`: o vínculo existe, sai.
+
+**Suspender (`applyFanSuspension`, muda).** Lê os seguimentos do suspenso (até 50) e a candidatura dele, e o fã-clube: apaga os seguimentos e, com o fã-clube ativo, grava `paused`, `statusReason: 'suspended'`, `pausedAt` e o destaque fora. Tirar a suspensão (`setFanSuspended` com `false`) não mexe em nada disso.
+
+**A cópia da noite (`copyFanClubCounts`, em `fan-clubs/copy.ts`).** Chamada pelo handler do `closeStatsDays` depois do `runStatsClose`, com `try/catch` próprio. Consulta até 500 fã-clubes `active` ou `paused` por `counts.at` crescente (o `null` primeiro). Com o prazo e a concorrência da decisão 37. Para cada um, fora de transação: os 16 shards (uma consulta), os `count()` no grupo `fanClubFollows` (todos, os de `followedAt` nos últimos 30 dias, `newAccount`, `chosenUsername` falso e `byOwnerCode`) e o `count()` no grupo `centrals` com o `fanClubId` (os trazidos que ficaram). Grava `counts` numa gravação só; na primeira cópia de um mês, o `lastMonth` (o de agora menos o `monthStart`) e o `monthStart` novo; o `featured: false` com o prazo vencido, numa transação curta que relê o `featuredUntil`. São umas 22 leituras por fã-clube; a falha de um vai ao log e não para os outros.
+
+**As cópias do perfil (`queueFanProfileSync` e `syncFanProfile`, mudam).** A fila passa a enfileirar também quando o @ muda (hoje só o nome, a foto e o `photoPath`, `fan-profile/model.ts:342-350`; o @ não vai nos comentários, mas vai no fã-clube e na candidatura). A tarefa regrava, além dos comentários, o `owner*` do fã-clube dele, o `fan*` da candidatura e o `author*` das publicações dele (em páginas de 100).
+
+### 34.6 Regras, índices, Storage e TTL
+
+**Firestore (`firestore.rules`),** ao lado das da Moderação, todas com `allow write: if false`:
+
+- `fanClubApplications/{uid}`, `fanClubs/{clubId}` (com a subcoleção `prizes/{grantId}`), `fanClubStats/{clubId}/fanClubShards/{shard}`, `fanClubPosts/{postId}` e `fanClubReportQueue/{postId}`: leitura com `canSeeSection('fanClubs')` (`firestore.rules:54-58`), editor, Leitor e admin.
+- `fanClubApplicationPrivate/{uid}`: leitura só com `canEditSection('fanClubs')` (`:61-66`); o Leitor não lê.
+- `fanClubReports/{id}`: `allow read, write: if false`, fechada até para a equipe, como a `commentReports` e a `profileReports` (guarda quem denunciou).
+- `users/{uid}/fanClubFollows/{clubId}` e `users/{uid}/fanClubCredits/{artistId}`: leitura com `canSeeSection('fans')`, como o `users/{uid}/centrals` (`:164-167`); e a regra de grupo `match /{path=**}/fanClubFollows/{clubId}`, também só com `fans`, no molde da de `centrals` (`:197-199`). Sem elas, as duas cairiam no `match /{document=**}` fechado (`:500-502`).
+- A `ALL_SECTIONS` dos testes de regras ganha `fanClubs` (`tests/firestore-rules.test.ts:496` e as cópias dos outros arquivos de `tests/`).
+
+A seção Fã-clubes lê os números da cópia (`counts`), e não conta os seguidores ao vivo: o `count()` no grupo `fanClubFollows` pede a leitura do grupo, que só a seção Fãs tem (decisão 29). O status do pedido de um prêmio vem de `redemptions`, que só a seção `rewards` lê: sem ela, a ficha mostra o código sem o status.
+
+**Storage (`storage.rules`),** `match /fanClubMedia/{uid}/{fileName}`:
+
+- `get` só do dono (o app confere se a tentativa anterior chegou, como em `fans/{uid}`, `storage.rules:166-180`); `list` falso;
+- `create` só pelo dono, com o nome `club-(photo|thumb)-[a-z0-9-]{8,40}\.jpg`, `image/jpeg` de até 2 MiB e sem sobrescrever;
+- o `fanCanUpload(uid)` (`:76-79`) e a vaga nova, `fanClubUploadReserved(uid, fileName)` (o nome na lista `fileNames` de `users/{uid}/uploads/fanClubPost` e o `expiresAt` no futuro): as duas leituras do Firestore que o Storage aceita por avaliação (`:85-92`);
+- `update` e `delete` falsos.
+
+Quem garante que o fã é gestor de fã-clube ativo, de artista com `photosAllowed`, é o servidor, ao abrir a vaga: a regra não comporta uma terceira leitura. A pasta fica fora de `fans/{uid}/`, porque a varredura da foto do perfil apaga de lá o que não é a foto atual nem um envio recente (`stalePhotoFiles`, `fan-profile/model.ts:293-306`). As URLs saem com o token de download, como as do perfil.
+
+**Índices compostos novos (21),** cada um com a linha num `functions/src/fan-clubs/indexes.test.ts` novo, pelo ajudante de `functions/test/indexes.ts`:
+
+| Coleção | Campos | Quem consulta |
+| --- | --- | --- |
+| `fanClubApplications` | `status`, `submittedAt` | a fila das pendentes, da mais antiga |
+| `fanClubApplications` | `artistId`, `status`, `submittedAt` | a fila por artista e "Centrais que eu cuido" (`in`) |
+| `fanClubApplications` | `status`, `decidedAt` decrescente | as resolvidas |
+| `fanClubs` | `status`, `counts.followers` decrescente | a lista por seguidores |
+| `fanClubs` | `status`, `counts.followers30d` decrescente | a lista por novos em 30 dias |
+| `fanClubs` | `status`, `approvedAt` decrescente | a lista pela aprovação |
+| `fanClubs` | `artistId`, `status`, `counts.followers` decrescente | a lista por artista e o `GET /artists/:artistId/fan-clubs` |
+| `fanClubs` | `artistId`, `status`, `counts.followers30d` decrescente | a lista por artista |
+| `fanClubs` | `artistId`, `status`, `approvedAt` decrescente | a lista por artista |
+| `fanClubs` | `featured`, `featuredUntil` | o filtro Destaque do painel |
+| `fanClubs` | `status`, `counts.at` | a cópia da noite (`in` em `active` e `paused`) |
+| `fanClubPosts` | `clubId`, `status`, `publishedAt` decrescente | a página do fã-clube e a Início (`in`) |
+| `fanClubPosts` | `status`, `submittedAt` | a fila de revisão |
+| `fanClubPosts` | `authorUid`, `submittedAt` decrescente | "Minhas publicações" |
+| `fanClubPosts` | `clubId`, `submittedAt` decrescente | a ficha do fã-clube, em todos os status |
+| `fanClubReportQueue` | `status`, `lastReportedAt` decrescente | as denúncias abertas |
+| `fanClubReportQueue` | `status`, `resolvedAt` decrescente | as resolvidas |
+| grupo `fanClubFollows` | `clubId`, `followedAt` decrescente | os seguidores recentes e os novos em 30 dias |
+| grupo `fanClubFollows` | `clubId`, `newAccount` | a cópia (contas novas) |
+| grupo `fanClubFollows` | `clubId`, `chosenUsername` | a cópia (@ automático) |
+| grupo `fanClubFollows` | `clubId`, `byOwnerCode` | a cópia (trazidos pelo gestor) |
+
+São 65 índices compostos com estes. Os destacados de um artista (a página e o teto de 3) são só igualdades (`artistId`, `status` e `featured`) e saem da junção dos índices de um campo. As combinações do painel ficam presas às que têm índice: o filtro de status é sempre escolhido (o padrão é ativo), o de artista é opcional, e o filtro Destaque lista todos os destacados pelo `featuredUntil`, sem combinar com os outros dois. As consultas de igualdade num campo só (a candidatura e o fã-clube do gestor por `ownerUid`, as publicações e as denúncias de um fã na exclusão, os seguimentos de um artista no `leaveCentral`) usam os índices automáticos. Os `fieldOverrides` novos: o `clubId` de `fanClubFollows` e o `fanClubId` de `centrals` no escopo de grupo (o `count()` de todos os seguidores e dos trazidos que ficaram); a política TTL em `fanClubApplicationPrivate.expiresAt`; e as isenções de `fanClubPosts.text`, `fanClubApplicationPrivate.pitch`, `fanClubReportQueue.reasons`, `fanClubs/{clubId}/prizes.note`, `redemptions.coupon` e `redemptions.message` (textos que ninguém consulta). O emulador não cobra índice: os de grupo só aparecem em produção, e o teste de índices é a rede.
+
+**Publicar:** o `rules:deploy` antes das funções, esperando os 21 índices ficarem prontos no console (34.15, passo 1). Nada no ar depende deles até as funções novas.
+
+### 34.7 Exclusão de conta e pedido de dados
+
+**`deleteUserData`** (`store.ts:205-237`) ganha um passo, `removeFanClubData` (em `fan-clubs/service.ts`), depois do `removeFanEngagement` e antes do `cancelFanRedemptions` e do `recursiveDelete` de `users/{uid}` (`:229`):
+
+1. **A candidatura e o privado:** apagados.
+2. **O fã-clube do gestor vira lápide** (decisão 21), numa transação: `closed`, `statusReason: 'account_deleted'`, `accountDeleted: true`, `ownerUid`, `ownerName`, `ownerUsername`, `ownerPhotoURL` e `name` nulos, o destaque fora. Ficam os `counts`, os shards e o registro `prizes` (sem dado dele: os pontos, a recompensa e a nota da equipe).
+3. **As publicações dele:** apagadas, em páginas de 100 (`authorUid`), e os itens da `fanClubReportQueue` delas vão a `resolved` com `author_deleted`. Os arquivos de `fanClubMedia/{uid}/` saem no `purgeFanPhotos` do fim, que passa a limpar as duas pastas, com a segunda limpeza 1 h depois.
+4. **As denúncias que ele fez:** apagadas, descontando o item da rodada, como as de perfil (29.9).
+
+O `recursiveDelete` leva os seguimentos, os créditos e a vaga (`uploads/fanClubPost`); nenhum passo novo para quem segue, e o `count()` cai junto. O `cancelFanRedemptions` (`rewards/service.ts:424-502`) trata o pedido de prêmio como os outros (o aberto vira `canceled`, com a vaga de volta) e passa a tirar também o `coupon` e a `message`. Ficam como estão: os vínculos de outros fãs com o `fanClubId` dele, o `referrals.link.targetId` de quem ele trouxe, os seguimentos de outros fãs (o fã-clube indisponível) e os pontos que ele rendeu a outros e os agregados do dia (20.10 e 19.12).
+
+**`FAN_DATA_SOURCES`** (`fan-data/sources.ts:130`, hoje 31 fontes) ganha 10, presas às duas pontas pelo teste de 32.10:
+
+| Fonte | No arquivo | `omit` | Exclusão |
+| --- | --- | --- | --- |
+| `fanClubApplications/{uid}` | primeira chamada | `decidedBy` | apagada |
+| `fanClubApplicationPrivate/{uid}` | primeira chamada | nada | apagada |
+| `fanClubs` (`ownerUid`) | primeira chamada | `approvedBy`, `closedBy`, `featuredBy` | lápide (`stripped`) |
+| `fanClubs/{clubId}/prizes` | fora: os mesmos dados estão no extrato (`fanclub_prize:*`) e no pedido, e nenhuma leitura da lista acha a subcoleção de um documento achado por consulta (`fan-data/sources.ts:64-81`) | nada | fica, sem dado dele (`kept`) |
+| `fanClubPosts` (`authorUid`) | uma parte nova, `fanClubPosts` | `reviewedBy` | apagada |
+| `fanClubReports` (`reporterUid`) | primeira chamada | `round` | apagada |
+| `fanClubReportQueue` (`authorUid`) | fora: a fila é de quem denunciou, como a `moderationQueue` e a `profileReportQueue` (`sources.ts:348-369`) | nada | fica, com `author_deleted` (`kept`) |
+| `users/{uid}/fanClubFollows` | primeira chamada | `byOwnerCode` (diria quem convidou, que o arquivo já tira do `referrals`, `sources.ts:263-266`) | apagada (`recursiveDelete`) |
+| `users/{uid}/fanClubCredits` | fora: marcador técnico da antifraude, e o `via: 'owner_code'` diria quem convidou | nada | apagada (`recursiveDelete`) |
+| Storage `fanClubMedia/{uid}/` | como a `storage.fans` | nada | apagada |
+
+O `redemptions` que já é fonte leva o `coupon` e a `message` (dados dele) e o `fanClubId`. O `users/{uid}/centrals`, que já é fonte, ganha o `fanClubId` no `omit` (pelo mesmo motivo do `byOwnerCode`); o `firstJoin` vai. As denúncias contra as publicações dele ficam fora do arquivo e na exclusão (são de quem denunciou, 21.12). O teste de emulador (`functions/test/fan-data.emulator.test.ts`) ganha os dados de um gestor com fã-clube, publicações, prêmio e seguidores, e os ramos do `leftovers` (`:388-484`) para as fontes novas e a pasta nova (`:431`); sem a fonte, o `listCollections()` de `users/{uid}` quebra o teste (`:733-743`). O `sources.test.ts` e o `fan-data/indexes.test.ts` ganham as linhas. O painel percorre as partes que a primeira chamada lista (`imagineup-admin` `src/lib/fan-data-export.ts:84-118`) e não muda.
+
+### 34.8 Auditoria, filtro, tetos e CPU
+
+- **Auditoria:** 13 ações novas no `AuditAction` (`staff/service.ts:92-159`, de 67 a 80): `fanClub.application.approved`, `fanClub.application.rejected`, `fanClub.paused`, `fanClub.resumed`, `fanClub.closed`, `fanClub.featured`, `fanClub.unfeatured`, `fanClub.rewarded`, `fanClub.post.approved`, `fanClub.post.rejected`, `fanClub.post.hidden`, `fanClub.post.restored` e `fanClub.report.resolved`. A seção sai do prefixo (`SECTION_BY_PREFIX`, `staff/audit-index.ts:19-31`, com `fanClub: 'fanClubs'`). O `DETAIL_TARGETS` (`:57-82`) ganha `['clubId', 'fanClub']`, `['fanClubPostId', 'fanClubPost']` e `['fanUid', 'fan']`; o `authorUid` já é `fan` (`:69`), e o `artistId`, o `rewardId` e o `code` já dão os alvos do artista, da recompensa e do pedido. Nunca o `targetUid`: fora do prefixo `fan.`, ele é gravado como `staff` (`:91` e `:132`). Nunca vão aos `details` o texto de divulgação, as redes, o WhatsApp, o texto da publicação, o cupom nem a mensagem. O `audit-index.test.ts` ganha as 13 linhas em `ROWS` (`:18`, que o typecheck exige). No painel, os rótulos em `src/lib/audit.ts` (`AUDIT_ACTIONS`, `:27-95`, e os alvos `fanClub` "Fã-clube" e `fanClubPost` "Publicação de fã-clube" no `TARGET_LABELS`, `:184-197`). Os índices de `staffAudit` por alvo já existem (`firestore.indexes.json:248-255`).
+- **Filtro:** os campos `fanClubName`, `fanClubPitch` e `fanClubPost` no `FilterTextField` e no `FIELD_BLOCKS`, com todas as categorias barradas, como os outros até a aprovação das lojas (`content-filter/match.ts:58` e `:76-83`); as redes da candidatura usam o campo `socials` de hoje. A recusa é o 400 `fan_club_invalid` com `reason: 'not_allowed'`, sem dizer o termo. O nome com "oficial" recusa `reason: 'official'`. Spam e links ficam para a denúncia e a revisão.
+- **Tetos do dia:** `fanclub_apply` (3), `fanclub_post` (5), `fanclub_upload` (10) e `fanclub_follow` (30), nos lugares da decisão 11: o `DailyActionKey` vai de 13 a 17 chaves, e o painel ganha os rótulos "Candidaturas a fã-clube", "Publicações de fã-clube", "Fotos de fã-clube" e "Seguir fã-clubes". O painel de antes do merge salva o bloco dos tetos sem as chaves novas, e o servidor aceita a lista parcial (`points/config.ts:505-514`): elas voltam ao padrão (34.19).
+- **CPU:** a `decideFanClub` com 256 MiB (1/6). O `cpu.test.ts` passa sem mudar código (lê os exports), com os comentários de contagem (`:129-132` e `:141-142`) de 68 para 69 e a soma de uns 19,49 para uns 19,66; o `access-log.test.ts` (`:224-229`, as 57 do `onPanelCall` viram 58); o `check-public-functions.mjs` confere o `allUsers` da nova depois do deploy.
+
+### 34.9 App
+
+**Domínio e rotas.** Um domínio novo, `src/domains/fan-club/` (`api.ts`, `types.ts`, `queries.ts`, `fixtures.ts`, `views/` e `components/`), com o seletor por domínio da seção 13 (`fanClub` no `DataDomain` e no `SERVER_DOMAINS`, `src/config/data-source.ts:40`; sem a `EXPO_PUBLIC_API_URL`, as fixtures). Ele importa, sempre pelos index: o `profile` (o `pickPhoto` e a função de preparo nova, decisão 15, e o `action-rewards`, que mostra o "+N"), o `invites` (o link), o `posts` (o `useBlockFanMutation`, `posts/queries.ts:880`, para o "Bloquear e denunciar") e o `artists` (os tipos e um ajudante novo de entrada exportado pelo index, com a comemoração e as invalidações que hoje moram no `useJoinCentralMutation`, `artists/queries.ts:311-380`, e o `refreshAfterJoin`, que não sai pelo index: as Suas centrais, a 1d, o mural, o ranking e as missões). Os domínios de composição (`settings`, `artist-page` e `home`) o importam pelo index, e ninguém mais. As chaves das consultas ficam num `fan-club/keys.ts` sem dependências, que o `artists` (sair da central) e o `posts` (bloquear) importam pelo arquivo, no molde do `posts/keys.ts`, para zerar "Fã-clubes que sigo" e "Dos seus fã-clubes", também no cache gravado no disco. Os erros: os códigos no `FAN_CLUB_ERROR_CODES` (34.3), o `isContentRefusal` com o `fan_club_invalid`, e as ações novas no `RefusalAction` e no `PHRASES` do `src/services/api/refusal.ts` (`:16-97`), para o 403 do suspenso e o 429 do teto. Rotas novas, todas no `Stack.Protected` do `src/app/_layout.tsx`:
+
+- `src/app/meu-fa-clube/index.tsx`: o estado do fã (apresentação, espera, recusa ou "Meu fã-clube"), na pilha raiz, sem tab bar;
+- `src/app/meu-fa-clube/candidatura.tsx` e `src/app/meu-fa-clube/nova-publicacao.tsx`: na pilha raiz, por causa do teclado, como o `editar-perfil`;
+- `src/app/fa-clube/[clubeId].tsx`: a página pública, rota raiz como `/fa/[fanId]` e `/post/[postId]`, para o destino do convite funcionar (o `+native-intent` passa qualquer caminho com `?ref=` para `/convite/CODIGO?destino=<caminho>`, `src/domains/invites/deep-link.ts:67-78`);
+- `src/app/denunciar-publicacao/[publicacaoId].tsx`: a `formSheet` da denúncia, no molde da `denunciar-perfil`;
+- `src/app/(tabs)/(perfil)/fa-clubes-que-sigo.tsx`: na pilha do Perfil, ao lado de `fas-bloqueados`;
+- `src/app/(tabs)/(inicio,explorar,ranking,perfil)/fa-clubes-do-artista/[artistaId].tsx`: o "Ver todos" do card da 1d, na pilha da aba de onde veio, como a central;
+- `src/app/deixar-de-seguir/[clubeId].tsx`: a `formSheet` "Deixar de seguir?" (toda sheet é uma rota).
+
+**Telas, uma a uma:**
+
+1. **Ajustes** (`src/domains/settings/views/settings.tsx`). Um bloco novo, "Fã-clube", entre Perfil (`:159`) e Segurança (`:172`), com a `ListRow` "Tenha seu fã-clube" (o `IconTile` e o `Chevron`). Só aparece com o `open` ou com candidatura (decisão 9). Embaixo, "Fã-clubes que sigo", a entrada fixa da lista dos seguidos (item 10). O meta muda com o estado: "Divulgue um artista e traga fãs" (sem candidatura), "Candidatura em análise", "Não aprovada, toque para ver", "Seu fã-clube de {{artist}}", "Fora do ar, toque para ver" (o `available` falso) e "Novo prêmio" (decisão 51).
+2. **Apresentação** (`/meu-fa-clube`, sem candidatura). Um carrossel de 5 passos, sem dinheiro: envie sua candidatura; a equipe analisa, e o resultado aparece aqui; seu fã-clube aparece na página do artista; publique textos e fotos, que a equipe confere antes de irem ao ar; compartilhe seu link e veja quantas pessoas você trouxe. Embaixo, as condições (18+, ativo, sem suspensão) e, só com o `notice`, o texto do reconhecimento (decisão 47). Continuar e Pular levam à candidatura.
+3. **Candidatura** (`/meu-fa-clube/candidatura`). Os campos da decisão 8, com o artista vindo do `GET /me/fan-club/artists` (sem nenhum: "Entre na central do artista primeiro", com o atalho para a Explorar), as redes já preenchidas com as do perfil, os contadores de caracteres, as duas caixas e o link do regulamento. Enviar faz o `POST` com a `Idempotency-Key` da tentativa. Cada recusa aparece no campo dela (`fan_club_invalid` com o `field`) ou no topo (`fan_club_refused` com o motivo e, no `cooldown`, a data); o @ automático leva a "Editar perfil".
+4. **Espera e recusa** (`/meu-fa-clube`). Em análise: "Em análise desde {{date}}" e "Desistir da candidatura" (o `DELETE`, com confirmação). Recusada: o motivo em texto fixo por código e "Você pode enviar de novo a partir de {{date}}", ou, na 3ª rodada, a frase do fim. Encerrado pela equipe: a frase do fim, sem botão.
+5. **Meu fã-clube** (`/meu-fa-clube`, aprovado). O cabeçalho com o nome, o artista e o status; os cartões Seguidores e Novos em 30 dias; "Seu fã-clube é destaque até {{date}}"; os números pelo `GET /me/fan-club/numbers`; o card Prêmios (o último reconhecimento, do `lastReward`: a data e os pontos, como "+{{points}} pontos em {{date}}", e "Ver meus prêmios", que abre a loja); "Compartilhar meu fã-clube" (a folha nativa com `{linkBase}/fa-clube/<id>?ref=CODIGO` e o código escrito na mensagem, registrando `fanclub:<id>` pelo `PUT /me/invite/links`, no molde do `useShareArtist`, `artist-page/hooks/use-share-artist.ts:14-31`); os cartões de links, visitas, cadastros, entradas trazidas, publicações no ar e em análise; "Nova publicação"; "Minhas publicações", com o status numa `Pill` (`src/components/pill`: Em análise, No ar, Recusada com o motivo, Retirada, Oculta pela equipe), Retirar na pendente e Tirar do ar na publicada; e "Ver como os fãs veem". Indisponível (o `available` falso): o aviso no topo com a frase do `unavailableReason` (pausado pela equipe, artista fora do ar, fã-clube fechado para o artista, ou fora da central do artista), sem Nova publicação, Compartilhar nem "Ver como os fãs veem". Com o `rulesOutdated`, o aviso "O regulamento mudou" com o link e "Aceitar" (o `PUT /me/fan-club/rules`). No card Prêmios, "Falar com a equipe" abre o contato, para quem não quer ou não pode usar um prêmio. No fim, "Quero encerrar meu fã-clube", que abre o contato (decisão 13). Abrir a tela marca o prêmio como visto no aparelho.
+6. **Nova publicação** (`/meu-fa-clube/nova-publicacao`). O texto de 1 a 1.000 e, só com `photosAllowed`, "Escolher foto da galeria". O `pickPhoto` (`profile/photo.ts:54-70`) escolhe sem o recorte do sistema, e a função de preparo nova (decisão 15), ao lado do `preparePhoto` (`:103-130`), recorta em 4:5 no `ImageManipulator` e gera as duas saídas (1080x1350 e 480x600, JPEG, sem EXIF, até 2 MiB e 300 KiB). O envio tem três passos (a vaga, os dois arquivos e o `POST`), com a tentativa guardada, como a foto do perfil; confirma com "Enviado para revisão".
+7. **Página pública** (`/fa-clube/[clubeId]`). A faixa "Fã-clube, não oficial", o nome, "feito por @gestor" (o toque abre `/fa/[fanId]`) e o artista (o toque abre a central); "N seguidores" e o selo Destaque; o botão "Seguir o fã-clube", com a linha "Você também entra na central do {{artist}}" para quem não é membro, e depois "Seguindo", com a sheet "Deixar de seguir?" ("As publicações dele saem da sua Início. Você continua na central do {{artist}}."); o gestor vê "Seu fã-clube" no lugar do botão; Compartilhar, com o código de quem compartilha; as publicações no ar, cada uma com Compartilhar (o link do fã-clube, `fanclub:<clubId>`, sem link próprio por publicação) e Denunciar; e, no menu, "Bloquear e denunciar" o gestor, que avisa que você deixa de seguir. O seguir que fez a entrada mostra a comemoração da entrada de sempre e invalida as Suas centrais, a 1d e o mural, como a entrada faz. 404: "Este fã-clube não está disponível."
+8. **Página do artista** (`src/domains/artist-page/views/artist-details.tsx`). O card "Fã-clubes" no cabeçalho, depois do `ArtistActions` (`:634-660`), antes das abas, no molde do `TopFansCard` (`components/top-fans-card.tsx`): até 3 (os destacados primeiro, depois os mais seguidos), com o nome, o gestor, as publicações, os seguidores arredondados da cópia e "Seguindo" quando for o caso, e "Ver todos", que abre a lista paginada do `GET /artists/:artistId/fan-clubs` (a rota `fa-clubes-do-artista/[artistaId]`). Some sem fã-clube e quando a consulta falha. O conteúdo de fã não entra no Mural, na grade nem no `/feed`.
+9. **Início** (`src/domains/home/views/home.tsx`). A seção "Dos seus fã-clubes" entre o `CentralsSection` (`:39`) e o título do mural (`:40`), só com publicação, cada cartão com a faixa não oficial, o nome do fã-clube e o menu com Compartilhar e Denunciar (a mesma `formSheet`), como a App Store 1.2 e o Google Play pedem junto do conteúdo.
+10. **Fã-clubes que sigo** (Perfil). A lista do `GET /me/fan-club-follows`, com "Deixar de seguir" em cada linha; o indisponível aparece com o nome, quando há, e "Indisponível", só com o Deixar de seguir. A recusa `follow_limit` da página leva a esta tela.
+11. **Sair da central** (`src/i18n/translations.json:203-209`). A frase "Você também deixa de seguir os fã-clubes de {{artist}}." no texto da sheet.
+12. **Loja** (`src/domains/rewards/views/rewards.tsx`). A fileira "Seus prêmios" no `RewardsHeader` (`:42-60`), entre o `LargeTitleHeader` e o `FeaturedRewardCard`, só com `prizes`; o toque abre `/recompensa/[recompensaId]?pedido=CODIGO`. O detalhe (`views/reward-details.tsx`) acha a recompensa em `prizes` e mostra o pedido em modo prêmio: sem custo, sem Resgatar, com o código, o status, o cupom (selecionável), a mensagem e as instruções (`RedemptionCard`, `components/redeem-steps.tsx:106-153`). O tipo `discount` ganha o ícone (`rewards/consts.ts:20-26`; o app não tem rótulo por tipo), e o `reward-icon.tsx` ganha o ícone de reserva (decisão 42). O toque no prêmio acha o pedido em `prizes`, e não no `data.rewards` que o `useRewardQuery` lê hoje (`rewards/queries.ts:91-97`).
+13. **Extrato** (`src/domains/profile/describe-ledger.ts:41-84`). A origem `fanclub_prize` com "Prêmio do fã-clube" (`translations.json:694-706`) e o `LedgerSource` (`profile/types.ts:269-280`).
+
+**Textos.** Todos no `translations.json`, em português, sem travessão: os do bloco "Fã-clube" dos Ajustes, da apresentação, da candidatura (com uma frase por motivo de recusa), dos estados, do "Meu fã-clube", da página, da denúncia (com "Uso indevido de imagem"), do seguir, da Início, da loja e do extrato. O nome do artista entra por `{{artist}}`.
+
+**Acessibilidade.** As regras de sempre: o botão de seguir anuncia o estado ("Seguindo"), a linha da central faz parte do rótulo do botão, a faixa não oficial é lida antes do nome, os cartões de número têm rótulo com o valor, e o carrossel tem os passos anunciados ("Passo 2 de 5"). Fonte em 1,3 nas telas novas na conferência (34.14, etapa 10).
+
+**Fixtures.** O `fan-club/fixtures.ts` com um fã-clube aprovado da Camila (a gestora de exemplo), duas publicações no ar, uma em análise e o seguir; o prêmio nas fixtures da loja (o `prizes` do `rewards/fixtures.ts`) e no extrato (`profile/fixtures.ts`); e o seguir que faz a entrada pela regra de coerência da seção 13 (o `followFixture` e o `earnFixturePoints`), para a cliente ver as telas sem o servidor, como o resto das fixtures.
+
+### 34.10 Painel e o README de passagem
+
+O painel é outra conversa, no `imagineup-admin`, guiada por um README fora de repositório (`C:/Users/User/Desktop/Projetos/painel-fa-clubes/README.md`, escrito na etapa 9 de 34.14, no molde do `painel-lgpd/README.md`). As telas usam o `SectionGate` (`src/components/painel/section-gate.tsx:14`), a leitura única (`readQuery` e `readDoc`, `src/lib/firestore-read.ts:19` e `:34`), o Atualizar (`RefreshButton`) e o "Carregar mais" de 25 (`usePagedList` e `LoadMore`), sem `onSnapshot`. O Leitor vê tudo sem botões. Cada ação usa o `ConfirmDialog` com "A alteração fica registrada em Logs e auditoria com o seu nome." e manda o estado que a tela mostrou (`expected`); o `stale-decision` lê de novo e avisa.
+
+1. **A seção.** `fanClubs` no `SECTION_IDS` e no `SECTIONS` (`src/lib/staff.ts:10-20` e `:39-49`), no grupo `community`, com a rota `/fa-clubes` e o rótulo "Fã-clubes". A lateral pede o ícone da seção nova no `ICONS` (`src/components/painel/app-shell.tsx:31-42`); a tela Equipe se ajusta sozinha. O painel de antes ignora a seção desconhecida (`orderSections`, `:157-160`), então a ordem errada só atrasa.
+2. **Aba Candidaturas** (a padrão). As pendentes, da mais antiga para a mais nova, com a contagem por `count()`; o filtro por artista e o "Centrais que eu cuido" (pelo `artistPrivate.managerUid`, só para quem tem também a seção `artists`); uma segunda lista com as resolvidas. Cada linha: a foto, o nome e o @ (cópias), o artista, o nome proposto, a rodada e há quantos dias espera.
+3. **Ficha da candidatura** (`/fa-clubes/candidaturas/[uid]`). O artista e o nome proposto; do privado, só para quem edita: o texto de divulgação, o Instagram e o TikTok como links montados pelo painel (28.3), sem integração (3.1.d); o aceite e a declaração, com a data; as rodadas, pelo `history`; os atalhos para `/fas/[uid]` e `/moderacao/fas/[uid]`, só para quem tem essas seções. Aprovar (confirma ou ajusta o nome) e Recusar (o motivo da lista).
+4. **Aba Fã-clubes.** A lista com o status no `StatusChip` (ciano para ativo, muted para pausado, danger para encerrado), o artista, o gestor (`FanAvatar` com as cópias), o nome e as colunas da decisão 36, com "atualizado em {data}" (o `counts.at`). Ordena por seguidores, por novos em 30 dias ou pela aprovação; filtra por artista, por status e por destaque (os índices de 34.6).
+5. **Ficha do fã-clube** (`/fa-clubes/[id]`). O cabeçalho com o status e as ações Pausar, Reativar e Encerrar (Encerrar só para admin); os `MetricCard` com a soma dos 16 shards e os números da cópia (seguidores, novos em 30 dias, trazidos que ficaram sobre as entradas trazidas); "neste mês" e "mês passado" (`monthStart` e `lastMonth`); o bloco "Qualidade dos seguidores" (as três proporções, com o aviso acima da metade); os "Seguidores recentes" (uid, data e os três sinais), só com a seção Fãs, pela consulta de grupo com os atalhos para a ficha e a Moderação; o bloco "Destaque e recompensas" (Destacar, Tirar destaque, Recompensar e o histórico de `prizes`; quem tem `rewards` vê o código e o status do pedido, achado pelo `grantId`); as publicações em todos os status, com Ocultar e Reexibir; a candidatura de origem; e "Abrir nos Logs" pelo alvo `fanClub:<id>`, só com a seção `audit`.
+6. **O diálogo Recompensar** (decisões 38 e 44). O checklist como aviso (cada item marcado ou não, sem impedir) e três partes, cada uma visível só com a seção dela: o Destaque (a data de fim, até 31 dias), os pontos (até o teto do papel, com o aviso de que vão só ao saldo e somam no orçamento do dia do Ajuste) e o prêmio (a recompensa, só as `prize`, com o estoque; o cupom; a mensagem; "O cupom já é o prêmio", que nasce Entregue). A nota interna é obrigatória (1 a 200, sem dado pessoal). Confirmar manda o `feature` e o `reward` (com o `grantId` sorteado ao abrir o diálogo), e mostra o resultado de cada um; repetir é seguro.
+7. **Aba Publicações para revisar.** A fila, da mais antiga para a mais nova: a foto grande, o texto, o fã-clube, o autor e o artista, com a marca "fotos autorizadas" ou "só texto". Aprovar e Recusar com o motivo.
+8. **Aba Denúncias.** A `fanClubReportQueue` aberta (e as resolvidas), com a contagem por motivo e o link para a publicação; Manter e Ocultar, com a rodada.
+9. **Visão geral.** O cartão "Aguardando a equipe", com as candidaturas e as publicações em análise e as denúncias abertas (`count()`), só para quem tem a seção, na grade da `OverviewPage` (`src/components/visao-geral/overview-page.tsx:184-195`). É o alarme possível sem notificação, para as 24 h.
+10. **Artistas.** No diálogo do artista (`src/components/artistas/artist-dialog.tsx`), as duas caixas da decisão 9 ao lado da do `imageRightsConfirmed` (`:1113-1126`), marcadas quando o campo falta e a autorização foi recebida, e a leitura em "Dados internos" (`:329-349`); o campo entra no `PRIVATE_FIELDS` e no corpo do pedido (`src/lib/artists.ts:650-662`).
+11. **Recompensas.** O status `prize` ("Só para prêmios de fã-clube") e o tipo `discount` ("Desconto") em `src/lib/rewards.ts` (`:13-46`, o `parseReward` em `:108` e `:124`); a recompensa de prêmio fora do `reorderableIds` (`:263`), sem Publicar, Reabrir, Encerrar nem "Recusar pedidos abertos" no menu do catálogo (`catalog-tab.tsx:188-197`), e com o custo 0 no `validateReward` (`:369`) e no formulário; na aba Pedidos, o selo "Prêmio" e o cupom e a mensagem no pedido (`orders-tab.tsx:198-246`; o `parseRedemption` em `src/lib/rewards.ts:149`); a caixa "Só para prêmios de fã-clube" no formulário (`reward-dialog.tsx`), que manda o `prize: true` ao `createReward`; e a coluna "Prêmios" na aba Números (o `REWARD_KEYS`, `src/lib/stats.ts:112`, e o `rewardTable`, `src/lib/rewards.ts:458-470`).
+12. **Rótulos e tetos.** Os da auditoria (34.8), com os alvos novos no `TARGET_TYPES` de `src/lib/audit.ts`, de onde sai o `TARGET_LABELS`; "Fã-clube" no `ORIGIN_KIND_LABELS` (`src/lib/stats.ts:442-449`), no `LINK_KIND_LABELS` (`fan-tabs.tsx:282`) e no `referralPath` (`src/lib/fans.ts:235-249`), para a Crescimento e o modo Campanhas do Comparativo mostrarem o tipo sem tela nova; "Prêmio do fã-clube" no `sourceLabel` (`src/lib/stats.ts:423-439`) e na aba Pontos da ficha do fã, no lugar do "Ajuste de {nome}" (`fan-tabs.tsx:123-127`); as quatro chaves no `ACTION_CAP_KEYS` (`src/lib/points-config.ts:25-39`).
+13. **A Moderação.** O `SUSPEND_TEXT` (`src/lib/moderation.ts:39-40`) passa a dizer que a suspensão também pausa o fã-clube do fã e apaga os seguimentos dele, e que tirar a suspensão não devolve nada disso.
+14. **O wrapper da callable** (`src/lib/fan-club-api.ts`), com os motivos de 34.3, e o dublê de testes com as coleções novas.
+15. **Ordem:** o merge do painel depois das 69 funções no ar (34.15, passos 5 e 7). Uma recompensa `prize` só nasce pelo painel novo: o de antes a leria como rascunho e quebraria a reordenação do catálogo (34.19).
+
+### 34.11 Moderação e lojas
+
+- **Quem publica:** só o gestor aprovado, no próprio fã-clube, sempre com a revisão antes de ir ao ar (decisões 15 e 16). O Mural oficial continua só da equipe.
+- **O que as lojas pedem para conteúdo de usuário** (App Store 1.2 e a política de UGC do Google Play; 29.1 e UP-13): filtrar antes de publicar (o texto pelo filtro, a imagem pela revisão), denunciar com ação da equipe em até 24 h (o cartão "Aguardando a equipe" é o alarme), bloquear com aviso à equipe ("Bloquear e denunciar"), o contato publicado (o Sobre) e os termos com tolerância zero, aceitos na candidatura (o regulamento, UP-45). A ação em 24 h é da cliente (3.1.f e 10.1.f; 34.16, pergunta 3).
+- **Identidade:** a faixa "Fã-clube, não oficial" e "feito por @gestor" em toda tela do fã-clube; o nome com "oficial" recusado; nunca a pílula "gestão oficial"; o selo diz "Destaque", nunca "oficial".
+- **Ferramentas sobre o gestor:** as da Moderação de hoje (suspender, que agora também pausa o fã-clube e apaga os seguimentos; tirar a foto; trocar o @; apagar a bio e as redes) e, na seção nova, Pausar, Reativar e Encerrar.
+- **Prêmio e lojas:** sem sorteio, ranking ligado a prêmio, meta que paga prêmio nem critério anunciado (decisão 47). Um concurso anunciado pede a 5.3 da App Store (a Imagine como patrocinadora, as regras dentro do app e o aviso de que a Apple não patrocina) e a regra de concursos do Google Play.
+- **As notas de revisão das lojas** (29.14, passo 7) ganham o fã-clube: onde fica a candidatura, que toda publicação passa pela equipe, a denúncia com o motivo de imagem e o bloqueio.
+- **Fora do app:** sem câmera, o primeiro bloco não muda nada nativo. As declarações das lojas (App Privacy e Data safety) e o questionário de classificação etária ganham o conteúdo de usuário, pela cliente (34.16, pergunta 5).
+- **Revisão das lojas e a função ligada pelo servidor:** o fã-clube só abre com o regulamento publicado (decisão 9). A build mandada às lojas sai com o fã-clube já no ar, e as notas de revisão descrevem a função, o texto do reconhecimento (decisão 47) e a meta de 24 h da equipe (decisão 7); ligar depois da aprovação uma função que o revisor não viu é o risco da 2.3.1 da App Store.
+
+### 34.12 Seed dos emuladores e fixtures
+
+**Seed** (`fan-clubs/seed.ts`, chamado pelo `scripts/seed-emulators.mjs` depois da moderação de 29.10), pelos núcleos de verdade com o `SEED_ACTOR` (o teto não conta), e só quando o que ele cria ainda não existe (rodar de novo não muda nada):
+
+- O programa aberto nos emuladores com um endereço de teste do regulamento (a constante aceita a variável `FAN_CLUB_RULES_URL` do `scripts/functions-emulator-env.mjs`). O Netto com as duas caixas ligadas pelo padrão (o `imageRightsConfirmed`); o Nenho com o `photosAllowed: false` gravado (os fã-clubes dele só publicam texto).
+- A Camila, gestora aprovada do fã-clube do Netto, com duas publicações no ar (uma com a foto de `scripts/seed-assets/foto-teste.jpg`, recortada em 4:5) e uma em análise.
+- A Bia segue o fã-clube (e já era da central); uma conta do ranking que não era da central segue, para a entrada creditada aparecer em "entradas trazidas".
+- A Duda com uma candidatura pendente para o Nenho, para a fila do painel.
+- A Bia denuncia uma publicação da Camila com "Uso indevido de imagem", para a aba Denúncias.
+- Uma recompensa "Só para prêmios de fã-clube" (um ingresso de cortesia, estoque 2) e um prêmio dado à Camila com 200 pontos, para a fileira "Seus prêmios", o card e o extrato.
+- O script imprime "Fã-clube: a Camila gere o fã-clube do Netto, com seguidores, uma publicação em análise, uma denúncia e um prêmio; a Duda espera a aprovação."
+
+**Fixtures do app** (`fan-club/fixtures.ts`): o mesmo retrato, com a Camila como a fã logada, e o `resetFixtureSession` voltando a ele.
+
+### 34.13 Testes
+
+**Funções, puros (vitest, relógio fixo):**
+
+- `fan-clubs/model.test.ts`: o nome (3 e 40 valem; 2, 41, só espaços, "oficial" em qualquer caixa e com homóglifo, o termo barrado), o texto de divulgação, o texto da publicação, o `featuredUntil` (amanhã e 31 dias valem; hoje e 32 dias não, no fuso de São Paulo), o `grantId`, o cupom e a mensagem; a entrada da `decideFanClub` em tabela (cada `subject`, `decision`, `expected` e campo); o `parseFanClubReportReason` com o `image_misuse`; as proporções da qualidade e o aviso acima da metade.
+- `fan-clubs/copy.test.ts`: o retrato do mês (a primeira cópia do mês fecha o anterior; a segunda não), o destaque vencido.
+- `invites/model.test.ts`: o `classifyInvitePath` com `/fa-clube/<id>` (e os ids fora do formato como `other`), o `fanclub:<id>` no `LINK_ID` e no `parseLinkId`, e um teste que lista os tipos (`classifyInvitePath`, `LINK_ID` e `OriginKind`) e quebra quando um deles fica para trás.
+- `points/model.test.ts`: o `adjust` com a origem `fanclub_prize` (só o saldo, o id `fanclub_prize:<id>`), e a mesma origem num `earn` recusada.
+- `rewards/model.test.ts`: o status `prize` e o tipo `discount` (o `discount` fora do `prize` recusado), o custo 0 só no `prize`, o `isVisibleToFan` sem a `prize`, o pedido com `origin`, `coupon` e `message`, e o `redemptionView` com os dois.
+- `staff/model.test.ts` (`:42-52`, a lista exata com `fanClubs`), `staff/panel-errors.test.ts` (`:112-123`, o rótulo e os motivos novos), `staff/audit-index.test.ts` (as 13 linhas, com os alvos `fanClub`, `fanClubPost`, `fan`, `artist`, `reward` e `redemption`, e nenhum `staff:` do gestor).
+- `content-filter/match.test.ts`: os três campos novos com todas as categorias barradas.
+- `fan-clubs/indexes.test.ts`: as consultas de 34.6 com os índices; `fan-data/sources.test.ts` e `fan-data/indexes.test.ts`: as 10 fontes.
+- `api/index.test.ts` e `api/router.test.ts`: as 18 rotas (os ids fora do formato sem leitura, a chave exigida, as de desfazer na lista do `allowSuspended`, os métodos errados com 405).
+
+**Funções, nos emuladores:**
+
+- `fan-clubs.emulator.test.ts`, candidatura: cada recusa na ordem de 34.5; a rodada e o `canReapplyAt`; a desistência; o teto; o encerrado que nunca mais volta; o privado apagado na recusa e com o `expiresAt` na aprovação.
+- `decideFanClub`: cada decisão, o `stale-decision`, o `ok` sem auditar quando nada muda, o `self`, o Leitor e quem não tem a seção recusados, o encerrar só do admin (com `staff` e com `owner_request`, e a nova candidatura só no segundo), o aprovar e o reativar com o gestor suspenso recusados, a auditoria com os alvos e sem texto.
+- Publicações: a vaga, os bytes (o JPEG falso, o grande, o de dimensão errada), o teto de 3 em análise, a pré-moderação, retirar e tirar do ar com o `pendingPosts` e o `postCount` certos (três retiradas não prendem o gestor), o `restore`, o token trocado no `hide` e na tirada do ar (a URL velha deixa de abrir), os arquivos apagados na recusa, o `rules_outdated`.
+- Denúncia: a rodada, o `already_reported`, o teto somado com o de comentário e de perfil, o `action` ocultando a publicação.
+- Seguir: a entrada junto (o `central_join` pago uma vez), o crédito só na primeira entrada da vida (sair, voltar e seguir de novo não credita; com o `central_join` em 0 na configuração do teste, o marcador segura), o `own_fan_club`, o `follow_limit`, o teto, o `count()`, o bloqueado em 404.
+- O crédito pelo código do gestor: na entrada até 30 dias, não depois; no claim que chega depois da entrada do onboarding (o `central_join` já no extrato, o `firstJoin` no vínculo); no `POST /me/artists`, só a central do fã-clube.
+- `leaveCentral`, `blockFan` e a suspensão: cada um apaga o seguimento (o "seguidor fantasma" que a proposta temia), e o bloqueio feito pelo gestor não apaga.
+- Prêmio: o pedido de prêmio com o código, o cupom e a mensagem; o Aprovado e o Entregue; o `reward-not-prize`; o estoque; as três travas; os pontos só no saldo, com o teto e o orçamento do dia somados com o Ajuste; o mesmo `grantId` sem dobrar, e com outros campos, `grant-id-reused`; o pedido com o `requestedAt` na aba Pedidos; a recusa pela aba Pedidos sem lançamento e com a vaga; o `GET /rewards` com `prizes` e sem a recompensa em `rewards`; o resgate da `prize` com 404.
+- A cópia da noite: os `counts`, os retratos, o destaque vencido, a falha de um que não para os outros.
+- `fan-data.emulator.test.ts`: a exportação com as 10 fontes e o `omit`; a exclusão do gestor (a lápide, as publicações e os arquivos apagados, os itens da fila em `author_deleted`, o pedido aberto cancelado sem cupom) e de quem segue (o `count()` cai), com o `leftovers` vazio.
+- `panel-seed.emulator.test.ts`: o seed de 34.12 rodado duas vezes sem mudar nada.
+
+**Regras** (`tests/fan-club-rules.test.ts`, novo, e o `tests/storage-rules.test.ts`): a seção `fanClubs` (editor e Leitor) lê as coleções da seção, e o privado só o editor; o fã, outras seções e a desativada não; `fanClubReports` fechada para todos; o vínculo e o crédito só com `fans`, também pela consulta de grupo; ninguém grava; no Storage, o dono cria só com a vaga e o nome certo, não sobrescreve, não lista, e o outro fã não lê.
+
+**App:** os testes de cada tela de 34.9 (estados, recusas no campo, o envio em três passos com a tentativa guardada, o seguir com a linha da central e a comemoração, a sheet de deixar de seguir, o 404, o card da 1d e o "Ver todos", a seção da Início só com publicação, a lista dos seguidos com o indisponível, a frase da sheet de sair da central, a fileira "Seus prêmios" e o detalhe em modo prêmio, o ícone de reserva, o extrato); `fan-club/__tests__/api.test.ts` (as URLs, a chave e as fixtures); `routes.test.tsx` e `guards.test.tsx` com as rotas novas; o `src/i18n/__tests__/i18n.test.ts`, que varre o `translations.json`, ganha a conferência de que nenhum texto tem travessão nem meia-risca.
+
+### 34.14 Plano de construção em etapas
+
+Em ordem, depois do merge deste PR, numa worktree própria a partir da `main`. Uma etapa só começa com a anterior fechada. As etapas do app fecham com o fingerprint local (`npx --no-install expo-updates fingerprint:generate --platform android`) igual a `310056fd840b5459416c9926e46846b8c208aa76`. Os emuladores de outra sessão não podem estar no ar nas etapas que rodam o `npm run test:functions`. Os blocos são do tamanho de uma seção da nota, como a 29 ou a 30.
+
+1. **Servidor base (1 bloco).** A seção `fanClubs` (o `SECTION_IDS`, o rótulo e os testes); o módulo `fan-clubs/` com a candidatura (as duas rotas de leitura, o `POST` e o `DELETE`), o fã-clube, as caixas no `editArtist` e o `open`; a `decideFanClub` com `application` e `club` (menos o `reward`); as regras, os índices e o TTL; a auditoria; a suspensão que pausa; o `removeArtist` recusando `has-content` com fã-clube ativo ou pausado (`artists/service.ts:631-637`); o `syncFanProfile` e o @ na fila; a exclusão e a exportação da candidatura, do privado e da lápide; o seed da Camila aprovada. Fecha com `npm --prefix functions run typecheck`, `npm --prefix functions test`, `npm run test:functions`, `npm run test:rules` e o `npm run emulators:seed` rodado duas vezes.
+2. **Publicações (1 bloco).** A vaga e o `storage.rules`; o `photoProblem` generalizado; as rotas de publicar, listar, retirar, a página e as publicações; a `decideFanClub` com `post` e `report`; a denúncia com a fila; o bloqueio que esconde; o filtro e os tetos; a exclusão das publicações, das denúncias e da pasta. Fecha como a 1.
+3. **Atribuição (0,5 bloco).** O tipo `fanclub` no servidor, o marcador de crédito, o crédito pelo código do gestor (na entrada e no claim) e os shards. Fecha como a 1.
+4. **Seguidores e cópia (0,75 a 1 bloco).** As quatro rotas de seguir e a da Início; o `count()` nas rotas; o `leaveCentral`, o `blockFan` e a suspensão; a cópia noturna em passo próprio, com os retratos; os índices de grupo; as fontes do vínculo e do crédito. Fecha como a 1.
+5. **Destaque e prêmio no servidor (0,75 bloco).** O `feature`, o `unfeature` e o `reward`; o status `prize`, o tipo `discount`, o custo 0, a origem, o cupom e a mensagem na loja; o `prizes` do `GET /rewards`; o resgate da `prize` recusado; a origem `fanclub_prize` no núcleo; o passo `prize` nos shards; o `cancelFanRedemptions`; o registro e o `lastReward`; a fonte do registro. Fecha como a 1.
+6. **A base do app.** O tipo `fanclub` no `inviteLinkId` (`invites/link.ts:44-53`, que sem ele devolveria `fanclub` sem o id), o domínio com as chaves, os códigos de erro e as fixtures, o `refusal.ts`, o ajudante de entrada do `artists` e a função de preparo do `profile`, e os textos de base. Fecha com `npm run check`.
+7. **App: Ajustes, candidatura e "Meu fã-clube" (0,75 bloco).** O bloco dos Ajustes, a apresentação, a candidatura, os estados, o "Meu fã-clube" com os números, o link e o card Prêmios, e a Nova publicação com o recorte 4:5. Fecha com `npm run check` e o fingerprint.
+8. **App: página, seguir, Início, loja e extrato (0,75 bloco).** A página pública, a denúncia e o bloqueio, o card na 1d e a lista do artista, o seguir com a sheet, a Início, os seguidos, a sheet de sair, a fileira "Seus prêmios", o modo prêmio, o ícone de reserva e o extrato. Fecha com `npm run check` e o fingerprint.
+9. **O README do painel** (`Projetos/painel-fa-clubes/README.md`), com os itens de 34.10, o contrato de 34.3 e 34.4 e o seed. O painel (uns 1,5 bloco, com o prêmio) é outra conversa.
+10. **Documentação e conferência.** A nota fora desta seção (34.20), o `CLAUDE.md` e o `AGENTS.md` iguais, o arquivo dos lotes fora do repositório, e a conferência no emulador Android pelo Expo Go com o seed: a Duda vê "Candidatura em análise"; a Camila publica com foto, vê "Em análise", compartilha o link; a Bia segue e deixa de seguir, sai da central e vê o seguir sumir; um fã fora da central segue e entra junto; a denúncia com o motivo de imagem; o bloqueio do gestor; a Início com "Dos seus fã-clubes"; a Camila na loja com "Seus prêmios", o cupom e o extrato com "Prêmio do fã-clube"; o leitor de tela pelo `uiautomator dump` e a fonte em 1,3 nas telas novas. Fecha com `npm run check`, os testes das funções e das regras e o fingerprint.
+
+Total: uns 8 a 8,5 blocos com o painel, mais o meio bloco das decisões (este PR).
+
+### 34.15 Publicação
+
+Só o dono publica, com o ok dele, a partir de uma pasta na `main` nova com o `functions/.env.imagine-up-app` copiado ("Publicar", no `CLAUDE.md`). Até o passo 10, nada do fã-clube aparece para os fãs (decisão 56): por isso as funções velhas e novas convivem nos lotes sem dado para estragar.
+
+0. **Merge** na `main`, com o ok do dono, depois da etapa 10.
+1. **Regras, índices e TTL:** `npm run rules:deploy` (o `firestore.rules`, o `storage.rules`, os 21 índices compostos, os `fieldOverrides` de grupo, as isenções e a política TTL). Esperar os índices prontos no console e a política TTL ativa.
+2. **O diff desde o que está no ar** (`git diff --stat <o commit do último deploy> HEAD -- functions/src`): só os arquivos dos blocos.
+3. **Silenciar os alertas** (31.5).
+4. **Funções, as 69, em 5 lotes** (15, 15, 15, 15 e 9, na ordem do `index.ts`, com a `api` no lote 1 e a `decideFanClub` no último), com os comandos copiados do arquivo dos lotes, nunca redigitados.
+5. **O `allUsers` da `decideFanClub`** (`gcloud functions add-invoker-policy-binding decideFanClub --region=southamerica-east1 --member=allUsers --project=imagine-up-app`) e a conferência: o `functions:list` com as 69; o `check-public-functions.mjs` com as 59 chamáveis, nenhuma barrada; a CPU dela `0.1666` com concorrência `1`; o POST sem login com `unauthenticated`; o 401 do `GET /api/me/fan-club` sem login e o 404 de uma rota que não existe.
+6. **Fim do silenciamento.**
+7. **Painel** (outra conversa): o merge na `main` do `imagineup-admin` depois do passo 5. Só então a equipe cria a recompensa "Só para prêmios" (34.19).
+8. **EAS Update do canal preview** (`npm run update:preview`), com o fingerprint igual ao do APK. A linha dos Ajustes continua escondida (o regulamento ainda sem endereço).
+9. **O regulamento** (34.16, pergunta 5; as perguntas 1 a 4 o dono respondeu pela cliente em 16/10/2026): o Regulamento do Fã-clube publicado no site, e os termos e a privacidade revisados (UP-45). O `FAN_CLUB_RULES_URL` e a `FAN_CLUB_RULES_VERSION` entram num deploy das 69 funções, pela regra de "Publicar": as constantes moram no código compartilhado, e publicar só a `api` deixaria as funções com valores diferentes.
+10. **Ida ao ar:** é o deploy do passo 9. Com o endereço, a linha "Tenha seu fã-clube" aparece, e as caixas já valem ligadas para toda central com o `imageRightsConfirmed` (decisão 9); a equipe desliga antes, no diálogo do artista, a central que não deve abrir.
+11. **Conferir em produção**, com o ok do dono e uma conta de teste dele, logo depois do passo 10, no primeiro artista autorizado: a conta se candidata, a equipe recusa pelo painel, a conta vê o motivo; depois, a conta segue o fã-clube de verdade e deixa de seguir. Antes do passo 10 não há como: a candidatura e o seguir pedem o programa aberto. A conferência deixa rastro nos números reais (o `central_join` da conta, o shard `joins` e o marcador): a conta de teste sai pelo "Excluir conta", o que leva o vínculo e o marcador, e o registro do passo 12 diz o que ficou.
+12. **Registrar** como foi, aqui e em 26.21.
+
+### 34.16 Perguntas para a cliente
+
+O dono respondeu tudo o que era dele em 16/10/2026 (34.2) e, no mesmo dia, respondeu pela cliente quatro das cinco perguntas que seguravam a ida ao ar (o registro está na UP-65). Falta uma, o regulamento: com ela, o fã-clube vai ao ar (34.15, passos 9 e 10). As outras perguntas da proposta seguem abertas, sem segurar nada: o código segue as propostas.
+
+**As que seguravam a ida ao ar, respondidas pelo dono pela cliente (16/10/2026):**
+
+1. **Os artistas e as fotos.** Todos os artistas, ao entrar no app, assinam um documento que autoriza o uso de imagem dentro do app. Leitura registrada: a autorização de hoje (o `imageRightsConfirmed`, 10.1.b) cobre também as fotos postadas por fãs no fã-clube. As caixas "Aceita fã-clubes" e "Fãs podem postar fotos" ficam, ligadas por padrão para toda central com o `imageRightsConfirmed`, para a equipe desligar uma central se precisar (decisão 9). O limite: a autorização é do artista sobre a imagem dele; a foto de fotógrafo, de imprensa ou de terceiros continua barrada pelo regulamento e pela pré-moderação.
+2. **A idade.** 18 anos para ter fã-clube (o gestor), declarados na candidatura, como na proposta (decisão 52). Seguir continua livre para qualquer fã do app. Isso não decide a idade mínima do app em geral, que segue em aberto com a cliente (o relatório de 09/10/2026, decisão 4).
+3. **Quem revisa.** A equipe com acesso ao painel, ou seja, quem tem a seção Fã-clubes com edição (decisão 7). O dono não deu prazo; fica a proposta de agir em até 24 h, que vai nas notas de revisão das lojas (34.11), com o cartão "Aguardando a equipe" como alarme, porque não há notificação (3.1.i). Fila parada é motivo de recusa nas lojas e deixa o fã sem resposta.
+4. **Os prêmios.** O dono dispensou o parecer do jurídico ("pode fazer, está certo; qualquer coisa a gente refaz"), com o risco aceito, registrado na decisão 47 com a data: a Lei 5.768/1971 e a 5.3 da App Store. O texto do reconhecimento nasce ligado, com o link do regulamento e o aviso de que a Apple não patrocina, e a chave fica para desligar sem build. O "nunca" continua: sorteio, ranking ligado a prêmio, meta que paga prêmio, prêmio fixo por período, item prometido e cadastros ou downloads como critério anunciado. Os detalhes de cada prêmio ficam com a equipe na hora de dar (a pergunta 17, aberta).
+
+**A que ainda segura a ida ao ar:**
+
+5. **O regulamento.** O Regulamento do Fã-clube, com a parte dos prêmios, e em que endereço do site (o `FAN_CLUB_RULES_URL`, decisão 8)? Os termos e a privacidade (UP-45) trazem: o fã-clube não oficial; a proibição de se passar pelo artista, de vender o fã-clube e de cobrar dos membros; a tolerância zero; só foto própria ou autorizada (sem música, sem foto de imprensa e sem terceiros identificáveis), com a exceção ao trecho que hoje proíbe distribuir fotos dos artistas sem autorização (`site/termos/index.html:156-157`); quem é dono do conteúdo do fã (o contrato, 12.6, diz que é da contratante, e a seção 8 do rascunho dos termos diz que fica com o fã); a proibição de comprar, vender ou trocar seguidores, com a perda do destaque e do prêmio; o seguir, os sinais antifraude, quem vê, o prazo e os prêmios na privacidade; e, se um dia houver concurso, o aviso de promoção comercial e a regra 5.3 da Apple. As declarações das lojas (App Privacy e Data safety) ganham o conteúdo de usuário (o texto e a foto do gestor), e o questionário de classificação etária (o da Apple e o IARC do Google Play) passa a dizer que há conteúdo gerado por usuário, como a seção 30 já levou à cliente. A privacidade diz as finalidades (mostrar as publicações, contar os seguidores e evitar fraude no reconhecimento), a base (a execução do serviço e, na antifraude, o legítimo interesse, com o teste registrado pela cliente) e o prazo de guarda das publicações retiradas e das ocultas pela equipe (hoje, até a exclusão da conta, decisão 20).
+
+**As que o código já segue com a proposta** (abertas; mudam valores ou textos, não o desenho):
+
+6. Ela precisa do WhatsApp do candidato? Para quê, quem vê e por quanto tempo? Proposta: tirar; o e-mail da conta basta (decisão 14). O campo fica fora da tela até a resposta.
+7. Quantos fã-clubes por artista? Um por fã basta? Proposta: um ativo ou pausado por fã, sem limite por artista (decisão 12).
+8. O que conta como muito engajado: seguidores, novos no mês, entradas trazidas, cadastros ou publicações? Existe um número mínimo? As regras são dela (2.4 do contrato, UP-9). Proposta: nenhuma nota, só colunas ordenáveis (decisão 36).
+9. O que conta como sucesso do fã-clube: cadastros novos, entradas na central do artista ou os dois?
+10. O número de seguidores aparece para todos os fãs ou só para o gestor e a equipe? Proposta: para todos, na página do fã-clube (o número exato) e no card da 1d (o arredondado da cópia).
+11. Ela concorda que seguir um fã-clube também coloque o fã na central oficial do artista, com o aviso no botão (decisão 26)? E com as publicações de fã-clube na Início, numa seção separada do mural oficial e com a faixa não oficial (decisão 30)?
+12. Vai haver critério anunciado ou disputa, como "o fã-clube com mais seguidores ganha"? Proposta: não. Se sim, é outro bloco, com regulamento completo, a autorização da SPA (Lei 5.768/1971 e Decreto 70.951/1972) e a 5.3 da App Store (decisão 47).
+13. Vale exigir e-mail confirmado (ou conta Google ou Apple) para a conta contar no critério do prêmio? Proposta: não agora; a equipe olha os sinais (decisão 39).
+14. Afiliados com ganho por assinatura ficam para a proposta da Fase 2 (UP-42)? Proposta: sim; o `program` da candidatura é a porta (34.4).
+15. O nome no app passa a ser Fã-clube, para separar das centrais de fãs por artista do contrato? O dono já decidiu que sim (decisão 4); a pergunta fica para ela saber.
+16. Ela dá o ok da UP-49, já feita (os links de post, artista, agenda e fã-clube abrindo a página Baixar), e anda com o domínio próprio da UP-46?
+17. Os detalhes dos prêmios: quais e com que cota (cortesias de quais shows, descontos onde e de quanto, produtos, encontros); quem paga, e se os artistas concordam; quais parceiros dão cupom, um código por fã ou por campanha, com que validade, e se o parceiro pede dado do fã; se o ingresso é nominal e a bilheteria pede nome completo ou CPF; se bastam o 18+ declarado e o documento na retirada; o imposto sobre o prêmio em bens e serviços e um teto de valor; quem decide e quem entrega (a mesma equipe dos pedidos da loja?); as contas das lojas no nome da Imagine Music, que patrocina os prêmios (5.3.1 da App Store); e se a Imagine ou os artistas vão divulgar os fã-clubes premiados fora do app (só com o consentimento do gestor, decisão 48).
+18. O ok por escrito da cliente para reabrir o post de fã, que ela aprovou deixar de fora em 28/09/2026 (UP-10), num espaço não oficial e com a revisão da equipe antes de ir ao ar. O dono decidiu construir (decisão 1).
+
+### 34.17 Pendências
+
+- **O código.** Esta seção é só o desenho. As etapas de 34.14 começam depois do merge deste PR, com o ok do dono.
+- **O regulamento do fã-clube** (34.16, pergunta 5) segura a ida ao ar (34.15, passos 9 e 10), não a construção. As outras quatro perguntas que seguravam o dono respondeu pela cliente em 16/10/2026.
+- **O contrato.** O fã-clube segue fora do Anexo I: o dono decidiu construir sem aditivo (decisão 1), e a liberalidade não amplia o escopo nem obriga a cliente (11.3). Se a cliente pedir mudanças ou manutenção do fã-clube, o enquadramento (aditivo, Fase 2 ou liberalidade) é decisão do dono.
+- **Os links que abrem o app** (a UP-46 e o bloco 13). Até lá, quem não tem o app cai na Baixar e só fica atribuído se digitar o código mostrado lá; quem tem o app só chega pelo link do esquema `imagineup://`. Os números de entradas trazidas vão começar baixos. Antes da ida ao ar, conferir no ar que `/fa-clube/<id>/?ref=CODIGO` cai na Baixar com o código (o redirecionamento é o mesmo dos outros caminhos, `site/vercel.json:7-10`).
+- **O App Check** na build das lojas (27.5): sem ele, a conta falsa e o pedido de fora do app custam pouco, e os sinais da decisão 39 e o regulamento seguram parte do problema. O e-mail confirmado como critério do prêmio é pergunta (34.16, pergunta 13).
+- **O painel** é outra conversa, guiada pelo README de 34.10.
+- **O vault** (`vault/ImagineUP/`), só com o ok do dono: o fã-clube em `App.md` e a ordem de publicação em `Deploy.md`, na etapa 10.
+
+### 34.18 Fora deste bloco (só documentado)
+
+Da proposta (UP-65), para depois, sem data:
+
+- Curtidas e comentários nas publicações de fã-clube (com o `QueueCard` da Moderação aceitando outros tipos ou uma fila própria), e promover uma publicação aprovada ao Mural oficial, com o selo e o autor.
+- Vídeo (o `expo-video` numa build nova e a conferência do mp4 no servidor, seção 33) e câmera (com o texto nativo da permissão revisto).
+- Interações criadas pelo gestor (enquete, desafio, pergunta do dia), se a cliente quiser.
+- Os fluxos por dia de cada fã-clube (`byFanClub` nos shards do dia e `fanClubDaily`), a nota de engajamento com pesos no `config/points` e a comparação de até 3 fã-clubes (decisões 36 e 37).
+- Visitas de contas antigas por destino (um campo novo no `inviteVisitors`), e `inviteSignups` e `inviteVisits` no `byArtist` (26.20).
+- Pontos por seguidor qualificado, a missão "siga um fã-clube", pontos por publicação aprovada e o selo de gestor no perfil público, com as regras da cliente (2.4, UP-9; decisão 31).
+- O gestor encerrar o próprio fã-clube pelo app; uma regra para o gestor que sai da central do artista ou fica inativo (hoje o fã-clube continua, e a publicação nova pede o vínculo); editar o nome com nova revisão (decisão 10).
+- Publicação direta, sem pré-moderação, para o gestor que a equipe marcar como confiável (decisão 16).
+- Um código próprio do fã-clube (`inviteCodes.kind` novo, 20.14, opção c), se a cliente quiser o crédito sempre para o gestor.
+- Mais de um fã-clube por fã e um limite de fã-clubes por artista (decisão 12).
+- Atalhos no menu "+" e no menu "mais" da 1d (UP-48), e o destaque na Explorar.
+- A linha "Gestor do fã-clube X" na ficha do fã e na Moderação.
+- Notificação do resultado da candidatura, das publicações, de publicação nova e de prêmio: fora do contrato (3.1.i).
+- Publicações de fã-clube dentro do `/feed` oficial; ranking público de fã-clubes e o cartão "Fã-clubes em alta" na Visão geral.
+- Trazidos engajados, com o `fanClubId` no `centralPoints`.
+- Recusar o seguir da mesma pessoa noutra conta, pelo `ownerKey` do gestor (um `fanClubKeys`).
+- Remover um seguidor pela equipe sem suspender a conta.
+- Usar como prêmio uma recompensa que está na loja (decisão 41), e a recompensa da loja sem gastar pontos (2.h, UP-42).
+- Concurso anunciado ("o fã-clube do mês ganha"): regulamento completo, autorização da SPA e a 5.3 da App Store (decisão 47).
+- Afiliados com comissão e ganho por assinatura (Fase 2, UP-42), com `program: 'affiliate'` na mesma candidatura.
+
+### 34.19 Armadilhas
+
+- **Nome de coleção com regra de grupo.** `centrals`, `postLikes`, `eventRsvps` e `postComments` têm regra de grupo aberta para uma seção (`firestore.rules:186`, `:190`, `:197-199` e `:404`), e o `fanClubFollows` ganha a dele: nenhuma outra coleção pode ter esses nomes, senão a leitura se abre para quem tem a seção.
+- **O `postId` nos `details` vira o alvo `post:` do Mural** (`staff/audit-index.ts:64`): a publicação de fã-clube vai em `fanClubPostId`. E o `targetUid` fora das ações `fan.` vira `staff:` (`:91` e `:132`): o gestor vai em `fanUid`.
+- **O status `prize` no painel de antes.** O `parseReward` do painel publicado lê o status desconhecido como rascunho (`src/lib/rewards.ts:124`): mostra "Publicar", e o `setRewardStatus` do servidor de hoje publicaria sem conferir a origem (`rewards/panel.ts:319-332`); e o `reorderableIds` (`:263`) mandaria a recompensa de prêmio na ordem, que o servidor recusa (`invalid-request`), quebrando a reordenação do catálogo inteiro. Por isso a recompensa `prize` só nasce pelo painel novo, depois das funções (34.15, passo 7), e o servidor novo trava o `setRewardStatus`, o `reorderRewards` e o resgate para ela. Uma aba do painel aberta desde antes do merge segue com o JS velho até recarregar.
+- **O custo 0 só no `prize`.** O `parseRewardCost` recusa 0 (`rewards/model.ts:530-533`), o `parseExpectedCost` e o `spend` também (`model.ts:375-382` e `points/model.ts:495`): o prêmio nunca passa pelo resgate, só pelo `grantPrize`.
+- **Tipo de lançamento novo cairia em `spent`.** O `addEntryToShard` trata como gasto todo tipo que não é `adjust` nem `refund` (`points/stats.ts:203-235`), e o `assertValidEntry` recusa tipo desconhecido (`points/model.ts:526-527`). Por isso os pontos do prêmio são um `adjust` com a origem nova, e não um tipo novo.
+- **O extrato não marca toda entrada.** O `central_join:<artistId>` só é gravado quando o lançamento é aplicado: com o valor 0 ou no teto do dia, nada fica (`points/model.ts:796` e `:897-924`). A "primeira entrada da vida" do crédito pede o marcador `fanClubCredits` (decisão 23).
+- **A cópia dentro do `runStatsClose` não roda.** Ele volta antes quando não há dia a fechar (`points/close.ts:361-375`). A cópia é um passo próprio do handler, com `try/catch` próprio, e a falha dela não pode derrubar o fechamento do dia.
+- **O Storage aceita duas leituras do Firestore por avaliação** (`storage.rules:85-86`): o `fanCanUpload` e a vaga. O status do fã-clube e o `photosAllowed` ficam no servidor, na vaga.
+- **A fila das cópias não olha o @.** O `queueFanProfileSync` só enfileira com o nome, a foto ou o `photoPath` mudados (`fan-profile/model.ts:342-350`): sem o @ na condição, o "feito por @gestor" fica velho depois de uma troca.
+- **Os índices de grupo não são cobrados no emulador.** O `count()` no grupo `fanClubFollows` e no `centrals` passa no emulador e falha em produção sem os `fieldOverrides` de grupo: o `fan-clubs/indexes.test.ts` é a rede.
+- **Seguidor fantasma.** Se o `leaveCentral`, o `blockFan` ou a suspensão ficar sem o passo novo, sobra um seguimento que a regra diz que não devia existir: cada um tem o teste de emulador.
+- **O `POST /me/artists` entra em várias centrais de uma vez.** O crédito pelo código do gestor vale só para a central do fã-clube dele, e só uma vez.
+- **O código do pedido pode colidir.** O `tx.create` do pedido com um código sorteado que já existe dá `ALREADY_EXISTS`, que o `runTransaction` do Admin SDK não repete (as Armadilhas do fim da nota); a `decideFanClub` roda a transação do `reward` dentro do `retryOnAlreadyExists` (`points/award.ts:708`), e a nova tentativa sorteia outro código. O `grantId` fica, e o registro em `prizes` só nasce na tentativa que deu certo.
+- **O pedido entregue não se cancela.** O prêmio que nasce Entregue ("O cupom já é o prêmio") é final (`rewards/model.ts:258-262`): o Recusar não aparece nele.
+- **Os tetos novos no painel de antes.** O painel publicado salva o bloco dos tetos sem as quatro chaves novas, e o servidor aceita a lista parcial (`points/config.ts:505-514`): um valor mudado antes do merge do painel volta ao padrão no próximo salvamento.
+- **O `addStaffLimit` grava sem `merge`** (32.17). O `reward` usa as mesmas funções do `adjustFanPoints` e nenhum campo novo no `staffLimits`; um campo novo ali pede o cuidado de 32.12.
+- **O `count()` dentro da transação** conta 1 leitura a cada 1.000 entradas do índice e trava os documentos que conta (o `Transaction.get` com a consulta de agregação, `@google-cloud/firestore` 9.2): o seguir conta só os seguimentos do próprio fã (até 50), nunca os seguidores de um fã-clube, que ficam fora de transação.
+- **A URL com token passa por cima da regra do Storage.** A foto oculta ou tirada do ar segue abrindo pela URL de download guardada nos aparelhos, como na foto do perfil (`fan-profile/files.ts:77`), até o token mudar: o `hide`, a tirada do ar e a `action` da denúncia trocam o `firebaseStorageDownloadTokens` (34.5).
+- **As constantes do fã-clube moram no código compartilhado.** O `FAN_CLUB_RULES_URL`, a `FAN_CLUB_RULES_VERSION` e o `FAN_CLUB_PRIZE_NOTICE` mudam num deploy das 69 funções, como o resto ("Publicar"); só a `api` deixaria as outras com os valores velhos.
+- **O `firstJoin` é da entrada, e não do extrato.** O claim chega depois da entrada do onboarding, que já gravou o `central_join`: olhar o extrato no claim nunca credita (decisão 23).
+- **O cupom é dado do gestor.** Nunca vai ao registro do fã-clube, à auditoria, ao log nem à cópia da Visão geral; sai na exclusão da conta (34.7).
+- **Os textos sem travessão nem meia-risca**, também no `translations.json`, nos commits e nos PRs.
+
+### 34.20 Documentação
+
+**Neste PR (só documentação, 16/10/2026):**
+
+- **Nota:** esta seção; o cabeçalho (a seção 34 na lista e a frase de que ela é só o desenho, ao lado da linha "Em produção desde 15/10/2026"); e o item 27 de "Decisões em uma página" (o 26 é o da seção 33, no PR #25).
+- **`CLAUDE.md` e `AGENTS.md`** (iguais depois do cabeçalho): o "Escopo do contrato" sem o post de fã na lista do fora do contrato, com o estado de agora, a data e o motivo; as duas linhas que diziam que o post de fã do protótipo está fora do contrato (o "+" das aprovações de 28/09/2026) ganham a mesma ressalva; e uma linha nova nas Pendências, apontando esta seção.
+
+**Nas etapas de 34.14 (etapa 10):** a tabela de erros da seção 1 (os quatro códigos de 34.3); o mapa das rotas da seção 2 (as 18 novas); a tabela de origens da seção 5 (`fanclub_prize`); a seção 20 (o tipo `fanclub` em 20.1 e 20.3); a 22.12 (a origem no extrato); a seção 25 (o status `prize`, o tipo `discount`, o custo 0 e a `origin` do pedido, em 25.1 e 25.3); a seção 26 (a seção nova no modelo de seções e o cartão da Visão geral); o "Como foi" de 34.15 e de 26.21; e, no `CLAUDE.md` e no `AGENTS.md`, as seções "Equipe do painel" (a seção `fanClubs`), "Artistas e centrais" (as caixas por artista) e "API do app e pontos" (a origem nova), com as Pendências em dia.
+
+### 34.21 O que mudou com a crítica
+
+Três críticas independentes, em 16/10/2026, cada uma com um olhar: produto e lojas; servidor, segurança e custo; app, painel e coerência. Cada achado foi conferido no código (app na `main` `66c277a`, painel na `main` `ab0de7f`) antes de entrar. No meio delas, chegaram as respostas do dono pela cliente às perguntas que seguravam a ida ao ar (34.16), que mudaram as decisões 7, 9, 47 e 52.
+
+**Produto e lojas (14 achados; 13 entraram, 1 ficou para trás com as respostas do dono):**
+
+- O gestor não tinha saída sem punição: encerrar marcava o `closedByStaff`, e pausar segurava a candidatura nova. Entrou o encerramento a pedido (`owner_request`, decisão 13) e a linha "Quero encerrar meu fã-clube".
+- O gestor não sabia que o fã-clube saiu do ar: o `available` e o `unavailableReason` no `GET /me/fan-club`, e a tela sem Compartilhar, Nova publicação e "Ver como os fãs veem" quando ele não está no ar.
+- O gestor que sai da central ficava num limbo: a frase própria na sheet de sair, o `not_member` no "Meu fã-clube" e o vínculo no checklist do Recompensar.
+- O regulamento não tinha novo aceite: a rota `PUT /me/fan-club/rules`, o `rulesOutdated` e o publicar que espera o aceite. O prêmio não trava pela versão, porque o dono fixou três travas (decisão 46): a versão entra só no checklist.
+- A revisão das lojas e a função ligada pelo servidor (2.3.1 da App Store), o questionário de classificação etária, o Denunciar nos cartões da Início, as finalidades e a base legal (o legítimo interesse na antifraude), a ressalva da Lei 5.768/1971 sobre o concurso só cultural, o prazo de guarda das publicações retiradas e ocultas (pergunta à cliente, sem TTL agora), o consentimento da divulgação guardado pela equipe fora do app, o "Falar com a equipe" no card Prêmios e o nome do fã-clube indisponível em "Fã-clubes que sigo", para onde o `follow_limit` leva.
+- Ficou para trás: as perguntas da cliente que não deviam segurar a ida ao ar. Com as respostas do dono, só o regulamento segura; os detalhes dos prêmios viraram a pergunta 17, aberta.
+
+**Servidor, segurança e custo (13 achados; todos entraram, um com troca):**
+
+- O claim nunca creditava: o `central_join` da entrada do onboarding já estava no extrato quando o claim chegava. A "primeira entrada da vida" passou para o vínculo (`firstJoin`, gravado pelo `joinCentrals`), com as leituras do crédito antes do `joinCentrals`, que já grava (decisão 23).
+- Os contadores das publicações se perdiam: o passo da retirada e da tirada do ar, o `restore` com o `postCount` mais 1, a `action` da denúncia só a partir do `published` e a fila resolvida com `withdrawn`.
+- O fã suspenso podia ter fã-clube ativo: aprovar e reativar leem o perfil e recusam `owner-suspended`.
+- As fontes do pedido de dados: a `fanClubReportQueue` entrou como fonte de fora, e o `prizes` saiu do arquivo (os dados estão no extrato e no pedido); o `byOwnerCode`, o `fanClubCredits` e o `fanClubId` dos vínculos ficam fora do arquivo, porque diriam quem convidou.
+- O código de retirada chegava ao Leitor da seção Fã-clubes pelo `prizes`: o código saiu do registro, e o painel com `rewards` acha o pedido pelo `grantId`.
+- A foto oculta seguia abrindo pela URL com token: o token é trocado no `hide`, na tirada do ar e na `action`.
+- O pedido de prêmio sem o `requestedAt` sumia das listas: o pedido grava o `requestedAt` e o `statusAt`, e o passo `prize` dos agregados ficou definido (34.4). A troca: os pedidos de prêmio continuam na mesma leitura dos pedidos do fã (até 200), e as recompensas `prize` na mesma busca das que faltam, porque a fileira "Seus prêmios" precisa delas.
+- A cópia noturna podia não rodar: ela vai num `finally`, com prazo e concorrência próprios, e o destaque vencido sai numa transação curta.
+- O mesmo `grantId` com outros campos passava calado: `grant-id-reused`, como no Ajuste.
+- Os filtros do painel sem índice: as combinações ficaram presas às que têm índice, e o índice dos destacados de um artista saiu (só igualdades): 21 índices novos, 65 no total.
+- As leituras por pedido: o `GET /me/fan-club` ficou leve (de 1 a 5 leituras), os números foram para o `GET /me/fan-club/numbers`, e o card Prêmios leva à loja em vez de ler os pedidos.
+- A publicação: as constantes do regulamento e do aviso mudam num deploy das 69 funções, a conferência em produção registra o que deixa nos números, e a frase da CPU ficou certa (cabe mais uma função a 1/6 com folga).
+
+**App, painel e coerência (19 achados; todos entraram):**
+
+- O `CLAUDE.md` e o `AGENTS.md` atrasados em relação às respostas do dono pela cliente, e "o fã não publica" virou "o fã não publica post".
+- O contrato para criar a recompensa `prize` (o `prize: true` do `createReward`, com o `setRewardStatus` e o `updateReward` sem trocar o status), a `CapAction` no `details.action` do 429, os códigos de erro no domínio (`FAN_CLUB_ERROR_CODES`), o `isContentRefusal` com o `fan_club_invalid` e as ações novas do `refusal.ts`.
+- Os imports do domínio (o ajudante de entrada do `artists`, o `action-rewards`, o bloqueio dos `posts`), as chaves num `fan-club/keys.ts` para o `artists` e os `posts` zerarem o cache, a frase da sheet de sair sem o nome do artista, a função de preparo da foto ao lado do `preparePhoto`, as rotas que faltavam (a lista do artista e a sheet de deixar de seguir), a entrada fixa de "Fã-clubes que sigo" nos Ajustes e o link de compartilhar a publicação.
+- A etapa do tipo `fanclub` no app passou para antes das telas; a coluna "Prêmios" na aba Números; o `SUSPEND_TEXT` da Moderação; o ícone da seção na lateral, o `TARGET_TYPES` e o `PRIVATE_FIELDS`; o `follow_limit` com um nome só; as fixtures do prêmio na loja e no extrato; o app sem rótulo por tipo de recompensa; o caminho do `parseRedemption`.
 
 ## Armadilhas
 
