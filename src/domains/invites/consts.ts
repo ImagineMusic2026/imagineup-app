@@ -4,11 +4,11 @@
  * dependem dele e do Team ID da Apple. Do outro lado, o `+native-intent` lê o
  * `?ref=` de qualquer link que abra o app.
  *
- * Pendente: o site ainda não tem as páginas do app (`/post/ID/`,
- * `/artista/ID/`, `/agenda/`), e quem abre o link no navegador cai no 404
- * dele. A saída proposta é o site mandar esses caminhos para `/baixar/` (rewrite no
- * `vercel.json` do repositório `imagineup-LP`), mantendo o caminho e o
- * `?ref=` para quando os App Links existirem; decisão do dono.
+ * No navegador, desde 16/10/2026 (UP-49), o site manda `/post/ID/`,
+ * `/artista/ID/` e `/agenda/` para `/baixar/` com o `?ref=` junto
+ * (redirecionamento no `vercel.json` do repositório `imagineup-LP`), e a
+ * página Baixar mostra o código para digitar no cadastro. O link de convite
+ * (`/?ref=`) abre a página inicial, que não mostra o código.
  */
 export const SHARE_LINK_BASE = 'https://imagineup-painel.vercel.app';
 
