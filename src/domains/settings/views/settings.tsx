@@ -26,7 +26,7 @@ import { SectionLabel } from '@/components/section-label';
 import { Text } from '@/components/text';
 import { sourceOf } from '@/config/data-source';
 import { PRIVACY_URL, SUPPORT_EMAIL, TERMS_URL } from '@/config/links';
-import { useSignOut } from '@/domains/auth';
+import { useSessionMethod, useSignOut } from '@/domains/auth';
 import {
   isAutomaticUsername,
   SuspendedNotice,
@@ -40,7 +40,7 @@ import { useNow } from '@/hooks/use-now';
 import { useTabBarInset } from '@/hooks/use-tab-bar-inset';
 import { t, type TranslationKey } from '@/i18n';
 import { openSupportEmail, openWebPage } from '@/services/web-page';
-import { useSessionStore } from '@/stores/session';
+import { useSessionStore, type SignInMethod } from '@/stores/session';
 import { colors, spacing } from '@/theme';
 
 import { readAppVersion, type AppVersionInfo } from '../version';
@@ -70,6 +70,20 @@ function versionTexts({ version, update }: AppVersionInfo): { meta?: string; lab
     meta: t('settings.versionMetaUpdate', params),
     label: t('settings.versionLabelUpdate', params),
   };
+}
+
+/**
+ * A meta da linha "Sair" pelo jeito como a sessão entrou (seção 33, decisão
+ * 14): o provedor da sessão, e não a lista de provedores da conta. Com a
+ * senha (e sem saber), "Entrou como {{email}}"; com o Google, ele e o e-mail;
+ * com a Apple, sem o e-mail, que pode ser o de retransmissão. Sem e-mail, nada.
+ */
+function signOutMeta(method: SignInMethod | null, email: string | null): string | undefined {
+  if (method === 'apple') return t('settings.signOutMetaApple');
+  if (!email) return undefined;
+  return method === 'google'
+    ? t('settings.signOutMetaGoogle', { email })
+    : t('settings.signOutMeta', { email });
 }
 
 interface PageRowProps {
@@ -130,6 +144,8 @@ function editProfileMeta(profile: FanProfile | null | undefined, now: Date): str
 export function SettingsScreen() {
   const bottomInset = useTabBarInset();
   const email = useSessionStore((state) => state.user?.email ?? null);
+  // O provedor da sessão chega depois dela; sem ele, o último jeito de entrar do aparelho.
+  const sessionMeta = signOutMeta(useSessionMethod(), email);
   // Trocar a senha e o e-mail só na conta que entra com senha, e com o Firebase configurado.
   const canChangeCredentials = useSessionStore(
     (state) => state.user?.hasPassword === true && isFirebaseConfigured,
@@ -211,15 +227,15 @@ export function SettingsScreen() {
         <ListRow
           leading={<IconTile icon={LogOut} tone="glass" />}
           title={t('settings.signOut')}
-          meta={email ? t('settings.signOutMeta', { email }) : undefined}
+          meta={sessionMeta}
           trailing={leaving ? <ActivityIndicator color={colors.textMuted} /> : undefined}
           onPress={() => {
             if (!leaving) signOut.mutate();
           }}
           busy={leaving}
           accessibilityLabel={
-            email
-              ? `${t('settings.signOutLabel')}. ${t('settings.signOutMeta', { email })}`
+            sessionMeta
+              ? `${t('settings.signOutLabel')}. ${sessionMeta}`
               : t('settings.signOutLabel')
           }
           accessibilityHint={t('settings.signOutHint')}

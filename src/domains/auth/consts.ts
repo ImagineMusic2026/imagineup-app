@@ -45,3 +45,21 @@ export const FRESH_ACCOUNT_SIGN_IN_MS = 60_000;
 
 /** A conta que nasceu depois do link amarra o convite sozinha até 7 dias depois. */
 export const AUTO_BIND_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+
+/**
+ * Quanto a entrada numa conta que já existe espera o `GET /me/centrals` para
+ * decidir a escolha de artistas (seção 33, decisão 11) e, com o nome guardado
+ * da Apple, a leitura do perfil. Passou disso, segue com o que o aparelho tem.
+ */
+export const EXISTING_ACCOUNT_CHECK_MS = 3_000;
+
+/** O prazo da revogação do token da Apple na exclusão da conta (seção 33, decisão 12). */
+export const APPLE_REVOKE_TIMEOUT_MS = 10_000;
+
+/**
+ * O bundle ID do app no iOS, o `BUNDLE_ID` do `app.config.ts` (um teste
+ * confere os dois). Vai no cabeçalho `X-Ios-Bundle-Identifier` da revogação
+ * da Apple, como o SDK do Firebase para iOS manda em todo pedido: o código da
+ * Apple é emitido para ele (seção 33, decisão 12).
+ */
+export const IOS_BUNDLE_ID = 'br.com.imaginegroup.imagineup';

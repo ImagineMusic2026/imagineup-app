@@ -21,22 +21,32 @@ import { clearHandedOffEmail, readHandedOffEmail } from '../email-handoff';
 import { usePasswordReset } from '../hooks/use-password-reset';
 import { useSignIn } from '../hooks/use-sign-in';
 import { resetEmailSchema, signInSchema, type SignInForm } from '../schemas';
+import { forgetPendingGoogleLink, pendingGoogleLinkEmail } from '../social';
 
 const FIELD_ORDER = ['email', 'password'] as const;
 
 /**
  * Entrar com e-mail (sem desenho no protótipo), no visual da 1k. Quem entra não
  * navega: o guard troca a pilha quando a sessão muda.
+ *
+ * No modo "ligar" (seção 33, decisão 8), o Google da 1k esbarrou numa conta de
+ * senha com o mesmo e-mail: o e-mail vem preenchido, o texto de apoio diz que
+ * o Google passa a entrar nesta conta depois da senha (e que a conta sem senha
+ * passa pelo "Esqueci minha senha"), e a entrada liga o Google
+ * (`useSignIn`). Sair da tela sem entrar esquece a credencial do Google.
  */
 export function SignInScreen() {
   const signIn = useSignIn();
   const passwordReset = usePasswordReset();
+  // O e-mail da conta Google do modo "ligar", lido uma vez, na abertura.
+  const [linkEmail] = useState(pendingGoogleLinkEmail);
   // Vindo do cadastro com um e-mail que já tem conta, ele chega preenchido.
   const [handedOffEmail] = useState(readHandedOffEmail);
+  const presetEmail = linkEmail ?? handedOffEmail;
   const { control, handleSubmit, formState, setFocus, setError, clearErrors, getValues } =
     useForm<SignInForm>({
       resolver: zodResolver(signInSchema),
-      defaultValues: { email: handedOffEmail ?? '', password: '' },
+      defaultValues: { email: presetEmail ?? '', password: '' },
     });
   const disabled = !isFirebaseConfigured;
   // Credencial recusada: a senha ganha a borda de erro, como na proposta C.
@@ -44,6 +54,10 @@ export function SignInScreen() {
     signIn.isError && authErrorMessageKey(signIn.error) === 'auth.errors.invalidCredentials';
 
   useEffect(() => clearHandedOffEmail(), []);
+
+  // A ligação do Google só vale nesta tela: entrou, o `useSignIn` já a usou
+  // (e esquecer não faz nada); saiu sem entrar, ela vai embora.
+  useEffect(() => forgetPendingGoogleLink, []);
 
   const submit = handleSubmit(
     (values) => {
@@ -80,7 +94,9 @@ export function SignInScreen() {
   return (
     <AuthFormLayout
       title={t('auth.signIn.title')}
-      lead={t('auth.signIn.lead')}
+      lead={
+        linkEmail ? `${t('auth.link.lead')} ${t('auth.link.noPassword')}` : t('auth.signIn.lead')
+      }
       footer={
         <FormFooter
           question={t('auth.signIn.noAccount')}
@@ -138,7 +154,7 @@ export function SignInScreen() {
               autoComplete="current-password"
               textContentType="password"
               // Com o e-mail já preenchido, o próximo passo é a senha.
-              autoFocus={!!handedOffEmail}
+              autoFocus={!!presetEmail}
               returnKeyType="go"
               onSubmitEditing={submit}
             />

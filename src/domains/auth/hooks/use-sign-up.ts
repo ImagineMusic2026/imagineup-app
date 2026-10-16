@@ -25,9 +25,31 @@ import { playAuthExit } from './use-auth-exit';
 export type SignUpOutcome =
   { status: 'done' } | { status: 'inviteRejected'; reason: InviteRejection };
 
-// O fã que parou no estágio "código recusado" continua seguro nas telas de
-// conta: a função que solta fica aqui, para o "Continuar" soltar depois.
+// O fã que parou no estágio "código recusado" (ou no passo "Tem um código de
+// convite?" da conta social nova) continua seguro nas telas de conta: a
+// função que solta fica aqui, para o "Continuar" soltar depois.
 let heldRelease: (() => void) | null = null;
+
+/**
+ * Estaciona a trava de quem fica nas telas de conta depois de a conta nascer:
+ * o estágio "código recusado" do cadastro e o passo do convite da conta
+ * social nova (seção 33, decisão 7). Quem solta é o `releaseHeldSignUp` (o
+ * `useFinishSignUp` e a saída da tela). Uma trava estacionada antes é solta
+ * aqui, para nunca ficar presa.
+ */
+export function parkSignUpHold(release: () => void): void {
+  releaseHeldSignUp();
+  heldRelease = release;
+}
+
+/**
+ * Há um fã seguro depois de a conta nascer (o estágio "código recusado" ou o
+ * passo do convite da conta social nova). Sem ele, o passo do convite aberto
+ * a frio não tem a quem servir.
+ */
+export function hasHeldSignUp(): boolean {
+  return heldRelease !== null;
+}
 
 /**
  * Solta o fã do estágio "código recusado" (uma vez; sem estágio, não faz
@@ -99,7 +121,10 @@ export function useSignUp() {
         const user = await signUpWithEmail(form);
         // Conta nova nunca escolheu artistas, mesmo que outra conta já tenha
         // concluído a escolha neste aparelho (o "concluído" fica no aparelho).
-        usePreferencesStore.getState().resetOnboarding();
+        // A conta já existe e está logada: é a última entrada do aparelho.
+        const preferences = usePreferencesStore.getState();
+        preferences.resetOnboarding();
+        preferences.setLastSignInMethod('password');
         // O listener de sessão já pode ter gravado a conta sem nome; o nome
         // novo vale para as telas desde já.
         useSessionStore.getState().setSignedIn(user);
@@ -115,7 +140,7 @@ export function useSignUp() {
           const rejected = await claimTypedCode(bound);
           if (rejected) {
             held = true;
-            heldRelease = release;
+            parkSignUpHold(release);
             return { status: 'inviteRejected', reason: rejected };
           }
         }

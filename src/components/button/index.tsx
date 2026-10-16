@@ -32,8 +32,8 @@ import { withAlpha } from '@/utils/color';
  * - `primary`: rosa fechado, o CTA de toda tela.
  * - `points`: lima cheio, quando o assunto é ponto (resgate).
  * - `secondary`, `ghost`: escuros, para ação de apoio.
- * - `inverse`: branco com texto tinta, o "Criar minha conta" da 1k.
- * - `glass`: vidro claro com rótulo em Manrope, o "Já tenho conta" da 1k.
+ * - `inverse`: branco com texto tinta (o "Criar minha conta" do protótipo da 1k).
+ * - `glass`: vidro claro com rótulo em Manrope, o "Entrar com e-mail" da 1k.
  * - `outline`: contornado, o "Eu vou" das linhas da 1m.
  * - `pointsTinted`: lima tingido, o "Chamar amigos +10" da 1m.
  * - `onPoints`, `onPointsSoft`: sobre o card lima da missão do dia (1b).
@@ -272,9 +272,10 @@ export function Button({
  * Desativado ou carregando, o botão apaga até `opacities.disabled` e o brilho
  * some (o botão travado da 1l é chapado); ao liberar (o terceiro artista
  * escolhido), os dois voltam juntos em 250 ms, sem troca seca. Com reduzir
- * movimento, troca na hora. Nasce no estado atual, sem animar.
+ * movimento, troca na hora. Nasce no estado atual, sem animar. Exportado para
+ * os botões de marca da 1k (Apple e Google), que não são este componente.
  */
-function useInactiveFade(inactive: boolean) {
+export function useInactiveFade(inactive: boolean) {
   const reducedMotion = usePrefersReducedMotion();
   const opacity = useSharedValue(inactive ? opacities.disabled : 1);
 
@@ -355,9 +356,9 @@ function useSurfaceColors(background: string, border: string) {
 /**
  * Rótulo novo entra em fade. No render em que a chave muda, o conteúdo novo
  * já nasce invisível (a chave antiga ainda está no thread de UI), então nada
- * pisca antes de o fade começar.
+ * pisca antes de o fade começar. Exportado para o botão do Google da 1k.
  */
-function useContentFade(key: string) {
+export function useContentFade(key: string) {
   const reducedMotion = usePrefersReducedMotion();
   const shown = useSharedValue(key);
   const opacity = useSharedValue(1);

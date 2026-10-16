@@ -2,6 +2,7 @@ export { borderWidths, radii } from './borders';
 export {
   avatarFallbacks,
   colors,
+  googleBrand,
   photoFallbackPairs,
   tints,
   type ColorToken,

@@ -1,9 +1,13 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { router, Stack } from 'expo-router';
 import { Tabs } from 'expo-router/js-tabs';
-import { act, renderRouter, waitFor } from 'expo-router/testing-library';
+import { act, fireEvent, renderRouter, waitFor } from 'expo-router/testing-library';
+import { useState } from 'react';
 import { Text } from 'react-native';
 
+import SocialInviteRoute from '@/app/(auth)/codigo-de-convite';
+import { parkSignUpHold } from '@/domains/auth/hooks/use-sign-up';
 import {
   InviteCaptureScreen,
   inviteRoute,
@@ -11,8 +15,30 @@ import {
   readPendingInvite,
 } from '@/domains/invites';
 import { useSessionGate } from '@/hooks/use-session-gate';
+import { t } from '@/i18n';
+import { haptics } from '@/services/haptics';
 import { usePreferencesStore } from '@/stores/preferences';
 import { useSessionStore } from '@/stores/session';
+
+// O passo do convite da conta social nova é a tela de verdade, do domínio de
+// conta, que importa o Firebase (o build que o Jest resolve é ESM).
+jest.mock('firebase/app', () => ({ FirebaseError: class FirebaseError extends Error {} }));
+jest.mock('firebase/auth', () => ({}));
+jest.mock('firebase/firestore', () => ({}));
+jest.mock('@/firebase', () => ({
+  getFirebaseAuth: () => ({}),
+  getDb: () => ({}),
+  isFirebaseConfigured: true,
+}));
+jest.mock('@/config/env', () => ({
+  firebaseEnv: null,
+  apiUrl: undefined,
+  firebaseEmulatorHost: undefined,
+}));
+jest.mock('@/config/data-source', () => ({
+  sourceOf: () => 'fixtures',
+  usesFixtures: () => true,
+}));
 
 /**
  * Layout raiz com os mesmos guards do app e a tela de convite real. Trava o
@@ -22,24 +48,29 @@ import { useSessionStore } from '@/stores/session';
  */
 function RootLayout() {
   const { signedIn, onboarded } = useSessionGate();
+  const [client] = useState(
+    () => new QueryClient({ defaultOptions: { mutations: { retry: false, gcTime: Infinity } } }),
+  );
   return (
-    <Stack>
-      <Stack.Protected guard={!signedIn}>
-        <Stack.Screen name="(auth)" />
-      </Stack.Protected>
-      <Stack.Protected guard={signedIn && !onboarded}>
-        <Stack.Screen name="(onboarding)" />
-      </Stack.Protected>
-      <Stack.Protected guard={signedIn && onboarded}>
-        <Stack.Screen name="(tabs)" />
-        <Stack.Screen name="fa/[fanId]" />
-        <Stack.Screen name="editar-perfil" />
-        <Stack.Screen name="trocar-senha" />
-        <Stack.Screen name="trocar-email" />
-        <Stack.Screen name="denunciar-perfil/[fanId]" />
-      </Stack.Protected>
-      <Stack.Screen name="convite/[codigo]" />
-    </Stack>
+    <QueryClientProvider client={client}>
+      <Stack>
+        <Stack.Protected guard={!signedIn}>
+          <Stack.Screen name="(auth)" />
+        </Stack.Protected>
+        <Stack.Protected guard={signedIn && !onboarded}>
+          <Stack.Screen name="(onboarding)" />
+        </Stack.Protected>
+        <Stack.Protected guard={signedIn && onboarded}>
+          <Stack.Screen name="(tabs)" />
+          <Stack.Screen name="fa/[fanId]" />
+          <Stack.Screen name="editar-perfil" />
+          <Stack.Screen name="trocar-senha" />
+          <Stack.Screen name="trocar-email" />
+          <Stack.Screen name="denunciar-perfil/[fanId]" />
+        </Stack.Protected>
+        <Stack.Screen name="convite/[codigo]" />
+      </Stack>
+    </QueryClientProvider>
   );
 }
 
@@ -53,6 +84,7 @@ const appTree = {
   '(auth)/_layout': () => <Stack />,
   '(auth)/entrar': label('login'),
   '(auth)/cadastro': label('signup'),
+  '(auth)/codigo-de-convite': SocialInviteRoute,
   '(onboarding)/_layout': () => <Stack />,
   '(onboarding)/artistas': label('onboarding'),
   '(tabs)/_layout': () => <Tabs />,
@@ -151,6 +183,31 @@ describe('cadastro com os guards de sessão', () => {
 
     act(() => first());
     await waitFor(() => expect(view.getPathname()).toBe('/artistas'));
+  });
+});
+
+describe('a conta social nova no passo do convite (seção 33)', () => {
+  it('fica nas telas de conta, e "Pular" a leva para a escolha de artistas', async () => {
+    jest.spyOn(haptics, 'trigger').mockImplementation(() => undefined);
+    setSession(false, false);
+    // A entrada pela Apple: a conta nasce logada, e a trava fica estacionada.
+    act(() => {
+      const release = useSessionStore.getState().holdAuth();
+      useSessionStore.getState().setSignedIn(newAccount);
+      parkSignUpHold(release);
+    });
+    const view = renderRouter(appTree, { initialUrl: '/codigo-de-convite' });
+
+    expect(view.getByText(t('auth.socialInvite.title'))).toBeTruthy();
+    expect(rootRoutes(view)).toEqual(['(auth)']);
+
+    await act(async () => {
+      fireEvent.press(view.getByRole('button', { name: t('auth.socialInvite.skip') }));
+    });
+
+    await waitFor(() => expect(view.getPathname()).toBe('/artistas'));
+    expect(rootRoutes(view)).toEqual(['(onboarding)']);
+    expect(useSessionStore.getState().authHolds).toBe(0);
   });
 });
 

@@ -46,3 +46,34 @@ function parseFirebaseEnv(): FirebaseEnv | null {
 
 /** `null` enquanto o .env não estiver preenchido: o app abre, mas não autentica. */
 export const firebaseEnv = parseFirebaseEnv();
+
+// O formato do ID do cliente do Google: o número do projeto, um hífen, um
+// código e o sufixo do Google.
+const GOOGLE_CLIENT_ID_PATTERN = /^[\w-]+\.apps\.googleusercontent\.com$/;
+
+/**
+ * O ID do cliente Web do Google, sem espaço nas pontas. Vazio ou fora do
+ * formato vira `undefined`, e o Google fica desligado (o formato errado avisa
+ * no console em desenvolvimento).
+ */
+export function parseGoogleWebClientId(value: string | undefined): string | undefined {
+  const trimmed = value?.trim();
+  if (!trimmed) return undefined;
+  if (GOOGLE_CLIENT_ID_PATTERN.test(trimmed)) return trimmed;
+  if (__DEV__) {
+    console.warn(
+      '[env] EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID fora do formato. O Google fica desligado.',
+    );
+  }
+  return undefined;
+}
+
+/**
+ * O `webClientId` da entrada com o Google: o ID do cliente Web que o Firebase
+ * cria ao ligar o Google no Auth (seção 33 de docs/arquitetura-api.md). Fica
+ * fora do fingerprint, como as outras variáveis. Sem ele, o botão do Google
+ * não aparece.
+ */
+export const googleWebClientId = parseGoogleWebClientId(
+  process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID,
+);

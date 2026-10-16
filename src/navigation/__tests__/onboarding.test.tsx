@@ -10,6 +10,7 @@ import ChooseArtistsRoute from '@/app/(onboarding)/artistas';
 import AllArtistsRoute from '@/app/(onboarding)/todos-artistas';
 import { buildArtistsFixture, followFixture } from '@/domains/artists/fixtures';
 import type { FollowArtistsResult } from '@/domains/artists/types';
+import { settleOnboarding } from '@/domains/auth/hooks/use-sign-in';
 import { useArtistSelection } from '@/domains/onboarding/hooks/use-artist-selection';
 import { useSessionGate } from '@/hooks/use-session-gate';
 import { playStackExit } from '@/hooks/use-stack-fade';
@@ -498,5 +499,49 @@ describe('concluir a escolha de artistas', () => {
         'focus',
       ),
     );
+  });
+});
+
+describe('quem entra numa conta que já existe (seção 33, decisão 11)', () => {
+  it('com alguma central, a 1l fica para trás, e o guard leva às abas', async () => {
+    mockDataSource = 'api';
+    get.mockResolvedValueOnce({ data: [{ artistId: 'nettobrito' }] });
+
+    await settleOnboarding('nova');
+    const view = renderRouter(appTree, { initialUrl: '/' });
+
+    expect(get).toHaveBeenCalledWith(
+      '/me/centrals',
+      expect.objectContaining({ sessionUid: 'nova' }),
+    );
+    await waitFor(() => expect(view.getPathname()).toBe('/'));
+    expect(screen.getByText('home')).toBeOnTheScreen();
+  });
+
+  it('sem nenhuma, a 1l aparece, mesmo com o aparelho dizendo que já escolheu', async () => {
+    mockDataSource = 'api';
+    usePreferencesStore.setState({ hasCompletedOnboarding: true });
+    get.mockImplementation(async (url: string) =>
+      url === '/me/centrals' ? { data: [] } : { data: buildArtistsFixture() },
+    );
+
+    await settleOnboarding('nova');
+    renderRouter(appTree, { initialUrl: '/' });
+
+    expect(usePreferencesStore.getState().hasCompletedOnboarding).toBe(false);
+    expect(
+      await screen.findByRole('header', { name: t('onboarding.chooseArtists.title') }),
+    ).toBeOnTheScreen();
+    expect(screen.queryByText('home')).toBeNull();
+  });
+
+  it('sem a API (as fixtures), vale o que o aparelho já tem', async () => {
+    usePreferencesStore.setState({ hasCompletedOnboarding: true });
+
+    await settleOnboarding('nova');
+    renderRouter(appTree, { initialUrl: '/' });
+
+    expect(get).not.toHaveBeenCalled();
+    expect(await screen.findByText('home')).toBeOnTheScreen();
   });
 });

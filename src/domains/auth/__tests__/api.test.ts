@@ -1,6 +1,7 @@
 import { FirebaseError } from 'firebase/app';
 import {
   EmailAuthProvider,
+  onAuthStateChanged,
   reauthenticateWithCredential,
   updatePassword,
   verifyBeforeUpdateEmail,
@@ -17,11 +18,17 @@ import {
   changeEmailFailure,
   changePassword,
   changePasswordFailure,
+  confirmedUser,
+  deleteAccountFailure,
   isFinalInviteRejection,
+  listenToAuth,
+  RecentLoginRequiredError,
   requestEmailChange,
   sendInviteClaim,
   sendInviteVisit,
   SessionEndedError,
+  sessionProvider,
+  signInMethodOf,
   toSessionUser,
   typedInviteRejection,
 } from '../api';
@@ -43,6 +50,7 @@ jest.mock('firebase/auth', () => ({
   reauthenticateWithCredential: jest.fn(),
   updatePassword: jest.fn(),
   verifyBeforeUpdateEmail: jest.fn(),
+  onAuthStateChanged: jest.fn(() => () => undefined),
 }));
 jest.mock('firebase/firestore', () => ({}));
 // A conta da sessão que troca a senha e o e-mail.
@@ -213,6 +221,124 @@ describe('a sessão sabe se a conta tem senha (toSessionUser, seção 29)', () =
   });
 });
 
+describe('os jeitos de entrar da conta e o da sessão (seção 33)', () => {
+  const user = (providerData: { providerId: string }[] | undefined) =>
+    ({ uid: 'u', email: 'u@x.com', displayName: null, photoURL: null, providerData }) as User;
+
+  it.each([
+    ['e-mail e senha', [{ providerId: 'password' }], ['password']],
+    ['Google', [{ providerId: 'google.com' }], ['google']],
+    [
+      'Apple e Google',
+      [{ providerId: 'apple.com' }, { providerId: 'google.com' }],
+      ['apple', 'google'],
+    ],
+    [
+      'a senha e a Apple',
+      [{ providerId: 'password' }, { providerId: 'apple.com' }],
+      ['password', 'apple'],
+    ],
+    [
+      'outro provedor fica de fora',
+      [{ providerId: 'phone' }, { providerId: 'google.com' }],
+      ['google'],
+    ],
+    ['sem a lista', undefined, []],
+  ])('%s', (_, providerData, expected) => {
+    expect(toSessionUser(user(providerData)).providers).toEqual(expected);
+  });
+
+  it.each([
+    ['password', 'password'],
+    ['google.com', 'google'],
+    ['apple.com', 'apple'],
+    ['custom', null],
+    [null, null],
+  ])('o provedor %s é o jeito %s', (providerId, method) => {
+    expect(signInMethodOf(providerId)).toBe(method);
+  });
+
+  it('o provedor da sessão vem do token, e não da lista de provedores', async () => {
+    const both = {
+      ...user([{ providerId: 'apple.com' }, { providerId: 'google.com' }]),
+      getIdTokenResult: jest.fn(async () => ({ signInProvider: 'google.com' })),
+    } as unknown as User;
+    await expect(sessionProvider(both)).resolves.toBe('google');
+  });
+
+  it('o listener avisa a sessão na hora, e o provedor dela depois, só para a conta de agora', async () => {
+    let tokenRead: (value: { signInProvider: string }) => void = () => undefined;
+    const camila = {
+      ...user([{ providerId: 'apple.com' }]),
+      uid: 'uid-camila',
+      getIdTokenResult: jest.fn(
+        () =>
+          new Promise((resolve) => {
+            tokenRead = resolve;
+          }),
+      ),
+    } as unknown as User;
+    const onUser = jest.fn();
+    const onProvider = jest.fn();
+    listenToAuth(onUser, onProvider);
+    const callback = jest.mocked(onAuthStateChanged).mock.calls.at(-1)?.[1] as (
+      user: User | null,
+    ) => void;
+
+    mockAuth.currentUser = { uid: 'uid-camila', email: 'camila@x.com' };
+    callback(camila);
+    // A sessão não espera o token.
+    expect(onUser).toHaveBeenCalledWith(expect.objectContaining({ uid: 'uid-camila' }));
+    expect(onProvider).not.toHaveBeenCalled();
+
+    tokenRead({ signInProvider: 'apple.com' });
+    await waitForCalls(onProvider);
+    expect(onProvider).toHaveBeenCalledWith('uid-camila', 'apple');
+  });
+
+  it('o provedor que chega depois de outra conta entrar, ou o token que falha, não muda nada', async () => {
+    const camila = {
+      ...user([{ providerId: 'apple.com' }]),
+      uid: 'uid-camila',
+      getIdTokenResult: jest.fn(async () => ({ signInProvider: 'apple.com' })),
+    } as unknown as User;
+    const offline = {
+      ...camila,
+      getIdTokenResult: jest.fn(async () => {
+        throw new Error('sem rede');
+      }),
+    } as unknown as User;
+    const onProvider = jest.fn();
+    listenToAuth(jest.fn(), onProvider);
+    const callback = jest.mocked(onAuthStateChanged).mock.calls.at(-1)?.[1] as (
+      user: User | null,
+    ) => void;
+
+    // A Bia entrou antes de o token da Camila chegar.
+    mockAuth.currentUser = { uid: 'uid-bia', email: 'bia@x.com' };
+    callback(camila);
+    await flushPromises();
+    // Sem rede com o token vencido.
+    mockAuth.currentUser = { uid: 'uid-camila', email: 'camila@x.com' };
+    callback(offline);
+    await flushPromises();
+
+    expect(camila.getIdTokenResult).toHaveBeenCalled();
+    expect(offline.getIdTokenResult).toHaveBeenCalled();
+    expect(onProvider).not.toHaveBeenCalled();
+  });
+});
+
+/** Deixa as promessas pendentes andarem. */
+function flushPromises(): Promise<void> {
+  return new Promise((resolve) => setImmediate(() => resolve()));
+}
+
+/** Espera as promessas pendentes até a função ser chamada. */
+async function waitForCalls(fn: jest.Mock): Promise<void> {
+  for (let i = 0; i < 10 && fn.mock.calls.length === 0; i += 1) await flushPromises();
+}
+
 const firebaseError = (code: string) => new FirebaseError(code, code);
 
 describe('trocar a senha e o e-mail (seção 29, frente D)', () => {
@@ -297,5 +423,61 @@ describe('trocar a senha e o e-mail (seção 29, frente D)', () => {
     expect(changeEmailFailure(new SessionEndedError())).toBe('sessionEnded');
     expect(changePasswordFailure(new Error('x'))).toBe('unknown');
     expect(changeEmailFailure(new Error('x'))).toBe('unknown');
+  });
+});
+
+describe('por que a exclusão não passou (seção 33, decisão 12)', () => {
+  it('a conta da sessão confirmada, ou a sessão que terminou', async () => {
+    await expect(confirmedUser()).resolves.toBe(mockUser);
+    expect(mockAuth.authStateReady).toHaveBeenCalled();
+    mockAuth.currentUser = null;
+    await expect(confirmedUser()).rejects.toBeInstanceOf(SessionEndedError);
+  });
+
+  it.each([
+    ['a senha', 'needsPassword', 'password'],
+    ['o Google', 'needsGoogle', 'google'],
+    // A sessão da Apple sempre abre a folha dela: não há estágio a mostrar.
+    ['a Apple', 'unknown', 'apple'],
+  ] as const)('o login recente pedido pela sessão d%s vira %s', (_, failure, method) => {
+    expect(deleteAccountFailure(new RecentLoginRequiredError(method))).toBe(failure);
+  });
+
+  it.each([
+    ['auth/requires-recent-login', 'needsPassword'],
+    ['auth/user-mismatch', 'wrongAccount'],
+    ['auth/invalid-credential', 'wrongPassword'],
+    ['auth/wrong-password', 'wrongPassword'],
+    ['auth/network-request-failed', 'network'],
+    ['auth/too-many-requests', 'tooManyRequests'],
+    ['auth/user-token-expired', 'sessionEnded'],
+    ['auth/user-not-found', 'sessionEnded'],
+    ['auth/user-disabled', 'sessionEnded'],
+    ['auth/internal-error', 'unknown'],
+  ])('%s vira %s', (code, failure) => {
+    expect(deleteAccountFailure(firebaseError(code))).toBe(failure);
+  });
+
+  it.each([
+    ['o Google', 'google'],
+    ['a Apple', 'apple'],
+  ] as const)(
+    'na reautenticação pel%s, o token recusado (auth/invalid-credential) não é senha errada',
+    (_, method) => {
+      expect(deleteAccountFailure(firebaseError('auth/invalid-credential'), method)).toBe(
+        'unknown',
+      );
+      expect(deleteAccountFailure(firebaseError('auth/user-mismatch'), method)).toBe(
+        'wrongAccount',
+      );
+      expect(deleteAccountFailure(firebaseError('auth/invalid-credential'), 'password')).toBe(
+        'wrongPassword',
+      );
+    },
+  );
+
+  it('a sessão que acabou e o erro que não é do Firebase (a folha do provedor que falhou)', () => {
+    expect(deleteAccountFailure(new SessionEndedError())).toBe('sessionEnded');
+    expect(deleteAccountFailure(new Error('A folha falhou.'))).toBe('unknown');
   });
 });

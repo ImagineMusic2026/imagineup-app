@@ -6,7 +6,7 @@ import { resetFixtureSession } from '@/services/fixtures';
 import { queryClient, queryPersister } from '@/services/query';
 import { resetRefusalAlerts } from '@/services/refusal-alert';
 import { usePreferencesStore } from '@/stores/preferences';
-import { useSessionStore } from '@/stores/session';
+import { useSessionStore, type SignInMethod } from '@/stores/session';
 import { useSuspensionStore } from '@/stores/suspension';
 
 import { listenToAuth } from '../api';
@@ -40,12 +40,17 @@ async function clearSessionData(): Promise<void> {
  * Um aviso de sessão nova que chega no meio da saída vence o de saída: se for
  * de outro fã, os dados do anterior vão embora ali mesmo; se for o mesmo (o
  * Auth oscilando), o cache fica.
+ *
+ * Por onde a sessão entrou (o `signInProvider` do token, seção 33) chega
+ * depois, sem segurar a abertura, e só vale se a conta ainda for a mesma.
  */
 export function useAuthListener(): void {
   useEffect(() => {
     // Cada aviso do Auth tem o seu número: uma saída que termina depois de o
     // fã entrar de novo não derruba a sessão nova.
     let latest = 0;
+    const onSignInProvider = (uid: string, provider: SignInMethod | null): void =>
+      useSessionStore.getState().setSignInProvider(uid, provider);
     return listenToAuth((user) => {
       latest += 1;
       const current = latest;
@@ -67,6 +72,6 @@ export function useAuthListener(): void {
           setLastSessionUid(null);
           setSignedOut();
         });
-    });
+    }, onSignInProvider);
   }, []);
 }

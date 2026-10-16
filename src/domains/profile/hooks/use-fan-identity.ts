@@ -17,7 +17,9 @@ export interface FanIdentity {
 /**
  * Nome e foto do fã para as telas (header da 1b, hero da 1e, card "Você" da
  * 1f). Com o perfil do Firestore, valem os dele. Enquanto ele não chega, ou
- * antes de a função de cadastro criá-lo, ficam os da sessão.
+ * antes de a função de cadastro criá-lo, fica o nome da sessão, e a foto fica
+ * vazia: a foto da sessão é a do provedor (a do Google), que o perfil não
+ * copia, e ela piscaria antes do perfil (seção 33, decisão 13).
  *
  * O perfil sem nome (`null`) usa o nome da sessão quando ele passa na mesma
  * regra do servidor (`visibleLine()`, até 60). Se o `updateProfile` do
@@ -48,7 +50,7 @@ export function useFanIdentity(): FanIdentity {
   return {
     uid: sessionUser?.uid ?? lastSessionUid,
     name: sessionUser?.displayName ?? null,
-    photoURL: sessionUser?.photoURL ?? null,
+    photoURL: null,
     // Respondeu sem perfil ou falhou: quem mostra cai no nome de reserva.
     loading: profile.isPending,
   };

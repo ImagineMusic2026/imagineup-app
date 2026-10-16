@@ -17,13 +17,16 @@ import { useIsOnline } from '@/hooks/use-is-online';
 import { useStayOnScreen } from '@/hooks/use-stay-on-screen';
 import { useTabBarInset } from '@/hooks/use-tab-bar-inset';
 import { t, type TranslationKey } from '@/i18n';
+import { useSessionStore } from '@/stores/session';
 import { colors, motion, spacing } from '@/theme';
 import { announceFirstError } from '@/utils/form-errors';
 
 import { deleteAccountFailure } from '../api';
 import { PasswordField } from '../components/password-field';
 import { DELETE_ACCOUNT_ERRORS, useDeleteAccount } from '../hooks/use-delete-account';
+import { useSessionMethod } from '../hooks/use-session-method';
 import { reauthSchema, type ReauthForm } from '../schemas';
+import { deletionKindOf, triesLinkedApple, type DeleteAccountRequest } from '../social';
 
 const LOSS_ICON_SIZE = 18;
 
@@ -37,6 +40,19 @@ const LOSSES: readonly { key: TranslationKey; icon: LucideIcon }[] = [
 
 const FIELD_ORDER = ['password'] as const;
 
+/**
+ * Em que passo a confirmação está: o primeiro toque, o campo de senha ou o
+ * "Confirmar com o Google", depois que o Firebase pediu o login recente (ou,
+ * com a Apple ligada, antes da tentativa de revogação).
+ */
+type Stage = 'start' | 'password' | 'google';
+
+const SUBMIT_LABEL: Record<Stage, TranslationKey> = {
+  start: 'deleteAccount.submit',
+  password: 'deleteAccount.confirm',
+  google: 'deleteAccount.confirmGoogle',
+};
+
 function goBack(): void {
   if (router.canGoBack()) router.back();
   else router.replace('/perfil');
@@ -45,8 +61,19 @@ function goBack(): void {
 /**
  * Excluir conta (sem desenho, no visual das outras telas), aberta pelos
  * Ajustes. A própria tela é a confirmação: diz o que se perde e só então
- * oferece o botão. Se o Firebase pedir o login recente, aparece o campo de
- * senha, e a exclusão sai depois de reautenticar com a credencial de e-mail.
+ * oferece o botão. Pelo provedor da sessão (seção 33 de
+ * docs/arquitetura-api.md, decisão 12):
+ * - a senha: se o Firebase pedir o login recente, aparece o campo de senha, e
+ *   a exclusão sai depois de reautenticar com a credencial de e-mail;
+ * - o Google: o login recente vira o estágio "Confirmar com o Google", no
+ *   lugar do campo de senha, e o botão abre a folha do Google;
+ * - a Apple, no iPhone: a frase da Apple embaixo da lista, e o botão abre
+ *   sempre a folha da Apple (fechar a folha volta sem erro);
+ * - a Apple ligada a uma sessão de outro provedor, no iPhone: a frase da Apple
+ *   ligada, a confirmação da sessão pedida já no primeiro toque e, depois
+ *   dela, a folha da Apple como tentativa de revogação (cancelar exclui do
+ *   mesmo jeito).
+ *
  * Sem rede, o botão fica desligado; erro de rede deixa a conta como estava.
  * Deu certo, quem troca a tela é o guard (a sessão termina), e o perfil e o
  * @ somem no servidor.
@@ -55,13 +82,20 @@ export function DeleteAccountScreen() {
   const bottomInset = useTabBarInset();
   const online = useIsOnline();
   const deletion = useDeleteAccount();
-  const failure = deletion.isError ? deleteAccountFailure(deletion.error) : null;
-  // O pedido de senha fica depois do primeiro "login recente": as próximas
-  // tentativas vão com ela.
-  const [needsPassword, setNeedsPassword] = useState(false);
-  if (failure === 'needsPassword' && !needsPassword) setNeedsPassword(true);
-  // Depois de dar certo, o botão segue ocupado até o guard trocar a tela.
-  const busy = deletion.isPending || deletion.isSuccess;
+  const kind = deletionKindOf(useSessionMethod());
+  const hasApple = useSessionStore((state) => state.user?.providers?.includes('apple') === true);
+  const linkedApple = triesLinkedApple(kind, hasApple);
+  const failure = deletion.isError
+    ? deleteAccountFailure(deletion.error, deletion.variables?.kind)
+    : null;
+  // A senha ou o Google ficam depois do primeiro "login recente": as próximas
+  // tentativas vão com a confirmação.
+  const [stage, setStage] = useState<Stage>('start');
+  if (failure === 'needsPassword' && stage !== 'password') setStage('password');
+  if (failure === 'needsGoogle' && stage !== 'google') setStage('google');
+  // Depois de dar certo, o botão segue ocupado até o guard trocar a tela. A
+  // folha fechada pelo fã (`canceled`) volta ao botão livre.
+  const busy = deletion.isPending || deletion.data === 'deleted';
   useStayOnScreen(busy);
   // Sem rede, nada sai: nem pelo botão, nem pelo "ir" do teclado.
   const disabled = !online || !isFirebaseConfigured;
@@ -75,21 +109,32 @@ export function DeleteAccountScreen() {
     // O "ir" do teclado não passa pelo botão ocupado ou desligado: um pedido
     // por vez, e só com rede.
     if (busy || disabled) return;
-    if (!needsPassword) {
-      deletion.mutate({});
+    if (stage === 'password') {
+      void handleSubmit(
+        ({ password }) => deletion.mutate({ kind: 'password', password }),
+        (errors) => announceFirstError(errors, FIELD_ORDER),
+      )();
       return;
     }
-    void handleSubmit(
-      ({ password }) => deletion.mutate({ password }),
-      (errors) => announceFirstError(errors, FIELD_ORDER),
-    )();
+    const request: DeleteAccountRequest =
+      stage === 'google' ? { kind: 'google', confirm: true } : { kind };
+    deletion.mutate(request);
   };
 
   const wrongPassword = failure === 'wrongPassword';
   const message =
-    failure && failure !== 'needsPassword' && failure !== 'wrongPassword'
+    failure &&
+    failure !== 'needsPassword' &&
+    failure !== 'needsGoogle' &&
+    failure !== 'wrongPassword'
       ? t(DELETE_ACCOUNT_ERRORS[failure])
       : null;
+  const appleNotice: TranslationKey | null =
+    kind === 'apple'
+      ? 'deleteAccount.appleNotice'
+      : linkedApple
+        ? 'deleteAccount.appleLinkedNotice'
+        : null;
 
   return (
     <Screen scroll bottomInset={bottomInset}>
@@ -115,8 +160,30 @@ export function DeleteAccountScreen() {
       <Text variant="bodySmall" color={colors.textMuted} style={styles.fresh}>
         {t('deleteAccount.fresh')}
       </Text>
+      {appleNotice ? (
+        <Text
+          variant="body"
+          color={colors.textBody}
+          style={styles.notice}
+          testID="delete-account-apple-notice"
+        >
+          {t(appleNotice)}
+        </Text>
+      ) : null}
 
-      {needsPassword ? (
+      {stage === 'google' ? (
+        <Animated.View
+          entering={FadeIn.duration(motion.duration.base)}
+          style={styles.password}
+          testID="delete-account-google"
+        >
+          <Text variant="body" color={colors.textBody}>
+            {t('deleteAccount.googleLead')}
+          </Text>
+        </Animated.View>
+      ) : null}
+
+      {stage === 'password' ? (
         <Animated.View
           entering={FadeIn.duration(motion.duration.base)}
           style={styles.password}
@@ -156,7 +223,7 @@ export function DeleteAccountScreen() {
       ) : null}
 
       <Button
-        label={t(needsPassword ? 'deleteAccount.confirm' : 'deleteAccount.submit')}
+        label={t(SUBMIT_LABEL[stage])}
         icon={Trash2}
         onPress={submit}
         loading={busy}
@@ -204,6 +271,9 @@ const styles = StyleSheet.create({
   },
   fresh: {
     marginTop: spacing.md,
+  },
+  notice: {
+    marginTop: spacing.xl,
   },
   password: {
     marginTop: spacing.xl,

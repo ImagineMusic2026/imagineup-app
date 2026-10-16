@@ -5,6 +5,8 @@ import { createJSONStorage, persist } from 'zustand/middleware';
 import { haptics } from '@/services/haptics';
 import { StorageKeys } from '@/storage/storage/keys';
 
+import type { SignInMethod } from './session';
+
 interface PreferencesState {
   hapticsEnabled: boolean;
   /**
@@ -18,9 +20,16 @@ interface PreferencesState {
    * sessão (até 60 s com sinal ruim). Se a sessão tiver caído, o guard corrige.
    */
   lastSessionUid: string | null;
+  /**
+   * O jeito da última entrada que deu certo neste aparelho, dito na abertura
+   * (1k): "Da última vez, você entrou com o Google." (seção 33, decisão 9).
+   * Gravado em toda entrada, fica depois de "Sair" e sai na exclusão da conta.
+   */
+  lastSignInMethod: SignInMethod | null;
   hydrated: boolean;
   setHapticsEnabled: (value: boolean) => void;
   setLastSessionUid: (uid: string | null) => void;
+  setLastSignInMethod: (method: SignInMethod | null) => void;
   completeOnboarding: () => void;
   resetOnboarding: () => void;
 }
@@ -32,22 +41,30 @@ export const usePreferencesStore = create<PreferencesState>()(
       hapticsEnabled: true,
       hasCompletedOnboarding: false,
       lastSessionUid: null,
+      lastSignInMethod: null,
       hydrated: false,
       setHapticsEnabled: (value) => {
         haptics.setEnabled(value);
         set({ hapticsEnabled: value });
       },
       setLastSessionUid: (uid) => set({ lastSessionUid: uid }),
+      setLastSignInMethod: (method) => set({ lastSignInMethod: method }),
       completeOnboarding: () => set({ hasCompletedOnboarding: true }),
       resetOnboarding: () => set({ hasCompletedOnboarding: false }),
     }),
     {
       name: StorageKeys.Preferences,
       storage: createJSONStorage(() => AsyncStorage),
-      partialize: ({ hapticsEnabled, hasCompletedOnboarding, lastSessionUid }) => ({
+      partialize: ({
         hapticsEnabled,
         hasCompletedOnboarding,
         lastSessionUid,
+        lastSignInMethod,
+      }) => ({
+        hapticsEnabled,
+        hasCompletedOnboarding,
+        lastSessionUid,
+        lastSignInMethod,
       }),
       onRehydrateStorage: () => (state) => {
         if (state) haptics.setEnabled(state.hapticsEnabled);

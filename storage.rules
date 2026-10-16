@@ -59,10 +59,11 @@ service firebase.storage {
         && request.resource.contentType.matches('image/(webp|jpeg|png)');
     }
 
-    // Vídeo dos posts de vídeo (bloco 6): mp4 de 1 byte a 50 MB.
+    // Vídeo dos posts de vídeo (bloco 6): mp4 de 1 byte a 20 MiB, o teto do painel
+    // desde a seção 33 (antes, 50 MiB; 21.19 e 33.4 da nota).
     function validVideo() {
       return request.resource.size > 0
-        && request.resource.size <= 50 * 1024 * 1024
+        && request.resource.size <= 20 * 1024 * 1024
         && request.resource.contentType == 'video/mp4';
     }
 
