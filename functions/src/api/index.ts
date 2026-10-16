@@ -80,6 +80,24 @@ const APP_CHECK_OFF: AppCheckConfig = {
 export const MAX_BODY_BYTES = 16 * 1024;
 
 /**
+ * A rota de saúde, sem login (docs/arquitetura-api.md, 32.2): só o GET com
+ * este caminho exato. Fica fora da API_ROUTES, que passa pelo App Check e
+ * pelo login; o POST, o `/health/` e o `/health/x` seguem o caminho de hoje.
+ */
+const HEALTH_PATH = '/health';
+
+/**
+ * O corpo do GET /health. É contrato: o teste de disponibilidade do Cloud
+ * Monitoring ("ImagineUP: api no ar", 32.7) confere o texto `"ok":true` no
+ * corpo (o `--matcher-content`), e a política "ImagineUP: api fora do ar"
+ * (docs/protecao/politicas/api-fora-do-ar.json) dispara quando ele falha em 2
+ * ou mais regiões. Mudar o corpo pede o `gcloud monitoring uptime update ...
+ * --matcher-content` no mesmo deploy (32.17); os testes conferem o texto
+ * exato (32.10).
+ */
+export const HEALTH_BODY: Readonly<{ ok: true }> = Object.freeze({ ok: true });
+
+/**
  * O `details.reason` que vai para a linha do log (seção 30, decisão 13): só no
  * formato fechado dos motivos, para nem no futuro um texto do cliente chegar
  * ao log.
@@ -130,9 +148,17 @@ export function createApiHandler(deps: ApiDeps, routes: readonly ApiRoute[] = AP
   };
 
   return async (req: ApiRequest, res: ApiResponse): Promise<void> => {
+    // A rota de saúde (32.2), antes de tudo: sem o IP, o tamanho do corpo, o
+    // App Check, o token, o ritmo e o Firestore, e sem as linhas `acesso` e
+    // `api` (decisão 18 de 32.1: a sonda não é acesso de quem usa o app).
+    if (req.method.toUpperCase() === 'GET' && req.path === HEALTH_PATH) {
+      send(res, 200, HEALTH_BODY);
+      return;
+    }
+
     const started = Date.now();
     const method = req.method.toUpperCase();
-    // O IP da linha `acesso` (31.6), antes de tudo: o pedido recusado também sai.
+    // O IP da linha `acesso` (31.6), antes da rota: o pedido recusado também sai.
     const ip = clientIp(req);
     let route = 'unmatched';
     let uid: string | null = null;
@@ -208,10 +234,11 @@ export function createApiHandler(deps: ApiDeps, routes: readonly ApiRoute[] = AP
       }
       send(res, status, apiFailure.body(), apiFailure.headers);
     } finally {
-      // Todo pedido que chega ao handler escreve a linha `acesso` (31.6), com
-      // o uid só depois do token: a recusa que vem antes dele sai com null,
-      // mesmo com login. O que o runtime ou o Cloud Run respondem antes do
-      // handler fica sem ela (31.9). Ela vem antes da `api`, a última do pedido.
+      // Todo pedido que chega ao handler escreve a linha `acesso` (31.6), menos
+      // o GET /health, que sai antes (32.1, decisão 18). O uid só vem depois
+      // do token: a recusa que vem antes dele sai com null, mesmo com login.
+      // O que o runtime ou o Cloud Run respondem antes do handler fica sem
+      // ela (31.9). Ela vem antes da `api`, a última do pedido.
       logAccess(ip, uid);
       logger.info('api', {
         method,

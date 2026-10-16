@@ -39,6 +39,11 @@ import {
   type FanCountQueue,
 } from './centrals';
 import {
+  deleteFanAccount as deleteAccountOfFan,
+  exportFanData as exportDataOfFan,
+  type FanDataDeps,
+} from './fan-data';
+import {
   clearFanPhoto as removeFanPhotoByStaff,
   clearFanProfileText as clearFanTextByStaff,
   FAN_PROFILE_MAX_ATTEMPTS,
@@ -804,6 +809,40 @@ export const hideFanComments = onPanelCall(
     return result;
   },
 );
+
+// Os pedidos de dados de um fã pela LGPD (seção 32): exportar e excluir, só
+// para admin, sem seção, com o e-mail da conta digitado e o login de até 10
+// minutos. 256 MiB (1/6 de vCPU) e o prazo padrão: a exportação vem em
+// partes, e nenhuma resposta chega perto do teto da callable. Os logs levam
+// só o uid de quem chamou: nunca o e-mail, o uid do fã nem o conteúdo.
+
+const fanDataDeps = (): FanDataDeps => ({ db: getFirestore(), auth: getAuth() });
+
+/**
+ * Exporta os dados de um fã (32.2): a primeira chamada, auditada e com o teto
+ * de 20 por dia, traz o começo do arquivo; as páginas trazem as partes
+ * longas, de 500 em 500. O painel junta e baixa o arquivo.
+ */
+export const exportFanData = onPanelCall({ cors: PANEL_ORIGINS }, async (request) => {
+  const result = await exportDataOfFan(fanDataDeps(), request.auth, request.data);
+  logger.info('part' in result ? 'Página dos dados de um fã lida.' : 'Dados de um fã exportados.', {
+    actorUid: request.auth?.uid,
+  });
+  return result;
+});
+
+/**
+ * Exclui a conta de um fã (32.2): a auditoria e o teto de 5 por dia antes do
+ * `deleteUser`; o gatilho `deleteUserProfile` apaga os dados em seguida.
+ */
+export const deleteFanAccount = onPanelCall({ cors: PANEL_ORIGINS }, async (request) => {
+  const result = await deleteAccountOfFan(fanDataDeps(), request.auth, request.data);
+  logger.info('Conta de um fã excluída pela equipe.', {
+    actorUid: request.auth?.uid,
+    status: result.status,
+  });
+  return result;
+});
 
 // API HTTP do app (docs/arquitetura-api.md): carteira, progresso e extrato no
 // bloco 1, centrais no bloco 4, convite no bloco 5, mural e agenda no bloco 6,

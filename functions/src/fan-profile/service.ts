@@ -53,6 +53,7 @@ import {
   usernameRefusal,
   UsernameReleaseError,
   USERNAME_PATTERN,
+  type UsernameResetReason,
 } from './model';
 
 // O perfil editável do fã no Firestore e no Storage (bloco 9): a troca do @
@@ -124,11 +125,17 @@ export type UsernameSwap = {
   releaseRef: DocumentReference | null;
 };
 
-/** Os campos do perfil que a troca do @ grava (no `tx.update` de quem chama). */
+/**
+ * Os campos do perfil que a troca do @ grava (no `tx.update` de quem chama).
+ * O `usernameLockReason` vai sempre null: o prazo é do próprio fã, e um
+ * `moderation` antigo ao lado dele faria o app dizer que a equipe trocou
+ * (seção 32, decisão 2).
+ */
 export type UsernameSwapFields = {
   username: string;
   usernameChangedAt: Timestamp;
   usernameChangeableAt: Timestamp;
+  usernameLockReason: null;
 };
 
 /**
@@ -172,6 +179,7 @@ export function writeUsernameSwap(
     username: swap.username,
     usernameChangedAt: Timestamp.fromMillis(now),
     usernameChangeableAt: Timestamp.fromMillis(nextUsernameChange(now)),
+    usernameLockReason: null,
   };
 }
 
@@ -303,23 +311,32 @@ export async function readFanPublicProfile(
   return publicProfileOf(fanId, data, blockedOf(list.get('blocked')).includes(uid), blockedByMe);
 }
 
-export type UsernameRelease = { uid: string; previous: string; username: string };
+export type UsernameRelease = {
+  uid: string;
+  previous: string;
+  username: string;
+  /** ISO do prazo gravado (`moderation`), ou null sem prazo (`central`). */
+  changeableAt: string | null;
+};
 
 /**
  * O núcleo da liberação do @ de um fã, na transação de quem chama (o script
  * pelo `releaseUsername`, a callable `resetFanUsername` do painel, bloco 11):
  * troca o fã para um automático novo (o primeiro livre entre os candidatos do
- * gerador), sem prazo (`usernameChangeableAt: null`), e apaga a reserva
- * antiga, que fica livre na hora. Recusa sem gravar a reserva que não existe,
- * a de uma central, a que não é o @ de agora do perfil e, com `uid`, a de
- * outro fã. Não mexe no `usernameChangedAt`, que é das trocas do fã. Só lê
- * antes de gravar: quem chama lê o que precisa antes e grava depois.
+ * gerador) e apaga a reserva antiga, que fica livre na hora. Desde a seção 32
+ * (decisões 1 e 2), pelo motivo: `moderation` grava o prazo de 30 dias
+ * (`usernameChangeableAt`, o mesmo `nextUsernameChange` da troca do fã) e
+ * `usernameLockReason: 'moderation'`; `central` grava os dois null, sem prazo.
+ * Recusa sem gravar a reserva que não existe, a de uma central, a que não é o
+ * @ de agora do perfil e, com `uid`, a de outro fã. Não mexe no
+ * `usernameChangedAt`, que é das trocas do fã. Só lê antes de gravar: quem
+ * chama lê o que precisa antes e grava depois.
  */
 export async function releaseUsernameIn(
   tx: Transaction,
   db: Firestore,
   raw: string,
-  options: { now: number; random?: RandomDigits; uid?: string },
+  options: { now: number; reason: UsernameResetReason; random?: RandomDigits; uid?: string },
 ): Promise<UsernameRelease> {
   const username = normalizeUsername(raw);
   const random = options.random ?? randomDigits;
@@ -338,15 +355,23 @@ export async function releaseUsernameIn(
   const free = taken.find((snapshot) => !snapshot.exists);
   // Só acontece com todos os sorteados tomados: rodar de novo sorteia outros.
   if (!free) throw new Error('Nenhum @ automático livre entre os candidatos.');
+  const locked = options.reason === 'moderation';
+  const changeableAt = locked ? nextUsernameChange(options.now) : null;
   tx.create(free.ref, { uid, createdAt: Timestamp.fromMillis(options.now) });
   tx.delete(reservationRef);
-  tx.update(fanRef, { username: free.id, usernameChangeableAt: null });
-  return { uid, previous: username, username: free.id };
+  tx.update(fanRef, {
+    username: free.id,
+    usernameChangeableAt: changeableAt === null ? null : Timestamp.fromMillis(changeableAt),
+    usernameLockReason: locked ? 'moderation' : null,
+  });
+  return { uid, previous: username, username: free.id, changeableAt: iso(changeableAt) };
 }
 
 /**
  * Libera o @ de um fã para uma central (decisão 17): o `releaseUsernameIn`
- * numa transação própria do Admin SDK. Quem chama é o
+ * numa transação própria do Admin SDK, sempre com o motivo `central` (sem
+ * prazo, e o `usernameLockReason` null, também sobre um perfil que estava com
+ * `moderation`: o script destrava). Quem chama é o
  * `scripts/release-fan-username.mjs`, que desde o bloco 11 fica para
  * emergência (não audita): a equipe usa o `resetFanUsername` do painel.
  */
@@ -357,7 +382,11 @@ export function releaseUsername(
 ): Promise<UsernameRelease> {
   const now = options.now ?? Date.now();
   return db.runTransaction((tx) =>
-    releaseUsernameIn(tx, db, raw, { now, ...(options.random ? { random: options.random } : {}) }),
+    releaseUsernameIn(tx, db, raw, {
+      now,
+      reason: 'central',
+      ...(options.random ? { random: options.random } : {}),
+    }),
   );
 }
 

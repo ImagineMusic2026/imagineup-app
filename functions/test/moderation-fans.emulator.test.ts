@@ -538,28 +538,45 @@ describe('hideFanComments', () => {
   });
 });
 
+type ResetResult = { ok: true; username: string; changeableAt: string | null };
+
+/** O prazo do @ gravado no perfil, em ms (ou null). */
+const deadlineOf = async (uid: string) => {
+  const value = (await read(`users/${uid}`))?.usernameChangeableAt as Timestamp | null | undefined;
+  return value ? value.toMillis() : null;
+};
+
 describe('resetFanUsername', () => {
-  it('um @ automático novo e sem prazo; o antigo livre na hora; a tela velha e a reserva de central recusam', async () => {
+  it('sem o reason (o painel publicado): um @ automático novo com 30 dias de prazo e o motivo; o antigo livre na hora; a tela velha e a reserva de central recusam', async () => {
     const editor = await seedMember(env, 'Editora', 'editor', ['moderation']);
     const fan = await signUpFan(db, 'Camila Ribeiro');
     const previous = (await read(`users/${fan.uid}`))!.username as string;
-    const { username } = await ok<{ username: string }>(
+    const before = Date.now();
+    const reset = await ok<ResetResult>(
       'resetFanUsername',
       { uid: fan.uid, username: `@${previous}` },
       editor,
     );
+    const after = Date.now();
+    const { username } = reset;
+    expect(reset).toEqual({ ok: true, username, changeableAt: expect.any(String) });
     expect(username).toMatch(/^fa[0-9]+$/);
+    // O prazo é o da troca feita pelo fã: 30 dias depois do relógio da callable.
+    const deadline = Date.parse(reset.changeableAt!);
+    expect(deadline).toBeGreaterThanOrEqual(before + 30 * DAY_MS);
+    expect(deadline).toBeLessThanOrEqual(after + 30 * DAY_MS);
     expect(await read(`users/${fan.uid}`)).toMatchObject({
       username,
-      usernameChangeableAt: null,
+      usernameLockReason: 'moderation',
     });
+    expect(await deadlineOf(fan.uid)).toBe(deadline);
     expect(await exists(`usernames/${previous}`)).toBe(false);
     expect(await read(`usernames/${username}`)).toMatchObject({ uid: fan.uid });
     expect(await audits('fan.username.reset')).toEqual([
       expect.objectContaining({
         targetUid: fan.uid,
         section: 'moderation',
-        details: { uid: fan.uid, previous, username },
+        details: { uid: fan.uid, previous, username, reason: 'moderation' },
       }),
     ]);
     await waitFor('as chaves do @ novo', async () => {
@@ -598,6 +615,157 @@ describe('resetFanUsername', () => {
     expect(await read(`usernames/${handle}`)).toMatchObject({ artistId: handle });
   });
 
+  it('com o prazo da equipe, as duas rotas do fã recusam até a data (também o @ antigo); só a bio passa; na data, a troca do fã limpa o motivo', async () => {
+    const editor = await seedMember(env, 'Editora', 'editor', ['moderation']);
+    const fan = await signUpFan(db, 'Camila Ribeiro');
+    const previous = (await read(`users/${fan.uid}`))!.username as string;
+    const reset = await ok<ResetResult>(
+      'resetFanUsername',
+      { uid: fan.uid, username: previous, reason: 'moderation' },
+      editor,
+    );
+    const deadline = Date.parse(reset.changeableAt!);
+    const clock = { now: Date.now() };
+    const call = localApi(env, { now: () => clock.now });
+    const tooSoon = {
+      code: 'username_change_too_soon',
+      details: { changeableAt: reset.changeableAt },
+    };
+    const putUsername = (username: string) =>
+      call('PUT', '/me/username', {
+        token: fan.token,
+        key: unique('chave-arroba-'),
+        body: { username },
+      });
+    const putProfile = (body: unknown) =>
+      call('PUT', '/me/profile', { token: fan.token, key: unique('chave-perfil-'), body });
+
+    // As duas rotas recusam, sem gravar nada: um @ novo e o @ antigo, de volta.
+    for (const username of [unique('camilavolta'), previous]) {
+      expect(await putUsername(username)).toMatchObject({ status: 409, body: tooSoon });
+      expect(await putProfile({ username, bio: 'Oi!' })).toMatchObject({
+        status: 409,
+        body: tooSoon,
+      });
+    }
+    expect(await read(`users/${fan.uid}`)).toMatchObject({
+      username: reset.username,
+      usernameLockReason: 'moderation',
+    });
+    expect((await read(`users/${fan.uid}`))?.bio).toBeUndefined();
+    expect(await exists(`usernames/${previous}`)).toBe(false);
+
+    // Só a bio passa, e a resposta leva o prazo e o motivo.
+    expect(await putProfile({ bio: 'Fã do Netto.' })).toMatchObject({
+      status: 200,
+      body: {
+        username: reset.username,
+        usernameChangeableAt: reset.changeableAt,
+        usernameLockReason: 'moderation',
+        bio: 'Fã do Netto.',
+      },
+    });
+
+    // Um instante antes da data, ainda recusa; na data, a troca passa e o motivo vira null.
+    clock.now = deadline - 1;
+    expect(await putUsername(unique('camilanova'))).toMatchObject({ status: 409, body: tooSoon });
+    clock.now = deadline;
+    const chosen = unique('camilanova');
+    expect(await putProfile({ username: chosen })).toMatchObject({
+      status: 200,
+      body: {
+        username: chosen,
+        usernameChangeableAt: new Date(deadline + 30 * DAY_MS).toISOString(),
+        usernameLockReason: null,
+      },
+    });
+    expect(await read(`users/${fan.uid}`)).toMatchObject({
+      username: chosen,
+      usernameLockReason: null,
+    });
+    expect(await deadlineOf(fan.uid)).toBe(deadline + 30 * DAY_MS);
+  });
+
+  it('na data, a troca pelo PUT /me/username também grava o motivo null', async () => {
+    const editor = await seedMember(env, 'Editora', 'editor', ['moderation']);
+    const fan = await signUpFan(db, 'Bia Santos');
+    const previous = (await read(`users/${fan.uid}`))!.username as string;
+    const reset = await ok<ResetResult>(
+      'resetFanUsername',
+      { uid: fan.uid, username: previous },
+      editor,
+    );
+    const deadline = Date.parse(reset.changeableAt!);
+    const call = localApi(env, { now: () => deadline });
+    const chosen = unique('bianova');
+    expect(
+      await call('PUT', '/me/username', {
+        token: fan.token,
+        key: unique('chave-arroba-'),
+        body: { username: chosen },
+      }),
+    ).toMatchObject({
+      status: 200,
+      body: { username: chosen, changeableAt: new Date(deadline + 30 * DAY_MS).toISOString() },
+    });
+    expect(await read(`users/${fan.uid}`)).toMatchObject({
+      username: chosen,
+      usernameLockReason: null,
+    });
+  });
+
+  it('com reason central: o @ automático novo sem prazo e sem motivo, também sobre o prazo da equipe; o fã troca na hora', async () => {
+    const editor = await seedMember(env, 'Editora', 'editor', ['moderation']);
+    const fan = await signUpFan(db, 'Duda Lima');
+    const first = (await read(`users/${fan.uid}`))!.username as string;
+    // Primeiro a Moderação, com o prazo; depois o destravar, por um reset com central.
+    const locked = await ok<ResetResult>(
+      'resetFanUsername',
+      { uid: fan.uid, username: first },
+      editor,
+    );
+    expect(locked.changeableAt).not.toBeNull();
+    const unlocked = await ok<ResetResult>(
+      'resetFanUsername',
+      { uid: fan.uid, username: locked.username, reason: 'central' },
+      editor,
+    );
+    expect(unlocked).toEqual({
+      ok: true,
+      username: expect.stringMatching(/^fa[0-9]+$/),
+      changeableAt: null,
+    });
+    expect(unlocked.username).not.toBe(locked.username);
+    expect(await read(`users/${fan.uid}`)).toMatchObject({
+      username: unlocked.username,
+      usernameChangeableAt: null,
+      usernameLockReason: null,
+    });
+    expect(await exists(`usernames/${locked.username}`)).toBe(false);
+    expect((await audits('fan.username.reset')).map((entry) => entry.details)).toEqual(
+      expect.arrayContaining([
+        { uid: fan.uid, previous: first, username: locked.username, reason: 'moderation' },
+        {
+          uid: fan.uid,
+          previous: locked.username,
+          username: unlocked.username,
+          reason: 'central',
+        },
+      ]),
+    );
+    // Sem prazo: a primeira troca a partir do automático é livre, na hora.
+    const call = localApi(env, { now: () => Date.now() });
+    expect(
+      (
+        await call('PUT', '/me/username', {
+          token: fan.token,
+          key: unique('chave-arroba-'),
+          body: { username: unique('dudanova') },
+        })
+      ).status,
+    ).toBe(200);
+  });
+
   it('o próprio uid, o leitor e a editora sem moderation não', async () => {
     const viewer = await seedMember(env, 'Leitor', 'viewer', ['moderation']);
     const fansOnly = await seedMember(env, 'Fãs', 'editor', ['fans']);
@@ -628,7 +796,14 @@ describe('resetFanUsername', () => {
         (await failure('resetFanUsername', { uid: fan.uid, username: bad }, editor)).details,
       ).toEqual({ reason: 'invalid-request', field: 'username' });
     }
+    // O motivo estranho (seção 32): só moderation, central ou ausente.
+    for (const reason of [null, 'Moderation', 'ofensivo', 1]) {
+      expect(
+        (await failure('resetFanUsername', { uid: fan.uid, username, reason }, editor)).details,
+      ).toEqual({ reason: 'invalid-request', field: 'reason' });
+    }
     expect((await read(`users/${fan.uid}`))?.username).toBe(username);
+    expect((await read(`users/${fan.uid}`))?.usernameLockReason).toBeUndefined();
     expect(await read(`usernames/${username}`)).toMatchObject({ uid: fan.uid });
     expect(await audits('fan.username.reset')).toEqual([]);
   });
@@ -1066,7 +1241,11 @@ describe('resolveProfileReport (seção 29, 29.6)', () => {
     expect(await ok('clearFanPhoto', { uid: promo.uid }, editor)).toEqual({ ok: true });
     await untouched('clearFanPhoto');
     const previous = (await read(`users/${promo.uid}`))!.username as string;
-    await ok('resetFanUsername', { uid: promo.uid, username: previous }, editor);
+    // Sem o reason, como o painel publicado: o prazo vai ao perfil, nunca ao item.
+    expect(
+      (await ok<ResetResult>('resetFanUsername', { uid: promo.uid, username: previous }, editor))
+        .changeableAt,
+    ).not.toBeNull();
     await untouched('resetFanUsername');
     expect(
       await ok('clearFanProfileText', { uid: promo.uid, fields: ['bio', 'socials'] }, editor),

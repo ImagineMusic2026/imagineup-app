@@ -381,6 +381,20 @@ const ROWS: Record<AuditAction, Row> = {
     section: 'fans',
     targets: ['fan:uid-bia'],
   },
+  // Os pedidos de dados (seção 32, decisão 12): só o uid, nunca o e-mail; o
+  // prefixo `fan.` dá o alvo do fã, e não o da equipe.
+  'fan.data.exported': {
+    targetUid: 'uid-camila',
+    details: { uid: 'uid-camila' },
+    section: 'fans',
+    targets: ['fan:uid-camila'],
+  },
+  'fan.account.deleted': {
+    targetUid: 'uid-camila',
+    details: { uid: 'uid-camila' },
+    section: 'fans',
+    targets: ['fan:uid-camila'],
+  },
 };
 
 describe('auditIndex: uma linha por ação', () => {
@@ -393,6 +407,15 @@ describe('auditIndex: uma linha por ação', () => {
 });
 
 describe('auditIndex: as pontas', () => {
+  it('os pedidos de dados sem o targetUid ainda têm o alvo do fã, pelo details.uid', () => {
+    for (const action of ['fan.data.exported', 'fan.account.deleted']) {
+      expect(auditIndex({ action, targetUid: null, details: { uid: 'uid-camila' } })).toEqual({
+        section: 'fans',
+        targets: ['fan:uid-camila'],
+      });
+    }
+  });
+
   it('a busca por e-mail sem resultado não tem alvo', () => {
     expect(
       auditIndex({ action: 'fan.email.lookup', targetUid: null, details: { found: false } }),

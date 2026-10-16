@@ -43,6 +43,9 @@ const SECTION_BY_ACTION: Record<string, AuditSection> = {
   'fan.profile.report.resolved': 'moderation',
   'wallet.adjusted': 'fans',
   'fan.email.lookup': 'fans',
+  // Os pedidos de dados (seção 32, decisão 12): na seção Fãs, sem seção nova.
+  'fan.data.exported': 'fans',
+  'fan.account.deleted': 'fans',
 };
 
 /** A seção de uma ação (null para a que o painel não conhece). */
@@ -101,7 +104,8 @@ export type AuditIndex = { section: AuditSection | null; targets: string[] };
  * membros; `artists` para centrais, posts e shows; `moderation` para
  * comentários e as ferramentas de fã da Moderação; `missions` para a régua,
  * missões, conquistas, a meta e a carga inicial; `ranking` para as outras de
- * temporada; `rewards` para a loja; `fans` para o ajuste e a busca por e-mail.
+ * temporada; `rewards` para a loja; `fans` para o ajuste, a busca por e-mail
+ * e os pedidos de dados (seção 32).
  * Alvos: o `targetUid` (da equipe nas ações da Equipe, do fã nas ações de
  * fã), o `details.uid` das ações de fã e os ids de `details` (cada campo de
  * `DETAIL_TARGETS`, um id ou uma lista), sem repetir, até 50. `details` torto

@@ -20,7 +20,9 @@ import {
   normalizeUsername,
   USERNAME_INPUT_MAX,
   USERNAME_PATTERN,
+  USERNAME_RESET_REASONS,
   UsernameReleaseError,
+  type UsernameResetReason,
 } from './model';
 import { releaseUsernameIn } from './service';
 
@@ -150,24 +152,41 @@ export function parseCurrentUsername(value: unknown): string {
 }
 
 /**
+ * O motivo da troca do @ (puro, seção 32, decisão 1): ausente vale
+ * `moderation` (o painel publicado chama só com `{ uid, username }`);
+ * `moderation` ou `central` passam; outro valor é `invalid-request` com
+ * `field: 'reason'`.
+ */
+export function parseResetReason(value: unknown): UsernameResetReason {
+  if (value === undefined) return 'moderation';
+  if ((USERNAME_RESET_REASONS as readonly unknown[]).includes(value)) {
+    return value as UsernameResetReason;
+  }
+  throw panelError('invalid-request', { field: 'reason' });
+}
+
+/**
  * resetFanUsername (26.4, decisão 12): troca o @ de um fã por um automático
- * novo, sem prazo, e o antigo fica livre na hora. Numa transação: o membro, o
- * perfil (`fan-not-found`), o @ pedido conferido com o de agora
+ * novo, e o antigo fica livre na hora. Desde a seção 32 (decisões 1 e 5), com
+ * o motivo (`parseResetReason`): `moderation`, o padrão, grava o prazo de 30
+ * dias e o `usernameLockReason`; `central`, sem prazo. Numa transação: o
+ * membro, o perfil (`fan-not-found`), o @ pedido conferido com o de agora
  * (`username-changed`: a tela velha não troca o @ errado) e o núcleo do
  * `releaseUsername` (a reserva de uma central é `username-of-central`). O
  * gatilho do perfil regrava o `searchKeys`. Auditoria `fan.username.reset`,
- * com o @ antigo e o novo (26.12).
+ * com o @ antigo, o novo e o motivo (26.12). Responde o prazo em ISO, ou null.
  */
 export async function resetFanUsername(
   deps: FanPanelDeps,
   caller: CallerAuth | undefined,
   data: unknown,
-): Promise<{ ok: true; username: string }> {
+): Promise<{ ok: true; username: string; changeableAt: string | null }> {
   const { db } = deps;
   const input = requestFields(data);
   const uid = targetFanUid(caller, input.uid);
   await readPanelActor(directRead, db, caller, 'moderation', 'edit');
   const username = parseCurrentUsername(input.username);
+  const reason = parseResetReason(input.reason);
   const now = clock(deps);
 
   return db.runTransaction(async (tx) => {
@@ -180,6 +199,7 @@ export async function resetFanUsername(
       released = await releaseUsernameIn(tx, db, username, {
         now,
         uid,
+        reason,
         ...(deps.random ? { random: deps.random } : {}),
       });
     } catch (error) {
@@ -192,10 +212,14 @@ export async function resetFanUsername(
       'fan.username.reset',
       actor,
       uid,
-      { uid, previous: released.previous, username: released.username },
+      { uid, previous: released.previous, username: released.username, reason },
       now,
     );
-    return { ok: true as const, username: released.username };
+    return {
+      ok: true as const,
+      username: released.username,
+      changeableAt: released.changeableAt,
+    };
   });
 }
 

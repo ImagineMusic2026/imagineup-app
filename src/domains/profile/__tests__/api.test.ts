@@ -88,6 +88,7 @@ describe('perfil do Firestore', () => {
       photoURL: null,
       createdAt: '2026-09-29T11:17:40.910Z',
       usernameChangeableAt: null,
+      usernameLockReason: null,
       ...NO_DETAILS,
     });
   });
@@ -190,6 +191,51 @@ describe('perfil do Firestore', () => {
     expect(toFanProfile('uid-camila', CAMILA).usernameChangeableAt).toBeNull();
   });
 
+  it('quem pôs o prazo do @ (seção 32): só moderation; o ausente, null e o valor estranho viram null', () => {
+    const lockReason = (value: unknown) =>
+      toFanProfile('uid-camila', {
+        ...CAMILA,
+        usernameChangeableAt: timestamp('2026-11-06T15:00:00.000Z'),
+        usernameLockReason: value,
+      }).usernameLockReason;
+    expect(lockReason('moderation')).toBe('moderation');
+    expect(lockReason(null)).toBeNull();
+    expect(lockReason(undefined)).toBeNull();
+    expect(lockReason('central')).toBeNull();
+    expect(lockReason(1)).toBeNull();
+    // O perfil de antes da seção 32, sem o campo.
+    expect(toFanProfile('uid-camila', CAMILA).usernameLockReason).toBeNull();
+  });
+
+  it('a resposta do PUT /me/profile leva o motivo do prazo ao cache; a de antes, sem o campo, vale null', () => {
+    const cached = toFanProfile('uid-camila', {
+      ...CAMILA,
+      usernameChangeableAt: timestamp('2026-11-06T15:00:00.000Z'),
+      usernameLockReason: 'moderation',
+    });
+    expect(cached.usernameLockReason).toBe('moderation');
+    const edited = {
+      displayName: 'Camila Ribeiro',
+      username: 'fa123456',
+      usernameChangeableAt: '2026-11-06T15:00:00.000Z',
+      bio: 'Oi',
+      city: null,
+      gender: null,
+      privateAccount: false,
+      socials: { instagram: null, tiktok: null, linkedin: null, x: null },
+    };
+    const reasonAfter = (usernameLockReason: unknown) =>
+      applyEditableProfile(cached, {
+        ...edited,
+        usernameLockReason: usernameLockReason as 'moderation' | null,
+      }).usernameLockReason;
+    expect(reasonAfter('moderation')).toBe('moderation');
+    expect(reasonAfter(null)).toBeNull();
+    expect(reasonAfter('central')).toBeNull();
+    // A api de antes da seção 32 não manda o campo: o prazo dela é o do fã.
+    expect(applyEditableProfile(cached, edited).usernameLockReason).toBeNull();
+  });
+
   it('a suspensão (bloco 11) vira ISO e só aparece quando existe', () => {
     expect(
       toFanProfile('uid-camila', {
@@ -234,6 +280,7 @@ describe('perfil do Firestore', () => {
       photoURL: null,
       createdAt: null,
       usernameChangeableAt: null,
+      usernameLockReason: null,
       ...NO_DETAILS,
     });
   });

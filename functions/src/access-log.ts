@@ -10,12 +10,14 @@ import {
 import * as logger from 'firebase-functions/logger';
 
 // O registro de acesso (docs/arquitetura-api.md, 31.6): a cada pedido que chega
-// ao handler da api e a cada chamada que chega ao handler de uma callable do
-// painel, uma linha só com o IP e o uid, que o sink registros-de-acesso guarda
-// por 184 dias (Marco Civil, art. 15; a seção 8 da política de privacidade
-// promete só a data, a hora e o IP). A data e a hora são as da própria entrada
-// do log. Nada de rota, URL, aparelho nem corpo nessa linha. As agendadas, os
-// gatilhos e as filas não escrevem a linha: não são acesso de quem usa o app.
+// ao handler da api, menos o GET /health (32.1, decisão 18), que é a sonda do
+// teste de disponibilidade, e a cada chamada que chega ao handler de uma
+// callable do painel, uma linha só com o IP e o uid, que o sink
+// registros-de-acesso guarda por 184 dias (Marco Civil, art. 15; a seção 8 da
+// política de privacidade promete só a data, a hora e o IP). A data e a hora
+// são as da própria entrada do log. Nada de rota, URL, aparelho nem corpo nessa
+// linha. As agendadas, os gatilhos e as filas não escrevem a linha: não são
+// acesso de quem usa o app.
 
 /**
  * O texto da linha. É contrato: o filtro do sink

@@ -9,6 +9,7 @@ import {
   FAN_CITY_MAX,
   GENDERS,
   isSocialHandle,
+  lockReasonOf,
   normalizeSocialHandle,
   parseProfileChanges,
   profileDiff,
@@ -561,12 +562,13 @@ describe('profileUpdateOf', () => {
 const timestamp = (iso: string) => ({ toMillis: () => Date.parse(iso) });
 
 describe('editableProfileOf', () => {
-  it('o perfil completo, com o prazo do @ em ISO e as quatro redes', () => {
+  it('o perfil completo, com o prazo do @ em ISO, o motivo dele e as quatro redes', () => {
     expect(
       editableProfileOf({
         displayName: 'Camila Ribeiro',
         username: 'camilaribeiro',
         usernameChangeableAt: timestamp('2026-11-07T15:00:00.000Z'),
+        usernameLockReason: 'moderation',
         bio: 'Feira de Santana.\nFã do Netto desde o primeiro show.',
         city: 'Feira de Santana, BA',
         gender: 'woman',
@@ -579,6 +581,7 @@ describe('editableProfileOf', () => {
       displayName: 'Camila Ribeiro',
       username: 'camilaribeiro',
       usernameChangeableAt: '2026-11-07T15:00:00.000Z',
+      usernameLockReason: 'moderation',
       bio: 'Feira de Santana.\nFã do Netto desde o primeiro show.',
       city: 'Feira de Santana, BA',
       gender: 'woman',
@@ -592,6 +595,7 @@ describe('editableProfileOf', () => {
       displayName: null,
       username: 'fa123456',
       usernameChangeableAt: null,
+      usernameLockReason: null,
       bio: null,
       city: null,
       gender: null,
@@ -605,6 +609,7 @@ describe('editableProfileOf', () => {
         bio: 42,
         socials: { x: 'Fora Do Padrão', outra: 'zz' },
         usernameChangeableAt: '2026-11-07',
+        usernameLockReason: 'central',
       }),
     ).toMatchObject({
       gender: null,
@@ -612,7 +617,25 @@ describe('editableProfileOf', () => {
       bio: null,
       socials: { instagram: null, tiktok: null, linkedin: null, x: null },
       usernameChangeableAt: null,
+      usernameLockReason: null,
     });
+  });
+
+  it.each([
+    ['moderation', 'moderation'],
+    ['null', null],
+    ['ausente', undefined],
+    ['central (o motivo do reset, nunca guardado)', 'central'],
+    ['em maiúsculas', 'MODERATION'],
+    ['um número', 1],
+    ['um objeto', { reason: 'moderation' }],
+  ])('o usernameLockReason %s', (_, value) => {
+    const data: Record<string, unknown> = { username: 'fa123456' };
+    if (value !== undefined) data.usernameLockReason = value;
+    expect(editableProfileOf(data).usernameLockReason).toBe(
+      value === 'moderation' ? 'moderation' : null,
+    );
+    expect(lockReasonOf(value)).toBe(value === 'moderation' ? 'moderation' : null);
   });
 });
 

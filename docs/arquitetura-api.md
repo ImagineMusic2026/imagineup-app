@@ -1,8 +1,8 @@
 # Arquitetura da API do app
 
-Nota de arquitetura do servidor do ImagineUP. Ela diz como o app fala com as Cloud Functions, onde moram os pontos, como o ponto é lançado e como o painel lê os números. Vale para o bloco 1 (base do servidor e núcleo de pontos) e deixa a estrutura pronta para os blocos seguintes. O bloco 4 (centrais de verdade) está na seção 19, o bloco 5 (convite com atribuição e origem do fã), na seção 20, o bloco 6 (mural e agenda com conteúdo real), na seção 21, o bloco 7 (missões, níveis, conquistas e extrato), na seção 22, o bloco 8 (ranking e temporadas), na seção 23, o bloco 9 (perfil editável), na seção 24, o bloco 10 (loja e resgate), na seção 25, o bloco 11 (telas do painel), na seção 26, a proteção contra abuso, na seção 27, o perfil novo (bio, gênero, conta privada, redes, a edição pela API e o perfil público), na seção 28, as exigências das lojas (denúncia de perfil, bloqueados, Sobre, conta, suspensão, 429 e Explorar), na seção 29, o filtro do que o fã publica, na seção 30, e a proteção da produção (cópias do banco, alertas e o registro de acesso), na seção 31.
+Nota de arquitetura do servidor do ImagineUP. Ela diz como o app fala com as Cloud Functions, onde moram os pontos, como o ponto é lançado e como o painel lê os números. Vale para o bloco 1 (base do servidor e núcleo de pontos) e deixa a estrutura pronta para os blocos seguintes. O bloco 4 (centrais de verdade) está na seção 19, o bloco 5 (convite com atribuição e origem do fã), na seção 20, o bloco 6 (mural e agenda com conteúdo real), na seção 21, o bloco 7 (missões, níveis, conquistas e extrato), na seção 22, o bloco 8 (ranking e temporadas), na seção 23, o bloco 9 (perfil editável), na seção 24, o bloco 10 (loja e resgate), na seção 25, o bloco 11 (telas do painel), na seção 26, a proteção contra abuso, na seção 27, o perfil novo (bio, gênero, conta privada, redes, a edição pela API e o perfil público), na seção 28, as exigências das lojas (denúncia de perfil, bloqueados, Sobre, conta, suspensão, 429 e Explorar), na seção 29, o filtro do que o fã publica, na seção 30, a proteção da produção (cópias do banco, alertas e o registro de acesso), na seção 31, e a moderação do @, os pedidos de dados e o aviso de api fora do ar, na seção 32.
 
-Em produção desde 14/10/2026: o servidor de todas as seções (66 funções e 44 índices compostos), e o app delas no canal preview da EAS. Os blocos 1 e 4 a 10 saíram em 07/10/2026, o servidor do bloco 11 em 08/10/2026, as seções 27 e 28 de 08 a 09/10/2026 e as seções 29 e 30 em 14/10/2026. O relato de cada publicação está em 26.21.
+Em produção desde 15/10/2026 (UTC): o servidor de todas as seções (68 funções e 44 índices compostos), e o app delas no canal preview da EAS. Os blocos 1 e 4 a 10 saíram em 07/10/2026, o servidor do bloco 11 em 08/10/2026, as seções 27 e 28 de 08 a 09/10/2026, as seções 29, 30 e 31 em 14/10/2026 e a seção 32 em 15/10/2026 (UTC; a noite de 14/10 em Brasília). O relato de cada publicação está em 26.21.
 
 Origem: decisão do dono em 05/10/2026 (API HTTP numa função `onRequest`, pontos calculados na transação da ação) e o levantamento de 05/10/2026 (13 blocos, 26 endpoints, perguntas técnicas em aberto).
 
@@ -24,7 +24,7 @@ Quem mexe no servidor lê esta nota antes. Mudou uma decisão daqui? Mude a nota
 12. Um projeto Firebase só (`imagine-up-app`), mais os emuladores. O ambiente de testes espera o ok da cliente (UP-15).
 13. Bloco 4 (seção 19): vínculo em `users/{uid}/centrals/{artistId}`; `fanCount` somado num shard na transação e copiado para `artists/{id}` por uma fila de tarefas, no máximo uma vez a cada 10 s por central; vínculo novo paga `central_join` uma vez na vida, também na 1l; sair não tira ponto; posição do fã por central só no bloco 8.
 14. Bloco 5 (seção 20): código de convite por fã, sorteado no servidor e criado no primeiro `GET /me/invite`; claim uma vez por conta, em `referrals/{uid}`, só para conta de até 7 dias, pagando quem convidou (visita e cadastro) com o id do evento pela chave da pessoa (o e-mail normalizado, em HMAC-SHA256 com um segredo do servidor), para a conta excluída e recriada não pagar de novo; visita só no app, de conta logada diferente do dono e de outra pessoa (a chave do dono também barra o apelido do e-mail), contada no painel uma vez por pessoa e convidante, pague ou não; origem (tipo de link, destino e `utm_source`, `utm_medium` e `utm_campaign`) no convite e nos agregados por origem e campanha; cadastros por dia no gatilho de cadastro.
-15. Bloco 6 (seção 21): a equipe publica posts e shows pelas callables do painel, com a seção `artists` (provisório até a UP-9); post em `posts/{postId}`, show em `events/{eventId}`, curtida e presença em subcoleções do fã, comentário em `posts/{postId}/postComments`; curtidas e comentários contados em shards e copiados para o post por uma fila, no máximo uma vez a cada 10 s; `postCount` por `count()`; curtir paga uma vez na vida, comentar dentro do limite do dia, "Eu vou" uma vez por show; tetos diários de ações; denunciar comentário e bloquear fã, com a fila da Moderação e a callable `moderateComment`; a exclusão de conta apaga comentários, curtidas, presenças, denúncias e bloqueios, descontando as contagens.
+15. Bloco 6 (seção 21): a equipe publica posts e shows pelas callables do painel, com a seção `artists` (provisório até a UP-9); post em `posts/{postId}`, show em `events/{eventId}`, curtida e presença em subcoleções do fã, comentário em `posts/{postId}/postComments`; curtidas e comentários contados em shards e copiados para o post por uma fila, no máximo uma vez a cada 10 s; `postCount` por `count()`; curtir paga uma vez na vida, comentar dentro do limite do dia, "Eu vou" uma vez por show; tetos diários de ações; denunciar comentário e bloquear fã, com a fila da Moderação e a callable `moderateComment`; a exclusão de conta apaga comentários, curtidas, presenças, denúncias e bloqueios, descontando as contagens. Os limites do vídeo ficam no painel desde 15/10/2026 (21.19).
 16. Bloco 7 (seção 22): catálogo de missões em `config/missions`, versionado e lido pelo cache, com índice por tipo de ação, e as arquivadas em `missionArchive`; períodos do dia e da semana de São Paulo; progresso do fã na carteira, contado na transação da ação (a troca para curtido ou "Eu vou", o comentário e a entrada contam o alvo uma vez por missão e período; o link e o convite contam a pessoa pelo marcador), e a conclusão paga pelo núcleo com `mission:<id>:<período>`, no mesmo `pointsAwarded`; meta da temporada por missões concluídas ou pelos pontos da temporada, com a marca de quem a bateu; conquistas do servidor (nível, primeira vez, ranking no bloco 8) guardadas na carteira; subida de nível devolvida na resposta; tetos do dia na configuração; callables da régua, das missões, das conquistas (seção `missions`) e da temporada (seção `ranking`); extrato provisório no Perfil.
 17. Bloco 8 (seção 23): ranking por consulta ordenada com índice e posição por três `count()` na ordem da lista (pontos, chegada, id), lidas com a página numa transação só de leitura, sem materializar; ranking da central só com membros (`member` no `centralPoints`); uma temporada mostrada para todas as telas (a em andamento, a encerrada esperando a virada ou a última fechada, esta lida do arquivo); seta da semana pelo retrato gravado na carteira e no `centralPoints` toda segunda-feira; virada e retrato pela função agendada `rankingTick`, em páginas com o andamento na mesma transação, com o arquivo em `seasons/{id}/standings`, as temporadas do fã somadas pela virada (e não mais pela troca preguiçosa) e a próxima temporada promovida só no fim; Top 20 no retrato e na virada; callables `scheduleNextSeason`, `endSeason` e `closeSeasonNow`, e o `updateSeason` mais estrito; o aviso de ranking de exemplo sai do app.
 18. Bloco 9 (seção 24): a tela "Editar perfil", aberta pelos Ajustes e pelo hero da 1e; nome e cidade continuam direto no Firestore, pelas regras de hoje; o @ muda por `PUT /me/username`, com as regras do gerador, o padrão do automático (`fa` com números) só para o gerador, a troca atômica das reservas em `usernames/` e uma troca a cada 30 dias, com a disponibilidade em `GET /me/username/availability`; o @ automático não vira o do nome sozinho; a foto é escolhida, recortada e reduzida no app, enviada para `fans/{uid}/` no Storage (só o próprio fã, só JPEG de até 1 MiB, nome controlado, com o perfil existindo) e conferida e gravada por `PUT /me/photo`, com `DELETE /me/photo` para tirar, teto de 10 trocas por dia, a foto antiga apagada pelo gatilho do perfil e os envios que não viraram a foto apagados pela tarefa; as cópias do nome e da foto nos comentários são regravadas por uma fila, uma vez a cada 5 min por fã, com orçamento por dia, e no aparelho do fã as linhas "Você" leem o perfil; o ranking segue lendo o perfil e a temporada fechada segue congelada; a exclusão de conta tira o perfil antes das reservas e apaga a pasta da foto no fim e de novo 1 h depois; até o bloco 11, um script libera o @ de um fã para uma central; sem a API, a tela edita só nome e cidade. (Perfil novo, seção 28: nome, cidade e @ passam a ir pela API, num pedido só com o resto do perfil, e as regras fecham a edição direta; sem a API, a tela fica só leitura; item 21.)
@@ -34,6 +34,7 @@ Quem mexe no servidor lê esta nota antes. Mudou uma decisão daqui? Mude a nota
 22. Exigências das lojas (seção 29): a denúncia de perfil (`POST /fans/:fanId/report`, com os motivos e o teto da denúncia de comentário) numa coleção separada, `profileReportQueue/{uid}`, um item por fã denunciado, com a rodada (`round`) e o resumo do perfil na resolução (`resolvedDigest`), para a mesma pessoa só reabrir com o perfil mudado; a `moderationQueue`, o `moderateComment` e o painel publicado não mudam; a equipe fecha o item pela callable `resolveProfileReport` (66 funções e 44 índices compostos); a lista para desbloquear (`GET /me/blocks`, com o cursor pelo índice da inclusão) e o `blockedByMe` no perfil público; a exclusão de conta tira as denúncias de perfil do fã e fecha o item dele; no app, "Denunciar perfil" e "Bloquear" (com "Bloquear e denunciar") no perfil público, a tela "Fãs bloqueados", os Ajustes com Segurança, Conta (trocar o e-mail e a senha pelo Firebase Auth) e Sobre (privacidade, termos, regulamento, contato e versão), o aviso de conta suspensa com um canal por recusa, o 429 separado em ritmo (tenta de novo sozinho) e teto do dia (nunca), e a Explorar como vitrine das centrais; tudo por EAS Update, sem mudar o fingerprint.
 23. Filtro do que o fã publica (seção 30): uma lista de termos no servidor, em `functions/src/content-filter/` (código puro, sem dependência nova), conferida antes de publicar no comentário, no nome, no @, na bio, na cidade e nas redes, dentro das funções puras que o `validate` e a transação já chamam, sem leitura nova; o texto e cada termo passam pela mesma normalização (acentos, homóglifos, letras soltas, números e símbolos no lugar de letras e letras repetidas), com palavra inteira e frase no texto livre e trecho só dentro de um pedaço dos campos de identidade; o repositório, público, guarda só as chaves (o SHA-256 de cada pedaço normalizado), e a lista legível fica fora de todo repositório, com o dono; toda categoria barrada em todo campo até a aprovação das lojas; a recusa usa os códigos de hoje com o motivo `not_allowed` (`comment_invalid` e `profile_invalid`), e o @ barrado sai como reservado, sem gravar nada e sem dizer o termo; o nome do cadastro barrado vira "Fã", e o @ dele, o `fa`, no `createUserProfile` e no gatilho do perfil; a linha do log da `api` ganha o `code` e o `reason`; nenhuma regra, índice, fila, callable nem teto novo; no app, a frase com o link "Escrever para a equipe" embaixo do compositor e no campo do perfil, e o comentário recusado com o campo ocupado vira a linha "Não publicado", que sobrevive ao app fechado; o app vai por EAS Update, sem mudar o fingerprint, e a publicação saiu junto com a da seção 29, em 14/10/2026, num lote só de cinco funções.
 24. Proteção da produção (seção 31): o Firestore com o PITR de 7 dias, a proteção contra apagar e um backup diário com 14 dias, todos dentro dos 30 dias da política; alertas por e-mail no Cloud Monitoring (erros nas funções, a `api` com 5xx, as agendadas falhando ou paradas), silenciados em todo deploy de funções; e o registro de acesso por 184 dias numa linha de log própria, `acesso`, só com o IP (o último item do `X-Forwarded-For`) e o uid, escrita a cada pedido da `api` e a cada chamada das callables do painel (pelo `onPanelCall`), levada por um sink a um bucket de log em southamerica-east1; nenhuma regra, rota, callable ou pacote novo, e o fingerprint do app não muda.
+25. Moderação do @, pedidos de dados e aviso de api fora do ar (seção 32): o `resetFanUsername` ganha o motivo (`reason`); o `moderation`, o padrão, deixa o fã com o @ automático por 30 dias, com o `usernameLockReason` no perfil para o app dizer que foi a equipe, e o `central`, para o @ de um artista, fica sem prazo; duas callables só de admin, sem seção nova: `exportFanData` (o arquivo em JSON, pela resposta da callable, em partes que o painel junta e baixa) e `deleteFanAccount` (a exclusão do Auth, que o gatilho de sempre completa), com o e-mail da conta conferido, o login de até 10 minutos, o teto do dia de 20 exportações e 5 exclusões por pessoa e a auditoria só com o uid; a lista das fontes do fã (`FAN_DATA_SOURCES`) diz o que vai ao arquivo e o que a exclusão faz com cada uma, presa ao `deleteUserData` por teste; o `GET /health` na `api`, sem login e sem as linhas `acesso` e `api`, pedido a cada 5 minutos por um teste de disponibilidade, com o alerta por e-mail no canal de 31.4; o `posterUrl` na mídia do vídeo, a capa grande que o app do bloco B lê; 68 funções, nenhuma regra, índice, fila ou TTL novo, e o fingerprint do app não muda.
 
 ## 1. Formato da API
 
@@ -270,6 +271,8 @@ Fora dos 26, nova na proteção contra abuso: `POST /me/photo/upload` (a vaga do
 Fora dos 26, novas no perfil novo: `PUT /me/profile` (a edição inteira num pedido só, `profile/api.ts` `updateMyProfile`) e `GET /fans/:fanId` (o perfil público de outro fã, `profile/api.ts` `fetchFanProfile`), seção 28.
 
 Fora dos 26, novas nas exigências das lojas: `POST /fans/:fanId/report` (denunciar o perfil de outro fã, `posts/api.ts` `reportFan`) e `GET /me/blocks` (a lista de quem o fã bloqueou, `posts/api.ts` `fetchBlockedFans`), seção 29. O `DELETE /me/blocks/:fanId` do bloco 6 ganhou tela (`posts/api.ts` `unblockFan`, na tela "Fãs bloqueados" e no perfil público), e o `GET /fans/:fanId` ganhou o `blockedByMe`.
+
+Fora da tabela e da `API_ROUTES`, nova na seção 32: `GET /health`, sem login, sem App Check e sem Firestore, que responde 200 com `{"ok":true}` ao teste de disponibilidade (32.1, decisões 17 e 18). O app não chama. Ela vem antes de tudo no handler, e por isso a `API_ROUTES` segue com 44; o `POST /health`, o `HEAD /health`, o `/health/` e o `/health/x` dão 404 `not_found`.
 
 Os endpoints 25 e 26 são os do bloco 10 (seção 25). O 26 passa a mandar o corpo `{ expectedCost }`, e a resposta dos dois ganha o status de cada pedido.
 
@@ -894,7 +897,7 @@ Ficam para depois: a leitura de `users/{uid}` pela seção Fãs (bloco 11, uma l
 4. Novo: as chaves de `idempotency` com `uid == <uid>`, em lotes de até 500 (as respostas guardadas podem ter texto do fã; o TTL só apagaria em 30 dias).
 5. `staff/{uid}` (como hoje).
 
-O bloco 4 muda o passo 2: o documento do perfil sai sozinho primeiro, depois saem os vínculos com as centrais (descontando o `fanCount`) e só então o `recursiveDelete(users/{uid})`. Ordem completa e motivo na seção 19 (19.12). O bloco 5 acrescenta o código, os links e os convites (20.10). O bloco 6 acrescenta as curtidas, os comentários, as denúncias e os bloqueios (21.12). O bloco 8 acrescenta a linha do fã no arquivo de cada temporada (23.13). O bloco 9 passa as reservas de @ para depois do perfil e acrescenta a pasta da foto no fim (24.11). O bloco 10 cancela os pedidos de resgate abertos e tira o dado pessoal de todos os pedidos do fã, depois do engajamento do mural (25.11).
+O bloco 4 muda o passo 2: o documento do perfil sai sozinho primeiro, depois saem os vínculos com as centrais (descontando o `fanCount`) e só então o `recursiveDelete(users/{uid})`. Ordem completa e motivo na seção 19 (19.12). O bloco 5 acrescenta o código, os links e os convites (20.10). O bloco 6 acrescenta as curtidas, os comentários, as denúncias e os bloqueios (21.12). O bloco 8 acrescenta a linha do fã no arquivo de cada temporada (23.13). O bloco 9 passa as reservas de @ para depois do perfil e acrescenta a pasta da foto no fim (24.11). O bloco 10 cancela os pedidos de resgate abertos e tira o dado pessoal de todos os pedidos do fã, depois do engajamento do mural (25.11). A seção 32 não muda o `deleteUserData`: a equipe passa a disparar a mesma exclusão pelo painel (`deleteFanAccount`, só admin, que apaga a conta do Auth e deixa o resto ao gatilho), e a lista das fontes do fã (`FAN_DATA_SOURCES`, em `functions/src/fan-data/sources.ts`) diz o que a exclusão faz com cada uma. O comentário do `deleteUserData` aponta para a lista, e um teste de emulador prende as duas pontas. Fica o uid do fã excluído no `actor` dos lançamentos do convite e das missões que ele pagou a quem o convidou, na carteira dessa pessoa (32.3 e a pergunta 16 de 32.13, para o jurídico).
 
 Continua idempotente e seguro de repetir (o gatilho tem `retry: true`), e o `handleUserCreated` que desfaz a conta usa a mesma função.
 
@@ -2161,7 +2164,7 @@ Cada item traz a recomendação e o motivo. As perguntas para a cliente e para o
 
 1. **Quem publica é a equipe, pelo painel, com a seção `artists`.** Admin, ou editor com `artists`, cria, edita, publica e tira do ar posts e shows, e apaga o rascunho que nunca foi ao ar (decisão 4); o leitor com `artists` só vê. Sem seção nova nos `SECTION_IDS`: o conteúdo é da central, e uma seção nova mexeria em papéis, convites e regras do painel. Se a cliente quiser separar quem cuida das centrais de quem publica, uma seção própria entra depois, trocando a seção em três lugares: o `PANEL_CONTENT_SECTION` das funções novas, o `firestore.rules` (a leitura de `posts`, `events` e `postComments`) e o `storage.rules` (o envio da mídia). Provisório até a UP-9.
 2. **Post em `posts/{postId}`, na raiz, com id automático.** O mural junta várias centrais numa consulta (`artistId in [...]`), e a raiz dispensa o grupo de coleção. O id automático (20 caracteres) cabe no `post:<id>` do convite (`[A-Za-z0-9_-]{1,128}`) e no `eventId` do extrato. O seed usa os ids das fixtures (`p-clipe`, `p-show`...), que cabem nos dois.
-3. **A mídia sobe do navegador para `posts/{postId}/`, e a função confere, como as fotos das centrais.** Post de foto: duas versões da foto (a do detalhe e a miniatura). Post de vídeo: a capa em duas versões, obrigatória, e o arquivo `video/mp4` opcional, até 50 MB. O app não toca vídeo (mostra a capa com a marca de vídeo, como hoje); o arquivo fica guardado para quando tocar. Guardar o mp4 é pergunta para o dono (21.16).
+3. **A mídia sobe do navegador para `posts/{postId}/`, e a função confere, como as fotos das centrais.** Post de foto: duas versões da foto (a do detalhe e a miniatura). Post de vídeo: a capa em duas versões, obrigatória, e o arquivo `video/mp4` opcional, até 50 MB. O app não toca vídeo (mostra a capa com a marca de vídeo, como hoje); o arquivo fica guardado para quando tocar. Guardar o mp4 é pergunta para o dono (21.16). Desde 15/10/2026, o painel confere o arquivo antes do envio (H.264, faststart, nada fragmentado, até 720p, 20 MiB e 1 minuto), e o teto de 50 MiB do `storage.rules` cai para 20 MiB com a seção 33 (21.19).
 4. **Rascunho, no ar e fora do ar; apagar só o que nunca foi ao ar.** Post e show nascem rascunho, como a central: o `storage.rules` só aceita mídia de um documento que já existe. O que já foi publicado uma vez (`publishedAt` preenchido) não se apaga: pediria limpar curtidas, comentários, denúncias, presenças, links de convite e arquivos, e tirar do ar já some com o conteúdo do app. O rascunho que nunca foi ao ar se apaga (`deletePost` e `deleteEvent`, 21.9): nenhuma rota aceita curtida, comentário, presença ou link de conteúdo que não está no ar, então ele só tem o documento e os arquivos. Sem isso, um rascunho criado por engano prenderia a central para sempre (o `has-content` da decisão 23), e um show rascunho prenderia todas as centrais dele.
 5. **O que o fã vê.** Post no ar de central no ar. O mural (`/feed`) mostra só as centrais do fã; a grade da 1d e o detalhe mostram para qualquer fã logado, porque o link compartilhado abre para quem ainda não é membro. Fã sem central vê o mural vazio, com o texto de hoje ("O mural dos seus artistas aparece aqui."). Motivo: é o "Do seu fandom" do protótipo, e a frase da sheet de sair volta a ser verdade.
 6. **Curtidas e comentários contados em shards e copiados para o post por uma fila, como o `fanCount`.** 16 shards em `postStats/{postId}/countShards/{n}`; a fila `syncPostCounts` copia `likeCount` e `commentCount` para `posts/{postId}` no máximo uma vez a cada 10 s por post. Motivo: um post popular recebe curtidas de muitos fãs ao mesmo tempo, e somar no documento do post o deixaria disputado (perto de 1 gravação por segundo). Para quem acabou de curtir ou comentar, a leitura soma o que a cópia ainda não viu (21.6).
@@ -2254,6 +2257,7 @@ O `Post`, igual nas três rotas:
   "media": {
     "url": null,
     "thumbnailUrl": null,
+    "posterUrl": null,
     "width": 1920,
     "height": 1080
   },
@@ -2267,7 +2271,7 @@ O `Post`, igual nas três rotas:
 ```
 
 - `artist`: `name` e `verified` de `artists/{id}`; `photoURL` é o `thumb.url` ou `null`.
-- `media`: foto, `{ url: photo.url, thumbnailUrl: thumb.url, width: photo.width, height: photo.height }`; vídeo, o mesmo com a capa e `url` do mp4 (ou `null` sem o arquivo); texto e show, `null`. Foto ou vídeo sem mídia gravada (só o seed publica assim, como o clipe do exemplo acima) responde `{ url: null, thumbnailUrl: null, width, height }` com as medidas padrão das callables (foto 1080x1350, vídeo 1920x1080), o mesmo formato das fixtures (`mediaOf` em `posts/fixtures.ts`), e nunca `null`: o app decide a miniatura pela mídia (`withThumbnail` da `PostRow`, a mídia e a marca de vídeo da `PostContent`, o play da `PostGridRow`) e mostra o placeholder da marca pelo id quando a URL é nula. Com `media: null`, o clipe do seed sairia sem miniatura na 1b e como texto na grade da 1d.
+- `media`: foto, `{ url: photo.url, thumbnailUrl: thumb.url, width: photo.width, height: photo.height }`; vídeo, o mesmo com a capa e `url` do mp4 (ou `null` sem o arquivo); texto e show, `null`. Foto ou vídeo sem mídia gravada (só o seed publica assim, como o clipe do exemplo acima) responde `{ url: null, thumbnailUrl: null, width, height }` com as medidas padrão das callables (foto 1080x1350, vídeo 1920x1080), o mesmo formato das fixtures (`mediaOf` em `posts/fixtures.ts`), e nunca `null`: o app decide a miniatura pela mídia (`withThumbnail` da `PostRow`, a mídia e a marca de vídeo da `PostContent`, o play da `PostGridRow`) e mostra o placeholder da marca pelo id quando a URL é nula. Com `media: null`, o clipe do seed sairia sem miniatura na 1b e como texto na grade da 1d. (Seção 32, decisão 25, pelo contrato de 33.2: no vídeo, a mídia ganha o `posterUrl`, a capa grande, `photo.url`, ou `null` sem mídia gravada, como o clipe do exemplo; a foto sai sem o campo. O app lê o campo no bloco B.)
 - `event`: só no post de show, com o show no ar e não encerrado: `{ id, title, startsAt, city: "<cidade>, <UF>" }` (o `PostEvent` do app, que mostra "Aracaju, SE"). Senão, `null`.
 - `createdAt`: o `publishedAt` (o "há 2 h" do mural é desde a publicação).
 - `likeCount` e `commentCount`: as cópias, com a correção de quem chama (21.6).
@@ -3156,6 +3160,18 @@ Para o dono:
 - `blockLists` é só do servidor, nem a equipe lê.
 - O emulador não exige índice: a falta só aparece em produção, como código 9. Índices antes da `api`.
 - Callback passado ao `useMutation` roda com a tela desmontada: a sheet de opções confere se está montada antes de navegar.
+
+### 21.19 Limites do vídeo, conferidos no painel (15/10/2026)
+
+Depois do bloco 6, o painel passou a conferir o mp4 no navegador, antes do envio (`src/lib/video-check.ts` e o `videoFileProblem` de `src/lib/posts.ts`, no `imagineup-admin`, de 15/10/2026: os PRs #7, #12 e #13; o limite de 1 minuto nos PRs #15 e #19; o fragmentado nos PRs #20 e #22), e o dono decidiu a duração no mesmo dia. O servidor não mudou: o `storedVideo` (`functions/src/posts/panel.ts`) confere só se o arquivo existe e se é `video/mp4`, e o `storage.rules` aceita até 50 MiB (`50 * 1024 * 1024`, 21.11). Os limites ficam no painel pelo motivo da decisão 1: só a equipe envia vídeo.
+
+- **O que o painel aceita (com o PR #22):** MP4 de até 20 MiB (`20 * 1024 * 1024`; a frase diz "20 MB"), com o MOV recusado pela frase dele; H.264 na entrada `avc1`, com o perfil Baseline, Main ou High (o `profile_idc` 66, 77 ou 100, lido no `avcC`); o `moov` antes do `mdat` (faststart), para o vídeo começar a tocar antes de baixar inteiro; nada fragmentado; até 720p, com o lado menor até 720 e o maior até 1280, pela medida codificada, só girada (o `pasp` fica de fora do limite); e até 60 s arredondados. Recusa o HEVC (`hvc1` e `hev1`) e as variantes `avc2` a `avc4`, cada um com a sua frase, e qualquer outro perfil (como o High 10 e o 4:2:2) ou o arquivo sem `avcC`, com uma frase só. A tela mostra só a primeira recusa, na ordem em que a pessoa resolve ao exportar de novo: o arquivo (MOV, outro formato, mais de 20 MiB, vazio), a falta de imagem de vídeo, o fragmentado, a duração, o codec, o perfil, a resolução e o faststart.
+- **Nada fragmentado (PR #22).** Todo MP4 com `mvex` no `moov` é recusado, antes da duração, do codec e do resto, com a frase "Este MP4 está fragmentado. Exporte de novo em MP4 comum, sem fragmentar.". No fragmentado, o `mvhd` e as faixas cobrem só o que está no próprio `moov`, que pode ser o primeiro fragmento (um vídeo de 100 s entrava como 0:02), e a duração inteira só vem no `mehd`, que muito export não traz. O PR #20 lia o `mehd` e deixava passar o fragmentado que tem um (MP4Box, Bento4), sem ninguém conferir se ele toca, porque o app ainda não toca vídeo; o #22 tirou essa leitura.
+- **Até 1 minuto (decisão do dono de 15/10/2026).** Com 20 MiB, um minuto em 720p dá uns 2,7 Mbps de vídeo, com o áudio a 128 kbps: a qualidade de um streaming. Com 2 minutos, seriam uns 1,3 Mbps, fraco num clipe com movimento; manter a qualidade pediria uns 40 MiB, o dobro de dados para o fã no 4G e de saída do Storage, e o cache de 200 MB do player da seção 33 guardaria metade dos vídeos. O limite está no painel desde os PRs #15 e #19 e conta os segundos arredondados: até 60,499 s passa, porque muito export de "1:00" sai com uns centésimos a mais (o enchimento do AAC, o corte sem recodificar, 1800 quadros a 29,97 fps). A duração lida já vem arredondada ao milissegundo, então de 60,4995 s a 60,5 s ela arredonda duas vezes e fica de fora, meio milésimo de diferença. A recusa diz a duração ("O vídeo tem 1 min 40 s. O limite é de 1 minuto: corte e exporte de novo."), e a regra que a tela mostra junto do vídeo (o `VIDEO_RULES_TEXT`) cita o minuto.
+- **O que vai no arquivo:** o painel grava no `customMetadata` do mp4 o `durationMs`, o `width` e o `height`, em texto: a medida na tela, já girada e corrigida pela caixa `pasp` (aceita entre 1/4 e 4; fora disso, vale 1), com lados inteiros a partir de 1. Em 15/10/2026, o Storage de produção não tinha nenhum arquivo de post (`gcloud storage ls`, só leitura): nenhum vídeo do painel antigo, sem essas conferências, nem da janela entre os PRs #7 e #12, em que o `pasp` ainda não entrava na medida, ficou para trás.
+- **O post não guarda a duração nem a medida do vídeo (adiado sem data, decisão do dono de 15/10/2026).** O `PostMedia` manda o `width` e o `height` da capa, e o player da seção 33 segue a capa, presa entre 4:5 e 16:9; nenhum app lê a duração. Copiar o `customMetadata` para o post só vale se o app mostrar a duração no mural, e pediria publicar todas as funções. Quando entrar: campos novos e opcionais, sem mudar o sentido do `width` e do `height` da capa, que o app publicado usa; a conferência no `storedVideo` com uma faixa própria para o `durationMs` (a do `imageSide` vai só até 10.000 e cortaria todo vídeo de mais de 10 s); e uma carga para os posts de antes, porque o `storedVideo` só roda quando o `updatePost` traz o `videoPath`.
+- **O teto do `storage.rules` cai para 20 MiB junto com a seção 33 (decisão do dono de 15/10/2026).** Exatamente `20 * 1024 * 1024`, a conta do painel (um `20_000_000` recusaria arquivos que o painel aceita), com o teste de `tests/storage-rules.test.ts` e só o `npm run rules:deploy`, sem função e sem silenciar os alertas. A regra só vale para envio novo: o vídeo que já está no Storage continua tocando.
+- **Proporção:** sem limite. O vídeo em pé (9:16) aparece no player da seção 33 com faixas nas laterais; mostrar em pé na altura toda é decisão para quando a cliente postar vídeo vertical.
 
 ## 22. Bloco 7: missões, níveis, conquistas e extrato
 
@@ -4906,8 +4922,8 @@ Cada item traz a recomendação e o motivo. As perguntas para a cliente e para o
 1. **Nome e cidade continuam direto no Firestore, pelas regras de hoje.** O app grava com `updateDoc` só os campos que mudaram e `updatedAt: serverTimestamp()`, como o `fillMissingProfileName`, e a escuta que já existe (`useWatchMyProfile`) atualiza todas as telas. Motivo: a regra já está pronta e testada (`visibleLine()`, 1 a 60 no nome, 1 a 80 na cidade, `null` limpa a cidade, uma edição a cada 10 s), e a API não ganharia nada com isso. O app não mexe no nome do Auth (`updateProfile`): o perfil é a fonte, e o nome da sessão só vale como reserva para o perfil sem nome (`useFanIdentity`). (Perfil novo, 28.1, decisões 8 a 10: nome e cidade passam a ir pela API, no `PUT /me/profile`, com o teto `name_change`, e as regras fecham a edição direta, salvo o primeiro nome do perfil sem nome.)
 2. **O @ muda por rota da API.** `PUT /me/username` troca a reserva antiga pela nova e grava o perfil numa transação só, e `GET /me/username/availability` diz se um @ está livre enquanto o fã digita. Motivo: `usernames/` é do servidor (unicidade com as centrais e com o gerador), e a troca atômica das duas reservas só cabe numa transação do Admin SDK.
 3. **As regras do @ escolhido são as do gerador, mais duas.** Formato `USERNAME_PATTERN` (`^[a-z0-9]{3,20}$`, o mesmo do cadastro); fora dos reservados (`RESERVED` com os números no lugar de letras e o "rn" no lugar de "m", e os `RESERVED_HANDLES` das centrais, exatos: a função `looksReserved` de `functions/src/profile.ts` passa a ser exportada como `isReservedUsername`); único em `usernames/`, contra fãs e centrais. As duas a mais: o padrão do automático (`^fa[0-9]+$`) fica só para o gerador, para o automático continuar reconhecível e o fã não ocupar o espaço que o gerador sorteia; e o servidor normaliza só o óbvio (tira espaços das pontas e um `@` do começo, passa para minúsculas), sem trocar acento por letra: "camilaribeirõ" é recusado, e não vira outro @ sem o fã ver. Para o padrão valer só para o sorteio, o gerador deixa de tirar do nome uma base no formato `^fa[0-9]*$` (o nome "Fa 12" dava `fa12`, e `fa12` com 4 dígitos dá `fa` com 6, igual ao sorteio): essa base vira a do automático (`usernameBase` devolve `fa`). Assim todo @ `^fa[0-9]+$` criado daqui em diante é sorteio. Um perfil antigo com um @ desses tirado do nome aparece como automático na tela, o que só muda o selo e a dica.
-4. **O @ automático não vira o do nome sozinho.** Responde a pendência do `CLAUDE.md`. Quem ficou com o `fa` (nome que chegou depois da espera do cadastro, Apple sem nome, perfil antigo) troca pela tela, que destaca o automático. Motivo: trocar sozinho mudaria um @ que o fã pode já ter mostrado a alguém, e uma regra a mais no gatilho de cadastro e na edição do nome teria de decidir o que fazer com o @ do nome já tomado. A primeira troca a partir do automático é livre: o prazo de 30 dias só conta depois de uma troca do fã.
-5. **Uma troca a cada 30 dias, contada no servidor.** A troca grava `usernameChangedAt` e `usernameChangeableAt` (a troca mais 30 dias) no perfil. O app lê o `usernameChangeableAt` pela escuta do perfil, sem rota a mais, e mostra a data; o `usernameChangedAt` é o registro do servidor (a resposta do @ igual ao de agora o devolve). Motivo: o prazo é regra do servidor; guardado no perfil, a tela sabe antes de o fã digitar, e mudar o prazo não exige build. Mudança de prazo não é retroativa (quem trocou antes fica com a data gravada), como os valores de pontos (seção 9). O @ antigo fica livre na hora, na mesma transação. Motivo: o @ do fã não aparece para os outros fãs (o ranking e os comentários mostram o nome), então segurar o antigo não protege ninguém e prenderia @ à toa. Consequência: o @ não identifica um fã ao longo do tempo (24.16).
+4. **O @ automático não vira o do nome sozinho.** Responde a pendência do `CLAUDE.md`. Quem ficou com o `fa` (nome que chegou depois da espera do cadastro, Apple sem nome, perfil antigo) troca pela tela, que destaca o automático. Motivo: trocar sozinho mudaria um @ que o fã pode já ter mostrado a alguém, e uma regra a mais no gatilho de cadastro e na edição do nome teria de decidir o que fazer com o @ do nome já tomado. A primeira troca a partir do automático é livre: o prazo de 30 dias só conta depois de uma troca do fã. (Seção 32, decisão 1: depois do `resetFanUsername` com o motivo `moderation`, o padrão, o fã também espera 30 dias, porque o reset grava o prazo; com o `central` e pelo script, a troca seguinte continua livre.)
+5. **Uma troca a cada 30 dias, contada no servidor.** A troca grava `usernameChangedAt` e `usernameChangeableAt` (a troca mais 30 dias) no perfil. O app lê o `usernameChangeableAt` pela escuta do perfil, sem rota a mais, e mostra a data; o `usernameChangedAt` é o registro do servidor (a resposta do @ igual ao de agora o devolve). Motivo: o prazo é regra do servidor; guardado no perfil, a tela sabe antes de o fã digitar, e mudar o prazo não exige build. Mudança de prazo não é retroativa (quem trocou antes fica com a data gravada), como os valores de pontos (seção 9). O @ antigo fica livre na hora, na mesma transação. Motivo: o @ do fã não aparece para os outros fãs (o ranking e os comentários mostram o nome), então segurar o antigo não protege ninguém e prenderia @ à toa. Consequência: o @ não identifica um fã ao longo do tempo (24.16). (Seção 32, decisão 2: a troca do fã grava também `usernameLockReason: null`, e o reset da Moderação, `'moderation'`; é por ele que o app diz quem trocou o @.)
 6. **Foto: o app escolhe, recorta, reduz e envia; a API confere e grava.** Galeria ou câmera (`expo-image-picker`, com o recorte quadrado do sistema), recorte quadrado pelo centro e redução para 512 × 512 em JPEG de qualidade 0,8 (`expo-image-manipulator`), envio direto ao Storage (`fans/{uid}/photo-<id>.jpg`) e `PUT /me/photo` com o caminho. A função confere caminho, existência, tipo, tamanho, a idade do arquivo (enviado há no máximo 10 min e depois da última troca de foto do perfil, o `photoUpdatedAt`) e o começo do arquivo (os bytes `FF D8 FF` e, no cabeçalho do JPEG, largura e altura de 1 a 1024), grava `photoURL` (a URL de download com token), `photoPath` e `photoUpdatedAt`, e a foto anterior sai do Storage. É o padrão das fotos das centrais (nome novo a cada envio, a função confere e grava a URL, a pasta é limpa depois). Motivo do envio direto: a API recusa corpo acima de 16 KiB, e uma foto em base64 passaria por ela sem ganho. Motivo do começo conferido: o `contentType` é o que o cliente diz; sem dependência nova para decodificar a imagem, os 3 primeiros bytes barram o arquivo que não é JPEG, e a largura e a altura do marcador SOF, lidas nos primeiros 64 KiB, barram o JPEG de 1 MiB com dimensões enormes, pesado de decodificar no aparelho de quem vê o comentário ou o ranking. Motivo da idade: um arquivo velho ou de antes da última troca nunca vira a foto, e por isso a limpeza pode apagá-lo sem correr com o `PUT` (decisão 8).
 7. **Pasta `fans/{uid}/` com regra própria.** Só o próprio fã grava na pasta dele, só `image/jpeg`, de 1 byte a 1 MiB, com o nome `photo-<id>.jpg` (o `id` é o `createIdempotencyKey()` do app), sem sobrescrever, e só com `users/{uid}` existindo. Ler pelo caminho (o arquivo e os metadados), só o dono: o app confere os metadados antes de enviar de novo, para saber se o envio de uma tentativa já chegou. Listar, trocar e apagar, ninguém (o servidor apaga). Motivo: os outros fãs veem a foto pela URL com token, que não passa pelas regras. O perfil exigido barra a conta só da equipe e a conta excluída, cujo token ainda vale até 1 h.
 8. **A foto antiga sai na hora; os envios que não viraram a foto, na tarefa.** O gatilho do perfil (`queueFanProfileSync`, 24.7) apaga o arquivo do `photoPath` anterior assim que o perfil troca ou tira a foto. A tarefa `syncFanProfile` varre a pasta e apaga o que não é a foto de agora e foi enviado antes do `photoUpdatedAt` ou há mais de 15 min (`ABANDONED_UPLOAD_MS`). Assim o envio que falhou antes da troca que deu certo, o abandonado mais comum, sai na tarefa dessa troca. Motivo de não haver corrida com o `PUT`: ele recusa o arquivo de mais de 10 min ou de antes da última troca (decisão 6), então nada que a varredura apaga pode virar a foto depois; e a folga de 5 min entre os 10 e os 15 min cobre o pedido que ainda está na transação. O envio que ainda vai chegar ao `PUT` (depois da última troca e com menos de 15 min) fica. O envio abandonado sem troca nenhuma depois sai na próxima troca ou remoção de foto, na próxima mudança de nome ou na exclusão da conta, como os envios abandonados das centrais.
@@ -5062,12 +5078,12 @@ Nenhuma coleção de raiz nova (só a subcoleção `profileSync` do perfil) e ne
 3. `usernameRefusal(username)`: `automatic` ou `reserved` é 400 `username_invalid`.
 4. `usernameChangeableAt` depois do agora: 409 `username_change_too_soon`, com `details: { changeableAt }`.
 5. `tx.getAll(usernames/{novo}, usernames/{atual})`. A nova existe com o `uid` de quem chama (sobra de uma falha antiga; não deveria acontecer): segue sem criar. Existe de outro fã ou de uma central: 409 `username_taken`.
-6. Grava: `tx.create(usernames/{novo}, { uid, createdAt: agora })` (quando ela não existe); `tx.delete(usernames/{atual})` só quando ela existe e o `uid` dela é o de quem chama (uma reserva de central nunca sai); `tx.update(users/{uid}, { username, usernameChangedAt: agora, usernameChangeableAt: agora + 30 dias })`.
+6. Grava: `tx.create(usernames/{novo}, { uid, createdAt: agora })` (quando ela não existe); `tx.delete(usernames/{atual})` só quando ela existe e o `uid` dela é o de quem chama (uma reserva de central nunca sai); `tx.update(users/{uid}, { username, usernameChangedAt: agora, usernameChangeableAt: agora + 30 dias })`. Desde a seção 32, o mesmo `update` grava `usernameLockReason: null` (`writeUsernameSwap`).
 7. Responde `{ username, changedAt, changeableAt }`.
 
 Dois pedidos pelo mesmo @ ao mesmo tempo (dois fãs, ou um fã e o gerador de um cadastro, ou o `createArtist` do painel): as transações disputam `usernames/{novo}`; a que perde volta com `ABORTED` (o SDK repete) ou com `ALREADY_EXISTS` no `tx.create` (o `retryOnAlreadyExists` do `runIdempotent` roda de novo uma vez), e a nova rodada acha a reserva: `username_taken`. Dois pedidos do mesmo fã com chaves diferentes: com @ diferentes, o segundo acha o prazo gravado pelo primeiro e recebe `username_change_too_soon`; com o mesmo @, o segundo acha o @ já trocado, responde o de agora (passo 2), e os dois recebem 200 com uma reserva só.
 
-**`releaseUsername`** (o script de 24.9, fora da API, numa transação do Admin SDK, sem `runIdempotent`): lê `users/{uid}` e `usernames/{@}`; a reserva que não existe, de uma central ou de outro uid, ou o perfil com outro @, recusa sem gravar. Lê os candidatos do gerador para o automático (`usernameCandidates('fa')`, num `tx.getAll`) e fica com o primeiro livre. Grava como o passo 6 da rota, com `usernameChangeableAt: null` (o fã escolhe outro @ na hora, sem esperar) e sem mexer no `usernameChangedAt`, que é das trocas do fã. Devolve o @ novo.
+**`releaseUsername`** (o script de 24.9, fora da API, numa transação do Admin SDK, sem `runIdempotent`): lê `users/{uid}` e `usernames/{@}`; a reserva que não existe, de uma central ou de outro uid, ou o perfil com outro @, recusa sem gravar. Lê os candidatos do gerador para o automático (`usernameCandidates('fa')`, num `tx.getAll`) e fica com o primeiro livre. Grava como o passo 6 da rota, com `usernameChangeableAt: null` (o fã escolhe outro @ na hora, sem esperar) e sem mexer no `usernameChangedAt`, que é das trocas do fã. Devolve o @ novo. (Seção 32: o núcleo é o `releaseUsernameIn`, com o motivo obrigatório. O script passa `central`, que grava o prazo e o `usernameLockReason` como `null`; o `resetFanUsername` com `moderation` grava o prazo de 30 dias e o `'moderation'`, 32.4.)
 
 **`PUT /me/photo`** (no `runIdempotent`):
 
@@ -6297,7 +6313,7 @@ No molde de 21.9 e 25.8: `onCall` exportada no `src/index.ts` depois do `setGlob
 | `adjustFanPoints` | `fans`, edição | `{ uid, adjustmentId, balance?, xp?, season?, central?: { artistId, season?, total? }, note }` | `{ status: 'applied' \| 'duplicate', balance, xp, seasonPoints }` | `invalid-request`, `self`, `fan-not-found`, `artist-not-found`, `season-required`, `negative-counter` (`details.counter`), `adjust-above-limit` (`details.max`), `adjust-daily-limit` (`details.counter`, `details.remaining`), `adjustment-id-reused` (`details.entry`) |
 | `findFanByEmail` | `fans`, edição | `{ email }` | `{ uid: string \| null }` | `invalid-request`, `lookup-daily-limit` |
 | `getPanelRanking` | `ranking`, ver | `{ artistId?: string \| null, cursor?: string \| null }` | `{ season, items, nextCursor }` | `invalid-request`, `artist-not-found` |
-| `resetFanUsername` | `moderation`, edição | `{ uid, username }` | `{ ok: true, username }` | `invalid-request`, `self`, `fan-not-found`, `username-changed`, `username-of-central` |
+| `resetFanUsername` | `moderation`, edição | `{ uid, username, reason? }` (o `reason` desde a seção 32) | `{ ok: true, username, changeableAt }` (o `changeableAt` desde a seção 32) | `invalid-request`, `self`, `fan-not-found`, `username-changed`, `username-of-central` |
 | `clearFanPhoto` | `moderation`, edição | `{ uid }` | `{ ok: true }` | `invalid-request`, `self`, `fan-not-found` |
 | `setFanSuspended` | `moderation`, edição | `{ uid, suspended, reason?, note? }` | `{ ok: true, suspended }` | `invalid-request`, `self`, `fan-not-found` |
 | `hideFanComments` | `moderation`, edição | `{ uid }` | `{ hidden, more }` | `invalid-request`, `self` |
@@ -6321,13 +6337,15 @@ Mensagens: `self` "Você não pode mudar a sua própria conta de fã pelo painel
 
 **`getPanelRanking`** (`ranking/panel.ts`): o `readLeaderboard` de `ranking/service.ts` com uma opção nova que não exige central publicada (a central precisa existir: `artist-not-found`), o uid de quem chama só para o `isMe` (sempre falso) e o `config/season` lido sem cache. Resposta: `season` (a `seasonView` da temporada mostrada, a mesma do `GET /ranking/season`, ou `null`), `items` (as linhas do `GET /ranking`, `LeaderboardEntry`, com `userId`, nome, foto, cidade, pontos e `change`) e `nextCursor` (o cursor opaco de 23.2). Páginas de 20, como o app. Sem auditoria.
 
-**`resetFanUsername`** (`fan-profile/panel.ts`): numa transação, o membro, o perfil (`fan-not-found`) e a conferência de que o @ pedido é o de agora do perfil (`username-changed`: a tela velha não troca o @ errado); depois, o núcleo do `releaseUsername` (24.4), que passa a receber a transação de quem chama (o script continua chamando a versão que abre a própria): reserva com `uid` (a de central é `username-of-central`), o primeiro automático livre entre os sorteados, a reserva antiga apagada e o perfil com o @ novo e `usernameChangeableAt: null` (o fã escolhe outro sem esperar). O gatilho do perfil regrava as cópias e o `searchKeys`. Auditoria `fan.username.reset`, `details: { uid, previous, username }`. O @ antigo fica livre na hora (pergunta 15). Limite em aberto: como o automático deixa a troca seguinte livre (24.1), o fã que não está suspenso pode pegar o @ antigo de volta na hora, pelo app; a decisão é do dono (pergunta 23), e até lá a equipe suspende quem faz isso (o suspenso não troca o @).
+**`resetFanUsername`** (`fan-profile/panel.ts`): numa transação, o membro, o perfil (`fan-not-found`) e a conferência de que o @ pedido é o de agora do perfil (`username-changed`: a tela velha não troca o @ errado); depois, o núcleo do `releaseUsername` (24.4), que passa a receber a transação de quem chama (o script continua chamando a versão que abre a própria): reserva com `uid` (a de central é `username-of-central`), o primeiro automático livre entre os sorteados, a reserva antiga apagada e o perfil com o @ novo e `usernameChangeableAt: null` (o fã escolhe outro sem esperar). O gatilho do perfil regrava as cópias e o `searchKeys`. Auditoria `fan.username.reset`, `details: { uid, previous, username }`. O @ antigo fica livre na hora (pergunta 15). Limite em aberto: como o automático deixa a troca seguinte livre (24.1), o fã que não está suspenso pode pegar o @ antigo de volta na hora, pelo app; a decisão é do dono (pergunta 23), e até lá a equipe suspende quem faz isso (o suspenso não troca o @). (Respondida em 14/10/2026 com a opção (a), na seção 32: a entrada ganha o `reason`, `moderation` ou `central`, e o ausente vale `moderation`; o `moderation` grava o `usernameChangeableAt` daqui a 30 dias e o `usernameLockReason` `'moderation'`; o `central` fica sem prazo, como acima; a resposta ganha o `changeableAt`, e a auditoria, o `reason`. Contrato em 32.2, e o passo a passo em 32.4.)
 
 **`clearFanPhoto`** (`fan-profile/panel.ts`): numa transação, o membro e o perfil; com `photoURL` ou `photoPath`, `tx.update(users/{uid}, { photoURL: null, photoPath: null, photoUpdatedAt: agora })`, a mesma gravação do `DELETE /me/photo` (nunca `updatedAt`). O gatilho `queueFanProfileSync` apaga o arquivo e a fila `syncFanProfile` acerta as cópias nos comentários. Sem foto: `{ ok: true }` sem auditar. Auditoria `fan.photo.removed`, `details: { uid }`. O fã pode subir outra foto depois, se não estiver suspenso (26.6).
 
 **`setFanSuspended`** (`moderation/fans.ts`, 26.6): `suspended` booleano. Para suspender, `reason` de `SUSPENSION_REASONS` (`spam`, `offensive`, `harassment`, `other`) e `note` opcional, de 1 a 280, uma linha visível; para tirar, os dois ficam de fora. Numa transação, o membro e o perfil (`fan-not-found`); já no estado pedido: `{ ok: true, suspended }` sem gravar. Suspender grava em `users/{uid}` `suspendedAt` (o "agora") e `suspensionReason`; tirar apaga os dois (`FieldValue.delete()`). Auditoria `fan.suspended` (`details: { uid, reason, note? }`) e `fan.unsuspended` (`details: { uid }`).
 
 **`hideFanComments`** (`moderation/fans.ts`): recusa o próprio uid (`self`); lê `collectionGroup('postComments')` com `authorUid == uid` e `status == 'visible'`, `limit(24)` (`HIDE_FAN_COMMENTS_PAGE`, índice de 26.11), e oculta a página inteira numa transação só, com o mesmo núcleo do `moderateComment` (`hide`), separado em leitura e gravação (`readModerationTargets` e `writeModeration`): relê o membro, relê cada comentário e o item da fila num `getAll` (o oculto ou apagado no meio fica de fora), oculta, soma a contagem de cada post num shard só e resolve os itens da fila como `hidden`, sem auditar cada comentário; na mesma transação, uma entrada `fan.comments.hidden` com `details: { uid, count, postIds, commentIds }`. Assim nunca há comentário oculto sem a auditoria: quem perde o acesso no meio, o prazo estourado ou uma falha não deixam nada pela metade. A página de 24 é o que cabe nos 50 alvos da auditoria (o fã, os comentários e os posts deles, 26.8), com 48 leituras (os comentários e os itens da fila, mais o membro) e até 73 gravações. Responde `{ hidden, more }`: `more` quando a página veio cheia; o painel chama de novo até `more: false`. `timeoutSeconds: 120`; o painel chama com o prazo de 130 s (o `httpsCallable` desiste em 70 s por padrão, 26.15). Ocultar não tira pontos (21.8). Fã sem comentário visível: `{ hidden: 0, more: false }` sem auditar.
+
+**Seção 32:** duas callables novas, só de admin e sem seção (o `readPanelAdmin`, lido direto e de novo na transação): `exportFanData` (o arquivo dos dados do fã, em partes) e `deleteFanAccount` (a exclusão da conta), com o e-mail da conta conferido, o login de até 10 minutos, o teto do dia em `staffLimits` (20 e 5 por pessoa), a auditoria só com o uid e a exclusão recusada para quem também é da equipe (`fan-is-staff`). O contrato está em 32.2, e o passo a passo, em 32.4.
 
 ### 26.5 Mudanças em funções que existem
 
@@ -6389,7 +6407,7 @@ staffAudit/{autoId} {
 
 `auditIndex(entry)` (puro, `staff/audit-index.ts`, com teste em tabela que passa por todas as ações):
 
-- `section`: `team` para `invite.*` e `member.*`; `artists` para `artist.*`, `post.*` e `event.*`; `moderation` para `comment.*` e as ações de fã da Moderação (`fan.username.reset`, `fan.photo.removed`, `fan.suspended`, `fan.unsuspended`, `fan.comments.hidden`); `missions` para `points.config.updated`, `mission.*`, `achievement.*`, `season.goal.updated` e `config.seeded`; `ranking` para as outras `season.*`; `rewards` para `reward.*` e `redemption.*`; `fans` para `wallet.adjusted` e `fan.email.lookup`.
+- `section`: `team` para `invite.*` e `member.*`; `artists` para `artist.*`, `post.*` e `event.*`; `moderation` para `comment.*` e as ações de fã da Moderação (`fan.username.reset`, `fan.photo.removed`, `fan.suspended`, `fan.unsuspended`, `fan.comments.hidden` e, desde as seções 28 e 29, `fan.profile.cleared` e `fan.profile.report.resolved`); `missions` para `points.config.updated`, `mission.*`, `achievement.*`, `season.goal.updated` e `config.seeded`; `ranking` para as outras `season.*`; `rewards` para `reward.*` e `redemption.*`; `fans` para `wallet.adjusted`, `fan.email.lookup` e, desde a seção 32, os pedidos de dados (`fan.data.exported` e `fan.account.deleted`).
 - `targets`: `staff:<uid>` (o `targetUid` das ações da equipe), `invite:<id>`, `artist:<id>` (de `artistId` e de cada id de `artistIds`), `post:<id>`, `event:<id>`, `comment:<id>` (de `commentId` e de cada um de `commentIds`), `fan:<uid>` (de `authorUid`, do `uid` das ações de fã e do `targetUid` delas), `mission:<id>`, `achievement:<id>`, `season:<id>` (e `nextSeasonId`), `reward:<id>`, `redemption:<código>` (de `code` e de cada um de `codes`). Listas longas (reordenar até 240 ids) entram até o teto de 50; a tela mostra a contagem.
 - O `details` fica sem índice (isenção nova): ninguém consulta por ele, e as listas de reordenar gerariam uma entrada por item.
 
@@ -6429,6 +6447,8 @@ Rótulos (o painel mostra estes, de `src/lib/audit.ts`; o servidor só grava o `
 | `fan.suspended` | Conta suspensa | Moderação |
 | `fan.unsuspended` | Suspensão retirada | Moderação |
 | `fan.comments.hidden` | Comentários do fã ocultados | Moderação |
+| `fan.profile.cleared` | Bio e redes do fã apagadas | Moderação |
+| `fan.profile.report.resolved` | Denúncia de perfil resolvida | Moderação |
 | `points.config.updated` | Régua de pontos alterada | Missões |
 | `mission.created` | Missão criada | Missões |
 | `mission.updated` | Missão editada | Missões |
@@ -6460,6 +6480,8 @@ Rótulos (o painel mostra estes, de `src/lib/audit.ts`; o servidor só grava o `
 | `redemption.contacts.viewed` | Contatos de resgate vistos | Recompensas |
 | `wallet.adjusted` | Pontos ajustados | Fãs |
 | `fan.email.lookup` | Fã buscado por e-mail (com `found: false`, "Busca por e-mail sem resultado") | Fãs |
+| `fan.data.exported` | Dados do fã exportados (LGPD) | Fãs |
+| `fan.account.deleted` | Conta do fã excluída (LGPD) | Fãs |
 
 Os `changed[]` e `fields[]` vêm com o nome do campo em inglês (`title`, `cost`, `dailyLimits`...): o painel tem um dicionário de rótulos por entidade e mostra o nome cru quando não conhece. Ação que o painel não conhece aparece com o `action` cru e a seção "Outros". `actorUid: null` aparece como o `actorName` gravado ("Virada automática", "Equipe ImagineUP", "Carga inicial").
 
@@ -6652,7 +6674,7 @@ Um teste por consulta, no molde do `ranking/indexes.test.ts` (o emulador não co
 
 ### 26.12 Exclusão de conta
 
-Nada novo a apagar: `suspendedAt`, `suspensionReason` e `searchKeys` moram no perfil, que já sai. A auditoria guarda o uid do fã nas ações de fã (`wallet.adjusted`, `fan.*`, `comment.*`) depois da exclusão, como as outras entradas: é o registro do que a equipe fez. Ela não guarda texto escrito pelo fã, com uma exceção: o `fan.username.reset` guarda o @ antigo e o novo (`previous` e `username`), que identificam a pessoa (pergunta 16). O `staffLimits` não tem nada do fã. O retrato do fechamento não tem uid. O `deleteUserData` não muda; o `store.test.ts` continua prendendo a ordem.
+Nada novo a apagar: `suspendedAt`, `suspensionReason` e `searchKeys` moram no perfil, que já sai. A auditoria guarda o uid do fã nas ações de fã (`wallet.adjusted`, `fan.*`, `comment.*`) depois da exclusão, como as outras entradas: é o registro do que a equipe fez. Ela não guarda texto escrito pelo fã, com uma exceção: o `fan.username.reset` guarda o @ antigo e o novo (`previous` e `username`), que identificam a pessoa (pergunta 16). O `staffLimits` não tem nada do fã. O retrato do fechamento não tem uid. O `deleteUserData` não muda; o `store.test.ts` continua prendendo a ordem. (Seção 32: o `fan.username.reset` ganha o `reason`, `moderation` ou `central`, que não é texto do fã; as duas ações novas, `fan.data.exported` e `fan.account.deleted`, guardam só o uid, nunca o e-mail digitado nem o da conta, e a `fan.account.deleted` é gravada antes da exclusão e fica depois dela, como as outras. O `staffLimits` passa a guardar os uids excluídos no dia, em `deletedUids`, que o TTL apaga em 30 dias, 32.3.)
 
 ### 26.13 Seed dos emuladores
 
@@ -6948,7 +6970,7 @@ Leitor vê tudo, sem botões. Editor com `moderation` e Admin, tudo. Estados: fi
 | Detalhes de uma linha (o botão "Detalhes", com `aria-expanded`) | o `details`, com os nomes dos campos em pt-BR ("Campos mudados: título, custo"), "de X para Y" nas mudanças de status e de acesso, a nota e as contagens; listas longas como contagem |
 | Lista de pessoas do filtro | `staff` (regra nova para `audit`), com "Automático" para `actorUid == null` |
 
-- Filtros: período (7, 30 ou 90 dias, ou "Tudo"; padrão 30), seção (Equipe e as seções do painel), pessoa, ação (a lista de ações aparece com uma seção escolhida; a consulta manda só `action ==`, sem a seção, e a pessoa sai) e alvo (o tipo e o id, @ ou código: "Fã", "Central", "Post", "Show", "Comentário", "Missão", "Conquista", "Temporada", "Recompensa", "Pedido", "Membro", "Convite"; com o alvo, só o período). No tipo "Fã", o alvo é o uid; o @ só vira uid para quem vê Fãs ou Moderação (as seções que leem `users`), e para os outros a tela diz "Cole o identificador do fã (o @ precisa da seção Fãs ou Moderação).". A central é o próprio @, e o pedido, o código normalizado. As combinações aceitas são as dos índices de 26.11 (pessoa, seção, pessoa e seção, ação, alvo); a tela desliga o filtro que não combina e diz por quê.
+- Filtros: período (7, 30 ou 90 dias, ou "Tudo"; padrão 30), seção (Equipe e as seções do painel), pessoa, ação (a lista de ações aparece com uma seção escolhida; a consulta manda só `action ==`, sem a seção, e a pessoa sai) e alvo (o tipo e o id, @ ou código: "Fã", "Central", "Post", "Show", "Comentário", "Missão", "Conquista", "Temporada", "Recompensa", "Pedido", "Membro", "Convite"; com o alvo, só o período). No tipo "Fã", o alvo é o uid; o @ só vira uid para quem vê Fãs, porque a busca é uma consulta em `users` (`where('username', '==', ...)`, no `findFanUidByHandle` de `src/lib/audit-data.ts`) e a Moderação só lista os suspensos (`firestore.rules`:144-146). Sem Fãs e sem Moderação, a tela nem consulta e diz "Cole o identificador do fã (o @ precisa da seção Fãs ou Moderação)."; com a Moderação e sem Fãs, a consulta volta `permission-denied`, e a tela diz "Cole o identificador do fã: o @ só vira identificador para quem vê a seção Fãs.". A central é o próprio @, e o pedido, o código normalizado. As combinações aceitas são as dos índices de 26.11 (pessoa, seção, pessoa e seção, ação, alvo); a tela desliga o filtro que não combina e diz por quê.
 - O alvo fã leva à ficha (com `fans`) e à página da Moderação (com `moderation`); os outros ficam em texto.
 - Leitura única com "Atualizar". Leitor, Editor e Admin veem o mesmo, sem ação. Ação que o painel não conhece aparece crua, na seção "Outros".
 - Estados: "Nenhuma alteração neste período." e "Nenhuma alteração com esses filtros." Custo por abertura: 50 entradas e a equipe (até 20).
@@ -6966,7 +6988,7 @@ As três páginas de Artistas ganham, abaixo do título, a navegação "Centrais
 | Comentários de um post (diálogo grande): autor, texto, data, situação | `posts/{id}/postComments` por `createdAt` decrescente, 20 por vez |
 
 - Ações (editor com `artists` e admin): "Novo post" e "Editar", "Publicar" e "Tirar do ar" (`setPostStatus`, confirmação para tirar), "Apagar" (`deletePost`, só o que nunca foi ao ar; confirmação vermelha) e, nos comentários, "Ocultar" e "Reexibir" (`moderateComment`, só para quem edita `moderation`).
-- Diálogo do post: central e tipo (Foto, Vídeo, Texto, Show; travados depois de criado), texto (até 2.000, com o contador e a limpeza do `cleanMultiline`; obrigatório em texto e show), mídia pelo tipo (foto na proporção dela entre 4:5 e 16:9, com a foto até 1080 de largura e a miniatura de 480; no vídeo, a capa obrigatória, enviada ou tirada de um quadro do vídeo no navegador, e o mp4 opcional até 50 MB, com o progresso; HEIC e MOV recusados com a frase), e o show (só os da central, com o aviso "Este show ainda não está no ar: o post só publica depois dele."). Botões "Salvar rascunho" e "Salvar e publicar".
+- Diálogo do post: central e tipo (Foto, Vídeo, Texto, Show; travados depois de criado), texto (até 2.000, com o contador e a limpeza do `cleanMultiline`; obrigatório em texto e show), mídia pelo tipo (foto na proporção dela entre 4:5 e 16:9, com a foto até 1080 de largura e a miniatura de 480; no vídeo, a capa obrigatória, enviada ou tirada de um quadro do vídeo no navegador, e o mp4 opcional, conferido no navegador antes do envio (H.264, faststart, nada fragmentado, até 720p, 20 MiB e 1 minuto, 21.19) e enviado com o progresso; HEIC e MOV recusados com a frase), e o show (só os da central, com o aviso "Este show ainda não está no ar: o post só publica depois dele."). Botões "Salvar rascunho" e "Salvar e publicar".
 - Criação em passos, com o `postId` gerado pelo painel: `createPost` (decisão 18), o envio para `posts/{postId}/`, o `updatePost` com a mídia (sempre a foto, a miniatura e o vídeo juntos) e o `setPostStatus`. O passo que falha deixa o rascunho, a mensagem diz o que faltou ("O post ficou como rascunho. Falta enviar a mídia.") e a nova tentativa continua dali.
 
 **Agenda:**
@@ -7062,9 +7084,9 @@ Para o dono, respondidas em 07/10/2026:
 21. O `PANEL_ORIGINS` do emulador com as portas 3001 a 3009 (26.5, 26.18): aprovado.
 22. O seed com as contas da editora e do leitor, o fã de propaganda com foto, a suspensão do `rank-48`, os pedidos dos `rank-*`, a meta do `rank-02` e a auditoria de exemplo (26.13), só nos emuladores: aprovado.
 
-Para o dono, em aberto (de uma revisão do código, 07/10/2026):
+Para o dono, de uma revisão do código (07/10/2026), respondida em 14/10/2026:
 
-23. O @ trocado pela Moderação pode voltar na hora. O `resetFanUsername` deixa o fã com o automático e sem prazo (a primeira troca a partir do automático é livre, 24.1), e o @ antigo fica livre (pergunta 15). Então um fã que não está suspenso faz `PUT /me/username` com o mesmo @ ofensivo segundos depois e consegue; o suspenso, logo que a suspensão sai. Até a resposta, o código segue a pergunta 15 como aprovada, e a equipe suspende quem pega o @ de volta. Opções: (a) o `resetFanUsername` ganha um motivo, `central` (como hoje) ou `moderation`, que grava `usernameChangeableAt` para daqui a 30 dias (o fã fica com o automático por 30 dias; o @ antigo continua livre para outra pessoa e para uma central); (b) com `moderation`, uma trava da equipe na reserva antiga (`{ heldBy: 'moderation', heldUntil }`, sem `uid`), que a troca do fã recusa com `username_taken` e que o `createArtist` e o `checkArtistHandle` precisariam aceitar. Proposta: (a), que não mexe na reserva nem no fluxo da central.
+23. O @ trocado pela Moderação pode voltar na hora. O `resetFanUsername` deixa o fã com o automático e sem prazo (a primeira troca a partir do automático é livre, 24.1), e o @ antigo fica livre (pergunta 15). Então um fã que não está suspenso faz `PUT /me/username` com o mesmo @ ofensivo segundos depois e consegue; o suspenso, logo que a suspensão sai. Até a resposta, o código segue a pergunta 15 como aprovada, e a equipe suspende quem pega o @ de volta. Opções: (a) o `resetFanUsername` ganha um motivo, `central` (como hoje) ou `moderation`, que grava `usernameChangeableAt` para daqui a 30 dias (o fã fica com o automático por 30 dias; o @ antigo continua livre para outra pessoa e para uma central); (b) com `moderation`, uma trava da equipe na reserva antiga (`{ heldBy: 'moderation', heldUntil }`, sem `uid`), que a troca do fã recusa com `username_taken` e que o `createArtist` e o `checkArtistHandle` precisariam aceitar. Proposta: (a), que não mexe na reserva nem no fluxo da central. **Resposta do dono, 14/10/2026:** a (a), feita na seção 32 (32.1, decisões 1 a 5), com o limite da pergunta 15 de 32.13: a trava é da conta, e o @ em si ofensivo vai à lista do filtro (seção 30).
 
 ### 26.20 Fora deste bloco (só documentado)
 
@@ -7156,7 +7178,7 @@ O `closeStatsDays` rodou à 00:20 de 08/10, antes de a carga criar o `statsMeta/
 
 No mesmo dia, o painel ganhou o perfil novo (PR #2 do `imagineup-admin`) e a lista "Perfis denunciados" (PR #3), publicados pela Vercel. Ficam a conferência com as duas contas de teste do dono (29.14, passo 5, com os passos do filtro de 30.13, passo 6) e o console do Auth (29.14, passo 6).
 
-**Produção desde 14/10/2026:** 66 funções (as 56 chamáveis com o `allUsers`), 44 índices compostos, as regras da `main` `f258ca2` e o EAS Update do canal preview na runtime `310056fd`. No mesmo dia, mais tarde, as 66 funções saíram de novo, da `main` `8faeccf`, com o registro de acesso da seção 31 (como foi, em 31.12): desde então todas rodam o mesmo código, e o diff da próxima publicação conta desde `8faeccf`.
+**Produção desde 14/10/2026:** 66 funções (as 56 chamáveis com o `allUsers`), 44 índices compostos, as regras da `main` `f258ca2` e o EAS Update do canal preview na runtime `310056fd`. No mesmo dia, mais tarde, as 66 funções saíram de novo, da `main` `8faeccf`, com o registro de acesso da seção 31 (como foi, em 31.12). Em 15/10/2026 (UTC; a noite de 14/10 em Brasília), as 68 funções saíram da `main` `c4c25ff`, com a seção 32 (as 58 chamáveis com o `allUsers`), sem regra nem índice novo, e o EAS Update do canal preview foi de novo na runtime `310056fd` (como foi, em 32.12): desde então todas rodam o mesmo código, e o diff da próxima publicação conta desde `c4c25ff`.
 
 **Como publicar daqui em diante:** a receita está em "Publicar", na seção "API do app e pontos" do `CLAUDE.md`: a pasta do deploy na `main` nova com o `functions/.env.imagine-up-app`; `npm run rules:deploy` e a espera dos índices; as funções em lotes de até 15, com 20 min entre eles, rodados pelo dono no PowerShell; o gatilho que falhou na criação apagado e recriado minutos depois; as cargas com as Application Default Credentials, `--dry-run` antes e o `revoke` no fim; e a conferência com `functions:list`, um teste da `api` sem login e os logs do `rankingTick`. As armadilhas estão em 26.22.
 
@@ -7237,7 +7259,7 @@ Etapa 2 da construção (as callables, as mudanças em funções que existem, a 
 - **O `adjustFanPoints` lê o lançamento da tentativa antes do `planAwards`**, na mesma transação, para comparar o corpo com o gravado (o `duplicate` ou o `adjustment-id-reused`), em vez de esperar o `duplicate` do plano. O `negative_counter` diz o primeiro contador na ordem do painel (`balance`, `xp`, `season`, `centralSeason`, `centralTotal`), e cada um tem a frase dele ("O ajuste deixaria o saldo negativo."). O admin também soma o que ajusta no `staffLimits` do dia (sem teto), como o `checkStaffLimit` da etapa 1 já fazia.
 - **No plano, o suspenso que não chama sai `skipped` antes da conferência do extrato**: um ganho que já tinha sido pago aparece `skipped`, e não `duplicate`. No convite, o dono suspenso fica como o dono sem perfil: o marcador da pessoa não nasce e a visita não soma nos agregados (o cadastro convidado soma); depois de tirada a suspensão, a mesma pessoa visitando de novo paga.
 - **O `findFanByEmail` trata o `auth/invalid-email` do Admin SDK como conta que não existe** (`{ uid: null }`, a busca conta), porque a conferência do formato no servidor é mais solta que a do Auth.
-- **O `releaseUsername` virou o núcleo `releaseUsernameIn(tx, db, @, { now, uid? })`**, com o `releaseUsername` do script em volta. Com o `uid`, a reserva de outro fã é recusada; no `resetFanUsername`, a reserva que falta ou é de outro fã vira `username-changed`, e a de uma central, `username-of-central`.
+- **O `releaseUsername` virou o núcleo `releaseUsernameIn(tx, db, @, { now, uid? })`**, com o `releaseUsername` do script em volta. Com o `uid`, a reserva de outro fã é recusada; no `resetFanUsername`, a reserva que falta ou é de outro fã vira `username-changed`, e a de uma central, `username-of-central`. (Seção 32: as opções ganham o `reason`, obrigatório.)
 - **Os núcleos da Moderação ficaram prontos para o seed**: `applyModeration` (o `moderateComment` na transação de quem chama, com `audit: false` para o lote) e `runModeration`, e `applyFanSuspension` e `runFanSuspension`, todos com um ator dado. O `hideFanComments` relê o membro em cada transação de comentário (quem perde o acesso no meio para), pula o comentário apagado no meio e aceita `pageSize` nas dependências (os testes usam 2); a integração, abaixo, juntou a página e a auditoria numa transação só.
 - **O `getPanelRanking` mora em `ranking/panel.ts` como `readPanelRanking`.** O `artistId` que não é texto é `invalid-request`; o texto fora do formato do @ é `artist-not-found`, como a rota do app.
 - **O `PANEL_ORIGINS` sai de `panelOrigins(process.env)`**, uma função pura com teste, lida quando o módulo carrega.
@@ -7266,7 +7288,7 @@ Integração (duas revisões do código construído, em 07/10/2026):
 - **O `account_suspended` mora no `api/errors.ts`** também em 26.2 e 26.5, que ainda diziam `api/contract.ts`.
 - **Testes acrescentados:** a recusa do `resetFanUsername` com o fã que não existe e com o @ fora do formato (e o `parseCurrentUsername` puro), o `clearFanPhoto` do leitor e da editora sem `moderation`, o acesso perdido no meio do `hideFanComments`, o retrato do último dia da temporada e o id do painel de outro documento.
 - **O `CLAUDE.md` deixou de dizer "sem deploy"** nos blocos 1 e 4 a 10, publicados em 07/10/2026.
-- **O @ que a Moderação troca pode voltar na hora pelo app.** A revisão apontou que o fã não suspenso pega o @ antigo de volta, porque o automático deixa a troca seguinte livre. Mudar isso contraria a pergunta 15 como o dono aprovou, então o código ficou e a escolha virou a pergunta 23.
+- **O @ que a Moderação troca pode voltar na hora pelo app.** A revisão apontou que o fã não suspenso pega o @ antigo de volta, porque o automático deixa a troca seguinte livre. Mudar isso contraria a pergunta 15 como o dono aprovou, então o código ficou e a escolha virou a pergunta 23. Respondida pelo dono em 14/10/2026 com a (a): o motivo `moderation` grava o prazo de 30 dias (seção 32, decisões 1 a 5).
 
 #### O painel (imagineup-admin, PR #1)
 
@@ -7342,7 +7364,7 @@ Para ligar, na ordem:
 1. Registrar os provedores no console do Firebase (App Check): Play Integrity no app Android e App Attest (com o DeviceCheck de reserva) no iOS, com o SHA-256 da chave de assinatura da EAS.
 2. No app, `@react-native-firebase/app` e `@react-native-firebase/app-check` (módulos nativos: build nova, fingerprint novo) só para pegar o token, entregue ao SDK JS por um `CustomProvider` (`initializeAppCheck` do `firebase/app-check`), e o axios mandando o `X-Firebase-AppCheck` em todo pedido. Em desenvolvimento, o provedor de depuração com o token registrado no console.
 3. Publicar a `api` com `APP_CHECK_MODE = 'monitor'` e olhar o log por uns dias, até os pedidos sem token serem só das builds antigas.
-4. Trocar para `enforce` quando as builds antigas saírem de uso (as que não mandam o token passam a receber 403).
+4. Trocar para `enforce` quando as builds antigas saírem de uso (as que não mandam o token passam a receber 403). Junto com o `enforce`, uma métrica de log sobre a linha `api` com o `code` `app_check_failed` e um alerta por taxa, ao canal de 31.4: com a atestação quebrada numa build, todo pedido do fã recebe 403, o alerta (b) de 31.4 só olha os 5xx, e o `GET /health`, que vem antes do App Check, segue 200 (seção 32, 32.16).
 5. Depois, ligar a exigência do App Check no console para o Firestore e o Storage (o perfil e a foto, que o app acessa direto) e, no painel, o reCAPTCHA Enterprise com o `enforceAppCheck` nas callables. Isso é do painel e de outra rodada.
 
 ### 27.6 `artists` fechado para o fã
@@ -9402,7 +9424,7 @@ O bloco protege o que já está no ar. São três frentes: recuperar o banco dep
 
 Origem: o pedido do dono de 14/10/2026 para proteger a produção e o plano do mesmo dia, feito sobre um levantamento só de leitura do projeto e revisto por uma crítica. O plano e o levantamento ficam fora do repositório, em `Projetos/protecao-imagineup/` (`protecao-plano.md` e `protecao-estado.txt`), com as ajudas do gcloud conferidas e os filtros testados nos logs reais de 07 a 14/10/2026. O pedido fixou as respostas às perguntas do plano: o e-mail do dono no canal; o backup com 14 dias; o registro de acesso pela saída (a), uma linha de log própria, só com o IP e o uid, no lugar de guardar o log de pedido, que leva também a URL e o aparelho; a mesma linha nas callables do painel; e os 184 dias. Depois, no mesmo dia: "pode seguir com tudo, as 66 em lotes".
 
-Estado: as medidas de 31.1 foram ligadas em 14/10/2026, com o ok do dono, e conferidas pelo gcloud, só leitura, no mesmo dia; falta a 5ª política, depois da rodada das 00:20 de 15/10/2026 (31.4). O registro de acesso está construído na branch `registro-acesso`, criada da `docs-publicacao` em `01f5537` (o PR #21, aberto), que parte da `main` `f258ca2`, nas duas etapas do plano de construção (`Projetos/protecao-imagineup/registro-acesso-plano.md`, fora do repositório), ambas de 14/10/2026: o código com os testes (a linha `acesso` na `api` e nas 55 callables do painel, e as duas frases de log que a configuração lê presas por teste, dos dois lados, 31.11); e a documentação com os arquivos (`docs/protecao/`, esta seção, o `CLAUDE.md` e o `AGENTS.md`). Depois veio uma revisão, no mesmo dia, com os achados conferidos e aplicados (31.14), e tudo foi num commit só da branch, sem push. O registro de acesso entrou na `main` pelo merge `8faeccf` (PR #22) e foi publicado em 14/10/2026: as 66 funções em 5 lotes, a linha `acesso` conferida com o IP forjado, o bucket `registros-de-acesso` e o sink, com a primeira linha no bucket (como foi, em 31.12). O que o código decidiu diferente do desenho está em 31.14.
+Estado: as medidas de 31.1 foram ligadas em 14/10/2026, com o ok do dono, e conferidas pelo gcloud, só leitura, no mesmo dia. Em 15/10/2026 (UTC), depois do deploy da seção 32, entraram o teste de disponibilidade e a política da `api` fora do ar, que ficou sendo a 5ª (32.12, "Como foi"); a `close-stats-days-parado`, a 6ª, entrou às 03:21 UTC do mesmo dia, logo depois da rodada das 00:20 (31.4), e o primeiro backup saiu `READY` às 07:08 UTC (31.13). O registro de acesso está construído na branch `registro-acesso`, criada da `docs-publicacao` em `01f5537` (o PR #21, aberto), que parte da `main` `f258ca2`, nas duas etapas do plano de construção (`Projetos/protecao-imagineup/registro-acesso-plano.md`, fora do repositório), ambas de 14/10/2026: o código com os testes (a linha `acesso` na `api` e nas 55 callables do painel, e as duas frases de log que a configuração lê presas por teste, dos dois lados, 31.11); e a documentação com os arquivos (`docs/protecao/`, esta seção, o `CLAUDE.md` e o `AGENTS.md`). Depois veio uma revisão, no mesmo dia, com os achados conferidos e aplicados (31.14), e tudo foi num commit só da branch, sem push. O registro de acesso entrou na `main` pelo merge `8faeccf` (PR #22) e foi publicado em 14/10/2026: as 66 funções em 5 lotes, a linha `acesso` conferida com o IP forjado, o bucket `registros-de-acesso` e o sink, com a primeira linha no bucket (como foi, em 31.12). O que o código decidiu diferente do desenho está em 31.14.
 
 Trava do bloco: só servidor e documentação. Nada muda o fingerprint do app (`310056fd840b5459416c9926e46846b8c208aa76`): nenhum pacote novo (o IP é conferido pelo `node:net`), nada no app, no `app.config.ts`, no `package.json` nem no `.gitignore`. Nenhuma regra, índice, fila, rota, callable ou chave de teto nova. O que as funções respondem não muda: só entra uma linha de log.
 
@@ -9417,16 +9439,17 @@ Como era antes:
 
 Ligado em 14/10/2026, a partir das 10h44 de Brasília, na ordem do plano:
 
-| Medida | Estado em 14/10/2026 |
+| Medida | Estado em 14 e 15/10/2026 |
 | --- | --- |
 | PITR de 7 dias no Firestore `(default)` | ligado (`versionRetentionPeriod: 604800s`); o `earliestVersionTime` recua até ficar 7 dias atrás, em 21/10/2026 |
 | Proteção contra apagar o banco | ligada (`DELETE_PROTECTION_ENABLED`) |
-| Backup diário | uma agenda diária com retenção de 14 dias (`1209600s`), na mesma região; o primeiro backup sai até 15/10/2026 |
+| Backup diário | uma agenda diária com retenção de 14 dias (`1209600s`), na mesma região; o primeiro saiu `READY` em 15/10/2026, às 07:08 UTC, com validade até 29/10/2026 |
 | Canal de e-mail "ImagineUP: alertas do servidor" | o e-mail do dono, testado pela política de teste (31.4), que foi apagada depois |
 | Métricas de log `funcoes_erros`, `ranking_tick_ok` e `close_stats_days_ok` | criadas; contam só a partir da criação, sem olhar o passado |
-| Políticas de alerta com o rótulo `app=imagineup` | 4: erros nas funções, `api` com 5xx, função agendada falhou ou job parado, `rankingTick` parado |
-| 5ª política, `close-stats-days-parado` | pendente: entra depois da rodada das 00:20 de 15/10/2026, a primeira com a métrica (31.4) |
-| Registro de acesso (bucket `registros-de-acesso` com 184 dias, e o sink) | não criado: espera a linha `acesso` no ar (31.12) |
+| Políticas de alerta com o rótulo `app=imagineup` | 4 em 14/10/2026: erros nas funções, `api` com 5xx, função agendada falhou ou job parado, `rankingTick` parado; 5 desde 15/10/2026 (UTC), com a `api` fora do ar (abaixo); 6 desde as 03:21 UTC de 15/10/2026, com a `close-stats-days-parado` |
+| 6ª política, `close-stats-days-parado` (a "5ª" de 31.4: a da `api` fora do ar entrou antes) | criada pelo Claude em 15/10/2026, às 03:21 UTC, logo depois da rodada das 00:20 (03:20 UTC), a primeira com a métrica (31.4) |
+| Teste de disponibilidade "ImagineUP: api no ar" e a política "ImagineUP: api fora do ar" | criados pelo Claude em 15/10/2026 (UTC), depois do deploy da seção 32: o teste nas 3 regiões, com o caminho `/api/health`, e a política no canal acima (32.7 e 32.12, "Como foi") |
+| Registro de acesso (bucket `registros-de-acesso` com 184 dias, e o sink) | criados depois do deploy da linha `acesso`, no mesmo dia, com a primeira linha no bucket às 18:32 UTC (31.12, "Como foi") |
 | Silenciamento de alerta | nenhum |
 | Orçamento de R$ 50 | não criado: é da cliente (31.13) |
 
@@ -9442,13 +9465,14 @@ gcloud monitoring policies list --filter='userLabels.app=imagineup' --format="ta
 gcloud monitoring snoozes list --format="table(name.basename(),displayName,interval.startTime,interval.endTime)" --project=imagine-up-app
 gcloud logging buckets list --location=- --format="table(name.basename(),retentionDays,lifecycleState)" --project=imagine-up-app
 gcloud logging sinks list --format="table(name,destination)" --project=imagine-up-app
+gcloud monitoring uptime list-configs --format="table(name.basename(),displayName,period,timeout,httpCheck.path)" --project=imagine-up-app
 ```
 
-Esperado hoje: PITR e proteção ligados; uma agenda; o canal numa linha só; as 3 métricas; 4 políticas (5 depois da 5ª); só o `_Default` (30 dias) e o `_Required` nos buckets e nos sinks. No dia 7 depois de ligar, o `earliestVersionTime` 7 dias atrás; no dia 14, uns 14 backups `READY`, sempre.
+Esperado hoje: PITR e proteção ligados; uma agenda; o canal numa linha só; as 3 métricas; 6 políticas; o `_Default` (30 dias), o `_Required` e o `registros-de-acesso` (184 dias) nos buckets, e o sink `registros-de-acesso` além dos dois padrão; um teste de disponibilidade só, "ImagineUP: api no ar", com `300s`, `30s` e o caminho `/api/health`. No dia 7 depois de ligar, o `earliestVersionTime` 7 dias atrás; no dia 14, uns 14 backups `READY`, sempre.
 
 ### 31.2 Os arquivos e os comandos
 
-Os arquivos da proteção ficam em `docs/protecao/`: os aplicados em 14/10/2026 e os que esperam a vez (a 5ª política, 31.4, e o filtro do sink, 31.7). São cópias byte a byte dos de `Projetos/protecao-imagineup/`, sem e-mail, sem id de canal, de política ou de conta e sem segredo. Não passam pelo prettier: a pasta está no `.prettierignore`, porque ele reescreveria os JSON, e a cópia deixaria de ser igual ao que está ligado.
+Os arquivos da proteção ficam em `docs/protecao/`: os aplicados em 14/10/2026 (o filtro do sink, 31.7, depois do deploy da linha `acesso`), os aplicados em 15/10/2026 (UTC; a política da `api` fora do ar, 32.7, e a `close-stats-days-parado`, a 6ª política, 31.4). São cópias byte a byte dos de `Projetos/protecao-imagineup/`, sem e-mail, sem id de canal, de política ou de conta e sem segredo. Não passam pelo prettier: a pasta está no `.prettierignore`, porque ele reescreveria os JSON, e a cópia deixaria de ser igual ao que está ligado.
 
 | Arquivo | O que é |
 | --- | --- |
@@ -9461,12 +9485,14 @@ Os arquivos da proteção ficam em `docs/protecao/`: os aplicados em 14/10/2026 
 | `politicas/agendadas-falha.json` | alerta (c): falha do `closeStatsDays`, ou job pausado ou apagado |
 | `politicas/ranking-tick-parado.json` | alerta (c): `rankingTick` sem rodar |
 | `politicas/close-stats-days-parado.json` | alerta (c): `closeStatsDays` sem fechar o dia |
+| `politicas/api-fora-do-ar.json` | alerta (d): a `api` fora do ar, sobre o teste de disponibilidade (seção 32). O teste não tem arquivo: o `gcloud monitoring uptime create` não lê configuração, e o comando dele fica em 32.7 |
 | `politicas/teste-canal.json` | a política de teste do canal, criada e apagada a cada teste (31.4) |
 | `registro-acesso/filtro-linha-acesso.txt` | o filtro do sink: só a linha `acesso` (31.7) |
 
 Regras dos comandos desta seção:
 
 - Rodam no Git Bash, da raiz do repositório (os caminhos de `docs/protecao/` são relativos), com `--project=imagine-up-app` escrito. Copie da nota, nunca redigite: em 09/10/2026, um `--project` sem o hífen deu 403. No PowerShell, o `$(...)` e o `cat` não funcionam igual.
+- Exceção: o `gcloud monitoring uptime create` e o `update` do teste de disponibilidade rodam no PowerShell. No Git Bash, o `--path=/api/health` vira um caminho do Windows (32.7 e 32.17).
 - Os blocos entre parênteses rodam inteiros numa chamada só. Eles guardam o canal numa variável que só vale dentro da chamada e param no `exit 1` se o canal vier vazio ou duplicado, antes de criar qualquer política.
 - Sem terminal, como no shell do Claude, o gcloud aceita a resposta padrão de toda pergunta: um `delete` sem `--quiet` executa direto. Nenhum passo conta com a pergunta como trava.
 - O grupo `channels` só existe no beta (`gcloud beta monitoring channels`).
@@ -9519,7 +9545,7 @@ Todos mandam e-mail ao canal "ImagineUP: alertas do servidor", com o rótulo `ap
 **(b) `api` com 5xx** (`api-5xx.json`, sobre a métrica do Cloud Run `run.googleapis.com/request_count`):
 
 - Dispara quando, numa janela de 10 minutos, mais de 5% dos pedidos da `api` voltam 5xx e há pelo menos 5 respostas 5xx. As duas condições juntas: com pouco tráfego, 1 erro em 2 pedidos já é 50%; com muito, 5 erros podem ser 0,1%.
-- Não cobre a `api` fora do ar sem nenhum pedido chegando: isso pede um teste de disponibilidade (uptime check), que não está ligado (31.13).
+- Não cobre a `api` fora do ar sem nenhum pedido chegando: isso fica com o alerta (d), o teste de disponibilidade da seção 32.
 - O que fazer: `resource.labels.service_name="api" httpRequest.status>=500` no Logs Explorer. O 503 de cota de CPU vem em deploy; fora dele, a mensagem está no stdout da `api`. Muitos 429 ou 503 com tráfego alto apontam para o teto de 8 instâncias.
 
 **(c) Função agendada falhou ou parada.** O Scheduler marca 200 mesmo com erro dentro da função, então os alertas olham os logs da função, e não só o Scheduler. As condições de ausência somam as revisões, para um deploy não parecer função parada.
@@ -9528,9 +9554,15 @@ Todos mandam e-mail ao canal "ImagineUP: alertas do servidor", com o rótulo `ap
 - `ranking-tick-parado.json`, por ausência: nenhuma rodada do `rankingTick` com HTTP 200 por uns 40 minutos (janela de 20 minutos e mais 20 de espera). Pega job pausado, função apagada, 500 ou 403 em toda rodada e falha do próprio Scheduler. O erro lógico com HTTP 200 fica com o alerta (a). O que fazer: `gcloud scheduler jobs describe firebase-schedule-rankingTick-southamerica-east1 --location=southamerica-east1 --project=imagine-up-app`, os logs do serviço `rankingtick`; função apagada volta com um deploy.
 - `close-stats-days-parado.json`, por ausência: nenhum "closeStatsDays: dias fechados" em 24 h 30 min, uns 35 minutos depois da rodada das 00:20 que faltou. O Google limita a espera de um alerta de ausência a 23,5 horas, então a parte longa fica na janela da condição (88.200 s, abaixo do teto de 90.000 s) e a espera fica em 5 minutos. O que fazer: `gcloud scheduler jobs describe firebase-schedule-closeStatsDays-southamerica-east1 --location=southamerica-east1 --project=imagine-up-app`; para rodar agora, `gcloud scheduler jobs run` com o mesmo job; cada rodada fecha até 31 dias atrasados.
 
+**(d) `api` fora do ar** (`api-fora-do-ar.json`, sobre o teste de disponibilidade "ImagineUP: api no ar", seção 32):
+
+- O teste pede o `GET /api/health` a cada 5 minutos, de 3 regiões (`south-america`, `usa-virginia` e `usa-oregon`), com 30 s de prazo, e confere o 2xx e o `"ok":true` no corpo. A rota responde sem login e sem Firestore (32.1, decisão 17).
+- Dispara com 2 ou mais regiões falhando por 5 minutos: uma região sozinha não dispara. O e-mail chega de 5 a 10 minutos depois da queda. O filtro é pelo host das funções, e não pelo id do teste: outro teste de disponibilidade no mesmo host também dispara (32.17).
+- O teste, a política, os comandos e o "O que fazer" estão em 32.7. Criados pelo Claude em 15/10/2026 (UTC), depois do deploy da seção 32 (32.12, "Como foi").
+
 **Contrato do texto.** A `close_stats_days_ok` casa com o texto exato "closeStatsDays: dias fechados", no stdout do serviço `closestatsdays` (`functions/src/points/close.ts`, no nível info). A linha só sai quando a rodada fecha algum dia. Mudar a frase, ou o nível para `warn`, faz o alerta disparar todo dia. A frase fica numa constante com o comentário de contrato, e os testes de 31.11 a prendem dos dois lados: no código e no arquivo da métrica. Mudar o texto pede mudar a métrica (`metricas/close_stats_days_ok.yaml`) no mesmo dia.
 
-**A 5ª política** (o passo pendente), depois das 00:20 de 15/10/2026, com uns 15 minutos de folga. Antes, conferir que a linha da rodada saiu depois da criação da métrica (14/10/2026, 13:45 UTC):
+**A 6ª política** (a `close-stats-days-parado`, criada em 15/10/2026, às 03:21 UTC; era a 5ª, e a da `api` fora do ar entrou antes). O bloco fica como receita para criar de novo: depois de uma rodada das 00:20, com uns 15 minutos de folga. Antes, conferir que a linha da rodada saiu depois da criação da métrica (14/10/2026, 13:45 UTC):
 
 ```bash
 gcloud logging read 'resource.type="cloud_run_revision" AND resource.labels.service_name="closestatsdays" AND jsonPayload.message="closeStatsDays: dias fechados"' --freshness=1d --limit=1 --format="value(timestamp)" --project=imagine-up-app
@@ -9542,7 +9574,7 @@ gcloud monitoring policies create --policy-from-file=docs/protecao/politicas/clo
 )
 ```
 
-O `echo` mostra um nome só, `projects/imagine-up-app/notificationChannels/<NUMERO>`. Depois, o `policies list` de 31.1 mostra 5, e o console (Monitoring, Alertas) nenhuma condição inválida. No primeiro mês, conferir que este alerta não dispara à toa.
+O `echo` mostra um nome só, `projects/imagine-up-app/notificationChannels/<NUMERO>`. Depois, o `policies list` de 31.1 mostra 6, e o console (Monitoring, Alertas) nenhuma condição inválida. No primeiro mês, conferir que este alerta não dispara à toa.
 
 **Testar o canal de novo** (e-mail trocado no console, ou dúvida se chega): uma política temporária que dispara com uma linha escrita à mão. O dono confirma o e-mail (olhar também o spam), e a política sai.
 
@@ -9558,7 +9590,7 @@ gcloud monitoring policies delete "$(gcloud monitoring policies list --filter='u
 
 O `logging write` vai uns 2 minutos depois do `create`; o `delete`, com o e-mail recebido.
 
-**Desfazer**, se um dia for preciso: as políticas antes, depois as métricas, depois o canal (o `--force` tira o canal das políticas que o usam). O gcloud do Windows termina cada linha com `\r\n`, e o `\r` não separa palavras no laço: sem o `tr -d '\r'`, só a última política sairia. O `list` depois do laço tem de voltar vazio antes de apagar as métricas, senão sobra política olhando métrica que não existe.
+**Desfazer**, se um dia for preciso: as políticas antes, depois as métricas, depois o canal (o `--force` tira o canal das políticas que o usam). O gcloud do Windows termina cada linha com `\r\n`, e o `\r` não separa palavras no laço: sem o `tr -d '\r'`, só a última política sairia. O `list` depois do laço tem de voltar vazio antes de apagar as métricas, senão sobra política olhando métrica que não existe. O laço apaga também a política da `api` fora do ar (alerta (d)); o teste de disponibilidade não tem o rótulo nas políticas e sai pelo `delete` de 32.7, com o `CHECK_ID`.
 
 ```bash
 for p in $(gcloud monitoring policies list --filter='userLabels.app=imagineup' --format='value(name)' --project=imagine-up-app | tr -d '\r'); do gcloud monitoring policies delete "$p" --quiet --project=imagine-up-app; done
@@ -9569,7 +9601,7 @@ gcloud logging metrics delete close_stats_days_ok --project=imagine-up-app
 gcloud beta monitoring channels delete "$(gcloud beta monitoring channels list --filter='displayName="ImagineUP: alertas do servidor"' --format='value(name)' --project=imagine-up-app)" --force --project=imagine-up-app
 ```
 
-**Criar de novo**, depois de um desfazer, na ordem de 14/10/2026: o canal, com o e-mail do dono no lugar do marcador; as 3 métricas; uns 10 minutos de espera, para o `rankingTick` rodar uma vez; o bloco das 4 políticas; a 5ª política só depois de uma rodada das 00:20 com a métrica já criada (o bloco acima); e o teste do canal.
+**Criar de novo**, depois de um desfazer, na ordem de 14/10/2026: o canal, com o e-mail do dono no lugar do marcador; as 3 métricas; uns 10 minutos de espera, para o `rankingTick` rodar uma vez; o bloco das 4 políticas; o teste de disponibilidade, os 10 minutos dele nas 3 regiões e a política da `api` fora do ar (32.7); a 6ª política (a `close-stats-days-parado`) só depois de uma rodada das 00:20 com a métrica já criada (o bloco acima); e o teste do canal.
 
 ```bash
 gcloud beta monitoring channels create --channel-content-from-file=docs/protecao/canal-email.json --channel-labels=email_address=<EMAIL_DO_DONO> --project=imagine-up-app
@@ -9599,7 +9631,7 @@ Todo deploy de funções sobe revisões novas e pode bater na cota de CPU da reg
 
    O `tr -d '\r'` é obrigatório no Git Bash: o gcloud do Windows termina cada linha com `\r\n`, o `paste` junta as linhas e deixa o `\r` no fim de cada nome menos o último, e o `--criteria-policies` não apara. Sem ele, o `create` falha ou silencia só a última política.
 
-2. **Conferir o intervalo e as políticas logo depois de criar.** Um silenciamento não se apaga (o grupo `snoozes` só tem `cancel`, `create`, `describe`, `list` e `update`), e uma data errada, com o ano trocado, calaria todos os alertas. O `list` dá o ID e as datas (em UTC, 3 horas a mais que Brasília); o `describe` dá as políticas, que são as mesmas do `policies list` de 31.1, uma por linha: 4 hoje, 5 depois da 5ª. Errado, cancelar e criar de novo.
+2. **Conferir o intervalo e as políticas logo depois de criar.** Um silenciamento não se apaga (o grupo `snoozes` só tem `cancel`, `create`, `describe`, `list` e `update`), e uma data errada, com o ano trocado, calaria todos os alertas. O `list` dá o ID e as datas (em UTC, 3 horas a mais que Brasília); o `describe` dá as políticas, que são as mesmas do `policies list` de 31.1, uma por linha: 6, com a da `api` fora do ar (32.7) e a `close-stats-days-parado` (31.4). Errado, cancelar e criar de novo.
 
    ```bash
    gcloud monitoring snoozes list --filter='displayName="Deploy do servidor"' --format="table(name.basename(),interval.startTime,interval.endTime)" --project=imagine-up-app
@@ -9620,7 +9652,7 @@ O `list` mostra também os silenciamentos antigos, que ficam para sempre; o que 
 - **`ip`:** o último item do `X-Forwarded-For`, o que o front-end do Google acrescenta no Cloud Run sem balanceador, nunca o primeiro, que o cliente escreve como quiser. O item é aparado e só vale se o `isIP` do `node:net` aceitar; o último item que não é um IP vira `null`, e nenhum texto do cliente chega à linha. Sem o cabeçalho, o `req.ip`, se for um IP, ou `null`. Com o cabeçalho, nunca o `req.ip`: atrás de um proxy confiado, o Express tira o `req.ip` do primeiro item. Que o último item é o IP de quem chamou, a publicação confere (31.12, passo 4) contra o `httpRequest.remoteIp` do log de pedido, com um cabeçalho forjado.
 - **`uid`:** o uid do Firebase Auth de quem chamou, ou `null` sem login. Na `api`, o uid só é conhecido depois do token, e a linha sai com `null` também no token inválido ou vencido e em toda recusa que vem antes do token, mesmo com login: o 404, o 405 (o `OPTIONS` inclusive), o 400 do caminho fora do formato, o 413 do corpo grande e o 403 do App Check. A consulta por uid não acha esses pedidos (31.8 e 31.9).
 
-**Na `api`.** No `finally` do `createApiHandler` (`functions/src/api/index.ts`), logo antes da linha `api`, que continua a última do pedido. Vale para todo pedido que chega ao handler: os de sucesso, o 401, o 404, o 405, o 429 do ritmo e o 500. O IP é calculado no começo do handler. O `ApiRequest` (`api/types.ts`) ganha o `ip?: string`, que o `Request` do Express já tem.
+**Na `api`.** No `finally` do `createApiHandler` (`functions/src/api/index.ts`), logo antes da linha `api`, que continua a última do pedido. Vale para todo pedido que chega ao handler: os de sucesso, o 401, o 404, o 405, o 429 do ritmo e o 500. Menos o `GET /health` (seção 32, decisão 18): a rota de saúde vem antes de tudo no handler e não escreve a linha `acesso` nem a linha `api`, porque é a sonda do teste de disponibilidade, e não acesso de quem usa o app (864 pedidos por dia). Cada sonda fica só no log de pedido, 30 dias. O `POST /health` e os outros caminhos com `/health` seguem a regra (404, com as duas linhas). O IP é calculado no começo do handler. O `ApiRequest` (`api/types.ts`) ganha o `ip?: string`, que o `Request` do Express já tem.
 
 - Não chegam ao handler, e ficam só no log de pedido, 30 dias (31.9): o corpo JSON malformado (400) e o `/favicon.ico` e o `/robots.txt` (404, também em `api/favicon.ico`, porque o caminho chega sem o nome da função), que o runtime das funções responde antes dele; o corpo acima de 32 MB, recusado antes da função; e o 429 com as instâncias no teto e o 503 da cota de CPU, que o Cloud Run responde sem chamar a função. Nenhum desses pedidos chega aos dados. O teste de emulador do JSON malformado prende o primeiro caso (31.11).
 
@@ -9716,6 +9748,7 @@ Premissas (as do plano): R$ 5,50 por dólar; os preços de tabela do Google lido
 | Proteção contra apagar o banco | R$ 0 | R$ 0 |
 | Backup diário com 14 dias | menos de R$ 0,01 | R$ 3,47 (R$ 1,73 a R$ 6,93) |
 | Canal, 3 métricas e 5 alertas | R$ 0 | R$ 0 |
+| Teste de disponibilidade da `api` e o alerta (d) (seção 32) | R$ 0 | R$ 0 |
 | O mesmo, a partir de 01/09/2027 | uns R$ 15 | uns R$ 15 |
 | Registro de acesso por 184 dias | R$ 0,00 | R$ 1,16 |
 | Total até 08/2027 | perto de R$ 0 | uns R$ 5,40 |
@@ -9723,6 +9756,7 @@ Premissas (as do plano): R$ 5,50 por dólar; os preços de tabela do Google lido
 
 - **Firestore STANDARD em São Paulo:** o PITR custa o mesmo que o armazenamento (US$ 0,135 por GiB por mês) e fica perto do tamanho do banco; o backup, US$ 0,045 por GiB por mês, com 14 cópias guardadas. Nenhum dos dois tem cota grátis. Restaurar e clonar só custam quando usados (31.3).
 - **Alertas:** grátis até 31/08/2027. A partir de 01/09/2027 (a data mínima anunciada pelo Google), US$ 0,35 por mês por métrica citada numa condição, mais US$ 0,50 por milhão de pontos lidos: uns R$ 15 por mês, que não mudam com o número de fãs. As 3 métricas de log ficam longe dos 150 MiB grátis.
+- **Teste de disponibilidade** (seção 32, 32.7): 25.920 execuções por mês, longe do milhão grátis por projeto. A política sobre a métrica do teste não é cobrada, nem a partir de 01/09/2027, então o alerta (d) não entra nos uns R$ 15. Os 864 pedidos por dia à `api` ficam no plano grátis, e o log de pedido deles soma uns 40 MB por mês no `_Default`. R$ 0.
 - **Registro de acesso:** uma linha de uns 1,2 KB por pedido (o envelope pesa mais que os dois campos), uns 4,1 GiB por mês com 10 mil fãs. A retenção além de 30 dias, com os 6 meses cheios, guarda uns 21 GiB: uns R$ 1,16 por mês. A linha também entra no `_Default`, e o projeto todo fica perto de 16 GiB por mês, dentro dos 50 GiB grátis de entrada. Se o uso triplicar, o projeto chega perto dos 50 GiB: aí vale tirar do `_Default` o que já vai ao bucket. As callables somam pouco, e o volume delas não cresce com os fãs.
 
 ### 31.11 Testes
@@ -9798,12 +9832,12 @@ Desde então as 66 funções rodam o código de `8faeccf`.
 
 Pendências:
 
-- **A 5ª política** (`close-stats-days-parado`), depois da rodada das 00:20 de 15/10/2026 (31.4), e, no primeiro mês, conferir que ela não dispara à toa.
+- **A 6ª política** (`close-stats-days-parado`, a "5ª" de 31.4: a da `api` fora do ar entrou antes): criada em 15/10/2026, às 03:21 UTC, logo depois da rodada das 00:20 (31.4). Falta, no primeiro mês, conferir que ela não dispara à toa.
 - **O orçamento de R$ 50 por mês**, pela cliente (UP-38), com avisos em 50%, 90% e 100% do gasto real e em 100% do previsto (o passo a passo está no plano, item 4). O orçamento só avisa: não corta gasto nem desliga nada. Conferir com ela quem administra a conta de faturamento.
 - **O roteiro de restauração** (31.3): o script que copia os documentos de volta com `--dry-run` e reexclui quem saiu depois da cópia. Ainda não escrito.
 - **A política de privacidade** (UP-45): citar que as cópias de segurança são apagadas em até 14 dias e que as fotos ficam nos Estados Unidos (o bucket de fotos em US-EAST1).
-- **O bucket de fotos** `imagine-up-app.firebasestorage.app`, em US-EAST1, sem versionamento e com 7 dias de exclusão reversível: uma foto apagada por engano some em 7 dias. Avaliar o versionamento com regra de vida curta, ou uma exclusão reversível maior. A região não muda sem um bucket novo.
-- **O uptime check da `api`** (31.4, alerta (b)), se o dono quiser.
+- **O bucket de fotos** `imagine-up-app.firebasestorage.app`, em US-EAST1, sem versionamento e com 7 dias de exclusão reversível: uma foto apagada por engano some em 7 dias. Avaliar o versionamento com regra de vida curta, ou uma exclusão reversível maior. A região não muda sem um bucket novo. (Decisão 7 do dono, 14/10/2026: anotado, não agora; o que pesa quando entrar, com o limite dos 30 dias da política, está em 32.15.)
+- **O teste de disponibilidade da `api`:** feito. Pedido pelo dono em 14/10/2026 e desenhado na seção 32 (A8: a rota `GET /health`, o teste e a política, o alerta (d) de 31.4). O teste "ImagineUP: api no ar" e a política "ImagineUP: api fora do ar", a 5ª com o rótulo, foram criados pelo Claude em 15/10/2026 (UTC), depois do deploy da seção 32 (32.12, "Como foi").
 - **Quem lê os registros:** conferir com a cliente quem tem os papéis de leitura de logs no projeto (31.7). Travar o bucket só depois do jurídico.
 - **As lacunas de 31.9**, para o jurídico (UP-45).
 
@@ -9845,6 +9879,788 @@ Cada etapa do plano de construção acrescenta aqui o ponto em que o código dec
 - **O `uid` `null` antes do token.** O 404, o 405, o 400 do caminho, o 413 e o 403 do App Check vêm antes do `authenticate` e saem com o `uid` `null`, mesmo com login (o próprio teste do 404 mandava o token). Entrou na 31.6, na 31.8 (a consulta por uid não os acha) e como a lacuna 5 de 31.9; o teste do 404 diz isso no nome.
 - **O trace na leitura do bucket.** O passo 9 de 31.12 pedia o trace da linha, e a leitura de 31.7 não o mostrava: o formato ganhou o `trace`, na ordem do passo 4.
 - **"Iguais ao que está ligado".** O `CLAUDE.md` e o `AGENTS.md` diziam isso de todo `docs/protecao/`, mas a 5ª política, a de teste e o filtro do sink não estão no ar (o gcloud de 14/10/2026 mostra 4 políticas e nenhum sink além dos dois padrão). O texto passou a separar os aplicados dos que esperam a vez, como a 31.2.
+
+## 32. Moderação do @, pedidos de dados (LGPD) e aviso de api fora do ar
+
+O bloco atende três decisões do dono que não pedem nada nativo. São três frentes: (A5) o @ trocado pela Moderação só volta a ser trocado pelo fã depois de 30 dias; (A6) a ferramenta da equipe para atender o pedido de dados de um fã pela LGPD, exportar ou excluir, que hoje só se faz pelo console; (A8) o aviso por e-mail quando a `api` sai do ar, por um teste de disponibilidade (uptime check) do Cloud Monitoring. A seção registra também as decisões que ficam para depois (32.15). Esta seção é o contrato: decisões, rotas e callables, dados, o passo a passo, regras, o painel e o README de passagem, o teste de disponibilidade com os comandos, o app com os textos, seed e fixtures, testes, o plano de construção, a publicação, as perguntas, o que é da cliente, as pendências, o que fica fora e as armadilhas. Segue os padrões das seções 1 a 31 e só diz o que muda ou acrescenta.
+
+Origem: as respostas do dono de 14/10/2026 às perguntas sobre o que falta no app. São oito: (1) entrar com Apple e Google na 1.0, com o "login automático" da aprovação de 28/09/2026; (2) tocar o vídeo dos posts no app; (3) o relatório de falhas (Sentry), anotado para depois; (4) as duas contas de demonstração das lojas, em produção, criadas na hora do envio; (5) o @ trocado pela Moderação com 30 dias de espera, a opção (a) da pergunta 23 de 26.19; (6) a ferramenta dos pedidos de dados, com o servidor agora e o painel numa outra conversa, por um README de passagem; (7) o versionamento do bucket de fotos, anotado; (8) o aviso de `api` fora do ar, no canal "ImagineUP: alertas do servidor". Os itens 1 e 2 mudam o fingerprint e vão num bloco nativo à parte (o bloco B, com a build das lojas). Os itens do painel (atualizar o Next.js, o CI do painel, o segundo fator da equipe, o cartão "Pronto para abrir" e o editor da lista do filtro) ficam para a outra conversa, depois deste bloco. Este bloco, o A, traz os itens 5, 6 e 8 e registra os itens 3, 4 e 7.
+
+Estado: publicado de 14 a 15/10/2026, com o ok do dono, da `main` `c4c25ff` (o merge do PR #24). Foi na noite de 14/10 em Brasília, de umas 02:07 a umas 02:30 UTC de 15/10. Saíram as 68 funções em 5 lotes, o `allUsers` da `exportFanData` e da `deleteFanAccount`, o teste de disponibilidade "ImagineUP: api no ar", a política "ImagineUP: api fora do ar" (a 5ª com o rótulo `app=imagineup`) e o EAS Update do canal preview na runtime `310056fd`. Nenhuma regra nem índice mudou. Como foi, em 32.12; o que falta, em 32.15. O desenho é de 14/10/2026, conferido contra o código da branch `lgpd-moderacao`, criada da `main` `c727f66`. Naquele dia, as 66 funções no ar rodavam o código de `8faeccf`, que só difere da `c727f66` na documentação. O estado da plataforma foi conferido pelo gcloud, só leitura, antes da construção: nenhum teste de disponibilidade; 4 políticas com o rótulo `app=imagineup` (a `close-stats-days-parado` esperava a rodada das 00:20 de 15/10/2026, 31.4); um canal só, "ImagineUP: alertas do servidor"; a `api` com 1 vCPU, concorrência 80, até 8 instâncias e nenhuma instância mínima. As perguntas estão em 32.13, o plano em 32.11 e a publicação em 32.12. O desenho passou por duas críticas no mesmo dia, uma de LGPD e segurança e outra de código e publicação; o que entrou e o que ficou de fora está em 32.19.
+
+Respostas do dono, de 14/10/2026 ("segue com as recomendadas"): a pergunta 1 com a (a), a exportação pela resposta da callable, em partes, que o painel junta e baixa como JSON; a pergunta 2 com a (i), só admin, na ficha do fã; a pergunta 3 com a (a), a rota nova `GET /health`; e as perguntas 4 a 16 com a proposta. Junto, a pergunta 6 da seção 33 (bloco B): o `posterUrl` na `api` entra na publicação deste bloco (decisão 25). A conta de demonstração das lojas (decisão 4 do dono, 32.15) fica para a hora do envio, não agora. O teste de disponibilidade e a política do `/health` são criados pelo Claude depois do deploy (32.12, passo 9): agora, só os arquivos (`docs/protecao/`) e os comandos (32.7). A construção começou no mesmo dia: as 8 etapas de 32.11 estão feitas, com a conferência no emulador Android pelo Expo Go, e a revisão final entrou antes do commit (32.19, fechamento). O commit da branch entrou na `main` pelo merge `c4c25ff` (PR #24); o que o código decidiu está em 32.19.
+
+Trava do bloco: nada muda o fingerprint do app (`310056fd840b5459416c9926e46846b8c208aa76`). Nenhum pacote novo, nada no `app.config.ts`, no `package.json`, no `.gitignore` nem no `eas.json`. A parte do app (só a A5) chega ao APK interno por EAS Update. No servidor: duas callables novas (68 funções), uma rota sem login na `api` (`GET /health`), o prazo no `resetFanUsername`, um campo novo no perfil e o `posterUrl` na mídia do vídeo (decisão 25). Nenhuma regra, índice composto, isenção, fila, TTL ou chave de teto do app nova. Na configuração do projeto: um teste de disponibilidade e uma política de alerta.
+
+Como era antes:
+
+- O `resetFanUsername` (26.4) troca o @ do fã por um automático novo e grava `usernameChangeableAt: null` (`releaseUsernameIn`, em `fan-profile/service.ts`). A primeira troca a partir do automático é livre (24.1), então o fã que não está suspenso pega de novo o @ ofensivo pelo app segundos depois (pergunta 23 de 26.19). Até a resposta, a equipe suspendia quem pegava o @ de volta.
+- O app diz "Você troca o @ de novo em {{date}}." quando o perfil tem o prazo, e "Você trocou o @ há menos de 30 dias." quando o servidor recusa com o 409 e o perfil em cache não tem o prazo (`edit-profile.tsx:292-339` e `:416-420`). O painel publicado diz, no diálogo da troca, "O fã fica com um @ automático novo e pode escolher outro na hora." (`imagineup-admin`, `src/lib/moderation.ts:66`).
+- O pedido de dados (art. 18 da LGPD: acesso, portabilidade e eliminação) só se atendia pelo console: o Firestore documento a documento, o Auth e o Storage. A seção 12 da política de privacidade publicada manda o pedido ao e-mail de atendimento, e a seção 9 pede a exclusão "do email cadastrado". A cópia completa (o acesso) tem prazo de 15 dias (art. 19, II); a eliminação pede providência imediata, ou uma resposta com os motivos (art. 18, §4º).
+- A exclusão pela própria pessoa existe no app (Ajustes, "Excluir conta"), e o gatilho `deleteUserProfile` apaga tudo (seção 12). Nenhuma ferramenta da equipe dispara essa exclusão.
+- Nenhum teste de disponibilidade. O alerta (b) de 31.4 olha só a taxa de 5xx da `api`: com a `api` fora do ar e nenhum pedido chegando, ninguém é avisado (31.4 e 31.13). A `api` não tem rota sem login que responda 200: o 401 de `/me/wallet` e o 404 de uma rota que não existe são as conferências manuais de hoje ("Publicar", passo 6).
+
+### 32.1 Decisões
+
+Cada item traz a escolha e o motivo, e a alternativa trocada quando há. As perguntas estão em 32.13.
+
+**Moderação do @ (A5)**
+
+1. **O `resetFanUsername` ganha um motivo, `moderation` ou `central`, e o `moderation` grava o prazo de 30 dias.** É a opção (a) da pergunta 23 de 26.19, a escolha do dono em 14/10/2026. A entrada ganha o campo opcional `reason`; sem ele, vale `moderation`, porque o painel publicado chama só com `{ uid, username }` (`imagineup-admin`, `src/lib/moderation-api.ts:42`). Com `moderation`, o fã fica com o automático novo e com o `usernameChangeableAt` daqui a 30 dias (o `nextUsernameChange`, o mesmo prazo da troca feita por ele). Com `central`, como hoje: sem prazo, para o @ de um artista que ainda não tem central (resposta 7 de 28.15), em que o fã não fez nada de errado. O @ antigo fica livre na hora nos dois casos (pergunta 15 de 26.19). Trocada: a opção (b) da pergunta 23, a trava da equipe na reserva antiga, que mexeria no `createArtist` e no `checkArtistHandle`. Limite (pergunta 15 de 32.13): a trava é da conta, e não do @. O @ antigo fica livre na hora para outra conta, e a pessoa que exclui a conta e cria outra volta sem prazo, com a primeira troca livre, como na suspensão (26.6). Quando o @ em si é ofensivo, a equipe pede o termo na lista do filtro (seção 30), e aí ninguém o pega. Destravar o prazo de um fã é um novo reset com `central`, que dá outro @ automático, sem prazo.
+2. **O motivo da trava fica no perfil, em `usernameLockReason`.** O valor é `'moderation'` ou `null`. O `releaseUsernameIn` grava `'moderation'` junto com o prazo e `null` sem ele; a troca feita pelo próprio fã (`writeUsernameSwap`) grava `null`. Motivo: o app precisa saber quem trocou para dizer a frase certa, e o prazo sozinho não diz. Sem o `null` na troca do fã, um `moderation` antigo ficaria ao lado do prazo novo dele, e o app diria que a equipe trocou. O campo ausente (os perfis de antes) vale `null`. Trocado: o motivo só na auditoria, que o app não lê.
+3. **As rotas do fã não mudam.** O `PUT /me/username` e o `PUT /me/profile` já leem o `usernameChangeableAt` do perfil que o `runIdempotent` leu e recusam pelo `usernameChangeProblem`, com 409 `username_change_too_soon` e o `details.changeableAt`, sem gravar nada (24.4 e 28.4, passo 3). O @ igual ao de agora responde sem gravar, e o suspenso recebe o 403 antes. Gravar o prazo no reset basta para as duas rotas recusarem até a data.
+4. **O `EditableProfile` ganha o `usernameLockReason`.** O `PUT /me/profile` responde o perfil editável, e o app o põe no cache por cima do que veio do Firestore (`applyEditableProfile`). Sem o campo na resposta, o cache perderia o motivo a cada salvamento. O campo é aditivo: o JS no ar o ignora.
+5. **A auditoria leva o motivo, e a resposta leva o prazo.** O `fan.username.reset` passa a `details: { uid, previous, username, reason }`; as entradas de antes ficam sem ele (todas eram sem prazo). A resposta da callable ganha o `changeableAt` (ISO, ou `null` com `central`), também aditivo.
+
+**Pedidos de dados (A6)**
+
+6. **Duas callables novas, só para admin: `exportFanData` e `deleteFanAccount`.** Nenhuma seção nova. Motivo: os pedidos são raros (alguns por ano), a exclusão não tem volta, e a exportação entrega o e-mail da conta a partir do uid, o que hoje só o `getRedemptionContacts` faz, nos pedidos abertos e para a seção `rewards` (a busca por e-mail devolve só o uid, 26.4). Só admin não muda o `SECTION_IDS`, as regras, o `canSeeSection` nem o modelo de seções do painel, e segue a página Equipe, que também é só de admin (`TEAM_PAGE`). O admin é lido de `staff/{uid}` (ativo, com a sessão depois do `authValidAfter` e o papel `admin`), direto e de novo na transação, no molde do `readPanelActor`. Trocadas (pergunta 2): (ii) exportar com a seção `fans` e edição, como o `findFanByEmail`, e excluir só admin; (iii) uma seção nova, `lgpd`, que muda o `SECTION_IDS` (`staff/model.ts`), o `SECTION_LABELS` (`staff/panel-actor.ts`), o espelho do painel (`src/lib/staff.ts`), a tela Equipe e as regras de leitura de `users` (hoje só `fans` e `moderation`), com os testes delas.
+7. **A exportação é a resposta da callable, em partes, e o painel junta e baixa o arquivo.** A primeira chamada (sem `part`) devolve a conta, o perfil, os documentos únicos e as listas curtas, com a lista das partes longas. Cada parte longa vem em páginas de até 500 documentos (`part` e `after`). O painel junta tudo num arquivo `.json` no navegador (por Blob) e não guarda nada. Nenhuma cópia fica no servidor. Motivo: em partes, nenhuma resposta chega perto do teto de uns 32 MiB da resposta da callable de 2ª geração (o emulador não confere esse teto), nenhuma passa do prazo padrão de 60 s, e 256 MiB bastam, com a CPU a 1/6. Um fã muito ativo por um ano dá uns 4 MB; um fã no teto do dia por um ano (300 curtidas e 100 comentários por dia) passaria de 32 MB numa resposta só. A primeira chamada leva as denúncias inteiras, que as regras fecham para a equipe: no teto do dia, um ano dá umas 11 mil, uns 2 MB (32.3). Trocadas (pergunta 1): (b) uma resposta só, com a recusa `export-too-large` acima de uns 20 MiB, 512 MiB e 120 s (1/3 de vCPU e uma sobra de CPU de uns 0,34); (c) um arquivo no Storage com link assinado, que pede o papel `iam.serviceAccountTokenCreator` na conta das funções (o Editor não tem o `iam.serviceAccounts.signBlob`), uma pasta nova no `storage.rules` e uma regra de vida no bucket (em US-EAST1), e deixa o dado num lugar a mais. O código nunca usou o `getSignedUrl`: as fotos usam o `getDownloadURL` com token, que não vence.
+8. **O arquivo traz o que a exclusão apaga, por uma lista comum, sem o técnico e sem dado de outra pessoa ou da equipe.** As fontes ficam em `FAN_DATA_SOURCES` (`functions/src/fan-data/sources.ts`), com o que vai ao arquivo, os campos que saem de cada fonte (`omit`) e o que a exclusão faz com cada uma (32.3). O comentário do `deleteUserData` ("Dado novo do fã fora de users/{uid} precisa entrar aqui") passa a apontar para a lista, e um teste de emulador prende as duas pontas (32.10). Ficam fora, com o motivo escrito na lista: as cópias técnicas (`idempotency`, `profileSync` e `uploads`), as chaves HMAC dos visitantes do convite (de outras pessoas), o uid de quem convidou o fã e os convidados dele (só a contagem), as denúncias contra o fã (`moderationQueue` e `profileReportQueue`, que são de quem denunciou), o `staffAudit` (registro interno, com o nome de quem é da equipe) e o `staff/{uid}` (não é dado de fã). Os documentos do fã também guardam dado de outras pessoas, e esses campos saem pelo `omit`: no extrato, o `actor` (o uid do convidado nos lançamentos do convite e nas missões que ele pagou; o uid e o nome de quem é da equipe no ajuste e na devolução do resgate), que fica só com o `type`, o `uid` e o `note` do ajuste (o motivo, texto livre da equipe, que o painel diz a quem ajusta que o fã não vê e que pode citar outra pessoa); nos `invite_visit` e `invite_signup`, a chave da pessoa trazida no id e no `eventId`; o `updatedBy` dos pedidos; o `hiddenBy` dos comentários; o `ownerKey` dos códigos (que não sai do servidor, `firestore.rules`); o `round` da denúncia de perfil (a rodada do item de outro fã); na origem, o `award` (o pagamento a quem convidou, que diria se ela estava suspensa ou no limite do dia) e o `inviterRemovedAt` (quando ela excluiu a conta); os resumos `keys` das missões da carteira (nas de convite, o resumo da chave da pessoa trazida); e três técnicos do perfil (`searchKeys`, `signupCounted` e `photoPath`). Os alvos das denúncias e dos bloqueios feitos pelo fã ficam (pergunta 7). O resto vai como está gravado: um campo novo do fã entra sozinho, uma fonte nova pede a lista, e um campo novo com dado de outra pessoa entra no `omit` (o teste de 32.10 acusa). Trocado: completo por padrão, sem filtro de campos, que levava esses campos ao fã. O `GET /me/ledger` do app já mostra ao fã o id dos lançamentos do convite: o limite de 20.6 não muda.
+9. **O registro de acesso fica fora do arquivo.** O arquivo traz um aviso: os registros de acesso ficam 6 meses, por lei, e são pedidos à equipe. Motivo: a consulta é do Cloud Logging (31.7), e a função precisaria de um papel novo de leitura de logs na conta de serviço padrão do Compute (`<NUMERO_DO_PROJETO>-compute`), que todas as funções dividem; a entrega desse registro já tem o roteiro de 31.8, com o jurídico (UP-45); e a consulta por uid não acha as recusas anteriores ao token (31.9, lacuna 5). Na exclusão, o registro e o `staffAudit` com o uid continuam, como a seção 8 da política já diz.
+10. **Confirmação forte: o pedido confirmado pelo e-mail da conta, o e-mail digitado e o login recente.** As duas callables recebem o `email` que a pessoa da equipe digita, e o servidor confere com o e-mail da conta no Auth, sem diferença de maiúsculas (`email-mismatch`, sem dizer qual é o certo). A política pede o pedido "do email cadastrado" (seção 9), então a equipe tem esse e-mail na mão. A conferência liga a tela à conta (um uid errado colado na tela não passa), e não o pedido à pessoa: um remetente forjado ou um Reply-To trocado passam por ela. Por isso o caminho do pedido fica no README e na política (32.6, item 4, e 32.14): quem consegue entrar no app exclui pelo app; a equipe responde numa mensagem nova ao e-mail da conta, nunca ao Reply-To; a exclusão só sai com a resposta vinda dessa caixa, depois da lista do que se perde; o arquivo vai numa mensagem nova ao e-mail da conta e, com o `emailConfirmado` false (o caso comum, porque o cadastro não confirma o e-mail), só depois da mesma ida e volta, que prova quem tem a caixa, e não quem usou a conta; e o pedido de um representante (art. 18, §3º, e o responsável pelo menor, art. 14) fica fora da ferramenta, com o jurídico. O login de quem chama precisa ter até 10 minutos (o `auth_time` do token; `recent-login-required`), na primeira chamada da exportação e na exclusão. As páginas da exportação pedem só o admin (decisão 12). Trocada: digitar o @ de agora, como no reset (`username-changed`), que confirma a tela, mas não o pedido.
+11. **A exclusão é a do Auth.** O `deleteFanAccount` chama o `auth.deleteUser(uid)`, e o gatilho `deleteUserProfile` (`retry: true`) apaga tudo, como na exclusão pelo app (seção 12). A callable responde que a conta saiu (`deleted`), e não que os dados sumiram: a falha do gatilho cai no alerta (a) de 31.4. Trocado: a callable rodar o `deleteUserData` ela mesma, o que levaria o Storage, a fila da segunda limpeza da foto e um prazo longo para dentro dela, e faria duas exclusões correrem juntas.
+12. **A auditoria vem antes da exclusão, na mesma transação do teto; as páginas da exportação não auditam.** O `fan.data.exported` e o `fan.account.deleted` levam `details: { uid }`, o `targetEmail` vazio e o alvo `fan:<uid>` (pelo prefixo `fan.`), nunca o e-mail. Na exclusão, a transação (o admin relido, o teto e a auditoria) vem antes do `deleteUser`: o registro de quem mandou excluir existe antes do ato sem volta. Se o `deleteUser` falhar, a auditoria fica, a ficha continua no painel, e a nova tentativa da mesma pessoa da equipe no mesmo dia não grava outra entrada nem conta de novo (o uid fica na lista do dia dela, decisão 13). A lista é de quem chama: outro admin que repete conta no teto dele e grava outra entrada. Trocada: a auditoria depois, que deixaria uma conta apagada sem registro se a transação falhasse. Na exportação, a primeira chamada audita e conta; as páginas não, porque só trazem o que o admin já lê pelas regras (`users/{uid}` e as subcoleções, `wallets`, `postComments`, `fanInvites` e `redemptions`). O que as regras fecham para a equipe (o e-mail, as denúncias que o fã fez e os bloqueios) vem só na primeira chamada.
+13. **Teto do dia por pessoa: 20 exportações e 5 exclusões.** No `staffLimits/{uid}_{dia}` (`staff/limits.ts`), com o TTL de 30 dias que já existe: `dataExports` (a contagem) e `deletedUids` (os uids excluídos no dia; a contagem é o tamanho da lista). Motivo: segura o erro e a sessão roubada, e cinco cobrem as duas contas de demonstração (32.15). Recusas `export-daily-limit` e `deletion-daily-limit`.
+14. **Fã que é da equipe: exportar pode, excluir não.** O `deleteUserData` apaga o `staff/{uid}` sem a trava do último admin (`store.ts`), e o `artistPrivate.managerUid` ficaria apontando para uma conta que não existe. A exclusão recusa `fan-is-staff` quando o `staff/{uid}` existe, em qualquer status. A equipe tira a pessoa em Equipe antes (`removeStaffMember`, que mantém a conta quando ela tem `users/{uid}`) e exclui depois. O `self` continua: ninguém exclui nem exporta a própria conta pelo painel (pelo app, exclui).
+15. **Os casos de borda da exclusão.** Conta do Auth que já saiu com o perfil ainda lá (a repetição depois do sucesso, ou o gatilho atrasado): `{ status: 'pending' }`, sem teto nem auditoria. Sem conta e sem perfil: `fan-not-found`. Conta do Auth sem perfil e sem `staff/{uid}` (a de antes do gatilho, ou um cadastro desfeito pela metade): exclui, porque também é dado pessoal. Perfil sem conta por mais de 1 hora é falha do gatilho: fica com o alerta (a) e com um roteiro fora do bloco (32.16). O painel não chega à conta do Auth sem perfil: o `findFanByEmail` devolve `uid: null` sem o `users/{uid}`, e a busca de Fãs diz "Nenhum fã com esse e-mail." (a ficha aberta pelo uid diz "Fã não encontrado."). O servidor aceita o caso, e o pedido dessa conta sai pelo console do Authentication, com o ok do dono (32.16).
+16. **Exportar pede a conta do Auth.** Sem ela (a exclusão em andamento), `fan-not-found`: não há e-mail para conferir, e os dados estão saindo. Conta sem perfil exporta a conta, com o `perfil` `null`, mas só fora do painel (decisão 15).
+
+**Aviso de api fora do ar (A8)**
+
+17. **Uma rota de saúde sem login, `GET /health`, testada pelo uptime check.** Responde 200 com `{"ok":true}` e `Cache-Control: no-store`, sem Firestore, sem login e sem App Check. Ela fica no começo do `createApiHandler`, antes do `matchRoute`, do App Check e do `authenticate` (`functions/src/api/index.ts`): uma `ReadRoute` comum passaria pelo login e daria 401. Não entra na `API_ROUTES`, que segue com 44; `POST /health` e `/health/x` seguem o caminho de hoje (404 `not_found`). O deploy que ela pede sai junto com as funções do bloco, sem custo a mais. Trocado (pergunta 3): o 401 de `GET /api/me/wallet`, sem deploy, com duas armadilhas: com o `APP_CHECK_MODE` em `enforce` (27.5, na build das lojas), o App Check vem antes do login, a sonda recebe 403 e o alerta dispara à toa; em `monitor`, cada sonda escreve "api: pedido sem App Check válido" e polui a medição.
+18. **A rota de saúde não escreve a linha `acesso` nem a linha `api`.** Ela não é acesso de quem usa o app, não lê dado nenhum, e a sonda deixaria 864 linhas por dia por 184 dias no bucket do registro de acesso, com o IP do Google. O log de pedido do Cloud Run continua guardando cada uma por 30 dias. Muda o contrato de 31.6 ("todo pedido que chega ao handler") para "menos o `GET /health`". Trocado: manter as linhas e citar a sonda em 31.9, com os IPs pelo `gcloud monitoring uptime list-ips`.
+19. **O teste: a cada 5 minutos, de 3 regiões, com 30 s de prazo.** As regiões `south-america`, `usa-virginia` e `usa-oregon`: 3 é o mínimo; a América do Sul é onde estão os fãs, e as duas dos EUA ficam em costas diferentes. HTTPS na porta 443, `GET /api/health` no host `southamerica-east1-imagine-up-app.cloudfunctions.net` (o mesmo do `EXPO_PUBLIC_API_URL`), com o certificado conferido, o status 2xx e o corpo com `"ok":true`. O prazo cobre a partida a frio (uns 2,5 s nos logs) com folga. O rótulo `app=imagineup`. Trocados: 1 minuto, que avisa antes, mas faz 5 vezes mais pedidos e linhas no log de pedido; o prazo padrão de 60 s.
+20. **A política: 2 ou mais regiões falhando por 5 minutos.** O `check_passed` de cada região alinhado pelo valor mais recente (`ALIGN_NEXT_OLDER`, 1200 s), contado pelas falhas por host (`REDUCE_COUNT_FALSE`), acima de 1, por 300 s. Uma região sozinha (a sonda do Google com problema) não dispara. O aviso chega de 5 a 10 minutos depois da queda. O filtro é pelo host, e não pelo `check_id`, que só existe depois de criar o teste: assim o arquivo não leva id nenhum (31.2). O e-mail vai ao canal de hoje, com o "O que fazer" na `documentation`, e o silenciamento do deploy (31.5) já pega a política pelo rótulo.
+21. **O comando do teste fica na nota, e a política num arquivo.** O `gcloud monitoring uptime create` não aceita arquivo de configuração: os flags ficam em 32.7. A política vai a `docs/protecao/politicas/api-fora-do-ar.json`, cópia byte a byte de `Projetos/protecao-imagineup/politicas/api-fora-do-ar.json` (31.2).
+22. **A sonda mantém uma instância da `api` acordada a maior parte do tempo.** É bom para o fã (menos partida a frio) e não custa CPU fora dos pedidos. Essa instância conta na cota de CPU da região enquanto existe: o pior caso do `cpu.test.ts` já conta as 8 instâncias da `api` e não muda, mas na janela do deploy sobra 1 vCPU a menos. O silenciamento e os lotes de "Publicar" seguem iguais.
+
+**Geral**
+
+23. **Publicar todas as funções**, as 68, pela regra geral de "Publicar", em 5 lotes. O código mudado é dividido: o `audit-index.ts` entra no `writeAudit` de toda callable que audita, o `staff/limits.ts` no `findFanByEmail` e no `adjustFanPoints`, e o `fan-profile/service.ts` na `api` e na callable. A pergunta 12 de 29.15 (o lote mínimo) segue sem resposta.
+24. **CPU: as duas callables a 256 MiB (1/6 de vCPU cada).** A `api` cheia mais uma instância de cada outra função passa de uns 19,16 para uns 19,49 dos 20 vCPU da região, com uma sobra de uns 0,51 (umas 3 funções a 1/6).
+25. **O `posterUrl` da seção 33 entra neste bloco, só a parte do servidor.** Resposta do dono à pergunta 6 de 33.13, em 14/10/2026: a capa grande do vídeo na `api` sai na publicação do bloco A. O contrato é o de 33.2 (decisão 21 de 33.1): o `mediaView` (`functions/src/posts/model.ts`) e o `PostMedia` (`functions/src/api/contract.ts`) ganham o `posterUrl`, opcional, só no vídeo: a `media.photo.url` (a capa de até 1080), ou `null` sem mídia gravada; a foto sai sem o campo; texto e show, `media: null`, como hoje. Só a `api` chama o `postView`, e ela já está no lote 1 (32.12). Ficam no bloco B: o `types.ts` do app, a capa parada do detalhe com `posterUrl ?? thumbnailUrl` e o mp4 do seed (33.11, etapa 1), que passam a usar o servidor deste bloco; o bloco B não refaz o `mediaView` nem o `contract.ts`. O app no ar ignora o campo, e o JS deste bloco não o lê.
+
+### 32.2 Contrato: a rota, as callables e os erros
+
+#### `GET /health` (na `api`, sem login)
+
+- Resposta: 200, `{"ok":true}`, `Content-Type: application/json; charset=utf-8` e `Cache-Control: no-store`. Só o `GET` com o caminho exato `/health` (o `req.path`, que chega sem o `/api`). No endereço público: `https://southamerica-east1-imagine-up-app.cloudfunctions.net/api/health`.
+- Antes de tudo no handler: sem o `clientIp`, sem App Check, sem token, sem o ritmo, sem Firestore e sem as linhas `acesso` e `api`.
+- O corpo é contrato do teste de disponibilidade (o `--matcher-content` de 32.7). Ele fica numa constante, `HEALTH_BODY`, com o comentário de contrato, e o teste confere o texto exato (32.10).
+
+#### `resetFanUsername` (muda)
+
+- Entrada: `{ uid: string, username: string, reason?: 'moderation' | 'central' }`. O `reason` ausente vale `moderation`; outro valor dá `invalid-request` com `field: 'reason'`.
+- As recusas de hoje continuam iguais: `unauthenticated`, `invalid-request` (`uid` e `username`), `self`, `not-staff`, `no-section` (o Leitor), `fan-not-found`, `username-changed` e `username-of-central`.
+- Saída: `{ ok: true, username, changeableAt }`, com o `changeableAt` em ISO (`moderation`) ou `null` (`central`).
+- Auditoria `fan.username.reset`, com `details: { uid, previous, username, reason }`.
+
+#### `PUT /me/profile` e `PUT /me/username` (a recusa não muda)
+
+- A recusa até a data é a de hoje: 409 `username_change_too_soon`, com `details: { changeableAt }`. Nenhum motivo novo no erro: o app lê o motivo do perfil (32.8).
+- O `EditableProfile`, a resposta do `PUT /me/profile`, ganha `usernameLockReason: 'moderation' | null` (o tipo `UsernameLockReason` do `contract.ts`). A troca do @ pelo fã grava `usernameLockReason: null`.
+
+#### `PostMedia` (na `api`, muda: o `posterUrl`)
+
+- O contrato de 33.2 (decisão 25): no vídeo, `posterUrl` com a `media.photo.url`, ou `null` sem mídia gravada; na foto, sem o campo. Vale no `GET /feed`, no `GET /artists/:id/posts` e no `GET /posts/:id`, que montam o post pelo mesmo `postView`. Nenhum código de erro, rota, teto ou chave nova.
+
+#### `exportFanData` (nova, só admin)
+
+- **Primeira chamada.** Entrada: `{ uid: string, email: string }`. Saída: o começo do arquivo (32.3), com `partes`, a lista das partes que faltam.
+- **Página.** Entrada: `{ uid: string, part: string, after?: string }`, com o `part` de uma das 8 partes de 32.3. Saída: `{ part, items, after }`, em que `items` são até 500 documentos na ordem do id (`FieldPath.documentId()`), com o `omit` da fonte, e `after` é o id do último documento da página (o caminho, nos comentários), ou `null` quando a parte acabou. O painel devolve o `after` como veio.
+- Recusas, nesta ordem: `unauthenticated`; `invalid-request` com `field: 'uid'`; `self`; `invalid-request` com `field: 'email'` (o formato do `parseLookupEmail`), `'part'` ou `'after'`; `not-staff`; `admin-only`; `recent-login-required` (só a primeira chamada); `export-daily-limit` (só a primeira); `fan-not-found` (sem conta no Auth); `email-mismatch`.
+- `timeoutSeconds` padrão (60 s) e 256 MiB: o painel usa o prazo padrão do SDK (70 s).
+
+#### `deleteFanAccount` (nova, só admin)
+
+- Entrada: `{ uid: string, email: string }`. Saída: `{ status: 'deleted' | 'pending' }`.
+- Recusas, nesta ordem: `unauthenticated`; `invalid-request` com `field: 'uid'`; `self`; `invalid-request` com `field: 'email'`; `not-staff`; `admin-only`; `recent-login-required`; `fan-is-staff`; `fan-not-found`; `email-mismatch`; `deletion-daily-limit`. O `pending` vem antes do `email-mismatch`: sem a conta, não há e-mail para conferir.
+
+**Motivos novos** (`PanelErrorReason` e `ERRORS` de `staff/panel-errors.ts`; o `admin-only` no `PanelAccessReason` e no `panelAccessError` de `staff/panel-actor.ts`, ao lado dos de acesso):
+
+| Motivo | Código | Mensagem |
+| --- | --- | --- |
+| `admin-only` | `permission-denied` | "Só um admin do painel pode fazer isso." |
+| `recent-login-required` | `failed-precondition` | "Entre de novo com a sua senha para continuar." |
+| `email-mismatch` | `failed-precondition` | "Este e-mail não é o da conta deste fã. Confira o e-mail do pedido." |
+| `fan-is-staff` | `failed-precondition` | "Esta conta também é da equipe do painel. Tire a pessoa da Equipe antes de excluir a conta." |
+| `export-daily-limit` | `resource-exhausted` | "Você chegou ao limite de 20 exportações de dados hoje." |
+| `deletion-daily-limit` | `resource-exhausted` | "Você chegou ao limite de 5 exclusões de conta hoje." |
+
+Os de hoje que as duas usam: `invalid-request`, `self` e `fan-not-found` (`panel-errors.ts`) e `unauthenticated` e `not-staff` (`panel-actor.ts`).
+
+### 32.3 Dados: campos, a lista das fontes e o arquivo
+
+**Perfil (`users/{uid}`):** `usernameLockReason`, `'moderation'` ou `null`, gravado só pelo servidor (o `releaseUsernameIn` e o `writeUsernameSwap`). Ausente vale `null`.
+
+**`staffLimits/{uid}_{dia}`:** os campos `dataExports` (número) e `deletedUids` (lista de uids). Mudam juntos o `StaffLimitState`, o `emptyStaffLimit`, o `parseStaffLimit` (leitura tolerante: só textos no formato do uid, sem repetir), o `checkStaffLimit` (os pedidos `{ kind: 'data-export' }` e `{ kind: 'account-deletion', uid }`; o uid que já está na lista passa sem somar) e o `addStaffLimit`, que grava todos os campos a cada vez com um `set` sem `merge`. Constantes `DATA_EXPORTS_DAILY_MAX = 20` e `ACCOUNT_DELETIONS_DAILY_MAX = 5`.
+
+**`staffAudit`:** as ações `fan.data.exported` e `fan.account.deleted` no `AuditAction` (`staff/service.ts`), com a seção `fans` no `SECTION_BY_ACTION` (`staff/audit-index.ts`); o prefixo `fan.` já dá o alvo `fan:<uid>`.
+
+**As fontes (`FAN_DATA_SOURCES`):** cada fonte com o lugar no arquivo (a primeira chamada, uma parte ou fora, com o motivo) e o que a exclusão faz com ela. É a lista que a exportação percorre e que o teste de 32.10 prende ao `deleteUserData`.
+
+| Fonte | No arquivo | Na exclusão |
+| --- | --- | --- |
+| Auth (`getUser`) | `conta`: o nome do Auth (o do cadastro, que a edição do perfil não muda), o e-mail, se ele foi confirmado, cada provedor com o e-mail dele, a criação e o último login; nunca o hash da senha nem os tokens | começa por ela |
+| `users/{uid}` | `perfil`, sem `searchKeys`, `signupCounted` e `photoPath` | apagado |
+| `users/{uid}/centrals` | parte `centrais` | apagado, com o `fanCount` |
+| `users/{uid}/postLikes` | parte `curtidas` | apagado, com a contagem do post |
+| `users/{uid}/eventRsvps` | parte `presencas` | apagado |
+| `users/{uid}/profileSync` e `users/{uid}/uploads` | fora: técnicos (o orçamento das cópias e a vaga do envio da foto) | apagados |
+| `usernames` com `uid ==` | `arrobasReservados`, só os ids | apagado |
+| `wallets/{uid}` | `carteira`, sem os resumos `keys` das missões | apagado |
+| `wallets/{uid}/ledger` | parte `extrato`, sem o `uid` e o `note` (o motivo do ajuste, que o painel diz que o fã não vê) e com o `actor` só com o `type`; nos `invite_visit` e `invite_signup`, o id só com a origem e sem o `eventId` (a chave da pessoa trazida) | apagado |
+| `wallets/{uid}/centralPoints` | parte `pontosPorCentral` | apagado |
+| `fanInvites/{uid}` | `convite` | apagado |
+| `fanInvites/{uid}/inviteLinks` | parte `linksDeConvite` | apagado |
+| `fanInvites/{uid}/inviteVisitors` | fora: chaves HMAC do e-mail de outras pessoas | apagado |
+| `inviteCodes` com `uid ==` | `codigosDeConvite`, sem o `ownerKey` | apagado |
+| `referrals/{uid}` | `origem`, sem o `inviterUid`, o `award` e o `inviterRemovedAt` (de quem convidou: o uid, o pagamento a ela e quando ela excluiu a conta) | apagado |
+| `referrals` com `inviterUid ==` | `pessoasTrazidas`, só a contagem | desligado (`inviterUid` null) |
+| `wallets/<quem convidou>/ledger` (os `invite_*` e as missões que o fã pagou a quem o convidou) | fora: são da carteira de outra pessoa | ficam, com o uid do fã no `actor` e a chave dele no id (pergunta 16; jurídico, UP-45) |
+| grupo `postComments` com `authorUid ==` | parte `comentarios`, com o `postId` e sem o `hiddenBy` | apagado, com a contagem e a fila |
+| `commentReports` com `reporterUid ==` | `denunciasDeComentario`, inteiras | apagado, descontado da fila |
+| `profileReports` com `reporterUid ==` | `denunciasDePerfil`, inteiras, sem o `round` | apagado |
+| `blockLists/{uid}` | `bloqueios` | apagado, e o uid sai das listas dos outros |
+| `redemptions` com `uid ==` | parte `pedidosDaLoja`, sem o `updatedBy` | o aberto cancelado, e todos sem o uid e as cópias |
+| `seasons/*/standings/{uid}` | `temporadas`, com o id da temporada | apagado |
+| `moderationQueue` (os comentários do fã) e `profileReportQueue/{uid}` | fora: denúncias contra o fã, de quem denunciou (jurídico, UP-45) | ficam: o item do comentário sem o texto, e o do perfil sem o `resolvedDigest` |
+| `idempotency` com `uid ==` | fora: cópias técnicas das respostas, 30 dias | apagado |
+| `staff/{uid}` | fora: o acesso ao painel não é dado de fã | apagado (a exclusão pela equipe recusa antes, `fan-is-staff`) |
+| Storage `fans/{uid}/` | o `photoURL` do perfil | apagado |
+| `staffAudit` com o uid | fora: registro interno, com o nome de quem é da equipe | fica (seção 8 da política) |
+| registro de acesso (31.7) | fora: aviso no arquivo (decisão 9) | fica 184 dias |
+
+**O arquivo.** A primeira chamada devolve o começo, e o painel acrescenta cada parte como uma lista com o nome dela, tira o `partes` e baixa como `imagineup-dados-<uid>-<AAAA-MM-DD>.json`. Os nomes do nível de cima ficam em português, porque o arquivo vai para o fã; os campos de dentro ficam como estão gravados. Cada documento de lista leva o `id` (e o comentário, o `postId`).
+
+```json
+{
+  "formato": "imagineup-dados-do-fa",
+  "versao": 1,
+  "geradoEm": "2026-10-20T13:00:00.000Z",
+  "uid": "<uid>",
+  "avisos": ["..."],
+  "conta": {
+    "nome": "Nome do cadastro",
+    "email": "pessoa@exemplo.com",
+    "emailConfirmado": false,
+    "provedores": [{"id": "password", "email": "pessoa@exemplo.com"}],
+    "criadaEm": "2026-10-10T12:00:00.000Z",
+    "ultimoLoginEm": "2026-10-19T22:10:00.000Z"
+  },
+  "perfil": {},
+  "arrobasReservados": [],
+  "carteira": null,
+  "convite": null,
+  "codigosDeConvite": [],
+  "origem": null,
+  "pessoasTrazidas": 0,
+  "bloqueios": null,
+  "denunciasDeComentario": [],
+  "denunciasDePerfil": [],
+  "temporadas": [],
+  "partes": ["extrato", "pontosPorCentral", "centrais", "curtidas", "presencas", "comentarios", "linksDeConvite", "pedidosDaLoja"]
+}
+```
+
+- **Valores:** o `Timestamp` vira ISO em UTC; a referência de documento, o caminho; o `GeoPoint`, `{ latitude, longitude }`; os bytes, base64; mapas e listas, recursivos. Uma função pura, `toExportValue` (`fan-data/model.ts`).
+- **Os avisos** (`avisos`, nesta ordem): "Este arquivo traz os dados da sua conta no ImagineUP no momento em que foi gerado."; "As datas estão em UTC, no formato ISO 8601."; "Os campos com uid no nome, como reporterUid e targetUid, guardam o identificador interno de uma conta."; "A foto do perfil está no endereço do campo photoURL."; "Os registros de acesso (data, hora e endereço IP) ficam guardados por 6 meses, como pede o Marco Civil da Internet (art. 15). Eles não estão neste arquivo. Para pedir, responda ao e-mail da equipe."
+- **As listas da primeira chamada:** os bloqueios vão até 1.000 (`BLOCK_LIST_MAX`), os códigos e as reservas são poucos, e as temporadas, uma por temporada fechada. As denúncias não têm teto de tamanho: o `REPORTS_PER_DAY` (30, ajustável no `comment_report` pelo painel) é por dia, somando comentário e perfil, e o histórico vem inteiro. No teto, um ano dá umas 11 mil denúncias, uns 2 MB (uns 200 B cada), longe dos uns 32 MiB da resposta. A primeira chamada lê cada lista de denúncias em páginas internas de 500, pela ordem do id, até o fim, sem cortar. Elas não viram parte, porque as regras as fecham para a equipe e as páginas não auditam (decisão 12).
+- **O filtro de campos** (o `omit` de cada fonte, decisão 8): no servidor, na primeira chamada e nas páginas, antes do `toExportValue`. O `after` das páginas é o id de verdade do documento (o admin lê o extrato pelas regras), e o arquivo leva o id com a máscara.
+- **O fã da equipe:** a exportação traz só os dados de fã. O `staff/{uid}` fica fora (decisão 8), e a equipe junta à mão, se o pedido for também sobre o acesso ao painel.
+
+### 32.4 Passo a passo
+
+**`GET /health`:** no começo do handler, antes do `clientIp`: com `method === 'GET'` e `req.path === '/health'`, `send(res, 200, HEALTH_BODY)` e `return`, fora do `try` e do `finally`.
+
+**`resetFanUsername`:**
+
+1. `targetFanUid`, o `readPanelActor(directRead, ..., 'moderation', 'edit')`, o `parseCurrentUsername` e o `parseResetReason` (ausente: `moderation`).
+2. Na transação: o membro relido; o perfil (`fan-not-found`); o @ pedido igual ao de agora (`username-changed`); o `releaseUsernameIn(tx, db, username, { now, uid, random, reason })`, que grava `username`, `usernameChangeableAt` (agora mais 30 dias, ou `null`) e `usernameLockReason` (`'moderation'`, ou `null`) num `tx.update` só.
+3. Na mesma transação, a auditoria `fan.username.reset` com o `reason`.
+4. Responde `{ ok: true, username, changeableAt }`. O gatilho do perfil regrava o `searchKeys`, como hoje.
+
+O `releaseUsername` do `scripts/release-fan-username.mjs` passa `reason: 'central'` e segue sem prazo.
+
+**`exportFanData`, primeira chamada:**
+
+1. `targetFanUid` e `parseLookupEmail` (o campo `email`).
+2. `readPanelAdmin(directRead, db, caller)` e o login recente (`isRecentLogin(caller.token.auth_time, now)`, até 600 s).
+3. O teto lido fora de transação (`export-daily-limit`), no molde do `findFanByEmail`.
+4. `auth.getUser(uid)`: o `auth/user-not-found` dá `fan-not-found`; o e-mail da conta, em minúsculas, diferente do digitado dá `email-mismatch`.
+5. Leituras fora de transação: `users/{uid}`, `wallets/{uid}`, `fanInvites/{uid}`, `referrals/{uid}` e `blockLists/{uid}` num `getAll`; `usernames` e `inviteCodes` por igualdade; `commentReports` e `profileReports` por igualdade, em páginas de 500 pela ordem do id, até o fim; a contagem de `referrals` com `inviterUid`; os ids de `seasons` (`select()`) e um `getAll` das `standings/{uid}`.
+6. Transação: o admin relido (`readPanelAdmin(transactionRead(tx), ...)`), o teto relido e somado (`addStaffLimit`) e a auditoria `fan.data.exported` com `{ uid }`.
+7. Responde o começo do arquivo, com o `omit` de cada fonte. Se a transação falhar, nada sai.
+
+**`exportFanData`, página:**
+
+1. `targetFanUid`, `parsePart` e `parseAfter(part, after)`: texto de até 1.500 caracteres; nas partes de coleção, um id sem `/`; nos comentários, `posts/<id>/postComments/<id>`.
+2. `readPanelAdmin(directRead, db, caller)`. Sem login recente, sem teto e sem auditoria (decisão 12).
+3. A consulta da parte, com `orderBy(FieldPath.documentId())`, o `startAfter` do `after` e `limit(500)`. Nos comentários, o grupo `postComments` com `authorUid ==` e o cursor pelo caminho completo.
+4. Responde `{ part, items, after }`: os itens com o `omit` da fonte (no extrato, também a máscara do id dos `invite_*`); o `after` com o id de verdade do último documento (o caminho, nos comentários), ou `null` quando a página vem com menos de 500.
+
+**`deleteFanAccount`:**
+
+1. `targetFanUid` e `parseLookupEmail`.
+2. `readPanelAdmin(directRead, db, caller)` e o login recente.
+3. Leituras fora de transação: `staff/{uid}` (existe: `fan-is-staff`) e `users/{uid}`.
+4. `auth.getUser(uid)`: o `auth/user-not-found` com o perfil dá `{ status: 'pending' }`, e sem o perfil, `fan-not-found`. O e-mail diferente dá `email-mismatch`.
+5. O teto do dia, fora de transação: o uid já na lista passa; senão, com 5 na lista, `deletion-daily-limit`.
+6. Transação: o admin relido, o `staff/{uid}` relido (`fan-is-staff`) e o teto relido; com o uid fora da lista, soma o uid e grava a auditoria `fan.account.deleted` com `{ uid }`.
+7. `auth.deleteUser(uid)`; o `auth/user-not-found` conta como feito (outra chamada chegou antes).
+8. Responde `{ status: 'deleted' }`. O gatilho `deleteUserProfile` apaga os dados em seguida (seção 12).
+
+**Onde mora:** os núcleos em `functions/src/fan-data/` (`export.ts`, `delete.ts`, `sources.ts`, `model.ts` puro e `index.ts`), com as dependências `FanDataDeps` (`db`, `auth: Pick<Auth, 'getUser' | 'deleteUser'>`, `now`); o `readPanelAdmin` em `staff/panel-actor.ts`, ao lado do `readPanelActor`; os dois `onPanelCall({ cors: PANEL_ORIGINS }, ...)` no `functions/src/index.ts`, logo depois do `hideFanComments`, com os imports renomeados (`exportDataOfFan` e `deleteAccountOfFan`) e o log só com o `actorUid` (e o `status`, na exclusão). Nunca o e-mail, o uid do fã ou o conteúdo no log.
+
+### 32.5 Regras, índices, TTL e exclusão de conta
+
+- **Regras:** nada muda. O `usernameLockReason` é do servidor, e o `firstProfileName` é lista fechada (`hasOnly(['displayName', 'updatedAt'])`). O teste "o fã não mexe em pontos, nível, @, foto nem na data de criação" (`tests/firestore-rules.test.ts:217`) ganha `{ usernameLockReason: null }` e `{ usernameLockReason: 'moderation' }`.
+- **Índices:** nenhum composto e nenhuma isenção nova. As consultas por igualdade num campo, com a ordem pelo id, usam o índice automático (`usernames.uid`, `inviteCodes.uid`, `commentReports.reporterUid`, `profileReports.reporterUid`, `redemptions.uid` e a contagem de `referrals.inviterUid`); o grupo `postComments` por `authorUid` usa a isenção com o escopo COLLECTION_GROUP ascendente que já existe (24.10); as subcoleções vão só pela ordem do id. O emulador não exige índice: as formas vão para `functions/src/fan-data/indexes.test.ts`.
+- **TTL:** o de `staffLimits.expiresAt` já cobre os campos novos.
+- **Exclusão de conta:** o `deleteUserData` não muda; só o comentário dele passa a apontar para a `FAN_DATA_SOURCES` e para esta seção. O `usernameLockReason` mora no perfil, que já sai.
+
+### 32.6 Efeitos no painel e o README de passagem
+
+**O painel publicado não quebra.** Até o PR #6 do painel, de 15/10/2026, ele chamava o `resetFanUsername` sem o `reason`, que vira `moderation`: o fã ficava com o prazo, e o diálogo continuava dizendo "pode escolher outro na hora" (armadilha). A resposta com o `changeableAt` a mais é ignorada. Nos Logs, o `reason` do `fan.username.reset` aparece cru, "Motivo: moderation" (o `detailLines` de `src/lib/audit.ts` lê todo `reason` pelo mapa da suspensão), e as duas ações novas aparecem com o nome cru no filtro Fãs (a seção vem gravada pelo servidor). As callables novas não são chamadas.
+
+O que o painel precisa (outra conversa, no `imagineup-admin`, a partir da `origin/main` `c75c4de`) vai em `C:/Users/User/Desktop/Projetos/painel-lgpd/README.md`, fora de repositório, no molde do `painel-exigencias-lojas/README.md` (objetivo, onde está o contrato, decisões, estado, regras de trabalho, emuladores, item por item, ordem, critério de pronto, ao terminar), escrito na etapa 7 de 32.11:
+
+1. O contrato de 32.2 e 32.3, e as decisões 1 a 16.
+2. **O @ trocado (A5).** O diálogo da troca (`src/components/moderacao/fan-moderation-page.tsx`) ganha a escolha do motivo: "O @ é ofensivo ou impróprio" (`moderation`, a marcada) e "O @ é de um artista" (`central`). O `resetFanUsername` de `src/lib/moderation-api.ts` manda o `reason` e lê o `changeableAt`. O `resetUsernameText` (`src/lib/moderation.ts:66`) passa a depender do motivo: com `moderation`, "O fã fica com um @ automático novo e só escolhe outro daqui a 30 dias. O @{username} fica livre para qualquer pessoa."; com `central`, o texto de hoje. O teste dele em `tests/moderation.test.mjs:76` acompanha. O `ConfirmDialog` de hoje (`src/components/ui/confirm-dialog.tsx`) não tem campo nem escolha: o motivo pede um `Dialog` com estado, como o `ClearProfileTextDialog` (`fan-moderation-page.tsx`, perto da linha 345), ou duas ações, cada uma com o seu `ConfirmDialog`. O README diz também: destravar o prazo de um fã é um novo reset com `central` (outro @ automático, sem prazo), e, até o PR, o `release-fan-username.mjs`, com o ok do dono; e o @ em si ofensivo pede o termo na lista do filtro (seção 30), senão outra conta o pega na hora (decisão 1).
+3. **Logs.** O `detailLines` do `fan.username.reset` mostra o motivo ("Motivo: ofensivo ou impróprio" ou "Motivo: @ de artista"; sem ele, nada); os rótulos novos, na seção `fans`: `fan.data.exported` "Dados do fã exportados (LGPD)" e `fan.account.deleted` "Conta do fã excluída (LGPD)" (`src/lib/audit.ts` e `tests/audit.test.mjs`).
+4. **Onde o pedido de dados entra.** Na ficha do fã (`src/components/fas/fan-page.tsx`), um bloco "Pedido de dados (LGPD)" só para admin (o papel lido do membro, como a Equipe), com "Exportar dados" e "Excluir conta" e o texto "Use só depois de confirmar o pedido pelo e-mail da conta. A cópia dos dados sai em até 15 dias. A exclusão sai na hora, ou a pessoa recebe o motivo.". O caminho até a ficha é a busca por e-mail de hoje (`findFanByEmail`); a conta do Auth sem perfil não chega à ficha e fica fora do painel (decisão 15). Nenhuma página nova e nenhuma seção nova. O README traz o caminho do pedido para a equipe (decisão 10): quem consegue entrar no app exclui pelo app (Perfil, Ajustes, Conta, "Excluir conta"); a resposta vai numa mensagem nova ao e-mail da conta, nunca ao Reply-To; a exclusão só sai com a resposta vinda dessa caixa, depois da lista do que se perde; o arquivo vai numa mensagem nova ao e-mail da conta e, com o `emailConfirmado` false, só depois da mesma ida e volta; o pedido de um representante fica fora do painel, com o jurídico (UP-45).
+5. **Exportar.** O diálogo pede o e-mail do pedido. O `exportFanData` em `src/lib/fan-api.ts` faz a primeira chamada e depois as páginas de cada parte de `partes`, na ordem, devolvendo o `after` como veio (o id do último documento, ou o caminho, nos comentários), até o `after` `null`, com um progresso ("Juntando os dados: extrato"). Um módulo puro novo (`src/lib/fan-data-export.ts`, com teste) monta o arquivo (o começo sem o `partes`, mais cada parte) e o nome. O download é por Blob e `URL.createObjectURL`, revogado logo depois. Nada vai para o `localStorage`, para o estado global ou para o console. Depois do download, o aviso "Mande o arquivo numa mensagem nova ao e-mail da conta e apague a cópia baixada.".
+6. **Excluir.** Um `Dialog` próprio com estado, com o tom de perigo, no molde do `AdjustDialog` (`src/components/fas/adjust-dialog.tsx`) ou do `ClearProfileTextDialog`: o `ConfirmDialog` não tem campo nem o passo do login (item 7). Ele pede o e-mail do pedido, mostra o que se perde (as quatro linhas do `deleteAccount.losses` do app: o perfil com o @, que fica livre; os pontos, o nível e as conquistas; o ranking e as centrais; e os resgates não entregues, cancelados sem os pontos de volta), que a equipe manda antes ao e-mail da conta, e diz o que acontece: "A conta sai na hora, e os dados são apagados em seguida. Não tem volta.". Depois do `deleted`, o aviso "A conta saiu. Os dados são apagados em seguida." e a volta à lista. O `pending` diz "A conta já saiu. Os dados estão sendo apagados." O `fan-not-found` depois de um erro incerto (o prazo do SDK) quer dizer que a conta já saiu.
+7. **Login recente.** Com o `recent-login-required`, o painel pede a senha de novo (`reauthenticateWithCredential` com o `EmailAuthProvider`), e repete a chamada com o token novo. A equipe entra só por e-mail e senha.
+8. **Erros** (`src/lib/errors.ts`): cinco motivos novos de 32.2 (`admin-only`, `recent-login-required`, `fan-is-staff`, `export-daily-limit` e `deletion-daily-limit`), com as mensagens de lá. O `email-mismatch` já existe no mapa, com a frase do aceite do convite, e fica: a frase do servidor ganha no `callableErrorMessage` (32.19, etapa 7).
+9. **Prazo:** o padrão do SDK (70 s); nenhuma das duas usa o `LONG_CALL_TIMEOUT_MS`.
+10. **O que o painel não faz:** não mostra o conteúdo do arquivo, não guarda o arquivo, não escuta em tempo real (decisão de 07/10/2026) e não lê `blockLists`, `commentReports` nem `profileReports` (fechadas).
+11. **Ordem:** o painel entra na `main` dele só depois das funções publicadas, do `allUsers` das duas callables (32.12, passo 6) e das 68 atualizadas no dia (32.12, passo 7: o código antigo do `findFanByEmail` e do `adjustFanPoints` zera os contadores novos, 32.17). Sem o `allUsers`, a callable responde 403 do Cloud Run, que chega como `functions/internal`.
+12. **Emuladores:** o admin do seed (`equipe@teste.imagineup`) exporta a Camila (`camila@teste.imagineup`, que tem dado em quase toda fonte) e exclui uma conta criada na hora pelo cadastro do app nos emuladores, nunca uma do seed. O editor (`editora@teste.imagineup`) e o Leitor não veem o bloco; o `admin-only` fica provado nos testes do servidor (32.10).
+
+### 32.7 Aviso de api fora do ar: o teste, a política e os comandos
+
+| Item | Valor |
+| --- | --- |
+| Nome | "ImagineUP: api no ar" |
+| Endereço | `https://southamerica-east1-imagine-up-app.cloudfunctions.net/api/health`, `GET`, porta 443, certificado conferido |
+| Esperado | status 2xx e o corpo com `"ok":true` (`contains-string`) |
+| Frequência e prazo | 5 minutos e 30 s |
+| Regiões | `south-america`, `usa-virginia` e `usa-oregon` |
+| Rótulo | `app=imagineup` |
+| Política | "ImagineUP: api fora do ar" (`docs/protecao/politicas/api-fora-do-ar.json`): 2 ou mais regiões falhando por 5 minutos, ao canal "ImagineUP: alertas do servidor" |
+
+Os comandos seguem as regras de 31.2: no Git Bash, da raiz do repositório, com `--project=imagine-up-app` escrito, copiados da nota. A exceção é o `gcloud monitoring uptime create` e o `update` de um teste, que rodam no PowerShell, pela armadilha do caminho (abaixo do bloco "Criar o teste"). Os flags foram conferidos no `--help` do gcloud 588.0.0, em 14/10/2026: as regiões aceitas são `asia-pacific`, `europe`, `south-america`, `usa-iowa`, `usa-oregon` e `usa-virginia`, com no mínimo 3; os períodos, 1, 5, 10 e 15 minutos; o `update` aceita `--path`, `--set-status-codes`, `--clear-status-codes`, `--set-regions` e `--matcher-content`; o `delete` e o `describe` recebem o `CHECK_ID`, que o `list-configs` mostra.
+
+**Criar o teste**, só com o `GET /health` no ar (32.12, passo 9):
+
+```bash
+curl -s -w "\n%{http_code}\n" https://southamerica-east1-imagine-up-app.cloudfunctions.net/api/health
+gcloud monitoring uptime create "ImagineUP: api no ar" --resource-type=uptime-url --resource-labels=host=southamerica-east1-imagine-up-app.cloudfunctions.net,project_id=imagine-up-app --protocol=https --port=443 --path=/api/health --request-method=get --validate-ssl=true --status-classes=2xx --matcher-content='"ok":true' --matcher-type=contains-string --period=5 --timeout=30 --regions=south-america,usa-virginia,usa-oregon --user-labels=app=imagineup --project=imagine-up-app
+gcloud monitoring uptime list-configs --filter='displayName="ImagineUP: api no ar"' --format="table(name.basename(),displayName,period,timeout,httpCheck.path)" --project=imagine-up-app
+gcloud monitoring uptime describe <CHECK_ID> --project=imagine-up-app
+```
+
+Esperado: o `curl` com `{"ok":true}` e `200`; o `list-configs` com uma linha só, `300s`, `30s` e o caminho `/api/health`; e, uns 10 minutos depois, o teste verde nas 3 regiões no console (Monitoring, Verificações de tempo de atividade).
+
+**A armadilha do caminho no Git Bash (15/10/2026).** No Git Bash desta máquina, o `--path=/api/health` vira `/C:/Program Files/Git/api/health`: a conversão de caminhos do MSYS age em todo argumento que começa com barra. O `MSYS_NO_PATHCONV=1` não serve, porque quebra o próprio gcloud (o Python não acha o `gcloud.py`). Em 15/10/2026, o teste nasceu com esse caminho e falhou por alguns minutos. O conserto foi o `gcloud monitoring uptime update <CHECK_ID> --path=/api/health --project=imagine-up-app`, rodado no PowerShell. Regra: o `create` e o `update` do teste rodam no PowerShell; quem rodar no Git Bash confere o `httpCheck.path` com o `describe` logo depois. No PowerShell 5.1, as aspas de dentro do `--matcher-content` podem não chegar iguais ao gcloud: quem criar por lá confere também o `contentMatchers` no `describe`. O que deu certo em 15/10/2026 foi o `create` no Git Bash e o `update` do caminho no PowerShell.
+
+**Criar a política**, depois de o teste passar nas 3 regiões, com o bloco do canal de 31.4:
+
+```bash
+(
+CANAL=$(gcloud beta monitoring channels list --filter='displayName="ImagineUP: alertas do servidor"' --format='value(name)' --project=imagine-up-app)
+echo "canal: $CANAL"
+[ -n "$CANAL" ] && [ "$(printf '%s\n' "$CANAL" | wc -l)" -eq 1 ] || { echo "canal vazio ou duplicado: parar"; exit 1; }
+gcloud monitoring policies create --policy-from-file=docs/protecao/politicas/api-fora-do-ar.json --notification-channels="$CANAL" --project=imagine-up-app
+)
+gcloud monitoring policies list --filter='userLabels.app=imagineup' --format="table(name.basename(),displayName,enabled)" --project=imagine-up-app
+```
+
+Esperado: uma política a mais no `list` (5, ou 6 com a 5ª de 31.4) e nenhuma condição inválida no console (Monitoring, Alertas).
+
+**O arquivo da política** (`docs/protecao/politicas/api-fora-do-ar.json`, escrito na etapa 6 de 32.11, com a mesma forma dos de 31.2):
+
+```json
+{
+  "displayName": "ImagineUP: api fora do ar",
+  "userLabels": {"app": "imagineup"},
+  "severity": "CRITICAL",
+  "combiner": "OR",
+  "conditions": [
+    {
+      "displayName": "O teste da api falhou em 2 ou mais regiões por 5 min",
+      "conditionThreshold": {
+        "filter": "metric.type=\"monitoring.googleapis.com/uptime_check/check_passed\" AND resource.type=\"uptime_url\" AND resource.labels.host=\"southamerica-east1-imagine-up-app.cloudfunctions.net\"",
+        "aggregations": [
+          {
+            "alignmentPeriod": "1200s",
+            "perSeriesAligner": "ALIGN_NEXT_OLDER",
+            "crossSeriesReducer": "REDUCE_COUNT_FALSE",
+            "groupByFields": ["resource.label.host"]
+          }
+        ],
+        "comparison": "COMPARISON_GT",
+        "thresholdValue": 1,
+        "duration": "300s",
+        "evaluationMissingData": "EVALUATION_MISSING_DATA_INACTIVE",
+        "trigger": {"count": 1}
+      }
+    }
+  ],
+  "alertStrategy": {"autoClose": "3600s"},
+  "documentation": {
+    "subject": "ImagineUP: api fora do ar",
+    "mimeType": "text/markdown",
+    "content": "A api do app não passou no teste de disponibilidade em 2 ou mais regiões por 5 minutos. Enquanto isso dura, o app não carrega nada do servidor.\n\nO que fazer:\n\n1. Abra `https://southamerica-east1-imagine-up-app.cloudfunctions.net/api/health` no navegador. O esperado é `{\"ok\":true}`.\n2. Se há deploy de funções agora, o silenciamento do deploy devia cobrir esta janela (31.5 da nota). Confira com `gcloud monitoring snoozes list --project=imagine-up-app`.\n3. No Logs Explorer do projeto imagine-up-app, use o filtro `resource.labels.service_name=\"api\"`. Resposta 503 sem log da função aponta para a cota de CPU da região.\n4. Confira a função: `gcloud functions describe api --region=southamerica-east1 --project=imagine-up-app`.\n5. Veja o status do Google Cloud em https://status.cloud.google.com, na região southamerica-east1."
+  }
+}
+```
+
+**Testar o alerta** (opcional, com o ok do dono, depois da política): um segundo teste no mesmo host, com um corpo que nunca vem, falha nas 3 regiões e dispara a política (o filtro é pelo host). O e-mail chega uns 10 minutos depois. Com ele, o teste sai, e o incidente fecha sozinho depois da janela de 20 minutos. O rótulo dele é `teste=alerta`, e não um parecido com `imagineup` (31.2).
+
+```bash
+gcloud monitoring uptime create "ImagineUP: teste do alerta da api" --resource-type=uptime-url --resource-labels=host=southamerica-east1-imagine-up-app.cloudfunctions.net,project_id=imagine-up-app --protocol=https --port=443 --path=/api/health --request-method=get --validate-ssl=true --matcher-content='"ok":false' --matcher-type=contains-string --period=5 --timeout=30 --regions=south-america,usa-virginia,usa-oregon --user-labels=teste=alerta --project=imagine-up-app
+gcloud monitoring uptime list-configs --filter='userLabels.teste=alerta' --format="table(name.basename(),displayName)" --project=imagine-up-app
+gcloud monitoring uptime delete <CHECK_ID_DO_TESTE> --quiet --project=imagine-up-app
+```
+
+**Desfazer**, se um dia for preciso: a política antes, depois o teste. O "Desfazer" de 31.4 apaga a política junto com as outras, pelo rótulo; o teste sai sempre por este `delete`.
+
+```bash
+gcloud monitoring policies delete "$(gcloud monitoring policies list --filter='displayName="ImagineUP: api fora do ar"' --format='value(name)' --project=imagine-up-app)" --quiet --project=imagine-up-app
+gcloud monitoring uptime delete <CHECK_ID> --quiet --project=imagine-up-app
+```
+
+**Criar de novo**, depois de um desfazer: o teste, a espera dos 10 minutos e a política, como acima. No "Criar de novo" de 31.4, o teste e a política entram depois das 4 políticas.
+
+**Trocar para o 401 de `/me/wallet`**, se a rota de saúde sair um dia: `gcloud monitoring uptime update <CHECK_ID> --path=/api/me/wallet --set-status-codes=401 --matcher-content='"code":"unauthenticated"' --project=imagine-up-app`, com a armadilha do caminho acima. Depois, o `describe` tem de mostrar o caminho `/api/me/wallet` e só o 401 aceito; se o 2xx continuar, um segundo `update` com `--remove-status-classes=2xx` (os flags de status são exclusivos entre si num mesmo comando). Antes de tudo, ler a decisão 17 (o App Check em `enforce` quebra esse teste).
+
+**Custos:** o teste faz 25.920 execuções por mês (3 regiões a cada 5 minutos), longe do milhão grátis por projeto (depois dele, US$ 0,30 por 1.000). A política de alerta sobre métrica de uptime não é cobrada, nem depois de 01/09/2027 ("Metric alerting policies that use Billing, Quota, or Uptime metrics are not charged", na página de preços do Google Cloud Observability, lida em 14/10/2026). Os 864 pedidos por dia à `api` ficam no plano grátis de pedidos e cobram CPU só durante o pedido; o log de pedido deles soma uns 40 MB por mês no `_Default`, longe dos 50 GiB grátis. Total: R$ 0.
+
+### 32.8 App
+
+Só a A5. Só JS: `profile/types.ts`, `profile/api.ts`, `profile/username.ts`, `edit-profile.tsx`, `settings/views/settings.tsx` e o `translations.json`, com os testes. Chega por EAS Update e não muda o fingerprint. O `QUERY_CACHE_VERSION` não sobe: o campo é opcional, e o perfil salvo no disco antes dele vale `null` (o precedente da seção 28).
+
+- **Tipos:** o `FanProfile` ganha `usernameLockReason?: UsernameLockReason | null`, e o `EditableProfile`, o mesmo campo, opcional (o servidor de antes do deploy não manda). `UsernameLockReason = 'moderation'`.
+- **Leitura:** o `toFanProfile` e o `applyEditableProfile` passam o campo por um `lockReasonOf` (só `'moderation'`; qualquer outro valor, `null`).
+- **Helper puro** em `profile/username.ts`: `usernameLock(profile, now)` devolve `{ until, byTeam }` com o prazo no futuro, ou `null`. A tela "Editar perfil" e os Ajustes usam o mesmo.
+- **Editar perfil** (`edit-profile.tsx`): o `lockedText` passa a receber o motivo. Com o prazo da equipe, a frase da equipe; com o do fã, a de hoje. Na recusa 409, a data vem do `details.changeableAt` da resposta (o `apiErrorDetail`), e só sem ela do perfil em cache: assim, com o cache velho, a frase sai com a data, e não "há menos de 30 dias". O motivo vem do perfil; o 409 não traz motivo. O campo continua só leitura, a pílula "Automático" continua, e a dica do @ automático continua vencida pelo prazo.
+- **Contato:** com o prazo da equipe, embaixo da linha do @, o link "Escrever para a equipe" (o `SuspensionContact` de `profile/components/suspended-notice`, que a tela já usa na recusa do filtro), com o assunto `editProfile.username.lockedMailSubject`. É irmão da linha e do card, nunca filho (a regra dos pressáveis aninhados), e não aparece com o prazo do próprio fã. Motivo: o fã que discorda da troca tem um canal na própria tela.
+- **Ajustes** (`settings.tsx:96-103`): o "Seu @ ainda é automático" sai quando o @ está travado, e a linha volta a "Foto, nome, @, bio e redes": não faz sentido convidar a trocar um @ que não pode ser trocado.
+
+Textos novos (`translations.json`, em `editProfile.username`):
+
+| Chave | Texto |
+| --- | --- |
+| `editProfile.username.lockedByTeam` | "A equipe trocou seu @. Você escolhe outro a partir de {{date}}." |
+| `editProfile.username.lockedByTeamSoon` | "A equipe trocou seu @ há menos de 30 dias." |
+| `editProfile.username.lockedMailSubject` | "Troca do @ no ImagineUP" |
+
+O `lockedByTeamSoon` só aparece sem data nenhuma (nem no perfil, nem no 409), como o `tooSoon` de hoje. Sem e-mail, sem travessão e sem meia-risca.
+
+**Com o servidor novo no ar**, em cada geração de JS:
+
+| Superfície | JS no ar (o EAS Update de 14/10/2026) | JS novo |
+| --- | --- | --- |
+| Editar perfil, @ trocado pela equipe | "Você troca o @ de novo em {{date}}." (certo, sem dizer quem trocou) | "A equipe trocou seu @. Você escolhe outro a partir de {{date}}.", com o link "Escrever para a equipe" |
+| Recusa 409 com o cache sem o prazo | "Você trocou o @ há menos de 30 dias." (errado para a equipe) | a frase com a data do 409 |
+| Ajustes, @ automático travado | "Seu @ ainda é automático" | "Foto, nome, @, bio e redes" |
+
+Nenhuma geração quebra: o campo novo é ignorado pelo JS no ar, e a ordem entre o EAS Update e o servidor é livre (o JS novo sem o campo mostra as frases de hoje).
+
+### 32.9 Seed dos emuladores e fixtures
+
+- **Seed:** não muda. Um fã do seed com o @ trocado mudaria o @ de uma conta que as fixtures do app copiam (a regra de coerência da seção 13), e o @ automático é sorteado. O caminho do servidor fica provado nos testes do emulador (32.10).
+- **Conferência da frase no emulador:** numa conta criada na hora pelo cadastro do app (não a Camila, para não mudar as outras conferências), o `resetFanUsername` chamado no emulador pelo admin do seed, ou, sem o painel local, o `usernameChangeableAt` e o `usernameLockReason` gravados pela interface do emulador (`localhost:4000`) no `users/{uid}` dela.
+- **Fixtures do app:** não mudam. O perfil das fixtures não tem prazo; o caminho do prazo da equipe é provado no Jest com o perfil mockado.
+- **Pedidos de dados:** a Camila do seed tem dado em quase toda fonte e serve à conferência da exportação. A exclusão usa sempre uma conta criada na hora.
+
+### 32.10 Testes
+
+**Funções, puros (vitest):**
+
+- `fan-profile/details.test.ts`: o `editableProfileOf` com o `usernameLockReason` (`'moderation'`, `null`, ausente e um valor estranho, que vira `null`); os dois `toEqual` de hoje (perto das linhas 566 e 591) ganham o campo.
+- `fan-profile/panel` (o teste puro do `parseResetReason`): ausente dá `moderation`; `central` passa; outro valor, `invalid-request` com `field: 'reason'`.
+- `posts/model.test.ts` (o `mediaView`, decisão 25, a tabela de 33.10): o vídeo com a capa tem `posterUrl` igual à `media.photo.url`; o vídeo sem mídia gravada, `posterUrl: null`; a foto, sem o campo; texto e show, `media: null`, como hoje.
+- `staff/limits.test.ts`: a 21ª exportação do dia recusa; a 6ª exclusão recusa; o uid que já está na lista passa sem somar; o `addStaffLimit` grava os campos novos (uma busca por e-mail depois de uma exportação não zera a contagem); a leitura tolerante da lista.
+- `staff/audit-index.test.ts`: as duas linhas novas no `ROWS` (seção `fans`, alvo `fan:<uid>`).
+- `staff/panel-errors.test.ts`: os motivos novos, com o código e a mensagem.
+- `fan-data/model.test.ts`: o `toExportValue` (`Timestamp`, referência, `GeoPoint`, bytes, mapas e listas aninhados, `null`); o `omit` de cada fonte (o `actor` só com o `type`, sem o `uid`, o `note` do ajuste, o `updatedBy`, o `hiddenBy`, o `ownerKey`, o `round`, os `keys` das missões e, na origem, o `inviterUid`, o `award` e o `inviterRemovedAt`) e a máscara do extrato (o id dos `invite_*` só com a origem, sem o `eventId`); os campos técnicos fora do perfil; o `parsePart` e o `parseAfter` (o caminho dos comentários e o id das coleções); o `isRecentLogin` no limite exato de 600 s.
+- `fan-data/sources.test.ts`: nomes únicos; toda fonte com parte tem o leitor e o nome da parte; toda fonte fora tem o motivo; as 8 partes na ordem de 32.3.
+- `fan-data/indexes.test.ts`: as formas das consultas de 32.5 contra o `firestore.indexes.json`.
+- `api/index.test.ts`: o `GET /health` responde 200 com o corpo exato `{"ok":true}` e o `Cache-Control: no-store`, sem chamar o Auth, o Firestore (uma dependência que lança), o App Check em `enforce` nem o limitador, e sem as linhas `acesso` e `api`; o `POST /health` e o `GET /health/x` dão 404 `not_found`, com a linha `acesso`.
+- `api/health.test.ts` (novo), as duas pontas do contrato: o `HEALTH_BODY` serializado é `{"ok":true}`; o `docs/protecao/politicas/api-fora-do-ar.json` tem o rótulo `app=imagineup`, a métrica `uptime_check/check_passed`, o `uptime_url`, o host da `api` e o `/api/health` no "O que fazer".
+- `cpu.test.ts` passa sem mudar o código (a soma fica abaixo de 20); mudam só os comentários com as contagens. O `access-log.test.ts` passa (as duas novas vêm do `onPanelCall`); muda só o comentário.
+
+**Funções, nos emuladores:**
+
+- `moderation-fans.emulator.test.ts`, no `resetFanUsername`: sem o `reason`, o perfil com o `usernameChangeableAt` daqui a 30 dias e o `usernameLockReason` `'moderation'`, a resposta com o `changeableAt` e a auditoria com o `reason` (a linha 554, que esperava `null`, muda); o fã recebe 409 `username_change_too_soon` com o `changeableAt` no `PUT /me/username` e no `PUT /me/profile` (pelo `localApi`), também tentando o @ antigo; o `PUT /me/profile` só com a bio passa e responde o `usernameLockReason`; com o relógio da `api` depois da data, a troca passa e grava `usernameLockReason: null`; com `reason: 'central'`, sem prazo e com `null`; o `reason` estranho, `invalid-request`; o @ antigo continua livre na hora para outra pessoa. A outra chamada do reset no arquivo (perto da linha 1069) acompanha.
+- `profile-edit.emulator.test.ts`: o `releaseUsername` do script segue sem prazo e grava `usernameLockReason: null`, também sobre um perfil que estava com `moderation` (o caso de hoje, nas linhas 409 a 431); os dois `toEqual` do corpo do `PUT /me/profile` (perto das linhas 1006 e 1059) ganham o `usernameLockReason: null`.
+- O `posterUrl` (decisão 25): no `content-panel.emulator.test.ts`, o post de vídeo com a mídia conferida no emulador do Storage e publicado sai no `GET /posts/:id`, no `GET /feed` (o fã entra na central pelo `PUT /me/centrals/:id`) e no `GET /artists/:id/posts` (o handler no processo, `localApi`), com a mesma mídia nas três e o `posterUrl` igual à `media.photo.url` gravada, e depois de tirar o mp4, com a `url` nula e o `posterUrl` ainda lá; no `posts.emulator.test.ts`, o `p-clipe` do seed, sem mídia, sai com `posterUrl: null`. O mp4 do seed é do bloco B (33.11, etapa 1).
+- `fan-data.emulator.test.ts` (novo):
+  - acesso: sem login, uid fora do formato e `self`; o editor com todas as seções e o Leitor recebem `admin-only`; o membro desativado, `not-staff`;
+  - o `recent-login-required` pelo núcleo chamado direto com o `auth_time` de 11 minutos atrás (o emulador do Auth dá o token com o login de agora);
+  - o `email-mismatch` (o e-mail certo em maiúsculas passa) e o `fan-not-found`;
+  - o teto: a 21ª exportação e a 6ª exclusão recusam, e o mesmo uid no mesmo dia, pela mesma pessoa da equipe, não conta nem audita de novo;
+  - a auditoria: só `{ uid }`, o `targetEmail` vazio, a seção `fans`, o alvo `fan:<uid>`, e nenhuma entrada nas páginas;
+  - um fã com dado em toda fonte, pelas rotas de verdade (entrar numa central, curtir, "Eu vou", comentar, denunciar um comentário e um perfil, bloquear, gerar um link de convite, trazer alguém pelo código, resgatar) e pelo núcleo do seed (a linha numa temporada fechada): exportado inteiro, cada fonte com parte ou na primeira chamada vem não vazia, e o extrato com 501 lançamentos (gravados pelo Admin SDK) vem em duas páginas, com o `after` devolvido como veio;
+  - as denúncias inteiras: 1.001 denúncias de comentário em dias diferentes, gravadas pelo Admin SDK, vêm todas na primeira chamada (sem o corte de 30 e pelas páginas internas de 500);
+  - nada de outra pessoa: com o fã que trouxe alguém pelo código, recebeu um ajuste da equipe, teve um pedido recusado e um comentário ocultado, nenhum valor do arquivo é o uid de outro fã, fora dos alvos das denúncias e dos bloqueios (pergunta 7), e em lugar nenhum aparece o uid ou o nome de quem é da equipe, a chave de pessoa (`personKey`) do convidado ou o `ownerKey`; o ajuste sai sem o `note`, e a origem sem o `inviterUid`, o `award` e o `inviterRemovedAt`, também com quem convidou suspensa e com quem convidou de conta excluída;
+  - a ponta do "dado novo": o `listCollections()` de `users/{uid}`, `wallets/{uid}` e `fanInvites/{uid}` só tem nomes que estão na `FAN_DATA_SOURCES`;
+  - depois, o `deleteFanAccount`: `deleted`, a conta some do Auth, o gatilho trata cada fonte como a lista diz (apagada, sem o uid ou desligada), os lançamentos de quem o convidou ficam, com o uid no `actor` (a linha de 32.3), e a repetição responde `pending` ou `fan-not-found`;
+  - o `fan-is-staff` com o `staff/{uid}` ativo, pendente e desativado; a conta do Auth sem perfil é excluída; o perfil sem conta responde `pending`.
+- `access-log.emulator.test.ts`: o `GET /health` não escreve a linha (pelo `firebase-debug.log`, como o preflight).
+
+**Regras** (`tests/firestore-rules.test.ts`): o `usernameLockReason` na lista do que o fã não grava (32.5).
+
+**App:**
+
+- `src/domains/profile/__tests__/api.test.ts`: o `toFanProfile` e o `applyEditableProfile` com o `usernameLockReason` (`'moderation'`, `null`, ausente e estranho).
+- `src/domains/profile/__tests__/username.test.ts`: o `usernameLock` sem prazo, com o prazo passado, com o prazo do fã e com o da equipe.
+- `src/navigation/__tests__/edit-profile.test.tsx`: o perfil com o prazo e o `moderation` mostra "A equipe trocou seu @. Você escolhe outro a partir de ..." com o campo só leitura e a pílula "Automático"; o prazo do fã mostra a frase de hoje; o 409 com o cache sem prazo usa a data do `details.changeableAt`; com o `moderation` no perfil, a frase da equipe; sem data nenhuma, as frases sem data; o link "Escrever para a equipe" só com o prazo da equipe, abrindo o e-mail com o assunto `lockedMailSubject` (o `openSupportEmail` mockado), e nunca com o prazo do fã.
+- `src/navigation/__tests__/settings.test.tsx`: o @ automático com o prazo correndo mostra "Foto, nome, @, bio e redes", e não "Seu @ ainda é automático" (o caso da linha 322 continua para o automático sem prazo).
+- O teste que varre o `translations.json` (nenhum e-mail) passa com as chaves novas.
+
+### 32.11 Plano de construção em etapas
+
+Em ordem, no worktree `imagineup-app-design`, branch `lgpd-moderacao`. Uma etapa só começa com a anterior fechada e com as respostas de 32.13 que ela pede. As etapas do app fecham com o fingerprint local (`npx --no-install expo-updates fingerprint:generate --platform android`) igual a `310056fd840b5459416c9926e46846b8c208aa76`. Os emuladores de outra sessão não podem estar no ar nas etapas que rodam o `npm run test:functions` (o `useCleanEmulators` apaga tudo). Commits só com o ok do dono, sem o `Co-Authored-By`.
+
+1. **O @ no servidor (A5), e o `posterUrl` (decisão 25).** `releaseUsernameIn` e `releaseUsername` com o `reason`; `writeUsernameSwap` com o `null`; `resetFanUsername` com o `parseResetReason`, a auditoria e a resposta; o `contract.ts` e o `editableProfileOf`; os testes de 32.10 (puros, os dois de emulador e o de regras), com os quatro `toEqual` de hoje que ganham o campo (dois no `details.test.ts` e dois no `profile-edit.emulator.test.ts`). Junto, o `posterUrl` no `mediaView` e no `PostMedia`, com os testes dele de 32.10. Fecha com `npm --prefix functions run typecheck`, `npm --prefix functions test`, `npm run test:functions`, `npm run test:rules` e `npm run check`.
+2. **O @ no app (A5).** Os tipos, o `api.ts`, o `usernameLock`, a tela "Editar perfil" com o link de contato, os Ajustes e o `translations.json`, com os testes. Fecha com `npm run check` e o fingerprint.
+3. **A base dos pedidos de dados (A6).** `fan-data/sources.ts` (com o `omit` de cada fonte) e `fan-data/model.ts` (com a máscara do extrato); o `readPanelAdmin` e o `admin-only`; os motivos novos do `panel-errors.ts`; os contadores do `staff/limits.ts`; as duas ações no `AuditAction` e no `SECTION_BY_ACTION`; os testes puros e de índice. Nenhuma callable ainda. Fecha com o `typecheck` e `npm --prefix functions test`.
+4. **As callables (A6).** `fan-data/export.ts` (a primeira chamada com as denúncias em páginas internas de 500, até o fim), `fan-data/delete.ts` e os dois `onPanelCall` no `index.ts`; o comentário do `deleteUserData`; os comentários de contagem (`cpu.test.ts`, `access-log.test.ts` e `content-filter/index.ts`; o `index.ts` não tem) e a lista de callables do topo do `panel-errors.ts`; o `fan-data.emulator.test.ts`. Fecha com o `typecheck`, `npm --prefix functions test`, `npm run test:functions`, `npm run test:rules` e o `npm run emulators:seed` com os emuladores abertos.
+5. **A rota de saúde (A8).** O `GET /health` e o `HEALTH_BODY` no `api/index.ts`; os testes do `api/index.test.ts` e do `access-log.emulator.test.ts`. Fecha com `npm --prefix functions test` e `npm run test:functions`.
+6. **Os arquivos da proteção (A8).** `Projetos/protecao-imagineup/politicas/api-fora-do-ar.json` (fora do repositório) e a cópia byte a byte em `docs/protecao/politicas/api-fora-do-ar.json`, conferida pelo `cmp`, sem id de canal, de política ou de teste; o `api/health.test.ts`; e, fora do repositório, o `Projetos/protecao-imagineup/protecao-plano.md` (o "Não cobre" da linha 246 e a pendência da linha 568 apontando para esta seção). Fecha com `npm --prefix functions test` e o `prettier --check` sem acusar a pasta (o `.prettierignore` já tem `docs/protecao`).
+7. **O README do painel.** `C:/Users/User/Desktop/Projetos/painel-lgpd/README.md` (pasta nova, fora de repositório), com os itens de 32.6, no molde do `painel-exigencias-lojas/README.md`.
+8. **Documentação e conferência.** A nota fora desta seção (32.18), o `CLAUDE.md` e o `AGENTS.md` iguais (o `diff <(tail -n +3 AGENTS.md) CLAUDE.md` vazio), o arquivo dos lotes fora do repositório (`Projetos/protecao-imagineup/lotes-lgpd-moderacao.txt`, no molde do `lotes-registro-acesso.txt`: o `cd <pasta do deploy> -ErrorAction Stop;` em cada linha, o silenciamento, os 5 lotes, o `allUsers` e a conferência de 32.12), e a conferência no emulador Android pelo Expo Go: a frase da equipe na "Editar perfil" de uma conta criada na hora (32.9), o campo só leitura e os Ajustes sem "Seu @ ainda é automático"; o `GET /health` no emulador da `api`. Fecha com `npm run check`, os testes das funções e das regras de novo e o fingerprint. Sugestão para o vault, só com o ok do dono: a ferramenta dos pedidos de dados e o aviso de `api` fora do ar em `vault/ImagineUP/App.md`.
+
+### 32.12 Publicação
+
+Só servidor, configuração e um EAS Update: nenhuma regra, índice, fila ou TTL. As funções saem do terminal do dono, no PowerShell; o silenciamento, o teste e a política, do Git Bash do Claude, menos o `create` e o `update` do teste, que vão no PowerShell (32.7). Cada passo com o ok do dono.
+
+0. **Merge** na `main`, com o ok do dono, depois da etapa 8.
+1. **Pasta do deploy:** um worktree na `main` nova, com o `functions/.env.imagine-up-app` copiado ("Publicar", passo 1).
+2. **O diff desde o que está no ar:** `git diff --stat 8faeccf HEAD -- functions/src`. Fora deste bloco, nada pode aparecer. Os de dentro: `fan-data/`, `fan-profile/service.ts`, `fan-profile/panel.ts`, `fan-profile/details.ts`, `fan-profile/model.ts` (os motivos do reset), `fan-profile/index.ts`, `posts/model.ts` (o `posterUrl`, decisão 25), `api/contract.ts`, `api/index.ts`, `staff/limits.ts`, `staff/panel-errors.ts`, `staff/panel-actor.ts`, `staff/service.ts`, `staff/audit-index.ts`, `store.ts`, `content-filter/index.ts` e `access-log.ts` (só o comentário), `index.ts` e testes.
+3. **Silenciar os alertas** (31.5, passos 1 e 2), com 3 horas de janela. O `describe` mostra as políticas do rótulo: 4, ou 5 com a 5ª de 31.4.
+4. **Lote 1, com a `api`**, e a conferência antes dos outros lotes:
+
+   ```powershell
+   $env:FUNCTIONS_DISCOVERY_TIMEOUT = "60"; npx --yes firebase-tools@15.32.0 deploy --only functions:api,functions:createUserProfile,functions:deleteUserProfile,functions:createStaffInvite,functions:resendStaffInvite,functions:cancelStaffInvite,functions:getStaffInvite,functions:acceptStaffInvite,functions:linkStaffInvite,functions:updateStaffMember,functions:setStaffMemberActive,functions:removeStaffMember,functions:checkArtistHandle,functions:createArtist,functions:updateArtist --project imagine-up-app
+   ```
+
+   Depois, no Git Bash: o `GET /api/health` (200, `{"ok":true}`), o `GET /api/me/wallet` sem login (401) e a prova de que o `/health` não escreve a linha `acesso`. A linha `acesso` não guarda o caminho, e listar as linhas da janela não prova a falta: o primeiro `logging read` acha o trace do pedido ao `/health` no log de pedido do Cloud Run, e o segundo, com esse trace no lugar de `<TRACE>`, procura a linha `acesso` dele.
+
+   ```bash
+   curl -s -w "\n%{http_code}\n" https://southamerica-east1-imagine-up-app.cloudfunctions.net/api/health
+   curl -s -o /dev/null -w "%{http_code}\n" https://southamerica-east1-imagine-up-app.cloudfunctions.net/api/me/wallet
+   gcloud logging read 'log_id("run.googleapis.com/requests") AND resource.labels.service_name="api" AND httpRequest.requestUrl:"/api/health"' --freshness=15m --limit=3 --format="table(timestamp,trace,httpRequest.status)" --project=imagine-up-app
+   gcloud logging read 'log_id("run.googleapis.com/stdout") AND jsonPayload.message="acesso" AND resource.labels.service_name="api" AND trace="<TRACE>"' --freshness=15m --limit=5 --format="table(timestamp,trace,jsonPayload.ip)" --project=imagine-up-app
+   gcloud logging read 'log_id("run.googleapis.com/stdout") AND jsonPayload.message="acesso" AND resource.labels.service_name="api"' --freshness=15m --limit=5 --format="table(timestamp,trace,jsonPayload.ip,jsonPayload.uid)" --project=imagine-up-app
+   ```
+
+   Esperado: o primeiro `logging read` com o pedido ao `/health`, o trace e o 200; o segundo, vazio; o terceiro, com a linha `acesso` do 401. Se o segundo trouxer uma linha: parar, e os lotes seguintes esperam.
+
+5. **Lotes 2 a 5**, com uns minutos entre um e o seguinte. Um lote que falhar pela cota de CPU vai de novo depois de uns 30 minutos sem deploy ("Publicar", passo 3), e os seguintes esperam. Os lotes 2, 3 e 4 são os de 31.12, passo 5. O lote 5 só sai com o lote 4 sem erro: o `addStaffLimit` do código de `8faeccf`, no `findFanByEmail` e no `adjustFanPoints` do lote 4, grava sem `merge` e zeraria os contadores novos das duas callables (32.17). O lote 5 leva as duas novas:
+
+   ```powershell
+   $env:FUNCTIONS_DISCOVERY_TIMEOUT = "60"; npx --yes firebase-tools@15.32.0 deploy --only functions:exportFanData,functions:deleteFanAccount,functions:queueArtistFanCountSync,functions:syncArtistFanCount,functions:queuePostCountSync,functions:syncPostCounts,functions:queueFanProfileSync,functions:syncFanProfile --project imagine-up-app
+   ```
+
+   Os cinco lotes somam as 68 funções (15, 15, 15, 15 e 8), na ordem do `index.ts`, com as duas novas logo depois do `hideFanComments`. A etapa 4 confere a lista contra os exports do `index.ts`: 68, sem repetição, as 57 do `onPanelCall`. Os comandos, com o `cd` da pasta do deploy na frente, ficam em `Projetos/protecao-imagineup/lotes-lgpd-moderacao.txt`, fora do repositório, escrito na etapa 8, para o dono copiar sem redigitar.
+6. **O `allUsers` das duas novas:** `gcloud functions add-invoker-policy-binding exportFanData --region=southamerica-east1 --member=allUsers --project=imagine-up-app` e o mesmo com `deleteFanAccount`.
+7. **Conferir** ("Publicar", passo 6): o `functions:list` com as 68; as 68 com a data do deploy, pela mais antiga, que é do dia, depois do lote 1 (`gcloud functions list --regions=southamerica-east1 --v2 --sort-by=updateTime --limit=3 --format="table(name.basename(),updateTime)" --project=imagine-up-app`); o `node scripts/check-public-functions.mjs` com as 58 chamáveis, nenhuma barrada; a CPU das duas novas (`0.1666` e `1`) e das outras como antes; o POST sem login às duas novas (`curl -s -X POST -H "Content-Type: application/json" -d '{"data":{}}' https://southamerica-east1-imagine-up-app.cloudfunctions.net/exportFanData`, e o mesmo com `deleteFanAccount`) com o `unauthenticated`; o 401 da `api`, o 404 `not_found` e os logs do `rankingTick`.
+8. **Fim do silenciamento** (31.5, passo 3).
+9. **O teste de disponibilidade e a política** (32.7), pelo Claude, depois do deploy (resposta do dono de 14/10/2026; até lá, só os arquivos e os comandos): o teste, os 10 minutos, a política e a conferência no console. O teste do alerta, se o dono quiser.
+10. **EAS Update do canal preview** (`npm run update:preview`, com o ok do dono), com o fingerprint igual a `310056fd840b5459416c9926e46846b8c208aa76`. No aparelho com o APK: abrir, fechar e abrir de novo. A ordem com o servidor é livre (32.8); depois dele, a frase da equipe aparece de uma vez.
+11. **Painel:** o PR da outra conversa (`painel-lgpd/README.md`) entra na `main` do `imagineup-admin` só depois dos passos 6 e 7, com as 68 atualizadas no dia (o `adjustFanPoints` e o `findFanByEmail` em especial). Até lá, o diálogo da troca do @ promete "pode escolher outro na hora".
+12. **Conferir em produção**, com o ok do dono e uma conta de teste dele (a pergunta 13 de 29.15 segue sem resposta), depois do painel: a troca do @ pela Moderação e a frase na "Editar perfil"; a exportação da conta de teste, com o arquivo aberto; a exclusão de uma conta de teste, com o `users/{uid}` sumindo em segundos.
+13. **Registrar** como foi, aqui e em 26.21, e, fora do repositório, o teste e a política no `Projetos/protecao-imagineup/protecao-estado.txt`.
+
+**Como foi (14 a 15/10/2026):** com o ok do dono, da `main` `c4c25ff` (o merge do PR #24), na pasta `imagineup-app-deploy`. Foi na noite de 14/10 em Brasília, de umas 02:07 a umas 02:30 UTC de 15/10.
+
+1. O diff desde `8faeccf` em `functions/src` só trouxe os arquivos do bloco (a lista do passo 2 e do arquivo dos lotes). Nenhuma regra nem índice mudou: não houve `rules:deploy`.
+2. O silenciamento em UTC (`date -u`, sem o erro do fuso de 14/10/2026, 31.5), das 02:07 às 05:07 UTC, conferido.
+3. Lote 1, com a `api`, pelo dono no PowerShell. A primeira conferência leu o "Deploy complete!" da aba do terminal do deploy anterior: o lote 1 ainda rodava, e o `/health` respondeu 404, da revisão antiga. A `api` foi das últimas do lote a subir. Depois dela: o `GET /health` com 200 e `{"ok":true}`; o `/me/wallet` sem login com 401; pelo trace, o pedido ao `/health` sem nenhuma linha `acesso`, e o 401 com a linha `acesso`, o IP real e o `uid` vazio. A regra que saiu daqui está em 32.17.
+4. Lotes 2 a 5, pelo dono, sem erro de cota. Depois, o `allUsers` da `exportFanData` e da `deleteFanAccount`, pelo dono.
+5. Conferência: 68 funções ativas, todas atualizadas em 15/10/2026 (UTC); o `check-public-functions.mjs` com 58 chamáveis, nenhuma barrada; a CPU da `api` com `1` e `80`, da `exportFanData` e da `deleteFanAccount` com `0.1666` e `1`, e do `rankingTick` e do `createUserProfile` com `0.3333` e `1`; as três filas com `maxConcurrentDispatches: 5`; o `/health` com 200, o `/me/wallet` com 401 e uma rota que não existe com 404.
+6. Silenciamento cancelado no fim das conferências.
+7. O teste "ImagineUP: api no ar", criado pelo Claude com o comando de 32.7, no Git Bash. O `--path=/api/health` virou `/C:/Program Files/Git/api/health` (a armadilha de 32.7), e o teste falhou por alguns minutos, até o `update` do caminho rodado no PowerShell. Se o alerta "api fora do ar" mandou e-mail nesses minutos, foi esse engano.
+8. A política "ImagineUP: api fora do ar", criada pelo Claude a partir de `docs/protecao/politicas/api-fora-do-ar.json`, no canal "ImagineUP: alertas do servidor". Ficaram 5 políticas com o rótulo `app=imagineup`. A 6ª, a `close-stats-days-parado`, entrou às 03:21 UTC, logo depois da rodada das 00:20 (31.4).
+9. Conferido às 02:38 UTC de 15/10/2026, só leitura: o `describe` do teste com o caminho `/api/health`, o `"ok":true` em `CONTAINS_STRING`, o 2xx, `300s`, `30s` e as 3 regiões; e a métrica `monitoring.googleapis.com/uptime_check/check_passed`, lida pela API REST do Monitoring, com pontos nas 3 regiões (`sa-brazil-sao_paulo`, `usa-virginia` e `usa-oregon`) desde as 02:31 UTC, todos aprovados. Nenhum ponto reprovado apareceu na métrica.
+10. O EAS Update do canal preview, pelo Claude, com o fingerprint conferido antes: o grupo Android `d84424cf-f686-4b22-b836-ba8bd64e50c0`, na runtime `310056fd`, a do APK interno.
+
+Desde então as 68 funções rodam o código de `c4c25ff`, e o diff da próxima publicação conta desde ele. Falta o que está em 32.15: a conferência em produção (passo 12). O painel (passo 11) entrou em 15/10/2026, no PR #6 do `imagineup-admin`.
+
+### 32.13 Perguntas
+
+**Respondidas pelo dono em 14/10/2026** ("segue com as recomendadas"): 1 com a (a), 2 com a (i), 3 com a (a), e 4 a 16 com a proposta (a 14 conferida na hora do envio às lojas). Junto, a pergunta 6 de 33.13: o `posterUrl` na `api` sai na publicação deste bloco (decisão 25). O texto abaixo fica como estava, para o registro das opções.
+
+**Para o dono, antes da construção.** As três mudam o contrato e o README do painel; as etapas 3 a 7 dependem delas. As etapas 1 e 2 (a A5) não dependem e podem começar.
+
+1. **Como a exportação chega à equipe?** Opções: (a) a resposta da callable, em partes: a primeira chamada com o pequeno e as páginas de até 500 documentos para o longo; o painel junta e baixa o JSON; nada guardado no servidor, 256 MiB, nenhum teto de tamanho (decisão 7); (b) uma resposta só, com a recusa acima de uns 20 MiB (o teto da callable é uns 32 MiB), 512 MiB e 120 s, e uma sobra de CPU de uns 0,34; (c) um arquivo no Storage com link assinado de prazo curto, que pede o papel `iam.serviceAccountTokenCreator` na conta das funções, uma pasta nova no `storage.rules` e uma regra de vida no bucket dos EUA. Proposta: (a).
+2. **Quem atende os pedidos de dados?** Opções: (i) só admin, as duas, sem seção nova, na ficha do fã (decisão 6); (ii) exportar com a seção `fans` e edição, e excluir só admin; (iii) uma seção nova `lgpd`, que muda o modelo de seções, as regras e o painel. Proposta: (i).
+3. **Qual endereço o teste de disponibilidade usa?** Opções: (a) a rota nova `GET /health`, sem login, 200 sem tocar no Firestore, publicada junto com este bloco (decisão 17); (b) o 401 de `GET /api/me/wallet`, sem mudar código, que quebra com o App Check em `enforce` e polui o modo `monitor`; (c) o 404 de uma rota que não existe, estável com o App Check, mas que confunde quem lê o alerta. Proposta: (a).
+
+**Para o dono, que seguem com a proposta** (o código segue a proposta até a resposta):
+
+4. **A confirmação: a equipe confirma o pedido por uma mensagem nova ao e-mail da conta, e o painel confere o e-mail digitado e o login de até 10 minutos** (decisão 10)? Proposta: sim, com o app primeiro para quem consegue entrar, o arquivo só ao e-mail da conta e o pedido de representante fora da ferramenta. Alternativa: digitar o @ de agora, como no reset, que confirma a tela, mas não o pedido.
+5. **A auditoria vem antes do `deleteUser`** (decisão 12), aceitando uma entrada sem a exclusão quando o Auth falha? Proposta: sim, com a nova tentativa do mesmo dia sem entrada repetida.
+6. **O registro de acesso fica fora do arquivo**, com o aviso (decisão 9)? Proposta: sim. Vai junto ao jurídico (UP-45).
+7. **As denúncias e os bloqueios feitos pelo fã entram no arquivo, com os uids dos alvos como gravados** (32.3)? Proposta: sim: são ações dele. O resto do arquivo sai sem uid, nome ou chave de outra pessoa ou da equipe (decisão 8). As denúncias contra ele ficam fora. Vai junto ao jurídico (UP-45).
+8. **Os tetos de 20 exportações e 5 exclusões por pessoa e dia** (decisão 13)? Proposta: sim.
+9. **O fã da equipe exporta, mas só é excluído depois de sair da Equipe** (decisão 14)? Proposta: sim.
+10. **O `reason` no `resetFanUsername`, com o `moderation` como padrão e o `central` sem prazo** (decisões 1 e 5)? Proposta: sim. Alternativa: sempre `moderation`, sem entrada nova, e o caso do @ de artista pelo script.
+11. **A rota de saúde sem as linhas `acesso` e `api`** (decisão 18)? Proposta: sem. Alternativa: com as linhas, e a sonda citada em 31.9.
+12. **O teste a cada 5 minutos, de 3 regiões, e o alerta com 2 regiões por 5 minutos** (decisões 19 e 20)? Proposta: sim.
+13. **O teste do alerta com o segundo teste temporário** (32.7)? Proposta: sim, uma vez, logo depois da política, com o e-mail confirmado pelo dono.
+14. **As contas de demonstração no Google Play** (32.15): apagar depois da aprovação serve lá, ou a conta fica enquanto o app estiver na loja? Para a hora do envio às lojas, conferida no Play Console ("Acesso ao app"). A decisão 4 vale até lá.
+15. **O limite da trava do @** (decisão 1): o @ antigo fica livre na hora para outra conta, e a pessoa que exclui a conta e cria outra volta sem prazo. Proposta: aceitar, como na suspensão, com o termo na lista do filtro quando o @ em si é ofensivo. Alternativa: a reserva do @ antigo por 30 dias, a opção (b) da pergunta 23 de 26.19, que mexe no `createArtist` e no `checkArtistHandle`.
+16. **O uid do fã excluído no extrato de quem o convidou** (32.3): os lançamentos do convite e as missões que ele pagou ficam na carteira de quem convidou, com o uid dele no `actor` e a chave dele no id. Proposta: ficam, citados na política, e vão ao jurídico (UP-45) com a chave do convidado excluído (pergunta 8 de 20.14). Alternativa: o `deleteUserData` limpa o `actor.uid`, por uma consulta de grupo no `ledger` que pede uma isenção nova de índice (hoje nenhuma no `ledger`).
+
+### 32.14 O que é da cliente
+
+- **A política de privacidade** (UP-45): dizer como o titular pede os dados e a exclusão (pelo e-mail cadastrado, com a confirmação numa mensagem nova a esse e-mail), os prazos (a cópia completa em até 15 dias, art. 19, II; a exclusão na hora, ou uma resposta com os motivos, art. 18, §4º), o arquivo em JSON, que quem entra no app exclui pelo app e que a exclusão pelo painel é a mesma do app.
+- **Quem atende:** os admins do painel dela, pelo caminho do README (decisão 10). Os prazos correm do pedido, e o controle deles fica no e-mail de atendimento: a ferramenta não registra pedidos, só o que foi feito.
+- **O jurídico** (UP-45): o registro de acesso a pedido do titular (31.8), as denúncias e os bloqueios no arquivo, as denúncias contra o fã fora dele, o `staffAudit` com o uid depois da exclusão, o uid do fã excluído no extrato de quem o convidou (pergunta 16), o motivo do ajuste da equipe fora do arquivo (o painel diz a quem ajusta que o fã não o vê; se ele for ao arquivo, essa dica muda antes), o pedido de um representante (art. 18, §3º) e o do responsável pelo menor (art. 14), que ficam fora da ferramenta, e o e-mail não confirmado, em que a ida e volta prova quem tem a caixa, e não quem usou a conta.
+- **A troca do @ pela Moderação:** os termos de uso podem citar que o @ ofensivo é trocado, que o fã escolhe outro em 30 dias e que o termo vai à lista do filtro.
+
+### 32.15 Pendências: o que falta da publicação e as decisões 3, 4 e 7 do dono
+
+- **O que falta da publicação (15/10/2026).** O painel entrou na `main` do `imagineup-admin` e na Vercel em 15/10/2026, depois das 68 funções e do `allUsers` das duas novas (32.12, passo 11): o PR #6 (o bloco "Pedido de dados (LGPD)" na ficha do fã, só para admin, e a troca do @ com o motivo, `moderation` ou `central`) e os ajustes dos PRs #10, #11 e #13 (os diálogos da Moderação que sobrevivem à resposta incerta e o "Parar" da exportação). Falta a conferência em produção com uma conta de teste do dono: a troca do @ pela Moderação com os 30 dias, a exportação e a exclusão (32.12, passo 12). Da seção 31, a 6ª política e o primeiro backup saíram em 15/10/2026 (31.13).
+- **Relatório de falhas, Sentry (decisão 3): anotado para depois, não agora.** A Expo indica o `@sentry/react-native`, instalado pelo `@sentry/wizard`, com o `SENTRY_AUTH_TOKEN` nas variáveis da EAS e o envio dos source maps depois de cada `eas update` (`npx sentry-expo-upload-sourcemaps dist`). É nativo: muda o fingerprint e só entra numa build. Pede o aviso na política de privacidade (UP-45: os dados do aparelho e do erro vão ao Sentry) e a conta do Sentry da cliente. Lugar natural: a build das lojas ou a primeira depois dela.
+- **Contas de demonstração para os revisores das lojas (decisão 4): em produção, só as duas que as lojas pedem, criadas na hora do envio, não agora.** São a conta de demonstração com o onboarding feito e a segunda conta de fã (29.14, passo 7). A senha vai só nas notas de revisão, nunca no repositório, na nota ou no chat. As contas saem depois da aprovação: pelo app ("Excluir conta") ou pela ferramenta deste bloco (`deleteFanAccount`, com o e-mail delas). Cada versão nova enviada às lojas passa por revisão de novo e pede contas válidas: elas voltam a ser criadas a cada envio. No Google Play, o "Acesso ao app" pede credenciais que continuem valendo, e a revisão pode voltar a qualquer momento: conferir no Console, na hora do envio, se apagar depois da aprovação serve lá, ou se a conta do Google fica enquanto o app estiver na loja (pergunta 14 de 32.13, para a hora do envio).
+- **Fotos apagadas por engano, versionamento do bucket (decisão 7): anotado, não agora.** O bucket `imagine-up-app.firebasestorage.app` fica em US-EAST1, sem versionamento, com 7 dias de exclusão reversível (604800 s) e sem regra de vida (gcloud, 14/10/2026; 31.13). Quando entrar: versionamento com uma regra de vida que apague a versão antiga antes dos 30 dias da política, contados desde a exclusão da conta (a foto de quem excluiu a conta não pode ficar mais que isso), ou uma exclusão reversível maior, até esse limite. A região não muda sem um bucket novo.
+
+### 32.16 Fora deste bloco (só documentado)
+
+- O bloco B, nativo, na build das lojas: entrar com Apple e Google e o "login automático" (decisão 1) e tocar o vídeo dos posts (decisão 2).
+- Os itens do painel da outra conversa que faltam: o segundo fator da equipe, o cartão "Pronto para abrir" e o editor da lista do filtro. Já entraram em 15/10/2026: o Next.js (16.4.0 no PR #4 do painel e 16.4.1 no PR #8), o CI do painel (lint, typecheck, testes e build em todo PR e na `main`, no PR #5, com o Node 24 fixado no PR #9) e o prazo do @ (abaixo).
+- A exportação pelo próprio fã, no app.
+- Um registro dos pedidos de dados (data do pedido, prazo e resposta): fica com o e-mail de atendimento.
+- O registro de acesso no arquivo (decisão 9) e o acesso ao painel do fã que é da equipe.
+- Um roteiro para o perfil que ficou sem conta do Auth (o gatilho que falhou de vez): um script com as credenciais do dono que roda o `deleteUserData`, com `--dry-run`, como as cargas.
+- A confirmação do pedido quando a conta é da Apple com o e-mail escondido (o pedido chega de outro endereço): entra com o bloco B.
+- A reautenticação da equipe por outro provedor: a equipe entra só por e-mail e senha.
+- A correção dos dados (art. 18, III) e a oposição: o fã edita o perfil no app, e o resto vai pelo e-mail de atendimento.
+- Mostrar no painel o prazo do @: entrou no PR #6 do painel, em 15/10/2026, na página do fã da Moderação, e não na ficha de Fãs. Enquanto o prazo vale, o perfil mostra o item "Troca do @" ("Liberada a partir de 14 nov", com ", @ trocado pela equipe" quando o `usernameLockReason` é `moderation`; o `usernameLockText` de `src/lib/moderation.ts`).
+- Uma rota de saúde que confira o Firestore: o alerta (b) de 31.4 pega a `api` com erro quando há pedidos.
+- O alerta da atestação quebrada: com o App Check em `enforce` (27.5), uma build com a atestação quebrada recebe 403 `app_check_failed` em todo pedido, e o `GET /health`, antes do App Check, segue 200; o alerta (b) de 31.4 só olha 5xx. Junto com o `enforce`: uma métrica de log sobre a linha `api` com o `code` `app_check_failed`, com alerta por taxa (27.5 ganha o passo na etapa 8).
+- A conta do Auth sem perfil (decisões 15 e 16): o painel não chega a ela, porque o `findFanByEmail` devolve `uid: null`. O pedido sai pelo console do Authentication (a exclusão e, para a cópia, o nome, o e-mail, os provedores e as datas, escritos à mão), com o ok do dono. Trocado: o `findFanByEmail` devolver o uid sem o perfil, que muda a ficha do painel.
+- O pedido de um representante (art. 18, §3º) e o do responsável pelo menor (art. 14): fora da ferramenta, com o jurídico (UP-45).
+- Limpar o uid do fã excluído no `actor` do extrato de quem o convidou (pergunta 16): pede uma isenção nova de índice.
+
+### 32.17 Armadilhas
+
+- **Limpar o motivo da trava na troca do fã.** O `writeUsernameSwap` grava `usernameLockReason: null`; sem isso, um `moderation` antigo fica ao lado do prazo novo do fã, e o app diz que a equipe trocou.
+- **O `addStaffLimit` grava com `set` sem `merge`.** Campo novo que não entra nele é apagado na próxima busca por e-mail ou no próximo ajuste do dia, e o teto de exportação volta a zero. Na publicação, as duas versões convivem: o `findFanByEmail` e o `adjustFanPoints` do código de `8faeccf` apagam o `dataExports` e o `deletedUids`, e o "mesmo uid não conta de novo" deixa de valer. Por isso o lote 5 só sai com o lote 4 sem erro, e o painel só entra com as 68 atualizadas no dia (32.12, passos 5, 7 e 11).
+- **A trava é da conta, e não do @.** O @ antigo fica livre na hora para outra conta, e quem exclui a conta e cria outra volta sem prazo (pergunta 15). O @ em si ofensivo vai à lista do filtro (seção 30).
+- **Dado de outra pessoa num documento do fã.** O arquivo leva o que está gravado, menos o `omit` de cada fonte. Campo novo com uid, nome, chave ou estado de outra pessoa, ou texto da equipe (como o `actor` e o `note` do extrato, ou o `award` da origem), entra no `omit`, senão vai ao fã; o teste de 32.10 acusa os uids e as chaves, e não o estado nem o texto.
+- **O e-mail digitado confere a tela, e não a pessoa.** O pedido só vale confirmado pelo e-mail da conta, numa mensagem nova, nunca pelo Reply-To (decisão 10).
+- **A exclusão recusa o fã da equipe.** O `deleteUserData` apaga o `staff/{uid}` sem a trava do último admin e deixaria o `managerUid` das centrais apontando para ninguém.
+- **A ordem da exclusão:** a auditoria e o teto na transação, e só depois o `deleteUser`. A repetição do mesmo uid no mesmo dia, pela mesma pessoa da equipe, não conta nem audita de novo. A lista é de quem chama: outro admin conta no teto dele e audita outra vez.
+- **As páginas da exportação não auditam**, então nunca levam o que as regras fecham para a equipe (o e-mail, as denúncias e os bloqueios): isso fica na primeira chamada.
+- **Limites que o emulador não confere:** o teto de uns 32 MiB da resposta da callable (as partes ficam longe dele) e os índices (as formas em `fan-data/indexes.test.ts`).
+- **O cursor dos comentários é o caminho completo.** No grupo `postComments`, a ordem pelo id é a do caminho (`posts/<id>/postComments/<id>`); o id sozinho não serve de `startAfter`.
+- **Fonte nova do fã** fora de `users/{uid}`, `wallets/{uid}` e `fanInvites/{uid}` entra à mão na `FAN_DATA_SOURCES` e no `deleteUserData`; o teste do `listCollections()` só pega as subcoleções desses três, e não o uid do fã gravado num documento de outra pessoa (o `actor` do extrato de quem o convidou, 32.3).
+- **As denúncias da primeira chamada não têm teto de tamanho.** O `REPORTS_PER_DAY` é por dia; o histórico vem inteiro, em páginas internas de 500. Um `limit` nessa leitura cortaria a resposta ao titular sem aviso.
+- **Callable nova:** sempre pelo `onPanelCall` (31.6) e com o `allUsers` depois do deploy, senão o painel recebe `functions/internal`.
+- **O SDK do painel manda `undefined` como `null`.** O `httpsCallable` passa os dados pelo `encode` do `@firebase/functions`, que troca o `undefined` de uma chave por `null`, e o servidor recusa o `null` no `after` e no `reason` (`invalid-request`; 32.19, etapas 1 e 3). A primeira página de cada parte vai sem a chave `after`, e o `reason` vai sempre escrito (o README do painel, 7.1).
+- **O `GET /health` fica antes de tudo no handler.** Uma `ReadRoute` comum passaria pelo login (401) e, com o App Check em `enforce`, daria 403. Nunca um caminho terminado em `z` (o Cloud Run reserva alguns, como `/healthz`).
+- **O corpo da rota de saúde é contrato.** Mudar o `HEALTH_BODY` sem mudar o `--matcher-content` do teste (`gcloud monitoring uptime update ... --matcher-content`) faz o alerta disparar.
+- **O teste e a política só depois da rota no ar.** Criados antes, o teste falha nas 3 regiões, e a política dispara em 5 minutos.
+- **Outro teste de disponibilidade no host das funções** dispara "ImagineUP: api fora do ar", porque a política filtra pelo host (decisão 20): um teste futuro de uma callable, ou o teste do alerta esquecido. O do alerta sai logo depois do e-mail, e um teste novo no host pede antes um filtro novo na política.
+- **O `GET /health` não vê o App Check.** Com o `enforce` e a atestação quebrada numa build, os fãs recebem 403 e a sonda segue 200 (32.16).
+- **O `\r` do gcloud no Git Bash:** os blocos com várias linhas usam o `tr -d '\r'` (31.4 e 31.5), e a data do silenciamento nunca sai do `TZ=America/Sao_Paulo date`.
+- **O "Deploy complete!" de outra aba.** Em 15/10/2026, a primeira conferência do lote 1 leu o "Deploy complete!" da aba do terminal do deploy anterior. O lote ainda rodava, e o `/health` respondeu 404, da revisão antiga; a `api` foi das últimas do lote a subir. Antes de conferir: o "Deploy complete!" na mesma aba em que o comando foi colado, e a função atualizada pelo `updateTime` do `gcloud functions describe <nome> --region=southamerica-east1 --project=imagine-up-app --format="value(updateTime)"`.
+- **O caminho do teste no Git Bash.** O `--path=/api/health` do `gcloud monitoring uptime create` e do `update` vira `/C:/Program Files/Git/api/health` (a conversão de caminhos do MSYS), e o `MSYS_NO_PATHCONV=1` quebra o próprio gcloud. O teste nasce falhando e, com a política no ar, o alerta dispara. Os dois comandos rodam no PowerShell, ou o `describe` confere o `httpCheck.path` logo depois (32.7).
+- **A margem de CPU** cai para uns 0,51 vCPU. Mais de 3 funções novas a 1/6 pedem baixar o `maxInstances` da `api` ou mais cota.
+- **O painel publicado** prometia "pode escolher outro na hora" e mandava todo reset como `moderation` até o PR #6, de 15/10/2026: até ali, a troca do @ de um artista travava o fã por 30 dias. Um cliente antigo, sem o `reason`, ainda cai em `moderation`.
+- **O e-mail digitado nunca vai ao log nem à auditoria.** O log das duas callables leva só o `actorUid`.
+
+### 32.18 Documentação
+
+**Nota** (`docs/arquitetura-api.md`), na etapa 8:
+
+- O cabeçalho (linha 3): "e a moderação do @, os pedidos de dados e o aviso de api fora do ar, na seção 32", e o "Em produção desde" quando publicar.
+- "Decisões em uma página": um item 25 para este bloco.
+- Seção 2: um parágrafo "Fora da tabela": o `GET /health`, sem login, fora da `API_ROUTES`.
+- Seção 12: a exclusão pela equipe (`deleteFanAccount`), a `FAN_DATA_SOURCES` e o uid do fã que fica no `actor` do extrato de quem o convidou.
+- 27.5: junto com o `enforce`, a métrica de log do `app_check_failed` com o alerta por taxa (32.16).
+- 24.1 e 24.4: o prazo depois da troca pela Moderação e o `usernameLockReason` na troca do fã.
+- 21.2: o `posterUrl` na mídia do vídeo (decisão 25), com remissão a 33.2. O resto do vídeo (21.1, decisão 3) fica com o bloco B (33.17).
+- 26.4: o `resetFanUsername` com o `reason` e o prazo; as duas callables novas, só de admin. 26.12: o `reason` na auditoria e as duas ações novas, só com o uid.
+- 26.19, pergunta 23: respondida pelo dono em 14/10/2026, opção (a). O item de 26.23 sobre o @ que volta na hora passa a apontar para esta seção.
+- 26.21: a publicação.
+- 31.1 (a tabela e o "Esperado": o teste e mais uma política), 31.2 (o `api-fora-do-ar.json` e o comando do teste, que fica em 32.7), 31.4 (o alerta (b) deixa de dizer "não cobre"; um item (d) para a `api` fora do ar; o "Desfazer" e o "Criar de novo" com o teste), 31.5, passo 2 ("4 hoje, 5 depois da 5ª" passa a contar a política nova), 31.6 (a rota de saúde sem as linhas), 31.10 (o custo do teste, R$ 0) e 31.13 (a pendência do uptime feita; a do bucket de fotos aponta para 32.15).
+- 32.19, com o que o código fez diferente.
+
+**`CLAUDE.md` e `AGENTS.md`** (iguais, com o cabeçalho de duas linhas do `AGENTS.md`):
+
+- Estrutura: o `src/fan-data/` nas funções.
+- Equipe do painel: o `resetFanUsername` com o prazo de 30 dias e o `reason` (sai o "sem prazo" e a remissão à pergunta 23 em aberto); as duas callables novas, só de admin, com o teto, a auditoria e o `fan-is-staff`.
+- API do app e pontos, "Publicar": 68 funções, 58 chamáveis, os lotes de 15, 15, 15, 15 e 8, e o `allUsers` das duas novas.
+- Pendências: as decisões 3, 4 e 7 (32.15); a proteção da produção com o teste de disponibilidade; o "Antes de mandar às lojas" com as contas de demonstração saindo depois da aprovação.
+
+**Comentários no código:** as contagens de 66 e 55 no `cpu.test.ts`, no `access-log.test.ts` e no `content-filter/index.ts` (o `index.ts` não tem contagem), e a lista de callables no topo do `panel-errors.ts`.
+
+**Fora do repositório:** o `Projetos/protecao-imagineup/protecao-plano.md` (etapa 6), o `lotes-lgpd-moderacao.txt` (etapa 8) e o `protecao-estado.txt` (32.12, passo 13).
+
+**Vault** (`vault/ImagineUP/App.md`): só com o ok do dono, como sugestão no fim da etapa 8.
+
+### 32.19 O que o código fez diferente do desenho
+
+Cada etapa de 32.11 acrescenta aqui o ponto em que o código decidiu um detalhe que o desenho deixava aberto, ou fez diferente do que ele diz, com o motivo.
+
+**Revisão do desenho (14/10/2026).** Duas críticas, uma de LGPD e segurança e outra de código e publicação, conferidas uma a uma contra o código, as regras e o painel em `origin/main` `c75c4de`. Entraram:
+
+- O filtro de campos por fonte (decisão 8 e 32.3): o arquivo levava, "como gravado", o uid do convidado e a chave dele no extrato, o uid e o nome da equipe no `actor`, no `updatedBy` e no `hiddenBy`, o `ownerKey` e o `round`. Os resumos `keys` das missões entraram na mesma regra, achados na conferência. O teste de terceiros, com a exceção dos alvos das denúncias e dos bloqueios (pergunta 7).
+- O uid do fã excluído no `actor` do extrato de quem o convidou: a linha nova de 32.3 e a pergunta 16.
+- As denúncias da primeira chamada: o `REPORTS_PER_DAY` é por dia, e não um teto da lista; a leitura vai inteira, em páginas internas de 500, com o teste das 1.001.
+- O caminho do pedido (decisão 10, 32.6 e 32.14): o e-mail digitado não liga o pedido à pessoa; a ida e volta pelo e-mail da conta, o app primeiro, o arquivo só ao e-mail da conta, a cópia apagada, o representante fora e os prazos separados (art. 19, II, e art. 18, §4º).
+- O limite da trava do @ (decisão 1, pergunta 15 e 32.17), o destravar por um reset com `central`, o termo na lista do filtro e o link de contato no app (32.8).
+- O nome do Auth e o e-mail de cada provedor na `conta`.
+- O alerta do `app_check_failed` com o `enforce` (32.16) e a armadilha do teste no mesmo host (32.17).
+- O `after` como o id do último documento, o caminho nos comentários (32.2 e 32.6).
+- A conta do Auth sem perfil fora do painel (decisões 15 e 16 e 32.16).
+- A convivência do `addStaffLimit` antigo na publicação: o lote 5 depois do lote 4 sem erro, a regra da cota e as 68 atualizadas antes do painel (32.12 e 32.17).
+- O `Dialog` com estado no lugar do `ConfirmDialog` (32.6, itens 2 e 6), o passo 6 do `allUsers`, o arquivo dos lotes e o `protecao-plano.md`, os quatro `toEqual` da etapa 1, a prova pelo trace no lote 1, a ordem das recusas do `deleteFanAccount`, o `getRedemptionContacts` na decisão 6 e o `index.ts` fora dos comentários de contagem.
+
+Ficaram de fora, com o motivo:
+
+- O `deleteUserData` limpar o `actor.uid` no extrato de quem convidou: pede uma consulta de grupo no `ledger` e uma isenção nova de índice, contra a trava do bloco. Fica como alternativa da pergunta 16.
+- O teste de "nenhum uid de outro fã" no arquivo inteiro: os alvos das denúncias e dos bloqueios ficam, pela pergunta 7.
+- O filtro da política pelo `check_id`: o id só existe depois de criar o teste, o arquivo não leva id (31.2), e o teste do alerta depende do filtro pelo host. Fica a armadilha.
+- Mudar o `findFanByEmail` para devolver a conta sem perfil: muda a ficha do painel por um caso raro, que o console resolve.
+- Um teto explícito nas denúncias da primeira chamada: cortaria a resposta ao titular; o tamanho real fica longe do limite.
+- A reserva do @ antigo por 30 dias: é a opção (b), trocada pelo dono; fica como alternativa da pergunta 15.
+
+**Etapa 1, o @ no servidor e o `posterUrl` (14/10/2026).** Feita como em 32.4 e 32.10, com estes detalhes:
+
+- O `reason` do `releaseUsernameIn` é obrigatório, sem padrão: cada chamador decide. O padrão `moderation` mora só no `parseResetReason` da callable. O `releaseUsername` passa sempre `central`, e por isso o `scripts/release-fan-username.mjs` não mudou (a frase dele, "sem prazo", continua certa).
+- O `UsernameRelease` ganhou o `changeableAt` (ISO, ou null), de onde sai a resposta da callable; o script ignora o campo.
+- O `parseResetReason` trata como ausente só o `undefined` (a chave que o painel não manda). O `null` é "outro valor": `invalid-request` com `field: 'reason'`.
+- Onde mora: `USERNAME_RESET_REASONS` e `UsernameResetReason` em `fan-profile/model.ts`; o `lockReasonOf` em `fan-profile/details.ts`, ao lado do `genderOf`; o `UsernameLockReason` no `contract.ts`. O teste puro do `parseResetReason` é um arquivo novo, `fan-profile/panel.test.ts`, no molde do `moderation/profile-panel.test.ts`.
+- O `posterUrl` entra só no vídeo, por espalhamento: na foto, a chave nem existe (o teste confere com `'posterUrl' in`). Na capa sem miniatura, a miniatura cai na capa, como hoje, e o `posterUrl` é a mesma URL.
+- O teste de emulador do `posterUrl` fica no `content-panel.emulator.test.ts`, com o handler no processo (`localApi`): o arquivo não sobe a função `api`, e a mídia de verdade (as URLs do emulador do Storage) já nasce ali pelo `updatePost`. Ele confere também o post sem o mp4 (a `url` nula e o `posterUrl` ainda lá). O `posts.emulator.test.ts` só ganhou o `posterUrl: null` do `p-clipe` do seed.
+- Além do que 32.10 pede: a troca pelo `PUT /me/username` na data também grava o motivo null; o destravar por um reset com `central` sobre o prazo da equipe; o instante antes da data ainda recusa; e, nas regras, o perfil sem nome com o `usernameLockReason` gravado pelo servidor ainda aceita o primeiro nome.
+- A chamada da linha 1069 do `moderation-fans.emulator.test.ts` (a regressão do item de perfil) passou a conferir o `changeableAt` da resposta: o prazo vai ao perfil, nunca ao item da `profileReportQueue`.
+- A etapa fecha também com `npm run check` (pedido de toda etapa), além dos quatro comandos de 32.11.
+
+**Etapa 2, o @ no app (14/10/2026).** Feita como em 32.8 e 32.10, com estes detalhes:
+
+- O `lockReasonOf` do app mora em `profile/username.ts`, ao lado do `usernameLock`, e não no `details.ts` (o espelho do `details.ts` das funções, onde o do servidor mora): o plano não mexia no `details.ts` do app, e a função é do @. Mesma regra do servidor: só `moderation`; o resto, `null`.
+- O `toFanProfile` sempre traz o `usernameLockReason` (`null` sem o campo), como o `usernameChangeableAt`; os dois `toEqual` do perfil inteiro no `api.test.ts` ganharam o campo. No `EditableProfile` do app o campo é opcional, e a resposta sem ele vale `null`: o prazo da `api` de antes é sempre o do fã.
+- O `usernameLock(profile, now)` recebe só o prazo e o motivo do perfil (ou nada) e o `Date` de agora. O prazo no instante exato de agora, ou fora do formato, não trava (o `>` de antes).
+- Na tela, o motivo vem sempre do perfil, também na recusa 409, que não traz motivo. O `tooSoon` virou o `refusedLock`, que guarda a data do 409 (o `details.changeableAt`); sem ela, a do perfil em cache; sem nenhuma, as frases sem data.
+- O link "Escrever para a equipe" do prazo da equipe não aparece para o suspenso: o aviso de cima já tem o link, com o assunto da suspensão, e dois links iguais confundiriam o leitor de tela. Limite aceito: com o aviso do filtro (seção 30) aberto e o prazo da equipe, a tela tem dois links "Escrever para a equipe", cada um com o seu assunto.
+- Os Ajustes leem o relógio pelo `useNow` (a cada minuto e na volta do app), para o prazo vencer com a tela aberta. O "Seu @ ainda é automático" sai com qualquer prazo correndo: o @ automático com prazo só nasce do reset da equipe.
+- O index do `profile` passou a exportar o `usernameLock`, o `UsernameLock` e o `UsernameLockReason`: os Ajustes moram no `settings`, que só importa pelo index.
+- O teste do link mocka o `openSupportEmail` pelo `jest.spyOn` no módulo (`import * as webPage`), e o teste do filtro no mesmo arquivo passou a ler o `webPage.supportEmailUrl`.
+- Além do que 32.10 pede: o prazo vencido com o `moderation` não trava nem mostra o link; o suspenso com o prazo da equipe fica com um link só; o 409 do relógio adiantado com o `moderation` no perfil diz a frase da equipe com a data do 409 e mostra o link; nos Ajustes, o prazo vencido volta a avisar do automático; e o `lockReasonOf` em tabela.
+- O `QUERY_CACHE_VERSION` não subiu, e o fingerprint Android continua `310056fd840b5459416c9926e46846b8c208aa76`.
+
+**Etapa 3, a base dos pedidos de dados (14/10/2026).** Feita como em 32.3, 32.4 e 32.10, sem callable, com estes detalhes:
+
+- A `FAN_DATA_SOURCES` tem 31 fontes. Duas linhas da tabela de 32.3 viraram duas fontes cada (o `profileSync` e o `uploads`; a `moderationQueue` e a `profileReportQueue`), para cada subcoleção ter o nome dela no teste do `listCollections()`. Cada fonte diz o lugar no arquivo (`place`: a primeira chamada, uma parte, o endereço ou fora, com o motivo), o leitor (`read`: a conta do Auth, o documento do uid, a subcoleção, a igualdade num campo, o grupo, a contagem, as temporadas, ou nenhum pelo uid), o `omit` e o que a exclusão faz (`deletion`: o efeito `account`, `deleted`, `stripped`, `detached` ou `kept`, com a frase da tabela). A ordem do arquivo fica em `FAN_DATA_FIRST_KEYS` e `FAN_DATA_PARTS`. O `knownSubcollections` dá as subcoleções de `users`, `wallets` e `fanInvites` para o teste da etapa 4.
+- A foto do Storage ganhou um lugar próprio, `address`: o arquivo leva só o endereço, no `photoURL` do perfil.
+- O `omit` é por caminho com ponto, e o `*` vale qualquer chave de um mapa: os resumos das missões saem por `missions.*.items.*.keys`. O `uid` do extrato sai pelo `omit`, mas o `actor` não: a máscara do extrato (`mask: 'ledger'`) guarda só o `type`, e assim um campo novo no `actor` também fica fora do arquivo.
+- A máscara do convite olha o prefixo do id e, sem ele, o campo `source`. O id vira exatamente `invite_visit` ou `invite_signup`, e o `eventId` sai.
+- Na lista das temporadas, o `id` de cada item é o da temporada (o pai, `idFromParent`), e o `seasonId` gravado continua. No comentário, o `postId` vem do caminho (`parentField`). Um campo gravado com o nome `id` perde para o id do documento.
+- Os campos técnicos do perfil ficam em `PROFILE_TECHNICAL_FIELDS`, no `sources.ts`, e não no `model.ts`: o `model.ts` importa do `sources.ts`, e o contrário faria um ciclo de módulos.
+- O `parseAfter` aceita como primeira página só o `after` ausente. O `null` é `invalid-request` com `field: 'after'`, como o `reason: null` da etapa 1: é o `after` da página que fecha a parte, e o painel que o devolvesse recomeçaria a parte sem fim. Ele recusa também os ids `.`, `..` e `__x__`, e nos comentários só passa o caminho `posts/<id>/postComments/<id>`.
+- O `isRecentLogin` aceita o `auth_time` um pouco no futuro (o relógio do servidor atrás do login). Sem ele, ou fora do formato, recusa.
+- Além do que a etapa pedia, o `model.ts` já traz o que a etapa 4 usa: a `conta` (`exportAccount`, com as datas do Auth em ISO e o vazio em `null`), o começo do arquivo (`exportHeader`, com os avisos de 32.3 em `EXPORT_NOTICES`), o `sameEmail` (sem diferença de maiúsculas; sem e-mail na conta, nunca confere), o `exportFields` dos documentos únicos, o `exportItem` de cada documento de lista e o `exportList`, que dá só os ids nas reservas de @ (`idsOnly`).
+- No `checkStaffLimit`, a exclusão do uid que já está na lista do dia responde `ok` com `repeat: true`. É o sinal para a etapa 4 não gravar outra auditoria (decisão 12). O documento do dia saiu num `staffLimitDoc` puro, que o `addStaffLimit` grava; o teste prova que a busca por e-mail depois de uma exportação e de uma exclusão não zera as duas contagens. A lista `deletedUids` é lida com o `isFanId` da Moderação.
+- As mensagens dos dois tetos leem o número das constantes (`DATA_EXPORTS_DAILY_MAX` e `ACCOUNT_DELETIONS_DAILY_MAX`), com o texto de 32.2.
+- O `readPanelAdmin` responde `admin-only` para qualquer papel que não seja `admin`, também um valor estranho. O comentário do topo do `panel-errors.ts` já cita o `exportFanData` e o `deleteFanAccount`, e o do `AuditEntry` (`staff/service.ts`) diz que as duas ações levam só o uid.
+- O `fan-data/indexes.test.ts` tira as formas da própria lista (as fontes do arquivo com igualdade, grupo ou contagem) e prende as 7 consultas de 32.5. Uma consulta nova na lista pede a forma no teste.
+
+**Etapa 4, as callables dos pedidos de dados (14/10/2026).** Feita como em 32.2, 32.4 e 32.10, com estes detalhes:
+
+- O que as duas callables dividem mora no `export.ts`: o `FanDataDeps`, a conta do Auth (`fanAccount`, que devolve null no `auth/user-not-found`), o `requireRecentLogin`, a recusa dos tetos com o `max` (`staffLimitError`) e a auditoria só com o uid (`auditFanData`). O `delete.ts` importa de lá. Nenhum arquivo além dos dois de 32.4.
+- A primeira chamada e a página se separam pela chave `part`. Sem ela, é a primeira chamada, e o `after` é ignorado. Com ela, é uma página, e o `email` é ignorado.
+- A primeira chamada percorre as chaves de `FAN_DATA_FIRST_KEYS` pelo leitor de cada fonte. Os documentos únicos vêm num `getAll` só, e o ausente vale null. As listas por igualdade (as reservas de @, os códigos e as duas denúncias) vêm inteiras, em páginas internas de 500. Depois, a contagem e as temporadas, pelo `select()` e um `getAll`. As leituras correm juntas, antes da transação. O `partes` traz sempre as 8 partes, também as vazias.
+- As páginas usam a mesma consulta das listas, com o `orderBy(FieldPath.documentId())` e o `startAfter`: o id nas coleções e, no grupo dos comentários, a referência do caminho.
+- O log das duas leva só o `actorUid`, e o da exclusão também o `status`. A exportação escreve "Dados de um fã exportados." na primeira chamada e "Página dos dados de um fã lida." nas páginas.
+- A exclusão lê o `staff/{uid}` e o perfil num `getAll` só. A transação relê o admin, o `staff/{uid}` e o teto. Com o `repeat`, ela não grava nada, e o `deleteUser` vem de novo.
+- O `access-log.test.ts` mudou além do comentário: o título do teste e os dois `toBeGreaterThanOrEqual` passaram de 55 para 57. O comentário do `cpu.test.ts` passou a dizer a `api` a 1 vCPU, e não a 1/3.
+- A lista das funções foi conferida contra o `lib/index.js`: 68 funções, 57 do `onPanelCall` e 58 chamáveis com a `api`. O `exportFanData` e o `deleteFanAccount` vêm logo depois do `hideFanComments`. Os 5 lotes (o 1 e o 5 de 32.12, e os 2, 3 e 4 de 31.12) somam 15, 15, 15, 15 e 8: as 68, sem repetição e sem sobra.
+- No `fan-data.emulator.test.ts`, as 19 primeiras exportações do dia são gravadas pelo `staffLimitDoc`, e a 20ª e a 21ª vão pela callable. A repetição do mesmo uid vem do núcleo com um `deleteUser` que falha depois da transação; a nova tentativa, pela callable, exclui sem somar nem auditar. A linha nas temporadas fechadas sai do `seedPastSeasons`, e a foto, do `seedFanPhoto`. O cursor dos comentários é testado com o caminho do primeiro. A exclusão é conferida fonte a fonte pelo `deletion.effect` da lista, e a fonte sem conferência faz o teste falhar.
+- Além do que 32.10 pede: o limite exato de 600 s, pelo núcleo; a página com o login antigo passa; a recusa do e-mail não traz o e-mail da conta; o `fan-is-staff` não conta nem audita; e os itens das filas contra o fã ficam resolvidos como `author_deleted`.
+
+**Etapa 5, a rota de saúde (14/10/2026).** Feita como em 32.1 (decisões 17 e 18), 32.2 e 32.10, com estes detalhes:
+
+- A rota é a primeira coisa do handler: vem antes do relógio do pedido, do `clientIp`, do teto do corpo, do `matchRoute`, do App Check, do token e do ritmo. Por isso o `GET /health` com um corpo acima de 16 KiB também responde 200: nada do pedido é lido além do método e do caminho.
+- O caminho exato é o `req.path` igual a `/health`, sem o `normalizePath` do roteador. O `/health/` com a barra no fim segue o caminho de hoje, como o `POST`, o `HEAD` e o `/health/x`: 404 `not_found`, com as linhas `acesso` e `api`. O método passa pelo `toUpperCase`, como no resto do handler.
+- A resposta sai pelo mesmo `send` das rotas, com o `Content-Type` e o `Cache-Control: no-store` de sempre. O `HEALTH_BODY` é um objeto congelado, exportado pelo `api/index.ts` para o `api/health.test.ts` da etapa 6; o `HEALTH_PATH` fica só no arquivo.
+- O comentário do topo do `access-log.ts` ("a cada pedido que chega ao handler da api") não mudou, porque o arquivo fica fora da lista do passo 2 de 32.12. A exceção do `GET /health` está no comentário do handler e entra na 31.6 da nota na etapa 8.
+- A `API_ROUTES` segue com 44 rotas, conferidas no `lib` da etapa.
+- Além do que 32.10 pede: o teste puro prova que o pedido nem é lido (o `req.get` não é chamado, então nem o IP nem o cabeçalho do App Check), com um Firestore que lança em qualquer uso e um limitador sem ficha; o `HEAD /health` e o `/health/` também dão 404 com as duas linhas; e nenhuma rota da `API_ROUTES` começa com `/health`. No emulador, o teste confere também o 200, o `Content-Type`, o `no-store` e o texto exato `{"ok":true}`, pelo HTTP de verdade.
+
+**Etapa 6, os arquivos da proteção (14/10/2026).** Feita como em 32.7, 32.10 e 32.11, sem mexer no projeto, com estes detalhes:
+
+- A política saiu do bloco de 32.7, byte a byte: `Projetos/protecao-imagineup/politicas/api-fora-do-ar.json`, em LF e com a quebra de linha no fim, como as outras. A cópia em `docs/protecao/politicas/` saiu pelo `cp`, e o `cmp` deu iguais. O arquivo não leva id de canal, de política nem de teste.
+- O passo 2 do "O que fazer" ganhou o `--project=imagine-up-app` no `gcloud monitoring snoozes list`, no bloco de 32.7 e no arquivo. O gcloud desta máquina não tem projeto padrão (`core/project` vazio), e sem o flag o comando falha. A regra de 31.2 pede o `--project` escrito.
+- A política foi conferida sem rede contra as mensagens da API do Monitoring que vêm no gcloud 588.0.0 (o `AlertPolicy` pelo `JsonToMessage`): nenhum campo desconhecido, e os valores fixos (`ALIGN_NEXT_OLDER`, `REDUCE_COUNT_FALSE`, `COMPARISON_GT` e o resto) existem. A mesma conferência passa no `api-5xx.json` e no `ranking-tick-parado.json`, e um arquivo com um campo e um valor errados é recusado. O script ficou fora do repositório.
+- O `api/health.test.ts` não escreve o host só como texto: ele monta o host pela região do manifesto da `api` (o `__endpoint`, como o `cpu.test.ts`) e pelo projeto do `.firebaserc`, e confere que dá o host de produção. A política tem de ter esse host no filtro e o `https://<host>/api/health` no "O que fazer", e o `{"ok":true}` do "O esperado" sai do `HEALTH_BODY`.
+- O `HEALTH_PATH` continua só no `api/index.ts`. O teste confere o `/api/health` pelo texto, e o `index.test.ts` já prende o `/health` da rota.
+- Além do que 32.10 pede: o nome da política (o dos comandos de 32.7), uma condição só, o filtro sem o `check_id`, nada de `name`, `notificationChannels` ou `projects/` no arquivo, e o LF com a quebra no fim (o `.gitattributes` põe `eol=lf`).
+- Cinco mutações, cada uma feita e desfeita: o host, o caminho do "O que fazer", o rótulo, o `HEALTH_BODY` e um canal no arquivo. Cada uma quebra o teste.
+- Fora do repositório, o `protecao-plano.md`: o "Não cobre" do alerta (b), na linha 246, e a pendência do uptime check, na linha 568, apontam para esta seção (32.7 e 32.12, passo 9).
+- A tabela de 31.2 ganha o arquivo novo na etapa 8, com o resto da nota fora desta seção (32.18).
+
+**Etapa 7, o README do painel (14/10/2026).** Escrito em `C:/Users/User/Desktop/Projetos/painel-lgpd/README.md`, fora de repositório, no molde do `painel-exigencias-lojas/README.md`, com os 12 itens de 32.6. Conferido contra 32.2, 32.3 e 32.6 e contra o painel em `origin/main` `c75c4de`, lido pelo `git show`, sem escrever no `imagineup-admin`. A conferência achou:
+
+- O `email-mismatch` já existe no `REASON_MESSAGES` do painel (`src/lib/errors.ts:74`), com a frase do aceite do convite: o servidor usa o mesmo motivo no convite da equipe (`staff/errors.ts`) e nos pedidos de dados. O README manda não trocar a frase do mapa: o `callableErrorMessage` usa antes a frase do servidor, e a reserva dos pedidos, se houver, fica num mapa próprio. Entram no mapa cinco motivos novos, e não seis (32.6, item 8).
+- O SDK do painel manda `undefined` como `null` (o `encode` do `@firebase/functions`, no `firebase` 12.19), e o servidor recusa o `null` no `after` e no `reason` (etapas 1 e 3). O README manda a primeira página sem a chave `after` e o `reason` sempre escrito, e a armadilha entrou em 32.17.
+- O painel publicado não ignora o `reason` nos Logs: o `detailLines` lê todo `reason` pelo mapa da suspensão e mostra "Motivo: moderation". As duas ações novas aparecem no filtro Fãs com o nome cru, e não em "Outros": a seção do filtro e da linha vem gravada pelo servidor. O primeiro parágrafo de 32.6 foi corrigido.
+- A conta do Auth sem perfil não chega à ficha, e quem responde é a busca de Fãs, com "Nenhum fã com esse e-mail." (`src/lib/fan-search.ts`). A decisão 15 foi corrigida.
+- O `field.tsx` do painel não tem rádio: o README propõe um `Radio` no molde do `Checkbox`, ou o `SelectInput` da suspensão.
+- O papel vem do `isAdmin(member)` de `src/lib/staff.ts`, o mesmo da Equipe, e a ficha já passa pelo `SectionGate` de `fans`. O editor do seed não vê o bloco: o `admin-only` fica provado nos testes do servidor (32.10), e não na tela.
+- O `reauthenticateWithCredential` do `@firebase/auth` 1.13 troca o token (o `_forOperation` chama o `_updateTokensIfNecessary`): a repetição vai com o `auth_time` novo, sem `getIdToken(true)`. No emulador do Auth, o `auth_time` é o `lastLoginAt` da conta e não muda na troca do token: o pedido da senha aparece com o painel aberto há mais de 10 minutos.
+- Propostas além de 32.6, marcadas no README: o laço das páginas no módulo puro, com a busca injetada (testável no Node, como os outros testes do painel), e a página que falhou continuada sem outra primeira chamada; o aviso do e-mail não confirmado depois do download, pelo `conta.emailConfirmado`; o nome do arquivo com a data em UTC do `geradoEm`; as frases de sucesso da troca do @ com o `changeableAt`; e a ficha da própria conta sem os botões (`self`).
+- A conta para a troca do @ e a exclusão nos emuladores sai do `accounts:signUp` do emulador do Auth (o `?key=emulador` do seed), sem senha escrita no README; o perfil nasce pelo `createUserProfile`.
+- Visto de passagem, fora do bloco: o `FanComments` da página do fã da Moderação monta o mesmo `ConfirmDialog` duas vezes (linhas 705 a 720 de `c75c4de`). Fica no README, para a outra conversa avisar o dono.
+- A etapa não muda código, teste nem regra do repositório: só a nota e o README de fora.
+
+**Etapa 8, a documentação e a conferência (14/10/2026).** Feita como em 32.11 e 32.18, com estes detalhes:
+
+- **A nota fora desta seção:** o cabeçalho; o item 25 de "Decisões em uma página"; o parágrafo "Fora da tabela" da seção 2, com o `GET /health`; a seção 12, com a exclusão pela equipe, a lista das fontes e o uid no extrato de quem convidou; 21.2, com o `posterUrl` no exemplo do clipe e no item da mídia; 24.1 (decisões 4 e 5) e 24.4 (a troca do fã e o `releaseUsername`); 26.4 (a linha da tabela, o limite respondido e as duas callables novas); 26.12; 26.19 (a pergunta 23 respondida); 26.23 (os dois itens do @); 27.5 (o passo 4); 31.1, 31.2, 31.4 (o alerta (b), o alerta (d) novo, o "Desfazer" e o "Criar de novo"), 31.5 (passo 2), 31.6, 31.10 e 31.13. O "Em produção desde" do cabeçalho e o 26.21 ficam para a publicação (32.12, passo 13).
+- **Além do que 32.18 pedia:**
+  - 26.12 dizia que o `staffLimits` não tem nada do fã. Desde esta seção, o `deletedUids` guarda os uids excluídos no dia, e o parágrafo ganhou a frase.
+  - 31.1 estava velha no registro de acesso: a tabela dizia "não criado", e o "Esperado" falava só do `_Default` e do `_Required`, mas o bucket e o sink saíram em 14/10/2026 (31.12, "Como foi"). As duas foram corrigidas. O 31.2 dizia o filtro do sink "esperando a vez", e também foi corrigido. O 31.1 ganhou o `uptime list-configs`.
+  - 32.12, passo 2: a lista do diff não tinha o `fan-profile/model.ts` (os motivos do reset) nem o `fan-profile/index.ts`, que a etapa 1 mudou. Os dois entraram, conferidos pelo `git diff --name-only 8faeccf`.
+  - A tabela dos rótulos de 26.8 não mudou: ela é a do painel, e as seções 28 e 29 também não a mudaram. As duas ações novas entram nela com o PR do painel (32.6, item 3).
+- **O `CLAUDE.md` e o `AGENTS.md`**, iguais (o `diff <(tail -n +3 AGENTS.md) CLAUDE.md` vazio, e o `prettier --check` passa nos dois): a Estrutura (o `GET /health` no `src/api/`, o `src/fan-data/`, o `readPanelAdmin` no `src/staff/` e os arquivos da proteção); os Dados (o `usernameLockReason`); a Equipe do painel (as 68 funções, o `resetFanUsername` com o prazo e o `reason`, e um item novo desta seção); Artistas e centrais (o reset do @ de um artista com `central`); a API do app e pontos (o perfil editável, um item novo da rota de saúde e do `posterUrl`, e o "Publicar" com a próxima publicação: 68 funções, 58 chamáveis, os 5 lotes, a prova do `/health`, o `allUsers` e o painel por último); e as Pendências (a pergunta 23 respondida, as 68 no item do servidor, a margem de CPU de uns 0,51, a proteção da produção com o teste de disponibilidade e o bucket de fotos pela decisão 7, um item novo desta seção com as decisões 3, 4 e 7, e as contas de demonstração no "Antes de mandar às lojas").
+- **O arquivo dos lotes**, `Projetos/protecao-imagineup/lotes-lgpd-moderacao.txt`, fora do repositório, no molde do `lotes-registro-acesso.txt`: o antes (o merge, a pasta do deploy e o diff, com a lista dos arquivos do bloco), o silenciamento, os 5 lotes com o `cd <pasta do deploy> -ErrorAction Stop;` em cada linha, a conferência do lote 1 com a prova pelo trace, a espera do lote 5 pelo lote 4 sem erro, o `allUsers`, a conferência de 32.12, passo 7, o fim do silenciamento, os passos 9 a 13 e a lista das 68 por lote. Um script conferiu: os 5 lotes somam 68 (15, 15, 15, 15 e 8), sem repetição nem sobra contra os exports do `lib/index.js`; cada comando, sem o `cd`, é igual ao da nota (o 1 e o 5 de 32.12, e os 2, 3 e 4 de 31.12); e todo `curl` e `gcloud` de 32.12 está no arquivo.
+- **A conferência no emulador Android pelo Expo Go** (Medium Phone, API 36), com os emuladores do Firebase e o seed, sob a trava dos emuladores:
+  - uma conta criada na hora pelo cadastro do app, com o @ tirado do nome, passou pela 1l com três centrais;
+  - o admin do seed chamou o `resetFanUsername` de verdade, no emulador de funções, sem o `reason`, como o painel publicado: a resposta veio com o @ automático novo e o `changeableAt` daqui a 30 dias, o perfil com o prazo e o `moderation`, e a auditoria com o `reason`;
+  - a "Editar perfil" mostrou "A equipe trocou seu @. Você escolhe outro a partir de 13 de novembro.", o campo do @ só leitura (desligado na árvore do `uiautomator dump`) com a pílula "Automático" e o link "Escrever para a equipe" embaixo do card, um foco só, fora do pressável do campo. O toque no link abriu o app de e-mail do emulador (o Gmail, sem conta, parou na apresentação); o assunto fica provado no Jest;
+  - os Ajustes mostraram "Foto, nome, @, bio e redes" com o @ automático travado;
+  - a bio salva pelo ✓ (o `PUT /me/profile`, 200) manteve o prazo e o motivo no perfil, e a frase da equipe voltou ao abrir a tela de novo;
+  - o destravar: um reset com `central` deu outro @ automático, sem prazo e com o motivo `null`. Os Ajustes voltaram a "Seu @ ainda é automático", e a "Editar perfil" ficou com o campo editável e a dica do automático, sem a frase e sem o link;
+  - o `GET /health` no emulador da `api`: 200, com o `Content-Type` JSON, o `no-store` e o `{"ok":true}`; o `/health/` e o `POST /health`, 404. Três pedidos seguidos ao `/health` não acrescentaram nenhuma linha `acesso` nem `api` ao log dos emuladores, e cada 404 acrescentou as duas;
+  - no fim, o emulador Android, o Metro e os emuladores do Firebase pararam, e as portas ficaram livres.
+- **A etapa não mudou código, teste nem regra:** no repositório, só a nota, o `CLAUDE.md` e o `AGENTS.md`. Os resultados de fechamento: o `typecheck` das funções passou; o `npm --prefix functions test` deu 67 arquivos e 2.263 testes passando; o `npm run test:functions`, 26 arquivos e 451 testes; o `npm run test:rules`, 13 suítes e 186 testes; o `npm run check`, 166 suítes e 2.726 testes, com os tipos e o lint. O fingerprint do Android ficou igual (`310056fd840b5459416c9926e46846b8c208aa76`).
+- **O vault:** a sugestão para o `vault/ImagineUP/App.md` (a ferramenta dos pedidos de dados, o @ da Moderação e o aviso de `api` fora do ar) vai ao dono no fim da etapa, e só entra no vault com o ok dele.
+
+**Fechamento: a revisão final e o commit (14/10/2026).** Três revisões (LGPD e segurança, servidor, app e documentação) leram o bloco inteiro antes do commit. Cada achado foi conferido no código, e todos entraram:
+
+- **A origem levava o estado de quem convidou.** O `referrals/{uid}` guarda o `award` (o status do pagamento a quem convidou: `skipped` com ela suspensa, `capped` no limite do dia dela) e o `inviterRemovedAt` (gravado pelo `detachReferrals` quando ela exclui a conta). A `api` nunca mostra nenhum dos dois. Os dois entraram no `omit` da fonte `referrals`, com a linha de 32.3 e a decisão 8. O teste de emulador ganhou um caso com quem convidou suspensa e outro com quem convidou de conta excluída, e o arquivo grande confere a origem sem os três campos. O `code` fica: foi o fã que o usou.
+- **O motivo do ajuste ia ao fã.** O `note` do lançamento `adjustment` é o texto livre da equipe, que o app nunca mostrou e que o painel publicado diz a quem ajusta que o fã não vê ("O fã não vê o motivo.", no `adjust-dialog.tsx`). A etapa 3 o deixava no arquivo. Entrou no `omit` do extrato, com a linha de 32.3, a decisão 8 e a pergunta ao jurídico em 32.14. Se o dono o quiser no arquivo, a dica do painel muda antes.
+- **O número do projeto na decisão 9** deu lugar ao marcador `<NUMERO_DO_PROJETO>-compute`, como no resto da nota e no `CLAUDE.md`. Nenhum arquivo do repositório tem o número.
+- **O comentário do topo do `access-log.ts`** cita a exceção do `GET /health` (decisão 18). O arquivo entrou na lista do passo 2 de 32.12 e no passo 3 do "ANTES" do `lotes-lgpd-moderacao.txt`, como mudança só de comentário. A etapa 5 o tinha deixado, por estar fora daquela lista.
+- **O `posterUrl` nas três rotas.** O teste do `content-panel.emulator.test.ts` faz o fã entrar na central e confere a mesma mídia no `GET /posts/:id`, no `GET /feed` e no `GET /artists/:id/posts`, com o mp4 e sem ele, como 33.10 pede a este bloco.
+- **32.6, itens 8 e 12:** cinco motivos novos no mapa do painel, com o `email-mismatch` de hoje mantido, e o editor e o Leitor sem o bloco. A etapa 7 tinha corrigido só a decisão 15 e o primeiro parágrafo, e o README manda seguir esta seção quando os dois discordam.
+- **A repetição da exclusão é da mesma pessoa.** O `deletedUids` mora no `staffLimits` de quem chama: outro admin que repete depois de um `deleteUser` que falhou conta no teto dele e grava outra entrada. A decisão 12, 32.10, 32.17, o `CLAUDE.md` e o README do painel (7.1) dizem isso agora. O código não mudou.
+- **O `CLAUDE.md` dizia que o painel manda sempre o `reason`.** O publicado chama com `{ uid, username }`, e o reset cai em `moderation`; quem manda sempre a chave é o painel novo do README.
+- **No README do painel:** o `fan-not-found` depois de uma tentativa incerta quer dizer que a conta e o perfil saíram, e o resto sai pelo gatilho (o `deleteUserData` apaga o perfil primeiro); e a conta de teste do item 6.8, criada com nome, nasce com o @ tirado do nome (`contates`), e não com um automático.
+- **O comentário do `SuspensionContact`** cita o terceiro uso, o link do @ trocado pela equipe na "Editar perfil", com o assunto `editProfile.username.lockedMailSubject`.
+
+Os dois achados do número do projeto eram o mesmo, e contam como um. Nenhum foi recusado.
 
 ## Armadilhas
 

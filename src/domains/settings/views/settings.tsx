@@ -27,9 +27,16 @@ import { Text } from '@/components/text';
 import { sourceOf } from '@/config/data-source';
 import { PRIVACY_URL, SUPPORT_EMAIL, TERMS_URL } from '@/config/links';
 import { useSignOut } from '@/domains/auth';
-import { isAutomaticUsername, SuspendedNotice, useMyProfileQuery } from '@/domains/profile';
+import {
+  isAutomaticUsername,
+  SuspendedNotice,
+  useMyProfileQuery,
+  usernameLock,
+  type FanProfile,
+} from '@/domains/profile';
 import { useRewardsRulesUrl } from '@/domains/rewards';
 import { isFirebaseConfigured } from '@/firebase';
+import { useNow } from '@/hooks/use-now';
 import { useTabBarInset } from '@/hooks/use-tab-bar-inset';
 import { t, type TranslationKey } from '@/i18n';
 import { openSupportEmail, openWebPage } from '@/services/web-page';
@@ -90,13 +97,14 @@ function PageRow({ icon, titleKey, url, testID }: PageRowProps) {
 
 /**
  * O que a linha "Editar perfil" promete: com a API, "Foto, nome, @, bio e
- * redes" (ou o aviso do @ automático); sem ela, a tela é só leitura (seção 28,
- * decisão 12), e a linha diz isso.
+ * redes" (ou o aviso do @ automático, que não convida a trocar o @ travado
+ * pelo prazo, seção 32); sem ela, a tela é só leitura (seção 28, decisão 12),
+ * e a linha diz isso.
  */
-function editProfileMeta(username: string | null | undefined): string {
+function editProfileMeta(profile: FanProfile | null | undefined, now: Date): string {
   if (sourceOf('profile') !== 'api') return t('settings.editProfileMetaReadOnly');
   return t(
-    isAutomaticUsername(username)
+    isAutomaticUsername(profile?.username) && !usernameLock(profile, now)
       ? 'settings.editProfileMetaAutomatic'
       : 'settings.editProfileMeta',
   );
@@ -127,12 +135,13 @@ export function SettingsScreen() {
     (state) => state.user?.hasPassword === true && isFirebaseConfigured,
   );
   const signOut = useSignOut();
-  const username = useMyProfileQuery().data?.username;
+  const profile = useMyProfileQuery().data;
+  const now = useNow();
   const rulesUrl = useRewardsRulesUrl();
   const [contactFailed, setContactFailed] = useState(false);
   // Depois de sair, a linha segue ocupada até o guard trocar a tela.
   const leaving = signOut.isPending || signOut.isSuccess;
-  const profileMeta = editProfileMeta(username);
+  const profileMeta = editProfileMeta(profile, now);
   const version = versionTexts(readAppVersion());
   const contactError = t('settings.contactError', { email: SUPPORT_EMAIL });
 

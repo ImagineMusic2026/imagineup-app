@@ -176,7 +176,10 @@ export async function removeSeasonStandings(db: Firestore, uid: string): Promise
  * engajamento do mural e antes do recursiveDelete: os solicitados e aprovados
  * viram `canceled`, com a vaga de volta e sem devolver pontos, e todo pedido
  * do fã perde o uid, a cópia do nome e do @ e o motivo da recusa. Pode rodar
- * mais de uma vez. Dado novo do fã fora de users/{uid} precisa entrar aqui.
+ * mais de uma vez. Dado novo do fã entra aqui e na `FAN_DATA_SOURCES`
+ * (fan-data/sources.ts), a lista que a exportação dos pedidos de dados
+ * percorre, com o que esta função faz com cada fonte; um teste de emulador
+ * prende as duas pontas (docs/arquitetura-api.md, seção 32, decisão 8).
  *
  * A ordem importa: toda gravação da API lê users/{uid} na transação
  * (requireFan), então depois que o documento do perfil some nenhuma gravação

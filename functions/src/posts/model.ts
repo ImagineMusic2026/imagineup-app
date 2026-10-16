@@ -185,15 +185,21 @@ export function isPostVisible(
  * A mídia como o app lê. Foto e vídeo sempre trazem a mídia, mesmo sem
  * arquivo gravado (só o seed publica assim): as URLs nulas e as medidas
  * padrão, como as fixtures (o app decide a miniatura pela presença dela).
- * Texto e show: null.
+ * Texto e show: null. O vídeo leva também o `posterUrl`, a capa grande
+ * (`photo.url`), ou null sem mídia gravada; a foto, não (33.2, decisão 25 da
+ * seção 32).
  */
 export function mediaView(post: PostRecord): PostMedia | null {
   if (post.kind !== 'photo' && post.kind !== 'video') return null;
   const size = POST_MEDIA_SIZES[post.kind].photo;
-  if (!post.photo) return { url: null, thumbnailUrl: null, ...size };
+  const video = post.kind === 'video';
+  if (!post.photo) {
+    return { url: null, thumbnailUrl: null, ...(video ? { posterUrl: null } : {}), ...size };
+  }
   return {
-    url: post.kind === 'video' ? (post.video?.url ?? null) : post.photo.url,
+    url: video ? (post.video?.url ?? null) : post.photo.url,
     thumbnailUrl: post.thumb?.url ?? post.photo.url,
+    ...(video ? { posterUrl: post.photo.url } : {}),
     width: post.photo.width || size.width,
     height: post.photo.height || size.height,
   };

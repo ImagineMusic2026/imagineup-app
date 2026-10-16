@@ -31,8 +31,9 @@ export interface SuspensionContactProps {
   /** O alinhamento do link e do endereço: no centro nos avisos das sheets. */
   align?: 'start' | 'center';
   /**
-   * O assunto do e-mail: o da conta suspensa, por padrão, ou o do texto
-   * recusado pelo filtro (`contentFilter.mailSubject`, seção 30).
+   * O assunto do e-mail: o da conta suspensa, por padrão, o do texto recusado
+   * pelo filtro (`contentFilter.mailSubject`, seção 30) ou o do @ trocado pela
+   * equipe (`editProfile.username.lockedMailSubject`, seção 32).
    */
   subject?: TranslationKey;
 }
@@ -40,10 +41,11 @@ export interface SuspensionContactProps {
 /**
  * "Escrever para a equipe": o link irmão das frases da conta suspensa (o
  * aviso fixo, o compositor, as sheets, o resgate, o convite e a edição do
- * perfil) e das do texto recusado pelo filtro (o compositor e a edição do
- * perfil, seção 30). Abre o app de e-mail com o assunto e nenhum dado do fã;
- * sem app de e-mail, mostra o endereço (selecionável) e o anuncia (29.1,
- * decisão 15).
+ * perfil), das do texto recusado pelo filtro (o compositor e a edição do
+ * perfil, seção 30) e da frase do @ trocado pela equipe, embaixo da linha do
+ * @ na edição do perfil (seção 32). Abre o app de e-mail com o assunto e
+ * nenhum dado do fã; sem app de e-mail, mostra o endereço (selecionável) e o
+ * anuncia (29.1, decisão 15).
  */
 export function SuspensionContact({
   style,

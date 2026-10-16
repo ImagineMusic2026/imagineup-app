@@ -229,6 +229,9 @@ describe('perfil do fã (users/{uid})', () => {
       { usernameChangedAt: serverTimestamp() },
       { usernameChangeableAt: null },
       { usernameChangeableAt: Timestamp.fromMillis(0) },
+      // Seção 32: o motivo do prazo do @ é do servidor.
+      { usernameLockReason: null },
+      { usernameLockReason: 'moderation' },
     ]) {
       await assertFails(edit(change));
     }
@@ -240,6 +243,8 @@ describe('perfil do fã (users/{uid})', () => {
       photoUpdatedAt: MINUTE_AGO(),
       usernameChangedAt: MINUTE_AGO(),
       usernameChangeableAt: Timestamp.fromMillis(Date.now() + 30 * 24 * 60 * 60 * 1000),
+      // Seção 32: o @ trocado pela Moderação, com o motivo.
+      usernameLockReason: 'moderation',
     };
     await seedNamelessProfile(serverFields);
     await assertSucceeds(firstName('Camila Ribeiro'));

@@ -10,7 +10,14 @@ import { DailyCapError, ModerationError } from '../moderation/model';
 import { staticConfigSource } from '../points/config';
 import { PostError } from '../posts/model';
 import { RewardError } from '../rewards/model';
-import { API_ROUTES, APP_CHECK_MODE, apiError, createApiHandler, createRateLimiter } from './index';
+import {
+  API_ROUTES,
+  APP_CHECK_MODE,
+  apiError,
+  createApiHandler,
+  createRateLimiter,
+  HEALTH_BODY,
+} from './index';
 import type { ApiDeps, ApiRequest, ApiRoute } from './types';
 
 // O vi.mock sobe para antes dos imports: o logger acima já é o falso.
@@ -1688,5 +1695,93 @@ describe('registro de acesso: a linha `acesso` (31.6)', () => {
     await call(request('GET', '/me/wallet', { headers: forged }));
     await call(request('GET', '/nao/existe', { headers: forged }));
     expect(messages()).toEqual(['acesso', 'api', 'acesso', 'api']);
+  });
+});
+
+describe('rota de saúde: o GET /health (32.2)', () => {
+  /** Um Firestore que lança em qualquer uso: a rota que responde com ele não tocou nele. */
+  const untouchable = new Proxy(
+    {},
+    {
+      get() {
+        throw new Error('usou o Firestore');
+      },
+    },
+  ) as Firestore;
+
+  it('200 com {"ok":true} e no-store, antes do Auth, do Firestore, do App Check, do ritmo e das linhas', async () => {
+    const verifyIdToken = vi.fn();
+    const verify = vi.fn();
+    // Um limitador sem ficha nenhuma: qualquer pedido que passasse por ele seria 429.
+    const rateLimiter = { take: vi.fn(() => 60) };
+    const handler = createApiHandler({
+      db: untouchable,
+      auth: { verifyIdToken },
+      now: () => NOW,
+      appCheck: { mode: 'enforce', verify },
+      rateLimiter,
+    });
+    // Sem login, com o cabeçalho de IP e um corpo acima do teto: nada disso é lido.
+    const req = request('GET', '/health', {
+      headers: { Authorization: '', 'X-Forwarded-For': '203.0.113.7, 198.51.100.4' },
+      rawBody: Buffer.alloc(16 * 1024 + 1),
+    });
+    const get = vi.fn(req.get);
+    req.get = get;
+    const { res, sent } = response();
+    await handler(req, res);
+
+    expect(sent).toEqual({
+      status: 200,
+      headers: { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' },
+      body: { ok: true },
+    });
+    // O texto exato é contrato do teste de disponibilidade (o --matcher-content de 32.7).
+    expect(JSON.stringify(sent.body)).toBe('{"ok":true}');
+    expect(JSON.stringify(HEALTH_BODY)).toBe('{"ok":true}');
+    expect(Object.isFrozen(HEALTH_BODY)).toBe(true);
+    expect(get).not.toHaveBeenCalled();
+    expect(verifyIdToken).not.toHaveBeenCalled();
+    expect(verify).not.toHaveBeenCalled();
+    expect(rateLimiter.take).not.toHaveBeenCalled();
+    // Nem a linha `acesso` nem a `api` (decisão 18 de 32.1), e nenhum aviso.
+    expect(logger.info).not.toHaveBeenCalled();
+    expect(logger.warn).not.toHaveBeenCalled();
+    expect(logger.error).not.toHaveBeenCalled();
+  });
+
+  it('só o GET com o caminho exato: o POST, o HEAD, o /health/ e o /health/x dão 404 not_found, com a linha `acesso`', async () => {
+    const forged = { 'X-Forwarded-For': '203.0.113.7, 198.51.100.4' };
+    const cases: [string, string][] = [
+      ['POST', '/health'],
+      ['HEAD', '/health'],
+      ['GET', '/health/'],
+      ['GET', '/health/x'],
+    ];
+    for (const [method, path] of cases) {
+      vi.mocked(logger.info).mockClear();
+      const sent = await call(request(method, path, { headers: forged }));
+      expect(sent.status).toBe(404);
+      expect(sent.body).toEqual({ code: 'not_found', message: 'Não encontrado.' });
+      expect(vi.mocked(logger.info).mock.calls).toEqual([
+        ['acesso', { ip: '198.51.100.4', uid: null }],
+        [
+          'api',
+          {
+            method,
+            route: 'unmatched',
+            status: 404,
+            ms: expect.any(Number),
+            uid: null,
+            replayed: false,
+            code: 'not_found',
+          },
+        ],
+      ]);
+    }
+  });
+
+  it('fica fora da API_ROUTES: nenhuma rota da tabela tem o caminho /health', () => {
+    expect(API_ROUTES.filter((route) => route.pattern.startsWith('/health'))).toEqual([]);
   });
 });
