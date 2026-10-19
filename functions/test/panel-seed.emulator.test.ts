@@ -11,6 +11,7 @@ import { dayKey, shiftDay } from '../src/day';
 import {
   SEED_CAMILA_FAN_CLUB,
   SEED_FAN_CLUB_POSTS,
+  seedFanClubLink,
   seedFanClubPosts,
   seedFanClubs,
 } from '../src/fan-clubs';
@@ -81,7 +82,8 @@ import { localApi, signIn, useEmulators } from './support';
  * denúncia de perfil da Bia contra o Promo. Desde o fã-clube (34.12, etapa 1
  * de 34.14), em seguida, a Camila aprovada no Netto e o Nenho só com texto;
  * desde a etapa 2, as três publicações dela (duas no ar, uma com a foto em
- * 4:5) e a denúncia da Bia contra a da foto.
+ * 4:5) e a denúncia da Bia contra a da foto; desde a etapa 3, o link do
+ * fã-clube que ela compartilhou, nos números do fã-clube.
  */
 const env = useEmulators('painel-seed', ['api', 'createUserProfile']);
 const { db, bucket } = env;
@@ -206,6 +208,8 @@ async function seed(ranking: Map<string, string>): Promise<void> {
     },
     T0,
   );
+  // O link do fã-clube que a Camila compartilhou (etapa 3).
+  await seedFanClubLink(db, 'camila', T0);
   await seedPanelStats(db, T0);
   await seedPanelClose(db, T0, quiet);
 }
@@ -237,9 +241,11 @@ async function dump(): Promise<Record<string, [string, DocumentData][]>> {
   ]) {
     out[name] = (await db.collection(name).get()).docs.map((doc) => [doc.id, doc.data()]);
   }
-  out.statsShards = (await db.collectionGroup('statsShards').get()).docs
-    .map((doc) => [doc.ref.path, doc.data()] as [string, DocumentData])
-    .sort(([a], [b]) => (a < b ? -1 : 1));
+  for (const group of ['statsShards', 'fanClubShards', 'inviteLinks']) {
+    out[group] = (await db.collectionGroup(group).get()).docs
+      .map((doc) => [doc.ref.path, doc.data()] as [string, DocumentData])
+      .sort(([a], [b]) => (a < b ? -1 : 1));
+  }
   return out;
 }
 
@@ -491,6 +497,15 @@ describe('o seed das telas do painel (26.13)', () => {
       reason: 'image_misuse',
     });
     expect(audit.filter((entry) => entry.action === 'fanClub.post.approved')).toHaveLength(2);
+    // O link do fã-clube (etapa 3): o da Camila, com 1 link nos números dele.
+    expect(await read(`fanInvites/camila/inviteLinks/fanclub:${clubId}`)).toMatchObject({
+      kind: 'fanclub',
+      targetId: clubId,
+    });
+    const clubShards = await db.collection(`fanClubStats/${clubId}/fanClubShards`).get();
+    expect(clubShards.docs.reduce((sum, doc) => sum + ((doc.get('links') as number) ?? 0), 0)).toBe(
+      1,
+    );
     for (let index = 1; index <= 20; index += 1) {
       const id = `seed-audit-${String(index).padStart(2, '0')}`;
       const entry = (await read(`staffAudit/${id}`))!;

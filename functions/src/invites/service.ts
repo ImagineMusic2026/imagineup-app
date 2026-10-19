@@ -7,6 +7,15 @@ import {
   type Transaction,
 } from 'firebase-admin/firestore';
 
+import { readClaimCredit } from '../fan-clubs/credit';
+import {
+  addFanClubCount,
+  fanClubRef,
+  writeFanClubCount,
+  writeFanClubCounts,
+  writeFanClubCredit,
+  type FanClubCountsDelta,
+} from '../fan-clubs/store';
 import type { MissionTick } from '../missions/model';
 import {
   addDailyCount,
@@ -117,10 +126,22 @@ function statusOf(plan: AwardPlan, uid: string, entryId: string): AwardStatus {
 /** Quem chama o convite: o uid, o e-mail do ID token (nunca o do corpo) e o segredo do HMAC. */
 export type InviteCaller = { uid: string; email: string | null };
 
+/** O que o `readMarker` leu: o marcador e o alvo do link. */
+type MarkerRead = {
+  marker: DocumentSnapshot;
+  /** A central do post ou do fã-clube lido, para o alvo das missões de link (`linkOn`). */
+  targetArtistId: string | null;
+  /** O fã-clube do link, quando ele existe: os números dele somam a visita e o cadastro. */
+  clubId: string | null;
+};
+
 /**
- * O marcador da pessoa e, quando o link é de um post e há missão de link com
- * alvo de central no ar (22.4, `linkOn`), o post, para a central dele, num
- * getAll só. Sem essa missão, nada a mais é lido.
+ * O marcador da pessoa e, num getAll só, o alvo do link: o post, quando há
+ * missão de link com alvo de central no ar (22.4, `linkOn`), para a central
+ * dele; e o fã-clube, sempre que o link é de fã-clube (seção 34, decisão 22),
+ * para a central dele e para os números dele (os shards, decisão 24), que só
+ * somam no fã-clube que existe. Sem essa missão e sem link de fã-clube, nada a
+ * mais é lido.
  */
 async function readMarker(
   tx: Transaction,
@@ -128,12 +149,22 @@ async function readMarker(
   markerRef: DocumentReference,
   link: InviteLinkOrigin | null,
   award: AwardContext,
-): Promise<{ marker: DocumentSnapshot; postArtistId: string | null }> {
+): Promise<MarkerRead> {
   const postId = link?.kind === 'post' ? link.targetId : null;
-  const readPost = postId !== null && award.game.missions.shareWithCentral;
-  const [marker, post] = await tx.getAll(markerRef, ...(readPost ? [postRef(db, postId)] : []));
-  const artistId = post?.exists ? post.get('artistId') : null;
-  return { marker: marker!, postArtistId: typeof artistId === 'string' ? artistId : null };
+  const clubId = link?.kind === 'fanclub' ? link.targetId : null;
+  const target =
+    postId !== null && award.game.missions.shareWithCentral
+      ? postRef(db, postId)
+      : clubId !== null
+        ? fanClubRef(db, clubId)
+        : null;
+  const [marker, read] = await tx.getAll(markerRef, ...(target ? [target] : []));
+  const artistId = read?.exists ? read.get('artistId') : null;
+  return {
+    marker: marker!,
+    targetArtistId: typeof artistId === 'string' && artistId !== '' ? artistId : null,
+    clubId: clubId !== null && read?.exists ? clubId : null,
+  };
 }
 
 /**
@@ -272,15 +303,22 @@ function referralDoc(
  *    criando uma conta com o apelido de um e-mail (o Firebase não confere o
  *    e-mail), e a conta gasta o claim único (20.6);
  * 6. o marcador de visita da pessoa nesse convidante (e o post do link, para
- *    as missões de link com alvo de central, 22.4);
- * 7. planAwards com a visita e o cadastro de quem convidou, pela chave da
+ *    as missões de link com alvo de central, 22.4, ou o fã-clube do link,
+ *    seção 34);
+ * 7. o crédito pelo código do gestor (seção 34, decisão 23,
+ *    `readClaimCredit`): quem convidou gere um fã-clube ativo, e o vínculo de
+ *    quem chega com a central dele já existe, com o `firstJoin`, sem
+ *    `fanClubId` e sem o marcador do crédito;
+ * 8. planAwards com a visita e o cadastro de quem convidou, pela chave da
  *    pessoa (sem perfil, saem `skipped`), e as unidades das missões dele: o
  *    `invite` quando o marcador ainda não guarda um cadastro, e o `share` no
  *    link, quando o marcador ainda não existe (bloco 7);
- * 8. referrals/{uid}, com a origem e o `award`; o marcador, se quem convidou
+ * 9. referrals/{uid}, com a origem e o `award`; o marcador, se quem convidou
  *    existe e a pessoa ainda não tinha contado (já com o `signupAt`), ou o
  *    `signupAt` no marcador que veio de uma visita; o cadastro convidado (e a
- *    visita, se o marcador nasceu) nos agregados.
+ *    visita, se o marcador nasceu) nos agregados e, com o link de um
+ *    fã-clube que existe, nos números dele; com o crédito, o `fanClubId` no
+ *    vínculo, o marcador do crédito e `joins` +1 nos números do fã-clube.
  * Os pontos vão sem central (decisão 11): o convite é do fã.
  */
 export async function claimInvite(
@@ -319,11 +357,17 @@ export async function claimInvite(
 
   // Fora do primeiro getAll: o caminho depende do dono, que só se sabe agora.
   const markerRef = inviteVisitorRef(db, invite.uid, key);
-  const { marker, postArtistId } = await readMarker(tx, db, markerRef, input.link, award);
+  const { marker, targetArtistId, clubId } = await readMarker(tx, db, markerRef, input.link, award);
+  const credit = await readClaimCredit(tx, db, {
+    uid: fan.uid,
+    inviterUid: invite.uid,
+    profileCreatedAt: fan.profileCreatedAt,
+    now: award.now,
+  });
   const ticks: MissionTick[] = [];
   if (!markerHasSignup(marker)) ticks.push({ action: 'invite', key, on: { artistIds: [] } });
   if (!marker.exists && input.via === 'link' && input.link) {
-    ticks.push({ action: 'share', key, on: linkOn(input.link, postArtistId) });
+    ticks.push({ action: 'share', key, on: linkOn(input.link, targetArtistId) });
   }
   const plan = await planAwards(
     tx,
@@ -355,18 +399,27 @@ export async function claimInvite(
   );
 
   const kind = originKind(input);
+  const clubCounts: FanClubCountsDelta = new Map();
   addInviteCounts(plan, {
     event: 'signup',
     kind,
     utmSource: input.utm.source,
     utmCampaign: input.utm.campaign,
   });
+  if (clubId !== null) addFanClubCount(clubCounts, clubId, 'signups');
   if (inviterActive && !marker.exists) {
     tx.create(markerRef, { via: 'claim', day: plan.day, createdAt: at, signupAt: at });
     addInviteCounts(plan, { event: 'visit', kind });
+    if (clubId !== null) addFanClubCount(clubCounts, clubId, 'visits');
   } else if (inviterActive && !markerHasSignup(marker)) {
     tx.update(markerRef, { signupAt: at });
   }
+  if (credit) {
+    tx.update(credit.membership, { fanClubId: credit.credit.clubId });
+    writeFanClubCredit(tx, db, fan.uid, credit.credit, at);
+    addFanClubCount(clubCounts, credit.credit.clubId, 'joins');
+  }
+  writeFanClubCounts(tx, db, clubCounts, award.shard, at);
   return { status: 'claimed', plan };
 }
 
@@ -413,14 +466,16 @@ export type VisitOutcome = { counted: boolean; plan?: AwardPlan };
  * 2. o dono do código (pelo uid ou pela chave do e-mail): `counted: false`;
  * 3. quem visita já mandou 20 visitas hoje: `counted: false`;
  * 4. o marcador de visita da pessoa nesse convidante (e o post do link, para
- *    as missões de link com alvo de central, 22.4);
+ *    as missões de link com alvo de central, 22.4, ou o fã-clube do link,
+ *    seção 34);
  * 5. planAwards com a visita de quem convidou, pela chave da pessoa: roda
  *    também com o marcador já criado (a visita que antes saiu `capped` ou
  *    `zero` paga agora, a que já pagou sai `duplicate`), e a unidade `share`
  *    das missões dele, com o marcador ainda não existente (bloco 7);
  * 6. +1 nas visitas mandadas do dia de quem chama; o marcador, se quem
  *    convidou existe e a pessoa ainda não tinha contado, com a visita nos
- *    agregados. `counted` é o marcador ter nascido aqui.
+ *    agregados e, com o link de um fã-clube que existe, nos números dele
+ *    (decisão 24). `counted` é o marcador ter nascido aqui.
  * O `counted` fica no servidor (testes e seed): a rota responde sempre o
  * mesmo corpo, senão ele diria a quem chama, pelo apelido de um e-mail, se
  * aquela pessoa é dona do código ou já passou por ele (20.6).
@@ -444,7 +499,7 @@ export async function recordInviteVisit(
   }
 
   const markerRef = inviteVisitorRef(db, invite.uid, key);
-  const { marker, postArtistId } = await readMarker(tx, db, markerRef, input.link, award);
+  const { marker, targetArtistId, clubId } = await readMarker(tx, db, markerRef, input.link, award);
   const plan = await planAwards(
     tx,
     db,
@@ -455,7 +510,7 @@ export async function recordInviteVisit(
         entries: inviteEntries(invite.code, key, ['invite_visit']),
         ticks: marker.exists
           ? []
-          : [{ action: 'share', key, on: linkOn(input.link, postArtistId) }],
+          : [{ action: 'share', key, on: linkOn(input.link, targetArtistId) }],
       },
     ],
     award,
@@ -463,12 +518,10 @@ export async function recordInviteVisit(
   if (countsSent) addDailyCount(plan, fan, 'invite_visit_sent');
   const visit = statusOf(plan, invite.uid, ledgerId({ source: 'invite_visit', eventId: key }));
   if (visit === 'skipped' || marker.exists) return { counted: false, plan };
-  tx.create(markerRef, {
-    via: 'visit',
-    day: plan.day,
-    createdAt: Timestamp.fromMillis(award.now),
-  });
+  const at = Timestamp.fromMillis(award.now);
+  tx.create(markerRef, { via: 'visit', day: plan.day, createdAt: at });
   addInviteCounts(plan, { event: 'visit', kind: input.link.kind });
+  if (clubId !== null) writeFanClubCount(tx, db, clubId, 'visits', award.shard, at);
   return { counted: true, plan };
 }
 
@@ -512,12 +565,15 @@ export type LinkOutcome = { created: boolean; plan?: AwardPlan };
 /**
  * Link compartilhado (`PUT /me/invite/links/:linkId`): um por destino.
  * 1. um getAll: fanInvites/{uid}, o link e, no link de uma central,
- *    artists/{@}, ou, no de um post, posts/{id} (e a central dele numa
- *    segunda leitura); sem código ainda, 404;
- * 2. o link já existe, a central não existe ou não está publicada, o post não
- *    está visível (no ar, de central no ar, bloco 6, 21.2), ou o fã já
- *    registrou 30 novos hoje: `created: false`;
- * 3. cria o link, +1 nos links do dia de quem chama e o link nos agregados.
+ *    artists/{@}, no de um fã-clube, fanClubs/{id} (seção 34), ou, no de um
+ *    post, posts/{id} (e a central dele numa segunda leitura); sem código
+ *    ainda, 404;
+ * 2. o link já existe, a central não existe ou não está publicada, o fã-clube
+ *    não existe ou não está ativo (decisão 22), o post não está visível (no
+ *    ar, de central no ar, bloco 6, 21.2), ou o fã já registrou 30 novos
+ *    hoje: `created: false`;
+ * 3. cria o link, +1 nos links do dia de quem chama e o link nos agregados e,
+ *    no de um fã-clube, nos números dele (decisão 24).
  */
 export async function recordInviteLink(
   tx: Transaction,
@@ -533,25 +589,32 @@ export async function recordInviteLink(
   if (link.kind === 'artist' && link.targetId) {
     refs.push(db.collection('artists').doc(link.targetId));
   }
-  const [invite, existing, artist] = isPost ? extra : await tx.getAll(...refs);
+  const clubId = link.kind === 'fanclub' ? link.targetId : null;
+  if (clubId !== null) refs.push(fanClubRef(db, clubId));
+  const [invite, existing, target] = isPost ? extra : await tx.getAll(...refs);
   if (!invite!.exists) throw new InviteError('invite_not_found');
   if (existing!.exists) return { created: false };
-  if (artist && artist.get('status') !== 'published') return { created: false };
+  if (link.kind === 'artist' && target && target.get('status') !== 'published') {
+    return { created: false };
+  }
+  if (clubId !== null && target?.get('status') !== 'active') return { created: false };
   if (isPost && !visible) return { created: false };
   const countsDaily = award.actor.type === 'fan';
   const today = fan.wallet.days[dayKey(award.now)]?.count.invite_link ?? 0;
   if (countsDaily && today >= award.config.actionCaps.invite_link) return { created: false };
 
   const plan = await planAwards(tx, db, [{ uid: fan.uid, entries: [], fan }], award);
+  const at = Timestamp.fromMillis(award.now);
   tx.create(inviteLinkRef(db, fan.uid, link.linkId), {
     uid: fan.uid,
     linkId: link.linkId,
     kind: link.kind,
     targetId: link.targetId,
-    createdAt: Timestamp.fromMillis(award.now),
+    createdAt: at,
   });
   if (countsDaily) addDailyCount(plan, fan, 'invite_link');
   addInviteCounts(plan, { event: 'link', kind: link.kind });
+  if (clubId !== null) writeFanClubCount(tx, db, clubId, 'links', award.shard, at);
   return { created: true, plan };
 }
 

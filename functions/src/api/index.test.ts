@@ -451,7 +451,7 @@ describe('convite (bloco 5)', () => {
   });
 
   it('linkId fora do formato: 400 com o campo, antes de abrir a transação', async () => {
-    for (const linkId of ['convite', 'artist%3A__trio__', 'post%3A']) {
+    for (const linkId of ['convite', 'artist%3A__trio__', 'post%3A', 'fanclub%3A__clube__']) {
       const sent = await call(
         request('PUT', `/me/invite/links/${linkId}`, {
           headers: { 'Idempotency-Key': 'chave-link-0001' },
@@ -2028,6 +2028,7 @@ describe('fã-clube gerido pelo fã (seção 34)', () => {
     );
     expect(routes.map((route) => [route.method, route.pattern, route.writes])).toEqual([
       ['GET', '/me/fan-club', false],
+      ['GET', '/me/fan-club/numbers', false],
       ['GET', '/me/fan-club/artists', false],
       ['POST', '/me/fan-club/application', true],
       ['DELETE', '/me/fan-club/application', true],

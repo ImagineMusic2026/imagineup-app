@@ -7,6 +7,8 @@ import {
   checkClubName,
   CLUB_PHOTO_LIMITS,
   CLUB_THUMB_LIMITS,
+  FAN_CLUB_COUNT_FIELDS,
+  FAN_CLUB_CREDIT_WINDOW_MS,
   FAN_CLUB_HISTORY_MAX,
   FAN_CLUB_PENDING_MAX,
   FAN_CLUB_POSTS_PER_DAY,
@@ -27,6 +29,7 @@ import {
   fanClubRulesUrl,
   hasOfficialWord,
   isFeaturedNow,
+  isWithinCreditWindow,
   parseApplication,
   parseFeaturedUntil,
   parsePost,
@@ -36,6 +39,7 @@ import {
   sameProportion,
   slotFileNames,
   slotNamesOf,
+  sumFanClubShards,
   withHistory,
   type ApplicationHistoryItem,
   type ApplicationRecord,
@@ -46,7 +50,8 @@ import {
 // candidatura, a candidatura de novo (a rodada, o prazo e as recusas), as
 // caixas por artista e o prazo do Destaque, com o relógio fixo. Desde a
 // etapa 2, a publicação: os tetos, o corpo, o novo aceite, a vaga e a leitura
-// do documento.
+// do documento. Desde a etapa 3, a atribuição: a janela do crédito pelo
+// código do gestor e a soma dos shards.
 
 // O filtro do que o fã publica (seção 30) trocado por um de palavras neutras:
 // nenhum termo da lista de verdade entra no repositório (30.11).
@@ -602,5 +607,30 @@ describe('o Destaque (decisão 35)', () => {
     expect(isFeaturedNow({ featured: true, featuredUntil: '2026-10-18' }, NOW)).toBe(false);
     expect(isFeaturedNow({ featured: false, featuredUntil: '2026-10-30' }, NOW)).toBe(false);
     expect(isFeaturedNow({ featured: true, featuredUntil: null }, NOW)).toBe(false);
+  });
+});
+
+describe('a atribuição (decisões 23 e 24)', () => {
+  const NOW_MS = Date.parse('2026-10-19T15:00:00.000Z');
+
+  it('o crédito pelo código do gestor: o perfil de até 30 dias; de 30 dias e 1 ms, ou sem data, não', () => {
+    expect(FAN_CLUB_CREDIT_WINDOW_MS).toBe(30 * 24 * 60 * 60 * 1000);
+    expect(isWithinCreditWindow(NOW_MS, NOW_MS)).toBe(true);
+    expect(isWithinCreditWindow(NOW_MS - FAN_CLUB_CREDIT_WINDOW_MS, NOW_MS)).toBe(true);
+    expect(isWithinCreditWindow(NOW_MS - FAN_CLUB_CREDIT_WINDOW_MS - 1, NOW_MS)).toBe(false);
+    expect(isWithinCreditWindow(null, NOW_MS)).toBe(false);
+  });
+
+  it('os números somam os shards campo a campo; o que não é número conta 0; nunca negativo', () => {
+    expect(FAN_CLUB_COUNT_FIELDS).toEqual(['links', 'visits', 'signups', 'joins']);
+    expect(sumFanClubShards([])).toEqual({ links: 0, visits: 0, signups: 0, joins: 0 });
+    expect(
+      sumFanClubShards([
+        { links: 2, visits: 5, updatedAt: 'x' },
+        { visits: 1, signups: 1, joins: 1 },
+        { joins: 2.9, signups: '3', links: Number.NaN },
+        { visits: -10 },
+      ]),
+    ).toEqual({ links: 2, visits: 0, signups: 1, joins: 3 });
   });
 });

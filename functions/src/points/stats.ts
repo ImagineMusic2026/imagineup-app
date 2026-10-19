@@ -284,8 +284,23 @@ export function addEngagementToShard(
   }
 }
 
-/** Tipo do link de onde veio o fã: o caminho classificado, ou `code` para o código digitado. */
-export type OriginKind = 'invite' | 'post' | 'artist' | 'agenda' | 'other' | 'code';
+/**
+ * Os tipos do link de onde veio o fã: o caminho classificado (o
+ * `classifyInvitePath` do convite), ou `code` para o código digitado. O
+ * `fanclub` é o link do fã-clube (seção 34, decisão 22): o `closeStatsDays`
+ * soma a folha `byOrigin.kind.fanclub` como as outras.
+ */
+export const ORIGIN_KINDS = [
+  'invite',
+  'post',
+  'artist',
+  'agenda',
+  'fanclub',
+  'other',
+  'code',
+] as const;
+
+export type OriginKind = (typeof ORIGIN_KINDS)[number];
 
 /** Chave dos recortes de `utm_*` nos shards. */
 export const ORIGIN_KEY_MAX = 40;

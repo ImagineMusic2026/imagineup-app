@@ -33,6 +33,7 @@ describe('a lista das fontes', () => {
     expect(out.map((source) => source.id)).toEqual([
       'users.profileSync',
       'users.uploads',
+      'users.fanClubCredits',
       'fanInvites.inviteVisitors',
       'inviterLedger',
       'moderationQueue',
@@ -193,6 +194,7 @@ describe('o filtro de campos (decisão 8)', () => {
       Object.fromEntries(filtered.map((source) => [source.id, [source.omit, source.mask ?? null]])),
     ).toEqual({
       users: [['searchKeys', 'signupCounted', 'photoPath'], null],
+      'users.centrals': [['fanClubId'], null],
       wallets: [['missions.*.items.*.keys'], null],
       'wallets.ledger': [['uid', 'note'], 'ledger'],
       inviteCodes: [['ownerKey'], null],
@@ -231,6 +233,7 @@ describe('o que a exclusão faz', () => {
       'users.eventRsvps': 'deleted',
       'users.profileSync': 'deleted',
       'users.uploads': 'deleted',
+      'users.fanClubCredits': 'deleted',
       'users.contact': 'deleted',
       usernames: 'deleted',
       wallets: 'deleted',
@@ -276,6 +279,7 @@ describe('as subcoleções conhecidas (o teste do listCollections)', () => {
       'eventRsvps',
       'profileSync',
       'uploads',
+      'fanClubCredits',
       'contact',
     ]);
     expect(knownSubcollections('wallets')).toEqual(['ledger', 'centralPoints']);

@@ -675,6 +675,12 @@ if (camilaUid) {
   console.log(
     `Publicações do fã-clube: ${clubPosts.created} criadas e ${clubPosts.published} aprovadas agora (3 no total: duas no ar, uma com foto, e uma em análise); a denúncia da Bia por uso indevido de imagem ${clubPosts.reported ? 'gravada agora' : 'já estava'}.`,
   );
+  // O link do fã-clube que a Camila compartilhou (etapa 3): rodar de novo não grava.
+  const { seedFanClubLink } = functionsBuild('fan-clubs');
+  const clubLink = await withFirestore((db) => seedFanClubLink(db, camilaUid));
+  console.log(
+    `Link do fã-clube: o da Camila ${clubLink ? 'registrado agora' : 'já estava'}, com 1 link nos números do fã-clube.`,
+  );
 }
 
 // Os números de 60 dias por último, depois de tudo que grava em dias passados.

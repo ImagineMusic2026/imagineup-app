@@ -14,6 +14,7 @@ import {
   readFanClubPage,
   readFanClubPosts,
   readMyFanClub,
+  readMyFanClubNumbers,
   readMyFanClubPosts,
   removeFanClubPost,
   reportFanClubPost,
@@ -26,6 +27,7 @@ import { isContentId } from '../../page-cursor';
 import type {
   FanClubArtists,
   FanClubCard,
+  FanClubNumbers,
   FanClubPage,
   FanClubPost,
   FanClubUploadSlot,
@@ -42,11 +44,12 @@ import { pageQuery } from './paging';
 // estado do fã nos Ajustes, as centrais que aceitam fã-clube, candidatar e
 // desistir. A etapa 2: o novo aceite do regulamento, a vaga de envio da foto,
 // publicar, "Minhas publicações", retirar e tirar do ar, a página pública, as
-// publicações no ar, a lista do artista e a denúncia. As que gravam rodam no
-// runIdempotent, com o perfil exigido; as de desfazer (desistir e retirar)
-// aceitam o suspenso. Os arquivos do Storage que saem ou trocam de token
-// mudam depois da gravação (o `storageWork`, guardado na chave e refeito na
-// repetição). Os seguidores chegam na etapa 4.
+// publicações no ar, a lista do artista e a denúncia. A etapa 3: os números
+// do gestor (a soma dos shards da atribuição e os seguidores). As que gravam
+// rodam no runIdempotent, com o perfil exigido; as de desfazer (desistir e
+// retirar) aceitam o suspenso. Os arquivos do Storage que saem ou trocam de
+// token mudam depois da gravação (o `storageWork`, guardado na chave e
+// refeito na repetição). Os seguidores chegam na etapa 4.
 
 /**
  * O corpo da candidatura conferido e limpo (`parseApplication`), sem leitura:
@@ -103,6 +106,16 @@ export const fanClubRoutes: ApiRoute[] = [
     writes: false,
     async handle({ deps, uid, now }): Promise<MyFanClub> {
       return readMyFanClub(deps.db, uid, now);
+    },
+  },
+  {
+    // Só no "Meu fã-clube" (etapa 3): a soma dos shards e os seguidores. Sem
+    // o fã-clube da candidatura aprovada, 404 `fan_club_not_found`.
+    method: 'GET',
+    pattern: '/me/fan-club/numbers',
+    writes: false,
+    async handle({ deps, uid, now }): Promise<FanClubNumbers> {
+      return readMyFanClubNumbers(deps.db, uid, now);
     },
   },
   {

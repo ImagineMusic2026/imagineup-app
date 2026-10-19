@@ -726,6 +726,26 @@ export type MyFanClub = {
   club: MyFanClubClub | null;
 };
 
+/**
+ * `GET /me/fan-club/numbers`: os números do fã-clube do gestor, só no "Meu
+ * fã-clube" (etapa 3 de 34.14). Os seguidores pelo `count()` de quem segue
+ * agora (0 até a etapa 4 trazer o seguir) e os do convite e da atribuição pela
+ * soma dos 16 shards (decisão 24).
+ */
+export type FanClubNumbers = {
+  followers: number;
+  /** Quem segue agora e seguiu nos últimos 30 dias. */
+  followers30d: number;
+  /** Links do fã-clube registrados, por qualquer fã. */
+  links: number;
+  /** Pessoas contadas como visitantes pelo link do fã-clube. */
+  visits: number;
+  /** Cadastros que chegaram pelo link do fã-clube. */
+  signups: number;
+  /** Entradas trazidas para a central oficial (decisão 23). */
+  joins: number;
+};
+
 /** Uma central do fã que aceita fã-clubes, no `GET /me/fan-club/artists`. */
 export type FanClubArtist = {
   artistId: string;

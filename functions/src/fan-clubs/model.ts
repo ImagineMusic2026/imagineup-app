@@ -813,6 +813,44 @@ export function parseRulesAcceptance(
   return { ok: true };
 }
 
+// --- A atribuição (decisões 22 a 24) ---------------------------------------------------
+
+/** O crédito pelo código do gestor vale até 30 dias depois do cadastro de quem entra (decisão 23). */
+export const FAN_CLUB_CREDIT_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
+
+/** O perfil de quem entra tem até 30 dias (o `createdAt`); sem a data, não. */
+export function isWithinCreditWindow(profileCreatedAt: number | null, now: number): boolean {
+  return profileCreatedAt !== null && now - profileCreatedAt <= FAN_CLUB_CREDIT_WINDOW_MS;
+}
+
+/** Como a entrada foi trazida: seguindo o fã-clube (etapa 4) ou pelo código do gestor. */
+export type FanClubCreditVia = 'follow' | 'owner_code';
+
+/** O crédito de uma entrada: o fã-clube que trouxe, a central dele e o caminho. */
+export type FanClubCredit = { clubId: string; artistId: string; via: FanClubCreditVia };
+
+/** Os números do fã-clube que somam nos shards, na transação da ação (decisão 24). */
+export const FAN_CLUB_COUNT_FIELDS = ['links', 'visits', 'signups', 'joins'] as const;
+export type FanClubCountField = (typeof FAN_CLUB_COUNT_FIELDS)[number];
+export type FanClubCounts = Record<FanClubCountField, number>;
+
+/**
+ * A soma dos shards do fã-clube, campo a campo: o que não é número conta 0, e
+ * a soma nunca sai negativa (só há `increment` de 1 para cima; um valor
+ * estranho não derruba a tela).
+ */
+export function sumFanClubShards(shards: readonly Record<string, unknown>[]): FanClubCounts {
+  const sums: FanClubCounts = { links: 0, visits: 0, signups: 0, joins: 0 };
+  for (const shard of shards) {
+    for (const field of FAN_CLUB_COUNT_FIELDS) {
+      const value = shard[field];
+      if (typeof value === 'number' && Number.isFinite(value)) sums[field] += Math.trunc(value);
+    }
+  }
+  for (const field of FAN_CLUB_COUNT_FIELDS) sums[field] = Math.max(0, sums[field]);
+  return sums;
+}
+
 // --- As denúncias das publicações (decisão 18) ----------------------------------------
 
 /** Como a fila da denúncia termina: pela equipe, pelo gestor que retirou ou pela exclusão dele. */

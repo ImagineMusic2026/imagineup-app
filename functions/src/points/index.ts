@@ -91,6 +91,7 @@ export {
   addInviteToShard,
   addRedemptionToShard,
   emptyShardDelta,
+  ORIGIN_KINDS,
   ORIGIN_NONE,
   originKey,
   pickShard,

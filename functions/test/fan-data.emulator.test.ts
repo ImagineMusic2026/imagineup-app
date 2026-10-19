@@ -564,7 +564,37 @@ describe('o arquivo de um fã com dado em toda fonte, e a exclusão', () => {
       const artistId = await central(env);
       const postId = await post(env, artistId);
       const eventId = await show(env, [artistId], now + 10 * DAY_MS);
+      // A Duda gere um fã-clube da central (seção 34): a entrada do fã, trazido
+      // pelo código dela, é creditada (o `fanClubId` no vínculo, fora do
+      // arquivo, e o marcador `fanClubCredits`, fora dele inteiro).
+      await db.doc(`artistPrivate/${artistId}`).set({ imageRightsConfirmed: true });
+      expect((await as(inviter)('PUT', `/me/centrals/${artistId}`)).status).toBe(200);
+      const inviterApplied = await as(inviter)('POST', '/me/fan-club/application', {
+        artistId,
+        name: 'Turma da Duda',
+        instagram: 'duda.teste.up',
+        whatsapp: '(75) 99876-5432',
+        pitch: 'Divulgo a central no grupo dos fãs da cidade e nos stories.',
+        adult: true,
+        rulesVersion: FAN_CLUB_RULES_VERSION,
+      });
+      expect(inviterApplied.status).toBe(200);
+      await ok(
+        'decideFanClub',
+        { subject: 'application', id: inviter.uid, decision: 'approve', expected: 1 },
+        admin,
+      );
+      const inviterClubId = (await read(`fanClubApplications/${inviter.uid}`))?.clubId as string;
+      expect(inviterClubId).toEqual(expect.any(String));
       expect((await as(fan)('PUT', `/me/centrals/${artistId}`)).status).toBe(200);
+      expect(await read(`users/${fan.uid}/centrals/${artistId}`)).toMatchObject({
+        firstJoin: true,
+        fanClubId: inviterClubId,
+      });
+      expect(await read(`users/${fan.uid}/fanClubCredits/${artistId}`)).toMatchObject({
+        clubId: inviterClubId,
+        via: 'owner_code',
+      });
       expect((await as(fan)('PUT', `/posts/${postId}/like`)).status).toBe(200);
       expect((await as(fan)('PUT', `/events/${eventId}/rsvp`)).status).toBe(200);
       const commentIds: string[] = [];
@@ -593,7 +623,6 @@ describe('o arquivo de um fã com dado em toda fonte, e a exclusão', () => {
 
       // O fã-clube (seção 34): a candidatura na central, aprovada pela equipe.
       // O privado fica com as redes (o texto de divulgação sai na aprovação).
-      await db.doc(`artistPrivate/${artistId}`).set({ imageRightsConfirmed: true });
       const applied = await as(fan)('POST', '/me/fan-club/application', {
         artistId,
         name: 'Turma da Camila',
@@ -810,6 +839,12 @@ describe('o arquivo de um fã com dado em toda fonte, e a exclusão', () => {
         commentPaths.slice(1).map((path) => path.split('/')[3]),
       );
       expect(rest.after).toBeNull();
+      // O vínculo com a central leva o `firstJoin`, e não o `fanClubId` (diria
+      // quem convidou, seção 34, 34.7); o marcador do crédito fica fora.
+      expect(file.centrais as Item[]).toEqual([
+        expect.objectContaining({ id: artistId, firstJoin: true }),
+      ]);
+      expect((file.centrais as Item[])[0]).not.toHaveProperty('fanClubId');
       expect(file.pedidosDaLoja as Item[]).toEqual([
         expect.not.objectContaining({ updatedBy: expect.anything() }),
       ]);
@@ -859,6 +894,7 @@ describe('o arquivo de um fã com dado em toda fonte, e a exclusão', () => {
       const ownerKey = (await read(`inviteCodes/${code}`))?.ownerKey as string;
       expect(ownerKey).toEqual(expect.any(String));
       expect(text).not.toContain(ownerKey);
+      expect(text).not.toContain(inviterClubId);
       // Os lançamentos que a equipe mexeu estão lá, sem quem mexeu.
       expect((file.extrato as Item[]).map((item) => item.source)).toEqual(
         expect.arrayContaining([

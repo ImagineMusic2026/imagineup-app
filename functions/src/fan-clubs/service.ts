@@ -13,6 +13,7 @@ import type {
   FanClubArtist,
   FanClubArtists,
   FanClubCard,
+  FanClubNumbers,
   FanClubPage,
   FanClubPerson,
   MyFanClub,
@@ -43,10 +44,12 @@ import {
   FAN_CLUB_RULES_VERSION,
   FEATURED_PER_ARTIST_MAX,
   fanClubBoxes,
+  fanClubNotFound,
   fanClubRecord,
   fanClubRefused,
   fanClubRulesUrl,
   isFeaturedNow,
+  sumFanClubShards,
   type ApplicationInput,
   type ApplicationRecord,
   type FanClubRecord,
@@ -60,6 +63,7 @@ import {
   FEATURE_OFF,
   fanClubFollowRef,
   fanClubRef,
+  fanClubShardsOf,
   fanClubsOf,
   fanClubsOfOwner,
   ownerCopiesOf,
@@ -69,7 +73,8 @@ import {
 // o `GET /me/fan-club` (leve, de 1 a 5 leituras), as centrais que aceitam
 // fã-clube para a candidatura, candidatar e desistir e o novo aceite do
 // regulamento, na transação do runIdempotent, a página pública e a lista dos
-// fã-clubes de um artista, e o passo da exclusão de conta (34.7). A ordem de
+// fã-clubes de um artista, os números do gestor (a etapa 3 de 34.14: a soma
+// dos shards e os seguidores), e o passo da exclusão de conta (34.7). A ordem de
 // uma rota que grava é a de sempre: as leituras do domínio, o planAwards, as
 // gravações.
 
@@ -436,25 +441,57 @@ const ownerOf = (club: FanClubRecord): FanClubPerson => ({
 
 /**
  * Quem segue o fã-clube agora, pelo `count()` no grupo `fanClubFollows`
- * (decisão 28), fora de transação. Sem o índice de grupo (só em produção: o
- * emulador não exige), a contagem falha com o código 9: vale 0, com o erro no
- * log, como o "N posts" da 1d (21.1).
+ * (decisão 28), fora de transação; com o `since`, só quem seguiu desde ele (os
+ * novos em 30 dias, pelo índice de grupo do `clubId` com o `followedAt`). Sem
+ * o índice de grupo (só em produção: o emulador não exige), a contagem falha
+ * com o código 9: vale 0, com o erro no log, como o "N posts" da 1d (21.1).
  */
-async function countFollowers(db: Firestore, clubId: string): Promise<number> {
+async function countFollowers(db: Firestore, clubId: string, since?: number): Promise<number> {
   try {
-    const snap = await db
-      .collectionGroup('fanClubFollows')
-      .where('clubId', '==', clubId)
-      .count()
-      .get();
+    let query = db.collectionGroup('fanClubFollows').where('clubId', '==', clubId);
+    if (since !== undefined) query = query.where('followedAt', '>=', tsOf(since));
+    const snap = await query.count().get();
     return snap.data().count;
   } catch (error) {
     logger.error('fan-clubs: a contagem dos seguidores falhou', {
       clubId,
+      since: since === undefined ? null : iso(since),
       error: error instanceof Error ? error.message : String(error),
     });
     return 0;
   }
+}
+
+/** Os novos seguidores contam os últimos 30 dias (decisão 36). */
+const FOLLOWERS_RECENT_MS = 30 * 24 * 60 * 60 * 1000;
+
+/**
+ * `GET /me/fan-club/numbers` (34.3): os números do fã-clube do gestor, só no
+ * "Meu fã-clube". O fã-clube da candidatura aprovada, ainda dele, em qualquer
+ * status (o encerrado também mostra o que fez); sem ele, 404
+ * `fan_club_not_found`. Depois, em paralelo: a soma dos 16 shards (uma
+ * consulta, `sumFanClubShards`) e os dois `count()` dos seguidores. Fora de
+ * transação: a candidatura, o fã-clube, os shards e as contagens.
+ */
+export async function readMyFanClubNumbers(
+  db: Firestore,
+  uid: string,
+  now: number,
+): Promise<FanClubNumbers> {
+  const application = await applicationRef(db, uid).get();
+  const record = application.exists
+    ? applicationRecord(uid, (application.data() ?? {}) as Record<string, unknown>)
+    : null;
+  if (record?.status !== 'approved' || record.clubId === null) throw fanClubNotFound();
+  const clubId = record.clubId;
+  const club = await fanClubRef(db, clubId).get();
+  if (!club.exists || club.get('ownerUid') !== uid) throw fanClubNotFound();
+  const [shards, followers, followers30d] = await Promise.all([
+    fanClubShardsOf(db, clubId).get(),
+    countFollowers(db, clubId),
+    countFollowers(db, clubId, now - FOLLOWERS_RECENT_MS),
+  ]);
+  return { followers, followers30d, ...sumFanClubShards(shards.docs.map((doc) => doc.data())) };
 }
 
 /**
