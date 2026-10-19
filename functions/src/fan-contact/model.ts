@@ -1,7 +1,8 @@
 // O contato do fã (docs/arquitetura-api.md, seção 35, e a decisão 14 da
 // seção 34): o WhatsApp que a equipe usa para combinar a entrega dos resgates
 // da loja e, com o fã-clube, dos prêmios. Um número por fã, num lugar privado
-// (`users/{uid}/contact/main`, fechado nas regras), guardado como celular
+// (`users/{uid}/contact/main`, privado nas regras: só o servidor grava, e só
+// quem edita Fã-clubes lê o de quem tem candidatura), guardado como celular
 // brasileiro em E.164 (`+55`, o DDD e os 9 dígitos). Puro: nada aqui lê o
 // Firestore. O app tem a mesma conferência em `src/utils/whatsapp.ts`: mudou
 // uma, mude a outra.

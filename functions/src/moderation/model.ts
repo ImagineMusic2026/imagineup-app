@@ -1,4 +1,5 @@
 import { secondsUntil } from '../centrals/model';
+import { FAN_CLUB_APPLIES_PER_DAY } from '../fan-clubs/model';
 import {
   NAME_CHANGES_PER_DAY,
   PHOTO_CHANGES_PER_DAY,
@@ -51,7 +52,7 @@ export const REDEEMS_PER_DAY = 10;
  * da loja (bloco 10, 25.7), no mesmo molde; `upload`, a vaga de envio da
  * foto do perfil (proteção contra abuso, 27.4); `profile` e `name`, o
  * salvamento do perfil e a troca de nome do `PUT /me/profile` (seção 28,
- * decisão 9).
+ * decisão 9); `club_apply`, a candidatura a fã-clube (seção 34, decisão 11).
  */
 export type CapAction =
   | 'like'
@@ -63,7 +64,8 @@ export type CapAction =
   | 'redeem'
   | 'upload'
   | 'profile'
-  | 'name';
+  | 'name'
+  | 'club_apply';
 
 export const DAILY_CAPS: Record<CapAction, { key: DailyActionKey; limit: number }> = {
   like: { key: 'like_set', limit: LIKES_PER_DAY },
@@ -76,6 +78,7 @@ export const DAILY_CAPS: Record<CapAction, { key: DailyActionKey; limit: number 
   upload: { key: 'photo_upload', limit: PHOTO_UPLOADS_PER_DAY },
   profile: { key: 'profile_save', limit: PROFILE_SAVES_PER_DAY },
   name: { key: 'name_change', limit: NAME_CHANGES_PER_DAY },
+  club_apply: { key: 'fanclub_apply', limit: FAN_CLUB_APPLIES_PER_DAY },
 };
 
 /**

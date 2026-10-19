@@ -413,6 +413,8 @@ describe('profileSyncNeeded', () => {
 
   it.each([
     ['displayName', 'Camila Ribeiro'],
+    // O fã-clube (seção 34): o @ vai nas cópias do gestor e da candidatura.
+    ['username', 'camilaribeiro'],
     ['photoURL', 'https://x/a.jpg'],
     ['photoPath', `fans/${UID}/photo-agora0001.jpg`],
   ])('%s põe tarefa', (field, value) => {
@@ -421,7 +423,6 @@ describe('profileSyncNeeded', () => {
 
   it.each([
     ['city', 'Feira de Santana, BA'],
-    ['username', 'camilaribeiro'],
     ['updatedAt', 2],
   ])('%s sozinho não põe', (field, value) => {
     expect(profileSyncNeeded(base, { ...base, [field]: value })).toBe(false);

@@ -126,6 +126,9 @@ describe('a primeira chamada', () => {
       'denunciasDeComentario',
       'denunciasDePerfil',
       'temporadas',
+      'candidaturaDeFaClube',
+      'candidaturaDeFaClubePrivada',
+      'faClubes',
     ]);
   });
 
@@ -153,6 +156,9 @@ describe('a primeira chamada', () => {
       denunciasDeComentario: { kind: 'equal', collection: 'commentReports', field: 'reporterUid' },
       denunciasDePerfil: { kind: 'equal', collection: 'profileReports', field: 'reporterUid' },
       temporadas: { kind: 'standings' },
+      candidaturaDeFaClube: { kind: 'doc', collection: 'fanClubApplications' },
+      candidaturaDeFaClubePrivada: { kind: 'doc', collection: 'fanClubApplicationPrivate' },
+      faClubes: { kind: 'equal', collection: 'fanClubs', field: 'ownerUid' },
     });
     expect(firstKeySource('arrobasReservados').idsOnly).toBe(true);
     expect(firstKeySource('temporadas').idFromParent).toBe(true);
@@ -181,6 +187,8 @@ describe('o filtro de campos (decisão 8)', () => {
       postComments: [['hiddenBy'], null],
       profileReports: [['round'], null],
       redemptions: [['updatedBy'], null],
+      fanClubApplications: [['decidedBy'], null],
+      fanClubs: [['approvedBy', 'closedBy', 'featuredBy'], null],
     });
     expect(PROFILE_TECHNICAL_FIELDS).toEqual(['searchKeys', 'signupCounted', 'photoPath']);
   });
@@ -226,6 +234,9 @@ describe('o que a exclusão faz', () => {
       blockLists: 'deleted',
       redemptions: 'stripped',
       standings: 'deleted',
+      fanClubApplications: 'deleted',
+      fanClubApplicationPrivate: 'deleted',
+      fanClubs: 'stripped',
       moderationQueue: 'kept',
       profileReportQueue: 'kept',
       idempotency: 'deleted',

@@ -1,5 +1,6 @@
 import { AgendaError } from '../agenda/model';
 import { CentralError } from '../centrals/model';
+import { FanClubError } from '../fan-clubs/model';
 import { ProfileEditError } from '../fan-profile/model';
 import { InviteError } from '../invites/model';
 import { DailyCapError, ModerationError } from '../moderation/model';
@@ -18,6 +19,7 @@ export type ApiErrorCode =
   | 'username_invalid'
   | 'photo_invalid'
   | 'profile_invalid'
+  | 'fan_club_invalid'
   | 'unauthenticated'
   | 'not_fan'
   | 'account_suspended'
@@ -39,6 +41,7 @@ export type ApiErrorCode =
   | 'block_list_full'
   | 'username_taken'
   | 'username_change_too_soon'
+  | 'fan_club_refused'
   | 'payload_too_large'
   | 'idempotency_key_reused'
   | 'too_many_requests'
@@ -62,6 +65,7 @@ export const API_ERRORS: Record<ApiErrorCode, { status: number; message: string 
   },
   photo_invalid: { status: 400, message: 'Foto fora do formato. Escolha outra.' },
   profile_invalid: { status: 400, message: 'Perfil fora do formato. Confira os campos.' },
+  fan_club_invalid: { status: 400, message: 'Campo fora do formato. Confira e tente de novo.' },
   unauthenticated: { status: 401, message: 'Entre na sua conta para continuar.' },
   app_check_failed: {
     status: 403,
@@ -99,6 +103,7 @@ export const API_ERRORS: Record<ApiErrorCode, { status: number; message: string 
     status: 409,
     message: 'Você trocou o @ há pouco. Tente de novo mais tarde.',
   },
+  fan_club_refused: { status: 409, message: 'Isso não pode ser feito no fã-clube agora.' },
   payload_too_large: { status: 413, message: 'Pedido grande demais.' },
   idempotency_key_reused: { status: 422, message: 'Esta chave já foi usada em outro pedido.' },
   too_many_requests: { status: 429, message: 'Tentativas demais por hoje. Tente amanhã.' },
@@ -157,7 +162,7 @@ const BUSY_CODES = new Set([4, 8, 10, 14]);
 /**
  * Qualquer erro para o erro da API. Recusa do núcleo de pontos, das centrais,
  * do convite, do mural, da agenda, da moderação, da edição do perfil (bloco
- * 9) ou da loja (bloco 10) vira o código combinado (e
+ * 9), da loja (bloco 10) ou do fã-clube (seção 34) vira o código combinado (e
  * os tetos do dia, o 429 com Retry-After); disputa que sobrou das 5 tentativas vira 503 com Retry-After;
  * o resto é 500 (e vai para o log de erro).
  */
@@ -192,7 +197,8 @@ export function toApiHttpError(error: unknown): { error: ApiHttpError; unexpecte
     error instanceof PostError ||
     error instanceof AgendaError ||
     error instanceof ProfileEditError ||
-    error instanceof RewardError
+    error instanceof RewardError ||
+    error instanceof FanClubError
   ) {
     return { error: apiError(error.reason, error.details), unexpected: false };
   }

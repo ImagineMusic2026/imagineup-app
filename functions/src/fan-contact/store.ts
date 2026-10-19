@@ -10,9 +10,11 @@ import { contactWhatsapp, type ContactSource } from './model';
 
 // Onde o contato do fã mora (seção 35): `users/{uid}/contact/main`, debaixo do
 // perfil, para o `recursiveDelete` da exclusão de conta o levar junto. As
-// regras fecham a subcoleção para todos, até para o próprio fã e para a
-// equipe: o fã lê e troca o número pelo `GET` e o `PUT /me/contact`, e a
-// equipe o vê pelo `getRedemptionContacts`.
+// regras só deixam ler o documento, pelo caminho, a quem edita a seção
+// Fã-clubes, e só de quem tem candidatura (a ficha dela, seção 34); ninguém
+// lista nem grava pelo cliente. O fã lê e troca o número pelo `GET` e o
+// `PUT /me/contact`, e a equipe com Recompensas o vê pelo
+// `getRedemptionContacts`.
 
 /** O id do documento único do contato. */
 export const FAN_CONTACT_DOC_ID = 'main';
@@ -31,9 +33,10 @@ export function fanContactDoc(
 }
 
 /**
- * Grava o contato na transação de quem chama, sem ler antes: o resgate
- * (`source: 'store'`) e o `PUT /me/contact` (`'app'`); com a seção 34, a
- * candidatura (`'fanclub'`). O `merge` não apaga campo que outra seção
+ * Grava o contato na transação de quem chama, sem ler o contato antes (quem
+ * chama pode ler outras coisas, como o `PUT /me/contact` com o `null`): o
+ * resgate (`source: 'store'`), o `PUT /me/contact` (`'app'`) e, com a seção
+ * 34, a candidatura (`'fanclub'`). O `merge` não apaga campo que outra seção
  * acrescente ao documento.
  */
 export function writeFanContact(

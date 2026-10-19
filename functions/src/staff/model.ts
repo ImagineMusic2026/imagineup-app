@@ -1,13 +1,18 @@
 import { staffError, type StaffErrorReason } from './errors';
 import { isVisibleLine } from '../visible-line';
 
-/** Seções do painel, na ordem da lateral. Admin sempre tem todas. */
+/**
+ * Seções do painel, na ordem da lateral. Admin sempre tem todas. A `fanClubs`
+ * (Fã-clubes, docs/arquitetura-api.md, seção 34, decisão 5) fica ao lado de
+ * Fãs e de Artistas.
+ */
 export const SECTION_IDS = [
   'overview',
   'growth',
   'ranking',
   'fans',
   'artists',
+  'fanClubs',
   'missions',
   'rewards',
   'moderation',

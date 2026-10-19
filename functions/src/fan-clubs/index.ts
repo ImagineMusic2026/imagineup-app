@@ -1,0 +1,83 @@
+// O fã-clube gerido pelo fã (docs/arquitetura-api.md, seção 34): a
+// candidatura, o fã-clube, a callable `decideFanClub` do painel e o passo da
+// exclusão de conta. A API (src/api/routes/fan-clubs.ts) usa daqui; a
+// callable fica em src/index.ts; o seed dos emuladores carrega o build
+// (functions/lib/fan-clubs).
+export {
+  APPLICATION_KEYS,
+  APPLICATION_REJECT_REASONS,
+  applicationRecord,
+  applicationTurn,
+  checkClubName,
+  CLOSE_REASONS,
+  FAN_CLUB_APPLIES_PER_DAY,
+  FAN_CLUB_NAME_MAX,
+  FAN_CLUB_NAME_MIN,
+  FAN_CLUB_OPEN,
+  FAN_CLUB_PITCH_MAX,
+  FAN_CLUB_PITCH_MIN,
+  FAN_CLUB_PRIZE_NOTICE,
+  FAN_CLUB_REAPPLY_MS,
+  FAN_CLUB_ROUNDS_MAX,
+  FAN_CLUB_RULES_URL,
+  FAN_CLUB_RULES_VERSION,
+  fanClubBoxes,
+  fanClubBoxValue,
+  FanClubError,
+  fanClubRecord,
+  fanClubRefused,
+  hasOfficialWord,
+  isFeaturedNow,
+  isLiveFanClub,
+  parseApplication,
+  parseFeaturedUntil,
+  type ApplicationInput,
+  type ApplicationRecord,
+  type ApplicationRejectReason,
+  type CloseReason,
+  type FanClubBoxes,
+  type FanClubErrorCode,
+  type FanClubRecord,
+  type FanClubRefusal,
+  type FanClubStatus,
+} from './model';
+export {
+  applicationPrivateRef,
+  applicationRef,
+  fanClubRef,
+  fanClubsOf,
+  fanClubsOfOwner,
+  contactRequired,
+  liveFanClubsOfArtist,
+  pauseForSuspension,
+  readActiveClubOf,
+  syncFanClubCopies,
+} from './store';
+export {
+  applicationView,
+  applyForFanClub,
+  clubView,
+  readFanClubArtists,
+  readMyFanClub,
+  removeFanClubData,
+  runApplyForFanClub,
+  withdrawApplication,
+  type FanClubOutcome,
+} from './service';
+export {
+  applyFanClubDecision,
+  decideFanClub,
+  DECISION_SUBJECTS,
+  parseDecision,
+  runFanClubDecision,
+  type DecisionInput,
+  type DecisionResult,
+  type DecisionSubject,
+  type FanClubPanelDeps,
+} from './panel';
+export {
+  SEED_CAMILA_FAN_CLUB,
+  SEED_TEXT_ONLY_ARTIST,
+  seedFanClubs,
+  type SeedFanClubsResult,
+} from './seed';

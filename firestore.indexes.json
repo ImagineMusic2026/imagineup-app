@@ -373,6 +373,179 @@
         { "fieldPath": "status", "order": "ASCENDING" },
         { "fieldPath": "resolvedAt", "order": "DESCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "fanClubApplications",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "submittedAt", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "fanClubApplications",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "artistId", "order": "ASCENDING" },
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "submittedAt", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "fanClubApplications",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "decidedAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "fanClubs",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "counts.followers", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "fanClubs",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "counts.followers30d", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "fanClubs",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "approvedAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "fanClubs",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "artistId", "order": "ASCENDING" },
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "counts.followers", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "fanClubs",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "artistId", "order": "ASCENDING" },
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "counts.followers30d", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "fanClubs",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "artistId", "order": "ASCENDING" },
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "approvedAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "fanClubs",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "featured", "order": "ASCENDING" },
+        { "fieldPath": "featuredUntil", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "fanClubs",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "counts.at", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "fanClubPosts",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "clubId", "order": "ASCENDING" },
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "publishedAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "fanClubPosts",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "submittedAt", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "fanClubPosts",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "authorUid", "order": "ASCENDING" },
+        { "fieldPath": "submittedAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "fanClubPosts",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "clubId", "order": "ASCENDING" },
+        { "fieldPath": "submittedAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "fanClubReportQueue",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "lastReportedAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "fanClubReportQueue",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "resolvedAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "fanClubFollows",
+      "queryScope": "COLLECTION_GROUP",
+      "fields": [
+        { "fieldPath": "clubId", "order": "ASCENDING" },
+        { "fieldPath": "followedAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "fanClubFollows",
+      "queryScope": "COLLECTION_GROUP",
+      "fields": [
+        { "fieldPath": "clubId", "order": "ASCENDING" },
+        { "fieldPath": "newAccount", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "fanClubFollows",
+      "queryScope": "COLLECTION_GROUP",
+      "fields": [
+        { "fieldPath": "clubId", "order": "ASCENDING" },
+        { "fieldPath": "chosenUsername", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "fanClubFollows",
+      "queryScope": "COLLECTION_GROUP",
+      "fields": [
+        { "fieldPath": "clubId", "order": "ASCENDING" },
+        { "fieldPath": "byOwnerCode", "order": "ASCENDING" }
+      ]
     }
   ],
   "fieldOverrides": [
@@ -455,6 +628,32 @@
     { "collectionGroup": "statsDaily", "fieldPath": "byReward", "indexes": [] },
     { "collectionGroup": "statsDaily", "fieldPath": "snapshot", "indexes": [] },
     { "collectionGroup": "staffAudit", "fieldPath": "details", "indexes": [] },
-    { "collectionGroup": "staffLimits", "fieldPath": "expiresAt", "ttl": true, "indexes": [] }
+    { "collectionGroup": "staffLimits", "fieldPath": "expiresAt", "ttl": true, "indexes": [] },
+    {
+      "collectionGroup": "fanClubFollows",
+      "fieldPath": "clubId",
+      "indexes": [
+        { "order": "ASCENDING", "queryScope": "COLLECTION" },
+        { "order": "DESCENDING", "queryScope": "COLLECTION" },
+        { "arrayConfig": "CONTAINS", "queryScope": "COLLECTION" },
+        { "order": "ASCENDING", "queryScope": "COLLECTION_GROUP" }
+      ]
+    },
+    {
+      "collectionGroup": "centrals",
+      "fieldPath": "fanClubId",
+      "indexes": [
+        { "order": "ASCENDING", "queryScope": "COLLECTION" },
+        { "order": "DESCENDING", "queryScope": "COLLECTION" },
+        { "arrayConfig": "CONTAINS", "queryScope": "COLLECTION" },
+        { "order": "ASCENDING", "queryScope": "COLLECTION_GROUP" }
+      ]
+    },
+    { "collectionGroup": "fanClubPosts", "fieldPath": "text", "indexes": [] },
+    { "collectionGroup": "fanClubApplicationPrivate", "fieldPath": "pitch", "indexes": [] },
+    { "collectionGroup": "fanClubReportQueue", "fieldPath": "reasons", "indexes": [] },
+    { "collectionGroup": "prizes", "fieldPath": "note", "indexes": [] },
+    { "collectionGroup": "redemptions", "fieldPath": "coupon", "indexes": [] },
+    { "collectionGroup": "redemptions", "fieldPath": "message", "indexes": [] }
   ]
 }

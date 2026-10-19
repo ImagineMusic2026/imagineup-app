@@ -55,6 +55,7 @@ describe('os índices da exportação dos dados do fã (32.5)', () => {
       'COLLECTION commentReports.reporterUid',
       'COLLECTION profileReports.reporterUid',
       'COLLECTION redemptions.uid',
+      'COLLECTION fanClubs.ownerUid',
     ]);
   });
 

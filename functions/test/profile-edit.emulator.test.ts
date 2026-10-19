@@ -885,12 +885,18 @@ describe('cópias do nome e da foto nos comentários', () => {
     expect(await copyOf(postId, commentId)).toEqual(fresh);
   });
 
-  it('a cidade e o @ sozinhos não põem tarefa (o orçamento não nasce)', async () => {
+  it('a cidade sozinha não põe tarefa (o orçamento não nasce); o @ põe, desde o fã-clube', async () => {
     const fan = await signUpFan(db, 'Camila Ribeiro');
     await change(fan, { city: 'Irará, BA' });
-    await db.doc(`users/${fan.uid}`).update({ username: unique('soarroba') });
     await sleep(3_000);
     expect(await exists(`users/${fan.uid}/profileSync/budget`)).toBe(false);
+    // O fã-clube e a candidatura copiam o @ (seção 34, 34.5): a troca põe a tarefa.
+    await db.doc(`users/${fan.uid}`).update({ username: unique('soarroba') });
+    await waitFor(
+      'o orçamento da fila depois da troca do @',
+      () => exists(`users/${fan.uid}/profileSync/budget`),
+      30_000,
+    );
   });
 
   it('a tarefa com o perfil apagado não grava nos comentários e esvazia a pasta', async () => {

@@ -120,7 +120,8 @@ export function syncFanSearchKeys(
  *    nome ou @ trocados: o `searchKeys` do perfil de agora (bloco 11,
  *    `syncFanSearchKeys`) e, com o nome trocado, o nome barrado pelo filtro
  *    vira "Fã" (seção 30); mudar só o `searchKeys` não põe tarefa na fila;
- * 2. sem mudança no nome, na foto ou no caminho dela: termina;
+ * 2. sem mudança no nome, no @ (desde o fã-clube, seção 34), na foto ou no
+ *    caminho dela: termina;
  * 3. o orçamento do dia, numa transação que exige o perfil (o gatilho
  *    atrasado de uma conta excluída não o recria);
  * 4. a tarefa da janela (5 min ou 1 h). Id repetido é ignorado; outro erro

@@ -15,6 +15,7 @@ import {
   USERNAME_PATTERN,
 } from '../../fan-profile';
 import { parseWhatsapp, readFanContact, writeFanContact } from '../../fan-contact';
+import { contactRequired, fanClubRefused } from '../../fan-clubs';
 import type {
   EditableProfile,
   FanContact,
@@ -206,16 +207,22 @@ export const profileRoutes: ApiRoute[] = [
   },
   {
     // Trocar ou apagar o WhatsApp fora do resgate (seção 35, no desenho da
-    // decisão 14 da seção 34): grava com `source: 'app'`, sem ler antes e sem
-    // teto próprio (o ritmo de 27.3 basta). O suspenso recebe 403, como na
-    // edição do perfil. Com a seção 34, o `null` passa a ser recusado com o
-    // fã-clube ativo ou pausado (`contact_required`).
+    // decisão 14 da seção 34): grava com `source: 'app'`, sem ler o contato
+    // antes e sem teto próprio (o ritmo de 27.3 basta). O suspenso recebe 403,
+    // como na edição do perfil. Com a seção 34 (decisão 14), o `null` é
+    // recusado com a candidatura pendente ou o fã-clube ativo ou pausado (409
+    // `fan_club_refused`, `contact_required`): o número é obrigatório na
+    // candidatura e é o canal dos prêmios. Só o `null` lê a candidatura e o
+    // fã-clube, antes de gravar.
     method: 'PUT',
     pattern: '/me/contact',
     writes: true,
     validate: (input) => void bodyContact(input),
     async handle(ctx) {
       const whatsapp = bodyContact(ctx);
+      if (whatsapp === null && (await contactRequired(ctx.tx, ctx.deps.db, ctx.fan.uid))) {
+        throw fanClubRefused('contact_required');
+      }
       writeFanContact(
         ctx.tx,
         ctx.deps.db,

@@ -119,6 +119,13 @@
  * painel conferir), pelos núcleos das rotas, com o ator de sistema. A denúncia
  * só vai sem o item do Promo na fila.
  *
+ * Fã-clube gerido pelo fã (functions/lib/fan-clubs, docs/arquitetura-api.md,
+ * 34.12, etapa 1 de 34.14): logo depois, o programa aberto, sem o
+ * regulamento (o aceite cita os Termos); o Nenho com o "Fãs podem postar
+ * fotos" desligado (os fã-clubes dele só publicam texto) e o Netto com as
+ * caixas pelo padrão; e a Camila, gestora aprovada do fã-clube do Netto, pela
+ * candidatura com o ator de sistema e pela aprovação do admin do seed.
+ *
  * Rodar de novo não muda nada. Depois da meia-noite, o progresso do dia volta
  * a 0, como o de qualquer fã: para ver de novo o 3 de 5 e o 2 de 5, feche os
  * emuladores (os dados somem) e rode o seed outra vez.
@@ -633,6 +640,16 @@ const profileModeration = await withFirestore((db) =>
 console.log(
   `Moderação: a Camila bloqueou um fã do ranking, e a Bia denunciou o perfil do Promo (${profileModeration.blocks} bloqueio e ${profileModeration.reports} denúncia gravados agora; 1 e 1 no total).`,
 );
+
+// O fã-clube (34.12, etapa 1 de 34.14), depois das exigências das lojas: o
+// Nenho só com texto e a Camila aprovada no Netto (rodar de novo não grava).
+if (camilaUid) {
+  const { seedFanClubs } = functionsBuild('fan-clubs');
+  const fanClubs = await withFirestore((db) => seedFanClubs(db, camilaUid, staffActor));
+  console.log(
+    `Fã-clube: a Camila gere o fã-clube do Netto (${fanClubs.applied ? 'candidatura agora' : 'candidatura já existia'}, ${fanClubs.approved ? 'aprovada agora' : 'já aprovada'}); o Nenho só aceita texto (${fanClubs.textOnly ? 'gravado agora' : 'já estava'}).`,
+  );
+}
 
 // Os números de 60 dias por último, depois de tudo que grava em dias passados.
 const statsSeed = functionsFile('points/stats-seed');

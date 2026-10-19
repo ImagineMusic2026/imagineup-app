@@ -5,6 +5,7 @@ import { FieldPath, Timestamp, type Query } from 'firebase-admin/firestore';
 import { describe, expect, it } from 'vitest';
 
 import { dayKey } from '../src/day';
+import { FAN_CLUB_RULES_VERSION } from '../src/fan-clubs';
 import {
   deleteFanAccount,
   exportFanData,
@@ -45,7 +46,10 @@ import {
  * `FAN_DATA_SOURCES`, sem dado de outra pessoa nem da equipe, com o extrato
  * em duas páginas e as denúncias inteiras na primeira chamada; a ponta do
  * "dado novo" (o `listCollections()` dentro da lista); e a exclusão, com o
- * gatilho tratando cada fonte como a lista diz.
+ * gatilho tratando cada fonte como a lista diz. Desde o fã-clube (seção 34,
+ * 34.7, etapa 1 de 34.14), o fã é também gestor aprovado: a candidatura, o
+ * privado e o fã-clube vêm no arquivo, e a exclusão apaga os dois primeiros e
+ * deixa a lápide.
  */
 const env = useEmulators('dados-do-fa', [
   'createUserProfile',
@@ -59,6 +63,7 @@ const env = useEmulators('dados-do-fa', [
   'setRewardStatus',
   'setRedemptionStatus',
   'moderateComment',
+  'decideFanClub',
 ]);
 const { db, auth, bucket } = env;
 const files = fanPhotoFiles(() => bucket);
@@ -392,6 +397,8 @@ async function leftovers(
     inviteeUid: string;
     inviterUid: string;
     inviterEntries: string[];
+    /** O fã-clube que o fã gere (seção 34): vira lápide. */
+    clubId: string;
   },
 ): Promise<string[]> {
   const left: string[] = [];
@@ -434,6 +441,21 @@ async function leftovers(
             return (await bucket.getFiles({ prefix: `fans/${uid}/` }))[0].length === 0;
           }
       }
+    }
+    if (effect === 'stripped' && source.id === 'fanClubs' && how.kind === 'equal') {
+      // A lápide (decisão 21): encerrada, sem o dono, as cópias e o nome.
+      const tomb = await read(`fanClubs/${known.clubId}`);
+      return (
+        (await none(db.collection(how.collection).where(how.field, '==', uid))) &&
+        tomb?.ownerUid === null &&
+        tomb.ownerName === null &&
+        tomb.ownerUsername === null &&
+        tomb.ownerPhotoURL === null &&
+        tomb.name === null &&
+        tomb.status === 'closed' &&
+        tomb.statusReason === 'account_deleted' &&
+        tomb.accountDeleted === true
+      );
     }
     if (effect === 'stripped' && how.kind === 'equal') {
       const kept = await read(`${how.collection}/${known.redemptionId}`);
@@ -548,6 +570,28 @@ describe('o arquivo de um fã com dado em toda fonte, e a exclusão', () => {
       ).toBe(200);
       expect((await report(fan, `/fans/${other.uid}/report`)).status).toBe(200);
       expect((await as(fan)('PUT', `/me/blocks/${other.uid}`)).status).toBe(200);
+
+      // O fã-clube (seção 34): a candidatura na central, aprovada pela equipe.
+      // O privado fica com as redes (o texto de divulgação sai na aprovação).
+      await db.doc(`artistPrivate/${artistId}`).set({ imageRightsConfirmed: true });
+      const applied = await as(fan)('POST', '/me/fan-club/application', {
+        artistId,
+        name: 'Turma da Camila',
+        instagram: 'camila.teste.up',
+        // O contato do fã nasce aqui (source fanclub), e o resgate depois o regrava.
+        whatsapp: '(75) 99123-4567',
+        pitch: 'Divulgo a central nos stories e no grupo dos fãs da cidade.',
+        adult: true,
+        rulesVersion: FAN_CLUB_RULES_VERSION,
+      });
+      expect(applied).toMatchObject({ status: 200, body: { application: { status: 'pending' } } });
+      await ok(
+        'decideFanClub',
+        { subject: 'application', id: fan.uid, decision: 'approve', expected: 1 },
+        admin,
+      );
+      const clubId = (await read(`fanClubApplications/${fan.uid}`))?.clubId as string;
+      expect(clubId).toEqual(expect.any(String));
 
       // A equipe: um ajuste, um pedido recusado e um comentário ocultado.
       await ok(
@@ -704,6 +748,22 @@ describe('o arquivo de um fã com dado em toda fonte, e a exclusão', () => {
       expect(file.pedidosDaLoja as Item[]).toEqual([
         expect.not.objectContaining({ updatedBy: expect.anything() }),
       ]);
+      // O fã-clube (34.7): a candidatura sem quem decidiu, o privado com as
+      // redes e sem o texto de divulgação, e o fã-clube sem quem aprovou.
+      expect(file.candidaturaDeFaClube as Item).toMatchObject({
+        status: 'approved',
+        clubId,
+        proposedName: 'Turma da Camila',
+      });
+      expect(file.candidaturaDeFaClube as Item).not.toHaveProperty('decidedBy');
+      expect(file.candidaturaDeFaClubePrivada as Item).toMatchObject({
+        instagram: 'camila.teste.up',
+        pitch: null,
+      });
+      expect(file.faClubes as Item[]).toEqual([
+        expect.objectContaining({ id: clubId, name: 'Turma da Camila', status: 'active' }),
+      ]);
+      expect((file.faClubes as Item[])[0]).not.toHaveProperty('approvedBy');
 
       // Nada de outra pessoa (pergunta 7: os alvos das denúncias e dos
       // bloqueios ficam) e nada da equipe, da chave do convidado ou do ownerKey.
@@ -763,6 +823,7 @@ describe('o arquivo de um fã com dado em toda fonte, e a exclusão', () => {
         inviteeUid: invitee.uid,
         inviterUid: inviter.uid,
         inviterEntries,
+        clubId,
       };
       expect(await ok('deleteFanAccount', request(fan), admin)).toEqual({ status: 'deleted' });
       await waitFor(

@@ -39,6 +39,9 @@ export const FAN_DATA_FIRST_KEYS = [
   'denunciasDeComentario',
   'denunciasDePerfil',
   'temporadas',
+  'candidaturaDeFaClube',
+  'candidaturaDeFaClubePrivada',
+  'faClubes',
 ] as const;
 
 export type FanDataFirstKey = (typeof FAN_DATA_FIRST_KEYS)[number];
@@ -356,6 +359,36 @@ export const FAN_DATA_SOURCES: readonly FanDataSource[] = [
     omit: [],
     idFromParent: true,
     deletion: { effect: 'deleted', note: 'apagado' },
+  },
+  {
+    // O fã-clube gerido pelo fã (seção 34, 34.7), desde a etapa 1 de 34.14.
+    id: 'fanClubApplications',
+    label: 'fanClubApplications/{uid}',
+    place: { in: 'first', key: 'candidaturaDeFaClube' },
+    read: { kind: 'doc', collection: 'fanClubApplications' },
+    // O uid e o nome de quem é da equipe e decidiu.
+    omit: ['decidedBy'],
+    deletion: { effect: 'deleted', note: 'apagado' },
+  },
+  {
+    id: 'fanClubApplicationPrivate',
+    label: 'fanClubApplicationPrivate/{uid}',
+    place: { in: 'first', key: 'candidaturaDeFaClubePrivada' },
+    read: { kind: 'doc', collection: 'fanClubApplicationPrivate' },
+    omit: [],
+    deletion: { effect: 'deleted', note: 'apagado' },
+  },
+  {
+    id: 'fanClubs',
+    label: 'fanClubs com ownerUid ==',
+    place: { in: 'first', key: 'faClubes' },
+    read: { kind: 'equal', collection: 'fanClubs', field: 'ownerUid' },
+    // O uid e o nome de quem é da equipe e aprovou, encerrou ou destacou.
+    omit: ['approvedBy', 'closedBy', 'featuredBy'],
+    deletion: {
+      effect: 'stripped',
+      note: 'vira lápide: encerrado, sem o dono, as cópias e o nome (decisão 21)',
+    },
   },
   {
     id: 'moderationQueue',

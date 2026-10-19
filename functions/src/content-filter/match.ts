@@ -43,6 +43,16 @@ export type FilterTerm = {
   readonly inHandle?: true;
 };
 
+/**
+ * Os campos que conferem também o trecho (`inHandle`) dentro de um pedaço: o
+ * nome, a cidade e, como um nome que aparece na página, o do fã-clube (34.8).
+ */
+const HANDLE_TEXT_FIELDS: ReadonlySet<FilterTextField> = new Set([
+  'displayName',
+  'city',
+  'fanClubName',
+]);
+
 /** Uma entrada como o `terms.ts` guarda: as chaves, nunca o texto. */
 export type FilterEntryKeys = {
   readonly category: FilterCategory;
@@ -54,8 +64,13 @@ export type FilterEntryKeys = {
   readonly handleLengths?: readonly number[];
 };
 
-/** Os campos de texto que o `isBlockedText` confere. */
-export type FilterTextField = 'comment' | 'bio' | 'displayName' | 'city';
+/**
+ * Os campos de texto que o `isBlockedText` confere. Desde o fã-clube (seção
+ * 34, 34.8), o nome proposto (`fanClubName`) e o texto de divulgação da
+ * candidatura (`fanClubPitch`).
+ */
+export type FilterTextField =
+  'comment' | 'bio' | 'displayName' | 'city' | 'fanClubName' | 'fanClubPitch';
 export type FilterField = FilterTextField | 'username' | 'socials';
 export type FieldBlocks = Readonly<Record<FilterField, readonly FilterCategory[]>>;
 
@@ -64,6 +79,8 @@ const FIELDS: readonly FilterField[] = [
   'bio',
   'displayName',
   'city',
+  'fanClubName',
+  'fanClubPitch',
   'username',
   'socials',
 ];
@@ -78,6 +95,8 @@ export const FIELD_BLOCKS: FieldBlocks = {
   bio: FILTER_CATEGORIES,
   displayName: FILTER_CATEGORIES,
   city: FILTER_CATEGORIES,
+  fanClubName: FILTER_CATEGORIES,
+  fanClubPitch: FILTER_CATEGORIES,
   username: FILTER_CATEGORIES,
   socials: FILTER_CATEGORIES,
 };
@@ -556,7 +575,7 @@ function socialBlocked(scan: Scan, handle: string): boolean {
 function filterOf(compiled: () => Compiled): ContentFilter {
   return {
     isBlockedText: (text, field) =>
-      textBlocked(new Scan(compiled(), field), text, field === 'displayName' || field === 'city'),
+      textBlocked(new Scan(compiled(), field), text, HANDLE_TEXT_FIELDS.has(field)),
     isBlockedHandle: (username) => handleBlocked(new Scan(compiled(), 'username'), username),
     isBlockedSocial: (handle) => socialBlocked(new Scan(compiled(), 'socials'), handle),
   };

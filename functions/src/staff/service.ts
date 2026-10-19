@@ -156,6 +156,13 @@ export type AuditAction =
   | 'fan.profile.report.resolved'
   | 'fan.data.exported'
   | 'fan.account.deleted'
+  | 'fanClub.application.approved'
+  | 'fanClub.application.rejected'
+  | 'fanClub.paused'
+  | 'fanClub.resumed'
+  | 'fanClub.closed'
+  | 'fanClub.featured'
+  | 'fanClub.unfeatured'
   | 'config.seeded';
 
 /**
@@ -165,7 +172,9 @@ export type AuditAction =
  * auditoria nunca leva o texto de um comentário, nem o uid, o nome, o @ ou o
  * e-mail de quem resgatou (25.8). Os pedidos de dados (`fan.data.exported` e
  * `fan.account.deleted`, seção 32, decisão 12) levam só `details: { uid }`,
- * com o targetEmail vazio: nunca o e-mail digitado nem o da conta.
+ * com o targetEmail vazio: nunca o e-mail digitado nem o da conta. As do
+ * fã-clube (`fanClub.*`, seção 34, 34.8) levam o gestor em `details.fanUid`,
+ * nunca no targetUid, e nunca o texto de divulgação, as redes nem o WhatsApp.
  */
 export type AuditEntry = {
   action: AuditAction;
