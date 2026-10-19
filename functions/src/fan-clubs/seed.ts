@@ -78,6 +78,7 @@ export async function seedFanClubs(
         id: camilaUid,
         decision: 'approve',
         expected: record.round,
+        submittedAt: record.submittedAt,
         name: null,
       },
       { actor, now },

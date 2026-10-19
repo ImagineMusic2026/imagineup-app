@@ -100,7 +100,7 @@ describe('o programa (decisões 8, 9 e 47)', () => {
   });
 
   it('nenhum texto tem travessão nem meia-risca', () => {
-    expect(FAN_CLUB_PRIZE_NOTICE).not.toMatch(/[–—]/);
+    expect(FAN_CLUB_PRIZE_NOTICE).not.toMatch(/[\u2013\u2014]/);
   });
 });
 
@@ -111,7 +111,7 @@ describe('o nome do fã-clube (decisão 10)', () => {
   });
 
   it('2, 41, só espaços e caractere invisível: format', () => {
-    for (const raw of ['ab', 'a'.repeat(41), '     ', 'Netto⠀Fãs', 'Netto\nFãs']) {
+    for (const raw of ['ab', 'a'.repeat(41), '     ', 'Netto\u2800Fãs', 'Netto\nFãs']) {
       expect(checkClubName(raw), JSON.stringify(raw)).toEqual({ ok: false, reason: 'format' });
     }
   });
@@ -121,7 +121,7 @@ describe('o nome do fã-clube (decisão 10)', () => {
       'Fã-clube Oficial do Netto',
       'OFICIAL Netto',
       'Netto ofícial',
-      'Netto Οficial',
+      'Netto \u039Fficial',
       'Netto o f i c i a l',
       'Netto oficiaaal',
     ]) {

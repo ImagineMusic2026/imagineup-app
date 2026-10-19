@@ -37,6 +37,7 @@ describe('a candidatura', () => {
       id: 'uidCamila',
       decision: 'approve',
       expected: 1,
+      submittedAt: null,
       name: null,
     });
     expect(
@@ -47,8 +48,16 @@ describe('a candidatura', () => {
       id: 'uidCamila',
       decision: 'reject',
       expected: 1,
+      submittedAt: null,
       reason: 'not_fit',
     });
+    // O submittedAt da tela, em ms: a mesma rodada depois de desistir e mandar de novo.
+    expect(
+      application({ decision: 'approve', expected: 1, submittedAt: 1_760_000_000_000 }),
+    ).toMatchObject({ submittedAt: 1_760_000_000_000 });
+    expect(
+      application({ decision: 'reject', expected: 1, reason: 'other', submittedAt: null }),
+    ).toMatchObject({ submittedAt: null });
   });
 
   it.each([
@@ -69,6 +78,12 @@ describe('a candidatura', () => {
     [
       { decision: 'approve', expected: 1, name: 'Netto Pepino' },
       { field: 'name', problem: 'not_allowed' },
+    ],
+    [{ decision: 'approve', expected: 1, submittedAt: '2026-10-19' }, { field: 'submittedAt' }],
+    [{ decision: 'approve', expected: 1, submittedAt: -1 }, { field: 'submittedAt' }],
+    [
+      { decision: 'reject', expected: 1, reason: 'other', submittedAt: 1.5 },
+      { field: 'submittedAt' },
     ],
     [{ decision: 'reject', expected: 1 }, { field: 'reason' }],
     [{ decision: 'reject', expected: 1, reason: 'spam' }, { field: 'reason' }],

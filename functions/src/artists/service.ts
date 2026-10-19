@@ -518,12 +518,22 @@ export async function editArtist(
       changed.push('contactPhone');
     }
     // As caixas do fã-clube (decisão 9): só a que muda o que o diálogo mostra
-    // (o gravado ou, sem ele, o `imageRightsConfirmed` de antes deste pedido).
+    // (o gravado ou, sem ele, o `imageRightsConfirmed`), antes ou depois deste
+    // pedido. Com a autorização trocada no mesmo pedido, a caixa ausente
+    // mudaria de valor sozinha: a mandada é gravada, para valer o que a
+    // equipe escolheu, também quando a autorização voltar.
     const boxes: { enabled?: boolean; photosAllowed?: boolean } = {};
+    const stored = internal as Record<string, unknown> | undefined;
+    const after = {
+      ...stored,
+      imageRightsConfirmed: patch.imageRightsConfirmed ?? stored?.imageRightsConfirmed,
+    };
     for (const key of FAN_CLUB_BOXES) {
       const value = patch.fanClubs?.[key];
-      const stored = internal as Record<string, unknown> | undefined;
-      if (value !== undefined && value !== fanClubBoxValue(stored, key)) {
+      if (
+        value !== undefined &&
+        (value !== fanClubBoxValue(stored, key) || value !== fanClubBoxValue(after, key))
+      ) {
         boxes[key] = value;
         changed.push(`fanClubs.${key}`);
       }

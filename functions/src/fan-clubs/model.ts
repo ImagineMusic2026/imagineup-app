@@ -291,10 +291,11 @@ export type FanClubInvalidField =
 
 /**
  * Os motivos do 409 `fan_club_refused` desta etapa (34.3), mais o
- * `program_closed`: a candidatura com o `FAN_CLUB_OPEN` desligado (decisão 9).
+ * `applications_closed`: a candidatura com o `FAN_CLUB_OPEN` desligado (decisão 9;
+ * o `program_closed` do `unavailableReason` é o fã-clube fechado para o artista).
  */
 export type FanClubRefusal =
-  | 'program_closed'
+  | 'applications_closed'
   | 'username_required'
   | 'not_member'
   | 'artist_closed'

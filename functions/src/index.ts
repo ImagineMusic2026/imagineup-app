@@ -793,7 +793,8 @@ export const resolveProfileReport = onPanelCall({ cors: PANEL_ORIGINS }, async (
  * admin), destacar e tirar o destaque do fã-clube, com o estado que a tela
  * mostrou e a auditoria na mesma transação. 256 MiB (1/6 de vCPU), o padrão:
  * a sobra da cota cai de uns 0,51 para uns 0,34 vCPU (decisão 55). O log leva
- * só quem chamou, o assunto e a decisão: nunca o texto do fã.
+ * só quem chamou, o assunto e o status que ficou: nunca o texto do fã (a
+ * decisão exata vai na auditoria, na mesma transação).
  */
 export const decideFanClub = onPanelCall({ cors: PANEL_ORIGINS }, async (request) => {
   const result = await decideFanClubOfPanel({ db: getFirestore() }, request.auth, request.data);

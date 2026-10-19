@@ -238,7 +238,7 @@ export type FanClubOutcome = { body: MyFanClub; plan: AwardPlan };
 /**
  * Candidatar (`POST /me/fan-club/application`, 34.5), na transação do
  * runIdempotent, com o corpo já conferido (`parseApplication`): o programa
- * aberto (`program_closed`); o @ escolhido (`username_required`); um
+ * aberto (`applications_closed`); o @ escolhido (`username_required`); um
  * `getAll` do vínculo com a central, do artista, do `artistPrivate` e da
  * candidatura (`not_member`, depois `artist_closed`); com a candidatura
  * aprovada, o fã-clube dela; a candidatura de antes (`applicationTurn`); o
@@ -257,7 +257,7 @@ export async function applyForFanClub(
   },
 ): Promise<FanClubOutcome> {
   const { fan, award, profile, input } = options;
-  if (!FAN_CLUB_OPEN) throw fanClubRefused('program_closed');
+  if (!FAN_CLUB_OPEN) throw fanClubRefused('applications_closed');
   const username = profile.get('username');
   if (typeof username !== 'string' || isAutomaticUsername(username)) {
     throw fanClubRefused('username_required');

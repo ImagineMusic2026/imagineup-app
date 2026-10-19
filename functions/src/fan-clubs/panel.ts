@@ -30,6 +30,7 @@ import {
   fanClubBoxes,
   fanClubRecord,
   isFeaturedNow,
+  millisOf,
   parseFeaturedUntil,
   reapplyAfterRejection,
   withHistory,
@@ -68,6 +69,12 @@ export type DecisionInput =
       decision: 'approve';
       /** A rodada que a tela mostrou. */
       expected: number;
+      /**
+       * O `submittedAt` que a tela mostrou, em ms, ou null sem ele: a rodada
+       * fica a mesma depois de desistir e mandar de novo, e só a data separa
+       * uma candidatura da outra.
+       */
+      submittedAt: number | null;
       /** O nome confirmado ou ajustado pela equipe; null fica o proposto. */
       name: string | null;
     }
@@ -76,6 +83,7 @@ export type DecisionInput =
       id: string;
       decision: 'reject';
       expected: number;
+      submittedAt: number | null;
       reason: ApplicationRejectReason;
     }
   | {
@@ -112,8 +120,9 @@ const CLUB_DECISIONS = ['pause', 'resume', 'close', 'feature', 'unfeature'] as c
  * O corpo da callable depois do assunto e do id (puro): a decisão da lista do
  * assunto, o `expected` (a rodada, inteiro de 0 em diante, na candidatura; o
  * status, no fã-clube) e os campos de cada decisão (34.3); senão
- * `invalid-request` com o campo. O nome da aprovação passa pelas regras da
- * candidatura (`checkClubName`), com o motivo no `details.reason`.
+ * `invalid-request` com o campo. Na candidatura, o `submittedAt` opcional (o
+ * da tela, em ms). O nome da aprovação passa pelas regras da candidatura
+ * (`checkClubName`), com o motivo no `details.problem`.
  */
 export function parseDecision(
   subject: DecisionSubject,
@@ -127,6 +136,15 @@ export function parseDecision(
     if (typeof expected !== 'number' || !Number.isSafeInteger(expected) || expected < 0) {
       throw invalid('expected');
     }
+    const shown = fields.submittedAt;
+    if (
+      shown !== undefined &&
+      shown !== null &&
+      (typeof shown !== 'number' || !Number.isSafeInteger(shown) || shown < 0)
+    ) {
+      throw invalid('submittedAt');
+    }
+    const submittedAt = typeof shown === 'number' ? shown : null;
     if (decision === 'reject') {
       if (!(APPLICATION_REJECT_REASONS as readonly unknown[]).includes(fields.reason)) {
         throw invalid('reason');
@@ -136,6 +154,7 @@ export function parseDecision(
         id,
         decision,
         expected,
+        submittedAt,
         reason: fields.reason as ApplicationRejectReason,
       };
     }
@@ -146,7 +165,7 @@ export function parseDecision(
       if (!checked.ok) throw invalid('name', { problem: checked.reason });
       name = checked.name;
     }
-    return { subject, id, decision, expected, name };
+    return { subject, id, decision, expected, submittedAt, name };
   }
   if (!(CLUB_DECISIONS as readonly unknown[]).includes(decision)) throw invalid('decision');
   if (!(FAN_CLUB_STATUSES as readonly unknown[]).includes(expected)) throw invalid('expected');
@@ -208,14 +227,28 @@ const isSuspended = (profile: DocumentSnapshot): boolean => {
   return at !== undefined && at !== null;
 };
 
-/** O artista no ar e com o fã-clube aberto para ele (`artist-not-open`). */
-async function requireOpenArtist(tx: Transaction, db: Firestore, artistId: string) {
+/**
+ * O artista no ar e com o fã-clube aberto para ele (`artist-not-open`). Com
+ * `since` (o `submittedAt` da candidatura, em ms), também a central criada
+ * depois dela: o @ de uma central apagada pode voltar em outra, e a
+ * candidatura que sobrou não vira fã-clube da nova.
+ */
+async function requireOpenArtist(
+  tx: Transaction,
+  db: Firestore,
+  artistId: string,
+  since: number | null = null,
+) {
   const [artist, privateDoc] = await tx.getAll(
     artistRef(db, artistId),
     db.collection('artistPrivate').doc(artistId),
   );
   const record = artist!.exists ? artistRecord(artist!.id, artist!.data() ?? {}) : null;
   if (!isPublished(record) || !fanClubBoxes(privateDoc!.data()).enabled) {
+    throw panelError('artist-not-open');
+  }
+  const createdAt = millisOf(artist!.get('createdAt'));
+  if (since !== null && createdAt !== null && createdAt > since) {
     throw panelError('artist-not-open');
   }
   return record;
@@ -228,10 +261,10 @@ const historyField = (record: ApplicationRecord) =>
 
 /**
  * Aprovar ou recusar a candidatura (34.5), na transação de quem chama: a
- * candidatura e o privado (`application-not-found`); a rodada diferente da
- * da tela, `stale-decision`; já decidida do mesmo jeito, `ok` sem gravar; a
- * que não está pendente (decidida do outro jeito ou retirada), também
- * `stale-decision`. Aprovar lê também o perfil (o suspenso,
+ * candidatura e o privado (`application-not-found`); a rodada ou o
+ * `submittedAt` diferentes dos da tela, `stale-decision`; já decidida do
+ * mesmo jeito (a recusa com o mesmo motivo), `ok` sem gravar; a que não está
+ * pendente (decidida de outro jeito ou retirada), também `stale-decision`. Aprovar lê também o perfil (o suspenso,
  * `owner-suspended`), o artista e o `artistPrivate` (`artist-not-open`), cria
  * o fã-clube ativo com as cópias do gestor, `counts` zerado e o destaque fora,
  * grava a candidatura aprovada com o `clubId` e tira o texto de divulgação do
@@ -252,9 +285,18 @@ async function decideApplication(
   if (!application!.exists) throw panelError('application-not-found');
   const record = applicationRecord(input.id, application!.data() ?? {});
   if (record.round !== input.expected) throw panelError('stale-decision');
+  if (input.submittedAt !== null && record.submittedAt !== input.submittedAt) {
+    throw panelError('stale-decision');
+  }
   const target = input.decision === 'approve' ? 'approved' : 'rejected';
   const done = { ok: true, subject: 'application', id: input.id, status: target } as const;
-  if (record.status === target) return done;
+  // Já decidida do mesmo jeito (a recusa, com o mesmo motivo): a repetição.
+  if (
+    record.status === target &&
+    (input.decision === 'approve' || record.rejectReason === input.reason)
+  ) {
+    return done;
+  }
   if (record.status !== 'pending') throw panelError('stale-decision');
   const at = tsOf(now);
   const decidedBy = { uid: actor.uid, name: actor.name };
@@ -291,7 +333,7 @@ async function decideApplication(
 
   if (!profile!.exists) throw panelError('application-not-found');
   if (isSuspended(profile!)) throw panelError('owner-suspended');
-  const artist = await requireOpenArtist(tx, db, record.artistId);
+  const artist = await requireOpenArtist(tx, db, record.artistId, record.submittedAt);
   const proposed = checkClubName(record.proposedName);
   const name = input.name ?? (proposed.ok ? proposed.name : null);
   if (name === null) throw invalid('name', { problem: proposed.ok ? null : proposed.reason });
@@ -400,9 +442,10 @@ async function featuredOthers(
 /**
  * Pausar, reativar, encerrar, destacar e tirar o destaque (34.5), na
  * transação de quem chama: o fã-clube (`fan-club-not-found`); o gestor é quem
- * chama, `self`; o status diferente do da tela, `stale-decision`; já no
- * estado pedido, `ok` sem gravar; a decisão que não cabe no status,
- * `invalid-request` com `field: 'decision'`. Pausar e encerrar tiram o
+ * chama, `self`; a mesma decisão já tomada (pausado pela equipe, reativado,
+ * encerrado com o mesmo motivo, o mesmo prazo do destaque, sem destaque),
+ * `ok` sem gravar; o status diferente do da tela, `stale-decision`; a decisão
+ * que não cabe no status, `invalid-request` com `field: 'decision'`. Pausar e encerrar tiram o
  * destaque; reativar só do pausado, com o gestor sem suspensão
  * (`owner-suspended`) e o artista aberto (`artist-not-open`); encerrar apaga
  * o privado e marca a candidatura: `closedByStaff` com `staff`, ou o
@@ -420,19 +463,42 @@ async function decideClub(
   if (!snap.exists) throw panelError('fan-club-not-found');
   const club = fanClubRecord(snap.id, snap.data() ?? {});
   if (club.ownerUid !== null && club.ownerUid === actor.uid) throw panelError('self');
-  if (club.status !== input.expected) throw panelError('stale-decision');
   const result = (status: FanClubStatus): DecisionResult => ({
     ok: true,
     subject: 'club',
     id: input.id,
     status,
   });
+  // A repetição da mesma decisão (a nova tentativa do painel depois de uma
+  // falha incerta): pausar, reativar e encerrar mudam o status que o
+  // `expected` diz, e a mesma chamada de novo seria `stale-decision`. Vale só a
+  // mesma decisão: pausado pela equipe, e encerrado com o mesmo motivo; a
+  // pausa pela suspensão e o encerramento com outro motivo são outra decisão.
+  const target =
+    input.decision === 'pause'
+      ? 'paused'
+      : input.decision === 'resume'
+        ? 'active'
+        : input.decision === 'close'
+          ? 'closed'
+          : null;
+  if (
+    target !== null &&
+    club.status === target &&
+    (input.decision === 'pause'
+      ? club.statusReason === 'staff'
+      : input.decision === 'close'
+        ? club.statusReason === input.reason
+        : true)
+  ) {
+    return result(target);
+  }
+  if (club.status !== input.expected) throw panelError('stale-decision');
   const at = tsOf(now);
   const details = { clubId: club.id, artistId: club.artistId, fanUid: club.ownerUid };
 
   switch (input.decision) {
     case 'pause': {
-      if (club.status === 'paused') return result('paused');
       if (club.status !== 'active') throw notInStatus();
       tx.update(ref, {
         status: 'paused',
@@ -445,7 +511,6 @@ async function decideClub(
       return result('paused');
     }
     case 'resume': {
-      if (club.status === 'active') return result('active');
       if (club.status !== 'paused' || club.ownerUid === null) throw notInStatus();
       const profile = await tx.get(db.collection('users').doc(club.ownerUid));
       if (!profile.exists) throw notInStatus();
@@ -456,7 +521,7 @@ async function decideClub(
       return result('active');
     }
     case 'close': {
-      if (club.status === 'closed') return result('closed');
+      if (club.status === 'closed') throw notInStatus();
       const owner = club.ownerUid;
       const application = owner ? await tx.get(applicationRef(db, owner)) : null;
       tx.update(ref, {
@@ -469,6 +534,8 @@ async function decideClub(
       });
       if (owner && application?.exists) {
         const record = applicationRecord(owner, application.data() ?? {});
+        // Só a candidatura deste fã-clube: o privado de outra (uma pendente
+        // nova) não é deste encerramento.
         if (record.clubId === club.id) {
           tx.update(
             application.ref,
@@ -476,8 +543,8 @@ async function decideClub(
               ? { closedByStaff: true }
               : { canReapplyAt: tsOf(now + FAN_CLUB_REAPPLY_MS), round: 0 },
           );
+          tx.delete(applicationPrivateRef(db, owner));
         }
-        tx.delete(applicationPrivateRef(db, owner));
       }
       audit(tx, db, 'fanClub.closed', actor, { ...details, reason: input.reason }, at);
       return result('closed');

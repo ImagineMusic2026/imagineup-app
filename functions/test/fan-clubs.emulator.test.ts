@@ -2,7 +2,12 @@ import { Timestamp } from 'firebase-admin/firestore';
 import { describe, expect, it } from 'vitest';
 
 import { dayKey, shiftDay } from '../src/day';
-import { FAN_CLUB_PRIZE_NOTICE, FAN_CLUB_RULES_VERSION, removeFanClubData } from '../src/fan-clubs';
+import {
+  FAN_CLUB_PRIZE_NOTICE,
+  FAN_CLUB_RULES_VERSION,
+  fanClubBoxes,
+  removeFanClubData,
+} from '../src/fan-clubs';
 import { fanPhotoFiles, syncFanProfile } from '../src/fan-profile';
 import { DEFAULT_POINTS_CONFIG, staticConfigSource } from '../src/points';
 import {
@@ -63,11 +68,15 @@ async function audits(action: string) {
   return snap.docs.map((doc) => doc.data());
 }
 
-/** O handler no processo com um relógio que o teste move (o prazo de 30 dias). */
-function clockApi(start = Date.now()) {
-  const clock = { now: start };
+/**
+ * O handler no processo com um relógio que o teste adianta (o prazo de 30
+ * dias): o de verdade mais o `offset`, para a candidatura nunca vir antes da
+ * central criada no teste (a aprovação recusa a central mais nova que ela).
+ */
+function clockApi() {
+  const clock = { offset: 0 };
   const call = localApi(env, {
-    now: () => clock.now,
+    now: () => Date.now() + clock.offset,
     config: staticConfigSource({ points: DEFAULT_POINTS_CONFIG }),
   });
   return { clock, call };
@@ -327,7 +336,7 @@ describe('a candidatura (34.3 e 34.5)', () => {
       status: 429,
       body: { code: 'too_many_requests', details: { limit: 3, action: 'club_apply' } },
     });
-    clock.now += DAY_MS;
+    clock.offset += DAY_MS;
     expect((await apply(call, fan, applicationBody(artistId))).status).toBe(200);
   });
 });
@@ -449,7 +458,7 @@ describe('decideFanClub: a candidatura', () => {
 
     // A rodada 2 e a 3, cada uma depois do prazo, e a 3ª recusada sem prazo.
     for (const round of [2, 3]) {
-      clock.now = Date.now() + 31 * DAY_MS;
+      clock.offset = 31 * DAY_MS;
       expect(await apply(call, fan, applicationBody(artistId))).toMatchObject({
         status: 200,
         body: { application: { round } },
@@ -506,6 +515,62 @@ describe('decideFanClub: a candidatura', () => {
     );
     expect(await audits('fanClub.application.approved')).toEqual([]);
   });
+
+  it('desistir e mandar de novo, na mesma rodada: o submittedAt da tela separa as duas candidaturas', async () => {
+    const { clock, call } = clockApi();
+    const editor = await seedMember(env, 'Editora', 'editor', ['fanClubs']);
+    const first = await openArtist();
+    const second = await openArtist();
+    const fan = await candidate(call, first);
+    expect((await join(call, fan, second)).status).toBe(200);
+    const shown = (
+      (await read(`fanClubApplications/${fan.uid}`))!.submittedAt as Timestamp
+    ).toMillis();
+    // A tela abriu com a candidatura do primeiro artista; o fã desiste e manda outra.
+    expect((await withdraw(call, fan)).status).toBe(200);
+    clock.offset += 60_000;
+    expect(await apply(call, fan, applicationBody(second, { name: 'Outra Turma' }))).toMatchObject({
+      status: 200,
+      body: { application: { round: 1, artistId: second } },
+    });
+    const old = { subject: 'application', id: fan.uid, expected: 1, submittedAt: shown };
+    for (const decision of [
+      { decision: 'approve' },
+      { decision: 'reject', reason: 'incomplete' },
+    ]) {
+      expect(
+        (await failure('decideFanClub', { ...old, ...decision }, editor)).details?.reason,
+      ).toBe('stale-decision');
+    }
+    expect(await read(`fanClubApplications/${fan.uid}`)).toMatchObject({
+      status: 'pending',
+      artistId: second,
+      canReapplyAt: null,
+    });
+    expect((await db.collection('fanClubs').where('ownerUid', '==', fan.uid).get()).empty).toBe(
+      true,
+    );
+    // Com o submittedAt de agora, aprova; de novo, ok sem auditar outra vez.
+    const now = (
+      (await read(`fanClubApplications/${fan.uid}`))!.submittedAt as Timestamp
+    ).toMillis();
+    const fresh = { ...old, submittedAt: now, decision: 'approve' };
+    expect((await ok('decideFanClub', fresh, editor)).status).toBe('approved');
+    expect((await ok('decideFanClub', fresh, editor)).status).toBe('approved');
+    expect(await audits('fanClub.application.approved')).toHaveLength(1);
+    expect((await read(`fanClubs/${await clubOf(fan)}`))?.artistId).toBe(second);
+    // A recusa repetida com outro motivo é outra decisão.
+    const other = await candidate(call, first, 'Bia Santos');
+    const reject = { subject: 'application', id: other.uid, expected: 1, decision: 'reject' };
+    await ok('decideFanClub', { ...reject, reason: 'not_fit' }, editor);
+    expect((await ok('decideFanClub', { ...reject, reason: 'not_fit' }, editor)).status).toBe(
+      'rejected',
+    );
+    expect(
+      (await failure('decideFanClub', { ...reject, reason: 'other' }, editor)).details?.reason,
+    ).toBe('stale-decision');
+    expect(await audits('fanClub.application.rejected')).toHaveLength(1);
+  });
 });
 
 describe('decideFanClub: o fã-clube', () => {
@@ -540,8 +605,10 @@ describe('decideFanClub: o fã-clube', () => {
     expect((await myFanClub(call, fan)).body).toMatchObject({
       club: { status: 'paused', available: false, unavailableReason: 'paused' },
     });
-    // Pausar de novo: ok, sem auditar.
+    // Pausar de novo, com a tela que já mostra o pausado ou com a mesma chamada
+    // (a nova tentativa do painel): ok, sem auditar.
     expect((await decideClub(editor, clubId, 'pause', 'paused')).status).toBe('paused');
+    expect((await decideClub(editor, clubId, 'pause', 'active')).status).toBe('paused');
     expect(await audits('fanClub.paused')).toHaveLength(1);
     expect((await audits('fanClub.paused'))[0]).toMatchObject({
       details: { clubId, artistId, fanUid: fan.uid },
@@ -565,6 +632,8 @@ describe('decideFanClub: o fã-clube', () => {
       statusReason: null,
       pausedAt: null,
     });
+    // A mesma chamada de novo: ok, sem auditar; a tela velha que pede reativar o ativo, também.
+    expect((await decideClub(editor, clubId, 'resume', 'paused')).status).toBe('active');
     expect(await audits('fanClub.resumed')).toHaveLength(1);
     // O gestor fora da central: o fã-clube continua, e o "Meu fã-clube" diz por quê.
     expect(
@@ -606,6 +675,18 @@ describe('decideFanClub: o fã-clube', () => {
     const [suspended] = await audits('fan.suspended');
     expect(suspended).toMatchObject({ details: { uid: fan.uid, clubId } });
     expect(suspended!.targets).toEqual([`fan:${fan.uid}`, `fanClub:${clubId}`]);
+    // A tela que mostrava o ativo e pede pausar: a pausa pela suspensão é outra decisão.
+    expect(
+      (
+        await failure(
+          'decideFanClub',
+          { subject: 'club', id: clubId, decision: 'pause', expected: 'active' },
+          admin,
+        )
+      ).details?.reason,
+    ).toBe('stale-decision');
+    expect(await read(`fanClubs/${clubId}`)).toMatchObject({ statusReason: 'suspended' });
+    expect(await audits('fanClub.paused')).toEqual([]);
     expect(
       (
         await failure(
@@ -675,14 +756,32 @@ describe('decideFanClub: o fã-clube', () => {
     expect((await audits('fanClub.closed'))[0]).toMatchObject({
       details: { clubId, artistId, fanUid: fan.uid, reason: 'owner_request' },
     });
-    // Encerrar de novo: ok, sem auditar.
-    expect((await decideClub(admin, clubId, 'close', 'closed')).status).toBe('closed');
+    // A mesma chamada de novo (a nova tentativa do painel): ok, sem auditar e sem
+    // gravar na candidatura; com o outro motivo, é outra decisão.
+    const canReapplyAt = (await read(`fanClubApplications/${fan.uid}`))?.canReapplyAt;
+    expect(
+      (await decideClub(admin, clubId, 'close', 'active', { reason: 'owner_request' })).status,
+    ).toBe('closed');
+    expect(
+      (await decideClub(admin, clubId, 'close', 'closed', { reason: 'owner_request' })).status,
+    ).toBe('closed');
+    expect((await read(`fanClubApplications/${fan.uid}`))?.canReapplyAt).toEqual(canReapplyAt);
+    expect(
+      (
+        await failure(
+          'decideFanClub',
+          { subject: 'club', id: clubId, decision: 'close', expected: 'active', reason: 'staff' },
+          admin,
+        )
+      ).details?.reason,
+    ).toBe('stale-decision');
+    expect((await read(`fanClubApplications/${fan.uid}`))?.closedByStaff).toBe(false);
     expect(await audits('fanClub.closed')).toHaveLength(1);
     expect(await apply(call, fan, applicationBody(artistId))).toMatchObject({
       status: 409,
       body: { details: { reason: 'cooldown' } },
     });
-    clock.now = Date.now() + 31 * DAY_MS;
+    clock.offset = 31 * DAY_MS;
     expect(await apply(call, fan, applicationBody(artistId))).toMatchObject({
       status: 200,
       body: { application: { status: 'pending', round: 1 }, club: null },
@@ -695,14 +794,14 @@ describe('decideFanClub: o fã-clube', () => {
     await decideClub(admin, otherClub, 'close', 'active');
     expect(await read(`fanClubs/${otherClub}`)).toMatchObject({ statusReason: 'staff' });
     expect((await read(`fanClubApplications/${other.uid}`))?.closedByStaff).toBe(true);
-    clock.now = Date.now() + 365 * DAY_MS;
+    clock.offset = 365 * DAY_MS;
     expect(await apply(call, other, applicationBody(artistId))).toMatchObject(
       refusal('not_allowed'),
     );
     expect((await myFanClub(call, other)).body).toMatchObject({
       application: { canApply: false },
     });
-    // O gestor não pausa nem encerra o próprio fã-clube pelo painel.
+    // O fã-clube que não existe.
     expect(
       (
         await failure(
@@ -712,6 +811,48 @@ describe('decideFanClub: o fã-clube', () => {
         )
       ).details?.reason,
     ).toBe('fan-club-not-found');
+  });
+
+  it('o gestor que também é da equipe não decide o próprio fã-clube: self, antes do stale-decision', async () => {
+    const { call } = clockApi();
+    const artistId = await openArtist();
+    const editor = await seedMember(env, 'Editora', 'editor', ['fanClubs']);
+    const fan = await candidate(call, artistId);
+    await approve(editor, fan);
+    const clubId = await clubOf(fan);
+    const member = (role: 'editor' | 'admin') =>
+      db.doc(`staff/${fan.uid}`).set({
+        uid: fan.uid,
+        email: fan.email,
+        displayName: 'Gestora da Equipe',
+        role,
+        sections: ['fanClubs'],
+        status: 'active',
+      });
+    await member('editor');
+    const until = shiftDay(dayKey(Date.now()), 7);
+    const reasonOf = async (decision: string, expected: string, extra = {}) =>
+      (
+        await failure(
+          'decideFanClub',
+          { subject: 'club', id: clubId, decision, expected, ...extra },
+          fan,
+        )
+      ).details?.reason;
+    expect(await reasonOf('pause', 'active')).toBe('self');
+    expect(await reasonOf('pause', 'paused')).toBe('self');
+    expect(await reasonOf('unfeature', 'active')).toBe('self');
+    expect(await reasonOf('feature', 'active', { featuredUntil: until })).toBe('self');
+    // Encerrar pede o admin antes de tudo; o admin gestor recebe o self.
+    expect(await reasonOf('close', 'active')).toBe('admin-only');
+    await member('admin');
+    expect(await reasonOf('close', 'active')).toBe('self');
+    expect(await read(`fanClubs/${clubId}`)).toMatchObject({ status: 'active', featured: false });
+    for (const action of ['fanClub.paused', 'fanClub.featured', 'fanClub.closed']) {
+      expect(await audits(action)).toEqual([]);
+    }
+    // Outra pessoa da equipe decide.
+    expect((await decideClub(editor, clubId, 'pause', 'active')).status).toBe('paused');
   });
 
   it('destacar: de amanhã a 31 dias, até 3 por artista (o vencido não conta), o mesmo prazo sem gravar e tirar o destaque', async () => {
@@ -851,6 +992,81 @@ describe('o artista (decisão 9 e 34.14)', () => {
     }
   });
 
+  it('as caixas com a autorização trocada no mesmo pedido valem o que a equipe mandou', async () => {
+    const editor = await seedMember(env, 'Editora', 'editor', ['artists']);
+    const draft = { status: 'draft', publishedAt: null };
+    const boxesOf = async (artistId: string) =>
+      fanClubBoxes(await read(`artistPrivate/${artistId}`));
+    // Liga a autorização e desliga a caixa num pedido só: a caixa fica desligada.
+    const first = await openArtist({ imageRightsConfirmed: false }, draft);
+    await ok(
+      'updateArtist',
+      { artistId: first, imageRightsConfirmed: true, fanClubs: { enabled: false } },
+      editor,
+    );
+    expect((await read(`artistPrivate/${first}`))?.fanClubs).toEqual({ enabled: false });
+    expect(await boxesOf(first)).toEqual({ enabled: false, photosAllowed: true });
+    expect(
+      (await audits('artist.updated')).find((entry) => entry.details.artistId === first)?.details
+        .changed,
+    ).toEqual(['imageRightsConfirmed', 'fanClubs.enabled']);
+    // Desliga a autorização e a caixa: a caixa fica gravada e não volta sozinha.
+    const second = await openArtist({ imageRightsConfirmed: true }, draft);
+    await ok(
+      'updateArtist',
+      { artistId: second, imageRightsConfirmed: false, fanClubs: { enabled: false } },
+      editor,
+    );
+    expect((await read(`artistPrivate/${second}`))?.fanClubs).toEqual({ enabled: false });
+    await ok('updateArtist', { artistId: second, imageRightsConfirmed: true }, editor);
+    expect(await boxesOf(second)).toEqual({ enabled: false, photosAllowed: true });
+    // Sem a autorização e sem mudar nada: não grava nem audita.
+    const third = await openArtist({ imageRightsConfirmed: false }, draft);
+    const before = (await db.doc(`artistPrivate/${third}`).get()).updateTime;
+    await ok(
+      'updateArtist',
+      { artistId: third, imageRightsConfirmed: false, fanClubs: { enabled: false } },
+      editor,
+    );
+    expect((await db.doc(`artistPrivate/${third}`).get()).updateTime).toEqual(before);
+    expect(
+      (await audits('artist.updated')).filter((entry) => entry.details.artistId === third),
+    ).toEqual([]);
+  });
+
+  it('a candidatura pendente de uma central apagada não vira fã-clube da central nova com o mesmo @', async () => {
+    const { call } = clockApi();
+    const admin = await seedMember(env, 'Admin', 'admin');
+    const artistId = await openArtist();
+    const fan = await candidate(call, artistId);
+    expect(
+      (
+        await call('DELETE', `/me/centrals/${artistId}`, {
+          token: fan.token,
+          key: unique('chave-sai-'),
+        })
+      ).status,
+    ).toBe(200);
+    // Sem fãs, posts, shows nem fã-clube no ar, a central sai; o @ volta numa nova.
+    await ok('deleteArtist', { artistId }, admin);
+    await central(env, {}, artistId);
+    await db.doc(`artistPrivate/${artistId}`).set({ imageRightsConfirmed: true });
+    expect(
+      (
+        await failure(
+          'decideFanClub',
+          { subject: 'application', id: fan.uid, decision: 'approve', expected: 1 },
+          admin,
+        )
+      ).details?.reason,
+    ).toBe('artist-not-open');
+    expect((await db.collection('fanClubs').where('ownerUid', '==', fan.uid).get()).empty).toBe(
+      true,
+    );
+    // Recusar continua possível: a equipe fecha a candidatura que sobrou.
+    expect((await reject(admin, fan, 1)).status).toBe('rejected');
+  });
+
   it('deleteArtist recusa has-content com fã-clube ativo ou pausado; o encerrado não segura', async () => {
     const { call } = clockApi();
     const admin = await seedMember(env, 'Admin', 'admin');
@@ -912,7 +1128,7 @@ describe('as cópias do perfil e a exclusão (34.5 e 34.7)', () => {
     await approve(admin, fan);
     const oldClub = await clubOf(fan);
     await decideClub(admin, oldClub, 'close', 'active', { reason: 'owner_request' });
-    clock.now = Date.now() + 31 * DAY_MS;
+    clock.offset = 31 * DAY_MS;
     expect((await apply(call, fan, applicationBody(artistId))).status).toBe(200);
     await approve(admin, fan);
     const club = await clubOf(fan);
