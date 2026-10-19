@@ -70,9 +70,18 @@ const iso = (ms: number | null): string => new Date(ms ?? 0).toISOString();
 const artistOf = (snap: DocumentSnapshot | undefined): ArtistRecord | null =>
   snap?.exists ? artistRecord(snap.id, (snap.data() ?? {}) as Record<string, unknown>) : null;
 
-/** O fã-clube que aparece para os fãs, sem olhar o artista: ativo, com dono e nome. */
+/**
+ * O fã-clube que aparece para os fãs, sem olhar o artista: ativo, com dono,
+ * nome e artista. Sem o `artistId` (só um documento mexido à mão), o
+ * `artistRef` lançaria e derrubaria a lista e a Início inteiras: o fã-clube
+ * fica indisponível.
+ */
 const isShownClub = (club: FanClubRecord | null): club is FanClubRecord & { ownerUid: string } =>
-  club !== null && club.status === 'active' && club.ownerUid !== null && club.name !== null;
+  club !== null &&
+  club.status === 'active' &&
+  club.ownerUid !== null &&
+  club.name !== null &&
+  club.artistId !== '';
 
 // --- Seguir e deixar de seguir ------------------------------------------------------------
 
@@ -109,7 +118,7 @@ export async function followFanClub(
     db.collection('referrals').doc(fan.uid),
   );
   const club = clubSnap!.exists ? fanClubRecord(clubSnap!.id, clubSnap!.data() ?? {}) : null;
-  if (!isShownClub(club) || club.artistId === '') throw fanClubNotFound();
+  if (!isShownClub(club)) throw fanClubNotFound();
   const [artistSnap, privateDoc, membership, marker] = await tx.getAll(
     artistRef(db, club.artistId),
     artistPrivateRef(db, club.artistId),

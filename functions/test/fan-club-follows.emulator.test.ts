@@ -540,13 +540,14 @@ describe('o seguir some com a central, o bloqueio e a suspensão (decisões 27, 
 });
 
 describe('as listas do fã: "Fã-clubes que sigo" e a Início (decisão 30)', () => {
-  it('os seguidos, do mais novo, com o indisponível marcado: o pausado e o de artista fora do ar com o nome, a lápide sem', async () => {
+  it('os seguidos, do mais novo, com o indisponível marcado: o pausado, o encerrado e o de artista fora do ar com o nome; a lápide e o de gestor bloqueado sem', async () => {
     const admin = await seedMember(env, 'Admin da Equipe', 'admin');
     const { clock, call } = clockApi();
     const netto = await openArtist();
     const nenho = await openArtist();
     const available = await manager(call, admin, netto, 'Camila Ribeiro');
     const paused = await manager(call, admin, netto, 'Alan Ferreira');
+    const closed = await manager(call, admin, netto, 'Duda Lima');
     const tombstone = await manager(call, admin, netto, 'Gabi Souza');
     const artistOff = await manager(call, admin, nenho, 'Enzo Rocha');
     const fan = await signUpFan(db, 'Bia Santos');
@@ -554,13 +555,19 @@ describe('as listas do fã: "Fã-clubes que sigo" e a Início (decisão 30)', ()
       status: 200,
       body: { items: [] },
     });
-    for (const owner of [available, paused, tombstone, artistOff]) {
+    for (const owner of [available, paused, closed, tombstone, artistOff]) {
       clock.offset += 1_000;
       expect((await follow(call, fan, owner.clubId)).status).toBe(200);
     }
     await ok(
       'decideFanClub',
       { subject: 'club', id: paused.clubId, decision: 'pause', expected: 'active' },
+      admin,
+    );
+    // O encerrado pela equipe continua com o nome (só a lápide o perde).
+    await ok(
+      'decideFanClub',
+      { subject: 'club', id: closed.clubId, decision: 'close', expected: 'active' },
       admin,
     );
     await removeFanClubData(db, tombstone.fan.uid);
@@ -581,6 +588,12 @@ describe('as listas do fã: "Fã-clubes que sigo" e a Início (decisão 30)', ()
       },
       expect.objectContaining({ id: tombstone.clubId, name: null, owner: null, available: false }),
       expect.objectContaining({
+        id: closed.clubId,
+        name: await names(closed.clubId),
+        owner: null,
+        available: false,
+      }),
+      expect.objectContaining({
         id: paused.clubId,
         name: await names(paused.clubId),
         owner: null,
@@ -594,9 +607,28 @@ describe('as listas do fã: "Fã-clubes que sigo" e a Início (decisão 30)', ()
         available: true,
       }),
     ]);
+
+    // O gestor bloqueado (a lista gravada direto: o `blockFan` apagaria o
+    // vínculo): a linha fica, para liberar a vaga, sem o nome e sem o gestor.
+    await db.doc(`blockLists/${fan.uid}`).set({
+      uid: fan.uid,
+      blocked: [available.fan.uid],
+      updatedAt: Timestamp.now(),
+      schemaVersion: 1,
+    });
+    const blocked = await call('GET', '/me/fan-club-follows', { token: fan.token });
+    expect((blocked.body.items as { id: string }[]).at(-1)).toEqual({
+      id: available.clubId,
+      name: null,
+      artistId: netto,
+      artistName: `Central ${netto}`,
+      owner: null,
+      followedAt: expect.any(String),
+      available: false,
+    });
   });
 
-  it('a Início: as publicações no ar dos fã-clubes disponíveis, da mais nova, 10 por página; sem vínculo, vazia', async () => {
+  it('a Início: as publicações no ar dos fã-clubes disponíveis, da mais nova, 10 por página; sem vínculo, vazia; sem o gestor bloqueado, o pausado, o artista fora do ar e o fã-clube fechado para o artista', async () => {
     const admin = await seedMember(env, 'Admin da Equipe', 'admin');
     const { call } = clockApi();
     const artistId = await openArtist();
@@ -646,6 +678,29 @@ describe('as listas do fã: "Fã-clubes que sigo" e a Início (decisão 30)', ()
     expect(
       await call('GET', '/me/fan-club-feed', { token: fan.token, query: { limit: '2', cursor } }),
     ).toMatchObject({ status: 200, body: { items: [{ id: a1 }], nextCursor: null } });
+    const feedIds = async () =>
+      (
+        (await call('GET', '/me/fan-club-feed', { token: fan.token })).body.items as {
+          id: string;
+        }[]
+      ).map((item) => item.id);
+
+    // O gestor bloqueado sai da Início (a lista gravada direto: o `blockFan`
+    // apagaria o vínculo).
+    const blockList = db.doc(`blockLists/${fan.uid}`);
+    await blockList.set({
+      uid: fan.uid,
+      blocked: [first.fan.uid],
+      updatedAt: Timestamp.now(),
+      schemaVersion: 1,
+    });
+    expect(await feedIds()).toEqual([b1]);
+    await blockList.set({
+      uid: fan.uid,
+      blocked: [],
+      updatedAt: Timestamp.now(),
+      schemaVersion: 1,
+    });
 
     // O fã-clube pausado sai da Início.
     await ok(
@@ -653,8 +708,17 @@ describe('as listas do fã: "Fã-clubes que sigo" e a Início (decisão 30)', ()
       { subject: 'club', id: second.clubId, decision: 'pause', expected: 'active' },
       admin,
     );
-    const after = await call('GET', '/me/fan-club-feed', { token: fan.token });
-    expect((after.body.items as { id: string }[]).map((item) => item.id)).toEqual([a2, a1]);
+    expect(await feedIds()).toEqual([a2, a1]);
+
+    // O fã-clube fechado para o artista e o artista fora do ar também.
+    const boxes = db.doc(`artistPrivate/${artistId}`);
+    await boxes.set({ fanClubs: { enabled: false } }, { merge: true });
+    expect(await feedIds()).toEqual([]);
+    await boxes.set({ fanClubs: { enabled: true } }, { merge: true });
+    await db.doc(`artists/${artistId}`).update({ status: 'hidden' });
+    expect(await feedIds()).toEqual([]);
+    await db.doc(`artists/${artistId}`).update({ status: 'published' });
+    expect(await feedIds()).toEqual([a2, a1]);
   });
 });
 

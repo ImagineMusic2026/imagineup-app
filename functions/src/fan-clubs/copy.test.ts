@@ -1,5 +1,7 @@
-import { describe, expect, it } from 'vitest';
+import type { Firestore } from 'firebase-admin/firestore';
+import { describe, expect, it, vi } from 'vitest';
 
+import { runFanClubCopyStep } from './copy';
 import {
   FAN_CLUB_COPY_BUDGET_MS,
   FAN_CLUB_COPY_CONCURRENCY,
@@ -12,9 +14,11 @@ import {
 } from './model';
 
 // A cópia da noite do fã-clube (docs/arquitetura-api.md, seção 34, decisões
-// 35 e 37; 34.13): o retrato do mês e o destaque vencido, puros. A leitura
-// dos números, a transação e a falha de um que não para os outros ficam no
-// teste de emulador (functions/test/fan-club-follows.emulator.test.ts).
+// 35 e 37; 34.13): o retrato do mês e o destaque vencido, puros, e o passo do
+// `closeStatsDays` com um Firestore falso (ele nunca lança). A leitura dos
+// números, a transação e a falha de um que não para os outros ficam no teste
+// de emulador (functions/test/fan-club-follows.emulator.test.ts); o `finally`
+// do handler, em src/close-stats-days.test.ts.
 
 const counts = (values: Partial<FanClubCopyCounts>): FanClubCopyCounts => ({
   followers: 0,
@@ -99,5 +103,42 @@ describe('o destaque vencido (decisão 35)', () => {
     // Marcado sem prazo não vale na leitura: a cópia desliga.
     expect(isFeatureExpired({ featured: true, featuredUntil: null }, now)).toBe(true);
     expect(isFeatureExpired({ featured: false, featuredUntil: '2026-10-01' }, now)).toBe(false);
+  });
+});
+
+describe('o passo da cópia no closeStatsDays (decisão 37)', () => {
+  /** Um Firestore falso: a consulta dos fã-clubes devolve o que o `get` der. */
+  const fakeDb = (get: () => Promise<unknown>): Firestore => {
+    const query = { where: () => query, orderBy: () => query, limit: () => query, get };
+    return { collection: () => query } as unknown as Firestore;
+  };
+  const at = Date.parse('2026-10-20T03:20:00.000Z');
+
+  it('a consulta que falha (o índice que falta) vai ao log, e o passo não lança', async () => {
+    const log = { info: vi.fn(), error: vi.fn() };
+    const db = fakeDb(() => Promise.reject(new Error('9 FAILED_PRECONDITION')));
+    await expect(
+      runFanClubCopyStep(db, { now: at, deadline: at + 1_000, log }),
+    ).resolves.toBeNull();
+    expect(log.error).toHaveBeenCalledWith('fan-clubs: a cópia da noite falhou', {
+      error: '9 FAILED_PRECONDITION',
+    });
+    expect(log.info).not.toHaveBeenCalled();
+  });
+
+  it('sem fã-clube para copiar, o resumo da noite no log', async () => {
+    const log = { info: vi.fn(), error: vi.fn() };
+    const db = fakeDb(async () => ({ docs: [] }));
+    const result = {
+      selected: 0,
+      copied: 0,
+      failed: 0,
+      deferred: 0,
+      unfeatured: 0,
+      monthsClosed: 0,
+    };
+    expect(await runFanClubCopyStep(db, { now: at, deadline: at + 1_000, log })).toEqual(result);
+    expect(log.info).toHaveBeenCalledWith('fan-clubs: a cópia da noite', result);
+    expect(log.error).not.toHaveBeenCalled();
   });
 });
