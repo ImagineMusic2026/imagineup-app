@@ -9,6 +9,9 @@ import {
   CLUB_THUMB_LIMITS,
   FAN_CLUB_COUNT_FIELDS,
   FAN_CLUB_CREDIT_WINDOW_MS,
+  FAN_CLUB_FEED_FOLLOWS,
+  FAN_CLUB_FOLLOWS_MAX,
+  FAN_CLUB_FOLLOWS_PER_DAY,
   FAN_CLUB_HISTORY_MAX,
   FAN_CLUB_PENDING_MAX,
   FAN_CLUB_POSTS_PER_DAY,
@@ -27,14 +30,19 @@ import {
   fanClubRecord,
   fanClubReportId,
   fanClubRulesUrl,
+  followerQuality,
+  FOLLOWERS_RECENT_MS,
+  followSignals,
   hasOfficialWord,
   isFeaturedNow,
   isWithinCreditWindow,
+  NEW_ACCOUNT_MS,
   parseApplication,
   parseFeaturedUntil,
   parsePost,
   parseRulesAcceptance,
   postMediaPaths,
+  QUALITY_WARNING_SHARE,
   reapplyAfterRejection,
   sameProportion,
   slotFileNames,
@@ -632,5 +640,85 @@ describe('a atribuição (decisões 23 e 24)', () => {
         { visits: -10 },
       ]),
     ).toEqual({ links: 2, visits: 0, signups: 1, joins: 3 });
+  });
+});
+
+describe('os seguidores (decisões 26 a 34 e 39)', () => {
+  const NOW_MS = Date.parse('2026-10-19T15:00:00.000Z');
+  const DAY = 24 * 60 * 60 * 1000;
+
+  it('os tetos: 50 seguidos por fã, 30 seguimentos por dia, 20 vínculos na Início', () => {
+    expect(FAN_CLUB_FOLLOWS_MAX).toBe(50);
+    expect(FAN_CLUB_FOLLOWS_PER_DAY).toBe(30);
+    expect(FAN_CLUB_FEED_FOLLOWS).toBe(20);
+    expect(NEW_ACCOUNT_MS).toBe(7 * DAY);
+    expect(FOLLOWERS_RECENT_MS).toBe(30 * DAY);
+  });
+
+  it('a conta nova: o perfil com menos de 7 dias; com 7 dias, ou sem data, não', () => {
+    const signals = (profileCreatedAt: number | null) =>
+      followSignals({
+        profileCreatedAt,
+        username: 'bia.santos',
+        inviterUid: null,
+        ownerUid: 'gestora',
+        now: NOW_MS,
+      }).newAccount;
+    expect(signals(NOW_MS)).toBe(true);
+    expect(signals(NOW_MS - 7 * DAY + 1)).toBe(true);
+    expect(signals(NOW_MS - 7 * DAY)).toBe(false);
+    expect(signals(null)).toBe(false);
+  });
+
+  it('o @ escolhido: não o automático; sem @, não', () => {
+    const chosen = (username: unknown) =>
+      followSignals({
+        profileCreatedAt: null,
+        username,
+        inviterUid: null,
+        ownerUid: 'gestora',
+        now: NOW_MS,
+      }).chosenUsername;
+    expect(chosen('bia.santos')).toBe(true);
+    expect(chosen('fa1234567')).toBe(false);
+    expect(chosen('')).toBe(false);
+    expect(chosen(undefined)).toBe(false);
+  });
+
+  it('o trazido pelo gestor: o inviterUid de quem segue é o gestor', () => {
+    const byOwner = (inviterUid: unknown) =>
+      followSignals({
+        profileCreatedAt: null,
+        username: 'bia.santos',
+        inviterUid,
+        ownerUid: 'gestora',
+        now: NOW_MS,
+      }).byOwnerCode;
+    expect(byOwner('gestora')).toBe(true);
+    expect(byOwner('outro-fa')).toBe(false);
+    expect(byOwner(null)).toBe(false);
+  });
+});
+
+describe('a qualidade dos seguidores (decisão 39)', () => {
+  it('cada sinal sobre os seguidores, e o aviso só acima da metade', () => {
+    expect(QUALITY_WARNING_SHARE).toBe(0.5);
+    expect(
+      followerQuality({ followers: 10, newAccounts: 6, automaticUsername: 5, byOwnerCode: 1 }),
+    ).toEqual({
+      newAccounts: 0.6,
+      automaticUsername: 0.5,
+      byOwnerCode: 0.1,
+      warnings: ['newAccounts'],
+    });
+    expect(
+      followerQuality({ followers: 4, newAccounts: 4, automaticUsername: 3, byOwnerCode: 4 }),
+    ).toMatchObject({ warnings: ['newAccounts', 'automaticUsername', 'byOwnerCode'] });
+  });
+
+  it('sem seguidores, tudo 0 e nenhum aviso', () => {
+    expect(
+      followerQuality({ followers: 0, newAccounts: 0, automaticUsername: 0, byOwnerCode: 0 }),
+    ).toEqual({ newAccounts: 0, automaticUsername: 0, byOwnerCode: 0, warnings: [] });
   });
 });

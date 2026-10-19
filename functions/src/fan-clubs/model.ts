@@ -3,7 +3,7 @@ import { filterTokens, isBlockedSocial, isBlockedText } from '../content-filter'
 import { dayKey, shiftDay } from '../day';
 import { parseWhatsapp } from '../fan-contact/model';
 import { normalizeSocialHandle } from '../fan-profile/details';
-import type { PhotoLimits } from '../fan-profile/model';
+import { isAutomaticUsername, type PhotoLimits } from '../fan-profile/model';
 import { cleanLine, cleanMultiline, isVisibleLine, isVisibleMultiline } from '../visible-line';
 
 // O fã-clube gerido pelo fã (docs/arquitetura-api.md, seção 34), puro: nada
@@ -105,6 +105,25 @@ export const FAN_CLUB_POSTS_PAGE = 10;
 
 /** Fã-clubes por página no `GET /artists/:artistId/fan-clubs`. */
 export const ARTIST_FAN_CLUBS_PAGE = 20;
+
+/**
+ * Fã-clubes seguidos por fã ao mesmo tempo (decisão 34): o 51º seguir recusa
+ * `follow_limit`, e os indisponíveis contam. É também o tamanho do `GET
+ * /me/fan-club-follows` e o que a suspensão apaga de uma vez.
+ */
+export const FAN_CLUB_FOLLOWS_MAX = 50;
+
+/** Seguimentos por dia (o teto `fanclub_follow`, editável no `config/points.actionCaps`). */
+export const FAN_CLUB_FOLLOWS_PER_DAY = 30;
+
+/** Os vínculos mais novos que a seção "Dos seus fã-clubes" da Início lê (decisão 30). */
+export const FAN_CLUB_FEED_FOLLOWS = 20;
+
+/** O perfil com menos de 7 dias é conta nova, um dos sinais do vínculo (decisão 39). */
+export const NEW_ACCOUNT_MS = 7 * 24 * 60 * 60 * 1000;
+
+/** Os novos seguidores contam os últimos 30 dias (decisão 36). */
+export const FOLLOWERS_RECENT_MS = 30 * 24 * 60 * 60 * 1000;
 
 // --- Os valores dos documentos (34.4) -------------------------------------------
 
@@ -348,7 +367,8 @@ export type FanClubInvalidField =
  * (decisão 9; o `program_closed` do `unavailableReason` é o fã-clube fechado
  * para o artista). O `contact_required` é do `PUT /me/contact` (decisão 14).
  * Os da publicação (etapa 2): `club_not_active`, `photos_not_allowed`,
- * `rules_outdated`, `upload_missing` e `too_many_pending`.
+ * `rules_outdated`, `upload_missing` e `too_many_pending`. Os do seguir
+ * (etapa 4): `own_fan_club` e `follow_limit`.
  */
 export type FanClubRefusal =
   | 'applications_closed'
@@ -365,7 +385,9 @@ export type FanClubRefusal =
   | 'photos_not_allowed'
   | 'rules_outdated'
   | 'upload_missing'
-  | 'too_many_pending';
+  | 'too_many_pending'
+  | 'own_fan_club'
+  | 'follow_limit';
 
 export type FanClubErrorCode =
   'fan_club_invalid' | 'fan_club_refused' | 'fan_club_not_found' | 'fan_club_post_not_found';
@@ -849,6 +871,161 @@ export function sumFanClubShards(shards: readonly Record<string, unknown>[]): Fa
   }
   for (const field of FAN_CLUB_COUNT_FIELDS) sums[field] = Math.max(0, sums[field]);
   return sums;
+}
+
+// --- Os seguidores (decisões 26 a 34 e 39) ---------------------------------------------
+
+/** Os sinais de qualidade do vínculo de seguir, gravados na hora de seguir (decisão 39). */
+export type FollowSignals = { newAccount: boolean; chosenUsername: boolean; byOwnerCode: boolean };
+
+/**
+ * Os três sinais do vínculo (decisão 39): a conta nova (o perfil com menos de
+ * 7 dias; sem a data, não), o @ escolhido (não o automático; sem @, não) e o
+ * trazido pelo gestor (o `referrals.inviterUid` de quem segue é o gestor).
+ * Muitos seguidores novos, de @ automático e trazidos pelo próprio gestor são
+ * o retrato da fazenda de seguidores.
+ */
+export function followSignals(input: {
+  profileCreatedAt: number | null;
+  username: unknown;
+  inviterUid: unknown;
+  ownerUid: string;
+  now: number;
+}): FollowSignals {
+  const { profileCreatedAt, username, now } = input;
+  return {
+    newAccount: profileCreatedAt !== null && now - profileCreatedAt < NEW_ACCOUNT_MS,
+    chosenUsername:
+      typeof username === 'string' && username !== '' && !isAutomaticUsername(username),
+    byOwnerCode: typeof input.inviterUid === 'string' && input.inviterUid === input.ownerUid,
+  };
+}
+
+// --- A cópia da noite (decisões 28, 35 e 37) --------------------------------------------
+
+/** Fã-clubes copiados por noite, os de cópia mais antiga primeiro (decisão 37). */
+export const FAN_CLUB_COPY_MAX = 500;
+
+/** Fã-clubes copiados ao mesmo tempo (decisão 37). */
+export const FAN_CLUB_COPY_CONCURRENCY = 10;
+
+/**
+ * O prazo da cópia, contado do começo do handler do `closeStatsDays` (que tem
+ * 300 s): depois dele, nenhum fã-clube novo começa, e o que sobrou fica para a
+ * noite seguinte, que começa pelos de cópia mais antiga.
+ */
+export const FAN_CLUB_COPY_BUDGET_MS = 270_000;
+
+/** Os números da cópia da noite (`counts`, 34.4), sem a data. */
+export type FanClubCopyCounts = {
+  followers: number;
+  followers30d: number;
+  newAccounts: number;
+  automaticUsername: number;
+  byOwnerCode: number;
+  joins: number;
+  retained: number;
+  signups: number;
+  visits: number;
+  links: number;
+};
+
+/** O retrato de um mês (`monthStart` e `lastMonth`, 34.4). */
+export type FanClubMonth = {
+  month: string;
+  followers: number;
+  joins: number;
+  signups: number;
+  visits: number;
+  links: number;
+};
+
+const MONTH_FIELDS = ['followers', 'joins', 'signups', 'visits', 'links'] as const;
+
+const MONTH_PATTERN = /^\d{4}-\d{2}$/;
+
+/** O mês de São Paulo (`AAAA-MM`). */
+export const monthOf = (now: number): string => dayKey(now).slice(0, 7);
+
+/** O retrato gravado, ou null sem ele (ou fora do formato: a cópia começa de novo). */
+export function fanClubMonthOf(value: unknown): FanClubMonth | null {
+  if (!isRecord(value) || typeof value.month !== 'string' || !MONTH_PATTERN.test(value.month)) {
+    return null;
+  }
+  const month: FanClubMonth = {
+    month: value.month,
+    followers: 0,
+    joins: 0,
+    signups: 0,
+    visits: 0,
+    links: 0,
+  };
+  for (const field of MONTH_FIELDS) {
+    const number = value[field];
+    month[field] = typeof number === 'number' && Number.isFinite(number) ? Math.trunc(number) : 0;
+  }
+  return month;
+}
+
+/**
+ * O retrato do mês na cópia (decisão 37), puro: na primeira cópia do
+ * fã-clube, só o `monthStart` com os números de agora; na primeira cópia de
+ * um mês, também o `lastMonth`, os números de agora menos os do `monthStart`
+ * (com o mês dele: o que mudou desde a primeira cópia daquele mês), e o
+ * `monthStart` novo; no resto do mês, null (nada a gravar). Os seguidores do
+ * `lastMonth` são o saldo do mês e podem sair negativos.
+ */
+export function monthTurn(
+  monthStart: FanClubMonth | null,
+  counts: FanClubCopyCounts,
+  now: number,
+): { monthStart: FanClubMonth; lastMonth: FanClubMonth | null } | null {
+  const month = monthOf(now);
+  if (monthStart !== null && monthStart.month === month) return null;
+  const start: FanClubMonth = { month, followers: 0, joins: 0, signups: 0, visits: 0, links: 0 };
+  for (const field of MONTH_FIELDS) start[field] = counts[field];
+  if (monthStart === null) return { monthStart: start, lastMonth: null };
+  const last: FanClubMonth = { ...monthStart };
+  for (const field of MONTH_FIELDS) last[field] = counts[field] - monthStart[field];
+  return { monthStart: start, lastMonth: last };
+}
+
+/** O Destaque marcado com o prazo vencido: a cópia da noite o desliga (decisão 35). */
+export const isFeatureExpired = (
+  club: Pick<FanClubRecord, 'featured' | 'featuredUntil'>,
+  now: number,
+): boolean => club.featured && !isFeaturedNow(club, now);
+
+/**
+ * A proporção de um sinal acima da qual a ficha do fã-clube avisa (decisão
+ * 39): passou da metade. O limite é proposta, fácil de trocar.
+ */
+export const QUALITY_WARNING_SHARE = 0.5;
+
+export type QualitySignal = 'newAccounts' | 'automaticUsername' | 'byOwnerCode';
+
+/** As três proporções da qualidade dos seguidores e os sinais que passam da metade. */
+export type FollowerQuality = Record<QualitySignal, number> & { warnings: QualitySignal[] };
+
+/**
+ * A qualidade dos seguidores pela cópia (decisão 39), pura: cada sinal sobre
+ * os seguidores (0 sem seguidores), e o aviso de cada um acima da metade. A
+ * ficha do painel (34.10, item 5) mostra o mesmo: esta é a referência dela.
+ */
+export function followerQuality(
+  counts: Pick<FanClubCopyCounts, 'followers' | QualitySignal>,
+): FollowerQuality {
+  const signals: QualitySignal[] = ['newAccounts', 'automaticUsername', 'byOwnerCode'];
+  const share = (value: number) => (counts.followers > 0 ? value / counts.followers : 0);
+  const quality = {
+    newAccounts: share(counts.newAccounts),
+    automaticUsername: share(counts.automaticUsername),
+    byOwnerCode: share(counts.byOwnerCode),
+  };
+  return {
+    ...quality,
+    warnings: signals.filter((signal) => quality[signal] > QUALITY_WARNING_SHARE),
+  };
 }
 
 // --- As denúncias das publicações (decisão 18) ----------------------------------------

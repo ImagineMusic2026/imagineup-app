@@ -512,3 +512,53 @@ describe('rotas do fã-clube (seção 34, etapa 3)', () => {
     });
   });
 });
+
+describe('rotas do fã-clube (seção 34, etapa 4)', () => {
+  it('seguir, deixar de seguir, os seguidos e a Início não se confundem com o fã-clube', () => {
+    const cases: [string, string, string, boolean, Record<string, string>][] = [
+      [
+        'PUT',
+        '/me/fan-club-follows/clube1',
+        '/me/fan-club-follows/:clubId',
+        true,
+        { clubId: 'clube1' },
+      ],
+      [
+        'DELETE',
+        '/me/fan-club-follows/clube1',
+        '/me/fan-club-follows/:clubId',
+        true,
+        { clubId: 'clube1' },
+      ],
+      ['GET', '/me/fan-club-follows', '/me/fan-club-follows', false, {}],
+      ['GET', '/me/fan-club-feed', '/me/fan-club-feed', false, {}],
+    ];
+    for (const [method, path, pattern, writes, params] of cases) {
+      expect(matchRoute(API_ROUTES, method, path), `${method} ${path}`).toMatchObject({
+        kind: 'match',
+        route: { method, pattern, writes },
+        params,
+      });
+    }
+  });
+
+  it('os métodos errados são 405 com os aceitos', () => {
+    expect(matchRoute(API_ROUTES, 'GET', '/me/fan-club-follows/clube1')).toEqual({
+      kind: 'method_not_allowed',
+      allow: ['PUT', 'DELETE'],
+    });
+    expect(matchRoute(API_ROUTES, 'POST', '/me/fan-club-follows')).toEqual({
+      kind: 'method_not_allowed',
+      allow: ['GET'],
+    });
+    expect(matchRoute(API_ROUTES, 'POST', '/me/fan-club-feed')).toEqual({
+      kind: 'method_not_allowed',
+      allow: ['GET'],
+    });
+    expect(matchRoute(API_ROUTES, 'GET', '/me/fan-club-feed/clube1').kind).toBe('not_found');
+  });
+
+  it('a API tem 64 rotas: as 44 de antes e as 20 do fã-clube e do contato do fã', () => {
+    expect(API_ROUTES).toHaveLength(64);
+  });
+});

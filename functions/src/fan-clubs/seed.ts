@@ -1,17 +1,26 @@
 import type { Firestore } from 'firebase-admin/firestore';
 
+import { membershipRef, runJoinCentrals } from '../centrals/service';
 import type { FanPhotoFiles } from '../fan-profile/files';
 import { parseLinkId } from '../invites/model';
 import { runInviteLinks } from '../invites/service';
 import { DEFAULT_POINTS_CONFIG } from '../points/config';
 import { NO_GAME } from '../points/model';
 import { SEED_ACTOR } from '../points/seed';
+import { copyFanClubCount } from './copy';
+import { runFollowFanClub } from './follows';
 import { applicationRecord, fanClubPostRecord, type ApplicationInput } from './model';
 import { runFanClubDecision } from './panel';
 import { runCreateFanClubPost, runOpenFanClubUpload } from './posts';
 import { runReportFanClubPost } from './reports';
 import { runApplyForFanClub } from './service';
-import { applicationRef, fanClubPostsOfAuthor, fanClubReportQueueRef } from './store';
+import {
+  applicationRef,
+  fanClubFollowRef,
+  fanClubPostsOfAuthor,
+  fanClubRef,
+  fanClubReportQueueRef,
+} from './store';
 
 // O fã-clube no seed dos emuladores (docs/arquitetura-api.md, 34.12), pelos
 // núcleos de verdade. Na etapa 1 de 34.14: a Camila, gestora aprovada do
@@ -23,9 +32,11 @@ import { applicationRef, fanClubPostsOfAuthor, fanClubReportQueueRef } from './s
 // ar, uma com a foto de teste em 4:5, e uma em análise) e a denúncia da Bia
 // contra a da foto, com "Uso indevido de imagem". Na etapa 3: o link do
 // fã-clube que a Camila compartilhou (`fanclub:<id>`), para os números do
-// fã-clube terem um link. Os seguidores, o prêmio e a candidatura pendente da
-// Duda chegam com as etapas deles. Rodar de novo não muda nada. Nunca roda em
-// produção: o script fixa os emuladores.
+// fã-clube terem um link. Na etapa 4: os seguidores (a Bia, da central, e uma
+// conta do ranking que entra junto, a entrada trazida) e a primeira cópia da
+// noite. O prêmio e a candidatura pendente da Duda chegam com as etapas deles.
+// Rodar de novo não muda nada. Nunca roda em produção: o script fixa os
+// emuladores.
 
 /** A central com as fotos de fã desligadas (só texto). */
 export const SEED_TEXT_ONLY_ARTIST = 'nenho';
@@ -230,4 +241,69 @@ export async function seedFanClubLink(
   if (link === null) return false;
   const options = { now, config: DEFAULT_POINTS_CONFIG, actor: SEED_ACTOR, game: NO_GAME };
   return (await runInviteLinks(db, camilaUid, [link], options)) > 0;
+}
+
+/** A conta do ranking que segue o fã-clube da Camila sem ser da central do Netto (34.12). */
+export const SEED_FAN_CLUB_FOLLOWER = 'rank-40@teste.imagineup';
+
+export type SeedFanClubFollowsResult = {
+  /** A Bia entrou agora na central do Netto, antes de seguir. */
+  joined: boolean;
+  /** Seguimentos gravados agora (a Bia e a conta do ranking: 2 no total). */
+  follows: number;
+  /** A cópia da noite do fã-clube rodou agora (só sem cópia ainda). */
+  copied: boolean;
+};
+
+/**
+ * Os seguidores do fã-clube da Camila (34.12, etapa 4 de 34.14), pelos
+ * núcleos de verdade, com o ator de sistema (os tetos não contam) e o
+ * `central_join` em 0, como a base do ranking (os pontos e as posições do
+ * seed não mudam): a Bia, que já é da central (entra antes pela página, se
+ * falta), segue; a conta do ranking, que não é da central, segue e entra
+ * junto, e a entrada creditada aparece em "entradas trazidas" (o crédito do
+ * seguir). Depois, a cópia da noite do fã-clube, só sem cópia ainda
+ * (`counts.at` nulo), para a lista e a ficha do painel terem os números.
+ * Cada passo só roda quando o que ele cria falta: rodar de novo não muda nada.
+ */
+export async function seedFanClubFollows(
+  db: Firestore,
+  input: { camilaUid: string; biaUid: string; followerUid: string },
+  now: number = Date.now(),
+): Promise<SeedFanClubFollowsResult> {
+  const result: SeedFanClubFollowsResult = { joined: false, follows: 0, copied: false };
+  const application = await applicationRef(db, input.camilaUid).get();
+  const clubId = application.exists
+    ? applicationRecord(input.camilaUid, application.data() ?? {}).clubId
+    : null;
+  if (clubId === null) return result;
+  const club = await fanClubRef(db, clubId).get();
+  const artistId = club.get('artistId');
+  if (typeof artistId !== 'string') return result;
+  const options = {
+    now,
+    config: {
+      ...DEFAULT_POINTS_CONFIG,
+      values: { ...DEFAULT_POINTS_CONFIG.values, central_join: 0 },
+    },
+    actor: SEED_ACTOR,
+    game: NO_GAME,
+  };
+  if (!(await fanClubFollowRef(db, input.biaUid, clubId).get()).exists) {
+    if (!(await membershipRef(db, input.biaUid, artistId).get()).exists) {
+      await runJoinCentrals(db, input.biaUid, [artistId], { ...options, via: 'page' });
+      result.joined = true;
+    }
+    await runFollowFanClub(db, input.biaUid, clubId, options);
+    result.follows += 1;
+  }
+  if (!(await fanClubFollowRef(db, input.followerUid, clubId).get()).exists) {
+    await runFollowFanClub(db, input.followerUid, clubId, options);
+    result.follows += 1;
+  }
+  if ((await fanClubRef(db, clubId).get()).get('counts.at') === null) {
+    await copyFanClubCount(db, clubId, now);
+    result.copied = true;
+  }
+  return result;
 }

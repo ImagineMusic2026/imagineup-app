@@ -6,6 +6,7 @@ import {
   type DocumentData,
   type DocumentReference,
   type Firestore,
+  type Query,
   type QueryDocumentSnapshot,
   type QuerySnapshot,
   type Transaction,
@@ -14,6 +15,7 @@ import {
 import { fanShardOf } from '../centrals/model';
 import {
   applicationRecord,
+  FAN_CLUB_FOLLOWS_MAX,
   fanClubRecord,
   isLiveFanClub,
   type ApplicationRecord,
@@ -25,11 +27,12 @@ import {
 // Onde o fã-clube mora no Firestore (docs/arquitetura-api.md, 34.4) e os
 // passos que outros módulos chamam sem passar pelo service: a pausa pela
 // suspensão (a Moderação), as cópias do perfil do gestor (a tarefa
-// `syncFanProfile`), a consulta do `has-content` (o `removeArtist`) e, desde a
+// `syncFanProfile`), a consulta do `has-content` (o `removeArtist`), desde a
 // etapa 3 de 34.14, as gravações da atribuição (o marcador do crédito e os
-// shards dos números, que as centrais e o convite gravam). Só importa o model
-// (e o puro das centrais), para nenhum desses módulos puxar a API, os pontos
-// ou a equipe por aqui.
+// shards dos números, que as centrais e o convite gravam) e, desde a etapa 4,
+// as leituras dos seguimentos que sair da central, o bloqueio e a suspensão
+// apagam. Só importa o model (e o puro das centrais), para nenhum desses
+// módulos puxar a API, os pontos ou a equipe por aqui.
 
 export const fanClubsOf = (db: Firestore): CollectionReference => db.collection('fanClubs');
 
@@ -49,12 +52,33 @@ export const artistPrivateRef = (db: Firestore, artistId: string): DocumentRefer
   db.collection('artistPrivate').doc(artistId);
 
 /**
- * `users/{uid}/fanClubFollows/{clubId}`: o vínculo de seguir (decisões 26 a
- * 34). Nasce na etapa 4 de 34.14; a página e a lista do artista já leem o
- * `isFollowing` por ele.
+ * `users/{uid}/fanClubFollows`: os vínculos de seguir de um fã (decisões 26 a
+ * 34), um por fã-clube, com o id do fã-clube. Saem com o perfil, no
+ * `recursiveDelete` da exclusão.
  */
+export const fanClubFollowsOf = (db: Firestore, uid: string): CollectionReference =>
+  db.collection('users').doc(uid).collection('fanClubFollows');
+
 export const fanClubFollowRef = (db: Firestore, uid: string, clubId: string): DocumentReference =>
-  db.collection('users').doc(uid).collection('fanClubFollows').doc(clubId);
+  fanClubFollowsOf(db, uid).doc(clubId);
+
+/**
+ * Quem segue o fã-clube agora, no grupo `fanClubFollows` (decisão 28), para o
+ * `count()` da página, dos números do gestor e da cópia da noite; com o
+ * `since`, só quem seguiu desde ele (os novos em 30 dias). A faixa leva o
+ * `orderBy('followedAt', 'desc')` de propósito: sem ele, a consulta ordena
+ * pelo `followedAt` crescente e pediria outro índice, e com ele usa o de
+ * grupo `(clubId, followedAt decrescente)` que 34.6 já tem (o da lista dos
+ * seguidores recentes). Todos os seguidores usam a isenção do `clubId` no
+ * escopo do grupo. O emulador não cobra índice: o `fan-clubs/indexes.test.ts`
+ * prende as duas formas.
+ */
+export function followersQuery(db: Firestore, clubId: string, since?: Timestamp): Query {
+  const query = db.collectionGroup('fanClubFollows').where('clubId', '==', clubId);
+  return since === undefined
+    ? query
+    : query.where('followedAt', '>=', since).orderBy('followedAt', 'desc');
+}
 
 /** `fanClubPosts/{postId}`: as publicações, fora de `posts/{id}` (decisão 17). */
 export const fanClubPostsOf = (db: Firestore): CollectionReference => db.collection('fanClubPosts');
@@ -165,6 +189,54 @@ export function writeFanClubCredit(
 /** As publicações de um autor, em qualquer status. Índice automático do `authorUid`. */
 export const fanClubPostsOfAuthor = (db: Firestore, uid: string) =>
   fanClubPostsOf(db).where('authorUid', '==', uid);
+
+/**
+ * Os seguimentos do fã nos fã-clubes de um artista, na transação de quem
+ * chama: sair da central deixa de seguir todos eles (decisão 27). Igualdade
+ * num campo: o índice automático do `artistId`. Só leitura (quem chama apaga
+ * depois de ler tudo).
+ */
+export async function readFollowsOfArtist(
+  tx: Transaction,
+  db: Firestore,
+  uid: string,
+  artistId: string,
+): Promise<DocumentReference[]> {
+  const snap = await tx.get(fanClubFollowsOf(db, uid).where('artistId', '==', artistId));
+  return snap.docs.map((doc) => doc.ref);
+}
+
+/**
+ * O seguimento do fã-clube de quem é bloqueado (decisão 32), na transação de
+ * quem bloqueia: a candidatura do bloqueado e, com o `clubId` dela, o vínculo
+ * de quem bloqueia com esse fã-clube. Uma leitura, mais uma com o `clubId`; o
+ * vínculo que existe, ou null. Só leitura.
+ */
+export async function readFollowOfOwner(
+  tx: Transaction,
+  db: Firestore,
+  uid: string,
+  ownerUid: string,
+): Promise<DocumentReference | null> {
+  const application = await readApplicationOf(tx, db, ownerUid);
+  if (application === null || application.clubId === null) return null;
+  const follow = await tx.get(fanClubFollowRef(db, uid, application.clubId));
+  return follow.exists ? follow.ref : null;
+}
+
+/**
+ * Os seguimentos do fã, até os 50 que ele pode ter (decisão 34), na
+ * transação de quem chama: a suspensão apaga todos (decisão 33). Sem ordem e
+ * sem filtro: nenhum índice. Só leitura.
+ */
+export async function readFollowsOf(
+  tx: Transaction,
+  db: Firestore,
+  uid: string,
+): Promise<DocumentReference[]> {
+  const snap = await tx.get(fanClubFollowsOf(db, uid).limit(FAN_CLUB_FOLLOWS_MAX));
+  return snap.docs.map((doc) => doc.ref);
+}
 
 /** O destaque desligado: a pausa, o encerramento, a suspensão e a lápide (decisão 35). */
 export const FEATURE_OFF = {

@@ -1,6 +1,6 @@
 import { FieldValue, Timestamp, type Firestore, type Transaction } from 'firebase-admin/firestore';
 
-import { pauseForSuspension, readActiveClubOf } from '../fan-clubs/store';
+import { pauseForSuspension, readActiveClubOf, readFollowsOf } from '../fan-clubs/store';
 import { requestFields } from '../staff/model';
 import { directRead, readPanelActor, transactionRead, type PanelActor } from '../staff/panel-actor';
 import { panelError, targetFanUid } from '../staff/panel-errors';
@@ -78,7 +78,9 @@ export function parseSuspensionInput(
  * `fan.suspended` (com o motivo e a nota) ou `fan.unsuspended`. Desde o
  * fã-clube (seção 34, decisão 33), suspender pausa o fã-clube ativo do fã
  * (`statusReason: 'suspended'`, com o destaque fora), e a auditoria leva o
- * `clubId`; tirar a suspensão não reativa nada.
+ * `clubId`; e apaga os seguimentos dele (até os 50 que ele pode ter), a
+ * limpeza da fazenda de seguidores. Tirar a suspensão não reativa o fã-clube
+ * nem devolve os seguimentos.
  */
 export async function applyFanSuspension(
   tx: Transaction,
@@ -91,12 +93,15 @@ export async function applyFanSuspension(
   const current = profile.get('suspendedAt');
   const suspended = current !== undefined && current !== null;
   if (suspended === input.suspended) return { changed: false };
-  // As leituras antes das gravações: o fã-clube ativo dele (a candidatura e o fã-clube).
+  // As leituras antes das gravações: o fã-clube ativo dele (a candidatura e o
+  // fã-clube) e os seguimentos dele.
   const club = input.suspended ? await readActiveClubOf(tx, db, input.uid) : null;
+  const follows = input.suspended ? await readFollowsOf(tx, db, input.uid) : [];
   const at = Timestamp.fromMillis(options.now);
   if (input.suspended) {
     tx.update(profile.ref, { suspendedAt: at, suspensionReason: input.reason });
     if (club) pauseForSuspension(tx, club.ref, at);
+    for (const follow of follows) tx.delete(follow);
   } else {
     tx.update(profile.ref, {
       suspendedAt: FieldValue.delete(),

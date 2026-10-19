@@ -1,10 +1,11 @@
 // O fã-clube gerido pelo fã (docs/arquitetura-api.md, seção 34): a
 // candidatura, o fã-clube, as publicações e as denúncias delas, a atribuição
-// (o crédito das entradas trazidas e os números em shards), a callable
-// `decideFanClub` do painel e o passo da exclusão de conta. A API
-// (src/api/routes/fan-clubs.ts) usa daqui; a callable fica em src/index.ts; o
-// seed dos emuladores carrega o build (functions/lib/fan-clubs). As centrais e
-// o convite importam o store e o credit pelo arquivo.
+// (o crédito das entradas trazidas e os números em shards), os seguidores, a
+// cópia da noite, a callable `decideFanClub` do painel e o passo da exclusão
+// de conta. A API (src/api/routes/fan-clubs.ts) usa daqui; a callable e o
+// passo da cópia no `closeStatsDays` ficam em src/index.ts; o seed dos
+// emuladores carrega o build (functions/lib/fan-clubs). As centrais, o
+// convite e a Moderação importam o store e o credit pelo arquivo.
 export {
   APPLICATION_KEYS,
   APPLICATION_REJECT_REASONS,
@@ -16,8 +17,14 @@ export {
   CLUB_PHOTO_LIMITS,
   CLUB_THUMB_LIMITS,
   FAN_CLUB_APPLIES_PER_DAY,
+  FAN_CLUB_COPY_BUDGET_MS,
+  FAN_CLUB_COPY_CONCURRENCY,
+  FAN_CLUB_COPY_MAX,
   FAN_CLUB_COUNT_FIELDS,
   FAN_CLUB_CREDIT_WINDOW_MS,
+  FAN_CLUB_FEED_FOLLOWS,
+  FAN_CLUB_FOLLOWS_MAX,
+  FAN_CLUB_FOLLOWS_PER_DAY,
   FAN_CLUB_NAME_MAX,
   FAN_CLUB_NAME_MIN,
   FAN_CLUB_OPEN,
@@ -39,19 +46,28 @@ export {
   fanClubBoxValue,
   FanClubError,
   fanClubMediaFolder,
+  fanClubMonthOf,
   fanClubPostRecord,
   fanClubRecord,
   fanClubRefused,
   fanClubReportId,
+  followerQuality,
+  FOLLOWERS_RECENT_MS,
+  followSignals,
   hasOfficialWord,
+  isFeatureExpired,
   isFeaturedNow,
   isLiveFanClub,
   isWithinCreditWindow,
+  monthOf,
+  monthTurn,
+  NEW_ACCOUNT_MS,
   parseApplication,
   parseFeaturedUntil,
   parsePost,
   parseRulesAcceptance,
   POST_REJECT_REASONS,
+  QUALITY_WARNING_SHARE,
   sameProportion,
   slotFileNames,
   sumFanClubShards,
@@ -60,24 +76,31 @@ export {
   type ApplicationRejectReason,
   type CloseReason,
   type FanClubBoxes,
+  type FanClubCopyCounts,
   type FanClubCountField,
   type FanClubCounts,
   type FanClubCredit,
   type FanClubCreditVia,
   type FanClubErrorCode,
+  type FanClubMonth,
   type FanClubPostRecord,
   type FanClubPostStatus,
   type FanClubRecord,
   type FanClubRefusal,
   type FanClubStatus,
+  type FollowerQuality,
+  type FollowSignals,
   type PostInput,
   type PostRejectReason,
+  type QualitySignal,
   type ReportResolution,
 } from './model';
 export {
   applicationPrivateRef,
   applicationRef,
   fanClubCreditRef,
+  fanClubFollowRef,
+  fanClubFollowsOf,
   fanClubPostRef,
   fanClubPostsOf,
   fanClubRef,
@@ -89,9 +112,13 @@ export {
   fanClubsOfOwner,
   fanClubUploadSlotRef,
   contactRequired,
+  followersQuery,
   liveFanClubsOfArtist,
   pauseForSuspension,
   readActiveClubOf,
+  readFollowOfOwner,
+  readFollowsOf,
+  readFollowsOfArtist,
   syncFanClubCopies,
 } from './store';
 export { readClaimCredit, readEntryCredit } from './credit';
@@ -100,6 +127,7 @@ export {
   applicationView,
   applyForFanClub,
   clubView,
+  ownerOf,
   readArtistFanClubs,
   readFanClubArtists,
   readFanClubPage,
@@ -127,6 +155,24 @@ export {
   type FanClubFileWork,
 } from './posts';
 export {
+  followFanClub,
+  readFanClubFeed,
+  readFollowedFanClubs,
+  runFollowFanClub,
+  unfollowFanClub,
+  type FollowOutcome,
+} from './follows';
+export {
+  copyFanClubCount,
+  copyFanClubCounts,
+  readFanClubCounts,
+  runFanClubCopyStep,
+  type FanClubCopyOne,
+  type FanClubCopyOptions,
+  type FanClubCopyResult,
+  type ReadFanClubCounts,
+} from './copy';
+export {
   removeFanClubReportsOf,
   reportFanClubPost,
   runReportFanClubPost,
@@ -146,11 +192,14 @@ export {
 } from './panel';
 export {
   SEED_CAMILA_FAN_CLUB,
+  SEED_FAN_CLUB_FOLLOWER,
   SEED_FAN_CLUB_POSTS,
   SEED_TEXT_ONLY_ARTIST,
+  seedFanClubFollows,
   seedFanClubLink,
   seedFanClubPosts,
   seedFanClubs,
+  type SeedFanClubFollowsResult,
   type SeedFanClubPost,
   type SeedFanClubPostsResult,
   type SeedFanClubsResult,

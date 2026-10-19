@@ -1474,10 +1474,11 @@ describe('suspensão do fã (bloco 11)', () => {
         'DELETE /me/photo',
         'PUT /me/blocks/:fanId',
         'DELETE /me/blocks/:fanId',
-        // O fã-clube (seção 34): desistir da candidatura e retirar a publicação
-        // são de desfazer.
+        // O fã-clube (seção 34): desistir da candidatura, retirar a publicação e
+        // deixar de seguir são de desfazer.
         'DELETE /me/fan-club/application',
         'DELETE /me/fan-club/posts/:postId',
+        'DELETE /me/fan-club-follows/:clubId',
       ].sort(),
     );
     // Toda rota que lê ignora a trava (ela mora no runIdempotent).
@@ -2015,6 +2016,8 @@ describe('fã-clube gerido pelo fã (seção 34)', () => {
       ['POST', '/me/fan-club/posts'],
       ['DELETE', '/me/fan-club/posts/pub1'],
       ['POST', '/fan-club-posts/pub1/report'],
+      ['PUT', '/me/fan-club-follows/clube1'],
+      ['DELETE', '/me/fan-club-follows/clube1'],
     ] as const) {
       const sent = await call(request(method, path, { body: {} }), API_ROUTES, noReads);
       expect(sent.status, `${method} ${path}`).toBe(400);
@@ -2041,14 +2044,20 @@ describe('fã-clube gerido pelo fã (seção 34)', () => {
       ['GET', '/fan-clubs/:clubId', false],
       ['GET', '/fan-clubs/:clubId/posts', false],
       ['POST', '/fan-club-posts/:postId/report', true],
+      ['PUT', '/me/fan-club-follows/:clubId', true],
+      ['DELETE', '/me/fan-club-follows/:clubId', true],
+      ['GET', '/me/fan-club-follows', false],
+      ['GET', '/me/fan-club-feed', false],
     ]);
-    // Candidatar, publicar, abrir a vaga, o novo aceite e denunciar criam: o
-    // suspenso não manda (sem `allowSuspended`); retirar é de desfazer.
+    // Candidatar, publicar, abrir a vaga, o novo aceite, denunciar e seguir
+    // criam: o suspenso não manda (sem `allowSuspended`); retirar e deixar de
+    // seguir são de desfazer.
     for (const route of routes.filter((item) => item.writes)) {
       const undo =
         route.method === 'DELETE' &&
         (route.pattern === '/me/fan-club/application' ||
-          route.pattern === '/me/fan-club/posts/:postId');
+          route.pattern === '/me/fan-club/posts/:postId' ||
+          route.pattern === '/me/fan-club-follows/:clubId');
       expect('allowSuspended' in route && route.allowSuspended, route.pattern).toBe(
         undo ? true : false,
       );
@@ -2063,6 +2072,9 @@ describe('fã-clube gerido pelo fã (seção 34)', () => {
       ['DELETE', '/me/fan-club/posts/__pub__', 'fan_club_post_not_found'],
       ['POST', '/fan-club-posts/__pub__/report', 'fan_club_post_not_found'],
       ['GET', '/artists/Netto/fan-clubs', 'artist_not_found'],
+      // O seguir (etapa 4): o id fora do formato não existe, e nada é lido.
+      ['PUT', '/me/fan-club-follows/__clube__', 'fan_club_not_found'],
+      ['DELETE', '/me/fan-club-follows/__clube__', 'fan_club_not_found'],
     ];
     for (const [method, path, code] of cases) {
       const sent = await call(request(method, path, { headers: key }), API_ROUTES, noReads);
@@ -2172,6 +2184,7 @@ describe('fã-clube gerido pelo fã (seção 34)', () => {
     for (const [action, limit] of [
       ['club_post', 5],
       ['club_upload', 10],
+      ['club_follow', 30],
     ] as const) {
       const sent = await call(
         request('GET', '/teste/fa-clube'),

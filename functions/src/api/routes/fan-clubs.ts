@@ -5,36 +5,45 @@ import {
   ARTIST_FAN_CLUBS_PAGE,
   createFanClubPost,
   FAN_CLUB_POSTS_PAGE,
+  followFanClub,
   openFanClubUpload,
   parseApplication,
   parsePost,
   parseRulesAcceptance,
   readArtistFanClubs,
   readFanClubArtists,
+  readFanClubFeed,
   readFanClubPage,
   readFanClubPosts,
+  readFollowedFanClubs,
   readMyFanClub,
   readMyFanClubNumbers,
   readMyFanClubPosts,
   removeFanClubPost,
   reportFanClubPost,
+  unfollowFanClub,
   withdrawApplication,
   type ApplicationInput,
   type PostInput,
 } from '../../fan-clubs';
 import { parseFanClubReportReason, type FanClubReportReason } from '../../moderation';
 import { isContentId } from '../../page-cursor';
+import { rewardsOf } from '../../points/award';
 import type {
+  ActionRewards,
   FanClubArtists,
   FanClubCard,
   FanClubNumbers,
   FanClubPage,
   FanClubPost,
   FanClubUploadSlot,
+  FollowedFanClubs,
+  FollowFanClubResult,
   MyFanClub,
   OwnFanClubPost,
   Page,
   ReportFanClubPostResult,
+  UnfollowFanClubResult,
 } from '../contract';
 import { apiError } from '../errors';
 import type { ApiRoute, RouteInput } from '../types';
@@ -45,11 +54,13 @@ import { pageQuery } from './paging';
 // desistir. A etapa 2: o novo aceite do regulamento, a vaga de envio da foto,
 // publicar, "Minhas publicações", retirar e tirar do ar, a página pública, as
 // publicações no ar, a lista do artista e a denúncia. A etapa 3: os números
-// do gestor (a soma dos shards da atribuição e os seguidores). As que gravam
-// rodam no runIdempotent, com o perfil exigido; as de desfazer (desistir e
-// retirar) aceitam o suspenso. Os arquivos do Storage que saem ou trocam de
-// token mudam depois da gravação (o `storageWork`, guardado na chave e
-// refeito na repetição). Os seguidores chegam na etapa 4.
+// do gestor (a soma dos shards da atribuição e os seguidores). A etapa 4:
+// seguir e deixar de seguir, "Fã-clubes que sigo" e a seção "Dos seus
+// fã-clubes" da Início. As que gravam rodam no runIdempotent, com o perfil
+// exigido; as de desfazer (desistir, retirar e deixar de seguir) aceitam o
+// suspenso. Os arquivos do Storage que saem ou trocam de token mudam depois da
+// gravação (o `storageWork`, guardado na chave e refeito na repetição).
+// Nenhuma rota devolve quem segue: o gestor vê só o número (decisão 29).
 
 /**
  * O corpo da candidatura conferido e limpo (`parseApplication`), sem leitura:
@@ -307,6 +318,63 @@ export const fanClubRoutes: ApiRoute[] = [
       });
       const body: ReportFanClubPostResult = { postId, status };
       return { body, plan };
+    },
+  },
+  {
+    // Seguir: quando falta, entra junto na central oficial (o central_join de
+    // sempre, com a comemoração). Já seguindo, a mesma resposta sem gravar.
+    method: 'PUT',
+    pattern: '/me/fan-club-follows/:clubId',
+    writes: true,
+    validate: clubParam,
+    async handle(ctx) {
+      const { body, plan } = await followFanClub(ctx.tx, ctx.deps.db, {
+        fan: ctx.fan,
+        award: ctx.award,
+        profile: ctx.profile,
+        clubId: ctx.params.clubId!,
+      });
+      const result: FollowFanClubResult & ActionRewards = { ...body, ...rewardsOf(plan) };
+      return { body: result, plan };
+    },
+  },
+  {
+    // Deixar de seguir, em qualquer status do fã-clube: desfazer, então o
+    // suspenso também. Nunca recusa; não mexe na central.
+    method: 'DELETE',
+    pattern: '/me/fan-club-follows/:clubId',
+    writes: true,
+    allowSuspended: true,
+    validate: clubParam,
+    async handle(ctx) {
+      const { body, plan } = await unfollowFanClub(ctx.tx, ctx.deps.db, {
+        fan: ctx.fan,
+        award: ctx.award,
+        clubId: ctx.params.clubId!,
+      });
+      const result: UnfollowFanClubResult = body;
+      return { body: result, plan };
+    },
+  },
+  {
+    // "Fã-clubes que sigo": até 50, com o indisponível marcado. Sem chave e
+    // sem exigir o perfil (quem nunca seguiu recebe a lista vazia).
+    method: 'GET',
+    pattern: '/me/fan-club-follows',
+    writes: false,
+    async handle({ deps, uid }): Promise<FollowedFanClubs> {
+      return readFollowedFanClubs(deps.db, uid);
+    },
+  },
+  {
+    // "Dos seus fã-clubes" da Início: as publicações no ar dos 20 vínculos
+    // mais novos, 10 por página. Sem vínculo, a página vazia.
+    method: 'GET',
+    pattern: '/me/fan-club-feed',
+    writes: false,
+    validate: (input) => void pageQuery(input, FAN_CLUB_POSTS_PAGE),
+    async handle(ctx): Promise<Page<FanClubPost>> {
+      return readFanClubFeed(ctx.deps.db, ctx.uid, pageQuery(ctx, FAN_CLUB_POSTS_PAGE));
     },
   },
 ];

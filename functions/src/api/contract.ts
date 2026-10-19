@@ -729,8 +729,8 @@ export type MyFanClub = {
 /**
  * `GET /me/fan-club/numbers`: os números do fã-clube do gestor, só no "Meu
  * fã-clube" (etapa 3 de 34.14). Os seguidores pelo `count()` de quem segue
- * agora (0 até a etapa 4 trazer o seguir) e os do convite e da atribuição pela
- * soma dos 16 shards (decisão 24).
+ * agora (o seguir é da etapa 4) e os do convite e da atribuição pela soma dos
+ * 16 shards (decisão 24).
  */
 export type FanClubNumbers = {
   followers: number;
@@ -812,7 +812,7 @@ export type FanClubPerson = {
   photoURL: string | null;
 };
 
-/** Uma publicação no ar (`GET /fan-clubs/:clubId/posts`; a Início, na etapa 4). */
+/** Uma publicação no ar (`GET /fan-clubs/:clubId/posts` e a Início, `GET /me/fan-club-feed`). */
 export type FanClubPost = {
   id: string;
   clubId: string;
@@ -870,3 +870,43 @@ export type FanClubCard = {
 
 /** A denúncia de uma publicação (`POST /fan-club-posts/:postId/report`). */
 export type ReportFanClubPostResult = { postId: string; status: 'reported' | 'already_reported' };
+
+// --- Os seguidores (etapa 4 de 34.14) ------------------------------------------------
+
+/**
+ * Seguir (`PUT /me/fan-club-follows/:clubId`), no molde do `JoinCentralResult`
+ * (a resposta leva também as recompensas da entrada, `ActionRewards`): o
+ * `joined` diz se o seguir fez a entrada na central oficial agora (a
+ * comemoração da entrada), e o `pointsAwarded`, os pontos dela. Já seguindo:
+ * `joined: false` e 0, sem gravar.
+ */
+export type FollowFanClubResult = {
+  clubId: string;
+  following: true;
+  joined: boolean;
+  pointsAwarded: number;
+};
+
+/** Deixar de seguir (`DELETE /me/fan-club-follows/:clubId`): nunca recusa. */
+export type UnfollowFanClubResult = { clubId: string; following: false };
+
+/**
+ * Um fã-clube seguido, em "Fã-clubes que sigo" (`GET /me/fan-club-follows`).
+ * Disponível: o fã-clube ativo, de artista no ar e com o fã-clube aberto, de
+ * gestor que o fã não bloqueou. Indisponível, o nome só quando ele ainda
+ * existe e o gestor não está bloqueado (a lápide fica sem nome), e sem o
+ * gestor: a linha mostra "Indisponível" e o Deixar de seguir.
+ */
+export type FollowedFanClub = {
+  id: string;
+  name: string | null;
+  artistId: string;
+  artistName: string;
+  owner: FanClubPerson | null;
+  /** ISO. */
+  followedAt: string;
+  available: boolean;
+};
+
+/** `GET /me/fan-club-follows`: até 50, do mais novo ao mais antigo (os indisponíveis contam nos 50). */
+export type FollowedFanClubs = { items: FollowedFanClub[] };

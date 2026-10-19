@@ -16,6 +16,7 @@ import { CENTRAL_ENTRIES_PER_DAY } from '../centrals/model';
 import { ConfigValidationError } from '../config-validation';
 import {
   FAN_CLUB_APPLIES_PER_DAY,
+  FAN_CLUB_FOLLOWS_PER_DAY,
   FAN_CLUB_POSTS_PER_DAY,
   FAN_CLUB_UPLOADS_PER_DAY,
 } from '../fan-clubs/model';
@@ -80,16 +81,17 @@ export const ACTION_CAP_KEYS = [
   'fanclub_apply',
   'fanclub_post',
   'fanclub_upload',
+  'fanclub_follow',
 ] as const satisfies readonly DailyActionKey[];
 
 /**
  * Os tetos do dia (blocos 4, 5, 6, desde o bloco 9 as trocas de foto e desde o
  * bloco 10 os resgates da loja, as vagas de envio da foto da proteção contra
  * abuso e, desde o perfil novo, os salvamentos do perfil e as trocas de nome;
- * desde a seção 34, as candidaturas a fã-clube, as publicações e as vagas de
- * envio da foto delas) como padrão do código (22.1,
+ * desde a seção 34, as candidaturas a fã-clube, as publicações, as vagas de
+ * envio da foto delas e os seguimentos) como padrão do código (22.1,
  * decisão 13; 24.1, decisão 11; 25.1, decisão 15; 28.1, decisão 9; 34.1,
- * decisão 11).
+ * decisões 11 e 34).
  */
 export const DEFAULT_ACTION_CAPS: Record<DailyActionKey, number> = {
   central_entry: CENTRAL_ENTRIES_PER_DAY,
@@ -108,6 +110,7 @@ export const DEFAULT_ACTION_CAPS: Record<DailyActionKey, number> = {
   fanclub_apply: FAN_CLUB_APPLIES_PER_DAY,
   fanclub_post: FAN_CLUB_POSTS_PER_DAY,
   fanclub_upload: FAN_CLUB_UPLOADS_PER_DAY,
+  fanclub_follow: FAN_CLUB_FOLLOWS_PER_DAY,
 };
 
 /** Teto do dia: de 1 a 10.000. */

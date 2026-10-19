@@ -43,6 +43,7 @@ import {
   FAN_CLUB_PRIZE_NOTICE,
   FAN_CLUB_RULES_VERSION,
   FEATURED_PER_ARTIST_MAX,
+  FOLLOWERS_RECENT_MS,
   fanClubBoxes,
   fanClubNotFound,
   fanClubRecord,
@@ -66,6 +67,7 @@ import {
   fanClubShardsOf,
   fanClubsOf,
   fanClubsOfOwner,
+  followersQuery,
   ownerCopiesOf,
 } from './store';
 
@@ -432,7 +434,8 @@ export async function acceptFanClubRules(
 
 // --- A página pública e a lista do artista --------------------------------------------
 
-const ownerOf = (club: FanClubRecord): FanClubPerson => ({
+/** O gestor como os fãs veem: as cópias do perfil dele no fã-clube. */
+export const ownerOf = (club: FanClubRecord): FanClubPerson => ({
   uid: club.ownerUid ?? '',
   name: club.ownerName,
   username: club.ownerUsername,
@@ -441,20 +444,15 @@ const ownerOf = (club: FanClubRecord): FanClubPerson => ({
 
 /**
  * Quem segue o fã-clube agora, pelo `count()` no grupo `fanClubFollows`
- * (decisão 28), fora de transação; com o `since`, só quem seguiu desde ele (os
- * novos em 30 dias). A faixa leva o `orderBy('followedAt', 'desc')` de
- * propósito: sem ele, a consulta ordena pelo `followedAt` crescente e pediria
- * outro índice, e com ele usa o de grupo `(clubId, followedAt decrescente)`
- * que 34.6 já tem (o da lista dos seguidores recentes). Sem o índice de grupo
- * (só em produção: o emulador não exige), a contagem falha com o código 9:
- * vale 0, com o erro no log, como o "N posts" da 1d (21.1).
+ * (decisão 28, o `followersQuery`), fora de transação; com o `since`, só quem
+ * seguiu desde ele (os novos em 30 dias). Sem o índice de grupo (só em
+ * produção: o emulador não exige), a contagem falha com o código 9: vale 0,
+ * com o erro no log, como o "N posts" da 1d (21.1). A cópia da noite usa a
+ * mesma consulta sem engolir o erro (um 0 lá ficaria gravado).
  */
 async function countFollowers(db: Firestore, clubId: string, since?: number): Promise<number> {
   try {
-    let query = db.collectionGroup('fanClubFollows').where('clubId', '==', clubId);
-    if (since !== undefined) {
-      query = query.where('followedAt', '>=', tsOf(since)).orderBy('followedAt', 'desc');
-    }
+    const query = followersQuery(db, clubId, since === undefined ? undefined : tsOf(since));
     const snap = await query.count().get();
     return snap.data().count;
   } catch (error) {
@@ -466,9 +464,6 @@ async function countFollowers(db: Firestore, clubId: string, since?: number): Pr
     return 0;
   }
 }
-
-/** Os novos seguidores contam os últimos 30 dias (decisão 36). */
-const FOLLOWERS_RECENT_MS = 30 * 24 * 60 * 60 * 1000;
 
 /**
  * `GET /me/fan-club/numbers` (34.3): os números do fã-clube do gestor, só no

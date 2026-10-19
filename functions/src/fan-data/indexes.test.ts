@@ -78,6 +78,7 @@ describe('os índices da exportação dos dados do fã (32.5)', () => {
       'users.centrals',
       'users.postLikes',
       'users.eventRsvps',
+      'users.fanClubFollows',
       'wallets.ledger',
       'wallets.centralPoints',
       'fanInvites.inviteLinks',

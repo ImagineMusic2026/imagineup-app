@@ -403,6 +403,7 @@ describe('tetos do dia e o limite da missão (bloco 7)', () => {
       fanclub_apply: 3,
       fanclub_post: 5,
       fanclub_upload: 10,
+      fanclub_follow: 30,
     });
   });
 
