@@ -1940,6 +1940,7 @@ describe('fã-clube gerido pelo fã (seção 34)', () => {
       artistId: 'nettobrito',
       name: 'Netto de Coração',
       instagram: 'camila.teste.up',
+      whatsapp: '(75) 99123-4567',
       pitch: 'Divulgo o artista nos stories e no grupo dos fãs da cidade.',
       adult: true,
       rulesVersion: 'termos-2026-10',
@@ -1973,6 +1974,14 @@ describe('fã-clube gerido pelo fã (seção 34)', () => {
       [
         { ...valid, instagram: null },
         { code: 'fan_club_invalid', details: { field: 'socials', reason: 'format' } },
+      ],
+      [
+        { ...valid, whatsapp: 75991234567 },
+        { code: 'invalid_request', details: { field: 'whatsapp' } },
+      ],
+      [
+        { ...valid, whatsapp: '(75) 3221-4567' },
+        { code: 'fan_club_invalid', details: { field: 'whatsapp', reason: 'format' } },
       ],
       [
         { ...valid, adult: false },

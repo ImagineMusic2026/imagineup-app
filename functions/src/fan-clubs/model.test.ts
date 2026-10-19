@@ -49,6 +49,7 @@ const body = (extra: Record<string, unknown> = {}) => ({
   name: 'Netto de Coração',
   instagram: 'camila.teste.up',
   tiktok: null,
+  whatsapp: '(75) 99123-4567',
   pitch: PITCH,
   adult: true,
   rulesVersion: FAN_CLUB_RULES_VERSION,
@@ -160,17 +161,28 @@ describe('o corpo da candidatura (34.3 e 34.5)', () => {
         name: 'Netto de Coração',
         instagram: 'camila.teste.up',
         tiktok: 'camila.teste.up',
+        whatsapp: '+5575991234567',
         pitch: `${PITCH}\n\nLevo a turma aos shows.`,
       },
     });
   });
 
-  it('as chaves de hoje (o WhatsApp entra com o contato do fã, a UP-66)', () => {
+  it('o WhatsApp normalizado pelo parseWhatsapp do contato do fã: com e sem o +55', () => {
+    for (const whatsapp of ['75991234567', '+55 75 99123-4567', '55 (75) 99123-4567']) {
+      expect(parseApplication(body({ whatsapp })), whatsapp).toMatchObject({
+        ok: true,
+        value: { whatsapp: '+5575991234567' },
+      });
+    }
+  });
+
+  it('as chaves do corpo, com o WhatsApp do contato do fã (decisão 14)', () => {
     expect(APPLICATION_KEYS).toEqual([
       'artistId',
       'name',
       'instagram',
       'tiktok',
+      'whatsapp',
       'pitch',
       'adult',
       'rulesVersion',
@@ -193,6 +205,12 @@ describe('o corpo da candidatura (34.3 e 34.5)', () => {
     expect(parseApplication(body({ pitch: null }))).toEqual({ ok: false, field: 'pitch' });
     expect(parseApplication(body({ instagram: 7 }))).toEqual({ ok: false, field: 'instagram' });
     expect(parseApplication(body({ adult: 'sim' }))).toEqual({ ok: false, field: 'adult' });
+    for (const whatsapp of [75991234567, undefined, null]) {
+      expect(parseApplication(body({ whatsapp })), String(whatsapp)).toEqual({
+        ok: false,
+        field: 'whatsapp',
+      });
+    }
     expect(parseApplication(body({ rulesVersion: undefined }))).toEqual({
       ok: false,
       field: 'rulesVersion',
@@ -213,6 +231,17 @@ describe('o corpo da candidatura (34.3 e 34.5)', () => {
       [{ pitch: `${PITCH} abacaxi` }, { field: 'pitch', reason: 'not_allowed' }],
       [{ instagram: 'https://golpe.example/camila' }, { field: 'instagram', reason: 'format' }],
       [{ tiktok: 'berinjela.camila' }, { field: 'tiktok', reason: 'not_allowed' }],
+      // O celular brasileiro com o DDD e o 9 (a regra da UP-66, seção 35, decisão 3).
+      [{ whatsapp: '' }, { field: 'whatsapp', reason: 'format' }],
+      [{ whatsapp: '(75) 3221-4567' }, { field: 'whatsapp', reason: 'format' }],
+      [{ whatsapp: '99123-4567' }, { field: 'whatsapp', reason: 'format' }],
+      [{ whatsapp: '+1 415 555 0100' }, { field: 'whatsapp', reason: 'format' }],
+      [{ whatsapp: '(75) 99123-45678' }, { field: 'whatsapp', reason: 'format' }],
+      [{ whatsapp: 'zap 75991234567' }, { field: 'whatsapp', reason: 'format' }],
+      [
+        { whatsapp: '(75) 3221-4567', adult: false },
+        { field: 'whatsapp', reason: 'format' },
+      ],
       [
         { instagram: null, tiktok: '' },
         { field: 'socials', reason: 'format' },

@@ -418,6 +418,11 @@ describe('o seed das telas do painel (26.13)', () => {
       status: 'active',
     });
     expect(await read('fanClubApplicationPrivate/camila')).toMatchObject({ pitch: null });
+    // O WhatsApp de teste da candidatura, no contato do fã (decisão 14).
+    expect(await read('users/camila/contact/main')).toMatchObject({
+      whatsapp: SEED_CAMILA_FAN_CLUB.whatsapp,
+      source: 'fanclub',
+    });
     expect((await read('artistPrivate/nenho'))?.fanClubs).toEqual({ photosAllowed: false });
     expect(await read('artistPrivate/nettobrito')).not.toHaveProperty('fanClubs');
     expect(audit.filter((entry) => entry.action === 'fanClub.application.approved')).toHaveLength(

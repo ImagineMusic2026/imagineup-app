@@ -30,7 +30,9 @@ import { resolve } from 'node:path';
  * candidatura, só quem edita; as denúncias uma a uma, ninguém; o vínculo de
  * seguir e o marcador do crédito, só a seção Fãs, também pelo grupo. Ninguém
  * grava pelo cliente, nem o próprio fã, que lê tudo pela API. O contato do fã
- * (`users/{uid}/contact/main`) chega com a UP-66.
+ * (`users/{uid}/contact/main`, o WhatsApp da seção 35): quem edita a seção
+ * lê o documento pelo caminho, na ficha da candidatura; o Leitor, a seção
+ * Fãs e o próprio fã, não; ninguém lista.
  */
 let env: RulesTestEnvironment;
 
@@ -83,6 +85,7 @@ const REPORT = `fanClubReports/${FOLLOWER}_publicacao-1`;
 const QUEUE = 'fanClubReportQueue/publicacao-1';
 const FOLLOW = `users/${FOLLOWER}/fanClubFollows/${CLUB}`;
 const CREDIT = `users/${FOLLOWER}/fanClubCredits/nettobrito`;
+const CONTACT = `users/${GESTOR}/contact/main`;
 
 beforeEach(async () => {
   await env.clearFirestore();
@@ -145,6 +148,11 @@ beforeEach(async () => {
       byOwnerCode: false,
     });
     await setDoc(doc(db, CREDIT), { artistId: 'nettobrito', clubId: CLUB, via: 'follow' });
+    await setDoc(doc(db, CONTACT), {
+      whatsapp: '+5575991234567',
+      source: 'fanclub',
+      updatedAt: at,
+    });
   });
 });
 
@@ -238,6 +246,25 @@ describe('a seção Fã-clubes', () => {
   });
 });
 
+describe('o contato do fã (decisão 14)', () => {
+  it('quem edita a seção Fã-clubes lê o documento pelo caminho, e o admin', async () => {
+    for (const uid of ['admin', 'faClubes']) {
+      await assertSucceeds(getDoc(doc(as(uid), CONTACT)));
+    }
+  });
+
+  it('o Leitor, a seção Fãs, outras seções, a desativada e o próprio fã não leem; ninguém lista', async () => {
+    for (const uid of ['leitorFaClubes', 'fas', 'artistas', 'desativada', GESTOR, FOLLOWER]) {
+      await assertFails(getDoc(doc(as(uid), CONTACT)));
+    }
+    await assertFails(getDoc(doc(env.unauthenticatedContext().firestore(), CONTACT)));
+    for (const uid of ['admin', 'faClubes', GESTOR]) {
+      await assertFails(getDocs(collection(as(uid), `users/${GESTOR}/contact`)));
+      await assertFails(getDocs(collectionGroup(as(uid), 'contact')));
+    }
+  });
+});
+
 describe('quem segue (decisão 29)', () => {
   it('só a seção Fãs lê o vínculo e o marcador, também pela consulta de grupo', async () => {
     for (const uid of ['admin', 'fas']) await readsFollows(as(uid), 'succeeds');
@@ -267,6 +294,8 @@ describe('ninguém grava pelo cliente', () => {
       await assertFails(deleteDoc(doc(db, FOLLOW)));
       await assertFails(setDoc(doc(db, `users/${uid}/fanClubFollows/${CLUB}`), { clubId: CLUB }));
       await assertFails(setDoc(doc(db, CREDIT), { via: 'follow' }));
+      await assertFails(setDoc(doc(db, CONTACT), { whatsapp: '+5575988887777' }));
+      await assertFails(deleteDoc(doc(db, CONTACT)));
     }
   });
 });

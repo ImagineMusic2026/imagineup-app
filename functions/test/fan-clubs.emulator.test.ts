@@ -109,6 +109,7 @@ const applicationBody = (artistId: string, extra: Record<string, unknown> = {}) 
   name: 'Turma do Netto',
   instagram: 'camila.teste.up',
   tiktok: '@camila.teste.up',
+  whatsapp: '(75) 99123-4567',
   pitch: PITCH,
   adult: true,
   rulesVersion: FAN_CLUB_RULES_VERSION,
@@ -240,6 +241,16 @@ describe('a candidatura (34.3 e 34.5)', () => {
       pitch: PITCH,
       schemaVersion: 1,
     });
+    // O WhatsApp vai para o contato do fã, e não para o privado (decisão 14).
+    expect(await read(`users/${fan.uid}/contact/main`)).toEqual({
+      whatsapp: '+5575991234567',
+      source: 'fanclub',
+      updatedAt: expect.any(Timestamp),
+    });
+    expect(await call('GET', '/me/contact', { token: fan.token })).toEqual({
+      status: 200,
+      body: { whatsapp: '+5575991234567' },
+    });
     // Mandar de novo com a pendente: already_applied.
     expect(await apply(call, fan, applicationBody(artistId))).toMatchObject(
       refusal('already_applied'),
@@ -338,6 +349,83 @@ describe('a candidatura (34.3 e 34.5)', () => {
     });
     clock.offset += DAY_MS;
     expect((await apply(call, fan, applicationBody(artistId))).status).toBe(200);
+  });
+});
+
+describe('o WhatsApp da candidatura e o contato do fã (decisão 14)', () => {
+  const putContact = (call: Api, fan: Fan, whatsapp: string | null) =>
+    call('PUT', '/me/contact', {
+      token: fan.token,
+      key: unique('chave-contato-'),
+      body: { whatsapp },
+    });
+
+  it('obrigatório e normalizado, com e sem o +55; o curto, o longo e o fixo recusados, sem gravar', async () => {
+    const { call } = clockApi();
+    const artistId = await openArtist();
+    const fan = await signUpFan(db, 'Camila Ribeiro');
+    expect((await join(call, fan, artistId)).status).toBe(200);
+    for (const whatsapp of [
+      '99123-4567',
+      '(75) 99123-45678',
+      '(75) 3221-4567',
+      '+1 415 555 0100',
+    ]) {
+      expect(
+        await apply(call, fan, applicationBody(artistId, { whatsapp })),
+        whatsapp,
+      ).toMatchObject({
+        status: 400,
+        body: { code: 'fan_club_invalid', details: { field: 'whatsapp' } },
+      });
+    }
+    const { whatsapp: _whatsapp, ...without } = applicationBody(artistId);
+    expect(await apply(call, fan, without)).toMatchObject({
+      status: 400,
+      body: { code: 'invalid_request', details: { field: 'whatsapp' } },
+    });
+    expect(await exists(`fanClubApplications/${fan.uid}`)).toBe(false);
+    expect(await exists(`users/${fan.uid}/contact/main`)).toBe(false);
+    expect(
+      await apply(call, fan, applicationBody(artistId, { whatsapp: '+55 75 98888-7777' })),
+    ).toMatchObject({ status: 200 });
+    expect(await read(`users/${fan.uid}/contact/main`)).toMatchObject({
+      whatsapp: '+5575988887777',
+      source: 'fanclub',
+    });
+  });
+
+  it('o PUT /me/contact troca; apagar com o fã-clube ativo ou pausado é contact_required; com a pendente ou o encerrado, apaga', async () => {
+    const { call } = clockApi();
+    const artistId = await openArtist();
+    const admin = await seedMember(env, 'Admin', 'admin');
+    const fan = await candidate(call, artistId);
+    // Com a candidatura pendente, o fã ainda não tem fã-clube: apaga e grava de novo.
+    expect(await putContact(call, fan, null)).toMatchObject({
+      status: 200,
+      body: { whatsapp: null },
+    });
+    expect(await putContact(call, fan, '(75) 99123-4567')).toMatchObject({ status: 200 });
+    await approve(admin, fan);
+    const clubId = await clubOf(fan);
+    expect(await putContact(call, fan, null)).toMatchObject(refusal('contact_required'));
+    expect(await putContact(call, fan, '75 98888-7777')).toMatchObject({
+      status: 200,
+      body: { whatsapp: '+5575988887777' },
+    });
+    expect(await read(`users/${fan.uid}/contact/main`)).toMatchObject({
+      whatsapp: '+5575988887777',
+      source: 'app',
+    });
+    await decideClub(admin, clubId, 'pause', 'active');
+    expect(await putContact(call, fan, null)).toMatchObject(refusal('contact_required'));
+    expect((await read(`users/${fan.uid}/contact/main`))?.whatsapp).toBe('+5575988887777');
+    await decideClub(admin, clubId, 'close', 'paused', { reason: 'owner_request' });
+    expect(await putContact(call, fan, null)).toMatchObject({
+      status: 200,
+      body: { whatsapp: null },
+    });
+    expect((await read(`users/${fan.uid}/contact/main`))?.whatsapp).toBeNull();
   });
 });
 

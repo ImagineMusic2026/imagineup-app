@@ -1,6 +1,7 @@
 import { isArtistId } from '../centrals/model';
 import { filterTokens, isBlockedSocial, isBlockedText } from '../content-filter';
 import { dayKey, shiftDay } from '../day';
+import { parseWhatsapp } from '../fan-contact/model';
 import { normalizeSocialHandle } from '../fan-profile/details';
 import { cleanLine, cleanMultiline, isVisibleLine, isVisibleMultiline } from '../visible-line';
 
@@ -293,6 +294,7 @@ export type FanClubInvalidField =
  * Os motivos do 409 `fan_club_refused` desta etapa (34.3), mais o
  * `applications_closed`: a candidatura com o `FAN_CLUB_OPEN` desligado (decisão 9;
  * o `program_closed` do `unavailableReason` é o fã-clube fechado para o artista).
+ * O `contact_required` é do `PUT /me/contact` (decisão 14).
  */
 export type FanClubRefusal =
   | 'applications_closed'
@@ -303,7 +305,8 @@ export type FanClubRefusal =
   | 'has_fan_club'
   | 'cooldown'
   | 'too_many_rounds'
-  | 'not_allowed';
+  | 'not_allowed'
+  | 'contact_required';
 
 export type FanClubErrorCode = 'fan_club_invalid' | 'fan_club_refused';
 
@@ -402,6 +405,7 @@ export const APPLICATION_KEYS = [
   'name',
   'instagram',
   'tiktok',
+  'whatsapp',
   'pitch',
   'adult',
   'rulesVersion',
@@ -413,6 +417,8 @@ export type ApplicationInput = {
   name: string;
   instagram: string | null;
   tiktok: string | null;
+  /** O WhatsApp no formato guardado (`+55`, o DDD e o celular), para o contato do fã (decisão 14). */
+  whatsapp: string;
   pitch: string;
 };
 
@@ -429,7 +435,9 @@ const isTextOrNull = (value: unknown): value is string | null =>
  *   com o campo (400 `invalid_request` na rota);
  * - o resto fora da regra lança `fan_club_invalid` com o campo e o motivo, na
  *   ordem: o nome, o texto de divulgação, as redes (pelo menos uma), o
- *   `adult: true` e a `rulesVersion` igual à do servidor.
+ *   WhatsApp (obrigatório, pelo `parseWhatsapp` do contato do fã: o celular
+ *   brasileiro com o DDD e o 9), o `adult: true` e a `rulesVersion` igual à do
+ *   servidor.
  */
 export function parseApplication(
   body: unknown,
@@ -440,7 +448,7 @@ export function parseApplication(
   const unknownKey = keys.find((key) => !(APPLICATION_KEYS as readonly string[]).includes(key));
   if (unknownKey !== undefined) return { ok: false, field: unknownKey };
   if (!isArtistId(body.artistId)) return { ok: false, field: 'artistId' };
-  for (const key of ['name', 'pitch', 'rulesVersion'] as const) {
+  for (const key of ['name', 'pitch', 'whatsapp', 'rulesVersion'] as const) {
     if (typeof body[key] !== 'string') return { ok: false, field: key };
   }
   for (const key of ['instagram', 'tiktok'] as const) {
@@ -454,11 +462,13 @@ export function parseApplication(
   const instagram = cleanSocial('instagram', (body.instagram as string | null | undefined) ?? null);
   const tiktok = cleanSocial('tiktok', (body.tiktok as string | null | undefined) ?? null);
   if (instagram === null && tiktok === null) throw fanClubInvalid('socials', 'format');
+  const whatsapp = parseWhatsapp(body.whatsapp);
+  if (whatsapp === null) throw fanClubInvalid('whatsapp', 'format');
   if (body.adult !== true) throw fanClubInvalid('adult', 'format');
   if (body.rulesVersion !== rulesVersion) throw fanClubInvalid('rulesVersion', 'format');
   return {
     ok: true,
-    value: { artistId: body.artistId, name: name.name, instagram, tiktok, pitch },
+    value: { artistId: body.artistId, name: name.name, instagram, tiktok, whatsapp, pitch },
   };
 }
 

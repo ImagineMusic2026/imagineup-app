@@ -7,7 +7,7 @@ import {
   type Transaction,
 } from 'firebase-admin/firestore';
 
-import { applicationRecord, fanClubRecord } from './model';
+import { applicationRecord, fanClubRecord, isLiveFanClub, type FanClubRecord } from './model';
 
 // Onde o fã-clube mora no Firestore (docs/arquitetura-api.md, 34.4) e os
 // passos que outros módulos chamam sem passar pelo service: a pausa pela
@@ -46,15 +46,15 @@ export const liveFanClubsOfArtist = (db: Firestore, artistId: string) =>
   fanClubsOf(db).where('artistId', '==', artistId).where('status', 'in', ['active', 'paused']);
 
 /**
- * O fã-clube ativo do fã, para a suspensão pausar (decisão 33), na transação
- * de quem chama: a candidatura e, com o `clubId`, o fã-clube. Só leituras (a
- * suspensão grava depois de ler tudo). Null sem fã-clube ativo dele.
+ * O fã-clube da candidatura aprovada do fã, na transação de quem chama: a
+ * candidatura e, com o `clubId`, o fã-clube, se ele ainda é do fã. Só
+ * leituras (quem chama grava depois de ler tudo).
  */
-export async function readActiveClubOf(
+async function readOwnClubOf(
   tx: Transaction,
   db: Firestore,
   uid: string,
-): Promise<{ ref: DocumentReference; clubId: string } | null> {
+): Promise<{ ref: DocumentReference; record: FanClubRecord } | null> {
   const application = await tx.get(applicationRef(db, uid));
   if (!application.exists) return null;
   const { status, clubId } = applicationRecord(uid, application.data() ?? {});
@@ -62,8 +62,35 @@ export async function readActiveClubOf(
   const club = await tx.get(fanClubRef(db, clubId));
   if (!club.exists) return null;
   const record = fanClubRecord(club.id, club.data() ?? {});
-  if (record.ownerUid !== uid || record.status !== 'active') return null;
-  return { ref: club.ref, clubId };
+  return record.ownerUid === uid ? { ref: club.ref, record } : null;
+}
+
+/**
+ * O fã-clube ativo do fã, para a suspensão pausar (decisão 33). Null sem
+ * fã-clube ativo dele.
+ */
+export async function readActiveClubOf(
+  tx: Transaction,
+  db: Firestore,
+  uid: string,
+): Promise<{ ref: DocumentReference; clubId: string } | null> {
+  const own = await readOwnClubOf(tx, db, uid);
+  if (own === null || own.record.status !== 'active') return null;
+  return { ref: own.ref, clubId: own.record.id };
+}
+
+/**
+ * O fã tem fã-clube ativo ou pausado: o `PUT /me/contact` recusa apagar o
+ * WhatsApp com `contact_required`, porque ele é o canal dos prêmios (decisão
+ * 14). Até duas leituras.
+ */
+export async function hasLiveFanClub(
+  tx: Transaction,
+  db: Firestore,
+  uid: string,
+): Promise<boolean> {
+  const own = await readOwnClubOf(tx, db, uid);
+  return own !== null && isLiveFanClub(own.record.status);
 }
 
 /** A pausa pela suspensão do gestor (decisão 33): `paused`, o motivo, a data e o destaque fora. */

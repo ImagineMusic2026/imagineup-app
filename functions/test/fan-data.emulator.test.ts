@@ -578,6 +578,8 @@ describe('o arquivo de um fã com dado em toda fonte, e a exclusão', () => {
         artistId,
         name: 'Turma da Camila',
         instagram: 'camila.teste.up',
+        // O contato do fã nasce aqui (source fanclub), e o resgate depois o regrava.
+        whatsapp: '(75) 99123-4567',
         pitch: 'Divulgo a central nos stories e no grupo dos fãs da cidade.',
         adult: true,
         rulesVersion: FAN_CLUB_RULES_VERSION,

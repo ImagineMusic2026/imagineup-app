@@ -11,7 +11,8 @@ import { applicationRef } from './store';
 // O fã-clube no seed dos emuladores (docs/arquitetura-api.md, 34.12), na
 // etapa 1 de 34.14: a Camila, gestora aprovada do fã-clube do Netto, pelos
 // núcleos de verdade (a candidatura com o ator de sistema, que não conta no
-// teto, e a aprovação com o admin do seed), e o Nenho com o `photosAllowed:
+// teto, com o WhatsApp de teste no contato dela, e a aprovação com o admin do
+// seed), e o Nenho com o `photosAllowed:
 // false` gravado (os fã-clubes dele só publicam texto). O Netto fica com as
 // caixas pelo padrão (o `imageRightsConfirmed`). As publicações, os
 // seguidores, a denúncia, o prêmio e a candidatura pendente da Duda chegam
@@ -21,12 +22,16 @@ import { applicationRef } from './store';
 /** A central com as fotos de fã desligadas (só texto). */
 export const SEED_TEXT_ONLY_ARTIST = 'nenho';
 
-/** A candidatura da Camila (as redes de exemplo do perfil dela, 28.10). */
+/**
+ * A candidatura da Camila (as redes de exemplo do perfil dela, 28.10), com um
+ * WhatsApp de teste no molde dos pedidos abertos do seed da loja (seção 35).
+ */
 export const SEED_CAMILA_FAN_CLUB: ApplicationInput = {
   artistId: 'nettobrito',
   name: 'Netto de Coração',
   instagram: 'camila.teste.up',
   tiktok: 'camila.teste.up',
+  whatsapp: '+5575900000010',
   pitch:
     'Divulgo o Netto nos stories e no grupo dos fãs de Irará, levo a turma aos shows e ' +
     'compartilho os clipes no dia do lançamento.',

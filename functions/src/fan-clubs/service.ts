@@ -15,6 +15,7 @@ import type {
 } from '../api/contract';
 import { artistRecord, CENTRALS_MAX, isPublished, type ArtistRecord } from '../centrals/model';
 import { artistRef, membershipRef, membershipsRef } from '../centrals/service';
+import { writeFanContact } from '../fan-contact/store';
 import { isAutomaticUsername } from '../fan-profile/model';
 import { countDailyAction, enforceDailyCap } from '../moderation/caps';
 import {
@@ -243,8 +244,9 @@ export type FanClubOutcome = { body: MyFanClub; plan: AwardPlan };
  * candidatura (`not_member`, depois `artist_closed`); com a candidatura
  * aprovada, o fã-clube dela; a candidatura de antes (`applicationTurn`); o
  * teto `fanclub_apply`; o `planAwards` sem entradas; e grava a candidatura
- * (`pending`, com as cópias do perfil, o `history` de antes e a rodada) e o
- * privado (as redes e o texto de divulgação), juntos.
+ * (`pending`, com as cópias do perfil, o `history` de antes e a rodada), o
+ * privado (as redes e o texto de divulgação) e o contato do fã
+ * (`users/{uid}/contact/main`, com `source: 'fanclub'`), juntos.
  */
 export async function applyForFanClub(
   tx: Transaction,
@@ -337,6 +339,8 @@ export async function applyForFanClub(
     pitch: input.pitch,
     schemaVersion: 1,
   });
+  // O WhatsApp vai para o contato do fã, e não para o privado (decisão 14).
+  writeFanContact(tx, db, fan.uid, input.whatsapp, 'fanclub', at);
   countDailyAction(plan, fan, award, 'club_apply');
   return {
     body: { ...programOf(), application: applicationView(record, null, award.now), club: null },
