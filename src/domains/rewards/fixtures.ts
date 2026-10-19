@@ -3,7 +3,13 @@ import { set, subDays } from 'date-fns';
 import { buildAgendaEventsFixture } from '@/domains/agenda/fixtures';
 import { isUpcoming } from '@/domains/agenda/group-by-month';
 import { ApiError } from '@/services/api/errors';
-import { fixtureNow, fixtureWallet, onFixtureSessionEnd } from '@/services/fixtures';
+import {
+  fixtureContact,
+  fixtureNow,
+  fixtureWallet,
+  onFixtureSessionEnd,
+} from '@/services/fixtures';
+import { parseWhatsapp } from '@/utils/whatsapp';
 
 import { REDEEM_ERROR_CODES, REWARDS_RULES_URL } from './consts';
 import type {
@@ -245,14 +251,23 @@ function baseRedemptions(now: Date): StoredRedemption[] {
 // o mais novo) e o que cada chave de idempotência já devolveu, com o custo
 // que ela mandou.
 let sessionRedemptions: StoredRedemption[] = [];
-let answered = new Map<string, { result: RedeemResult; expectedCost: number }>();
+let answered = new Map<
+  string,
+  { result: RedeemResult; expectedCost: number; whatsapp: string | undefined }
+>();
 
 function allRedemptions(now: Date): StoredRedemption[] {
   return [...baseRedemptions(now), ...sessionRedemptions];
 }
 
-function reject(kind: ApiError['kind'], message: string, status: number, code: string): never {
-  throw new ApiError(kind, message, status, code);
+function reject(
+  kind: ApiError['kind'],
+  message: string,
+  status: number,
+  code: string,
+  details: Record<string, unknown> | null = null,
+): never {
+  throw new ApiError(kind, message, status, code, details);
 }
 
 /** A recompensa como a loja mostra, com o show aberto e os pedidos do fã. */
@@ -315,16 +330,18 @@ function drawCode(taken: ReadonlySet<string>): string {
 
 /**
  * O servidor do resgate nas fixtures, com as recusas da API na mesma ordem
- * (25.2), fora o teto do dia: a chave já usada com outro custo
+ * (25.2), fora o teto do dia: o WhatsApp fora do formato (`invalid_request`
+ * com o campo, seção 35), a chave já usada com outro custo ou outro número
  * (`idempotency_key_reused`), a recompensa que não existe
  * (`reward_not_found`), esgotada (`sold_out`: sem vaga ou com o show que
  * passou), o custo mudado (`reward_changed`), o limite por fã
  * (`redeem_limit_reached`) e, pela `fixtureWallet.spend`, o saldo
  * (`insufficient_points`). Desconta só o saldo (o nível e a temporada não
  * caem), baixa o estoque e devolve o código e as instruções, com o pedido
- * solicitado, que também voltam na loja (`redemptions`). A mesma chave
- * devolve o resgate da primeira vez, sem gastar de novo. Fica em memória e
- * volta ao início quando o app reabre ou a sessão termina.
+ * solicitado, que também voltam na loja (`redemptions`), e guarda o número
+ * no contato de exemplo (`fixtureContact`). A mesma chave devolve o resgate
+ * da primeira vez, sem gastar de novo. Fica em memória e volta ao início
+ * quando o app reabre ou a sessão termina.
  */
 export const rewardsFixture = {
   redeem(
@@ -332,10 +349,15 @@ export const rewardsFixture = {
     idempotencyKey: string,
     expectedCost: number,
     now: Date = fixtureNow(),
+    whatsapp?: string,
   ): RedeemResult {
+    const number = whatsapp === undefined ? undefined : parseWhatsapp(whatsapp);
+    if (number === null) {
+      reject('validation', 'Pedido inválido.', 400, 'invalid_request', { field: 'whatsapp' });
+    }
     const previous = answered.get(idempotencyKey);
     if (previous) {
-      if (previous.expectedCost !== expectedCost) {
+      if (previous.expectedCost !== expectedCost || previous.whatsapp !== number) {
         reject(
           'validation',
           'Esta chave já foi usada em outro pedido.',
@@ -398,7 +420,8 @@ export const rewardsFixture = {
       redeemedAt: at,
       status: 'requested',
     };
-    answered.set(idempotencyKey, { result, expectedCost });
+    answered.set(idempotencyKey, { result, expectedCost, whatsapp: number });
+    if (number !== undefined) fixtureContact.set(number);
     return { ...result };
   },
 

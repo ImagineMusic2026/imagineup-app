@@ -233,6 +233,9 @@ export function buildRewardGrid(rewards: readonly Reward[]): RewardGrid {
  * - `suspended`: a conta suspensa pela equipe (403 `account_suspended`, 26.6);
  * - `rateLimited`: pedidos seguidos demais (429 `rate_limited`, 27.3): nada
  *   foi gravado;
+ * - `whatsappInvalid`: o servidor recusou o número (400 `invalid_request` com
+ *   o campo `whatsapp`, seção 35); a confirmação continua aberta, com o erro
+ *   no campo;
  * - `failed`: o resto (rede, servidor); o resultado pode ser incerto.
  */
 export type RedeemFailure =
@@ -245,6 +248,7 @@ export type RedeemFailure =
   | 'alreadyRedeemed'
   | 'suspended'
   | 'rateLimited'
+  | 'whatsappInvalid'
   | 'failed';
 
 const FAILURES: Readonly<Record<string, Exclude<RedeemFailure, 'failed'>>> = {
@@ -262,6 +266,9 @@ export function redeemFailure(error: unknown): RedeemFailure {
   const refusal = actionRefusal(error, 'redeem').type;
   if (refusal === 'suspended' || refusal === 'rateLimited') return refusal;
   if (!(error instanceof ApiError) || error.code === null) return 'failed';
+  if (error.code === REDEEM_ERROR_CODES.invalidRequest && error.details?.field === 'whatsapp') {
+    return 'whatsappInvalid';
+  }
   return FAILURES[error.code] ?? 'failed';
 }
 

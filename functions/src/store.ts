@@ -176,9 +176,11 @@ export async function removeSeasonStandings(db: Firestore, uid: string): Promise
  * bloco 10, os pedidos da loja (cancelFanRedemptions, 25.11), depois do
  * engajamento do mural e antes do recursiveDelete: os solicitados e aprovados
  * viram `canceled`, com a vaga de volta e sem devolver pontos, e todo pedido
- * do fã perde o uid, a cópia do nome e do @ e o motivo da recusa. Desde o
- * fã-clube (seção 34, 34.7), antes dos pedidos, a candidatura e o privado
- * saem, e o fã-clube do gestor vira lápide (removeFanClubData). Pode rodar
+ * do fã perde o uid, a cópia do nome e do @ e o motivo da recusa. Desde a
+ * seção 35, o contato do fã (o WhatsApp, `users/{uid}/contact/main`) sai com o
+ * recursiveDelete do perfil, sem passo próprio. Desde o fã-clube (seção 34,
+ * 34.7), antes dos pedidos, a candidatura e o privado saem, e o fã-clube do
+ * gestor vira lápide (removeFanClubData). Pode rodar
  * mais de uma vez. Dado novo do fã entra aqui e na `FAN_DATA_SOURCES`
  * (fan-data/sources.ts), a lista que a exportação dos pedidos de dados
  * percorre, com o que esta função faz com cada fonte; um teste de emulador

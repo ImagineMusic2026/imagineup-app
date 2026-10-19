@@ -115,6 +115,7 @@ describe('a primeira chamada', () => {
     expect(FAN_DATA_FIRST_KEYS).toEqual([
       'conta',
       'perfil',
+      'contato',
       'arrobasReservados',
       'carteira',
       'convite',
@@ -144,6 +145,7 @@ describe('a primeira chamada', () => {
     ).toEqual({
       conta: { kind: 'auth' },
       perfil: { kind: 'doc', collection: 'users' },
+      contato: { kind: 'subdoc', parent: 'users', name: 'contact', id: 'main' },
       arrobasReservados: { kind: 'equal', collection: 'usernames', field: 'uid' },
       carteira: { kind: 'doc', collection: 'wallets' },
       convite: { kind: 'doc', collection: 'fanInvites' },
@@ -214,6 +216,7 @@ describe('o que a exclusão faz', () => {
       'users.eventRsvps': 'deleted',
       'users.profileSync': 'deleted',
       'users.uploads': 'deleted',
+      'users.contact': 'deleted',
       usernames: 'deleted',
       wallets: 'deleted',
       'wallets.ledger': 'deleted',
@@ -254,6 +257,7 @@ describe('as subcoleções conhecidas (o teste do listCollections)', () => {
       'eventRsvps',
       'profileSync',
       'uploads',
+      'contact',
     ]);
     expect(knownSubcollections('wallets')).toEqual(['ledger', 'centralPoints']);
     expect(knownSubcollections('fanInvites')).toEqual(['inviteLinks', 'inviteVisitors']);

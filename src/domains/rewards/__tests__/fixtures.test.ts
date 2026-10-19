@@ -2,7 +2,7 @@ import { addDays } from 'date-fns';
 
 import { buildAgendaEventsFixture } from '@/domains/agenda/fixtures';
 import { ApiError } from '@/services/api/errors';
-import { fixtureWallet } from '@/services/fixtures';
+import { fixtureContact, fixtureWallet } from '@/services/fixtures';
 
 import { REDEEM_ERROR_CODES } from '../consts';
 import {
@@ -60,6 +60,7 @@ const evening = (daysAgo: number) => new Date(2026, 8, 29 - daysAgo, 18, 0).toIS
 beforeEach(() => {
   rewardsFixture.reset();
   fixtureWallet.reset();
+  fixtureContact.reset();
 });
 
 describe('catálogo de exemplo, igual ao seed (25.13)', () => {
@@ -209,6 +210,27 @@ describe('resgate nas fixtures', () => {
     expect(
       catchError(() => rewardsFixture.redeem('ingressos', 'chave-1', 7_000, NOW)),
     ).toMatchObject({ status: 422, code: REDEEM_ERROR_CODES.alreadyRedeemed });
+  });
+
+  it('o WhatsApp vai para o contato de exemplo; fora do formato, 400 com o campo, sem gastar (seção 35)', () => {
+    expect(
+      catchError(() => rewardsFixture.redeem('ingressos', 'chave-1', 6_000, NOW, '(75) 3221-4567')),
+    ).toMatchObject({ status: 400, code: 'invalid_request', details: { field: 'whatsapp' } });
+    expect(fixtureWallet.get().balance).toBe(12_480);
+    expect(fixtureContact.get()).toBeNull();
+
+    rewardsFixture.redeem('ingressos', 'chave-1', 6_000, NOW, '(75) 99123-4567');
+    expect(fixtureContact.get()).toBe('+5575991234567');
+    // A mesma chave com outro número é outro pedido: 422, como no servidor.
+    expect(
+      catchError(() =>
+        rewardsFixture.redeem('ingressos', 'chave-1', 6_000, NOW, '(11) 98765-4321'),
+      ),
+    ).toMatchObject({ status: 422, code: REDEEM_ERROR_CODES.alreadyRedeemed });
+    // Sem o número (o app de antes), o contato fica como estava.
+    fixtureWallet.earn(20_000);
+    rewardsFixture.redeem('camisa', 'chave-2', 15_000, NOW);
+    expect(fixtureContact.get()).toBe('+5575991234567');
   });
 
   it('o pedido volta na loja, no topo, com o status solicitado e as instruções', () => {

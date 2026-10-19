@@ -1274,6 +1274,70 @@ describe('loja e resgate (bloco 10)', () => {
     }
   });
 
+  it('WhatsApp fora do formato (seção 35): 400 com o campo, antes de abrir a transação', async () => {
+    for (const whatsapp of [null, '', '(75) 3221-4567', '(20) 99123-4567', 75991234567, ['x']]) {
+      const sent = await call(
+        request('POST', '/rewards/camisa/redeem', {
+          headers: { 'Idempotency-Key': 'chave-resgate-1' },
+          body: { expectedCost: 15_000, whatsapp },
+        }),
+      );
+      expect(sent.status).toBe(400);
+      expect(sent.body).toMatchObject({
+        code: 'invalid_request',
+        details: { field: 'whatsapp' },
+      });
+    }
+  });
+
+  it('GET /me/contact (seção 35): o número guardado, conferido de novo, sem chave', async () => {
+    const contactDb = (data: Record<string, unknown> | undefined) =>
+      ({
+        collection: (name: string) => ({
+          doc: (uid: string) => ({
+            collection: (sub: string) => ({
+              doc: (id: string) => ({
+                get: async () => {
+                  expect([name, uid, sub, id]).toEqual(['users', 'uid-camila', 'contact', 'main']);
+                  return { data: () => data };
+                },
+              }),
+            }),
+          }),
+        }),
+      }) as unknown as Firestore;
+    const saved = await call(
+      request('GET', '/me/contact'),
+      API_ROUTES,
+      contactDb({ whatsapp: '+5575991234567', source: 'store' }),
+    );
+    expect(saved.status).toBe(200);
+    expect(saved.body).toEqual({ whatsapp: '+5575991234567' });
+    for (const data of [undefined, { whatsapp: null }, { whatsapp: '(75) 99123-4567' }]) {
+      const sent = await call(request('GET', '/me/contact'), API_ROUTES, contactDb(data));
+      expect(sent.body).toEqual({ whatsapp: null });
+    }
+  });
+
+  it('PUT /me/contact (seção 35): o corpo fora do formato é 400 com o campo, antes da transação; sem chave, 400', async () => {
+    for (const body of [
+      undefined,
+      {},
+      { whatsapp: '' },
+      { whatsapp: '(75) 3221-4567' },
+      { whatsapp: 75991234567 },
+      [{ whatsapp: '+5575991234567' }],
+    ]) {
+      const sent = await call(
+        request('PUT', '/me/contact', { headers: { 'Idempotency-Key': 'chave-contato-1' }, body }),
+      );
+      expect(sent.status).toBe(400);
+      expect(sent.body).toMatchObject({ code: 'invalid_request', details: { field: 'whatsapp' } });
+    }
+    const keyless = await call(request('PUT', '/me/contact', { body: { whatsapp: null } }));
+    expect(keyless.body).toMatchObject({ code: 'idempotency_key_required' });
+  });
+
   it('id fora do formato: 404 reward_not_found, sem ler nada', async () => {
     for (const path of ['/rewards/__x__/redeem', '/rewards/meet.netto/redeem']) {
       const sent = await call(

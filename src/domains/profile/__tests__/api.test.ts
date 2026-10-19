@@ -3,16 +3,18 @@ import { doc, getDoc, onSnapshot } from 'firebase/firestore';
 import { storageFileExists, uploadLocalFile } from '@/firebase';
 
 import { api } from '@/services/api';
-import { fixtureWallet } from '@/services/fixtures';
+import { fixtureContact, fixtureWallet } from '@/services/fixtures';
 
 import {
   applyEditableProfile,
   fetchFanProfile,
   fetchMyAchievements,
   fetchMyInvite,
+  fetchContact,
   fetchMyProfile,
   fetchMyProgress,
   fetchUsernameAvailability,
+  updateContact,
   fetchWallet,
   photoUploaded,
   registerInviteLink,
@@ -471,6 +473,59 @@ describe('perfil editável (bloco 9 e seção 28)', () => {
     expect(get).toHaveBeenCalledWith('/me/username/availability', {
       params: { username: 'camilaribeiro' },
     });
+  });
+
+  it('o WhatsApp guardado (seção 35) vem de GET /me/contact, conferido de novo', async () => {
+    mockDataSource = 'api';
+    get.mockResolvedValueOnce({ data: { whatsapp: '+5575991234567' } });
+    await expect(fetchContact()).resolves.toEqual({ whatsapp: '+5575991234567' });
+    expect(get).toHaveBeenCalledWith('/me/contact');
+    for (const data of [{ whatsapp: null }, { whatsapp: '(75) 99123-4567' }, {}, null]) {
+      get.mockResolvedValueOnce({ data });
+      await expect(fetchContact()).resolves.toEqual({ whatsapp: null });
+    }
+  });
+
+  it('trocar e apagar o WhatsApp é PUT /me/contact com a chave, e a resposta é conferida de novo', async () => {
+    mockDataSource = 'api';
+    const put = jest.mocked(api.put);
+    put.mockResolvedValueOnce({ data: { whatsapp: '+5575991234567' } });
+    await expect(updateContact('(75) 99123-4567', 'contact-chave-0001')).resolves.toEqual({
+      whatsapp: '+5575991234567',
+    });
+    expect(put).toHaveBeenCalledWith(
+      '/me/contact',
+      { whatsapp: '(75) 99123-4567' },
+      { headers: { 'Idempotency-Key': 'contact-chave-0001' } },
+    );
+    put.mockResolvedValueOnce({ data: { whatsapp: 'estranho' } });
+    await expect(updateContact(null, 'contact-chave-0002')).resolves.toEqual({ whatsapp: null });
+  });
+
+  it('nas fixtures, trocar e apagar gravam no contato de exemplo; fora do formato, 400 com o campo', async () => {
+    fixtureContact.reset();
+    await expect(updateContact('(11) 98765-4321', 'contact-chave-0001')).resolves.toEqual({
+      whatsapp: '+5511987654321',
+    });
+    expect(fixtureContact.get()).toBe('+5511987654321');
+    await expect(updateContact('(75) 3221-4567', 'contact-chave-0002')).rejects.toMatchObject({
+      status: 400,
+      code: 'invalid_request',
+      details: { field: 'whatsapp' },
+    });
+    expect(fixtureContact.get()).toBe('+5511987654321');
+    await expect(updateContact(null, 'contact-chave-0003')).resolves.toEqual({ whatsapp: null });
+    expect(fixtureContact.get()).toBeNull();
+    expect(jest.mocked(api.put)).not.toHaveBeenCalled();
+  });
+
+  it('nas fixtures, o WhatsApp é o do último resgate de exemplo, sem rede', async () => {
+    fixtureContact.reset();
+    await expect(fetchContact()).resolves.toEqual({ whatsapp: null });
+    fixtureContact.set('+5511987654321');
+    await expect(fetchContact()).resolves.toEqual({ whatsapp: '+5511987654321' });
+    fixtureContact.reset();
+    expect(get).not.toHaveBeenCalled();
   });
 
   it('gravar e tirar a foto vão com a chave da tentativa', async () => {

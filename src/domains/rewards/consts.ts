@@ -40,6 +40,8 @@ export const REDEEM_ERROR_CODES = {
   changed: 'reward_changed',
   dailyLimit: 'too_many_requests',
   alreadyRedeemed: 'idempotency_key_reused',
+  /** Com o `details.field` `whatsapp`: o número fora do formato (seção 35). */
+  invalidRequest: 'invalid_request',
 } as const;
 
 /**

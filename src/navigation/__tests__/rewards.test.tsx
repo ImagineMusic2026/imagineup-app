@@ -21,7 +21,7 @@ import type { RedeemResult, RewardsResponse } from '@/domains/rewards/types';
 import { t } from '@/i18n';
 import { api } from '@/services/api';
 import { ApiError } from '@/services/api/errors';
-import { fixtureWallet } from '@/services/fixtures';
+import { fixtureContact, fixtureWallet } from '@/services/fixtures';
 import { haptics } from '@/services/haptics';
 
 // O build do Firebase que o Jest resolve é ESM; a loja só lê a carteira do
@@ -135,6 +135,10 @@ const NEW_CODE =
 /** O código da resposta da API nos testes, com o status solicitado (no sucesso e no detalhe). */
 const VIDEO_CODE = /^Código do resgate: UP-2001\. Solicitado em \d+ de \p{L}+\.$/u;
 const CONFIRM = t('rewards.confirm.action');
+/** O WhatsApp guardado da Camila nos testes (seção 35), e como o campo o mostra. */
+const SAVED = '+5575991234567';
+const SAVED_FIELD = '(75) 99123-4567';
+const WHATSAPP = t('rewards.confirm.whatsapp.label');
 
 const announcements = () =>
   jest
@@ -157,14 +161,20 @@ function deferred<T>() {
   return { promise, resolve };
 }
 
-/** A API por rota: a loja das fixtures e a carteira pedida. */
+/** A API por rota: a loja das fixtures, a carteira pedida e o WhatsApp guardado. */
 function mockApi({
   balance = 12_480,
   rewards = () => buildRewardsFixture(new Date()),
-}: { balance?: number; rewards?: () => RewardsResponse } = {}): void {
+  contact = () => SAVED,
+}: {
+  balance?: number;
+  rewards?: () => RewardsResponse;
+  contact?: () => string | null;
+} = {}): void {
   mockDataSource = 'api';
   get.mockImplementation(async (url: string) => {
     if (url === '/rewards') return { data: rewards() } as never;
+    if (url === '/me/contact') return { data: { whatsapp: contact() } } as never;
     if (url === '/me/wallet') {
       // Gravada agora: a recusa antiga das fixtures (a videochamada) não faz
       // a carteira buscar de novo (syncRefunds).
@@ -235,6 +245,9 @@ beforeEach(() => {
   mockDataSource = 'fixtures';
   rewardsFixture.reset();
   fixtureWallet.reset();
+  // A Camila já resgatou antes: o campo do WhatsApp vem preenchido.
+  fixtureContact.reset();
+  fixtureContact.set(SAVED);
   onlineManager.setOnline(true);
   // Como no app no modo fixtures: consulta não pausa offline; mutação segue o padrão.
   client = new QueryClient({
@@ -382,6 +395,13 @@ describe('loja de recompensas (1h)', () => {
       ),
     ).toBeTruthy();
     expect(fixtureWallet.get().balance).toBe(12_480);
+    // O WhatsApp vem preenchido com o guardado, com o +55 fixo e a finalidade (seção 35).
+    const whatsapp = screen.getByLabelText(WHATSAPP);
+    expect(whatsapp).toHaveProp('value', SAVED_FIELD);
+    expect(whatsapp).toHaveProp('editable', true);
+    expect(whatsapp).toHaveProp('keyboardType', 'phone-pad');
+    expect(whatsapp).toHaveProp('accessibilityHint', t('rewards.confirm.whatsapp.hint'));
+    expect(screen.getByText('+55', { includeHiddenElements: true })).toBeTruthy();
 
     // Confirmado: código, instruções do servidor e o saldo novo.
     const invalidate = jest.spyOn(client, 'invalidateQueries');
@@ -402,6 +422,7 @@ describe('loja de recompensas (1h)', () => {
     ).toBeTruthy();
     expect(screen.getByText(/e-mail da sua conta em até 5 dias úteis/)).toBeTruthy();
     expect(screen.getByText(t('rewards.success.tracking'))).toBeTruthy();
+    expect(screen.getByText(t('rewards.success.whatsapp', { number: SAVED_FIELD }))).toBeTruthy();
     expect(haptics.trigger).toHaveBeenCalledWith('redeem');
     expect(haptics.trigger).not.toHaveBeenCalledWith('insufficientPoints');
     // Só o saldo cai: o nível e a temporada ficam.
@@ -480,6 +501,54 @@ describe('loja de recompensas (1h)', () => {
 
     act(() => testRouter.back());
     await waitFor(() => expect(view.getPathname()).toBe('/recompensas'));
+  });
+
+  it('sem número guardado, o campo vem vazio; confirmar sem ele avisa no campo e não gasta (seção 35)', async () => {
+    fixtureContact.reset();
+    await openVideoConfirmation();
+    const whatsapp = screen.getByLabelText(WHATSAPP);
+    expect(whatsapp).toHaveProp('value', '');
+
+    fireEvent.press(screen.getByRole('button', { name: CONFIRM }));
+    const required = t('rewards.confirm.whatsapp.required');
+    expect(await screen.findByText(required, { includeHiddenElements: true })).toBeTruthy();
+    expect(screen.getByLabelText(WHATSAPP)).toHaveProp(
+      'accessibilityHint',
+      `${required} ${t('rewards.confirm.whatsapp.hint')}`,
+    );
+    expect(announcements()).toContain(required);
+    expect(fixtureWallet.get().balance).toBe(12_480);
+
+    // Fora do formato (o fixo, sem o 9): o outro aviso, e nada sai.
+    fireEvent.changeText(screen.getByLabelText(WHATSAPP), '7532214567');
+    expect(screen.getByLabelText(WHATSAPP)).toHaveProp('value', '(75) 32214-567');
+    expect(screen.queryByText(required, { includeHiddenElements: true })).toBeNull();
+    fireEvent.press(screen.getByRole('button', { name: CONFIRM }));
+    expect(
+      await screen.findByText(t('rewards.confirm.whatsapp.invalid'), {
+        includeHiddenElements: true,
+      }),
+    ).toBeTruthy();
+    expect(fixtureWallet.get().balance).toBe(12_480);
+
+    // Colado com o país: a máscara tira o +55, e o resgate guarda o número.
+    fireEvent.changeText(screen.getByLabelText(WHATSAPP), '+55 11 98765-4321');
+    expect(screen.getByLabelText(WHATSAPP)).toHaveProp('value', '(11) 98765-4321');
+    fireEvent.press(screen.getByRole('button', { name: CONFIRM }));
+    expect(await screen.findByText('Resgate confirmado')).toBeTruthy();
+    expect(fixtureContact.get()).toBe('+5511987654321');
+    expect(
+      screen.getByText(t('rewards.success.whatsapp', { number: '(11) 98765-4321' })),
+    ).toBeTruthy();
+  });
+
+  it('o número editado vai no resgate e vira o guardado da próxima confirmação', async () => {
+    await openVideoConfirmation();
+    fireEvent.changeText(screen.getByLabelText(WHATSAPP), '(71) 98888-7777');
+    fireEvent.press(screen.getByRole('button', { name: CONFIRM }));
+    expect(await screen.findByText('Resgate confirmado')).toBeTruthy();
+    expect(fixtureContact.get()).toBe('+5571988887777');
+    expect(client.getQueryData(profileKeys.contact())).toEqual({ whatsapp: '+5571988887777' });
   });
 
   it('"Voltar" da confirmação volta ao detalhe sem gastar nada', async () => {
@@ -566,7 +635,7 @@ describe('resgate pela API', () => {
       method: 'POST',
       url: '/rewards/videochamada/redeem',
       headers: { 'Idempotency-Key': expect.any(String) },
-      data: { expectedCost: 8_500 },
+      data: { expectedCost: 8_500, whatsapp: SAVED },
     });
     expect(second?.headers).toEqual(first?.headers);
     expect(second?.data).toEqual(first?.data);
@@ -913,6 +982,81 @@ describe('resgate pela API', () => {
     expect(
       await screen.findByRole('button', { name: t('rewards.details.limitReachedOne') }),
     ).toBeDisabled();
+  });
+
+  it('o número que o servidor recusa (400 com o campo) volta ao campo, sem sair da confirmação', async () => {
+    mockApi();
+    request
+      .mockRejectedValueOnce(
+        new ApiError('validation', 'Pedido inválido.', 400, REDEEM_ERROR_CODES.invalidRequest, {
+          field: 'whatsapp',
+        }),
+      )
+      .mockResolvedValueOnce({ data: videoResult } as never);
+    await openVideoConfirmation();
+    await waitFor(() => expect(screen.getByLabelText(WHATSAPP)).toHaveProp('value', SAVED_FIELD));
+
+    fireEvent.press(screen.getByRole('button', { name: CONFIRM }));
+    const invalid = t('rewards.confirm.whatsapp.invalid');
+    expect(await screen.findByText(invalid, { includeHiddenElements: true })).toBeTruthy();
+    expect(screen.getByRole('header', { name: 'Confirmar resgate?' })).toBeTruthy();
+    expect(announcements()).toContain(invalid);
+    expect(haptics.trigger).toHaveBeenCalledWith('error');
+
+    // A recusa é definitiva: o número corrigido vai com chave nova.
+    fireEvent.changeText(screen.getByLabelText(WHATSAPP), '(75) 98765-4321');
+    fireEvent.press(screen.getByRole('button', { name: CONFIRM }));
+    expect(await screen.findByText('Resgate confirmado')).toBeTruthy();
+    const key = (call: number) =>
+      (request.mock.calls[call]![0] as { headers: Record<string, string> }).headers[
+        'Idempotency-Key'
+      ];
+    expect(key(1)).not.toBe(key(0));
+    expect(request.mock.calls[1]![0]).toMatchObject({
+      data: { expectedCost: 8_500, whatsapp: '+5575987654321' },
+    });
+  });
+
+  it('depois de uma falha incerta, o campo mostra o número da tentativa, sem edição', async () => {
+    mockApi();
+    request
+      .mockRejectedValueOnce(new ApiError('network', 'sem rede'))
+      .mockResolvedValueOnce({ data: videoResult } as never);
+    await openVideoConfirmation();
+    await waitFor(() => expect(screen.getByLabelText(WHATSAPP)).toHaveProp('value', SAVED_FIELD));
+    fireEvent.changeText(screen.getByLabelText(WHATSAPP), '(71) 98888-7777');
+
+    fireEvent.press(screen.getByRole('button', { name: CONFIRM }));
+    expect(await screen.findByText(t('rewards.errors.failed'))).toBeTruthy();
+    const locked = screen.getByLabelText(WHATSAPP);
+    expect(locked).toHaveProp('value', '(71) 98888-7777');
+    expect(locked).toHaveProp('editable', false);
+    expect(locked).toHaveProp('accessibilityHint', t('rewards.confirm.whatsapp.locked'));
+
+    fireEvent.press(screen.getByRole('button', { name: CONFIRM }));
+    expect(await screen.findByText('Resgate confirmado')).toBeTruthy();
+    expect(request.mock.calls[1]![0]).toMatchObject({
+      data: { expectedCost: 8_500, whatsapp: '+5571988887777' },
+    });
+  });
+
+  it('a api de antes da seção 35 (sem o GET /me/contact): o campo vem vazio, e o resgate segue', async () => {
+    mockApi();
+    const routes = get.getMockImplementation()!;
+    get.mockImplementation(async (url: string, ...rest: unknown[]) => {
+      if (url === '/me/contact')
+        throw new ApiError('notFound', 'Rota não encontrada.', 404, 'not_found');
+      return routes(url, ...(rest as []));
+    });
+    request.mockResolvedValueOnce({ data: videoResult } as never);
+    await openVideoConfirmation();
+    // O 404 já processado: o campo vazio é o da falha, e não o da consulta carregando.
+    await waitFor(() => expect(client.getQueryState(profileKeys.contact())?.status).toBe('error'));
+    expect(screen.getByLabelText(WHATSAPP)).toHaveProp('value', '');
+    fireEvent.changeText(screen.getByLabelText(WHATSAPP), '75991234567');
+    fireEvent.press(screen.getByRole('button', { name: CONFIRM }));
+    expect(await screen.findByText('Resgate confirmado')).toBeTruthy();
+    expect(request.mock.calls[0]![0]).toMatchObject({ data: { whatsapp: SAVED } });
   });
 
   it('o teto do dia só avisa, com o toque de erro; a próxima tentativa leva chave nova', async () => {

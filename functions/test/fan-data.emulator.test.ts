@@ -423,6 +423,8 @@ async function leftovers(
           return !(await exists(`${how.collection}/${uid}`));
         case 'sub':
           return none(db.collection(`${how.parent}/${uid}/${how.name}`));
+        case 'subdoc':
+          return !(await exists(`${how.parent}/${uid}/${how.name}/${how.id}`));
         case 'equal':
           return none(db.collection(how.collection).where(how.field, '==', uid));
         case 'group':
@@ -607,7 +609,10 @@ describe('o arquivo de um fã com dado em toda fonte, e a exclusão', () => {
         admin,
       );
       await ok('setRewardStatus', { rewardId, status: 'published' }, admin);
-      const redeemed = await as(fan)('POST', `/rewards/${rewardId}/redeem`, { expectedCost: 50 });
+      const redeemed = await as(fan)('POST', `/rewards/${rewardId}/redeem`, {
+        expectedCost: 50,
+        whatsapp: '(75) 99123-4567',
+      });
       expect(redeemed.status).toBe(200);
       const redemptionId = redeemed.body.code as string;
       await ok(
@@ -662,6 +667,12 @@ describe('o arquivo de um fã com dado em toda fonte, e a exclusão', () => {
         expect(profile, field).not.toHaveProperty(field);
       }
       expect(profile.photoURL).toEqual(expect.any(String));
+      // O contato do fã (seção 35), inteiro, com a origem e a data.
+      expect(file.contato).toEqual({
+        whatsapp: '+5575991234567',
+        source: 'store',
+        updatedAt: expect.stringMatching(/Z$/),
+      });
       expect(file.pessoasTrazidas).toBe(1);
       expect(file.origem as Item).toMatchObject({ code: inviterCode });
       for (const field of ['inviterUid', 'award', 'inviterRemovedAt']) {

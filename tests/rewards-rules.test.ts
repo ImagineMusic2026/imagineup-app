@@ -7,6 +7,7 @@ import {
 } from '@firebase/rules-unit-testing';
 import {
   collection,
+  collectionGroup,
   deleteDoc,
   doc,
   getDoc,
@@ -26,7 +27,10 @@ import { resolve } from 'node:path';
  * (redemptions) são só do servidor: o fã recebe a loja e os próprios pedidos
  * pela API, nem o pedido com o uid dele lê direto. A equipe com a seção
  * rewards lê os dois, os contadores do dia (statsDaily) e os shows (events),
- * para escolher o show da recompensa. Ninguém grava pelo cliente.
+ * para escolher o show da recompensa. Ninguém grava pelo cliente. Desde a
+ * seção 35, o contato do fã (o WhatsApp do resgate, users/{uid}/contact/main)
+ * fica fechado para todos, até para o próprio fã e para o admin: o fã recebe
+ * o dele pela API, e a equipe com rewards, pela callable dos contatos.
  */
 let env: RulesTestEnvironment;
 
@@ -92,6 +96,7 @@ const REDEMPTION = 'redemptions/UP-4KD9TM';
 const STATS_DAY = 'statsDaily/2026-10-05';
 const STATS_SHARD = `${STATS_DAY}/statsShards/7`;
 const EVENT = 'events/sao-joao-irara';
+const CONTACT = 'users/uid-camila/contact/main';
 
 /** Equipe, o perfil da Camila e os documentos da loja, como o servidor grava. */
 async function seed(): Promise<void> {
@@ -120,6 +125,11 @@ async function seed(): Promise<void> {
       city: null,
       photoURL: null,
       createdAt: Timestamp.now(),
+    });
+    await setDoc(doc(db, CONTACT), {
+      whatsapp: '+5575991234567',
+      source: 'store',
+      updatedAt: Timestamp.now(),
     });
     const at = Timestamp.now();
     await setDoc(doc(db, REWARD), {
@@ -243,6 +253,33 @@ describe('catálogo e pedidos (rewards, redemptions)', () => {
     await assertFails(
       getDocs(query(collection(db, 'redemptions'), where('uid', '==', 'uid-camila'))),
     );
+  });
+});
+
+describe('o contato do fã (seção 35)', () => {
+  it('ninguém lê pelas regras: nem a própria fã, nem a equipe com rewards ou fans, nem o admin', async () => {
+    for (const db of [
+      as('uid-camila'),
+      as('admin'),
+      as('editora'),
+      as('leitor'),
+      as('fas'),
+      as('ligada', LINKED_AT),
+      anonymous(),
+    ]) {
+      await assertFails(getDoc(doc(db, CONTACT)));
+      await assertFails(getDocs(collection(db, 'users/uid-camila/contact')));
+      await assertFails(getDocs(collectionGroup(db, 'contact')));
+    }
+  });
+
+  it('ninguém grava pelo cliente, nem a própria fã', async () => {
+    for (const db of [as('uid-camila'), as('admin'), as('editora')]) {
+      await assertFails(setDoc(doc(db, CONTACT), { whatsapp: '+5511987654321' }));
+      await assertFails(updateDoc(doc(db, CONTACT), { whatsapp: '+5511987654321' }));
+      await assertFails(deleteDoc(doc(db, CONTACT)));
+      await assertFails(setDoc(doc(db, 'users/uid-camila/contact/outro'), { whatsapp: null }));
+    }
   });
 });
 

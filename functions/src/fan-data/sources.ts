@@ -28,6 +28,7 @@ export type FanDataPart = (typeof FAN_DATA_PARTS)[number];
 export const FAN_DATA_FIRST_KEYS = [
   'conta',
   'perfil',
+  'contato',
   'arrobasReservados',
   'carteira',
   'convite',
@@ -67,6 +68,8 @@ export type FanDataRead =
   | { kind: 'auth' }
   /** O documento `<collection>/{uid}`. */
   | { kind: 'doc'; collection: string }
+  /** O documento `<parent>/{uid}/<name>/<id>`, único na subcoleção (o contato do fã, seção 35). */
+  | { kind: 'subdoc'; parent: FanDataParent; name: string; id: string }
   /** A subcoleção `<parent>/{uid}/<name>`, pela ordem do id. */
   | { kind: 'sub'; parent: FanDataParent; name: string }
   /** `<collection>` com `<field> == uid`, pela ordem do id (o índice automático do campo). */
@@ -186,6 +189,15 @@ export const FAN_DATA_SOURCES: readonly FanDataSource[] = [
     read: { kind: 'sub', parent: 'users', name: 'uploads' },
     omit: [],
     deletion: { effect: 'deleted', note: 'apagado' },
+  },
+  {
+    // O WhatsApp do fã (seção 35): sai inteiro, com a origem e a data.
+    id: 'users.contact',
+    label: 'users/{uid}/contact/main',
+    place: { in: 'first', key: 'contato' },
+    read: { kind: 'subdoc', parent: 'users', name: 'contact', id: 'main' },
+    omit: [],
+    deletion: { effect: 'deleted', note: 'apagado (o recursiveDelete do perfil)' },
   },
   {
     id: 'usernames',
@@ -477,6 +489,8 @@ export function firstKeySource(key: FanDataFirstKey): FanDataSource {
  */
 export function knownSubcollections(parent: FanDataParent): string[] {
   return FAN_DATA_SOURCES.flatMap((item) =>
-    item.read.kind === 'sub' && item.read.parent === parent ? [item.read.name] : [],
+    (item.read.kind === 'sub' || item.read.kind === 'subdoc') && item.read.parent === parent
+      ? [item.read.name]
+      : [],
   );
 }

@@ -641,6 +641,14 @@ export type RedeemResult = {
   status: 'requested';
 };
 
+/**
+ * `FanContact` do app (`GET` e `PUT /me/contact`, seção 35): o WhatsApp que o
+ * fã guardou no último resgate ou trocou pelo `PUT` (e, com a seção 34, na
+ * candidatura), em E.164 (`+5575991234567`), ou null. Só o próprio fã recebe;
+ * a equipe vê pelo `getRedemptionContacts`.
+ */
+export type FanContact = { whatsapp: string | null };
+
 // --- Fã-clube gerido pelo fã (seção 34, 34.3) ---------------------------------------
 // O espelho no app (src/domains/fan-club/types.ts) chega na etapa 6 de 34.14:
 // até lá, nenhuma versão do app chama estas rotas.

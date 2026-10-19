@@ -1,5 +1,5 @@
 import { api } from '@/services/api';
-import { fixtureWallet, setFixtureNow } from '@/services/fixtures';
+import { fixtureContact, fixtureWallet, setFixtureNow } from '@/services/fixtures';
 
 import { fetchRewards, redeemReward } from '../api';
 import { rewardsFixture } from '../fixtures';
@@ -43,6 +43,7 @@ beforeEach(() => {
 afterEach(() => {
   rewardsFixture.reset();
   fixtureWallet.reset();
+  fixtureContact.reset();
   setFixtureNow(null);
 });
 
@@ -55,7 +56,7 @@ describe('loja do servidor (bloco 10)', () => {
     expect(get).toHaveBeenCalledWith('/rewards');
   });
 
-  it('com a API, o resgate é POST com a Idempotency-Key e o custo que o fã viu no corpo', async () => {
+  it('com a API, o resgate é POST com a Idempotency-Key, o custo que o fã viu e o WhatsApp no corpo', async () => {
     mockDataSource = 'api';
     const result: RedeemResult = {
       redemptionId: 'UP-C3NWPB',
@@ -68,13 +69,18 @@ describe('loja do servidor (bloco 10)', () => {
     };
     request.mockResolvedValue({ data: result });
     await expect(
-      redeemReward({ rewardId: 'camisa', idempotencyKey: 'chave-1234', expectedCost: 15_000 }),
+      redeemReward({
+        rewardId: 'camisa',
+        idempotencyKey: 'chave-1234',
+        expectedCost: 15_000,
+        whatsapp: '+5575991234567',
+      }),
     ).resolves.toEqual(result);
     expect(request).toHaveBeenCalledWith({
       method: 'POST',
       url: '/rewards/camisa/redeem',
       headers: { 'Idempotency-Key': 'chave-1234' },
-      data: { expectedCost: 15_000 },
+      data: { expectedCost: 15_000, whatsapp: '+5575991234567' },
     });
   });
 
@@ -85,8 +91,11 @@ describe('loja do servidor (bloco 10)', () => {
       rewardId: 'videochamada',
       idempotencyKey: 'chave-1234',
       expectedCost: 8_500,
+      whatsapp: '+5575991234567',
     });
     expect(result).toMatchObject({ rewardId: 'videochamada', status: 'requested' });
+    // O número vai para o contato de exemplo, que a próxima confirmação lê.
+    expect(fixtureContact.get()).toBe('+5575991234567');
     expect(get).not.toHaveBeenCalled();
     expect(request).not.toHaveBeenCalled();
   });
