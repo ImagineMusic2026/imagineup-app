@@ -8,7 +8,7 @@ import { ReduceMotion, ReducedMotionConfig } from 'react-native-reanimated';
 import { registerAgendaMutationDefaults } from '@/domains/agenda';
 import { registerArtistMutationDefaults } from '@/domains/artists';
 import { registerPostMutationDefaults } from '@/domains/posts';
-import { SuspensionWatcher } from '@/domains/profile';
+import { registerProfileQueryDefaults, SuspensionWatcher } from '@/domains/profile';
 import { useAnnounceOffline } from '@/hooks/use-announce-offline';
 import { usePrefersReducedMotion } from '@/hooks/use-prefers-reduced-motion';
 import { persistOptions, queryClient, setupReactQueryForReactNative } from '@/services/query';
@@ -18,6 +18,8 @@ import { colors, navigationTheme } from '@/theme';
 registerPostMutationDefaults(queryClient);
 registerAgendaMutationDefaults(queryClient);
 registerArtistMutationDefaults(queryClient);
+// O contato do fã (seção 35) nunca vai ao disco, nem quando nasce fora da tela.
+registerProfileQueryDefaults(queryClient);
 
 // O `ReducedMotionConfig` abaixo é de propósito, mas o Reanimated avisa a cada
 // abertura em desenvolvimento, e o aviso cobria a tab bar em toda conferência

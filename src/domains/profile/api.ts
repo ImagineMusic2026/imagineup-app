@@ -3,8 +3,10 @@ import { doc, getDoc, onSnapshot, type DocumentData } from 'firebase/firestore';
 import { sourceOf } from '@/config/data-source';
 import { getDb, storageFileExists, uploadLocalFile } from '@/firebase';
 import { api } from '@/services/api';
+import { ApiError } from '@/services/api/errors';
 import type { InviteLinkResult } from '@/domains/invites';
-import { fixtureDelay, fixtureNow } from '@/services/fixtures';
+import { fixtureContact, fixtureDelay, fixtureNow } from '@/services/fixtures';
+import { isWhatsapp, parseWhatsapp } from '@/utils/whatsapp';
 
 import { genderOf, socialsOf } from './details';
 import { fanProfileFixture } from './fan-fixtures';
@@ -17,6 +19,7 @@ import {
 } from './fixtures';
 import type {
   EditableProfile,
+  FanContact,
   FanProfile,
   FanPublicProfile,
   LedgerPage,
@@ -269,6 +272,50 @@ export async function updateMyProfile(
     signal,
   });
   return data;
+}
+
+/**
+ * O WhatsApp guardado do fã (`GET /me/contact`, seção 35), conferido de novo:
+ * fora do formato vale `null`. Só lê, sem chave. Nas fixtures, o número do
+ * último resgate de exemplo (`fixtureContact`).
+ */
+export async function fetchContact(): Promise<FanContact> {
+  if (sourceOf('profile') === 'fixtures') {
+    await fixtureDelay();
+    return { whatsapp: fixtureContact.get() };
+  }
+  const { data } = await api.get<Partial<FanContact>>('/me/contact');
+  return { whatsapp: isWhatsapp(data?.whatsapp) ? data.whatsapp : null };
+}
+
+/**
+ * Troca ou apaga o WhatsApp do fã (`PUT /me/contact`, seção 35, no desenho da
+ * decisão 14 da seção 34): o número no formato guardado, ou `null` para
+ * apagar, com a chave da tentativa. Devolve o contato de agora. Nas fixtures,
+ * grava no contato de exemplo, com a mesma conferência do servidor (o número
+ * fora do formato é 400 com o campo).
+ */
+export async function updateContact(
+  whatsapp: string | null,
+  idempotencyKey: string,
+): Promise<FanContact> {
+  if (sourceOf('profile') === 'fixtures') {
+    await fixtureDelay();
+    const number = whatsapp === null ? null : parseWhatsapp(whatsapp);
+    if (whatsapp !== null && number === null) {
+      throw new ApiError('validation', 'Pedido inválido.', 400, 'invalid_request', {
+        field: 'whatsapp',
+      });
+    }
+    fixtureContact.set(number);
+    return { whatsapp: number };
+  }
+  const { data } = await api.put<Partial<FanContact>>(
+    '/me/contact',
+    { whatsapp },
+    { headers: { 'Idempotency-Key': idempotencyKey } },
+  );
+  return { whatsapp: isWhatsapp(data?.whatsapp) ? data.whatsapp : null };
 }
 
 /** O @ está livre? Enquanto o fã digita (só lê, sem chave). */

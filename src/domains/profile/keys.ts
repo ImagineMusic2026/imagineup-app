@@ -22,6 +22,8 @@ export const profileKeys = {
    */
   ledger: () => [...profileKeys.wallet(), 'ledger'] as const,
   invite: () => [...profileKeys.all, 'invite'] as const,
+  /** O WhatsApp do fã (seção 35), que o resgate grava e a confirmação mostra. */
+  contact: () => [...profileKeys.all, 'contact'] as const,
   /** O @ que o fã digita na tela "Editar perfil" (bloco 9). */
   username: () => [...profileKeys.all, 'username'] as const,
   usernameAvailability: (username: string) =>

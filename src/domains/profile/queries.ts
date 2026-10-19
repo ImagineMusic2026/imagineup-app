@@ -19,6 +19,7 @@ import { createIdempotencyKey } from '@/utils/id';
 import {
   applyEditableProfile,
   fanPhotoPath,
+  fetchContact,
   fetchFanProfile,
   fetchLedgerPage,
   fetchMyAchievements,
@@ -32,6 +33,7 @@ import {
   removeMyPhoto,
   reservePhotoUpload,
   setMyPhoto,
+  updateContact,
   updateMyProfile,
   uploadFanPhoto,
   watchMyProfile,
@@ -41,6 +43,7 @@ import { fanKeys, profileKeys, profileMutationKeys } from './keys';
 import { PhotoPickError, preparePhoto, type PickedPhoto } from './photo';
 import type {
   EditableProfile,
+  FanContact,
   FanProfile,
   FanPublicProfile,
   PhotoChange,
@@ -145,6 +148,66 @@ export function useLedgerInfiniteQuery() {
     queryFn: ({ pageParam }) => fetchLedgerPage({ cursor: pageParam }),
     initialPageParam: null as string | null,
     getNextPageParam: (lastPage) => lastPage.nextCursor,
+  });
+}
+
+/**
+ * O WhatsApp guardado do fã (seção 35), para a confirmação do resgate
+ * preencher o campo. Fora do disco: o número não fica guardado no aparelho
+ * (o cache em memória basta para a sheet). O resgate que dá certo põe o
+ * número novo aqui (`useRedeemRewardMutation`); sem a rota (a `api` de antes
+ * da seção 35), a consulta falha e o campo começa vazio.
+ */
+export function useMyContactQuery() {
+  const options = queryOptionsFor('profile');
+  return useQuery({
+    ...options,
+    queryKey: profileKeys.contact(),
+    queryFn: fetchContact,
+    meta: { ...options.meta, persist: false },
+  });
+}
+
+/**
+ * O contato do fã fica fora do disco também quando a consulta nasce pelo
+ * `setQueryData` (o resgate que termina com a sheet fechada, depois da saída):
+ * o padrão vale para a chave, e o `clear` da saída não o apaga. Chamado no
+ * `AppProviders`, antes de o cache ser restaurado.
+ */
+export function registerProfileQueryDefaults(client: QueryClient): void {
+  client.setQueryDefaults(profileKeys.contact(), { meta: { persist: false } });
+}
+
+/**
+ * Troca ou apaga o WhatsApp do fã (`PUT /me/contact`, seção 35, no desenho da
+ * decisão 14 da seção 34): o número digitado, ou `null` para apagar. Nenhuma
+ * tela chama ainda: a tela "WhatsApp para a equipe" vem com a seção 34. A
+ * chave é da tentativa e do número: o mesmo número de novo, depois de uma
+ * falha incerta, repete a chave; outro número é outra gravação, com chave nova
+ * (vale a última). No sucesso, o contato em cache fica com o número de agora.
+ */
+export function useUpdateContactMutation() {
+  const queryClient = useQueryClient();
+  const uid = useSessionStore((state) => state.user?.uid ?? null);
+  const attempt = useRef<{ key: string; whatsapp: string | null } | null>(null);
+  return useMutation({
+    mutationFn: (whatsapp: string | null) => {
+      if (attempt.current?.whatsapp !== whatsapp) {
+        attempt.current = { key: `contact-${createIdempotencyKey()}`, whatsapp };
+      }
+      return updateContact(whatsapp, attempt.current.key);
+    },
+    networkMode: 'always',
+    retry: false,
+    onSuccess: (contact) => {
+      attempt.current = null;
+      // A sessão que saiu no meio não deixa o número no cache do fã seguinte.
+      if ((useSessionStore.getState().user?.uid ?? null) !== uid) return;
+      queryClient.setQueryData<FanContact>(profileKeys.contact(), contact);
+    },
+    onError: (error) => {
+      if (!isUncertainFailure(error)) attempt.current = null;
+    },
   });
 }
 

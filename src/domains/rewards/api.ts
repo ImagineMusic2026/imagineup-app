@@ -20,21 +20,23 @@ export async function fetchRewards(): Promise<RewardsResponse> {
  * estoque, limite por fã, instruções); a chave de idempotência impede que uma
  * repetição gaste duas vezes, e o `expectedCost` (o custo que o fã viu na
  * confirmação) impede que ele pague um custo que não viu (`reward_changed`).
+ * O `whatsapp` (seção 35) vai para o contato do fã, junto com o pedido.
  */
 export async function redeemReward({
   rewardId,
   idempotencyKey,
   expectedCost,
+  whatsapp,
 }: RedeemVariables): Promise<RedeemResult> {
   if (sourceOf('rewards') === 'fixtures') {
     await fixtureDelay();
-    return rewardsFixture.redeem(rewardId, idempotencyKey, expectedCost);
+    return rewardsFixture.redeem(rewardId, idempotencyKey, expectedCost, fixtureNow(), whatsapp);
   }
   const { data } = await api.request<RedeemResult>({
     method: 'POST',
     url: `/rewards/${encodeURIComponent(rewardId)}/redeem`,
     headers: { 'Idempotency-Key': idempotencyKey },
-    data: { expectedCost },
+    data: { expectedCost, whatsapp },
   });
   return data;
 }

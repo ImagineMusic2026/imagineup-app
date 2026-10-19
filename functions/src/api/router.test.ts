@@ -347,6 +347,23 @@ describe('rotas do perfil novo (seção 28)', () => {
   });
 });
 
+describe('o contato do fã (seção 35)', () => {
+  it('GET /me/contact só lê; PUT /me/contact grava; os outros métodos são 405', () => {
+    expect(matchRoute(API_ROUTES, 'GET', '/me/contact')).toMatchObject({
+      kind: 'match',
+      route: { method: 'GET', pattern: '/me/contact', writes: false },
+    });
+    expect(matchRoute(API_ROUTES, 'PUT', '/me/contact')).toMatchObject({
+      kind: 'match',
+      route: { method: 'PUT', pattern: '/me/contact', writes: true },
+    });
+    expect(matchRoute(API_ROUTES, 'DELETE', '/me/contact')).toEqual({
+      kind: 'method_not_allowed',
+      allow: ['GET', 'PUT'],
+    });
+  });
+});
+
 describe('rotas da loja (bloco 10)', () => {
   it('/rewards e /rewards/:rewardId/redeem não se confundem', () => {
     expect(matchRoute(API_ROUTES, 'GET', '/rewards')).toMatchObject({

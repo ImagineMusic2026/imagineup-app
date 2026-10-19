@@ -9,6 +9,7 @@ import {
 import type { EventRecord } from '../agenda/model';
 import { eventOf, eventRef } from '../agenda/store';
 import type { RedeemResult, RewardsResponse } from '../api/contract';
+import { writeFanContact } from '../fan-contact';
 import { countDailyAction, enforceDailyCap } from '../moderation/caps';
 import {
   addRedemptionCounts,
@@ -146,7 +147,11 @@ export type RedeemOutcome = { plan: AwardPlan; result: RedeemResult | null };
  * 6. o débito pelo núcleo (`redeem:<código>`, só o saldo; saldo curto é
  *    `insufficient_points`);
  * 7. o pedido `requested`, o `redeemedCount` mais 1, os contadores do dia e o
- *    teto.
+ *    teto;
+ * 8. com o `whatsapp` (seção 35), o contato do fã (`users/{uid}/contact/main`,
+ *    com `source: 'store'`), sem ler antes: o número e o pedido entram juntos,
+ *    e a recusa de qualquer passo de cima não guarda o número. Sem ele (o app
+ *    de antes da seção 35), o contato fica como estava.
  * O seed passa um código fixo, lido junto com a recompensa: se o pedido já
  * existe, sai sem efeito (`result: null`).
  */
@@ -158,6 +163,11 @@ export async function redeemReward(
     award: AwardContext;
     rewardId: string;
     expectedCost: number;
+    /**
+     * O WhatsApp no formato guardado (`parseWhatsapp`), ou `undefined` no
+     * pedido do app de antes da seção 35, que não manda o campo.
+     */
+    whatsapp?: string;
     /** users/{uid} lido na transação: a cópia do nome e do @ (25.1, decisão 13). */
     profile: DocumentSnapshot;
     /** O sorteio do código; só o teste da colisão troca. */
@@ -244,6 +254,9 @@ export async function redeemReward(
   tx.update(rewardRef(db, rewardId), { redeemedCount: item.redeemedCount + 1 });
   addRedemptionCounts(plan, [{ rewardId, kind: 'requested', points: item.cost }]);
   countDailyAction(plan, fan, award, 'redeem');
+  if (options.whatsapp !== undefined) {
+    writeFanContact(tx, db, fan.uid, options.whatsapp, 'store', at);
+  }
 
   const balance =
     plan.fans.find((planned) => planned.uid === fan.uid)?.wallet?.state.balance ??
@@ -507,7 +520,7 @@ export async function cancelFanRedemptions(
 export function runRedeemReward(
   db: Firestore,
   uid: string,
-  input: { rewardId: string; expectedCost: number; code: string },
+  input: { rewardId: string; expectedCost: number; code: string; whatsapp?: string },
   options: RunOptions,
 ): Promise<RedeemOutcome> {
   return runAsFan(db, uid, options, (tx, fan, award, profile) =>

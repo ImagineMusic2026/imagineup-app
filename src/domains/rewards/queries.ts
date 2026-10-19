@@ -3,7 +3,7 @@ import { useEffect, useRef } from 'react';
 import { AccessibilityInfo } from 'react-native';
 
 import { sourceOf } from '@/config/data-source';
-import { profileKeys, type Wallet } from '@/domains/profile';
+import { profileKeys, type FanContact, type Wallet } from '@/domains/profile';
 import { t } from '@/i18n';
 import { haptics } from '@/services/haptics';
 import { queryOptionsFor } from '@/services/query/client';
@@ -98,12 +98,14 @@ export function useRewardQuery(rewardId: string) {
 }
 
 /**
- * A tentativa de resgate em aberto: a chave e o custo que ela mandou (25.5), os
- * pedidos que a recompensa já tinha quando ela abriu e se ela está indo.
+ * A tentativa de resgate em aberto: a chave, o custo e o WhatsApp que ela
+ * mandou (25.5 e seção 35), os pedidos que a recompensa já tinha quando ela
+ * abriu e se ela está indo.
  */
 interface Attempt {
   key: string;
   expectedCost: number;
+  whatsapp: string;
   knownCodes: ReadonlySet<string>;
   pending: boolean;
 }
@@ -119,7 +121,10 @@ interface Attempt {
  * mandou e repete o mesmo corpo, mesmo que a confirmação mostre outro custo:
  * o servidor devolve o resultado guardado (se gravou) ou recusa com
  * `reward_changed` (se não gravou), e a chave nunca é trocada às cegas
- * (25.5). Volta ao início quando o app reabre.
+ * (25.5). O WhatsApp entra no mesmo corpo (seção 35): enquanto a tentativa
+ * está aberta, o campo da confirmação mostra o número dela, sem edição
+ * (`attemptWhatsapp`), porque outro número com a mesma chave daria 422. Volta
+ * ao início quando o app reabre.
  *
  * A loja também responde: quando ela mostra um pedido desta recompensa que
  * não existia quando a tentativa abriu, e nada está indo, a tentativa gravou
@@ -134,12 +139,18 @@ function attemptSlot(uid: string, rewardId: string): string {
   return `${uid}/${rewardId}`;
 }
 
-function attemptFor(slot: string, confirmedCost: number, knownCodes: readonly string[]): Attempt {
+function attemptFor(
+  slot: string,
+  confirmedCost: number,
+  whatsapp: string,
+  knownCodes: readonly string[],
+): Attempt {
   const open = openAttempts.get(slot);
   if (open) return open;
   const attempt: Attempt = {
     key: createIdempotencyKey(),
     expectedCost: confirmedCost,
+    whatsapp,
     knownCodes: new Set(knownCodes),
     pending: false,
   };
@@ -171,9 +182,10 @@ function announce(message: string): void {
  * congelou ao abrir (`confirmedCost`).
  *
  * No sucesso, o saldo novo da resposta entra direto na carteira (a pílula da
- * 1h e a da sheet contam para baixo na hora), e a carteira (com o progresso e
- * o extrato, debaixo dela) e a loja buscam de novo (a loja traz o código, as
- * instruções e o status em `redemptions`). O resgate não mexe em XP,
+ * 1h e a da sheet contam para baixo na hora), o número mandado entra no
+ * contato do fã em cache (a próxima confirmação já vem preenchida com ele), e
+ * a carteira (com o progresso e o extrato, debaixo dela) e a loja buscam de
+ * novo (a loja traz o código, as instruções e o status em `redemptions`). O resgate não mexe em XP,
  * temporada, centrais, missões nem conquistas: nada disso busca de novo.
  * Depois de uma falha incerta, a carteira e a loja também buscam de novo: o
  * resgate pode ter sido gravado. O toque sai daqui sempre; o anúncio, só com a
@@ -215,6 +227,12 @@ export function useRedeemRewardMutation(rewardId: string) {
       queryClient.setQueryData<Wallet>(profileKeys.wallet(), (wallet) =>
         wallet ? { ...wallet, balance: result.balance } : wallet,
       );
+      // A sessão que saiu no meio do resgate não deixa o número no cache do fã seguinte.
+      if ((useSessionStore.getState().user?.uid ?? '') === uid) {
+        queryClient.setQueryData<FanContact>(profileKeys.contact(), {
+          whatsapp: variables.whatsapp,
+        });
+      }
       refreshWallet();
       refreshShop();
       haptics.trigger('redeem');
@@ -256,6 +274,7 @@ export function useRedeemRewardMutation(rewardId: string) {
         case 'dailyLimit':
         case 'suspended':
         case 'rateLimited':
+        case 'whatsappInvalid':
           // Nada foi gravado, e a loja e o saldo não mudaram.
           haptics.trigger('error');
           break;
@@ -276,20 +295,32 @@ export function useRedeemRewardMutation(rewardId: string) {
   return {
     ...mutation,
     /**
-     * `confirmedCost` é o custo que a confirmação congelou ao abrir; com uma
-     * tentativa aberta, vai o custo dela. `callbacks` só rodam com a tela
-     * montada (o passo da sheet); o resto roda sempre.
+     * `confirmedCost` é o custo que a confirmação congelou ao abrir, e
+     * `whatsapp`, o número conferido do campo (E.164); com uma tentativa
+     * aberta, vão os dela. `callbacks` só rodam com a tela montada (o passo da
+     * sheet); o resto roda sempre.
      */
-    redeem: (confirmedCost: number, callbacks?: RedeemCallbacks) => {
+    redeem: (confirmedCost: number, whatsapp: string, callbacks?: RedeemCallbacks) => {
       if (inFlight.current) return;
       inFlight.current = true;
-      const attempt = attemptFor(slot, confirmedCost, shownCodes());
+      const attempt = attemptFor(slot, confirmedCost, whatsapp, shownCodes());
       attempt.pending = true;
       mutation.mutate(
-        { rewardId, idempotencyKey: attempt.key, expectedCost: attempt.expectedCost },
+        {
+          rewardId,
+          idempotencyKey: attempt.key,
+          expectedCost: attempt.expectedCost,
+          whatsapp: attempt.whatsapp,
+        },
         callbacks,
       );
     },
+    /**
+     * O WhatsApp da tentativa aberta desta recompensa (a que falhou sem
+     * resposta clara, ou a que está indo), ou `null`: o campo mostra este
+     * número sem edição, porque a próxima confirmação repete o mesmo corpo.
+     */
+    attemptWhatsapp: (): string | null => openAttempts.get(slot)?.whatsapp ?? null,
     /**
      * A tentativa aberta já gravou: a loja mostra um pedido desta recompensa
      * que não existia quando ela abriu (a resposta se perdeu, e o servidor

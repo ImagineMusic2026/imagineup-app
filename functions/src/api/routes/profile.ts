@@ -1,3 +1,5 @@
+import { Timestamp } from 'firebase-admin/firestore';
+
 import {
   changeUsername,
   normalizeUsername,
@@ -12,8 +14,10 @@ import {
   USERNAME_INPUT_MAX,
   USERNAME_PATTERN,
 } from '../../fan-profile';
+import { parseWhatsapp, readFanContact, writeFanContact } from '../../fan-contact';
 import type {
   EditableProfile,
+  FanContact,
   PhotoChange,
   PhotoUploadSlot,
   ProfileChanges,
@@ -33,7 +37,10 @@ import type { ApiRoute, RouteInput } from '../types';
 // Storage, ou tirar); desde a proteção contra abuso (27.4), também a vaga do
 // envio, pedida antes de o app subir o arquivo. As que gravam rodam no
 // runIdempotent, com o perfil exigido e lido na transação (o `profile` do
-// contexto). docs/arquitetura-api.md, seções 24 e 28.
+// contexto). Desde a seção 35, também o contato do fã (`GET` e `PUT
+// /me/contact`): o WhatsApp que o resgate da loja grava, a confirmação do
+// resgate mostra e o fã troca ou apaga (a tela vem com a seção 34).
+// docs/arquitetura-api.md, seções 24, 28 e 35.
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -75,6 +82,22 @@ function bodyPath(input: RouteInput): string {
   const { path } = input.body;
   if (!parseFanPhotoPath(path)) throw new ProfileEditError('photo_invalid', { reason: 'path' });
   return path;
+}
+
+/**
+ * O `whatsapp` do corpo do `PUT /me/contact` (seção 35): o número no formato
+ * guardado, ou `null` para apagar. A chave ausente, outro tipo ou o número fora
+ * do formato dão 400 com o campo, sem leitura.
+ */
+function bodyContact(input: RouteInput): string | null {
+  if (!isRecord(input.body) || !('whatsapp' in input.body)) {
+    throw apiError('invalid_request', { field: 'whatsapp' });
+  }
+  const { whatsapp } = input.body;
+  if (whatsapp === null) return null;
+  const parsed = parseWhatsapp(whatsapp);
+  if (parsed === null) throw apiError('invalid_request', { field: 'whatsapp' });
+  return parsed;
 }
 
 export const profileRoutes: ApiRoute[] = [
@@ -167,6 +190,41 @@ export const profileRoutes: ApiRoute[] = [
         award: ctx.award,
         profile: ctx.profile,
       });
+      return { body };
+    },
+  },
+  {
+    // O WhatsApp guardado (seção 35), só para o próprio fã: uma leitura, sem
+    // chave e sem exigir o perfil. A confirmação do resgate preenche o campo
+    // com ele; sem número, `null`.
+    method: 'GET',
+    pattern: '/me/contact',
+    writes: false,
+    async handle({ deps, uid }): Promise<FanContact> {
+      return readFanContact(deps.db, uid);
+    },
+  },
+  {
+    // Trocar ou apagar o WhatsApp fora do resgate (seção 35, no desenho da
+    // decisão 14 da seção 34): grava com `source: 'app'`, sem ler antes e sem
+    // teto próprio (o ritmo de 27.3 basta). O suspenso recebe 403, como na
+    // edição do perfil. Com a seção 34, o `null` passa a ser recusado com o
+    // fã-clube ativo ou pausado (`contact_required`).
+    method: 'PUT',
+    pattern: '/me/contact',
+    writes: true,
+    validate: (input) => void bodyContact(input),
+    async handle(ctx) {
+      const whatsapp = bodyContact(ctx);
+      writeFanContact(
+        ctx.tx,
+        ctx.deps.db,
+        ctx.fan.uid,
+        whatsapp,
+        'app',
+        Timestamp.fromMillis(ctx.award.now),
+      );
+      const body: FanContact = { whatsapp };
       return { body };
     },
   },

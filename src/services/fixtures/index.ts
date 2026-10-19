@@ -207,6 +207,30 @@ export const fixtureBlocks = {
   },
 };
 
+let contactWhatsapp: string | null = null;
+
+/**
+ * O WhatsApp do fã de exemplo (seção 35), como o contato do servidor: começa
+ * sem número, o resgate de exemplo e o `updateContact` gravam, e a
+ * confirmação lê para preencher o campo (o `fetchContact` do perfil). Mora
+ * aqui porque atravessa domínios, como a carteira.
+ */
+export const fixtureContact = {
+  get(): string | null {
+    return contactWhatsapp;
+  },
+
+  /** O número no formato guardado, ou `null` para apagar. */
+  set(whatsapp: string | null): void {
+    contactWhatsapp = whatsapp;
+  },
+
+  /** Volta ao início (fim da sessão e testes). */
+  reset(): void {
+    contactWhatsapp = null;
+  },
+};
+
 // O `reset` do estado em memória de cada domínio (presenças, resgates,
 // centrais seguidas, missões).
 const sessionResets = new Set<() => void>();
@@ -227,5 +251,6 @@ export function resetFixtureSession(): void {
   fixtureWallet.reset();
   fixtureMembership.reset();
   fixtureBlocks.reset();
+  fixtureContact.reset();
   for (const reset of sessionResets) reset();
 }

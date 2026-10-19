@@ -110,12 +110,17 @@ async function fund(fan: Fan, balance: number): Promise<void> {
   );
 }
 
-async function redeemCode(fan: Fan, rewardId: string, cost: number): Promise<string> {
+async function redeemCode(
+  fan: Fan,
+  rewardId: string,
+  cost: number,
+  whatsapp?: string,
+): Promise<string> {
   const response = await http(env, `/rewards/${rewardId}/redeem`, {
     method: 'POST',
     token: fan.token,
     key: unique('resgate-'),
-    body: { expectedCost: cost },
+    body: whatsapp === undefined ? { expectedCost: cost } : { expectedCost: cost, whatsapp },
   });
   if (response.status !== 200) throw new Error(`Resgate falhou: ${JSON.stringify(response.body)}`);
   return response.body.code as string;
@@ -624,18 +629,22 @@ describe('pedidos (setRedemptionStatus)', () => {
 });
 
 describe('contatos de quem resgatou (getRedemptionContacts)', () => {
-  it('o nome, o @ e o e-mail de agora dos abertos; os fechados fora; a conta que sumiu, tudo null', async () => {
+  it('o nome, o @, o e-mail e o WhatsApp de agora dos abertos; os fechados fora; a conta que sumiu, tudo null', async () => {
     const editor = await seedMember(env, 'Editora', 'editor', ['rewards']);
     const viewer = await seedMember(env, 'Leitora', 'viewer', ['rewards']);
     const other = await seedMember(env, 'Conteúdo', 'editor', ['artists']);
     const camila = await signUpFan(db, 'Camila Ribeiro');
+    const alan = await signUpFan(db, 'Alan Souza');
     await fund(camila, 10_000);
+    await fund(alan, 10_000);
     const rewardId = await published(editor, { cost: 100, perFanLimit: null });
+    // O primeiro pedido vem do app de antes da seção 35, sem o número.
     const requested = await redeemCode(camila, rewardId, 100);
-    const approved = await redeemCode(camila, rewardId, 100);
+    const approved = await redeemCode(camila, rewardId, 100, '(75) 99123-4567');
     const delivered = await redeemCode(camila, rewardId, 100);
     const refused = await redeemCode(camila, rewardId, 100);
     const canceled = await redeemCode(camila, rewardId, 100);
+    const alanOpen = await redeemCode(alan, rewardId, 100);
     // O pedido aberto de uma conta que já não existe no Auth (a exclusão ainda
     // não passou por ele), gravado direto: excluir pela API do Auth dispararia
     // o deleteUserProfile, que cancelaria o pedido no meio do teste.
@@ -658,27 +667,43 @@ describe('contatos de quem resgatou (getRedemptionContacts)', () => {
     // A Camila troca o @ depois do pedido: o contato vem com o novo.
     await db.doc(`users/${camila.uid}`).update({ username: 'camila_nova' });
 
-    const codes = [requested, approved, delivered, refused, canceled, orphan];
+    // O contato da conta que sumiu também não sai: ela volta com tudo null.
+    await db.doc('users/uid-que-sumiu/contact/main').set({ whatsapp: '+5575991234567' });
+
+    const codes = [requested, approved, delivered, refused, canceled, orphan, alanOpen];
     const { contacts } = await ok<{ contacts: Record<string, unknown>[] }>(
       'getRedemptionContacts',
       { redemptionIds: codes },
       editor,
     );
     const byCode = Object.fromEntries(contacts.map((contact) => [contact.redemptionId, contact]));
-    expect(Object.keys(byCode).sort()).toEqual([approved, orphan, requested].sort());
+    expect(Object.keys(byCode).sort()).toEqual([alanOpen, approved, orphan, requested].sort());
+    // O número de agora, também no pedido feito antes dele.
     expect(byCode[requested]).toEqual({
       redemptionId: requested,
       name: 'Camila Ribeiro',
       username: 'camila_nova',
       email: camila.email,
+      whatsapp: '+5575991234567',
     });
-    expect(byCode[approved]).toMatchObject({ email: camila.email });
+    expect(byCode[approved]).toMatchObject({ email: camila.email, whatsapp: '+5575991234567' });
+    expect(byCode[alanOpen]).toMatchObject({ email: alan.email, whatsapp: null });
     expect(byCode[orphan]).toEqual({
       redemptionId: orphan,
       name: null,
       username: null,
       email: null,
+      whatsapp: null,
     });
+
+    // Um contato fora do formato vale null.
+    await db.doc(`users/${alan.uid}/contact/main`).set({ whatsapp: '75 99123-4567' });
+    const again = await ok<{ contacts: Record<string, unknown>[] }>(
+      'getRedemptionContacts',
+      { redemptionIds: [alanOpen] },
+      editor,
+    );
+    expect(again.contacts).toEqual([expect.objectContaining({ whatsapp: null })]);
 
     expect(
       await failure('getRedemptionContacts', { redemptionIds: [requested] }, viewer),
@@ -697,10 +722,16 @@ describe('contatos de quem resgatou (getRedemptionContacts)', () => {
     });
 
     const viewed = await audits('redemption.contacts.viewed');
-    expect(viewed).toHaveLength(1);
-    expect(viewed[0]!.details).toEqual({ codes: expect.any(Array), count: 3 });
-    expect(JSON.stringify(viewed[0])).not.toContain(camila.email);
-    expect(JSON.stringify(viewed[0])).not.toContain('camila_nova');
+    expect(viewed).toHaveLength(2);
+    expect(viewed.map((entry) => entry.details).sort((a, b) => b.count - a.count)).toEqual([
+      { codes: expect.any(Array), count: 4 },
+      { codes: [alanOpen], count: 1 },
+    ]);
+    for (const entry of viewed) {
+      expect(JSON.stringify(entry)).not.toContain(camila.email);
+      expect(JSON.stringify(entry)).not.toContain('camila_nova');
+      expect(JSON.stringify(entry)).not.toContain('99123');
+    }
   });
 });
 

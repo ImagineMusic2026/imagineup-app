@@ -143,6 +143,9 @@ async function deletedSourcesWithData(from: Firestore, uid: string): Promise<str
       case 'sub':
         found = !(await from.collection(`${how.parent}/${uid}/${how.name}`).limit(1).get()).empty;
         break;
+      case 'subdoc':
+        found = await exists(from, `${how.parent}/${uid}/${how.name}/${how.id}`);
+        break;
       case 'equal':
         found = !(await from.collection(how.collection).where(how.field, '==', uid).limit(1).get())
           .empty;
@@ -245,13 +248,18 @@ describe('a conta excluída depois da cópia', () => {
         { uid: sai.uid, adjustmentId: unique('ajuste-'), note: 'Teste', balance: 100 },
         admin,
       );
-      const redeemed = await as(sai)('POST', `/rewards/${rewardId}/redeem`, { expectedCost: 50 });
+      // Com o WhatsApp (seção 35): o contato de quem sai também não pode voltar.
+      const redeemed = await as(sai)('POST', `/rewards/${rewardId}/redeem`, {
+        expectedCost: 50,
+        whatsapp: '(75) 99123-4567',
+      });
       expect(redeemed.status).toBe(200);
       const redemptionId = redeemed.body.code as string;
 
       // A cópia, e depois dela a Duda exclui a conta: o gatilho de verdade.
       expect(await cloneDefault()).toBeGreaterThan(0);
       expect(await exists(copy, `users/${sai.uid}`)).toBe(true);
+      expect(await exists(copy, `users/${sai.uid}/contact/main`)).toBe(true);
       await auth.deleteUser(sai.uid);
       await waitFor(
         'o gatilho da exclusão terminar',

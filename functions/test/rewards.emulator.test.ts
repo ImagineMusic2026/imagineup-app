@@ -139,6 +139,27 @@ const redeem = (fan: { token: string }, rewardId: string, cost: number, key = un
     body: { expectedCost: cost },
   });
 
+/** O resgate do app da seção 35, com o WhatsApp no corpo. */
+const redeemWith = (
+  fan: { token: string },
+  rewardId: string,
+  cost: number,
+  whatsapp: unknown,
+  key = unique('resgate-'),
+) =>
+  http(env, `/rewards/${rewardId}/redeem`, {
+    method: 'POST',
+    token: fan.token,
+    key,
+    body: { expectedCost: cost, whatsapp },
+  });
+
+async function savedContact(fan: { token: string }) {
+  const response = await http(env, '/me/contact', { token: fan.token });
+  expect(response.status).toBe(200);
+  return response.body as { whatsapp: string | null };
+}
+
 type ShopReward = {
   id: string;
   status: string;
@@ -518,6 +539,148 @@ describe('o resgate (POST /rewards/:id/redeem)', () => {
       body: { code: 'not_fan' },
     });
     expect(await redemptionsOf(id)).toHaveLength(0);
+  });
+});
+
+describe('o WhatsApp no resgate (seção 35)', () => {
+  it('guarda o número no contato do fã com o pedido, e o GET /me/contact devolve só a ele', async () => {
+    const fan = await signUpFan(db, 'Camila Ribeiro');
+    const other = await signUpFan(db, 'Alan Souza');
+    await fund(fan, 50_000);
+    const id = await reward({ cost: 1_000, perFanLimit: null });
+    expect(await savedContact(fan)).toEqual({ whatsapp: null });
+    const started = Date.now();
+
+    const first = await redeemWith(fan, id, 1_000, '(75) 99123-4567');
+    expect(first.status).toBe(200);
+    // A resposta não muda: o número não volta nela, nem na cópia da chave.
+    expect(Object.keys(first.body as object).sort()).toEqual(
+      [
+        'balance',
+        'code',
+        'instructions',
+        'redeemedAt',
+        'redemptionId',
+        'rewardId',
+        'status',
+      ].sort(),
+    );
+    const code = (first.body as { code: string }).code;
+    const contact = await read(`users/${fan.uid}/contact/main`);
+    expect(contact).toEqual({
+      whatsapp: '+5575991234567',
+      source: 'store',
+      updatedAt: expect.any(Timestamp),
+    });
+    expect((contact!.updatedAt as Timestamp).toMillis()).toBeGreaterThanOrEqual(started - 1_000);
+    expect(JSON.stringify(await read(`redemptions/${code}`))).not.toContain('99123');
+    const keys = await db.collection('idempotency').where('uid', '==', fan.uid).get();
+    expect(keys.size).toBe(1);
+    expect(JSON.stringify(keys.docs[0]!.data().body)).not.toContain('99123');
+    expect(await savedContact(fan)).toEqual({ whatsapp: '+5575991234567' });
+    expect(await savedContact(other)).toEqual({ whatsapp: null });
+
+    // O resgate seguinte troca o número; o do app de antes (sem o campo) não mexe nele.
+    expect((await redeemWith(fan, id, 1_000, '+55 11 98765-4321')).status).toBe(200);
+    expect(await savedContact(fan)).toEqual({ whatsapp: '+5511987654321' });
+    expect((await redeem(fan, id, 1_000)).status).toBe(200);
+    expect(await read(`users/${fan.uid}/contact/main`)).toMatchObject({
+      whatsapp: '+5511987654321',
+      source: 'store',
+    });
+    expect(await redemptionsOf(id)).toHaveLength(3);
+  });
+
+  it('o app de antes resgata sem o campo, e o fã sem número segue sem contato', async () => {
+    const fan = await signUpFan(db);
+    await fund(fan, 5_000);
+    const id = await reward({ cost: 1_000 });
+    expect((await redeem(fan, id, 1_000)).status).toBe(200);
+    expect(await exists(`users/${fan.uid}/contact/main`)).toBe(false);
+    expect(await savedContact(fan)).toEqual({ whatsapp: null });
+  });
+
+  it('a recusa não guarda o número; a mesma chave com outro número é 422', async () => {
+    const fan = await signUpFan(db);
+    await fund(fan, 500);
+    const id = await reward({ cost: 1_000, perFanLimit: null });
+    expect(await redeemWith(fan, id, 1_000, '(75) 99123-4567')).toMatchObject({
+      status: 409,
+      body: { code: 'insufficient_points' },
+    });
+    expect(await exists(`users/${fan.uid}/contact/main`)).toBe(false);
+
+    await fund(fan, 5_000);
+    for (const whatsapp of [null, '', '(75) 3221-4567', '(75) 9123-4567', '+1 415 555 0100']) {
+      expect(await redeemWith(fan, id, 1_000, whatsapp)).toMatchObject({
+        status: 400,
+        body: { code: 'invalid_request', details: { field: 'whatsapp' } },
+      });
+    }
+    expect(await exists(`users/${fan.uid}/contact/main`)).toBe(false);
+    expect(await redemptionsOf(id)).toHaveLength(0);
+
+    const key = unique('chave-numero-');
+    expect((await redeemWith(fan, id, 1_000, '(75) 99123-4567', key)).status).toBe(200);
+    expect(await redeemWith(fan, id, 1_000, '(75) 99999-0000', key)).toMatchObject({
+      status: 422,
+      body: { code: 'idempotency_key_reused' },
+    });
+    expect(await savedContact(fan)).toEqual({ whatsapp: '+5575991234567' });
+    expect(await redemptionsOf(id)).toHaveLength(1);
+  });
+
+  it('o PUT /me/contact troca e apaga o número, com a origem app; o suspenso recebe 403', async () => {
+    const fan = await signUpFan(db);
+    await fund(fan, 5_000);
+    const id = await reward({ cost: 1_000, perFanLimit: null });
+    const put = (whatsapp: unknown, key = unique('contato-')) =>
+      http(env, '/me/contact', { method: 'PUT', token: fan.token, key, body: { whatsapp } });
+
+    const changed = await put('(11) 98765-4321');
+    expect(changed).toMatchObject({ status: 200, body: { whatsapp: '+5511987654321' } });
+    expect(await read(`users/${fan.uid}/contact/main`)).toEqual({
+      whatsapp: '+5511987654321',
+      source: 'app',
+      updatedAt: expect.any(Timestamp),
+    });
+    expect(await savedContact(fan)).toEqual({ whatsapp: '+5511987654321' });
+
+    // O resgate grava de novo, com a origem store.
+    expect((await redeemWith(fan, id, 1_000, '(75) 99123-4567')).status).toBe(200);
+    expect(await read(`users/${fan.uid}/contact/main`)).toMatchObject({
+      whatsapp: '+5575991234567',
+      source: 'store',
+    });
+
+    // Apagar deixa o documento com o número null; o GET volta null.
+    expect(await put(null)).toMatchObject({ status: 200, body: { whatsapp: null } });
+    expect(await read(`users/${fan.uid}/contact/main`)).toMatchObject({
+      whatsapp: null,
+      source: 'app',
+    });
+    expect(await savedContact(fan)).toEqual({ whatsapp: null });
+
+    expect(await put('(75) 3221-4567')).toMatchObject({
+      status: 400,
+      body: { code: 'invalid_request', details: { field: 'whatsapp' } },
+    });
+    await db.doc(`users/${fan.uid}`).update({ suspendedAt: Timestamp.now() });
+    expect(await put('(75) 99123-4567')).toMatchObject({
+      status: 403,
+      body: { code: 'account_suspended' },
+    });
+    expect(await savedContact(fan)).toEqual({ whatsapp: null });
+  });
+
+  it('a exclusão de conta leva o contato junto com o perfil', async () => {
+    const fan = await signUpFan(db);
+    await fund(fan, 5_000);
+    const id = await reward({ cost: 1_000 });
+    expect((await redeemWith(fan, id, 1_000, '(75) 99123-4567')).status).toBe(200);
+    expect(await exists(`users/${fan.uid}/contact/main`)).toBe(true);
+    await deleteUserData(db, fan.uid);
+    expect(await exists(`users/${fan.uid}/contact/main`)).toBe(false);
   });
 });
 

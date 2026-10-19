@@ -13,11 +13,14 @@ import {
   fanKeys,
   profileKeys,
   useFanProfileQuery,
+  useMyContactQuery,
   useMyProfileQuery,
+  useUpdateContactMutation,
   useUpdateProfileMutation,
   useWatchMyProfile,
 } from '../queries';
-import type { EditableProfile, FanPublicProfile } from '../types';
+import { ApiError } from '@/services/api/errors';
+import type { EditableProfile, FanContact, FanPublicProfile } from '../types';
 
 jest.mock('firebase/firestore', () => ({
   doc: jest.fn((_db: unknown, ...path: string[]) => path.join('/')),
@@ -25,7 +28,11 @@ jest.mock('firebase/firestore', () => ({
   onSnapshot: jest.fn(),
 }));
 jest.mock('@/firebase', () => ({ getDb: () => ({}) }));
-jest.mock('@/services/api', () => ({ api: { get: jest.fn(), put: jest.fn() } }));
+// O `ApiError` de verdade: a mutação do contato separa a falha incerta por ele.
+jest.mock('@/services/api', () => ({
+  api: { get: jest.fn(), put: jest.fn() },
+  ApiError: jest.requireActual('@/services/api/errors').ApiError,
+}));
 // Sem .env no Jest: o aviso de Firebase sem configuração não polui a saída.
 jest.mock('@/config/env', () => ({ firebaseEmulatorHost: undefined }));
 // Lido na hora da chamada: os testes do ✓ põem o perfil na API.
@@ -317,5 +324,55 @@ describe('perfil público de outro fã (seção 28)', () => {
       client.getQueryCache().find({ queryKey: fanKeys.profile(fanId) })?.state.isInvalidated;
     expect(state('uid-camila')).toBe(true);
     expect(state('fa-rank-01')).toBe(false);
+  });
+});
+
+describe('o contato do fã (seção 35)', () => {
+  it('o WhatsApp guardado fica fora do disco', async () => {
+    mockDataSource = 'api';
+    jest.mocked(api.get).mockResolvedValueOnce({ data: { whatsapp: '+5575991234567' } });
+    const { result } = renderHook(() => useMyContactQuery(), { wrapper });
+    await waitFor(() => expect(result.current.data).toEqual({ whatsapp: '+5575991234567' }));
+    const query = client.getQueryCache().find({ queryKey: profileKeys.contact() });
+    expect(query?.meta).toMatchObject({ persist: false });
+  });
+
+  it('a troca põe o número no cache; a falha incerta repete a chave só com o mesmo número', async () => {
+    mockDataSource = 'api';
+    const put = jest.mocked(api.put);
+    put
+      .mockRejectedValueOnce(new ApiError('network', 'sem rede'))
+      .mockResolvedValueOnce({ data: { whatsapp: '+5575991234567' } })
+      .mockResolvedValueOnce({ data: { whatsapp: null } });
+    const keyOf = (call: number) =>
+      (put.mock.calls[call]![2] as { headers: Record<string, string> }).headers['Idempotency-Key'];
+    const { result } = renderHook(() => useUpdateContactMutation(), { wrapper });
+
+    await act(async () => {
+      await result.current.mutateAsync('(75) 99123-4567').catch(() => undefined);
+    });
+    await act(async () => {
+      await result.current.mutateAsync('(75) 99123-4567');
+    });
+    expect(put).toHaveBeenNthCalledWith(
+      1,
+      '/me/contact',
+      { whatsapp: '(75) 99123-4567' },
+      {
+        headers: { 'Idempotency-Key': expect.stringMatching(/^contact-/) },
+      },
+    );
+    expect(keyOf(1)).toBe(keyOf(0));
+    expect(client.getQueryData<FanContact>(profileKeys.contact())).toEqual({
+      whatsapp: '+5575991234567',
+    });
+
+    // Apagar é outra gravação, com chave nova.
+    await act(async () => {
+      await result.current.mutateAsync(null);
+    });
+    expect(put.mock.calls[2]![1]).toEqual({ whatsapp: null });
+    expect(keyOf(2)).not.toBe(keyOf(1));
+    expect(client.getQueryData<FanContact>(profileKeys.contact())).toEqual({ whatsapp: null });
   });
 });

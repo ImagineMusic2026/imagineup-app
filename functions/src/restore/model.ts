@@ -157,6 +157,7 @@ export function accountSources(
         out.set(`ids:${read.collection}`, { kind: 'ids', collection: read.collection });
         break;
       case 'sub':
+      case 'subdoc':
         out.set(`ids:${read.parent}`, { kind: 'ids', collection: read.parent });
         break;
       case 'equal':

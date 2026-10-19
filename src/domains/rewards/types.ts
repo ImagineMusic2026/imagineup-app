@@ -109,12 +109,19 @@ export interface RedeemVariables {
    * `reward_changed` quando o custo de agora é outro.
    */
   expectedCost: number;
+  /**
+   * O WhatsApp do fã em E.164 (`+5575991234567`, seção 35): o servidor guarda
+   * no contato do fã, para a equipe combinar a entrega. Fora do formato, 400
+   * `invalid_request` com o campo `whatsapp`.
+   */
+  whatsapp: string;
 }
 
 /**
- * O que o servidor devolve ao confirmar. O app não pede endereço nem dado
- * pessoal novo: a entrega física fica com a equipe, e as instruções (retirada
- * com o código ou contato pelo e-mail da conta) vêm do painel.
+ * O que o servidor devolve ao confirmar. Desde a seção 35, o app pede só o
+ * WhatsApp, para a equipe combinar a entrega (o endereço, quando a entrega
+ * pede, a equipe combina por ele); as instruções (retirada com o código ou o
+ * contato da equipe) vêm do painel. O número não volta na resposta.
  */
 export interface RedeemResult {
   redemptionId: string;

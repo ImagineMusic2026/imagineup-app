@@ -333,6 +333,11 @@ describe('a frase com o link nas telas que mostram erro, sem o Alert', () => {
     renderRouter(appTree, { initialUrl: '/recompensa/videochamada' });
 
     fireEvent.press(await screen.findByRole('button', { name: 'Resgatar por 8.500 pontos' }));
+    // O WhatsApp da confirmação (seção 35): sem ele, o resgate nem sai.
+    fireEvent.changeText(
+      await screen.findByLabelText(t('rewards.confirm.whatsapp.label')),
+      '75991234567',
+    );
     fireEvent.press(await screen.findByRole('button', { name: t('rewards.confirm.action') }));
 
     const text = 'Sua conta está suspensa. Você não pode resgatar.';

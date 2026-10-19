@@ -537,7 +537,16 @@
       "body": "Você troca {{points}} do seu saldo por {{title}}.",
       "note": "Seu nível não cai: só o saldo diminui. A entrega fica com a equipe da Imagine Music, e depois de confirmar você vê como retirar ou como a equipe vai falar com você.",
       "action": "Confirmar resgate",
-      "back": "Voltar"
+      "back": "Voltar",
+      "whatsapp": {
+        "label": "Seu WhatsApp",
+        "prefix": "+55",
+        "placeholder": "(00) 00000-0000",
+        "hint": "Celular com DDD e o 9 na frente, para a equipe falar com você sobre a entrega.",
+        "locked": "É o número da tentativa anterior, que vale até ela ter resposta.",
+        "required": "Informe seu WhatsApp com o DDD.",
+        "invalid": "Confira o número: o DDD e o celular, com o 9 na frente."
+      }
     },
     "success": {
       "title": "Resgate confirmado",
@@ -545,7 +554,8 @@
       "nextSteps": "Próximos passos",
       "done": "Pronto",
       "announcement": "Resgate confirmado. Seu saldo agora é {{balance}}.",
-      "tracking": "Você acompanha o pedido nesta recompensa, na loja."
+      "tracking": "Você acompanha o pedido nesta recompensa, na loja.",
+      "whatsapp": "Se precisar, a equipe fala com você pelo WhatsApp +55 {{number}}."
     },
     "redeemed": {
       "title": "Seus resgates",
@@ -567,7 +577,8 @@
       "limitReached": "Você chegou ao limite de resgates desta recompensa.",
       "changed": "O custo desta recompensa mudou. Confira antes de resgatar.",
       "dailyLimit": "Você fez resgates demais hoje. Tente de novo amanhã.",
-      "alreadyRedeemed": "Seu resgate anterior já foi registrado. Confira em Seus resgates."
+      "alreadyRedeemed": "Seu resgate anterior já foi registrado. Confira em Seus resgates.",
+      "whatsappInvalid": "Confira o número: o DDD e o celular, com o 9 na frente."
     },
     "redeemedShort": "Resgatado",
     "legal": {

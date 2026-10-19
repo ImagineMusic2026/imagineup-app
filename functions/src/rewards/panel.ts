@@ -3,6 +3,7 @@ import { Timestamp, type Firestore, type Transaction } from 'firebase-admin/fire
 import * as logger from 'firebase-functions/logger';
 
 import { isEventOpen } from '../agenda/model';
+import { contactWhatsapp, fanContactRef } from '../fan-contact';
 import { eventOf, eventRef } from '../agenda/store';
 import { removeFiles, type ArtistFiles } from '../artists/files';
 import { imageSize, isImageContentType } from '../artists/model';
@@ -37,8 +38,9 @@ import { redemptionRef, redemptionsRef, rewardOf, rewardRef, rewardsRef } from '
 // admin, ou editor com a seção rewards, cadastra, edita, publica, encerra,
 // repõe o estoque, ordena e apaga o rascunho sem pedido, e cuida dos pedidos
 // (aprovar, marcar entregue, recusar com motivo) e dos contatos de quem
-// resgatou. A foto sobe do navegador para rewards/{rewardId}/ e a função
-// confere o arquivo. As telas são do bloco 11 (imagineup-admin).
+// resgatou (desde a seção 35, com o WhatsApp). A foto sobe do navegador para
+// rewards/{rewardId}/ e a função confere o arquivo. As telas são do bloco 11
+// (imagineup-admin).
 
 /** As dependências das callables da loja (25.8). */
 export type RewardsPanelDeps = {
@@ -533,16 +535,20 @@ export type RedemptionContact = {
   name: string | null;
   username: string | null;
   email: string | null;
+  /** O WhatsApp de agora do contato do fã (seção 35), em E.164, ou null sem número. */
+  whatsapp: string | null;
 };
 
 /**
  * getRedemptionContacts (25.1, decisão 13): o nome, o @ e o e-mail de agora
  * de quem fez os pedidos abertos (solicitados e aprovados), para a equipe
- * entregar. Pedido que não existe ou já fechou fica fora da resposta
- * (minimização de dados); o de uma conta que não existe mais volta com tudo
- * null. Só admin ou editor com `rewards`: o leitor vê a cópia do nome e do @
- * no pedido, nunca o e-mail. Uma auditoria por chamada, com os códigos e a
- * quantidade, sem nome, @ nem e-mail.
+ * entregar, e, desde a seção 35, o WhatsApp do contato do fã
+ * (`users/{uid}/contact/main`, o de agora, também nos pedidos de antes dele),
+ * ou null sem número. Pedido que não existe ou já fechou fica fora da
+ * resposta (minimização de dados); o de uma conta que não existe mais volta
+ * com tudo null. Só admin ou editor com `rewards`: o leitor vê a cópia do
+ * nome e do @ no pedido, nunca o e-mail nem o WhatsApp. Uma auditoria por
+ * chamada, com os códigos e a quantidade, sem nome, @, e-mail nem WhatsApp.
  */
 export async function readRedemptionContacts(
   deps: RewardsPanelDeps,
@@ -553,22 +559,31 @@ export async function readRedemptionContacts(
   await editor(deps, caller);
   const codes = parseRedemptionCodes(requestFields(data).redemptionIds);
 
-  const snaps = await db.getAll(...codes.map((code) => redemptionRef(db, code)));
-  const open = snaps
+  const orders = await db.getAll(...codes.map((code) => redemptionRef(db, code)));
+  const open = orders
     .filter((snap) => snap.exists)
     .map((snap) => redemptionRecord(snap.id, snap.data() ?? {}))
     .filter((item) => isOpenRedemption(item.status) && item.uid !== null);
   const uids = [...new Set(open.map((item) => item.uid!))];
-  const profiles =
-    uids.length > 0 ? await db.getAll(...uids.map((uid) => db.collection('users').doc(uid))) : [];
-  const profileOf = new Map(uids.map((uid, index) => [uid, profiles[index]]));
+  // Os perfis e os contatos num getAll só: os perfis primeiro, os contatos depois.
+  const snaps =
+    uids.length > 0
+      ? await db.getAll(
+          ...uids.map((uid) => db.collection('users').doc(uid)),
+          ...uids.map((uid) => fanContactRef(db, uid)),
+        )
+      : [];
+  const profileOf = new Map(uids.map((uid, index) => [uid, snaps[index]]));
+  const contactOf = new Map(uids.map((uid, index) => [uid, snaps[uids.length + index]]));
   const users =
     uids.length > 0 ? await deps.auth.getUsers(uids.map((uid) => ({ uid }))) : { users: [] };
   const userOf = new Map(users.users.map((user) => [user.uid, user]));
 
   const contacts = open.map((item): RedemptionContact => {
     const user = userOf.get(item.uid!);
-    if (!user) return { redemptionId: item.code, name: null, username: null, email: null };
+    if (!user) {
+      return { redemptionId: item.code, name: null, username: null, email: null, whatsapp: null };
+    }
     const profile = profileOf.get(item.uid!);
     const name = profile?.exists ? profile.get('displayName') : null;
     const username = profile?.exists ? profile.get('username') : null;
@@ -577,6 +592,7 @@ export async function readRedemptionContacts(
       name: typeof name === 'string' ? name : null,
       username: typeof username === 'string' ? username : null,
       email: user.email ?? null,
+      whatsapp: contactWhatsapp(contactOf.get(item.uid!)?.data()),
     };
   });
 

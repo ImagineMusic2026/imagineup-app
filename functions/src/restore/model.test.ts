@@ -139,6 +139,7 @@ describe('as contas que a cópia conhece', () => {
           case 'doc':
             return source.kind === 'ids' && source.collection === read.collection;
           case 'sub':
+          case 'subdoc':
             return source.kind === 'ids' && source.collection === read.parent;
           case 'equal':
           case 'count':
