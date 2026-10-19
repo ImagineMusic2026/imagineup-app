@@ -1474,8 +1474,10 @@ describe('suspensão do fã (bloco 11)', () => {
         'DELETE /me/photo',
         'PUT /me/blocks/:fanId',
         'DELETE /me/blocks/:fanId',
-        // O fã-clube (seção 34): desistir da candidatura é de desfazer.
+        // O fã-clube (seção 34): desistir da candidatura e retirar a publicação
+        // são de desfazer.
         'DELETE /me/fan-club/application',
+        'DELETE /me/fan-club/posts/:postId',
       ].sort(),
     );
     // Toda rota que lê ignora a trava (ela mora no runIdempotent).
@@ -2008,20 +2010,177 @@ describe('fã-clube gerido pelo fã (seção 34)', () => {
     for (const [method, path] of [
       ['POST', '/me/fan-club/application'],
       ['DELETE', '/me/fan-club/application'],
+      ['PUT', '/me/fan-club/rules'],
+      ['POST', '/me/fan-club/upload'],
+      ['POST', '/me/fan-club/posts'],
+      ['DELETE', '/me/fan-club/posts/pub1'],
+      ['POST', '/fan-club-posts/pub1/report'],
     ] as const) {
       const sent = await call(request(method, path, { body: {} }), API_ROUTES, noReads);
-      expect(sent.status).toBe(400);
+      expect(sent.status, `${method} ${path}`).toBe(400);
       expect(sent.body).toMatchObject({ code: 'idempotency_key_required' });
     }
-    const routes = API_ROUTES.filter((route) => route.pattern.startsWith('/me/fan-club'));
+    const routes = API_ROUTES.filter(
+      (route) =>
+        route.pattern.startsWith('/me/fan-club') ||
+        route.pattern.includes('/fan-club') ||
+        route.pattern.startsWith('/fan-clubs'),
+    );
     expect(routes.map((route) => [route.method, route.pattern, route.writes])).toEqual([
       ['GET', '/me/fan-club', false],
       ['GET', '/me/fan-club/artists', false],
       ['POST', '/me/fan-club/application', true],
       ['DELETE', '/me/fan-club/application', true],
+      ['PUT', '/me/fan-club/rules', true],
+      ['GET', '/me/fan-club/posts', false],
+      ['POST', '/me/fan-club/upload', true],
+      ['POST', '/me/fan-club/posts', true],
+      ['DELETE', '/me/fan-club/posts/:postId', true],
+      ['GET', '/artists/:artistId/fan-clubs', false],
+      ['GET', '/fan-clubs/:clubId', false],
+      ['GET', '/fan-clubs/:clubId/posts', false],
+      ['POST', '/fan-club-posts/:postId/report', true],
     ]);
-    // Candidatar cria: o suspenso não manda (sem `allowSuspended`).
-    const apply = routes.find((route) => route.method === 'POST');
-    expect(apply && 'allowSuspended' in apply).toBe(false);
+    // Candidatar, publicar, abrir a vaga, o novo aceite e denunciar criam: o
+    // suspenso não manda (sem `allowSuspended`); retirar é de desfazer.
+    for (const route of routes.filter((item) => item.writes)) {
+      const undo =
+        route.method === 'DELETE' &&
+        (route.pattern === '/me/fan-club/application' ||
+          route.pattern === '/me/fan-club/posts/:postId');
+      expect('allowSuspended' in route && route.allowSuspended, route.pattern).toBe(
+        undo ? true : false,
+      );
+    }
+  });
+
+  it('os ids fora do formato são 404 sem ler nada (etapa 2)', async () => {
+    const key = { 'Idempotency-Key': 'chave-fa-clube-0002' };
+    const cases: [string, string, string][] = [
+      ['GET', '/fan-clubs/__clube__', 'fan_club_not_found'],
+      ['GET', '/fan-clubs/__clube__/posts', 'fan_club_not_found'],
+      ['DELETE', '/me/fan-club/posts/__pub__', 'fan_club_post_not_found'],
+      ['POST', '/fan-club-posts/__pub__/report', 'fan_club_post_not_found'],
+      ['GET', '/artists/Netto/fan-clubs', 'artist_not_found'],
+    ];
+    for (const [method, path, code] of cases) {
+      const sent = await call(request(method, path, { headers: key }), API_ROUTES, noReads);
+      expect(sent.status, `${method} ${path}`).toBe(404);
+      expect(sent.body).toMatchObject({ code });
+      expect(sent.body).not.toHaveProperty('details');
+    }
+  });
+
+  it('POST /me/fan-club/posts confere o corpo antes de abrir a transação (sem leitura)', async () => {
+    const key = { 'Idempotency-Key': 'chave-fa-clube-0003' };
+    const cases: [unknown, Record<string, unknown>][] = [
+      [undefined, { code: 'invalid_request', details: { field: 'body' } }],
+      [
+        { text: 'Oi', photo: false, foto: 1 },
+        { code: 'invalid_request', details: { field: 'foto' } },
+      ],
+      [{ photo: false }, { code: 'invalid_request', details: { field: 'text' } }],
+      [{ text: 'Oi' }, { code: 'invalid_request', details: { field: 'photo' } }],
+      [
+        { text: 'Oi', photo: 'sim' },
+        { code: 'invalid_request', details: { field: 'photo' } },
+      ],
+      [
+        { text: '   ', photo: false },
+        { code: 'fan_club_invalid', details: { field: 'text', reason: 'format' } },
+      ],
+      [
+        { text: 'a'.repeat(1_001), photo: false },
+        { code: 'fan_club_invalid', details: { field: 'text', reason: 'format' } },
+      ],
+      [
+        { text: 'Que pepino esse show', photo: true },
+        { code: 'fan_club_invalid', details: { field: 'text', reason: 'not_allowed' } },
+      ],
+    ];
+    for (const [body, expected] of cases) {
+      const sent = await call(
+        request('POST', '/me/fan-club/posts', { body, headers: key }),
+        API_ROUTES,
+        noReads,
+      );
+      expect(sent.status, JSON.stringify(body)).toBe(400);
+      expect(sent.body).toMatchObject(expected);
+    }
+    expect(logger.error).not.toHaveBeenCalled();
+  });
+
+  it('PUT /me/fan-club/rules e a denúncia conferem o corpo antes de abrir a transação', async () => {
+    const key = { 'Idempotency-Key': 'chave-fa-clube-0004' };
+    const cases: [string, string, unknown, Record<string, unknown>][] = [
+      [
+        'PUT',
+        '/me/fan-club/rules',
+        {},
+        { code: 'invalid_request', details: { field: 'rulesVersion' } },
+      ],
+      [
+        'PUT',
+        '/me/fan-club/rules',
+        { rulesVersion: 'termos-2026-10', outro: 1 },
+        { code: 'invalid_request', details: { field: 'outro' } },
+      ],
+      [
+        'PUT',
+        '/me/fan-club/rules',
+        { rulesVersion: 'regulamento-2027' },
+        { code: 'fan_club_invalid', details: { field: 'rulesVersion', reason: 'format' } },
+      ],
+      [
+        'POST',
+        '/fan-club-posts/pub1/report',
+        { reason: 'nudez' },
+        { code: 'invalid_request', details: { field: 'reason' } },
+      ],
+      [
+        'POST',
+        '/fan-club-posts/pub1/report',
+        ['spam'],
+        { code: 'invalid_request', details: { field: 'reason' } },
+      ],
+    ];
+    for (const [method, path, body, expected] of cases) {
+      const sent = await call(request(method, path, { body, headers: key }), API_ROUTES, noReads);
+      expect(sent.status, JSON.stringify(body)).toBe(400);
+      expect(sent.body).toMatchObject(expected);
+    }
+  });
+
+  it('os 404 do fã-clube e da publicação saem sem detalhes, e os tetos novos levam a ação', async () => {
+    for (const [error, code, message] of [
+      [
+        new FanClubError('fan_club_not_found'),
+        'fan_club_not_found',
+        'Este fã-clube não está disponível.',
+      ],
+      [
+        new FanClubError('fan_club_post_not_found'),
+        'fan_club_post_not_found',
+        'Publicação não encontrada.',
+      ],
+    ] as const) {
+      const sent = await call(request('GET', '/teste/fa-clube'), thrower(error));
+      expect(sent).toMatchObject({ status: 404, body: { code, message } });
+      expect(sent.body).not.toHaveProperty('details');
+    }
+    for (const [action, limit] of [
+      ['club_post', 5],
+      ['club_upload', 10],
+    ] as const) {
+      const sent = await call(
+        request('GET', '/teste/fa-clube'),
+        thrower(new DailyCapError(action, limit, 3600)),
+      );
+      expect(sent).toMatchObject({
+        status: 429,
+        body: { code: 'too_many_requests', details: { limit, action } },
+      });
+    }
+    expect(logger.error).not.toHaveBeenCalled();
   });
 });

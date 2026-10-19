@@ -66,11 +66,11 @@ export type FilterEntryKeys = {
 
 /**
  * Os campos de texto que o `isBlockedText` confere. Desde o fã-clube (seção
- * 34, 34.8), o nome proposto (`fanClubName`) e o texto de divulgação da
- * candidatura (`fanClubPitch`).
+ * 34, 34.8), o nome proposto (`fanClubName`), o texto de divulgação da
+ * candidatura (`fanClubPitch`) e o texto da publicação (`fanClubPost`).
  */
 export type FilterTextField =
-  'comment' | 'bio' | 'displayName' | 'city' | 'fanClubName' | 'fanClubPitch';
+  'comment' | 'bio' | 'displayName' | 'city' | 'fanClubName' | 'fanClubPitch' | 'fanClubPost';
 export type FilterField = FilterTextField | 'username' | 'socials';
 export type FieldBlocks = Readonly<Record<FilterField, readonly FilterCategory[]>>;
 
@@ -81,6 +81,7 @@ const FIELDS: readonly FilterField[] = [
   'city',
   'fanClubName',
   'fanClubPitch',
+  'fanClubPost',
   'username',
   'socials',
 ];
@@ -97,6 +98,7 @@ export const FIELD_BLOCKS: FieldBlocks = {
   city: FILTER_CATEGORIES,
   fanClubName: FILTER_CATEGORIES,
   fanClubPitch: FILTER_CATEGORIES,
+  fanClubPost: FILTER_CATEGORIES,
   username: FILTER_CATEGORIES,
   socials: FILTER_CATEGORIES,
 };

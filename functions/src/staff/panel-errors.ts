@@ -41,7 +41,9 @@ export type PanelErrorReason =
   | 'stale-decision'
   | 'artist-not-open'
   | 'feature-limit'
-  | 'owner-suspended';
+  | 'owner-suspended'
+  | 'fan-club-post-not-found'
+  | 'fan-club-report-not-found';
 
 const ERRORS: Record<PanelErrorReason, [FunctionsErrorCode, string]> = {
   'invalid-request': ['invalid-argument', 'Pedido inválido.'],
@@ -96,6 +98,8 @@ const ERRORS: Record<PanelErrorReason, [FunctionsErrorCode, string]> = {
     'failed-precondition',
     'O gestor está suspenso. Tire a suspensão antes de reativar o fã-clube.',
   ],
+  'fan-club-post-not-found': ['not-found', 'Essa publicação não existe mais.'],
+  'fan-club-report-not-found': ['not-found', 'Essa publicação não está na fila de denúncias.'],
 };
 
 /** Erro das callables do bloco 11: código do Firebase, mensagem em pt-BR e `details: { reason, ... }`. */

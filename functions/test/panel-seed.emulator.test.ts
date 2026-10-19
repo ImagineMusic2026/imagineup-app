@@ -8,7 +8,12 @@ import { seedEvents } from '../src/agenda';
 import { seedCamilaCentrals, seedCentrals } from '../src/centrals';
 import { FILTER_ENTRIES } from '../src/content-filter/terms';
 import { dayKey, shiftDay } from '../src/day';
-import { SEED_CAMILA_FAN_CLUB, seedFanClubs } from '../src/fan-clubs';
+import {
+  SEED_CAMILA_FAN_CLUB,
+  SEED_FAN_CLUB_POSTS,
+  seedFanClubPosts,
+  seedFanClubs,
+} from '../src/fan-clubs';
 import {
   editableProfileOf,
   fanPhotoFiles,
@@ -74,7 +79,9 @@ import { localApi, signIn, useEmulators } from './support';
  * privada e redes), no fim, antes dos números, como o script. Desde as
  * exigências das lojas (29.10), logo depois deles, o bloqueio da Camila e a
  * denúncia de perfil da Bia contra o Promo. Desde o fã-clube (34.12, etapa 1
- * de 34.14), em seguida, a Camila aprovada no Netto e o Nenho só com texto.
+ * de 34.14), em seguida, a Camila aprovada no Netto e o Nenho só com texto;
+ * desde a etapa 2, as três publicações dela (duas no ar, uma com a foto em
+ * 4:5) e a denúncia da Bia contra a da foto.
  */
 const env = useEmulators('painel-seed', ['api', 'createUserProfile']);
 const { db, bucket } = env;
@@ -84,6 +91,10 @@ const T0 = Date.parse('2026-10-07T18:00:00.000Z');
 const TODAY = dayKey(T0);
 const YESTERDAY = shiftDay(TODAY, -1);
 const JPEG = readFileSync(resolve(__dirname, '../../scripts/seed-assets/foto-teste.jpg'));
+const CLUB_PHOTO = readFileSync(resolve(__dirname, '../../scripts/seed-assets/foto-fa-clube.jpg'));
+const CLUB_THUMB = readFileSync(
+  resolve(__dirname, '../../scripts/seed-assets/foto-fa-clube-mini.jpg'),
+);
 const ACTOR = { uid: SEED_STAFF_ADMIN.uid, name: SEED_STAFF_ADMIN.displayName };
 const quiet = { info: () => undefined, warn: () => undefined, error: () => undefined };
 
@@ -181,6 +192,20 @@ async function seed(ranking: Map<string, string>): Promise<void> {
   await seedProfileModeration(db, (email) => uidOf(ranking, email), T0);
   // O fã-clube (34.12, etapa 1 de 34.14): a Camila aprovada no Netto.
   await seedFanClubs(db, 'camila', ACTOR, T0);
+  // As publicações e a denúncia (etapa 2).
+  await seedFanClubPosts(
+    db,
+    fanPhotoFiles(() => bucket),
+    upload,
+    {
+      camilaUid: 'camila',
+      biaUid: 'bia',
+      actor: ACTOR,
+      photo: new Uint8Array(CLUB_PHOTO),
+      thumb: new Uint8Array(CLUB_THUMB),
+    },
+    T0,
+  );
   await seedPanelStats(db, T0);
   await seedPanelClose(db, T0, quiet);
 }
@@ -206,6 +231,9 @@ async function dump(): Promise<Record<string, [string, DocumentData][]>> {
     'fanClubApplications',
     'fanClubApplicationPrivate',
     'fanClubs',
+    'fanClubPosts',
+    'fanClubReports',
+    'fanClubReportQueue',
   ]) {
     out[name] = (await db.collection(name).get()).docs.map((doc) => [doc.id, doc.data()]);
   }
@@ -428,6 +456,41 @@ describe('o seed das telas do painel (26.13)', () => {
     expect(audit.filter((entry) => entry.action === 'fanClub.application.approved')).toHaveLength(
       1,
     );
+    // As publicações (34.12, etapa 2): duas no ar, a primeira com a foto em 4:5,
+    // e uma em análise; a Bia denuncia a da foto por uso indevido de imagem.
+    const clubId = application.clubId as string;
+    const posts = (await db.collection('fanClubPosts').where('authorUid', '==', 'camila').get())
+      .docs;
+    const byText = new Map(posts.map((doc) => [doc.get('text') as string, doc]));
+    expect(posts).toHaveLength(SEED_FAN_CLUB_POSTS.length);
+    const [photoItem, textItem, pendingItem] = SEED_FAN_CLUB_POSTS;
+    const photoPost = byText.get(photoItem!.text)!;
+    expect(photoPost.data()).toMatchObject({
+      clubId,
+      artistId: 'nettobrito',
+      kind: 'photo',
+      status: 'published',
+      media: {
+        photo: { width: 1080, height: 1350 },
+        thumb: { width: 480, height: 600 },
+      },
+      reviewedBy: { uid: SEED_STAFF_ADMIN.uid, name: SEED_STAFF_ADMIN.displayName },
+    });
+    expect(byText.get(textItem!.text)!.data()).toMatchObject({ kind: 'text', status: 'published' });
+    expect(byText.get(pendingItem!.text)!.data()).toMatchObject({ status: 'pending' });
+    expect(await read(`fanClubs/${clubId}`)).toMatchObject({ postCount: 2, pendingPosts: 1 });
+    expect(await read(`fanClubReportQueue/${photoPost.id}`)).toMatchObject({
+      status: 'open',
+      round: 1,
+      reportCount: 1,
+      reasons: { image_misuse: 1 },
+      authorUid: 'camila',
+    });
+    expect(await read(`fanClubReports/bia_${photoPost.id}`)).toMatchObject({
+      reporterUid: 'bia',
+      reason: 'image_misuse',
+    });
+    expect(audit.filter((entry) => entry.action === 'fanClub.post.approved')).toHaveLength(2);
     for (let index = 1; index <= 20; index += 1) {
       const id = `seed-audit-${String(index).padStart(2, '0')}`;
       const entry = (await read(`staffAudit/${id}`))!;

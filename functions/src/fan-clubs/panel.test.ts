@@ -3,7 +3,8 @@ import { describe, expect, it, vi } from 'vitest';
 import { decideFanClub, parseDecision } from './panel';
 
 // A entrada da callable decideFanClub (docs/arquitetura-api.md, 34.3), em
-// tabela, sem Firestore: cada assunto, decisão, `expected` e campo; e as
+// tabela, sem Firestore: cada assunto (a candidatura, o fã-clube e, desde a
+// etapa 2, a publicação e a denúncia), decisão, `expected` e campo; e as
 // recusas que vêm antes de qualquer leitura (o login, o assunto, o id e a
 // própria candidatura).
 
@@ -29,6 +30,10 @@ const application = (fields: Record<string, unknown>) =>
   parseDecision('application', 'uidCamila', fields, NOW);
 
 const club = (fields: Record<string, unknown>) => parseDecision('club', 'clube1', fields, NOW);
+
+const post = (fields: Record<string, unknown>) => parseDecision('post', 'pub1', fields, NOW);
+
+const report = (fields: Record<string, unknown>) => parseDecision('report', 'pub1', fields, NOW);
 
 describe('a candidatura', () => {
   it('aprovar com o nome proposto ou ajustado; recusar com o motivo da lista', () => {
@@ -137,6 +142,60 @@ describe('o fã-clube', () => {
   });
 });
 
+describe('a publicação (etapa 2)', () => {
+  it('aprovar, ocultar e reexibir só com o status; recusar com o motivo da lista', () => {
+    for (const decision of ['approve', 'hide', 'restore'] as const) {
+      expect(post({ decision, expected: 'pending' })).toEqual({
+        subject: 'post',
+        id: 'pub1',
+        decision,
+        expected: 'pending',
+      });
+    }
+    expect(post({ decision: 'reject', expected: 'pending', reason: 'image_rights' })).toEqual({
+      subject: 'post',
+      id: 'pub1',
+      decision: 'reject',
+      expected: 'pending',
+      reason: 'image_rights',
+    });
+  });
+
+  it.each([
+    [{ decision: 'pause', expected: 'pending' }, 'decision'],
+    [{ decision: 'keep', expected: 'pending' }, 'decision'],
+    [{ decision: 'approve' }, 'expected'],
+    [{ decision: 'approve', expected: 'active' }, 'expected'],
+    [{ decision: 'approve', expected: 1 }, 'expected'],
+    [{ decision: 'reject', expected: 'pending' }, 'reason'],
+    [{ decision: 'reject', expected: 'pending', reason: 'not_fit' }, 'reason'],
+  ])('%j: invalid-request com o campo %s', (fields, field) => {
+    expect(detailsOf(() => post(fields))).toEqual({ reason: 'invalid-request', field });
+  });
+});
+
+describe('a denúncia (etapa 2)', () => {
+  it('manter ou ocultar, com a rodada da tela', () => {
+    expect(report({ decision: 'keep', expected: 1 })).toEqual({
+      subject: 'report',
+      id: 'pub1',
+      decision: 'keep',
+      expected: 1,
+    });
+    expect(report({ decision: 'action', expected: 3 })).toMatchObject({ decision: 'action' });
+  });
+
+  it.each([
+    [{ decision: 'hide', expected: 1 }, 'decision'],
+    [{ decision: 'keep' }, 'expected'],
+    [{ decision: 'keep', expected: 0 }, 'expected'],
+    [{ decision: 'keep', expected: 1.5 }, 'expected'],
+    [{ decision: 'keep', expected: 'open' }, 'expected'],
+  ])('%j: invalid-request com o campo %s', (fields, field) => {
+    expect(detailsOf(() => report(fields))).toEqual({ reason: 'invalid-request', field });
+  });
+});
+
 describe('antes de qualquer leitura', () => {
   const noReads = {
     collection: () => {
@@ -161,7 +220,7 @@ describe('antes de qualquer leitura', () => {
     expect(await detailsOfCall({ subject: 'application', id: 'uidCamila' }, null)).toEqual({
       reason: 'unauthenticated',
     });
-    for (const subject of [undefined, 'post', 'report', 'fã']) {
+    for (const subject of [undefined, 'reward', 'prize', 'fã']) {
       expect(await detailsOfCall({ subject, id: 'x' })).toEqual({
         reason: 'invalid-request',
         field: 'subject',
@@ -171,10 +230,12 @@ describe('antes de qualquer leitura', () => {
       reason: 'invalid-request',
       field: 'id',
     });
-    expect(await detailsOfCall({ subject: 'club', id: 'a/b' })).toEqual({
-      reason: 'invalid-request',
-      field: 'id',
-    });
+    for (const subject of ['club', 'post', 'report']) {
+      expect(await detailsOfCall({ subject, id: 'a/b' })).toEqual({
+        reason: 'invalid-request',
+        field: 'id',
+      });
+    }
     expect(await detailsOfCall({ subject: 'application', id: 'uidEquipe' })).toEqual({
       reason: 'self',
     });

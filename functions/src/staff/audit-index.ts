@@ -82,9 +82,11 @@ const DETAIL_TARGETS: readonly [field: string, type: string][] = [
   ['code', 'redemption'],
   ['codes', 'redemption'],
   // O fã-clube (34.8): o gestor vai em `fanUid`, porque o `targetUid` fora das
-  // ações `fan.` vira `staff:`.
+  // ações `fan.` vira `staff:`; a publicação, em `fanClubPostId`, porque o
+  // `postId` é o alvo `post:` do Mural.
   ['clubId', 'fanClub'],
   ['fanUid', 'fan'],
+  ['fanClubPostId', 'fanClubPost'],
 ];
 
 /** Id que vira alvo: texto de 1 a 200 caracteres, sem `/`. */

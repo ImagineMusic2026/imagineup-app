@@ -10,9 +10,11 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 /**
- * Regras do Storage (fotos das centrais em artists/{id}/) contra os emuladores
- * de Storage e Firestore: o storage.rules lê staff/{uid} e artists/{id} no
- * Firestore do mesmo projeto. Rode com `npm run test:rules`. O clearStorage() da biblioteca só
+ * Regras do Storage (fotos das centrais em artists/{id}/ e, desde então, a
+ * mídia dos posts, a foto do fã, a das recompensas e as fotos das publicações
+ * do fã-clube) contra os emuladores de Storage e Firestore: o storage.rules lê
+ * staff/{uid}, artists/{id}, o perfil e as vagas no Firestore do mesmo
+ * projeto. Rode com `npm run test:rules`. O clearStorage() da biblioteca só
  * apaga a raiz do bucket, então cada teste sobe num caminho próprio.
  */
 let env: RulesTestEnvironment;
@@ -532,6 +534,155 @@ describe('foto do fã (fans/{uid}/)', () => {
       await assertFails(storage.ref('fans/camila').listAll());
       await assertFails(storage.ref(path).delete());
       await assertFails(storage.ref(path).updateMetadata({ contentType: 'image/png' }));
+    }
+  });
+});
+
+// --- Fotos das publicações do fã-clube (seção 34, 34.6) -----------------------------------
+
+describe('fotos das publicações do fã-clube (fanClubMedia/{uid}/)', () => {
+  // A gestora com perfil (users/camila, como o servidor cria) e outro fã.
+  beforeEach(async () => {
+    await env.withSecurityRulesDisabled(async (context) => {
+      for (const uid of ['camila', 'alan']) {
+        await setDoc(doc(context.firestore(), `users/${uid}`), {
+          displayName: uid,
+          username: uid,
+          city: null,
+          photoURL: null,
+          createdAt: Timestamp.now(),
+        });
+      }
+    });
+  });
+
+  const jpeg = { contentType: 'image/jpeg' };
+
+  /** Os dois nomes de uma vaga, com um id novo (o servidor sorteia um uuid). */
+  function names(): { photo: string; thumb: string } {
+    const id = `9b2c0a1e-${(++counter).toString(16).padStart(4, '0')}-4222-8333-444455556666`;
+    return { photo: `club-photo-${id}.jpg`, thumb: `club-thumb-${id}.jpg` };
+  }
+
+  /** A vaga que o POST /me/fan-club/upload grava: os dois nomes e o prazo. */
+  async function reserveSlot(
+    uid: string,
+    slot: { photo: string; thumb: string },
+    expiresInMs = 10 * 60_000,
+  ) {
+    await env.withSecurityRulesDisabled(async (context) => {
+      await setDoc(doc(context.firestore(), `users/${uid}/uploads/fanClubPost`), {
+        fileNames: [slot.photo, slot.thumb],
+        expiresAt: Timestamp.fromMillis(Date.now() + expiresInMs),
+        createdAt: Timestamp.now(),
+        schemaVersion: 1,
+      });
+    });
+  }
+
+  /** Uma vaga aberta na pasta do fã, com os dois caminhos. */
+  async function reserved(uid = 'camila') {
+    const slot = names();
+    await reserveSlot(uid, slot);
+    const folder = `fanClubMedia/${uid}/`;
+    return { photo: folder + slot.photo, thumb: folder + slot.thumb };
+  }
+
+  it('a gestora com a vaga aberta sobe a foto e a miniatura com os nomes da vaga', async () => {
+    const paths = await reserved();
+    await assertSucceeds(upload(as('camila'), paths.photo, jpeg));
+    await assertSucceeds(upload(as('camila'), paths.thumb, jpeg));
+  });
+
+  it('sem vaga, com a vaga de outros nomes, a vencida ou a da foto do perfil, não sobe', async () => {
+    const free = names();
+    await assertFails(upload(as('camila'), `fanClubMedia/camila/${free.photo}`, jpeg));
+    const old = await reserved();
+    // A vaga nova troca a de antes: os nomes que ficaram para trás não sobem mais.
+    await reserved();
+    await assertFails(upload(as('camila'), old.photo, jpeg));
+    const expired = names();
+    await reserveSlot('camila', expired, -1_000);
+    await assertFails(upload(as('camila'), `fanClubMedia/camila/${expired.photo}`, jpeg));
+    // A vaga da foto do perfil (uploads/photo) não abre a pasta do fã-clube.
+    const other = names();
+    await env.withSecurityRulesDisabled(async (context) => {
+      await setDoc(doc(context.firestore(), 'users/camila/uploads/photo'), {
+        fileName: other.photo,
+        expiresAt: Timestamp.fromMillis(Date.now() + 60_000),
+        createdAt: Timestamp.now(),
+      });
+    });
+    await assertFails(upload(as('camila'), `fanClubMedia/camila/${other.photo}`, jpeg));
+  });
+
+  it('a vaga de um fã não abre a pasta de outro, e outro fã, sem login e a equipe não sobem', async () => {
+    const slot = names();
+    await reserveSlot('alan', slot);
+    await assertFails(upload(as('camila'), `fanClubMedia/camila/${slot.photo}`, jpeg));
+    const paths = await reserved();
+    await assertFails(upload(as('alan'), paths.photo, jpeg));
+    await assertFails(upload(anonymous(), paths.photo, jpeg));
+    await assertFails(upload(as('admin'), paths.photo, jpeg));
+  });
+
+  it('sem users/{uid} e com o fã suspenso, não sobe', async () => {
+    const paths = await reserved();
+    await env.withSecurityRulesDisabled(async (context) => {
+      await updateDoc(doc(context.firestore(), 'users/camila'), { suspendedAt: Timestamp.now() });
+    });
+    await assertFails(upload(as('camila'), paths.photo, jpeg));
+    await env.withSecurityRulesDisabled(async (context) => {
+      await deleteDoc(doc(context.firestore(), 'users/camila'));
+    });
+    await assertFails(upload(as('camila'), paths.thumb, jpeg));
+  });
+
+  it('só JPEG, de 1 byte a 2 MiB', async () => {
+    for (const contentType of ['image/png', 'image/webp', 'image/jpeg; charset=utf-8']) {
+      const paths = await reserved();
+      await assertFails(upload(as('camila'), paths.photo, { contentType }));
+    }
+    let paths = await reserved();
+    await assertSucceeds(upload(as('camila'), paths.photo, { ...jpeg, size: 2 * MB }));
+    paths = await reserved();
+    await assertFails(upload(as('camila'), paths.photo, { ...jpeg, size: 2 * MB + 1 }));
+    paths = await reserved();
+    await assertFails(upload(as('camila'), paths.photo, { ...jpeg, size: 0 }));
+  });
+
+  it('nome fora do formato e subpasta não sobem, nem com a vaga do nome', async () => {
+    for (const name of [
+      'photo-mg5k2x1a-0001.jpg',
+      'club-foto-9b2c0a1e-0001.jpg',
+      'club-photo-a.jpg',
+      'club-photo-ABCDEFGH.jpg',
+      'club-photo-9b2c0a1e-0001.jpeg',
+    ]) {
+      await reserveSlot('camila', { photo: name, thumb: name });
+      await assertFails(upload(as('camila'), `fanClubMedia/camila/${name}`, jpeg));
+    }
+    const slot = names();
+    await reserveSlot('camila', slot);
+    await assertFails(upload(as('camila'), `fanClubMedia/camila/sub/${slot.photo}`, jpeg));
+  });
+
+  it('o mesmo nome duas vezes não sobe (sem sobrescrever)', async () => {
+    const paths = await reserved();
+    await assertSucceeds(upload(as('camila'), paths.photo, jpeg));
+    await assertFails(upload(as('camila'), paths.photo, jpeg));
+  });
+
+  it('a dona lê pelo caminho; outro fã e sem login, não; ninguém lista, troca nem apaga', async () => {
+    const paths = await reserved();
+    await assertSucceeds(upload(as('camila'), paths.photo, jpeg));
+    await assertSucceeds(as('camila').ref(paths.photo).getMetadata());
+    await assertFails(as('alan').ref(paths.photo).getMetadata());
+    await assertFails(anonymous().ref(paths.photo).getMetadata());
+    for (const storage of [as('camila'), as('admin')]) {
+      await assertFails(storage.ref('fanClubMedia/camila').listAll());
+      await assertFails(storage.ref(paths.photo).delete());
+      await assertFails(storage.ref(paths.photo).updateMetadata({ contentType: 'image/png' }));
     }
   });
 });

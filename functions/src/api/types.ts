@@ -86,8 +86,20 @@ export type WriteContext = ReadContext & {
   profile: DocumentSnapshot;
 };
 
-/** O que a rota que grava devolve: a resposta e, se lançou pontos, o plano (com quem chama). */
-export type WorkResult = { status?: number; body: unknown; plan?: AwardPlan };
+/**
+ * O que a rota que grava devolve: a resposta e, se lançou pontos, o plano (com
+ * quem chama). O `afterCommit` roda depois que a transação gravou, antes da
+ * resposta, só no pedido que gravou (a repetição pela chave não roda): o que
+ * não cabe numa transação, como apagar arquivos do Storage ou trocar o token
+ * de download (as publicações do fã-clube, seção 34). A falha dele vai ao log
+ * e não muda a resposta.
+ */
+export type WorkResult = {
+  status?: number;
+  body: unknown;
+  plan?: AwardPlan;
+  afterCommit?: () => Promise<void>;
+};
 
 type RouteBase = {
   method: Method;

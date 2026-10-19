@@ -163,6 +163,11 @@ export type AuditAction =
   | 'fanClub.closed'
   | 'fanClub.featured'
   | 'fanClub.unfeatured'
+  | 'fanClub.post.approved'
+  | 'fanClub.post.rejected'
+  | 'fanClub.post.hidden'
+  | 'fanClub.post.restored'
+  | 'fanClub.report.resolved'
   | 'config.seeded';
 
 /**
@@ -173,8 +178,11 @@ export type AuditAction =
  * e-mail de quem resgatou (25.8). Os pedidos de dados (`fan.data.exported` e
  * `fan.account.deleted`, seção 32, decisão 12) levam só `details: { uid }`,
  * com o targetEmail vazio: nunca o e-mail digitado nem o da conta. As do
- * fã-clube (`fanClub.*`, seção 34, 34.8) levam o gestor em `details.fanUid`,
- * nunca no targetUid, e nunca o texto de divulgação, as redes nem o WhatsApp.
+ * fã-clube (`fanClub.*`, seção 34, 34.8) levam o gestor em `details.fanUid`
+ * (o autor da publicação, em `details.authorUid`), nunca no targetUid, e
+ * nunca o texto de divulgação, as redes, o WhatsApp nem o texto da
+ * publicação; a publicação vai em `details.fanClubPostId`, nunca em `postId`
+ * (o alvo `post:` do Mural).
  */
 export type AuditEntry = {
   action: AuditAction;

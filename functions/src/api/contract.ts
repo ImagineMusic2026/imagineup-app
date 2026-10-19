@@ -737,3 +737,112 @@ export type FanClubArtist = {
 
 /** `GET /me/fan-club/artists`. */
 export type FanClubArtists = { items: FanClubArtist[] };
+
+// --- As publicações do fã-clube (etapa 2 de 34.14) -----------------------------------
+
+/** O status da publicação (34.4). */
+export type FanClubPostStatus =
+  'pending' | 'published' | 'rejected' | 'withdrawn' | 'hidden' | 'removed';
+
+/** O motivo da recusa da publicação pela equipe (o app mostra um texto fixo por código). */
+export type FanClubPostRejectReason = 'image_rights' | 'off_topic' | 'quality' | 'rules' | 'other';
+
+/** Uma imagem da publicação: a URL com token e o tamanho lido no arquivo. */
+export type FanClubPostImage = { url: string; width: number; height: number };
+
+/**
+ * A publicação como o gestor vê em "Minhas publicações" (`GET
+ * /me/fan-club/posts`, e a resposta do `POST` e do `DELETE`). A foto e a
+ * miniatura só vêm em análise e no ar: na recusada e na retirada os arquivos
+ * saíram, e na oculta e na tirada do ar o token mudou.
+ */
+export type OwnFanClubPost = {
+  id: string;
+  clubId: string;
+  artistId: string;
+  kind: 'text' | 'photo';
+  text: string;
+  photo: FanClubPostImage | null;
+  thumb: FanClubPostImage | null;
+  status: FanClubPostStatus;
+  rejectReason: FanClubPostRejectReason | null;
+  /** ISO. */
+  submittedAt: string;
+  /** ISO, ou null antes de ir ao ar. */
+  publishedAt: string | null;
+  /** ISO da última decisão da equipe, ou null. */
+  reviewedAt: string | null;
+};
+
+/**
+ * A vaga de envio da foto (`POST /me/fan-club/upload`): os dois caminhos que
+ * o app sobe para o Storage (a foto e a miniatura) e o prazo, em ISO.
+ */
+export type FanClubUploadSlot = { photoPath: string; thumbPath: string; expiresAt: string };
+
+/** O gestor, no fã-clube e nas publicações: as cópias do perfil dele. */
+export type FanClubPerson = {
+  uid: string;
+  name: string | null;
+  username: string | null;
+  photoURL: string | null;
+};
+
+/** Uma publicação no ar (`GET /fan-clubs/:clubId/posts`; a Início, na etapa 4). */
+export type FanClubPost = {
+  id: string;
+  clubId: string;
+  clubName: string;
+  artistId: string;
+  author: FanClubPerson;
+  kind: 'text' | 'photo';
+  text: string;
+  photo: FanClubPostImage | null;
+  thumb: FanClubPostImage | null;
+  /** ISO. */
+  publishedAt: string;
+};
+
+/** O artista na página do fã-clube. */
+export type FanClubPageArtist = {
+  id: string;
+  name: string;
+  shortName: string | null;
+  thumbUrl: string | null;
+};
+
+/**
+ * A página pública (`GET /fan-clubs/:clubId`): o fã-clube ativo, de artista no
+ * ar e com o fã-clube aberto, de gestor que quem pede não bloqueou. Nunca
+ * prêmio nem pontos (decisão 48).
+ */
+export type FanClubPage = {
+  id: string;
+  name: string;
+  artist: FanClubPageArtist;
+  owner: FanClubPerson;
+  /** O número exato, pelo `count()` de quem segue agora (decisão 28). */
+  followerCount: number;
+  postCount: number;
+  /** O Destaque, com o prazo conferido. */
+  featured: boolean;
+  isFollowing: boolean;
+  isOwner: boolean;
+  /** Quem pede é da central oficial do artista. */
+  isMember: boolean;
+};
+
+/** Um fã-clube na lista do artista (`GET /artists/:artistId/fan-clubs`). */
+export type FanClubCard = {
+  id: string;
+  name: string;
+  owner: FanClubPerson;
+  /** Os seguidores da cópia da noite (o app arredonda). */
+  followers: number;
+  featured: boolean;
+  postCount: number;
+  isFollowing: boolean;
+};
+
+/** A denúncia de uma publicação (`POST /fan-club-posts/:postId/report`). */
+export type ReportFanClubPostResult = { postId: string; status: 'reported' | 'already_reported' };

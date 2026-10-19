@@ -86,7 +86,13 @@ export type IdempotentWork = (ctx: {
   profile: DocumentSnapshot;
 }) => Promise<WorkResult>;
 
-export type IdempotentResult = { status: number; body: unknown; replayed: boolean };
+export type IdempotentResult = {
+  status: number;
+  body: unknown;
+  replayed: boolean;
+  /** O passo de depois da gravação, da tentativa que gravou (nunca na repetição). */
+  afterCommit?: () => Promise<void>;
+};
 
 /**
  * A resposta como o app vai recebê-la: o JSON do `res.json`, sem campo
@@ -111,6 +117,8 @@ export function storedBody(body: unknown): unknown {
  * 4. o trabalho da rota (leituras, planAwards, gravações do domínio);
  * 5. grava o plano (ou só a atividade de quem chama) e a chave, juntos.
  * O plano da rota precisa ter partido do `fan` deste pedido (`plan.caller`).
+ * O `afterCommit` da rota volta junto, da tentativa que gravou, para quem
+ * chama rodar depois da transação.
  * O shard é sorteado de novo a cada tentativa. ALREADY_EXISTS roda tudo de
  * novo uma vez: a segunda rodada acha a chave ou o lançamento.
  */
@@ -168,7 +176,9 @@ export function runIdempotent(
         createdAt: Timestamp.fromMillis(call.now),
         expiresAt: Timestamp.fromMillis(call.now + IDEMPOTENCY_TTL_MS),
       });
-      return { status, body, replayed: false };
+      return result.afterCommit
+        ? { status, body, replayed: false, afterCommit: result.afterCommit }
+        : { status, body, replayed: false };
     }),
   );
 }

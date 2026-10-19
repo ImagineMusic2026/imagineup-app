@@ -13,6 +13,7 @@ import * as logger from 'firebase-functions/logger';
 
 import type { EditableProfile, FanPublicProfile, ProfileChanges } from '../api/contract';
 import { removeFiles, type LeftoverFile } from '../artists/files';
+import { fanClubMediaFolder } from '../fan-clubs/model';
 import { syncFanClubCopies } from '../fan-clubs/store';
 import { countDailyAction, enforceDailyCap } from '../moderation/caps';
 import { blockedOf } from '../moderation/model';
@@ -573,11 +574,13 @@ const warnMissingBucket = (log: Log, uid: string): void => {
 };
 
 /**
- * Esvazia a pasta `fans/{uid}/`, arquivo por arquivo, em lotes. Sobrou
- * arquivo: lança, para quem chama (a exclusão de conta, a tarefa) tentar de
- * novo. O Storage ainda não ligado no projeto (`isMissingBucket`: o bucket que
- * não existe ou sem nome na configuração) conta como pasta vazia, senão a
- * exclusão repetiria sem parar. Devolve quantos arquivos havia.
+ * Esvazia as pastas do fã no Storage, arquivo por arquivo, em lotes: a da
+ * foto do perfil (`fans/{uid}/`) e, desde o fã-clube (seção 34, 34.7), a das
+ * fotos das publicações (`fanClubMedia/{uid}/`). Sobrou arquivo: lança, para
+ * quem chama (a exclusão de conta, a tarefa) tentar de novo. O Storage ainda
+ * não ligado no projeto (`isMissingBucket`: o bucket que não existe ou sem
+ * nome na configuração) conta como pasta vazia, senão a exclusão repetiria
+ * sem parar. Devolve quantos arquivos havia.
  */
 export async function purgeFanPhotos(
   files: Pick<FanPhotoFiles, 'list' | 'remove'>,
@@ -586,7 +589,10 @@ export async function purgeFanPhotos(
 ): Promise<number> {
   let paths: string[];
   try {
-    paths = await files.list(fanPhotoFolder(uid));
+    paths = [
+      ...(await files.list(fanPhotoFolder(uid))),
+      ...(await files.list(fanClubMediaFolder(uid))),
+    ];
   } catch (error) {
     if (!isMissingBucket(error)) throw error;
     warnMissingBucket(log, uid);

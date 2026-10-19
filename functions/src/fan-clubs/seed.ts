@@ -1,23 +1,27 @@
 import type { Firestore } from 'firebase-admin/firestore';
 
+import type { FanPhotoFiles } from '../fan-profile/files';
 import { DEFAULT_POINTS_CONFIG } from '../points/config';
 import { NO_GAME } from '../points/model';
 import { SEED_ACTOR } from '../points/seed';
-import { applicationRecord, type ApplicationInput } from './model';
+import { applicationRecord, fanClubPostRecord, type ApplicationInput } from './model';
 import { runFanClubDecision } from './panel';
+import { runCreateFanClubPost, runOpenFanClubUpload } from './posts';
+import { runReportFanClubPost } from './reports';
 import { runApplyForFanClub } from './service';
-import { applicationRef } from './store';
+import { applicationRef, fanClubPostsOfAuthor, fanClubReportQueueRef } from './store';
 
-// O fã-clube no seed dos emuladores (docs/arquitetura-api.md, 34.12), na
-// etapa 1 de 34.14: a Camila, gestora aprovada do fã-clube do Netto, pelos
-// núcleos de verdade (a candidatura com o ator de sistema, que não conta no
+// O fã-clube no seed dos emuladores (docs/arquitetura-api.md, 34.12), pelos
+// núcleos de verdade. Na etapa 1 de 34.14: a Camila, gestora aprovada do
+// fã-clube do Netto (a candidatura com o ator de sistema, que não conta no
 // teto, com o WhatsApp de teste no contato dela, e a aprovação com o admin do
-// seed), e o Nenho com o `photosAllowed:
-// false` gravado (os fã-clubes dele só publicam texto). O Netto fica com as
-// caixas pelo padrão (o `imageRightsConfirmed`). As publicações, os
-// seguidores, a denúncia, o prêmio e a candidatura pendente da Duda chegam
-// com as etapas deles. Rodar de novo não muda nada. Nunca roda em produção:
-// o script fixa os emuladores.
+// seed), e o Nenho com o `photosAllowed: false` gravado (os fã-clubes dele só
+// publicam texto). O Netto fica com as caixas pelo padrão (o
+// `imageRightsConfirmed`). Na etapa 2: as três publicações da Camila (duas no
+// ar, uma com a foto de teste em 4:5, e uma em análise) e a denúncia da Bia
+// contra a da foto, com "Uso indevido de imagem". Os seguidores, o prêmio e a
+// candidatura pendente da Duda chegam com as etapas deles. Rodar de novo não
+// muda nada. Nunca roda em produção: o script fixa os emuladores.
 
 /** A central com as fotos de fã desligadas (só texto). */
 export const SEED_TEXT_ONLY_ARTIST = 'nenho';
@@ -89,6 +93,114 @@ export async function seedFanClubs(
       { actor, now },
     );
     result.approved = true;
+  }
+  return result;
+}
+
+/** Uma publicação do seed: o texto, se leva a foto de teste e se a equipe a aprova. */
+export type SeedFanClubPost = { text: string; photo: boolean; publish: boolean };
+
+/** As publicações da Camila, na ordem em que nascem (duas no ar e uma em análise). */
+export const SEED_FAN_CLUB_POSTS: readonly SeedFanClubPost[] = [
+  {
+    text: 'O ensaio de hoje foi lindo! Quem vem com a gente no show de sábado em Irará?',
+    photo: true,
+    publish: true,
+  },
+  {
+    text: 'Contagem regressiva para o lançamento do clipe novo: faltam 3 dias. Bora assistir juntos!',
+    photo: false,
+    publish: true,
+  },
+  {
+    text: 'Fizemos uma faixa para o próximo show. Quem quer ajudar a pintar no domingo?',
+    photo: false,
+    publish: false,
+  },
+];
+
+export type SeedFanClubPostsResult = {
+  /** Publicações criadas agora. */
+  created: number;
+  /** Publicações aprovadas agora. */
+  published: number;
+  /** A denúncia da Bia entrou agora. */
+  reported: boolean;
+};
+
+/**
+ * As publicações da Camila e a denúncia da Bia (34.12, etapa 2), pelos núcleos
+ * de verdade: a vaga, os dois arquivos da foto de teste em 4:5 (`save`, como o
+ * app enviaria) e a publicação com o ator de sistema (os tetos não contam), e
+ * a aprovação com o admin do seed. Cada publicação só nasce quando a Camila
+ * ainda não tem uma com o mesmo texto, e só é aprovada quando está em análise
+ * e o seed a quer no ar (a recusada ou retirada no painel local fica como
+ * está). A denúncia só vai sem o item da publicação da foto na fila.
+ */
+export async function seedFanClubPosts(
+  db: Firestore,
+  files: FanPhotoFiles,
+  save: (path: string, data: Uint8Array) => Promise<void>,
+  input: {
+    camilaUid: string;
+    biaUid: string;
+    actor: { uid: string; name: string };
+    photo: Uint8Array;
+    thumb: Uint8Array;
+  },
+  now: number = Date.now(),
+): Promise<SeedFanClubPostsResult> {
+  const result: SeedFanClubPostsResult = { created: 0, published: 0, reported: false };
+  const options = { now, config: DEFAULT_POINTS_CONFIG, actor: SEED_ACTOR, game: NO_GAME };
+  const existing = await fanClubPostsOfAuthor(db, input.camilaUid).get();
+  const byText = new Map(
+    existing.docs.map((doc) => [
+      doc.get('text'),
+      { id: doc.id, status: fanClubPostRecord(doc.id, doc.data()).status as string },
+    ]),
+  );
+  let photoPost: { id: string; status: string } | null = null;
+  for (const item of SEED_FAN_CLUB_POSTS) {
+    let post = byText.get(item.text) ?? null;
+    if (post === null) {
+      if (item.photo) {
+        const { body: slot } = await runOpenFanClubUpload(db, input.camilaUid, options);
+        await save(slot.photoPath, input.photo);
+        await save(slot.thumbPath, input.thumb);
+      }
+      const { body } = await runCreateFanClubPost(
+        db,
+        files,
+        input.camilaUid,
+        { text: item.text, photo: item.photo },
+        options,
+      );
+      result.created += 1;
+      post = { id: body.id, status: body.status };
+    }
+    if (item.publish && post.status === 'pending') {
+      const decided = await runFanClubDecision(
+        db,
+        { subject: 'post', id: post.id, decision: 'approve', expected: 'pending' },
+        { actor: input.actor, now, files },
+      );
+      result.published += 1;
+      post = { id: post.id, status: decided.status };
+    }
+    if (item.photo) photoPost = post;
+  }
+  // Só a publicação no ar se denuncia (a recusada no painel local fica sem).
+  if (
+    photoPost?.status === 'published' &&
+    !(await fanClubReportQueueRef(db, photoPost.id).get()).exists
+  ) {
+    await runReportFanClubPost(
+      db,
+      input.biaUid,
+      { postId: photoPost.id, reason: 'image_misuse' },
+      options,
+    );
+    result.reported = true;
   }
   return result;
 }

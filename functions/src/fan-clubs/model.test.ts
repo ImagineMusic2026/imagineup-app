@@ -5,7 +5,13 @@ import {
   applicationRecord,
   applicationTurn,
   checkClubName,
+  CLUB_PHOTO_LIMITS,
+  CLUB_THUMB_LIMITS,
   FAN_CLUB_HISTORY_MAX,
+  FAN_CLUB_PENDING_MAX,
+  FAN_CLUB_POSTS_PER_DAY,
+  FAN_CLUB_UPLOAD_SLOT_MS,
+  FAN_CLUB_UPLOADS_PER_DAY,
   FAN_CLUB_OPEN,
   FAN_CLUB_PRIZE_NOTICE,
   FAN_CLUB_REAPPLY_MS,
@@ -14,13 +20,21 @@ import {
   fanClubBoxes,
   fanClubBoxValue,
   FanClubError,
+  fanClubMediaFolder,
+  fanClubPostRecord,
   fanClubRecord,
+  fanClubReportId,
   fanClubRulesUrl,
   hasOfficialWord,
   isFeaturedNow,
   parseApplication,
   parseFeaturedUntil,
+  parsePost,
+  parseRulesAcceptance,
+  postMediaPaths,
   reapplyAfterRejection,
+  slotFileNames,
+  slotNamesOf,
   withHistory,
   type ApplicationHistoryItem,
   type ApplicationRecord,
@@ -29,7 +43,9 @@ import {
 // O fã-clube gerido pelo fã, puro (docs/arquitetura-api.md, 34.13): as
 // constantes do programa, o nome, o texto de divulgação, o corpo da
 // candidatura, a candidatura de novo (a rodada, o prazo e as recusas), as
-// caixas por artista e o prazo do Destaque, com o relógio fixo.
+// caixas por artista e o prazo do Destaque, com o relógio fixo. Desde a
+// etapa 2, a publicação: os tetos, o corpo, o novo aceite, a vaga e a leitura
+// do documento.
 
 // O filtro do que o fã publica (seção 30) trocado por um de palavras neutras:
 // nenhum termo da lista de verdade entra no repositório (30.11).
@@ -381,7 +397,141 @@ describe('a leitura dos documentos', () => {
       featured: false,
       postCount: 0,
       ownerUid: null,
+      followers: 0,
     });
+  });
+
+  it('o fã-clube lê os seguidores da cópia e as cópias do gestor', () => {
+    expect(
+      fanClubRecord('c1', {
+        status: 'active',
+        counts: { followers: 12, at: null },
+        ownerName: 'Camila',
+        ownerUsername: 'camilarib',
+        ownerPhotoURL: '',
+      }),
+    ).toMatchObject({
+      followers: 12,
+      ownerName: 'Camila',
+      ownerUsername: 'camilarib',
+      ownerPhotoURL: null,
+    });
+  });
+
+  it('a publicação: com a mídia é foto, sem ela é texto; o status estranho vale tirada do ar', () => {
+    const media = {
+      photo: {
+        url: 'https://f/p',
+        path: 'fanClubMedia/u/club-photo-abcdefgh.jpg',
+        width: 1080,
+        height: 1350,
+      },
+      thumb: {
+        url: 'https://f/t',
+        path: 'fanClubMedia/u/club-thumb-abcdefgh.jpg',
+        width: 480,
+        height: 600,
+      },
+    };
+    const photo = fanClubPostRecord('p1', {
+      clubId: 'c1',
+      artistId: 'nettobrito',
+      authorUid: 'u',
+      text: 'Oi',
+      media,
+      status: 'pending',
+      rejectReason: 'quality',
+      submittedAt: { toMillis: () => NOW },
+    });
+    expect(photo).toMatchObject({ kind: 'photo', status: 'pending', submittedAt: NOW, media });
+    expect(postMediaPaths(photo)).toEqual([media.photo.path, media.thumb.path]);
+    const odd = fanClubPostRecord('p2', { status: 'apagada', media: { photo: media.photo } });
+    expect(odd).toMatchObject({ kind: 'text', status: 'removed', media: null, rejectReason: null });
+    expect(postMediaPaths(odd)).toEqual([]);
+  });
+});
+
+describe('a publicação (decisões 11, 15 e 16)', () => {
+  it('os tetos: 3 em análise, 5 por dia, 10 vagas por dia, 10 min de vaga', () => {
+    expect(FAN_CLUB_PENDING_MAX).toBe(3);
+    expect(FAN_CLUB_POSTS_PER_DAY).toBe(5);
+    expect(FAN_CLUB_UPLOADS_PER_DAY).toBe(10);
+    expect(FAN_CLUB_UPLOAD_SLOT_MS).toBe(10 * 60_000);
+    expect(CLUB_PHOTO_LIMITS).toEqual({ maxBytes: 2 * 1024 * 1024, maxSide: 1350 });
+    expect(CLUB_THUMB_LIMITS).toEqual({ maxBytes: 300 * 1024, maxSide: 600 });
+  });
+
+  it('o texto limpo, de 1 a 1.000, com ou sem foto', () => {
+    expect(parsePost({ text: '  Que show!  ', photo: false })).toEqual({
+      ok: true,
+      value: { text: 'Que show!', photo: false },
+    });
+    expect(parsePost({ text: 'a', photo: true })).toMatchObject({ ok: true });
+    expect(parsePost({ text: 'a'.repeat(1_000), photo: false })).toMatchObject({ ok: true });
+  });
+
+  it('malformado: o campo, para o 400 invalid_request', () => {
+    expect(parsePost(undefined)).toEqual({ ok: false, field: 'body' });
+    expect(parsePost([])).toEqual({ ok: false, field: 'body' });
+    expect(parsePost({ text: 'Oi', photo: false, media: {} })).toEqual({
+      ok: false,
+      field: 'media',
+    });
+    expect(parsePost({ photo: false })).toEqual({ ok: false, field: 'text' });
+    expect(parsePost({ text: 'Oi' })).toEqual({ ok: false, field: 'photo' });
+    expect(parsePost({ text: 'Oi', photo: 1 })).toEqual({ ok: false, field: 'photo' });
+  });
+
+  it('fora da regra: fan_club_invalid no texto (format e o filtro, fanClubPost)', () => {
+    for (const text of ['', '   ', '\u200b', 'a'.repeat(1_001)]) {
+      expect(errorOf(() => parsePost({ text, photo: false })).details).toEqual({
+        field: 'text',
+        reason: 'format',
+      });
+    }
+    expect(errorOf(() => parsePost({ text: 'Que pepino', photo: false })).details).toEqual({
+      field: 'text',
+      reason: 'not_allowed',
+    });
+  });
+
+  it('o novo aceite: a versão do servidor; a outra é fan_club_invalid', () => {
+    expect(parseRulesAcceptance({ rulesVersion: FAN_CLUB_RULES_VERSION })).toEqual({ ok: true });
+    expect(parseRulesAcceptance(null)).toEqual({ ok: false, field: 'body' });
+    expect(parseRulesAcceptance({})).toEqual({ ok: false, field: 'rulesVersion' });
+    expect(parseRulesAcceptance({ rulesVersion: 2 })).toEqual({
+      ok: false,
+      field: 'rulesVersion',
+    });
+    expect(parseRulesAcceptance({ rulesVersion: FAN_CLUB_RULES_VERSION, x: 1 })).toEqual({
+      ok: false,
+      field: 'x',
+    });
+    expect(
+      errorOf(() => parseRulesAcceptance({ rulesVersion: 'regulamento-2027' })).details,
+    ).toEqual({ field: 'rulesVersion', reason: 'format' });
+  });
+
+  it('a vaga: os dois nomes de um id, na pasta do gestor, e a leitura deles', () => {
+    expect(fanClubMediaFolder('uidCamila')).toBe('fanClubMedia/uidCamila/');
+    const names = slotFileNames('9b2c0a1e-1111-4222-8333-444455556666');
+    expect(names).toEqual({
+      photo: 'club-photo-9b2c0a1e-1111-4222-8333-444455556666.jpg',
+      thumb: 'club-thumb-9b2c0a1e-1111-4222-8333-444455556666.jpg',
+    });
+    expect(slotNamesOf([names.photo, names.thumb])).toEqual(names);
+    expect(slotNamesOf([names.thumb, names.photo])).toBeNull();
+    expect(slotNamesOf([names.photo])).toBeNull();
+    expect(slotNamesOf(['club-photo-a.jpg', names.thumb])).toBeNull();
+    expect(slotNamesOf('x')).toBeNull();
+  });
+
+  it('a denúncia: uma por fã e publicação', () => {
+    expect(fanClubReportId('uidBia', 'pub1')).toBe('uidBia_pub1');
+  });
+
+  it('os 404 saem sem detalhes', () => {
+    expect(new FanClubError('fan_club_not_found').details).toBeUndefined();
   });
 });
 

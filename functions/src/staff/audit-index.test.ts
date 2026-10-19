@@ -442,6 +442,64 @@ const ROWS: Record<AuditAction, Row> = {
     section: 'fanClubs',
     targets: ['artist:nettobrito', 'fanClub:clube1', 'fan:uid-camila'],
   },
+  // A publicação vai em `fanClubPostId` (nunca em `postId`, o alvo do Mural), e
+  // o gestor, pelo `authorUid`.
+  'fanClub.post.approved': {
+    details: {
+      fanClubPostId: 'pub1',
+      clubId: 'clube1',
+      artistId: 'nettobrito',
+      authorUid: 'uid-camila',
+      reason: null,
+    },
+    section: 'fanClubs',
+    targets: ['artist:nettobrito', 'fan:uid-camila', 'fanClub:clube1', 'fanClubPost:pub1'],
+  },
+  'fanClub.post.rejected': {
+    details: {
+      fanClubPostId: 'pub1',
+      clubId: 'clube1',
+      artistId: 'nettobrito',
+      authorUid: 'uid-camila',
+      reason: 'image_rights',
+    },
+    section: 'fanClubs',
+    targets: ['artist:nettobrito', 'fan:uid-camila', 'fanClub:clube1', 'fanClubPost:pub1'],
+  },
+  'fanClub.post.hidden': {
+    details: {
+      fanClubPostId: 'pub1',
+      clubId: 'clube1',
+      artistId: 'nettobrito',
+      authorUid: 'uid-camila',
+      reason: null,
+    },
+    section: 'fanClubs',
+    targets: ['artist:nettobrito', 'fan:uid-camila', 'fanClub:clube1', 'fanClubPost:pub1'],
+  },
+  'fanClub.post.restored': {
+    details: {
+      fanClubPostId: 'pub1',
+      clubId: 'clube1',
+      artistId: 'nettobrito',
+      authorUid: 'uid-camila',
+      reason: null,
+    },
+    section: 'fanClubs',
+    targets: ['artist:nettobrito', 'fan:uid-camila', 'fanClub:clube1', 'fanClubPost:pub1'],
+  },
+  'fanClub.report.resolved': {
+    details: {
+      fanClubPostId: 'pub1',
+      clubId: 'clube1',
+      resolution: 'actioned',
+      reportCount: 2,
+      round: 1,
+      postHidden: true,
+    },
+    section: 'fanClubs',
+    targets: ['fanClub:clube1', 'fanClubPost:pub1'],
+  },
 };
 
 describe('auditIndex: uma linha por ação', () => {

@@ -424,6 +424,69 @@ describe('rotas do fã-clube (seção 34, etapa 1)', () => {
       kind: 'method_not_allowed',
       allow: ['POST', 'DELETE'],
     });
-    expect(matchRoute(API_ROUTES, 'GET', '/me/fan-club/rules').kind).toBe('not_found');
+    // Desde a etapa 2, o novo aceite do regulamento (PUT).
+    expect(matchRoute(API_ROUTES, 'GET', '/me/fan-club/rules')).toEqual({
+      kind: 'method_not_allowed',
+      allow: ['PUT'],
+    });
+  });
+});
+
+describe('rotas do fã-clube (seção 34, etapa 2)', () => {
+  it('as publicações, a página, a lista do artista e a denúncia não se confundem', () => {
+    const cases: [string, string, string, boolean, Record<string, string>][] = [
+      ['PUT', '/me/fan-club/rules', '/me/fan-club/rules', true, {}],
+      ['GET', '/me/fan-club/posts', '/me/fan-club/posts', false, {}],
+      ['POST', '/me/fan-club/posts', '/me/fan-club/posts', true, {}],
+      ['POST', '/me/fan-club/upload', '/me/fan-club/upload', true, {}],
+      ['DELETE', '/me/fan-club/posts/pub1', '/me/fan-club/posts/:postId', true, { postId: 'pub1' }],
+      [
+        'GET',
+        '/artists/nettobrito/fan-clubs',
+        '/artists/:artistId/fan-clubs',
+        false,
+        { artistId: 'nettobrito' },
+      ],
+      ['GET', '/fan-clubs/clube1', '/fan-clubs/:clubId', false, { clubId: 'clube1' }],
+      ['GET', '/fan-clubs/clube1/posts', '/fan-clubs/:clubId/posts', false, { clubId: 'clube1' }],
+      [
+        'POST',
+        '/fan-club-posts/pub1/report',
+        '/fan-club-posts/:postId/report',
+        true,
+        { postId: 'pub1' },
+      ],
+    ];
+    for (const [method, path, pattern, writes, params] of cases) {
+      expect(matchRoute(API_ROUTES, method, path), `${method} ${path}`).toMatchObject({
+        kind: 'match',
+        route: { method, pattern, writes },
+        params,
+      });
+    }
+  });
+
+  it('os métodos errados são 405 com os aceitos', () => {
+    expect(matchRoute(API_ROUTES, 'PUT', '/me/fan-club/posts')).toEqual({
+      kind: 'method_not_allowed',
+      allow: ['GET', 'POST'],
+    });
+    expect(matchRoute(API_ROUTES, 'GET', '/me/fan-club/upload')).toEqual({
+      kind: 'method_not_allowed',
+      allow: ['POST'],
+    });
+    expect(matchRoute(API_ROUTES, 'GET', '/me/fan-club/posts/pub1')).toEqual({
+      kind: 'method_not_allowed',
+      allow: ['DELETE'],
+    });
+    expect(matchRoute(API_ROUTES, 'DELETE', '/fan-clubs/clube1')).toEqual({
+      kind: 'method_not_allowed',
+      allow: ['GET'],
+    });
+    expect(matchRoute(API_ROUTES, 'GET', '/fan-club-posts/pub1/report')).toEqual({
+      kind: 'method_not_allowed',
+      allow: ['POST'],
+    });
+    expect(matchRoute(API_ROUTES, 'GET', '/fan-club-posts/pub1').kind).toBe('not_found');
   });
 });

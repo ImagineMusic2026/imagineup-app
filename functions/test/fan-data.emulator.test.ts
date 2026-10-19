@@ -49,7 +49,10 @@ import {
  * gatilho tratando cada fonte como a lista diz. Desde o fã-clube (seção 34,
  * 34.7, etapa 1 de 34.14), o fã é também gestor aprovado: a candidatura, o
  * privado e o fã-clube vêm no arquivo, e a exclusão apaga os dois primeiros e
- * deixa a lápide.
+ * deixa a lápide. Desde a etapa 2, ele publica com foto (a parte
+ * `publicacoesDeFaClube`, sem quem revisou) e denuncia uma publicação de outro
+ * fã-clube (sem a rodada); a exclusão apaga as duas, a pasta das fotos e deixa
+ * o item da fila da publicação dele em `author_deleted`.
  */
 const env = useEmulators('dados-do-fa', [
   'createUserProfile',
@@ -440,6 +443,9 @@ async function leftovers(
           if (source.id === 'storage.fans') {
             return (await bucket.getFiles({ prefix: `fans/${uid}/` }))[0].length === 0;
           }
+          if (source.id === 'storage.fanClubMedia') {
+            return (await bucket.getFiles({ prefix: `fanClubMedia/${uid}/` }))[0].length === 0;
+          }
       }
     }
     if (effect === 'stripped' && source.id === 'fanClubs' && how.kind === 'equal') {
@@ -495,6 +501,20 @@ async function leftovers(
           // O item aberto vai a `author_deleted`, sem o resumo do perfil.
           const item = await read(`profileReportQueue/${uid}`);
           return item?.resolvedDigest === null && item.resolution === 'author_deleted';
+        }
+        case 'fanClubReportQueue': {
+          // O item aberto da publicação dele vai a `author_deleted` (etapa 2).
+          const items = await db
+            .collection('fanClubReportQueue')
+            .where('authorUid', '==', uid)
+            .get();
+          return (
+            !items.empty &&
+            items.docs.every(
+              (doc) =>
+                doc.get('status') === 'resolved' && doc.get('resolution') === 'author_deleted',
+            )
+          );
         }
         case 'staffAudit':
           return !(await none(db.collection('staffAudit').where('targetUid', '==', uid)));
@@ -592,6 +612,49 @@ describe('o arquivo de um fã com dado em toda fonte, e a exclusão', () => {
       );
       const clubId = (await read(`fanClubApplications/${fan.uid}`))?.clubId as string;
       expect(clubId).toEqual(expect.any(String));
+
+      // A publicação com foto (etapa 2): a vaga, os dois arquivos, a aprovação
+      // da equipe (o `reviewedBy` fica fora do arquivo) e a denúncia de outro
+      // fã contra ela (fora do arquivo, fica na exclusão).
+      const slot = (await as(fan)('POST', '/me/fan-club/upload')).body as {
+        photoPath: string;
+        thumbPath: string;
+      };
+      await save(slot.photoPath, JPEG);
+      await save(slot.thumbPath, JPEG);
+      const published = await as(fan)('POST', '/me/fan-club/posts', {
+        text: 'Foto do ensaio',
+        photo: true,
+      });
+      expect(published).toMatchObject({ status: 200, body: { status: 'pending', kind: 'photo' } });
+      const fanClubPostId = published.body.id as string;
+      await ok(
+        'decideFanClub',
+        { subject: 'post', id: fanClubPostId, decision: 'approve', expected: 'pending' },
+        admin,
+      );
+      expect((await report(other, `/fan-club-posts/${fanClubPostId}/report`)).status).toBe(200);
+      // A denúncia dele numa publicação no ar de outro fã-clube.
+      const otherClubPost = unique('pubOutro');
+      await db.doc(`fanClubPosts/${otherClubPost}`).set({
+        clubId: 'clubeDoOutro',
+        artistId,
+        authorUid: other.uid,
+        authorName: 'Bia Santos',
+        authorUsername: null,
+        authorPhotoURL: null,
+        kind: 'text',
+        text: 'Do outro fã-clube',
+        media: null,
+        status: 'published',
+        rejectReason: null,
+        submittedAt: Timestamp.fromMillis(now),
+        publishedAt: Timestamp.fromMillis(now),
+        reviewedAt: null,
+        reviewedBy: null,
+        schemaVersion: 1,
+      });
+      expect((await report(fan, `/fan-club-posts/${otherClubPost}/report`)).status).toBe(200);
 
       // A equipe: um ajuste, um pedido recusado e um comentário ocultado.
       await ok(
@@ -694,7 +757,9 @@ describe('o arquivo de um fã com dado em toda fonte, e a exclusão', () => {
         if (Array.isArray(value)) expect(value.length, source.id).toBeGreaterThan(0);
         if (typeof value === 'number') expect(value, source.id).toBeGreaterThan(0);
         if (place.in === 'address') {
-          expect((value as Item)[place.field], source.id).toEqual(expect.any(String));
+          // A foto do perfil no `photoURL`; as das publicações, na `media` da primeira.
+          const holder = (Array.isArray(value) ? value[0] : value) as Item;
+          expect(JSON.stringify(holder[place.field]), source.id).toMatch(/token=/);
         }
       }
 
@@ -764,6 +829,15 @@ describe('o arquivo de um fã com dado em toda fonte, e a exclusão', () => {
         expect.objectContaining({ id: clubId, name: 'Turma da Camila', status: 'active' }),
       ]);
       expect((file.faClubes as Item[])[0]).not.toHaveProperty('approvedBy');
+      // As publicações (etapa 2), sem quem revisou, e a denúncia dele, sem a rodada.
+      expect(file.publicacoesDeFaClube as Item[]).toEqual([
+        expect.objectContaining({ id: fanClubPostId, status: 'published', text: 'Foto do ensaio' }),
+      ]);
+      expect((file.publicacoesDeFaClube as Item[])[0]).not.toHaveProperty('reviewedBy');
+      expect(file.denunciasDeFaClube as Item[]).toEqual([
+        expect.objectContaining({ postId: otherClubPost, reason: 'spam' }),
+      ]);
+      expect((file.denunciasDeFaClube as Item[])[0]).not.toHaveProperty('round');
 
       // Nada de outra pessoa (pergunta 7: os alvos das denúncias e dos
       // bloqueios ficam) e nada da equipe, da chave do convidado ou do ownerKey.

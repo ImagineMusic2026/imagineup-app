@@ -20,6 +20,7 @@ export const FAN_DATA_PARTS = [
   'comentarios',
   'linksDeConvite',
   'pedidosDaLoja',
+  'publicacoesDeFaClube',
 ] as const;
 
 export type FanDataPart = (typeof FAN_DATA_PARTS)[number];
@@ -42,6 +43,7 @@ export const FAN_DATA_FIRST_KEYS = [
   'candidaturaDeFaClube',
   'candidaturaDeFaClubePrivada',
   'faClubes',
+  'denunciasDeFaClube',
 ] as const;
 
 export type FanDataFirstKey = (typeof FAN_DATA_FIRST_KEYS)[number];
@@ -57,8 +59,11 @@ export type FanDataPlace =
   | { in: 'first'; key: FanDataFirstKey }
   /** Numa parte longa, em páginas de até 500 pela ordem do id. */
   | { in: 'part'; part: FanDataPart }
-  /** Só o endereço, num campo de outra fonte (a foto, no `photoURL` do perfil). */
-  | { in: 'address'; key: FanDataFirstKey; field: string }
+  /**
+   * Só o endereço, num campo de outra fonte: a foto, no `photoURL` do perfil;
+   * as fotos das publicações do fã-clube, na `media` delas (uma parte longa).
+   */
+  | { in: 'address'; key: FanDataFirstKey | FanDataPart; field: string }
   /** Fora do arquivo, com o motivo. */
   | { in: 'out'; reason: string };
 
@@ -391,6 +396,25 @@ export const FAN_DATA_SOURCES: readonly FanDataSource[] = [
     },
   },
   {
+    // As publicações do fã-clube (seção 34, 34.7), desde a etapa 2 de 34.14.
+    id: 'fanClubPosts',
+    label: 'fanClubPosts com authorUid ==',
+    place: { in: 'part', part: 'publicacoesDeFaClube' },
+    read: { kind: 'equal', collection: 'fanClubPosts', field: 'authorUid' },
+    // O uid e o nome de quem é da equipe e decidiu a publicação.
+    omit: ['reviewedBy'],
+    deletion: { effect: 'deleted', note: 'apagada, com o item aberto da fila em author_deleted' },
+  },
+  {
+    id: 'fanClubReports',
+    label: 'fanClubReports com reporterUid ==',
+    place: { in: 'first', key: 'denunciasDeFaClube' },
+    read: { kind: 'equal', collection: 'fanClubReports', field: 'reporterUid' },
+    // A rodada do item da fila de outro fã.
+    omit: ['round'],
+    deletion: { effect: 'deleted', note: 'apagada, descontada da rodada aberta' },
+  },
+  {
     id: 'moderationQueue',
     label: 'moderationQueue (os comentários do fã)',
     place: {
@@ -411,6 +435,17 @@ export const FAN_DATA_SOURCES: readonly FanDataSource[] = [
     read: { kind: 'doc', collection: 'profileReportQueue' },
     omit: [],
     deletion: { effect: 'kept', note: 'fica o item do perfil, sem o resolvedDigest' },
+  },
+  {
+    id: 'fanClubReportQueue',
+    label: 'fanClubReportQueue (as publicações do fã)',
+    place: {
+      in: 'out',
+      reason: 'denúncias contra o fã, de quem denunciou (jurídico, UP-45)',
+    },
+    read: { kind: 'equal', collection: 'fanClubReportQueue', field: 'authorUid' },
+    omit: [],
+    deletion: { effect: 'kept', note: 'fica o item da publicação, em author_deleted' },
   },
   {
     id: 'idempotency',
@@ -438,6 +473,14 @@ export const FAN_DATA_SOURCES: readonly FanDataSource[] = [
     read: { kind: 'none', where: 'a pasta fans/{uid}/ do Storage' },
     omit: [],
     deletion: { effect: 'deleted', note: 'apagado' },
+  },
+  {
+    id: 'storage.fanClubMedia',
+    label: 'Storage fanClubMedia/{uid}/',
+    place: { in: 'address', key: 'publicacoesDeFaClube', field: 'media' },
+    read: { kind: 'none', where: 'a pasta fanClubMedia/{uid}/ do Storage' },
+    omit: [],
+    deletion: { effect: 'deleted', note: 'apagada' },
   },
   {
     id: 'staffAudit',

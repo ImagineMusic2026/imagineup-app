@@ -114,6 +114,27 @@ function refusalOf(failure: ApiHttpError): { code: string; reason?: string } {
     : { code: failure.code };
 }
 
+/**
+ * O passo de depois da gravação de uma rota (`WorkResult.afterCommit`): a
+ * gravação já valeu, então a falha não muda a resposta e vai ao log, com a
+ * rota, o uid e a mensagem (nunca texto do fã).
+ */
+async function runAfterCommit(
+  work: () => Promise<void>,
+  route: string,
+  uid: string,
+): Promise<void> {
+  try {
+    await work();
+  } catch (error) {
+    logger.error('api: o passo depois da gravação falhou', {
+      route,
+      uid,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+}
+
 function send(
   res: ApiResponse,
   status: number,
@@ -221,6 +242,7 @@ export function createApiHandler(deps: ApiDeps, routes: readonly ApiRoute[] = AP
       );
       status = result.status;
       replayed = result.replayed;
+      if (result.afterCommit) await runAfterCommit(result.afterCommit, route, callerUid);
       send(res, status, result.body, replayed ? { 'Idempotency-Replayed': 'true' } : {});
     } catch (error) {
       const { error: apiFailure, unexpected } = toApiHttpError(error);

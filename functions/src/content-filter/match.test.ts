@@ -41,6 +41,7 @@ const TEXT_FIELDS: readonly FilterTextField[] = [
   'city',
   'fanClubName',
   'fanClubPitch',
+  'fanClubPost',
 ];
 
 const ENTRY_ERROR = 'Filtro de conteúdo: a entrada 1 está fora da forma.';
@@ -235,6 +236,12 @@ describe.each([
     expect(text('Fã-clube Pepinópolis', 'fanClubName')).toBe(false);
   });
 
+  it('o texto da publicação do fã-clube confere a palavra e a frase, como o comentário (34.8)', () => {
+    expect(text('Show lindo, berinjela pura', 'fanClubPost')).toBe(true);
+    expect(text('Fã-clube Berinjelada no show', 'fanClubPost')).toBe(false);
+    expect(text('Que chuchu azedo esse', 'fanClubPost')).toBe(true);
+  });
+
   it('o termo sem inHandle não vale como trecho', () => {
     expect(text('Pepinópolis', 'city')).toBe(false);
     expect(text('Ana Pepinosa', 'displayName')).toBe(false);
@@ -324,6 +331,7 @@ describe('a política por campo', () => {
       city: [category],
       fanClubName: [category],
       fanClubPitch: [category],
+      fanClubPost: [category],
       username: [category],
       socials: [category],
     });

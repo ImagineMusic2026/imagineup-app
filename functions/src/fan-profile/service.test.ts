@@ -13,20 +13,27 @@ const UID = 'uidCamila';
 const quiet = () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn() });
 
 describe('purgeFanPhotos', () => {
-  it('lista a pasta do fã (com a barra, para não pegar outro uid) e apaga arquivo por arquivo', async () => {
+  it('lista as duas pastas do fã (com a barra, para não pegar outro uid) e apaga arquivo por arquivo', async () => {
     const removed: string[] = [];
     const files = {
-      list: vi.fn(async (prefix: string) => [
-        `${prefix}photo-a0000001.jpg`,
-        `${prefix}photo-b0000001.jpg`,
-      ]),
+      list: vi.fn(async (prefix: string) =>
+        prefix.startsWith('fans/')
+          ? [`${prefix}photo-a0000001.jpg`, `${prefix}photo-b0000001.jpg`]
+          : [`${prefix}club-photo-c0000001.jpg`],
+      ),
       remove: vi.fn(async (path: string) => {
         removed.push(path);
       }),
     } as unknown as FanPhotoFiles;
-    expect(await purgeFanPhotos(files, UID, quiet())).toBe(2);
+    expect(await purgeFanPhotos(files, UID, quiet())).toBe(3);
+    // A foto do perfil e, desde o fã-clube (seção 34, 34.7), as fotos das publicações.
     expect(files.list).toHaveBeenCalledWith(`fans/${UID}/`);
-    expect(removed).toEqual([`fans/${UID}/photo-a0000001.jpg`, `fans/${UID}/photo-b0000001.jpg`]);
+    expect(files.list).toHaveBeenCalledWith(`fanClubMedia/${UID}/`);
+    expect(removed).toEqual([
+      `fans/${UID}/photo-a0000001.jpg`,
+      `fans/${UID}/photo-b0000001.jpg`,
+      `fanClubMedia/${UID}/club-photo-c0000001.jpg`,
+    ]);
   });
 
   it('o bucket que não existe (404 na listagem) termina como pasta vazia, com aviso', async () => {
@@ -71,10 +78,10 @@ describe('purgeFanPhotos', () => {
     const removed: string[] = [];
     const log = quiet();
     const files = {
-      list: async (prefix: string) => [
-        `${prefix}photo-a0000001.jpg`,
-        `${prefix}photo-b0000001.jpg`,
-      ],
+      list: async (prefix: string) =>
+        prefix.startsWith('fans/')
+          ? [`${prefix}photo-a0000001.jpg`, `${prefix}photo-b0000001.jpg`]
+          : [],
       remove: async (path: string) => {
         if (path.endsWith('a0000001.jpg')) throw new Error('503 Service Unavailable');
         removed.push(path);
@@ -106,7 +113,10 @@ describe('exclusões em lotes', () => {
   it('uma pasta enchida por script sai inteira, sem passar do lote em andamento', async () => {
     const paths = Array.from({ length: 2_345 }, (_, index) => `fans/${UID}/photo-x${index}.jpg`);
     const counting = countingFiles();
-    const files = { list: async () => paths, remove: counting.remove } as unknown as FanPhotoFiles;
+    const files = {
+      list: async (prefix: string) => (prefix.startsWith('fans/') ? paths : []),
+      remove: counting.remove,
+    } as unknown as FanPhotoFiles;
     expect(await purgeFanPhotos(files, UID, quiet())).toBe(paths.length);
     expect(counting.removed).toHaveLength(paths.length);
     expect(counting.peak()).toBe(FAN_PHOTO_DELETE_BATCH);
