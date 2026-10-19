@@ -80,7 +80,7 @@ export const fanClubUploadSlotRef = (db: Firestore, uid: string): DocumentRefere
 
 /**
  * `users/{uid}/fanClubCredits/{artistId}`: o marcador do crédito de entrada,
- * uma vez por pessoa e artista (decisão 23). Sai com o perfil, no
+ * uma vez por conta e artista (decisão 23). Sai com o perfil, no
  * `recursiveDelete` da exclusão.
  */
 export const fanClubCreditRef = (db: Firestore, uid: string, artistId: string): DocumentReference =>

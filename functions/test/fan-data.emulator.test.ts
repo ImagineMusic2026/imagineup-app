@@ -894,6 +894,9 @@ describe('o arquivo de um fã com dado em toda fonte, e a exclusão', () => {
       const ownerKey = (await read(`inviteCodes/${code}`))?.ownerKey as string;
       expect(ownerKey).toEqual(expect.any(String));
       expect(text).not.toContain(ownerKey);
+      // O fã chegou pelo código digitado, sem link: o id do fã-clube da Duda só
+      // estaria no `fanClubId` do vínculo, que sai. Pelo link `/fa-clube/<id>`,
+      // ele iria na `origem.link.targetId`, de propósito (34.22).
       expect(text).not.toContain(inviterClubId);
       // Os lançamentos que a equipe mexeu estão lá, sem quem mexeu.
       expect((file.extrato as Item[]).map((item) => item.source)).toEqual(

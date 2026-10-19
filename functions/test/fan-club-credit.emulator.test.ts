@@ -443,7 +443,7 @@ describe('o link do fã-clube no convite (decisão 22) e os números em shards (
       status: 200,
       body: { created: false },
     });
-    expect(await exists('fanClubStats/clubeQueNaoExiste')).toBe(false);
+    expect((await clubNumbers('clubeQueNaoExiste')).shards).toBe(0);
     await ok(
       'decideFanClub',
       { subject: 'club', id: owner.clubId, decision: 'pause', expected: 'active' },
@@ -471,11 +471,14 @@ describe('o link do fã-clube no convite (decisão 22) e os números em shards (
     const friendCode = await codeOf(call, friend);
     const path = `/fa-clube/${owner.clubId}`;
 
-    // A visita de quem já tem conta: conta uma vez por pessoa.
+    // A visita de quem já tem conta: conta uma vez por pessoa e convidante (o
+    // marcador do convite, como as visitas do dia); pelo código de outro fã, de novo.
     const visitor = await signUpFan(db, 'Bia Santos');
     expect((await visit(call, visitor, friendCode, path)).status).toBe(200);
     expect((await visit(call, visitor, friendCode, path)).status).toBe(200);
     expect(await clubNumbers(owner.clubId)).toMatchObject({ visits: 1, signups: 0 });
+    expect((await visit(call, visitor, owner.code, path)).status).toBe(200);
+    expect(await clubNumbers(owner.clubId)).toMatchObject({ visits: 2, signups: 0 });
 
     // O cadastro pelo link: a origem `fanclub`, o cadastro e a visita (o marcador nasce no claim).
     const fan = await signUpFan(db, 'Duda Lima');
@@ -487,13 +490,13 @@ describe('o link do fã-clube no convite (decisão 22) e os números em shards (
       inviterUid: friend.uid,
       link: { kind: 'fanclub', targetId: owner.clubId },
     });
-    expect(await clubNumbers(owner.clubId)).toMatchObject({ visits: 2, signups: 1, joins: 0 });
+    expect(await clubNumbers(owner.clubId)).toMatchObject({ visits: 3, signups: 1, joins: 0 });
     expect(
       await statsSum(db, daysSince(start), (data) => data.byOrigin?.kind?.fanclub?.signups ?? 0),
     ).toBe(1);
     expect(
       await statsSum(db, daysSince(start), (data) => data.byOrigin?.kind?.fanclub?.visits ?? 0),
-    ).toBe(2);
+    ).toBe(3);
 
     // Quem trouxe é o Enzo, que não é gestor: a entrada não credita o fã-clube.
     expect((await join(call, fan, artistId)).status).toBe(200);
@@ -508,10 +511,7 @@ describe('o link do fã-clube no convite (decisão 22) e os números em shards (
     expect(await read(`referrals/${lost.uid}`)).toMatchObject({
       link: { kind: 'fanclub', targetId: 'clubeQueNaoExiste' },
     });
-    expect(await exists('fanClubStats/clubeQueNaoExiste')).toBe(false);
-    expect((await db.collection('fanClubStats/clubeQueNaoExiste/fanClubShards').get()).empty).toBe(
-      true,
-    );
+    expect((await clubNumbers('clubeQueNaoExiste')).shards).toBe(0);
   });
 });
 

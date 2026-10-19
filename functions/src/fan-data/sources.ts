@@ -297,7 +297,9 @@ export const FAN_DATA_SOURCES: readonly FanDataSource[] = [
     read: { kind: 'doc', collection: 'referrals' },
     // De quem convidou o fã, que é outra pessoa: o uid; o `award`, o status do
     // pagamento a ela (`skipped` com ela suspensa, `capped` no limite do dia
-    // dela); e o `inviterRemovedAt`, quando ela excluiu a conta.
+    // dela); e o `inviterRemovedAt`, quando ela excluiu a conta. O `code` e o
+    // `link` ficam, com o `targetId` do post, da central ou do fã-clube: foi o
+    // fã que os usou (32.19), e o link de fã-clube qualquer fã compartilha (34.22).
     omit: ['inviterUid', 'award', 'inviterRemovedAt'],
     deletion: { effect: 'deleted', note: 'apagado' },
   },

@@ -738,7 +738,11 @@ export type FanClubNumbers = {
   followers30d: number;
   /** Links do fã-clube registrados, por qualquer fã. */
   links: number;
-  /** Pessoas contadas como visitantes pelo link do fã-clube. */
+  /**
+   * Visitas pelo link do fã-clube: o marcador do convite que nasceu por ele,
+   * uma vez por pessoa e convidante (20.1, decisão 3); a mesma pessoa conta de
+   * novo pelo código de outro fã.
+   */
   visits: number;
   /** Cadastros que chegaram pelo link do fã-clube. */
   signups: number;

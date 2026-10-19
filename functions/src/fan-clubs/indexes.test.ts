@@ -72,6 +72,9 @@ const COMPOSITE: CompositeShape[] = [
   ]),
   shape('as denúncias abertas', 'fanClubReportQueue', [asc('status'), desc('lastReportedAt')]),
   shape('as denúncias resolvidas', 'fanClubReportQueue', [asc('status'), desc('resolvedAt')]),
+  // A contagem dos novos em 30 dias (o `countFollowers` com o `since`) leva o
+  // `orderBy('followedAt', 'desc')` de propósito, para usar esta forma: sem
+  // ele, a faixa ordenaria pelo `followedAt` crescente, que pede outro índice.
   shape(
     'os seguidores recentes e os novos em 30 dias',
     'fanClubFollows',

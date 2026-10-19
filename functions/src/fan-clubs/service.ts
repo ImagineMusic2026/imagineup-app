@@ -442,14 +442,19 @@ const ownerOf = (club: FanClubRecord): FanClubPerson => ({
 /**
  * Quem segue o fã-clube agora, pelo `count()` no grupo `fanClubFollows`
  * (decisão 28), fora de transação; com o `since`, só quem seguiu desde ele (os
- * novos em 30 dias, pelo índice de grupo do `clubId` com o `followedAt`). Sem
- * o índice de grupo (só em produção: o emulador não exige), a contagem falha
- * com o código 9: vale 0, com o erro no log, como o "N posts" da 1d (21.1).
+ * novos em 30 dias). A faixa leva o `orderBy('followedAt', 'desc')` de
+ * propósito: sem ele, a consulta ordena pelo `followedAt` crescente e pediria
+ * outro índice, e com ele usa o de grupo `(clubId, followedAt decrescente)`
+ * que 34.6 já tem (o da lista dos seguidores recentes). Sem o índice de grupo
+ * (só em produção: o emulador não exige), a contagem falha com o código 9:
+ * vale 0, com o erro no log, como o "N posts" da 1d (21.1).
  */
 async function countFollowers(db: Firestore, clubId: string, since?: number): Promise<number> {
   try {
     let query = db.collectionGroup('fanClubFollows').where('clubId', '==', clubId);
-    if (since !== undefined) query = query.where('followedAt', '>=', tsOf(since));
+    if (since !== undefined) {
+      query = query.where('followedAt', '>=', tsOf(since)).orderBy('followedAt', 'desc');
+    }
     const snap = await query.count().get();
     return snap.data().count;
   } catch (error) {
