@@ -569,8 +569,15 @@ export type FanPublicProfile = {
 
 // --- Loja e resgate (bloco 10), espelho de src/domains/rewards/types.ts ---
 
-/** `RewardKind` do app: decide o ícone e a cor do quadro. */
-export type RewardKind = 'ticket' | 'videocall' | 'merch' | 'screen' | 'meet';
+/**
+ * `RewardKind` do app: decide o ícone e a cor do quadro. O `discount`
+ * (Desconto, seção 34, decisão 42) é só dos prêmios de fã-clube e chega só no
+ * `prizes`; o app ganha o ícone dele e o de reserva na etapa 8 de 34.14.
+ */
+export type RewardKind = 'ticket' | 'videocall' | 'merch' | 'screen' | 'meet' | 'discount';
+
+/** Os tipos da loja (o `rewards`): sem o `discount`, que quebraria a tela do app de antes. */
+export type StoreRewardKind = Exclude<RewardKind, 'discount'>;
 
 /** `RewardStatus` do app: `soldOut` na encerrada, sem vaga ou com o show fechado. */
 export type RewardStatus = 'available' | 'soldOut';
@@ -607,7 +614,7 @@ export type RewardRedemption = {
 /** `Reward` do app (`GET /rewards`, 25.2). */
 export type Reward = {
   id: string;
-  kind: RewardKind;
+  kind: StoreRewardKind;
   title: string;
   subtitle: string;
   description: string | null;
@@ -626,8 +633,50 @@ export type Reward = {
   redemptions: RewardRedemption[];
 };
 
-/** `RewardsResponse` do app: a loja na ordem do painel e o endereço do regulamento. */
-export type RewardsResponse = { rulesUrl: string | null; rewards: Reward[] };
+/**
+ * Um prêmio de fã-clube do gestor (seção 34, decisão 51): o pedido que a
+ * equipe deu pelo Recompensar e a recompensa "Só para prêmios" resumida. A
+ * fileira "Seus prêmios" da loja e o detalhe em modo prêmio (etapa 8 de
+ * 34.14) leem daqui.
+ */
+export type FanClubPrize = {
+  /** O mesmo valor do `code`: a chave da lista. */
+  id: string;
+  /** O código de retirada ("UP-4KD9TM"), o de sempre dos pedidos. */
+  code: string;
+  /** Nasce `approved` ou `delivered`; o recusado é o prêmio cancelado pela equipe. */
+  status: RedemptionStatus;
+  /** ISO: o instante do status de agora. */
+  statusAt: string;
+  /** ISO: quando a equipe deu o prêmio. */
+  grantedAt: string;
+  /** O cupom do parceiro (até 60), ou null; nunca no recusado. */
+  coupon: string | null;
+  /** A mensagem da equipe ao gestor (até 140), ou null. */
+  message: string | null;
+  /** Só no recusado: o texto da equipe, ou null. */
+  refusalReason: string | null;
+  reward: {
+    id: string;
+    kind: RewardKind;
+    title: string;
+    imageUrl: string | null;
+    /** As de agora no prêmio aberto; a cópia da hora do prêmio no fechado. */
+    instructions: string;
+  };
+};
+
+/**
+ * `RewardsResponse` do app: a loja na ordem do painel, o endereço do
+ * regulamento e, desde a seção 34, os prêmios de fã-clube do fã (do mais novo
+ * ao mais antigo, até 20, sem a recompensa deles em `rewards`). O app de
+ * antes ignora o `prizes`.
+ */
+export type RewardsResponse = {
+  rulesUrl: string | null;
+  rewards: Reward[];
+  prizes: FanClubPrize[];
+};
 
 /** `RedeemResult` do app (`POST /rewards/:rewardId/redeem`): o pedido nasce `requested`. */
 export type RedeemResult = {

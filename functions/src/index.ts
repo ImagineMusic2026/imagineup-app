@@ -810,17 +810,23 @@ export const resolveProfileReport = onPanelCall({ cors: PANEL_ORIGINS }, async (
 /**
  * As decisões da seção Fã-clubes (seção 34, 34.3), numa callable só (decisão
  * 6): aprovar ou recusar a candidatura; pausar, reativar, encerrar (só
- * admin), destacar e tirar o destaque do fã-clube; aprovar, recusar, ocultar
- * e reexibir a publicação; e manter ou ocultar a denunciada, com o estado que
- * a tela mostrou e a auditoria na mesma transação. Depois dela, os arquivos da
- * publicação recusada saem e os tokens da ocultada mudam, no Storage. 256 MiB (1/6 de vCPU), o padrão:
+ * admin), destacar, tirar o destaque e recompensar o fã-clube (os pontos só
+ * no saldo, com a seção Fãs, e o prêmio, que vira pedido da loja, com a seção
+ * Recompensas); aprovar, recusar, ocultar e reexibir a publicação; e manter ou
+ * ocultar a denunciada, com o estado que a tela mostrou e a auditoria na mesma
+ * transação. Depois dela, os arquivos da publicação recusada saem e os tokens
+ * da ocultada mudam, no Storage. 256 MiB (1/6 de vCPU), o padrão:
  * a sobra da cota cai de uns 0,51 para uns 0,34 vCPU (decisão 55). O log leva
  * só quem chamou, o assunto e o status que ficou: nunca o texto do fã (a
  * decisão exata vai na auditoria, na mesma transação).
  */
 export const decideFanClub = onPanelCall({ cors: PANEL_ORIGINS }, async (request) => {
   const result = await decideFanClubOfPanel(
-    { db: getFirestore(), files: fanFiles() },
+    {
+      db: getFirestore(),
+      files: fanFiles(),
+      config: (fansConfig ??= createConfigSource(getFirestore())),
+    },
     request.auth,
     request.data,
   );

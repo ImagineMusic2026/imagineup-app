@@ -134,7 +134,11 @@
  * Camila, a entrada leva o crédito da gestora), e o rank-40, que não é da
  * central e entra junto com o seguir (a entrada trazida), os dois com o
  * central_join em 0, como a base do ranking; e a primeira cópia da noite do
- * fã-clube, para a lista e a ficha do painel terem os números.
+ * fã-clube, para a lista e a ficha do painel terem os números. Na etapa 5, a
+ * recompensa "Só para prêmios de fã-clube" (um ingresso de cortesia do São
+ * João de Irará, estoque 2, fora da loja) e o prêmio dado à Camila pelo
+ * Recompensar, com 200 pontos só no saldo, o cupom e a mensagem (a fileira
+ * "Seus prêmios", o card Prêmios e o extrato com "Prêmio do fã-clube").
  *
  * Rodar de novo não muda nada. Depois da meia-noite, o progresso do dia volta
  * a 0, como o de qualquer fã: para ver de novo o 3 de 5 e o 2 de 5, feche os
@@ -696,6 +700,17 @@ if (camilaUid) {
   );
   console.log(
     `Seguidores do fã-clube: ${clubFollows.follows} agora (2 no total: a Bia, ${clubFollows.joined ? 'que entrou agora na central do Netto' : 'já da central do Netto'}, e o ${SEED_FAN_CLUB_FOLLOWER.split('@')[0]}, que entrou junto, a entrada trazida); a cópia da noite ${clubFollows.copied ? 'rodou agora' : 'já tinha rodado'}.`,
+  );
+  // O prêmio da Camila (etapa 5), depois dos seguidores: rodar de novo não grava.
+  const { seedFanClubPrize } = functionsBuild('fan-clubs');
+  const clubPrize = await withFirestore((db) =>
+    seedFanClubPrize(db, { camilaUid, actor: staffActor }),
+  );
+  console.log(
+    `Prêmio do fã-clube: a recompensa "Só para prêmios" ${clubPrize.reward ? 'cadastrada agora' : 'já estava'}, e o prêmio da Camila (200 pontos e o ingresso de cortesia, com o cupom) ${clubPrize.granted ? 'dado agora' : 'já tinha sido dado'}.`,
+  );
+  console.log(
+    'Fã-clube: a Camila gere o fã-clube do Netto, com seguidores, uma publicação em análise, uma denúncia e um prêmio.',
   );
 }
 

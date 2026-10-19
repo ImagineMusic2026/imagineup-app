@@ -43,7 +43,10 @@ export type PanelErrorReason =
   | 'feature-limit'
   | 'owner-suspended'
   | 'fan-club-post-not-found'
-  | 'fan-club-report-not-found';
+  | 'fan-club-report-not-found'
+  | 'prize-not-allowed'
+  | 'grant-id-reused'
+  | 'reward-not-prize';
 
 const ERRORS: Record<PanelErrorReason, [FunctionsErrorCode, string]> = {
   'invalid-request': ['invalid-argument', 'Pedido inválido.'],
@@ -100,6 +103,18 @@ const ERRORS: Record<PanelErrorReason, [FunctionsErrorCode, string]> = {
   ],
   'fan-club-post-not-found': ['not-found', 'Essa publicação não existe mais.'],
   'fan-club-report-not-found': ['not-found', 'Essa publicação não está na fila de denúncias.'],
+  // O Recompensar (34.3). O `prize-not-allowed` leva qual trava falhou em
+  // `details.problem` (`club_not_active`, `not_adult` ou `owner_suspended`),
+  // porque o `details.reason` é o do erro.
+  'prize-not-allowed': [
+    'failed-precondition',
+    'O prêmio pede o fã-clube ativo, o gestor com 18 anos ou mais declarados e sem suspensão.',
+  ],
+  'grant-id-reused': [
+    'failed-precondition',
+    'Esse reconhecimento já foi dado com outros valores. Abra o diálogo de novo.',
+  ],
+  'reward-not-prize': ['failed-precondition', 'Essa recompensa não é só para prêmios de fã-clube.'],
 };
 
 /** Erro das callables do bloco 11: código do Firebase, mensagem em pt-BR e `details: { reason, ... }`. */

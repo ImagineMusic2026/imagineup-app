@@ -181,6 +181,22 @@ describe('os motivos do fã-clube (34.3)', () => {
       'failed-precondition',
       'O gestor está suspenso. Tire a suspensão antes de reativar o fã-clube.',
     ],
+    // O Recompensar (etapa 5).
+    [
+      'prize-not-allowed',
+      'failed-precondition',
+      'O prêmio pede o fã-clube ativo, o gestor com 18 anos ou mais declarados e sem suspensão.',
+    ],
+    [
+      'grant-id-reused',
+      'failed-precondition',
+      'Esse reconhecimento já foi dado com outros valores. Abra o diálogo de novo.',
+    ],
+    [
+      'reward-not-prize',
+      'failed-precondition',
+      'Essa recompensa não é só para prêmios de fã-clube.',
+    ],
   ] as const)('%s: %s, com a mensagem de 34.3', (reason, code, message) => {
     expect(panelError(reason)).toMatchObject({ code, message, details: { reason } });
   });

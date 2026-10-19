@@ -3,10 +3,11 @@ import { describe, expect, it, vi } from 'vitest';
 import { decideFanClub, parseDecision } from './panel';
 
 // A entrada da callable decideFanClub (docs/arquitetura-api.md, 34.3), em
-// tabela, sem Firestore: cada assunto (a candidatura, o fã-clube e, desde a
-// etapa 2, a publicação e a denúncia), decisão, `expected` e campo; e as
-// recusas que vêm antes de qualquer leitura (o login, o assunto, o id e a
-// própria candidatura).
+// tabela, sem Firestore: cada assunto (a candidatura, o fã-clube com o
+// Recompensar desde a etapa 5 e, desde a etapa 2, a publicação e a denúncia),
+// decisão, `expected` e campo; e as recusas que vêm antes de qualquer leitura
+// (o login, o assunto, o id e a própria candidatura). Os campos do
+// Recompensar um a um ficam no `model.test.ts` (`parseRewardGrant`).
 
 vi.mock('../content-filter', async (importOriginal) => {
   const { fakeContentFilter } = await import('../../test/content-filter-fake.js');
@@ -128,9 +129,46 @@ describe('o fã-clube', () => {
     ).toMatchObject({ decision: 'feature', featuredUntil: '2026-11-19' });
   });
 
+  it('recompensar (etapa 5): os pontos, o prêmio ou os dois, com o grantId e a nota', () => {
+    const prize = { rewardId: 'cortesia', delivered: false, coupon: ' CUPOM-10 ', message: '' };
+    expect(
+      club({
+        decision: 'reward',
+        expected: 'active',
+        grantId: 'concessao-0001',
+        points: 200,
+        prize,
+        note: ' Divulgou o show. ',
+      }),
+    ).toEqual({
+      subject: 'club',
+      id: 'clube1',
+      decision: 'reward',
+      expected: 'active',
+      grant: {
+        grantId: 'concessao-0001',
+        points: 200,
+        prize: { rewardId: 'cortesia', delivered: false, coupon: 'CUPOM-10', message: null },
+        note: 'Divulgou o show.',
+      },
+    });
+    expect(
+      club({
+        decision: 'reward',
+        expected: 'active',
+        grantId: 'concessao-0001',
+        points: 5,
+        note: 'Nota',
+      }),
+    ).toMatchObject({ grant: { points: 5, prize: null } });
+  });
+
   it.each([
     [{ decision: 'approve', expected: 'active' }, 'decision'],
-    [{ decision: 'reward', expected: 'active' }, 'decision'],
+    [{ decision: 'reward', expected: 'active' }, 'grantId'],
+    [{ decision: 'reward', expected: 'active', grantId: 'curto', points: 1, note: 'N' }, 'grantId'],
+    [{ decision: 'reward', expected: 'active', grantId: 'concessao-0001', note: 'N' }, 'points'],
+    [{ decision: 'reward', grantId: 'concessao-0001', points: 1, note: 'N' }, 'expected'],
     [{ decision: 'pause' }, 'expected'],
     [{ decision: 'pause', expected: 'ativo' }, 'expected'],
     [{ decision: 'close', expected: 'active', reason: 'account_deleted' }, 'reason'],

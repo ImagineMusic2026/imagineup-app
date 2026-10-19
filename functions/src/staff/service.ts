@@ -163,6 +163,7 @@ export type AuditAction =
   | 'fanClub.closed'
   | 'fanClub.featured'
   | 'fanClub.unfeatured'
+  | 'fanClub.rewarded'
   | 'fanClub.post.approved'
   | 'fanClub.post.rejected'
   | 'fanClub.post.hidden'
@@ -180,9 +181,9 @@ export type AuditAction =
  * com o targetEmail vazio: nunca o e-mail digitado nem o da conta. As do
  * fã-clube (`fanClub.*`, seção 34, 34.8) levam o gestor em `details.fanUid`
  * (o autor da publicação, em `details.authorUid`), nunca no targetUid, e
- * nunca o texto de divulgação, as redes, o WhatsApp nem o texto da
- * publicação; a publicação vai em `details.fanClubPostId`, nunca em `postId`
- * (o alvo `post:` do Mural).
+ * nunca o texto de divulgação, as redes, o WhatsApp, o texto da publicação,
+ * o cupom nem a mensagem do prêmio; a publicação vai em
+ * `details.fanClubPostId`, nunca em `postId` (o alvo `post:` do Mural).
  */
 export type AuditEntry = {
   action: AuditAction;

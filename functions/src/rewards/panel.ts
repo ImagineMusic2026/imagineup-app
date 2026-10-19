@@ -7,6 +7,7 @@ import { contactWhatsapp, fanContactRef } from '../fan-contact';
 import { eventOf, eventRef } from '../agenda/store';
 import { removeFiles, type ArtistFiles } from '../artists/files';
 import { imageSize, isImageContentType } from '../artists/model';
+import { applicationPrivateRef } from '../fan-clubs/store';
 import type { ConfigSource } from '../points/config';
 import { pickShard } from '../points/stats';
 import { isFileIn, isRetriedDraft, staleFiles } from '../posts/model';
@@ -16,18 +17,22 @@ import { writeAudit, type AuditAction, type CallerAuth } from '../staff/service'
 import { rewardPanelError } from './errors';
 import {
   isOpenRedemption,
+  isPrizeRedemption,
   parseRedemptionCodes,
   parseRedemptionStatusRequest,
   parseRewardCreate,
   parseRewardId,
   parseRewardIds,
   parseRewardPatch,
+  parseRewardPrizeFlag,
   parseRewardTargetStatus,
   parseStockTotal,
   redemptionRecord,
   remainingOf,
   REWARD_PHOTO_SIZE,
+  rewardPatchProblem,
   rewardPrefix,
+  rewardRecord,
   type RewardFields,
   type RewardPhoto,
 } from './model';
@@ -100,12 +105,18 @@ async function nextRewardOrder(tx: Transaction, db: Firestore): Promise<number> 
   return typeof order === 'number' && Number.isFinite(order) ? Math.floor(order) + 1 : 0;
 }
 
-/** Os campos de uma recompensa nova (o núcleo do `createReward` e do seed). */
+/**
+ * Os campos de uma recompensa nova (o núcleo do `createReward` e do seed). A
+ * de prêmio de fã-clube (`prize`, seção 34) nasce sem o `order`: ela fica
+ * fora da ordem do catálogo, e o painel de antes da seção 34, que lista o
+ * catálogo pelo `orderBy('order')`, não a lista nem a manda no
+ * `reorderRewards` (34.22).
+ */
 export function newRewardDoc(
   fields: RewardFields,
   options: {
-    order: number;
-    status: 'draft' | 'published';
+    order: number | null;
+    status: 'draft' | 'published' | 'prize';
     now: number;
     by: string;
   },
@@ -116,7 +127,7 @@ export function newRewardDoc(
     photo: null,
     redeemedCount: 0,
     status: options.status,
-    order: options.order,
+    ...(options.status === 'prize' || options.order === null ? {} : { order: options.order }),
     publishedAt: options.status === 'published' ? at : null,
     closedAt: null,
     createdAt: at,
@@ -132,7 +143,10 @@ export function newRewardDoc(
  * `rewardId` pode vir do painel (`doc(collection(db, 'rewards')).id`): o mesmo
  * id de novo, com o rascunho ainda rascunho e de quem chama, responde sem
  * gravar (25.5); o id de qualquer outro documento é `invalid-request`
- * (`field: 'rewardId'`, bloco 11, 26.5). O show precisa existir.
+ * (`field: 'rewardId'`, bloco 11, 26.5). O show precisa existir. Com o
+ * `prize: true` (seção 34, decisão 40), a recompensa "Só para prêmios de
+ * fã-clube": nasce com o status `prize`, custo 0 e fora da ordem (sem o
+ * `order`), e nunca vai à loja; a mesma repetição vale para ela.
  */
 export async function addReward(
   deps: RewardsPanelDeps,
@@ -144,6 +158,7 @@ export async function addReward(
   const input = requestFields(data);
   const given = input.rewardId === undefined ? null : parseRewardIdField(input.rewardId);
   const fields = parseRewardCreate(input);
+  const prize = parseRewardPrizeFlag(input);
 
   return db.runTransaction(async (tx) => {
     const actor = await editorIn(tx, deps, caller);
@@ -151,26 +166,42 @@ export async function addReward(
     if (given) {
       const existing = await tx.get(ref);
       if (existing.exists) {
-        if (!isRetriedDraft(existing.data(), actor.uid)) {
+        if (!isRetriedReward(existing.data(), actor.uid, prize)) {
           throw rewardPanelError('invalid-request', { field: 'rewardId' });
         }
         return { rewardId: ref.id };
       }
     }
     if (fields.eventId) await requireEvent(tx, db, fields.eventId);
-    const order = await nextRewardOrder(tx, db);
+    const order = prize ? null : await nextRewardOrder(tx, db);
     const now = clock(deps);
-    tx.create(ref, newRewardDoc(fields, { order, status: 'draft', now, by: actor.uid }));
+    tx.create(
+      ref,
+      newRewardDoc(fields, { order, status: prize ? 'prize' : 'draft', now, by: actor.uid }),
+    );
     audit(
       tx,
       db,
       'reward.created',
       actor,
-      { rewardId: ref.id, title: fields.title, kind: fields.kind },
+      { rewardId: ref.id, title: fields.title, kind: fields.kind, ...(prize ? { prize } : {}) },
       Timestamp.fromMillis(now),
     );
     return { rewardId: ref.id };
   });
+}
+
+/**
+ * A repetição do `createReward` (25.5): o rascunho ainda rascunho ou, com o
+ * `prize`, a recompensa de prêmio, criados por quem chama.
+ */
+function isRetriedReward(
+  stored: Record<string, unknown> | undefined,
+  actorUid: string,
+  prize: boolean,
+): boolean {
+  if (!prize) return isRetriedDraft(stored, actorUid);
+  return stored?.status === 'prize' && stored.createdBy === actorUid;
 }
 
 /** O `rewardId` que o painel gera: fora do formato é pedido inválido. */
@@ -238,7 +269,9 @@ async function pruneRewardFiles(
  * updateReward: ausente não muda; null limpa a descrição, o limite e o show.
  * Muda em qualquer status, também o custo (o resgate confere, 25.1, decisão
  * 8). O estoque muda pelo `setRewardStock`. Nada mudou: ok, sem gravar nem
- * auditar.
+ * auditar. Na recompensa de prêmio de fã-clube (seção 34), o custo fica 0 e o
+ * tipo aceita o `discount`; na da loja, nenhum dos dois (`invalid-request` com
+ * o campo, conferido com a recompensa lida).
  */
 export async function editReward(
   deps: RewardsPanelDeps,
@@ -258,6 +291,8 @@ export async function editReward(
     const snap = await tx.get(rewardRef(db, rewardId));
     if (!snap.exists) throw rewardPanelError('reward-not-found');
     const current = snap.data() ?? {};
+    const misfit = rewardPatchProblem(patch, rewardRecord(snap.id, current));
+    if (misfit) throw rewardPanelError('invalid-request', { field: misfit });
     const changes: Record<string, unknown> = {};
     const changed: string[] = [];
     for (const [field, value] of Object.entries(patch)) {
@@ -290,7 +325,9 @@ export async function editReward(
  * setRewardStatus: publicar o rascunho (com `publishedAt` na primeira vez) ou
  * reabrir a encerrada, no fim da ordem; com show, só com ele aberto
  * (`event-not-open`). Encerrar só a no ar (`not-published` no rascunho), sem
- * mexer nos pedidos. O mesmo status é ok, sem gravar.
+ * mexer nos pedidos. O mesmo status é ok, sem gravar. A recompensa de prêmio
+ * de fã-clube não muda de status (`reward-is-prize`, seção 34): o painel de
+ * antes a leria como rascunho e a publicaria na loja.
  */
 export async function changeRewardStatus(
   deps: RewardsPanelDeps,
@@ -309,6 +346,7 @@ export async function changeRewardStatus(
     const reward = rewardOf(snap);
     if (!reward) throw rewardPanelError('reward-not-found');
     const from = reward.status;
+    if (from === 'prize') throw rewardPanelError('reward-is-prize');
     if (from === status) return;
     const at = clock(deps);
     const now = Timestamp.fromMillis(at);
@@ -391,7 +429,8 @@ export async function changeRewardStock(
 /**
  * reorderRewards: a lista completa dos rascunhos e das no ar, sem faltar,
  * sobrar nem repetir (`invalid-request`); as encerradas ficam fora e mantêm o
- * `order` delas. Cada uma que muda de lugar grava o `order`.
+ * `order` delas, e as de prêmio de fã-clube (seção 34), que nem têm o
+ * `order`, também. Cada uma que muda de lugar grava o `order`.
  */
 export async function reorderRewardList(
   deps: RewardsPanelDeps,
@@ -537,6 +576,12 @@ export type RedemptionContact = {
   email: string | null;
   /** O WhatsApp de agora do contato do fã (seção 35), em E.164, ou null sem número. */
   whatsapp: string | null;
+  /**
+   * Só no pedido de prêmio de fã-clube (seção 34, decisão 43): o Instagram do
+   * privado da candidatura do gestor, ou null (o pedido da loja, ou o privado
+   * que já saiu). O painel de antes ignora o campo.
+   */
+  instagram: string | null;
 };
 
 /**
@@ -544,11 +589,15 @@ export type RedemptionContact = {
  * de quem fez os pedidos abertos (solicitados e aprovados), para a equipe
  * entregar, e, desde a seção 35, o WhatsApp do contato do fã
  * (`users/{uid}/contact/main`, o de agora, também nos pedidos de antes dele),
- * ou null sem número. Pedido que não existe ou já fechou fica fora da
- * resposta (minimização de dados); o de uma conta que não existe mais volta
- * com tudo null. Só admin ou editor com `rewards`: o leitor vê a cópia do
- * nome e do @ no pedido, nunca o e-mail nem o WhatsApp. Uma auditoria por
- * chamada, com os códigos e a quantidade, sem nome, @, e-mail nem WhatsApp.
+ * ou null sem número. Desde a seção 34 (decisões 14 e 43), o pedido de prêmio
+ * de fã-clube traz também o Instagram do privado da candidatura do gestor
+ * (`fanClubApplicationPrivate/{uid}`), porque a equipe combina a entrega pelo
+ * WhatsApp ou pelo Instagram; o da loja vem com `instagram: null`. Pedido que
+ * não existe ou já fechou fica fora da resposta (minimização de dados); o de
+ * uma conta que não existe mais volta com tudo null. Só admin ou editor com
+ * `rewards`: o leitor vê a cópia do nome e do @ no pedido, nunca o e-mail, o
+ * WhatsApp nem o Instagram. Uma auditoria por chamada, com os códigos e a
+ * quantidade, sem nome, @, e-mail, WhatsApp nem Instagram.
  */
 export async function readRedemptionContacts(
   deps: RewardsPanelDeps,
@@ -565,16 +614,22 @@ export async function readRedemptionContacts(
     .map((snap) => redemptionRecord(snap.id, snap.data() ?? {}))
     .filter((item) => isOpenRedemption(item.status) && item.uid !== null);
   const uids = [...new Set(open.map((item) => item.uid!))];
-  // Os perfis e os contatos num getAll só: os perfis primeiro, os contatos depois.
+  // Os gestores dos pedidos de prêmio: o Instagram mora no privado da candidatura.
+  const prizeUids = [
+    ...new Set(open.filter((item) => isPrizeRedemption(item)).map((item) => item.uid!)),
+  ];
+  // Os perfis, os contatos e os privados num getAll só, nesta ordem.
   const snaps =
     uids.length > 0
       ? await db.getAll(
           ...uids.map((uid) => db.collection('users').doc(uid)),
           ...uids.map((uid) => fanContactRef(db, uid)),
+          ...prizeUids.map((uid) => applicationPrivateRef(db, uid)),
         )
       : [];
   const profileOf = new Map(uids.map((uid, index) => [uid, snaps[index]]));
   const contactOf = new Map(uids.map((uid, index) => [uid, snaps[uids.length + index]]));
+  const privateOf = new Map(prizeUids.map((uid, index) => [uid, snaps[2 * uids.length + index]]));
   const users =
     uids.length > 0 ? await deps.auth.getUsers(uids.map((uid) => ({ uid }))) : { users: [] };
   const userOf = new Map(users.users.map((user) => [user.uid, user]));
@@ -582,17 +637,26 @@ export async function readRedemptionContacts(
   const contacts = open.map((item): RedemptionContact => {
     const user = userOf.get(item.uid!);
     if (!user) {
-      return { redemptionId: item.code, name: null, username: null, email: null, whatsapp: null };
+      return {
+        redemptionId: item.code,
+        name: null,
+        username: null,
+        email: null,
+        whatsapp: null,
+        instagram: null,
+      };
     }
     const profile = profileOf.get(item.uid!);
     const name = profile?.exists ? profile.get('displayName') : null;
     const username = profile?.exists ? profile.get('username') : null;
+    const instagram = isPrizeRedemption(item) ? privateOf.get(item.uid!)?.get('instagram') : null;
     return {
       redemptionId: item.code,
       name: typeof name === 'string' ? name : null,
       username: typeof username === 'string' ? username : null,
       email: user.email ?? null,
       whatsapp: contactWhatsapp(contactOf.get(item.uid!)?.data()),
+      instagram: typeof instagram === 'string' && instagram !== '' ? instagram : null,
     };
   });
 

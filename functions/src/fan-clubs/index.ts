@@ -1,7 +1,7 @@
 // O fã-clube gerido pelo fã (docs/arquitetura-api.md, seção 34): a
 // candidatura, o fã-clube, as publicações e as denúncias delas, a atribuição
 // (o crédito das entradas trazidas e os números em shards), os seguidores, a
-// cópia da noite, a callable `decideFanClub` do painel e o passo da exclusão
+// cópia da noite, a callable `decideFanClub` do painel (com o Recompensar) e o passo da exclusão
 // de conta. A API (src/api/routes/fan-clubs.ts) usa daqui; a callable e o
 // passo da cópia no `closeStatsDays` ficam em src/index.ts; o seed dos
 // emuladores carrega o build (functions/lib/fan-clubs). As centrais, o
@@ -25,6 +25,7 @@ export {
   FAN_CLUB_FEED_FOLLOWS,
   FAN_CLUB_FOLLOWS_MAX,
   FAN_CLUB_FOLLOWS_PER_DAY,
+  FAN_CLUB_GRANT_ID_PATTERN,
   FAN_CLUB_NAME_MAX,
   FAN_CLUB_NAME_MIN,
   FAN_CLUB_OPEN,
@@ -48,6 +49,7 @@ export {
   fanClubMediaFolder,
   fanClubMonthOf,
   fanClubPostRecord,
+  fanClubPrizeRecord,
   fanClubRecord,
   fanClubRefused,
   fanClubReportId,
@@ -65,10 +67,18 @@ export {
   parseApplication,
   parseFeaturedUntil,
   parsePost,
+  parsePrizeCoupon,
+  parsePrizeMessage,
+  parseRewardGrant,
   parseRulesAcceptance,
   POST_REJECT_REASONS,
+  PRIZE_COUPON_MAX,
+  PRIZE_MESSAGE_MAX,
+  prizeBlock,
   QUALITY_WARNING_SHARE,
+  REWARD_NOTE_MAX,
   sameProportion,
+  sameRewardGrant,
   slotFileNames,
   sumFanClubShards,
   type ApplicationInput,
@@ -85,6 +95,7 @@ export {
   type FanClubMonth,
   type FanClubPostRecord,
   type FanClubPostStatus,
+  type FanClubPrizeRecord,
   type FanClubRecord,
   type FanClubRefusal,
   type FanClubStatus,
@@ -92,8 +103,11 @@ export {
   type FollowSignals,
   type PostInput,
   type PostRejectReason,
+  type PrizeBlock,
+  type PrizeInput,
   type QualitySignal,
   type ReportResolution,
+  type RewardGrantInput,
 } from './model';
 export {
   applicationPrivateRef,
@@ -103,6 +117,8 @@ export {
   fanClubFollowsOf,
   fanClubPostRef,
   fanClubPostsOf,
+  fanClubPrizeRef,
+  fanClubPrizesOf,
   fanClubRef,
   fanClubReportQueueRef,
   fanClubReportsOf,
@@ -180,27 +196,35 @@ export {
 } from './reports';
 export {
   applyFanClubDecision,
+  applyRewardDecision,
+  assertGrantCap,
   decideFanClub,
   DECISION_SUBJECTS,
   parseDecision,
+  rewardSections,
   runFanClubDecision,
   type Decided,
   type DecisionInput,
   type DecisionResult,
   type DecisionSubject,
   type FanClubPanelDeps,
+  type RewardContext,
+  type RewardDecisionResult,
 } from './panel';
 export {
   SEED_CAMILA_FAN_CLUB,
   SEED_FAN_CLUB_FOLLOWER,
+  SEED_FAN_CLUB_GRANT,
   SEED_FAN_CLUB_POSTS,
   SEED_TEXT_ONLY_ARTIST,
   seedFanClubFollows,
   seedFanClubLink,
   seedFanClubPosts,
+  seedFanClubPrize,
   seedFanClubs,
   type SeedFanClubFollowsResult,
   type SeedFanClubPost,
   type SeedFanClubPostsResult,
+  type SeedFanClubPrizeResult,
   type SeedFanClubsResult,
 } from './seed';

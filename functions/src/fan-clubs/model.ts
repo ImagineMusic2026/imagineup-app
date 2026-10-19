@@ -4,6 +4,7 @@ import { dayKey, shiftDay } from '../day';
 import { parseWhatsapp } from '../fan-contact/model';
 import { normalizeSocialHandle } from '../fan-profile/details';
 import { isAutomaticUsername, type PhotoLimits } from '../fan-profile/model';
+import { isContentId } from '../page-cursor';
 import { cleanLine, cleanMultiline, isVisibleLine, isVisibleMultiline } from '../visible-line';
 
 // O fã-clube gerido pelo fã (docs/arquitetura-api.md, seção 34), puro: nada
@@ -637,6 +638,198 @@ export function isFeaturedNow(
   now: number,
 ): boolean {
   return club.featured && club.featuredUntil !== null && club.featuredUntil >= dayKey(now);
+}
+
+// --- O Recompensar (decisões 43 a 46 e 50) ---------------------------------------------
+
+/**
+ * O `grantId` do Recompensar: o formato do `adjustmentId` do Ajuste (o painel
+ * sorteia ao abrir o diálogo, como o `newAdjustmentId`). É o id do registro
+ * `fanClubs/{clubId}/prizes/{grantId}` e o evento do lançamento
+ * `fanclub_prize:<grantId>`.
+ */
+export const FAN_CLUB_GRANT_ID_PATTERN = /^[A-Za-z0-9_-]{8,64}$/;
+
+/** O cupom do parceiro, numa linha, e a mensagem da equipe ao gestor (decisão 43). */
+export const PRIZE_COUPON_MAX = 60;
+export const PRIZE_MESSAGE_MAX = 140;
+
+/** A nota interna do Recompensar (34.3): de 1 a 200, numa linha, sem dado pessoal. */
+export const REWARD_NOTE_MAX = 200;
+
+/** O prêmio pedido no Recompensar: a recompensa "Só para prêmios", o "O cupom já é o prêmio", o cupom e a mensagem. */
+export type PrizeInput = {
+  rewardId: string;
+  delivered: boolean;
+  coupon: string | null;
+  message: string | null;
+};
+
+/** O Recompensar conferido (sem o teto do papel, que a callable confere com quem chama). */
+export type RewardGrantInput = {
+  grantId: string;
+  /** Os pontos, só no saldo (decisão 45); null sem pontos. */
+  points: number | null;
+  prize: PrizeInput | null;
+  note: string;
+};
+
+export type ParsedRewardGrant =
+  { ok: true; value: RewardGrantInput } | { ok: false; field: string };
+
+const PRIZE_KEYS = ['rewardId', 'delivered', 'coupon', 'message'] as const;
+
+/** O cupom: ausente, null ou vazio vale null; senão de 1 a 60, numa linha visível, sem quebra. */
+export function parsePrizeCoupon(
+  value: unknown,
+): { ok: true; value: string | null } | { ok: false } {
+  if (value === undefined || value === null) return { ok: true, value: null };
+  if (typeof value !== 'string') return { ok: false };
+  const coupon = cleanLine(value);
+  if (coupon === '') return { ok: true, value: null };
+  if (coupon.length > PRIZE_COUPON_MAX || !isVisibleLine(coupon)) return { ok: false };
+  return { ok: true, value: coupon };
+}
+
+/** A mensagem: ausente, null ou vazia vale null; senão de 1 a 140, limpa (`cleanMultiline`). */
+export function parsePrizeMessage(
+  value: unknown,
+): { ok: true; value: string | null } | { ok: false } {
+  if (value === undefined || value === null) return { ok: true, value: null };
+  if (typeof value !== 'string') return { ok: false };
+  const message = cleanMultiline(value);
+  if (message === '') return { ok: true, value: null };
+  if (message.length > PRIZE_MESSAGE_MAX || !isVisibleMultiline(message)) return { ok: false };
+  return { ok: true, value: message };
+}
+
+/**
+ * Os campos do `reward` da `decideFanClub` (34.3), puro: o `grantId` no
+ * formato; os `points`, inteiro a partir de 1 (o teto do papel vem depois),
+ * ou ausentes; o `prize`, `{ rewardId, delivered, coupon, message }` sem
+ * outras chaves, ou ausente; pelo menos um dos dois (senão o campo `points`);
+ * e a `note` de 1 a 200, numa linha visível. O primeiro campo fora do formato
+ * volta como `field`.
+ */
+export function parseRewardGrant(fields: Record<string, unknown>): ParsedRewardGrant {
+  const fail = (field: string): ParsedRewardGrant => ({ ok: false, field });
+  if (typeof fields.grantId !== 'string' || !FAN_CLUB_GRANT_ID_PATTERN.test(fields.grantId)) {
+    return fail('grantId');
+  }
+  let points: number | null = null;
+  if (fields.points !== undefined && fields.points !== null) {
+    if (
+      typeof fields.points !== 'number' ||
+      !Number.isSafeInteger(fields.points) ||
+      fields.points < 1
+    ) {
+      return fail('points');
+    }
+    points = fields.points;
+  }
+  let prize: PrizeInput | null = null;
+  if (fields.prize !== undefined && fields.prize !== null) {
+    const raw = fields.prize;
+    if (
+      !isRecord(raw) ||
+      Object.keys(raw).some((key) => !(PRIZE_KEYS as readonly string[]).includes(key))
+    ) {
+      return fail('prize');
+    }
+    // O id da recompensa: o `isRewardId` da loja, que é o `isContentId`.
+    if (!isContentId(raw.rewardId)) return fail('prize.rewardId');
+    if (typeof raw.delivered !== 'boolean') return fail('prize.delivered');
+    const coupon = parsePrizeCoupon(raw.coupon);
+    if (!coupon.ok) return fail('prize.coupon');
+    const message = parsePrizeMessage(raw.message);
+    if (!message.ok) return fail('prize.message');
+    prize = {
+      rewardId: raw.rewardId,
+      delivered: raw.delivered,
+      coupon: coupon.value,
+      message: message.value,
+    };
+  }
+  if (points === null && prize === null) return fail('points');
+  if (typeof fields.note !== 'string') return fail('note');
+  const note = cleanLine(fields.note);
+  if (note.length < 1 || note.length > REWARD_NOTE_MAX || !isVisibleLine(note)) {
+    return fail('note');
+  }
+  return { ok: true, value: { grantId: fields.grantId, points, prize, note } };
+}
+
+/** `fanClubs/{clubId}/prizes/{grantId}` lido (decisão 50): sem o código do pedido nem o cupom. */
+export type FanClubPrizeRecord = {
+  grantId: string;
+  clubId: string;
+  artistId: string;
+  points: number | null;
+  ledgerId: string | null;
+  prize: { rewardId: string; rewardTitle: string; rewardKind: string; delivered: boolean } | null;
+  note: string;
+  at: number | null;
+};
+
+export function fanClubPrizeRecord(id: string, data: Record<string, unknown>): FanClubPrizeRecord {
+  const prize = isRecord(data.prize) ? data.prize : null;
+  return {
+    grantId: id,
+    clubId: typeof data.clubId === 'string' ? data.clubId : '',
+    artistId: typeof data.artistId === 'string' ? data.artistId : '',
+    points: typeof data.points === 'number' && data.points > 0 ? count(data.points) : null,
+    ledgerId: text(data.ledgerId),
+    prize: prize
+      ? {
+          rewardId: typeof prize.rewardId === 'string' ? prize.rewardId : '',
+          rewardTitle: typeof prize.rewardTitle === 'string' ? prize.rewardTitle : '',
+          rewardKind: typeof prize.rewardKind === 'string' ? prize.rewardKind : '',
+          delivered: prize.delivered === true,
+        }
+      : null,
+    note: typeof data.note === 'string' ? data.note : '',
+    at: millisOf(data.at),
+  };
+}
+
+/**
+ * O registro gravado é o mesmo Recompensar do pedido (34.3): os pontos, a
+ * recompensa, o "O cupom já é o prêmio" e a nota; e, com o pedido de prêmio
+ * achado pelo `grantId` (`order`, sem a exclusão de conta, que tira o cupom e
+ * a mensagem), o cupom e a mensagem, que moram só nele. Outros valores com o
+ * mesmo `grantId`: `grant-id-reused`.
+ */
+export function sameRewardGrant(
+  stored: FanClubPrizeRecord,
+  input: RewardGrantInput,
+  order: { coupon: string | null; message: string | null } | null,
+): boolean {
+  if (stored.points !== input.points || stored.note !== input.note) return false;
+  if ((stored.prize === null) !== (input.prize === null)) return false;
+  if (!stored.prize || !input.prize) return true;
+  if (
+    stored.prize.rewardId !== input.prize.rewardId ||
+    stored.prize.delivered !== input.prize.delivered
+  ) {
+    return false;
+  }
+  return (
+    order === null || (order.coupon === input.prize.coupon && order.message === input.prize.message)
+  );
+}
+
+/** As travas do prêmio que falham (decisão 46), na ordem; null quando todas passam. */
+export type PrizeBlock = 'club_not_active' | 'not_adult' | 'owner_suspended';
+
+export function prizeBlock(input: {
+  club: Pick<FanClubRecord, 'status' | 'ownerUid'>;
+  adultDeclared: boolean;
+  ownerSuspended: boolean;
+}): PrizeBlock | null {
+  if (input.club.status !== 'active' || input.club.ownerUid === null) return 'club_not_active';
+  if (!input.adultDeclared) return 'not_adult';
+  if (input.ownerSuspended) return 'owner_suspended';
+  return null;
 }
 
 // --- As publicações (decisões 15 a 20) ------------------------------------------------

@@ -113,7 +113,8 @@ export type ShardDelta = {
 /**
  * Os fluxos do dia de uma recompensa (bloco 10, 25.9): pedidos e os pontos
  * gastos neles, aprovados, entregues, recusados (com os pontos devolvidos) e
- * cancelados pela exclusão de conta.
+ * cancelados pela exclusão de conta; e os prêmios de fã-clube dados (seção
+ * 34, 34.4), que não são resgate.
  */
 export type RewardCount = {
   requested: number;
@@ -123,6 +124,7 @@ export type RewardCount = {
   refused: number;
   canceled: number;
   refunded: number;
+  prizes: number;
 };
 
 /** Cadastros, visitas e links de um tipo de link. */
@@ -370,8 +372,12 @@ export function addAchievementToShard(delta: ShardDelta, achievementId: string):
   achievement.unlocked += 1;
 }
 
-/** Um passo de um pedido da loja, para os agregados (bloco 10, 25.9). */
-export type RedemptionShardKind = 'requested' | 'approved' | 'delivered' | 'refused' | 'canceled';
+/**
+ * Um passo de um pedido da loja, para os agregados (bloco 10, 25.9). O
+ * `prize` é o pedido de prêmio de fã-clube que nasce (seção 34, 34.4).
+ */
+export type RedemptionShardKind =
+  'requested' | 'approved' | 'delivered' | 'refused' | 'canceled' | 'prize';
 
 const REDEMPTION_TOTALS = {
   requested: 'redeemRequested',
@@ -379,7 +385,16 @@ const REDEMPTION_TOTALS = {
   delivered: 'redeemDelivered',
   refused: 'redeemRefused',
   canceled: 'redeemCanceled',
-} as const satisfies Record<RedemptionShardKind, keyof ShardDelta['totals']>;
+} as const satisfies Record<Exclude<RedemptionShardKind, 'prize'>, keyof ShardDelta['totals']>;
+
+const REWARD_COUNT_OF = {
+  requested: 'requested',
+  approved: 'approved',
+  delivered: 'delivered',
+  refused: 'refused',
+  canceled: 'canceled',
+  prize: 'prizes',
+} as const satisfies Record<RedemptionShardKind, keyof RewardCount>;
 
 function emptyRewardCount(): RewardCount {
   return {
@@ -390,6 +405,7 @@ function emptyRewardCount(): RewardCount {
     refused: 0,
     canceled: 0,
     refunded: 0,
+    prizes: 0,
   };
 }
 
@@ -399,17 +415,21 @@ function emptyRewardCount(): RewardCount {
  * entrega, a recusa com os pontos que voltaram de fato (`points`) e o
  * cancelamento da exclusão de conta. Os pontos em si já entram pelo
  * lançamento (`spent` e `refunded` nos totais); aqui é o recorte por
- * recompensa. São fluxo, como o resto do shard.
+ * recompensa. São fluxo, como o resto do shard. O pedido de prêmio de
+ * fã-clube (o passo `prize`, e os outros passos com `prize: true`) soma só
+ * na recompensa, nunca nos totais `redeem*` da Loja da Visão geral: o prêmio
+ * não é resgate (seção 34, 34.4).
  */
 export function addRedemptionToShard(
   delta: ShardDelta,
   rewardId: string,
   kind: RedemptionShardKind,
   points = 0,
+  options: { prize?: boolean } = {},
 ): void {
-  delta.totals[REDEMPTION_TOTALS[kind]] += 1;
+  if (kind !== 'prize' && options.prize !== true) delta.totals[REDEMPTION_TOTALS[kind]] += 1;
   const reward = (delta.byReward[rewardId] ??= emptyRewardCount());
-  reward[kind] += 1;
+  reward[REWARD_COUNT_OF[kind]] += 1;
   if (kind === 'requested') reward.spent += points;
   if (kind === 'refused') reward.refunded += points;
 }

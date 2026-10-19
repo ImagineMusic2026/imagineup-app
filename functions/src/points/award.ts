@@ -658,9 +658,16 @@ export function addEngagementCounts(plan: AwardPlan, changes: readonly Engagemen
 /**
  * Um passo de um pedido da loja (bloco 10, 25.9): o pedido (com o custo em
  * `points`), a aprovação, a entrega, a recusa (com os pontos que voltaram de
- * fato em `points`) e o cancelamento da exclusão de conta.
+ * fato em `points`) e o cancelamento da exclusão de conta. Com `prize`, um
+ * passo do pedido de prêmio de fã-clube (seção 34, 34.4): só na recompensa,
+ * fora dos totais da Loja.
  */
-export type RedemptionChange = { rewardId: string; kind: RedemptionShardKind; points?: number };
+export type RedemptionChange = {
+  rewardId: string;
+  kind: RedemptionShardKind;
+  points?: number;
+  prize?: boolean;
+};
 
 /**
  * Soma os passos dos pedidos da loja no shard do dia do plano, no molde do
@@ -672,7 +679,9 @@ export function addRedemptionCounts(plan: AwardPlan, changes: readonly Redemptio
   if (changes.length === 0) return;
   plan.shard ??= emptyShardDelta();
   for (const change of changes) {
-    addRedemptionToShard(plan.shard, change.rewardId, change.kind, change.points ?? 0);
+    addRedemptionToShard(plan.shard, change.rewardId, change.kind, change.points ?? 0, {
+      prize: change.prize === true,
+    });
   }
 }
 
