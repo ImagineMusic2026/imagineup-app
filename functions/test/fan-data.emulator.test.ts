@@ -595,6 +595,15 @@ describe('o arquivo de um fã com dado em toda fonte, e a exclusão', () => {
         clubId: inviterClubId,
         via: 'owner_code',
       });
+      // O fã segue o fã-clube da Duda (etapa 4): o vínculo vai ao arquivo sem o
+      // `byOwnerCode` (diria quem convidou), e sai na exclusão.
+      expect(await as(fan)('PUT', `/me/fan-club-follows/${inviterClubId}`)).toMatchObject({
+        status: 200,
+        body: { following: true, joined: false },
+      });
+      expect(await read(`users/${fan.uid}/fanClubFollows/${inviterClubId}`)).toMatchObject({
+        byOwnerCode: true,
+      });
       expect((await as(fan)('PUT', `/posts/${postId}/like`)).status).toBe(200);
       expect((await as(fan)('PUT', `/events/${eventId}/rsvp`)).status).toBe(200);
       const commentIds: string[] = [];
@@ -873,6 +882,17 @@ describe('o arquivo de um fã com dado em toda fonte, e a exclusão', () => {
         expect.objectContaining({ postId: otherClubPost, reason: 'spam' }),
       ]);
       expect((file.denunciasDeFaClube as Item[])[0]).not.toHaveProperty('round');
+      // Os fã-clubes que ele segue (etapa 4), sem o `byOwnerCode`.
+      expect(file.faClubesSeguidos as Item[]).toEqual([
+        expect.objectContaining({
+          id: inviterClubId,
+          clubId: inviterClubId,
+          artistId,
+          newAccount: true,
+          chosenUsername: true,
+        }),
+      ]);
+      expect((file.faClubesSeguidos as Item[])[0]).not.toHaveProperty('byOwnerCode');
 
       // Nada de outra pessoa (pergunta 7: os alvos das denúncias e dos
       // bloqueios ficam) e nada da equipe, da chave do convidado ou do ownerKey.
@@ -896,8 +916,10 @@ describe('o arquivo de um fã com dado em toda fonte, e a exclusão', () => {
       expect(text).not.toContain(ownerKey);
       // O fã chegou pelo código digitado, sem link: o id do fã-clube da Duda só
       // estaria no `fanClubId` do vínculo, que sai. Pelo link `/fa-clube/<id>`,
-      // ele iria na `origem.link.targetId`, de propósito (34.22).
-      expect(text).not.toContain(inviterClubId);
+      // ele iria na `origem.link.targetId`, de propósito (34.22). Ele segue o
+      // fã-clube da Duda: o id vai nos seguidos, porque seguir é dele, e sem o
+      // `byOwnerCode` nada ali diz quem convidou.
+      expect(JSON.stringify({ ...file, faClubesSeguidos: null })).not.toContain(inviterClubId);
       // Os lançamentos que a equipe mexeu estão lá, sem quem mexeu.
       expect((file.extrato as Item[]).map((item) => item.source)).toEqual(
         expect.arrayContaining([
@@ -945,6 +967,13 @@ describe('o arquivo de um fã com dado em toda fonte, e a exclusão', () => {
         90_000,
       );
       expect(await leftovers(fan.uid, known)).toEqual([]);
+      // Quem segue sai junto: o `count()` dos seguidores cai, sem passo novo.
+      const followers = await db
+        .collectionGroup('fanClubFollows')
+        .where('clubId', '==', inviterClubId)
+        .count()
+        .get();
+      expect(followers.data().count).toBe(0);
 
       // De novo, depois do gatilho: sem conta e sem perfil.
       expect((await failure('deleteFanAccount', request(fan), admin)).details?.reason).toBe(

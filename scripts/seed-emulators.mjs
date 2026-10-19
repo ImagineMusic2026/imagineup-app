@@ -128,7 +128,13 @@
  * etapa 2, as publicações dela (duas no ar, uma com a foto de teste em 4:5,
  * scripts/seed-assets/foto-fa-clube.jpg e a miniatura foto-fa-clube-mini.jpg,
  * enviadas ao emulador do Storage como o app enviaria, e uma em análise) e a
- * denúncia da Bia contra a da foto, com "Uso indevido de imagem".
+ * denúncia da Bia contra a da foto, com "Uso indevido de imagem". Na etapa 3,
+ * o link do fã-clube que a Camila compartilhou. Na etapa 4, os seguidores: a
+ * Bia, que entra antes na central do Netto pela página (com o código da
+ * Camila, a entrada leva o crédito da gestora), e o rank-40, que não é da
+ * central e entra junto com o seguir (a entrada trazida), os dois com o
+ * central_join em 0, como a base do ranking; e a primeira cópia da noite do
+ * fã-clube, para a lista e a ficha do painel terem os números.
  *
  * Rodar de novo não muda nada. Depois da meia-noite, o progresso do dia volta
  * a 0, como o de qualquer fã: para ver de novo o 3 de 5 e o 2 de 5, feche os
@@ -680,6 +686,16 @@ if (camilaUid) {
   const clubLink = await withFirestore((db) => seedFanClubLink(db, camilaUid));
   console.log(
     `Link do fã-clube: o da Camila ${clubLink ? 'registrado agora' : 'já estava'}, com 1 link nos números do fã-clube.`,
+  );
+  // Os seguidores e a primeira cópia da noite (etapa 4): rodar de novo não grava.
+  const { SEED_FAN_CLUB_FOLLOWER, seedFanClubFollows } = functionsBuild('fan-clubs');
+  const followerUid = rankingUids.get(SEED_FAN_CLUB_FOLLOWER);
+  if (!followerUid) throw new Error(`Sem conta para ${SEED_FAN_CLUB_FOLLOWER}.`);
+  const clubFollows = await withFirestore((db) =>
+    seedFanClubFollows(db, { camilaUid, biaUid: fanUids.bia, followerUid }),
+  );
+  console.log(
+    `Seguidores do fã-clube: ${clubFollows.follows} agora (2 no total: a Bia, ${clubFollows.joined ? 'que entrou agora na central do Netto' : 'já da central do Netto'}, e o ${SEED_FAN_CLUB_FOLLOWER.split('@')[0]}, que entrou junto, a entrada trazida); a cópia da noite ${clubFollows.copied ? 'rodou agora' : 'já tinha rodado'}.`,
   );
 }
 

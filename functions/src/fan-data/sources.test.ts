@@ -134,6 +134,7 @@ describe('a primeira chamada', () => {
       'candidaturaDeFaClubePrivada',
       'faClubes',
       'denunciasDeFaClube',
+      'faClubesSeguidos',
     ]);
   });
 
@@ -165,6 +166,7 @@ describe('a primeira chamada', () => {
       candidaturaDeFaClubePrivada: { kind: 'doc', collection: 'fanClubApplicationPrivate' },
       faClubes: { kind: 'equal', collection: 'fanClubs', field: 'ownerUid' },
       denunciasDeFaClube: { kind: 'equal', collection: 'fanClubReports', field: 'reporterUid' },
+      faClubesSeguidos: { kind: 'sub', parent: 'users', name: 'fanClubFollows' },
     });
     expect(firstKeySource('arrobasReservados').idsOnly).toBe(true);
     expect(firstKeySource('temporadas').idFromParent).toBe(true);
@@ -195,6 +197,7 @@ describe('o filtro de campos (decisão 8)', () => {
     ).toEqual({
       users: [['searchKeys', 'signupCounted', 'photoPath'], null],
       'users.centrals': [['fanClubId'], null],
+      'users.fanClubFollows': [['byOwnerCode'], null],
       wallets: [['missions.*.items.*.keys'], null],
       'wallets.ledger': [['uid', 'note'], 'ledger'],
       inviteCodes: [['ownerKey'], null],
@@ -234,6 +237,7 @@ describe('o que a exclusão faz', () => {
       'users.profileSync': 'deleted',
       'users.uploads': 'deleted',
       'users.fanClubCredits': 'deleted',
+      'users.fanClubFollows': 'deleted',
       'users.contact': 'deleted',
       usernames: 'deleted',
       wallets: 'deleted',
@@ -280,6 +284,7 @@ describe('as subcoleções conhecidas (o teste do listCollections)', () => {
       'profileSync',
       'uploads',
       'fanClubCredits',
+      'fanClubFollows',
       'contact',
     ]);
     expect(knownSubcollections('wallets')).toEqual(['ledger', 'centralPoints']);

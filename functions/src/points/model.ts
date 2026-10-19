@@ -202,7 +202,8 @@ export type AwardResult = { uid: string; entryId: string; status: AwardStatus; p
  * `name_change`, os salvamentos do perfil e as trocas de nome (o perfil novo,
  * seção 28, decisão 9); `fanclub_apply`, as candidaturas a fã-clube, e
  * `fanclub_post` e `fanclub_upload`, as publicações e as vagas de envio da
- * foto delas (seção 34, decisão 11).
+ * foto delas (seção 34, decisão 11); `fanclub_follow`, os seguimentos de
+ * fã-clube (seção 34, decisão 34).
  */
 export type DailyActionKey =
   | 'central_entry'
@@ -220,7 +221,8 @@ export type DailyActionKey =
   | 'name_change'
   | 'fanclub_apply'
   | 'fanclub_post'
-  | 'fanclub_upload';
+  | 'fanclub_upload'
+  | 'fanclub_follow';
 
 export type DayStats = {
   earned: number;

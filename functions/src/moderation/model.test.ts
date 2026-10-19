@@ -141,6 +141,7 @@ describe('tetos do dia', () => {
       club_apply: { key: 'fanclub_apply', limit: 3 },
       club_post: { key: 'fanclub_post', limit: 5 },
       club_upload: { key: 'fanclub_upload', limit: 10 },
+      club_follow: { key: 'fanclub_follow', limit: 30 },
     });
     expect(BLOCK_LIST_MAX).toBe(1_000);
   });

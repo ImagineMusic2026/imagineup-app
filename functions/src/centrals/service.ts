@@ -16,6 +16,7 @@ import { readEntryCredit } from '../fan-clubs/credit';
 import type { FanClubCredit } from '../fan-clubs/model';
 import {
   addFanClubCount,
+  readFollowsOfArtist,
   writeFanClubCounts,
   writeFanClubCredit,
   type FanClubCountsDelta,
@@ -168,7 +169,9 @@ export type JoinOutcome = {
  * 2. as novas são as publicadas sem vínculo; com alguma, o fã que já fez
  *    CENTRAL_ENTRIES_PER_DAY entradas hoje é recusado (too_many_entries);
  * 3. as leituras do crédito pelo código do gestor (seção 34, decisão 23,
- *    `readEntryCredit`), antes de qualquer gravação;
+ *    `readEntryCredit`), antes de qualquer gravação; na entrada pelo seguir
+ *    o fã-clube (decisão 26), o crédito vem de quem chama (`followCredit`,
+ *    com o marcador já lido, ou null), e o código do gestor não é conferido;
  * 4. planAwards com um central_join por nova (uma vez na vida por central) e
  *    uma unidade `join` de missão por nova (bloco 7, 22.4);
  * 5. vínculo, +1 num shard do fanCount e `joined` no shard do painel de cada
@@ -188,7 +191,18 @@ export async function joinCentrals(
   tx: Transaction,
   db: Firestore,
   read: JoinRead,
-  options: { fan: FanContext; award: AwardContext; artistIds: readonly string[]; via: JoinVia },
+  options: {
+    fan: FanContext;
+    award: AwardContext;
+    artistIds: readonly string[];
+    via: JoinVia;
+    /**
+     * O crédito da entrada pelo seguir o fã-clube (o `fanClubId` de 34.5, com
+     * `via: 'follow'`), ou null com o marcador que já existe. Sem a chave, a
+     * entrada confere o crédito pelo código do gestor.
+     */
+    followCredit?: FanClubCredit | null;
+  },
 ): Promise<JoinOutcome> {
   const { fan, award, via } = options;
   const ids = [...new Set(options.artistIds)];
@@ -210,12 +224,15 @@ export async function joinCentrals(
       secondsUntil(nextDayStart(award.now), award.now),
     );
   }
-  const credit = await readEntryCredit(tx, db, {
-    uid: fan.uid,
-    profileCreatedAt: fan.profileCreatedAt,
-    now: award.now,
-    joining: joined,
-  });
+  const credit =
+    options.followCredit !== undefined
+      ? options.followCredit
+      : await readEntryCredit(tx, db, {
+          uid: fan.uid,
+          profileCreatedAt: fan.profileCreatedAt,
+          now: award.now,
+          joining: joined,
+        });
   const entries: AwardEntry[] = joined.map((id) => ({
     kind: 'earn',
     source: 'central_join',
@@ -350,7 +367,10 @@ export function followedAfter(read: FollowRead, joined: readonly string[], now: 
  * do ranking da central; sem o documento, nada, porque ele nunca pontuou
  * nela). Sem vínculo, nada. Não mexe em ponto: sair não tira os pontos, e
  * entrar de novo não paga a entrada outra vez. Vale em qualquer status da
- * central.
+ * central. Desde o fã-clube (seção 34, decisão 27), sair deixa de seguir os
+ * fã-clubes do artista: os seguimentos dele são lidos antes do planAwards e
+ * apagados, também sem vínculo (nenhum seguimento fica sem a central). O
+ * crédito e o marcador ficam: voltar e seguir de novo não credita outra vez.
  */
 export async function leaveCentral(
   tx: Transaction,
@@ -360,7 +380,9 @@ export async function leaveCentral(
   const { fan, award, artistId } = options;
   const ref = membershipRef(db, fan.uid, artistId);
   const [membership, points] = await tx.getAll(ref, centralPointsRef(db, fan.uid, artistId));
+  const follows = await readFollowsOfArtist(tx, db, fan.uid, artistId);
   const plan = await planAwards(tx, db, [{ uid: fan.uid, fan, entries: [] }], award);
+  for (const follow of follows) tx.delete(follow);
   if (!membership!.exists) return { plan, left: false };
   tx.delete(ref);
   bumpFanShard(tx, db, artistId, fanShardOf(award.shard), -1, Timestamp.fromMillis(award.now));

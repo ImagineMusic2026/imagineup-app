@@ -38,7 +38,11 @@ import {
   runFanCountSync,
   type FanCountQueue,
 } from './centrals';
-import { decideFanClub as decideFanClubOfPanel } from './fan-clubs';
+import {
+  decideFanClub as decideFanClubOfPanel,
+  FAN_CLUB_COPY_BUDGET_MS,
+  runFanClubCopyStep,
+} from './fan-clubs';
 import {
   deleteFanAccount as deleteAccountOfFan,
   exportFanData as exportDataOfFan,
@@ -542,6 +546,14 @@ export const rankingTick = onSchedule(
  * soma do centralPoints rodam no servidor, e cada dia lê só os shards dele),
  * e cada dia fecha na própria transação, com `create`. O que não couber nos
  * 300 s fecha na nova tentativa ou na noite seguinte, sem refazer nada.
+ *
+ * Desde o fã-clube (seção 34, decisão 37), a cópia da noite dos fã-clubes é
+ * um passo próprio, depois do fechamento: num `finally`, porque o
+ * `runStatsClose` lança quando um dia falha, e fora dele, que volta antes sem
+ * dia a fechar. O passo nunca lança (o `try/catch` do `runFanClubCopyStep`) e
+ * para de começar fã-clubes perto dos 270 s do handler; o que sobrar fica
+ * para a noite seguinte. Na nova tentativa, a cópia roda de novo sem mal: o
+ * mês fechado não fecha outra vez.
  */
 export const closeStatsDays = onSchedule(
   {
@@ -551,7 +563,15 @@ export const closeStatsDays = onSchedule(
     retryCount: 3,
   },
   async () => {
-    await runStatsClose(getFirestore(), { now: Date.now() });
+    const start = Date.now();
+    try {
+      await runStatsClose(getFirestore(), { now: start });
+    } finally {
+      await runFanClubCopyStep(getFirestore(), {
+        now: Date.now(),
+        deadline: start + FAN_CLUB_COPY_BUDGET_MS,
+      });
+    }
   },
 );
 

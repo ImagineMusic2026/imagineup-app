@@ -1,6 +1,7 @@
 import { FieldValue, Timestamp, type Firestore, type Transaction } from 'firebase-admin/firestore';
 
 import type { BlockedFansPage } from '../api/contract';
+import { readFollowOfOwner } from '../fan-clubs/store';
 import { blockedFanOf, profileDigest } from '../fan-profile/details';
 import {
   addEngagementCounts,
@@ -252,7 +253,11 @@ export type BlockOutcome = { plan: AwardPlan; blocked: boolean };
  * perfil é 404; quem já está na lista, nada além da atividade; lista cheia
  * (1.000) é 409; o teto do dia (30 bloqueios); a lista é gravada inteira (a
  * transação já a leu), com o fluxo `blocks` e o contador do teto. O bloqueado
- * não fica sabendo.
+ * não fica sabendo. Desde o fã-clube (seção 34, decisão 32), bloquear o
+ * gestor deixa de seguir o fã-clube dele: a candidatura do bloqueado e, com o
+ * `clubId`, o vínculo de quem bloqueia são lidos antes de gravar, e o vínculo
+ * sai (também com ele já na lista). O bloqueio feito pelo gestor só grava a
+ * lista dele: ninguém deixa de seguir.
  */
 export async function blockFan(
   tx: Transaction,
@@ -264,16 +269,17 @@ export async function blockFan(
   const listRef = blockListRef(db, fan.uid);
   const [list, other] = await tx.getAll(listRef, db.collection('users').doc(fanId));
   if (!other!.exists) throw new ModerationError('fan_not_found');
+  const follow = await readFollowOfOwner(tx, db, fan.uid, fanId);
   const blocked = blockedOf(list!.get('blocked'));
   if (blocked.includes(fanId)) {
-    return {
-      plan: await planAwards(tx, db, [{ uid: fan.uid, fan, entries: [] }], award),
-      blocked: true,
-    };
+    const plan = await planAwards(tx, db, [{ uid: fan.uid, fan, entries: [] }], award);
+    if (follow) tx.delete(follow);
+    return { plan, blocked: true };
   }
   if (blocked.length >= BLOCK_LIST_MAX) throw new ModerationError('block_list_full');
   enforceDailyCap(fan, award, 'block');
   const plan = await planAwards(tx, db, [{ uid: fan.uid, fan, entries: [] }], award);
+  if (follow) tx.delete(follow);
   tx.set(listRef, {
     uid: fan.uid,
     blocked: [...blocked, fanId],

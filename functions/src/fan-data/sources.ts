@@ -44,6 +44,7 @@ export const FAN_DATA_FIRST_KEYS = [
   'candidaturaDeFaClubePrivada',
   'faClubes',
   'denunciasDeFaClube',
+  'faClubesSeguidos',
 ] as const;
 
 export type FanDataFirstKey = (typeof FAN_DATA_FIRST_KEYS)[number];
@@ -209,6 +210,20 @@ export const FAN_DATA_SOURCES: readonly FanDataSource[] = [
     read: { kind: 'sub', parent: 'users', name: 'fanClubCredits' },
     omit: [],
     deletion: { effect: 'deleted', note: 'apagado (o recursiveDelete do perfil)' },
+  },
+  {
+    // Os fã-clubes que o fã segue (seção 34, 34.7), desde a etapa 4 de 34.14:
+    // até 50, inteiros na primeira chamada. O `byOwnerCode` diria quem
+    // convidou, que o arquivo já tira do `referrals`.
+    id: 'users.fanClubFollows',
+    label: 'users/{uid}/fanClubFollows',
+    place: { in: 'first', key: 'faClubesSeguidos' },
+    read: { kind: 'sub', parent: 'users', name: 'fanClubFollows' },
+    omit: ['byOwnerCode'],
+    deletion: {
+      effect: 'deleted',
+      note: 'apagado (o recursiveDelete do perfil), e o count() dos seguidores cai junto',
+    },
   },
   {
     // O WhatsApp do fã (seção 35): sai inteiro, com a origem e a data.

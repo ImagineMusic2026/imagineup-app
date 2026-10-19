@@ -217,8 +217,8 @@ function docRef(db: Firestore, source: FanDataSource, uid: string): DocumentRefe
 /**
  * As chaves da primeira chamada, na ordem do arquivo (32.3), cada uma pelo
  * leitor da fonte dela: a conta, os documentos únicos num `getAll` (o
- * ausente é null), as listas por igualdade inteiras, a contagem e as
- * temporadas.
+ * ausente é null), as listas por igualdade e as subcoleções inteiras (os
+ * fã-clubes seguidos, até 50), a contagem e as temporadas.
  */
 async function readFirstKeys(db: Firestore, uid: string, user: UserRecord): Promise<ExportRecord> {
   const sources = FAN_DATA_FIRST_KEYS.map((key) => ({ key, source: firstKeySource(key) }));
@@ -242,6 +242,7 @@ async function readFirstKeys(db: Firestore, uid: string, user: UserRecord): Prom
           return snap?.exists ? exportFields(source, snap.data()!) : null;
         }
         case 'equal':
+        case 'sub':
           return exportList(source, await readWholeList(db, source, uid));
         case 'count': {
           const counted = await db

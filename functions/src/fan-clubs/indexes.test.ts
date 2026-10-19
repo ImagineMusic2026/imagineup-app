@@ -58,7 +58,9 @@ const COMPOSITE: CompositeShape[] = [
     desc('approvedAt'),
   ]),
   shape('o filtro Destaque', 'fanClubs', [asc('featured'), asc('featuredUntil')]),
+  // A cópia da noite (etapa 4): o `in` no status e a ordem crescente da cópia.
   shape('a cópia da noite (in em active e paused)', 'fanClubs', [asc('status'), asc('counts.at')]),
+  // A Início (etapa 4) usa a mesma forma com o `in` no `clubId` (até 30 por bloco).
   shape('a página do fã-clube e a Início', 'fanClubPosts', [
     asc('clubId'),
     asc('status'),
@@ -72,9 +74,11 @@ const COMPOSITE: CompositeShape[] = [
   ]),
   shape('as denúncias abertas', 'fanClubReportQueue', [asc('status'), desc('lastReportedAt')]),
   shape('as denúncias resolvidas', 'fanClubReportQueue', [asc('status'), desc('resolvedAt')]),
-  // A contagem dos novos em 30 dias (o `countFollowers` com o `since`) leva o
-  // `orderBy('followedAt', 'desc')` de propósito, para usar esta forma: sem
-  // ele, a faixa ordenaria pelo `followedAt` crescente, que pede outro índice.
+  // A contagem dos novos em 30 dias (o `followersQuery` com o `since`, na
+  // página, nos números e na cópia) leva o `orderBy('followedAt', 'desc')` de
+  // propósito, para usar esta forma: sem ele, a faixa ordenaria pelo
+  // `followedAt` crescente, que pede outro índice. As três da cópia somam uma
+  // igualdade ao `clubId` do `followersQuery`.
   shape(
     'os seguidores recentes e os novos em 30 dias',
     'fanClubFollows',
@@ -121,7 +125,12 @@ const SINGLE: SingleFieldShape[] = [
   single('fanClubReports.reporterUid', 'fanClubReports', asc('reporterUid')),
   // Os seguimentos de um artista no leaveCentral (etapa 4).
   single('fanClubFollows.artistId', 'fanClubFollows', asc('artistId')),
-  // O count() de todos os seguidores e dos trazidos que ficaram, no grupo.
+  // Os seguidos do fã, do mais novo: "Fã-clubes que sigo" e os 20 da Início
+  // (etapa 4). A suspensão e o count() do follow_limit leem a subcoleção sem
+  // filtro nem ordem, sem índice.
+  single('fanClubFollows.followedAt (decrescente)', 'fanClubFollows', desc('followedAt')),
+  // O count() de todos os seguidores (a página, os números e a cópia) e dos
+  // trazidos que ficaram (a cópia), no grupo.
   single('grupo fanClubFollows.clubId', 'fanClubFollows', asc('clubId'), 'COLLECTION_GROUP'),
   single('grupo centrals.fanClubId', 'centrals', asc('fanClubId'), 'COLLECTION_GROUP'),
 ];

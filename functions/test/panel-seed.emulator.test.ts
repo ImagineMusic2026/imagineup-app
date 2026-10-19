@@ -10,7 +10,9 @@ import { FILTER_ENTRIES } from '../src/content-filter/terms';
 import { dayKey, shiftDay } from '../src/day';
 import {
   SEED_CAMILA_FAN_CLUB,
+  SEED_FAN_CLUB_FOLLOWER,
   SEED_FAN_CLUB_POSTS,
+  seedFanClubFollows,
   seedFanClubLink,
   seedFanClubPosts,
   seedFanClubs,
@@ -83,7 +85,9 @@ import { localApi, signIn, useEmulators } from './support';
  * de 34.14), em seguida, a Camila aprovada no Netto e o Nenho só com texto;
  * desde a etapa 2, as três publicações dela (duas no ar, uma com a foto em
  * 4:5) e a denúncia da Bia contra a da foto; desde a etapa 3, o link do
- * fã-clube que ela compartilhou, nos números do fã-clube.
+ * fã-clube que ela compartilhou, nos números do fã-clube; desde a etapa 4, os
+ * seguidores (a Bia, que entra antes na central, e o rank-40, que entra junto,
+ * a entrada trazida) e a primeira cópia da noite do fã-clube.
  */
 const env = useEmulators('painel-seed', ['api', 'createUserProfile']);
 const { db, bucket } = env;
@@ -210,6 +214,12 @@ async function seed(ranking: Map<string, string>): Promise<void> {
   );
   // O link do fã-clube que a Camila compartilhou (etapa 3).
   await seedFanClubLink(db, 'camila', T0);
+  // Os seguidores e a primeira cópia da noite (etapa 4).
+  await seedFanClubFollows(
+    db,
+    { camilaUid: 'camila', biaUid: 'bia', followerUid: uidOf(ranking, SEED_FAN_CLUB_FOLLOWER) },
+    T0,
+  );
   await seedPanelStats(db, T0);
   await seedPanelClose(db, T0, quiet);
 }
@@ -241,7 +251,14 @@ async function dump(): Promise<Record<string, [string, DocumentData][]>> {
   ]) {
     out[name] = (await db.collection(name).get()).docs.map((doc) => [doc.id, doc.data()]);
   }
-  for (const group of ['statsShards', 'fanClubShards', 'inviteLinks']) {
+  for (const group of [
+    'statsShards',
+    'fanClubShards',
+    'inviteLinks',
+    'centrals',
+    'fanClubFollows',
+    'fanClubCredits',
+  ]) {
     out[group] = (await db.collectionGroup(group).get()).docs
       .map((doc) => [doc.ref.path, doc.data()] as [string, DocumentData])
       .sort(([a], [b]) => (a < b ? -1 : 1));
@@ -506,6 +523,54 @@ describe('o seed das telas do painel (26.13)', () => {
     expect(clubShards.docs.reduce((sum, doc) => sum + ((doc.get('links') as number) ?? 0), 0)).toBe(
       1,
     );
+    // Os seguidores (etapa 4): a Bia, que entrou antes na central pela página
+    // (sem crédito: no teste, ela não chegou pelo código da Camila), e o
+    // rank-40, que não era da central e entrou junto, com o crédito do seguir;
+    // os dois com o central_join em 0. A primeira cópia da noite tem os números.
+    const follower = uidOf(ranking, SEED_FAN_CLUB_FOLLOWER);
+    expect(await read(`users/bia/fanClubFollows/${clubId}`)).toEqual({
+      uid: 'bia',
+      clubId,
+      artistId: 'nettobrito',
+      followedAt: Timestamp.fromMillis(T0),
+      newAccount: false,
+      chosenUsername: true,
+      byOwnerCode: false,
+      schemaVersion: 1,
+    });
+    expect(await read('users/bia/centrals/nettobrito')).toMatchObject({
+      via: 'page',
+      firstJoin: true,
+      fanClubId: null,
+    });
+    expect(await read(`users/${follower}/fanClubFollows/${clubId}`)).toMatchObject({ clubId });
+    expect(await read(`users/${follower}/centrals/nettobrito`)).toMatchObject({
+      via: 'page',
+      firstJoin: true,
+      fanClubId: clubId,
+    });
+    expect(await read(`users/${follower}/fanClubCredits/nettobrito`)).toMatchObject({
+      clubId,
+      via: 'follow',
+    });
+    expect(await read(`wallets/${follower}/ledger/central_join:nettobrito`)).toBeUndefined();
+    expect(await read(`fanClubs/${clubId}`)).toMatchObject({
+      counts: {
+        followers: 2,
+        followers30d: 2,
+        newAccounts: 0,
+        automaticUsername: 0,
+        byOwnerCode: 0,
+        joins: 1,
+        retained: 1,
+        signups: 0,
+        visits: 0,
+        links: 1,
+        at: Timestamp.fromMillis(T0),
+      },
+      monthStart: { month: '2026-10', followers: 2, joins: 1, signups: 0, visits: 0, links: 1 },
+      lastMonth: null,
+    });
     for (let index = 1; index <= 20; index += 1) {
       const id = `seed-audit-${String(index).padStart(2, '0')}`;
       const entry = (await read(`staffAudit/${id}`))!;
