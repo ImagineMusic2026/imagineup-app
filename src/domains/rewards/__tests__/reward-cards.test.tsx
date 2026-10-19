@@ -312,23 +312,36 @@ describe('pedido no detalhe da recompensa', () => {
     ).toBeTruthy();
   });
 
-  it('o sucesso diz onde acompanhar o pedido', () => {
+  const RESULT = {
+    redemptionId: 'UP-C3NWPB',
+    rewardId: 'videochamada',
+    code: 'UP-C3NWPB',
+    balance: 3_980,
+    instructions: 'A equipe fala com você.',
+    redeemedAt: new Date(2026, 8, 29, 20).toISOString(),
+    status: 'requested' as const,
+  };
+
+  it('o sucesso diz onde acompanhar o pedido e o WhatsApp que foi com ele (seção 35)', () => {
     render(
       <SuccessBody
         reward={VIDEO}
-        result={{
-          redemptionId: 'UP-C3NWPB',
-          rewardId: 'videochamada',
-          code: 'UP-C3NWPB',
-          balance: 3_980,
-          instructions: 'A equipe fala com você.',
-          redeemedAt: new Date(2026, 8, 29, 20).toISOString(),
-          status: 'requested',
-        }}
+        result={RESULT}
+        whatsapp="+5575991234567"
         headingRef={{ current: null }}
       />,
     );
     expect(screen.getByText('Você acompanha o pedido nesta recompensa, na loja.')).toBeTruthy();
+    expect(
+      screen.getByText('Se precisar, a equipe fala com você pelo WhatsApp +55 (75) 99123-4567.'),
+    ).toBeTruthy();
+  });
+
+  it('sem o número (ou fora do formato), o sucesso não fala do WhatsApp', () => {
+    render(
+      <SuccessBody reward={VIDEO} result={RESULT} whatsapp={null} headingRef={{ current: null }} />,
+    );
+    expect(screen.queryByText(/WhatsApp/)).toBeNull();
   });
 });
 

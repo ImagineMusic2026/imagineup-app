@@ -36,6 +36,7 @@ Quem mexe no servidor lê esta nota antes. Mudou uma decisão daqui? Mude a nota
 24. Proteção da produção (seção 31): o Firestore com o PITR de 7 dias, a proteção contra apagar e um backup diário com 14 dias, todos dentro dos 30 dias da política; alertas por e-mail no Cloud Monitoring (erros nas funções, a `api` com 5xx, as agendadas falhando ou paradas), silenciados em todo deploy de funções; e o registro de acesso por 184 dias numa linha de log própria, `acesso`, só com o IP (o último item do `X-Forwarded-For`) e o uid, escrita a cada pedido da `api` e a cada chamada das callables do painel (pelo `onPanelCall`), levada por um sink a um bucket de log em southamerica-east1; nenhuma regra, rota, callable ou pacote novo, e o fingerprint do app não muda.
 25. Moderação do @, pedidos de dados e aviso de api fora do ar (seção 32): o `resetFanUsername` ganha o motivo (`reason`); o `moderation`, o padrão, deixa o fã com o @ automático por 30 dias, com o `usernameLockReason` no perfil para o app dizer que foi a equipe, e o `central`, para o @ de um artista, fica sem prazo; duas callables só de admin, sem seção nova: `exportFanData` (o arquivo em JSON, pela resposta da callable, em partes que o painel junta e baixa) e `deleteFanAccount` (a exclusão do Auth, que o gatilho de sempre completa), com o e-mail da conta conferido, o login de até 10 minutos, o teto do dia de 20 exportações e 5 exclusões por pessoa e a auditoria só com o uid; a lista das fontes do fã (`FAN_DATA_SOURCES`) diz o que vai ao arquivo e o que a exclusão faz com cada uma, presa ao `deleteUserData` por teste; o `GET /health` na `api`, sem login e sem as linhas `acesso` e `api`, pedido a cada 5 minutos por um teste de disponibilidade, com o alerta por e-mail no canal de 31.4; o `posterUrl` na mídia do vídeo, a capa grande que o app do bloco B lê; 68 funções, nenhuma regra, índice, fila ou TTL novo, e o fingerprint do app não muda.
 27. Fã-clube gerido pelo fã, com o prêmio ao gestor (seção 34, só o desenho, de 16/10/2026; o dono decidiu construir sem aditivo): o Modelo A, um espaço não oficial ligado à central oficial, em `fanClubs/{clubId}`; a candidatura nos Ajustes, para quem tem o @ escolhido e está na central de um artista com "Aceita fã-clubes", com o 18+ declarado e até 3 rodadas; a seção nova `fanClubs` no painel e uma callable só, `decideFanClub` (69 funções, sobra de CPU de uns 0,34 vCPU), em que o editor da seção decide e só o admin encerra; o gestor publica texto, ou texto com foto da galeria, sempre revisado antes de ir ao ar, fora de `posts/{id}`, com a denúncia numa fila própria e o motivo novo "Uso indevido de imagem"; seguir também faz entrar na central, conta por `count()` com a cópia noturna, rende 0 ponto e acaba ao sair da central, ao bloquear o gestor e na suspensão; o tipo de link `fanclub` e a entrada trazida só na primeira da vida, com o marcador `fanClubCredits`; o Destaque com prazo de até 31 dias e o prêmio ao gestor como um pedido da loja a partir de uma recompensa "Só para prêmios de fã-clube", com os pontos na mesma ação, só no saldo, e "Prêmio do fã-clube" no extrato; a exclusão do gestor apaga as publicações e deixa o fã-clube como lápide; nada nativo, tudo por EAS Update, e o fã-clube abre aos fãs com o EAS Update, com a chave `FAN_CLUB_OPEN` do servidor para fechar sem build (as caixas por artista nascem ligadas para toda central com o `imageRightsConfirmed`, o texto do reconhecimento nasce ligado, com o parecer do jurídico dispensado pelo dono e o risco aceito, e o regulamento, os termos e a privacidade ficam para depois, sem segurar nada; o aceite da candidatura cita os Termos de Uso até o regulamento chegar); o WhatsApp entra obrigatório na candidatura como contato do fã (`users/{uid}/contact/main`), que a loja também usa (UP-66), e vai ao "Ver contatos" da aba Pedidos.
+28. WhatsApp no resgate da loja (seção 35, UP-66, decisão do dono de 19/10/2026): todo resgate pede o WhatsApp do fã, obrigatório no app, já preenchido com o número guardado e editável; o número mora no contato do fã da seção 34, `users/{uid}/contact/main`, fechado nas regras para todos, como celular brasileiro com DDD em E.164 (`parseWhatsapp`, igual no servidor e no app), gravado na transação do resgate e nunca no pedido; o fã lê e troca o dele pelo `GET` e o `PUT /me/contact` (a 45ª e a 46ª rotas, no desenho da seção 34; o número fora do disco no app), e a equipe com Recompensas vê o número de agora no "Ver contatos" dos pedidos abertos, com o link `wa.me`, sem o número na auditoria; o app de antes resgata sem o campo, e o servidor aceita; a exportação ganha o `contato`, e a exclusão o leva com o perfil; 68 funções, nenhum índice, fila ou TTL novo, e o fingerprint do app não muda.
 
 ## 1. Formato da API
 
@@ -224,9 +225,9 @@ Mensagens: `invalid_request` "Pedido inválido."; `idempotency_key_required` "Fa
 
 Códigos que os próximos blocos vão criar entram nesta tabela quando nascerem. Não há limite de pedidos por minuto no bloco 1: o `maxInstances` segura o custo, e os limites de pontos não são erro (seção 5). A exceção, do bloco 4, é o teto diário de entradas em centrais (19.5), com 429 e `Retry-After`: sem ele, um script que entra e sai sem parar gravaria sem teto e inflaria os fluxos do painel. O bloco 6 faz o mesmo com curtidas, comentários, presenças, denúncias e bloqueios (21.7), o bloco 9, com as trocas de foto (24.8), o bloco 10, com os resgates (25.7), e o perfil novo, com os salvamentos do perfil e as trocas de nome (28.5).
 
-## 2. Mapa das 44 rotas
+## 2. Mapa das 46 rotas
 
-Os 26 endpoints que os `api.ts` do app já chamavam no levantamento de 05/10/2026, na tabela, e as rotas que os blocos seguintes trouxeram, nos parágrafos "Fora dos 26" embaixo dela. Na tabela, curtir e "Eu vou" contam como um endpoint cada, com `PUT` para fazer e `DELETE` para desfazer. Contando cada método e caminho, a `API_ROUTES` tem hoje 44 rotas, com as duas do perfil novo (seção 28) e as duas das exigências das lojas (seção 29).
+Os 26 endpoints que os `api.ts` do app já chamavam no levantamento de 05/10/2026, na tabela, e as rotas que os blocos seguintes trouxeram, nos parágrafos "Fora dos 26" embaixo dela. Na tabela, curtir e "Eu vou" contam como um endpoint cada, com `PUT` para fazer e `DELETE` para desfazer. Contando cada método e caminho, a `API_ROUTES` tem hoje 46 rotas, com as duas do perfil novo (seção 28), as duas das exigências das lojas (seção 29) e as duas do contato do fã (seção 35).
 
 | #   | Método e caminho                         | Função do app                                       | Bloco |
 | --- | ---------------------------------------- | --------------------------------------------------- | ----- |
@@ -273,9 +274,11 @@ Fora dos 26, novas no perfil novo: `PUT /me/profile` (a edição inteira num ped
 
 Fora dos 26, novas nas exigências das lojas: `POST /fans/:fanId/report` (denunciar o perfil de outro fã, `posts/api.ts` `reportFan`) e `GET /me/blocks` (a lista de quem o fã bloqueou, `posts/api.ts` `fetchBlockedFans`), seção 29. O `DELETE /me/blocks/:fanId` do bloco 6 ganhou tela (`posts/api.ts` `unblockFan`, na tela "Fãs bloqueados" e no perfil público), e o `GET /fans/:fanId` ganhou o `blockedByMe`.
 
+Fora dos 26, novas no WhatsApp do resgate: `GET /me/contact` (o WhatsApp guardado do fã, que a confirmação do resgate mostra, `profile/api.ts` `fetchContact`) e `PUT /me/contact` (trocar ou apagar o número, `profile/api.ts` `updateContact`; a tela que chama vem com a seção 34), seção 35, no desenho da decisão 14 da seção 34.
+
 Fora da tabela e da `API_ROUTES`, nova na seção 32: `GET /health`, sem login, sem App Check e sem Firestore, que responde 200 com `{"ok":true}` ao teste de disponibilidade (32.1, decisões 17 e 18). O app não chama. Ela vem antes de tudo no handler, e por isso a `API_ROUTES` segue com 44; o `POST /health`, o `HEAD /health`, o `/health/` e o `/health/x` dão 404 `not_found`.
 
-Os endpoints 25 e 26 são os do bloco 10 (seção 25). O 26 passa a mandar o corpo `{ expectedCost }`, e a resposta dos dois ganha o status de cada pedido.
+Os endpoints 25 e 26 são os do bloco 10 (seção 25). O 26 passa a mandar o corpo `{ expectedCost }` (desde a seção 35, com o `whatsapp`), e a resposta dos dois ganha o status de cada pedido.
 
 O `POST /invites/claim` era endereço provisório (comentário em `auth/api.ts`). O bloco 5 o mantém como final, com o corpo novo (seção 20).
 
@@ -5453,7 +5456,7 @@ Cada item traz a recomendação e o motivo. As perguntas para a cliente e para o
 10. **O que a loja mostra (`GET /rewards`): as recompensas no ar, na ordem do painel, com os pedidos do próprio fã.** A encerrada só aparece para quem tem pedido nela, como esgotada (`status: 'soldOut'`), para o fã continuar vendo o código, as instruções e o status. A no ar sem estoque, ou com o show que já passou ou saiu do ar (decisão 18), aparece para todos como esgotada. Motivo: o fã acompanha o pedido no detalhe da recompensa (não há tela de pedidos), e uma encerrada que sumisse levaria o código junto; mostrar todas as encerradas a todos encheria a loja de "Esgotado" com o tempo. A equipe que quer o "Esgotado" para todos baixa o estoque até o já resgatado (decisão 11) e recusa os pedidos dela com `restock: false` (decisão 5); a recusa padrão e o cancelamento da exclusão de conta devolvem a vaga e desfazem esse "Esgotado".
 11. **Estoque como total oferecido e pedidos que o seguram.** A recompensa guarda `stockTotal` (o total oferecido, ou `null` sem limite) e `redeemedCount` (os pedidos solicitados, aprovados e entregues); o que sobra é a diferença. O resgate soma 1; a recusa e o cancelamento tiram 1; sempre na mesma transação do pedido. A recusa com `restock: false` tira 1 também do total (decisão 5). A equipe repõe mudando o total (`setRewardStock`), nunca abaixo do já resgatado (`stock-below-redeemed`). Motivo: repor nunca apaga o que foi resgatado, e o pedido do fã não corre com a callable, porque um grava a contagem e o outro o total. `redeemedCount` é mantido também sem estoque, para o painel e para a troca de "sem limite" para um total.
 12. **Disputa pelo estoque num documento só, a recompensa** (25.6). A transação lê a recompensa e grava a contagem; os pedidos da mesma recompensa entram um de cada vez. Motivo: estoque pequeno (20 vagas) acaba em segundos, e depois disso nenhum pedido grava a recompensa, então a disputa só dura enquanto há vaga; nunca vender a mais vem da própria transação. As alternativas (lotes de estoque em shards, vagas pré-criadas, fila com resposta depois) pedem mais leitura, ou mudam o contrato do app, que espera o `RedeemResult` na resposta. Sinal e passo seguinte em 25.6.
-13. **Quem resgatou, para a equipe entregar: o pedido guarda o uid e a cópia do nome e do @; o e-mail só sai por callable.** A cópia (`fanName`, `fanUsername`) é a da hora do resgate, tirada do perfil que a transação já leu. A callable `getRedemptionContacts` (25.8) devolve o nome, o @ e o e-mail de agora (do perfil e do Auth) de até 50 pedidos abertos (solicitados e aprovados, os que ainda pedem contato para a entrega), só para admin ou editor com `rewards`, com uma entrada em `staffAudit` sem os e-mails. Pedido fechado não devolve contato: minimização de dados (LGPD), porque o entregue, o recusado e o cancelado não pedem mais conversa; se a cliente quiser o e-mail dos entregues por alguns dias (troca de tamanho, reclamação), a janela entra depois (pergunta 8 de 25.15). Motivo: o e-mail mora no Auth e é o canal de contato (as instruções dizem "a equipe fala com você pelo e-mail da sua conta"); copiado no pedido, ele ficaria legível a todo leitor da seção, envelheceria quando o fã trocasse de e-mail e seria mais um dado a apagar. O leitor (`viewer`) com `rewards` vê os pedidos e a cópia do nome e do @, nunca o e-mail; quem não tem a seção não vê nada. A cópia é de exibição, com a data do pedido (24.16): o fã que troca o @ continua achado pelo uid.
+13. **Quem resgatou, para a equipe entregar: o pedido guarda o uid e a cópia do nome e do @; o e-mail só sai por callable.** A cópia (`fanName`, `fanUsername`) é a da hora do resgate, tirada do perfil que a transação já leu. A callable `getRedemptionContacts` (25.8) devolve o nome, o @ e o e-mail de agora (do perfil e do Auth) de até 50 pedidos abertos (solicitados e aprovados, os que ainda pedem contato para a entrega), só para admin ou editor com `rewards`, com uma entrada em `staffAudit` sem os e-mails. Pedido fechado não devolve contato: minimização de dados (LGPD), porque o entregue, o recusado e o cancelado não pedem mais conversa; se a cliente quiser o e-mail dos entregues por alguns dias (troca de tamanho, reclamação), a janela entra depois (pergunta 8 de 25.15). Motivo: o e-mail mora no Auth e é o canal de contato (as instruções dizem "a equipe fala com você pelo e-mail da sua conta"); copiado no pedido, ele ficaria legível a todo leitor da seção, envelheceria quando o fã trocasse de e-mail e seria mais um dado a apagar. O leitor (`viewer`) com `rewards` vê os pedidos e a cópia do nome e do @, nunca o e-mail; quem não tem a seção não vê nada. A cópia é de exibição, com a data do pedido (24.16): o fã que troca o @ continua achado pelo uid. Desde a seção 35, a callable devolve também o WhatsApp de agora, do contato do fã (`users/{uid}/contact/main`), que o resgate pede; ele nunca vai ao pedido (35.1, decisões 2 e 7).
 14. **Exclusão de conta: os pedidos abertos são cancelados, e o histórico fica sem dado pessoal.** Avaliação da proposta: adotada, com um status próprio. Solicitados e aprovados viram `canceled`, o estoque volta e os pontos não (a carteira sai junto). Todo pedido do fã perde o uid, a cópia do nome e do @ e o motivo da recusa, e ganha `accountDeleted: true`. Os agregados contam o cancelamento como fluxo do dia (`canceled`), e nenhum contador desconta. Motivo do status próprio: "recusado" é decisão da equipe, com motivo para o fã; misturar os dois distorceria os números da seção. Motivo de cancelar: sem conta, a equipe não tem como falar com o fã (o e-mail some com o Auth) nem conferir quem retira, e o estoque ficaria preso. Troca a direção da seção 17 (pergunta 12), que deixava o pedido aberto para a equipe entregar. A tela "Excluir conta" passa a dizer isso (25.12). Detalhes em 25.11.
 15. **Teto do dia: 10 resgates por fã** (`reward_redeem` nos `actionCaps`, padrão `REDEEMS_PER_DAY` em `moderation/model.ts`, com os outros tetos, editável pelo `updatePointsConfig` como eles): o 11º do dia de São Paulo é 429 `too_many_requests` com `Retry-After` até a meia-noite. É a primeira conferência do resgate, antes de ler a recompensa: a carteira já foi lida pelo `runIdempotent`, então custa 0 leitura, e o script no teto não lê nem trava a recompensa disputada. Conta só o resgate que gravou (a recusa desfaz a transação). Motivo: o saldo já segura quem não tem pontos; o teto segura o fã (ou o script com o token dele) que tem saldo e esvaziaria várias recompensas pequenas num dia. Nenhum fã de verdade resgata 10 vezes num dia.
 16. **Contadores do painel por recompensa e no total, nos shards do dia** (25.9): pedidos, pontos gastos, aprovados, entregues, recusados, cancelados e pontos devolvidos, somados na transação de cada passo. São fluxos do dia; os pedidos abertos de agora saem do `count()` por status. A seção `rewards` passa a ler `statsDaily` (pergunta 16 de 25.15).
@@ -10040,6 +10043,7 @@ Os de hoje que as duas usam: `invalid-request`, `self` e `fan-not-found` (`panel
 | --- | --- | --- |
 | Auth (`getUser`) | `conta`: o nome do Auth (o do cadastro, que a edição do perfil não muda), o e-mail, se ele foi confirmado, cada provedor com o e-mail dele, a criação e o último login; nunca o hash da senha nem os tokens | começa por ela |
 | `users/{uid}` | `perfil`, sem `searchKeys`, `signupCounted` e `photoPath` | apagado |
+| `users/{uid}/contact/main` (seção 35) | `contato`, inteiro: o WhatsApp, a origem e a data | apagado, com o `recursiveDelete` do perfil |
 | `users/{uid}/centrals` | parte `centrais` | apagado, com o `fanCount` |
 | `users/{uid}/postLikes` | parte `curtidas` | apagado, com a contagem do post |
 | `users/{uid}/eventRsvps` | parte `presencas` | apagado |
@@ -10086,6 +10090,7 @@ Os de hoje que as duas usam: `invalid-request`, `self` e `fan-not-found` (`panel
     "ultimoLoginEm": "2026-10-19T22:10:00.000Z"
   },
   "perfil": {},
+  "contato": null,
   "arrobasReservados": [],
   "carteira": null,
   "convite": null,
@@ -11579,6 +11584,260 @@ Três críticas independentes, em 16/10/2026, cada uma com um olhar: produto e l
 - O contrato para criar a recompensa `prize` (o `prize: true` do `createReward`, com o `setRewardStatus` e o `updateReward` sem trocar o status), a `CapAction` no `details.action` do 429, os códigos de erro no domínio (`FAN_CLUB_ERROR_CODES`), o `isContentRefusal` com o `fan_club_invalid` e as ações novas do `refusal.ts`.
 - Os imports do domínio (o ajudante de entrada do `artists`, o `action-rewards`, o bloqueio dos `posts`), as chaves num `fan-club/keys.ts` para o `artists` e os `posts` zerarem o cache, a frase da sheet de sair sem o nome do artista, a função de preparo da foto ao lado do `preparePhoto`, as rotas que faltavam (a lista do artista e a sheet de deixar de seguir), a entrada fixa de "Fã-clubes que sigo" nos Ajustes e o link de compartilhar a publicação.
 - A etapa do tipo `fanclub` no app passou para antes das telas; a coluna "Prêmios" na aba Números; o `SUSPEND_TEXT` da Moderação; o ícone da seção na lateral, o `TARGET_TYPES` e o `PRIVATE_FIELDS`; o `follow_limit` com um nome só; as fixtures do prêmio na loja e no extrato; o app sem rótulo por tipo de recompensa; o caminho do `parseRedemption`.
+
+## 35. WhatsApp no resgate da loja
+
+O resgate da loja passa a pedir o WhatsApp do fã, e a equipe vê o número no "Ver contatos" da aba Pedidos do painel, com o link que abre a conversa. Vale para toda a loja: camisa, ingresso, videochamada e o resto. O número mora no contato do fã, o mesmo lugar privado que a seção 34 desenhou para a candidatura do fã-clube (decisão 14 de 34.1), com as duas rotas dele: esta seção o constrói primeiro, e a 34 o reaproveita (35.12). Esta seção é o contrato: decisões, rotas e a callable, dados, o passo a passo, regras e exclusão de conta, o app, o painel, seed e fixtures, testes, a publicação, as perguntas, a coordenação com a 34 e as armadilhas. Segue os padrões das seções 1 a 32 e só diz o que muda ou acrescenta.
+
+Origem: a decisão do dono de 19/10/2026 (UP-66, "WhatsApp no resgate da loja"): "pede WhatsApp agora para que a equipe entre em contato mais rápido". A equipe combina as entregas pelo WhatsApp ou pelo Instagram, e até aqui só tinha o e-mail da conta. A mesma resposta levou o WhatsApp à candidatura do fã-clube (34.2, resposta 6), com o pedido de um campo de contato só por fã, privado, que a loja reaproveite.
+
+Estado: construído em 19/10/2026, nas branches `whatsapp-resgate` do app (a partir da `main` `8eca5d9`, levada depois para cima da `main` `0baa4d7`, o merge do PR #33 com a seção 34) e `whatsapp-ver-contatos` do painel (a partir da `main` `ab0de7f`), e conferido nos testes (35.9). Não publicado: o roteiro está em 35.10, para o dono rodar depois do merge. O desenho da seção 34 foi conferido na branch `docs-fa-clube` em `7278993` e está na `main` desde `0baa4d7` (o commit `e83f00f` pôs o contato do fã em `users/{uid}/contact/main`, com o `GET` e o `PUT /me/contact`).
+
+Trava do bloco: nada muda o fingerprint do app (`310056fd840b5459416c9926e46846b8c208aa76`). Nenhum pacote novo, nada no `app.config.ts`, no `package.json`, no `.gitignore` nem no `eas.json`: o app chega ao APK interno por EAS Update. No servidor: duas rotas novas na `api` (`GET` e `PUT /me/contact`, 46 rotas), o corpo do resgate com o número, o `getRedemptionContacts` com o WhatsApp, uma fonte nova na `FAN_DATA_SOURCES` (32) e um `match` explícito nas regras do Firestore. Nenhuma função nova (68), nenhum índice composto, isenção, fila, TTL, código de erro ou chave de teto nova.
+
+Como era antes:
+
+- O `POST /rewards/:rewardId/redeem` recebia só `{ expectedCost }` e não guardava contato nenhum (25.2). O pedido guarda o uid e a cópia do nome e do @ (decisão 13 de 25.1).
+- A equipe com Recompensas (editor ou admin) via o nome, o @ e o e-mail de agora de até 50 pedidos abertos pelo `getRedemptionContacts` (25.8), no "Ver contatos" da aba Pedidos (`imagineup-admin`, `src/components/recompensas/orders-tab.tsx` e `order-dialogs.tsx`), com a auditoria `redemption.contacts.viewed` sem os contatos. O Leitor não via contato.
+- O app dizia, no tipo do resgate, que "não pede endereço nem dado pessoal novo" (`src/domains/rewards/types.ts`), e as instruções das recompensas de exemplo dizem que a equipe fala com o fã "pelo e-mail da sua conta".
+- O rascunho da política de privacidade (site `imagineup`, `site/privacidade/index.html`, seção 2) já prevê o telefone "quando uma recompensa exige entrega ou contato", e a seção 8 guarda os dados "enquanto a sua conta existir".
+
+### 35.1 Decisões
+
+Cada item traz a escolha e o motivo, e a alternativa trocada quando há. As perguntas estão em 35.11.
+
+**O número e onde ele mora**
+
+1. **O WhatsApp é pedido em todo resgate da loja, de qualquer tipo.** A decisão do dono vale para a loja inteira, e não só para o que tem entrega física: a videochamada e o meet & greet também se combinam com o fã. Trocado: pedir só nas recompensas marcadas pelo painel, que pediria um campo novo na recompensa e uma decisão da equipe a cada cadastro.
+2. **O número mora no contato do fã, `users/{uid}/contact/main`, o mesmo da seção 34.** Um documento por fã, com `whatsapp`, `source` e `updatedAt` (35.3), os campos de 34.4. Fica debaixo de `users/{uid}` para o `recursiveDelete` da exclusão de conta o levar sem passo novo (35.5). Nunca no perfil (`users/{uid}`): o documento é lido pelo próprio fã direto do Firestore e pela equipe com Fãs ou Moderação, e o número iria para o cache do perfil no aparelho e para a ficha do fã. Nunca no pedido (`redemptions/{código}`): o Leitor de Recompensas lê os pedidos, a cópia envelheceria quando o fã trocasse de número, e cada pedido seria mais um lugar com o dado. Trocado: um campo no perfil, mais simples de ler e de exportar, e uma cópia no pedido, como o nome e o @ (que são de exibição, 25.1).
+3. **O formato é o celular brasileiro com DDD, guardado em E.164: `+55`, o DDD e os 9 dígitos começando por 9** (`+5575991234567`). A conferência é o `parseWhatsapp` (`functions/src/fan-contact/model.ts`), igual no app (`src/utils/whatsapp.ts`), com a mesma tabela de testes nos dois lados. Aceita a máscara do app ("(75) 99123-4567"), o número colado com o país ("+55 75 99123-4567" ou "55 75 99123-4567") e o zero do DDD ("075 99123-4567"), com espaço, parênteses, hífen e ponto. Recusa o fixo (8 dígitos depois do DDD), o celular sem o 9, o DDD que não existe (os 67 da Anatel, `BRAZIL_DDDS`), o número de outro país, letras e o texto acima de 40 caracteres. Motivo: o WhatsApp de uma pessoa é o celular; o 9 na frente pega o erro mais comum (o número antigo, de 8 dígitos), e o DDD conferido pega o dígito trocado; o `wa.me` pede o país, e a equipe fala com fãs do Brasil. Trocado: o que a 34 descrevia (só os dígitos; com 10 ou 11, o `+55` na frente; com o `+`, de 8 a 15), que aceitaria o fixo e qualquer país sem como conferir o número. Limite: o fã com número de fora do Brasil não resgata pelo app novo (pergunta 1 de 35.11).
+4. **O campo é obrigatório no app, já preenchido com o número guardado e editável.** A leitura do dono: obrigatório. A confirmação do resgate mostra o campo com o `+55` fixo na frente, a máscara montada a cada dígito e, embaixo, a regra e a finalidade: "Celular com DDD e o 9 na frente, para a equipe falar com você sobre a entrega." (a regra do campo vai na dica, e não só no exemplo, como pede a acessibilidade do `CLAUDE.md`). Vazio ou fora do formato, a confirmação não sai, e o erro aparece no campo (35.6). O número guardado vem do `GET /me/contact` (decisão 6); o fã troca no próprio campo, e o resgate guarda o novo.
+5. **O servidor confere o número no `validate` e o grava na transação do resgate, sem ler antes.** Presente, o `whatsapp` passa pelo `parseWhatsapp`; fora do formato (também `null` e o texto vazio), 400 `invalid_request` com `details.field: 'whatsapp'`, antes de abrir a transação, como o `expectedCost`. Na transação, depois de todas as conferências de hoje, o `tx.set` do contato com `merge`, `source: 'store'` e o `updatedAt` do pedido (25.4, passo 8 novo). O número e o pedido entram juntos: a recusa de qualquer passo (o saldo, o estoque, o limite, o teto) não guarda o número. Todo resgate grava de novo, também com o mesmo número: o `updatedAt` é a última vez que o fã confirmou o número. Sem leitura, o resgate não ganha leitura nem disputa nova. O `merge` não apaga campo que outra seção acrescente ao documento.
+6. **O fã lê e troca o número por duas rotas novas, `GET` e `PUT /me/contact`, as da seção 34, e o app o guarda só em memória.** O `GET` responde `{ whatsapp }` (o número, ou `null`), com uma leitura, sem chave e sem exigir o perfil, só ao próprio fã; o valor estranho no documento vale `null`. O `PUT` recebe `{ whatsapp }`: o número passa pelo `parseWhatsapp`, e o `null` apaga (o documento fica com `whatsapp: null`); grava com `source: 'app'`, sem ler antes e sem teto próprio (o ritmo de 27.3 basta), e o suspenso recebe o 403, como na edição do perfil. A consulta do app (`useMyContactQuery`, no `profile`) fica fora do disco (`meta: { persist: false }`), buscada quando a sheet do resgate abre; o `updateContact` e o `useUpdateContactMutation` ficam prontos no `profile`, sem tela que os chame nesta seção (a tela "WhatsApp para a equipe" vem com a 34). Motivo: o número não fica no cache gravado no aparelho; a candidatura do fã-clube (34.9) lê e grava pelas mesmas rotas, e a etapa 1 da 34 começa em cima delas. Trocado: o número dentro do `GET /rewards`, sem rota nova, que levaria o número ao cache da loja gravado no disco (`queryOptionsFor`, com o persister do React Query). Fica para a 34 a recusa do `null` com o fã-clube ativo ou pausado (`contact_required`).
+7. **Quem vê: o próprio fã, pela API, e a equipe com Recompensas, pelo "Ver contatos" dos pedidos abertos.** As regras fecham a subcoleção para todos, até o próprio fã e o admin (o `match /users/{uid}/contact/{docId}` com `allow read, write: if false`, que repete o fechado do `match` final de propósito, como o `blockLists`). O `getRedemptionContacts` devolve o WhatsApp de agora junto com o e-mail, nos mesmos pedidos (abertos, até 50) e para as mesmas pessoas (admin ou editor com `rewards`); o Leitor de Recompensas continua sem contato. A seção Fãs não vê o número: a 34 deixou a escolha para esta seção (34.6), e ele fica com quem entrega. Quando a 34 for construída, a regra ganha a leitura de quem edita Fã-clubes (a ficha da candidatura). O número é o de agora, também nos pedidos feitos antes dele, como o e-mail.
+8. **Nada do número na auditoria, no log, nos `details` nem na resposta do resgate.** A auditoria `redemption.contacts.viewed` continua com os códigos e a contagem. A resposta do `POST /rewards/:rewardId/redeem` não muda, e por isso a cópia da resposta na `idempotency` não leva o número. A impressão do pedido na chave (`fingerprint`, o sha256 do método, do caminho e do corpo) leva o número no texto que vira hash: é pseudônima, e não anônima (os celulares do Brasil são uns 6,7 bilhões, e os outros campos são conhecidos), mas é técnica, some em 30 dias (o TTL de `idempotency.expiresAt`) e com a exclusão de conta. Já a resposta do `PUT /me/contact` leva o número em texto (o contrato de 34.3, que o app usa para pôr o número normalizado no cache), e a cópia dela fica na `idempotency` por até 30 dias, também depois de o fã apagar o número com `null`, como a do `PUT /me/profile` com o perfil: técnica, fora do arquivo da exportação e levada pela exclusão de conta. O painel não guarda o número no navegador (35.7).
+
+**A transição**
+
+9. **O app de antes resgata sem o campo, e o servidor aceita o corpo sem o `whatsapp` para sempre.** É a regra da seção 1: app instalado não pode quebrar, e rota que muda de formato ganharia endereço novo. Ausente (`undefined`), o resgate passa como hoje e o contato fica como estava; a equipe vê "Sem WhatsApp" no pedido e fala pelo e-mail. Na prática, o caso dura a janela entre o deploy das funções e o EAS Update chegar ao APK interno (abrir, fechar e abrir de novo). Trocado: recusar o corpo sem o número (o app de antes mostraria "Não deu para confirmar o resgate" e não resgataria até o update) e uma chave que liga a recusa depois, num deploy a mais.
+10. **O app novo com a `api` de antes também funciona.** O `GET /me/contact` responde 404 `not_found`, a consulta falha e o campo começa vazio; o resgate com o `whatsapp` passa, porque o `parseExpectedCost` só lê o custo, e o número não é guardado; mesmo assim, o sucesso mostra o número, e ele entra no cache do contato, só em memória: a equipe não o vê e fala pelo e-mail. Por isso a ordem é funções, depois o EAS Update (35.10), e o passo 5 confere a `api` nova antes de seguir. O painel de antes ignora o campo novo do `getRedemptionContacts`; o painel novo com o servidor de antes mostra "Sem WhatsApp". Por isso o painel vem por último.
+11. **A tentativa aberta guarda o número e o repete.** A tentativa do resgate (25.5 e 25.12) guarda a chave, o custo e agora o número que mandou. Depois de uma falha sem resposta clara, o toque seguinte repete o mesmo corpo: outro número com a mesma chave daria 422 (`idempotency_key_reused`) e seria lido como "seu resgate anterior já foi registrado". Por isso, com a tentativa aberta (também a primeira, enquanto vai), o campo mostra o número dela, sem edição; parada a tentativa (a falha sem resposta clara), a dica vira "É o número da tentativa anterior, que vale até ela ter resposta." A recusa definitiva fecha a tentativa e devolve o campo à edição.
+
+**LGPD, tetos e custo**
+
+12. **A exportação traz o contato inteiro, e a exclusão o apaga com o perfil.** A `FAN_DATA_SOURCES` (`fan-data/sources.ts`) ganha a fonte `users.contact`, na chave `contato` da primeira chamada, depois do `perfil`, com o leitor novo `subdoc` (o documento único de uma subcoleção do fã) e nada no `omit`: o número, a origem e a data são do fã. A exclusão não ganha passo: o `recursiveDelete(users/{uid})` do `deleteUserData` leva a subcoleção, e o teste de emulador de 32.10 prende as duas pontas (o `listCollections()` de `users/{uid}` só com nomes da lista). O roteiro de restauração (31.3) pega a fonte nova sozinho (`accountSources`). O número fica enquanto a conta existir, trocado a cada resgate, como diz a seção 8 da política; apagar o número sem excluir a conta é o `PUT /me/contact` com `null`, que ainda não tem tela (pergunta 3 de 35.11); a cópia da resposta de um `PUT` anterior fica na `idempotency` até o TTL (decisão 8).
+13. **Nenhum teto novo, e o filtro não se aplica.** As gravações do contato vêm do resgate que deu certo, já limitado pelo teto do dia `reward_redeem` (10) e pelo ritmo de 27.3, e do `PUT /me/contact`, que grava um documento só, com o ritmo; o `GET /me/contact` só lê. O filtro do que o fã publica (seção 30) é para texto que outras pessoas leem: o número guardado só tem dígitos e só a equipe o vê.
+14. **CPU: nenhuma função nova.** Mudam a `api` (as duas rotas do contato e o resgate), o `getRedemptionContacts` (uma leitura a mais por fã, no mesmo `getAll` dos perfis), a `exportFanData` (a fonte nova) e, só no comentário, o `deleteUserData`. A conta de 32.1 (decisão 24) não muda: as 68 funções, a sobra de uns 0,51 vCPU.
+
+**Painel e app**
+
+15. **No painel, o WhatsApp entra no "Ver contatos", com o link da conversa.** Embaixo do e-mail de cada pedido: "WhatsApp: +55 (75) 99123-4567", em link para `https://wa.me/5575991234567?text=...`, em outra aba, com a mensagem pronta "Olá! Aqui é a equipe do ImagineUP, sobre o seu resgate UP-XXXXXX.", que a pessoa da equipe pode mudar antes de mandar. Sem número, "Sem WhatsApp". O painel confere o número de novo antes de mostrar e de montar o link (`src/lib/whatsapp.ts`), como as redes do perfil: fora do formato, não aparece. O número vive só no estado do diálogo, como os outros contatos: fechou, sai da memória, e nada vai para o armazenamento do navegador. Abrir o link deixa o endereço no histórico do navegador, como qualquer link (armadilha em 35.13).
+16. **No app, o campo fica na confirmação, e o sucesso repete o número.** O campo entra entre o quadro do custo e a nota da confirmação; o sucesso diz "Se precisar, a equipe fala com você pelo WhatsApp +55 (75) 99123-4567.", para o fã conferir o que foi. A recusa do número pelo servidor volta ao campo, sem sair da confirmação.
+
+### 35.2 Contrato: as rotas e a callable
+
+#### `POST /rewards/:rewardId/redeem` (muda: o corpo)
+
+- Corpo: `{ expectedCost: number, whatsapp?: string }`. O app novo sempre manda o `whatsapp`; o de antes, não (decisão 9).
+- Recusas antes da transação, nesta ordem: o id fora do formato (404 `reward_not_found`), o `expectedCost` (400 `invalid_request` com `field: 'expectedCost'`) e o `whatsapp` presente fora do formato (400 `invalid_request` com `field: 'whatsapp'`). As da transação não mudam (25.2).
+- Resposta: a de hoje (`RedeemResult`), sem o número.
+
+#### `GET /me/contact` (nova)
+
+- Resposta: `{ whatsapp: string | null }` (o `FanContact` do `contract.ts`), com o número no formato guardado, ou `null` sem documento, com o `whatsapp` apagado (`null`, depois do `PUT` com `null`) ou fora do formato.
+- Uma leitura (`users/{uid}/contact/main`), sem `Idempotency-Key` e sem exigir o perfil.
+- No app: `fetchContact` em `src/domains/profile/api.ts`, como a 34 previa.
+
+#### `PUT /me/contact` (nova)
+
+- Corpo: `{ whatsapp: string | null }`, com a `Idempotency-Key`. Resposta: `{ whatsapp }`, o número no formato guardado, ou `null`.
+- Recusas, nesta ordem: a chave que falta (400 `idempotency_key_required`); o corpo sem a chave `whatsapp`, com outro tipo ou com o número fora do formato (400 `invalid_request` com `field: 'whatsapp'`, antes da transação); o `runIdempotent` (o perfil exigido; o suspenso, 403 `account_suspended`). Com a seção 34, o `null` com o fã-clube ativo ou pausado passa a dar 409 `fan_club_refused` com `contact_required`.
+- No app: `updateContact` em `src/domains/profile/api.ts` e o `useUpdateContactMutation`, sem tela nesta seção.
+
+#### `getRedemptionContacts` (muda: a resposta)
+
+- Cada contato ganha `whatsapp: string | null`: o número de agora do contato do fã, ou `null` (sem número, fora do formato, ou a conta que não existe mais, que volta com tudo `null`).
+- Entrada, recusas, quem chama e a auditoria não mudam.
+
+Nenhum código de erro novo: o 400 é o `invalid_request` de sempre, com o campo.
+
+### 35.3 Dados
+
+**`users/{uid}/contact/main`** (o contato do fã, de 34.4; só o servidor lê e grava):
+
+```ts
+users/{uid}/contact/main {
+  whatsapp: string | null   // E.164: '+55', o DDD e os 9 dígitos; null depois que o fã apaga (o PUT com null)
+  source: 'store' | 'fanclub' | 'app'   // onde foi gravado pela última vez: o resgate grava 'store', o PUT, 'app'
+  updatedAt: Timestamp      // o instante do resgate ou do PUT que gravou
+}
+```
+
+**`FAN_DATA_SOURCES`:** 32 fontes. A nova, na tabela de 32.3:
+
+| Fonte | No arquivo | Na exclusão |
+| --- | --- | --- |
+| `users/{uid}/contact/main` | `contato`, inteiro (o número, a origem e a data) | apagado, com o `recursiveDelete` do perfil |
+
+O leitor `subdoc` (`{ kind: 'subdoc', parent, name, id }`) lê o documento único de uma subcoleção do fã no mesmo `getAll` dos documentos da primeira chamada; o `knownSubcollections` o conta, para o teste do `listCollections()`, e o `accountSources` da restauração o trata como o `sub` (os ids de `users`).
+
+**O módulo novo** é `functions/src/fan-contact/`: `model.ts` (puro: `BRAZIL_DDDS`, `parseWhatsapp`, `isWhatsapp`, `contactWhatsapp` e o tipo `ContactSource`), `store.ts` (`fanContactRef`, `fanContactDoc`, `writeFanContact`, a gravação comum do resgate e do `PUT`, e `readFanContact`) e `index.ts`. A seção 34 importa dele.
+
+### 35.4 Passo a passo
+
+**Resgatar (`POST /rewards/:rewardId/redeem`):**
+
+1. O `validate`, sem leitura: o id, o `expectedCost` e o `bodyWhatsapp` (ausente vale `undefined`; presente, o `parseWhatsapp` ou o 400).
+2. O `runIdempotent` e os passos 1 a 7 de 25.4, como hoje.
+3. Passo 8 novo: com o `whatsapp`, o `tx.set(fanContactRef(db, uid), { whatsapp, source: 'store', updatedAt }, { merge: true })`, com o mesmo instante do pedido.
+4. A resposta de hoje. A chave guarda a resposta, sem o número.
+
+O seed (`runRedeemReward`) aceita o mesmo `whatsapp` opcional.
+
+**Ler o número (`GET /me/contact`):** o `readFanContact`, um `get` do documento, e o `contactWhatsapp` (o valor no formato, ou `null`).
+
+**Trocar ou apagar (`PUT /me/contact`):** o `validate`, sem leitura, com o `bodyContact` (o `parseWhatsapp`, ou o `null`); o `runIdempotent`; o `writeFanContact` com `source: 'app'` e o instante do pedido; responde `{ whatsapp }`.
+
+**Ver os contatos (`getRedemptionContacts`):** o leitor confere quem chama, lê os pedidos, separa os abertos e, num `getAll` só, os perfis e os contatos dos uids (os perfis primeiro, os contatos depois); depois o `getUsers` do Auth e a auditoria, como hoje. O contato de cada pedido leva o `contactWhatsapp` do documento.
+
+### 35.5 Regras, índices, TTL e exclusão de conta
+
+- **Regras:** o `match /contact/{docId}` dentro de `users/{uid}`, com `allow read, write: if false` e o comentário (decisão 7). Muda só o `firestore.rules`; o `storage.rules` e o `firestore.indexes.json` são os do ar (`f258ca2`). Os testes ficam em `tests/rewards-rules.test.ts` (35.9).
+- **Índices:** nenhum. O `GET /me/contact` e o `getAll` dos contatos leem por id.
+- **TTL:** nenhum. O número fica enquanto a conta existir (decisão 12).
+- **Exclusão de conta:** o `deleteUserData` não muda; só o comentário diz que o contato sai com o `recursiveDelete` do perfil. A ordem de hoje vale: o perfil sai primeiro, e um resgate que leu o perfil antes grava o contato antes do `recursiveDelete`, que o leva.
+
+### 35.6 App
+
+Só JS: `src/utils/whatsapp.ts` (novo), `services/fixtures` (o `fixtureContact`), o `profile` (`types.ts`, `keys.ts`, `api.ts`, `queries.ts` e `index.ts`), o `rewards` (`types.ts`, `api.ts`, `fixtures.ts`, `consts.ts`, `describe-reward.ts`, `queries.ts`, `components/redeem-steps.tsx` e `views/reward-details.tsx`) e o `translations.json`, com os testes. Chega por EAS Update e não muda o fingerprint. O `QUERY_CACHE_VERSION` não sobe: a consulta nova fica fora do disco, e nada do que já é gravado muda de formato.
+
+- **A máscara e a conferência** (`src/utils/whatsapp.ts`): o `parseWhatsapp` e o `isWhatsapp` iguais aos do servidor; o `maskWhatsapp`, que monta "(75) 99123-4567" a partir dos dígitos (até 11; o campo já mascarado nunca perde o `55`, para o dígito a mais com o DDD 55 ser cortado, e não lido como o país; só o número colado cru perde o `55` do país, com o `+` ou com 12 dígitos ou mais; o zero do DDD sai sempre), com o parêntese, o espaço e o hífen só quando vem um dígito depois deles (apagar do fim nunca para num separador); e o `whatsappFieldValue`, o guardado no formato do campo.
+- **O número guardado:** o `useMyContactQuery` (`profile`), fora do disco, buscado ao abrir a sheet do resgate. O `updateContact` e o `useUpdateContactMutation` (a chave é da tentativa e do número: o mesmo número depois de uma falha incerta repete a chave; outro número leva chave nova, e vale o último) ficam prontos para a tela da seção 34. Até o fã mexer no campo, ele segue o número guardado (que pode chegar depois de a confirmação abrir); depois, o que o fã digitou. O resgate que dá certo põe o número mandado no cache (`profileKeys.contact()`), e a próxima confirmação já vem com ele; se a sessão mudou no meio (o fã saiu com o resgate indo), não põe. O `registerProfileQueryDefaults`, chamado no `AppProviders`, deixa a chave do contato fora do disco também quando a consulta nasce pelo `setQueryData`, sem a tela montada.
+- **O campo** (`WhatsappField`, em `redeem-steps.tsx`): o `TextInput` de sempre, com o rótulo "Seu WhatsApp", o prefixo "+55" (fora do leitor de tela), o teclado do telefone (`phone-pad`, `telephoneNumber`, `tel`), o "(00) 00000-0000" de exemplo e a finalidade na dica. A rolagem da sheet ganha o `keyboardShouldPersistTaps="handled"`, o `keyboardDismissMode="on-drag"` e, no iOS, o `automaticallyAdjustKeyboardInsets`, como a sheet de todos os artistas; no Android, a sheet redimensiona com o teclado.
+- **Confirmar:** com a tentativa aberta, vai o número dela; senão, o do campo pelo `parseWhatsapp`. Vazio, "Informe seu WhatsApp com o DDD."; fora do formato, "Confira o número: o DDD e o celular, com o 9 na frente."; nos dois casos o erro fica no campo (lido junto com a dica), o erro é anunciado (o foco num campo já focado não fala) e o foco vai para o campo no frame seguinte ao render, com o campo já editável: na recusa do servidor (`whatsappInvalid`, o 400 com o campo), o campo estava travado pela tentativa durante o envio, e o campo desligado não recebe foco (no Android, o comando do foco pode chegar antes do commit no mesmo lote). A recusa do servidor fica na confirmação, com o toque de erro; é definitiva, e a próxima tentativa leva chave nova.
+- **O sucesso:** "Se precisar, a equipe fala com você pelo WhatsApp +55 {{number}}.", com o número que foi no pedido (o `variables` da mutação).
+- **Fixtures** (sem API): o `fixtureContact` de `services/fixtures` começa sem número, o resgate de exemplo e o `updateContact` conferem o número como o servidor (400 com o campo; no resgate, a mesma chave com outro número é 422) e o guardam, e o `fetchContact` o lê. Volta ao início no fim da sessão.
+
+Textos novos (`translations.json`):
+
+| Chave | Texto |
+| --- | --- |
+| `rewards.confirm.whatsapp.label` | "Seu WhatsApp" |
+| `rewards.confirm.whatsapp.prefix` | "+55" |
+| `rewards.confirm.whatsapp.placeholder` | "(00) 00000-0000" |
+| `rewards.confirm.whatsapp.hint` | "Celular com DDD e o 9 na frente, para a equipe falar com você sobre a entrega." |
+| `rewards.confirm.whatsapp.locked` | "É o número da tentativa anterior, que vale até ela ter resposta." (só com a tentativa parada, e não durante o envio) |
+| `rewards.confirm.whatsapp.required` | "Informe seu WhatsApp com o DDD." |
+| `rewards.confirm.whatsapp.invalid` | "Confira o número: o DDD e o celular, com o 9 na frente." |
+| `rewards.errors.whatsappInvalid` | "Confira o número: o DDD e o celular, com o 9 na frente." (o anúncio com a sheet fechada) |
+| `rewards.success.whatsapp` | "Se precisar, a equipe fala com você pelo WhatsApp +55 {{number}}." |
+
+Sem e-mail, sem travessão e sem meia-risca. A nota da confirmação (`rewards.confirm.note`) não muda.
+
+**Com cada geração de JS e de servidor:**
+
+| | `api` de antes | `api` nova |
+| --- | --- | --- |
+| JS no ar (o EAS Update de 14/10/2026) | o resgate de hoje | o resgate passa sem o número; o contato fica como estava, e a equipe vê "Sem WhatsApp" (decisão 9) |
+| JS novo | o campo vem vazio (o 404 do `GET /me/contact`); o resgate passa, e o número não é guardado, embora o sucesso o mostre (decisão 10) | o campo preenchido com o guardado; o número vai com o pedido |
+
+Nenhuma combinação quebra o resgate. A ordem recomendada é a de 35.10: funções, EAS Update, painel.
+
+### 35.7 Painel
+
+No `imagineup-admin`, a partir da `main` `ab0de7f`, na branch `whatsapp-ver-contatos`:
+
+- `src/lib/whatsapp.ts` (novo, puro): o `isWhatsapp` (o formato guardado com os 67 DDDs), o `formatWhatsapp` ("+55 (75) 99123-4567"), o `whatsappMessage` (a mensagem pronta com o código) e o `whatsappLink` (`https://wa.me/<dígitos>?text=...`, com o domínio fixo, ou `null` fora do formato).
+- `src/lib/reward-api.ts`: o `RedemptionContact` ganha `whatsapp`, e o `getRedemptionContacts` passa cada contato pelo `parseRedemptionContact` (o que falta vale `null`, o WhatsApp conferido de novo, o contato sem código ou com o código fora do formato do pedido fora, porque o código entra no texto do link): o servidor de antes, sem o campo, dá "Sem WhatsApp". O `isDeletedContact` diz que a conta saiu só com tudo `null`, como o servidor a devolve.
+- `src/components/recompensas/order-dialogs.tsx`: no `ContactsDialog`, embaixo do e-mail, o `WhatsappContact`: o link "WhatsApp: +55 (75) 99123-4567" em outra aba (`noopener noreferrer nofollow`), com o ícone de link externo e "(abre a conversa em outra aba)" para o leitor de tela, ou "Sem WhatsApp". O número nunca corta: na coluna estreita (o diálogo no computador, de 640 px, e o celular de 320 px), "WhatsApp:" fica numa linha e o número desce inteiro, com o ícone (medido nas duas larguras). A conta excluída (tudo `null`) fica só com "Conta excluída"; a conta que existe sem e-mail mostra "Sem e-mail" e o WhatsApp. O "Copiar e-mails" não muda.
+- `README.md`: os dados de fã e a linha de Recompensas com o WhatsApp.
+- Testes em `tests/whatsapp.test.mjs` (35.9).
+
+### 35.8 Seed dos emuladores e fixtures
+
+- **Seed:** os pedidos abertos das contas `rank-01` a `rank-04` (26.13) levam um WhatsApp de teste cada (`+5575900000001` a `+5575900000004`, só nos emuladores), e o "Ver contatos" do painel nos emuladores mostra o link. Os pedidos da Camila ficam sem número, como os feitos antes desta seção: a confirmação dela nos emuladores começa com o campo vazio, e o "Ver contatos" mostra "Sem WhatsApp" nos pedidos abertos dela.
+- **Fixtures do app:** o contato de exemplo começa sem número (decisão 6), e as instruções das recompensas de exemplo não mudam (a tabela de 25.13 e o seed continuam iguais).
+
+### 35.9 Testes
+
+**Funções, puros (vitest):**
+
+- `fan-contact/model.test.ts` (novo): a tabela do `parseWhatsapp` (a máscara, o país, o zero do DDD, o DDD 55 com 11 dígitos; o fixo, o celular sem o 9, os DDDs que não existem, outro país, letras, o link do `wa.me`, o texto longo e o que não é texto), os 67 DDDs, o `isWhatsapp` e o `contactWhatsapp`.
+- `api/index.test.ts`: o `whatsapp` fora do formato (também `null`, vazio, número e lista) dá 400 com o campo antes da transação; o `GET /me/contact` com o número, sem documento, com o `null` e com o valor estranho; o `PUT /me/contact` com o corpo fora do formato (sem a chave `whatsapp`, vazio, o fixo, número, lista) dá 400 com o campo, e sem a chave de idempotência, 400.
+- `api/router.test.ts`: o `GET /me/contact` só lê, o `PUT` grava, e o `DELETE` é 405 com `GET, PUT`.
+- `fan-data/sources.test.ts` e `restore/model.test.ts`: a fonte nova (a chave `contato`, o leitor `subdoc`, o `deleted`, o `contact` nas subcoleções de `users`) e a conta dela na restauração.
+
+**Funções, nos emuladores:**
+
+- `rewards.emulator.test.ts`: o número guardado com o pedido (o documento com o `source` e o `updatedAt`), a resposta sem o número, nem no pedido nem na cópia da chave; o `GET /me/contact` só do próprio fã; o resgate seguinte troca o número e o do app de antes não mexe nele; a recusa (o saldo e o formato) não guarda nada; a mesma chave com outro número é 422; o `PUT /me/contact` troca (com `source: 'app'`), o resgate seguinte grava de novo com `store`, o `null` apaga e o `GET` volta `null`, o fixo é 400 e o suspenso recebe 403; a exclusão de conta leva o contato.
+- `rewards-panel.emulator.test.ts`: o `getRedemptionContacts` com o WhatsApp de agora, também no pedido feito antes dele, o `null` de quem não tem número e da conta que sumiu, o valor estranho como `null`, e as duas auditorias sem o número.
+- `fan-data.emulator.test.ts`: a exportação com o `contato` e a exclusão sem sobra (o leitor `subdoc` no `leftovers`).
+
+**Regras** (`tests/rewards-rules.test.ts`): ninguém lê o contato, nem a própria fã, nem a equipe com Recompensas ou Fãs, nem o admin, também pela subcoleção e pelo grupo `contact`; ninguém grava.
+
+**App:**
+
+- `src/utils/__tests__/whatsapp.test.ts`: a mesma tabela do servidor, a máscara enquanto o fã digita e ao colar (também o dígito a mais com o DDD 55 e o zero do DDD), o separador no fim e o `whatsappFieldValue`.
+- `src/domains/profile/__tests__/api.test.ts`: o `fetchContact` e o `updateContact` pela API (com a chave, a resposta conferida de novo) e nas fixtures (trocar, o 400 e apagar).
+- `src/domains/profile/__tests__/queries.test.tsx`: o contato fora do disco; a troca põe o número no cache, a falha incerta repete a chave com o mesmo número, e apagar leva chave nova.
+- `src/domains/rewards/__tests__/api.test.ts`, `fixtures.test.ts`, `queries.test.tsx` e `reward-cards.test.tsx`: o número no corpo; o resgate de exemplo com o número (o 400, o 422 e o contato guardado); a tentativa que guarda e repete o número, o número no cache do contato no sucesso e o 400 do número como recusa definitiva sem buscar nada; o sucesso com e sem o número.
+- `src/navigation/__tests__/rewards.test.tsx`: o campo preenchido na confirmação, com o `+55`, o teclado e a dica; o campo vazio sem número guardado, os dois erros com o anúncio, a máscara ao colar e o número guardado depois; o número editado vira o guardado; o 400 do servidor volta ao campo e a próxima tentativa leva chave nova; a falha incerta trava o campo com o número da tentativa; e a `api` de antes (sem o `GET /me/contact`) com o campo vazio e o resgate passando.
+- `src/navigation/__tests__/suspension.test.tsx`: o resgate do fã suspenso digita o número antes de confirmar, para chegar à recusa do servidor.
+- `functions/test/restore.emulator.test.ts`: o resgate de quem sai leva o número, a cópia tem o contato, e o leitor `subdoc` entra no `deletedSourcesWithData`: a restauração não traz de volta o contato de quem excluiu a conta.
+
+**Painel** (`tests/whatsapp.test.mjs`, com o dublê da callable): a conferência (o fixo, o celular sem o 9, os DDDs que não existem), o texto e o link (o endereço cru, com a mensagem codificada; nada de link fora do formato), a leitura dos contatos (o campo que falta, o estranho, a resposta sem lista e o código fora do formato, que derrubaria o `encodeURIComponent`) e a conta excluída só com tudo `null`.
+
+### 35.10 Publicação
+
+O roteiro, para o dono rodar depois do merge, cada passo com o ok dele. As regras e as funções saem da pasta do deploy; o EAS Update, pelo Claude ou pelo dono; o painel, pelo merge do PR. Os comandos dos lotes estão em `Projetos/protecao-imagineup/lotes-whatsapp-resgate.txt`, fora do repositório, para copiar sem redigitar.
+
+0. **Merge** do PR do app na `main`, com o ok do dono. O do painel espera o passo 6.
+1. **Pasta do deploy:** a `imagineup-app-deploy` na `main` nova, com o `functions/.env.imagine-up-app` ("Publicar", passo 1).
+2. **O diff desde o que está no ar:** `git diff --stat c4c25ff HEAD -- functions/src firestore.rules storage.rules firestore.indexes.json`. Os de dentro: `fan-contact/` (novo), `api/contract.ts`, `api/routes/profile.ts` (as duas rotas do contato), `api/routes/rewards.ts`, `api/index.test.ts`, `api/router.test.ts`, `rewards/service.ts`, `rewards/panel.ts`, `rewards/seed.ts`, `fan-data/sources.ts` (e o teste), `fan-data/export.ts`, `restore/` (o módulo da 31.3, que o `index.ts` não exporta), `store.ts` (só o comentário) e o `firestore.rules`. O `storage.rules` e o `firestore.indexes.json` não podem aparecer: se outra seção entrou antes (o teto do vídeo da 33 muda o `storage.rules`), pare e confira com o dono.
+3. **Regras:** `npx --yes firebase-tools@15.32.0 deploy --only firestore:rules --project imagine-up-app` (o Claude pode rodar). Só o `firestore.rules` muda, e o `match` novo repete o fechado do final: a ordem com as funções é livre, e não há índice para esperar. O `--only firestore:rules`, e não o `npm run rules:deploy`, para nada do Storage nem dos índices sair junto.
+4. **Silenciar os alertas** (31.5, passos 1 e 2), com 3 horas de janela, conferido logo depois.
+5. **As 68 funções em 5 lotes** (15, 15, 15, 15 e 8, os de 32.12, passo 5), pelo dono no PowerShell, com uns minutos entre um e o seguinte. Publicar todas, e não só as que mudaram: o código é compartilhado ("Publicar", passo 3). Nenhuma função é nova: não há `allUsers` para dar. Depois do lote 1 (com a `api`), a conferência no Git Bash: o `GET /api/health` com 200, o `GET /api/me/contact` sem login com 401 e o `DELETE /api/me/contact` com 405 e o `Allow: GET, PUT` (o roteador vem antes do login: a `api` de antes responderia 404 `not_found` aos dois). Os lotes seguintes esperam essa conferência.
+6. **Conferir** ("Publicar", passo 6): o `functions:list` com as 68, todas com a data do dia; o `node scripts/check-public-functions.mjs` com as 58 chamáveis, nenhuma barrada; o 401 da `api`, o 404 `not_found` e os logs do `rankingTick`. Depois, o fim do silenciamento (31.5, passo 3).
+7. **EAS Update do canal preview** (`npm run update:preview`, com o ok do dono), com o fingerprint igual a `310056fd840b5459416c9926e46846b8c208aa76` (`npx --no-install expo-updates fingerprint:generate --platform android`). No aparelho com o APK: abrir, fechar e abrir de novo. Antes deste passo, o app de antes resgata sem o número (decisão 9).
+8. **Painel:** o merge do PR do `imagineup-admin` (squash, pelo dono), depois do passo 6, e a publicação dele na Vercel pela `main`. Antes, o "Ver contatos" não mostra o WhatsApp (decisão 10).
+9. **Conferir em produção**, com uma conta de teste do dono (a pergunta 13 de 29.15 segue sem resposta): um resgate com o número, o "Ver contatos" com o link que abre a conversa, e o número de novo na confirmação seguinte. O resgate de teste é recusado pela equipe depois, com a vaga de volta.
+10. **Instruções das recompensas:** as recompensas de verdade cujas instruções dizem que a equipe fala "pelo e-mail da sua conta" são revistas pela equipe no painel (Recompensas, Editar), para falar do WhatsApp. É texto do painel, sem deploy.
+11. **Registrar** como foi, aqui e em 26.21, e a linha datada no Andamento da UP-66 no Notion.
+
+### 35.11 Perguntas
+
+**Para o dono ou a cliente** (o código segue a proposta até a resposta):
+
+1. **O fã com número de fora do Brasil.** Hoje ele não resgata pelo app novo (decisão 3). Proposta: aceitar, porque o público é do Brasil, e a equipe atende pelo e-mail quem pedir. Alternativa: um campo internacional (o país e o número), que muda a máscara, a conferência e o link.
+2. **O WhatsApp num fixo (o WhatsApp Business).** Recusado hoje (decisão 3). Proposta: manter, porque é raro para um fã e o 9 pega o erro do número antigo.
+3. **Apagar o número sem excluir a conta.** O `PUT /me/contact` com `null` já apaga, mas nenhuma tela o chama até a seção 34 (a tela "WhatsApp para a equipe"). Proposta: até lá, o pedido vai ao e-mail de atendimento, como os pedidos de dados (seção 32), e a equipe apaga pelo console; ou uma linha nos Ajustes já agora, que é um bloco pequeno de app, sem servidor novo.
+4. **A política de privacidade** (UP-45): o rascunho fala do telefone "quando uma recompensa exige entrega ou contato". Proposta de texto para a cliente: o WhatsApp é pedido em todo resgate, para a equipe combinar a entrega; só a equipe vê; fica enquanto a conta existir, trocado a cada resgate, e sai com a exclusão da conta. A seção 34 acrescenta o fã-clube às finalidades (34.16, item 5).
+5. **A janela do contato depois da entrega** (a pergunta 8 de 25.15, que valia para o e-mail): o WhatsApp segue a mesma regra, só nos pedidos abertos.
+
+### 35.12 Coordenação com a seção 34
+
+A 34 (PR #33, na `main` desde `0baa4d7`, só o desenho) desenhou o contato do fã e disse que, se a UP-66 saísse antes, o documento e as rotas nasceriam nela (34.17). O que nasce aqui e o que fica para a 34:
+
+- **Nasce aqui:** o documento `users/{uid}/contact/main` com os campos de 34.4 (o resgate grava `source: 'store'`, o `PUT`, `'app'`), o módulo `functions/src/fan-contact/` com o `parseWhatsapp` e o `writeFanContact`, o `GET` e o `PUT /me/contact` (a 45ª e a 46ª rotas, no contrato de 34.3) com o `fetchContact`, o `updateContact`, o `useMyContactQuery` e o `useUpdateContactMutation` do `profile`, o `match` fechado nas regras, a fonte `users.contact` na `FAN_DATA_SOURCES` (a 34 contava 11 fontes novas com ela; ficam 10) e o "Ver contatos" com o WhatsApp em todo pedido aberto.
+- **Fica para a 34:** a recusa do `null` no `PUT /me/contact` com o fã-clube ativo ou pausado (`contact_required`), a `API_ROUTES` de 46 a 64 (as 18 rotas que faltam da 34), a gravação da candidatura com `source: 'fanclub'` (pelo `writeFanContact`), a leitura da regra para quem edita Fã-clubes, o Instagram nos pedidos de prêmio e a tela "WhatsApp para a equipe".
+- **O que a 34 ajusta no texto quando for construída:** o `parseWhatsapp` é o desta seção (decisão 3: o celular brasileiro, sem o fixo e sem outro país), e não o "de 8 a 15 dígitos com o `+`" de 34.1, decisão 14; o "nada fica com a UP-66" sobre a seção Fãs (34.6) está decidido na decisão 7 (a seção Fãs não lê).
+
+### 35.13 Armadilhas
+
+- **O número não vai ao pedido.** O `redemptions/{código}` é lido pelo Leitor de Recompensas: qualquer cópia do número ali passaria por ele. Quem precisa do número lê o contato, pelo servidor.
+- **A tentativa aberta repete o corpo inteiro.** O número entra no `fingerprint` da chave: trocar o número com a tentativa aberta daria 422, lido como "seu resgate anterior já foi registrado". Por isso o campo trava com a tentativa aberta.
+- **O app de antes não manda o campo.** O servidor nunca pode passar a recusar o corpo sem o `whatsapp` sem antes medir quem ainda resgata sem ele: o APK interno pode ficar dias sem abrir o update.
+- **O `GET /me/contact` não vai para o disco.** O `meta: { persist: false }` na consulta é a garantia de que o número não fica no cache gravado no aparelho; a loja (`GET /rewards`) vai para o disco e não pode carregar o número.
+- **O link do `wa.me` fica no histórico do navegador.** O painel não guarda o número, mas o navegador guarda o endereço aberto, como qualquer link. A equipe usa o painel em aparelho de trabalho, com a sessão dela.
+- **A conferência mora em três lugares.** O `parseWhatsapp` do servidor e o do app, com a mesma tabela de testes, e o `isWhatsapp` do painel: mudou a regra (um DDD novo da Anatel, o número de fora), mude os três.
+- **O `merge` no contato.** Sem ele, o resgate apagaria o campo que a 34 acrescentar ao documento.
+
+### 35.14 O que o código fez e como foi conferido
+
+- **Servidor:** `npm --prefix functions run typecheck`, os testes puros (`npm --prefix functions test`), o `npm run test:functions` nos emuladores e o `npm run test:rules`.
+- **App:** `npm run check` (os tipos, o lint e os testes do Jest).
+- **Painel:** `npm run lint`, `npm run typecheck`, `npm test` e `npm run build`.
+- **Revisão:** antes dos PRs, uma revisão independente do diff de cada repositório, com um verificador para cada achado. No app e no servidor, 11 achados, todos sustentados e aplicados: a `main` nova com a seção 34; o foco do campo depois da recusa do servidor; a frase da trava durante o primeiro envio; a máscara com o DDD 55; o contato fora do disco quando nasce pelo `setQueryData`, e não gravado depois da saída; a cópia da resposta do `PUT` na `idempotency` (na nota, decisões 8 e 12); o teste da restauração com o contato; o teste da `api` de antes, que esperava o 404; o sucesso com a `api` de antes (na nota, decisão 10); a regra do campo na dica; e frases desta seção. No painel, 5: o número que cortava na coluna estreita, a conta sem e-mail tratada como excluída, o código fora do formato que derrubaria o link e dois testes que não provavam o que diziam.
 
 ## Armadilhas
 

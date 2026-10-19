@@ -323,17 +323,40 @@ export async function seedCamilaRedemptions(
  * Os pedidos abertos de outros fãs (bloco 11, 26.13): as contas rank-01 a
  * rank-04, as que têm saldo para tanto, pedem os ingressos hoje, com o código
  * fixo de cada uma, para a aba Pedidos do painel ter o que aprovar, entregar,
- * recusar e mostrar os contatos sem gastar os pedidos da Camila.
+ * recusar e mostrar os contatos sem gastar os pedidos da Camila. Desde a
+ * seção 35, com um WhatsApp de teste cada (o "Ver contatos" com o link); os
+ * pedidos da Camila ficam sem, como os de antes dela.
  */
 export const SEED_OPEN_REDEMPTIONS: readonly {
   email: string;
   code: string;
   minutesAgo: number;
+  whatsapp: string;
 }[] = [
-  { email: 'rank-01@teste.imagineup', code: 'UP-RK2TQX', minutesAgo: 180 },
-  { email: 'rank-02@teste.imagineup', code: 'UP-RK3MZB', minutesAgo: 150 },
-  { email: 'rank-03@teste.imagineup', code: 'UP-RK4HDW', minutesAgo: 120 },
-  { email: 'rank-04@teste.imagineup', code: 'UP-RK5JVC', minutesAgo: 90 },
+  {
+    email: 'rank-01@teste.imagineup',
+    code: 'UP-RK2TQX',
+    minutesAgo: 180,
+    whatsapp: '+5575900000001',
+  },
+  {
+    email: 'rank-02@teste.imagineup',
+    code: 'UP-RK3MZB',
+    minutesAgo: 150,
+    whatsapp: '+5575900000002',
+  },
+  {
+    email: 'rank-03@teste.imagineup',
+    code: 'UP-RK4HDW',
+    minutesAgo: 120,
+    whatsapp: '+5575900000003',
+  },
+  {
+    email: 'rank-04@teste.imagineup',
+    code: 'UP-RK5JVC',
+    minutesAgo: 90,
+    whatsapp: '+5575900000004',
+  },
 ];
 
 /** A recompensa dos pedidos abertos: o par de ingressos (sem estoque, limite de 2). */
@@ -360,7 +383,12 @@ export async function seedOpenRedemptions(
     const outcome = await runRedeemReward(
       db,
       uid,
-      { rewardId: SEED_OPEN_REDEMPTION_REWARD, expectedCost: cost, code: item.code },
+      {
+        rewardId: SEED_OPEN_REDEMPTION_REWARD,
+        expectedCost: cost,
+        code: item.code,
+        whatsapp: item.whatsapp,
+      },
       { now: now - item.minutesAgo * 60_000, config, actor: SEED_ACTOR },
     );
     if (outcome.result) redeemed += 1;

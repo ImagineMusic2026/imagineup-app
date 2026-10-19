@@ -116,6 +116,17 @@ export interface EditableProfile {
 }
 
 /**
+ * O contato do fã (`GET /me/contact`, seção 35, espelho do `FanContact` das
+ * funções): o WhatsApp guardado no último resgate, em E.164
+ * (`+5575991234567`), ou `null`. Só o próprio fã recebe. A confirmação do
+ * resgate preenche o campo com ele; com a seção 34, a candidatura do
+ * fã-clube também.
+ */
+export interface FanContact {
+  whatsapp: string | null;
+}
+
+/**
  * O perfil público de outro fã (`GET /fans/:fanId`, espelho do
  * `FanPublicProfile` das funções). Fechado (`restricted`: conta privada,
  * suspensa ou que bloqueou quem vê, sem dizer qual): só a foto, o nome e o @,

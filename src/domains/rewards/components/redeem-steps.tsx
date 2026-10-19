@@ -1,6 +1,12 @@
 import { Check, CircleAlert, Info, WifiOff, type LucideIcon } from 'lucide-react-native';
 import type { Ref, RefObject } from 'react';
-import { StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
+import {
+  StyleSheet,
+  View,
+  type TextInput as NativeTextInput,
+  type StyleProp,
+  type ViewStyle,
+} from 'react-native';
 
 import { Button } from '@/components/button';
 import { Card } from '@/components/card';
@@ -9,11 +15,13 @@ import { Pill } from '@/components/pill';
 import { SectionLabel } from '@/components/section-label';
 import { Skeleton, SkeletonGroup } from '@/components/skeleton';
 import { Text } from '@/components/text';
+import { TextInput } from '@/components/text-input';
 import { TextLink } from '@/components/text-link';
 import { SuspensionContact } from '@/domains/profile';
 import { t } from '@/i18n';
 import { colors, layout, radii, spacing, typography } from '@/theme';
 import { formatNumber, formatPointsSpoken } from '@/utils/number';
+import { whatsappFieldValue } from '@/utils/whatsapp';
 
 import {
   isOpenRedemption,
@@ -299,6 +307,56 @@ function DetailsButtons({
   }
 }
 
+/** O campo do WhatsApp da confirmação (seção 35): o estado mora na tela do resgate. */
+export interface WhatsappFieldProps {
+  /** O texto com a máscara ("(75) 99123-4567"), sem o `+55`, que fica fixo na frente. */
+  value: string;
+  onChange: (text: string) => void;
+  /** O erro do campo (vazio, fora do formato, ou a recusa do servidor), ou `undefined`. */
+  error: string | undefined;
+  /**
+   * A tentativa aberta (a que está indo, ou uma falha sem resposta clara) já
+   * mandou um número: o campo mostra o dela, sem edição, porque a próxima
+   * confirmação repete o mesmo pedido.
+   */
+  locked: boolean;
+  /** O resgate está indo: a frase da trava só aparece depois, com a tentativa parada. */
+  pending: boolean;
+  inputRef: Ref<NativeTextInput>;
+}
+
+/**
+ * O WhatsApp do fã, preenchido com o número guardado e editável, com o `+55`
+ * fixo na frente e, embaixo, a regra e a finalidade: "Celular com DDD e o 9 na
+ * frente, para a equipe falar com você sobre a entrega." O teclado é o do
+ * telefone, e a máscara se monta a cada dígito.
+ */
+function WhatsappField({ value, onChange, error, locked, pending, inputRef }: WhatsappFieldProps) {
+  return (
+    <View style={styles.block}>
+      <TextInput
+        ref={inputRef}
+        label={t('rewards.confirm.whatsapp.label')}
+        prefix={t('rewards.confirm.whatsapp.prefix')}
+        value={value}
+        onChangeText={onChange}
+        placeholder={t('rewards.confirm.whatsapp.placeholder')}
+        keyboardType="phone-pad"
+        textContentType="telephoneNumber"
+        autoComplete="tel"
+        returnKeyType="done"
+        editable={!locked}
+        error={error}
+        hint={
+          locked && !pending
+            ? t('rewards.confirm.whatsapp.locked')
+            : t('rewards.confirm.whatsapp.hint')
+        }
+      />
+    </View>
+  );
+}
+
 export interface ConfirmBodyProps {
   reward: Reward;
   /**
@@ -309,18 +367,21 @@ export interface ConfirmBodyProps {
   cost: number;
   balance: number | null;
   headingRef: HeadingRef;
+  whatsapp: WhatsappFieldProps;
 }
 
 /**
- * A confirmação: quanto sai do saldo, como ele fica e que a entrega é com a
- * equipe. O "depois" só aparece quando o saldo cobre (se ele deixar de cobrir,
- * a tela volta ao detalhe).
+ * A confirmação: quanto sai do saldo, como ele fica, o WhatsApp para a equipe
+ * combinar a entrega (seção 35) e que a entrega é com a equipe. O "depois" só
+ * aparece quando o saldo cobre (se ele deixar de cobrir, a tela volta ao
+ * detalhe).
  */
 export function ConfirmBody({
   reward,
   cost: confirmedCost,
   balance,
   headingRef,
+  whatsapp,
 }: ConfirmBodyProps) {
   const cost: SummaryLine = {
     label: t('rewards.summary.cost'),
@@ -348,6 +409,7 @@ export function ConfirmBody({
         })}
       </Text>
       <RewardSummary lines={lines} style={styles.block} />
+      <WhatsappField {...whatsapp} />
       <Text variant="bodyXs" color={colors.textTertiary} style={styles.paragraph}>
         {t('rewards.confirm.note')}
       </Text>
@@ -410,16 +472,20 @@ export function ConfirmActions({
 export interface SuccessBodyProps {
   reward: Reward;
   result: RedeemResult;
+  /** O WhatsApp que foi com o pedido (E.164), para o fã conferir. */
+  whatsapp: string | null;
   headingRef: HeadingRef;
 }
 
 /**
  * Resgate confirmado: o código para mostrar na retirada, com o status do
  * pedido (o "Solicitado em" do card de "Seus resgates", um foco só), e as
- * instruções do servidor. O título leva o saldo novo para o leitor de tela,
- * que chega nele pelo foco (um anúncio à parte seria cortado por esse foco).
+ * instruções do servidor, com o WhatsApp que foi junto (seção 35), para o fã
+ * conferir. O título leva o saldo novo para o leitor de tela, que chega nele
+ * pelo foco (um anúncio à parte seria cortado por esse foco).
  */
-export function SuccessBody({ reward, result, headingRef }: SuccessBodyProps) {
+export function SuccessBody({ reward, result, whatsapp, headingRef }: SuccessBodyProps) {
+  const number = whatsappFieldValue(whatsapp);
   // O pedido nasce solicitado, no instante do resgate (25.2).
   const status: Pick<RewardRedemption, 'status' | 'statusAt'> = {
     status: result.status ?? 'requested',
@@ -472,6 +538,11 @@ export function SuccessBody({ reward, result, headingRef }: SuccessBodyProps) {
       <Text variant="body" color={colors.textBody}>
         {result.instructions}
       </Text>
+      {number ? (
+        <Text variant="bodySmall" color={colors.textSecondary} style={styles.paragraph}>
+          {t('rewards.success.whatsapp', { number })}
+        </Text>
+      ) : null}
       <Text variant="bodyXs" color={colors.textTertiary} style={styles.paragraph}>
         {t('rewards.success.tracking')}
       </Text>

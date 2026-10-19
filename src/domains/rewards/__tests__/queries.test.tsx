@@ -198,6 +198,9 @@ describe('o resgate (useRedeemRewardMutation)', () => {
     ];
   const costOf = (call: number) =>
     (request.mock.calls[call]![0] as { data: { expectedCost: number } }).data.expectedCost;
+  const whatsappOf = (call: number) =>
+    (request.mock.calls[call]![0] as { data: { whatsapp: string } }).data.whatsapp;
+  const WHATSAPP = '+5575991234567';
 
   /**
    * Um toque em confirmar, até o fim de verdade: os callbacks do toque rodam
@@ -207,9 +210,10 @@ describe('o resgate (useRedeemRewardMutation)', () => {
   async function attempt(
     hook: { current: ReturnType<typeof useRedeemRewardMutation> },
     cost: number,
+    whatsapp: string = WHATSAPP,
   ) {
     const settled = jest.fn();
-    act(() => hook.current.redeem(cost, { onSuccess: settled, onError: settled }));
+    act(() => hook.current.redeem(cost, whatsapp, { onSuccess: settled, onError: settled }));
     await waitFor(() => expect(settled).toHaveBeenCalledTimes(1));
     await act(() => new Promise((resolve) => setTimeout(resolve, 0)));
     expect(hook.current.isPending).toBe(false);
@@ -237,6 +241,48 @@ describe('o resgate (useRedeemRewardMutation)', () => {
     expect(invalidated(profileKeys.achievements())).toBe(false);
     expect(invalidated(profileKeys.invite())).toBe(false);
     expect(costOf(0)).toBe(15_000);
+    // O número mandado entra no contato em cache: a próxima confirmação vem preenchida.
+    expect(whatsappOf(0)).toBe(WHATSAPP);
+    expect(client.getQueryData(profileKeys.contact())).toEqual({ whatsapp: WHATSAPP });
+    expect(result.current.attemptWhatsapp()).toBeNull();
+  });
+
+  it('o número recusado pelo servidor (seção 35) é definitivo: nada busca de novo, e a próxima leva chave nova', async () => {
+    request
+      .mockRejectedValueOnce(
+        new ApiError('validation', 'x', 400, REDEEM_ERROR_CODES.invalidRequest, {
+          field: 'whatsapp',
+        }),
+      )
+      .mockResolvedValueOnce({ data: RESULT });
+    client.setQueryData(profileKeys.contact(), { whatsapp: null });
+    const invalidate = jest.spyOn(client, 'invalidateQueries');
+    const { result } = renderHook(() => useRedeemRewardMutation('camisa'), { wrapper });
+
+    await attempt(result, 15_000);
+    expect(haptics.trigger).toHaveBeenCalledWith('error');
+    expect(invalidate).not.toHaveBeenCalled();
+    expect(result.current.attemptWhatsapp()).toBeNull();
+    expect(client.getQueryData(profileKeys.contact())).toEqual({ whatsapp: null });
+
+    await attempt(result, 15_000, '+5511987654321');
+    expect(keyOf(1)).not.toBe(keyOf(0));
+    expect(whatsappOf(1)).toBe('+5511987654321');
+  });
+
+  it('depois de uma falha incerta, a tentativa guarda o número: o toque seguinte repete o dela', async () => {
+    request
+      .mockRejectedValueOnce(new ApiError('network', 'sem rede'))
+      .mockResolvedValueOnce({ data: RESULT });
+    const { result } = renderHook(() => useRedeemRewardMutation('camisa'), { wrapper });
+
+    await attempt(result, 15_000, WHATSAPP);
+    expect(result.current.attemptWhatsapp()).toBe(WHATSAPP);
+    // Outro número no campo não muda o corpo: a mesma chave com outro número seria 422.
+    await attempt(result, 15_000, '+5511987654321');
+    expect(keyOf(1)).toBe(keyOf(0));
+    expect(whatsappOf(1)).toBe(WHATSAPP);
+    expect(result.current.attemptWhatsapp()).toBeNull();
   });
 
   it.each([
@@ -372,7 +418,7 @@ describe('o resgate (useRedeemRewardMutation)', () => {
         .mockResolvedValueOnce({ data: RESULT });
       const { result } = renderHook(() => useRedeemRewardMutation('camisa'), { wrapper });
       const settled = jest.fn();
-      act(() => result.current.redeem(15_000, { onError: settled }));
+      act(() => result.current.redeem(15_000, WHATSAPP, { onError: settled }));
 
       const shop = withOrder('UP-HG56TT');
       expect(result.current.attemptRecorded(shirt(shop))).toBe(false);

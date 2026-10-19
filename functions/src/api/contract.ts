@@ -640,3 +640,11 @@ export type RedeemResult = {
   redeemedAt: string;
   status: 'requested';
 };
+
+/**
+ * `FanContact` do app (`GET` e `PUT /me/contact`, seção 35): o WhatsApp que o
+ * fã guardou no último resgate ou trocou pelo `PUT` (e, com a seção 34, na
+ * candidatura), em E.164 (`+5575991234567`), ou null. Só o próprio fã recebe;
+ * a equipe vê pelo `getRedemptionContacts`.
+ */
+export type FanContact = { whatsapp: string | null };

@@ -178,6 +178,15 @@ service cloud.firestore {
         allow read: if canSeeSection('fans');
         allow write: if false;
       }
+
+      // O contato do fã (o WhatsApp, docs/arquitetura-api.md, seção 35): só o
+      // servidor lê e grava. O fã recebe o próprio pela API (GET /me/contact),
+      // e a equipe com Recompensas, pela callable getRedemptionContacts, nos
+      // pedidos abertos. Nem a seção fans lê: o número fica com quem entrega.
+      // Repete o fechado do match final de propósito, como o blockLists.
+      match /contact/{docId} {
+        allow read, write: if false;
+      }
     }
 
     // Pelos grupos de coleção (quem vai a um show, na seção Fãs). Valem para

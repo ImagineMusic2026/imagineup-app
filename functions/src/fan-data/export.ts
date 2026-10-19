@@ -201,10 +201,17 @@ async function readStandings(db: Firestore, uid: string): Promise<ExportDoc[]> {
   );
 }
 
-/** O documento `<collection>/{uid}` de uma fonte lida pelo documento. */
+/**
+ * O documento de uma fonte lida pelo documento: `<collection>/{uid}`, ou o
+ * único da subcoleção (`<parent>/{uid}/<name>/<id>`, o contato do fã).
+ */
 function docRef(db: Firestore, source: FanDataSource, uid: string): DocumentReference {
-  if (source.read.kind !== 'doc') throw new Error(`A fonte ${source.id} não é um documento.`);
-  return db.collection(source.read.collection).doc(uid);
+  const { read } = source;
+  if (read.kind === 'doc') return db.collection(read.collection).doc(uid);
+  if (read.kind === 'subdoc') {
+    return db.collection(read.parent).doc(uid).collection(read.name).doc(read.id);
+  }
+  throw new Error(`A fonte ${source.id} não é um documento.`);
 }
 
 /**
@@ -215,7 +222,9 @@ function docRef(db: Firestore, source: FanDataSource, uid: string): DocumentRefe
  */
 async function readFirstKeys(db: Firestore, uid: string, user: UserRecord): Promise<ExportRecord> {
   const sources = FAN_DATA_FIRST_KEYS.map((key) => ({ key, source: firstKeySource(key) }));
-  const single = sources.filter(({ source }) => source.read.kind === 'doc');
+  const single = sources.filter(
+    ({ source }) => source.read.kind === 'doc' || source.read.kind === 'subdoc',
+  );
   const snaps = await db.getAll(...single.map(({ source }) => docRef(db, source, uid)));
   const docs = new Map<string, DocumentSnapshot>(
     single.map(({ key }, index) => [key, snaps[index]!]),
@@ -227,7 +236,8 @@ async function readFirstKeys(db: Firestore, uid: string, user: UserRecord): Prom
       switch (read.kind) {
         case 'auth':
           return exportAccount(user);
-        case 'doc': {
+        case 'doc':
+        case 'subdoc': {
           const snap = docs.get(key);
           return snap?.exists ? exportFields(source, snap.data()!) : null;
         }
