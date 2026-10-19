@@ -2,6 +2,7 @@ import { FieldValue, type Firestore } from 'firebase-admin/firestore';
 
 import { leaveAllCentrals } from './centrals/service';
 import { FILTERED_NAME, isBlockedHandle, isBlockedText } from './content-filter';
+import { removeFanClubData } from './fan-clubs/service';
 import type { FanPhotoFiles } from './fan-profile/files';
 import { isAutomaticUsername } from './fan-profile/model';
 import { fanSearchKeys } from './fan-profile/search';
@@ -175,7 +176,9 @@ export async function removeSeasonStandings(db: Firestore, uid: string): Promise
  * bloco 10, os pedidos da loja (cancelFanRedemptions, 25.11), depois do
  * engajamento do mural e antes do recursiveDelete: os solicitados e aprovados
  * viram `canceled`, com a vaga de volta e sem devolver pontos, e todo pedido
- * do fã perde o uid, a cópia do nome e do @ e o motivo da recusa. Pode rodar
+ * do fã perde o uid, a cópia do nome e do @ e o motivo da recusa. Desde o
+ * fã-clube (seção 34, 34.7), antes dos pedidos, a candidatura e o privado
+ * saem, e o fã-clube do gestor vira lápide (removeFanClubData). Pode rodar
  * mais de uma vez. Dado novo do fã entra aqui e na `FAN_DATA_SOURCES`
  * (fan-data/sources.ts), a lista que a exportação dos pedidos de dados
  * percorre, com o que esta função faz com cada fonte; um teste de emulador
@@ -225,6 +228,7 @@ export async function deleteUserData(
   await removeInviteData(db, uid);
   await leaveAllCentrals(db, uid);
   await removeFanEngagement(db, uid);
+  await removeFanClubData(db, uid);
   await cancelFanRedemptions(db, uid);
   await db.recursiveDelete(profile);
   await referralRef(db, uid).delete();

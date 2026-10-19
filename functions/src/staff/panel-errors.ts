@@ -13,7 +13,8 @@ import type { CallerAuth } from './service';
  * (28.6), `clearFanProfileText`, a das exigências das lojas (29.6),
  * `resolveProfileReport` (com os motivos próprios dela no
  * `moderationPanelError`), e as dos pedidos de dados, só de admin (32.2),
- * `exportFanData` e `deleteFanAccount`. A mensagem em pt-BR vai junto e pode
+ * `exportFanData` e `deleteFanAccount`, e a do fã-clube gerido pelo fã
+ * (seção 34, 34.3), `decideFanClub`. A mensagem em pt-BR vai junto e pode
  * ser mostrada como está. Os de acesso (`unauthenticated`, `not-staff`,
  * `no-section`) vêm do `readPanelActor`, e o `admin-only`, do `readPanelAdmin`.
  */
@@ -34,7 +35,13 @@ export type PanelErrorReason =
   | 'email-mismatch'
   | 'fan-is-staff'
   | 'export-daily-limit'
-  | 'deletion-daily-limit';
+  | 'deletion-daily-limit'
+  | 'fan-club-not-found'
+  | 'application-not-found'
+  | 'stale-decision'
+  | 'artist-not-open'
+  | 'feature-limit'
+  | 'owner-suspended';
 
 const ERRORS: Record<PanelErrorReason, [FunctionsErrorCode, string]> = {
   'invalid-request': ['invalid-argument', 'Pedido inválido.'],
@@ -78,6 +85,16 @@ const ERRORS: Record<PanelErrorReason, [FunctionsErrorCode, string]> = {
   'deletion-daily-limit': [
     'resource-exhausted',
     `Você chegou ao limite de ${ACCOUNT_DELETIONS_DAILY_MAX} exclusões de conta hoje.`,
+  ],
+  // O fã-clube gerido pelo fã (34.3).
+  'fan-club-not-found': ['not-found', 'Esse fã-clube não existe mais.'],
+  'application-not-found': ['not-found', 'Essa candidatura não existe mais.'],
+  'stale-decision': ['failed-precondition', 'Isso mudou desde que a tela abriu. Abra de novo.'],
+  'artist-not-open': ['failed-precondition', 'O artista está fora do ar ou não aceita fã-clubes.'],
+  'feature-limit': ['failed-precondition', 'Este artista já tem 3 fã-clubes em destaque.'],
+  'owner-suspended': [
+    'failed-precondition',
+    'O gestor está suspenso. Tire a suspensão antes de reativar o fã-clube.',
   ],
 };
 

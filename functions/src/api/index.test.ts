@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { AgendaError } from '../agenda/model';
 import { CentralError } from '../centrals/model';
+import { FAN_CLUB_PRIZE_NOTICE, FanClubError } from '../fan-clubs/model';
 import { InviteError } from '../invites/model';
 import { ProfileEditError } from '../fan-profile/model';
 import { DailyCapError, ModerationError } from '../moderation/model';
@@ -1409,6 +1410,8 @@ describe('suspensão do fã (bloco 11)', () => {
         'DELETE /me/photo',
         'PUT /me/blocks/:fanId',
         'DELETE /me/blocks/:fanId',
+        // O fã-clube (seção 34): desistir da candidatura é de desfazer.
+        'DELETE /me/fan-club/application',
       ].sort(),
     );
     // Toda rota que lê ignora a trava (ela mora no runIdempotent).
@@ -1783,5 +1786,169 @@ describe('rota de saúde: o GET /health (32.2)', () => {
 
   it('fica fora da API_ROUTES: nenhuma rota da tabela tem o caminho /health', () => {
     expect(API_ROUTES.filter((route) => route.pattern.startsWith('/health'))).toEqual([]);
+  });
+});
+
+describe('fã-clube gerido pelo fã (seção 34)', () => {
+  const thrower = (error: unknown): ApiRoute[] => [
+    {
+      method: 'GET',
+      pattern: '/teste/fa-clube',
+      writes: false,
+      handle: async () => {
+        throw error;
+      },
+    },
+  ];
+
+  it('o FanClubError vira o 400 fan_club_invalid e o 409 fan_club_refused, com os detalhes', async () => {
+    const invalid = await call(
+      request('GET', '/teste/fa-clube'),
+      thrower(new FanClubError('fan_club_invalid', { field: 'name', reason: 'official' })),
+    );
+    expect(invalid).toMatchObject({
+      status: 400,
+      body: {
+        code: 'fan_club_invalid',
+        message: 'Campo fora do formato. Confira e tente de novo.',
+        details: { field: 'name', reason: 'official' },
+      },
+    });
+    const refused = await call(
+      request('GET', '/teste/fa-clube'),
+      thrower(
+        new FanClubError('fan_club_refused', {
+          reason: 'cooldown',
+          canReapplyAt: '2026-11-04T15:00:00.000Z',
+        }),
+      ),
+    );
+    expect(refused).toMatchObject({
+      status: 409,
+      body: {
+        code: 'fan_club_refused',
+        message: 'Isso não pode ser feito no fã-clube agora.',
+        details: { reason: 'cooldown', canReapplyAt: '2026-11-04T15:00:00.000Z' },
+      },
+    });
+    expect(logger.error).not.toHaveBeenCalled();
+  });
+
+  it('o teto das candidaturas: 429 com a ação club_apply e o Retry-After', async () => {
+    const sent = await call(
+      request('GET', '/teste/fa-clube'),
+      thrower(new DailyCapError('club_apply', 3, 3600)),
+    );
+    expect(sent).toMatchObject({
+      status: 429,
+      headers: { 'Retry-After': '3600' },
+      body: { code: 'too_many_requests', details: { limit: 3, action: 'club_apply' } },
+    });
+  });
+
+  it('GET /me/fan-club sem candidatura: o programa e nada mais, com uma leitura', async () => {
+    const read: string[] = [];
+    const db = {
+      collection: (name: string) => ({ doc: (id: string) => ({ path: name + '/' + id }) }),
+      getAll: async (...refs: { path: string }[]) => {
+        read.push(...refs.map((ref) => ref.path));
+        return refs.map(() => ({ exists: false, data: () => undefined }));
+      },
+    } as unknown as Firestore;
+    const sent = await call(request('GET', '/me/fan-club'), API_ROUTES, db);
+    expect(sent).toMatchObject({
+      status: 200,
+      body: {
+        open: true,
+        rulesUrl: null,
+        rulesVersion: 'termos-2026-10',
+        notice: FAN_CLUB_PRIZE_NOTICE,
+        application: null,
+        club: null,
+      },
+    });
+    expect(read).toEqual(['fanClubApplications/uid-camila']);
+  });
+
+  it('POST /me/fan-club/application confere o corpo antes de abrir a transação (sem leitura)', async () => {
+    const key = { 'Idempotency-Key': 'chave-fa-clube-0001' };
+    const valid = {
+      artistId: 'nettobrito',
+      name: 'Netto de Coração',
+      instagram: 'camila.teste.up',
+      pitch: 'Divulgo o artista nos stories e no grupo dos fãs da cidade.',
+      adult: true,
+      rulesVersion: 'termos-2026-10',
+    };
+    const cases: [unknown, Record<string, unknown>][] = [
+      [undefined, { code: 'invalid_request', details: { field: 'body' } }],
+      [
+        { ...valid, foto: 1 },
+        { code: 'invalid_request', details: { field: 'foto' } },
+      ],
+      [
+        { ...valid, artistId: 'Netto' },
+        { code: 'invalid_request', details: { field: 'artistId' } },
+      ],
+      [
+        { ...valid, adult: 'sim' },
+        { code: 'invalid_request', details: { field: 'adult' } },
+      ],
+      [
+        { ...valid, name: 'Netto Oficial' },
+        { code: 'fan_club_invalid', details: { field: 'name', reason: 'official' } },
+      ],
+      [
+        { ...valid, name: 'Netto Pepino' },
+        { code: 'fan_club_invalid', details: { field: 'name', reason: 'not_allowed' } },
+      ],
+      [
+        { ...valid, pitch: 'curto' },
+        { code: 'fan_club_invalid', details: { field: 'pitch', reason: 'format' } },
+      ],
+      [
+        { ...valid, instagram: null },
+        { code: 'fan_club_invalid', details: { field: 'socials', reason: 'format' } },
+      ],
+      [
+        { ...valid, adult: false },
+        { code: 'fan_club_invalid', details: { field: 'adult', reason: 'format' } },
+      ],
+      [
+        { ...valid, rulesVersion: 'regulamento-2027' },
+        { code: 'fan_club_invalid', details: { field: 'rulesVersion', reason: 'format' } },
+      ],
+    ];
+    for (const [body, expected] of cases) {
+      const sent = await call(
+        request('POST', '/me/fan-club/application', { body, headers: key }),
+        API_ROUTES,
+        noReads,
+      );
+      expect(sent.status, JSON.stringify(body)).toBe(400);
+      expect(sent.body).toMatchObject(expected);
+    }
+    expect(logger.error).not.toHaveBeenCalled();
+  });
+
+  it('as que gravam exigem a Idempotency-Key; as de leitura, não', async () => {
+    for (const [method, path] of [
+      ['POST', '/me/fan-club/application'],
+      ['DELETE', '/me/fan-club/application'],
+    ] as const) {
+      const sent = await call(request(method, path, { body: {} }), API_ROUTES, noReads);
+      expect(sent.status).toBe(400);
+      expect(sent.body).toMatchObject({ code: 'idempotency_key_required' });
+    }
+    const routes = API_ROUTES.filter((route) => route.pattern.startsWith('/me/fan-club'));
+    expect(routes.map((route) => [route.method, route.pattern, route.writes])).toEqual([
+      ['GET', '/me/fan-club', false],
+      ['GET', '/me/fan-club/artists', false],
+      ['POST', '/me/fan-club/application', true],
+      ['DELETE', '/me/fan-club/application', true],
+    ]);
+    // Candidatar cria: o suspenso não manda (sem `allowSuspended`).
+    const apply = routes.find((route) => route.method === 'POST');
+    expect(apply && 'allowSuspended' in apply).toBe(false);
   });
 });

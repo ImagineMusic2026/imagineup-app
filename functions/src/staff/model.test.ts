@@ -45,6 +45,7 @@ describe('seções e papéis', () => {
       'ranking',
       'fans',
       'artists',
+      'fanClubs',
       'missions',
       'rewards',
       'moderation',

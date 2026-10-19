@@ -8,6 +8,7 @@ import { seedEvents } from '../src/agenda';
 import { seedCamilaCentrals, seedCentrals } from '../src/centrals';
 import { FILTER_ENTRIES } from '../src/content-filter/terms';
 import { dayKey, shiftDay } from '../src/day';
+import { SEED_CAMILA_FAN_CLUB, seedFanClubs } from '../src/fan-clubs';
 import {
   editableProfileOf,
   fanPhotoFiles,
@@ -72,7 +73,8 @@ import { localApi, signIn, useEmulators } from './support';
  * perfil novo (28.10), também os detalhes da tabela (bio, gênero, conta
  * privada e redes), no fim, antes dos números, como o script. Desde as
  * exigências das lojas (29.10), logo depois deles, o bloqueio da Camila e a
- * denúncia de perfil da Bia contra o Promo.
+ * denúncia de perfil da Bia contra o Promo. Desde o fã-clube (34.12, etapa 1
+ * de 34.14), em seguida, a Camila aprovada no Netto e o Nenho só com texto.
  */
 const env = useEmulators('painel-seed', ['api', 'createUserProfile']);
 const { db, bucket } = env;
@@ -177,6 +179,8 @@ async function seed(ranking: Map<string, string>): Promise<void> {
   }
   // As exigências das lojas (29.10), depois dos detalhes do perfil.
   await seedProfileModeration(db, (email) => uidOf(ranking, email), T0);
+  // O fã-clube (34.12, etapa 1 de 34.14): a Camila aprovada no Netto.
+  await seedFanClubs(db, 'camila', ACTOR, T0);
   await seedPanelStats(db, T0);
   await seedPanelClose(db, T0, quiet);
 }
@@ -198,6 +202,10 @@ async function dump(): Promise<Record<string, [string, DocumentData][]>> {
     'redemptions',
     'wallets',
     'config',
+    'artistPrivate',
+    'fanClubApplications',
+    'fanClubApplicationPrivate',
+    'fanClubs',
   ]) {
     out[name] = (await db.collection(name).get()).docs.map((doc) => [doc.id, doc.data()]);
   }
@@ -360,7 +368,16 @@ describe('o seed das telas do painel (26.13)', () => {
       expect(Array.isArray(entry.targets), entry.action as string).toBe(true);
     }
     expect(new Set(audit.map((entry) => entry.section))).toEqual(
-      new Set(['team', 'artists', 'missions', 'ranking', 'rewards', 'moderation', 'fans']),
+      new Set([
+        'team',
+        'artists',
+        'missions',
+        'ranking',
+        'rewards',
+        'moderation',
+        'fans',
+        'fanClubs',
+      ]),
     );
     expect(new Set(audit.map((entry) => entry.actorName))).toEqual(
       new Set([
@@ -384,6 +401,28 @@ describe('o seed das telas do painel (26.13)', () => {
       section: 'moderation',
       targets: expect.arrayContaining([`comment:${SEED_HIDDEN_SPAM_COMMENT}`, 'fan:spam']),
     });
+    // O fã-clube (34.12): a Camila gere o do Netto, aprovada pelo admin do seed;
+    // o Nenho só aceita texto, e o Netto fica com as caixas pelo padrão.
+    const application = (await read('fanClubApplications/camila'))!;
+    expect(application).toMatchObject({
+      status: 'approved',
+      artistId: 'nettobrito',
+      round: 1,
+      proposedName: SEED_CAMILA_FAN_CLUB.name,
+      decidedBy: { uid: SEED_STAFF_ADMIN.uid, name: SEED_STAFF_ADMIN.displayName },
+    });
+    expect(await read(`fanClubs/${application.clubId as string}`)).toMatchObject({
+      artistId: 'nettobrito',
+      ownerUid: 'camila',
+      name: SEED_CAMILA_FAN_CLUB.name,
+      status: 'active',
+    });
+    expect(await read('fanClubApplicationPrivate/camila')).toMatchObject({ pitch: null });
+    expect((await read('artistPrivate/nenho'))?.fanClubs).toEqual({ photosAllowed: false });
+    expect(await read('artistPrivate/nettobrito')).not.toHaveProperty('fanClubs');
+    expect(audit.filter((entry) => entry.action === 'fanClub.application.approved')).toHaveLength(
+      1,
+    );
     for (let index = 1; index <= 20; index += 1) {
       const id = `seed-audit-${String(index).padStart(2, '0')}`;
       const entry = (await read(`staffAudit/${id}`))!;

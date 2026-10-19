@@ -334,17 +334,19 @@ export function copiesDiffer(
 
 /**
  * A mudança do perfil põe tarefa na fila: o nome, a foto ou o caminho dela
- * mudaram. A cidade, o @, o `updatedAt` e, desde o perfil novo (seção 28), a
- * bio, o gênero, a conta privada e as redes sozinhos não (nenhuma cópia os
- * guarda); o caminho sozinho põe, porque a varredura da tarefa leva o envio
- * que falhou antes da troca.
+ * mudaram e, desde o fã-clube (seção 34, 34.5), o @, que o fã-clube e a
+ * candidatura copiam ("feito por @gestor"; os comentários não guardam o @). A
+ * cidade, o `updatedAt` e, desde o perfil novo (seção 28), a bio, o gênero, a
+ * conta privada e as redes sozinhos não (nenhuma cópia os guarda); o caminho
+ * sozinho põe, porque a varredura da tarefa leva o envio que falhou antes da
+ * troca.
  */
 export function profileSyncNeeded(
   before: Record<string, unknown> | undefined,
   after: Record<string, unknown> | undefined,
 ): boolean {
   if (!before || !after) return false;
-  return (['displayName', 'photoURL', 'photoPath'] as const).some(
+  return (['displayName', 'username', 'photoURL', 'photoPath'] as const).some(
     (field) => (before[field] ?? null) !== (after[field] ?? null),
   );
 }

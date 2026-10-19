@@ -640,3 +640,92 @@ export type RedeemResult = {
   redeemedAt: string;
   status: 'requested';
 };
+
+// --- Fã-clube gerido pelo fã (seção 34, 34.3) ---------------------------------------
+// O espelho no app (src/domains/fan-club/types.ts) chega na etapa 6 de 34.14:
+// até lá, nenhuma versão do app chama estas rotas.
+
+/** O status da candidatura. */
+export type FanClubApplicationStatus = 'pending' | 'approved' | 'rejected' | 'withdrawn';
+
+/** O motivo da recusa da candidatura pela equipe (o app mostra um texto fixo por código). */
+export type FanClubRejectReason =
+  'incomplete' | 'not_fit' | 'artist_limit' | 'image_rights' | 'rules' | 'other';
+
+/** Uma decisão da equipe na candidatura, para as rodadas. */
+export type FanClubApplicationHistoryItem = {
+  round: number;
+  decision: 'approved' | 'rejected';
+  reason: FanClubRejectReason | null;
+  /** ISO. */
+  at: string;
+};
+
+/** A candidatura do fã, no `GET /me/fan-club`. */
+export type FanClubApplicationView = {
+  status: FanClubApplicationStatus;
+  artistId: string;
+  artistName: string;
+  proposedName: string;
+  /** De 1 a 3; 0 depois do encerramento a pedido. */
+  round: number;
+  /** ISO. */
+  submittedAt: string | null;
+  rejectReason: FanClubRejectReason | null;
+  /** ISO, ou null. */
+  canReapplyAt: string | null;
+  /** O fã pode mandar a candidatura de novo agora (false para sempre com o encerramento pela equipe). */
+  canApply: boolean;
+  history: FanClubApplicationHistoryItem[];
+};
+
+/** Por que o fã-clube não aparece para os fãs ou o gestor não publica. */
+export type FanClubUnavailableReason =
+  'paused' | 'artist_off' | 'program_closed' | 'not_member' | 'closed';
+
+/** O fã-clube do gestor, no `GET /me/fan-club`. */
+export type MyFanClubClub = {
+  id: string;
+  name: string;
+  artistId: string;
+  artistName: string;
+  status: 'active' | 'paused' | 'closed';
+  postCount: number;
+  pendingPosts: number;
+  /** O artista aceita fotos de fãs (a caixa e o fã-clube aberto para o artista). */
+  photosAllowed: boolean;
+  /** O fim do Destaque (`AAAA-MM-DD`), só dentro do prazo. */
+  featuredUntil: string | null;
+  /** O último reconhecimento, sem a nota da equipe. */
+  lastReward: { at: string | null; points: number | null; prize: boolean } | null;
+  available: boolean;
+  unavailableReason: FanClubUnavailableReason | null;
+  /** O regulamento aceito numa versão velha: o publicar espera o novo aceite. */
+  rulesOutdated: boolean;
+};
+
+/** `GET /me/fan-club` (e a resposta da candidatura e da desistência). */
+export type MyFanClub = {
+  /** O programa aberto (`FAN_CLUB_OPEN`): sem ele e sem candidatura, os Ajustes escondem a linha. */
+  open: boolean;
+  /** O regulamento; null até ele existir, e o app usa os Termos de Uso. */
+  rulesUrl: string | null;
+  /** A versão que a candidatura manda no `rulesVersion`. */
+  rulesVersion: string;
+  /** O texto do reconhecimento (`FAN_CLUB_PRIZE_NOTICE`), ou null desligado. */
+  notice: string | null;
+  application: FanClubApplicationView | null;
+  club: MyFanClubClub | null;
+};
+
+/** Uma central do fã que aceita fã-clubes, no `GET /me/fan-club/artists`. */
+export type FanClubArtist = {
+  artistId: string;
+  name: string;
+  shortName: string | null;
+  thumbUrl: string | null;
+  photosAllowed: boolean;
+};
+
+/** `GET /me/fan-club/artists`. */
+export type FanClubArtists = { items: FanClubArtist[] };

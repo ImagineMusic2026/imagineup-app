@@ -28,6 +28,8 @@ const SECTION_BY_PREFIX: Record<string, AuditSection> = {
   season: 'ranking',
   reward: 'rewards',
   redemption: 'rewards',
+  // O fã-clube gerido pelo fã (seção 34, 34.8).
+  fanClub: 'fanClubs',
 };
 
 const SECTION_BY_ACTION: Record<string, AuditSection> = {
@@ -79,6 +81,10 @@ const DETAIL_TARGETS: readonly [field: string, type: string][] = [
   ['rewardIds', 'reward'],
   ['code', 'redemption'],
   ['codes', 'redemption'],
+  // O fã-clube (34.8): o gestor vai em `fanUid`, porque o `targetUid` fora das
+  // ações `fan.` vira `staff:`.
+  ['clubId', 'fanClub'],
+  ['fanUid', 'fan'],
 ];
 
 /** Id que vira alvo: texto de 1 a 200 caracteres, sem `/`. */
@@ -105,7 +111,7 @@ export type AuditIndex = { section: AuditSection | null; targets: string[] };
  * comentários e as ferramentas de fã da Moderação; `missions` para a régua,
  * missões, conquistas, a meta e a carga inicial; `ranking` para as outras de
  * temporada; `rewards` para a loja; `fans` para o ajuste, a busca por e-mail
- * e os pedidos de dados (seção 32).
+ * e os pedidos de dados (seção 32); `fanClubs` para o fã-clube (seção 34).
  * Alvos: o `targetUid` (da equipe nas ações da Equipe, do fã nas ações de
  * fã), o `details.uid` das ações de fã e os ids de `details` (cada campo de
  * `DETAIL_TARGETS`, um id ou uma lista), sem repetir, até 50. `details` torto

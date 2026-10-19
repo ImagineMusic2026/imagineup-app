@@ -144,7 +144,7 @@ describe('gatilho queueFanProfileSync', () => {
     );
   });
 
-  it('a cidade, o @, o updatedAt e o searchKeys sozinhos não põem tarefa', async () => {
+  it('a cidade, o updatedAt e o searchKeys sozinhos não põem tarefa; o @ põe (seção 34)', async () => {
     const { db, writes } = fakeDb();
     const queue = fakeQueue();
     for (const after of [
@@ -162,7 +162,10 @@ describe('gatilho queueFanProfileSync', () => {
         ),
       ).toEqual({ photo: null, task: 'unchanged' });
     }
-    // O @ trocado acerta só o `searchKeys`, sem tarefa na fila das cópias.
+    expect(queue.enqueue).not.toHaveBeenCalled();
+    expect(writes).toEqual([]);
+    // O @ trocado acerta o `searchKeys` e, desde o fã-clube (seção 34, 34.5),
+    // põe a tarefa: o fã-clube e a candidatura copiam o @.
     expect(
       await queueFanProfileSync(
         db,
@@ -176,9 +179,9 @@ describe('gatilho queueFanProfileSync', () => {
         },
         { emulator: false },
       ),
-    ).toEqual({ photo: null, task: 'unchanged', searchKeys: 'written' });
-    expect(queue.enqueue).not.toHaveBeenCalled();
-    expect(writes).toEqual([]);
+    ).toEqual({ photo: null, task: 'queued', searchKeys: 'written' });
+    expect(queue.enqueue).toHaveBeenCalledTimes(1);
+    expect(writes).toHaveLength(1);
   });
 
   it('o searchKeys sai do perfil relido, nunca do evento, e só grava quando muda', async () => {
@@ -371,7 +374,7 @@ describe('o nome barrado no gatilho do perfil (seção 30, decisão 11)', () => 
       { uid: UID, before, after, eventTime: EVENT_TIME },
       { emulator: false },
     );
-    expect(result).toEqual({ photo: null, task: 'unchanged', searchKeys: 'written' });
+    expect(result).toEqual({ photo: null, task: 'queued', searchKeys: 'written' });
     expect(updates).toEqual([
       { path: `users/${UID}`, data: { searchKeys: fanSearchKeys('Camila Pepino', 'camilanova') } },
     ]);

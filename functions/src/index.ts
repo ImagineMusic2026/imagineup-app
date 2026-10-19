@@ -38,6 +38,7 @@ import {
   runFanCountSync,
   type FanCountQueue,
 } from './centrals';
+import { decideFanClub as decideFanClubOfPanel } from './fan-clubs';
 import {
   deleteFanAccount as deleteAccountOfFan,
   exportFanData as exportDataOfFan,
@@ -783,6 +784,24 @@ export const clearFanProfileText = onPanelCall({ cors: PANEL_ORIGINS }, async (r
 export const resolveProfileReport = onPanelCall({ cors: PANEL_ORIGINS }, async (request) => {
   const result = await resolveReportOfFan({ db: getFirestore() }, request.auth, request.data);
   logger.info('Denúncia de perfil resolvida pela equipe.', { actorUid: request.auth?.uid });
+  return result;
+});
+
+/**
+ * As decisões da seção Fã-clubes (seção 34, 34.3), numa callable só (decisão
+ * 6): aprovar ou recusar a candidatura e pausar, reativar, encerrar (só
+ * admin), destacar e tirar o destaque do fã-clube, com o estado que a tela
+ * mostrou e a auditoria na mesma transação. 256 MiB (1/6 de vCPU), o padrão:
+ * a sobra da cota cai de uns 0,51 para uns 0,34 vCPU (decisão 55). O log leva
+ * só quem chamou, o assunto e a decisão: nunca o texto do fã.
+ */
+export const decideFanClub = onPanelCall({ cors: PANEL_ORIGINS }, async (request) => {
+  const result = await decideFanClubOfPanel({ db: getFirestore() }, request.auth, request.data);
+  logger.info('Decisão da equipe num fã-clube.', {
+    actorUid: request.auth?.uid,
+    subject: result.subject,
+    status: result.status,
+  });
   return result;
 });
 

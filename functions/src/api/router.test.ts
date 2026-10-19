@@ -373,3 +373,40 @@ describe('rotas da loja (bloco 10)', () => {
     expect(matchRoute(API_ROUTES, 'GET', '/rewards/camisa').kind).toBe('not_found');
   });
 });
+
+describe('rotas do fã-clube (seção 34, etapa 1)', () => {
+  it('o estado, as centrais e a candidatura não se confundem', () => {
+    expect(matchRoute(API_ROUTES, 'GET', '/me/fan-club')).toMatchObject({
+      kind: 'match',
+      route: { method: 'GET', pattern: '/me/fan-club', writes: false },
+    });
+    expect(matchRoute(API_ROUTES, 'GET', '/me/fan-club/artists')).toMatchObject({
+      kind: 'match',
+      route: { method: 'GET', pattern: '/me/fan-club/artists', writes: false },
+    });
+    expect(matchRoute(API_ROUTES, 'POST', '/me/fan-club/application')).toMatchObject({
+      kind: 'match',
+      route: { method: 'POST', pattern: '/me/fan-club/application', writes: true },
+    });
+    expect(matchRoute(API_ROUTES, 'DELETE', '/me/fan-club/application')).toMatchObject({
+      kind: 'match',
+      route: { method: 'DELETE', pattern: '/me/fan-club/application', writes: true },
+    });
+  });
+
+  it('os métodos errados são 405 com os aceitos', () => {
+    expect(matchRoute(API_ROUTES, 'POST', '/me/fan-club')).toEqual({
+      kind: 'method_not_allowed',
+      allow: ['GET'],
+    });
+    expect(matchRoute(API_ROUTES, 'PUT', '/me/fan-club/artists')).toEqual({
+      kind: 'method_not_allowed',
+      allow: ['GET'],
+    });
+    expect(matchRoute(API_ROUTES, 'GET', '/me/fan-club/application')).toEqual({
+      kind: 'method_not_allowed',
+      allow: ['POST', 'DELETE'],
+    });
+    expect(matchRoute(API_ROUTES, 'GET', '/me/fan-club/rules').kind).toBe('not_found');
+  });
+});

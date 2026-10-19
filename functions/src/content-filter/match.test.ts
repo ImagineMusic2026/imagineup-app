@@ -34,7 +34,14 @@ const TERMS: readonly FilterTerm[] = [
 // o de uma cidade com um termo dentro.
 const EXCEPTIONS = ['Vila Berinjela', 'pepino-do-mar'];
 
-const TEXT_FIELDS: readonly FilterTextField[] = ['comment', 'bio', 'displayName', 'city'];
+const TEXT_FIELDS: readonly FilterTextField[] = [
+  'comment',
+  'bio',
+  'displayName',
+  'city',
+  'fanClubName',
+  'fanClubPitch',
+];
 
 const ENTRY_ERROR = 'Filtro de conteúdo: a entrada 1 está fora da forma.';
 
@@ -221,6 +228,13 @@ describe.each([
     expect(filter.isBlockedSocial('chuchu_azedo_2026')).toBe(true);
   });
 
+  it('o nome do fã-clube confere o trecho, como o nome do fã; o texto de divulgação, não (34.8)', () => {
+    expect(text('Fã-clube Berinjelada', 'fanClubName')).toBe(true);
+    expect(text('Fã-clube Berinjelada', 'fanClubPitch')).toBe(false);
+    expect(text('Divulgo a berinjela nas redes', 'fanClubPitch')).toBe(true);
+    expect(text('Fã-clube Pepinópolis', 'fanClubName')).toBe(false);
+  });
+
   it('o termo sem inHandle não vale como trecho', () => {
     expect(text('Pepinópolis', 'city')).toBe(false);
     expect(text('Ana Pepinosa', 'displayName')).toBe(false);
@@ -308,6 +322,8 @@ describe('a política por campo', () => {
       bio: [category],
       displayName: [category],
       city: [category],
+      fanClubName: [category],
+      fanClubPitch: [category],
       username: [category],
       socials: [category],
     });

@@ -395,6 +395,53 @@ const ROWS: Record<AuditAction, Row> = {
     section: 'fans',
     targets: ['fan:uid-camila'],
   },
+  // O fã-clube (seção 34, 34.8): o gestor pelo `fanUid`, nunca como `staff:`.
+  'fanClub.application.approved': {
+    details: {
+      clubId: 'clube1',
+      artistId: 'nettobrito',
+      fanUid: 'uid-camila',
+      round: 1,
+      nameChanged: false,
+    },
+    section: 'fanClubs',
+    targets: ['artist:nettobrito', 'fanClub:clube1', 'fan:uid-camila'],
+  },
+  'fanClub.application.rejected': {
+    details: { artistId: 'nenho', fanUid: 'uid-duda', round: 2, reason: 'incomplete' },
+    section: 'fanClubs',
+    targets: ['artist:nenho', 'fan:uid-duda'],
+  },
+  'fanClub.paused': {
+    details: { clubId: 'clube1', artistId: 'nettobrito', fanUid: 'uid-camila' },
+    section: 'fanClubs',
+    targets: ['artist:nettobrito', 'fanClub:clube1', 'fan:uid-camila'],
+  },
+  'fanClub.resumed': {
+    details: { clubId: 'clube1', artistId: 'nettobrito', fanUid: 'uid-camila' },
+    section: 'fanClubs',
+    targets: ['artist:nettobrito', 'fanClub:clube1', 'fan:uid-camila'],
+  },
+  'fanClub.closed': {
+    details: { clubId: 'clube1', artistId: 'nettobrito', fanUid: 'uid-camila', reason: 'staff' },
+    section: 'fanClubs',
+    targets: ['artist:nettobrito', 'fanClub:clube1', 'fan:uid-camila'],
+  },
+  'fanClub.featured': {
+    details: {
+      clubId: 'clube1',
+      artistId: 'nettobrito',
+      fanUid: 'uid-camila',
+      featuredUntil: '2026-11-01',
+    },
+    section: 'fanClubs',
+    targets: ['artist:nettobrito', 'fanClub:clube1', 'fan:uid-camila'],
+  },
+  'fanClub.unfeatured': {
+    details: { clubId: 'clube1', artistId: 'nettobrito', fanUid: 'uid-camila' },
+    section: 'fanClubs',
+    targets: ['artist:nettobrito', 'fanClub:clube1', 'fan:uid-camila'],
+  },
 };
 
 describe('auditIndex: uma linha por ação', () => {
@@ -414,6 +461,16 @@ describe('auditIndex: as pontas', () => {
         targets: ['fan:uid-camila'],
       });
     }
+  });
+
+  it('a suspensão que pausa o fã-clube do fã leva o alvo do fã-clube (seção 34, decisão 33)', () => {
+    expect(
+      auditIndex({
+        action: 'fan.suspended',
+        targetUid: 'uid-camila',
+        details: { uid: 'uid-camila', reason: 'spam', clubId: 'clube1' },
+      }),
+    ).toEqual({ section: 'moderation', targets: ['fan:uid-camila', 'fanClub:clube1'] });
   });
 
   it('a busca por e-mail sem resultado não tem alvo', () => {

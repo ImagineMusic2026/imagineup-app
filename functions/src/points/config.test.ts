@@ -398,6 +398,8 @@ describe('tetos do dia e o limite da missão (bloco 7)', () => {
       // O perfil novo (seção 28): os salvamentos do perfil e as trocas de nome.
       profile_save: 20,
       name_change: 5,
+      // O fã-clube (seção 34, decisão 11): as candidaturas.
+      fanclub_apply: 3,
     });
   });
 

@@ -44,6 +44,7 @@ const SECTION_LABELS: Partial<Record<SectionId, string>> = {
   overview: 'Visão geral',
   growth: 'Crescimento',
   artists: 'Artistas e centrais',
+  fanClubs: 'Fã-clubes',
   moderation: 'Moderação',
   fans: 'Fãs',
   missions: 'Missões',

@@ -71,6 +71,8 @@ describe('tetos do dia', () => {
       // O perfil novo: os salvamentos do perfil e as trocas de nome (seção 28).
       profile: { key: 'profile_save', limit: 20 },
       name: { key: 'name_change', limit: 5 },
+      // O fã-clube (seção 34, decisão 11): as candidaturas.
+      club_apply: { key: 'fanclub_apply', limit: 3 },
     });
     expect(BLOCK_LIST_MAX).toBe(1_000);
   });

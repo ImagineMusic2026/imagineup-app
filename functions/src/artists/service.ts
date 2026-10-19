@@ -8,6 +8,8 @@ import {
 import * as logger from 'firebase-functions/logger';
 
 import { readFanCountForDelete } from '../centrals/service';
+import { fanClubBoxValue } from '../fan-clubs/model';
+import { liveFanClubsOfArtist } from '../fan-clubs/store';
 import { artistError } from './errors';
 import { removeFiles, type ArtistFiles, type LeftoverFile } from './files';
 import {
@@ -91,6 +93,12 @@ export type ArtistPrivate = {
   managerUid: string | null;
   managerName: string | null;
   imageRightsConfirmed: boolean;
+  /**
+   * As caixas do fã-clube (seção 34, decisão 9): "Aceita fã-clubes" e "Fãs
+   * podem postar fotos deste artista". Ausentes nas centrais de antes: valem
+   * o `imageRightsConfirmed`, e só o `false` gravado desliga.
+   */
+  fanClubs?: { enabled?: boolean; photosAllowed?: boolean };
   createdBy: string;
   updatedBy: string;
   updatedAt: Timestamp;
@@ -317,7 +325,30 @@ type ArtistPatch = Partial<Pick<Artist, PublicField>> & {
   contactEmail?: string | null;
   contactPhone?: string | null;
   photo?: PhotoPaths | null;
+  fanClubs?: { enabled?: boolean; photosAllowed?: boolean };
 };
+
+const FAN_CLUB_BOXES = ['enabled', 'photosAllowed'] as const;
+
+/**
+ * As caixas do fã-clube no pedido (decisão 9): um objeto com `enabled` e
+ * `photosAllowed`, os dois opcionais e booleanos; outra chave ou outro tipo
+ * é `invalid-request`.
+ */
+function parseFanClubBoxes(value: unknown): { enabled?: boolean; photosAllowed?: boolean } {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    throw artistError('invalid-request');
+  }
+  const input = value as Record<string, unknown>;
+  const boxes: { enabled?: boolean; photosAllowed?: boolean } = {};
+  for (const key of Object.keys(input)) {
+    if (!(FAN_CLUB_BOXES as readonly string[]).includes(key)) throw artistError('invalid-request');
+  }
+  for (const key of FAN_CLUB_BOXES) {
+    if (input[key] !== undefined) boxes[key] = parseFlag(input[key]);
+  }
+  return boxes;
+}
 
 function parsePatch(input: Record<string, unknown>, artistId: string): ArtistPatch {
   const patch: ArtistPatch = {};
@@ -334,6 +365,7 @@ function parsePatch(input: Record<string, unknown>, artistId: string): ArtistPat
   if (input.contactEmail !== undefined) patch.contactEmail = parseContactEmail(input.contactEmail);
   if (input.contactPhone !== undefined) patch.contactPhone = parseContactPhone(input.contactPhone);
   if (input.photo !== undefined) patch.photo = parsePhotoPaths(input.photo, artistId);
+  if (input.fanClubs !== undefined) patch.fanClubs = parseFanClubBoxes(input.fanClubs);
   return patch;
 }
 
@@ -408,6 +440,9 @@ async function pruneArtistFiles(
  * autorização de imagem. Cada campo vai para o seu documento: textos, selo e
  * fotos em artists/ (com updatedAt), e contato, gestor e autorização em
  * artistPrivate/, que também guarda updatedAt e updatedBy de toda mudança.
+ * Desde o fã-clube (seção 34, decisão 9), as caixas "Aceita fã-clubes" e
+ * "Fãs podem postar fotos" (`fanClubs`), em artistPrivate/, com o `merge`
+ * que não apaga a outra caixa.
  * Nada mudou: ok, sem gravar nem auditar. Pedido com `photo` que passou: depois
  * da transação, a pasta da central fica só com as fotos novas (ou vazia, com
  * `photo: null`), sem travar a resposta se a limpeza falhar.
@@ -482,6 +517,18 @@ export async function editArtist(
       privateChanges.phone = patch.contactPhone;
       changed.push('contactPhone');
     }
+    // As caixas do fã-clube (decisão 9): só a que muda o que o diálogo mostra
+    // (o gravado ou, sem ele, o `imageRightsConfirmed` de antes deste pedido).
+    const boxes: { enabled?: boolean; photosAllowed?: boolean } = {};
+    for (const key of FAN_CLUB_BOXES) {
+      const value = patch.fanClubs?.[key];
+      const stored = internal as Record<string, unknown> | undefined;
+      if (value !== undefined && value !== fanClubBoxValue(stored, key)) {
+        boxes[key] = value;
+        changed.push(`fanClubs.${key}`);
+      }
+    }
+    if (Object.keys(boxes).length > 0) privateChanges.fanClubs = boxes;
     if (changed.length === 0) return;
 
     const now = Timestamp.fromMillis(clock(deps));
@@ -600,7 +647,8 @@ export async function reorderArtistList(
 /**
  * deleteArtist: só admin, em qualquer status (rascunho, no ar ou fora do ar),
  * menos central com fãs (has-fans: essa sai do ar em vez de sumir) ou com
- * post ou show, mesmo rascunho (has-content, bloco 6). Quem
+ * post ou show, mesmo rascunho (has-content, bloco 6), ou com fã-clube ativo
+ * ou pausado (has-content, seção 34). Quem
  * decide é a soma dos shards do fanCount, lida na transação (o fanCount de
  * artists/ é uma cópia que pode estar atrasada); sem shard nenhum (central de
  * antes do bloco 4), o fanCount. Apaga a central, o artistPrivate/, os shards,
@@ -628,13 +676,16 @@ export async function removeArtist(
     // Posts e shows (bloco 6, 21.1, decisão 23): também o rascunho, que a
     // equipe apaga antes (deletePost, deleteEvent). Sem isso, posts e shows
     // ficariam apontando para um @ que outra central pode tomar depois.
-    const [posts, events] = await Promise.all([
+    // Desde o fã-clube (seção 34, 34.14), também o fã-clube ativo ou pausado:
+    // a lápide e o encerrado não seguram, mas o vivo apontaria para o @.
+    const [posts, events, fanClubs] = await Promise.all([
       tx.get(db.collection('posts').where('artistId', '==', artistId).limit(1)),
       tx.get(db.collection('events').where('artistIds', 'array-contains', artistId).limit(1)),
+      tx.get(liveFanClubsOfArtist(db, artistId).limit(1)),
     ]);
     const problem = deleteProblem({ fanCount: fans });
     if (problem) throw artistError(problem);
-    if (!posts.empty || !events.empty) throw artistError('has-content');
+    if (!posts.empty || !events.empty || !fanClubs.empty) throw artistError('has-content');
     const now = Timestamp.fromMillis(clock(deps));
     tx.delete(artistRef(db, artistId));
     tx.delete(privateRef(db, artistId));

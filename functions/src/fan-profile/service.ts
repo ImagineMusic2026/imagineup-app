@@ -13,6 +13,7 @@ import * as logger from 'firebase-functions/logger';
 
 import type { EditableProfile, FanPublicProfile, ProfileChanges } from '../api/contract';
 import { removeFiles, type LeftoverFile } from '../artists/files';
+import { syncFanClubCopies } from '../fan-clubs/store';
 import { countDailyAction, enforceDailyCap } from '../moderation/caps';
 import { blockedOf } from '../moderation/model';
 import { blockListRef } from '../moderation/store';
@@ -610,6 +611,8 @@ export type FanProfileSyncResult = {
   read: number;
   /** Comentários com a cópia regravada. */
   updated: number;
+  /** A candidatura e os fã-clubes do fã com a cópia regravada (seção 34, 34.5). */
+  fanClubCopies: number;
   /** Arquivos que saíram da pasta. */
   removed: number;
 };
@@ -719,8 +722,9 @@ async function sweepFanFolder(
 
 /**
  * A tarefa `syncFanProfile` (24.7): sem perfil, esvazia a pasta e termina;
- * senão regrava as cópias do nome e da foto nos comentários do fã e só então
- * varre a pasta (a varredura depende do Storage, e uma falha nele não segura
+ * senão regrava as cópias do nome e da foto nos comentários do fã e, desde o
+ * fã-clube (seção 34, 34.5), as do nome, do @ e da foto na candidatura e nos
+ * fã-clubes dele, e só então varre a pasta (a varredura depende do Storage, e uma falha nele não segura
  * as cópias, que só dependem do Firestore). A listagem que falhou ou o arquivo
  * que sobrou fazem a tarefa lançar no fim, e a fila tenta de novo (tudo é
  * seguro de repetir: a cópia igual não grava, e a varredura relê a pasta).
@@ -735,19 +739,23 @@ export async function syncFanProfile(
   const first = await profileRef(db, uid).get();
   if (!first.exists) {
     const removed = await purgeFanPhotos(files, uid, log);
-    return { deleted: true, read: 0, updated: 0, removed };
+    return { deleted: true, read: 0, updated: 0, fanClubCopies: 0, removed };
   }
 
   const { read, updated } = await syncCommentCopies(db, uid);
+  const fanClubCopies = await syncFanClubCopies(db, uid);
   const sweep = await sweepFanFolder(db, files, uid, now, log);
-  if (sweep.deleted) return { deleted: true, read, updated, removed: sweep.removed };
+  if (sweep.deleted) {
+    return { deleted: true, read, updated, fanClubCopies, removed: sweep.removed };
+  }
 
   log.info('fan-profile: cópias do perfil acertadas', {
     uid,
     read,
     updated,
+    fanClubCopies,
     removed: sweep.removed,
   });
   if (sweep.failure) throw sweep.failure;
-  return { deleted: false, read, updated, removed: sweep.removed };
+  return { deleted: false, read, updated, fanClubCopies, removed: sweep.removed };
 }

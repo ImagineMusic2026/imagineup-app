@@ -200,7 +200,8 @@ export type AwardResult = { uid: string; entryId: string; status: AwardStatus; p
  * os resgates da loja (o teto do bloco 10, 25.1, decisão 15); `photo_upload`,
  * as vagas de envio da foto (a proteção contra abuso, 27.4); `profile_save` e
  * `name_change`, os salvamentos do perfil e as trocas de nome (o perfil novo,
- * seção 28, decisão 9).
+ * seção 28, decisão 9); `fanclub_apply`, as candidaturas a fã-clube (seção
+ * 34, decisão 11).
  */
 export type DailyActionKey =
   | 'central_entry'
@@ -215,7 +216,8 @@ export type DailyActionKey =
   | 'reward_redeem'
   | 'photo_upload'
   | 'profile_save'
-  | 'name_change';
+  | 'name_change'
+  | 'fanclub_apply';
 
 export type DayStats = {
   earned: number;

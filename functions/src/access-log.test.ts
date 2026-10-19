@@ -221,8 +221,8 @@ describe('o manifesto: toda callable exportada vem do onPanelCall', () => {
     )
     .map(([name]) => name);
 
-  it('as callables do painel são todas do onPanelCall (57 desde a seção 32)', () => {
-    expect(callables.length).toBeGreaterThanOrEqual(57);
+  it('as callables do painel são todas do onPanelCall (58 desde a seção 34)', () => {
+    expect(callables.length).toBeGreaterThanOrEqual(58);
     expect(callables).toEqual(expect.arrayContaining(['createStaffInvite', 'hideFanComments']));
     const plain = callables.filter((name) => !isPanelCall(exported[name as keyof typeof exported]));
     expect(plain).toEqual([]);

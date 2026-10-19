@@ -178,6 +178,20 @@ service cloud.firestore {
         allow read: if canSeeSection('fans');
         allow write: if false;
       }
+
+      // O fã-clube gerido pelo fã (docs/arquitetura-api.md, seção 34, 34.6): o
+      // vínculo de seguir um fã-clube e o marcador do crédito de entrada, no
+      // molde do centrals. Só o servidor grava. Quem segue é só da seção Fãs
+      // (decisão 29): nem a seção Fã-clubes nem o gestor leem a lista.
+      match /fanClubFollows/{clubId} {
+        allow read: if canSeeSection('fans');
+        allow write: if false;
+      }
+
+      match /fanClubCredits/{artistId} {
+        allow read: if canSeeSection('fans');
+        allow write: if false;
+      }
     }
 
     // Pelos grupos de coleção (quem vai a um show, na seção Fãs). Valem para
@@ -195,6 +209,14 @@ service cloud.firestore {
     // Vale para qualquer caminho que termine em centrals/{id}, inclusive uma
     // coleção de raiz: nenhuma outra coleção pode se chamar centrals.
     match /{path=**}/centrals/{artistId} {
+      allow read: if canSeeSection('fans');
+    }
+
+    // Os seguidores de um fã-clube, pelo grupo de coleção (os "Seguidores
+    // recentes" da ficha, só com a seção Fãs, seção 34, decisão 29). Vale para
+    // qualquer caminho que termine em fanClubFollows/{id}: nenhuma outra
+    // coleção pode se chamar fanClubFollows.
+    match /{path=**}/fanClubFollows/{clubId} {
       allow read: if canSeeSection('fans');
     }
 
@@ -459,6 +481,60 @@ service cloud.firestore {
     // match final de propósito, como o postStats.
     match /blockLists/{uid} {
       allow read, write: if false;
+    }
+
+    // O fã-clube gerido pelo fã (docs/arquitetura-api.md, seção 34, 34.6). Só
+    // o servidor grava (a API e a callable decideFanClub). O fã não lê nada
+    // disso direto, nem o próprio: chega pela API (GET /me/fan-club). A seção
+    // fanClubs lê a candidatura, o fã-clube (com os prêmios), os números, as
+    // publicações e a fila das denúncias: o editor, o Leitor e o admin.
+    match /fanClubApplications/{uid} {
+      allow read: if canSeeSection('fanClubs');
+      allow write: if false;
+    }
+
+    // As redes e o texto de divulgação da candidatura (decisão 14): só quem
+    // edita a seção; o Leitor não lê.
+    match /fanClubApplicationPrivate/{uid} {
+      allow read: if canEditSection('fanClubs');
+      allow write: if false;
+    }
+
+    match /fanClubs/{clubId} {
+      allow read: if canSeeSection('fanClubs');
+      allow write: if false;
+
+      match /prizes/{grantId} {
+        allow read: if canSeeSection('fanClubs');
+        allow write: if false;
+      }
+    }
+
+    // Os números do fã-clube em 16 shards (decisão 24): a ficha soma os 16. O
+    // documento de cima não existe (o increment cria só o shard).
+    match /fanClubStats/{clubId} {
+      allow read, write: if false;
+
+      match /fanClubShards/{shard} {
+        allow read: if canSeeSection('fanClubs');
+        allow write: if false;
+      }
+    }
+
+    match /fanClubPosts/{postId} {
+      allow read: if canSeeSection('fanClubs');
+      allow write: if false;
+    }
+
+    // As denúncias uma a uma guardam quem denunciou: fechadas até para a
+    // equipe, como as de comentário e as de perfil. A tela usa a fila.
+    match /fanClubReports/{reportId} {
+      allow read, write: if false;
+    }
+
+    match /fanClubReportQueue/{postId} {
+      allow read: if canSeeSection('fanClubs');
+      allow write: if false;
     }
 
     // Resultado congelado das temporadas (bloco 8): o cabeçalho e a posição

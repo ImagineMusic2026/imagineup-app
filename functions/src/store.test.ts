@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { leaveAllCentrals } from './centrals/service';
 import { FILTERED_NAME, isBlockedHandle, isBlockedText } from './content-filter';
+import { removeFanClubData } from './fan-clubs/service';
 import type { FanPhotoFiles } from './fan-profile/files';
 import { detachReferrals, removeInviteData } from './invites/service';
 import { removeFanEngagement } from './posts/service';
@@ -20,12 +21,14 @@ import { createProfile, deleteUserData } from './store';
 // do fã são desligados depois. A linha do fã no arquivo das temporadas (bloco
 // 8, 23.13) sai depois da carteira. Os pedidos da loja (bloco 10, 25.11) são
 // cancelados e anonimizados depois do engajamento do mural e antes do
-// recursiveDelete. Nos emuladores, as entradas terminam antes da
+// recursiveDelete, e o fã-clube (seção 34, 34.7) sai antes deles. Nos
+// emuladores, as entradas terminam antes da
 // exclusão, e a ordem trocada passaria; aqui um Firestore falso anota cada
 // passo.
 vi.mock('./centrals/service', () => ({ leaveAllCentrals: vi.fn() }));
 vi.mock('./posts/service', () => ({ removeFanEngagement: vi.fn() }));
 vi.mock('./rewards/service', () => ({ cancelFanRedemptions: vi.fn() }));
+vi.mock('./fan-clubs/service', () => ({ removeFanClubData: vi.fn() }));
 vi.mock('./invites/service', () => ({
   removeInviteData: vi.fn(),
   detachReferrals: vi.fn(),
@@ -98,6 +101,7 @@ describe('exclusão de conta (deleteUserData)', () => {
     vi.mocked(detachReferrals).mockReset();
     vi.mocked(removeFanEngagement).mockReset();
     vi.mocked(cancelFanRedemptions).mockReset();
+    vi.mocked(removeFanClubData).mockReset();
   });
 
   it('o perfil sai sozinho primeiro, as reservas e o convite logo depois e os convidados depois do perfil', async () => {
@@ -121,6 +125,9 @@ describe('exclusão de conta (deleteUserData)', () => {
       steps.push(`cancelFanRedemptions ${uid}`);
       return { canceled: 0, anonymized: 0 };
     });
+    vi.mocked(removeFanClubData).mockImplementation(async (_db, uid) => {
+      steps.push(`removeFanClubData ${uid}`);
+    });
 
     await deleteUserData(fakeDb(steps), UID);
 
@@ -130,6 +137,7 @@ describe('exclusão de conta (deleteUserData)', () => {
       `removeInviteData ${UID}`,
       `leaveAllCentrals ${UID}`,
       `removeFanEngagement ${UID}`,
+      `removeFanClubData ${UID}`,
       `cancelFanRedemptions ${UID}`,
       `recursiveDelete users/${UID}`,
       `delete referrals/${UID}`,

@@ -114,6 +114,7 @@ describe('o papel de quem chama', () => {
       ['overview', 'Visão geral'],
       ['growth', 'Crescimento'],
       ['audit', 'Logs e auditoria'],
+      ['fanClubs', 'Fã-clubes'],
     ] as const) {
       await expect(
         readPanelActor(reader(member('editor')), db, caller, section, 'view'),
@@ -161,6 +162,27 @@ describe('os motivos dos pedidos de dados (32.2)', () => {
       message: 'Só um admin do painel pode fazer isso.',
       details: { reason: 'admin-only' },
     });
+  });
+});
+
+describe('os motivos do fã-clube (34.3)', () => {
+  it.each([
+    ['fan-club-not-found', 'not-found', 'Esse fã-clube não existe mais.'],
+    ['application-not-found', 'not-found', 'Essa candidatura não existe mais.'],
+    ['stale-decision', 'failed-precondition', 'Isso mudou desde que a tela abriu. Abra de novo.'],
+    [
+      'artist-not-open',
+      'failed-precondition',
+      'O artista está fora do ar ou não aceita fã-clubes.',
+    ],
+    ['feature-limit', 'failed-precondition', 'Este artista já tem 3 fã-clubes em destaque.'],
+    [
+      'owner-suspended',
+      'failed-precondition',
+      'O gestor está suspenso. Tire a suspensão antes de reativar o fã-clube.',
+    ],
+  ] as const)('%s: %s, com a mensagem de 34.3', (reason, code, message) => {
+    expect(panelError(reason)).toMatchObject({ code, message, details: { reason } });
   });
 });
 

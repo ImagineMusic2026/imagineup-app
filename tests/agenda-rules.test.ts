@@ -46,6 +46,7 @@ const ALL_SECTIONS = [
   'ranking',
   'fans',
   'artists',
+  'fanClubs',
   'missions',
   'rewards',
   'moderation',
