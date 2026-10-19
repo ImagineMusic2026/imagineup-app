@@ -352,7 +352,11 @@ describe('a lista do ranking', () => {
   });
 
   it('a api de verdade, pelo HTTP do emulador, com o ID token: a temporada, o ranking e a posição', async () => {
-    await seasons();
+    // A api de verdade usa o relógio de verdade: a temporada fica em andamento
+    // em volta de agora (a São João do teste, presa ao T0, terminou em
+    // 19/10/2026 às 15h de São Paulo).
+    const now = Date.now();
+    await seasons({ season: { ...SJ, startsAt: now - 18 * DAY_MS, endsAt: now + 12 * DAY_MS } });
     const me = await signUpFan(db, 'Camila Ribeiro');
     await mine(me, { points: 120 });
     await ghost('lider', { points: 900 });

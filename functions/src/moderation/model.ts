@@ -1,5 +1,9 @@
 import { secondsUntil } from '../centrals/model';
-import { FAN_CLUB_APPLIES_PER_DAY } from '../fan-clubs/model';
+import {
+  FAN_CLUB_APPLIES_PER_DAY,
+  FAN_CLUB_POSTS_PER_DAY,
+  FAN_CLUB_UPLOADS_PER_DAY,
+} from '../fan-clubs/model';
 import {
   NAME_CHANGES_PER_DAY,
   PHOTO_CHANGES_PER_DAY,
@@ -52,7 +56,9 @@ export const REDEEMS_PER_DAY = 10;
  * da loja (bloco 10, 25.7), no mesmo molde; `upload`, a vaga de envio da
  * foto do perfil (proteção contra abuso, 27.4); `profile` e `name`, o
  * salvamento do perfil e a troca de nome do `PUT /me/profile` (seção 28,
- * decisão 9); `club_apply`, a candidatura a fã-clube (seção 34, decisão 11).
+ * decisão 9); `club_apply`, a candidatura a fã-clube, e `club_post` e
+ * `club_upload`, a publicação e a vaga de envio da foto dela (seção 34,
+ * decisão 11).
  */
 export type CapAction =
   | 'like'
@@ -65,7 +71,9 @@ export type CapAction =
   | 'upload'
   | 'profile'
   | 'name'
-  | 'club_apply';
+  | 'club_apply'
+  | 'club_post'
+  | 'club_upload';
 
 export const DAILY_CAPS: Record<CapAction, { key: DailyActionKey; limit: number }> = {
   like: { key: 'like_set', limit: LIKES_PER_DAY },
@@ -79,6 +87,8 @@ export const DAILY_CAPS: Record<CapAction, { key: DailyActionKey; limit: number 
   profile: { key: 'profile_save', limit: PROFILE_SAVES_PER_DAY },
   name: { key: 'name_change', limit: NAME_CHANGES_PER_DAY },
   club_apply: { key: 'fanclub_apply', limit: FAN_CLUB_APPLIES_PER_DAY },
+  club_post: { key: 'fanclub_post', limit: FAN_CLUB_POSTS_PER_DAY },
+  club_upload: { key: 'fanclub_upload', limit: FAN_CLUB_UPLOADS_PER_DAY },
 };
 
 /**
@@ -121,6 +131,7 @@ export type ModerationErrorReason =
   | 'fan_not_found'
   | 'own_comment'
   | 'own_profile'
+  | 'own_post'
   | 'self'
   | 'block_list_full';
 
@@ -129,6 +140,7 @@ const MODERATION_MESSAGES: Record<ModerationErrorReason, string> = {
   fan_not_found: 'Fã não encontrado.',
   own_comment: 'O próprio comentário não se denuncia.',
   own_profile: 'O próprio perfil não se denuncia.',
+  own_post: 'A própria publicação não se denuncia.',
   self: 'Não dá para bloquear a própria conta.',
   block_list_full: 'Você chegou ao limite de fãs bloqueados.',
 };
@@ -136,8 +148,8 @@ const MODERATION_MESSAGES: Record<ModerationErrorReason, string> = {
 /**
  * Recusa da moderação. A API traduz `comment_not_found` e `fan_not_found`
  * para os 404, `block_list_full` para o 409, e `own_comment`, `own_profile`
- * (a denúncia de perfil, seção 29) e `self` para o 400 `invalid_request` com
- * `details.reason`.
+ * (a denúncia de perfil, seção 29), `own_post` (a da publicação de fã-clube,
+ * seção 34) e `self` para o 400 `invalid_request` com `details.reason`.
  */
 export class ModerationError extends Error {
   readonly reason: ModerationErrorReason;
@@ -171,6 +183,65 @@ export function parseReportReason(body: unknown): ReportReason | null | undefine
     ? (reason as ReportReason)
     : undefined;
 }
+
+/**
+ * Motivos da denúncia de uma publicação de fã-clube (seção 34, decisão 18): os
+ * 4 de sempre mais o "Uso indevido de imagem", só aqui. O `REPORT_REASONS` da
+ * denúncia de comentário e de perfil não muda.
+ */
+export const FAN_CLUB_REPORT_REASONS = [
+  'spam',
+  'offensive',
+  'harassment',
+  'image_misuse',
+  'other',
+] as const;
+export type FanClubReportReason = (typeof FAN_CLUB_REPORT_REASONS)[number];
+
+/** Chave da contagem por motivo no item da `fanClubReportQueue`: o motivo, ou `none`. */
+export type FanClubReasonKey = FanClubReportReason | 'none';
+
+export const fanClubReasonKey = (reason: FanClubReportReason | null): FanClubReasonKey =>
+  reason ?? 'none';
+
+/**
+ * Corpo da denúncia de uma publicação de fã-clube: `{ reason }`, com um dos
+ * motivos de `FAN_CLUB_REPORT_REASONS` ou null (ausente vale null). Outro
+ * valor, ou corpo que não é objeto: undefined (400 na rota).
+ */
+export function parseFanClubReportReason(body: unknown): FanClubReportReason | null | undefined {
+  if (body === undefined || body === null) return null;
+  if (typeof body !== 'object' || Array.isArray(body)) return undefined;
+  const reason = (body as { reason?: unknown }).reason;
+  if (reason === undefined || reason === null) return null;
+  return (FAN_CLUB_REPORT_REASONS as readonly unknown[]).includes(reason)
+    ? (reason as FanClubReportReason)
+    : undefined;
+}
+
+/** O que a `fanClubReportQueue` guarda por motivo: as seis chaves, a partir de 0. */
+export type FanClubReasonCounts = Record<FanClubReasonKey, number>;
+
+export function emptyFanClubReasons(): FanClubReasonCounts {
+  return { spam: 0, offensive: 0, harassment: 0, image_misuse: 0, other: 0, none: 0 };
+}
+
+/** A contagem por motivo lida da fila do fã-clube (campo estranho vale 0). */
+export function fanClubReasonsOf(value: unknown): FanClubReasonCounts {
+  const counts = emptyFanClubReasons();
+  if (typeof value !== 'object' || value === null) return counts;
+  for (const key of Object.keys(counts) as FanClubReasonKey[]) {
+    const n = (value as Record<string, unknown>)[key];
+    counts[key] = typeof n === 'number' && Number.isFinite(n) && n > 0 ? Math.floor(n) : 0;
+  }
+  return counts;
+}
+
+/** A chave de uma denúncia guardada da fila do fã-clube (motivo estranho vale `none`). */
+export const storedFanClubReasonKey = (reason: unknown): FanClubReasonKey =>
+  (FAN_CLUB_REPORT_REASONS as readonly unknown[]).includes(reason)
+    ? (reason as FanClubReportReason)
+    : 'none';
 
 /** Id da denúncia: uma por fã e comentário (o id do comentário é único no banco). */
 export function reportId(commentId: string, reporterUid: string): string {

@@ -37,6 +37,7 @@ describe('a lista das fontes', () => {
       'inviterLedger',
       'moderationQueue',
       'profileReportQueue',
+      'fanClubReportQueue',
       'idempotency',
       'staff',
       'staffAudit',
@@ -62,7 +63,7 @@ describe('a lista das fontes', () => {
 });
 
 describe('as partes longas', () => {
-  it('as 8 partes, na ordem do arquivo (32.3)', () => {
+  it('as 9 partes, na ordem do arquivo (32.3; as publicações do fã-clube desde a seção 34)', () => {
     expect(FAN_DATA_PARTS).toEqual([
       'extrato',
       'pontosPorCentral',
@@ -72,6 +73,7 @@ describe('as partes longas', () => {
       'comentarios',
       'linksDeConvite',
       'pedidosDaLoja',
+      'publicacoesDeFaClube',
     ]);
   });
 
@@ -105,6 +107,7 @@ describe('as partes longas', () => {
         },
         linksDeConvite: { kind: 'sub', parent: 'fanInvites', name: 'inviteLinks' },
         pedidosDaLoja: { kind: 'equal', collection: 'redemptions', field: 'uid' },
+        publicacoesDeFaClube: { kind: 'equal', collection: 'fanClubPosts', field: 'authorUid' },
       },
     );
   });
@@ -129,6 +132,7 @@ describe('a primeira chamada', () => {
       'candidaturaDeFaClube',
       'candidaturaDeFaClubePrivada',
       'faClubes',
+      'denunciasDeFaClube',
     ]);
   });
 
@@ -159,6 +163,7 @@ describe('a primeira chamada', () => {
       candidaturaDeFaClube: { kind: 'doc', collection: 'fanClubApplications' },
       candidaturaDeFaClubePrivada: { kind: 'doc', collection: 'fanClubApplicationPrivate' },
       faClubes: { kind: 'equal', collection: 'fanClubs', field: 'ownerUid' },
+      denunciasDeFaClube: { kind: 'equal', collection: 'fanClubReports', field: 'reporterUid' },
     });
     expect(firstKeySource('arrobasReservados').idsOnly).toBe(true);
     expect(firstKeySource('temporadas').idFromParent).toBe(true);
@@ -169,6 +174,14 @@ describe('a primeira chamada', () => {
       in: 'address',
       key: 'perfil',
       field: 'photoURL',
+    });
+  });
+
+  it('as fotos das publicações do fã-clube vão pelo endereço, na media delas', () => {
+    expect(fanDataSource('storage.fanClubMedia').place).toEqual({
+      in: 'address',
+      key: 'publicacoesDeFaClube',
+      field: 'media',
     });
   });
 });
@@ -189,6 +202,8 @@ describe('o filtro de campos (decisão 8)', () => {
       redemptions: [['updatedBy'], null],
       fanClubApplications: [['decidedBy'], null],
       fanClubs: [['approvedBy', 'closedBy', 'featuredBy'], null],
+      fanClubPosts: [['reviewedBy'], null],
+      fanClubReports: [['round'], null],
     });
     expect(PROFILE_TECHNICAL_FIELDS).toEqual(['searchKeys', 'signupCounted', 'photoPath']);
   });
@@ -237,11 +252,15 @@ describe('o que a exclusão faz', () => {
       fanClubApplications: 'deleted',
       fanClubApplicationPrivate: 'deleted',
       fanClubs: 'stripped',
+      fanClubPosts: 'deleted',
+      fanClubReports: 'deleted',
       moderationQueue: 'kept',
       profileReportQueue: 'kept',
+      fanClubReportQueue: 'kept',
       idempotency: 'deleted',
       staff: 'deleted',
       'storage.fans': 'deleted',
+      'storage.fanClubMedia': 'deleted',
       staffAudit: 'kept',
       accessLog: 'kept',
     });

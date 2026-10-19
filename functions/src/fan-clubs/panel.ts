@@ -8,6 +8,7 @@ import {
 
 import { artistRecord, isPublished } from '../centrals/model';
 import { artistRef } from '../centrals/service';
+import { MISSING_FAN_PHOTO_FILES, type FanPhotoFiles } from '../fan-profile/files';
 import { isContentId } from '../page-cursor';
 import { requestFields } from '../staff/model';
 import {
@@ -24,27 +25,37 @@ import {
   applicationRecord,
   checkClubName,
   CLOSE_REASONS,
+  FAN_CLUB_POST_STATUSES,
   FAN_CLUB_REAPPLY_MS,
   FAN_CLUB_STATUSES,
   FEATURED_PER_ARTIST_MAX,
   fanClubBoxes,
+  fanClubPostRecord,
   fanClubRecord,
   isFeaturedNow,
   millisOf,
   parseFeaturedUntil,
+  POST_REJECT_REASONS,
+  postMediaPaths,
   reapplyAfterRejection,
   withHistory,
   type ApplicationRecord,
   type ApplicationRejectReason,
   type CloseReason,
+  type FanClubPostStatus,
   type FanClubRecord,
   type FanClubStatus,
+  type PostMedia,
+  type PostRejectReason,
 } from './model';
+import { NO_FILE_WORK, runFanClubFileWork, type FanClubFileWork } from './posts';
 import {
   applicationPrivateRef,
   applicationRef,
   FEATURE_OFF,
+  fanClubPostRef,
   fanClubRef,
+  fanClubReportQueueRef,
   fanClubsOf,
   ownerCopiesOf,
 } from './store';
@@ -55,11 +66,12 @@ import {
 // decide), e a auditoria na mesma transação. O molde é o do
 // `resolveProfileReport`: o estado que a tela mostrou (`expected`) diferente
 // do de agora é `stale-decision`; nada a mudar, `ok` sem gravar nem auditar.
-// Esta etapa (34.14, etapa 1) decide a candidatura e o fã-clube; as
-// publicações, as denúncias e o Recompensar chegam nas etapas 2 e 5.
+// A etapa 1 de 34.14 decide a candidatura e o fã-clube; a etapa 2, as
+// publicações e as denúncias delas, com os arquivos apagados e os tokens
+// trocados depois da transação; o Recompensar chega na etapa 5.
 
-/** Os assuntos que esta etapa decide. */
-export const DECISION_SUBJECTS = ['application', 'club'] as const;
+/** Os assuntos que a callable decide. */
+export const DECISION_SUBJECTS = ['application', 'club', 'post', 'report'] as const;
 export type DecisionSubject = (typeof DECISION_SUBJECTS)[number];
 
 export type DecisionInput =
@@ -101,28 +113,59 @@ export type DecisionInput =
       expected: FanClubStatus;
       /** `AAAA-MM-DD`, de amanhã a 31 dias. */
       featuredUntil: string;
+    }
+  | {
+      subject: 'post';
+      id: string;
+      decision: 'approve' | 'hide' | 'restore';
+      /** O status da publicação que a tela mostrou. */
+      expected: FanClubPostStatus;
+    }
+  | {
+      subject: 'post';
+      id: string;
+      decision: 'reject';
+      expected: FanClubPostStatus;
+      reason: PostRejectReason;
+    }
+  | {
+      subject: 'report';
+      /** O id da publicação, que é o do item da `fanClubReportQueue`. */
+      id: string;
+      decision: 'keep' | 'action';
+      /** A rodada do item que a tela mostrou. */
+      expected: number;
     };
 
 export type DecisionResult = {
   ok: true;
   subject: DecisionSubject;
   id: string;
-  /** O status do assunto depois da decisão (da candidatura ou do fã-clube). */
+  /**
+   * O status do assunto depois da decisão: da candidatura, do fã-clube, da
+   * publicação ou do item da fila de denúncias (`resolved`).
+   */
   status: string;
 };
+
+/** A decisão tomada e o que fica para depois da transação (os arquivos da publicação). */
+export type Decided = { result: DecisionResult; files: FanClubFileWork };
 
 const invalid = (field: string, extra: Record<string, unknown> = {}) =>
   panelError('invalid-request', { field, ...extra });
 
 const CLUB_DECISIONS = ['pause', 'resume', 'close', 'feature', 'unfeature'] as const;
+const POST_DECISIONS = ['approve', 'reject', 'hide', 'restore'] as const;
+const REPORT_DECISIONS = ['keep', 'action'] as const;
 
 /**
  * O corpo da callable depois do assunto e do id (puro): a decisão da lista do
  * assunto, o `expected` (a rodada, inteiro de 0 em diante, na candidatura; o
- * status, no fã-clube) e os campos de cada decisão (34.3); senão
- * `invalid-request` com o campo. Na candidatura, o `submittedAt` opcional (o
- * da tela, em ms). O nome da aprovação passa pelas regras da candidatura
- * (`checkClubName`), com o motivo no `details.problem`.
+ * status, no fã-clube e na publicação; a rodada, inteiro de 1 em diante, na
+ * denúncia) e os campos de cada decisão (34.3); senão `invalid-request` com o
+ * campo. Na candidatura, o `submittedAt` opcional (o da tela, em ms). O nome
+ * da aprovação passa pelas regras da candidatura (`checkClubName`), com o
+ * motivo no `details.problem`.
  */
 export function parseDecision(
   subject: DecisionSubject,
@@ -167,6 +210,38 @@ export function parseDecision(
     }
     return { subject, id, decision, expected, submittedAt, name };
   }
+  if (subject === 'post') {
+    if (!(POST_DECISIONS as readonly unknown[]).includes(decision)) throw invalid('decision');
+    if (!(FAN_CLUB_POST_STATUSES as readonly unknown[]).includes(expected)) {
+      throw invalid('expected');
+    }
+    const shown = expected as FanClubPostStatus;
+    if (decision === 'reject') {
+      if (!(POST_REJECT_REASONS as readonly unknown[]).includes(fields.reason)) {
+        throw invalid('reason');
+      }
+      return {
+        subject,
+        id,
+        decision,
+        expected: shown,
+        reason: fields.reason as PostRejectReason,
+      };
+    }
+    return {
+      subject,
+      id,
+      decision: decision as 'approve' | 'hide' | 'restore',
+      expected: shown,
+    };
+  }
+  if (subject === 'report') {
+    if (!(REPORT_DECISIONS as readonly unknown[]).includes(decision)) throw invalid('decision');
+    if (typeof expected !== 'number' || !Number.isSafeInteger(expected) || expected < 1) {
+      throw invalid('expected');
+    }
+    return { subject, id, decision: decision as 'keep' | 'action', expected };
+  }
   if (!(CLUB_DECISIONS as readonly unknown[]).includes(decision)) throw invalid('decision');
   if (!(FAN_CLUB_STATUSES as readonly unknown[]).includes(expected)) throw invalid('expected');
   const status = expected as FanClubStatus;
@@ -190,6 +265,12 @@ export function parseDecision(
 
 export type FanClubPanelDeps = {
   db: Firestore;
+  /**
+   * O Storage das fotos das publicações (etapa 2): a URL nova no `restore`, e,
+   * depois da transação, os arquivos apagados na recusa e os tokens trocados
+   * ao ocultar. Sem ele, só as decisões de publicação com foto falham.
+   */
+  files?: FanPhotoFiles;
   /** Relógio em ms; os testes fixam. */
   now?: () => number;
 };
@@ -581,16 +662,281 @@ async function decideClub(
   }
 }
 
-/** O núcleo, na transação de quem chama (a callable, o seed e os testes). */
-export function applyFanClubDecision(
+// --- A publicação --------------------------------------------------------------------
+
+/**
+ * O que a mesma decisão de novo refaz depois da transação: recusar apaga os
+ * arquivos de novo, ocultar troca o token de novo e relê, reexibir relê.
+ * Apagar o que já saiu e trocar de novo o token de uma oculta não fazem mal.
+ */
+function repeatedPostWork(
+  decision: (typeof POST_DECISIONS)[number],
+  postId: string,
+  paths: string[],
+): FanClubFileWork {
+  switch (decision) {
+    case 'reject':
+      return { ...NO_FILE_WORK, remove: paths };
+    case 'hide':
+      return { ...NO_FILE_WORK, rotate: paths, refresh: [postId] };
+    case 'restore':
+      return { ...NO_FILE_WORK, refresh: [postId] };
+    case 'approve':
+      return NO_FILE_WORK;
+  }
+}
+
+/** O status que cada decisão da publicação deixa, e de onde ela sai (34.5). */
+const POST_TARGET = {
+  approve: 'published',
+  reject: 'rejected',
+  hide: 'hidden',
+  restore: 'published',
+} as const satisfies Record<(typeof POST_DECISIONS)[number], FanClubPostStatus>;
+
+const POST_FROM = {
+  approve: 'pending',
+  reject: 'pending',
+  hide: 'published',
+  restore: 'hidden',
+} as const satisfies Record<(typeof POST_DECISIONS)[number], FanClubPostStatus>;
+
+const POST_AUDIT = {
+  approve: 'fanClub.post.approved',
+  reject: 'fanClub.post.rejected',
+  hide: 'fanClub.post.hidden',
+  restore: 'fanClub.post.restored',
+} as const satisfies Record<(typeof POST_DECISIONS)[number], AuditAction>;
+
+/**
+ * A mídia com as URLs de agora, lidas no Storage (o `restore`: o ocultar
+ * trocou o token, e a URL guardada não abre mais). Leituras, antes de
+ * qualquer gravação da transação.
+ */
+async function freshMedia(files: FanPhotoFiles, media: PostMedia): Promise<PostMedia> {
+  const [photo, thumb] = await Promise.all([
+    files.downloadUrl(media.photo.path),
+    files.downloadUrl(media.thumb.path),
+  ]);
+  return { photo: { ...media.photo, url: photo }, thumb: { ...media.thumb, url: thumb } };
+}
+
+/**
+ * Aprovar, recusar, ocultar e reexibir a publicação (34.5), na transação de
+ * quem chama: a publicação (`fan-club-post-not-found`); o autor é quem chama,
+ * `self`; a mesma decisão já tomada (a recusa com o mesmo motivo), `ok` sem
+ * gravar; o status diferente do da tela, `stale-decision`; a decisão que não
+ * cabe no status, `invalid-request` com `field: 'decision'`. Aprovar:
+ * `published`, o `pendingPosts` menos 1, o `postCount` mais 1 e o
+ * `lastPostAt`. Recusar: `rejected` com o motivo, o `pendingPosts` menos 1 e
+ * os arquivos apagados depois da transação. Ocultar: `hidden`, o `postCount`
+ * menos 1 e os tokens trocados depois da transação. Reexibir: `published`, o
+ * `postCount` mais 1 e as URLs novas na `media`. A auditoria leva o id da
+ * publicação em `fanClubPostId` (nunca em `postId`, que é o do Mural) e nunca
+ * o texto.
+ */
+async function decidePost(
+  tx: Transaction,
+  db: Firestore,
+  input: Extract<DecisionInput, { subject: 'post' }>,
+  options: { actor: Actor; now: number; files: FanPhotoFiles },
+): Promise<Decided> {
+  const { actor, now, files } = options;
+  const ref = fanClubPostRef(db, input.id);
+  const snap = await tx.get(ref);
+  if (!snap.exists) throw panelError('fan-club-post-not-found');
+  const post = fanClubPostRecord(snap.id, snap.data() ?? {});
+  if (post.authorUid === actor.uid) throw panelError('self');
+  const target = POST_TARGET[input.decision];
+  const done: Decided = {
+    result: { ok: true, subject: 'post', id: input.id, status: target },
+    files: NO_FILE_WORK,
+  };
+  const paths = postMediaPaths(post);
+  if (
+    post.status === target &&
+    (input.decision !== 'reject' || post.rejectReason === input.reason)
+  ) {
+    // A repetição (a nova tentativa do painel) refaz o que fica para depois da
+    // transação, sem gravar: a troca do token ou a remoção que pode ter
+    // falhado, e a releitura das URLs da reexibida.
+    return { ...done, files: repeatedPostWork(input.decision, post.id, paths) };
+  }
+  if (post.status !== input.expected) throw panelError('stale-decision');
+  if (post.status !== POST_FROM[input.decision]) throw notInStatus();
+  const clubSnap = await tx.get(fanClubRef(db, post.clubId));
+  const club = clubSnap.exists ? fanClubRecord(clubSnap.id, clubSnap.data() ?? {}) : null;
+  const media =
+    input.decision === 'restore' && post.media ? await freshMedia(files, post.media) : null;
+
+  const at = tsOf(now);
+  const reviewed = { reviewedAt: at, reviewedBy: { uid: actor.uid, name: actor.name } };
+  let work: FanClubFileWork = NO_FILE_WORK;
+  switch (input.decision) {
+    case 'approve':
+      tx.update(ref, { status: 'published', publishedAt: at, ...reviewed });
+      if (club) {
+        tx.update(clubSnap.ref, {
+          pendingPosts: Math.max(0, club.pendingPosts - 1),
+          postCount: club.postCount + 1,
+          lastPostAt: at,
+          updatedAt: at,
+        });
+      }
+      break;
+    case 'reject':
+      tx.update(ref, { status: 'rejected', rejectReason: input.reason, ...reviewed });
+      if (club) {
+        tx.update(clubSnap.ref, {
+          pendingPosts: Math.max(0, club.pendingPosts - 1),
+          updatedAt: at,
+        });
+      }
+      work = { ...NO_FILE_WORK, remove: paths };
+      break;
+    case 'hide':
+      tx.update(ref, { status: 'hidden', ...reviewed });
+      if (club) {
+        tx.update(clubSnap.ref, { postCount: Math.max(0, club.postCount - 1), updatedAt: at });
+      }
+      // Relida depois da troca: alguém pode reexibir antes de ela terminar.
+      work = { ...NO_FILE_WORK, rotate: paths, refresh: [post.id] };
+      break;
+    case 'restore':
+      tx.update(ref, { status: 'published', ...(media ? { media } : {}), ...reviewed });
+      if (club) tx.update(clubSnap.ref, { postCount: club.postCount + 1, updatedAt: at });
+      // Relida depois da transação: um ocultar de antes pode trocar o token depois desta leitura.
+      work = { ...NO_FILE_WORK, refresh: [post.id] };
+      break;
+  }
+  audit(
+    tx,
+    db,
+    POST_AUDIT[input.decision],
+    actor,
+    {
+      fanClubPostId: post.id,
+      clubId: post.clubId,
+      artistId: post.artistId,
+      authorUid: post.authorUid,
+      reason: input.decision === 'reject' ? input.reason : null,
+    },
+    at,
+  );
+  return { ...done, files: work };
+}
+
+// --- A denúncia ----------------------------------------------------------------------
+
+const countOf = (value: unknown): number =>
+  typeof value === 'number' && Number.isFinite(value) && value > 0 ? Math.floor(value) : 0;
+
+/**
+ * Manter ou Ocultar a publicação denunciada (34.5), na transação de quem
+ * chama: o item da `fanClubReportQueue` e a publicação num `getAll`. Sem o
+ * item, ou resolvido com `withdrawn` ou `author_deleted` (não há o que a
+ * equipe decidir): `fan-club-report-not-found`. O autor é quem chama, `self`.
+ * A rodada diferente da do item: `stale-decision`. Já resolvido com a mesma
+ * resolução: `ok` sem gravar nem auditar. `keep` resolve com `kept`; `action`
+ * resolve com `actioned` e, com a publicação ainda no ar, a oculta na mesma
+ * transação (o `postCount` menos 1 e os tokens trocados depois); em outro
+ * status, só resolve. Trocar `kept` por `actioned`, ou o contrário, na mesma
+ * rodada vale, como na denúncia de perfil (29.6). A auditoria
+ * `fanClub.report.resolved` leva a resolução, a contagem, a rodada e se a
+ * publicação foi ocultada agora, nunca o texto.
+ */
+async function decideReport(
+  tx: Transaction,
+  db: Firestore,
+  input: Extract<DecisionInput, { subject: 'report' }>,
+  options: { actor: Actor; now: number },
+): Promise<Decided> {
+  const { actor, now } = options;
+  const postRef = fanClubPostRef(db, input.id);
+  const [item, postSnap] = await tx.getAll(fanClubReportQueueRef(db, input.id), postRef);
+  if (!item!.exists) throw panelError('fan-club-report-not-found');
+  const status = item!.get('status');
+  const current = item!.get('resolution');
+  if (status !== 'open' && (current === 'withdrawn' || current === 'author_deleted')) {
+    throw panelError('fan-club-report-not-found');
+  }
+  const post = postSnap!.exists ? fanClubPostRecord(postSnap!.id, postSnap!.data() ?? {}) : null;
+  const authorUid = post?.authorUid ?? item!.get('authorUid');
+  if (authorUid === actor.uid) throw panelError('self');
+  if (item!.get('round') !== input.expected) throw panelError('stale-decision');
+  const resolution = input.decision === 'keep' ? 'kept' : 'actioned';
+  const done: Decided = {
+    result: { ok: true, subject: 'report', id: input.id, status: 'resolved' },
+    files: NO_FILE_WORK,
+  };
+  if (status === 'resolved' && current === resolution) {
+    // A repetição do Ocultar refaz a troca do token da publicação oculta.
+    return resolution === 'actioned' && post?.status === 'hidden'
+      ? { ...done, files: { ...NO_FILE_WORK, rotate: postMediaPaths(post), refresh: [post.id] } }
+      : done;
+  }
+
+  const hide = resolution === 'actioned' && post?.status === 'published';
+  const clubSnap = hide && post ? await tx.get(fanClubRef(db, post.clubId)) : null;
+  const at = tsOf(now);
+  const by = { uid: actor.uid, name: actor.name };
+  let work: FanClubFileWork = NO_FILE_WORK;
+  if (hide && post) {
+    tx.update(postRef, { status: 'hidden', reviewedAt: at, reviewedBy: by });
+    if (clubSnap?.exists) {
+      const club = fanClubRecord(clubSnap.id, clubSnap.data() ?? {});
+      tx.update(clubSnap.ref, { postCount: Math.max(0, club.postCount - 1), updatedAt: at });
+    }
+    work = { ...NO_FILE_WORK, rotate: postMediaPaths(post), refresh: [post.id] };
+  }
+  tx.update(item!.ref, { status: 'resolved', resolution, resolvedAt: at, resolvedBy: by });
+  audit(
+    tx,
+    db,
+    'fanClub.report.resolved',
+    actor,
+    {
+      fanClubPostId: input.id,
+      clubId: post?.clubId ?? item!.get('clubId') ?? null,
+      resolution,
+      reportCount: countOf(item!.get('reportCount')),
+      round: input.expected,
+      postHidden: hide,
+    },
+    at,
+  );
+  return { ...done, files: work };
+}
+
+/**
+ * O núcleo, na transação de quem chama (a callable, o seed e os testes): a
+ * decisão e o que fica para depois da transação (só as publicações mexem em
+ * arquivo). Sem o Storage (`files`), as decisões que leem uma foto falham.
+ */
+export async function applyFanClubDecision(
   tx: Transaction,
   db: Firestore,
   input: DecisionInput,
-  options: { actor: Actor; now: number },
-): Promise<DecisionResult> {
-  return input.subject === 'application'
-    ? decideApplication(tx, db, input, options)
-    : decideClub(tx, db, input, options);
+  options: { actor: Actor; now: number; files?: FanPhotoFiles },
+): Promise<Decided> {
+  const { actor, now } = options;
+  switch (input.subject) {
+    case 'application':
+      return {
+        result: await decideApplication(tx, db, input, { actor, now }),
+        files: NO_FILE_WORK,
+      };
+    case 'club':
+      return { result: await decideClub(tx, db, input, { actor, now }), files: NO_FILE_WORK };
+    case 'post':
+      return decidePost(tx, db, input, {
+        actor,
+        now,
+        files: options.files ?? MISSING_FAN_PHOTO_FILES,
+      });
+    case 'report':
+      return decideReport(tx, db, input, { actor, now });
+  }
 }
 
 /**
@@ -598,8 +944,11 @@ export function applyFanClubDecision(
  * seção `fanClubs` e edição, lida direto e de novo na transação. Sem login,
  * `unauthenticated`; o assunto fora da lista, `invalid-request` com
  * `field: 'subject'`; o id fora do formato, com `field: 'id'`; a própria
- * candidatura, `self` (o próprio fã-clube, na transação). Encerrar pede o
- * papel admin (`admin-only`). Saída `{ ok: true, subject, id, status }`.
+ * candidatura, `self` (o próprio fã-clube, a própria publicação e a denúncia
+ * dela, na transação). Encerrar pede o papel admin (`admin-only`). Depois da
+ * transação, os arquivos da publicação recusada saem e os tokens da ocultada
+ * mudam (a falha vai ao log: a decisão já valeu). Saída
+ * `{ ok: true, subject, id, status }`.
  */
 export async function decideFanClub(
   deps: FanClubPanelDeps,
@@ -630,22 +979,38 @@ export async function decideFanClub(
   const now = (deps.now ?? Date.now)();
   const input = parseDecision(subject as DecisionSubject, id, fields, now);
   if (input.decision === 'close' && direct.role !== 'admin') throw panelAccessError('admin-only');
-  return db.runTransaction(async (tx) => {
+  const decided = await db.runTransaction(async (tx) => {
     const actor = await readPanelActor(transactionRead(tx), db, caller, 'fanClubs', 'edit');
     if (input.decision === 'close' && actor.role !== 'admin') {
       throw panelAccessError('admin-only');
     }
-    return applyFanClubDecision(tx, db, input, { actor, now });
+    return applyFanClubDecision(tx, db, input, {
+      actor,
+      now,
+      ...(deps.files ? { files: deps.files } : {}),
+    });
   });
+  await runFanClubFileWork(db, deps.files ?? MISSING_FAN_PHOTO_FILES, decided.files);
+  return decided.result;
 }
 
-/** A decisão fora do painel, com um ator dado (o seed dos emuladores). Sem conferir o acesso. */
-export function runFanClubDecision(
+/**
+ * A decisão fora do painel, com um ator dado (o seed dos emuladores). Sem
+ * conferir o acesso. Com `files`, os arquivos mudam depois da transação, como
+ * na callable.
+ */
+export async function runFanClubDecision(
   db: Firestore,
   input: DecisionInput,
-  options: { actor: Actor; now?: number },
+  options: { actor: Actor; now?: number; files?: FanPhotoFiles },
 ): Promise<DecisionResult> {
-  return db.runTransaction((tx) =>
-    applyFanClubDecision(tx, db, input, { actor: options.actor, now: options.now ?? Date.now() }),
+  const decided = await db.runTransaction((tx) =>
+    applyFanClubDecision(tx, db, input, {
+      actor: options.actor,
+      now: options.now ?? Date.now(),
+      ...(options.files ? { files: options.files } : {}),
+    }),
   );
+  if (options.files) await runFanClubFileWork(db, options.files, decided.files);
+  return decided.result;
 }

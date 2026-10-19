@@ -148,7 +148,7 @@ describe('exclusão de conta (deleteUserData)', () => {
     ]);
   });
 
-  it('com o Storage, a pasta da foto sai por último, arquivo por arquivo (bloco 9)', async () => {
+  it('com o Storage, as pastas do fã saem por último, arquivo por arquivo (bloco 9 e seção 34)', async () => {
     const steps: string[] = [];
     const files = {
       list: vi.fn(async (prefix: string) => {
@@ -162,11 +162,14 @@ describe('exclusão de conta (deleteUserData)', () => {
 
     await deleteUserData(fakeDb(steps), UID, { files });
 
-    expect(steps.slice(-4)).toEqual([
+    expect(steps.slice(-7)).toEqual([
       `delete staff/${UID}`,
       `list fans/${UID}/`,
+      `list fanClubMedia/${UID}/`,
       `remove fans/${UID}/photo-agora0001.jpg`,
       `remove fans/${UID}/photo-falhou01.jpg`,
+      `remove fanClubMedia/${UID}/photo-agora0001.jpg`,
+      `remove fanClubMedia/${UID}/photo-falhou01.jpg`,
     ]);
     expect(steps[0]).toBe(`delete users/${UID}`);
   });
@@ -178,8 +181,9 @@ describe('exclusão de conta (deleteUserData)', () => {
         throw new Error('503');
       },
     } as unknown as FanPhotoFiles;
+    // Um arquivo em cada pasta (a da foto do perfil e a do fã-clube).
     await expect(deleteUserData(fakeDb([]), UID, { files: failing })).rejects.toThrow(
-      /Ficaram 1 arquivo/,
+      /Ficaram 2 arquivo/,
     );
     const noBucket = {
       list: async () => {

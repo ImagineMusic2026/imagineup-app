@@ -1,7 +1,7 @@
 import * as logger from 'firebase-functions/logger';
 
 import { clientIp, logAccess } from '../access-log';
-import { MISSING_FAN_PHOTO_FILES } from '../fan-profile/files';
+import { MISSING_FAN_PHOTO_FILES, runStorageWork } from '../fan-profile/files';
 import { createConfigSource } from '../points/config';
 import { APP_CHECK_HEADER, checkAppCheck, type AppCheckConfig } from './app-check';
 import { authenticate } from './auth';
@@ -221,6 +221,8 @@ export function createApiHandler(deps: ApiDeps, routes: readonly ApiRoute[] = AP
       );
       status = result.status;
       replayed = result.replayed;
+      // Os arquivos da rota (apagar e trocar o token), também na repetição: nunca lança.
+      if (result.storageWork) await runStorageWork(resolved.files, result.storageWork);
       send(res, status, result.body, replayed ? { 'Idempotency-Replayed': 'true' } : {});
     } catch (error) {
       const { error: apiFailure, unexpected } = toApiHttpError(error);

@@ -13,6 +13,7 @@ import {
   type FanContext,
 } from '../points/award';
 import type { GameConfig, PointsConfig } from '../points/model';
+import { hasStorageWork, storageWorkOf, type StorageWork } from '../fan-profile/files';
 import { pickShard } from '../points/stats';
 import { apiError } from './errors';
 import type { ResolvedDeps, WorkResult } from './types';
@@ -86,7 +87,16 @@ export type IdempotentWork = (ctx: {
   profile: DocumentSnapshot;
 }) => Promise<WorkResult>;
 
-export type IdempotentResult = { status: number; body: unknown; replayed: boolean };
+export type IdempotentResult = {
+  status: number;
+  body: unknown;
+  replayed: boolean;
+  /**
+   * O trabalho de arquivos da rota, guardado na chave: volta no pedido que
+   * gravou e em toda repetição, para quem chama rodar depois da transação.
+   */
+  storageWork?: StorageWork;
+};
 
 /**
  * A resposta como o app vai recebê-la: o JSON do `res.json`, sem campo
@@ -111,6 +121,9 @@ export function storedBody(body: unknown): unknown {
  * 4. o trabalho da rota (leituras, planAwards, gravações do domínio);
  * 5. grava o plano (ou só a atividade de quem chama) e a chave, juntos.
  * O plano da rota precisa ter partido do `fan` deste pedido (`plan.caller`).
+ * O `storageWork` da rota fica guardado na chave e volta junto, também na
+ * repetição (a da transação que já gravou e o SDK repetiu, e a do app com a
+ * mesma chave), para quem chama rodar depois da transação.
  * O shard é sorteado de novo a cada tentativa. ALREADY_EXISTS roda tudo de
  * novo uma vez: a segunda rodada acha a chave ou o lançamento.
  */
@@ -131,7 +144,13 @@ export function runIdempotent(
       if (saved!.exists) {
         if (saved!.get('fingerprint') !== call.fingerprint)
           throw apiError('idempotency_key_reused');
-        return { status: saved!.get('status'), body: saved!.get('body') ?? null, replayed: true };
+        const storageWork = storageWorkOf(saved!.get('storageWork'));
+        return {
+          status: saved!.get('status'),
+          body: saved!.get('body') ?? null,
+          replayed: true,
+          ...(storageWork ? { storageWork } : {}),
+        };
       }
 
       const fan = await requireFan(tx, db, call.uid, profile!, wallet!, call.now, {
@@ -159,16 +178,21 @@ export function runIdempotent(
 
       const status = result.status ?? 200;
       const body = storedBody(result.body);
+      const storageWork =
+        result.storageWork && hasStorageWork(result.storageWork) ? result.storageWork : null;
       tx.create(keyRef, {
         uid: call.uid,
         route: call.route,
         fingerprint: call.fingerprint,
         status,
         body,
+        ...(storageWork ? { storageWork } : {}),
         createdAt: Timestamp.fromMillis(call.now),
         expiresAt: Timestamp.fromMillis(call.now + IDEMPOTENCY_TTL_MS),
       });
-      return { status, body, replayed: false };
+      return storageWork
+        ? { status, body, replayed: false, storageWork }
+        : { status, body, replayed: false };
     }),
   );
 }

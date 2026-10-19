@@ -253,6 +253,55 @@ describe('runIdempotent', () => {
     expect(key?.data).toMatchObject({ status: 200, body: expected });
   });
 
+  it('o trabalho de arquivos fica na chave e volta também na repetição (seção 34)', async () => {
+    const storageWork = { remove: ['fanClubMedia/uid-camila/a.jpg'], rotate: [] };
+    const first = fakeDb(PROFILE);
+    const work: IdempotentWork = async () => ({ body: { ok: true }, storageWork });
+    expect(
+      await runIdempotent(
+        deps(first.db, () => 0),
+        CALL,
+        work,
+      ),
+    ).toEqual({
+      status: 200,
+      body: { ok: true },
+      replayed: false,
+      storageWork,
+    });
+    const key = first.tries[0]!.find((write) => write.path.startsWith('idempotency/'));
+    expect(key?.data).toMatchObject({ storageWork });
+    // A repetição (a do SDK depois de um commit que valeu, ou a do app) refaz o trabalho.
+    const replay = fakeDb({
+      ...PROFILE,
+      [key!.path]: { fingerprint: 'f', status: 200, body: { ok: true }, storageWork },
+    });
+    expect(
+      await runIdempotent(
+        deps(replay.db, () => 0),
+        CALL,
+        work,
+      ),
+    ).toEqual({
+      status: 200,
+      body: { ok: true },
+      replayed: true,
+      storageWork,
+    });
+    // Sem trabalho, nada vai à chave.
+    const empty = fakeDb(PROFILE);
+    await runIdempotent(
+      deps(empty.db, () => 0),
+      CALL,
+      async () => ({
+        body: { ok: true },
+        storageWork: { remove: [], rotate: [] },
+      }),
+    );
+    const emptyKey = empty.tries[0]!.find((write) => write.path.startsWith('idempotency/'));
+    expect(emptyKey?.data).not.toHaveProperty('storageWork');
+  });
+
   it('plano feito sem o fan de quem chama recusa sem gravar nada (a atividade sumiria)', async () => {
     const { db, tries } = fakeDb(PROFILE);
     const work: IdempotentWork = async ({ tx, award }) => {

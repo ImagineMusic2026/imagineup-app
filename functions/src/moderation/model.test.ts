@@ -9,11 +9,18 @@ import {
   DAILY_CAPS,
   dailyCapProblem,
   DailyCapError,
+  emptyFanClubReasons,
+  FAN_CLUB_REPORT_REASONS,
+  fanClubReasonKey,
+  fanClubReasonsOf,
   formatBlockCursor,
   isFanId,
   ModerationError,
   parseBlockCursor,
+  parseFanClubReportReason,
   parseReportReason,
+  REPORT_REASONS,
+  storedFanClubReasonKey,
   profileReportId,
   reasonsOf,
   reportId,
@@ -54,6 +61,64 @@ describe('motivos da denúncia', () => {
   });
 });
 
+describe('motivos da denúncia de publicação de fã-clube (seção 34, decisão 18)', () => {
+  it('os 4 de sempre mais o uso indevido de imagem, só aqui', () => {
+    expect(FAN_CLUB_REPORT_REASONS).toEqual([
+      'spam',
+      'offensive',
+      'harassment',
+      'image_misuse',
+      'other',
+    ]);
+    // A denúncia de comentário e de perfil não muda.
+    expect(REPORT_REASONS).toEqual(['spam', 'offensive', 'harassment', 'other']);
+    expect(parseReportReason({ reason: 'image_misuse' })).toBeUndefined();
+  });
+
+  it.each([
+    [undefined, null],
+    [null, null],
+    [{}, null],
+    [{ reason: null }, null],
+    [{ reason: 'spam' }, 'spam'],
+    [{ reason: 'image_misuse' }, 'image_misuse'],
+    [{ reason: 'other' }, 'other'],
+  ])('%j vale %s', (body, reason) => {
+    expect(parseFanClubReportReason(body)).toBe(reason);
+  });
+
+  it.each([[{ reason: 'nudez' }], [{ reason: 2 }], ['image_misuse'], [[]]])(
+    '%j é inválido (400)',
+    (body) => {
+      expect(parseFanClubReportReason(body)).toBeUndefined();
+    },
+  );
+
+  it('a contagem por motivo da fila, com as seis chaves', () => {
+    expect(emptyFanClubReasons()).toEqual({
+      spam: 0,
+      offensive: 0,
+      harassment: 0,
+      image_misuse: 0,
+      other: 0,
+      none: 0,
+    });
+    expect(fanClubReasonsOf({ image_misuse: 3, spam: -1, none: 'x' })).toMatchObject({
+      image_misuse: 3,
+      spam: 0,
+      none: 0,
+    });
+    expect(fanClubReasonKey(null)).toBe('none');
+    expect(fanClubReasonKey('image_misuse')).toBe('image_misuse');
+    expect(storedFanClubReasonKey('chato')).toBe('none');
+    expect(storedFanClubReasonKey('image_misuse')).toBe('image_misuse');
+  });
+
+  it('a própria publicação é own_post (400)', () => {
+    expect(new ModerationError('own_post').message).toBe('A própria publicação não se denuncia.');
+  });
+});
+
 describe('tetos do dia', () => {
   it('os valores de 21.7', () => {
     expect(DAILY_CAPS).toEqual({
@@ -71,8 +136,11 @@ describe('tetos do dia', () => {
       // O perfil novo: os salvamentos do perfil e as trocas de nome (seção 28).
       profile: { key: 'profile_save', limit: 20 },
       name: { key: 'name_change', limit: 5 },
-      // O fã-clube (seção 34, decisão 11): as candidaturas.
+      // O fã-clube (seção 34, decisão 11): as candidaturas, as publicações e
+      // as vagas de envio da foto delas.
       club_apply: { key: 'fanclub_apply', limit: 3 },
+      club_post: { key: 'fanclub_post', limit: 5 },
+      club_upload: { key: 'fanclub_upload', limit: 10 },
     });
     expect(BLOCK_LIST_MAX).toBe(1_000);
   });

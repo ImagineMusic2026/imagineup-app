@@ -308,6 +308,17 @@ describe('photoProblem', () => {
     expect(photoProblem(file(), jpeg(SOI, sof(0xc0, 0, 512)))).toBe('dimensions');
     expect(photoProblem(file(), jpeg(SOI, sof(0xc0, 512, 0)))).toBe('dimensions');
   });
+
+  it('com outro teto (a foto do fã-clube, seção 34, decisão 15): os bytes e o lado dele', () => {
+    const club = { maxBytes: 2 * PHOTO_MAX_BYTES, maxSide: 1350 };
+    const photo = jpeg(SOI, APP0, sof(0xc0, 1080, 1350));
+    expect(photoProblem(file({ size: 2 * PHOTO_MAX_BYTES }), photo, club)).toBeNull();
+    expect(photoProblem(file({ size: 2 * PHOTO_MAX_BYTES + 1 }), photo, club)).toBe('size');
+    expect(photoProblem(file(), jpeg(SOI, sof(0xc0, 1080, 1351)), club)).toBe('dimensions');
+    // O padrão continua o da foto do perfil.
+    expect(photoProblem(file(), photo)).toBe('dimensions');
+    expect(photoProblem(file({ size: PHOTO_MAX_BYTES + 1 }))).toBe('size');
+  });
 });
 
 describe('photoTooOld', () => {

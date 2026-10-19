@@ -32,6 +32,8 @@ export type ApiErrorCode =
   | 'fan_not_found'
   | 'photo_not_found'
   | 'reward_not_found'
+  | 'fan_club_not_found'
+  | 'fan_club_post_not_found'
   | 'method_not_allowed'
   | 'insufficient_points'
   | 'sold_out'
@@ -85,6 +87,8 @@ export const API_ERRORS: Record<ApiErrorCode, { status: number; message: string 
   fan_not_found: { status: 404, message: 'Fã não encontrado.' },
   photo_not_found: { status: 404, message: 'Foto não encontrada. Envie de novo.' },
   reward_not_found: { status: 404, message: 'Recompensa não encontrada.' },
+  fan_club_not_found: { status: 404, message: 'Este fã-clube não está disponível.' },
+  fan_club_post_not_found: { status: 404, message: 'Publicação não encontrada.' },
   method_not_allowed: { status: 405, message: 'Método não aceito nesta rota.' },
   insufficient_points: { status: 409, message: 'Saldo insuficiente.' },
   sold_out: { status: 409, message: 'Recompensa esgotada.' },
@@ -206,6 +210,7 @@ export function toApiHttpError(error: unknown): { error: ApiHttpError; unexpecte
     if (
       error.reason === 'own_comment' ||
       error.reason === 'own_profile' ||
+      error.reason === 'own_post' ||
       error.reason === 'self'
     ) {
       return { error: apiError('invalid_request', { reason: error.reason }), unexpected: false };

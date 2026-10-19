@@ -3,14 +3,15 @@ import { filterTokens, isBlockedSocial, isBlockedText } from '../content-filter'
 import { dayKey, shiftDay } from '../day';
 import { parseWhatsapp } from '../fan-contact/model';
 import { normalizeSocialHandle } from '../fan-profile/details';
+import type { PhotoLimits } from '../fan-profile/model';
 import { cleanLine, cleanMultiline, isVisibleLine, isVisibleMultiline } from '../visible-line';
 
 // O fã-clube gerido pelo fã (docs/arquitetura-api.md, seção 34), puro: nada
 // aqui lê ou grava o Firestore. As constantes do programa, as regras dos
-// campos da candidatura, as recusas da API, a leitura dos documentos e o
-// prazo do Destaque. Este módulo não importa a moderação, os pontos nem a
-// equipe: os tetos do dia (moderation/model.ts e points/config.ts) importam
-// daqui.
+// campos da candidatura e da publicação, as recusas da API, a leitura dos
+// documentos e o prazo do Destaque. Este módulo não importa a moderação, os
+// pontos nem a equipe: os tetos do dia (moderation/model.ts e
+// points/config.ts) importam daqui.
 
 // --- O programa (decisões 8, 9 e 47) --------------------------------------------
 
@@ -77,6 +78,33 @@ export const FAN_CLUB_HISTORY_MAX = 10;
 /** O Destaque: o fim de amanhã a 31 dias, e até 3 destacados por artista ao mesmo tempo. */
 export const FEATURE_DAYS_MAX = 31;
 export const FEATURED_PER_ARTIST_MAX = 3;
+
+/** O texto da publicação: de 1 a 1.000 (decisão 15). */
+export const FAN_CLUB_POST_TEXT_MAX = 1_000;
+
+/** Publicações em análise ao mesmo tempo, no `pendingPosts` do fã-clube (decisão 11). */
+export const FAN_CLUB_PENDING_MAX = 3;
+
+/** Publicações por dia (o teto `fanclub_post`, editável no `config/points.actionCaps`). */
+export const FAN_CLUB_POSTS_PER_DAY = 5;
+
+/** Vagas de envio de foto por dia (o teto `fanclub_upload`, editável no `config/points.actionCaps`). */
+export const FAN_CLUB_UPLOADS_PER_DAY = 10;
+
+/** O prazo da vaga de envio da foto, como o da foto do perfil (27.4). */
+export const FAN_CLUB_UPLOAD_SLOT_MS = 10 * 60_000;
+
+/** A foto da publicação (o app gera 1080x1350, em JPEG sem EXIF): até 2 MiB e 1350 de lado. */
+export const CLUB_PHOTO_LIMITS: PhotoLimits = { maxBytes: 2 * 1024 * 1024, maxSide: 1350 };
+
+/** A miniatura da publicação (o app gera 480x600): até 300 KiB e 600 de lado. */
+export const CLUB_THUMB_LIMITS: PhotoLimits = { maxBytes: 300 * 1024, maxSide: 600 };
+
+/** Publicações por página na página do fã-clube e em "Minhas publicações". */
+export const FAN_CLUB_POSTS_PAGE = 10;
+
+/** Fã-clubes por página no `GET /artists/:artistId/fan-clubs`. */
+export const ARTIST_FAN_CLUBS_PAGE = 20;
 
 // --- Os valores dos documentos (34.4) -------------------------------------------
 
@@ -146,6 +174,12 @@ export type FanClubRecord = {
   featured: boolean;
   featuredUntil: string | null;
   lastReward: { at: number | null; points: number | null; prize: boolean } | null;
+  /** Os seguidores da cópia da noite (`counts.followers`, decisão 28): a ordem das listas. */
+  followers: number;
+  /** As cópias do gestor (null na lápide). */
+  ownerName: string | null;
+  ownerUsername: string | null;
+  ownerPhotoURL: string | null;
 };
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -237,6 +271,10 @@ export function fanClubRecord(id: string, data: Record<string, unknown>): FanClu
           prize: reward.prize === true,
         }
       : null,
+    followers: count(isRecord(data.counts) ? data.counts.followers : undefined),
+    ownerName: text(data.ownerName),
+    ownerUsername: text(data.ownerUsername),
+    ownerPhotoURL: text(data.ownerPhotoURL),
   };
 }
 
@@ -286,15 +324,31 @@ export function fanClubBoxes(data: Record<string, unknown> | undefined): FanClub
 /** O motivo do 400 `fan_club_invalid`. */
 export type FanClubInvalidReason = 'format' | 'not_allowed' | 'official';
 
-/** Os campos do `fan_club_invalid` na candidatura. */
+/**
+ * Os campos do `fan_club_invalid`: os da candidatura, o texto da publicação,
+ * a foto e a miniatura que chegaram fora do teto (decisão 15) e a versão do
+ * regulamento no novo aceite.
+ */
 export type FanClubInvalidField =
-  'name' | 'pitch' | 'instagram' | 'tiktok' | 'socials' | 'whatsapp' | 'adult' | 'rulesVersion';
+  | 'name'
+  | 'pitch'
+  | 'instagram'
+  | 'tiktok'
+  | 'socials'
+  | 'whatsapp'
+  | 'adult'
+  | 'rulesVersion'
+  | 'text'
+  | 'photo'
+  | 'thumb';
 
 /**
- * Os motivos do 409 `fan_club_refused` desta etapa (34.3), mais o
- * `applications_closed`: a candidatura com o `FAN_CLUB_OPEN` desligado (decisão 9;
- * o `program_closed` do `unavailableReason` é o fã-clube fechado para o artista).
- * O `contact_required` é do `PUT /me/contact` (decisão 14).
+ * Os motivos do 409 `fan_club_refused` das etapas 1 e 2 de 34.14 (34.3), mais
+ * o `applications_closed`: a candidatura com o `FAN_CLUB_OPEN` desligado
+ * (decisão 9; o `program_closed` do `unavailableReason` é o fã-clube fechado
+ * para o artista). O `contact_required` é do `PUT /me/contact` (decisão 14).
+ * Os da publicação (etapa 2): `club_not_active`, `photos_not_allowed`,
+ * `rules_outdated`, `upload_missing` e `too_many_pending`.
  */
 export type FanClubRefusal =
   | 'applications_closed'
@@ -306,25 +360,34 @@ export type FanClubRefusal =
   | 'cooldown'
   | 'too_many_rounds'
   | 'not_allowed'
-  | 'contact_required';
+  | 'contact_required'
+  | 'club_not_active'
+  | 'photos_not_allowed'
+  | 'rules_outdated'
+  | 'upload_missing'
+  | 'too_many_pending';
 
-export type FanClubErrorCode = 'fan_club_invalid' | 'fan_club_refused';
+export type FanClubErrorCode =
+  'fan_club_invalid' | 'fan_club_refused' | 'fan_club_not_found' | 'fan_club_post_not_found';
 
 const FAN_CLUB_MESSAGES: Record<FanClubErrorCode, string> = {
   fan_club_invalid: 'Campo fora do formato.',
-  fan_club_refused: 'A candidatura não pode ser feita agora.',
+  fan_club_refused: 'Isso não pode ser feito no fã-clube agora.',
+  fan_club_not_found: 'Fã-clube não encontrado.',
+  fan_club_post_not_found: 'Publicação não encontrada.',
 };
 
 /**
  * Recusa do fã-clube. A API traduz o `reason` no código dela (400
- * `fan_club_invalid` com `details: { field, reason }` e 409
- * `fan_club_refused` com `details: { reason }`).
+ * `fan_club_invalid` com `details: { field, reason }`, 409
+ * `fan_club_refused` com `details: { reason }` e os 404 `fan_club_not_found`
+ * e `fan_club_post_not_found`, sem detalhes).
  */
 export class FanClubError extends Error {
   readonly reason: FanClubErrorCode;
-  readonly details: Record<string, unknown>;
+  readonly details: Record<string, unknown> | undefined;
 
-  constructor(reason: FanClubErrorCode, details: Record<string, unknown>) {
+  constructor(reason: FanClubErrorCode, details?: Record<string, unknown>) {
     super(FAN_CLUB_MESSAGES[reason]);
     this.name = 'FanClubError';
     this.reason = reason;
@@ -337,6 +400,12 @@ export const fanClubInvalid = (field: FanClubInvalidField, reason: FanClubInvali
 
 export const fanClubRefused = (reason: FanClubRefusal, extra: Record<string, unknown> = {}) =>
   new FanClubError('fan_club_refused', { reason, ...extra });
+
+/** O fã-clube que não existe ou que a pessoa não pode ver (404, decisão 19). */
+export const fanClubNotFound = () => new FanClubError('fan_club_not_found');
+
+/** A publicação que não existe, fora do ar ou de outro autor (404). */
+export const fanClubPostNotFound = () => new FanClubError('fan_club_post_not_found');
 
 // --- O nome e o texto de divulgação (decisões 8 e 10) ------------------------------
 
@@ -547,3 +616,211 @@ export function isFeaturedNow(
 ): boolean {
   return club.featured && club.featuredUntil !== null && club.featuredUntil >= dayKey(now);
 }
+
+// --- As publicações (decisões 15 a 20) ------------------------------------------------
+
+export const FAN_CLUB_POST_STATUSES = [
+  'pending',
+  'published',
+  'rejected',
+  'withdrawn',
+  'hidden',
+  'removed',
+] as const;
+export type FanClubPostStatus = (typeof FAN_CLUB_POST_STATUSES)[number];
+
+/** Os motivos da recusa da publicação pela equipe (34.3). */
+export const POST_REJECT_REASONS = [
+  'image_rights',
+  'off_topic',
+  'quality',
+  'rules',
+  'other',
+] as const;
+export type PostRejectReason = (typeof POST_REJECT_REASONS)[number];
+
+/**
+ * A pasta das fotos das publicações de um gestor no Storage, fora de
+ * `fans/{uid}/`, que a varredura da foto do perfil esvazia (34.6). Com a
+ * barra do fim, para o prefixo não pegar outro uid.
+ */
+export const fanClubMediaFolder = (uid: string): string => `fanClubMedia/${uid}/`;
+
+/** O nome de um arquivo da vaga: `club-photo-<id>.jpg` ou `club-thumb-<id>.jpg` (o `storage.rules`). */
+export const FAN_CLUB_MEDIA_NAME = /^club-(photo|thumb)-[a-z0-9-]{8,40}\.jpg$/;
+
+/** Os dois nomes de uma vaga, com o mesmo id: a foto e a miniatura. */
+export function slotFileNames(id: string): { photo: string; thumb: string } {
+  return { photo: `club-photo-${id}.jpg`, thumb: `club-thumb-${id}.jpg` };
+}
+
+/**
+ * Os dois nomes guardados numa vaga (`fileNames`), na ordem da foto e da
+ * miniatura, ou null fora do formato.
+ */
+export function slotNamesOf(value: unknown): { photo: string; thumb: string } | null {
+  if (!Array.isArray(value) || value.length !== 2) return null;
+  const [photo, thumb] = value as unknown[];
+  if (typeof photo !== 'string' || typeof thumb !== 'string') return null;
+  if (!FAN_CLUB_MEDIA_NAME.test(photo) || !FAN_CLUB_MEDIA_NAME.test(thumb)) return null;
+  if (!photo.startsWith('club-photo-') || !thumb.startsWith('club-thumb-')) return null;
+  return { photo, thumb };
+}
+
+/** A diferença de proporção aceita entre a foto e a miniatura (o arredondamento da redução). */
+export const PROPORTION_TOLERANCE = 0.02;
+
+/**
+ * A miniatura tem a proporção da foto (o app gera as duas em 4:5 da mesma
+ * imagem), com a folga do arredondamento: a dupla de imagens diferentes, com
+ * outra forma, é recusada. A mesma forma com outro conteúdo passa: a equipe
+ * revisa as duas (34.10).
+ */
+export function sameProportion(
+  photo: { width: number; height: number },
+  thumb: { width: number; height: number },
+): boolean {
+  if (photo.width < 1 || photo.height < 1 || thumb.width < 1 || thumb.height < 1) return false;
+  const a = photo.width / photo.height;
+  const b = thumb.width / thumb.height;
+  return Math.abs(a - b) <= PROPORTION_TOLERANCE * a;
+}
+
+/** Uma imagem da publicação: a URL com token, o caminho e o tamanho lido no arquivo. */
+export type PostImage = { url: string; path: string; width: number; height: number };
+
+/** A foto e a miniatura da publicação com foto. */
+export type PostMedia = { photo: PostImage; thumb: PostImage };
+
+/** `fanClubPosts/{postId}` lido, com as datas em ms. */
+export type FanClubPostRecord = {
+  id: string;
+  clubId: string;
+  artistId: string;
+  authorUid: string;
+  authorName: string | null;
+  authorUsername: string | null;
+  authorPhotoURL: string | null;
+  kind: 'text' | 'photo';
+  text: string;
+  media: PostMedia | null;
+  status: FanClubPostStatus;
+  rejectReason: PostRejectReason | null;
+  submittedAt: number;
+  publishedAt: number | null;
+  reviewedAt: number | null;
+};
+
+const dimension = (value: unknown): number =>
+  typeof value === 'number' && Number.isSafeInteger(value) && value > 0 ? value : 0;
+
+function postImageOf(value: unknown): PostImage | null {
+  if (!isRecord(value) || typeof value.url !== 'string' || typeof value.path !== 'string') {
+    return null;
+  }
+  return {
+    url: value.url,
+    path: value.path,
+    width: dimension(value.width),
+    height: dimension(value.height),
+  };
+}
+
+function postMediaOf(value: unknown): PostMedia | null {
+  if (!isRecord(value)) return null;
+  const photo = postImageOf(value.photo);
+  const thumb = postImageOf(value.thumb);
+  return photo && thumb ? { photo, thumb } : null;
+}
+
+/** A publicação lida. O status estranho vale `removed` (não aparece nem se decide). */
+export function fanClubPostRecord(id: string, data: Record<string, unknown>): FanClubPostRecord {
+  const media = postMediaOf(data.media);
+  return {
+    id,
+    clubId: typeof data.clubId === 'string' ? data.clubId : '',
+    artistId: typeof data.artistId === 'string' ? data.artistId : '',
+    authorUid: typeof data.authorUid === 'string' ? data.authorUid : '',
+    authorName: text(data.authorName),
+    authorUsername: text(data.authorUsername),
+    authorPhotoURL: text(data.authorPhotoURL),
+    kind: media !== null ? 'photo' : 'text',
+    text: typeof data.text === 'string' ? data.text : '',
+    media,
+    status: oneOf(FAN_CLUB_POST_STATUSES, data.status) ?? 'removed',
+    rejectReason: oneOf(POST_REJECT_REASONS, data.rejectReason),
+    submittedAt: millisOf(data.submittedAt) ?? 0,
+    publishedAt: millisOf(data.publishedAt),
+    reviewedAt: millisOf(data.reviewedAt),
+  };
+}
+
+/** Os caminhos da mídia de uma publicação (a foto e a miniatura), para apagar ou trocar o token. */
+export const postMediaPaths = (post: Pick<FanClubPostRecord, 'media'>): string[] =>
+  post.media ? [post.media.photo.path, post.media.thumb.path] : [];
+
+/** As chaves aceitas no corpo do `POST /me/fan-club/posts`. */
+export const POST_KEYS = ['text', 'photo'] as const;
+
+/** O corpo da publicação conferido e limpo. */
+export type PostInput = { text: string; photo: boolean };
+
+export type ParsedPost = { ok: true; value: PostInput } | { ok: false; field: string };
+
+/**
+ * O corpo da publicação, conferido antes da transação e sem leitura (o
+ * `validate` da rota chama de novo no `handle`): corpo que não é objeto,
+ * chave desconhecida, o `text` que não é texto e o `photo` que não é booleano
+ * são `{ ok: false }` com o campo (400 `invalid_request`); o texto de 1 a
+ * 1.000 em linhas visíveis (`format`) e fora do filtro (`not_allowed`, o campo
+ * `fanClubPost`) lança `fan_club_invalid` com `field: 'text'`.
+ */
+export function parsePost(body: unknown): ParsedPost {
+  if (!isRecord(body)) return { ok: false, field: 'body' };
+  const unknownKey = Object.keys(body).find(
+    (key) => !(POST_KEYS as readonly string[]).includes(key),
+  );
+  if (unknownKey !== undefined) return { ok: false, field: unknownKey };
+  if (typeof body.text !== 'string') return { ok: false, field: 'text' };
+  if (typeof body.photo !== 'boolean') return { ok: false, field: 'photo' };
+  const cleaned = cleanMultiline(body.text);
+  if (
+    cleaned.length < 1 ||
+    cleaned.length > FAN_CLUB_POST_TEXT_MAX ||
+    !isVisibleMultiline(cleaned)
+  ) {
+    throw fanClubInvalid('text', 'format');
+  }
+  if (isBlockedText(cleaned, 'fanClubPost')) throw fanClubInvalid('text', 'not_allowed');
+  return { ok: true, value: { text: cleaned, photo: body.photo } };
+}
+
+/**
+ * O corpo do novo aceite (`PUT /me/fan-club/rules`): `{ rulesVersion }`. Corpo
+ * que não é objeto, chave desconhecida e versão que não é texto são
+ * `{ ok: false }` com o campo; a versão diferente da do servidor lança
+ * `fan_club_invalid` com `field: 'rulesVersion'`.
+ */
+export function parseRulesAcceptance(
+  body: unknown,
+  rulesVersion: string = FAN_CLUB_RULES_VERSION,
+): { ok: true } | { ok: false; field: string } {
+  if (!isRecord(body)) return { ok: false, field: 'body' };
+  const unknownKey = Object.keys(body).find((key) => key !== 'rulesVersion');
+  if (unknownKey !== undefined) return { ok: false, field: unknownKey };
+  if (typeof body.rulesVersion !== 'string') return { ok: false, field: 'rulesVersion' };
+  if (body.rulesVersion !== rulesVersion) throw fanClubInvalid('rulesVersion', 'format');
+  return { ok: true };
+}
+
+// --- As denúncias das publicações (decisão 18) ----------------------------------------
+
+/** Como a fila da denúncia termina: pela equipe, pelo gestor que retirou ou pela exclusão dele. */
+export type ReportResolution = 'kept' | 'actioned' | 'withdrawn' | 'author_deleted';
+
+/**
+ * O id da denúncia: uma por fã e publicação, regravada a cada rodada do item.
+ * O `_` separa sem ambiguidade (o uid não tem `_`).
+ */
+export const fanClubReportId = (reporterUid: string, postId: string): string =>
+  `${reporterUid}_${postId}`;

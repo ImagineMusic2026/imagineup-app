@@ -124,7 +124,11 @@
  * regulamento (o aceite cita os Termos); o Nenho com o "Fãs podem postar
  * fotos" desligado (os fã-clubes dele só publicam texto) e o Netto com as
  * caixas pelo padrão; e a Camila, gestora aprovada do fã-clube do Netto, pela
- * candidatura com o ator de sistema e pela aprovação do admin do seed.
+ * candidatura com o ator de sistema e pela aprovação do admin do seed. Na
+ * etapa 2, as publicações dela (duas no ar, uma com a foto de teste em 4:5,
+ * scripts/seed-assets/foto-fa-clube.jpg e a miniatura foto-fa-clube-mini.jpg,
+ * enviadas ao emulador do Storage como o app enviaria, e uma em análise) e a
+ * denúncia da Bia contra a da foto, com "Uso indevido de imagem".
  *
  * Rodar de novo não muda nada. Depois da meia-noite, o progresso do dia volta
  * a 0, como o de qualquer fã: para ver de novo o 3 de 5 e o 2 de 5, feche os
@@ -648,6 +652,28 @@ if (camilaUid) {
   const fanClubs = await withFirestore((db) => seedFanClubs(db, camilaUid, staffActor));
   console.log(
     `Fã-clube: a Camila gere o fã-clube do Netto (${fanClubs.applied ? 'candidatura agora' : 'candidatura já existia'}, ${fanClubs.approved ? 'aprovada agora' : 'já aprovada'}); o Nenho só aceita texto (${fanClubs.textOnly ? 'gravado agora' : 'já estava'}).`,
+  );
+  // As publicações e a denúncia (etapa 2): rodar de novo não grava.
+  const { fanPhotoFiles: clubFiles } = functionsBuild('fan-profile');
+  const { seedFanClubPosts } = functionsBuild('fan-clubs');
+  const clubPhoto = readFileSync(new URL('./seed-assets/foto-fa-clube.jpg', import.meta.url));
+  const clubThumb = readFileSync(new URL('./seed-assets/foto-fa-clube-mini.jpg', import.meta.url));
+  const clubPosts = await withStorage((db, bucket) =>
+    seedFanClubPosts(
+      db,
+      clubFiles(() => bucket),
+      (path, data) => bucket.file(path).save(Buffer.from(data), { contentType: 'image/jpeg' }),
+      {
+        camilaUid,
+        biaUid: fanUids.bia,
+        actor: staffActor,
+        photo: new Uint8Array(clubPhoto),
+        thumb: new Uint8Array(clubThumb),
+      },
+    ),
+  );
+  console.log(
+    `Publicações do fã-clube: ${clubPosts.created} criadas e ${clubPosts.published} aprovadas agora (3 no total: duas no ar, uma com foto, e uma em análise); a denúncia da Bia por uso indevido de imagem ${clubPosts.reported ? 'gravada agora' : 'já estava'}.`,
   );
 }
 

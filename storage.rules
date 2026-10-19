@@ -19,6 +19,12 @@ rules_version = '2';
 // (canEditSection('rewards')), só para uma recompensa que já existe, no
 // molde da foto dos shows; a callable updateReward confere o arquivo.
 //
+// Desde o fã-clube gerido pelo fã (seção 34 de docs/arquitetura-api.md,
+// 34.6), a foto e a miniatura das publicações sobem do app para
+// fanClubMedia/{uid}/, só do próprio gestor, só JPEG de até 2 MiB, com os
+// nomes da vaga que a API abriu; a função api confere os arquivos e grava as
+// URLs na publicação, que a equipe revisa antes de ir ao ar.
+//
 // Quem sobe é quem altera Artistas e centrais no painel: a mesma conta de
 // canEditSection('artists') e staffSessionAllowed() do firestore.rules, lendo
 // staff/{uid} no Firestore. E só para uma central que já existe em
@@ -50,6 +56,18 @@ service firebase.storage {
         && (staffMember().get('role', '') == 'admin'
           || (staffMember().get('role', '') == 'editor'
             && section in staffMember().get('sections', [])));
+    }
+
+    // Admin, ou editor e leitor com a seção liberada, ativo e com sessão de
+    // login a partir do authValidAfter: o canSeeSection do firestore.rules.
+    // Só a leitura das fotos das publicações do fã-clube usa (seção 34).
+    function canSeeSection(section) {
+      return request.auth != null
+        && firestore.exists(staffPath())
+        && staffMember().get('status', '') == 'active'
+        && request.auth.token.get('auth_time', 0) >= staffMember().get('authValidAfter', 0)
+        && (staffMember().get('role', '') == 'admin'
+          || section in staffMember().get('sections', []));
     }
 
     // Foto já redimensionada pelo painel: webp, jpeg ou png, de 1 byte a 5 MB.
@@ -88,6 +106,19 @@ service firebase.storage {
       let slot = firestore.get(/databases/(default)/documents/users/$(uid)/uploads/photo);
       return slot != null
         && slot.data.fileName == fileName
+        && request.time < slot.data.expiresAt;
+    }
+
+    // A vaga de envio da foto da publicação do fã-clube (seção 34, 34.6): o
+    // servidor grava users/{uid}/uploads/fanClubPost pelo
+    // POST /me/fan-club/upload, com os dois nomes (a foto e a miniatura) e o
+    // prazo, e só para o gestor de fã-clube ativo de artista com as fotos de
+    // fã ligadas: a regra não comporta uma terceira leitura. Com o
+    // fanCanUpload, são as duas leituras do Firestore por avaliação.
+    function fanClubUploadReserved(uid, fileName) {
+      let slot = firestore.get(/databases/(default)/documents/users/$(uid)/uploads/fanClubPost);
+      return slot != null
+        && fileName in slot.data.fileNames
         && request.time < slot.data.expiresAt;
     }
 
@@ -176,6 +207,38 @@ service firebase.storage {
         && request.resource.contentType == 'image/jpeg'
         && fanCanUpload(uid)
         && photoUploadReserved(uid, fileName);
+      allow update, delete: if false;
+    }
+
+    // Fotos das publicações do fã-clube (seção 34, 34.6): o gestor sobe para a
+    // pasta dele a foto e a miniatura (club-photo-<id>.jpg e
+    // club-thumb-<id>.jpg), JPEG de até 2 MiB, sem sobrescrever, só com o
+    // perfil existindo e sem suspensão, e só os nomes da vaga aberta pela API,
+    // antes do prazo dela. A pasta fica fora de fans/{uid}/, que a varredura
+    // da foto do perfil esvazia. A função api confere os bytes (a miniatura
+    // até 300 KiB) e grava as URLs com token. O dono lê pelo caminho só com a
+    // vaga aberta e o nome nela (o app confere se o envio de uma tentativa já
+    // chegou): depois da publicação, a vaga sai, e a foto oculta ou tirada do
+    // ar não ganha uma URL nova pela leitura dos metadados. A equipe com a
+    // seção Fã-clubes lê pelo caminho (os arquivos ficam com ela como prova,
+    // decisão 20). Só o servidor apaga (a publicação retirada ou recusada, a
+    // vaga trocada e a pasta da conta excluída) e troca o token (a publicação
+    // oculta ou tirada do ar).
+    match /fanClubMedia/{uid}/{fileName} {
+      allow get: if request.auth != null
+        && ((request.auth.uid == uid && fanClubUploadReserved(uid, fileName))
+          || canSeeSection('fanClubs'));
+      allow list: if false;
+      allow create: if request.auth != null
+        && request.auth.uid == uid
+        && resource == null
+        && uid.matches('[A-Za-z0-9]{1,128}')
+        && fileName.matches('club-(photo|thumb)-[a-z0-9-]{8,40}[.]jpg')
+        && request.resource.size > 0
+        && request.resource.size <= 2 * 1024 * 1024
+        && request.resource.contentType == 'image/jpeg'
+        && fanCanUpload(uid)
+        && fanClubUploadReserved(uid, fileName);
       allow update, delete: if false;
     }
 

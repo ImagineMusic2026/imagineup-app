@@ -1,4 +1,8 @@
-import { bucketFiles, type ArtistFiles, type Bucket } from '../artists/files';
+import { randomUUID } from 'node:crypto';
+
+import * as logger from 'firebase-functions/logger';
+
+import { bucketFiles, removeFiles, type ArtistFiles, type Bucket } from '../artists/files';
 import type { FolderFile } from './model';
 
 /**
@@ -12,6 +16,14 @@ export type FanPhotoFiles = ArtistFiles & {
   readStart(path: string, bytes: number): Promise<Uint8Array>;
   /** Os arquivos com o prefixo e o `timeCreated` de cada um (todas as páginas). */
   listWithTimes(prefix: string): Promise<FolderFile[]>;
+  /**
+   * Troca o token de download do arquivo: a URL de antes deixa de abrir, e o
+   * `downloadUrl` seguinte sai com o token novo. A URL com token passa por
+   * cima da regra do Storage e fica no cache dos aparelhos; a foto da
+   * publicação de fã-clube oculta ou tirada do ar troca o token (seção 34,
+   * 34.5).
+   */
+  rotateDownloadToken(path: string): Promise<void>;
 };
 
 /**
@@ -43,6 +55,19 @@ export function fanPhotoFiles(getBucket: () => Bucket): FanPhotoFiles {
         const created = Date.parse(String(item.metadata?.timeCreated ?? ''));
         return { path: item.name, timeCreated: Number.isFinite(created) ? created : null };
       });
+    },
+    async rotateDownloadToken(path) {
+      const bucket = getBucket();
+      const emulator = storageEmulatorOrigin();
+      if (emulator) {
+        await emulatorRotateToken(emulator, bucket.name, path);
+        return;
+      }
+      // O `firebaseStorageDownloadTokens` gravado troca a lista inteira: o
+      // token de antes deixa de valer.
+      await bucket
+        .file(path)
+        .setMetadata({ metadata: { firebaseStorageDownloadTokens: randomUUID() } });
     },
   };
 }
@@ -80,6 +105,36 @@ async function emulatorDownloadUrl(origin: string, bucket: string, path: string)
 }
 
 /**
+ * A troca do token no emulador. Lá, o `firebaseStorageDownloadTokens` gravado
+ * pelos metadados soma à lista em vez de trocar, e o token de antes seguiria
+ * valendo: a troca vai pela API do Firebase, com o token `owner` (o papel da
+ * conta de serviço), criando um token novo e apagando os de antes.
+ */
+async function emulatorRotateToken(origin: string, bucket: string, path: string): Promise<void> {
+  const endpoint = `${origin}/v0/b/${bucket}/o/${encodeURIComponent(path)}`;
+  const headers = { Authorization: 'Bearer owner' };
+  const current = await fetch(endpoint, { headers });
+  if (!current.ok) {
+    throw new Error(`O emulador do Storage respondeu ${current.status} aos metadados da foto.`);
+  }
+  const { downloadTokens } = (await current.json()) as { downloadTokens?: string };
+  const old = (downloadTokens ?? '').split(',').filter((token) => token !== '');
+  const created = await fetch(`${endpoint}?create_token=true`, { method: 'POST', headers });
+  if (!created.ok) {
+    throw new Error(`O emulador do Storage respondeu ${created.status} ao token novo.`);
+  }
+  for (const token of old) {
+    const removed = await fetch(`${endpoint}?delete_token=${encodeURIComponent(token)}`, {
+      method: 'POST',
+      headers,
+    });
+    if (!removed.ok) {
+      throw new Error(`O emulador do Storage respondeu ${removed.status} ao apagar um token.`);
+    }
+  }
+}
+
+/**
  * O Storage ainda não ligado no projeto: o bucket que não existe (404 na
  * listagem) ou o que nem tem nome na configuração das funções (o
  * `getStorage().bucket()` sem `storageBucket` lança `storage/invalid-argument`
@@ -106,5 +161,73 @@ export const MISSING_FAN_PHOTO_FILES: FanPhotoFiles = (() => {
     remove: async () => missing(),
     readStart: async () => missing(),
     listWithTimes: async () => missing(),
+    rotateDownloadToken: async () => missing(),
   };
 })();
+
+/**
+ * O que mexe em arquivo do Storage depois de uma gravação, fora da transação:
+ * os caminhos a apagar e os de token de download a trocar (seção 34, 34.5).
+ * Só caminhos (o uid da pasta e o nome do arquivo, nunca texto do fã), para
+ * poder ficar guardado na chave de idempotência e rodar de novo na repetição:
+ * apagar o que já saiu e trocar de novo um token não fazem mal.
+ */
+export type StorageWork = { remove: string[]; rotate: string[] };
+
+export const NO_STORAGE_WORK: StorageWork = { remove: [], rotate: [] };
+
+export const hasStorageWork = (work: StorageWork): boolean =>
+  work.remove.length > 0 || work.rotate.length > 0;
+
+const isPathList = (value: unknown): value is string[] =>
+  Array.isArray(value) && value.every((item) => typeof item === 'string' && item !== '');
+
+/** O trabalho guardado (na chave de idempotência), ou null fora do formato. */
+export function storageWorkOf(value: unknown): StorageWork | null {
+  if (typeof value !== 'object' || value === null) return null;
+  const { remove, rotate } = value as Record<string, unknown>;
+  return isPathList(remove) && isPathList(rotate) ? { remove, rotate } : null;
+}
+
+type WorkLog = Pick<typeof logger, 'warn' | 'error'>;
+
+/**
+ * Apaga e troca os tokens, cada arquivo por conta própria (a falha de um não
+ * segura os outros). Nunca lança: a gravação já valeu, e o que falhou vai ao
+ * log com os caminhos. O arquivo que não existe conta como apagado; o token
+ * de um arquivo que não existe mais não muda (e vai ao log).
+ */
+export async function runStorageWork(
+  files: Pick<FanPhotoFiles, 'remove' | 'rotateDownloadToken'>,
+  work: StorageWork,
+  log: WorkLog = logger,
+): Promise<void> {
+  if (work.remove.length > 0) {
+    const leftovers = await removeFiles(files, work.remove);
+    if (leftovers.length > 0) {
+      log.warn('storage: arquivos ficaram depois da gravação', {
+        paths: leftovers.map((leftover) => leftover.path),
+        error: leftovers[0]!.error,
+      });
+    }
+  }
+  const rotated = await Promise.allSettled(
+    work.rotate.map((path) => files.rotateDownloadToken(path)),
+  );
+  const failed = rotated.flatMap((result, index) =>
+    result.status === 'rejected'
+      ? [
+          {
+            path: work.rotate[index]!,
+            error: result.reason instanceof Error ? result.reason.message : String(result.reason),
+          },
+        ]
+      : [],
+  );
+  if (failed.length > 0) {
+    log.error('storage: o token de download de um arquivo não mudou', {
+      paths: failed.map((item) => item.path),
+      error: failed[0]!.error,
+    });
+  }
+}

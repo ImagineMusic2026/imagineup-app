@@ -242,13 +242,31 @@ export type PhotoFileInfo = {
 };
 
 /**
+ * O teto de um JPEG enviado pelo fã: os bytes do arquivo e o maior lado. A
+ * foto do perfil usa o padrão; a foto e a miniatura das publicações do
+ * fã-clube (seção 34, decisão 15), os delas.
+ */
+export type PhotoLimits = { maxBytes: number; maxSide: number };
+
+/** O teto da foto do perfil: 1 MiB e 1024 de lado. */
+export const PROFILE_PHOTO_LIMITS: PhotoLimits = {
+  maxBytes: PHOTO_MAX_BYTES,
+  maxSide: PHOTO_MAX_SIDE,
+};
+
+/**
  * O problema do arquivo, ou null. Sem `head`, só os metadados (tipo e
  * tamanho), para não baixar o começo de um arquivo que já é recusado; com o
- * começo, também os bytes `FF D8 FF` e as dimensões do SOF (de 1 a 1024).
+ * começo, também os bytes `FF D8 FF` e as dimensões do SOF (de 1 ao maior
+ * lado). O teto padrão é o da foto do perfil (1 MiB e 1024).
  */
-export function photoProblem(file: PhotoFileInfo, head?: Uint8Array): PhotoProblem | null {
+export function photoProblem(
+  file: PhotoFileInfo,
+  head?: Uint8Array,
+  limits: PhotoLimits = PROFILE_PHOTO_LIMITS,
+): PhotoProblem | null {
   if (file.contentType !== 'image/jpeg') return 'type';
-  if (typeof file.size !== 'number' || file.size <= 0 || file.size > PHOTO_MAX_BYTES) {
+  if (typeof file.size !== 'number' || file.size <= 0 || file.size > limits.maxBytes) {
     return 'size';
   }
   if (!head) return null;
@@ -258,7 +276,7 @@ export function photoProblem(file: PhotoFileInfo, head?: Uint8Array): PhotoProbl
   const dimensions = jpegDimensions(head);
   if (!dimensions) return 'content';
   const { width, height } = dimensions;
-  if (width < 1 || height < 1 || width > PHOTO_MAX_SIDE || height > PHOTO_MAX_SIDE) {
+  if (width < 1 || height < 1 || width > limits.maxSide || height > limits.maxSide) {
     return 'dimensions';
   }
   return null;

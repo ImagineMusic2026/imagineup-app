@@ -1,23 +1,32 @@
 import {
+  FieldPath,
   Timestamp,
   type DocumentReference,
   type DocumentSnapshot,
   type Firestore,
   type Transaction,
 } from 'firebase-admin/firestore';
+import * as logger from 'firebase-functions/logger';
 
 import type {
   FanClubApplicationView,
   FanClubArtist,
   FanClubArtists,
+  FanClubCard,
+  FanClubPage,
+  FanClubPerson,
   MyFanClub,
   MyFanClubClub,
+  Page,
 } from '../api/contract';
 import { artistRecord, CENTRALS_MAX, isPublished, type ArtistRecord } from '../centrals/model';
 import { artistRef, membershipRef, membershipsRef } from '../centrals/service';
 import { writeFanContact } from '../fan-contact/store';
 import { isAutomaticUsername } from '../fan-profile/model';
 import { countDailyAction, enforceDailyCap } from '../moderation/caps';
+import { blockedOf } from '../moderation/model';
+import { blockListRef } from '../moderation/store';
+import { encodePageCursor } from '../page-cursor';
 import {
   planAwards,
   runAsFan,
@@ -32,6 +41,7 @@ import {
   FAN_CLUB_OPEN,
   FAN_CLUB_PRIZE_NOTICE,
   FAN_CLUB_RULES_VERSION,
+  FEATURED_PER_ARTIST_MAX,
   fanClubBoxes,
   fanClubRecord,
   fanClubRefused,
@@ -41,28 +51,31 @@ import {
   type ApplicationRecord,
   type FanClubRecord,
 } from './model';
+import { readVisibleClub, removeFanClubPostsOf, type PostsQuery } from './posts';
+import { removeFanClubReportsOf } from './reports';
 import {
   applicationPrivateRef,
   applicationRef,
+  artistPrivateRef,
   FEATURE_OFF,
+  fanClubFollowRef,
   fanClubRef,
+  fanClubsOf,
   fanClubsOfOwner,
   ownerCopiesOf,
 } from './store';
 
 // O lado do fã no fã-clube (docs/arquitetura-api.md, seção 34, 34.3 e 34.5):
 // o `GET /me/fan-club` (leve, de 1 a 5 leituras), as centrais que aceitam
-// fã-clube para a candidatura, candidatar e desistir, na transação do
-// runIdempotent, e o passo da exclusão de conta (34.7). A ordem de uma rota
-// que grava é a de sempre: as leituras do domínio, o planAwards, as gravações.
+// fã-clube para a candidatura, candidatar e desistir e o novo aceite do
+// regulamento, na transação do runIdempotent, a página pública e a lista dos
+// fã-clubes de um artista, e o passo da exclusão de conta (34.7). A ordem de
+// uma rota que grava é a de sempre: as leituras do domínio, o planAwards, as
+// gravações.
 
 const tsOf = (ms: number) => Timestamp.fromMillis(ms);
 
 const iso = (ms: number | null): string | null => (ms === null ? null : new Date(ms).toISOString());
-
-/** `artistPrivate/{id}`: as caixas do fã-clube (decisão 9) moram aqui. */
-const artistPrivateRef = (db: Firestore, artistId: string): DocumentReference =>
-  db.collection('artistPrivate').doc(artistId);
 
 /** Lê documentos fora (`db.getAll`) ou dentro (`tx.getAll`) de uma transação. */
 type GetAll = (refs: DocumentReference[]) => Promise<DocumentSnapshot[]>;
@@ -380,6 +393,204 @@ export async function withdrawApplication(
   };
 }
 
+/**
+ * O novo aceite do regulamento (`PUT /me/fan-club/rules`, 34.3), na transação
+ * do runIdempotent, com a versão do corpo já igual à do servidor
+ * (`parseRulesAcceptance`): o estado de agora (`myFanClubWith`, as leituras
+ * antes de qualquer gravação); sem o fã-clube ativo ou pausado da candidatura
+ * aprovada, `club_not_active`; com a versão de agora já aceita, a mesma
+ * resposta sem gravar; senão, grava na candidatura a versão e o
+ * `rulesAcceptedAt` novos, e o publicar deixa de esperar (`rules_outdated`).
+ */
+export async function acceptFanClubRules(
+  tx: Transaction,
+  db: Firestore,
+  options: { fan: FanContext; award: AwardContext },
+): Promise<FanClubOutcome> {
+  const { fan, award } = options;
+  const body = await myFanClubWith((refs) => tx.getAll(...refs), db, fan.uid, award.now);
+  if (
+    body.application?.status !== 'approved' ||
+    body.club === null ||
+    body.club.status === 'closed'
+  ) {
+    throw fanClubRefused('club_not_active');
+  }
+  const plan = await planAwards(tx, db, [{ uid: fan.uid, fan, entries: [] }], award);
+  if (!body.club.rulesOutdated) return { body, plan };
+  tx.update(applicationRef(db, fan.uid), {
+    rulesVersion: FAN_CLUB_RULES_VERSION,
+    rulesAcceptedAt: tsOf(award.now),
+  });
+  return { body: { ...body, club: { ...body.club, rulesOutdated: false } }, plan };
+}
+
+// --- A página pública e a lista do artista --------------------------------------------
+
+const ownerOf = (club: FanClubRecord): FanClubPerson => ({
+  uid: club.ownerUid ?? '',
+  name: club.ownerName,
+  username: club.ownerUsername,
+  photoURL: club.ownerPhotoURL,
+});
+
+/**
+ * Quem segue o fã-clube agora, pelo `count()` no grupo `fanClubFollows`
+ * (decisão 28), fora de transação. Sem o índice de grupo (só em produção: o
+ * emulador não exige), a contagem falha com o código 9: vale 0, com o erro no
+ * log, como o "N posts" da 1d (21.1).
+ */
+async function countFollowers(db: Firestore, clubId: string): Promise<number> {
+  try {
+    const snap = await db
+      .collectionGroup('fanClubFollows')
+      .where('clubId', '==', clubId)
+      .count()
+      .get();
+    return snap.data().count;
+  } catch (error) {
+    logger.error('fan-clubs: a contagem dos seguidores falhou', {
+      clubId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return 0;
+  }
+}
+
+/**
+ * `GET /fan-clubs/:clubId` (34.3): o fã-clube que quem pede pode ver
+ * (`readVisibleClub`: ativo, de artista no ar e com o fã-clube aberto, de
+ * gestor que ele não bloqueou; senão 404), com o vínculo de quem pede com a
+ * central (`isMember`) e com o fã-clube (`isFollowing`), lidos junto do
+ * artista, e o `followerCount` exato, pelo `count()`. Nunca prêmio nem
+ * pontos (decisão 48).
+ */
+export async function readFanClubPage(
+  db: Firestore,
+  uid: string,
+  clubId: string,
+  now: number,
+): Promise<FanClubPage> {
+  const [visible, followerCount] = await Promise.all([
+    readVisibleClub(db, uid, clubId, (club) => [
+      membershipRef(db, uid, club.artistId),
+      fanClubFollowRef(db, uid, clubId),
+    ]),
+    countFollowers(db, clubId),
+  ]);
+  const { club, artist, extra } = visible;
+  const [membership, follow] = extra;
+  return {
+    id: club.id,
+    name: club.name ?? '',
+    artist: {
+      id: artist.id,
+      name: artist.name,
+      shortName: artist.shortName,
+      thumbUrl: artist.thumbUrl,
+    },
+    owner: ownerOf(club),
+    followerCount,
+    postCount: club.postCount,
+    featured: isFeaturedNow(club, now),
+    isFollowing: follow?.exists === true,
+    isOwner: club.ownerUid === uid,
+    isMember: membership?.exists === true,
+  };
+}
+
+/**
+ * O cursor da faixa dos destacados, no campo do instante do cursor das listas
+ * (21.2): o maior instante que o cursor aceita, que nenhuma contagem de
+ * seguidores alcança. Com o id do último destacado mostrado; com o último da
+ * faixa, a página seguinte começa a lista dos outros do topo.
+ */
+const FEATURED_BAND = 253_402_300_799_999;
+
+/**
+ * `GET /artists/:artistId/fan-clubs` (34.3): o artista no ar e com o fã-clube
+ * aberto (senão, a página vazia, sem ler os fã-clubes) e a lista de bloqueios
+ * de quem pede, num `getAll`. Primeiro a faixa dos destacados com o prazo em
+ * dia (até 3, pelos seguidores e pelo id), cortada no `limit`; o cursor dela
+ * leva o id do último mostrado (`FEATURED_BAND`), e a página seguinte relê os
+ * destacados e continua depois dele. Depois, os ativos pelos seguidores da
+ * cópia (`counts.followers`) e o id, sem os destacados de agora (estão na
+ * faixa) e sem os de gestor bloqueado; o cursor guarda os seguidores e o id do
+ * último lido. A página nunca passa do `limit` e pode vir menor, com o
+ * cursor. Cada item com o `isFollowing`, num `getAll`.
+ */
+export async function readArtistFanClubs(
+  db: Firestore,
+  uid: string,
+  artistId: string,
+  query: PostsQuery,
+  now: number,
+): Promise<Page<FanClubCard>> {
+  const [artistSnap, privateDoc, blockList] = await db.getAll(
+    artistRef(db, artistId),
+    artistPrivateRef(db, artistId),
+    blockListRef(db, uid),
+  );
+  if (!isPublished(recordOf(artistSnap)) || !fanClubBoxes(privateDoc!.data()).enabled) {
+    return { items: [], nextCursor: null };
+  }
+  const blocked = new Set(blockedOf(blockList!.get('blocked')));
+  const shown = (club: FanClubRecord) =>
+    club.ownerUid !== null && club.name !== null && !blocked.has(club.ownerUid);
+  const active = fanClubsOf(db).where('artistId', '==', artistId).where('status', '==', 'active');
+
+  const items: FanClubRecord[] = [];
+  let nextCursor: string | null = null;
+  let need = query.limit;
+  let list = active.orderBy('counts.followers', 'desc').orderBy(FieldPath.documentId(), 'desc');
+  const inBand = query.cursor === null || query.cursor.at === FEATURED_BAND;
+  if (inBand) {
+    const snap = await active.where('featured', '==', true).get();
+    const featured = snap.docs
+      .map((doc) => fanClubRecord(doc.id, doc.data()))
+      .filter((club) => isFeaturedNow(club, now) && shown(club))
+      .sort((a, b) => b.followers - a.followers || a.id.localeCompare(b.id))
+      .slice(0, FEATURED_PER_ARTIST_MAX);
+    const after = query.cursor?.id;
+    const start = after ? featured.findIndex((club) => club.id === after) + 1 : 0;
+    const band = featured.slice(start, start + query.limit);
+    items.push(...band);
+    need = query.limit - band.length;
+    if (need === 0 && band.length > 0) {
+      // A página cheia de destacados: a seguinte continua a faixa ou, no fim
+      // dela, começa a lista dos outros do topo.
+      nextCursor = encodePageCursor({ at: FEATURED_BAND, id: band.at(-1)!.id });
+    }
+  } else if (query.cursor) {
+    list = list.startAfter(query.cursor.at, query.cursor.id);
+  }
+  if (need > 0) {
+    const snap = await list.limit(need + 1).get();
+    const read = snap.docs.slice(0, need).map((doc) => fanClubRecord(doc.id, doc.data()));
+    items.push(...read.filter((club) => !isFeaturedNow(club, now) && shown(club)));
+    const last = read.at(-1);
+    if (snap.size > need && last) {
+      nextCursor = encodePageCursor({ at: last.followers, id: last.id });
+    }
+  }
+  const follows =
+    items.length > 0
+      ? await db.getAll(...items.map((club) => fanClubFollowRef(db, uid, club.id)))
+      : [];
+  return {
+    items: items.map((club, index): FanClubCard => ({
+      id: club.id,
+      name: club.name ?? '',
+      owner: ownerOf(club),
+      followers: club.followers,
+      featured: isFeaturedNow(club, now),
+      postCount: club.postCount,
+      isFollowing: follows[index]?.exists === true,
+    })),
+    nextCursor,
+  };
+}
+
 /** Candidatar fora da API (o seed dos emuladores), com o ator dado (o de sistema não conta no teto). */
 export function runApplyForFanClub(
   db: Firestore,
@@ -401,14 +612,25 @@ export function runApplyForFanClub(
  * `closed`, `statusReason: 'account_deleted'`, `accountDeleted: true`, sem
  * dono, cópias e nome, com o destaque fora e o `closedAt` de antes (ou o de
  * agora). Ficam os `counts`, os shards e o registro dos prêmios, que não têm
- * dado dele. As publicações e as denúncias chegam na etapa 2 de 34.14. Pode
- * rodar de novo: a lápide já não tem dono e não aparece na consulta.
+ * dado dele. Desde a etapa 2 de 34.14, as publicações dele saem, com o item
+ * aberto da fila de cada uma em `author_deleted` (`removeFanClubPostsOf`), e
+ * as denúncias que ele fez saem, descontadas da rodada aberta
+ * (`removeFanClubReportsOf`); os arquivos de `fanClubMedia/{uid}/` saem no
+ * `purgeFanPhotos` do fim. Pode rodar de novo: a lápide já não tem dono e não
+ * aparece na consulta, e o que saiu não volta nas consultas seguintes.
  */
 export async function removeFanClubData(
   db: Firestore,
   uid: string,
   now: number = Date.now(),
 ): Promise<void> {
+  await removeLeadership(db, uid, now);
+  await removeFanClubPostsOf(db, uid, now);
+  await removeFanClubReportsOf(db, uid, now);
+}
+
+/** A candidatura, o privado e a lápide de cada fã-clube do gestor (34.7, passos 1 e 2). */
+async function removeLeadership(db: Firestore, uid: string, now: number): Promise<void> {
   await applicationPrivateRef(db, uid).delete();
   await applicationRef(db, uid).delete();
   const clubs = await fanClubsOfOwner(db, uid).get();

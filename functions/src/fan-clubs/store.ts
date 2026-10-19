@@ -1,9 +1,12 @@
 import {
+  FieldPath,
   Timestamp,
   type CollectionReference,
   type DocumentData,
   type DocumentReference,
   type Firestore,
+  type QueryDocumentSnapshot,
+  type QuerySnapshot,
   type Transaction,
 } from 'firebase-admin/firestore';
 
@@ -34,6 +37,44 @@ export const applicationRef = (db: Firestore, uid: string): DocumentReference =>
 /** `fanClubApplicationPrivate/{uid}`: as redes e o texto de divulgação (decisão 14). */
 export const applicationPrivateRef = (db: Firestore, uid: string): DocumentReference =>
   db.collection('fanClubApplicationPrivate').doc(uid);
+
+/** `artistPrivate/{id}`: as caixas do fã-clube (decisão 9) moram aqui. */
+export const artistPrivateRef = (db: Firestore, artistId: string): DocumentReference =>
+  db.collection('artistPrivate').doc(artistId);
+
+/**
+ * `users/{uid}/fanClubFollows/{clubId}`: o vínculo de seguir (decisões 26 a
+ * 34). Nasce na etapa 4 de 34.14; a página e a lista do artista já leem o
+ * `isFollowing` por ele.
+ */
+export const fanClubFollowRef = (db: Firestore, uid: string, clubId: string): DocumentReference =>
+  db.collection('users').doc(uid).collection('fanClubFollows').doc(clubId);
+
+/** `fanClubPosts/{postId}`: as publicações, fora de `posts/{id}` (decisão 17). */
+export const fanClubPostsOf = (db: Firestore): CollectionReference => db.collection('fanClubPosts');
+
+export const fanClubPostRef = (db: Firestore, postId: string): DocumentReference =>
+  fanClubPostsOf(db).doc(postId);
+
+/** `fanClubReports/{reporterUid}_{postId}`: a denúncia, fechada para todos (decisão 18). */
+export const fanClubReportsOf = (db: Firestore): CollectionReference =>
+  db.collection('fanClubReports');
+
+/** `fanClubReportQueue/{postId}`: a fila das denúncias de uma publicação, com a rodada. */
+export const fanClubReportQueueRef = (db: Firestore, postId: string): DocumentReference =>
+  db.collection('fanClubReportQueue').doc(postId);
+
+/**
+ * `users/{uid}/uploads/fanClubPost`: a vaga de envio da foto da publicação
+ * (34.6), com os dois nomes e o prazo. Só o servidor grava; a regra do Storage
+ * lê. Sai com o perfil, no `recursiveDelete` da exclusão.
+ */
+export const fanClubUploadSlotRef = (db: Firestore, uid: string): DocumentReference =>
+  db.collection('users').doc(uid).collection('uploads').doc('fanClubPost');
+
+/** As publicações de um autor, em qualquer status. Índice automático do `authorUid`. */
+export const fanClubPostsOfAuthor = (db: Firestore, uid: string) =>
+  fanClubPostsOf(db).where('authorUid', '==', uid);
 
 /** O destaque desligado: a pausa, o encerramento, a suspensão e a lápide (decisão 35). */
 export const FEATURE_OFF = {
@@ -148,21 +189,71 @@ export function ownerCopiesOf(profile: DocumentData): OwnerCopies {
 export const fanClubsOfOwner = (db: Firestore, uid: string) =>
   fanClubsOf(db).where('ownerUid', '==', uid);
 
+/** Publicações por página (e por transação) nas cópias do autor (34.5). */
+export const POST_COPIES_PAGE = 100;
+
 /**
- * As cópias do perfil na candidatura e nos fã-clubes do fã (34.5, a tarefa
- * `syncFanProfile`), numa transação que lê o perfil, a candidatura e os
- * fã-clubes dele (o de agora e os encerrados, que o painel ainda lista):
- * regrava o `fan*` da candidatura e o `owner*` de cada fã-clube só quando
- * diferem. Sem o perfil (a exclusão da conta no meio), não grava. Devolve
- * quantos documentos regravou.
+ * As cópias do perfil na candidatura, nos fã-clubes e nas publicações do fã
+ * (34.5, a tarefa `syncFanProfile`): primeiro uma transação que lê o perfil,
+ * a candidatura e os fã-clubes dele (o de agora e os encerrados, que o painel
+ * ainda lista) e regrava o `fan*` da candidatura e o `owner*` de cada
+ * fã-clube só quando diferem; depois o `author*` das publicações dele, em
+ * páginas de 100, cada uma numa transação que relê o perfil. Sem o perfil (a
+ * exclusão da conta no meio), não grava. Devolve quantos documentos regravou.
  */
 export async function syncFanClubCopies(db: Firestore, uid: string): Promise<number> {
+  const written = await syncOwnerCopies(db, uid);
+  return written === null ? 0 : written + (await syncPostCopies(db, uid));
+}
+
+/** O `author*` das publicações do fã, em páginas pela ordem do id; o perfil apagado no meio para. */
+async function syncPostCopies(db: Firestore, uid: string): Promise<number> {
+  const query = fanClubPostsOfAuthor(db, uid)
+    .orderBy(FieldPath.documentId())
+    .limit(POST_COPIES_PAGE);
+  let written = 0;
+  let last: QueryDocumentSnapshot | null = null;
+  for (;;) {
+    const cursor: QueryDocumentSnapshot | null = last;
+    const page = await db.runTransaction(async (tx) => {
+      const profile = await tx.get(db.collection('users').doc(uid));
+      if (!profile.exists) return null;
+      const snap: QuerySnapshot = await tx.get(cursor ? query.startAfter(cursor) : query);
+      const copies = ownerCopiesOf(profile.data() ?? {});
+      let count = 0;
+      for (const post of snap.docs) {
+        const data = post.data();
+        if (
+          (data.authorName ?? null) === copies.name &&
+          (data.authorUsername ?? null) === copies.username &&
+          (data.authorPhotoURL ?? null) === copies.photoURL
+        ) {
+          continue;
+        }
+        tx.update(post.ref, {
+          authorName: copies.name,
+          authorUsername: copies.username,
+          authorPhotoURL: copies.photoURL,
+        });
+        count += 1;
+      }
+      return { size: snap.size, last: snap.docs[snap.docs.length - 1] ?? null, count };
+    });
+    if (page === null) return written;
+    written += page.count;
+    last = page.last;
+    if (page.size < POST_COPIES_PAGE) return written;
+  }
+}
+
+/** A candidatura e os fã-clubes do fã, numa transação; null sem o perfil. */
+async function syncOwnerCopies(db: Firestore, uid: string): Promise<number | null> {
   return db.runTransaction(async (tx) => {
     const [profile, application] = await tx.getAll(
       db.collection('users').doc(uid),
       applicationRef(db, uid),
     );
-    if (!profile!.exists) return 0;
+    if (!profile!.exists) return null;
     const clubs = await tx.get(fanClubsOfOwner(db, uid));
     const copies = ownerCopiesOf(profile!.data() ?? {});
     let written = 0;
