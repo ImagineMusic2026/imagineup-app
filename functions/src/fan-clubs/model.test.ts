@@ -257,6 +257,34 @@ describe('o corpo da candidatura (34.3 e 34.5)', () => {
     }
   });
 
+  it('a escada da ordem: com tudo errado, cada campo só aparece depois de os de antes ficarem certos', () => {
+    let extra: Record<string, unknown> = {
+      name: 'ab',
+      pitch: 'curto',
+      instagram: null,
+      tiktok: '',
+      whatsapp: '(75) 3221-4567',
+      adult: false,
+      rulesVersion: 'termos-2026-09',
+    };
+    const ladder: [string, Record<string, unknown>][] = [
+      ['name', { name: 'Netto de Coração' }],
+      ['pitch', { pitch: PITCH }],
+      ['socials', { instagram: 'camila.teste.up', tiktok: null }],
+      ['whatsapp', { whatsapp: '(75) 99123-4567' }],
+      ['adult', { adult: true }],
+      ['rulesVersion', { rulesVersion: FAN_CLUB_RULES_VERSION }],
+    ];
+    for (const [field, fix] of ladder) {
+      expect(errorOf(() => parseApplication(body(extra))).details, field).toEqual({
+        field,
+        reason: 'format',
+      });
+      extra = { ...extra, ...fix };
+    }
+    expect(parseApplication(body(extra)).ok).toBe(true);
+  });
+
   it('o pitch de 20 e de 1.000 valem', () => {
     expect(parseApplication(body({ pitch: 'a'.repeat(20) })).ok).toBe(true);
     expect(parseApplication(body({ pitch: 'a'.repeat(1000) })).ok).toBe(true);

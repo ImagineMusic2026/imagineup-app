@@ -29,9 +29,10 @@ import { resolve } from 'node:path';
  * rewards lê os dois, os contadores do dia (statsDaily) e os shows (events),
  * para escolher o show da recompensa. Ninguém grava pelo cliente. Desde a
  * seção 35, o contato do fã (o WhatsApp do resgate, users/{uid}/contact/main)
- * fica fechado para o próprio fã e para a seção rewards: o fã recebe o dele
- * pela API, e a equipe com rewards, pela callable dos contatos. Com a seção 34,
- * quem edita Fã-clubes lê o documento (tests/fan-club-rules.test.ts).
+ * fica fechado para o próprio fã, para a seção rewards e, sem candidatura de
+ * fã-clube, para o admin: o fã recebe o dele pela API, e a equipe com rewards,
+ * pela callable dos contatos. Com a seção 34, quem edita Fã-clubes lê o de
+ * quem tem candidatura (tests/fan-club-rules.test.ts).
  */
 let env: RulesTestEnvironment;
 
@@ -258,9 +259,10 @@ describe('catálogo e pedidos (rewards, redemptions)', () => {
 });
 
 describe('o contato do fã (seção 35)', () => {
-  it('ninguém lê pelas regras: nem a própria fã, nem a equipe com rewards ou fans; ninguém lista', async () => {
+  it('sem candidatura de fã-clube, ninguém lê pelas regras: nem a própria fã, nem a equipe com rewards ou fans, nem o admin; ninguém lista', async () => {
     for (const db of [
       as('uid-camila'),
+      as('admin'),
       as('editora'),
       as('leitor'),
       as('fas'),
@@ -269,8 +271,9 @@ describe('o contato do fã (seção 35)', () => {
     ]) {
       await assertFails(getDoc(doc(db, CONTACT)));
     }
-    // Desde o fã-clube (seção 34, 34.6), quem edita a seção Fã-clubes lê o
-    // documento pelo caminho, e o admin edita todas: o resto fica em
+    // Desde o fã-clube (seção 34, 34.6), quem edita a seção Fã-clubes (o
+    // admin edita todas) lê o documento pelo caminho, mas só de quem tem
+    // candidatura, e a Camila daqui não tem: o resto fica em
     // tests/fan-club-rules.test.ts. Listar continua fechado para todos.
     for (const db of [as('uid-camila'), as('admin'), as('editora'), as('fas'), anonymous()]) {
       await assertFails(getDocs(collection(db, 'users/uid-camila/contact')));

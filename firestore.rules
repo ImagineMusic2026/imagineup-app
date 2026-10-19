@@ -197,10 +197,13 @@ service cloud.firestore {
       // servidor grava. O fã recebe o próprio pela API (GET /me/contact), e a
       // equipe com Recompensas, pela callable getRedemptionContacts, nos
       // pedidos abertos. Desde o fã-clube (seção 34, 34.6), quem edita a seção
-      // Fã-clubes lê o documento pelo caminho, na ficha da candidatura (o
-      // Leitor não); ninguém lista a subcoleção, e a seção fans não lê.
+      // Fã-clubes lê o documento pelo caminho, na ficha da candidatura, e só de
+      // quem tem candidatura (em qualquer status): o número de quem só usou a
+      // loja fica fechado até para o admin. O Leitor não lê; ninguém lista a
+      // subcoleção, e a seção fans não lê.
       match /contact/{docId} {
-        allow get: if canEditSection('fanClubs');
+        allow get: if canEditSection('fanClubs')
+          && exists(/databases/$(database)/documents/fanClubApplications/$(uid));
         allow list, write: if false;
       }
     }

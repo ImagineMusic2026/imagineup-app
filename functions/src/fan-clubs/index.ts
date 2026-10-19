@@ -47,7 +47,7 @@ export {
   fanClubRef,
   fanClubsOf,
   fanClubsOfOwner,
-  hasLiveFanClub,
+  contactRequired,
   liveFanClubsOfArtist,
   pauseForSuspension,
   readActiveClubOf,

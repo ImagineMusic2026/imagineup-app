@@ -31,8 +31,10 @@ import { resolve } from 'node:path';
  * seguir e o marcador do crédito, só a seção Fãs, também pelo grupo. Ninguém
  * grava pelo cliente, nem o próprio fã, que lê tudo pela API. O contato do fã
  * (`users/{uid}/contact/main`, o WhatsApp da seção 35): quem edita a seção
- * lê o documento pelo caminho, na ficha da candidatura; o Leitor, a seção
- * Fãs e o próprio fã, não; ninguém lista.
+ * lê o documento pelo caminho, na ficha da candidatura, e só de quem tem
+ * candidatura (em qualquer status); o número de quem só usou a loja fica
+ * fechado até para o admin. O Leitor, a seção Fãs e o próprio fã não leem;
+ * ninguém lista.
  */
 let env: RulesTestEnvironment;
 
@@ -60,7 +62,15 @@ const ALL_SECTIONS = [
   'audit',
 ];
 
-type Member = { role: 'admin' | 'editor' | 'viewer'; status: string; sections?: string[] };
+// auth_time do login que ligou a conta à equipe (authValidAfter).
+const LINKED_AT = 1_800_000_000;
+
+type Member = {
+  role: 'admin' | 'editor' | 'viewer';
+  status: string;
+  sections?: string[];
+  authValidAfter?: number;
+};
 
 const MEMBERS: Record<string, Member> = {
   admin: { role: 'admin', status: 'active' },
@@ -69,6 +79,14 @@ const MEMBERS: Record<string, Member> = {
   fas: { role: 'viewer', status: 'active', sections: ['fans'] },
   artistas: { role: 'editor', status: 'active', sections: ['artists'] },
   desativada: { role: 'editor', status: 'disabled', sections: ['fanClubs', 'fans'] },
+  pendente: { role: 'admin', status: 'pending' },
+  ligadaFaClubes: {
+    role: 'editor',
+    status: 'active',
+    sections: ['fanClubs'],
+    authValidAfter: LINKED_AT,
+  },
+  ligadaAdmin: { role: 'admin', status: 'active', authValidAfter: LINKED_AT },
 };
 
 const GESTOR = 'uid-camila';
@@ -86,6 +104,9 @@ const QUEUE = 'fanClubReportQueue/publicacao-1';
 const FOLLOW = `users/${FOLLOWER}/fanClubFollows/${CLUB}`;
 const CREDIT = `users/${FOLLOWER}/fanClubCredits/nettobrito`;
 const CONTACT = `users/${GESTOR}/contact/main`;
+// O contato de quem só resgatou na loja, sem candidatura.
+const STORE_ONLY = 'uid-davi';
+const STORE_CONTACT = `users/${STORE_ONLY}/contact/main`;
 
 beforeEach(async () => {
   await env.clearFirestore();
@@ -99,8 +120,9 @@ beforeEach(async () => {
         role: member.role,
         sections: member.role === 'admin' ? ALL_SECTIONS : (member.sections ?? []),
         status: member.status,
-        accountCreatedByInvite: true,
+        accountCreatedByInvite: member.authValidAfter === undefined,
         createdAt: Timestamp.now(),
+        ...(member.authValidAfter === undefined ? {} : { authValidAfter: member.authValidAfter }),
       });
     }
     const at = Timestamp.now();
@@ -153,12 +175,20 @@ beforeEach(async () => {
       source: 'fanclub',
       updatedAt: at,
     });
+    await setDoc(doc(db, STORE_CONTACT), {
+      whatsapp: '+5511987654321',
+      source: 'store',
+      updatedAt: at,
+    });
   });
 });
 
 type Db = ReturnType<RulesTestContext['firestore']>;
 
-const as = (uid: string) => env.authenticatedContext(uid).firestore();
+const as = (uid: string, authTime?: number) =>
+  env
+    .authenticatedContext(uid, authTime === undefined ? undefined : { auth_time: authTime })
+    .firestore();
 
 /** O que a seção Fã-clubes lê: os documentos e as consultas das telas (34.10). */
 async function readsSection(db: Db, outcome: 'succeeds' | 'fails'): Promise<void> {
@@ -215,12 +245,14 @@ describe('a seção Fã-clubes', () => {
     for (const uid of ['admin', 'faClubes', 'leitorFaClubes']) {
       await readsSection(as(uid), 'succeeds');
     }
+    await readsSection(as('ligadaFaClubes', LINKED_AT), 'succeeds');
   });
 
-  it('o fã (o próprio gestor também), outras seções e a desativada não leem', async () => {
-    for (const uid of [GESTOR, FOLLOWER, 'fas', 'artistas', 'desativada']) {
+  it('o fã (o próprio gestor também), outras seções, a desativada, a pendente e a sessão de antes do authValidAfter não leem', async () => {
+    for (const uid of [GESTOR, FOLLOWER, 'fas', 'artistas', 'desativada', 'pendente']) {
       await readsSection(as(uid), 'fails');
     }
+    await readsSection(as('ligadaFaClubes', LINKED_AT - 1), 'fails');
     await readsSection(env.unauthenticatedContext().firestore(), 'fails');
   });
 
@@ -247,16 +279,48 @@ describe('a seção Fã-clubes', () => {
 });
 
 describe('o contato do fã (decisão 14)', () => {
+  const editors = () => [
+    as('admin'),
+    as('faClubes'),
+    as('ligadaFaClubes', LINKED_AT),
+    as('ligadaAdmin', LINKED_AT),
+  ];
+
   it('quem edita a seção Fã-clubes lê o documento pelo caminho, e o admin', async () => {
-    for (const uid of ['admin', 'faClubes']) {
-      await assertSucceeds(getDoc(doc(as(uid), CONTACT)));
+    for (const db of editors()) await assertSucceeds(getDoc(doc(db, CONTACT)));
+  });
+
+  it('com a candidatura em qualquer status', async () => {
+    for (const status of ['pending', 'rejected', 'withdrawn', 'approved']) {
+      await env.withSecurityRulesDisabled(async (context) => {
+        await updateDoc(doc(context.firestore(), APPLICATION), { status });
+      });
+      await assertSucceeds(getDoc(doc(as('faClubes'), CONTACT)));
     }
   });
 
-  it('o Leitor, a seção Fãs, outras seções, a desativada e o próprio fã não leem; ninguém lista', async () => {
-    for (const uid of ['leitorFaClubes', 'fas', 'artistas', 'desativada', GESTOR, FOLLOWER]) {
+  it('sem candidatura, fechado até para o admin: o número de quem só usou a loja e o de quem a apagou', async () => {
+    for (const db of editors()) await assertFails(getDoc(doc(db, STORE_CONTACT)));
+    await env.withSecurityRulesDisabled(async (context) => {
+      await deleteDoc(doc(context.firestore(), APPLICATION));
+    });
+    for (const db of editors()) await assertFails(getDoc(doc(db, CONTACT)));
+  });
+
+  it('o Leitor, a seção Fãs, outras seções, a desativada, a pendente, a sessão de antes do authValidAfter e o próprio fã não leem; ninguém lista', async () => {
+    for (const uid of [
+      'leitorFaClubes',
+      'fas',
+      'artistas',
+      'desativada',
+      'pendente',
+      GESTOR,
+      FOLLOWER,
+    ]) {
       await assertFails(getDoc(doc(as(uid), CONTACT)));
     }
+    await assertFails(getDoc(doc(as('ligadaFaClubes', LINKED_AT - 1), CONTACT)));
+    await assertFails(getDoc(doc(as('ligadaAdmin', LINKED_AT - 1), CONTACT)));
     await assertFails(getDoc(doc(env.unauthenticatedContext().firestore(), CONTACT)));
     for (const uid of ['admin', 'faClubes', GESTOR]) {
       await assertFails(getDocs(collection(as(uid), `users/${GESTOR}/contact`)));

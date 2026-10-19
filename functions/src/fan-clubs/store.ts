@@ -7,7 +7,13 @@ import {
   type Transaction,
 } from 'firebase-admin/firestore';
 
-import { applicationRecord, fanClubRecord, isLiveFanClub, type FanClubRecord } from './model';
+import {
+  applicationRecord,
+  fanClubRecord,
+  isLiveFanClub,
+  type ApplicationRecord,
+  type FanClubRecord,
+} from './model';
 
 // Onde o fã-clube mora no Firestore (docs/arquitetura-api.md, 34.4) e os
 // passos que outros módulos chamam sem passar pelo service: a pausa pela
@@ -45,6 +51,29 @@ export const FEATURE_OFF = {
 export const liveFanClubsOfArtist = (db: Firestore, artistId: string) =>
   fanClubsOf(db).where('artistId', '==', artistId).where('status', 'in', ['active', 'paused']);
 
+/** A candidatura do fã lida na transação, ou null sem ela. */
+async function readApplicationOf(
+  tx: Transaction,
+  db: Firestore,
+  uid: string,
+): Promise<ApplicationRecord | null> {
+  const application = await tx.get(applicationRef(db, uid));
+  return application.exists ? applicationRecord(uid, application.data() ?? {}) : null;
+}
+
+/** O fã-clube da candidatura aprovada, se ele ainda é do fã; null sem ele. */
+async function readClubOfApplication(
+  tx: Transaction,
+  db: Firestore,
+  application: ApplicationRecord | null,
+): Promise<{ ref: DocumentReference; record: FanClubRecord } | null> {
+  if (application?.status !== 'approved' || application.clubId === null) return null;
+  const club = await tx.get(fanClubRef(db, application.clubId));
+  if (!club.exists) return null;
+  const record = fanClubRecord(club.id, club.data() ?? {});
+  return record.ownerUid === application.uid ? { ref: club.ref, record } : null;
+}
+
 /**
  * O fã-clube da candidatura aprovada do fã, na transação de quem chama: a
  * candidatura e, com o `clubId`, o fã-clube, se ele ainda é do fã. Só
@@ -55,14 +84,7 @@ async function readOwnClubOf(
   db: Firestore,
   uid: string,
 ): Promise<{ ref: DocumentReference; record: FanClubRecord } | null> {
-  const application = await tx.get(applicationRef(db, uid));
-  if (!application.exists) return null;
-  const { status, clubId } = applicationRecord(uid, application.data() ?? {});
-  if (status !== 'approved' || clubId === null) return null;
-  const club = await tx.get(fanClubRef(db, clubId));
-  if (!club.exists) return null;
-  const record = fanClubRecord(club.id, club.data() ?? {});
-  return record.ownerUid === uid ? { ref: club.ref, record } : null;
+  return readClubOfApplication(tx, db, await readApplicationOf(tx, db, uid));
 }
 
 /**
@@ -80,16 +102,20 @@ export async function readActiveClubOf(
 }
 
 /**
- * O fã tem fã-clube ativo ou pausado: o `PUT /me/contact` recusa apagar o
- * WhatsApp com `contact_required`, porque ele é o canal dos prêmios (decisão
- * 14). Até duas leituras.
+ * O WhatsApp é exigido agora (decisão 14): com a candidatura pendente (ele é
+ * obrigatório nela, e a aprovação não o confere) ou com o fã-clube ativo ou
+ * pausado (é o canal dos prêmios). O `PUT /me/contact` recusa apagar com
+ * `contact_required`. Uma leitura com a pendente, até duas com a aprovada; a
+ * transação que aprova grava a candidatura lida aqui, e uma das duas repete.
  */
-export async function hasLiveFanClub(
+export async function contactRequired(
   tx: Transaction,
   db: Firestore,
   uid: string,
 ): Promise<boolean> {
-  const own = await readOwnClubOf(tx, db, uid);
+  const application = await readApplicationOf(tx, db, uid);
+  if (application?.status === 'pending') return true;
+  const own = await readClubOfApplication(tx, db, application);
   return own !== null && isLiveFanClub(own.record.status);
 }
 
