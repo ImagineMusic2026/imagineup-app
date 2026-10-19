@@ -17,10 +17,9 @@ import type {
   OwnFanClubPost,
   Page,
 } from '../api/contract';
-import { removeFiles } from '../artists/files';
 import { artistRecord, isPublished, type ArtistRecord } from '../centrals/model';
 import { artistRef, membershipRef } from '../centrals/service';
-import type { FanPhotoFiles } from '../fan-profile/files';
+import { runStorageWork, type FanPhotoFiles, type StorageWork } from '../fan-profile/files';
 import {
   jpegDimensions,
   PHOTO_HEAD_BYTES,
@@ -57,6 +56,7 @@ import {
   fanClubRefused,
   millisOf,
   postMediaPaths,
+  sameProportion,
   slotFileNames,
   slotNamesOf,
   type FanClubPostRecord,
@@ -93,53 +93,70 @@ const iso = (ms: number): string => new Date(ms).toISOString();
 
 /**
  * O que fica para depois da transação: os arquivos a apagar (a publicação
- * retirada ou recusada) e os tokens de download a trocar (a oculta e a tirada
- * do ar, porque a URL com token passa por cima da regra do Storage, 34.19).
+ * retirada ou recusada), os tokens de download a trocar (a oculta e a tirada
+ * do ar, porque a URL com token passa por cima da regra do Storage, 34.19) e
+ * as publicações cujas URLs são relidas depois da troca (`refresh`): a
+ * reexibida, e a oculta que alguém reexibiu antes da troca terminar.
  */
-export type FanClubFileWork = { remove: string[]; rotate: string[] };
+export type FanClubFileWork = StorageWork & { refresh: string[] };
 
-export const NO_FILE_WORK: FanClubFileWork = { remove: [], rotate: [] };
+export const NO_FILE_WORK: FanClubFileWork = { remove: [], rotate: [], refresh: [] };
 
 type Log = Pick<typeof logger, 'warn' | 'error'>;
 
 /**
- * Apaga e troca os tokens, cada arquivo por conta própria (a falha de um não
- * segura os outros). Nunca lança: a gravação já valeu, e o que falhou vai ao
- * log com os caminhos (só uid e nomes de arquivo, nunca o texto do fã). O
- * arquivo que não existe conta como apagado.
+ * As URLs da publicação no ar acertadas com o token de agora, numa transação
+ * curta que relê a publicação: só a que está no ar, com a mesma mídia (os
+ * mesmos caminhos) e uma URL diferente da de agora. Fecha a corrida entre o
+ * ocultar, que troca o token depois da transação, e o reexibir de outra
+ * pessoa, que leu o token antes da troca: quem termina por último acerta.
+ */
+export async function refreshPostMedia(
+  db: Firestore,
+  files: Pick<FanPhotoFiles, 'downloadUrl'>,
+  postId: string,
+): Promise<boolean> {
+  return db.runTransaction(async (tx) => {
+    const snap = await tx.get(fanClubPostRef(db, postId));
+    if (!snap.exists) return false;
+    const post = fanClubPostRecord(snap.id, snap.data() ?? {});
+    if (post.status !== 'published' || post.media === null) return false;
+    const [photo, thumb] = await Promise.all([
+      files.downloadUrl(post.media.photo.path),
+      files.downloadUrl(post.media.thumb.path),
+    ]);
+    if (photo === post.media.photo.url && thumb === post.media.thumb.url) return false;
+    tx.update(snap.ref, {
+      media: {
+        photo: { ...post.media.photo, url: photo },
+        thumb: { ...post.media.thumb, url: thumb },
+      },
+    });
+    return true;
+  });
+}
+
+/**
+ * Apaga, troca os tokens (o `runStorageWork`) e, depois, relê as URLs das
+ * publicações do `refresh`. Nunca lança: a gravação já valeu, e o que falhou
+ * vai ao log com os caminhos ou o id (nunca o texto do fã).
  */
 export async function runFanClubFileWork(
-  files: Pick<FanPhotoFiles, 'remove' | 'rotateDownloadToken'>,
+  db: Firestore,
+  files: Pick<FanPhotoFiles, 'remove' | 'rotateDownloadToken' | 'downloadUrl'>,
   work: FanClubFileWork,
   log: Log = logger,
 ): Promise<void> {
-  if (work.remove.length > 0) {
-    const leftovers = await removeFiles(files, work.remove);
-    if (leftovers.length > 0) {
-      log.warn('fan-clubs: arquivos de publicação ficaram no Storage', {
-        paths: leftovers.map((leftover) => leftover.path),
-        error: leftovers[0]!.error,
+  await runStorageWork(files, work, log);
+  for (const postId of work.refresh) {
+    try {
+      await refreshPostMedia(db, files, postId);
+    } catch (error) {
+      log.error('fan-clubs: as URLs de uma publicação não foram relidas', {
+        postId,
+        error: error instanceof Error ? error.message : String(error),
       });
     }
-  }
-  const rotated = await Promise.allSettled(
-    work.rotate.map((path) => files.rotateDownloadToken(path)),
-  );
-  const failed = rotated.flatMap((result, index) =>
-    result.status === 'rejected'
-      ? [
-          {
-            path: work.rotate[index]!,
-            error: result.reason instanceof Error ? result.reason.message : String(result.reason),
-          },
-        ]
-      : [],
-  );
-  if (failed.length > 0) {
-    log.error('fan-clubs: o token de download de uma foto de publicação não mudou', {
-      paths: failed.map((item) => item.path),
-      error: failed[0]!.error,
-    });
   }
 }
 
@@ -400,8 +417,9 @@ const imageInvalid = (field: 'photo' | 'thumb', problem: PhotoProblem) =>
  * A foto e a miniatura da vaga, conferidas no Storage como a foto do perfil
  * (24.4), nesta ordem, a foto antes da miniatura: as duas existem
  * (`upload_missing`); os metadados (o tipo e o tamanho); os bytes do começo
- * (o JPEG pelo `FF D8 FF` e o lado pelo SOF), com os tetos da decisão 15; e a
- * URL de download com token.
+ * (o JPEG pelo `FF D8 FF` e o lado pelo SOF), com os tetos da decisão 15; a
+ * miniatura com a proporção da foto (`dimensions`: a dupla que não é da mesma
+ * imagem, a equipe revisa as duas); e a URL de download com token.
  */
 async function readPostMedia(
   files: FanPhotoFiles,
@@ -427,6 +445,9 @@ async function readPostMedia(
     const problem = photoProblem(described[index]!, heads[index], limits[field]);
     if (problem) throw imageInvalid(field, problem);
   });
+  if (!sameProportion(jpegDimensions(heads[0]!)!, jpegDimensions(heads[1]!)!)) {
+    throw imageInvalid('thumb', 'dimensions');
+  }
   const urls = await Promise.all(fields.map((field) => files.downloadUrl(paths[field])));
   const image = (index: number): PostImage => {
     const size = jpegDimensions(heads[index]!)!;
@@ -525,7 +546,7 @@ export async function removeFanClubPost(
   tx: Transaction,
   db: Firestore,
   options: { fan: FanContext; award: AwardContext; postId: string },
-): Promise<{ body: OwnFanClubPost; plan: AwardPlan; work: FanClubFileWork }> {
+): Promise<{ body: OwnFanClubPost; plan: AwardPlan; work: StorageWork }> {
   const { fan, award, postId } = options;
   const postRef = fanClubPostRef(db, postId);
   const [postSnap, item] = await tx.getAll(postRef, fanClubReportQueueRef(db, postId));

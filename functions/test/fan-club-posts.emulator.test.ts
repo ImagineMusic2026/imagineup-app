@@ -1,7 +1,8 @@
 import { Timestamp } from 'firebase-admin/firestore';
 import { describe, expect, it } from 'vitest';
 
-import { FAN_CLUB_RULES_VERSION } from '../src/fan-clubs';
+import { idempotencyDocId } from '../src/api';
+import { FAN_CLUB_RULES_VERSION, refreshPostMedia } from '../src/fan-clubs';
 import { fanPhotoFiles, syncFanProfile } from '../src/fan-profile';
 import { DEFAULT_POINTS_CONFIG, staticConfigSource, type PointsConfig } from '../src/points';
 import { deleteUserData } from '../src/store';
@@ -327,6 +328,15 @@ describe('publicar (34.5)', () => {
       body: { details: { field: 'thumb', problem: 'dimensions' } },
     });
 
+    // A miniatura com outra forma (quadrada): não é a mesma imagem da foto.
+    const fourth = (await openSlot(call, fan)).body as Slot;
+    await put(fourth.photoPath, jpeg(1080, 1350, 200_000));
+    await put(fourth.thumbPath, jpeg(480, 480));
+    expect(await publish(call, fan, text)).toMatchObject({
+      status: 400,
+      body: { details: { field: 'thumb', problem: 'dimensions' } },
+    });
+
     const slot = await uploaded(call, fan);
     const published = await publish(call, fan, text);
     expect(published).toMatchObject({
@@ -393,8 +403,12 @@ describe('publicar (34.5)', () => {
     );
     await db.doc(`artistPrivate/${artistId}`).update({ 'fanClubs.enabled': true });
     expect(
-      (await call('DELETE', `/me/centrals/${artistId}`, { token: fan.token, key: unique('sai-') }))
-        .status,
+      (
+        await call('DELETE', `/me/centrals/${artistId}`, {
+          token: fan.token,
+          key: unique('chave-sai-'),
+        })
+      ).status,
     ).toBe(200);
     expect(await publish(call, fan, { text: 'Oi', photo: false })).toMatchObject(
       refusal('not_member'),
@@ -506,13 +520,30 @@ describe('retirar e tirar do ar (decisão 20)', () => {
     await decidePost(editor, liveId, 'approve', 'pending');
     expect(await read(`fanClubs/${clubId}`)).toMatchObject({ pendingPosts: 0, postCount: 1 });
     expect(await opens(oldUrl)).toBe(true);
-    const removed = await removePost(call, fan, liveId);
+    const removeKey = unique('chave-tira-do-ar-');
+    const removeOnce = () =>
+      call('DELETE', `/me/fan-club/posts/${liveId}`, { token: fan.token, key: removeKey });
+    const removed = await removeOnce();
     expect(removed).toMatchObject({ status: 200, body: { status: 'removed', photo: null } });
     expect(await read(`fanClubs/${clubId}`)).toMatchObject({ postCount: 0 });
     // Os arquivos ficam com a equipe, e a URL guardada nos aparelhos deixa de abrir.
-    const media = (await read(`fanClubPosts/${liveId}`))!.media as { photo: { path: string } };
+    const media = (await read(`fanClubPosts/${liveId}`))!.media as {
+      photo: { path: string };
+      thumb: { path: string };
+    };
     expect(await fileExists(media.photo.path)).toBe(true);
     expect(await opens(oldUrl)).toBe(false);
+    // O trabalho fica guardado na chave, e a repetição pela mesma chave o refaz
+    // (a troca que falhou ou se perdeu tem outra chance): o token muda de novo.
+    const saved = await read(`idempotency/${idempotencyDocId(fan.uid, removeKey)}`);
+    expect(saved?.storageWork).toEqual({
+      remove: [],
+      rotate: [media.photo.path, media.thumb.path],
+    });
+    const between = await files.downloadUrl(media.photo.path);
+    expect(await opens(between)).toBe(true);
+    expect(await removeOnce()).toMatchObject({ status: 200, body: { status: 'removed' } });
+    expect(await opens(between)).toBe(false);
     // Outro status ou outro autor: 404.
     expect(await removePost(call, fan, liveId)).toMatchObject({
       status: 404,
@@ -624,6 +655,14 @@ describe('a decideFanClub com a publicação (34.3 e 34.5)', () => {
     await decidePost(editor, postId, 'hide', 'published');
     expect(await read(`fanClubs/${clubId}`)).toMatchObject({ postCount: 0 });
     expect(await opens(oldUrl)).toBe(false);
+    // A mesma decisão de novo (a nova tentativa do painel) troca o token de novo,
+    // sem gravar nem auditar.
+    const hiddenPath = (
+      (await read(`fanClubPosts/${postId}`))!.media as { photo: { path: string } }
+    ).photo.path;
+    const between = await files.downloadUrl(hiddenPath);
+    await decidePost(editor, postId, 'hide', 'published');
+    expect(await opens(between)).toBe(false);
     expect((await call('GET', `/fan-clubs/${clubId}/posts`, { token: fan.token })).body).toEqual({
       items: [],
       nextCursor: null,
@@ -714,6 +753,37 @@ describe('a decideFanClub com a publicação (34.3 e 34.5)', () => {
   });
 });
 
+describe('a corrida do reexibir com a troca do token (34.5)', () => {
+  it('a troca que termina depois do reexibir deixa a URL morta, e a releitura acerta a media', async () => {
+    const call = api();
+    const editor = await seedMember(env, 'Editora', 'editor', ['fanClubs']);
+    const { fan } = await gestor(call, editor);
+    await uploaded(call, fan);
+    const sent = await publish(call, fan, { text: 'Corrida', photo: true });
+    const postId = sent.body.id as string;
+    await decidePost(editor, postId, 'approve', 'pending');
+    const stale = (await read(`fanClubPosts/${postId}`))!.media as {
+      photo: { url: string; path: string };
+      thumb: { url: string; path: string };
+    };
+    // A troca de um ocultar de antes que só terminou agora.
+    await files.rotateDownloadToken(stale.photo.path);
+    await files.rotateDownloadToken(stale.thumb.path);
+    expect(await opens(stale.photo.url)).toBe(false);
+    expect(await refreshPostMedia(db, files, postId)).toBe(true);
+    const fresh = (await read(`fanClubPosts/${postId}`))!.media as {
+      photo: { url: string };
+      thumb: { url: string };
+    };
+    expect(await opens(fresh.photo.url)).toBe(true);
+    expect(await opens(fresh.thumb.url)).toBe(true);
+    // Com as URLs em dia, ou a publicação fora do ar, nada muda.
+    expect(await refreshPostMedia(db, files, postId)).toBe(false);
+    await decidePost(editor, postId, 'hide', 'published');
+    expect(await refreshPostMedia(db, files, postId)).toBe(false);
+  });
+});
+
 describe('a página, a lista do artista e o bloqueio (decisão 19)', () => {
   it('a página do fã-clube ativo, com o gestor, o artista e os vínculos de quem pede', async () => {
     const call = api();
@@ -778,8 +848,12 @@ describe('a página, a lista do artista e o bloqueio (decisão 19)', () => {
 
     // Quem bloqueia o gestor deixa de ver o fã-clube e as publicações dele.
     expect(
-      (await call('PUT', `/me/blocks/${fan.uid}`, { token: visitor.token, key: unique('bloq-') }))
-        .status,
+      (
+        await call('PUT', `/me/blocks/${fan.uid}`, {
+          token: visitor.token,
+          key: unique('chave-bloqueio-'),
+        })
+      ).status,
     ).toBe(200);
     expect(await page()).toMatchObject(notFound);
     expect(await posts()).toMatchObject(notFound);
@@ -797,8 +871,10 @@ describe('a página, a lista do artista e o bloqueio (decisão 19)', () => {
     const editor = await seedMember(env, 'Editora', 'editor', ['fanClubs']);
     const artistId = await openArtist();
     const clubs: string[] = [];
+    // Nomes com o @ escolhido pelo gerador (um "Fã 0" cairia no @ automático).
+    const names = ['Ana Clara', 'Bruno Alves', 'Carla Dias'];
     for (const [index, followers] of [5, 30, 12].entries()) {
-      const fan = await signUpFan(db, `Fã ${index}`);
+      const fan = await signUpFan(db, names[index]);
       expect((await join(call, fan, artistId)).status).toBe(200);
       expect(
         (
@@ -860,6 +936,32 @@ describe('a página, a lista do artista e o bloqueio (decisão 19)', () => {
         query: { limit: '2', cursor },
       }),
     ).toMatchObject({ status: 200, body: { items: [{ id: clubs[2], followers: 12 }] } });
+
+    // Com mais destacados que o limit, a faixa vai em páginas e nunca passa dele.
+    await ok(
+      'decideFanClub',
+      {
+        subject: 'club',
+        id: clubs[2],
+        decision: 'feature',
+        expected: 'active',
+        featuredUntil: tomorrow,
+      },
+      editor,
+    );
+    const pages: string[][] = [];
+    let next: string | null = null;
+    for (let page = 0; page < 3; page += 1) {
+      const sent = await call('GET', `/artists/${artistId}/fan-clubs`, {
+        token: visitor.token,
+        query: next ? { limit: '1', cursor: next } : { limit: '1' },
+      });
+      pages.push((sent.body.items as { id: string }[]).map((item) => item.id));
+      next = sent.body.nextCursor as string | null;
+      expect(next).toEqual(expect.any(String));
+    }
+    // Os destacados pelos seguidores (12 e 5), depois os outros do topo (30).
+    expect(pages).toEqual([[clubs[2]], [clubs[0]], [clubs[1]]]);
   });
 });
 
@@ -980,7 +1082,7 @@ describe('a denúncia da publicação (decisão 18)', () => {
       (
         await call('POST', `/fans/${fan.uid}/report`, {
           token: bia.token,
-          key: unique('p-'),
+          key: unique('chave-perfil-'),
           body: {},
         })
       ).status,
@@ -989,7 +1091,7 @@ describe('a denúncia da publicação (decisão 18)', () => {
       (
         await call('POST', `/fan-club-posts/${ids[0]}/report`, {
           token: bia.token,
-          key: unique('d-'),
+          key: unique('chave-denuncia-'),
           body: {},
         })
       ).status,
@@ -997,7 +1099,7 @@ describe('a denúncia da publicação (decisão 18)', () => {
     expect(
       await call('POST', `/fan-club-posts/${ids[1]}/report`, {
         token: bia.token,
-        key: unique('d-'),
+        key: unique('chave-denuncia-'),
         body: {},
       }),
     ).toMatchObject({ status: 429, body: { details: { action: 'report', limit: 2 } } });
@@ -1013,7 +1115,7 @@ describe('a denúncia da publicação (decisão 18)', () => {
     const bia = await signUpFan(db, 'Bia Santos');
     await call('POST', `/fan-club-posts/${postId}/report`, {
       token: bia.token,
-      key: unique('d-'),
+      key: unique('chave-denuncia-'),
       body: { reason: 'spam' },
     });
     expect((await removePost(call, fan, postId)).status).toBe(200);
@@ -1041,8 +1143,10 @@ describe('as cópias do autor e a exclusão da conta (34.5 e 34.7)', () => {
     const { fan } = await gestor(call, editor);
     const sent = await publish(call, fan, { text: 'Oi', photo: false });
     await db.doc(`users/${fan.uid}`).update({ displayName: 'Camila R.' });
+    // A gravação direta também dispara o gatilho de verdade, que pode acertar
+    // as cópias antes: a conta exata fica com o teste puro.
     const result = await syncFanProfile(db, files, fan.uid, Date.now());
-    expect(result.fanClubCopies).toBe(3);
+    expect(result).toMatchObject({ deleted: false, fanClubCopies: expect.any(Number) });
     expect(await read(`fanClubPosts/${sent.body.id as string}`)).toMatchObject({
       authorName: 'Camila R.',
     });
@@ -1063,7 +1167,7 @@ describe('as cópias do autor e a exclusão da conta (34.5 e 34.7)', () => {
     const bia = await signUpFan(db, 'Bia Santos');
     await call('POST', `/fan-club-posts/${liveId}/report`, {
       token: bia.token,
-      key: unique('d-'),
+      key: unique('chave-denuncia-'),
       body: { reason: 'harassment' },
     });
     // A gestora denuncia a publicação de outro fã-clube.
@@ -1072,7 +1176,7 @@ describe('as cópias do autor e a exclusão da conta (34.5 e 34.7)', () => {
     await decidePost(editor, otherId, 'approve', 'pending');
     await call('POST', `/fan-club-posts/${otherId}/report`, {
       token: fan.token,
-      key: unique('d-'),
+      key: unique('chave-denuncia-'),
       body: { reason: 'image_misuse' },
     });
 

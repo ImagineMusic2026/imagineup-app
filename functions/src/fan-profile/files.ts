@@ -1,6 +1,8 @@
 import { randomUUID } from 'node:crypto';
 
-import { bucketFiles, type ArtistFiles, type Bucket } from '../artists/files';
+import * as logger from 'firebase-functions/logger';
+
+import { bucketFiles, removeFiles, type ArtistFiles, type Bucket } from '../artists/files';
 import type { FolderFile } from './model';
 
 /**
@@ -162,3 +164,70 @@ export const MISSING_FAN_PHOTO_FILES: FanPhotoFiles = (() => {
     rotateDownloadToken: async () => missing(),
   };
 })();
+
+/**
+ * O que mexe em arquivo do Storage depois de uma gravação, fora da transação:
+ * os caminhos a apagar e os de token de download a trocar (seção 34, 34.5).
+ * Só caminhos (o uid da pasta e o nome do arquivo, nunca texto do fã), para
+ * poder ficar guardado na chave de idempotência e rodar de novo na repetição:
+ * apagar o que já saiu e trocar de novo um token não fazem mal.
+ */
+export type StorageWork = { remove: string[]; rotate: string[] };
+
+export const NO_STORAGE_WORK: StorageWork = { remove: [], rotate: [] };
+
+export const hasStorageWork = (work: StorageWork): boolean =>
+  work.remove.length > 0 || work.rotate.length > 0;
+
+const isPathList = (value: unknown): value is string[] =>
+  Array.isArray(value) && value.every((item) => typeof item === 'string' && item !== '');
+
+/** O trabalho guardado (na chave de idempotência), ou null fora do formato. */
+export function storageWorkOf(value: unknown): StorageWork | null {
+  if (typeof value !== 'object' || value === null) return null;
+  const { remove, rotate } = value as Record<string, unknown>;
+  return isPathList(remove) && isPathList(rotate) ? { remove, rotate } : null;
+}
+
+type WorkLog = Pick<typeof logger, 'warn' | 'error'>;
+
+/**
+ * Apaga e troca os tokens, cada arquivo por conta própria (a falha de um não
+ * segura os outros). Nunca lança: a gravação já valeu, e o que falhou vai ao
+ * log com os caminhos. O arquivo que não existe conta como apagado; o token
+ * de um arquivo que não existe mais não muda (e vai ao log).
+ */
+export async function runStorageWork(
+  files: Pick<FanPhotoFiles, 'remove' | 'rotateDownloadToken'>,
+  work: StorageWork,
+  log: WorkLog = logger,
+): Promise<void> {
+  if (work.remove.length > 0) {
+    const leftovers = await removeFiles(files, work.remove);
+    if (leftovers.length > 0) {
+      log.warn('storage: arquivos ficaram depois da gravação', {
+        paths: leftovers.map((leftover) => leftover.path),
+        error: leftovers[0]!.error,
+      });
+    }
+  }
+  const rotated = await Promise.allSettled(
+    work.rotate.map((path) => files.rotateDownloadToken(path)),
+  );
+  const failed = rotated.flatMap((result, index) =>
+    result.status === 'rejected'
+      ? [
+          {
+            path: work.rotate[index]!,
+            error: result.reason instanceof Error ? result.reason.message : String(result.reason),
+          },
+        ]
+      : [],
+  );
+  if (failed.length > 0) {
+    log.error('storage: o token de download de um arquivo não mudou', {
+      paths: failed.map((item) => item.path),
+      error: failed[0]!.error,
+    });
+  }
+}

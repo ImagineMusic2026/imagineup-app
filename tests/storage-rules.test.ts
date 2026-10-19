@@ -74,6 +74,16 @@ const MEMBERS: Record<string, Member> = {
   // Bloco 10: quem edita e quem só vê Recompensas e resgates.
   editoraLoja: { role: 'editor', status: 'active', sections: ['rewards'] },
   leitoraLoja: { role: 'viewer', status: 'active', sections: ['rewards'] },
+  // Seção 34: a equipe do fã-clube, que lê as fotos das publicações.
+  editoraFaClubes: { role: 'editor', status: 'active', sections: ['fanClubs'] },
+  leitoraFaClubes: { role: 'viewer', status: 'active', sections: ['fanClubs'] },
+  desativadaFaClubes: { role: 'editor', status: 'disabled', sections: ['fanClubs'] },
+  ligadaFaClubes: {
+    role: 'editor',
+    status: 'active',
+    sections: ['fanClubs'],
+    authValidAfter: LINKED_AT,
+  },
 };
 
 /** Membros gravados como o servidor grava. */
@@ -673,12 +683,48 @@ describe('fotos das publicações do fã-clube (fanClubMedia/{uid}/)', () => {
     await assertFails(upload(as('camila'), paths.photo, jpeg));
   });
 
-  it('a dona lê pelo caminho; outro fã e sem login, não; ninguém lista, troca nem apaga', async () => {
+  it('a dona lê pelo caminho só com a vaga aberta; outro fã e sem login, não', async () => {
     const paths = await reserved();
     await assertSucceeds(upload(as('camila'), paths.photo, jpeg));
     await assertSucceeds(as('camila').ref(paths.photo).getMetadata());
     await assertFails(as('alan').ref(paths.photo).getMetadata());
     await assertFails(anonymous().ref(paths.photo).getMetadata());
+    // A vaga sai com a publicação: a foto, oculta ou tirada do ar depois, não
+    // ganha uma URL nova pelos metadados.
+    await env.withSecurityRulesDisabled(async (context) => {
+      await deleteDoc(doc(context.firestore(), 'users/camila/uploads/fanClubPost'));
+    });
+    await assertFails(as('camila').ref(paths.photo).getMetadata());
+    await assertFails(as('camila').ref(paths.photo).getDownloadURL());
+    // A vaga vencida também não lê.
+    const late = names();
+    await reserveSlot('camila', late);
+    await assertSucceeds(upload(as('camila'), `fanClubMedia/camila/${late.photo}`, jpeg));
+    await reserveSlot('camila', late, -1_000);
+    await assertFails(as('camila').ref(`fanClubMedia/camila/${late.photo}`).getMetadata());
+  });
+
+  it('a equipe com a seção Fã-clubes lê pelo caminho (a prova da oculta); sem a seção, não', async () => {
+    const paths = await reserved();
+    await assertSucceeds(upload(as('camila'), paths.photo, jpeg));
+    for (const who of ['admin', 'editoraFaClubes', 'leitoraFaClubes']) {
+      await assertSucceeds(as(who).ref(paths.photo).getMetadata());
+    }
+    for (const who of ['editora', 'desativadaFaClubes', 'pendente']) {
+      await assertFails(as(who).ref(paths.photo).getMetadata());
+    }
+    // A sessão de antes do login que ligou a conta à equipe não lê.
+    await assertFails(
+      as('ligadaFaClubes', LINKED_AT - 1)
+        .ref(paths.photo)
+        .getMetadata(),
+    );
+    await assertSucceeds(as('ligadaFaClubes', LINKED_AT).ref(paths.photo).getMetadata());
+  });
+
+  it('ninguém lista, troca nem apaga, nem a dona nem a admin', async () => {
+    const paths = await reserved();
+    await assertSucceeds(upload(as('camila'), paths.photo, jpeg));
     for (const storage of [as('camila'), as('admin')]) {
       await assertFails(storage.ref('fanClubMedia/camila').listAll());
       await assertFails(storage.ref(paths.photo).delete());

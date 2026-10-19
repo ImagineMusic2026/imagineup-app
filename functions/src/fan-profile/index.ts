@@ -39,7 +39,16 @@ export {
   type SocialNetwork,
   type SocialProblem,
 } from './details';
-export { fanPhotoFiles, MISSING_FAN_PHOTO_FILES, type FanPhotoFiles } from './files';
+export {
+  fanPhotoFiles,
+  hasStorageWork,
+  MISSING_FAN_PHOTO_FILES,
+  NO_STORAGE_WORK,
+  runStorageWork,
+  storageWorkOf,
+  type FanPhotoFiles,
+  type StorageWork,
+} from './files';
 export {
   ABANDONED_UPLOAD_MS,
   AUTOMATIC_USERNAME,

@@ -667,6 +667,25 @@ export function slotNamesOf(value: unknown): { photo: string; thumb: string } | 
   return { photo, thumb };
 }
 
+/** A diferença de proporção aceita entre a foto e a miniatura (o arredondamento da redução). */
+export const PROPORTION_TOLERANCE = 0.02;
+
+/**
+ * A miniatura tem a proporção da foto (o app gera as duas em 4:5 da mesma
+ * imagem), com a folga do arredondamento: a dupla de imagens diferentes, com
+ * outra forma, é recusada. A mesma forma com outro conteúdo passa: a equipe
+ * revisa as duas (34.10).
+ */
+export function sameProportion(
+  photo: { width: number; height: number },
+  thumb: { width: number; height: number },
+): boolean {
+  if (photo.width < 1 || photo.height < 1 || thumb.width < 1 || thumb.height < 1) return false;
+  const a = photo.width / photo.height;
+  const b = thumb.width / thumb.height;
+  return Math.abs(a - b) <= PROPORTION_TOLERANCE * a;
+}
+
 /** Uma imagem da publicação: a URL com token, o caminho e o tamanho lido no arquivo. */
 export type PostImage = { url: string; path: string; width: number; height: number };
 

@@ -664,6 +664,28 @@ async function decideClub(
 
 // --- A publicação --------------------------------------------------------------------
 
+/**
+ * O que a mesma decisão de novo refaz depois da transação: recusar apaga os
+ * arquivos de novo, ocultar troca o token de novo e relê, reexibir relê.
+ * Apagar o que já saiu e trocar de novo o token de uma oculta não fazem mal.
+ */
+function repeatedPostWork(
+  decision: (typeof POST_DECISIONS)[number],
+  postId: string,
+  paths: string[],
+): FanClubFileWork {
+  switch (decision) {
+    case 'reject':
+      return { ...NO_FILE_WORK, remove: paths };
+    case 'hide':
+      return { ...NO_FILE_WORK, rotate: paths, refresh: [postId] };
+    case 'restore':
+      return { ...NO_FILE_WORK, refresh: [postId] };
+    case 'approve':
+      return NO_FILE_WORK;
+  }
+}
+
 /** O status que cada decisão da publicação deixa, e de onde ela sai (34.5). */
 const POST_TARGET = {
   approve: 'published',
@@ -730,11 +752,15 @@ async function decidePost(
     result: { ok: true, subject: 'post', id: input.id, status: target },
     files: NO_FILE_WORK,
   };
+  const paths = postMediaPaths(post);
   if (
     post.status === target &&
     (input.decision !== 'reject' || post.rejectReason === input.reason)
   ) {
-    return done;
+    // A repetição (a nova tentativa do painel) refaz o que fica para depois da
+    // transação, sem gravar: a troca do token ou a remoção que pode ter
+    // falhado, e a releitura das URLs da reexibida.
+    return { ...done, files: repeatedPostWork(input.decision, post.id, paths) };
   }
   if (post.status !== input.expected) throw panelError('stale-decision');
   if (post.status !== POST_FROM[input.decision]) throw notInStatus();
@@ -745,7 +771,6 @@ async function decidePost(
 
   const at = tsOf(now);
   const reviewed = { reviewedAt: at, reviewedBy: { uid: actor.uid, name: actor.name } };
-  const paths = postMediaPaths(post);
   let work: FanClubFileWork = NO_FILE_WORK;
   switch (input.decision) {
     case 'approve':
@@ -767,18 +792,21 @@ async function decidePost(
           updatedAt: at,
         });
       }
-      work = { remove: paths, rotate: [] };
+      work = { ...NO_FILE_WORK, remove: paths };
       break;
     case 'hide':
       tx.update(ref, { status: 'hidden', ...reviewed });
       if (club) {
         tx.update(clubSnap.ref, { postCount: Math.max(0, club.postCount - 1), updatedAt: at });
       }
-      work = { remove: [], rotate: paths };
+      // Relida depois da troca: alguém pode reexibir antes de ela terminar.
+      work = { ...NO_FILE_WORK, rotate: paths, refresh: [post.id] };
       break;
     case 'restore':
       tx.update(ref, { status: 'published', ...(media ? { media } : {}), ...reviewed });
       if (club) tx.update(clubSnap.ref, { postCount: club.postCount + 1, updatedAt: at });
+      // Relida depois da transação: um ocultar de antes pode trocar o token depois desta leitura.
+      work = { ...NO_FILE_WORK, refresh: [post.id] };
       break;
   }
   audit(
@@ -841,7 +869,12 @@ async function decideReport(
     result: { ok: true, subject: 'report', id: input.id, status: 'resolved' },
     files: NO_FILE_WORK,
   };
-  if (status === 'resolved' && current === resolution) return done;
+  if (status === 'resolved' && current === resolution) {
+    // A repetição do Ocultar refaz a troca do token da publicação oculta.
+    return resolution === 'actioned' && post?.status === 'hidden'
+      ? { ...done, files: { ...NO_FILE_WORK, rotate: postMediaPaths(post), refresh: [post.id] } }
+      : done;
+  }
 
   const hide = resolution === 'actioned' && post?.status === 'published';
   const clubSnap = hide && post ? await tx.get(fanClubRef(db, post.clubId)) : null;
@@ -854,7 +887,7 @@ async function decideReport(
       const club = fanClubRecord(clubSnap.id, clubSnap.data() ?? {});
       tx.update(clubSnap.ref, { postCount: Math.max(0, club.postCount - 1), updatedAt: at });
     }
-    work = { remove: [], rotate: postMediaPaths(post) };
+    work = { ...NO_FILE_WORK, rotate: postMediaPaths(post), refresh: [post.id] };
   }
   tx.update(item!.ref, { status: 'resolved', resolution, resolvedAt: at, resolvedBy: by });
   audit(
@@ -957,7 +990,7 @@ export async function decideFanClub(
       ...(deps.files ? { files: deps.files } : {}),
     });
   });
-  await runFanClubFileWork(deps.files ?? MISSING_FAN_PHOTO_FILES, decided.files);
+  await runFanClubFileWork(db, deps.files ?? MISSING_FAN_PHOTO_FILES, decided.files);
   return decided.result;
 }
 
@@ -978,6 +1011,6 @@ export async function runFanClubDecision(
       ...(options.files ? { files: options.files } : {}),
     }),
   );
-  if (options.files) await runFanClubFileWork(options.files, decided.files);
+  if (options.files) await runFanClubFileWork(db, options.files, decided.files);
   return decided.result;
 }

@@ -58,6 +58,18 @@ service firebase.storage {
             && section in staffMember().get('sections', [])));
     }
 
+    // Admin, ou editor e leitor com a seção liberada, ativo e com sessão de
+    // login a partir do authValidAfter: o canSeeSection do firestore.rules.
+    // Só a leitura das fotos das publicações do fã-clube usa (seção 34).
+    function canSeeSection(section) {
+      return request.auth != null
+        && firestore.exists(staffPath())
+        && staffMember().get('status', '') == 'active'
+        && request.auth.token.get('auth_time', 0) >= staffMember().get('authValidAfter', 0)
+        && (staffMember().get('role', '') == 'admin'
+          || section in staffMember().get('sections', []));
+    }
+
     // Foto já redimensionada pelo painel: webp, jpeg ou png, de 1 byte a 5 MB.
     function validImage() {
       return request.resource.size > 0
@@ -204,12 +216,18 @@ service firebase.storage {
     // perfil existindo e sem suspensão, e só os nomes da vaga aberta pela API,
     // antes do prazo dela. A pasta fica fora de fans/{uid}/, que a varredura
     // da foto do perfil esvazia. A função api confere os bytes (a miniatura
-    // até 300 KiB) e grava as URLs com token; o dono lê pelo caminho (o app
-    // confere se o envio de uma tentativa já chegou). Só o servidor apaga (a
-    // publicação retirada ou recusada, a vaga trocada e a pasta da conta
-    // excluída) e troca o token (a publicação oculta ou tirada do ar).
+    // até 300 KiB) e grava as URLs com token. O dono lê pelo caminho só com a
+    // vaga aberta e o nome nela (o app confere se o envio de uma tentativa já
+    // chegou): depois da publicação, a vaga sai, e a foto oculta ou tirada do
+    // ar não ganha uma URL nova pela leitura dos metadados. A equipe com a
+    // seção Fã-clubes lê pelo caminho (os arquivos ficam com ela como prova,
+    // decisão 20). Só o servidor apaga (a publicação retirada ou recusada, a
+    // vaga trocada e a pasta da conta excluída) e troca o token (a publicação
+    // oculta ou tirada do ar).
     match /fanClubMedia/{uid}/{fileName} {
-      allow get: if request.auth != null && request.auth.uid == uid;
+      allow get: if request.auth != null
+        && ((request.auth.uid == uid && fanClubUploadReserved(uid, fileName))
+          || canSeeSection('fanClubs'));
       allow list: if false;
       allow create: if request.auth != null
         && request.auth.uid == uid

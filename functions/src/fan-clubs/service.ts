@@ -500,14 +500,24 @@ export async function readFanClubPage(
 }
 
 /**
+ * O cursor da faixa dos destacados, no campo do instante do cursor das listas
+ * (21.2): o maior instante que o cursor aceita, que nenhuma contagem de
+ * seguidores alcança. Com o id do último destacado mostrado; com o último da
+ * faixa, a página seguinte começa a lista dos outros do topo.
+ */
+const FEATURED_BAND = 253_402_300_799_999;
+
+/**
  * `GET /artists/:artistId/fan-clubs` (34.3): o artista no ar e com o fã-clube
  * aberto (senão, a página vazia, sem ler os fã-clubes) e a lista de bloqueios
- * de quem pede, num `getAll`. Na primeira página, os destacados com o prazo em
- * dia (até 3, pelos seguidores); depois os ativos pelos seguidores da cópia
- * (`counts.followers`) e o id, sem os destacados de agora (já estão em cima) e
- * sem os de gestor bloqueado. O cursor guarda os seguidores e o id do último
- * lido (no campo do instante do cursor das listas, 21.2). A página pode vir
- * menor, com o cursor. Cada item com o `isFollowing`, num `getAll`.
+ * de quem pede, num `getAll`. Primeiro a faixa dos destacados com o prazo em
+ * dia (até 3, pelos seguidores e pelo id), cortada no `limit`; o cursor dela
+ * leva o id do último mostrado (`FEATURED_BAND`), e a página seguinte relê os
+ * destacados e continua depois dele. Depois, os ativos pelos seguidores da
+ * cópia (`counts.followers`) e o id, sem os destacados de agora (estão na
+ * faixa) e sem os de gestor bloqueado; o cursor guarda os seguidores e o id do
+ * último lido. A página nunca passa do `limit` e pode vir menor, com o
+ * cursor. Cada item com o `isFollowing`, num `getAll`.
  */
 export async function readArtistFanClubs(
   db: Firestore,
@@ -529,27 +539,44 @@ export async function readArtistFanClubs(
     club.ownerUid !== null && club.name !== null && !blocked.has(club.ownerUid);
   const active = fanClubsOf(db).where('artistId', '==', artistId).where('status', '==', 'active');
 
-  let featured: FanClubRecord[] = [];
-  if (query.cursor === null) {
+  const items: FanClubRecord[] = [];
+  let nextCursor: string | null = null;
+  let need = query.limit;
+  let list = active.orderBy('counts.followers', 'desc').orderBy(FieldPath.documentId(), 'desc');
+  const inBand = query.cursor === null || query.cursor.at === FEATURED_BAND;
+  if (inBand) {
     const snap = await active.where('featured', '==', true).get();
-    featured = snap.docs
+    const featured = snap.docs
       .map((doc) => fanClubRecord(doc.id, doc.data()))
       .filter((club) => isFeaturedNow(club, now) && shown(club))
       .sort((a, b) => b.followers - a.followers || a.id.localeCompare(b.id))
       .slice(0, FEATURED_PER_ARTIST_MAX);
+    const after = query.cursor?.id;
+    const start = after ? featured.findIndex((club) => club.id === after) + 1 : 0;
+    const band = featured.slice(start, start + query.limit);
+    items.push(...band);
+    need = query.limit - band.length;
+    if (need === 0 && band.length > 0) {
+      // A página cheia de destacados: a seguinte continua a faixa ou, no fim
+      // dela, começa a lista dos outros do topo.
+      nextCursor = encodePageCursor({ at: FEATURED_BAND, id: band.at(-1)!.id });
+    }
+  } else if (query.cursor) {
+    list = list.startAfter(query.cursor.at, query.cursor.id);
   }
-  const need = Math.max(1, query.limit - featured.length);
-  let list = active.orderBy('counts.followers', 'desc').orderBy(FieldPath.documentId(), 'desc');
-  if (query.cursor) list = list.startAfter(query.cursor.at, query.cursor.id);
-  const snap = await list.limit(need + 1).get();
-  const read = snap.docs.slice(0, need).map((doc) => fanClubRecord(doc.id, doc.data()));
-  const rest = read.filter((club) => !isFeaturedNow(club, now) && shown(club));
-  const items = [...featured, ...rest];
+  if (need > 0) {
+    const snap = await list.limit(need + 1).get();
+    const read = snap.docs.slice(0, need).map((doc) => fanClubRecord(doc.id, doc.data()));
+    items.push(...read.filter((club) => !isFeaturedNow(club, now) && shown(club)));
+    const last = read.at(-1);
+    if (snap.size > need && last) {
+      nextCursor = encodePageCursor({ at: last.followers, id: last.id });
+    }
+  }
   const follows =
     items.length > 0
       ? await db.getAll(...items.map((club) => fanClubFollowRef(db, uid, club.id)))
       : [];
-  const last = read.at(-1);
   return {
     items: items.map((club, index): FanClubCard => ({
       id: club.id,
@@ -560,8 +587,7 @@ export async function readArtistFanClubs(
       postCount: club.postCount,
       isFollowing: follows[index]?.exists === true,
     })),
-    nextCursor:
-      snap.size > need && last ? encodePageCursor({ at: last.followers, id: last.id }) : null,
+    nextCursor,
   };
 }
 

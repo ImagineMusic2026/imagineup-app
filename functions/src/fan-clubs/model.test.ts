@@ -33,6 +33,7 @@ import {
   parseRulesAcceptance,
   postMediaPaths,
   reapplyAfterRejection,
+  sameProportion,
   slotFileNames,
   slotNamesOf,
   withHistory,
@@ -524,6 +525,14 @@ describe('a publicação (decisões 11, 15 e 16)', () => {
     expect(slotNamesOf([names.photo])).toBeNull();
     expect(slotNamesOf(['club-photo-a.jpg', names.thumb])).toBeNull();
     expect(slotNamesOf('x')).toBeNull();
+  });
+
+  it('a miniatura com a proporção da foto, com a folga do arredondamento', () => {
+    expect(sameProportion({ width: 1080, height: 1350 }, { width: 480, height: 600 })).toBe(true);
+    expect(sameProportion({ width: 1080, height: 1350 }, { width: 480, height: 601 })).toBe(true);
+    expect(sameProportion({ width: 1080, height: 1350 }, { width: 480, height: 480 })).toBe(false);
+    expect(sameProportion({ width: 1080, height: 1350 }, { width: 600, height: 480 })).toBe(false);
+    expect(sameProportion({ width: 0, height: 1350 }, { width: 480, height: 600 })).toBe(false);
   });
 
   it('a denúncia: uma por fã e publicação', () => {

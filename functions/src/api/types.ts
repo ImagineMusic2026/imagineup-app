@@ -1,6 +1,6 @@
 import type { DocumentSnapshot, Firestore, Transaction } from 'firebase-admin/firestore';
 
-import type { FanPhotoFiles } from '../fan-profile/files';
+import type { FanPhotoFiles, StorageWork } from '../fan-profile/files';
 
 import type { AwardContext, AwardPlan, FanContext } from '../points/award';
 import type { ConfigSource } from '../points/config';
@@ -88,17 +88,18 @@ export type WriteContext = ReadContext & {
 
 /**
  * O que a rota que grava devolve: a resposta e, se lançou pontos, o plano (com
- * quem chama). O `afterCommit` roda depois que a transação gravou, antes da
- * resposta, só no pedido que gravou (a repetição pela chave não roda): o que
- * não cabe numa transação, como apagar arquivos do Storage ou trocar o token
- * de download (as publicações do fã-clube, seção 34). A falha dele vai ao log
- * e não muda a resposta.
+ * quem chama). O `storageWork` é o que não cabe numa transação: os arquivos do
+ * Storage a apagar e os tokens de download a trocar (as publicações do
+ * fã-clube, seção 34). Ele fica guardado na chave de idempotência, junto da
+ * resposta, e roda depois que a transação gravou, antes da resposta, e de novo
+ * em toda repetição pela chave (apagar e trocar de novo não fazem mal). A
+ * falha dele vai ao log e não muda a resposta.
  */
 export type WorkResult = {
   status?: number;
   body: unknown;
   plan?: AwardPlan;
-  afterCommit?: () => Promise<void>;
+  storageWork?: StorageWork;
 };
 
 type RouteBase = {

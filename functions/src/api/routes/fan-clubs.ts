@@ -17,7 +17,6 @@ import {
   readMyFanClubPosts,
   removeFanClubPost,
   reportFanClubPost,
-  runFanClubFileWork,
   withdrawApplication,
   type ApplicationInput,
   type PostInput,
@@ -46,7 +45,8 @@ import { pageQuery } from './paging';
 // publicações no ar, a lista do artista e a denúncia. As que gravam rodam no
 // runIdempotent, com o perfil exigido; as de desfazer (desistir e retirar)
 // aceitam o suspenso. Os arquivos do Storage que saem ou trocam de token
-// mudam depois da gravação (o `afterCommit`). Os seguidores chegam na etapa 4.
+// mudam depois da gravação (o `storageWork`, guardado na chave e refeito na
+// repetição). Os seguidores chegam na etapa 4.
 
 /**
  * O corpo da candidatura conferido e limpo (`parseApplication`), sem leitura:
@@ -185,14 +185,7 @@ export const fanClubRoutes: ApiRoute[] = [
         award: ctx.award,
       });
       const result: FanClubUploadSlot = body;
-      const { files } = ctx.deps;
-      return {
-        body: result,
-        plan,
-        ...(stale.length > 0
-          ? { afterCommit: () => runFanClubFileWork(files, { remove: stale, rotate: [] }) }
-          : {}),
-      };
+      return { body: result, plan, storageWork: { remove: stale, rotate: [] } };
     },
   },
   {
@@ -229,8 +222,7 @@ export const fanClubRoutes: ApiRoute[] = [
         postId: ctx.params.postId!,
       });
       const result: OwnFanClubPost = body;
-      const { files } = ctx.deps;
-      return { body: result, plan, afterCommit: () => runFanClubFileWork(files, work) };
+      return { body: result, plan, storageWork: work };
     },
   },
   {
