@@ -1,5 +1,6 @@
 import {
   FieldPath,
+  FieldValue,
   Timestamp,
   type CollectionReference,
   type DocumentData,
@@ -10,20 +11,25 @@ import {
   type Transaction,
 } from 'firebase-admin/firestore';
 
+import { fanShardOf } from '../centrals/model';
 import {
   applicationRecord,
   fanClubRecord,
   isLiveFanClub,
   type ApplicationRecord,
+  type FanClubCountField,
+  type FanClubCredit,
   type FanClubRecord,
 } from './model';
 
 // Onde o fã-clube mora no Firestore (docs/arquitetura-api.md, 34.4) e os
 // passos que outros módulos chamam sem passar pelo service: a pausa pela
 // suspensão (a Moderação), as cópias do perfil do gestor (a tarefa
-// `syncFanProfile`) e a consulta do `has-content` (o `removeArtist`). Só
-// importa o model, para nenhum desses módulos puxar a API, os pontos ou a
-// equipe por aqui.
+// `syncFanProfile`), a consulta do `has-content` (o `removeArtist`) e, desde a
+// etapa 3 de 34.14, as gravações da atribuição (o marcador do crédito e os
+// shards dos números, que as centrais e o convite gravam). Só importa o model
+// (e o puro das centrais), para nenhum desses módulos puxar a API, os pontos
+// ou a equipe por aqui.
 
 export const fanClubsOf = (db: Firestore): CollectionReference => db.collection('fanClubs');
 
@@ -71,6 +77,90 @@ export const fanClubReportQueueRef = (db: Firestore, postId: string): DocumentRe
  */
 export const fanClubUploadSlotRef = (db: Firestore, uid: string): DocumentReference =>
   db.collection('users').doc(uid).collection('uploads').doc('fanClubPost');
+
+/**
+ * `users/{uid}/fanClubCredits/{artistId}`: o marcador do crédito de entrada,
+ * uma vez por conta e artista (decisão 23). Sai com o perfil, no
+ * `recursiveDelete` da exclusão.
+ */
+export const fanClubCreditRef = (db: Firestore, uid: string, artistId: string): DocumentReference =>
+  db.collection('users').doc(uid).collection('fanClubCredits').doc(artistId);
+
+/** `fanClubStats/{clubId}/fanClubShards`: os números do fã-clube em 16 shards (decisão 24). */
+export const fanClubShardsOf = (db: Firestore, clubId: string): CollectionReference =>
+  db.collection('fanClubStats').doc(clubId).collection('fanClubShards');
+
+export const fanClubShardRef = (db: Firestore, clubId: string, shard: number): DocumentReference =>
+  fanClubShardsOf(db, clubId).doc(String(shard));
+
+/**
+ * Os números a somar numa transação, por fã-clube (o link do convite e o
+ * crédito podem ser de fã-clubes diferentes): uma gravação por fã-clube no
+ * fim, pelo `writeFanClubCounts`.
+ */
+export type FanClubCountsDelta = Map<string, Partial<Record<FanClubCountField, number>>>;
+
+/** Soma 1 num número do fã-clube, no que a transação vai gravar. */
+export function addFanClubCount(
+  delta: FanClubCountsDelta,
+  clubId: string,
+  field: FanClubCountField,
+): void {
+  const counts = delta.get(clubId) ?? {};
+  counts[field] = (counts[field] ?? 0) + 1;
+  delta.set(clubId, counts);
+}
+
+/**
+ * Grava os números somados num shard de cada fã-clube, sem ler: `increment`
+ * com `merge` (o documento nasce com a primeira soma) e o `updatedAt`. O shard
+ * é o sorteio da transação (`award.shard`, de novo a cada tentativa) reduzido
+ * aos 16 (`fanShardOf`), como o `fanCount` das centrais. Sem soma, nada.
+ */
+export function writeFanClubCounts(
+  tx: Transaction,
+  db: Firestore,
+  delta: FanClubCountsDelta,
+  shard: number,
+  at: Timestamp,
+): void {
+  for (const [clubId, counts] of delta) {
+    const fields: DocumentData = { updatedAt: at };
+    for (const [field, value] of Object.entries(counts)) {
+      if (value) fields[field] = FieldValue.increment(value);
+    }
+    tx.set(fanClubShardRef(db, clubId, fanShardOf(shard)), fields, { merge: true });
+  }
+}
+
+/** Soma 1 num número só de um fã-clube (o link, a visita): o `writeFanClubCounts` de uma soma. */
+export function writeFanClubCount(
+  tx: Transaction,
+  db: Firestore,
+  clubId: string,
+  field: FanClubCountField,
+  shard: number,
+  at: Timestamp,
+): void {
+  writeFanClubCounts(tx, db, new Map([[clubId, { [field]: 1 }]]), shard, at);
+}
+
+/** O marcador do crédito (decisão 23): quem trouxe, por onde e quando. */
+export function writeFanClubCredit(
+  tx: Transaction,
+  db: Firestore,
+  uid: string,
+  credit: FanClubCredit,
+  at: Timestamp,
+): void {
+  tx.create(fanClubCreditRef(db, uid, credit.artistId), {
+    artistId: credit.artistId,
+    clubId: credit.clubId,
+    via: credit.via,
+    at,
+    schemaVersion: 1,
+  });
+}
 
 /** As publicações de um autor, em qualquer status. Índice automático do `authorUid`. */
 export const fanClubPostsOfAuthor = (db: Firestore, uid: string) =>
@@ -120,7 +210,7 @@ async function readClubOfApplication(
  * candidatura e, com o `clubId`, o fã-clube, se ele ainda é do fã. Só
  * leituras (quem chama grava depois de ler tudo).
  */
-async function readOwnClubOf(
+export async function readOwnClubOf(
   tx: Transaction,
   db: Firestore,
   uid: string,

@@ -198,9 +198,15 @@ export function isWithinClaimWindow(profileCreatedAt: number | null, now: number
 
 // --- Origem --------------------------------------------------------------------
 
-export type InviteLinkKind = 'invite' | 'post' | 'artist' | 'agenda' | 'other';
+/**
+ * Os tipos de link do caminho classificado: os de origem nos shards menos o
+ * `code` (o código digitado não tem caminho). O `fanclub` é o `/fa-clube/<id>`
+ * da seção 34 (decisão 22). Um teste confere que o `classifyInvitePath` e o
+ * `parseLinkId` conhecem cada um.
+ */
+export type InviteLinkKind = Exclude<OriginKind, 'code'>;
 
-/** O tipo do link e o id do post ou da central (null no resto). */
+/** O tipo do link e o id do post, da central ou do fã-clube (null no resto). */
 export type InviteLinkOrigin = { kind: InviteLinkKind; targetId: string | null };
 
 function decodeSegment(segment: string): string | null {
@@ -214,11 +220,12 @@ function decodeSegment(segment: string): string | null {
 /**
  * Classifica o caminho que o link abria: `/` e `/c/<código>` são `invite`;
  * `/post/<id>`, `post`; `/artista/<id>`, `artist` (id no formato do @);
- * `/agenda`, `agenda`; o resto, e id fora do formato, `other`. O id de post
- * segue o `isContentId` (fora os `__.*__`, que o Firestore reserva: o claim e
- * a visita leem o post para a missão de link, e a leitura de um id reservado
- * seria recusada). A busca é ignorada, e o caminho em si não é guardado: um
- * `other` pode levar qualquer texto.
+ * `/agenda`, `agenda`; `/fa-clube/<id>`, `fanclub` (seção 34, decisão 22); o
+ * resto, e id fora do formato, `other`. Os ids de post e de fã-clube seguem o
+ * `isContentId` (fora os `__.*__`, que o Firestore reserva: o claim e a visita
+ * leem o post, para a missão de link, e o fã-clube, para os números dele, e a
+ * leitura de um id reservado seria recusada). A busca é ignorada, e o caminho
+ * em si não é guardado: um `other` pode levar qualquer texto.
  */
 export function classifyInvitePath(path: string): InviteLinkOrigin {
   const clean = path.split(/[?#]/, 1)[0]!.replace(/\/+$/, '') || '/';
@@ -228,10 +235,13 @@ export function classifyInvitePath(path: string): InviteLinkOrigin {
   if (rest.length > 0) return { kind: 'other', targetId: null };
   if (head === 'c' && id !== undefined && id !== '') return { kind: 'invite', targetId: null };
   if (head === 'agenda' && id === undefined) return { kind: 'agenda', targetId: null };
-  if ((head === 'post' || head === 'artista') && id !== undefined) {
+  if ((head === 'post' || head === 'artista' || head === 'fa-clube') && id !== undefined) {
     const decoded = decodeSegment(id);
     if (head === 'post' && isContentId(decoded)) {
       return { kind: 'post', targetId: decoded };
+    }
+    if (head === 'fa-clube' && isContentId(decoded)) {
+      return { kind: 'fanclub', targetId: decoded };
     }
     if (head === 'artista' && isHandleFormat(decoded)) {
       return { kind: 'artist', targetId: decoded };
@@ -386,13 +396,18 @@ export function parseVisitBody(body: unknown, now: number): Parsed<VisitInput> {
  * Onde a pessoa chegou pelo link, para o alvo das missões de link (bloco 7,
  * 22.4): o link de post leva o post e, quando lida, a central dele (o link de
  * um post do Netto anda a missão de link da central do Netto); o de central,
- * a central; os outros, nada.
+ * a central; o de fã-clube, a central dele, quando lido (seção 34, decisão
+ * 22); os outros, nada. `targetArtistId` é a central do post ou do fã-clube
+ * lido (null sem a leitura ou sem o documento).
  */
-export function linkOn(link: InviteLinkOrigin, postArtistId: string | null): MissionTick['on'] {
+export function linkOn(link: InviteLinkOrigin, targetArtistId: string | null): MissionTick['on'] {
   if (link.kind === 'post' && link.targetId) {
-    return { postId: link.targetId, artistIds: postArtistId ? [postArtistId] : [] };
+    return { postId: link.targetId, artistIds: targetArtistId ? [targetArtistId] : [] };
   }
   if (link.kind === 'artist' && link.targetId) return { artistIds: [link.targetId] };
+  if (link.kind === 'fanclub' && link.targetId) {
+    return { artistIds: targetArtistId ? [targetArtistId] : [] };
+  }
   return { artistIds: [] };
 }
 
@@ -403,21 +418,27 @@ export function originKind(input: { via: ClaimVia; link: InviteLinkOrigin | null
 
 // --- Links compartilhados --------------------------------------------------------
 
-export type SharedLinkKind = 'invite' | 'agenda' | 'post' | 'artist';
+/** Os tipos de link que o fã compartilha: os do caminho, menos o `other`. */
+export const SHARED_LINK_KINDS = ['invite', 'agenda', 'post', 'artist', 'fanclub'] as const;
+
+export type SharedLinkKind = (typeof SHARED_LINK_KINDS)[number];
 
 /** Um link que o fã compartilhou: um por destino. */
 export type SharedLink = { linkId: string; kind: SharedLinkKind; targetId: string | null };
 
-const LINK_ID = /^(invite|agenda|post:[A-Za-z0-9_-]{1,128}|artist:[a-z0-9_]{3,30})$/;
+const LINK_ID =
+  /^(invite|agenda|post:[A-Za-z0-9_-]{1,128}|artist:[a-z0-9_]{3,30}|fanclub:[A-Za-z0-9_-]{1,128})$/;
 
 /**
- * O `linkId` da rota: `invite` (o atalho Convidar), `agenda`, `post:<id>` ou
- * `artist:<@>` (fora dos ids `__.*__`). Fora disso, null (400).
+ * O `linkId` da rota: `invite` (o atalho Convidar), `agenda`, `post:<id>`,
+ * `artist:<@>` ou `fanclub:<id>` (seção 34, decisão 22; o @ e o id do
+ * fã-clube fora dos ids `__.*__`). Fora disso, null (400).
  */
 export function parseLinkId(raw: unknown): SharedLink | null {
   if (typeof raw !== 'string' || !LINK_ID.test(raw)) return null;
   if (raw === 'invite' || raw === 'agenda') return { linkId: raw, kind: raw, targetId: null };
-  const [kind, targetId] = raw.split(':', 2) as ['post' | 'artist', string];
+  const [kind, targetId] = raw.split(':', 2) as ['post' | 'artist' | 'fanclub', string];
   if (kind === 'artist' && !isHandleFormat(targetId)) return null;
+  if (kind === 'fanclub' && !isContentId(targetId)) return null;
   return { linkId: raw, kind, targetId };
 }

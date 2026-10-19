@@ -156,11 +156,13 @@ export const FAN_DATA_SOURCES: readonly FanDataSource[] = [
     deletion: { effect: 'deleted', note: 'apagado' },
   },
   {
+    // O `fanClubId` (seção 34, 34.7) diria quem convidou, que o arquivo já
+    // tira do `referrals`; o `firstJoin` vai.
     id: 'users.centrals',
     label: 'users/{uid}/centrals',
     place: { in: 'part', part: 'centrais' },
     read: { kind: 'sub', parent: 'users', name: 'centrals' },
-    omit: [],
+    omit: ['fanClubId'],
     deletion: { effect: 'deleted', note: 'apagado, com o fanCount' },
   },
   {
@@ -194,6 +196,19 @@ export const FAN_DATA_SOURCES: readonly FanDataSource[] = [
     read: { kind: 'sub', parent: 'users', name: 'uploads' },
     omit: [],
     deletion: { effect: 'deleted', note: 'apagado' },
+  },
+  {
+    // O marcador do crédito de entrada do fã-clube (seção 34, decisão 23).
+    id: 'users.fanClubCredits',
+    label: 'users/{uid}/fanClubCredits',
+    place: {
+      in: 'out',
+      reason:
+        "técnico: o marcador da antifraude do fã-clube, e o via 'owner_code' diria quem convidou",
+    },
+    read: { kind: 'sub', parent: 'users', name: 'fanClubCredits' },
+    omit: [],
+    deletion: { effect: 'deleted', note: 'apagado (o recursiveDelete do perfil)' },
   },
   {
     // O WhatsApp do fã (seção 35): sai inteiro, com a origem e a data.
@@ -282,7 +297,9 @@ export const FAN_DATA_SOURCES: readonly FanDataSource[] = [
     read: { kind: 'doc', collection: 'referrals' },
     // De quem convidou o fã, que é outra pessoa: o uid; o `award`, o status do
     // pagamento a ela (`skipped` com ela suspensa, `capped` no limite do dia
-    // dela); e o `inviterRemovedAt`, quando ela excluiu a conta.
+    // dela); e o `inviterRemovedAt`, quando ela excluiu a conta. O `code` e o
+    // `link` ficam, com o `targetId` do post, da central ou do fã-clube: foi o
+    // fã que os usou (32.19), e o link de fã-clube qualquer fã compartilha (34.22).
     omit: ['inviterUid', 'award', 'inviterRemovedAt'],
     deletion: { effect: 'deleted', note: 'apagado' },
   },

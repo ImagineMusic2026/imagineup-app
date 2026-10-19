@@ -490,3 +490,25 @@ describe('rotas do fã-clube (seção 34, etapa 2)', () => {
     expect(matchRoute(API_ROUTES, 'GET', '/fan-club-posts/pub1').kind).toBe('not_found');
   });
 });
+
+describe('rotas do fã-clube (seção 34, etapa 3)', () => {
+  it('os números do gestor não se confundem com o estado nem com as publicações', () => {
+    expect(matchRoute(API_ROUTES, 'GET', '/me/fan-club/numbers')).toMatchObject({
+      kind: 'match',
+      route: { method: 'GET', pattern: '/me/fan-club/numbers', writes: false },
+      params: {},
+    });
+    expect(matchRoute(API_ROUTES, 'POST', '/me/fan-club/numbers')).toEqual({
+      kind: 'method_not_allowed',
+      allow: ['GET'],
+    });
+  });
+
+  it('o link do fã-clube (fanclub:<id>) chega decodificado na rota dos links', () => {
+    expect(matchRoute(API_ROUTES, 'PUT', '/me/invite/links/fanclub%3Aclube1')).toMatchObject({
+      kind: 'match',
+      route: { method: 'PUT', pattern: '/me/invite/links/:linkId' },
+      params: { linkId: 'fanclub:clube1' },
+    });
+  });
+});

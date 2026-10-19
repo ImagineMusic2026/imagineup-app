@@ -26,6 +26,7 @@ export {
   parseLinkId,
   parseVisitBody,
   personKey,
+  SHARED_LINK_KINDS,
   type ClaimInput,
   type ClaimVia,
   type InviteErrorReason,

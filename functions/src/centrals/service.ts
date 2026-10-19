@@ -12,6 +12,14 @@ import {
 import * as logger from 'firebase-functions/logger';
 
 import type { Artist, ArtistDetails, FanCentral } from '../api/contract';
+import { readEntryCredit } from '../fan-clubs/credit';
+import type { FanClubCredit } from '../fan-clubs/model';
+import {
+  addFanClubCount,
+  writeFanClubCounts,
+  writeFanClubCredit,
+  type FanClubCountsDelta,
+} from '../fan-clubs/store';
 import type { SeasonConfig } from '../points/config';
 import {
   addDailyCount,
@@ -30,7 +38,7 @@ import {
   type FanContext,
   type RunOptions,
 } from '../points/award';
-import { dayKey, nextDayStart, type AwardEntry } from '../points/model';
+import { dayKey, ledgerId, nextDayStart, type AwardEntry } from '../points/model';
 import { shownPoints, shownSeason } from '../ranking/model';
 import { archivedCentralRanks, liveCentralRank } from '../ranking/service';
 import {
@@ -150,6 +158,8 @@ export type JoinOutcome = {
   plan: AwardPlan;
   /** As centrais em que o fã entrou agora (sem as que ele já seguia). */
   joined: string[];
+  /** O crédito de fã-clube gravado nesta entrada (seção 34, decisão 23), ou null. */
+  credited: FanClubCredit | null;
 };
 
 /**
@@ -157,11 +167,18 @@ export type JoinOutcome = {
  * 1. central que não existe ou não está publicada recusa tudo (artist_not_found);
  * 2. as novas são as publicadas sem vínculo; com alguma, o fã que já fez
  *    CENTRAL_ENTRIES_PER_DAY entradas hoje é recusado (too_many_entries);
- * 3. planAwards com um central_join por nova (uma vez na vida por central) e
+ * 3. as leituras do crédito pelo código do gestor (seção 34, decisão 23,
+ *    `readEntryCredit`), antes de qualquer gravação;
+ * 4. planAwards com um central_join por nova (uma vez na vida por central) e
  *    uma unidade `join` de missão por nova (bloco 7, 22.4);
- * 4. vínculo, +1 num shard do fanCount e `joined` no shard do painel de cada
- *    nova, e +1 no `central_entry` do dia na carteira do fã;
- * 5. `member: true` no `centralPoints` de cada nova (bloco 8, 23.7), a partir
+ * 5. vínculo, +1 num shard do fanCount e `joined` no shard do painel de cada
+ *    nova, e +1 no `central_entry` do dia na carteira do fã. O vínculo guarda
+ *    o `firstJoin` (o central_join dele não saiu `duplicate`: a primeira
+ *    entrada da vida na central) e o `fanClubId` do fã-clube que trouxe a
+ *    pessoa, ou null; com o crédito e o `firstJoin`, também o marcador
+ *    (`users/{uid}/fanClubCredits/{artistId}`) e `joins` +1 num shard do
+ *    fã-clube;
+ * 6. `member: true` no `centralPoints` de cada nova (bloco 8, 23.7), a partir
  *    do que o planAwards já leu para o central_join (sem o documento, ele
  *    nasce zerado): o fã entra no ranking da central com os pontos que já
  *    tinha nela.
@@ -193,6 +210,12 @@ export async function joinCentrals(
       secondsUntil(nextDayStart(award.now), award.now),
     );
   }
+  const credit = await readEntryCredit(tx, db, {
+    uid: fan.uid,
+    profileCreatedAt: fan.profileCreatedAt,
+    now: award.now,
+    joining: joined,
+  });
   const entries: AwardEntry[] = joined.map((id) => ({
     kind: 'earn',
     source: 'central_join',
@@ -216,23 +239,46 @@ export async function joinCentrals(
 
   const at = Timestamp.fromMillis(award.now);
   const shard = fanShardOf(award.shard);
+  const clubCounts: FanClubCountsDelta = new Map();
+  let credited: FanClubCredit | null = null;
   for (const id of joined) {
+    const firstJoin = joinStatus(plan, fan.uid, id) !== 'duplicate';
+    const creditHere = firstJoin && credit?.artistId === id ? credit : null;
     tx.create(membershipRef(db, fan.uid, id), {
       uid: fan.uid,
       artistId: id,
       via,
       joinedAt: at,
+      firstJoin,
+      fanClubId: creditHere?.clubId ?? null,
       schemaVersion: 1,
     });
     bumpFanShard(tx, db, id, shard, 1, at);
+    if (creditHere) {
+      writeFanClubCredit(tx, db, fan.uid, creditHere, at);
+      addFanClubCount(clubCounts, creditHere.clubId, 'joins');
+      credited = creditHere;
+    }
   }
+  writeFanClubCounts(tx, db, clubCounts, award.shard, at);
   addMembershipCounts(
     plan,
     joined.map((artistId) => ({ artistId, kind: 'joined' as const })),
   );
   if (countsEntry) addDailyCount(plan, fan, 'central_entry');
   for (const id of joined) setCentralMember(plan, fan.uid, id, true);
-  return { plan, joined };
+  return { plan, joined, credited };
+}
+
+/**
+ * O status do central_join de uma entrada no plano: `duplicate` quando o
+ * extrato já tinha a entrada naquela central (a volta de quem saiu); com o
+ * valor 0 ou no teto do dia o extrato não guarda nada, e a volta não sai
+ * `duplicate` (o marcador do crédito segura o fã-clube, decisão 23).
+ */
+function joinStatus(plan: AwardPlan, uid: string, artistId: string) {
+  const entryId = ledgerId({ source: 'central_join', eventId: artistId });
+  return plan.results.find((result) => result.uid === uid && result.entryId === entryId)?.status;
 }
 
 /** O vínculo lido, com o `joinedAt` em ms. */

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { EVENT_ID_PATTERN } from '../points/model';
+import { ORIGIN_KINDS, type OriginKind } from '../points/stats';
 import {
   classifyInvitePath,
   drawInviteCode,
@@ -12,6 +13,7 @@ import {
   inviteUrl,
   isInviteOwner,
   isWithinClaimWindow,
+  linkOn,
   normalizeEmail,
   normalizeInviteCode,
   normalizeUtm,
@@ -20,6 +22,9 @@ import {
   parseLinkId,
   parseVisitBody,
   personKey,
+  SHARED_LINK_KINDS,
+  type InviteLinkKind,
+  type SharedLinkKind,
 } from './model';
 
 const NOW = Date.parse('2026-10-05T15:00:00.000Z');
@@ -191,8 +196,52 @@ describe('tipo do link (classifyInvitePath)', () => {
     ['/artista/Netto-Brito', 'other', null],
     ['/artista/__trio__', 'other', null],
     ['/agenda/123', 'other', null],
+    ['/fa-clube/Ab3dE5fG7hJ9kL1mN2pQ', 'fanclub', 'Ab3dE5fG7hJ9kL1mN2pQ'],
+    ['/fa-clube/clube1/', 'fanclub', 'clube1'],
+    ['/fa-clube/clube1?ref=K7P3M9QX', 'fanclub', 'clube1'],
+    ['/fa-clube', 'other', null],
+    ['/fa-clube/__x__', 'other', null],
+    ['/fa-clube/a%2Fb', 'other', null],
+    ['/fa-clube/clube1/posts', 'other', null],
+    ['/fa-clubes/clube1', 'other', null],
   ])('%s é %s', (path, kind, targetId) => {
     expect(classifyInvitePath(path)).toEqual({ kind, targetId });
+  });
+});
+
+describe('os tipos de link nos três lugares do servidor (seção 34, decisão 22)', () => {
+  // Um tipo esquecido num deles vira `other` sem erro: o typecheck exige um
+  // exemplo por tipo, e o teste confere que cada lugar o reconhece.
+  const PATHS: Record<InviteLinkKind, string> = {
+    invite: '/c/K7P3M9QX',
+    post: '/post/p-clipe',
+    artist: '/artista/nettobrito',
+    agenda: '/agenda',
+    fanclub: '/fa-clube/clube1',
+    other: '/ranking',
+  };
+  const LINK_IDS: Record<SharedLinkKind, string> = {
+    invite: 'invite',
+    agenda: 'agenda',
+    post: 'post:p-clipe',
+    artist: 'artist:nettobrito',
+    fanclub: 'fanclub:clube1',
+  };
+
+  it('o OriginKind é o caminho classificado mais o code; cada tipo tem o caminho dele', () => {
+    const kinds = ORIGIN_KINDS.filter((kind): kind is InviteLinkKind => kind !== 'code');
+    expect([...kinds].sort()).toEqual(Object.keys(PATHS).sort());
+    for (const kind of kinds) expect(classifyInvitePath(PATHS[kind]).kind, kind).toBe(kind);
+    expect(originKind({ via: 'code', link: null })).toBe('code' satisfies OriginKind);
+  });
+
+  it('o linkId conhece todo tipo do caminho, menos o other', () => {
+    expect([...SHARED_LINK_KINDS].sort()).toEqual(
+      ORIGIN_KINDS.filter((kind) => kind !== 'code' && kind !== 'other').sort(),
+    );
+    for (const kind of SHARED_LINK_KINDS) {
+      expect(parseLinkId(LINK_IDS[kind])?.kind, kind).toBe(kind);
+    }
   });
 });
 
@@ -330,6 +379,24 @@ describe('corpo do claim (parseClaimBody)', () => {
   it('o tipo nos shards: o do link, ou code para o código digitado', () => {
     expect(originKind({ via: 'code', link: null })).toBe('code');
     expect(originKind({ via: 'link', link: { kind: 'artist', targetId: 'nenho' } })).toBe('artist');
+    expect(originKind({ via: 'link', link: { kind: 'fanclub', targetId: 'clube1' } })).toBe(
+      'fanclub',
+    );
+  });
+});
+
+describe('o alvo das missões de link (linkOn)', () => {
+  it('o post leva a central lida; o fã-clube, a central dele lida; sem a leitura, nenhuma', () => {
+    expect(linkOn({ kind: 'post', targetId: 'p-clipe' }, 'nettobrito')).toEqual({
+      postId: 'p-clipe',
+      artistIds: ['nettobrito'],
+    });
+    expect(linkOn({ kind: 'artist', targetId: 'nenho' }, null)).toEqual({ artistIds: ['nenho'] });
+    expect(linkOn({ kind: 'fanclub', targetId: 'clube1' }, 'nettobrito')).toEqual({
+      artistIds: ['nettobrito'],
+    });
+    expect(linkOn({ kind: 'fanclub', targetId: 'clube1' }, null)).toEqual({ artistIds: [] });
+    expect(linkOn({ kind: 'agenda', targetId: null }, null)).toEqual({ artistIds: [] });
   });
 });
 
@@ -357,6 +424,8 @@ describe('link compartilhado (parseLinkId)', () => {
     ['agenda', { linkId: 'agenda', kind: 'agenda', targetId: null }],
     ['post:p-clipe', { linkId: 'post:p-clipe', kind: 'post', targetId: 'p-clipe' }],
     ['artist:nettobrito', { linkId: 'artist:nettobrito', kind: 'artist', targetId: 'nettobrito' }],
+    ['fanclub:clube1', { linkId: 'fanclub:clube1', kind: 'fanclub', targetId: 'clube1' }],
+    ['fanclub:__clube', { linkId: 'fanclub:__clube', kind: 'fanclub', targetId: '__clube' }],
   ])('%s', (raw, link) => {
     expect(parseLinkId(raw)).toEqual(link);
   });
@@ -368,6 +437,11 @@ describe('link compartilhado (parseLinkId)', () => {
     ['post:'],
     [`post:${'x'.repeat(129)}`],
     ['post:a/b'],
+    ['fanclub:'],
+    ['fanclub:__x__'],
+    [`fanclub:${'x'.repeat(129)}`],
+    ['fanclub:a/b'],
+    ['fa-clube:clube1'],
     ['convite'],
     ['invite:x'],
     [''],

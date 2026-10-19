@@ -1,8 +1,10 @@
 // O fã-clube gerido pelo fã (docs/arquitetura-api.md, seção 34): a
-// candidatura, o fã-clube, as publicações e as denúncias delas, a callable
+// candidatura, o fã-clube, as publicações e as denúncias delas, a atribuição
+// (o crédito das entradas trazidas e os números em shards), a callable
 // `decideFanClub` do painel e o passo da exclusão de conta. A API
 // (src/api/routes/fan-clubs.ts) usa daqui; a callable fica em src/index.ts; o
-// seed dos emuladores carrega o build (functions/lib/fan-clubs).
+// seed dos emuladores carrega o build (functions/lib/fan-clubs). As centrais e
+// o convite importam o store e o credit pelo arquivo.
 export {
   APPLICATION_KEYS,
   APPLICATION_REJECT_REASONS,
@@ -14,6 +16,8 @@ export {
   CLUB_PHOTO_LIMITS,
   CLUB_THUMB_LIMITS,
   FAN_CLUB_APPLIES_PER_DAY,
+  FAN_CLUB_COUNT_FIELDS,
+  FAN_CLUB_CREDIT_WINDOW_MS,
   FAN_CLUB_NAME_MAX,
   FAN_CLUB_NAME_MIN,
   FAN_CLUB_OPEN,
@@ -42,6 +46,7 @@ export {
   hasOfficialWord,
   isFeaturedNow,
   isLiveFanClub,
+  isWithinCreditWindow,
   parseApplication,
   parseFeaturedUntil,
   parsePost,
@@ -49,11 +54,16 @@ export {
   POST_REJECT_REASONS,
   sameProportion,
   slotFileNames,
+  sumFanClubShards,
   type ApplicationInput,
   type ApplicationRecord,
   type ApplicationRejectReason,
   type CloseReason,
   type FanClubBoxes,
+  type FanClubCountField,
+  type FanClubCounts,
+  type FanClubCredit,
+  type FanClubCreditVia,
   type FanClubErrorCode,
   type FanClubPostRecord,
   type FanClubPostStatus,
@@ -67,11 +77,14 @@ export {
 export {
   applicationPrivateRef,
   applicationRef,
+  fanClubCreditRef,
   fanClubPostRef,
   fanClubPostsOf,
   fanClubRef,
   fanClubReportQueueRef,
   fanClubReportsOf,
+  fanClubShardRef,
+  fanClubShardsOf,
   fanClubsOf,
   fanClubsOfOwner,
   fanClubUploadSlotRef,
@@ -81,6 +94,7 @@ export {
   readActiveClubOf,
   syncFanClubCopies,
 } from './store';
+export { readClaimCredit, readEntryCredit } from './credit';
 export {
   acceptFanClubRules,
   applicationView,
@@ -90,6 +104,7 @@ export {
   readFanClubArtists,
   readFanClubPage,
   readMyFanClub,
+  readMyFanClubNumbers,
   removeFanClubData,
   runApplyForFanClub,
   withdrawApplication,
@@ -133,6 +148,7 @@ export {
   SEED_CAMILA_FAN_CLUB,
   SEED_FAN_CLUB_POSTS,
   SEED_TEXT_ONLY_ARTIST,
+  seedFanClubLink,
   seedFanClubPosts,
   seedFanClubs,
   type SeedFanClubPost,

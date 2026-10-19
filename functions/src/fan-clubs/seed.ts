@@ -1,6 +1,8 @@
 import type { Firestore } from 'firebase-admin/firestore';
 
 import type { FanPhotoFiles } from '../fan-profile/files';
+import { parseLinkId } from '../invites/model';
+import { runInviteLinks } from '../invites/service';
 import { DEFAULT_POINTS_CONFIG } from '../points/config';
 import { NO_GAME } from '../points/model';
 import { SEED_ACTOR } from '../points/seed';
@@ -19,9 +21,11 @@ import { applicationRef, fanClubPostsOfAuthor, fanClubReportQueueRef } from './s
 // publicam texto). O Netto fica com as caixas pelo padrão (o
 // `imageRightsConfirmed`). Na etapa 2: as três publicações da Camila (duas no
 // ar, uma com a foto de teste em 4:5, e uma em análise) e a denúncia da Bia
-// contra a da foto, com "Uso indevido de imagem". Os seguidores, o prêmio e a
-// candidatura pendente da Duda chegam com as etapas deles. Rodar de novo não
-// muda nada. Nunca roda em produção: o script fixa os emuladores.
+// contra a da foto, com "Uso indevido de imagem". Na etapa 3: o link do
+// fã-clube que a Camila compartilhou (`fanclub:<id>`), para os números do
+// fã-clube terem um link. Os seguidores, o prêmio e a candidatura pendente da
+// Duda chegam com as etapas deles. Rodar de novo não muda nada. Nunca roda em
+// produção: o script fixa os emuladores.
 
 /** A central com as fotos de fã desligadas (só texto). */
 export const SEED_TEXT_ONLY_ARTIST = 'nenho';
@@ -203,4 +207,27 @@ export async function seedFanClubPosts(
     result.reported = true;
   }
   return result;
+}
+
+/**
+ * O link do fã-clube da Camila (34.12, etapa 3 de 34.14), pelo núcleo de
+ * verdade do `PUT /me/invite/links/:linkId` (`runInviteLinks`, com o ator de
+ * sistema, fora do teto), como o "Compartilhar meu fã-clube" faria: o link
+ * `fanclub:<id>` e +1 nos links do fã-clube. Pede o fã-clube ativo dela e o
+ * código de convite (o `seedCamilaInvite`, antes); o link que já existe não
+ * conta de novo. Devolve se o link nasceu agora.
+ */
+export async function seedFanClubLink(
+  db: Firestore,
+  camilaUid: string,
+  now: number = Date.now(),
+): Promise<boolean> {
+  const application = await applicationRef(db, camilaUid).get();
+  const clubId = application.exists
+    ? applicationRecord(camilaUid, application.data() ?? {}).clubId
+    : null;
+  const link = clubId === null ? null : parseLinkId(`fanclub:${clubId}`);
+  if (link === null) return false;
+  const options = { now, config: DEFAULT_POINTS_CONFIG, actor: SEED_ACTOR, game: NO_GAME };
+  return (await runInviteLinks(db, camilaUid, [link], options)) > 0;
 }
