@@ -40,6 +40,7 @@ import { SectionLabel } from '@/components/section-label';
 import { UnderlineTabs, type UnderlineTab } from '@/components/underline-tabs';
 import { EventRow, useArtistAgendaQuery } from '@/domains/agenda';
 import { useArtistQuery, useIsJoinPending, useJoinCentralMutation } from '@/domains/artists';
+import { ArtistFanClubsCard } from '@/domains/fan-club';
 import {
   FeaturedMissionCard,
   MissionRow,
@@ -237,6 +238,9 @@ function tabOfMission(mission: Mission, artistId: string): ArtistTab | null {
  * Um link para outra central com esta aberta troca só o parâmetro da mesma
  * tela: a página nasce de novo (`key`), no Mural e no topo, sem a aba e a
  * rolagem da central anterior.
+ *
+ * Depois do botão da central, o card "Fã-clubes" (seção 34, 34.9, item 8),
+ * só depois da trava do fã-clube e só com fã-clube no artista.
  */
 export function ArtistDetailsScreen() {
   const params = useLocalSearchParams<{ artistaId: string }>();
@@ -649,6 +653,8 @@ function ArtistPage({ artistId }: { artistId: string }) {
         joinPending={joinPending}
         award={award}
       />
+      {/* Os fã-clubes do artista (seção 34): só depois da trava e só com fã-clube. */}
+      <ArtistFanClubsCard artistId={artistId} artistName={artist?.name ?? null} />
       {/* O puxar para atualizar acontece aqui no topo: a falha aparece onde o fã puxou. */}
       {updateFailed ? (
         <EmptyState

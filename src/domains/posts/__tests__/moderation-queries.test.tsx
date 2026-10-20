@@ -3,6 +3,7 @@ import { act, renderHook, waitFor } from '@testing-library/react-native';
 import type { ReactNode } from 'react';
 import { AccessibilityInfo } from 'react-native';
 
+import { fanClubKeys } from '@/domains/fan-club/keys';
 import { fanKeys, type FanPublicProfile } from '@/domains/profile';
 import { ApiError } from '@/services/api/errors';
 import { haptics } from '@/services/haptics';
@@ -106,6 +107,22 @@ describe('bloquear um fã', () => {
     expect(ids('p-clipe')).toEqual(['c2']);
     expect(ids('p-show')).toEqual([]);
     expect(client.getQueryState(postKeys.comments('p-clipe'))?.isInvalidated).toBe(true);
+  });
+
+  it('bloquear e desbloquear zeram o que os fãs veem dos fã-clubes (seção 34, decisões 19 e 32)', async () => {
+    client.setQueryData(fanClubKeys.follows(), { items: [] });
+    client.setQueryData(fanClubKeys.club('fc-1'), { id: 'fc-1' });
+    const { result } = renderHook(() => useBlockFanMutation('uidEnzo'), { wrapper });
+    act(() => result.current.block());
+    await waitFor(() =>
+      expect(client.getQueryState(fanClubKeys.follows())?.isInvalidated).toBe(true),
+    );
+    expect(client.getQueryState(fanClubKeys.club('fc-1'))?.isInvalidated).toBe(true);
+
+    client.setQueryData(fanClubKeys.feed(), { pages: [], pageParams: [] });
+    const unblock = renderHook(() => useUnblockFanMutation('uidEnzo'), { wrapper });
+    act(() => unblock.result.current.unblock());
+    await waitFor(() => expect(client.getQueryState(fanClubKeys.feed())?.isInvalidated).toBe(true));
   });
 
   it('no erro, nada sai do cache e o erro chega à sheet', async () => {

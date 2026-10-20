@@ -13,26 +13,28 @@ import { parseWhatsapp } from '@/utils/whatsapp';
 
 import { REDEEM_ERROR_CODES, REWARDS_RULES_URL } from './consts';
 import type {
+  FanClubPrize,
   RedeemResult,
   RedemptionStatus,
   Reward,
-  RewardKind,
   RewardRedemption,
   RewardsResponse,
+  StoreRewardKind,
 } from './types';
 
 /**
  * Loja de exemplo da 1h nas builds sem API: o mesmo catálogo do seed dos
  * emuladores (docs/arquitetura-api.md, 25.13, `functions/src/rewards/seed.ts`),
- * com os mesmos ids, custos, estoque, limites, shows e instruções, e os
- * pedidos antigos da Camila nos quatro status. Os reais vêm do painel. Texto
- * de fixture é dado, não interface: não passa por `t()`. Mudou um lado, mude o
- * outro e a tabela da nota (`__tests__/fixtures.test.ts` trava).
+ * com os mesmos ids, custos, estoque, limites, shows e instruções, os pedidos
+ * antigos da Camila nos quatro status e o prêmio de fã-clube dela (seção 34,
+ * 34.12). Os reais vêm do painel. Texto de fixture é dado, não interface: não
+ * passa por `t()`. Mudou um lado, mude o outro e a tabela da nota
+ * (`__tests__/fixtures.test.ts` trava).
  */
 
 type FixtureReward = {
   id: string;
-  kind: RewardKind;
+  kind: StoreRewardKind;
   title: string;
   subtitle: string;
   description: string | null;
@@ -49,7 +51,7 @@ type FixtureReward = {
   instructions: string;
 };
 
-const INSTRUCTIONS: Record<RewardKind, string> = {
+const INSTRUCTIONS: Record<StoreRewardKind, string> = {
   meet: 'Mostre este código na entrada do camarim no dia do show, a partir das 20 h, com um documento com foto.',
   ticket:
     'Retire o par de ingressos na bilheteria do show com este código e um documento com foto.',
@@ -308,12 +310,57 @@ function toReward(item: FixtureReward, now: Date, redemptions: StoredRedemption[
   };
 }
 
+/**
+ * O prêmio de fã-clube da Camila, como o seed o dá (34.12 e o
+ * `SEED_FAN_CLUB_GRANT` das funções): o ingresso de cortesia da recompensa
+ * "Só para prêmios" (`cortesia-sao-joao`, fora do catálogo), aprovado há 2
+ * dias, com o cupom e a mensagem da equipe. O código é fixo, do alfabeto dos
+ * pedidos (o do seed é sorteado).
+ */
+export const FIXTURE_PRIZE = {
+  code: 'UP-FC2JRW',
+  daysAgo: 2,
+  coupon: 'CORTESIA-IRARA',
+  message: 'Obrigado por levar a turma de Irará aos shows do Netto!',
+  reward: {
+    id: 'cortesia-sao-joao',
+    kind: 'ticket',
+    title: 'Ingresso de cortesia',
+    imageUrl: null,
+    instructions:
+      'Retire o ingresso na bilheteria do show com este código e um documento com foto. A equipe combina os detalhes com você pelo WhatsApp ou pelo Instagram.',
+  },
+} as const;
+
+function prizesFixture(now: Date): FanClubPrize[] {
+  const at = set(subDays(now, FIXTURE_PRIZE.daysAgo), {
+    hours: 15,
+    minutes: 0,
+    seconds: 0,
+    milliseconds: 0,
+  }).toISOString();
+  return [
+    {
+      id: FIXTURE_PRIZE.code,
+      code: FIXTURE_PRIZE.code,
+      status: 'approved',
+      statusAt: at,
+      grantedAt: at,
+      coupon: FIXTURE_PRIZE.coupon,
+      message: FIXTURE_PRIZE.message,
+      refusalReason: null,
+      reward: { ...FIXTURE_PRIZE.reward },
+    },
+  ];
+}
+
 /** A loja com o estoque que sobrou; objetos novos a cada chamada. */
 export function buildRewardsFixture(now: Date): RewardsResponse {
   const redemptions = allRedemptions(now);
   return {
     rulesUrl: REWARDS_RULES_URL.trim() === '' ? null : REWARDS_RULES_URL,
     rewards: FIXTURE_REWARDS.map((item) => toReward(item, now, redemptions)),
+    prizes: prizesFixture(now),
   };
 }
 

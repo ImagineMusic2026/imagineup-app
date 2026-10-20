@@ -315,11 +315,17 @@ describe('loja de recompensas (1h)', () => {
     ).toBeTruthy();
     expect(screen.getByLabelText('Seu saldo: 12.480 pontos')).toBeTruthy();
     const headers = screen.getAllByRole('header').map((node) => node.props.children);
-    expect(headers).toEqual(['Resgatar', 'Ao seu alcance']);
+    // "Seus prêmios": o prêmio de fã-clube da Camila (seção 34), entre o título e o destaque.
+    expect(headers).toEqual(['Resgatar', 'Seus prêmios', 'Ao seu alcance']);
+    expect(
+      screen.getByRole('button', {
+        name: /^Prêmio do fã-clube: Ingresso de cortesia\. Aprovado em /,
+      }),
+    ).toBeTruthy();
     const cards = screen
       .getAllByRole('button')
       .map((node) => node.props.accessibilityLabel as string | undefined)
-      .filter((name) => name?.endsWith('.'));
+      .filter((name) => name?.endsWith('.') && !name.startsWith('Prêmio do fã-clube'));
     expect(cards[0]).toMatch(featuredLabel('10.000 pontos'));
     // A grade do protótipo, com a passagem de som esgotada no fim.
     expect(cards.slice(1)).toEqual([TICKETS, VIDEO, SHIRT, SCREEN, SOUNDCHECK]);

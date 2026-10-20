@@ -6,13 +6,15 @@ import { PressableScale } from '@/components/pressable-scale';
 import { haptics } from '@/services/haptics';
 import { motion } from '@/theme';
 
+import { FALLBACK_REWARD_ICON, REWARD_ICONS, rewardIconOf } from '../consts';
 import { FeaturedRewardCard } from '../components/featured-reward-card';
+import { PrizeBody, PrizesRow } from '../components/prize-cards';
 import { DetailsActions, DetailsBody, SuccessBody } from '../components/redeem-steps';
 import { RewardCard } from '../components/reward-card';
 import { RewardSummary } from '../components/reward-summary';
 import { RewardsLegal } from '../components/rewards-legal';
 import { buildRewardsFixture } from '../fixtures';
-import type { Reward, RewardRedemption } from '../types';
+import type { FanClubPrize, Reward, RewardRedemption } from '../types';
 
 // As fixtures da loja leem os shows da agenda de exemplo, que chegam ao
 // domínio das missões (com o axios e o Firebase): o build ESM do Firebase não
@@ -395,5 +397,69 @@ describe('aviso da Apple e regulamento no pé da loja', () => {
     const link = screen.getByRole('link', { name: 'Regulamento' });
     expect(link).toHaveProp('accessibilityHint', 'Abre o regulamento das recompensas');
     expect(screen.getByText(/^As recompensas são oferecidas pela Imagine Music\./)).toBeTruthy();
+  });
+});
+
+describe('prêmios de fã-clube (seção 34, decisões 42 e 51)', () => {
+  const [PRIZE] = buildRewardsFixture(NOW).prizes ?? [];
+  const prize = (patch: Partial<FanClubPrize> = {}): FanClubPrize => ({ ...PRIZE!, ...patch });
+
+  it('o Desconto tem ícone, e o tipo desconhecido ganha o de reserva, sem quebrar', () => {
+    expect(rewardIconOf('discount')).toBe(REWARD_ICONS.discount);
+    expect(rewardIconOf('ticket')).toBe(REWARD_ICONS.ticket);
+    expect(rewardIconOf('experiencia_vip')).toBe(FALLBACK_REWARD_ICON);
+    expect(rewardIconOf('toString')).toBe(FALLBACK_REWARD_ICON);
+    render(
+      <PrizesRow
+        prizes={[prize({ reward: { ...PRIZE!.reward, kind: 'experiencia_vip' } })]}
+        onOpen={() => undefined}
+      />,
+    );
+    expect(screen.getByTestId(`reward-prize-${PRIZE!.id}`)).toBeOnTheScreen();
+  });
+
+  it('a fileira "Seus prêmios": cada prêmio é um botão só, com o título e o status, e abre o detalhe', () => {
+    const onOpen = jest.fn();
+    render(<PrizesRow prizes={[prize()]} onOpen={onOpen} />);
+    expect(screen.getByText('Seus prêmios')).toBeOnTheScreen();
+    const card = screen.getByLabelText(
+      'Prêmio do fã-clube: Ingresso de cortesia. Aprovado em 27 de setembro.',
+    );
+    expect(nestedPressables()).toHaveLength(0);
+    fireEvent.press(card);
+    expect(onOpen).toHaveBeenCalledWith(prize());
+  });
+
+  it('sem prêmio, a fileira não aparece', () => {
+    render(<PrizesRow prizes={[]} onOpen={() => undefined} />);
+    expect(screen.queryByTestId('reward-prizes')).not.toBeOnTheScreen();
+  });
+
+  it('o detalhe em modo prêmio: o selo, o código com o status, o cupom selecionável, a mensagem e as instruções, sem custo', () => {
+    render(<PrizeBody prize={prize()} headingRef={{ current: null }} />);
+    expect(screen.getByText('Prêmio do fã-clube')).toBeOnTheScreen();
+    expect(
+      screen.getByLabelText('Código do prêmio: UP-FC2JRW. Aprovado em 27 de setembro.'),
+    ).toBeOnTheScreen();
+    const coupon = screen.getByTestId('reward-prize-coupon');
+    expect(coupon.props.selectable).toBe(true);
+    expect(coupon.props.accessibilityLabel).toBe('Cupom: CORTESIA-IRARA');
+    expect(screen.getByTestId('reward-prize-message')).toHaveTextContent(
+      'Obrigado por levar a turma de Irará aos shows do Netto!',
+    );
+    expect(screen.getByTestId('reward-prize-instructions')).toBeOnTheScreen();
+    expect(screen.queryByText(/pts|pontos/)).not.toBeOnTheScreen();
+  });
+
+  it('o prêmio recusado diz o motivo, sem cupom e sem instruções', () => {
+    render(
+      <PrizeBody
+        prize={prize({ status: 'refused', coupon: null, refusalReason: 'O show foi adiado.' })}
+        headingRef={{ current: null }}
+      />,
+    );
+    expect(screen.getByText('Motivo: O show foi adiado.')).toBeOnTheScreen();
+    expect(screen.queryByTestId('reward-prize-coupon')).not.toBeOnTheScreen();
+    expect(screen.queryByTestId('reward-prize-instructions')).not.toBeOnTheScreen();
   });
 });

@@ -49,6 +49,7 @@ describe('linha do extrato', () => {
     ['redeem_refund', 'Resgate devolvido'],
     ['adjustment', 'Ajuste da equipe'],
     ['seed', 'Ajuste'],
+    ['fanclub_prize', 'Prêmio do fã-clube'],
     ['bonus_de_amanha', 'Pontos'],
   ])('a origem %s vira "%s" (a desconhecida cai em "Pontos")', (source, title) => {
     expect(ledgerRowLabel(entry('x', { source }), NOW)).toMatch(new RegExp(`^${title},`));
@@ -123,6 +124,29 @@ describe('linha do extrato', () => {
     );
     // O resgate antigo, sem título guardado, fica só com a hora.
     expect(ledgerContext(entry('redeem:r', { ...redeem, subjectTitle: null }))).toBeNull();
+  });
+
+  it('o prêmio do fã-clube (seção 34, decisão 45): só o saldo, em lima, sem contexto e sem a nota', () => {
+    const prize = entry('fanclub_prize:seed-camila-cortesia', {
+      kind: 'adjust',
+      source: 'fanclub_prize',
+      points: 200,
+      xpDelta: 0,
+      seasonDelta: 0,
+      artistId: null,
+      artistName: null,
+      centralSeasonDelta: 0,
+      centralTotalDelta: 0,
+      createdAt: at(2, 15),
+    });
+    expect(isVisibleLedgerEntry(prize)).toBe(true);
+    expect(ledgerSource(prize).tone).toBe('points');
+    expect(ledgerContext(prize)).toBeNull();
+    expect(ledgerValueText(prize)).toBe('+200');
+    expect(ledgerMeta(prize)).toBe('15:00');
+    expect(ledgerRowLabel(prize, NOW)).toBe(
+      'Prêmio do fã-clube, mais 200 pontos, em 27 de setembro às 15:00.',
+    );
   });
 
   it('o ajuste sem saldo mostra o XP ou a temporada; o só de central fica de fora', () => {

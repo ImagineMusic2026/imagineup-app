@@ -13,7 +13,7 @@ import { formatPointsSpoken } from '@/utils/number';
 
 import { fetchRewards, redeemReward } from './api';
 import { outcomeUnknown, redeemFailure, redeemFailureKey } from './describe-reward';
-import type { RedeemResult, RedeemVariables, Reward, RewardsResponse } from './types';
+import type { FanClubPrize, RedeemResult, RedeemVariables, Reward, RewardsResponse } from './types';
 
 /** A chave inclui tudo que muda o resultado. */
 export const rewardKeys = {
@@ -94,6 +94,23 @@ export function useRewardQuery(rewardId: string) {
     ...rewardsQueryOptions(queryClient),
     select: (data: RewardsResponse): Reward | null =>
       data.rewards.find((reward) => reward.id === rewardId) ?? null,
+  });
+}
+
+/**
+ * Um prêmio de fã-clube do fã, para o detalhe em modo prêmio (seção 34,
+ * decisão 51): sai do `prizes` da mesma lista da 1h (aberto a frio, busca a
+ * lista), pelo código do pedido e pela recompensa, e não do `rewards`, onde a
+ * recompensa de prêmio nunca está. `null` sem ele: a `api` de antes (sem o
+ * campo) ou o prêmio que não está mais na lista.
+ */
+export function usePrizeQuery(rewardId: string, code: string) {
+  const queryClient = useQueryClient();
+  return useQuery({
+    ...rewardsQueryOptions(queryClient),
+    select: (data: RewardsResponse): FanClubPrize | null =>
+      (data.prizes ?? []).find((prize) => prize.code === code && prize.reward.id === rewardId) ??
+      null,
   });
 }
 

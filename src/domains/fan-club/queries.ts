@@ -6,8 +6,9 @@ import {
   type InfiniteData,
   type QueryClient,
 } from '@tanstack/react-query';
-import { useRef } from 'react';
+import { useRef, useState } from 'react';
 
+import { useJoinCelebration } from '@/domains/artists';
 import { inviteLinkId } from '@/domains/invites';
 import {
   profileKeys,
@@ -16,6 +17,7 @@ import {
   type FanContact,
   type PreparedFanClubPhoto,
 } from '@/domains/profile';
+import type { TranslationKey } from '@/i18n';
 import { ApiError } from '@/services/api/errors';
 import { queryOptionsFor } from '@/services/query/client';
 import { useSessionStore } from '@/stores/session';
@@ -27,34 +29,52 @@ import {
   applyForFanClub,
   createFanClubPost,
   fanClubFileUploaded,
+  fetchArtistFanClubs,
+  fetchFanClub,
   fetchFanClubArtists,
+  fetchFanClubFeed,
+  fetchFanClubPosts,
+  fetchFollowedFanClubs,
   fetchMyFanClub,
   fetchMyFanClubNumbers,
   fetchMyFanClubPosts,
+  followFanClub,
   openFanClubUpload,
   removeFanClubPost,
+  reportFanClubPost,
+  unfollowFanClub,
   uploadFanClubFile,
   withdrawApplication,
 } from './api';
 import { FAN_CLUB_ERROR_CODES } from './consts';
-import { shownFanClub } from './entry';
+import { isDefinitiveRefusal, leaveCentralNotes, liveFanClub, shownFanClub } from './entry';
 import { fanClubKeys } from './keys';
-import { shareFanClub } from './share';
+import { shareFanClub, type ShareableFanClub } from './share';
 import type {
   FanClubApplicationBody,
+  FanClubCard,
   FanClubListPage,
+  FanClubPage,
+  FanClubPerson,
+  FanClubPost,
+  FanClubReportReason,
   FanClubUploadSlot,
+  FollowedFanClubs,
+  FollowFanClubResult,
   MyFanClub,
-  MyFanClubClub,
   OwnFanClubPost,
+  ReportFanClubPostResult,
+  UnfollowFanClubResult,
 } from './types';
 
-// As consultas e as gravações das telas do fã-clube da etapa 7 de 34.14 (os
-// Ajustes, a candidatura e o "Meu fã-clube"), pelo `api.ts`. Toda gravação
-// fica fora da fila e do disco: `networkMode: 'always'`, sem nova tentativa
-// automática e com a chave da tentativa (34.22, etapa 6): a mesma depois de
-// uma falha incerta, nova depois de uma recusa definitiva. A tela mostra a
-// frase do suspenso, sem o `Alert` (`suspendedAlert: false`).
+// As consultas e as gravações das telas do fã-clube, pelo `api.ts`: as da
+// etapa 7 de 34.14 (os Ajustes, a candidatura e o "Meu fã-clube") e as da
+// etapa 8 (a página, o seguir, a denúncia, o card da 1d, a Início e os
+// seguidos). Toda gravação fica fora da fila e do disco: `networkMode:
+// 'always'`, sem nova tentativa automática e com a chave da tentativa (34.22,
+// etapa 6): a mesma depois de uma falha incerta, nova depois de uma recusa
+// definitiva. A tela mostra a frase do suspenso, sem o `Alert`
+// (`suspendedAlert: false`).
 
 /**
  * Falha de resultado incerto (rede, prazo, servidor): o servidor pode ter
@@ -198,6 +218,9 @@ export function useMyFanClubPostsQuery(enabled: boolean) {
 export const fanClubMutationKeys = {
   apply: ['fanClub', 'apply'] as const,
   post: ['fanClub', 'post'] as const,
+  follow: ['fanClub', 'follow'] as const,
+  unfollow: ['fanClub', 'unfollow'] as const,
+  report: ['fanClub', 'report'] as const,
 };
 
 /** Uma tentativa: o corpo que foi (em texto, para comparar) e a chave dele. */
@@ -495,14 +518,14 @@ export function useCreateFanClubPostMutation() {
 }
 
 /**
- * "Compartilhar meu fã-clube" (34.9, item 5): a folha do sistema com o link do
- * fã-clube, o código de convite do gestor e o código escrito na mensagem; com
- * o código e a folha voltando compartilhada, o link conta como `fanclub:<id>`
- * (decisão 22), no molde do `useShareArtist`. Sem o código, o link puro.
+ * Compartilhar um fã-clube: "Compartilhar meu fã-clube" do gestor (34.9, item
+ * 5) e o Compartilhar da página e das publicações (item 7), sempre com o
+ * código de quem compartilha. A folha do sistema leva o link do fã-clube, o
+ * código de convite e o código escrito na mensagem; com o código e a folha
+ * voltando compartilhada, o link conta como `fanclub:<id>` (decisão 22), no
+ * molde do `useShareArtist`. Sem o código, o link puro.
  */
-export function useShareMyFanClub(): (
-  club: Pick<MyFanClubClub, 'id' | 'name' | 'artistName'>,
-) => void {
+export function useShareFanClub(): (club: ShareableFanClub) => void {
   const invite = useMyInviteQuery();
   const register = useRegisterInviteLinkMutation();
   const code = invite.data?.code ?? null;
@@ -518,4 +541,415 @@ export function useShareMyFanClub(): (
       })
       .catch(() => undefined);
   };
+}
+
+// --- O que os fãs veem (etapa 8 de 34.14) -----------------------------------------
+
+/**
+ * A trava do que os fãs veem (a página, o card da 1d, a Início, os seguidos e
+ * o link do fã-clube): o mesmo `GET /me/fan-club` dos Ajustes, na mesma chave
+ * e fora do disco, e o `liveFanClub` da resposta. Nenhuma outra rota do
+ * fã-clube sai antes de ele responder; com a `api` de antes da publicação (o
+ * 404), nada aparece. A recusa definitiva já vista nesta abertura do app não
+ * pergunta de novo a cada tela que monta (a Início, cada 1d); os Ajustes, sim
+ * (etapa 7), e a resposta nova chega a todas pelo cache. A resposta que veio
+ * vale a abertura inteira: só os Ajustes e as gravações a buscam de novo.
+ */
+export function useFanClubGate() {
+  const client = useQueryClient();
+  const options = queryOptionsFor('fanClub');
+  const cached = client.getQueryState<MyFanClub, Error>(fanClubKeys.mine());
+  const refused = cached?.status === 'error' && isDefinitiveRefusal(cached.error);
+  const query = useQuery({
+    ...options,
+    queryKey: fanClubKeys.mine(),
+    queryFn: fetchMyFanClub,
+    enabled: !refused,
+    staleTime: Infinity,
+    meta: { ...options.meta, persist: false },
+  });
+  return { query, live: liveFanClub(query.data, query.error) };
+}
+
+/**
+ * As frases do fã-clube na sheet "Sair da central" (34.9, item 11, e decisão
+ * 27), só depois da trava: quem sai deixa de seguir os fã-clubes do artista,
+ * e o gestor de um fã-clube dele fica sem publicar até voltar.
+ */
+export function useLeaveCentralNotes(artistId: string): TranslationKey[] {
+  const { live } = useFanClubGate();
+  return leaveCentralNotes(live, artistId);
+}
+
+/**
+ * A página pública (`GET /fan-clubs/:clubId`), só depois da trava. Fora do
+ * disco: o fã-clube pode sair do ar, e o gestor pode ser bloqueado depois. O
+ * 404 não tenta de novo (`shouldRetry`).
+ */
+export function useFanClubPageQuery(clubId: string, enabled: boolean) {
+  const options = queryOptionsFor('fanClub');
+  return useQuery({
+    ...options,
+    queryKey: fanClubKeys.club(clubId),
+    queryFn: () => fetchFanClub(clubId),
+    enabled: enabled && clubId !== '',
+    staleTime: 30_000,
+    meta: { ...options.meta, persist: false },
+  });
+}
+
+/**
+ * As publicações no ar da página, 10 por página, da mais nova. Fora do disco:
+ * as URLs da foto levam o token, que a equipe troca ao ocultar.
+ */
+export function useFanClubPostsQuery(clubId: string, enabled: boolean) {
+  const options = queryOptionsFor('fanClub');
+  return useInfiniteQuery({
+    ...options,
+    queryKey: fanClubKeys.clubPosts(clubId),
+    queryFn: ({ pageParam }) => fetchFanClubPosts(clubId, pageParam),
+    initialPageParam: null as string | null,
+    getNextPageParam: (lastPage) => lastPage.nextCursor,
+    enabled: enabled && clubId !== '',
+    meta: { ...options.meta, persist: false },
+  });
+}
+
+/**
+ * Os fã-clubes do artista (o card da 1d e o "Ver todos"), 20 por página: os
+ * destacados primeiro, depois pelos seguidores da cópia da noite. Fora do
+ * disco, como a página.
+ */
+export function useArtistFanClubsQuery(artistId: string, enabled: boolean) {
+  const options = queryOptionsFor('fanClub');
+  return useInfiniteQuery({
+    ...options,
+    queryKey: fanClubKeys.byArtist(artistId),
+    queryFn: ({ pageParam }) => fetchArtistFanClubs(artistId, pageParam),
+    initialPageParam: null as string | null,
+    getNextPageParam: (lastPage) => lastPage.nextCursor,
+    enabled: enabled && artistId !== '',
+    meta: { ...options.meta, persist: false },
+  });
+}
+
+/** "Fã-clubes que sigo" (`GET /me/fan-club-follows`): até 50, do mais novo. Fora do disco. */
+export function useFollowedFanClubsQuery(enabled: boolean) {
+  const options = queryOptionsFor('fanClub');
+  return useQuery({
+    ...options,
+    queryKey: fanClubKeys.follows(),
+    queryFn: fetchFollowedFanClubs,
+    enabled,
+    meta: { ...options.meta, persist: false },
+  });
+}
+
+/** "Dos seus fã-clubes" da Início (`GET /me/fan-club-feed`), 10 por página. Fora do disco. */
+export function useFanClubFeedQuery(enabled: boolean) {
+  const options = queryOptionsFor('fanClub');
+  return useInfiniteQuery({
+    ...options,
+    queryKey: fanClubKeys.feed(),
+    queryFn: ({ pageParam }) => fetchFanClubFeed(pageParam),
+    initialPageParam: null as string | null,
+    getNextPageParam: (lastPage) => lastPage.nextCursor,
+    enabled,
+    meta: { ...options.meta, persist: false },
+  });
+}
+
+type PostPages = InfiniteData<FanClubListPage<FanClubPost>, string | null>;
+
+const isPostPages = (data: unknown): data is PostPages => {
+  const pages = (data as { pages?: unknown } | undefined)?.pages;
+  return Array.isArray(pages);
+};
+
+const isPost = (item: unknown): item is FanClubPost =>
+  typeof item === 'object' && item !== null && 'publishedAt' in item && 'clubName' in item;
+
+/**
+ * A publicação que a sheet "Denunciar publicação" mostra, lida na abertura
+ * das páginas já carregadas (a página do fã-clube e a Início), no molde do
+ * `useCachedComment`. Aberta a frio, sem ela, `undefined`, e a sheet fecha:
+ * nada do fã-clube abre antes da trava.
+ */
+export function useCachedFanClubPost(postId: string): FanClubPost | undefined {
+  const client = useQueryClient();
+  const [post] = useState(() => {
+    if (!postId) return undefined;
+    for (const [, data] of client.getQueriesData({ queryKey: fanClubKeys.public() })) {
+      if (!isPostPages(data)) continue;
+      for (const page of data.pages) {
+        const found = page.items.find((item) => isPost(item) && item.id === postId);
+        if (found) return found;
+      }
+    }
+    return undefined;
+  });
+  return post;
+}
+
+/** O fã-clube que a sheet "Deixar de seguir" mostra: o nome e o artista. */
+export interface CachedFanClub {
+  id: string;
+  name: string | null;
+  artistId: string;
+  artistName: string;
+}
+
+/**
+ * O fã-clube da sheet "Deixar de seguir", lido na abertura: da página dele ou
+ * de "Fã-clubes que sigo", de onde a sheet abre. Aberta a frio, sem ele,
+ * `undefined`, e a sheet fecha.
+ */
+export function useCachedFanClub(clubId: string): CachedFanClub | undefined {
+  const client = useQueryClient();
+  const [club] = useState((): CachedFanClub | undefined => {
+    if (!clubId) return undefined;
+    const page = client.getQueryData<FanClubPage>(fanClubKeys.club(clubId));
+    if (page) {
+      return {
+        id: page.id,
+        name: page.name,
+        artistId: page.artist.id,
+        artistName: page.artist.name,
+      };
+    }
+    const followed = client
+      .getQueryData<FollowedFanClubs>(fanClubKeys.follows())
+      ?.items.find((item) => item.id === clubId);
+    return followed
+      ? {
+          id: followed.id,
+          name: followed.name,
+          artistId: followed.artistId,
+          artistName: followed.artistName,
+        }
+      : undefined;
+  });
+  return club;
+}
+
+/**
+ * O gestor do fã-clube, para o "Bloquear e denunciar" da página (decisão 19):
+ * a sheet "Denunciar perfil" lê o nome dele daqui, da página em cache, quando
+ * o perfil público não está no cache. Só o gestor desta página: outro id não
+ * acha nada.
+ */
+export function useCachedFanClubOwner(clubId: string, fanId: string): FanClubPerson | undefined {
+  const client = useQueryClient();
+  const [owner] = useState(() => {
+    if (!clubId || !fanId) return undefined;
+    const page = client.getQueryData<FanClubPage>(fanClubKeys.club(clubId));
+    return page?.owner.uid === fanId ? page.owner : undefined;
+  });
+  return owner;
+}
+
+/** O seguir de agora na página e nas listas do artista em cache, sem buscar de novo. */
+function setFollowing(
+  client: QueryClient,
+  clubId: string,
+  following: boolean,
+  joined: boolean,
+): void {
+  client.setQueryData<FanClubPage>(fanClubKeys.club(clubId), (page) => {
+    if (!page) return page;
+    const delta = page.isFollowing === following ? 0 : following ? 1 : -1;
+    return {
+      ...page,
+      isFollowing: following,
+      followerCount: Math.max(0, page.followerCount + delta),
+      isMember: page.isMember || joined,
+    };
+  });
+  client.setQueriesData<InfiniteData<FanClubListPage<FanClubCard>, string | null>>(
+    { queryKey: fanClubKeys.artistLists() },
+    (data) =>
+      data
+        ? {
+            ...data,
+            pages: data.pages.map((page) => ({
+              ...page,
+              items: page.items.map((item) =>
+                item.id === clubId ? { ...item, isFollowing: following } : item,
+              ),
+            })),
+          }
+        : data,
+  );
+}
+
+/** A chave da tentativa por fã-clube: a mesma até uma resposta clara. */
+function attemptKeyFor(attempts: Map<string, string>, prefix: string, id: string): string {
+  let key = attempts.get(id);
+  if (!key) {
+    key = `${prefix}-${createIdempotencyKey()}`;
+    attempts.set(id, key);
+  }
+  return key;
+}
+
+/** O fã-clube que o seguir manda: o id e o artista, para a comemoração da entrada. */
+export interface FollowTarget {
+  id: string;
+  artistId: string;
+}
+
+/**
+ * Seguir (`PUT /me/fan-club-follows/:clubId`, decisão 26): fora da central,
+ * entra junto. Não é otimista e não entra na fila: o botão fica carregando até
+ * a resposta. Um toque só por vez, com a chave da tentativa por fã-clube. No
+ * sucesso, a página passa a "Seguindo" (com o número e a central), a lista do
+ * artista também, e "Fã-clubes que sigo" e "Dos seus fã-clubes" buscam de
+ * novo; o seguir que fez a entrada comemora como a entrada de sempre (o "+N"
+ * do `award` e as invalidações das Suas centrais, da 1d, do mural, do ranking
+ * e das missões, pelo `useJoinCelebration`). O 404 tira o fã-clube das telas
+ * (ele saiu do ar ou o gestor foi bloqueado); a falha incerta busca a página
+ * de novo, porque o servidor pode ter gravado.
+ */
+export function useFollowFanClubMutation() {
+  const client = useQueryClient();
+  const { award, celebrate } = useJoinCelebration();
+  const attempts = useRef(new Map<string, string>());
+  const inFlight = useRef(false);
+  const mutation = useMutation<FollowFanClubResult, Error, FollowTarget, StartedBy>({
+    mutationKey: fanClubMutationKeys.follow,
+    mutationFn: (club) =>
+      followFanClub({
+        clubId: club.id,
+        idempotencyKey: attemptKeyFor(attempts.current, 'club-follow', club.id),
+      }),
+    networkMode: 'always',
+    retry: false,
+    meta: { suspendedAlert: false },
+    onMutate: startedBy,
+    onSuccess: (result, club, started) => {
+      attempts.current.delete(club.id);
+      if (!sameSession(started)) return;
+      setFollowing(client, club.id, true, result.joined);
+      void client.invalidateQueries({ queryKey: fanClubKeys.follows() });
+      void client.invalidateQueries({ queryKey: fanClubKeys.feed() });
+      if (!result.joined) return;
+      const { completedMissions, levelUp, unlockedAchievements, missionsChanged } = result;
+      celebrate({
+        artistId: club.artistId,
+        pointsAwarded: result.pointsAwarded,
+        completedMissions,
+        levelUp,
+        unlockedAchievements,
+        missionsChanged,
+      });
+    },
+    onError: (error, club) => {
+      const uncertain = isUncertainFailure(error);
+      if (!uncertain) attempts.current.delete(club.id);
+      if (error instanceof ApiError && error.code === FAN_CLUB_ERROR_CODES.notFound) {
+        void client.invalidateQueries({ queryKey: fanClubKeys.public() });
+      } else if (uncertain) {
+        void client.invalidateQueries({ queryKey: fanClubKeys.club(club.id) });
+      }
+    },
+    onSettled: () => {
+      inFlight.current = false;
+    },
+  });
+  const mutate: typeof mutation.mutate = (club, options) => {
+    if (inFlight.current) return;
+    inFlight.current = true;
+    mutation.mutate(club, options);
+  };
+  return { ...mutation, mutate, award };
+}
+
+/**
+ * Deixar de seguir (`DELETE /me/fan-club-follows/:clubId`), na sheet "Deixar
+ * de seguir": nunca recusa e não mexe na central. Não é otimista, com a chave
+ * da tentativa por fã-clube. No sucesso, a página e a lista do artista passam
+ * a "Seguir", o fã-clube sai de "Fã-clubes que sigo" sem buscar de novo, e
+ * "Dos seus fã-clubes" busca de novo.
+ */
+export function useUnfollowFanClubMutation() {
+  const client = useQueryClient();
+  const attempts = useRef(new Map<string, string>());
+  const inFlight = useRef(false);
+  const mutation = useMutation<UnfollowFanClubResult, Error, string, StartedBy>({
+    mutationKey: fanClubMutationKeys.unfollow,
+    mutationFn: (clubId) =>
+      unfollowFanClub({
+        clubId,
+        idempotencyKey: attemptKeyFor(attempts.current, 'club-unfollow', clubId),
+      }),
+    networkMode: 'always',
+    retry: false,
+    onMutate: startedBy,
+    onSuccess: (_result, clubId, started) => {
+      attempts.current.delete(clubId);
+      if (!sameSession(started)) return;
+      setFollowing(client, clubId, false, false);
+      client.setQueryData<FollowedFanClubs>(fanClubKeys.follows(), (data) =>
+        data ? { items: data.items.filter((item) => item.id !== clubId) } : data,
+      );
+      void client.invalidateQueries({ queryKey: fanClubKeys.feed() });
+    },
+    onError: (error, clubId) => {
+      if (!isUncertainFailure(error)) attempts.current.delete(clubId);
+    },
+    onSettled: () => {
+      inFlight.current = false;
+    },
+  });
+  const mutate: typeof mutation.mutate = (clubId, options) => {
+    if (inFlight.current) return;
+    inFlight.current = true;
+    mutation.mutate(clubId, options);
+  };
+  return { ...mutation, mutate };
+}
+
+interface ReportVariables {
+  postId: string;
+  reason: FanClubReportReason | null;
+}
+
+/**
+ * Denunciar uma publicação (`POST /fan-club-posts/:postId/report`, decisão
+ * 18), na sheet "Denunciar publicação", no molde da denúncia de perfil: não é
+ * otimista, não entra na fila e não muda cache nenhum. A chave é da tentativa:
+ * a mesma depois de uma falha incerta com a mesma publicação e o mesmo motivo,
+ * nova com outro motivo ou depois de uma recusa. A sheet diz a frase do
+ * suspenso, com o link, sem o `Alert` por cima.
+ */
+export function useReportFanClubPostMutation() {
+  const attempt = useRef<Attempt | null>(null);
+  const inFlight = useRef(false);
+  const mutation = useMutation<ReportFanClubPostResult, Error, ReportVariables>({
+    mutationKey: fanClubMutationKeys.report,
+    mutationFn: ({ postId, reason }) =>
+      reportFanClubPost({
+        postId,
+        reason,
+        idempotencyKey: attemptKey(attempt, `club-report-${postId}`, { postId, reason }),
+      }),
+    networkMode: 'always',
+    retry: false,
+    meta: { suspendedAlert: false },
+    onSuccess: () => {
+      attempt.current = null;
+    },
+    onError: (error) => {
+      if (!isUncertainFailure(error)) attempt.current = null;
+    },
+    onSettled: () => {
+      inFlight.current = false;
+    },
+  });
+  const mutate: typeof mutation.mutate = (variables, options) => {
+    if (inFlight.current) return;
+    inFlight.current = true;
+    mutation.mutate(variables, options);
+  };
+  return { ...mutation, mutate };
 }

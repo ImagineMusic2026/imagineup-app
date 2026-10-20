@@ -3,6 +3,8 @@ import { useRef, useState } from 'react';
 
 import { useMyRsvpsQuery } from '@/domains/agenda';
 import { useFanCentralsQuery } from '@/domains/artists';
+// As chaves do fã-clube pelo arquivo sem dependências, como o `artists` e os `posts`.
+import { fanClubKeys } from '@/domains/fan-club/keys';
 import { useDailyMissionQuery } from '@/domains/missions';
 import { useFeedQuery } from '@/domains/posts';
 import { refreshRanking } from '@/domains/ranking';
@@ -10,7 +12,9 @@ import { haptics } from '@/services/haptics';
 
 /**
  * Puxar para atualizar da home: missão do dia, centrais, mural e presenças,
- * juntos. O perfil não entra: a escuta do Firestore já o mantém em dia. O
+ * juntos, e "Dos seus fã-clubes" (seção 34), só quando ela já veio (depois
+ * da trava; antes, nada é pedido). O perfil não entra: a escuta do Firestore
+ * já o mantém em dia. O
  * ranking (1f e 1d, montadas nas outras abas) busca de novo junto, só a
  * primeira página: o "você é #12" sai da mesma conta do card "Você", e as
  * telas não podem discordar. O indicador fica só durante o puxão do fã, não
@@ -46,6 +50,7 @@ export function useHomeRefresh() {
       centrals.refetch(),
       feed.refetch(),
       rsvps.refetch(),
+      queryClient.invalidateQueries({ queryKey: fanClubKeys.feed() }),
     ]);
     setPull((current) => (current === id ? null : current));
   };

@@ -8,6 +8,7 @@ import { ChipGroup, type ChipItem } from '@/components/chip';
 import { BackButton } from '@/components/header';
 import { SheetGrabber } from '@/components/sheet-grabber';
 import { Text } from '@/components/text';
+import { useCachedFanClubOwner } from '@/domains/fan-club';
 import { useReportFanMutation, type CommentReportReason } from '@/domains/posts';
 import { SuspensionContact, useCachedFanProfile } from '@/domains/profile';
 import { useIsOnline } from '@/hooks/use-is-online';
@@ -45,7 +46,10 @@ type Failure = { key: TranslationKey; contact: boolean } | null;
  * "×", o que a equipe analisa, os motivos numa fileira de escolha única ("Sem
  * motivo" manda null) e "Enviar denúncia". O perfil vem do cache do perfil
  * público, lido na abertura (o conteúdo fica fixo, para a altura da sheet não
- * mudar); aberta a frio, sem ele, a sheet fecha.
+ * mudar); aberta a frio, sem ele, a sheet fecha. O "Bloquear e denunciar" da
+ * página do fã-clube (seção 34, decisão 19) manda o `clube`: sem o perfil no
+ * cache, o nome do gestor vem da página em cache, só se o gestor dela for o
+ * mesmo fã.
  *
  * Não é otimista: o botão fica "carregando" até o servidor responder,
  * desligado sem internet e enquanto vai, e o voltar fica preso
@@ -57,9 +61,12 @@ type Failure = { key: TranslationKey; contact: boolean } | null;
  * com a sheet fechada só anuncia.
  */
 export function ReportFanSheetScreen() {
-  const params = useLocalSearchParams<{ fanId: string }>();
+  const params = useLocalSearchParams<{ fanId: string; clube?: string }>();
   const fanId = typeof params.fanId === 'string' ? params.fanId : '';
-  const profile = useCachedFanProfile(fanId);
+  const cachedProfile = useCachedFanProfile(fanId);
+  const owner = useCachedFanClubOwner(typeof params.clube === 'string' ? params.clube : '', fanId);
+  const profile =
+    cachedProfile ?? (owner ? { displayName: owner.name, username: owner.username } : undefined);
   const insets = useSafeAreaInsets();
   const online = useIsOnline();
   const [standalone] = useState(() => !router.canGoBack());
@@ -83,9 +90,10 @@ export function ReportFanSheetScreen() {
   useStayOnScreen(report.isPending);
 
   // Aberta a frio (sem o perfil no cache): não há o que mostrar.
+  const missing = !profile;
   useEffect(() => {
-    if (!profile) closeSheet();
-  }, [profile]);
+    if (missing) closeSheet();
+  }, [missing]);
 
   if (!profile) return null;
 

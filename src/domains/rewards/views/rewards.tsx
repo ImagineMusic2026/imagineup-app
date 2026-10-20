@@ -14,22 +14,33 @@ import { t } from '@/i18n';
 import { colors, spacing } from '@/theme';
 
 import { FeaturedRewardCard } from '../components/featured-reward-card';
+import { PrizesRow } from '../components/prize-cards';
 import { RewardCard } from '../components/reward-card';
 import { RewardsLegal } from '../components/rewards-legal';
 import { RewardsSkeleton } from '../components/rewards-skeleton';
 import { buildRewardGrid, rewardAvailability, type RewardRow } from '../describe-reward';
 import { useRewardsRefresh } from '../hooks/use-rewards-refresh';
 import { useRewardsQuery } from '../queries';
-import type { Reward } from '../types';
+import type { FanClubPrize, Reward } from '../types';
 
 function openReward(reward: Reward): void {
   router.push({ pathname: '/recompensa/[recompensaId]', params: { recompensaId: reward.id } });
+}
+
+/** O prêmio abre o detalhe em modo prêmio, achado pelo código do pedido (seção 34, decisão 51). */
+function openPrize(prize: FanClubPrize): void {
+  router.push({
+    pathname: '/recompensa/[recompensaId]',
+    params: { recompensaId: prize.reward.id, pedido: prize.code },
+  });
 }
 
 interface RewardsHeaderProps {
   balance: number | null;
   /** A carteira não carregou: sem a pílula, que diria "carregando" para sempre. */
   balanceFailed: boolean;
+  /** Os prêmios de fã-clube do fã: vazio sem eles ou com a `api` de antes. */
+  prizes: readonly FanClubPrize[];
   featured: Reward | null;
   /** Há cards na grade: a sobrelinha "Ao seu alcance" abre a seção. */
   hasGrid: boolean;
@@ -37,9 +48,10 @@ interface RewardsHeaderProps {
 
 /**
  * Título com o voltar na mesma linha (aprovado em 2026-09-29) e o saldo à
- * direita (o mesmo "SEUS PONTOS" do perfil), o destaque e a sobrelinha.
+ * direita (o mesmo "SEUS PONTOS" do perfil), a fileira "Seus prêmios" (só com
+ * prêmio de fã-clube, seção 34), o destaque e a sobrelinha.
  */
-function RewardsHeader({ balance, balanceFailed, featured, hasGrid }: RewardsHeaderProps) {
+function RewardsHeader({ balance, balanceFailed, prizes, featured, hasGrid }: RewardsHeaderProps) {
   return (
     <View>
       <LargeTitleHeader
@@ -47,6 +59,7 @@ function RewardsHeader({ balance, balanceFailed, featured, hasGrid }: RewardsHea
         showBack
         accessory={balanceFailed ? undefined : <PointsPill value={balance} />}
       />
+      <PrizesRow prizes={prizes} onOpen={openPrize} />
       {featured ? (
         <FeaturedRewardCard
           reward={featured}
@@ -185,6 +198,8 @@ export function RewardsScreen() {
           <RewardsHeader
             balance={balance}
             balanceFailed={balanceFailed}
+            // A loja gravada antes da seção 34, ou a `api` de antes, vem sem o campo.
+            prizes={listState === 'loading' ? [] : (query.data?.prizes ?? [])}
             featured={listState === 'loading' ? null : featured}
             hasGrid={items.length > 0}
           />

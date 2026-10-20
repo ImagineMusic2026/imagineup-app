@@ -4,6 +4,9 @@ import {
   canApplyNow,
   fanClubStageOf,
   hasNewPrize,
+  isDefinitiveRefusal,
+  leaveCentralNotes,
+  liveFanClub,
   nextRoundOf,
   settingsRowOf,
   shownFanClub,
@@ -264,5 +267,65 @@ describe('settingsRowOf: a linha dos Ajustes (34.9, item 1)', () => {
       artist: 'Netto Brito',
     });
     expect(settingsRowOf(state, true).metaKey).toBe('fanClub.settings.metaPrize');
+  });
+});
+
+describe('a trava do que os fãs veem (etapa 8: a página, a 1d, a Início e os seguidos)', () => {
+  const routeMissing = new ApiError('notFound', 'Não encontrado.', 404, 'not_found');
+  const offline = new ApiError('network', 'Sem rede.', null, null);
+  const rateLimited = new ApiError('rateLimited', 'Devagar.', 429, 'rate_limited');
+
+  it('sem resposta ou com a `api` de antes (o 404), nada aparece', () => {
+    expect(liveFanClub(undefined, null)).toBeNull();
+    expect(liveFanClub(undefined, routeMissing)).toBeNull();
+    // O 404 depois de uma resposta antiga (o servidor desfeito) também esconde.
+    expect(liveFanClub(mine(), routeMissing)).toBeNull();
+    expect(isDefinitiveRefusal(routeMissing)).toBe(true);
+  });
+
+  it('a falha incerta e o ritmo deixam a resposta que já estava', () => {
+    expect(liveFanClub(mine(), offline)).toEqual(mine());
+    expect(liveFanClub(mine(), rateLimited)).toEqual(mine());
+    expect(isDefinitiveRefusal(offline)).toBe(false);
+    expect(isDefinitiveRefusal(rateLimited)).toBe(false);
+  });
+
+  it('não olha o `open`: com o programa fechado, os fã-clubes que existem continuam (decisão 9)', () => {
+    const closed = mine({ open: false });
+    expect(liveFanClub(closed, null)).toEqual(closed);
+    // A linha "Tenha seu fã-clube", sim: fechada para quem nunca se candidatou.
+    expect(shownFanClub(closed, null)).toBeNull();
+  });
+});
+
+describe('as frases do fã-clube na sheet "Sair da central" (34.9, item 11)', () => {
+  const approved = application({ status: 'approved', canApply: false });
+
+  it('antes da abertura, nenhuma', () => {
+    expect(leaveCentralNotes(null, 'nettobrito')).toEqual([]);
+  });
+
+  it('quem sai deixa de seguir os fã-clubes do artista', () => {
+    expect(leaveCentralNotes(mine(), 'nettobrito')).toEqual(['fanClub.leave.follows']);
+  });
+
+  it.each([
+    ['ativo', 'active'],
+    ['pausado', 'paused'],
+  ] as const)('o gestor de um fã-clube %s deste artista fica sem publicar', (_name, status) => {
+    const state = mine({ application: approved, club: club({ status }) });
+    expect(leaveCentralNotes(state, 'nettobrito')).toEqual([
+      'fanClub.leave.follows',
+      'fanClub.leave.manager',
+    ]);
+  });
+
+  it('o gestor de outro artista, o fã-clube encerrado e a candidatura em análise não ganham a frase', () => {
+    const elsewhere = mine({ application: approved, club: club({ artistId: 'nenho' }) });
+    const closed = mine({ application: approved, club: club({ status: 'closed' }) });
+    const pending = mine({ application: application() });
+    for (const state of [elsewhere, closed, pending]) {
+      expect(leaveCentralNotes(state, 'nettobrito')).toEqual(['fanClub.leave.follows']);
+    }
   });
 });

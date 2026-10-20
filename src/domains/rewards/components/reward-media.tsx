@@ -5,7 +5,7 @@ import { radii } from '@/theme';
 
 import { useMutedProgress } from '../hooks/use-muted-progress';
 import type { Reward } from '../types';
-import { RewardIcon } from './reward-icon';
+import { RewardIcon, type RewardIconSource } from './reward-icon';
 
 /** Proporção do destaque da 1h (366 x 196), a mesma da foto que o painel manda. */
 export const REWARD_PHOTO_ASPECT = 366 / 196;
@@ -13,7 +13,8 @@ export const REWARD_PHOTO_ASPECT = 366 / 196;
 const ICON_HEIGHT = 120;
 
 export interface RewardMediaProps {
-  reward: Reward;
+  /** A recompensa da loja, ou a de um prêmio de fã-clube (sem destaque). */
+  reward: RewardIconSource & Partial<Pick<Reward, 'featured'>>;
   /** Fora do alcance (faltam pontos ou esgotou): o quadro fica de vidro, como na grade. */
   outOfReach: boolean;
   style?: StyleProp<ViewStyle>;

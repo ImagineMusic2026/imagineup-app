@@ -15,6 +15,9 @@ import { AccessibilityInfo } from 'react-native';
 // As centrais pelo arquivo, fora do index: o `artists/queries` lê as chaves dos
 // posts, e pelo index seria um ciclo.
 import { artistKeys } from '@/domains/artists/queries';
+// As chaves do fã-clube pelo arquivo sem dependências (o fã-clube importa os
+// posts pelo index): bloquear e desbloquear zeram o que os fãs veem dele.
+import { fanClubKeys } from '@/domains/fan-club/keys';
 import { describeRewards, missionKeys, rewardsRefresh } from '@/domains/missions';
 import { fanKeys, profileKeys, useFanIdentity, type FanPublicProfile } from '@/domains/profile';
 // O "+N" das recompensas e o festejo das ações pelos arquivos, fora do index.
@@ -875,7 +878,9 @@ export function useReportCommentMutation(
  * hora, e as listas buscam de novo (já sem ele, do servidor); o perfil público
  * em cache passa a `blockedByMe`; e a lista de bloqueados volta à primeira
  * página (`resetQueries`: buscar de novo cada página já carregada custaria até
- * 50 leituras com a lista cheia). Com a sheet montada ou não.
+ * 50 leituras com a lista cheia). O que os fãs veem dos fã-clubes busca de
+ * novo (seção 34, decisões 19 e 32): o do bloqueado some, e o seguir dele sai.
+ * Com a sheet montada ou não.
  */
 export function useBlockFanMutation(
   fanId: string,
@@ -892,6 +897,7 @@ export function useBlockFanMutation(
       removeAuthorComments(queryClient, result.fanId);
       settleBlock(queryClient, result.fanId, true);
       void queryClient.resetQueries({ queryKey: moderationKeys.blocked() });
+      void queryClient.invalidateQueries({ queryKey: fanClubKeys.public() });
       if (mounted.current) {
         onDone?.(result);
         return;
@@ -931,7 +937,9 @@ export function useBlockFanMutation(
  * Como o bloqueio: não é otimista, não entra na fila, a chave é da tentativa
  * (`unblock-<fanId>-<id>`). No sucesso, o perfil em cache volta a "Bloquear",
  * o fã sai das páginas carregadas da lista sem buscar de novo, e as listas de
- * comentários buscam de novo (os dele voltam). Livre para o suspenso.
+ * comentários buscam de novo (os dele voltam), como o que os fãs veem dos
+ * fã-clubes (o fã-clube dele volta a aparecer; o seguir, não). Livre para o
+ * suspenso.
  */
 export function useUnblockFanMutation(
   fanId: string,
@@ -947,6 +955,7 @@ export function useUnblockFanMutation(
     onSuccess: (result) => {
       settleBlock(queryClient, result.fanId, false);
       dropBlockedFan(queryClient, result.fanId);
+      void queryClient.invalidateQueries({ queryKey: fanClubKeys.public() });
       if (mounted.current) {
         onDone?.(result);
         return;

@@ -1,4 +1,13 @@
-import { Handshake, ImageIcon, Shirt, Ticket, Video, type LucideIcon } from 'lucide-react-native';
+import {
+  Gift,
+  Handshake,
+  ImageIcon,
+  Shirt,
+  Ticket,
+  TicketPercent,
+  Video,
+  type LucideIcon,
+} from 'lucide-react-native';
 
 import type { IconTileTone } from '@/components/icon-tile';
 import { API_ERROR_CODES } from '@/services/api/errors';
@@ -15,7 +24,8 @@ export interface RewardIconSpec {
  * o que acontece num show (ingresso, meet & greet, foto no telão), rosa para o
  * resto, e nunca lima, que é só de pontos. O protótipo pinta o ingresso de
  * rosa e a videochamada de ciano; a regra do app vale até o dono dizer o
- * contrário, como nas missões (1g). Fora do saldo, o quadro fica de vidro.
+ * contrário, como nas missões (1g). Fora do saldo, o quadro fica de vidro. O
+ * Desconto (`discount`) é só dos prêmios de fã-clube (seção 34, decisão 42).
  */
 export const REWARD_ICONS: Record<RewardKind, RewardIconSpec> = {
   ticket: { icon: Ticket, tone: 'events' },
@@ -23,7 +33,22 @@ export const REWARD_ICONS: Record<RewardKind, RewardIconSpec> = {
   screen: { icon: ImageIcon, tone: 'events' },
   videocall: { icon: Video, tone: 'action' },
   merch: { icon: Shirt, tone: 'action' },
+  discount: { icon: TicketPercent, tone: 'action' },
 };
+
+/**
+ * O ícone de reserva (decisão 42): um tipo que o app ainda não conhece, vindo
+ * de um servidor mais novo, mostra o presente, em vez de quebrar a tela.
+ */
+export const FALLBACK_REWARD_ICON: RewardIconSpec = { icon: Gift, tone: 'action' };
+
+const isRewardKind = (kind: string): kind is RewardKind =>
+  Object.prototype.hasOwnProperty.call(REWARD_ICONS, kind);
+
+/** O ícone e a cor do tipo, ou o de reserva para o tipo desconhecido. */
+export function rewardIconOf(kind: string): RewardIconSpec {
+  return isRewardKind(kind) ? REWARD_ICONS[kind] : FALLBACK_REWARD_ICON;
+}
 
 /**
  * Códigos que o servidor devolve quando recusa o resgate (25.2). O de saldo é

@@ -110,12 +110,12 @@ describe('extrato de exemplo, igual ao seed da Camila', () => {
     return { first, second, items: [...first.items, ...second.items] };
   };
 
-  it('os 23 lançamentos em duas páginas de 20, do mais novo ao mais antigo', () => {
+  it('os 24 lançamentos em duas páginas de 20, do mais novo ao mais antigo', () => {
     const { first, second, items } = all();
     expect(first.items).toHaveLength(LEDGER_PAGE_SIZE);
-    expect(second.items).toHaveLength(3);
+    expect(second.items).toHaveLength(4);
     expect(second.nextCursor).toBeNull();
-    expect(items).toHaveLength(23);
+    expect(items).toHaveLength(24);
     const times = items.map((item) => Date.parse(item.createdAt));
     expect([...times].sort((a, b) => b - a)).toEqual(times);
   });
@@ -142,5 +142,20 @@ describe('extrato de exemplo, igual ao seed da Camila', () => {
     expect(shop[0]!.subject).toEqual({ type: 'reward', id: 'camisa' });
     // O que a loja gasta e devolve fecha com o ajuste: o saldo fica o do protótipo.
     expect(shop.reduce((sum, item) => sum + item.points, 0)).toBe(0);
+  });
+
+  it('o prêmio do fã-clube (seção 34, 34.12): 200 pontos só no saldo, com a origem própria', () => {
+    const prize = all().items.filter((item) => item.source === 'fanclub_prize');
+    expect(prize).toHaveLength(1);
+    expect(prize[0]).toMatchObject({
+      id: 'fanclub_prize:seed-camila-cortesia',
+      kind: 'adjust',
+      points: 200,
+      xpDelta: 0,
+      seasonDelta: 0,
+      artistId: null,
+      centralSeasonDelta: 0,
+      subjectTitle: null,
+    });
   });
 });

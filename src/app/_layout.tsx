@@ -94,6 +94,10 @@ export default function RootLayout() {
           <Stack.Screen name="meu-fa-clube/index" />
           <Stack.Screen name="meu-fa-clube/candidatura" />
           <Stack.Screen name="meu-fa-clube/nova-publicacao" />
+          {/* A página pública do fã-clube (seção 34, etapa 8): fora das abas, no
+              modelo do perfil público e do post, o destino do link de convite.
+              Sem a resposta do servidor novo, só diz que não está disponível. */}
+          <Stack.Screen name="fa-clube/[clubeId]" />
           {/* "Gerar meu link" na altura do conteúdo: o link, as regras e o botão
               aparecem sem o fã puxar a sheet. */}
           <Stack.Screen
@@ -134,6 +138,28 @@ export default function RootLayout() {
               do conteúdo, no molde da "Opções do comentário". */}
           <Stack.Screen
             name="denunciar-perfil/[fanId]"
+            options={{
+              presentation: 'formSheet',
+              sheetAllowedDetents: 'fitToContents',
+              sheetGrabberVisible: true,
+              sheetCornerRadius: radii.sheet,
+              contentStyle: { backgroundColor: colors.surface },
+            }}
+          />
+          {/* "Denunciar publicação" e "Deixar de seguir?" do fã-clube (seção 34),
+              na altura do conteúdo, no molde da "Denunciar perfil". */}
+          <Stack.Screen
+            name="denunciar-publicacao/[publicacaoId]"
+            options={{
+              presentation: 'formSheet',
+              sheetAllowedDetents: 'fitToContents',
+              sheetGrabberVisible: true,
+              sheetCornerRadius: radii.sheet,
+              contentStyle: { backgroundColor: colors.surface },
+            }}
+          />
+          <Stack.Screen
+            name="deixar-de-seguir/[clubeId]"
             options={{
               presentation: 'formSheet',
               sheetAllowedDetents: 'fitToContents',

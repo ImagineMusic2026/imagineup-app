@@ -8,6 +8,7 @@ import { BackButton } from '@/components/header';
 import { SheetGrabber } from '@/components/sheet-grabber';
 import { Text } from '@/components/text';
 import { useLeaveCentralMutation } from '@/domains/artists';
+import { useLeaveCentralNotes } from '@/domains/fan-club';
 import { useIsOnline } from '@/hooks/use-is-online';
 import { useStayOnScreen } from '@/hooks/use-stay-on-screen';
 import { t } from '@/i18n';
@@ -38,6 +39,11 @@ function closeSheet(): void {
  * do Android e o gesto do iOS ficam presos (`useStayOnScreen`), como no
  * resgate; o arrasto da sheet no Android não trava, e a resposta que chega
  * depois dele não navega (`useLeaveCentralMutation`).
+ *
+ * Depois da trava do fã-clube (seção 34, decisão 27), o texto diz também que
+ * quem sai deixa de seguir os fã-clubes do artista e, para o gestor de um
+ * fã-clube dele, que o fã-clube fica sem publicar até ele voltar. Antes da
+ * abertura, o texto é o de sempre.
  */
 export function LeaveCentralSheetScreen() {
   const params = useLocalSearchParams<{ artistaId: string }>();
@@ -58,6 +64,7 @@ export function LeaveCentralSheetScreen() {
     },
   });
   useStayOnScreen(leave.isPending);
+  const notes = useLeaveCentralNotes(artistId);
   const errorKey = leave.isError ? actionRefusal(leave.error, 'leave').key : null;
 
   return (
@@ -73,6 +80,17 @@ export function LeaveCentralSheetScreen() {
         <Text variant="body" color={colors.textSecondary}>
           {t('artist.leave.body')}
         </Text>
+        {notes.map((note) => (
+          <Text
+            key={note}
+            variant="body"
+            color={colors.textSecondary}
+            style={styles.note}
+            testID={`leave-central-${note}`}
+          >
+            {t(note)}
+          </Text>
+        ))}
         <View style={styles.actions}>
           {errorKey ? (
             <Text variant="caption" color={colors.danger} style={styles.error}>
@@ -120,6 +138,9 @@ const styles = StyleSheet.create({
   body: {
     paddingHorizontal: spacing.gutter,
     paddingTop: spacing.sm,
+  },
+  note: {
+    marginTop: spacing.sm,
   },
   actions: {
     marginTop: spacing.sectionTop,

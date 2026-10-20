@@ -44,6 +44,12 @@ const appTree = {
   'meu-fa-clube/index': label('my-fan-club'),
   'meu-fa-clube/candidatura': label('fan-club-apply'),
   'meu-fa-clube/nova-publicacao': label('fan-club-new-post'),
+  'fa-clube/[clubeId]': label('fan-club'),
+  'denunciar-publicacao/[publicacaoId]': label('report-fan-club-post'),
+  'deixar-de-seguir/[clubeId]': label('unfollow-fan-club'),
+  '(tabs)/(perfil)/fa-clubes-que-sigo': label('followed-fan-clubs'),
+  '(tabs)/(inicio,explorar,ranking,perfil)/fa-clubes-do-artista/[artistaId]':
+    label('artist-fan-clubs'),
   'recompensa/[recompensaId]': label('reward'),
   'convite/[codigo]': label('invite'),
 };
@@ -161,6 +167,49 @@ describe('rotas do app', () => {
     expect(view.getPathname()).toBe(url);
     expect(view.getSegments()).toEqual(segments);
     expect(rootRoutes(view)).toEqual([route]);
+  });
+
+  it.each([
+    ['/fa-clube/fc-1', ['fa-clube', '[clubeId]'], 'fa-clube/[clubeId]', 'fan-club'],
+    [
+      '/denunciar-publicacao/fcp-1',
+      ['denunciar-publicacao', '[publicacaoId]'],
+      'denunciar-publicacao/[publicacaoId]',
+      'report-fan-club-post',
+    ],
+    [
+      '/deixar-de-seguir/fc-1',
+      ['deixar-de-seguir', '[clubeId]'],
+      'deixar-de-seguir/[clubeId]',
+      'unfollow-fan-club',
+    ],
+  ])(
+    '%s abre a frio fora das abas, na pilha raiz (seção 34, etapa 8)',
+    (url, segments, route, text) => {
+      const view = renderRouter(appTree, { initialUrl: url });
+      expect(view.getByText(text)).toBeTruthy();
+      expect(view.getPathname()).toBe(url);
+      expect(view.getSegments()).toEqual(segments);
+      expect(rootRoutes(view)).toEqual([route]);
+    },
+  );
+
+  it('"Fã-clubes que sigo" por link abre na pilha do Perfil, com a raiz da aba embaixo (seção 34)', () => {
+    const view = renderRouter(appTree, { initialUrl: '/fa-clubes-que-sigo' });
+    expect(view.getByText('followed-fan-clubs')).toBeTruthy();
+    expect(view.getSegments()).toEqual(['(tabs)', '(perfil)', 'fa-clubes-que-sigo']);
+    act(() => testRouter.back());
+    expect(view.getPathname()).toBe('/perfil');
+  });
+
+  it('a lista dos fã-clubes do artista abre na pilha de uma aba, como a central (seção 34)', () => {
+    // O grupo da aba sai dos segmentos da última navegação, que no Jest ficam
+    // de um teste para o outro: aqui, só que é uma aba.
+    const view = renderRouter(appTree, { initialUrl: '/fa-clubes-do-artista/nenho' });
+    expect(view.getByText('artist-fan-clubs')).toBeTruthy();
+    const [tabs, , ...rest] = view.getSegments();
+    expect([tabs, ...rest]).toEqual(['(tabs)', 'fa-clubes-do-artista', '[artistaId]']);
+    expect(view.getSearchParams()).toEqual({ artistaId: 'nenho' });
   });
 
   it('o detalhe do resgate abre fora das abas, como a sheet do convite', () => {

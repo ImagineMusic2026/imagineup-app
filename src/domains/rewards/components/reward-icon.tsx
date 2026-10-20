@@ -6,14 +6,17 @@ import { RemoteImage } from '@/components/remote-image';
 import { colors, layout, radii } from '@/theme';
 import { withAlpha } from '@/utils/color';
 
-import { REWARD_ICONS } from '../consts';
+import { rewardIconOf } from '../consts';
 import type { Reward } from '../types';
 
 // Foto fora do alcance: apagada pela cor do card, como o quadro de vidro.
 const PHOTO_DIM = withAlpha(colors.surface, 0.5);
 
+/** O que o quadro lê: a recompensa da loja ou a de um prêmio, que pode ter um tipo que o app não conhece. */
+export type RewardIconSource = Pick<Reward, 'id' | 'imageUrl'> & { kind: string };
+
 export interface RewardIconProps {
-  reward: Reward;
+  reward: RewardIconSource;
   /** 0 no alcance (quadro na cor do tipo), 1 fora dele (vidro). */
   progress: SharedValue<number>;
   /** Altura do quadro; padrão, a da grade da 1h (74). */
@@ -25,6 +28,8 @@ export interface RewardIconProps {
  * Quadro de largura cheia com o ícone do tipo da recompensa (ou a foto, se o
  * painel mandar), na cor do assunto. Fora do alcance, o vidro apagado entra
  * por cima em fade, no mesmo passo do preço. Decorativo: quem fala é o card.
+ * O tipo que o app não conhece ganha o ícone de reserva (seção 34, decisão 42):
+ * sem ele, a tela quebrava.
  */
 export function RewardIcon({
   reward,
@@ -32,7 +37,7 @@ export function RewardIcon({
   height = layout.rewardTileHeight,
   style,
 }: RewardIconProps) {
-  const spec = REWARD_ICONS[reward.kind];
+  const spec = rewardIconOf(reward.kind);
   const mutedStyle = useAnimatedStyle(() => ({ opacity: progress.get() }));
   const size = { height };
 

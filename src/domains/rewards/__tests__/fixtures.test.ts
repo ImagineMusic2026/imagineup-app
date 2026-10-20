@@ -323,3 +323,30 @@ describe('resgate nas fixtures', () => {
     expect(rewardsFixture.redeem('ingressos', 'chave-1', 6_000, NOW).balance).toBe(6_480);
   });
 });
+
+describe('o prêmio de fã-clube da Camila (seção 34, 34.12)', () => {
+  it('no `prizes`, aprovado há 2 dias, com o cupom, a mensagem e a recompensa resumida', () => {
+    const { prizes, rewards } = buildRewardsFixture(NOW);
+    expect(prizes).toEqual([
+      {
+        id: 'UP-FC2JRW',
+        code: 'UP-FC2JRW',
+        status: 'approved',
+        statusAt: new Date(2026, 8, 27, 15, 0).toISOString(),
+        grantedAt: new Date(2026, 8, 27, 15, 0).toISOString(),
+        coupon: 'CORTESIA-IRARA',
+        message: 'Obrigado por levar a turma de Irará aos shows do Netto!',
+        refusalReason: null,
+        reward: expect.objectContaining({
+          id: 'cortesia-sao-joao',
+          kind: 'ticket',
+          title: 'Ingresso de cortesia',
+          imageUrl: null,
+        }),
+      },
+    ]);
+    expect(prizes?.[0]?.code).toMatch(CODE_PATTERN);
+    // A recompensa de prêmio nunca entra na loja.
+    expect(rewards.some((reward) => reward.id === 'cortesia-sao-joao')).toBe(false);
+  });
+});

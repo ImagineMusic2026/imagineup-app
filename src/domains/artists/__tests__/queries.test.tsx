@@ -3,6 +3,7 @@ import { act, renderHook, waitFor } from '@testing-library/react-native';
 import type { ReactNode } from 'react';
 import { AccessibilityInfo } from 'react-native';
 
+import { fanClubKeys } from '@/domains/fan-club/keys';
 import * as actionRewards from '@/domains/profile/action-rewards';
 import { ApiError } from '@/services/api/errors';
 import { fixtureWallet } from '@/services/fixtures';
@@ -403,6 +404,35 @@ describe('sair da central', () => {
     // Sair não muda ponto (a carteira fica), mas tira o fã do ranking da central (bloco 8).
     expect(client.getQueryState(['profile', 'wallet'])?.isInvalidated).toBe(false);
     expect(client.getQueryState(['ranking', 'season'])?.isInvalidated).toBe(true);
+  });
+
+  it('sair zera o que os fãs veem dos fã-clubes (seção 34, decisão 27); sem a trava, o estado do gestor não é pedido', async () => {
+    client.setQueryData(fanClubKeys.follows(), { items: [] });
+    client.setQueryData(fanClubKeys.feed(), { pages: [], pageParams: [] });
+    client.setQueryData(fanClubKeys.club('fc-1'), { id: 'fc-1' });
+    const response = holdLeave();
+    const { result } = renderHook(() => useLeaveCentralMutation('nenho'), { wrapper });
+    act(() => result.current.leave());
+    await waitFor(() => expect(result.current.isPending).toBe(true));
+    await response.resolve({ artistId: 'nenho' });
+
+    await waitFor(() =>
+      expect(client.getQueryState(fanClubKeys.follows())?.isInvalidated).toBe(true),
+    );
+    expect(client.getQueryState(fanClubKeys.feed())?.isInvalidated).toBe(true);
+    expect(client.getQueryState(fanClubKeys.club('fc-1'))?.isInvalidated).toBe(true);
+    // Antes da abertura (sem a resposta da trava), o estado do gestor não é pedido.
+    expect(client.getQueryState(fanClubKeys.mine())).toBeUndefined();
+  });
+
+  it('com a resposta da trava, o estado do gestor busca de novo (o fã-clube fica sem publicar)', async () => {
+    client.setQueryData(fanClubKeys.mine(), { open: true, application: null, club: null });
+    const response = holdLeave();
+    const { result } = renderHook(() => useLeaveCentralMutation('nenho'), { wrapper });
+    act(() => result.current.leave());
+    await waitFor(() => expect(result.current.isPending).toBe(true));
+    await response.resolve({ artistId: 'nenho' });
+    await waitFor(() => expect(client.getQueryState(fanClubKeys.mine())?.isInvalidated).toBe(true));
   });
 
   it('no erro, tudo fica como estava, e o erro chega à sheet', async () => {
