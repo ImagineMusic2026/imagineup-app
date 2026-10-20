@@ -39,6 +39,20 @@ export const fanClubsOf = (db: Firestore): CollectionReference => db.collection(
 export const fanClubRef = (db: Firestore, clubId: string): DocumentReference =>
   fanClubsOf(db).doc(clubId);
 
+/**
+ * `fanClubs/{clubId}/prizes/{grantId}`: o registro do Recompensar, uma linha
+ * por concessão (decisão 50), sem o código do pedido nem o cupom. Fica na
+ * lápide e na exclusão de conta do gestor (34.7).
+ */
+export const fanClubPrizesOf = (db: Firestore, clubId: string): CollectionReference =>
+  fanClubRef(db, clubId).collection('prizes');
+
+export const fanClubPrizeRef = (
+  db: Firestore,
+  clubId: string,
+  grantId: string,
+): DocumentReference => fanClubPrizesOf(db, clubId).doc(grantId);
+
 /** `fanClubApplications/{uid}`: a candidatura, uma por fã (decisão 12). */
 export const applicationRef = (db: Firestore, uid: string): DocumentReference =>
   db.collection('fanClubApplications').doc(uid);

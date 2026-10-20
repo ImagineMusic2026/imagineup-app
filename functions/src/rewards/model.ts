@@ -4,9 +4,11 @@ import { Timestamp } from 'firebase-admin/firestore';
 
 import { isEventOpen, type EventRecord } from '../agenda/model';
 import type {
+  FanClubPrize,
   RedemptionStatus as FanRedemptionStatus,
   Reward,
   RewardRedemption,
+  StoreRewardKind,
 } from '../api/contract';
 import { INVITE_CODE_ALPHABET } from '../invites/model';
 import { isContentId } from '../page-cursor';
@@ -17,12 +19,36 @@ import { rewardPanelError } from './errors';
 // service.ts lê, chama estas funções e grava. Contrato em
 // docs/arquitetura-api.md, seção 25.
 
-/** Os tipos de recompensa (o `RewardKind` do app): decidem o ícone e a cor do quadro. */
-export const REWARD_KINDS = ['ticket', 'videocall', 'merch', 'screen', 'meet'] as const;
+/**
+ * Os tipos de recompensa (o `RewardKind` do app): decidem o ícone e a cor do
+ * quadro. O `discount` (Desconto, seção 34, decisão 42) é só das recompensas
+ * de prêmio de fã-clube.
+ */
+export const REWARD_KINDS = ['ticket', 'videocall', 'merch', 'screen', 'meet', 'discount'] as const;
 export type RewardKind = (typeof REWARD_KINDS)[number];
 
-/** Ciclo da recompensa (25.1, decisão 9): rascunho, no ar e encerrada. */
-export type RewardDocStatus = 'draft' | 'published' | 'closed';
+/**
+ * Os tipos da loja, sem o `discount`: o app de antes da seção 34 não tem o
+ * ícone dele, e o tipo sem ícone quebra a tela da loja.
+ */
+export const STORE_REWARD_KINDS = [
+  'ticket',
+  'videocall',
+  'merch',
+  'screen',
+  'meet',
+] as const satisfies readonly StoreRewardKind[];
+
+/**
+ * Ciclo da recompensa (25.1, decisão 9): rascunho, no ar e encerrada. O
+ * `prize` (seção 34, decisão 40) é a recompensa "Só para prêmios de
+ * fã-clube": nasce assim, nunca aparece na loja nem muda de status, e só vira
+ * pedido pelo Recompensar da `decideFanClub`.
+ */
+export type RewardDocStatus = 'draft' | 'published' | 'closed' | 'prize';
+
+/** A origem do pedido (seção 34, 34.4): o resgate na loja ou o prêmio de fã-clube. */
+export type RedemptionOrigin = 'store' | 'prize';
 
 /**
  * Status do pedido (25.1, decisão 3): solicitado, aprovado, entregue,
@@ -59,6 +85,8 @@ export const FAN_REDEMPTIONS_READ_MAX = 200;
 export const REDEMPTION_DELETE_PAGE = 100;
 /** Pedidos por chamada do `getRedemptionContacts` (um `getUsers` só). */
 export const CONTACTS_MAX = 50;
+/** Os prêmios de fã-clube do fã no `GET /rewards` (`prizes`, seção 34, decisão 51). */
+export const FAN_PRIZES_MAX = 20;
 /** Rascunhos e no ar no `reorderRewards` (as encerradas ficam fora). */
 export const REWARDS_REORDER_MAX = 240;
 /**
@@ -162,6 +190,14 @@ export type RedemptionRecord = {
   canceledAt: number | null;
   statusAt: number;
   accountDeleted: boolean;
+  /** Ausente vale `store`; o `prize` nasce pelo Recompensar (seção 34, 34.4). */
+  origin: RedemptionOrigin;
+  /** Só no prêmio: o fã-clube e a concessão (`fanClubs/{clubId}/prizes/{grantId}`). */
+  fanClubId: string | null;
+  grantId: string | null;
+  /** Só no prêmio: o cupom do parceiro e a mensagem da equipe ao gestor (decisão 43). */
+  coupon: string | null;
+  message: string | null;
 };
 
 const text = (value: unknown): string | null => (typeof value === 'string' ? value : null);
@@ -191,6 +227,19 @@ function photoOf(value: unknown): RewardPhoto | null {
 const isKind = (value: unknown): value is RewardKind =>
   (REWARD_KINDS as readonly unknown[]).includes(value);
 
+const isStoreKind = (value: unknown): value is StoreRewardKind =>
+  (STORE_REWARD_KINDS as readonly unknown[]).includes(value);
+
+/** O tipo que o app recebe: o desconhecido vale `merch`, como na leitura do documento. */
+const kindForApp = (value: unknown): RewardKind => (isKind(value) ? value : 'merch');
+
+const REWARD_DOC_STATUSES: readonly RewardDocStatus[] = ['draft', 'published', 'closed', 'prize'];
+
+/** A recompensa "Só para prêmios de fã-clube" (seção 34, decisão 40). */
+export function isPrizeReward(reward: Pick<RewardRecord, 'status'>): boolean {
+  return reward.status === 'prize';
+}
+
 export function rewardRecord(id: string, data: Record<string, unknown>): RewardRecord {
   const status = data.status;
   return {
@@ -208,7 +257,9 @@ export function rewardRecord(id: string, data: Record<string, unknown>): RewardR
     perFanLimit: intOrNull(data.perFanLimit) || null,
     eventId: isContentId(data.eventId) ? data.eventId : null,
     instructions: text(data.instructions) ?? '',
-    status: status === 'draft' || status === 'published' || status === 'closed' ? status : null,
+    status: (REWARD_DOC_STATUSES as readonly unknown[]).includes(status)
+      ? (status as RewardDocStatus)
+      : null,
     order: typeof data.order === 'number' && Number.isFinite(data.order) ? data.order : 0,
     publishedAt: millis(data.publishedAt),
     closedAt: millis(data.closedAt),
@@ -242,7 +293,17 @@ export function redemptionRecord(code: string, data: Record<string, unknown>): R
     canceledAt: millis(data.canceledAt),
     statusAt: millis(data.statusAt) ?? requestedAt,
     accountDeleted: data.accountDeleted === true,
+    origin: data.origin === 'prize' ? 'prize' : 'store',
+    fanClubId: text(data.fanClubId),
+    grantId: text(data.grantId),
+    coupon: text(data.coupon),
+    message: text(data.message),
   };
+}
+
+/** O pedido de prêmio de fã-clube (seção 34, 34.4). */
+export function isPrizeRedemption(redemption: Pick<RedemptionRecord, 'origin'>): boolean {
+  return redemption.origin === 'prize';
 }
 
 // --- Status do pedido (25.1, decisões 3 a 5) -----------------------------------------
@@ -320,6 +381,21 @@ export function remainingOf(reward: Pick<RewardRecord, 'stockTotal' | 'redeemedC
 }
 
 /**
+ * O que impede dar um prêmio de fã-clube com a recompensa lida (seção 34,
+ * 34.5, Recompensar): não existe, não é "Só para prêmios" ou não tem vaga (a
+ * conta do estoque do resgate, sem o custo nem o limite por fã). Null quando
+ * pode.
+ */
+export function prizeRewardProblem(
+  reward: RewardRecord | null,
+): 'reward-not-found' | 'reward-not-prize' | 'sold-out' | null {
+  if (!reward) return 'reward-not-found';
+  if (!isPrizeReward(reward)) return 'reward-not-prize';
+  if (remainingOf(reward) === 0) return 'sold-out';
+  return null;
+}
+
+/**
  * A primeira parte das recusas, só com a recompensa lida (25.4, passo 2): não
  * existe ou em rascunho, encerrada, sem vaga. Depois dela, a rota lê o show e
  * os pedidos do fã.
@@ -385,7 +461,8 @@ export function parseExpectedCost(body: unknown): number | undefined {
 
 /**
  * A recompensa aparece para o fã? Rascunho nunca; no ar sempre; encerrada só
- * para quem tem pedido nela (25.1, decisão 10).
+ * para quem tem pedido nela (25.1, decisão 10). A de prêmio de fã-clube nunca
+ * entra na loja (seção 34, decisão 40): o gestor a vê só no `prizes`.
  */
 export function isVisibleToFan(
   reward: Pick<RewardRecord, 'status'>,
@@ -446,7 +523,9 @@ export function rewardView(
   const counted = mine.filter((item) => countsTowardLimit(item.status)).length;
   return {
     id: reward.id,
-    kind: reward.kind,
+    // O `discount` é só dos prêmios, que nunca chegam aqui; mesmo assim, o
+    // app de antes quebra com o tipo sem ícone, e a loja nunca o manda.
+    kind: isStoreKind(reward.kind) ? reward.kind : 'merch',
     title: reward.title,
     subtitle: reward.subtitle,
     description: reward.description,
@@ -464,6 +543,39 @@ export function rewardView(
     perFanLimit: reward.perFanLimit,
     limitReached: reward.perFanLimit !== null && counted >= reward.perFanLimit,
     redemptions: mine.map((item) => redemptionView(item, reward)),
+  };
+}
+
+/**
+ * Um prêmio de fã-clube como o gestor vê (o `prizes` do `GET /rewards`, seção
+ * 34, decisão 51): o pedido (código, status, cupom, mensagem e datas) e a
+ * recompensa resumida, com a de agora ou, sem ela, a cópia do pedido. As
+ * instruções seguem o `redemptionView`: as de agora no aberto, a cópia no
+ * fechado. O cupom não vai no recusado (o prêmio cancelado pela equipe); o
+ * motivo, só nele.
+ */
+export function prizeView(
+  redemption: RedemptionRecord,
+  reward: Pick<RewardRecord, 'kind' | 'title' | 'photo' | 'instructions'> | null,
+): FanClubPrize {
+  const open = isOpenRedemption(redemption.status);
+  const refused = redemption.status === 'refused';
+  return {
+    id: redemption.code,
+    code: redemption.code,
+    status: redemption.status as FanRedemptionStatus,
+    statusAt: iso(redemption.statusAt),
+    grantedAt: iso(redemption.requestedAt),
+    coupon: refused ? null : redemption.coupon,
+    message: redemption.message,
+    refusalReason: refused ? redemption.refusalReason : null,
+    reward: {
+      id: redemption.rewardId,
+      kind: kindForApp(reward ? reward.kind : redemption.rewardKind),
+      title: reward ? reward.title : redemption.rewardTitle,
+      imageUrl: reward?.photo?.url ?? null,
+      instructions: open && reward ? reward.instructions : redemption.instructions,
+    },
   };
 }
 
@@ -503,9 +615,10 @@ function parseMultiline(value: unknown, max: number, field: string): string {
 const isInt = (value: unknown): value is number =>
   typeof value === 'number' && Number.isInteger(value);
 
-export function parseRewardKind(value: unknown): RewardKind {
-  if (!isKind(value)) throw invalidField('kind');
-  return value;
+/** O tipo: o `discount` só na recompensa de prêmio (seção 34, decisão 42). */
+export function parseRewardKind(value: unknown, options: { prize?: boolean } = {}): RewardKind {
+  if (options.prize === true ? !isKind(value) : !isStoreKind(value)) throw invalidField('kind');
+  return value as RewardKind;
 }
 
 export function parseRewardTitle(value: unknown): string {
@@ -527,7 +640,15 @@ export function parseRewardInstructions(value: unknown): string {
   return parseMultiline(value, INSTRUCTIONS_MAX, 'instructions');
 }
 
-export function parseRewardCost(value: unknown): number {
+/**
+ * O custo: de 1 a 1.000.000 na loja; 0, e só 0, na recompensa de prêmio, que
+ * nunca passa pelo resgate (seção 34, decisão 40).
+ */
+export function parseRewardCost(value: unknown, options: { prize?: boolean } = {}): number {
+  if (options.prize === true) {
+    if (value !== 0) throw invalidField('cost');
+    return 0;
+  }
   if (!isInt(value) || value < 1 || value > COST_MAX) throw invalidField('cost');
   return value;
 }
@@ -577,18 +698,28 @@ export type RewardFields = {
 export type RewardPatch = Partial<Omit<RewardFields, 'stockTotal'>>;
 
 /**
+ * O `prize` do `createReward` (seção 34, 34.3): `true` faz a recompensa "Só
+ * para prêmios de fã-clube"; ausente ou `false`, a da loja.
+ */
+export function parseRewardPrizeFlag(input: Record<string, unknown>): boolean {
+  return input.prize === undefined ? false : parseBoolean(input.prize, 'prize');
+}
+
+/**
  * O `createReward` (25.8): obrigatórios o tipo, o título, o subtítulo, o
  * custo e as instruções; sem o resto, a descrição null, o destaque e a
  * escassez falsos, sem estoque (`null`), o limite 1 (`null` explícito é sem
- * limite) e sem show.
+ * limite) e sem show. Com o `prize: true` (seção 34), o tipo aceita o
+ * `discount` e o custo é 0 (ausente vale 0).
  */
 export function parseRewardCreate(input: Record<string, unknown>): RewardFields {
+  const prize = parseRewardPrizeFlag(input);
   return {
-    kind: parseRewardKind(input.kind),
+    kind: parseRewardKind(input.kind, { prize }),
     title: parseRewardTitle(input.title),
     subtitle: parseRewardSubtitle(input.subtitle),
     description: input.description === undefined ? null : parseRewardDescription(input.description),
-    cost: parseRewardCost(input.cost),
+    cost: prize && input.cost === undefined ? 0 : parseRewardCost(input.cost, { prize }),
     featured: input.featured === undefined ? false : parseBoolean(input.featured, 'featured'),
     scarcity: input.scarcity === undefined ? false : parseBoolean(input.scarcity, 'scarcity'),
     stockTotal: input.stockTotal === undefined ? null : parseStockTotal(input.stockTotal),
@@ -602,17 +733,23 @@ export function parseRewardCreate(input: Record<string, unknown>): RewardFields 
 /**
  * O `updateReward` (25.8): ausente não muda; `null` limpa o que aceita null
  * (descrição, limite e show). O estoque não muda por aqui (`setRewardStock`).
+ * O tipo aceita o `discount` e o custo aceita o 0, para a recompensa de
+ * prêmio (seção 34): a callable confere com a recompensa lida
+ * (`rewardPatchProblem`).
  */
 export function parseRewardPatch(input: Record<string, unknown>): RewardPatch {
   if (input.stockTotal !== undefined) throw invalidField('stockTotal');
   const patch: RewardPatch = {};
-  if (input.kind !== undefined) patch.kind = parseRewardKind(input.kind);
+  if (input.kind !== undefined) patch.kind = parseRewardKind(input.kind, { prize: true });
   if (input.title !== undefined) patch.title = parseRewardTitle(input.title);
   if (input.subtitle !== undefined) patch.subtitle = parseRewardSubtitle(input.subtitle);
   if (input.description !== undefined) {
     patch.description = parseRewardDescription(input.description);
   }
-  if (input.cost !== undefined) patch.cost = parseRewardCost(input.cost);
+  if (input.cost !== undefined) {
+    patch.cost =
+      input.cost === 0 ? parseRewardCost(0, { prize: true }) : parseRewardCost(input.cost);
+  }
   if (input.featured !== undefined) patch.featured = parseBoolean(input.featured, 'featured');
   if (input.scarcity !== undefined) patch.scarcity = parseBoolean(input.scarcity, 'scarcity');
   if (input.perFanLimit !== undefined) patch.perFanLimit = parsePerFanLimit(input.perFanLimit);
@@ -621,6 +758,21 @@ export function parseRewardPatch(input: Record<string, unknown>): RewardPatch {
     patch.instructions = parseRewardInstructions(input.instructions);
   }
   return patch;
+}
+
+/**
+ * O campo da mudança que não cabe na recompensa lida (seção 34, decisões 40 e
+ * 42): na da loja, o `discount` e o custo 0; na de prêmio, um custo que não é
+ * 0. Null quando cabe.
+ */
+export function rewardPatchProblem(
+  patch: RewardPatch,
+  reward: Pick<RewardRecord, 'status'>,
+): 'kind' | 'cost' | null {
+  if (isPrizeReward(reward)) return patch.cost !== undefined && patch.cost !== 0 ? 'cost' : null;
+  if (patch.kind !== undefined && !isStoreKind(patch.kind)) return 'kind';
+  if (patch.cost === 0) return 'cost';
+  return null;
 }
 
 /** Id de recompensa vindo do painel; fora do formato, a recompensa não existe. */

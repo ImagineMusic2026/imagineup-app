@@ -679,12 +679,14 @@ describe('contatos de quem resgatou (getRedemptionContacts)', () => {
     const byCode = Object.fromEntries(contacts.map((contact) => [contact.redemptionId, contact]));
     expect(Object.keys(byCode).sort()).toEqual([alanOpen, approved, orphan, requested].sort());
     // O número de agora, também no pedido feito antes dele.
+    // O Instagram (seção 34) só no pedido de prêmio: o da loja vem com null.
     expect(byCode[requested]).toEqual({
       redemptionId: requested,
       name: 'Camila Ribeiro',
       username: 'camila_nova',
       email: camila.email,
       whatsapp: '+5575991234567',
+      instagram: null,
     });
     expect(byCode[approved]).toMatchObject({ email: camila.email, whatsapp: '+5575991234567' });
     expect(byCode[alanOpen]).toMatchObject({ email: alan.email, whatsapp: null });
@@ -694,6 +696,7 @@ describe('contatos de quem resgatou (getRedemptionContacts)', () => {
       username: null,
       email: null,
       whatsapp: null,
+      instagram: null,
     });
 
     // Um contato fora do formato vale null.

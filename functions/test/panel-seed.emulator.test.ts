@@ -11,10 +11,12 @@ import { dayKey, shiftDay } from '../src/day';
 import {
   SEED_CAMILA_FAN_CLUB,
   SEED_FAN_CLUB_FOLLOWER,
+  SEED_FAN_CLUB_GRANT,
   SEED_FAN_CLUB_POSTS,
   seedFanClubFollows,
   seedFanClubLink,
   seedFanClubPosts,
+  seedFanClubPrize,
   seedFanClubs,
 } from '../src/fan-clubs';
 import {
@@ -59,6 +61,7 @@ import {
 import {
   SEED_OPEN_REDEMPTION_REWARD,
   SEED_OPEN_REDEMPTIONS,
+  SEED_PRIZE_REWARD,
   seedCamilaRedemptions,
   seedOpenRedemptions,
   seedRewards,
@@ -87,7 +90,8 @@ import { localApi, signIn, useEmulators } from './support';
  * 4:5) e a denúncia da Bia contra a da foto; desde a etapa 3, o link do
  * fã-clube que ela compartilhou, nos números do fã-clube; desde a etapa 4, os
  * seguidores (a Bia, que entra antes na central, e o rank-40, que entra junto,
- * a entrada trazida) e a primeira cópia da noite do fã-clube.
+ * a entrada trazida) e a primeira cópia da noite do fã-clube; desde a etapa 5,
+ * a recompensa "Só para prêmios" e o prêmio da Camila, com os pontos.
  */
 const env = useEmulators('painel-seed', ['api', 'createUserProfile']);
 const { db, bucket } = env;
@@ -220,6 +224,8 @@ async function seed(ranking: Map<string, string>): Promise<void> {
     { camilaUid: 'camila', biaUid: 'bia', followerUid: uidOf(ranking, SEED_FAN_CLUB_FOLLOWER) },
     T0,
   );
+  // A recompensa "Só para prêmios" e o prêmio da Camila (etapa 5).
+  await seedFanClubPrize(db, { camilaUid: 'camila', actor: ACTOR }, T0);
   await seedPanelStats(db, T0);
   await seedPanelClose(db, T0, quiet);
 }
@@ -382,7 +388,8 @@ describe('o seed das telas do painel (26.13)', () => {
       });
     }
     expect((await read('wallets/rank01'))!.balance).toBe(RANKING_SEED[0]!.now - 6_000);
-    expect((await db.collection('redemptions').get()).size).toBe(8);
+    // Mais o pedido de prêmio da Camila (34.12, etapa 5), Aprovado.
+    expect((await db.collection('redemptions').get()).size).toBe(9);
 
     // A meta: só o rank-02 bateu.
     const goal = await db
@@ -571,6 +578,45 @@ describe('o seed das telas do painel (26.13)', () => {
       monthStart: { month: '2026-10', followers: 2, joins: 1, signups: 0, visits: 0, links: 1 },
       lastMonth: null,
     });
+    // O prêmio (etapa 5): a recompensa "Só para prêmios" fora da ordem, o pedido
+    // Aprovado com o cupom e a mensagem, os 200 pontos só no saldo, o registro
+    // sem o código e o resumo no fã-clube.
+    const prizeReward = (await read(`rewards/${SEED_PRIZE_REWARD.id}`))!;
+    expect(prizeReward).toMatchObject({
+      status: 'prize',
+      cost: 0,
+      stockTotal: 2,
+      redeemedCount: 1,
+    });
+    expect(prizeReward).not.toHaveProperty('order');
+    const prizeOrders = await db
+      .collection('redemptions')
+      .where('grantId', '==', SEED_FAN_CLUB_GRANT.grantId)
+      .get();
+    expect(prizeOrders.size).toBe(1);
+    expect(prizeOrders.docs[0]!.data()).toMatchObject({
+      origin: 'prize',
+      status: 'approved',
+      points: 0,
+      uid: 'camila',
+      fanClubId: clubId,
+      coupon: SEED_FAN_CLUB_GRANT.prize!.coupon,
+      message: SEED_FAN_CLUB_GRANT.prize!.message,
+    });
+    expect(
+      await read(`wallets/camila/ledger/fanclub_prize:${SEED_FAN_CLUB_GRANT.grantId}`),
+    ).toMatchObject({ kind: 'adjust', source: 'fanclub_prize', points: 200, xpDelta: 0 });
+    expect(await read(`fanClubs/${clubId}/prizes/${SEED_FAN_CLUB_GRANT.grantId}`)).toMatchObject({
+      points: 200,
+      prize: { rewardId: SEED_PRIZE_REWARD.id, delivered: false },
+      by: { uid: SEED_STAFF_ADMIN.uid, name: SEED_STAFF_ADMIN.displayName },
+    });
+    expect((await read(`fanClubs/${clubId}`))?.lastReward).toEqual({
+      at: Timestamp.fromMillis(T0),
+      points: 200,
+      prize: true,
+    });
+    expect(audit.filter((entry) => entry.action === 'fanClub.rewarded')).toHaveLength(1);
     for (let index = 1; index <= 20; index += 1) {
       const id = `seed-audit-${String(index).padStart(2, '0')}`;
       const entry = (await read(`staffAudit/${id}`))!;

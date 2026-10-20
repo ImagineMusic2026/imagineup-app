@@ -133,6 +133,11 @@ const SINGLE: SingleFieldShape[] = [
   // trazidos que ficaram (a cópia), no grupo.
   single('grupo fanClubFollows.clubId', 'fanClubFollows', asc('clubId'), 'COLLECTION_GROUP'),
   single('grupo centrals.fanClubId', 'centrals', asc('fanClubId'), 'COLLECTION_GROUP'),
+  // O pedido de prêmio de uma concessão, na repetição do Recompensar (etapa 5):
+  // só a igualdade, e o painel com `rewards` acha o pedido do mesmo jeito.
+  single('redemptions.grantId', 'redemptions', asc('grantId')),
+  // O histórico de `prizes` da ficha, pela data (34.10, item 5): o automático.
+  single('prizes.at (decrescente)', 'prizes', desc('at')),
 ];
 
 describe('os índices do fã-clube (34.6)', () => {

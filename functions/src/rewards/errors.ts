@@ -20,7 +20,9 @@ export type RewardPanelErrorReason =
   | 'has-redemptions'
   | 'redemption-not-found'
   | 'invalid-transition'
-  | 'reason-not-allowed';
+  | 'reason-not-allowed'
+  | 'reward-is-prize'
+  | 'sold-out';
 
 const ERRORS: Record<RewardPanelErrorReason, [FunctionsErrorCode, string]> = {
   'invalid-request': ['invalid-argument', 'Pedido inválido.'],
@@ -54,6 +56,15 @@ const ERRORS: Record<RewardPanelErrorReason, [FunctionsErrorCode, string]> = {
   'reason-not-allowed': [
     'invalid-argument',
     'O motivo e a devolução da vaga só valem para recusar um pedido.',
+  ],
+  // A recompensa "Só para prêmios de fã-clube" (seção 34, 34.3).
+  'reward-is-prize': [
+    'failed-precondition',
+    'Essa recompensa é só para prêmios de fã-clube: ela não vai ao ar nem sai do ar.',
+  ],
+  'sold-out': [
+    'failed-precondition',
+    'Essa recompensa não tem mais vaga. Aumente o estoque antes de dar o prêmio.',
   ],
 };
 

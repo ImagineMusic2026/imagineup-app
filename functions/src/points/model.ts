@@ -63,11 +63,19 @@ export const VALUE_SOURCES = [
 export type ValueSource = (typeof VALUE_SOURCES)[number];
 
 /**
+ * As origens do ajuste: o da equipe (`adjustment`), o do seed e os pontos do
+ * prêmio do fã-clube (`fanclub_prize`, seção 34, decisão 45), que mexem só no
+ * saldo.
+ */
+export const ADJUST_SOURCES = ['adjustment', 'seed', 'fanclub_prize'] as const;
+export type AdjustSource = (typeof ADJUST_SOURCES)[number];
+
+/**
  * Todas as origens do extrato. `redeem` é o débito do resgate e
  * `redeem_refund`, a devolução do resgate recusado pela equipe (bloco 10,
  * docs/arquitetura-api.md, 25.1, decisão 7).
  */
-export type PointsSource = EarnSource | 'redeem' | 'redeem_refund' | 'adjustment' | 'seed';
+export type PointsSource = EarnSource | 'redeem' | 'redeem_refund' | AdjustSource;
 
 /** Um degrau da régua de níveis (o `Level` do app). */
 export type Level = { number: number; name: string; minXp: number };
@@ -167,8 +175,12 @@ export type AwardEntry =
       title?: string;
     }
   | {
+      /**
+       * O ajuste da equipe e o do seed; e os pontos do prêmio do fã-clube
+       * (`fanclub_prize:<grantId>`, seção 34, decisão 45), só no saldo.
+       */
       kind: 'adjust';
-      source: 'adjustment' | 'seed';
+      source: AdjustSource;
       eventId: string;
       balance?: number;
       xp?: number;
@@ -515,8 +527,18 @@ export function assertValidEntry(entry: AwardEntry): void {
       throw invalid('O título da devolução vai de 1 a 80, numa linha visível.');
     }
   } else if (entry.kind === 'adjust') {
-    if (entry.source !== 'adjustment' && entry.source !== 'seed') {
+    if (!(ADJUST_SOURCES as readonly string[]).includes(entry.source)) {
       throw invalid(`Origem de ajuste desconhecida: ${String(entry.source)}`);
+    }
+    // O prêmio do fã-clube vai só ao saldo, e só para cima (decisão 45).
+    if (
+      entry.source === 'fanclub_prize' &&
+      (!isPositiveInt(entry.balance) ||
+        entry.xp !== undefined ||
+        entry.season !== undefined ||
+        entry.central !== undefined)
+    ) {
+      throw invalid('O prêmio do fã-clube leva só o saldo, inteiro maior que 0.');
     }
     const deltas = [entry.balance, entry.xp, entry.season].filter((value) => value !== undefined);
     if (!deltas.every(isNonZeroInt))

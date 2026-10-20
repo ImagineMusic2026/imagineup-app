@@ -11,6 +11,7 @@ import {
 import { DEFAULT_POINTS_CONFIG } from './config';
 import {
   activityMarks,
+  assertValidEntry,
   computeAwards,
   emptyCentral,
   emptyWallet,
@@ -673,6 +674,67 @@ describe('ajuste', () => {
     });
     // Ajuste nunca conta por artista nos agregados.
     expect(both.shard?.byArtist).toEqual({});
+  });
+
+  it('o prêmio do fã-clube (seção 34, decisão 45): só o saldo, com o id fanclub_prize:<grantId> e a nota', () => {
+    const out = compute(
+      [
+        fan({
+          wallet: wallet({ balance: 10, xp: 30 }),
+          entries: [
+            {
+              kind: 'adjust',
+              source: 'fanclub_prize',
+              eventId: 'concessao-0001',
+              balance: 200,
+              note: 'Divulgou o show.',
+            },
+          ],
+        }),
+      ],
+      { actor: { type: 'staff', uid: 'uidEquipe', name: 'Editora' } },
+    );
+    expect(out.fans[0]!.wallet!.state).toMatchObject({ balance: 210, xp: 30, earnedTotal: 0 });
+    expect(out.fans[0]!.ledger[0]).toMatchObject({
+      id: 'fanclub_prize:concessao-0001',
+      data: {
+        kind: 'adjust',
+        source: 'fanclub_prize',
+        points: 200,
+        xpDelta: 0,
+        seasonDelta: 0,
+        note: 'Divulgou o show.',
+      },
+    });
+    // No total de ajustes e na origem nova, como o ajuste (points/stats.ts).
+    expect(out.shard).toMatchObject({
+      totals: { adjusted: 200, adjustedEvents: 1 },
+      bySource: { fanclub_prize: { points: 200, events: 1 } },
+    });
+  });
+
+  it('o prêmio do fã-clube só com o saldo positivo; a mesma origem num ganho é recusada', () => {
+    const invalid = [
+      { kind: 'adjust', source: 'fanclub_prize', eventId: 'g', balance: -5 },
+      { kind: 'adjust', source: 'fanclub_prize', eventId: 'g', xp: 5 },
+      { kind: 'adjust', source: 'fanclub_prize', eventId: 'g', balance: 5, season: 5 },
+      {
+        kind: 'adjust',
+        source: 'fanclub_prize',
+        eventId: 'g',
+        balance: 5,
+        central: { artistId: 'nenho', total: 5 },
+      },
+      { kind: 'earn', source: 'fanclub_prize', eventId: 'g' },
+    ] as unknown as AwardEntry[];
+    for (const entry of invalid) {
+      expect(() => assertValidEntry(entry), JSON.stringify(entry)).toThrow(
+        expect.objectContaining({ reason: 'invalid_entry' }),
+      );
+    }
+    expect(() =>
+      assertValidEntry({ kind: 'adjust', source: 'fanclub_prize', eventId: 'g', balance: 5 }),
+    ).not.toThrow();
   });
 });
 

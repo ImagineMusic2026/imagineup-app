@@ -448,6 +448,7 @@ export function buildSeedStats(now: number): { day: string; daysAgo: number; tre
         refused: 0,
         canceled: 0,
         refunded: 0,
+        prizes: 0,
       });
       reward[event.kind] += 1;
       if (event.kind === 'requested') {

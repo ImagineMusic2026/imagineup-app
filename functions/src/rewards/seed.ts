@@ -236,6 +236,49 @@ export async function seedRewards(db: Firestore, now: number = Date.now()): Prom
   return created;
 }
 
+/**
+ * A recompensa "Só para prêmios de fã-clube" do seed (seção 34, 34.12): um
+ * ingresso de cortesia do São João de Irará, com estoque 2 (a cota de
+ * cortesias). Fica fora do catálogo da loja e da tabela de 25.13: nunca vai
+ * ao app como recompensa, só no `prizes` de quem a recebe.
+ */
+export const SEED_PRIZE_REWARD: RewardFields & { id: string } = {
+  id: 'cortesia-sao-joao',
+  kind: 'ticket',
+  title: 'Ingresso de cortesia',
+  subtitle: 'São João de Irará',
+  description: 'Um ingresso de cortesia para o São João de Irará, dado pela equipe a um fã-clube.',
+  cost: 0,
+  featured: false,
+  scarcity: false,
+  stockTotal: 2,
+  perFanLimit: null,
+  eventId: 'sao-joao-irara',
+  instructions:
+    'Retire o ingresso na bilheteria do show com este código e um documento com foto. A equipe combina os detalhes com você pelo WhatsApp ou pelo Instagram.',
+};
+
+/**
+ * A recompensa de prêmio do seed, como o painel novo cadastraria (o
+ * `createReward` com o `prize: true`: o status `prize`, custo 0 e sem o
+ * `order`), só quando falta. O show precisa existir (o seed da agenda vem
+ * antes). Devolve se ela nasceu agora.
+ */
+export async function seedPrizeReward(db: Firestore, now: number = Date.now()): Promise<boolean> {
+  const { id, ...fields } = SEED_PRIZE_REWARD;
+  const ref = rewardRef(db, id);
+  return db.runTransaction(async (tx) => {
+    if ((await tx.get(ref)).exists) return false;
+    if (fields.eventId && !(await tx.get(eventRef(db, fields.eventId))).exists) {
+      throw new Error(
+        `O show ${fields.eventId} da recompensa ${id} não existe: rode o seed da agenda antes.`,
+      );
+    }
+    tx.create(ref, newRewardDoc(fields, { order: null, status: 'prize', now, by: 'seed' }));
+    return true;
+  });
+}
+
 export type SeedRedemptionsResult = { redeemed: number; transitions: number };
 
 /**

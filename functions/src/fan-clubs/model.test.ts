@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
+import { ADJUSTMENT_ID_PATTERN } from '../points/adjust';
 import {
   APPLICATION_KEYS,
   applicationRecord,
@@ -26,7 +27,9 @@ import {
   fanClubBoxValue,
   FanClubError,
   fanClubMediaFolder,
+  FAN_CLUB_GRANT_ID_PATTERN,
   fanClubPostRecord,
+  fanClubPrizeRecord,
   fanClubRecord,
   fanClubReportId,
   fanClubRulesUrl,
@@ -40,11 +43,16 @@ import {
   parseApplication,
   parseFeaturedUntil,
   parsePost,
+  parsePrizeCoupon,
+  parsePrizeMessage,
+  parseRewardGrant,
   parseRulesAcceptance,
   postMediaPaths,
+  prizeBlock,
   QUALITY_WARNING_SHARE,
   reapplyAfterRejection,
   sameProportion,
+  sameRewardGrant,
   slotFileNames,
   slotNamesOf,
   sumFanClubShards,
@@ -59,7 +67,8 @@ import {
 // caixas por artista e o prazo do Destaque, com o relógio fixo. Desde a
 // etapa 2, a publicação: os tetos, o corpo, o novo aceite, a vaga e a leitura
 // do documento. Desde a etapa 3, a atribuição: a janela do crédito pelo
-// código do gestor e a soma dos shards.
+// código do gestor e a soma dos shards. Desde a etapa 5, o Recompensar: o
+// `grantId`, o cupom, a mensagem, a nota, o corpo, a repetição e as travas.
 
 // O filtro do que o fã publica (seção 30) trocado por um de palavras neutras:
 // nenhum termo da lista de verdade entra no repositório (30.11).
@@ -720,5 +729,156 @@ describe('a qualidade dos seguidores (decisão 39)', () => {
     expect(
       followerQuality({ followers: 0, newAccounts: 0, automaticUsername: 0, byOwnerCode: 0 }),
     ).toEqual({ newAccounts: 0, automaticUsername: 0, byOwnerCode: 0, warnings: [] });
+  });
+});
+
+describe('o Recompensar (etapa 5, decisões 43 a 46)', () => {
+  it('o grantId tem o formato do adjustmentId do Ajuste', () => {
+    expect(FAN_CLUB_GRANT_ID_PATTERN.source).toBe(ADJUSTMENT_ID_PATTERN.source);
+    expect(FAN_CLUB_GRANT_ID_PATTERN.test('concessao-0001')).toBe(true);
+    expect(FAN_CLUB_GRANT_ID_PATTERN.test('curto')).toBe(false);
+    expect(FAN_CLUB_GRANT_ID_PATTERN.test('com espaço 0001')).toBe(false);
+  });
+
+  it('o cupom: de 1 a 60, numa linha, limpo; o vazio vale null', () => {
+    expect(parsePrizeCoupon(undefined)).toEqual({ ok: true, value: null });
+    expect(parsePrizeCoupon(null)).toEqual({ ok: true, value: null });
+    expect(parsePrizeCoupon('   ')).toEqual({ ok: true, value: null });
+    expect(parsePrizeCoupon(' IRARA-10 ')).toEqual({ ok: true, value: 'IRARA-10' });
+    expect(parsePrizeCoupon('x'.repeat(60))).toEqual({ ok: true, value: 'x'.repeat(60) });
+    expect(parsePrizeCoupon('x'.repeat(61))).toEqual({ ok: false });
+    expect(parsePrizeCoupon('IRARA\n10')).toEqual({ ok: false });
+    expect(parsePrizeCoupon(10)).toEqual({ ok: false });
+  });
+
+  it('a mensagem: de 1 a 140, limpa, com quebra de linha; a vazia vale null', () => {
+    expect(parsePrizeMessage('')).toEqual({ ok: true, value: null });
+    expect(parsePrizeMessage(' Parabéns!\r\n\n\nObrigado. ')).toEqual({
+      ok: true,
+      value: 'Parabéns!\n\nObrigado.',
+    });
+    expect(parsePrizeMessage('a'.repeat(140))).toEqual({ ok: true, value: 'a'.repeat(140) });
+    expect(parsePrizeMessage('a'.repeat(141))).toEqual({ ok: false });
+    expect(parsePrizeMessage(['oi'])).toEqual({ ok: false });
+  });
+
+  const base = { grantId: 'concessao-0001', note: 'Divulgou o show.' };
+  const prize = { rewardId: 'cortesia', delivered: false, coupon: null, message: null };
+
+  it('o corpo: os pontos, o prêmio ou os dois, e a nota', () => {
+    expect(parseRewardGrant({ ...base, points: 200, prize })).toEqual({
+      ok: true,
+      value: { grantId: 'concessao-0001', points: 200, prize, note: 'Divulgou o show.' },
+    });
+    expect(parseRewardGrant({ ...base, points: null, prize })).toMatchObject({
+      ok: true,
+      value: { points: null },
+    });
+    expect(parseRewardGrant({ ...base, points: 1, prize: null })).toMatchObject({
+      ok: true,
+      value: { prize: null },
+    });
+    expect(parseRewardGrant({ ...base, points: 1, note: ' Nota com espaço ' })).toMatchObject({
+      value: { note: 'Nota com espaço' },
+    });
+  });
+
+  it.each([
+    [{ ...base, grantId: 'curto', points: 1 }, 'grantId'],
+    [{ ...base, grantId: 7, points: 1 }, 'grantId'],
+    [{ ...base }, 'points'],
+    [{ ...base, points: 0 }, 'points'],
+    [{ ...base, points: -5 }, 'points'],
+    [{ ...base, points: 1.5 }, 'points'],
+    [{ ...base, points: '200' }, 'points'],
+    [{ ...base, prize: 'cortesia' }, 'prize'],
+    [{ ...base, prize: [prize] }, 'prize'],
+    [{ ...base, prize: { ...prize, extra: true } }, 'prize'],
+    [{ ...base, prize: { ...prize, rewardId: 'a/b' } }, 'prize.rewardId'],
+    [{ ...base, prize: { ...prize, delivered: 'sim' } }, 'prize.delivered'],
+    [{ ...base, prize: { ...prize, coupon: 'x'.repeat(61) } }, 'prize.coupon'],
+    [{ ...base, prize: { ...prize, message: 'x'.repeat(141) } }, 'prize.message'],
+    [{ ...base, points: 1, note: undefined }, 'note'],
+    [{ ...base, points: 1, note: '  ' }, 'note'],
+    [{ ...base, points: 1, note: 'x'.repeat(201) }, 'note'],
+    [{ ...base, points: 1, note: 'duas\nlinhas' }, 'note'],
+  ])('%j: o campo %s', (fields, field) => {
+    expect(parseRewardGrant(fields)).toEqual({ ok: false, field });
+  });
+
+  it('a repetição: os mesmos pontos, recompensa, entrega, nota, cupom e mensagem', () => {
+    const stored = fanClubPrizeRecord('concessao-0001', {
+      clubId: 'clube1',
+      artistId: 'nettobrito',
+      points: 200,
+      ledgerId: 'fanclub_prize:concessao-0001',
+      prize: {
+        rewardId: 'cortesia',
+        rewardTitle: 'Cortesia',
+        rewardKind: 'ticket',
+        delivered: false,
+      },
+      note: 'Divulgou o show.',
+    });
+    const input = {
+      grantId: 'concessao-0001',
+      points: 200,
+      prize: { ...prize, coupon: 'CUPOM' },
+      note: 'Divulgou o show.',
+    };
+    const order = { coupon: 'CUPOM', message: null };
+    expect(sameRewardGrant(stored, input, order)).toBe(true);
+    // Sem o pedido achado (ou com ele sem o cupom, pela exclusão), o cupom não se confere.
+    expect(sameRewardGrant(stored, input, null)).toBe(true);
+    expect(sameRewardGrant(stored, { ...input, points: 201 }, order)).toBe(false);
+    expect(sameRewardGrant(stored, { ...input, points: null }, order)).toBe(false);
+    expect(sameRewardGrant(stored, { ...input, note: 'Outra.' }, order)).toBe(false);
+    expect(sameRewardGrant(stored, { ...input, prize: null }, order)).toBe(false);
+    expect(
+      sameRewardGrant(stored, { ...input, prize: { ...input.prize, rewardId: 'outra' } }, order),
+    ).toBe(false);
+    expect(
+      sameRewardGrant(stored, { ...input, prize: { ...input.prize, delivered: true } }, order),
+    ).toBe(false);
+    expect(sameRewardGrant(stored, input, { coupon: 'OUTRO', message: null })).toBe(false);
+    expect(sameRewardGrant(stored, input, { coupon: 'CUPOM', message: 'Oi' })).toBe(false);
+  });
+
+  it('o registro lido: os pontos, a recompensa e a nota; o estranho vale null', () => {
+    expect(fanClubPrizeRecord('g1', {})).toEqual({
+      grantId: 'g1',
+      clubId: '',
+      artistId: '',
+      points: null,
+      ledgerId: null,
+      prize: null,
+      note: '',
+      at: null,
+    });
+  });
+
+  it('as travas, nesta ordem: o fã-clube ativo, o 18+ declarado e o gestor sem suspensão', () => {
+    const active = { status: 'active' as const, ownerUid: 'uidCamila' };
+    expect(prizeBlock({ club: active, adultDeclared: true, ownerSuspended: false })).toBeNull();
+    expect(
+      prizeBlock({
+        club: { ...active, status: 'paused' },
+        adultDeclared: false,
+        ownerSuspended: true,
+      }),
+    ).toBe('club_not_active');
+    expect(
+      prizeBlock({
+        club: { status: 'closed', ownerUid: null },
+        adultDeclared: true,
+        ownerSuspended: false,
+      }),
+    ).toBe('club_not_active');
+    expect(prizeBlock({ club: active, adultDeclared: false, ownerSuspended: true })).toBe(
+      'not_adult',
+    );
+    expect(prizeBlock({ club: active, adultDeclared: true, ownerSuspended: true })).toBe(
+      'owner_suspended',
+    );
   });
 });

@@ -34,12 +34,17 @@ import {
 } from '../points/stats';
 import { rewardPanelError } from './errors';
 import {
+  compareRedemptions,
   compareRewards,
   drawRedemptionCode,
+  FAN_PRIZES_MAX,
   FAN_REDEMPTIONS_READ_MAX,
   isOpenRedemption,
+  isPrizeRedemption,
+  isPrizeReward,
   isRewardId,
   isVisibleToFan,
+  prizeView,
   redeemProblem,
   REDEMPTION_DELETE_PAGE,
   redemptionRecord,
@@ -75,7 +80,11 @@ const textOrNull = (value: unknown): string | null =>
 /**
  * `GET /rewards` (25.2): as recompensas no ar na ordem do painel, as
  * encerradas em que o fã tem pedido (no lugar delas, como esgotadas), os
- * pedidos dele em cada uma e o show aberto montado na hora. Só lê.
+ * pedidos dele em cada uma e o show aberto montado na hora. Desde a seção 34
+ * (decisão 51), os prêmios de fã-clube do fã em `prizes`: os pedidos com a
+ * origem `prize` da mesma leitura dos pedidos (até 200), do mais novo ao mais
+ * antigo, até 20, sem o cancelado, com a recompensa "Só para prêmios" da mesma
+ * busca das que faltam; ela nunca entra em `rewards`. Só lê.
  */
 export async function readRewardsForFan(
   db: Firestore,
@@ -99,17 +108,25 @@ export async function readRewardsForFan(
   for (const doc of published.docs) rewards.set(doc.id, rewardRecord(doc.id, doc.data()));
   const redemptions = mine.docs.map((doc) => redemptionRecord(doc.id, doc.data()));
 
-  // As recompensas dos pedidos que não vieram na lista: na prática, as encerradas.
+  // As recompensas dos pedidos que não vieram na lista: na prática, as
+  // encerradas e as de prêmio (seção 34), que ficam só para o `prizes`.
   const missing = [...new Set(redemptions.map((item) => item.rewardId))].filter(
     (id) => isRewardId(id) && !rewards.has(id),
   );
+  const prizeRewards = new Map<string, RewardRecord>();
   if (missing.length > 0) {
     const snaps = await db.getAll(...missing.map((id) => rewardRef(db, id)));
     for (const snap of snaps) {
       const reward = rewardOf(snap);
       if (reward && isVisibleToFan(reward, true)) rewards.set(reward.id, reward);
+      else if (reward && isPrizeReward(reward)) prizeRewards.set(reward.id, reward);
     }
   }
+  const prizes = redemptions
+    .filter((item) => isPrizeRedemption(item) && item.status !== 'canceled')
+    .sort(compareRedemptions)
+    .slice(0, FAN_PRIZES_MAX)
+    .map((item) => prizeView(item, prizeRewards.get(item.rewardId) ?? null));
 
   const list = [...rewards.values()].sort(compareRewards);
   const eventIds = [
@@ -130,6 +147,7 @@ export async function readRewardsForFan(
         now,
       }),
     ),
+    prizes,
   };
 }
 
@@ -139,7 +157,8 @@ export type RedeemOutcome = { plan: AwardPlan; result: RedeemResult | null };
  * O resgate (`POST /rewards/:rewardId/redeem`, 25.4), no `runIdempotent`,
  * depois do `requireFan`, numa transação só:
  * 1. o teto do dia (antes de ler a recompensa disputada);
- * 2. a recompensa: não existe ou em rascunho, encerrada, sem vaga;
+ * 2. a recompensa: não existe, em rascunho ou só para prêmios de fã-clube
+ *    (seção 34: ninguém resgata um prêmio), encerrada, sem vaga;
  * 3. o show (só com show) e os pedidos do fã nesta recompensa (só com limite);
  * 4. show fechado, custo mudado, limite por fã;
  * 5. o código sorteado (`crypto.randomInt`), sem ler: o `tx.create` garante
@@ -275,6 +294,84 @@ export async function redeemReward(
   };
 }
 
+/** O pedido de prêmio de fã-clube a gravar (seção 34, 34.4 e 34.5). */
+export type PrizeGrant = {
+  /** A recompensa "Só para prêmios" lida na transação, já conferida (`prizeRewardProblem`). */
+  reward: RewardRecord;
+  /** O gestor: o uid e as cópias do nome e do @ do perfil lido (25.1, decisão 13). */
+  owner: { uid: string; name: string | null; username: string | null };
+  clubId: string;
+  grantId: string;
+  /** "O cupom já é o prêmio": o pedido nasce entregue, que é final (decisão 43). */
+  delivered: boolean;
+  coupon: string | null;
+  message: string | null;
+  /** Quem deu, da equipe (o `updatedBy` do pedido). */
+  by: { uid: string; name: string };
+  now: number;
+  /** O código sorteado (`drawRedemptionCode`): a colisão volta pelo `retryOnAlreadyExists`. */
+  code: string;
+};
+
+/**
+ * O pedido de prêmio de fã-clube (o `grantPrize` de 34.2, decisões 40 e 43),
+ * na transação do Recompensar da `decideFanClub`, depois de todas as leituras
+ * dela: o pedido `redemptions/{código}` com a origem `prize`, 0 ponto, o
+ * código `UP-` de sempre, `approved` (ou `delivered`, com "O cupom já é o
+ * prêmio"), o `requestedAt` e o `statusAt` de agora (as listas de pedidos
+ * ordenam pelo `requestedAt`), o cupom, a mensagem, o fã-clube, a concessão e
+ * as cópias do gestor; o `redeemedCount` da recompensa mais 1 (o estoque é a
+ * cota de cortesias); e, no shard do plano, o passo `prize` e o status com que
+ * ele nasce, só na recompensa, fora dos totais da Loja (34.4). Não lança
+ * ponto: os pontos do prêmio são outro lançamento, do Recompensar.
+ */
+export function grantPrize(
+  tx: Transaction,
+  db: Firestore,
+  plan: AwardPlan,
+  grant: PrizeGrant,
+): void {
+  const { reward } = grant;
+  const at = Timestamp.fromMillis(grant.now);
+  const status = grant.delivered ? 'delivered' : 'approved';
+  tx.create(redemptionRef(db, grant.code), {
+    code: grant.code,
+    rewardId: reward.id,
+    rewardTitle: reward.title,
+    rewardKind: reward.kind,
+    eventId: reward.eventId,
+    points: 0,
+    uid: grant.owner.uid,
+    fanName: grant.owner.name,
+    fanUsername: grant.owner.username,
+    status,
+    instructions: reward.instructions,
+    refusalReason: null,
+    refundedPoints: 0,
+    restocked: null,
+    requestedAt: at,
+    approvedAt: grant.delivered ? null : at,
+    deliveredAt: grant.delivered ? at : null,
+    refusedAt: null,
+    canceledAt: null,
+    statusAt: at,
+    updatedBy: { uid: grant.by.uid, name: grant.by.name },
+    accountDeleted: false,
+    origin: 'prize',
+    fanClubId: grant.clubId,
+    grantId: grant.grantId,
+    coupon: grant.coupon,
+    message: grant.message,
+    schemaVersion: 1,
+  });
+  // Como no resgate, sem o updatedAt da recompensa, que é das mudanças da equipe no catálogo.
+  tx.update(rewardRef(db, reward.id), { redeemedCount: reward.redeemedCount + 1 });
+  addRedemptionCounts(plan, [
+    { rewardId: reward.id, kind: 'prize' },
+    { rewardId: reward.id, kind: status, prize: true },
+  ]);
+}
+
 /** A mudança de status pedida (pela equipe, ou pelo seed com o `expectFrom`). */
 export type RedemptionStatusChange = {
   code: string;
@@ -316,7 +413,10 @@ export type RedemptionStatusOutcome = {
  * entregar só gravam o pedido e o contador do dia. Recusar devolve os pontos
  * pelo núcleo (`redeem_refund:<código>`, uma vez; o fã sem perfil não recebe
  * nada) e tira 1 do `redeemedCount` (nunca abaixo de 0); com `restock: false`
- * e estoque, tira 1 também do total, e o que sobra não muda.
+ * e estoque, tira 1 também do total, e o que sobra não muda. O pedido de
+ * prêmio de fã-clube (seção 34, decisão 49) passa pelo mesmo caminho: com 0
+ * ponto, a recusa não lança nada, e os passos dele somam só na recompensa,
+ * fora dos totais da Loja (34.4).
  */
 export async function applyRedemptionStatus(
   tx: Transaction,
@@ -354,6 +454,7 @@ export async function applyRedemptionStatus(
       ? { uid: ctx.actor.uid, name: ctx.actor.name ?? '' }
       : null;
   const { rewardId } = redemption;
+  const prize = isPrizeRedemption(redemption);
 
   if (change.to !== 'refused') {
     const plan = await planAwards(tx, db, [], award);
@@ -363,7 +464,7 @@ export async function applyRedemptionStatus(
       statusAt: at,
       updatedBy,
     });
-    addRedemptionCounts(plan, [{ rewardId, kind: change.to }]);
+    addRedemptionCounts(plan, [{ rewardId, kind: change.to, prize }]);
     applyAwards(tx, db, plan);
     return { changed: true, from, status: change.to, rewardId, refundedPoints: 0, restocked: null };
   }
@@ -411,7 +512,7 @@ export async function applyRedemptionStatus(
     }
     tx.update(rewardSnap.ref, fields);
   }
-  addRedemptionCounts(plan, [{ rewardId, kind: 'refused', points: refundedPoints }]);
+  addRedemptionCounts(plan, [{ rewardId, kind: 'refused', points: refundedPoints, prize }]);
   applyAwards(tx, db, plan);
   return {
     changed: true,
@@ -428,9 +529,11 @@ export async function applyRedemptionStatus(
  * `recursiveDelete` do perfil, em páginas de 100, cada uma numa transação que
  * relê os pedidos (o que já perdeu o uid fica como está): os solicitados e
  * aprovados viram `canceled` e devolvem a vaga (nenhum ponto volta: a
- * carteira sai depois); todo pedido do fã perde o uid, a cópia do nome e do @
- * e o motivo da recusa, e ganha `accountDeleted`. Um shard por transação, com
- * os cancelados. Rodar de novo não acha pedido com o uid. A transação decide
+ * carteira sai depois); todo pedido do fã perde o uid, a cópia do nome e do @,
+ * o motivo da recusa e, desde a seção 34 (34.7), o cupom e a mensagem do
+ * prêmio de fã-clube, e ganha `accountDeleted`. O pedido de prêmio aberto é
+ * cancelado como os outros, com a vaga de volta. Um shard por transação, com
+ * os cancelados (os de prêmio só na recompensa, fora dos totais da Loja). Rodar de novo não acha pedido com o uid. A transação decide
  * pelo que relê, nunca pela página: uma recusa da equipe entre a consulta e a
  * transação fica recusada, e a vaga não volta duas vezes.
  */
@@ -482,6 +585,7 @@ export async function cancelFanRedemptions(
           fanName: null,
           fanUsername: null,
           refusalReason: null,
+          ...(isPrizeRedemption(record!) ? { coupon: null, message: null } : {}),
           accountDeleted: true,
           ...(open
             ? { status: 'canceled', canceledAt: stamp, statusAt: stamp, updatedBy: null }
@@ -489,7 +593,9 @@ export async function cancelFanRedemptions(
         });
         if (open) {
           perReward.set(record!.rewardId, (perReward.get(record!.rewardId) ?? 0) + 1);
-          addRedemptionToShard(delta, record!.rewardId, 'canceled');
+          addRedemptionToShard(delta, record!.rewardId, 'canceled', 0, {
+            prize: isPrizeRedemption(record!),
+          });
         }
       }
       rewardIds.forEach((id, index) => {

@@ -428,6 +428,25 @@ export const FAN_DATA_SOURCES: readonly FanDataSource[] = [
     },
   },
   {
+    // O registro do Recompensar (seção 34, 34.7), desde a etapa 5 de 34.14.
+    id: 'fanClubs.prizes',
+    label: 'fanClubs/{clubId}/prizes (os fã-clubes do ownerUid)',
+    place: {
+      in: 'out',
+      reason:
+        'os mesmos dados estão no extrato (fanclub_prize) e no pedido de prêmio, e o registro não tem dado do gestor',
+    },
+    read: {
+      kind: 'none',
+      where: 'a subcoleção prizes de cada fã-clube do ownerUid, sem campo do gestor',
+    },
+    omit: [],
+    deletion: {
+      effect: 'kept',
+      note: 'fica na lápide, sem dado do gestor: os pontos, a recompensa e a nota da equipe',
+    },
+  },
+  {
     // As publicações do fã-clube (seção 34, 34.7), desde a etapa 2 de 34.14.
     id: 'fanClubPosts',
     label: 'fanClubPosts com authorUid ==',

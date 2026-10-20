@@ -6,6 +6,8 @@ import { INVITE_CODE_ALPHABET } from '../invites/model';
 import {
   COST_MAX,
   drawRedemptionCode,
+  isPrizeRedemption,
+  isPrizeReward,
   isVisibleToFan,
   parseExpectedCost,
   parseRedemptionCodes,
@@ -13,15 +15,24 @@ import {
   parseRewardCreate,
   parseRewardIds,
   parseRewardPatch,
+  parseRewardPrizeFlag,
   PER_FAN_LIMIT_MAX,
+  prizeRewardProblem,
+  prizeView,
   REDEMPTION_CODE_PATTERN,
   REDEMPTION_STATUSES,
   redeemProblem,
+  redemptionRecord,
   redemptionView,
+  REWARD_KINDS,
+  rewardPatchProblem,
+  rewardProblem,
+  rewardRecord,
   REWARDS_RULES_URL,
   rewardView,
   rulesUrlOf,
   STOCK_MAX,
+  STORE_REWARD_KINDS,
   transitionProblem,
   type RedemptionRecord,
   type RedemptionStatus,
@@ -102,6 +113,11 @@ function redemption(extra: Partial<RedemptionRecord> = {}): RedemptionRecord {
     canceledAt: null,
     statusAt: NOW - 7 * DAY_MS,
     accountDeleted: false,
+    origin: 'store',
+    fanClubId: null,
+    grantId: null,
+    coupon: null,
+    message: null,
     ...extra,
   };
 }
@@ -659,5 +675,159 @@ describe('pedidos do painel', () => {
         field: 'rewardIds',
       });
     }
+  });
+});
+
+describe('a recompensa "Só para prêmios de fã-clube" (seção 34, decisões 40 a 43)', () => {
+  const PRIZE = { ...BASE, prize: true, cost: 0 };
+
+  it('o prize: true aceita o Desconto e o custo 0 (ausente vale 0); a da loja, nenhum dos dois', () => {
+    expect(parseRewardPrizeFlag({})).toBe(false);
+    expect(parseRewardPrizeFlag({ prize: false })).toBe(false);
+    expect(parseRewardPrizeFlag({ prize: true })).toBe(true);
+    expect(panelReason(() => parseRewardPrizeFlag({ prize: 'sim' }))).toEqual({
+      reason: 'invalid-request',
+      field: 'prize',
+    });
+    expect(parseRewardCreate({ ...PRIZE, kind: 'discount' })).toMatchObject({
+      kind: 'discount',
+      cost: 0,
+    });
+    const { cost: _cost, ...withoutCost } = PRIZE;
+    expect(parseRewardCreate(withoutCost)).toMatchObject({ cost: 0 });
+    expect(panelReason(() => parseRewardCreate({ ...PRIZE, cost: 6_000 }))).toEqual({
+      reason: 'invalid-request',
+      field: 'cost',
+    });
+    expect(panelReason(() => parseRewardCreate({ ...BASE, kind: 'discount' }))).toEqual({
+      reason: 'invalid-request',
+      field: 'kind',
+    });
+    expect(panelReason(() => parseRewardCreate({ ...BASE, cost: 0 }))).toEqual({
+      reason: 'invalid-request',
+      field: 'cost',
+    });
+    expect(REWARD_KINDS).toContain('discount');
+    expect(STORE_REWARD_KINDS).not.toContain('discount');
+  });
+
+  it('a mudança confere com a recompensa lida: na de prêmio o custo fica 0; na da loja, sem Desconto nem 0', () => {
+    expect(parseRewardPatch({ kind: 'discount', cost: 0 })).toEqual({ kind: 'discount', cost: 0 });
+    const prize = reward({ status: 'prize', cost: 0 });
+    const store = reward();
+    expect(rewardPatchProblem({ kind: 'discount', cost: 0 }, prize)).toBeNull();
+    expect(rewardPatchProblem({ title: 'Outro' }, prize)).toBeNull();
+    expect(rewardPatchProblem({ cost: 10 }, prize)).toBe('cost');
+    expect(rewardPatchProblem({ kind: 'discount' }, store)).toBe('kind');
+    expect(rewardPatchProblem({ cost: 0 }, store)).toBe('cost');
+    expect(rewardPatchProblem({ cost: 10, kind: 'merch' }, store)).toBeNull();
+  });
+
+  it('a leitura guarda o status prize; a de prêmio nunca aparece na loja, nem com pedido', () => {
+    expect(rewardRecord('cortesia', { status: 'prize', kind: 'discount', cost: 0 })).toMatchObject({
+      status: 'prize',
+      kind: 'discount',
+      cost: 0,
+    });
+    expect(isPrizeReward(reward({ status: 'prize' }))).toBe(true);
+    expect(isVisibleToFan(reward({ status: 'prize' }), true)).toBe(false);
+    expect(isVisibleToFan(reward({ status: 'prize' }), false)).toBe(false);
+    // O resgate de uma recompensa de prêmio é o 404 do rascunho.
+    expect(rewardProblem(reward({ status: 'prize', cost: 0 }))?.reason).toBe('reward_not_found');
+  });
+
+  it('a loja nunca manda o Desconto, que quebraria o app de antes', () => {
+    expect(
+      rewardView(reward({ kind: 'discount' }), { event: null, redemptions: [], now: NOW }).kind,
+    ).toBe('merch');
+  });
+
+  it('as recusas do prêmio pela recompensa lida: não existe, não é de prêmio, sem vaga', () => {
+    expect(prizeRewardProblem(null)).toBe('reward-not-found');
+    expect(prizeRewardProblem(reward())).toBe('reward-not-prize');
+    expect(prizeRewardProblem(reward({ status: 'prize', stockTotal: 2, redeemedCount: 2 }))).toBe(
+      'sold-out',
+    );
+    expect(
+      prizeRewardProblem(reward({ status: 'prize', stockTotal: 2, redeemedCount: 1 })),
+    ).toBeNull();
+    expect(prizeRewardProblem(reward({ status: 'prize', stockTotal: null }))).toBeNull();
+  });
+
+  it('o pedido lido: a origem (ausente vale store), o fã-clube, a concessão, o cupom e a mensagem', () => {
+    expect(redemptionRecord('UP-4KD9TM', {})).toMatchObject({
+      origin: 'store',
+      fanClubId: null,
+      grantId: null,
+      coupon: null,
+      message: null,
+    });
+    const prize = redemptionRecord('UP-4KD9TM', {
+      origin: 'prize',
+      fanClubId: 'clube1',
+      grantId: 'concessao-0001',
+      coupon: 'CUPOM',
+      message: 'Parabéns!',
+    });
+    expect(prize).toMatchObject({
+      origin: 'prize',
+      fanClubId: 'clube1',
+      grantId: 'concessao-0001',
+      coupon: 'CUPOM',
+      message: 'Parabéns!',
+    });
+    expect(isPrizeRedemption(prize)).toBe(true);
+    expect(isPrizeRedemption(redemptionRecord('UP-4KD9TM', { origin: 'outra' }))).toBe(false);
+  });
+
+  it('o prêmio como o gestor vê: o pedido e a recompensa resumida; o recusado sem o cupom', () => {
+    const item = redemption({
+      origin: 'prize',
+      status: 'approved',
+      points: 0,
+      coupon: 'CUPOM',
+      message: 'Parabéns!',
+      rewardKind: 'discount',
+      instructions: 'A cópia.',
+    });
+    const current = reward({
+      id: 'ingressos',
+      status: 'prize',
+      kind: 'discount',
+      photo: { url: 'https://foto', path: 'rewards/ingressos/foto.webp', width: 1200, height: 643 },
+      instructions: 'As de agora.',
+    });
+    expect(prizeView(item, current)).toEqual({
+      id: 'UP-4KD9TM',
+      code: 'UP-4KD9TM',
+      status: 'approved',
+      statusAt: new Date(item.statusAt).toISOString(),
+      grantedAt: new Date(item.requestedAt).toISOString(),
+      coupon: 'CUPOM',
+      message: 'Parabéns!',
+      refusalReason: null,
+      reward: {
+        id: 'ingressos',
+        kind: 'discount',
+        title: 'Par de ingressos',
+        imageUrl: 'https://foto',
+        instructions: 'As de agora.',
+      },
+    });
+    const refused = { ...item, status: 'refused' as const, refusalReason: 'Adiado.' };
+    expect(prizeView(refused, current)).toMatchObject({
+      coupon: null,
+      message: 'Parabéns!',
+      refusalReason: 'Adiado.',
+      reward: { instructions: 'A cópia.' },
+    });
+    // Sem a recompensa, a cópia do pedido.
+    expect(prizeView(item, null).reward).toEqual({
+      id: 'ingressos',
+      kind: 'discount',
+      title: 'Par de ingressos',
+      imageUrl: null,
+      instructions: 'A cópia.',
+    });
   });
 });

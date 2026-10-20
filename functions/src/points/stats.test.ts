@@ -282,6 +282,33 @@ describe('loja nos shards (bloco 10, 25.9)', () => {
     });
   });
 
+  it('o pedido de prêmio de fã-clube (seção 34, 34.4): só na recompensa, nunca nos totais da Loja', () => {
+    const delta = emptyShardDelta();
+    addRedemptionToShard(delta, 'cortesia', 'prize');
+    addRedemptionToShard(delta, 'cortesia', 'approved', 0, { prize: true });
+    addRedemptionToShard(delta, 'cortesia', 'refused', 0, { prize: true });
+    addRedemptionToShard(delta, 'cortesia', 'canceled', 0, { prize: true });
+    expect(shardWrite(delta, '2026-10-05', NOW)).toEqual({
+      day: '2026-10-05',
+      byReward: {
+        cortesia: {
+          prizes: FieldValue.increment(1),
+          approved: FieldValue.increment(1),
+          refused: FieldValue.increment(1),
+          canceled: FieldValue.increment(1),
+        },
+      },
+      updatedAt: Timestamp.fromMillis(NOW),
+    });
+    const plan = { shard: null } as unknown as AwardPlan;
+    addRedemptionCounts(plan, [
+      { rewardId: 'cortesia', kind: 'prize' },
+      { rewardId: 'cortesia', kind: 'delivered', prize: true },
+    ]);
+    expect(plan.shard?.totals.redeemDelivered).toBe(0);
+    expect(plan.shard?.byReward.cortesia).toMatchObject({ prizes: 1, delivered: 1 });
+  });
+
   it('a recusa sem pontos de volta (fã sem perfil) conta a recusa, sem os pontos', () => {
     const delta = emptyShardDelta();
     addRedemptionToShard(delta, 'videochamada', 'refused', 0);

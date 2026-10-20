@@ -442,6 +442,28 @@ const ROWS: Record<AuditAction, Row> = {
     section: 'fanClubs',
     targets: ['artist:nettobrito', 'fanClub:clube1', 'fan:uid-camila'],
   },
+  // O Recompensar (etapa 5): a recompensa e o pedido de prêmio viram alvos, e
+  // nunca o cupom nem a mensagem, que não vão aos `details`.
+  'fanClub.rewarded': {
+    details: {
+      clubId: 'clube1',
+      artistId: 'nettobrito',
+      fanUid: 'uid-camila',
+      grantId: 'concessao-1',
+      points: 200,
+      rewardId: 'cortesia-irara',
+      code: 'UP-7QXH2R',
+      note: 'Divulgou o show de Irará.',
+    },
+    section: 'fanClubs',
+    targets: [
+      'artist:nettobrito',
+      'reward:cortesia-irara',
+      'redemption:UP-7QXH2R',
+      'fanClub:clube1',
+      'fan:uid-camila',
+    ],
+  },
   // A publicação vai em `fanClubPostId` (nunca em `postId`, o alvo do Mural), e
   // o gestor, pelo `authorUid`.
   'fanClub.post.approved': {

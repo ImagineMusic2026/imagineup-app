@@ -402,6 +402,9 @@ async function leftovers(
     inviterEntries: string[];
     /** O fã-clube que o fã gere (seção 34): vira lápide. */
     clubId: string;
+    /** O prêmio que ele recebeu (etapa 5): o registro fica, e o pedido aberto é cancelado. */
+    grantId: string;
+    prizeCode: string;
   },
 ): Promise<string[]> {
   const left: string[] = [];
@@ -514,6 +517,20 @@ async function leftovers(
               (doc) =>
                 doc.get('status') === 'resolved' && doc.get('resolution') === 'author_deleted',
             )
+          );
+        }
+        case 'fanClubs.prizes': {
+          // O registro fica na lápide, sem dado dele (34.7), e o pedido de
+          // prêmio aberto é cancelado sem o cupom e a mensagem.
+          const prize = await read(`fanClubs/${known.clubId}/prizes/${known.grantId}`);
+          const order = await read(`redemptions/${known.prizeCode}`);
+          return (
+            prize !== undefined &&
+            !JSON.stringify(prize).includes(uid) &&
+            order?.status === 'canceled' &&
+            order.uid === null &&
+            order.coupon === null &&
+            order.message === null
           );
         }
         case 'staffAudit':
@@ -725,6 +742,44 @@ describe('o arquivo de um fã com dado em toda fonte, e a exclusão', () => {
       );
       await ok('moderateComment', { postId, commentId: commentIds[1], action: 'hide' }, admin);
 
+      // O prêmio do fã-clube (etapa 5): os pontos no extrato (sem a nota da
+      // equipe) e o pedido de prêmio aberto, com o cupom e a mensagem, dele.
+      const prizeReward = await ok<{ rewardId: string }>(
+        'createReward',
+        {
+          prize: true,
+          kind: 'discount',
+          title: 'Desconto na loja parceira',
+          subtitle: 'Só para prêmios',
+          cost: 0,
+          stockTotal: 5,
+          instructions: 'Use o cupom no site da loja parceira.',
+        },
+        admin,
+      );
+      const grantId = unique('concessao-dados-');
+      const granted = await ok<{ code: string }>(
+        'decideFanClub',
+        {
+          subject: 'club',
+          id: clubId,
+          decision: 'reward',
+          expected: 'active',
+          grantId,
+          points: 200,
+          prize: {
+            rewardId: prizeReward.rewardId,
+            delivered: false,
+            coupon: 'CUPOM-DA-CAMILA',
+            message: 'Parabéns pelo fã-clube!',
+          },
+          note: 'Nota interna do prêmio',
+        },
+        admin,
+      );
+      const prizeCode = granted.code;
+      expect(prizeCode).toEqual(expect.stringMatching(/^UP-/));
+
       // 501 lançamentos gravados pelo Admin SDK: o extrato passa de uma página.
       for (let start = 0; start < 501; start += 250) {
         const batch = db.batch();
@@ -854,9 +909,22 @@ describe('o arquivo de um fã com dado em toda fonte, e a exclusão', () => {
         expect.objectContaining({ id: artistId, firstJoin: true }),
       ]);
       expect((file.centrais as Item[])[0]).not.toHaveProperty('fanClubId');
-      expect(file.pedidosDaLoja as Item[]).toEqual([
-        expect.not.objectContaining({ updatedBy: expect.anything() }),
-      ]);
+      // Os pedidos sem quem da equipe mudou; o de prêmio (etapa 5) com o cupom,
+      // a mensagem e o fã-clube, que são dele.
+      expect(file.pedidosDaLoja as Item[]).toHaveLength(2);
+      for (const item of file.pedidosDaLoja as Item[]) expect(item).not.toHaveProperty('updatedBy');
+      expect(file.pedidosDaLoja as Item[]).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            id: prizeCode,
+            origin: 'prize',
+            coupon: 'CUPOM-DA-CAMILA',
+            message: 'Parabéns pelo fã-clube!',
+            fanClubId: clubId,
+            points: 0,
+          }),
+        ]),
+      );
       // O fã-clube (34.7): a candidatura sem quem decidiu, o privado com as
       // redes e sem o texto de divulgação, e o fã-clube sem quem aprovou.
       expect(file.candidaturaDeFaClube as Item).toMatchObject({
@@ -928,6 +996,7 @@ describe('o arquivo de um fã com dado em toda fonte, e a exclusão', () => {
           'redeem_refund',
           'invite_visit',
           'invite_signup',
+          'fanclub_prize',
         ]),
       );
       // O motivo do ajuste fica fora: o painel diz a quem ajusta que o fã não o vê.
@@ -935,6 +1004,11 @@ describe('o arquivo de um fã com dado em toda fonte, e a exclusão', () => {
       expect(adjustment).toBeDefined();
       expect(adjustment).not.toHaveProperty('note');
       expect(text).not.toContain('Correção do show');
+      // A nota interna do prêmio também (o registro `prizes` fica fora do arquivo).
+      const prizeEntry = (file.extrato as Item[]).find((item) => item.source === 'fanclub_prize');
+      expect(prizeEntry).toMatchObject({ id: `fanclub_prize:${grantId}`, points: 200 });
+      expect(prizeEntry).not.toHaveProperty('note');
+      expect(text).not.toContain('Nota interna do prêmio');
 
       // A ponta do "dado novo": as subcoleções dos documentos do fã estão na lista.
       for (const parent of FAN_DATA_PARENTS) {
@@ -959,6 +1033,8 @@ describe('o arquivo de um fã com dado em toda fonte, e a exclusão', () => {
         inviterUid: inviter.uid,
         inviterEntries,
         clubId,
+        grantId,
+        prizeCode,
       };
       expect(await ok('deleteFanAccount', request(fan), admin)).toEqual({ status: 'deleted' });
       await waitFor(

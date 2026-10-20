@@ -8,9 +8,28 @@ import {
 
 import { artistRecord, isPublished } from '../centrals/model';
 import { artistRef } from '../centrals/service';
+import { dayKey } from '../day';
 import { MISSING_FAN_PHOTO_FILES, type FanPhotoFiles } from '../fan-profile/files';
 import { isContentId } from '../page-cursor';
-import { requestFields } from '../staff/model';
+import { adjustDailyMaxFor, adjustMaxFor } from '../points/adjust';
+import {
+  applyAwards,
+  ledgerRef,
+  planAwards,
+  requireFan,
+  retryOnAlreadyExists,
+  walletRef,
+  type AwardContext,
+} from '../points/award';
+import type { ConfigSource } from '../points/config';
+import { ledgerId, NO_GAME, type AwardEntry, type PointsConfig } from '../points/model';
+import { pickShard } from '../points/stats';
+import { rewardPanelError } from '../rewards/errors';
+import { drawRedemptionCode, prizeRewardProblem, redemptionRecord } from '../rewards/model';
+import { grantPrize } from '../rewards/service';
+import { redemptionsRef, rewardOf, rewardRef } from '../rewards/store';
+import { addStaffLimit, checkStaffLimit, parseStaffLimit, staffLimitRef } from '../staff/limits';
+import { requestFields, type SectionId, type StaffRole } from '../staff/model';
 import {
   directRead,
   panelAccessError,
@@ -18,7 +37,7 @@ import {
   transactionRead,
   type PanelActor,
 } from '../staff/panel-actor';
-import { panelError, targetFanUid } from '../staff/panel-errors';
+import { aboveLimitError, dailyLimitError, panelError, targetFanUid } from '../staff/panel-errors';
 import { writeAudit, type AuditAction, type CallerAuth } from '../staff/service';
 import {
   APPLICATION_REJECT_REASONS,
@@ -31,13 +50,17 @@ import {
   FEATURED_PER_ARTIST_MAX,
   fanClubBoxes,
   fanClubPostRecord,
+  fanClubPrizeRecord,
   fanClubRecord,
   isFeaturedNow,
   millisOf,
   parseFeaturedUntil,
+  parseRewardGrant,
   POST_REJECT_REASONS,
   postMediaPaths,
+  prizeBlock,
   reapplyAfterRejection,
+  sameRewardGrant,
   withHistory,
   type ApplicationRecord,
   type ApplicationRejectReason,
@@ -47,6 +70,7 @@ import {
   type FanClubStatus,
   type PostMedia,
   type PostRejectReason,
+  type RewardGrantInput,
 } from './model';
 import { NO_FILE_WORK, runFanClubFileWork, type FanClubFileWork } from './posts';
 import {
@@ -54,6 +78,7 @@ import {
   applicationRef,
   FEATURE_OFF,
   fanClubPostRef,
+  fanClubPrizeRef,
   fanClubRef,
   fanClubReportQueueRef,
   fanClubsOf,
@@ -66,9 +91,10 @@ import {
 // decide), e a auditoria na mesma transação. O molde é o do
 // `resolveProfileReport`: o estado que a tela mostrou (`expected`) diferente
 // do de agora é `stale-decision`; nada a mudar, `ok` sem gravar nem auditar.
-// A etapa 1 de 34.14 decide a candidatura e o fã-clube; a etapa 2, as
-// publicações e as denúncias delas, com os arquivos apagados e os tokens
-// trocados depois da transação; o Recompensar chega na etapa 5.
+// A etapa 1 de 34.14 decide a candidatura e o fã-clube (com o Destaque); a
+// etapa 2, as publicações e as denúncias delas, com os arquivos apagados e os
+// tokens trocados depois da transação; a etapa 5, o Recompensar (os pontos só
+// no saldo e o prêmio, que vira pedido da loja).
 
 /** Os assuntos que a callable decide. */
 export const DECISION_SUBJECTS = ['application', 'club', 'post', 'report'] as const;
@@ -115,6 +141,14 @@ export type DecisionInput =
       featuredUntil: string;
     }
   | {
+      subject: 'club';
+      id: string;
+      /** O Recompensar (etapa 5): os pontos, o prêmio ou os dois (decisões 44 a 46). */
+      decision: 'reward';
+      expected: FanClubStatus;
+      grant: RewardGrantInput;
+    }
+  | {
       subject: 'post';
       id: string;
       decision: 'approve' | 'hide' | 'restore';
@@ -148,13 +182,32 @@ export type DecisionResult = {
   status: string;
 };
 
+/**
+ * A saída do Recompensar (34.3): a de sempre, com o status do fã-clube, mais
+ * o `grantId`, o código do pedido de prêmio (null sem prêmio) e os pontos
+ * (null sem pontos).
+ */
+export type RewardDecisionResult = DecisionResult & {
+  grantId: string;
+  code: string | null;
+  points: number | null;
+};
+
 /** A decisão tomada e o que fica para depois da transação (os arquivos da publicação). */
 export type Decided = { result: DecisionResult; files: FanClubFileWork };
+
+/** As decisões do fã-clube, menos o Recompensar, que tem caminho próprio. */
+type ClubDecisionInput = Exclude<
+  Extract<DecisionInput, { subject: 'club' }>,
+  { decision: 'reward' }
+>;
+
+type RewardDecisionInput = Extract<DecisionInput, { decision: 'reward' }>;
 
 const invalid = (field: string, extra: Record<string, unknown> = {}) =>
   panelError('invalid-request', { field, ...extra });
 
-const CLUB_DECISIONS = ['pause', 'resume', 'close', 'feature', 'unfeature'] as const;
+const CLUB_DECISIONS = ['pause', 'resume', 'close', 'feature', 'unfeature', 'reward'] as const;
 const POST_DECISIONS = ['approve', 'reject', 'hide', 'restore'] as const;
 const REPORT_DECISIONS = ['keep', 'action'] as const;
 
@@ -255,6 +308,11 @@ export function parseDecision(
     if (featuredUntil === null) throw invalid('featuredUntil');
     return { subject, id, decision, expected: status, featuredUntil };
   }
+  if (decision === 'reward') {
+    const grant = parseRewardGrant(fields);
+    if (!grant.ok) throw invalid(grant.field);
+    return { subject, id, decision, expected: status, grant: grant.value };
+  }
   return {
     subject,
     id,
@@ -271,8 +329,17 @@ export type FanClubPanelDeps = {
    * ao ocultar. Sem ele, só as decisões de publicação com foto falham.
    */
   files?: FanPhotoFiles;
+  /**
+   * Os valores dos pontos (só a versão entra no lançamento do Recompensar), com
+   * o cache de sempre. Sem ele, só o Recompensar falha.
+   */
+  config?: ConfigSource;
   /** Relógio em ms; os testes fixam. */
   now?: () => number;
+  /** Sorteio do shard dos agregados; os testes fixam. */
+  random?: () => number;
+  /** O sorteio do código do pedido de prêmio; só o teste da colisão troca. */
+  drawCode?: () => string;
 };
 
 type Actor = Pick<PanelActor, 'uid' | 'name'>;
@@ -535,7 +602,7 @@ async function featuredOthers(
 async function decideClub(
   tx: Transaction,
   db: Firestore,
-  input: Extract<DecisionInput, { subject: 'club' }>,
+  input: ClubDecisionInput,
   options: { actor: Actor; now: number },
 ): Promise<DecisionResult> {
   const { actor, now } = options;
@@ -660,6 +727,253 @@ async function decideClub(
       return result(club.status);
     }
   }
+}
+
+// --- O Recompensar -------------------------------------------------------------------
+
+/** O contexto do Recompensar: quem dá (com o papel, para o orçamento do dia), os valores e o shard. */
+export type RewardContext = {
+  actor: Actor & { role: StaffRole };
+  now: number;
+  config: PointsConfig;
+  shard: number;
+  /** O sorteio do código do pedido de prêmio (`drawRedemptionCode`, fora do teste da colisão). */
+  drawCode?: () => string;
+};
+
+/** As seções a mais do Recompensar (decisão 7): `fans` com pontos e `rewards` com prêmio. */
+export function rewardSections(grant: RewardGrantInput): SectionId[] {
+  return [
+    ...(grant.points !== null ? (['fans'] as const) : []),
+    ...(grant.prize !== null ? (['rewards'] as const) : []),
+  ];
+}
+
+/**
+ * O teto do papel nos pontos do Recompensar, o mesmo do Ajuste por lançamento
+ * (decisão 45): `adjust-above-limit`, com o teto em `details.max`.
+ */
+export function assertGrantCap(grant: RewardGrantInput, role: StaffRole): void {
+  if (grant.points !== null && grant.points > adjustMaxFor(role)) {
+    throw aboveLimitError(adjustMaxFor(role));
+  }
+}
+
+/**
+ * O Recompensar (34.5), na transação de quem chama, com todas as leituras
+ * antes das gravações. Primeiro o fã-clube (`fan-club-not-found`; o gestor é
+ * quem chama, `self`); depois, num `getAll`, o registro
+ * `fanClubs/{clubId}/prizes/{grantId}`, a candidatura, o perfil e a carteira
+ * do gestor, com pontos o lançamento `fanclub_prize:<grantId>` e o
+ * `staffLimits` de quem dá, e com prêmio a recompensa. O registro que já
+ * existe com os mesmos campos (o cupom e a mensagem conferidos no pedido,
+ * achado pelo `grantId`) responde o que foi feito, sem gravar; com outros, ou
+ * o `grantId` já usado noutro fã-clube (o lançamento sem o registro, ou, com
+ * prêmio, um pedido com ele), `grant-id-reused`. Depois, nesta ordem: o
+ * status diferente do da tela, `stale-decision`; as três travas
+ * (`prize-not-allowed`, com a que falhou em `details.problem`); a recompensa
+ * (`reward-not-found`, `reward-not-prize`, `sold-out`); o orçamento do dia
+ * do Ajuste (`adjust-daily-limit`); o plano com o `adjust` de origem
+ * `fanclub_prize`, só no saldo. Grava o pedido de prêmio (`grantPrize`), o
+ * registro, o `lastReward`, a soma no orçamento e a auditoria
+ * `fanClub.rewarded`, nunca com o cupom nem a mensagem.
+ */
+export async function applyRewardDecision(
+  tx: Transaction,
+  db: Firestore,
+  input: RewardDecisionInput,
+  ctx: RewardContext,
+): Promise<RewardDecisionResult> {
+  const { actor, now, config } = ctx;
+  const { grant } = input;
+  const clubSnap = await tx.get(fanClubRef(db, input.id));
+  if (!clubSnap.exists) throw panelError('fan-club-not-found');
+  const club = fanClubRecord(clubSnap.id, clubSnap.data() ?? {});
+  if (club.ownerUid !== null && club.ownerUid === actor.uid) throw panelError('self');
+  const owner = club.ownerUid;
+  const entryId = ledgerId({ source: 'fanclub_prize', eventId: grant.grantId });
+
+  // Os lugares do getAll: o registro sempre; o resto só com o que ele pede.
+  const refs: DocumentReference[] = [fanClubPrizeRef(db, club.id, grant.grantId)];
+  const at = (ref: DocumentReference) => refs.push(ref) - 1;
+  const appAt = owner ? at(applicationRef(db, owner)) : -1;
+  const profileAt = owner ? at(db.collection('users').doc(owner)) : -1;
+  const walletAt = owner ? at(walletRef(db, owner)) : -1;
+  const ledgerAt = owner && grant.points !== null ? at(ledgerRef(db, owner, entryId)) : -1;
+  const limitAt = grant.points !== null ? at(staffLimitRef(db, actor.uid, now)) : -1;
+  const rewardAt = grant.prize !== null ? at(rewardRef(db, grant.prize.rewardId)) : -1;
+  const snaps = await tx.getAll(...refs);
+  const snap = (index: number) => (index >= 0 ? snaps[index]! : null);
+
+  const result = (code: string | null, points: number | null): RewardDecisionResult => ({
+    ok: true,
+    subject: 'club',
+    id: club.id,
+    status: club.status,
+    grantId: grant.grantId,
+    code,
+    points,
+  });
+
+  // A repetição (a nova tentativa do painel): o registro já gravado.
+  const stored = snaps[0]!;
+  if (stored.exists) {
+    const record = fanClubPrizeRecord(stored.id, stored.data() ?? {});
+    const orders = record.prize
+      ? await tx.get(redemptionsRef(db).where('grantId', '==', grant.grantId).limit(1))
+      : null;
+    const order = orders?.docs[0]
+      ? redemptionRecord(orders.docs[0].id, orders.docs[0].data())
+      : null;
+    const kept = order && !order.accountDeleted ? order : null;
+    if (!sameRewardGrant(record, grant, kept)) throw panelError('grant-id-reused');
+    return result(order?.code ?? null, record.points);
+  }
+  // O mesmo `grantId` noutro fã-clube: o lançamento do mesmo gestor, ou um
+  // pedido de prêmio de outro. O painel com `rewards` acha o pedido só pelo
+  // `grantId`, e a repetição acima também: ele tem de ser único entre os pedidos.
+  if (snap(ledgerAt)?.exists) throw panelError('grant-id-reused');
+  if (grant.prize !== null) {
+    const taken = await tx.get(redemptionsRef(db).where('grantId', '==', grant.grantId).limit(1));
+    if (!taken.empty) throw panelError('grant-id-reused');
+  }
+
+  if (club.status !== input.expected) throw panelError('stale-decision');
+  const profile = snap(profileAt);
+  const application = snap(appAt);
+  const block = prizeBlock({
+    club,
+    adultDeclared:
+      application?.exists === true &&
+      applicationRecord(owner!, application.data() ?? {}).adultDeclared,
+    ownerSuspended: profile?.exists === true && isSuspended(profile),
+  });
+  if (block) throw panelError('prize-not-allowed', { problem: block });
+  if (!profile?.exists) throw panelError('fan-not-found');
+
+  const rewardSnap = snap(rewardAt);
+  const reward = rewardSnap ? rewardOf(rewardSnap) : null;
+  if (grant.prize !== null) {
+    const problem = prizeRewardProblem(reward);
+    if (problem === 'reward-not-prize') throw panelError('reward-not-prize');
+    if (problem) throw rewardPanelError(problem);
+  }
+
+  const limit =
+    grant.points !== null
+      ? checkStaffLimit(parseStaffLimit(snap(limitAt)!.data(), dayKey(now)), {
+          kind: 'adjust',
+          deltas: { balance: grant.points },
+          dailyMax: adjustDailyMaxFor(actor.role),
+        })
+      : null;
+  if (limit && !limit.ok) {
+    if (limit.reason === 'adjust-daily-limit')
+      throw dailyLimitError(limit.counter, limit.remaining);
+    throw panelError('invalid-request');
+  }
+
+  const fan = await requireFan(tx, db, owner!, profile, snap(walletAt)!, now, {
+    markActivity: false,
+  });
+  const award: AwardContext = {
+    now,
+    config,
+    shard: ctx.shard,
+    actor: { type: 'staff', uid: actor.uid, name: actor.name },
+    game: NO_GAME,
+  };
+  const entries: AwardEntry[] =
+    grant.points !== null
+      ? [
+          {
+            kind: 'adjust',
+            source: 'fanclub_prize',
+            eventId: grant.grantId,
+            balance: grant.points,
+            note: grant.note,
+          },
+        ]
+      : [];
+  const plan = await planAwards(
+    tx,
+    db,
+    entries.length > 0 ? [{ uid: owner!, fan, entries }] : [],
+    award,
+  );
+  if (grant.points !== null) {
+    const applied = plan.results.find((item) => item.entryId === entryId);
+    if (applied?.status !== 'applied') {
+      // A leitura do extrato acima vem da mesma transação: não acontece.
+      throw new Error(
+        `O prêmio ${entryId} não foi aplicado: ${applied?.status ?? 'sem resultado'}.`,
+      );
+    }
+  }
+
+  // As gravações, depois de todas as leituras.
+  const stamp = tsOf(now);
+  const by = { uid: actor.uid, name: actor.name };
+  const code = grant.prize !== null ? (ctx.drawCode ?? drawRedemptionCode)() : null;
+  if (grant.prize !== null && reward && code !== null) {
+    const copies = ownerCopiesOf(profile.data() ?? {});
+    grantPrize(tx, db, plan, {
+      reward,
+      owner: { uid: owner!, name: copies.name, username: copies.username },
+      clubId: club.id,
+      grantId: grant.grantId,
+      delivered: grant.prize.delivered,
+      coupon: grant.prize.coupon,
+      message: grant.prize.message,
+      by,
+      now,
+      code,
+    });
+  }
+  tx.create(fanClubPrizeRef(db, club.id, grant.grantId), {
+    grantId: grant.grantId,
+    clubId: club.id,
+    artistId: club.artistId,
+    points: grant.points,
+    ledgerId: grant.points !== null ? entryId : null,
+    prize:
+      grant.prize !== null && reward
+        ? {
+            rewardId: reward.id,
+            rewardTitle: reward.title,
+            rewardKind: reward.kind,
+            delivered: grant.prize.delivered,
+          }
+        : null,
+    note: grant.note,
+    by,
+    at: stamp,
+    schemaVersion: 1,
+  });
+  tx.update(clubSnap.ref, {
+    lastReward: { at: stamp, points: grant.points, prize: grant.prize !== null },
+    updatedAt: stamp,
+  });
+  if (limit?.ok) addStaffLimit(tx, db, actor.uid, now, limit.next);
+  audit(
+    tx,
+    db,
+    'fanClub.rewarded',
+    actor,
+    {
+      clubId: club.id,
+      artistId: club.artistId,
+      fanUid: owner,
+      grantId: grant.grantId,
+      points: grant.points,
+      rewardId: grant.prize?.rewardId ?? null,
+      code,
+      note: grant.note,
+    },
+    stamp,
+  );
+  applyAwards(tx, db, plan);
+  return result(code, grant.points);
 }
 
 // --- A publicação --------------------------------------------------------------------
@@ -911,13 +1225,19 @@ async function decideReport(
 /**
  * O núcleo, na transação de quem chama (a callable, o seed e os testes): a
  * decisão e o que fica para depois da transação (só as publicações mexem em
- * arquivo). Sem o Storage (`files`), as decisões que leem uma foto falham.
+ * arquivo). Sem o Storage (`files`), as decisões que leem uma foto falham; sem
+ * o `reward` (o papel de quem dá, os valores e o shard), o Recompensar falha.
  */
 export async function applyFanClubDecision(
   tx: Transaction,
   db: Firestore,
   input: DecisionInput,
-  options: { actor: Actor; now: number; files?: FanPhotoFiles },
+  options: {
+    actor: Actor;
+    now: number;
+    files?: FanPhotoFiles;
+    reward?: Omit<RewardContext, 'actor' | 'now'> & { role: StaffRole };
+  },
 ): Promise<Decided> {
   const { actor, now } = options;
   switch (input.subject) {
@@ -927,6 +1247,18 @@ export async function applyFanClubDecision(
         files: NO_FILE_WORK,
       };
     case 'club':
+      if (input.decision === 'reward') {
+        if (!options.reward) throw new Error('O Recompensar pede o papel, os valores e o shard.');
+        const { role, ...reward } = options.reward;
+        return {
+          result: await applyRewardDecision(tx, db, input, {
+            ...reward,
+            actor: { ...actor, role },
+            now,
+          }),
+          files: NO_FILE_WORK,
+        };
+      }
       return { result: await decideClub(tx, db, input, { actor, now }), files: NO_FILE_WORK };
     case 'post':
       return decidePost(tx, db, input, {
@@ -945,10 +1277,15 @@ export async function applyFanClubDecision(
  * `unauthenticated`; o assunto fora da lista, `invalid-request` com
  * `field: 'subject'`; o id fora do formato, com `field: 'id'`; a própria
  * candidatura, `self` (o próprio fã-clube, a própria publicação e a denúncia
- * dela, na transação). Encerrar pede o papel admin (`admin-only`). Depois da
- * transação, os arquivos da publicação recusada saem e os tokens da ocultada
- * mudam (a falha vai ao log: a decisão já valeu). Saída
- * `{ ok: true, subject, id, status }`.
+ * dela, na transação). Encerrar pede o papel admin (`admin-only`). O
+ * Recompensar pede também, fora e de novo na transação, a seção `fans` com
+ * pontos e a `rewards` com prêmio, e confere o teto do papel nos pontos
+ * (`adjust-above-limit`), com a transação dentro do `retryOnAlreadyExists`: o
+ * código sorteado que já existe dá `ALREADY_EXISTS`, e a nova tentativa
+ * sorteia outro (34.19). Depois da transação, os arquivos da publicação
+ * recusada saem e os tokens da ocultada mudam (a falha vai ao log: a decisão
+ * já valeu). Saída `{ ok: true, subject, id, status }`, e no Recompensar com o
+ * `grantId`, o `code` e os `points`.
  */
 export async function decideFanClub(
   deps: FanClubPanelDeps,
@@ -979,6 +1316,7 @@ export async function decideFanClub(
   const now = (deps.now ?? Date.now)();
   const input = parseDecision(subject as DecisionSubject, id, fields, now);
   if (input.decision === 'close' && direct.role !== 'admin') throw panelAccessError('admin-only');
+  if (input.decision === 'reward') return rewardFanClub(deps, caller, input, direct, now);
   const decided = await db.runTransaction(async (tx) => {
     const actor = await readPanelActor(transactionRead(tx), db, caller, 'fanClubs', 'edit');
     if (input.decision === 'close' && actor.role !== 'admin') {
@@ -995,21 +1333,81 @@ export async function decideFanClub(
 }
 
 /**
+ * O Recompensar da callable: as seções a mais e o teto do papel, fora e de
+ * novo na transação, os valores dos pontos (só a versão entra no lançamento)
+ * e a transação no `retryOnAlreadyExists`, com o shard sorteado de novo a cada
+ * tentativa.
+ */
+async function rewardFanClub(
+  deps: FanClubPanelDeps,
+  caller: CallerAuth | undefined,
+  input: RewardDecisionInput,
+  direct: PanelActor,
+  now: number,
+): Promise<RewardDecisionResult> {
+  const { db } = deps;
+  const sections = rewardSections(input.grant);
+  for (const section of sections) await readPanelActor(directRead, db, caller, section, 'edit');
+  assertGrantCap(input.grant, direct.role);
+  if (!deps.config) throw new Error('O Recompensar pede os valores dos pontos (config).');
+  const { points: config } = await deps.config.get();
+  const random = deps.random ?? Math.random;
+  return retryOnAlreadyExists(() =>
+    db.runTransaction(async (tx) => {
+      const actor = await readPanelActor(transactionRead(tx), db, caller, 'fanClubs', 'edit');
+      for (const section of sections) {
+        await readPanelActor(transactionRead(tx), db, caller, section, 'edit');
+      }
+      assertGrantCap(input.grant, actor.role);
+      return applyRewardDecision(tx, db, input, {
+        actor,
+        now,
+        config,
+        shard: pickShard(random),
+        ...(deps.drawCode ? { drawCode: deps.drawCode } : {}),
+      });
+    }),
+  );
+}
+
+/**
  * A decisão fora do painel, com um ator dado (o seed dos emuladores). Sem
- * conferir o acesso. Com `files`, os arquivos mudam depois da transação, como
- * na callable.
+ * conferir o acesso nem o teto do papel. Com `files`, os arquivos mudam
+ * depois da transação, como na callable. O Recompensar pede o `config` (os
+ * valores dos pontos) e usa o papel dado (o admin do seed, sem orçamento do
+ * dia), dentro do `retryOnAlreadyExists`, como na callable.
  */
 export async function runFanClubDecision(
   db: Firestore,
   input: DecisionInput,
-  options: { actor: Actor; now?: number; files?: FanPhotoFiles },
+  options: {
+    actor: Actor;
+    now?: number;
+    files?: FanPhotoFiles;
+    config?: PointsConfig;
+    role?: StaffRole;
+    random?: () => number;
+  },
 ): Promise<DecisionResult> {
-  const decided = await db.runTransaction((tx) =>
-    applyFanClubDecision(tx, db, input, {
-      actor: options.actor,
-      now: options.now ?? Date.now(),
-      ...(options.files ? { files: options.files } : {}),
-    }),
+  const now = options.now ?? Date.now();
+  const random = options.random ?? Math.random;
+  const decided = await retryOnAlreadyExists(() =>
+    db.runTransaction((tx) =>
+      applyFanClubDecision(tx, db, input, {
+        actor: options.actor,
+        now,
+        ...(options.files ? { files: options.files } : {}),
+        ...(options.config
+          ? {
+              reward: {
+                role: options.role ?? 'admin',
+                config: options.config,
+                shard: pickShard(random),
+              },
+            }
+          : {}),
+      }),
+    ),
   );
   if (options.files) await runFanClubFileWork(db, options.files, decided.files);
   return decided.result;

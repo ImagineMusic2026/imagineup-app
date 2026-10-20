@@ -7,9 +7,15 @@ import { runInviteLinks } from '../invites/service';
 import { DEFAULT_POINTS_CONFIG } from '../points/config';
 import { NO_GAME } from '../points/model';
 import { SEED_ACTOR } from '../points/seed';
+import { SEED_PRIZE_REWARD, seedPrizeReward } from '../rewards/seed';
 import { copyFanClubCount } from './copy';
 import { runFollowFanClub } from './follows';
-import { applicationRecord, fanClubPostRecord, type ApplicationInput } from './model';
+import {
+  applicationRecord,
+  fanClubPostRecord,
+  type ApplicationInput,
+  type RewardGrantInput,
+} from './model';
 import { runFanClubDecision } from './panel';
 import { runCreateFanClubPost, runOpenFanClubUpload } from './posts';
 import { runReportFanClubPost } from './reports';
@@ -18,6 +24,7 @@ import {
   applicationRef,
   fanClubFollowRef,
   fanClubPostsOfAuthor,
+  fanClubPrizeRef,
   fanClubRef,
   fanClubReportQueueRef,
 } from './store';
@@ -34,9 +41,10 @@ import {
 // fã-clube que a Camila compartilhou (`fanclub:<id>`), para os números do
 // fã-clube terem um link. Na etapa 4: os seguidores (a Bia, da central, e uma
 // conta do ranking que entra junto, a entrada trazida) e a primeira cópia da
-// noite. O prêmio e a candidatura pendente da Duda chegam com as etapas deles.
-// Rodar de novo não muda nada. Nunca roda em produção: o script fixa os
-// emuladores.
+// noite. Na etapa 5: a recompensa "Só para prêmios" e o prêmio da Camila, com
+// os pontos. A candidatura pendente da Duda não está em nenhuma etapa de
+// 34.14 (34.22). Rodar de novo não muda nada. Nunca roda em produção: o
+// script fixa os emuladores.
 
 /** A central com as fotos de fã desligadas (só texto). */
 export const SEED_TEXT_ONLY_ARTIST = 'nenho';
@@ -305,5 +313,67 @@ export async function seedFanClubFollows(
     await copyFanClubCount(db, clubId, now);
     result.copied = true;
   }
+  return result;
+}
+
+/**
+ * O prêmio dado à Camila (34.12, etapa 5 de 34.14): 200 pontos, só no saldo,
+ * e o ingresso de cortesia da recompensa "Só para prêmios" do seed, com o
+ * cupom e a mensagem, para a fileira "Seus prêmios", o card Prêmios e o
+ * extrato com "Prêmio do fã-clube". O `grantId` é fixo: rodar de novo acha o
+ * registro com os mesmos campos e não grava.
+ */
+export const SEED_FAN_CLUB_GRANT: RewardGrantInput = {
+  grantId: 'seed-camila-cortesia',
+  points: 200,
+  prize: {
+    rewardId: SEED_PRIZE_REWARD.id,
+    delivered: false,
+    coupon: 'CORTESIA-IRARA',
+    message: 'Obrigado por levar a turma de Irará aos shows do Netto!',
+  },
+  note: 'Seed: o fã-clube que mais divulgou o São João de Irará.',
+};
+
+export type SeedFanClubPrizeResult = {
+  /** A recompensa "Só para prêmios" nasceu agora. */
+  reward: boolean;
+  /** O prêmio foi dado agora. */
+  granted: boolean;
+};
+
+/**
+ * A recompensa "Só para prêmios" (só quando falta) e o prêmio da Camila, pelo
+ * núcleo do Recompensar da `decideFanClub` com o admin do seed (sem conferir
+ * o acesso nem o teto do papel), só com o fã-clube dela ativo e sem o
+ * registro: rodar de novo não muda nada.
+ */
+export async function seedFanClubPrize(
+  db: Firestore,
+  input: { camilaUid: string; actor: { uid: string; name: string } },
+  now: number = Date.now(),
+): Promise<SeedFanClubPrizeResult> {
+  const result: SeedFanClubPrizeResult = { reward: false, granted: false };
+  result.reward = await seedPrizeReward(db, now);
+  const application = await applicationRef(db, input.camilaUid).get();
+  const clubId = application.exists
+    ? applicationRecord(input.camilaUid, application.data() ?? {}).clubId
+    : null;
+  if (clubId === null) return result;
+  const club = await fanClubRef(db, clubId).get();
+  if (club.get('status') !== 'active') return result;
+  if ((await fanClubPrizeRef(db, clubId, SEED_FAN_CLUB_GRANT.grantId).get()).exists) return result;
+  await runFanClubDecision(
+    db,
+    {
+      subject: 'club',
+      id: clubId,
+      decision: 'reward',
+      expected: 'active',
+      grant: SEED_FAN_CLUB_GRANT,
+    },
+    { actor: input.actor, now, config: DEFAULT_POINTS_CONFIG, role: 'admin' },
+  );
+  result.granted = true;
   return result;
 }
