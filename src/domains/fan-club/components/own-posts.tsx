@@ -15,6 +15,7 @@ import { actionRefusal } from '@/services/api/refusal';
 import { haptics } from '@/services/haptics';
 import { colors, radii, spacing } from '@/theme';
 import { formatDate } from '@/utils/date';
+import { sentence } from '@/utils/text';
 
 import { POST_REJECT_REASON_TEXTS, POST_STATUS_TEXTS } from '../describe';
 import { excerptOf } from '../format';
@@ -30,7 +31,8 @@ function rowLabel(post: OwnFanClubPost): string {
   const parts = [
     t('fanClub.mine.posts.rowLabel', {
       status: t(POST_STATUS_TEXTS[post.status]),
-      text: post.text,
+      // O ponto depois do texto só quando falta ("Quem vem?" fica como está).
+      text: sentence(post.text),
       date: formatDate(post.submittedAt),
     }),
   ];

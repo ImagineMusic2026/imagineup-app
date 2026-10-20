@@ -450,6 +450,23 @@ describe('a página do fã-clube (34.9, item 7)', () => {
     expect(mocked.fetchFanClub).toHaveBeenCalledWith('fc-1');
   });
 
+  it('o rótulo da publicação: o ponto depois do texto só quando ele não termina em "?" ou "!"', async () => {
+    // Visto no emulador Android na conferência da etapa 10 de 34.14: o texto
+    // do fã que terminava em "?" saía "Irará?. Com foto." no leitor de tela.
+    mocked.fetchFanClubPosts.mockResolvedValue({
+      items: [
+        post('p1', { text: 'Quem vem com a gente?' }),
+        post('p2', { text: 'Bora assistir juntos', kind: 'photo' }),
+      ],
+      nextCursor: null,
+    });
+    renderRouter(appTree, { initialUrl: '/fa-clube/fc-1' });
+
+    expect(await screen.findByLabelText(/^Quem vem com a gente\? Publicado /u)).toBeTruthy();
+    expect(screen.getByLabelText(/^Bora assistir juntos\. Com foto\. Publicado /u)).toBeTruthy();
+    expect(screen.queryByLabelText(/[?!.]\. /u)).toBeNull();
+  });
+
   it('"feito por @gestor" abre o perfil público dele', async () => {
     const view = renderRouter(appTree, { initialUrl: '/fa-clube/fc-1' });
     fireEvent.press(await screen.findByText('feito por @thalitasan'));
@@ -774,6 +791,12 @@ describe('"Fã-clubes que sigo" (34.9, item 10)', () => {
     fireEvent.press(screen.getByTestId('fan-club-unfollow-confirm'));
     await waitFor(() => expect(view.getPathname()).toBe('/fa-clubes-que-sigo'));
     expect(await screen.findByText('Você ainda não segue nenhum fã-clube.')).toBeTruthy();
+    // O título do vazio já termina em ponto: o rótulo não leva outro.
+    expect(
+      screen.getByLabelText(
+        'Você ainda não segue nenhum fã-clube. Os fã-clubes ficam na página de cada artista.',
+      ),
+    ).toBeTruthy();
     expect(mocked.fetchFollowedFanClubs).toHaveBeenCalledTimes(1);
   });
 });

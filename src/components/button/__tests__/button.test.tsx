@@ -191,6 +191,21 @@ describe('Button', () => {
     expect(screen.getByText('Eu vou')).toHaveStyle(typography.buttonXs);
   });
 
+  it('o rótulo tem 1 pt de folga de cada lado, para a última palavra não quebrar no Android', () => {
+    // O botão encolhe até o rótulo, e a medida do texto perde uma fração de
+    // pixel no arredondamento do Android: "Tirar do ar" saía "Tirar do" com
+    // a fonte em 1,3 (conferência da etapa 10 do fã-clube, no emulador).
+    render(
+      <>
+        <Button label="Tirar do ar" size="sm" variant="secondary" onPress={jest.fn()} />
+        <Button label="Ver meus prêmios" size="md" variant="pointsTinted" onPress={jest.fn()} />
+      </>,
+    );
+
+    expect(screen.getByText('Tirar do ar')).toHaveStyle({ paddingHorizontal: 1 });
+    expect(screen.getByText('Ver meus prêmios')).toHaveStyle({ paddingHorizontal: 1 });
+  });
+
   it('o rótulo cresce até 200% em todo tamanho, mesmo com a variante de chip', () => {
     render(
       <>

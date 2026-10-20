@@ -71,3 +71,16 @@ export function matchesSearch(text: string, query: string): boolean {
 export function nameBeforePeriod(name: string): string {
   return name.replace(/\.+$/u, '');
 }
+
+/**
+ * Um texto como frase de um rótulo do leitor de tela, antes da frase seguinte
+ * ("{{text}} Publicado há 2 horas."): com o ponto final só quando ele não
+ * termina em ".", "!", "?" ou "…" (também antes de aspas ou parêntese), para
+ * a publicação "Quem vem?" não sair "Quem vem?." nem o título "Nada aqui."
+ * sair "Nada aqui..". Espaço no fim sai.
+ */
+export function sentence(text: string): string {
+  const trimmed = text.trimEnd();
+  if (trimmed === '') return trimmed;
+  return /[.!?…]["'”’»)\]]*$/u.test(trimmed) ? trimmed : `${trimmed}.`;
+}

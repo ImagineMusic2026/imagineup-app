@@ -32,17 +32,28 @@ function Summary({ application }: { application: FanClubApplication }) {
   );
 }
 
-/** "Enviar nova candidatura", só quando a vez do fã já chegou. */
-export function ApplyAgain({ next }: { next: NextRound }) {
+/**
+ * "Enviar nova candidatura", só quando a vez do fã já chegou. Com `inline`
+ * (dentro do aviso do "Meu fã-clube", que alinha as ações ao começo), o botão
+ * vai numa fileira, como o "Aceitar" e o "Ver meus prêmios": direto na coluna,
+ * o desenho do Button esticaria sem fim na rolagem (etapa 10 de 34.14).
+ */
+export function ApplyAgain({ next, inline = false }: { next: NextRound; inline?: boolean }) {
   if (next.kind !== 'now') return null;
-  return (
+  const button = (
     <Button
       label={t('fanClub.state.applyAgain')}
       onPress={() => router.push('/meu-fa-clube/candidatura')}
       accessibilityHint={t('fanClub.intro.applyHint')}
-      style={styles.action}
+      style={inline ? [styles.action, styles.shrink] : styles.action}
       testID="fan-club-apply-again"
     />
+  );
+  if (!inline) return button;
+  return (
+    <View style={styles.row} testID="fan-club-apply-again-row">
+      {button}
+    </View>
   );
 }
 
@@ -200,6 +211,13 @@ const styles = StyleSheet.create({
   },
   action: {
     marginTop: spacing.xl,
+  },
+  row: {
+    flexDirection: 'row',
+  },
+  // Com a fonte grande, o rótulo quebra dentro da largura do aviso.
+  shrink: {
+    flexShrink: 1,
   },
   error: {
     marginTop: spacing.lg,

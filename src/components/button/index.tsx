@@ -215,7 +215,7 @@ export function Button({
             variant={labelVariant}
             color={surface.foreground}
             maxFontSizeMultiplier={MAX_FONT_SCALE}
-            style={styles.label}
+            style={[styles.label, styles.labelSlack]}
           >
             {label}
           </Text>
@@ -435,5 +435,14 @@ const styles = StyleSheet.create({
   label: {
     flexShrink: 1,
     textAlign: 'center',
+  },
+  // Uma folga de 1 pt de cada lado do rótulo. No Android, o texto medido
+  // perde uma fração de pixel no arredondamento do layout, e o botão que
+  // encolhe até o rótulo quebrava a última palavra para uma linha que ele não
+  // tem ("Tirar do ar" saía "Tirar do" com a fonte em 1,3, conferido no
+  // emulador na etapa 10 do fã-clube; com 1,15 e 1,5, não). Simétrica, para o
+  // rótulo seguir no centro.
+  labelSlack: {
+    paddingHorizontal: 1,
   },
 });

@@ -138,7 +138,10 @@
  * recompensa "Só para prêmios de fã-clube" (um ingresso de cortesia do São
  * João de Irará, estoque 2, fora da loja) e o prêmio dado à Camila pelo
  * Recompensar, com 200 pontos só no saldo, o cupom e a mensagem (a fileira
- * "Seus prêmios", o card Prêmios e o extrato com "Prêmio do fã-clube").
+ * "Seus prêmios", o card Prêmios e o extrato com "Prêmio do fã-clube"). Na
+ * etapa 10, a candidatura pendente da Duda para o Nenho (a fila do painel e o
+ * "Candidatura em análise" do app): ela entra antes na central pela página,
+ * com o central_join em 0, e se candidata com o ator de sistema.
  *
  * Rodar de novo não muda nada. Depois da meia-noite, o progresso do dia volta
  * a 0, como o de qualquer fã: para ver de novo o 3 de 5 e o 2 de 5, feche os
@@ -709,8 +712,14 @@ if (camilaUid) {
   console.log(
     `Prêmio do fã-clube: a recompensa "Só para prêmios" ${clubPrize.reward ? 'cadastrada agora' : 'já estava'}, e o prêmio da Camila (200 pontos e o ingresso de cortesia, com o cupom) ${clubPrize.granted ? 'dado agora' : 'já tinha sido dado'}.`,
   );
+  // A candidatura pendente da Duda (etapa 10), por último: rodar de novo não grava.
+  const { seedFanClubPending } = functionsBuild('fan-clubs');
+  const clubPending = await withFirestore((db) => seedFanClubPending(db, fanUids.duda));
   console.log(
-    'Fã-clube: a Camila gere o fã-clube do Netto, com seguidores, uma publicação em análise, uma denúncia e um prêmio.',
+    `Candidatura pendente: a da Duda para o Nenho ${clubPending.applied ? `entrou agora${clubPending.joined ? ', depois da entrada dela na central' : ''}` : 'já estava'}.`,
+  );
+  console.log(
+    'Fã-clube: a Camila gere o fã-clube do Netto, com seguidores, uma publicação em análise, uma denúncia e um prêmio; a Duda espera a aprovação.',
   );
 }
 
