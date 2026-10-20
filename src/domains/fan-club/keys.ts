@@ -3,9 +3,10 @@
  * muda o resultado, e tudo fica debaixo de `fanClubKeys.all`.
  *
  * Fica num arquivo sem dependências, no molde do `posts/keys.ts`: o domínio
- * `artists` (sair da central) e o `posts` (bloquear) importam daqui direto,
- * para zerar "Fã-clubes que sigo" e "Dos seus fã-clubes" (34.9); pelo index,
- * seria um ciclo (o fã-clube importa as centrais e os posts pelo index deles).
+ * `artists` (sair da central) e o `posts` (bloquear) vão importar daqui
+ * direto, na etapa 8 de 34.14, para zerar "Fã-clubes que sigo" e "Dos seus
+ * fã-clubes" (34.9 e 34.22); pelo index, seria um ciclo (o fã-clube importa
+ * as centrais e os posts pelo index deles).
  */
 export const fanClubKeys = {
   all: ['fanClub'] as const,

@@ -3,6 +3,7 @@ import { act, renderHook, waitFor } from '@testing-library/react-native';
 import type { ReactNode } from 'react';
 import { AccessibilityInfo } from 'react-native';
 
+import * as actionRewards from '@/domains/profile/action-rewards';
 import { ApiError } from '@/services/api/errors';
 import { fixtureWallet } from '@/services/fixtures';
 import { haptics } from '@/services/haptics';
@@ -514,15 +515,18 @@ describe('useJoinCelebration', () => {
     expect(client.getQueryState(['profile', 'wallet'])?.isInvalidated).toBe(false);
   });
 
-  it('com a tela fechada, só as invalidações', () => {
+  it('com a tela fechada, só as invalidações: nada de "+N"', () => {
     client.setQueryData(artistKeys.centrals(), []);
+    const toast = jest.spyOn(actionRewards, 'rewardsToast');
     const { result, unmount } = renderHook(() => useJoinCelebration(), { wrapper });
     const { celebrate } = result.current;
     unmount();
 
     celebrate({ artistId: 'rocksalles', pointsAwarded: 10 });
 
-    expect(result.current.award).toBeNull();
+    // O `result.current` fica parado no último render: quem prova é o "+N" que não foi montado.
+    expect(toast).not.toHaveBeenCalled();
     expect(client.getQueryState(artistKeys.centrals())?.isInvalidated).toBe(true);
+    toast.mockRestore();
   });
 });

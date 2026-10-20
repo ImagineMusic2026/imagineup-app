@@ -158,7 +158,10 @@ export const CLUB_PHOTO_SIZE = { width: 1080, height: 1350 } as const;
 /** A miniatura dos cartões, na mesma proporção: 480 × 600 (o servidor aceita até 600). */
 export const CLUB_THUMB_SIZE = { width: 480, height: 600 } as const;
 
-/** Os tetos de cada arquivo (os mesmos do `storage.rules` e da função): 2 MiB e 300 KiB. */
+/**
+ * Os tetos de cada arquivo: a foto até 2 MiB (o `storage.rules` e a função) e
+ * a miniatura até 300 KiB (só a função; o `storage.rules` aceita até 2 MiB).
+ */
 export const CLUB_PHOTO_MAX_BYTES = 2 * 1024 * 1024;
 export const CLUB_THUMB_MAX_BYTES = 300 * 1024;
 

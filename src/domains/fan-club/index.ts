@@ -1,8 +1,8 @@
 // O fã-clube gerido pelo fã (docs/arquitetura-api.md, seção 34): a base da
 // etapa 6 de 34.14. As telas (os Ajustes, a candidatura e o "Meu fã-clube"; a
 // página, o seguir, a Início e os seguidos) chegam nas etapas 7 e 8, com o
-// queries.ts e as views. Os domínios de composição importam daqui, e o
-// `artists` e os `posts` leem as chaves pelo arquivo (`fan-club/keys.ts`).
+// queries.ts e as views. Os domínios de composição vão importar daqui, e o
+// `artists` e os `posts`, as chaves pelo arquivo (`fan-club/keys.ts`).
 export {
   FAN_CLUB_ERROR_CODES,
   FAN_CLUB_FOLLOWS_MAX,

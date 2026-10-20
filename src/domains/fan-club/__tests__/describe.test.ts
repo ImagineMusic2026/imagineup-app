@@ -34,8 +34,9 @@ describe('fanClubErrorText', () => {
       field: 'whatsapp',
       text: 'Confira o número: o DDD e o celular, com o 9 na frente.',
     });
+    // A miniatura recusada vai para o campo da foto: a tela tem um só.
     expect(text(invalid({ field: 'thumb', reason: 'format', problem: 'dimensions' }))).toEqual({
-      field: 'thumb',
+      field: 'photo',
       text: 'Não deu para usar esta foto. Escolha outra e tente de novo.',
     });
   });
@@ -92,7 +93,7 @@ describe('fanClubErrorText', () => {
     }
     for (const field of FAN_CLUB_INVALID_FIELDS) {
       const found = fanClubErrorText(invalid({ field, reason: 'format' }));
-      expect(found?.field).toBe(field);
+      expect(found?.field).toBe(field === 'thumb' ? 'photo' : field);
       expect(t(found!.key)).not.toBe(found!.key);
     }
   });

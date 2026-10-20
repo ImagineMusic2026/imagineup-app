@@ -157,8 +157,8 @@ export const followFixture = {
 
 onFixtureSessionEnd(() => followFixture.reset());
 
-/** O nome curto que o card da home (1b) usa no protótipo. */
-const SHORT_NAMES: Readonly<Record<string, string>> = { juninhomoraes: 'Juninho M.' };
+/** O nome curto que o card da home (1b) usa no protótipo (e o fã-clube de exemplo, seção 34). */
+export const SHORT_NAMES: Readonly<Record<string, string>> = { juninhomoraes: 'Juninho M.' };
 
 /**
  * Centrais que o fã segue, na ordem em que ele entrou nelas: as três do

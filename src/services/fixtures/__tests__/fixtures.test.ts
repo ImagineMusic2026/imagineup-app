@@ -1,10 +1,13 @@
 import { API_ERROR_CODES, ApiError } from '@/services/api/errors';
 
 import {
+  fixtureBlocks,
   fixtureDelay,
   fixtureMembership,
   fixtureNow,
   fixtureWallet,
+  onFixtureCentralLeft,
+  onFixtureFanBlocked,
   resetFixtureSession,
   setFixtureNow,
 } from '..';
@@ -120,5 +123,30 @@ describe('membro das centrais nas fixtures (bloco 8)', () => {
     resetFixtureSession();
     expect(fixtureMembership.isMember('nenho')).toBe(true);
     expect(fixtureMembership.isMember('rocksalles')).toBe(false);
+  });
+});
+
+// O fã-clube (seção 34) ouve a saída da central e o bloqueio, para apagar o
+// seguir como o servidor: as fixtures compartilhadas avisam sem importar o
+// domínio.
+describe('os ouvintes da saída da central e do bloqueio', () => {
+  afterEach(() => resetFixtureSession());
+
+  it('a saída avisa a central; entrar e o reset não avisam', () => {
+    const left = jest.fn();
+    onFixtureCentralLeft(left);
+    fixtureMembership.join('rocksalles');
+    fixtureMembership.leave('nenho');
+    resetFixtureSession();
+    expect(left.mock.calls).toEqual([['nenho']]);
+  });
+
+  it('o bloqueio avisa sempre, também de quem já estava na lista; desbloquear não avisa', () => {
+    const blocked = jest.fn();
+    onFixtureFanBlocked(blocked);
+    fixtureBlocks.add('fa-rank-01');
+    fixtureBlocks.add('fa-rank-01');
+    fixtureBlocks.remove('fa-rank-01');
+    expect(blocked.mock.calls).toEqual([['fa-rank-01'], ['fa-rank-01']]);
   });
 });

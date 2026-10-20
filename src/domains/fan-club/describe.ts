@@ -23,8 +23,12 @@ import type {
 
 /** Uma recusa do fã-clube como a tela mostra. */
 export interface FanClubErrorText {
-  /** O campo da tela que recebe a frase (`fan_club_invalid`), ou null para o topo. */
-  field: FanClubInvalidField | null;
+  /**
+   * O campo da tela que recebe a frase (`fan_club_invalid`), ou null para o
+   * topo. A miniatura recusada vem como `photo`: a tela tem um campo só para
+   * a foto, e as duas saem da mesma escolha.
+   */
+  field: Exclude<FanClubInvalidField, 'thumb'> | null;
   key: TranslationKey;
   params?: TranslationParams;
 }
@@ -72,11 +76,12 @@ const isRefusal = (value: unknown): value is FanClubRefusal =>
 
 /** O `fan_club_invalid` no campo: o "oficial" no nome, o filtro (seção 30) ou o formato. */
 function invalidText(field: FanClubInvalidField, reason: unknown): FanClubErrorText {
-  if (reason === 'not_allowed') return { field, key: 'fanClub.refusal.contentRefused' };
+  const shown = field === 'thumb' ? 'photo' : field;
+  if (reason === 'not_allowed') return { field: shown, key: 'fanClub.refusal.contentRefused' };
   if (reason === 'official' && field === 'name') {
-    return { field, key: 'fanClub.errors.invalid.nameOfficial' };
+    return { field: shown, key: 'fanClub.errors.invalid.nameOfficial' };
   }
-  return { field, key: INVALID_TEXTS[field] };
+  return { field: shown, key: INVALID_TEXTS[field] };
 }
 
 /** O `fan_club_refused` no topo; o `cooldown` com a data do servidor, quando ela veio. */

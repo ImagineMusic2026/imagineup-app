@@ -1,4 +1,4 @@
-import { JOIN_CENTRAL_POINTS } from '@/domains/artists/fixtures';
+import { followFixture, JOIN_CENTRAL_POINTS } from '@/domains/artists/fixtures';
 import {
   fixtureBlocks,
   fixtureMembership,
@@ -135,6 +135,8 @@ describe('o retrato do seed', () => {
       expect.objectContaining({ artistId: 'nenho', photosAllowed: false }),
       expect.objectContaining({ artistId: 'juninhomoraes', photosAllowed: true }),
     ]);
+    // O nome curto do protótipo, como o seed das centrais.
+    expect(fanClubFixture.artists().items[2]?.shortName).toBe('Juninho M.');
   });
 
   it('a página do próprio fã-clube diz que é dela; a do seguido, que ela segue', () => {
@@ -158,6 +160,17 @@ describe('o retrato do seed', () => {
     });
   });
 
+  it('as publicações no ar da página, da mais nova; o fã-clube que não aparece é 404', () => {
+    expect(fanClubFixture.clubPosts(OWN_CLUB_ID, null).items.map((post) => post.id)).toEqual([
+      'fcp-netto-clipe',
+      'fcp-netto-ensaio',
+    ]);
+    expect(errorOf(() => fanClubFixture.clubPosts('nao-existe', null))).toMatchObject({
+      status: 404,
+      code: 'fan_club_not_found',
+    });
+  });
+
   it('"Fã-clubes que sigo" e "Dos seus fã-clubes" começam com o fã-clube do Nenho', () => {
     expect(fanClubFixture.follows().items).toEqual([
       expect.objectContaining({ id: FOLLOWED_CLUB_ID, available: true, name: 'Nenho Sempre' }),
@@ -172,7 +185,12 @@ describe('o retrato do seed', () => {
 
   it('a lista do artista: os destacados primeiro, com o seguir de quem pede', () => {
     expect(fanClubFixture.artistClubs('nenho', null).items).toEqual([
-      expect.objectContaining({ id: FOLLOWED_CLUB_ID, featured: true, isFollowing: true }),
+      expect.objectContaining({
+        id: FOLLOWED_CLUB_ID,
+        featured: true,
+        isFollowing: true,
+        followers: 42,
+      }),
     ]);
     expect(fanClubFixture.artistClubs('juninhomoraes', null)).toEqual({
       items: [],
@@ -204,6 +222,13 @@ describe('seguir e deixar de seguir', () => {
       pointsAwarded: 0,
     });
     expect(fixtureWallet.get().balance).toBe(before + JOIN_CENTRAL_POINTS);
+    // A lista do artista mostra os seguidores da cópia da noite, que o seguir
+    // de agora não muda; a página conta na hora, como o servidor.
+    expect(fanClubFixture.artistClubs('rocksalles', null).items[0]).toMatchObject({
+      followers: 12,
+      isFollowing: true,
+    });
+    expect(fanClubFixture.page(OTHER_CLUB_ID).followerCount).toBe(13);
   });
 
   it('com a carteira na API, a entrada pelo seguir de exemplo não rende ponto (seção 13)', () => {
@@ -243,14 +268,33 @@ describe('seguir e deixar de seguir', () => {
     });
   });
 
-  it('a gestora bloqueada: a página some, a linha fica sem nome e a Início sem as publicações', () => {
+  it('bloquear a gestora apaga o seguir (decisão 32): a página some, e desbloquear não devolve', () => {
     fixtureBlocks.add('fa-rank-01');
     expect(errorOf(() => fanClubFixture.page(FOLLOWED_CLUB_ID))).toMatchObject({ status: 404 });
-    expect(fanClubFixture.follows().items).toEqual([
-      expect.objectContaining({ id: FOLLOWED_CLUB_ID, name: null, owner: null, available: false }),
-    ]);
+    expect(fanClubFixture.follows().items).toEqual([]);
     expect(fanClubFixture.feed(null).items).toEqual([]);
     expect(fanClubFixture.artistClubs('nenho', null).items).toEqual([]);
+    fixtureBlocks.remove('fa-rank-01');
+    expect(fanClubFixture.page(FOLLOWED_CLUB_ID)).toMatchObject({
+      isFollowing: false,
+      followerCount: 41,
+    });
+    expect(fanClubFixture.follows().items).toEqual([]);
+  });
+
+  it('sair da central apaga o seguir dos fã-clubes do artista (decisão 27), e voltar não devolve', () => {
+    followFixture.leave('juninhomoraes', key());
+    expect(fanClubFixture.follows().items.map((item) => item.id)).toEqual([FOLLOWED_CLUB_ID]);
+    followFixture.leave('nenho', key());
+    expect(fanClubFixture.follows().items).toEqual([]);
+    expect(fanClubFixture.feed(null).items).toEqual([]);
+    expect(fanClubFixture.page(FOLLOWED_CLUB_ID)).toMatchObject({
+      isFollowing: false,
+      isMember: false,
+      followerCount: 41,
+    });
+    followFixture.join('nenho', key());
+    expect(fanClubFixture.follows().items).toEqual([]);
   });
 });
 
@@ -275,6 +319,22 @@ describe('a candidatura', () => {
       status: 400,
       code: 'fan_club_invalid',
       details: { field, reason },
+    });
+  });
+
+  it('fora da central do artista, not_member, depois da conferência dos campos', () => {
+    expect(errorOf(() => fanClubFixture.apply({ ...BODY, artistId: 'rocksalles' }, key()))).toEqual(
+      { status: 409, code: 'fan_club_refused', details: { reason: 'not_member' } },
+    );
+  });
+
+  it('o novo aceite: a versão de agora responde o estado sem mudar; a velha é fan_club_invalid', () => {
+    expect(fanClubFixture.acceptRules(FIXTURE_RULES_VERSION, key())).toEqual(fanClubFixture.mine());
+    expect(fanClubFixture.mine().club?.rulesOutdated).toBe(false);
+    expect(errorOf(() => fanClubFixture.acceptRules('termos-2026-09', key()))).toEqual({
+      status: 400,
+      code: 'fan_club_invalid',
+      details: { field: 'rulesVersion', reason: 'format' },
     });
   });
 

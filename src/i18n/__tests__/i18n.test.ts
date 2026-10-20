@@ -39,7 +39,7 @@ describe('translations.json', () => {
   });
 
   it('nenhum texto tem travessão nem meia-risca (seção 34, 34.13)', () => {
-    const dashes = allTexts(translations).filter((text) => /[–—]/.test(text));
+    const dashes = allTexts(translations).filter((text) => /[\u2013\u2014]/.test(text));
     expect(dashes).toEqual([]);
   });
 });

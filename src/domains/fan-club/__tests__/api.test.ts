@@ -202,6 +202,18 @@ describe('as gravações pela API, com a chave da tentativa', () => {
   });
 });
 
+describe('o corpo da candidatura', () => {
+  it('vai só com as 8 chaves que o servidor aceita, sem o que o formulário tiver a mais', async () => {
+    mockDataSource = 'api';
+    request.mockResolvedValue({ data: {} });
+    const withExtra = { ...BODY, acceptedTerms: true } as FanClubApplicationBody;
+    await applyForFanClub({ body: withExtra, idempotencyKey: 'chave-1234' });
+    expect(request.mock.calls[0]?.[0]).toMatchObject({ data: BODY });
+    const sent = (request.mock.calls[0]?.[0] as { data: object }).data;
+    expect(Object.keys(sent).sort()).toEqual(Object.keys(BODY).sort());
+  });
+});
+
 describe('nas fixtures, nada vai para a rede', () => {
   it('as leituras e as gravações respondem pelo "servidor" de exemplo', async () => {
     const mine = await fetchMyFanClub();

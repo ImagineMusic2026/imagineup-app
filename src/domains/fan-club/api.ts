@@ -68,7 +68,12 @@ export async function fetchFanClubArtists(): Promise<FanClubArtists> {
   return data;
 }
 
-/** Candidatar (`POST /me/fan-club/application`): devolve o estado novo do fã. */
+/**
+ * Candidatar (`POST /me/fan-club/application`): devolve o estado novo do fã.
+ * O corpo vai montado chave a chave: o servidor recusa chave desconhecida
+ * com 400 (`APPLICATION_KEYS`), e um campo a mais vindo do formulário não
+ * pode ir junto.
+ */
 export async function applyForFanClub({
   body,
   idempotencyKey,
@@ -77,11 +82,12 @@ export async function applyForFanClub({
     await fixtureDelay();
     return fanClubFixture.apply(body, idempotencyKey);
   }
+  const { artistId, name, instagram, tiktok, whatsapp, pitch, adult, rulesVersion } = body;
   const { data } = await api.request<MyFanClub>({
     method: 'POST',
     url: '/me/fan-club/application',
     headers: idempotency(idempotencyKey),
-    data: body,
+    data: { artistId, name, instagram, tiktok, whatsapp, pitch, adult, rulesVersion },
   });
   return data;
 }

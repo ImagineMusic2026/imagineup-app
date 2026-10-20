@@ -1,15 +1,15 @@
-import { addDays, format } from 'date-fns';
-
 // As centrais pelo arquivo, fora do index, como as outras fixtures: o seguir
 // que faz a entrada passa pelo `followFixture` delas (a regra de coerência da
 // seção 13: a entrada paga uma vez, pelo `earnFixturePoints`).
-import { buildArtistsFixture, followFixture } from '@/domains/artists/fixtures';
+import { buildArtistsFixture, followFixture, SHORT_NAMES } from '@/domains/artists/fixtures';
 import { ApiError, type ApiErrorDetails } from '@/services/api/errors';
 import {
   fixtureBlocks,
   fixtureContact,
   fixtureMembership,
   fixtureNow,
+  onFixtureCentralLeft,
+  onFixtureFanBlocked,
   onFixtureSessionEnd,
 } from '@/services/fixtures';
 import { parseWhatsapp } from '@/utils/whatsapp';
@@ -63,9 +63,15 @@ import type {
  * seguidores do seed, o link que ela compartilhou e o prêmio de 200 pontos);
  * segue o fã-clube de outra fã no Nenho; e não segue o de um fã na central do
  * Rock Salles, da qual ela não é membro: seguir esse faz a entrada junto, pelo
- * `followFixture` das centrais. Fica em memória e volta ao retrato quando a
- * sessão termina (`resetFixtureSession`). Os valores são de exemplo; os reais
- * vêm da API.
+ * `followFixture` das centrais. Sair da central e bloquear o gestor apagam o
+ * seguir, como no servidor (os ouvintes do `services/fixtures`). Fica em
+ * memória e volta ao retrato quando a sessão termina (`resetFixtureSession`).
+ * Os valores são de exemplo; os reais vêm da API.
+ *
+ * O retrato é o da gestora aprovada: a candidatura nova, a desistência, a
+ * recusa com o prazo, o regulamento velho e o fã-clube pausado ou encerrado
+ * não têm caminho aqui (o código responde como o servidor, mas nada leva a
+ * eles); as telas das etapas 7 e 8 testam esses estados com os dados delas.
  *
  * As publicações de exemplo são só texto: o contrato pede a URL da foto, e as
  * fixtures não guardam arquivo (a primeira do seed tem a foto de teste). A
@@ -395,9 +401,14 @@ function artistOf(artistId: string) {
   return buildArtistsFixture().find((artist) => artist.id === artistId) ?? null;
 }
 
-/** O fim do Destaque (`AAAA-MM-DD`), ou null sem destaque. */
+/** São Paulo, sem horário de verão desde 2019: o dia do Destaque é o de lá, como o `dayKey` do servidor. */
+const SAO_PAULO_OFFSET_MS = -3 * HOUR_MS;
+
+/** O fim do Destaque (`AAAA-MM-DD` de São Paulo), ou null sem destaque. */
 function featuredUntilOf(club: ClubRecord, now: Date): string | null {
-  return club.featuredDays === null ? null : format(addDays(now, club.featuredDays), 'yyyy-MM-dd');
+  if (club.featuredDays === null) return null;
+  const end = now.getTime() + SAO_PAULO_OFFSET_MS + club.featuredDays * DAY_MS;
+  return new Date(end).toISOString().slice(0, 10);
 }
 
 /** O fã-clube aparece para os fãs: ativo, do artista de exemplo, de gestor que a Camila não bloqueou. */
@@ -409,8 +420,17 @@ function isShown(club: ClubRecord): boolean {
   );
 }
 
+/** Os seguidores de agora (o `count()` da página e dos números): os de exemplo e a Camila, quando segue. */
 const followerCount = (club: ClubRecord): number =>
   club.followers + (followed.has(club.id) ? 1 : 0);
+
+/**
+ * Os seguidores da cópia da noite (o `counts.followers` da lista do artista):
+ * os do retrato, que não mudam com o seguir desta sessão, como no servidor,
+ * que só os copia de noite.
+ */
+const copiedFollowers = (club: ClubRecord): number =>
+  club.followers + (INITIAL_FOLLOWS.some(([id]) => id === club.id) ? 1 : 0);
 
 const pageOf = <T>(
   items: readonly T[],
@@ -537,7 +557,7 @@ function ownPostView(post: PostRecord, now: Date): OwnFanClubPost {
     photo: null,
     thumb: null,
     status: post.status,
-    rejectReason: post.rejectReason,
+    rejectReason: post.status === 'rejected' ? post.rejectReason : null,
     submittedAt: isoOf(post.submitted, now),
     publishedAt: post.published ? isoOf(post.published, now) : null,
     reviewedAt: post.reviewed ? isoOf(post.reviewed, now) : null,
@@ -612,7 +632,7 @@ export const fanClubFixture = {
       .map((artist) => ({
         artistId: artist.id,
         name: artist.name,
-        shortName: null,
+        shortName: SHORT_NAMES[artist.id] ?? null,
         thumbUrl: artist.photoURL,
         photosAllowed: !TEXT_ONLY_ARTISTS.has(artist.id),
       }));
@@ -744,7 +764,11 @@ export const fanClubFixture = {
     });
   },
 
-  /** Os fã-clubes do artista: os destacados primeiro, depois os mais seguidos. */
+  /**
+   * Os fã-clubes do artista, como o servidor: os destacados primeiro (pelos
+   * seguidores e pelo id crescente), depois os outros (pelos seguidores e
+   * pelo id decrescente), com os seguidores da cópia da noite.
+   */
   artistClubs(
     artistId: string,
     cursor: string | null,
@@ -756,14 +780,14 @@ export const fanClubFixture = {
       .sort(
         (a, b) =>
           Number(b.featured) - Number(a.featured) ||
-          followerCount(b.club) - followerCount(a.club) ||
-          a.club.id.localeCompare(b.club.id),
+          copiedFollowers(b.club) - copiedFollowers(a.club) ||
+          (a.featured ? a.club.id.localeCompare(b.club.id) : b.club.id.localeCompare(a.club.id)),
       )
       .map(({ club, featured }): FanClubCard => ({
         id: club.id,
         name: club.name,
         owner: club.owner,
-        followers: followerCount(club),
+        followers: copiedFollowers(club),
         featured,
         postCount: posts.filter((post) => post.clubId === club.id && post.status === 'published')
           .length,
@@ -780,7 +804,12 @@ export const fanClubFixture = {
     return {
       id: club.id,
       name: club.name,
-      artist: { id: artist.id, name: artist.name, shortName: null, thumbUrl: artist.photoURL },
+      artist: {
+        id: artist.id,
+        name: artist.name,
+        shortName: SHORT_NAMES[artist.id] ?? null,
+        thumbUrl: artist.photoURL,
+      },
       owner: club.owner,
       followerCount: followerCount(club),
       postCount: posts.filter((post) => post.clubId === club.id && post.status === 'published')
@@ -908,3 +937,19 @@ export const fanClubFixture = {
 };
 
 onFixtureSessionEnd(() => fanClubFixture.reset());
+
+/** Tira do seguir da Camila os fã-clubes que a regra pede, como o servidor apaga os vínculos. */
+function dropFollows(gone: (club: ClubRecord) => boolean): void {
+  const next = new Map(followed);
+  for (const clubId of followed.keys()) {
+    const club = clubs.find((candidate) => candidate.id === clubId);
+    if (club && gone(club)) next.delete(clubId);
+  }
+  followed = next;
+}
+
+// Sair da central apaga os seguimentos dos fã-clubes do artista (decisão 27),
+// e bloquear o gestor apaga o do fã-clube dele (decisão 32): desbloquear ou
+// voltar à central não devolve o seguir.
+onFixtureCentralLeft((artistId) => dropFollows((club) => club.artistId === artistId));
+onFixtureFanBlocked((fanId) => dropFollows((club) => club.owner.uid === fanId));
