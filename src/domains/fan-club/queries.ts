@@ -6,10 +6,12 @@ import {
   type InfiniteData,
   type QueryClient,
 } from '@tanstack/react-query';
-import { useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { AccessibilityInfo } from 'react-native';
 
-import { useJoinCelebration } from '@/domains/artists';
+import { artistKeys, useJoinCelebration } from '@/domains/artists';
 import { inviteLinkId } from '@/domains/invites';
+import { postKeys } from '@/domains/posts';
 import {
   profileKeys,
   useMyInviteQuery,
@@ -17,8 +19,10 @@ import {
   type FanContact,
   type PreparedFanClubPhoto,
 } from '@/domains/profile';
-import type { TranslationKey } from '@/i18n';
+import { t, type TranslationKey } from '@/i18n';
 import { ApiError } from '@/services/api/errors';
+import { actionRefusal } from '@/services/api/refusal';
+import { haptics } from '@/services/haptics';
 import { queryOptionsFor } from '@/services/query/client';
 import { useSessionStore } from '@/stores/session';
 import { createIdempotencyKey } from '@/utils/id';
@@ -47,6 +51,7 @@ import {
   withdrawApplication,
 } from './api';
 import { FAN_CLUB_ERROR_CODES } from './consts';
+import { fanClubErrorText } from './describe';
 import { isDefinitiveRefusal, leaveCentralNotes, liveFanClub, shownFanClub } from './entry';
 import { fanClubKeys } from './keys';
 import { shareFanClub, type ShareableFanClub } from './share';
@@ -106,6 +111,22 @@ const startedBy = (): StartedBy => ({ uid: sessionUid() });
 
 /** A sessão que pediu ainda é a de agora: a resposta de outra não vai ao cache do fã seguinte. */
 const sameSession = (started: StartedBy | undefined): boolean => started?.uid === sessionUid();
+
+/**
+ * Se a tela da gravação ainda está montada. Com a sheet fechada (o arrasto do
+ * Android não trava), os callbacks do `mutate` não rodam, e quem anuncia a
+ * resposta é o hook, no molde da denúncia de perfil.
+ */
+function useMounted() {
+  const mounted = useRef(false);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
+  return mounted;
+}
 
 /**
  * Uma recusa definitiva do fã-clube (o 409, os dois 404, a versão das regras
@@ -369,6 +390,11 @@ export function useRemoveFanClubPostMutation() {
       if (!sameSession(started)) return;
       patchMyPost(client, post);
       void client.invalidateQueries({ queryKey: fanClubKeys.mine() });
+      // A que estava no ar sai também do que os fãs veem (o "Ver como os fãs
+      // veem", a contagem da lista do artista).
+      if (post.status === 'removed') {
+        void client.invalidateQueries({ queryKey: fanClubKeys.public() });
+      }
     },
     onError: (error, postId) => {
       if (!isUncertainFailure(error)) attempts.current.delete(postId);
@@ -706,30 +732,33 @@ export interface CachedFanClub {
  */
 export function useCachedFanClub(clubId: string): CachedFanClub | undefined {
   const client = useQueryClient();
-  const [club] = useState((): CachedFanClub | undefined => {
-    if (!clubId) return undefined;
-    const page = client.getQueryData<FanClubPage>(fanClubKeys.club(clubId));
-    if (page) {
-      return {
-        id: page.id,
-        name: page.name,
-        artistId: page.artist.id,
-        artistName: page.artist.name,
-      };
-    }
-    const followed = client
-      .getQueryData<FollowedFanClubs>(fanClubKeys.follows())
-      ?.items.find((item) => item.id === clubId);
-    return followed
-      ? {
-          id: followed.id,
-          name: followed.name,
-          artistId: followed.artistId,
-          artistName: followed.artistName,
-        }
-      : undefined;
-  });
+  const [club] = useState(() => cachedFanClubOf(client, clubId));
   return club;
+}
+
+/** O fã-clube em cache, da página dele ou de "Fã-clubes que sigo". */
+function cachedFanClubOf(client: QueryClient, clubId: string): CachedFanClub | undefined {
+  if (!clubId) return undefined;
+  const page = client.getQueryData<FanClubPage>(fanClubKeys.club(clubId));
+  if (page) {
+    return {
+      id: page.id,
+      name: page.name,
+      artistId: page.artist.id,
+      artistName: page.artist.name,
+    };
+  }
+  const followed = client
+    .getQueryData<FollowedFanClubs>(fanClubKeys.follows())
+    ?.items.find((item) => item.id === clubId);
+  return followed
+    ? {
+        id: followed.id,
+        name: followed.name,
+        artistId: followed.artistId,
+        artistName: followed.artistName,
+      }
+    : undefined;
 }
 
 /**
@@ -807,8 +836,11 @@ export interface FollowTarget {
  * novo; o seguir que fez a entrada comemora como a entrada de sempre (o "+N"
  * do `award` e as invalidações das Suas centrais, da 1d, do mural, do ranking
  * e das missões, pelo `useJoinCelebration`). O 404 tira o fã-clube das telas
- * (ele saiu do ar ou o gestor foi bloqueado); a falha incerta busca a página
- * de novo, porque o servidor pode ter gravado.
+ * (ele saiu do ar ou o gestor foi bloqueado); a falha incerta busca de novo o
+ * que o sucesso mudaria, porque o servidor pode ter gravado
+ * (`refreshAfterUncertainFollow`). Quando a página mostra "Seguindo", a
+ * tentativa aberta acaba (`closeAttempt`): o seguir seguinte, depois de
+ * deixar de seguir, leva chave nova e não recebe a resposta guardada.
  */
 export function useFollowFanClubMutation() {
   const client = useQueryClient();
@@ -849,7 +881,7 @@ export function useFollowFanClubMutation() {
       if (error instanceof ApiError && error.code === FAN_CLUB_ERROR_CODES.notFound) {
         void client.invalidateQueries({ queryKey: fanClubKeys.public() });
       } else if (uncertain) {
-        void client.invalidateQueries({ queryKey: fanClubKeys.club(club.id) });
+        refreshAfterUncertainFollow(client, club.artistId);
       }
     },
     onSettled: () => {
@@ -861,7 +893,25 @@ export function useFollowFanClubMutation() {
     inFlight.current = true;
     mutation.mutate(club, options);
   };
-  return { ...mutation, mutate, award };
+  const closeAttempt = useCallback((clubId: string): void => {
+    attempts.current.delete(clubId);
+  }, []);
+  return { ...mutation, mutate, award, closeAttempt };
+}
+
+/**
+ * O seguir de resultado incerto: o servidor pode ter gravado e, fora da
+ * central, feito a entrada. Busca de novo o que o sucesso mudaria, no molde do
+ * resgate: o que os fãs veem dos fã-clubes (a página, as listas do artista, os
+ * seguidos e a Início), as Suas centrais, a 1d do artista, o mural e o saldo.
+ * O ranking e as missões ficam com o `staleTime` deles.
+ */
+function refreshAfterUncertainFollow(client: QueryClient, artistId: string): void {
+  void client.invalidateQueries({ queryKey: fanClubKeys.public() });
+  void client.invalidateQueries({ queryKey: artistKeys.centrals() });
+  void client.invalidateQueries({ queryKey: artistKeys.detail(artistId) });
+  void client.invalidateQueries({ queryKey: postKeys.feed() });
+  void client.invalidateQueries({ queryKey: profileKeys.wallet() });
 }
 
 /**
@@ -869,10 +919,13 @@ export function useFollowFanClubMutation() {
  * de seguir": nunca recusa e não mexe na central. Não é otimista, com a chave
  * da tentativa por fã-clube. No sucesso, a página e a lista do artista passam
  * a "Seguir", o fã-clube sai de "Fã-clubes que sigo" sem buscar de novo, e
- * "Dos seus fã-clubes" busca de novo.
+ * "Dos seus fã-clubes" busca de novo. A falha incerta busca de novo o que os
+ * fãs veem (o servidor pode ter gravado). Com a sheet já fechada, o hook
+ * anuncia a resposta.
  */
 export function useUnfollowFanClubMutation() {
   const client = useQueryClient();
+  const mounted = useMounted();
   const attempts = useRef(new Map<string, string>());
   const inFlight = useRef(false);
   const mutation = useMutation<UnfollowFanClubResult, Error, string, StartedBy>({
@@ -888,14 +941,25 @@ export function useUnfollowFanClubMutation() {
     onSuccess: (_result, clubId, started) => {
       attempts.current.delete(clubId);
       if (!sameSession(started)) return;
+      // O nome, antes de o fã-clube sair dos seguidos.
+      const name = cachedFanClubOf(client, clubId)?.name;
       setFollowing(client, clubId, false, false);
       client.setQueryData<FollowedFanClubs>(fanClubKeys.follows(), (data) =>
         data ? { items: data.items.filter((item) => item.id !== clubId) } : data,
       );
       void client.invalidateQueries({ queryKey: fanClubKeys.feed() });
+      if (mounted.current) return;
+      AccessibilityInfo.announceForAccessibility(
+        t('fanClub.unfollow.done', { name: name ?? t('fanClub.follows.unavailableName') }),
+      );
     },
     onError: (error, clubId) => {
-      if (!isUncertainFailure(error)) attempts.current.delete(clubId);
+      const uncertain = isUncertainFailure(error);
+      if (!uncertain) attempts.current.delete(clubId);
+      if (uncertain) void client.invalidateQueries({ queryKey: fanClubKeys.public() });
+      if (mounted.current) return;
+      haptics.trigger('error');
+      AccessibilityInfo.announceForAccessibility(t(actionRefusal(error, 'clubUnfollow').key));
     },
     onSettled: () => {
       inFlight.current = false;
@@ -917,12 +981,15 @@ interface ReportVariables {
 /**
  * Denunciar uma publicação (`POST /fan-club-posts/:postId/report`, decisão
  * 18), na sheet "Denunciar publicação", no molde da denúncia de perfil: não é
- * otimista, não entra na fila e não muda cache nenhum. A chave é da tentativa:
- * a mesma depois de uma falha incerta com a mesma publicação e o mesmo motivo,
- * nova com outro motivo ou depois de uma recusa. A sheet diz a frase do
- * suspenso, com o link, sem o `Alert` por cima.
+ * otimista e não entra na fila. A chave é da tentativa: a mesma depois de uma
+ * falha incerta com a mesma publicação e o mesmo motivo, nova com outro motivo
+ * ou depois de uma recusa. A sheet diz a frase do suspenso, com o link, sem o
+ * `Alert` por cima; com a sheet já fechada, o hook anuncia a resposta. A
+ * publicação que saiu do ar (o 404) sai também das telas.
  */
 export function useReportFanClubPostMutation() {
+  const client = useQueryClient();
+  const mounted = useMounted();
   const attempt = useRef<Attempt | null>(null);
   const inFlight = useRef(false);
   const mutation = useMutation<ReportFanClubPostResult, Error, ReportVariables>({
@@ -938,9 +1005,18 @@ export function useReportFanClubPostMutation() {
     meta: { suspendedAlert: false },
     onSuccess: () => {
       attempt.current = null;
+      if (mounted.current) return;
+      AccessibilityInfo.announceForAccessibility(t('fanClub.report.sent'));
     },
     onError: (error) => {
       if (!isUncertainFailure(error)) attempt.current = null;
+      if (error instanceof ApiError && error.code === FAN_CLUB_ERROR_CODES.postNotFound) {
+        void client.invalidateQueries({ queryKey: fanClubKeys.public() });
+      }
+      if (mounted.current) return;
+      haptics.trigger('error');
+      const key = fanClubErrorText(error)?.key ?? actionRefusal(error, 'clubReport').key;
+      AccessibilityInfo.announceForAccessibility(t(key));
     },
     onSettled: () => {
       inFlight.current = false;

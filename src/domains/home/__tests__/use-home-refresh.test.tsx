@@ -3,6 +3,7 @@ import { act, renderHook, waitFor } from '@testing-library/react-native';
 import type { ReactNode } from 'react';
 
 import { buildFanCentralsFixture } from '@/domains/artists/fixtures';
+import { fanClubKeys } from '@/domains/fan-club';
 import { buildDailyMissionFixture } from '@/domains/missions/fixtures';
 import { buildFeedPageFixture } from '@/domains/posts/fixtures';
 import { GLOBAL_SCOPE, rankingKeys } from '@/domains/ranking';
@@ -105,6 +106,17 @@ describe('puxar para atualizar a home', () => {
       pages: [page],
       pageParams: [null],
     });
+  });
+
+  it('"Dos seus fã-clubes" (seção 34) busca de novo junto, só quando já veio: antes da abertura, nada é pedido', async () => {
+    const { result } = await renderLoaded();
+    await act(() => result.current.refresh());
+    expect(client.getQueryState(fanClubKeys.feed())).toBeUndefined();
+
+    client.setQueryData(fanClubKeys.feed(), { pages: [], pageParams: [null] });
+    await act(() => result.current.refresh());
+    expect(client.getQueryState(fanClubKeys.feed())?.isInvalidated).toBe(true);
+    expect(get.mock.calls.some(([url]) => String(url).includes('fan-club'))).toBe(false);
   });
 
   it('sem internet, o indicador não fica girando: as buscas esperam a rede e voltam sozinhas', async () => {

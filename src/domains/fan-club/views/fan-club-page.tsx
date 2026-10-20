@@ -1,7 +1,7 @@
 import { FlashList } from '@shopify/flash-list';
 import { router, useIsFocused, useLocalSearchParams, useNavigationContainerRef } from 'expo-router';
 import { Check, Ellipsis, Share2 } from 'lucide-react-native';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { AccessibilityInfo, ActivityIndicator, Alert, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -81,10 +81,7 @@ export function FanClubPageScreen() {
 }
 
 function ClubScreen({ clubId }: { clubId: string }) {
-  const insets = useSafeAreaInsets();
   const focused = useIsFocused();
-  const now = useNow();
-  const share = useShareFanClub();
   const { query: gate, live } = useFanClubGate();
   const page = useFanClubPageQuery(clubId, live !== null);
   const posts = useFanClubPostsQuery(clubId, live !== null);
@@ -92,7 +89,6 @@ function ClubScreen({ clubId }: { clubId: string }) {
   const [blocked, setBlocked] = useState<string | null>(null);
   const club = page.data;
   const gone = isClubGone(page.error) || isClubGone(posts.error);
-  const shown = live !== null && club !== undefined && !gone && blocked === null;
 
   const gateFailed = live === null && gate.isError && !isDefinitiveRefusal(gate.error);
   useAnnounceWhen(focused && gateFailed && !gate.isFetching, t('fanClub.loadError'));
@@ -102,8 +98,9 @@ function ClubScreen({ clubId }: { clubId: string }) {
     t('fanClub.loadError'),
   );
 
-  const shareClub = (target: FanClubPage): void =>
-    share({ id: target.id, name: target.name, artistName: target.artist.name });
+  if (live !== null && club && !gone && blocked === null) {
+    return <ClubContent club={club} posts={posts} onBlocked={setBlocked} />;
+  }
 
   let body;
   if (blocked !== null) {
@@ -153,61 +150,93 @@ function ClubScreen({ clubId }: { clubId: string }) {
       header={
         <View style={styles.headerRow}>
           <BackButton />
-          {shown ? (
-            <View style={styles.headerActions}>
-              <HeaderIconButton
-                icon={Share2}
-                onPress={() => shareClub(club)}
-                accessibilityLabel={t('fanClub.page.share')}
-                accessibilityHint={t('fanClub.page.shareHint')}
-                testID="fan-club-page-share"
-              />
-              {club.isOwner ? null : (
-                <BlockMenu club={club} onBlocked={(name) => setBlocked(name)} />
-              )}
-            </View>
-          ) : null}
         </View>
       }
     >
-      {shown ? (
-        <FlashList<FanClubPost>
-          data={posts.data?.pages.flatMap((item) => item.items) ?? []}
-          keyExtractor={(post) => post.id}
-          getItemType={(post) => post.kind}
-          renderItem={({ item }) => (
-            <FanClubPostCard
-              post={item}
-              now={now}
-              variant="page"
-              canReport={!club.isOwner}
-              onShare={() => shareClub(club)}
-              onReport={(post) =>
-                router.push({
-                  pathname: '/denunciar-publicacao/[publicacaoId]',
-                  params: { publicacaoId: post.id },
-                })
-              }
-              testID={`fan-club-post-${item.id}`}
+      <View style={styles.body}>{body}</View>
+    </Screen>
+  );
+}
+
+/**
+ * A página com o fã-clube, só depois da trava: o compartilhar (com o código
+ * de convite, `GET /me/invite`) e o menu moram aqui, para nada sair antes da
+ * abertura.
+ */
+function ClubContent({
+  club,
+  posts,
+  onBlocked,
+}: {
+  club: FanClubPage;
+  posts: PostsQuery;
+  onBlocked: (name: string) => void;
+}) {
+  const insets = useSafeAreaInsets();
+  const now = useNow();
+  const share = useShareFanClub();
+  // A falha das publicações só aparece na lista: o leitor ouve também.
+  const focused = useIsFocused();
+  const settled = focused && posts.isError && !posts.isFetching;
+  useAnnounceWhen(settled && posts.data === undefined, t('fanClub.page.postsError'));
+  useAnnounceWhen(settled && posts.isFetchNextPageError, t('fanClub.page.postsMoreError'));
+  const shareClub = (): void =>
+    share({ id: club.id, name: club.name, artistName: club.artist.name });
+
+  return (
+    <Screen
+      padded
+      contentStyle={styles.screen}
+      header={
+        <View style={styles.headerRow}>
+          <BackButton />
+          <View style={styles.headerActions}>
+            <HeaderIconButton
+              icon={Share2}
+              onPress={shareClub}
+              accessibilityLabel={t('fanClub.page.share')}
+              accessibilityHint={t('fanClub.page.shareHint')}
+              testID="fan-club-page-share"
             />
-          )}
-          extraData={{ now, club }}
-          ItemSeparatorComponent={ItemGap}
-          ListHeaderComponent={<ClubHeader club={club} />}
-          ListEmptyComponent={<PostsPlaceholder query={posts} />}
-          ListFooterComponent={<PostsFooter query={posts} />}
-          onEndReached={() => {
-            if (posts.hasNextPage && !posts.isFetchingNextPage && !posts.isFetchNextPageError) {
-              void posts.fetchNextPage({ cancelRefetch: false });
+            {club.isOwner ? null : <BlockMenu club={club} onBlocked={onBlocked} />}
+          </View>
+        </View>
+      }
+    >
+      <FlashList<FanClubPost>
+        data={posts.data?.pages.flatMap((item) => item.items) ?? []}
+        keyExtractor={(post) => post.id}
+        getItemType={(post) => post.kind}
+        renderItem={({ item }) => (
+          <FanClubPostCard
+            post={item}
+            now={now}
+            variant="page"
+            canReport={!club.isOwner}
+            onShare={shareClub}
+            onReport={(post) =>
+              router.push({
+                pathname: '/denunciar-publicacao/[publicacaoId]',
+                params: { publicacaoId: post.id },
+              })
             }
-          }}
-          contentContainerStyle={{ paddingBottom: insets.bottom + spacing.xl }}
-          showsVerticalScrollIndicator={false}
-          testID="fan-club-page"
-        />
-      ) : (
-        <View style={styles.body}>{body}</View>
-      )}
+            testID={`fan-club-post-${item.id}`}
+          />
+        )}
+        extraData={{ now, club }}
+        ItemSeparatorComponent={ItemGap}
+        ListHeaderComponent={<ClubHeader club={club} />}
+        ListEmptyComponent={<PostsPlaceholder query={posts} />}
+        ListFooterComponent={<PostsFooter query={posts} />}
+        onEndReached={() => {
+          if (posts.hasNextPage && !posts.isFetchingNextPage && !posts.isFetchNextPageError) {
+            void posts.fetchNextPage({ cancelRefetch: false });
+          }
+        }}
+        contentContainerStyle={{ paddingBottom: insets.bottom + spacing.xl }}
+        showsVerticalScrollIndicator={false}
+        testID="fan-club-page"
+      />
     </Screen>
   );
 }
@@ -222,17 +251,21 @@ function PageSkeleton() {
 
 /**
  * O menu da página (decisão 19): "Bloquear e denunciar" o gestor, pelo
- * `Alert` do sistema, que foca, anuncia e já é a confirmação; avisa que você
- * deixa de seguir. O bloqueio que dá certo some com a página e abre a sheet
+ * `Alert` do sistema, que foca, anuncia e já é a confirmação; para quem segue,
+ * avisa que você deixa de seguir. O bloqueio que dá certo some com a página e abre a sheet
  * "Denunciar perfil" com o gestor (a denúncia de perfil de hoje).
  */
 function BlockMenu({ club, onBlocked }: { club: FanClubPage; onBlocked: (name: string) => void }) {
   const online = useIsOnline();
   const owner = personName(club.owner);
+  // Só quem segue deixa de seguir (decisão 32): a frase não diz o que não acontece.
+  const following = club.isFollowing;
   const block = useBlockFanMutation(club.owner.uid, {
     onDone: () => {
       haptics.trigger('success');
-      AccessibilityInfo.announceForAccessibility(t('fanClub.page.blocked', { name: owner }));
+      AccessibilityInfo.announceForAccessibility(
+        t(following ? 'fanClub.page.blocked' : 'fanClub.page.blockedNotFollowing', { name: owner }),
+      );
       onBlocked(owner);
       router.push({
         pathname: '/denunciar-perfil/[fanId]',
@@ -248,7 +281,9 @@ function BlockMenu({ club, onBlocked }: { club: FanClubPage; onBlocked: (name: s
   const open = (): void => {
     Alert.alert(
       t('fanClub.page.blockTitle', { name: owner }),
-      t('fanClub.page.blockMessage', { name: owner }),
+      t(following ? 'fanClub.page.blockMessage' : 'fanClub.page.blockMessageNotFollowing', {
+        name: owner,
+      }),
       [
         { text: t('fanClub.page.cancel'), style: 'cancel' },
         {
@@ -345,13 +380,22 @@ function ClubHeader({ club }: { club: FanClubPage }) {
  * botão, para o foco do leitor ficar nele quando o rótulo troca. O gestor vê
  * "Seu fã-clube", sem toque. O seguir que fez a entrada sobe o "+N" e diz que
  * entrou na central. A recusa fica embaixo, anunciada: o limite de 50 leva a
- * "Fã-clubes que sigo", e a conta suspensa tem o link da equipe.
+ * "Fã-clubes que sigo", e a conta suspensa tem o link da equipe. Com
+ * "Seguindo" (o sucesso, ou a falha incerta que gravou), a tentativa aberta
+ * acaba e o aviso sai.
  */
 function FollowArea({ club }: { club: FanClubPage }) {
   const online = useIsOnline();
   const follow = useFollowFanClubMutation();
-  const [failure, setFailure] = useState<Failure>(null);
+  const [lastFailure, setFailure] = useState<Failure>(null);
   const joinLine = !club.isOwner && !club.isFollowing && !club.isMember;
+  const { closeAttempt } = follow;
+  // O seguir depois de deixar de seguir leva chave nova, e não a resposta guardada.
+  useEffect(() => {
+    if (club.isFollowing) closeAttempt(club.id);
+  }, [club.isFollowing, club.id, closeAttempt]);
+  // O aviso é do "Seguir": com "Seguindo", não fica embaixo.
+  const failure = club.isFollowing ? null : lastFailure;
 
   const run = (): void => {
     setFailure(null);

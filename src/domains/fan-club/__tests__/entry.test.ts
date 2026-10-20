@@ -274,6 +274,8 @@ describe('a trava do que os fãs veem (etapa 8: a página, a 1d, a Início e os 
   const routeMissing = new ApiError('notFound', 'Não encontrado.', 404, 'not_found');
   const offline = new ApiError('network', 'Sem rede.', null, null);
   const rateLimited = new ApiError('rateLimited', 'Devagar.', 429, 'rate_limited');
+  // O `getIdToken` que falhou antes de sair (o token vencido e o sinal ruim).
+  const notSent = new ApiError('unknown', 'Firebase: network-request-failed', null, null);
 
   it('sem resposta ou com a `api` de antes (o 404), nada aparece', () => {
     expect(liveFanClub(undefined, null)).toBeNull();
@@ -288,6 +290,12 @@ describe('a trava do que os fãs veem (etapa 8: a página, a 1d, a Início e os 
     expect(liveFanClub(mine(), rateLimited)).toEqual(mine());
     expect(isDefinitiveRefusal(offline)).toBe(false);
     expect(isDefinitiveRefusal(rateLimited)).toBe(false);
+  });
+
+  it('o pedido que nem saiu (sem status) não fecha a trava: pergunta de novo depois', () => {
+    expect(isDefinitiveRefusal(notSent)).toBe(false);
+    expect(liveFanClub(mine(), notSent)).toEqual(mine());
+    expect(liveFanClub(undefined, notSent)).toBeNull();
   });
 
   it('não olha o `open`: com o programa fechado, os fã-clubes que existem continuam (decisão 9)', () => {

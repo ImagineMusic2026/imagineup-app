@@ -104,7 +104,7 @@ function FollowedRow({ club }: { club: FollowedFanClub }) {
         onPress={() =>
           router.push({ pathname: '/deixar-de-seguir/[clubeId]', params: { clubeId: club.id } })
         }
-        accessibilityLabel={t('fanClub.follows.unfollowLabel', { name })}
+        accessibilityLabel={t('fanClub.follows.unfollowLabel', { name, artist: club.artistName })}
         testID={`followed-fan-club-unfollow-${club.id}`}
       />
     </Card>
@@ -126,10 +126,11 @@ export function FollowedFanClubsScreen() {
   const items = query.data?.items ?? [];
   const settled = focused && query.isError && !query.isFetching;
   useAnnounceWhen(settled && query.data === undefined, t('fanClub.follows.loadError'));
+  const failed = live === null && gate.isError && !isDefinitiveRefusal(gate.error);
+  useAnnounceWhen(focused && failed && !gate.isFetching, t('fanClub.loadError'));
 
   let empty;
   if (live === null) {
-    const failed = gate.isError && !isDefinitiveRefusal(gate.error);
     empty = gate.isPending ? (
       <FollowedSkeleton />
     ) : failed ? (

@@ -462,4 +462,11 @@ describe('prêmios de fã-clube (seção 34, decisões 42 e 51)', () => {
     expect(screen.queryByTestId('reward-prize-coupon')).not.toBeOnTheScreen();
     expect(screen.queryByTestId('reward-prize-instructions')).not.toBeOnTheScreen();
   });
+
+  it('o entregue ("O cupom já é o prêmio") fica com o cupom e a mensagem, sem o "Como usar", como na loja', () => {
+    render(<PrizeBody prize={prize({ status: 'delivered' })} headingRef={{ current: null }} />);
+    expect(screen.getByTestId('reward-prize-coupon')).toBeOnTheScreen();
+    expect(screen.getByTestId('reward-prize-message')).toBeOnTheScreen();
+    expect(screen.queryByTestId('reward-prize-instructions')).not.toBeOnTheScreen();
+  });
 });

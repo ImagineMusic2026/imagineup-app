@@ -11,10 +11,14 @@ import type { FanClubApplication, MyFanClub, MyFanClubClub } from './types';
 /**
  * Uma recusa definitiva do `GET /me/fan-club`: o 404 de rota que não existe,
  * que a `api` de antes da publicação dá, ou outra que não muda tentando de
- * novo. A falha incerta (rede, servidor) e o ritmo não contam.
+ * novo, sempre com a resposta do servidor (o status). A falha incerta (rede,
+ * servidor), o ritmo e o pedido que nem saiu (o `getIdToken` que falhou, sem
+ * status) não contam, como no `isFinalInviteRejection`.
  */
 export function isDefinitiveRefusal(error: unknown): boolean {
-  return error instanceof ApiError && !error.isRetryable && !error.isRateLimited;
+  return (
+    error instanceof ApiError && error.status !== null && !error.isRetryable && !error.isRateLimited
+  );
 }
 
 /**

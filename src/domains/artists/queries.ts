@@ -236,14 +236,18 @@ function refreshRewards(client: QueryClient, result: ActionRewards): void {
  * fã na central nova vem de lá), o mural da home também, que mostra os posts
  * das centrais do fã, e o ranking, sempre: o fã entra no ranking da central
  * com os pontos que já tinha nela (bloco 8). As páginas de fã-clube em cache
- * também (a linha "Você também entra na central" do seguir, seção 34). Com
- * pontos, o saldo e o nível também mudaram.
+ * também (a linha "Você também entra na central" do seguir, seção 34), e o
+ * estado do gestor que tinha saído e voltou, só se já veio (a trava, como no
+ * sair). Com pontos, o saldo e o nível também mudaram.
  */
 function refreshAfterJoin(client: QueryClient, result: JoinCentralResult): void {
   void client.invalidateQueries({ queryKey: artistKeys.centrals() });
   void client.invalidateQueries({ queryKey: artistKeys.detail(result.artistId) });
   void client.invalidateQueries({ queryKey: postKeys.feed() });
   void client.invalidateQueries({ queryKey: fanClubKeys.pages() });
+  if (client.getQueryData(fanClubKeys.mine()) !== undefined) {
+    void client.invalidateQueries({ queryKey: fanClubKeys.mine() });
+  }
   refreshRanking(client);
   refreshRewards(client, result);
   if (result.pointsAwarded <= 0) return;

@@ -54,10 +54,11 @@ export function ArtistFanClubsScreen() {
   const settled = focused && query.isError && !query.isFetching;
   useAnnounceWhen(settled && query.data === undefined, t('fanClub.artistCard.listError'));
   useAnnounceWhen(settled && query.isFetchNextPageError, t('fanClub.artistCard.listMoreError'));
+  const failed = live === null && gate.isError && !isDefinitiveRefusal(gate.error);
+  useAnnounceWhen(focused && failed && !gate.isFetching, t('fanClub.loadError'));
 
   let empty;
   if (live === null) {
-    const failed = gate.isError && !isDefinitiveRefusal(gate.error);
     empty = gate.isPending ? (
       <ListSkeleton />
     ) : failed ? (

@@ -1,5 +1,5 @@
 import { onlineManager, QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { Stack } from 'expo-router';
+import { Stack, router } from 'expo-router';
 import { Tabs } from 'expo-router/js-tabs';
 import {
   act,
@@ -1174,5 +1174,101 @@ describe('loja (1h) quando algo não carrega', () => {
 
     expect(await screen.findByLabelText(t('rewards.empty'))).toBeTruthy();
     expect(screen.queryByRole('header', { name: 'Ao seu alcance' })).toBeNull();
+  });
+});
+
+// O detalhe em modo prêmio (seção 34, decisão 51): o `?pedido=CODIGO` da
+// fileira "Seus prêmios" abre o prêmio de fã-clube, que sai do `prizes` da loja.
+describe('detalhe em modo prêmio (seção 34)', () => {
+  const PRIZE_CARD = /^Prêmio do fã-clube: Ingresso de cortesia\. Aprovado em /;
+  const PRIZE_CODE = /^Código do prêmio: UP-FC2JRW\. Aprovado em /;
+
+  /** A loja da `api` de hoje (`e019948`): sem o campo `prizes`. */
+  const withoutPrizes = (): RewardsResponse => {
+    const response = buildRewardsFixture(new Date());
+    delete response.prizes;
+    return response;
+  };
+
+  it('o card da loja abre o prêmio: o código, o cupom, a mensagem e o "Como usar", sem custo e sem Resgatar', async () => {
+    const view = renderRouter(appTree, { initialUrl: '/recompensas' });
+    fireEvent.press(await screen.findByRole('button', { name: PRIZE_CARD }));
+
+    await waitFor(() => expect(view.getPathname()).toBe('/recompensa/cortesia-sao-joao'));
+    expect(view.getSearchParams()).toEqual(expect.objectContaining({ pedido: 'UP-FC2JRW' }));
+    expect(await screen.findByRole('header', { name: 'Ingresso de cortesia' })).toBeTruthy();
+    expect(screen.getByLabelText(PRIZE_CODE)).toBeTruthy();
+    expect(screen.getByLabelText('Cupom: CORTESIA-IRARA')).toBeTruthy();
+    expect(screen.getByTestId('reward-prize-message')).toBeTruthy();
+    expect(screen.getByTestId('reward-prize-instructions')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /Resgatar/ })).toBeNull();
+  });
+
+  it('a frio, abre sozinho, e fechar leva à loja', async () => {
+    const view = renderRouter(appTree, {
+      initialUrl: '/recompensa/cortesia-sao-joao?pedido=UP-FC2JRW',
+    });
+    expect(await screen.findByLabelText(PRIZE_CODE)).toBeTruthy();
+    fireEvent.press(screen.getByRole('button', { name: t('common.close') }));
+    await waitFor(() => expect(view.getPathname()).toBe('/recompensas'));
+  });
+
+  it.each([
+    ['o código que não existe', '/recompensa/cortesia-sao-joao?pedido=UP-XXXXXX'],
+    ['o código de outra recompensa', '/recompensa/videochamada?pedido=UP-FC2JRW'],
+  ])('%s diz que o prêmio não está mais disponível, sem o Resgatar', async (_case, url) => {
+    renderRouter(appTree, { initialUrl: url });
+    expect(await screen.findByLabelText(t('rewards.prizes.notFound'))).toBeTruthy();
+    await waitFor(() => expect(announcements()).toEqual([t('rewards.prizes.notFound')]));
+    expect(screen.queryByRole('button', { name: /Resgatar/ })).toBeNull();
+    expect(screen.queryByTestId('reward-prize-details')).toBeNull();
+  });
+
+  it('com a api de hoje (sem `prizes`), nada do prêmio aparece: nem na loja, nem pelo link', async () => {
+    mockApi({ rewards: withoutPrizes });
+    renderRouter(appTree, { initialUrl: '/recompensas' });
+    expect(
+      await screen.findByRole('button', { name: featuredLabel('10.000 pontos') }),
+    ).toBeTruthy();
+    const headers = screen.getAllByRole('header').map((node) => node.props.children);
+    expect(headers).toEqual(['Resgatar', 'Ao seu alcance']);
+    expect(screen.queryByRole('button', { name: PRIZE_CARD })).toBeNull();
+
+    act(() =>
+      router.push({
+        pathname: '/recompensa/[recompensaId]',
+        params: { recompensaId: 'cortesia-sao-joao', pedido: 'UP-FC2JRW' },
+      }),
+    );
+    expect(await screen.findByLabelText(t('rewards.prizes.notFound'))).toBeTruthy();
+    expect(screen.queryByLabelText(PRIZE_CODE)).toBeNull();
+    expect(screen.queryByText('CORTESIA-IRARA')).toBeNull();
+  });
+
+  it('a loja que não carrega: anuncia a falha e, ao voltar, leva o foco ao título do prêmio', async () => {
+    mockApi();
+    const answer = get.getMockImplementation();
+    get.mockImplementationOnce(async (url: string) => {
+      if (url === '/rewards') throw new Error('fora do ar');
+      return answer?.(url) as never;
+    });
+    renderRouter(appTree, { initialUrl: '/recompensa/cortesia-sao-joao?pedido=UP-FC2JRW' });
+
+    expect(await screen.findByLabelText(t('rewards.details.loadError'))).toBeTruthy();
+    await waitFor(() => expect(announcements()).toEqual([t('rewards.details.loadError')]));
+    fireEvent.press(screen.getByRole('button', { name: t('common.retry') }));
+    expect(await screen.findByRole('header', { name: 'Ingresso de cortesia' })).toBeTruthy();
+    await waitFor(() =>
+      expect(
+        jest
+          .mocked(AccessibilityInfo.sendAccessibilityEvent)
+          .mock.calls.some(
+            ([node, event]) =>
+              event === 'focus' &&
+              (node as { props?: { accessibilityRole?: string } }).props?.accessibilityRole ===
+                'header',
+          ),
+      ).toBe(true),
+    );
   });
 });

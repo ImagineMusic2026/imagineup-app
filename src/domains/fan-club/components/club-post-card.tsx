@@ -7,7 +7,7 @@ import { PressableScale } from '@/components/pressable-scale';
 import { RemoteImage } from '@/components/remote-image';
 import { Text } from '@/components/text';
 import { t } from '@/i18n';
-import { colors, radii, spacing } from '@/theme';
+import { colors, layout, radii, spacing } from '@/theme';
 import { formatRelativeAgo, formatRelativeAgoSpoken } from '@/utils/date';
 
 import { excerptOf } from '../format';
@@ -134,9 +134,12 @@ const styles = StyleSheet.create({
   card: {
     gap: spacing.md,
   },
+  // O alvo de toque inteiro, mesmo com o nome numa linha só.
   club: {
     alignItems: 'flex-start',
+    justifyContent: 'center',
     gap: spacing.xs,
+    minHeight: layout.minTouchTarget,
   },
   feedBody: {
     flexDirection: 'row',

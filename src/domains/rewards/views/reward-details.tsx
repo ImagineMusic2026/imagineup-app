@@ -160,24 +160,39 @@ function PrizeSheet({ rewardId, code }: { rewardId: string; code: string }) {
   const query = usePrizeQuery(rewardId, code);
   const heading = useRef<View>(null);
   const prize = query.data;
+  // Como no resgate: o "Tentar de novo" fica na tela enquanto busca, e o
+  // prêmio que chegou leva o foco ao título.
+  const [retrying, setRetrying] = useState(false);
+  const [recoveries, setRecoveries] = useState(0);
+  useFocusOnChange(String(recoveries), heading);
   useAnnounceWhen(
     prize === undefined && query.isError && !query.isFetching,
     t('rewards.details.loadError'),
   );
   useAnnounceWhen(prize === null, t('rewards.prizes.notFound'));
 
+  const retry = (): void => {
+    setRetrying(true);
+    void query
+      .refetch()
+      .then((result) => {
+        if (result.data) setRecoveries((count) => count + 1);
+      })
+      .finally(() => setRetrying(false));
+  };
+
   let body: ReactNode;
   if (prize) {
     body = <PrizeBody prize={prize} headingRef={heading} />;
   } else if (prize === null) {
     body = <EmptyState message={t('rewards.prizes.notFound')} />;
-  } else if (query.isError) {
+  } else if (query.isError || retrying) {
     body = (
       <EmptyState
         tone="error"
         message={t('rewards.details.loadError')}
-        onAction={() => void query.refetch()}
-        actionLoading={query.isFetching}
+        onAction={retry}
+        actionLoading={retrying}
       />
     );
   } else {

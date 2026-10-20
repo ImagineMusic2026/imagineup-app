@@ -296,7 +296,7 @@ function serverAnswers(): void {
   });
 }
 
-/** Nenhuma rota do fã-clube além do `GET /me/fan-club`. */
+/** Nenhuma rota do fã-clube além do `GET /me/fan-club`, nem o convite do compartilhar. */
 function expectOnlyTheGate(): void {
   const { fetchMyFanClub, ...others } = mocked;
   expect(fetchMyFanClub).toHaveBeenCalled();
@@ -304,6 +304,7 @@ function expectOnlyTheGate(): void {
     if (typeof fn !== 'function') continue;
     expect([name, jest.mocked(fn).mock.calls.length]).toEqual([name, 0]);
   }
+  expect(api.get).not.toHaveBeenCalled();
 }
 
 const announced = () => [
@@ -325,6 +326,10 @@ function confirmAlerts(): void {
 
 beforeEach(() => {
   jest.clearAllMocks();
+  // A resposta que um teste deixou no fã-clube e na `api` não passa ao seguinte
+  // (o `resetAllMocks` apagaria também as fábricas e o setup do Jest).
+  for (const fn of Object.values(mocked)) if (typeof fn === 'function') jest.mocked(fn).mockReset();
+  for (const fn of Object.values(api)) jest.mocked(fn).mockReset();
   useSessionStore.setState({
     status: 'signedIn',
     user: { uid: 'uid-camila', email: 'camila@teste.imagineup', displayName: null, photoURL: null },
@@ -405,6 +410,16 @@ describe('antes da abertura (o 404 da api de antes), nada aparece e nada mais é
     expectOnlyTheGate();
     // A recusa definitiva não é perguntada de novo a cada tela que monta.
     expect(mocked.fetchMyFanClub).toHaveBeenCalledTimes(1);
+
+    // Os Ajustes perguntam de novo a cada abertura (etapa 7), e o 404 não mostra nada.
+    act(() => router.back());
+    act(() => router.push('/ajustes'));
+    expect(await screen.findByRole('header', { name: 'Ajustes' })).toBeTruthy();
+    await waitFor(() => expect(mocked.fetchMyFanClub).toHaveBeenCalledTimes(2));
+    await act(async () => undefined);
+    expect(screen.queryByTestId('settings-fan-club-follows')).toBeNull();
+    expect(screen.queryByText('Fã-clubes que sigo')).toBeNull();
+    expectOnlyTheGate();
   });
 });
 
@@ -521,6 +536,41 @@ describe('seguir (decisão 26)', () => {
     expect(mocked.followFanClub.mock.calls[2]?.[0].idempotencyKey).not.toBe(first);
   });
 
+  it('a falha incerta que gravou: "Seguindo" sem o aviso, e o seguir depois de deixar de seguir leva chave nova', async () => {
+    // O servidor: grava o seguir e perde a resposta; depois, o deixar de seguir.
+    let following = false;
+    mocked.fetchFanClub.mockImplementation(() =>
+      Promise.resolve(page({ isMember: true, isFollowing: following })),
+    );
+    mocked.followFanClub
+      .mockImplementationOnce(() => {
+        following = true;
+        return Promise.reject(offline());
+      })
+      .mockResolvedValueOnce({ clubId: 'fc-1', following: true, joined: false, pointsAwarded: 0 });
+    mocked.unfollowFanClub.mockImplementation(() => {
+      following = false;
+      return Promise.resolve({ clubId: 'fc-1', following: false });
+    });
+    const view = renderRouter(appTree, { initialUrl: '/fa-clube/fc-1' });
+
+    fireEvent.press(await screen.findByRole('button', { name: 'Seguir o fã-clube Nenho Sempre' }));
+    // A página busca de novo e diz "Seguindo"; o aviso da falha sai.
+    const followingButton = await screen.findByRole('button', {
+      name: 'Seguindo o fã-clube Nenho Sempre',
+    });
+    expect(screen.queryByText('Não deu para seguir o fã-clube. Tente de novo.')).toBeNull();
+    fireEvent.press(followingButton);
+    await waitFor(() => expect(view.getPathname()).toBe('/deixar-de-seguir/fc-1'));
+    fireEvent.press(screen.getByTestId('fan-club-unfollow-confirm'));
+    await waitFor(() => expect(view.getPathname()).toBe('/fa-clube/fc-1'));
+
+    fireEvent.press(await screen.findByRole('button', { name: 'Seguir o fã-clube Nenho Sempre' }));
+    await screen.findByRole('button', { name: 'Seguindo o fã-clube Nenho Sempre' });
+    const [first, second] = mocked.followFanClub.mock.calls.map(([vars]) => vars.idempotencyKey);
+    expect(second).not.toBe(first);
+  });
+
   it('o limite de 50 mostra o atalho para "Fã-clubes que sigo"', async () => {
     mocked.followFanClub.mockRejectedValue(refused('follow_limit'));
     const view = renderRouter(appTree, { initialUrl: '/fa-clube/fc-1' });
@@ -615,6 +665,7 @@ describe('a denúncia da publicação (decisão 18)', () => {
 
 describe('"Bloquear e denunciar" o gestor (decisões 19 e 32)', () => {
   it('confirma, bloqueia, some com o fã-clube e abre a denúncia de perfil com o nome do gestor', async () => {
+    mocked.fetchFanClub.mockResolvedValue(page({ isFollowing: true, isMember: true }));
     confirmAlerts();
     const view = renderRouter(appTree, { initialUrl: '/fa-clube/fc-1' });
 
@@ -637,6 +688,19 @@ describe('"Bloquear e denunciar" o gestor (decisões 19 e 32)', () => {
         'Você bloqueou @thalitasan. Este fã-clube não aparece mais para você.',
       ),
     ).toBeTruthy();
+  });
+
+  it('quem não segue não ouve que deixou de seguir (só quem segue deixa, decisão 32)', async () => {
+    confirmAlerts();
+    const view = renderRouter(appTree, { initialUrl: '/fa-clube/fc-1' });
+
+    fireEvent.press(await screen.findByLabelText('Mais opções do fã-clube'));
+    const message = jest.mocked(Alert.alert).mock.calls[0]?.[1];
+    expect(message).toContain('Você para de ver o fã-clube e as publicações de @thalitasan.');
+    expect(message).not.toContain('deixa de seguir');
+    await waitFor(() => expect(view.getPathname()).toBe('/denunciar-perfil/fa-thalita'));
+    expect(announced()).toContain('Você bloqueou @thalitasan.');
+    expect(announced().join(' ')).not.toContain('deixou de seguir');
   });
 });
 
@@ -703,7 +767,9 @@ describe('"Fã-clubes que sigo" (34.9, item 10)', () => {
     mocked.unfollowFanClub.mockResolvedValue({ clubId: 'fc-2', following: false });
     const view = renderRouter(appTree, { initialUrl: '/fa-clubes-que-sigo' });
 
-    fireEvent.press(await screen.findByRole('button', { name: 'Deixar de seguir Rock Raiz' }));
+    fireEvent.press(
+      await screen.findByRole('button', { name: 'Deixar de seguir Rock Raiz, de Rock Salles' }),
+    );
     await waitFor(() => expect(view.getPathname()).toBe('/deixar-de-seguir/fc-2'));
     fireEvent.press(screen.getByTestId('fan-club-unfollow-confirm'));
     await waitFor(() => expect(view.getPathname()).toBe('/fa-clubes-que-sigo'));

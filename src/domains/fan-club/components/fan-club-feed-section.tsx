@@ -11,6 +11,7 @@ import {
 import { EmptyState } from '@/components/empty-state';
 import { SectionHeader } from '@/components/section-header';
 import { useFanCentralsQuery } from '@/domains/artists';
+import { useAnnounceWhen } from '@/hooks/use-announce-when';
 import { useNow } from '@/hooks/use-now';
 import { t } from '@/i18n';
 import { spacing } from '@/theme';
@@ -37,15 +38,29 @@ const SCROLL_THROTTLE = 64;
  * oficial não muda.
  */
 export function FanClubFeedSection() {
-  const { width } = useWindowDimensions();
-  const now = useNow();
-  const share = useShareFanClub();
-  const centrals = useFanCentralsQuery();
   const { live } = useFanClubGate();
   const feed = useFanClubFeedQuery(live !== null);
   const posts = feed.data?.pages.flatMap((page) => page.items) ?? [];
   if (live === null || posts.length === 0) return null;
+  return <FeedCarousel feed={feed} posts={posts} />;
+}
 
+/**
+ * A fileira, só depois da trava e com publicação: o compartilhar (com o código
+ * de convite, `GET /me/invite`) mora aqui, para nada sair antes da abertura.
+ */
+function FeedCarousel({
+  feed,
+  posts,
+}: {
+  feed: ReturnType<typeof useFanClubFeedQuery>;
+  posts: FanClubPost[];
+}) {
+  const { width } = useWindowDimensions();
+  const now = useNow();
+  const share = useShareFanClub();
+  const centrals = useFanCentralsQuery();
+  useAnnounceWhen(feed.isFetchNextPageError && !feed.isFetching, t('fanClub.feed.moreError'));
   const cardWidth = Math.min(width - spacing.gutter * 2 - PEEK, CARD_MAX_WIDTH);
   // O artista da mensagem de compartilhar, das centrais do fã (seguir faz entrar
   // nelas); sem ele, a mensagem sai sem o artista.

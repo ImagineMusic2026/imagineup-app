@@ -3,8 +3,7 @@ import { useRef, useState } from 'react';
 
 import { useMyRsvpsQuery } from '@/domains/agenda';
 import { useFanCentralsQuery } from '@/domains/artists';
-// As chaves do fã-clube pelo arquivo sem dependências, como o `artists` e os `posts`.
-import { fanClubKeys } from '@/domains/fan-club/keys';
+import { fanClubKeys } from '@/domains/fan-club';
 import { useDailyMissionQuery } from '@/domains/missions';
 import { useFeedQuery } from '@/domains/posts';
 import { refreshRanking } from '@/domains/ranking';
