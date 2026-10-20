@@ -1,8 +1,8 @@
 // O fã-clube gerido pelo fã (docs/arquitetura-api.md, seção 34): a base da
-// etapa 6 de 34.14. As telas (os Ajustes, a candidatura e o "Meu fã-clube"; a
-// página, o seguir, a Início e os seguidos) chegam nas etapas 7 e 8, com o
-// queries.ts e as views. Os domínios de composição vão importar daqui, e o
-// `artists` e os `posts`, as chaves pelo arquivo (`fan-club/keys.ts`).
+// etapa 6 de 34.14 e as telas da etapa 7 (os Ajustes, a candidatura e o "Meu
+// fã-clube"). A página, o seguir, a Início e os seguidos chegam na etapa 8. Os
+// domínios de composição importam daqui, e o `artists` e os `posts`, as chaves
+// pelo arquivo (`fan-club/keys.ts`).
 export {
   FAN_CLUB_ERROR_CODES,
   FAN_CLUB_FOLLOWS_MAX,
@@ -27,7 +27,23 @@ export {
   UNAVAILABLE_TEXTS,
   type FanClubErrorText,
 } from './describe';
+export {
+  canApplyNow,
+  fanClubStageOf,
+  hasNewPrize,
+  settingsRowOf,
+  shownFanClub,
+  type FanClubSettingsRow,
+  type FanClubStage,
+  type NextRound,
+} from './entry';
 export { fanClubKeys } from './keys';
+export {
+  useMyFanClubQuery,
+  useShownFanClub,
+  type FanClubPostStep,
+  type NewFanClubPost,
+} from './queries';
 export type {
   FanClubApplication,
   FanClubApplicationBody,
@@ -52,3 +68,6 @@ export type {
   MyFanClubClub,
   OwnFanClubPost,
 } from './types';
+export { FanClubApplyScreen } from './views/fan-club-apply';
+export { MyFanClubScreen } from './views/my-fan-club';
+export { NewFanClubPostScreen } from './views/new-fan-club-post';

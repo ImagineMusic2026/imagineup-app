@@ -43,6 +43,7 @@ import { openSupportEmail, openWebPage } from '@/services/web-page';
 import { useSessionStore } from '@/stores/session';
 import { colors, spacing } from '@/theme';
 
+import { FanClubSection } from '../components/fan-club-section';
 import { readAppVersion, type AppVersionInfo } from '../version';
 
 const TRAILING_ICON_SIZE = 18;
@@ -113,7 +114,8 @@ function editProfileMeta(profile: FanProfile | null | undefined, now: Date): str
 /**
  * Ajustes (sem desenho, no visual das outras telas), aberto pela engrenagem
  * do perfil. De cima para baixo: o aviso da conta suspensa (só com a
- * suspensão, seção 29, frente E); o perfil, com "Editar perfil" (bloco 9); a
+ * suspensão, seção 29, frente E); o perfil, com "Editar perfil" (bloco 9); o
+ * fã-clube, só com o programa aberto ou com candidatura (seção 34); a
  * segurança, com "Fãs bloqueados" (seção 29, frente B: a mesma palavra do
  * bloco do perfil público); a conta, com "Trocar e-mail" e "Trocar senha" (só
  * na conta com senha, frente D), Sair e Excluir conta; e o "Sobre" (frente C),
@@ -169,6 +171,7 @@ export function SettingsScreen() {
           testID="settings-edit-profile"
         />
       </View>
+      <FanClubSection />
       <SectionLabel>{t('settings.security')}</SectionLabel>
       <View style={styles.rows}>
         <ListRow

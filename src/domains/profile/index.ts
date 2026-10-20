@@ -1,5 +1,7 @@
 export { SuspendedNotice, SuspensionContact } from './components/suspended-notice';
 export { SuspensionWatcher } from './components/suspension-watcher';
+// As redes como o perfil e o servidor guardam, para a candidatura do fã-clube (seção 34).
+export { normalizeSocialHandle, type SocialHandleResult } from './details';
 export { fanProfileHref } from './fan-profile-href';
 export { useFanIdentity, type FanIdentity } from './hooks/use-fan-identity';
 export { useSuspension, type Suspension } from './hooks/use-suspension';

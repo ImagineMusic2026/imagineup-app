@@ -598,7 +598,7 @@ function checkName(raw: string): string {
   const name = raw.trim().replace(/\s+/g, ' ');
   if (name.length < FAN_CLUB_NAME_MIN || name.length > FAN_CLUB_NAME_MAX) invalid('name');
   const plain = name.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase();
-  if (/(^|[^a-z0-9])oficial([^a-z0-9]|$)/.test(plain)) invalid('name', 'official');
+  if (/(^|[ \-_.,;:/()])oficial([ \-_.,;:/()]|$)/.test(plain)) invalid('name', 'official');
   return name;
 }
 
