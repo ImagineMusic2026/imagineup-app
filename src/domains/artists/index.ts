@@ -20,6 +20,7 @@ export {
   joinArtistIdOf,
   useFollowArtistsMutation,
   useIsJoinPending,
+  useJoinCelebration,
   useJoinCentralMutation,
   useLeaveCentralMutation,
   type FollowArtistsOptions,

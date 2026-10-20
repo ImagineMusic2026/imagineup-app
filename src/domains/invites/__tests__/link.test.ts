@@ -74,6 +74,23 @@ describe('o link no servidor', () => {
     expect(inviteLinkId({ kind: 'agenda' })).toBe('agenda');
     expect(inviteLinkId({ kind: 'post', postId: 'p-clipe' })).toBe('post:p-clipe');
     expect(inviteLinkId({ kind: 'artist', artistId: 'nettobrito' })).toBe('artist:nettobrito');
+    // Seção 34, decisão 22: o fã-clube com o id, como o LINK_ID do servidor.
+    expect(inviteLinkId({ kind: 'fanclub', clubId: 'fc-netto-de-coracao' })).toBe(
+      'fanclub:fc-netto-de-coracao',
+    );
+  });
+
+  it('o link do fã-clube leva o código e volta para a página dele', () => {
+    const link = buildInviteUrl('CAMILA12', '/fa-clube/fc-netto-de-coracao');
+    expect(link).toBe(`${SHARE_LINK_BASE}/fa-clube/fc-netto-de-coracao?ref=CAMILA12`);
+    expect(parseInviteLink(link)).toEqual({
+      code: 'CAMILA12',
+      destination: '/fa-clube/fc-netto-de-coracao',
+      utm: {},
+    });
+    expect(invitePathForServer('/fa-clube/fc-netto-de-coracao?ref=CAMILA12')).toBe(
+      '/fa-clube/fc-netto-de-coracao',
+    );
   });
 
   it('a base do servidor troca o domínio do link, sem build nova', () => {

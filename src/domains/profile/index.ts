@@ -3,6 +3,18 @@ export { SuspensionWatcher } from './components/suspension-watcher';
 export { fanProfileHref } from './fan-profile-href';
 export { useFanIdentity, type FanIdentity } from './hooks/use-fan-identity';
 export { useSuspension, type Suspension } from './hooks/use-suspension';
+// A foto da publicação do fã-clube (seção 34, decisão 15): a galeria sem o
+// recorte do sistema e o preparo em 4:5, com a foto e a miniatura.
+export {
+  CLUB_PHOTO_SIZE,
+  CLUB_THUMB_SIZE,
+  PhotoPickError,
+  pickPhoto,
+  prepareFanClubPhoto,
+  type PickedPhoto,
+  type PreparedFanClubPhoto,
+  type PreparedImage,
+} from './photo';
 export {
   fanKeys,
   profileKeys,

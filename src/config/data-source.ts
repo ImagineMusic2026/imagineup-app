@@ -31,7 +31,13 @@ export type DataDomain =
    */
   | 'profile'
   /** Loja e resgate (bloco 10). */
-  | 'rewards';
+  | 'rewards'
+  /**
+   * O fã-clube gerido pelo fã (seção 34): /me/fan-club, as publicações, a
+   * página, o seguir e a Início. As rotas estão na `api` desde as etapas 1 a
+   * 4 de 34.14, e nenhuma tela as chama antes das etapas 7 e 8.
+   */
+  | 'fanClub';
 
 /**
  * Domínios com rota no servidor. Cada bloco acrescenta o seu no commit que
@@ -48,6 +54,7 @@ export const SERVER_DOMAINS: ReadonlySet<DataDomain> = new Set<DataDomain>([
   'ranking',
   'profile',
   'rewards',
+  'fanClub',
 ]);
 
 /**
@@ -73,6 +80,7 @@ const ALL_DOMAINS: readonly DataDomain[] = [
   'ranking',
   'profile',
   'rewards',
+  'fanClub',
 ];
 
 /** true enquanto algum domínio ainda lê das fixtures (o estado em memória delas importa). */

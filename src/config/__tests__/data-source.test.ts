@@ -17,6 +17,7 @@ const DOMAINS: DataDomain[] = [
   'ranking',
   'profile',
   'rewards',
+  'fanClub',
 ];
 
 /** O data-source com o env dado, carregado de novo. */
@@ -39,7 +40,7 @@ describe('fonte de cada domínio', () => {
     expect(usesFixtures()).toBe(true);
   });
 
-  it('com a API, a carteira (bloco 1), as centrais (bloco 4), o convite (bloco 5), o mural e a agenda (bloco 6), as missões e conquistas (bloco 7), o ranking (bloco 8), o @ e a foto (bloco 9) e a loja (bloco 10) vão para o servidor: nada fica nas fixtures', () => {
+  it('com a API, a carteira (bloco 1), as centrais (bloco 4), o convite (bloco 5), o mural e a agenda (bloco 6), as missões e conquistas (bloco 7), o ranking (bloco 8), o @ e a foto (bloco 9), a loja (bloco 10) e o fã-clube (seção 34) vão para o servidor: nada fica nas fixtures', () => {
     const { sourceOf, usesFixtures, SERVER_DOMAINS } = load({
       apiUrl: 'https://southamerica-east1-imagine-up-app.cloudfunctions.net/api',
     });
@@ -54,6 +55,7 @@ describe('fonte de cada domínio', () => {
       'ranking',
       'profile',
       'rewards',
+      'fanClub',
     ]);
     expect(DOMAINS.filter((domain) => sourceOf(domain) === 'api')).toEqual([...DOMAINS]);
     // Com o bloco 10, nenhum domínio fica nas fixtures: o cache todo vai para o
@@ -61,7 +63,7 @@ describe('fonte de cada domínio', () => {
     expect(usesFixtures()).toBe(false);
   });
 
-  it('com o emulador, as centrais, o convite, o mural, a agenda, as missões, as conquistas, o ranking, o perfil e a loja vêm da api dele', () => {
+  it('com o emulador, as centrais, o convite, o mural, a agenda, as missões, as conquistas, o ranking, o perfil, a loja e o fã-clube vêm da api dele', () => {
     const emulatorApi = realServer().resolveApiUrl('10.0.2.2', undefined);
     const { sourceOf } = load({ apiUrl: emulatorApi });
     expect(sourceOf('artists')).toBe('api');
@@ -73,6 +75,7 @@ describe('fonte de cada domínio', () => {
     expect(sourceOf('ranking')).toBe('api');
     expect(sourceOf('profile')).toBe('api');
     expect(sourceOf('rewards')).toBe('api');
+    expect(sourceOf('fanClub')).toBe('api');
   });
 });
 

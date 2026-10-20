@@ -201,3 +201,85 @@ describe('actionRefusal: o texto recusado pelo filtro', () => {
     expect(phrase(suspended, 'profile')).toEqual({ type: 'suspended', text: SHORT });
   });
 });
+
+// As superfícies do fã-clube (seção 34, 34.9): o 403 do suspenso e o 429 do
+// teto de cada uma, o 404 das que leem o fã-clube ou a publicação, e o texto
+// barrado pelo filtro na candidatura e na publicação.
+describe('actionRefusal: o fã-clube', () => {
+  const clubNotFound = new ApiError('notFound', 'x', 404, 'fan_club_not_found');
+  const postNotFound = new ApiError('notFound', 'x', 404, 'fan_club_post_not_found');
+  const contentRefused = new ApiError('validation', 'x', 400, 'fan_club_invalid', {
+    field: 'name',
+    reason: 'not_allowed',
+  });
+  const CONTENT = 'Conforme os Termos de uso do ImagineUP, este texto não pode ser usado.';
+
+  it.each<[RefusalAction, string, string, string]>([
+    [
+      'clubApply',
+      'Você chegou ao limite de candidaturas de hoje. Tente amanhã.',
+      'Sua conta está suspensa. Você não pode se candidatar a um fã-clube.',
+      'Não deu para enviar a candidatura. Tente de novo.',
+    ],
+    [
+      'clubUpload',
+      'Você chegou ao limite de fotos de hoje no fã-clube. Tente amanhã.',
+      'Sua conta está suspensa. Você não pode publicar no fã-clube.',
+      'Não deu para enviar a foto. Tente de novo.',
+    ],
+    [
+      'clubPost',
+      'Você chegou ao limite de publicações de hoje. Tente amanhã.',
+      'Sua conta está suspensa. Você não pode publicar no fã-clube.',
+      'Não deu para enviar a publicação. Tente de novo.',
+    ],
+    [
+      'clubReport',
+      'Você chegou ao limite de denúncias de hoje. Tente amanhã.',
+      SHORT,
+      'Não deu para enviar a denúncia. Tente de novo.',
+    ],
+    [
+      'clubFollow',
+      'Você chegou ao limite de hoje para seguir fã-clubes e entrar em centrais. Tente amanhã.',
+      'Sua conta está suspensa. Você não pode seguir fã-clubes.',
+      'Não deu para seguir o fã-clube. Tente de novo.',
+    ],
+  ])('%s: o teto, o suspenso, o ritmo e o genérico', (action, daily, refused, generic) => {
+    expect(phrase(dailyLimit, action)).toEqual({ type: 'dailyLimit', text: daily });
+    expect(phrase(suspended, action)).toEqual({ type: 'suspended', text: refused });
+    expect(phrase(rateLimited, action)).toEqual({ type: 'rateLimited', text: RATE });
+    expect(phrase(network, action)).toEqual({ type: null, text: generic });
+    expect(t(dailyLimitKey(action))).toBe(daily);
+  });
+
+  it.each<[RefusalAction, string]>([
+    ['clubWithdraw', 'Não deu para desistir da candidatura. Tente de novo.'],
+    ['clubRules', 'Não deu para aceitar o regulamento. Tente de novo.'],
+    ['clubRemovePost', 'Não deu para tirar a publicação. Tente de novo.'],
+    ['clubUnfollow', 'Não deu para deixar de seguir. Tente de novo.'],
+  ])('%s não tem teto do dia: o 429 do teto cai no genérico', (action, generic) => {
+    expect(phrase(dailyLimit, action)).toEqual({ type: null, text: generic });
+    expect(phrase(rateLimited, action)).toEqual({ type: 'rateLimited', text: RATE });
+    expect(phrase(network, action)).toEqual({ type: null, text: generic });
+  });
+
+  it('o 404: o fã-clube no seguir, a publicação no retirar e na denúncia', () => {
+    const club = 'Este fã-clube não está disponível.';
+    const post = 'Esta publicação não está mais disponível.';
+    expect(phrase(clubNotFound, 'clubFollow')).toEqual({ type: null, text: club });
+    expect(phrase(postNotFound, 'clubRemovePost')).toEqual({ type: null, text: post });
+    expect(phrase(postNotFound, 'clubReport')).toEqual({ type: null, text: post });
+  });
+
+  it('o texto barrado pelo filtro: a frase dos Termos de uso na candidatura e na publicação', () => {
+    expect(phrase(contentRefused, 'clubApply')).toEqual({ type: 'content', text: CONTENT });
+    expect(phrase(contentRefused, 'clubPost')).toEqual({ type: 'content', text: CONTENT });
+    // Seguir não manda texto: o mesmo erro fica com o genérico.
+    expect(phrase(contentRefused, 'clubFollow').type).toBeNull();
+  });
+
+  it('desistir, retirar e deixar de seguir são livres para o suspenso: o 403 fica com a frase de sempre', () => {
+    expect(phrase(suspended, 'clubWithdraw')).toEqual({ type: 'suspended', text: SHORT });
+  });
+});

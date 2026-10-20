@@ -11,7 +11,16 @@ import { ApiError, isAccountSuspended, isContentRefusal } from './errors';
  * - `report`: denunciar um comentário;
  * - `reportFan`: denunciar um perfil (o teto é o mesmo `report`, seção 29);
  * - `block` e `unblock`: bloquear e desbloquear um fã (livres para o
- *   suspenso; desbloquear não tem teto).
+ *   suspenso; desbloquear não tem teto);
+ * - as do fã-clube (seção 34): `clubApply`, a candidatura (o teto
+ *   `fanclub_apply`); `clubWithdraw`, desistir dela; `clubRules`, o novo
+ *   aceite do regulamento; `clubUpload`, a vaga da foto (o teto
+ *   `fanclub_upload`); `clubPost`, publicar (o teto `fanclub_post`);
+ *   `clubRemovePost`, retirar e tirar do ar; `clubReport`, denunciar uma
+ *   publicação (o teto `report` de sempre); `clubFollow`, seguir (o teto
+ *   `fanclub_follow` e, quando o seguir faz a entrada, o de entrar em
+ *   central); `clubUnfollow`, deixar de seguir. Desistir, retirar e deixar de
+ *   seguir são livres para o suspenso e não têm teto.
  */
 export type RefusalAction =
   | 'like'
@@ -27,15 +36,25 @@ export type RefusalAction =
   | 'redeem'
   | 'profile'
   | 'photo'
-  | 'invite';
+  | 'invite'
+  | 'clubApply'
+  | 'clubWithdraw'
+  | 'clubRules'
+  | 'clubUpload'
+  | 'clubPost'
+  | 'clubRemovePost'
+  | 'clubReport'
+  | 'clubFollow'
+  | 'clubUnfollow';
 
 /**
  * - `suspended`: 403 `account_suspended` (26.6);
  * - `dailyLimit`: o teto do dia da ação (429 `too_many_requests`);
  * - `rateLimited`: pedidos seguidos demais (429 `rate_limited` ou sem código),
  *   depois das novas tentativas;
- * - `content`: o texto fora dos Termos de uso (400 `comment_invalid` ou
- *   `profile_invalid` com `not_allowed`, seção 30), só nas ações com a frase.
+ * - `content`: o texto fora dos Termos de uso (400 `comment_invalid`,
+ *   `profile_invalid` ou `fan_club_invalid` com `not_allowed`, seções 30 e
+ *   34), só nas ações com a frase.
  */
 export type RefusalType = 'suspended' | 'dailyLimit' | 'rateLimited' | 'content';
 
@@ -93,6 +112,38 @@ const PHRASES: Record<RefusalAction, ActionPhrases> = {
   },
   photo: { dailyLimit: 'editProfile.photo.tooMany', generic: 'editProfile.photo.error' },
   invite: { suspended: 'suspension.invite', generic: 'invite.noCode' },
+  clubApply: {
+    dailyLimit: 'fanClub.refusal.applyDailyLimit',
+    suspended: 'fanClub.refusal.applySuspended',
+    content: 'fanClub.refusal.contentRefused',
+    generic: 'fanClub.refusal.applyError',
+  },
+  clubWithdraw: { generic: 'fanClub.refusal.withdrawError' },
+  clubRules: { generic: 'fanClub.refusal.rulesError' },
+  clubUpload: {
+    dailyLimit: 'fanClub.refusal.uploadDailyLimit',
+    suspended: 'fanClub.refusal.postSuspended',
+    generic: 'fanClub.refusal.uploadError',
+  },
+  clubPost: {
+    dailyLimit: 'fanClub.refusal.postDailyLimit',
+    suspended: 'fanClub.refusal.postSuspended',
+    content: 'fanClub.refusal.contentRefused',
+    generic: 'fanClub.refusal.postError',
+  },
+  clubRemovePost: { notFound: 'fanClub.postNotFound', generic: 'fanClub.refusal.removePostError' },
+  clubReport: {
+    dailyLimit: 'errors.dailyLimit.report',
+    notFound: 'fanClub.postNotFound',
+    generic: 'post.moderation.reportError',
+  },
+  clubFollow: {
+    dailyLimit: 'fanClub.refusal.followDailyLimit',
+    suspended: 'fanClub.refusal.followSuspended',
+    notFound: 'fanClub.notFound',
+    generic: 'fanClub.refusal.followError',
+  },
+  clubUnfollow: { generic: 'fanClub.refusal.unfollowError' },
 };
 
 /** A frase do teto do dia da ação (o `Alert` "Limite de hoje" e os avisos). */

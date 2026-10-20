@@ -37,4 +37,9 @@ describe('translations.json', () => {
     expect(t('suspension.alertMessage', { email: SUPPORT_EMAIL })).toContain(SUPPORT_EMAIL);
     expect(t('settings.contactError', { email: SUPPORT_EMAIL })).toContain(SUPPORT_EMAIL);
   });
+
+  it('nenhum texto tem travessão nem meia-risca (seção 34, 34.13)', () => {
+    const dashes = allTexts(translations).filter((text) => /[–—]/.test(text));
+    expect(dashes).toEqual([]);
+  });
 });

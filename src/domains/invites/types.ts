@@ -80,9 +80,14 @@ export interface InviteLinkResult {
   created: boolean;
 }
 
-/** Para onde o link compartilhado leva: um link por destino no servidor. */
+/**
+ * Para onde o link compartilhado leva: um link por destino no servidor. O
+ * `fanclub` é a página do fã-clube (`/fa-clube/<id>`, seção 34, decisão 22),
+ * que as publicações dele também compartilham.
+ */
 export type InviteLinkTarget =
   | { kind: 'invite' }
   | { kind: 'agenda' }
   | { kind: 'post'; postId: string }
-  | { kind: 'artist'; artistId: string };
+  | { kind: 'artist'; artistId: string }
+  | { kind: 'fanclub'; clubId: string };

@@ -699,8 +699,8 @@ export type RedeemResult = {
 export type FanContact = { whatsapp: string | null };
 
 // --- Fã-clube gerido pelo fã (seção 34, 34.3) ---------------------------------------
-// O espelho no app (src/domains/fan-club/types.ts) chega na etapa 6 de 34.14:
-// até lá, nenhuma versão do app chama estas rotas.
+// O espelho no app é src/domains/fan-club/types.ts (etapa 6 de 34.14): mudou
+// um, mude o outro. Nenhuma tela do app chama estas rotas antes das etapas 7 e 8.
 
 /** O status da candidatura. */
 export type FanClubApplicationStatus = 'pending' | 'approved' | 'rejected' | 'withdrawn';
