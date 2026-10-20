@@ -38,11 +38,18 @@ export const API_ERROR_CODES = {
   commentInvalid: 'comment_invalid',
   /** Um campo do `PUT /me/profile` fora da regra (400), com o `details.field`. */
   profileInvalid: 'profile_invalid',
+  /**
+   * Um campo do fã-clube fora da regra (400, seção 34), com o `details.field`
+   * e o `details.reason`. Mora aqui, e não só no `FAN_CLUB_ERROR_CODES` do
+   * domínio, porque o `isContentRefusal` também o trata.
+   */
+  fanClubInvalid: 'fan_club_invalid',
 } as const;
 
 /**
  * O `details.reason` do texto recusado pelo filtro do que o fã publica (seção
- * 30 de docs/arquitetura-api.md), no `comment_invalid` e no `profile_invalid`.
+ * 30 de docs/arquitetura-api.md), no `comment_invalid`, no `profile_invalid`
+ * e no `fan_club_invalid` (seção 34).
  */
 export const CONTENT_NOT_ALLOWED = 'not_allowed';
 
@@ -115,8 +122,9 @@ export function isAccountSuspended(error: unknown): boolean {
 }
 
 /**
- * O texto recusado pelo filtro do que o fã publica (400 `comment_invalid` ou
- * `profile_invalid` com o `details.reason` `not_allowed`, seção 30). Sem
+ * O texto recusado pelo filtro do que o fã publica (400 `comment_invalid`,
+ * `profile_invalid` ou `fan_club_invalid` com o `details.reason`
+ * `not_allowed`, seções 30 e 34). Sem
  * `instanceof`: lê o `status`, o `code` e o `details` de qualquer objeto,
  * porque o erro do comentário que volta do disco é um objeto do JSON, com os
  * campos do `ApiError`, e não um `ApiError`.
@@ -129,7 +137,11 @@ export function isContentRefusal(error: unknown): boolean {
     details?: unknown;
   };
   if (status !== 400) return false;
-  if (code !== API_ERROR_CODES.commentInvalid && code !== API_ERROR_CODES.profileInvalid) {
+  if (
+    code !== API_ERROR_CODES.commentInvalid &&
+    code !== API_ERROR_CODES.profileInvalid &&
+    code !== API_ERROR_CODES.fanClubInvalid
+  ) {
     return false;
   }
   const reason =

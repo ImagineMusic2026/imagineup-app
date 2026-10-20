@@ -5,7 +5,7 @@ import {
   useQueryClient,
   type QueryClient,
 } from '@tanstack/react-query';
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { AccessibilityInfo } from 'react-native';
 
 // Chaves de outros domínios pelo arquivo, fora do index: o perfil, os posts e
@@ -297,11 +297,52 @@ interface JoinContext {
 }
 
 /**
+ * A comemoração e as invalidações de uma entrada na central que o servidor
+ * confirmou: as Suas centrais, a página da central, o mural da home, o
+ * ranking e as missões buscam de novo (o `refreshAfterJoin`, que não sai pelo
+ * index), e, com a tela aberta, os pontos sobem num "+N" (`award`, para o
+ * `PointsToast`, que dá o toque e o anúncio do que a entrada rendeu). Chegou
+ * com a tela fechada (a rede voltou depois): só as invalidações.
+ *
+ * O "Entrar na central" da 1d usa, e o seguir do fã-clube que faz a entrada
+ * também (seção 34, decisão 26): ele chama o `celebrate` com o `artistId` do
+ * fã-clube e os pontos e as recompensas que o seguir devolveu.
+ */
+export function useJoinCelebration() {
+  const queryClient = useQueryClient();
+  const [award, setAward] = useState<JoinAward | null>(null);
+  const awards = useRef(0);
+  const mounted = useRef(false);
+
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
+
+  const celebrate = useCallback(
+    (result: JoinCentralResult): void => {
+      refreshAfterJoin(queryClient, result);
+      if (!mounted.current) return;
+      const toast = rewardsToast(result.pointsAwarded, result);
+      if (!toast) return;
+      awards.current += 1;
+      setAward({ id: awards.current, points: result.pointsAwarded, ...toast });
+    },
+    [queryClient],
+  );
+
+  return { award, celebrate };
+}
+
+/**
  * "Entrar na central" da página do artista (1d). Aparece na hora (otimista):
  * o botão vira "Na central", e a central entra em "Suas centrais" da home e
  * do perfil e nos chips do ranking, que leem a mesma lista. Os pontos que a
  * API devolver sobem num "+N" (`award`, para o `PointsToast`, que dá o toque e
- * o anúncio). Se a API recusar, tudo volta, com toque de erro e aviso.
+ * o anúncio), pelo `useJoinCelebration`. Se a API recusar, tudo volta, com
+ * toque de erro e aviso.
  *
  * Sem rede, a entrada espera na fila, com o estado otimista na tela, e
  * sobrevive ao app fechado (`mutationKey` registrada no `AppProviders`). O
@@ -310,8 +351,7 @@ interface JoinContext {
  */
 export function useJoinCentralMutation(artistId: string) {
   const queryClient = useQueryClient();
-  const [award, setAward] = useState<JoinAward | null>(null);
-  const awards = useRef(0);
+  const { award, celebrate } = useJoinCelebration();
   const mounted = useRef(false);
 
   useEffect(() => {
@@ -344,15 +384,7 @@ export function useJoinCentralMutation(artistId: string) {
       }
       return { inserted };
     },
-    onSuccess: (result) => {
-      refreshAfterJoin(queryClient, result);
-      // Chegou com a página fechada (a rede voltou depois): nada de "+N".
-      if (!mounted.current) return;
-      const toast = rewardsToast(result.pointsAwarded, result);
-      if (!toast) return;
-      awards.current += 1;
-      setAward({ id: awards.current, points: result.pointsAwarded, ...toast });
-    },
+    onSuccess: (result) => celebrate(result),
     onError: (error, { artistId: id }, context) => {
       setMember(queryClient, id, false, -1);
       if (context?.inserted) {

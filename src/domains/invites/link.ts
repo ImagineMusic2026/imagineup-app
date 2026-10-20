@@ -39,16 +39,25 @@ export function buildInviteUrl(
 /**
  * O id do link compartilhado no servidor (`PUT /me/invite/links/:linkId`): um
  * por destino. `invite` é o atalho Convidar; o show do "Chamar amigos" leva à
- * agenda (`agenda`).
+ * agenda (`agenda`); o fã-clube é `fanclub:<id>` (seção 34, decisão 22), como
+ * o `LINK_ID` de `functions/src/invites/model.ts`. Um caso por tipo: o tipo
+ * novo esquecido quebra o typecheck no `never`, em vez de sair sem o id.
  */
 export function inviteLinkId(target: InviteLinkTarget): string {
   switch (target.kind) {
+    case 'invite':
+    case 'agenda':
+      return target.kind;
     case 'post':
       return `post:${target.postId}`;
     case 'artist':
       return `artist:${target.artistId}`;
-    default:
-      return target.kind;
+    case 'fanclub':
+      return `fanclub:${target.clubId}`;
+    default: {
+      const unknown: never = target;
+      return unknown;
+    }
   }
 }
 

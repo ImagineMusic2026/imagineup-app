@@ -194,6 +194,8 @@ describe('isContentRefusal', () => {
     ['comment_invalid', { reason: 'not_allowed' }],
     ['profile_invalid', { field: 'bio', reason: 'not_allowed' }],
     ['profile_invalid', { field: 'socials.instagram', reason: 'not_allowed' }],
+    // O nome, o texto de divulgação e a publicação do fã-clube (seção 34).
+    ['fan_club_invalid', { field: 'pitch', reason: 'not_allowed' }],
   ])('o 400 %s com not_allowed, no ApiError e no objeto do JSON', (code, details) => {
     const error = refused(code, details);
     expect(isContentRefusal(error)).toBe(true);
@@ -205,6 +207,14 @@ describe('isContentRefusal', () => {
 
   it('outro motivo, outro status, outro código ou sem details: não é', () => {
     expect(isContentRefusal(refused('comment_invalid', { reason: 'too_long' }))).toBe(false);
+    // O "oficial" no nome e o formato do fã-clube não são o filtro.
+    expect(
+      isContentRefusal(refused('fan_club_invalid', { field: 'name', reason: 'official' })),
+    ).toBe(false);
+    expect(isContentRefusal(refused('fan_club_invalid', { field: 'text', reason: 'format' }))).toBe(
+      false,
+    );
+    expect(isContentRefusal(refused('fan_club_refused', { reason: 'not_allowed' }))).toBe(false);
     expect(
       isContentRefusal(refused('profile_invalid', { field: 'bio', reason: 'invisible' })),
     ).toBe(false);

@@ -142,6 +142,30 @@ const INITIAL_MEMBERSHIP: readonly string[] = ['nettobrito', 'nenho', 'juninhomo
 
 let members = new Set<string>(INITIAL_MEMBERSHIP);
 
+// Quem ouve a saída de uma central e o bloqueio de um fã (o fã-clube, seção
+// 34): os vínculos que o servidor apaga junto, sem que este arquivo importe o
+// domínio.
+const centralLeftListeners = new Set<(artistId: string) => void>();
+const fanBlockedListeners = new Set<(fanId: string) => void>();
+
+/**
+ * Avisa quando o fã de exemplo sai de uma central, como o `leaveCentral` do
+ * servidor, que apaga junto os seguimentos dos fã-clubes do artista (seção
+ * 34, decisão 27).
+ */
+export function onFixtureCentralLeft(listener: (artistId: string) => void): void {
+  centralLeftListeners.add(listener);
+}
+
+/**
+ * Avisa quando o fã de exemplo bloqueia alguém, também quem já estava na
+ * lista, como o `blockFan` do servidor, que apaga junto o seguimento do
+ * fã-clube do bloqueado (seção 34, decisão 32).
+ */
+export function onFixtureFanBlocked(listener: (fanId: string) => void): void {
+  fanBlockedListeners.add(listener);
+}
+
 /**
  * De quais centrais o fã de exemplo é membro, para o ranking de exemplo de
  * cada central, que é só de membros, como o do servidor (bloco 8): quem sai
@@ -160,6 +184,7 @@ export const fixtureMembership = {
 
   leave(artistId: string): void {
     members.delete(artistId);
+    for (const listener of centralLeftListeners) listener(artistId);
   },
 
   /** Volta ao início (fim da sessão e testes). */
@@ -190,6 +215,7 @@ export const fixtureBlocks = {
   /** Entra no fim, como o bloqueio novo no servidor; quem já está fica onde está. */
   add(fanId: string): void {
     if (!blocks.includes(fanId)) blocks = [...blocks, fanId];
+    for (const listener of fanBlockedListeners) listener(fanId);
   },
 
   remove(fanId: string): void {

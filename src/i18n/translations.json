@@ -1035,6 +1035,92 @@
       "event": "Vamos juntos? {{show}} está na agenda do ImagineUP"
     }
   },
+  "fanClub": {
+    "notFound": "Este fã-clube não está disponível.",
+    "postNotFound": "Esta publicação não está mais disponível.",
+    "refusal": {
+      "applyDailyLimit": "Você chegou ao limite de candidaturas de hoje. Tente amanhã.",
+      "applySuspended": "Sua conta está suspensa. Você não pode se candidatar a um fã-clube.",
+      "applyError": "Não deu para enviar a candidatura. Tente de novo.",
+      "withdrawError": "Não deu para desistir da candidatura. Tente de novo.",
+      "rulesError": "Não deu para aceitar o regulamento. Tente de novo.",
+      "uploadDailyLimit": "Você chegou ao limite de fotos de hoje no fã-clube. Tente amanhã.",
+      "uploadError": "Não deu para enviar a foto. Tente de novo.",
+      "postDailyLimit": "Você chegou ao limite de publicações de hoje. Tente amanhã.",
+      "postSuspended": "Sua conta está suspensa. Você não pode publicar no fã-clube.",
+      "postError": "Não deu para enviar a publicação. Tente de novo.",
+      "contentRefused": "Conforme os Termos de uso do ImagineUP, este texto não pode ser usado.",
+      "removePostError": "Não deu para tirar a publicação. Tente de novo.",
+      "followDailyLimit": "Você chegou ao limite de hoje para seguir fã-clubes e entrar em centrais. Tente amanhã.",
+      "followSuspended": "Sua conta está suspensa. Você não pode seguir fã-clubes.",
+      "followError": "Não deu para seguir o fã-clube. Tente de novo.",
+      "unfollowError": "Não deu para deixar de seguir. Tente de novo."
+    },
+    "errors": {
+      "invalid": {
+        "name": "O nome precisa ter de 3 a 40 caracteres.",
+        "nameOfficial": "O nome não pode ter a palavra oficial, porque o fã-clube não é oficial.",
+        "pitch": "Conte em 20 a 1.000 caracteres como e onde você vai divulgar.",
+        "instagram": "Confira o @ do Instagram.",
+        "tiktok": "Confira o @ do TikTok.",
+        "socials": "Informe pelo menos o Instagram ou o TikTok.",
+        "adult": "Para ter um fã-clube, confirme que você tem 18 anos ou mais.",
+        "rulesVersion": "As regras mudaram. Feche e abra de novo para ver a versão nova.",
+        "text": "Escreva de 1 a 1.000 caracteres.",
+        "photo": "Não deu para usar esta foto. Escolha outra e tente de novo."
+      },
+      "refused": {
+        "applicationsClosed": "As candidaturas para fã-clube estão fechadas agora.",
+        "usernameRequired": "Escolha seu @ em Editar perfil antes de se candidatar.",
+        "notMember": "Você precisa estar na central do artista.",
+        "artistClosed": "Este artista não está aceitando fã-clubes agora.",
+        "alreadyApplied": "Você já tem uma candidatura em análise.",
+        "hasFanClub": "Você já tem um fã-clube.",
+        "cooldown": "Você pode enviar de novo a partir de {{date}}.",
+        "cooldownLater": "Você pode enviar de novo daqui a alguns dias.",
+        "tooManyRounds": "Você já usou as 3 candidaturas.",
+        "notAllowed": "Você não pode mais ter um fã-clube.",
+        "contactRequired": "Enquanto você tiver fã-clube ou candidatura em análise, a equipe precisa do seu WhatsApp. Troque o número em vez de apagar.",
+        "clubNotActive": "Seu fã-clube não está no ar.",
+        "photosNotAllowed": "Este artista não aceita fotos de fãs agora. Publique só o texto.",
+        "rulesOutdated": "O regulamento mudou. Aceite o novo antes de publicar.",
+        "uploadMissing": "A foto não chegou. Escolha de novo e tente outra vez.",
+        "tooManyPending": "Você já tem 3 publicações em análise. Espere a equipe revisar.",
+        "ownFanClub": "Este fã-clube é seu.",
+        "followLimit": "Você já segue 50 fã-clubes. Deixe de seguir algum para seguir este."
+      }
+    },
+    "rejectReason": {
+      "incomplete": "A candidatura veio com informações incompletas.",
+      "notFit": "A equipe entendeu que a candidatura não combina com o programa agora.",
+      "artistLimit": "O artista já tem fã-clubes suficientes agora.",
+      "imageRights": "A candidatura usa imagem sem autorização.",
+      "rules": "A candidatura não segue as regras do fã-clube.",
+      "other": "A equipe não aprovou a candidatura desta vez."
+    },
+    "postStatus": {
+      "pending": "Em análise",
+      "published": "No ar",
+      "rejected": "Recusada",
+      "withdrawn": "Retirada",
+      "hidden": "Oculta pela equipe",
+      "removed": "Tirada do ar"
+    },
+    "postRejectReason": {
+      "imageRights": "Uso de imagem sem autorização.",
+      "offTopic": "Fora do assunto do artista.",
+      "quality": "A foto ou o texto não estão bons para ir ao ar.",
+      "rules": "Não segue as regras do fã-clube.",
+      "other": "A equipe não aprovou esta publicação."
+    },
+    "unavailable": {
+      "paused": "Seu fã-clube está pausado pela equipe.",
+      "artistOff": "A central do artista está fora do ar.",
+      "programClosed": "O artista não está aceitando fã-clubes agora.",
+      "notMember": "Você saiu da central do artista. Volte para publicar.",
+      "closed": "Seu fã-clube foi encerrado."
+    }
+  },
   "notFound": {
     "title": "Página não encontrada",
     "action": "Ir para o início"

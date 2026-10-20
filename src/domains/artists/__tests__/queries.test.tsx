@@ -3,6 +3,7 @@ import { act, renderHook, waitFor } from '@testing-library/react-native';
 import type { ReactNode } from 'react';
 import { AccessibilityInfo } from 'react-native';
 
+import * as actionRewards from '@/domains/profile/action-rewards';
 import { ApiError } from '@/services/api/errors';
 import { fixtureWallet } from '@/services/fixtures';
 import { haptics } from '@/services/haptics';
@@ -19,6 +20,7 @@ import {
   artistMutationKeys,
   registerArtistMutationDefaults,
   useFollowArtistsMutation,
+  useJoinCelebration,
   useJoinCentralMutation,
   useLeaveCentralMutation,
 } from '../queries';
@@ -468,5 +470,63 @@ describe('sair da central', () => {
     const keys = leave.mock.calls.map(([variables]) => variables.idempotencyKey);
     expect(keys[1]).toBe(keys[0]);
     expect(keys[2]).not.toBe(keys[1]);
+  });
+});
+
+// A entrada que outra ação fez (o seguir do fã-clube, seção 34, decisão 26):
+// a mesma comemoração e as mesmas invalidações do "Entrar na central".
+describe('useJoinCelebration', () => {
+  it('a entrada confirmada vira o "+N", e as centrais, a página, o mural, o ranking e o saldo buscam de novo', () => {
+    client.setQueryData(artistKeys.centrals(), []);
+    client.setQueryData(artistKeys.detail('rocksalles'), buildArtistDetailsFixture('rocksalles'));
+    client.setQueryData(['posts', 'feed'], { pages: [], pageParams: [] });
+    client.setQueryData(['ranking', 'season'], null);
+    client.setQueryData(['profile', 'wallet'], { balance: 0 });
+    const { result } = renderHook(() => useJoinCelebration(), { wrapper });
+
+    act(() => result.current.celebrate({ artistId: 'rocksalles', pointsAwarded: 10 }));
+
+    expect(result.current.award).toEqual({
+      id: 1,
+      points: 10,
+      announcement: 'Mais 10 pontos.',
+      haptic: 'pointsEarned',
+    });
+    expect(client.getQueryState(artistKeys.centrals())?.isInvalidated).toBe(true);
+    expect(client.getQueryState(artistKeys.detail('rocksalles'))?.isInvalidated).toBe(true);
+    expect(client.getQueryState(['posts', 'feed'])?.isInvalidated).toBe(true);
+    expect(client.getQueryState(['ranking', 'season'])?.isInvalidated).toBe(true);
+    expect(client.getQueryState(['profile', 'wallet'])?.isInvalidated).toBe(true);
+
+    // Cada entrada nova muda o id, para o "+N" subir de novo.
+    act(() => result.current.celebrate({ artistId: 'rocksalles', pointsAwarded: 5 }));
+    expect(result.current.award).toMatchObject({ id: 2, points: 5 });
+  });
+
+  it('sem pontos nem recompensa, nada de "+N", e o saldo não busca de novo', () => {
+    client.setQueryData(artistKeys.centrals(), []);
+    client.setQueryData(['profile', 'wallet'], { balance: 0 });
+    const { result } = renderHook(() => useJoinCelebration(), { wrapper });
+
+    act(() => result.current.celebrate({ artistId: 'nenho', pointsAwarded: 0 }));
+
+    expect(result.current.award).toBeNull();
+    expect(client.getQueryState(artistKeys.centrals())?.isInvalidated).toBe(true);
+    expect(client.getQueryState(['profile', 'wallet'])?.isInvalidated).toBe(false);
+  });
+
+  it('com a tela fechada, só as invalidações: nada de "+N"', () => {
+    client.setQueryData(artistKeys.centrals(), []);
+    const toast = jest.spyOn(actionRewards, 'rewardsToast');
+    const { result, unmount } = renderHook(() => useJoinCelebration(), { wrapper });
+    const { celebrate } = result.current;
+    unmount();
+
+    celebrate({ artistId: 'rocksalles', pointsAwarded: 10 });
+
+    // O `result.current` fica parado no último render: quem prova é o "+N" que não foi montado.
+    expect(toast).not.toHaveBeenCalled();
+    expect(client.getQueryState(artistKeys.centrals())?.isInvalidated).toBe(true);
+    toast.mockRestore();
   });
 });
