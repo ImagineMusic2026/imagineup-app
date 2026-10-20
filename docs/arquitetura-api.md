@@ -35,8 +35,8 @@ Quem mexe no servidor lê esta nota antes. Mudou uma decisão daqui? Mude a nota
 23. Filtro do que o fã publica (seção 30): uma lista de termos no servidor, em `functions/src/content-filter/` (código puro, sem dependência nova), conferida antes de publicar no comentário, no nome, no @, na bio, na cidade e nas redes, dentro das funções puras que o `validate` e a transação já chamam, sem leitura nova; o texto e cada termo passam pela mesma normalização (acentos, homóglifos, letras soltas, números e símbolos no lugar de letras e letras repetidas), com palavra inteira e frase no texto livre e trecho só dentro de um pedaço dos campos de identidade; o repositório, público, guarda só as chaves (o SHA-256 de cada pedaço normalizado), e a lista legível fica fora de todo repositório, com o dono; toda categoria barrada em todo campo até a aprovação das lojas; a recusa usa os códigos de hoje com o motivo `not_allowed` (`comment_invalid` e `profile_invalid`), e o @ barrado sai como reservado, sem gravar nada e sem dizer o termo; o nome do cadastro barrado vira "Fã", e o @ dele, o `fa`, no `createUserProfile` e no gatilho do perfil; a linha do log da `api` ganha o `code` e o `reason`; nenhuma regra, índice, fila, callable nem teto novo; no app, a frase com o link "Escrever para a equipe" embaixo do compositor e no campo do perfil, e o comentário recusado com o campo ocupado vira a linha "Não publicado", que sobrevive ao app fechado; o app vai por EAS Update, sem mudar o fingerprint, e a publicação saiu junto com a da seção 29, em 14/10/2026, num lote só de cinco funções.
 24. Proteção da produção (seção 31): o Firestore com o PITR de 7 dias, a proteção contra apagar e um backup diário com 14 dias, todos dentro dos 30 dias da política; alertas por e-mail no Cloud Monitoring (erros nas funções, a `api` com 5xx, as agendadas falhando ou paradas), silenciados em todo deploy de funções; e o registro de acesso por 184 dias numa linha de log própria, `acesso`, só com o IP (o último item do `X-Forwarded-For`) e o uid, escrita a cada pedido da `api` e a cada chamada das callables do painel (pelo `onPanelCall`), levada por um sink a um bucket de log em southamerica-east1; nenhuma regra, rota, callable ou pacote novo, e o fingerprint do app não muda.
 25. Moderação do @, pedidos de dados e aviso de api fora do ar (seção 32): o `resetFanUsername` ganha o motivo (`reason`); o `moderation`, o padrão, deixa o fã com o @ automático por 30 dias, com o `usernameLockReason` no perfil para o app dizer que foi a equipe, e o `central`, para o @ de um artista, fica sem prazo; duas callables só de admin, sem seção nova: `exportFanData` (o arquivo em JSON, pela resposta da callable, em partes que o painel junta e baixa) e `deleteFanAccount` (a exclusão do Auth, que o gatilho de sempre completa), com o e-mail da conta conferido, o login de até 10 minutos, o teto do dia de 20 exportações e 5 exclusões por pessoa e a auditoria só com o uid; a lista das fontes do fã (`FAN_DATA_SOURCES`) diz o que vai ao arquivo e o que a exclusão faz com cada uma, presa ao `deleteUserData` por teste; o `GET /health` na `api`, sem login e sem as linhas `acesso` e `api`, pedido a cada 5 minutos por um teste de disponibilidade, com o alerta por e-mail no canal de 31.4; o `posterUrl` na mídia do vídeo, a capa grande que o app do bloco B lê; 68 funções, nenhuma regra, índice, fila ou TTL novo, e o fingerprint do app não muda.
-26. Fã-clube gerido pelo fã, com o prêmio ao gestor (seção 34, só o desenho, de 16/10/2026; o dono decidiu construir sem aditivo): o Modelo A, um espaço não oficial ligado à central oficial, em `fanClubs/{clubId}`; a candidatura nos Ajustes, para quem tem o @ escolhido e está na central de um artista com "Aceita fã-clubes", com o 18+ declarado e até 3 rodadas; a seção nova `fanClubs` no painel e uma callable só, `decideFanClub` (69 funções, sobra de CPU de uns 0,34 vCPU), em que o editor da seção decide e só o admin encerra; o gestor publica texto, ou texto com foto da galeria, sempre revisado antes de ir ao ar, fora de `posts/{id}`, com a denúncia numa fila própria e o motivo novo "Uso indevido de imagem"; seguir também faz entrar na central, conta por `count()` com a cópia noturna, rende 0 ponto e acaba ao sair da central, ao bloquear o gestor e na suspensão; o tipo de link `fanclub` e a entrada trazida só na primeira da vida, com o marcador `fanClubCredits`; o Destaque com prazo de até 31 dias e o prêmio ao gestor como um pedido da loja a partir de uma recompensa "Só para prêmios de fã-clube", com os pontos na mesma ação, só no saldo, e "Prêmio do fã-clube" no extrato; a exclusão do gestor apaga as publicações e deixa o fã-clube como lápide; nada nativo, tudo por EAS Update, e o fã-clube abre aos fãs com o EAS Update, com a chave `FAN_CLUB_OPEN` do servidor para fechar sem build (as caixas por artista nascem ligadas para toda central com o `imageRightsConfirmed`, o texto do reconhecimento nasce ligado, com o parecer do jurídico dispensado pelo dono e o risco aceito, e o regulamento, os termos e a privacidade ficam para depois, sem segurar nada; o aceite da candidatura cita os Termos de Uso até o regulamento chegar); o WhatsApp entra obrigatório na candidatura como contato do fã (`users/{uid}/contact/main`), que a loja também usa (UP-66), e vai ao "Ver contatos" da aba Pedidos.
-27. WhatsApp no resgate da loja (seção 35, UP-66, decisão do dono de 19/10/2026): todo resgate pede o WhatsApp do fã, obrigatório no app, já preenchido com o número guardado e editável; o número mora no contato do fã da seção 34, `users/{uid}/contact/main`, privado nas regras (desde a etapa 1 da seção 34, quem edita Fã-clubes lê o de quem tem candidatura), como celular brasileiro com DDD em E.164 (`parseWhatsapp`, igual no servidor e no app), gravado na transação do resgate e nunca no pedido; o fã lê e troca o dele pelo `GET` e o `PUT /me/contact` (a 45ª e a 46ª rotas, no desenho da seção 34; o número fora do disco no app), e a equipe com Recompensas vê o número de agora no "Ver contatos" dos pedidos abertos, com o link `wa.me`, sem o número na auditoria; o app de antes resgata sem o campo, e o servidor aceita; a exportação ganha o `contato`, e a exclusão o leva com o perfil; 68 funções, nenhum índice, fila ou TTL novo, e o fingerprint do app não muda.
+27. Fã-clube gerido pelo fã, com o prêmio ao gestor (seção 34, só o desenho, de 16/10/2026; o dono decidiu construir sem aditivo): o Modelo A, um espaço não oficial ligado à central oficial, em `fanClubs/{clubId}`; a candidatura nos Ajustes, para quem tem o @ escolhido e está na central de um artista com "Aceita fã-clubes", com o 18+ declarado e até 3 rodadas; a seção nova `fanClubs` no painel e uma callable só, `decideFanClub` (69 funções, sobra de CPU de uns 0,34 vCPU), em que o editor da seção decide e só o admin encerra; o gestor publica texto, ou texto com foto da galeria, sempre revisado antes de ir ao ar, fora de `posts/{id}`, com a denúncia numa fila própria e o motivo novo "Uso indevido de imagem"; seguir também faz entrar na central, conta por `count()` com a cópia noturna, rende 0 ponto e acaba ao sair da central, ao bloquear o gestor e na suspensão; o tipo de link `fanclub` e a entrada trazida só na primeira da vida, com o marcador `fanClubCredits`; o Destaque com prazo de até 31 dias e o prêmio ao gestor como um pedido da loja a partir de uma recompensa "Só para prêmios de fã-clube", com os pontos na mesma ação, só no saldo, e "Prêmio do fã-clube" no extrato; a exclusão do gestor apaga as publicações e deixa o fã-clube como lápide; nada nativo, tudo por EAS Update, e o fã-clube abre aos fãs com o EAS Update, com a chave `FAN_CLUB_OPEN` do servidor para fechar sem build (as caixas por artista nascem ligadas para toda central com o `imageRightsConfirmed`, o texto do reconhecimento nasce ligado, com o parecer do jurídico dispensado pelo dono e o risco aceito, e o regulamento, os termos e a privacidade ficam para depois, sem segurar nada; o aceite da candidatura cita os Termos de Uso até o regulamento chegar); o WhatsApp entra obrigatório na candidatura como contato do fã (`users/{uid}/contact/main`), que a loja também usa (UP-66), e vai ao "Ver contatos" da aba Pedidos.
+28. WhatsApp no resgate da loja (seção 35, UP-66, decisão do dono de 19/10/2026): todo resgate pede o WhatsApp do fã, obrigatório no app, já preenchido com o número guardado e editável; o número mora no contato do fã da seção 34, `users/{uid}/contact/main`, privado nas regras (desde a etapa 1 da seção 34, quem edita Fã-clubes lê o de quem tem candidatura), como celular brasileiro com DDD em E.164 (`parseWhatsapp`, igual no servidor e no app), gravado na transação do resgate e nunca no pedido; o fã lê e troca o dele pelo `GET` e o `PUT /me/contact` (a 45ª e a 46ª rotas, no desenho da seção 34; o número fora do disco no app), e a equipe com Recompensas vê o número de agora no "Ver contatos" dos pedidos abertos, com o link `wa.me`, sem o número na auditoria; o app de antes resgata sem o campo, e o servidor aceita; a exportação ganha o `contato`, e a exclusão o leva com o perfil; 68 funções, nenhum índice, fila ou TTL novo, e o fingerprint do app não muda.
 
 ## 1. Formato da API
 
@@ -183,43 +183,43 @@ Corpo de erro, sempre:
 
 `details` é opcional. O `toApiError` do app lê `code` e `message`, e o `kind` sai do status. A mensagem é curta, em pt-BR, e pode aparecer como está; quando o app conhece o código, ele mostra o texto dele (`t()`).
 
-| code                       | status | kind no app  | quando                                                                                                                                                       |
-| -------------------------- | ------ | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `invalid_request`          | 400    | validation   | parâmetro, corpo ou cursor fora do formato                                                                                                                   |
-| `idempotency_key_required` | 400    | validation   | rota que grava sem `Idempotency-Key`, ou fora do formato                                                                                                     |
-| `comment_invalid`          | 400    | validation   | comentário vazio, longo demais, com invisível ou fora dos Termos de uso (bloco 6 e seção 30)                                                                 |
-| `username_invalid`         | 400    | validation   | @ fora do formato, reservado (a marca, a equipe ou a lista da seção 30) ou no padrão do automático (bloco 9)                                                 |
-| `profile_invalid`          | 400    | validation   | um campo do `PUT /me/profile` fora da regra ou das regras de conteúdo (seções 28 e 30)                                                                       |
-| `photo_invalid`            | 400    | validation   | foto de outro fã, fora do tipo, do tamanho, das dimensões ou que não é JPEG (bloco 9)                                                                        |
-| `unauthenticated`          | 401    | unauthorized | sem token, token inválido, vencido ou de outro projeto                                                                                                       |
-| `not_fan`                  | 403    | forbidden    | conta só da equipe tentando gravar                                                                                                                           |
-| `app_check_failed`         | 403    | forbidden    | App Check exigido e o pedido sem token ou com token inválido (27.5; hoje desligado)                                                                          |
-| `account_suspended`        | 403    | forbidden    | conta suspensa pela equipe numa rota que cria ou soma, ou no código novo (bloco 11)                                                                          |
-| `not_found`                | 404    | notFound     | rota que não existe                                                                                                                                          |
-| `artist_not_found`         | 404    | notFound     | central inexistente, fora do ar ou id fora do formato (bloco 4)                                                                                              |
-| `invite_not_found`         | 404    | notFound     | código de convite que não existe (bloco 5)                                                                                                                   |
-| `post_not_found`           | 404    | notFound     | post que não existe ou não está visível (bloco 6)                                                                                                            |
-| `event_not_found`          | 404    | notFound     | show que não existe, fora do ar ou encerrado (bloco 6)                                                                                                       |
-| `comment_not_found`        | 404    | notFound     | comentário que não existe ou oculto (bloco 6)                                                                                                                |
-| `fan_not_found`            | 404    | notFound     | fã que não existe, no bloqueio (bloco 6), no perfil público (seção 28) e na denúncia de perfil (seção 29)                                                    |
-| `photo_not_found`          | 404    | notFound     | arquivo da foto que não existe, velho ou de antes da última troca (bloco 9)                                                                                  |
-| `reward_not_found`         | 404    | notFound     | recompensa que não existe, em rascunho ou com id fora do formato (bloco 10)                                                                                  |
-| `method_not_allowed`       | 405    | unknown      | rota existe, método não                                                                                                                                      |
-| `insufficient_points`      | 409    | validation   | débito maior que o saldo (já em `API_ERROR_CODES`)                                                                                                           |
-| `sold_out`                 | 409    | validation   | recompensa sem vaga, encerrada ou com show fechado (bloco 10; no `API_ERROR_CODES`)                                                                          |
-| `redeem_limit_reached`     | 409    | validation   | o fã chegou ao limite de pedidos da recompensa (bloco 10)                                                                                                    |
-| `reward_changed`           | 409    | validation   | o custo que o fã viu não é o de agora (bloco 10)                                                                                                             |
-| `invite_not_allowed`       | 409    | validation   | autoconvite ou conta fora da janela do claim (bloco 5)                                                                                                       |
-| `block_list_full`          | 409    | validation   | lista de bloqueios cheia (bloco 6)                                                                                                                           |
-| `username_taken`           | 409    | validation   | @ de outro fã ou de uma central (bloco 9)                                                                                                                    |
-| `username_change_too_soon` | 409    | validation   | troca do @ antes do prazo de 30 dias (bloco 9)                                                                                                               |
-| `payload_too_large`        | 413    | unknown      | corpo acima de 16 KiB                                                                                                                                        |
-| `idempotency_key_reused`   | 422    | validation   | mesma chave com outro pedido                                                                                                                                 |
-| `too_many_requests`        | 429    | dailyLimit   | ação acima do teto do dia (blocos 4, 6, 9 e 10: 19.5, 21.7, 24.8 e 25.7; 27.4; 28.5; 29.5); o app nunca tenta de novo (29.11)                                |
+| code                       | status | kind no app  | quando                                                                                |
+| -------------------------- | ------ | ------------ | ------------------------------------------------------------------------------------- |
+| `invalid_request`          | 400    | validation   | parâmetro, corpo ou cursor fora do formato                                            |
+| `idempotency_key_required` | 400    | validation   | rota que grava sem `Idempotency-Key`, ou fora do formato                              |
+| `comment_invalid`          | 400    | validation   | comentário vazio, longo demais, com invisível ou fora dos Termos de uso (bloco 6 e seção 30) |
+| `username_invalid`         | 400    | validation   | @ fora do formato, reservado (a marca, a equipe ou a lista da seção 30) ou no padrão do automático (bloco 9) |
+| `profile_invalid`          | 400    | validation   | um campo do `PUT /me/profile` fora da regra ou das regras de conteúdo (seções 28 e 30) |
+| `photo_invalid`            | 400    | validation   | foto de outro fã, fora do tipo, do tamanho, das dimensões ou que não é JPEG (bloco 9) |
+| `unauthenticated`          | 401    | unauthorized | sem token, token inválido, vencido ou de outro projeto                                |
+| `not_fan`                  | 403    | forbidden    | conta só da equipe tentando gravar                                                    |
+| `app_check_failed`         | 403    | forbidden    | App Check exigido e o pedido sem token ou com token inválido (27.5; hoje desligado)   |
+| `account_suspended`        | 403    | forbidden    | conta suspensa pela equipe numa rota que cria ou soma, ou no código novo (bloco 11)   |
+| `not_found`                | 404    | notFound     | rota que não existe                                                                   |
+| `artist_not_found`         | 404    | notFound     | central inexistente, fora do ar ou id fora do formato (bloco 4)                       |
+| `invite_not_found`         | 404    | notFound     | código de convite que não existe (bloco 5)                                            |
+| `post_not_found`           | 404    | notFound     | post que não existe ou não está visível (bloco 6)                                     |
+| `event_not_found`          | 404    | notFound     | show que não existe, fora do ar ou encerrado (bloco 6)                                |
+| `comment_not_found`        | 404    | notFound     | comentário que não existe ou oculto (bloco 6)                                         |
+| `fan_not_found`            | 404    | notFound     | fã que não existe, no bloqueio (bloco 6), no perfil público (seção 28) e na denúncia de perfil (seção 29) |
+| `photo_not_found`          | 404    | notFound     | arquivo da foto que não existe, velho ou de antes da última troca (bloco 9)           |
+| `reward_not_found`         | 404    | notFound     | recompensa que não existe, em rascunho ou com id fora do formato (bloco 10)           |
+| `method_not_allowed`       | 405    | unknown      | rota existe, método não                                                               |
+| `insufficient_points`      | 409    | validation   | débito maior que o saldo (já em `API_ERROR_CODES`)                                    |
+| `sold_out`                 | 409    | validation   | recompensa sem vaga, encerrada ou com show fechado (bloco 10; no `API_ERROR_CODES`)   |
+| `redeem_limit_reached`     | 409    | validation   | o fã chegou ao limite de pedidos da recompensa (bloco 10)                             |
+| `reward_changed`           | 409    | validation   | o custo que o fã viu não é o de agora (bloco 10)                                      |
+| `invite_not_allowed`       | 409    | validation   | autoconvite ou conta fora da janela do claim (bloco 5)                                |
+| `block_list_full`          | 409    | validation   | lista de bloqueios cheia (bloco 6)                                                    |
+| `username_taken`           | 409    | validation   | @ de outro fã ou de uma central (bloco 9)                                             |
+| `username_change_too_soon` | 409    | validation   | troca do @ antes do prazo de 30 dias (bloco 9)                                        |
+| `payload_too_large`        | 413    | unknown      | corpo acima de 16 KiB                                                                 |
+| `idempotency_key_reused`   | 422    | validation   | mesma chave com outro pedido                                                          |
+| `too_many_requests`        | 429    | dailyLimit   | ação acima do teto do dia (blocos 4, 6, 9 e 10: 19.5, 21.7, 24.8 e 25.7; 27.4; 28.5; 29.5); o app nunca tenta de novo (29.11) |
 | `rate_limited`             | 429    | rateLimited  | pedidos seguidos demais do mesmo fã na instância, com `Retry-After` (27.3); o app tenta de novo sozinho, como no 429 sem código da cota do Cloud Run (29.11) |
-| `internal`                 | 500    | server       | erro inesperado                                                                                                                                              |
-| `profile_not_ready`        | 503    | server       | gravação sem `users/{uid}` (perfil nascendo ou conta excluída)                                                                                               |
-| `unavailable`              | 503    | server       | disputa, Firestore fora ou falha ao conferir o token                                                                                                         |
+| `internal`                 | 500    | server       | erro inesperado                                                                       |
+| `profile_not_ready`        | 503    | server       | gravação sem `users/{uid}` (perfil nascendo ou conta excluída)                        |
+| `unavailable`              | 503    | server       | disputa, Firestore fora ou falha ao conferir o token                                  |
 
 Mensagens: `invalid_request` "Pedido inválido."; `idempotency_key_required` "Falta a chave de idempotência."; `unauthenticated` "Entre na sua conta para continuar."; `not_fan` "Esta conta não é de fã."; `not_found` "Não encontrado."; `artist_not_found` "Central não encontrada."; `invite_not_found` "Convite não encontrado."; `invite_not_allowed` "Este convite não vale para esta conta."; `method_not_allowed` "Método não aceito nesta rota."; `insufficient_points` "Saldo insuficiente."; `payload_too_large` "Pedido grande demais."; `idempotency_key_reused` "Esta chave já foi usada em outro pedido."; `too_many_requests` "Tentativas demais por hoje. Tente amanhã."; `internal` "Algo deu errado. Tente de novo."; `profile_not_ready` "Seu perfil ainda está sendo criado. Tente de novo em instantes."; `unavailable` "Serviço ocupado. Tente de novo."; do bloco 6, `post_not_found` "Post não encontrado.", `event_not_found` "Show não encontrado.", `comment_not_found` "Comentário não encontrado.", `fan_not_found` "Fã não encontrado.", `comment_invalid` "Comentário vazio, longo demais, com caracteres invisíveis ou fora dos Termos de uso do ImagineUP." (o "fora dos Termos de uso" desde o filtro, 30.2) e `block_list_full` "Você chegou ao limite de fãs bloqueados."; do bloco 9 (24.2), `username_invalid` "Este @ não vale. Use de 3 a 20 letras minúsculas e números.", `photo_invalid` "Foto fora do formato. Escolha outra.", `photo_not_found` "Foto não encontrada. Envie de novo.", `username_taken` "Este @ já tem dono." e `username_change_too_soon` "Você trocou o @ há pouco. Tente de novo mais tarde."; do bloco 10 (25.2), `reward_not_found` "Recompensa não encontrada.", `sold_out` "Recompensa esgotada.", `redeem_limit_reached` "Você chegou ao limite de resgates desta recompensa." e `reward_changed` "O custo desta recompensa mudou. Confira antes de resgatar."; do bloco 11 (26.5), `account_suspended` "Sua conta está suspensa. Fale com a equipe do ImagineUP."; da proteção contra abuso (27.3 e 27.5), `rate_limited` "Muitos pedidos seguidos. Espere alguns segundos e tente de novo." e `app_check_failed` "Não deu para confirmar este aparelho. Atualize o app e tente de novo."; do perfil novo (28.2), `profile_invalid` "Perfil fora do formato. Confira os campos.", com `details: { field, reason }`. O filtro do que o fã publica (30.2) não cria código: o motivo `not_allowed` no `details.reason` do `comment_invalid` e do `profile_invalid`, e o @ barrado como `username_invalid` com `reserved`.
 
@@ -301,35 +301,35 @@ Por que a API para o resto: um caminho só no app (axios, React Query e cache no
 
 ### Coleções novas
 
-| Caminho                                                                      | Quem grava                                     | Quem lê pelo cliente                                                                            | Para quê                                                                                          |
-| ---------------------------------------------------------------------------- | ---------------------------------------------- | ----------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
-| `wallets/{uid}`                                                              | servidor (`award` e a marca de atividade)      | equipe com a seção `fans`                                                                       | os três contadores, totais, últimos 7 dias, temporadas passadas e atividade                       |
-| `wallets/{uid}/ledger/{entryId}`                                             | servidor (`award`)                             | equipe com `fans`                                                                               | extrato                                                                                           |
-| `wallets/{uid}/centralPoints/{artistId}`                                     | servidor (`award`)                             | equipe com `fans`                                                                               | pontos do fã em cada central                                                                      |
-| `config/points` e `config/points/versions/{n}`                               | servidor (callable do painel, bloco seguinte)  | equipe ativa                                                                                    | valores, limites diários e régua de níveis                                                        |
-| `config/season` e `config/season/versions/{n}`                               | servidor (callable do painel, bloco 8)         | equipe ativa                                                                                    | temporada atual                                                                                   |
-| `config/missions`, `config/achievements`, as versões e `missionArchive/{id}` | servidor (callables do painel, bloco 7)        | equipe com `missions` (as missões também com `overview`)                                        | catálogo de missões, meta da temporada, missões arquivadas e catálogo de conquistas (seção 22)    |
-| `statsDaily/{dia}` e `statsDaily/{dia}/statsShards/{n}`                      | servidor (`award`; fechamento do dia, 26.3)    | equipe com `overview`, `growth`, `missions` ou `rewards`                                        | contadores agregados do painel                                                                    |
-| `statsMeta/close`                                                            | servidor (fechamento do dia, bloco 11, 26.3)   | equipe com `overview`, `growth`, `missions` ou `rewards` (bloco 11, 26.10)                      | último dia fechado                                                                                |
-| `idempotency/{id}`                                                           | servidor (API)                                 | ninguém                                                                                         | chaves de idempotência                                                                            |
-| `users/{uid}/centrals/{artistId}`                                            | servidor (API, bloco 4)                        | equipe com `fans`                                                                               | vínculo do fã com a central (seção 19)                                                            |
-| `artistStats/{artistId}/fanShards/{n}`                                       | servidor (API e exclusão de conta, bloco 4)    | equipe com `artists`                                                                            | `fanCount` em shards, copiado para `artists/{id}` (seção 19)                                      |
-| `inviteCodes/{code}`                                                         | servidor (API e exclusão de conta, bloco 5)    | ninguém                                                                                         | dono de cada código de convite (seção 20)                                                         |
-| `fanInvites/{uid}` e `fanInvites/{uid}/inviteLinks/{linkId}`                 | servidor (API e exclusão de conta, bloco 5)    | equipe com `fans`                                                                               | o código do fã e os links que ele compartilhou (seção 20)                                         |
-| `fanInvites/{uid}/inviteVisitors/{personKey}`                                | servidor (API e exclusão de conta, bloco 5)    | ninguém                                                                                         | quem já contou como visitante de cada convidante (seção 20)                                       |
-| `referrals/{uid}`                                                            | servidor (API e exclusão de conta, bloco 5)    | equipe com `fans`                                                                               | quem trouxe o fã, por qual link e campanha (seção 20)                                             |
-| `posts/{postId}`                                                             | servidor (callables do painel, API, bloco 6)   | equipe com `artists`, `moderation` ou `fans` (e `missions`, bloco 11)                           | mural (seção 21)                                                                                  |
-| `posts/{postId}/postComments/{commentId}`                                    | servidor (API e callable, bloco 6)             | equipe com `artists` ou `moderation` (e `fans`, bloco 11)                                       | comentários (seção 21)                                                                            |
-| `postStats/{postId}/countShards/{n}`                                         | servidor (API e exclusão de conta, bloco 6)    | ninguém                                                                                         | curtidas e comentários em shards, copiados para o post (seção 21)                                 |
-| `events/{eventId}`                                                           | servidor (callables do painel, bloco 6)        | equipe com `artists`, `moderation`, `fans`, `rewards` ou `missions`                             | shows da agenda (seção 21; `rewards` desde o bloco 10, 25.10; `missions` desde o bloco 11, 26.10) |
-| `users/{uid}/postLikes/{postId}` e `users/{uid}/eventRsvps/{eventId}`        | servidor (API, bloco 6)                        | equipe com `fans`                                                                               | curtidas e presenças do fã, com o estado (seção 21)                                               |
-| `commentReports/{id}` e `moderationQueue/{commentId}`                        | servidor (API e callable, bloco 6)             | equipe com `moderation` (as denúncias, ninguém desde o bloco 11, 26.10: guardam quem denunciou) | denúncias e fila da Moderação (seção 21)                                                          |
-| `blockLists/{uid}`                                                           | servidor (API e exclusão de conta, bloco 6)    | ninguém                                                                                         | quem cada fã bloqueou (seção 21)                                                                  |
-| `seasons/{id}` e `seasons/{id}/standings/{uid}`                              | servidor (virada e exclusão de conta, bloco 8) | equipe com `ranking`                                                                            | resultado congelado de cada temporada e a posição final de cada fã (seção 23)                     |
-| `rankingJobs/{id}`                                                           | servidor (virada e retrato semanal, bloco 8)   | ninguém                                                                                         | andamento da virada e do retrato semanal (seção 23)                                               |
-| `rewards/{rewardId}`                                                         | servidor (painel, API e exclusão, bloco 10)    | equipe com `rewards`                                                                            | catálogo da loja, com o estoque (seção 25)                                                        |
-| `redemptions/{código}`                                                       | servidor (API, painel e exclusão, bloco 10)    | equipe com `rewards`                                                                            | pedidos de resgate, com o status (seção 25)                                                       |
-| `staffLimits/{uid}_{dia}`                                                    | servidor (ajuste e busca por e-mail, bloco 11) | ninguém                                                                                         | orçamento do dia de cada pessoa da equipe, com TTL de 30 dias (26.4)                              |
+| Caminho                                                                      | Quem grava                                      | Quem lê pelo cliente                                     | Para quê                                                                                       |
+| ---------------------------------------------------------------------------- | ----------------------------------------------- | -------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| `wallets/{uid}`                                                              | servidor (`award` e a marca de atividade)       | equipe com a seção `fans`                                | os três contadores, totais, últimos 7 dias, temporadas passadas e atividade                    |
+| `wallets/{uid}/ledger/{entryId}`                                             | servidor (`award`)                              | equipe com `fans`                                        | extrato                                                                                        |
+| `wallets/{uid}/centralPoints/{artistId}`                                     | servidor (`award`)                              | equipe com `fans`                                        | pontos do fã em cada central                                                                   |
+| `config/points` e `config/points/versions/{n}`                               | servidor (callable do painel, bloco seguinte)   | equipe ativa                                             | valores, limites diários e régua de níveis                                                     |
+| `config/season` e `config/season/versions/{n}`                               | servidor (callable do painel, bloco 8)          | equipe ativa                                             | temporada atual                                                                                |
+| `config/missions`, `config/achievements`, as versões e `missionArchive/{id}` | servidor (callables do painel, bloco 7)         | equipe com `missions` (as missões também com `overview`) | catálogo de missões, meta da temporada, missões arquivadas e catálogo de conquistas (seção 22) |
+| `statsDaily/{dia}` e `statsDaily/{dia}/statsShards/{n}`                      | servidor (`award`; fechamento do dia, 26.3)     | equipe com `overview`, `growth`, `missions` ou `rewards` | contadores agregados do painel                                                                 |
+| `statsMeta/close`                                                            | servidor (fechamento do dia, bloco 11, 26.3)    | equipe com `overview`, `growth`, `missions` ou `rewards` (bloco 11, 26.10) | último dia fechado                                                                             |
+| `idempotency/{id}`                                                           | servidor (API)                                  | ninguém                                                  | chaves de idempotência                                                                         |
+| `users/{uid}/centrals/{artistId}`                                            | servidor (API, bloco 4)                         | equipe com `fans`                                        | vínculo do fã com a central (seção 19)                                                         |
+| `artistStats/{artistId}/fanShards/{n}`                                       | servidor (API e exclusão de conta, bloco 4)     | equipe com `artists`                                     | `fanCount` em shards, copiado para `artists/{id}` (seção 19)                                   |
+| `inviteCodes/{code}`                                                         | servidor (API e exclusão de conta, bloco 5)     | ninguém                                                  | dono de cada código de convite (seção 20)                                                      |
+| `fanInvites/{uid}` e `fanInvites/{uid}/inviteLinks/{linkId}`                 | servidor (API e exclusão de conta, bloco 5)     | equipe com `fans`                                        | o código do fã e os links que ele compartilhou (seção 20)                                      |
+| `fanInvites/{uid}/inviteVisitors/{personKey}`                                | servidor (API e exclusão de conta, bloco 5)     | ninguém                                                  | quem já contou como visitante de cada convidante (seção 20)                                    |
+| `referrals/{uid}`                                                            | servidor (API e exclusão de conta, bloco 5)     | equipe com `fans`                                        | quem trouxe o fã, por qual link e campanha (seção 20)                                          |
+| `posts/{postId}`                                                             | servidor (callables do painel, API, bloco 6)    | equipe com `artists`, `moderation` ou `fans` (e `missions`, bloco 11) | mural (seção 21)                                                                               |
+| `posts/{postId}/postComments/{commentId}`                                    | servidor (API e callable, bloco 6)              | equipe com `artists` ou `moderation` (e `fans`, bloco 11) | comentários (seção 21)                                                                         |
+| `postStats/{postId}/countShards/{n}`                                         | servidor (API e exclusão de conta, bloco 6)     | ninguém                                                  | curtidas e comentários em shards, copiados para o post (seção 21)                              |
+| `events/{eventId}`                                                           | servidor (callables do painel, bloco 6)         | equipe com `artists`, `moderation`, `fans`, `rewards` ou `missions` | shows da agenda (seção 21; `rewards` desde o bloco 10, 25.10; `missions` desde o bloco 11, 26.10)                                  |
+| `users/{uid}/postLikes/{postId}` e `users/{uid}/eventRsvps/{eventId}`        | servidor (API, bloco 6)                         | equipe com `fans`                                        | curtidas e presenças do fã, com o estado (seção 21)                                            |
+| `commentReports/{id}` e `moderationQueue/{commentId}`                        | servidor (API e callable, bloco 6)              | equipe com `moderation` (as denúncias, ninguém desde o bloco 11, 26.10: guardam quem denunciou) | denúncias e fila da Moderação (seção 21)                                                       |
+| `blockLists/{uid}`                                                           | servidor (API e exclusão de conta, bloco 6)     | ninguém                                                  | quem cada fã bloqueou (seção 21)                                                               |
+| `seasons/{id}` e `seasons/{id}/standings/{uid}`                              | servidor (virada e exclusão de conta, bloco 8)  | equipe com `ranking`                                     | resultado congelado de cada temporada e a posição final de cada fã (seção 23)                  |
+| `rankingJobs/{id}`                                                           | servidor (virada e retrato semanal, bloco 8)    | ninguém                                                  | andamento da virada e do retrato semanal (seção 23)                                            |
+| `rewards/{rewardId}`                                                         | servidor (painel, API e exclusão, bloco 10)     | equipe com `rewards`                                     | catálogo da loja, com o estoque (seção 25)                                                     |
+| `redemptions/{código}`                                                       | servidor (API, painel e exclusão, bloco 10)     | equipe com `rewards`                                     | pedidos de resgate, com o status (seção 25)                                                    |
+| `staffLimits/{uid}_{dia}`                                                    | servidor (ajuste e busca por e-mail, bloco 11)  | ninguém                                                  | orçamento do dia de cada pessoa da equipe, com TTL de 30 dias (26.4)                            |
 
 O fã não lê nenhuma delas direto, nem a própria carteira: tudo chega pela API.
 
@@ -950,10 +950,10 @@ export function usesFixtures(): boolean; // algum domínio em fixtures
 
 Comportamento:
 
-| Situação                                                     | Carteira e progresso | Outros domínios                 |
-| ------------------------------------------------------------ | -------------------- | ------------------------------- |
-| Build sem API e sem emulador (o Expo Go sem `.env`)          | fixtures             | fixtures (igual a hoje)         |
-| Desenvolvimento com emulador                                 | API do emulador      | fixtures                        |
+| Situação                                           | Carteira e progresso | Outros domínios                 |
+| -------------------------------------------------- | -------------------- | ------------------------------- |
+| Build sem API e sem emulador (o Expo Go sem `.env`) | fixtures             | fixtures (igual a hoje)         |
+| Desenvolvimento com emulador                       | API do emulador      | fixtures                        |
 | Build com `EXPO_PUBLIC_API_URL` (as da EAS desde 08/10/2026) | API                  | fixtures até o bloco de cada um |
 
 **`EXPO_PUBLIC_API_URL` só entra nas builds da cliente quando todas as ações que rendem ou gastam pontos estiverem na API:** entrar na central (bloco 4), comentar, curtir e "Eu vou" (bloco 6), missões (bloco 7) e loja (bloco 10), e o ranking (bloco 8), para o card "Você" não mostrar o exemplo. Na prática, depois do bloco 10. Antes disso, com a regra de coerência abaixo, toda ação renderia 0, todo resgate recusaria com `points_unavailable` e todo fã de verdade ficaria com 0 ponto e nível 1: a cliente perderia a demonstração de pontos que tem hoje. Até lá, a API de verdade só vale em desenvolvimento, com os emuladores. Publicar a função `api` antes não muda nada nos aparelhos, enquanto a variável estiver vazia. (Cumprido com o bloco 10: a variável entrou no ambiente preview em 08/10/2026, com o APK interno, e em development e production no mesmo dia, pela resposta 10 de 28.15.)
@@ -6219,27 +6219,27 @@ Cada item traz a recomendação e o motivo. As perguntas para a cliente e para o
 
 Só o que as telas pedem. Cada linha com o custo.
 
-| Mudança                                                                                                                                                                       | Para quê                                                                                | Custo                                                                                                                                                                                                                                                                        |
-| ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `closeStatsDays` (agendada, 00:20) grava `statsDaily/{dia}` fechado, com o `snapshot` de ontem                                                                                | números de um dia em 1 leitura; o estoque da noite; a rede do `fanCount`                | por dia fechado, a lista dos shards (até 65 leituras) e 1 gravação; o retrato, umas 17 leituras por central mais as contagens; 1 job do Cloud Scheduler (o segundo do projeto, dentro dos 3 grátis por conta); no painel, 1 leitura de `statsMeta/close` por tela de números |
-| Isenções de índice nos mapas de `statsDaily`                                                                                                                                  | o documento fechado não vira milhares de entradas de índice                             | nenhum                                                                                                                                                                                                                                                                       |
-| `adjustFanPoints`                                                                                                                                                             | ajuste de pontos na ficha do fã                                                         | o membro, o perfil, a carteira, a central (com central), a temporada, o orçamento do dia e o extrato: até 7 leituras; carteira, extrato, centralPoints, shard, orçamento e auditoria: até 6 gravações                                                                        |
-| `findFanByEmail`                                                                                                                                                              | busca por e-mail                                                                        | 1 membro, 1 orçamento, 1 chamada ao Auth e 1 perfil; o orçamento e a auditoria gravados                                                                                                                                                                                      |
-| `staffLimits/{uid}_{dia}` (orçamento do dia de cada pessoa da equipe, com TTL)                                                                                                | teto diário do ajuste e da busca por e-mail                                             | 1 documento pequeno por pessoa e dia em que ajusta ou busca; some 30 dias depois pelo TTL                                                                                                                                                                                    |
-| Suspensão no `planAwards` (quem não chama) e no `ensureInviteCode`                                                                                                            | o suspenso não ganha pelo convite nem ganha código                                      | nenhuma leitura a mais (os dois já leem o perfil)                                                                                                                                                                                                                            |
-| `getPanelRanking`                                                                                                                                                             | ranking ao vivo                                                                         | a página do app (21 linhas, os perfis delas, até 3 contagens)                                                                                                                                                                                                                |
-| `resetFanUsername` e `clearFanPhoto`                                                                                                                                          | trocar o @ e tirar a foto                                                               | 3 a 7 leituras e 2 a 4 gravações; a foto põe a fila das cópias que já existe para andar                                                                                                                                                                                      |
-| `setFanSuspended`, `hideFanComments` e a trava na API                                                                                                                         | suspender e ocultar em lote                                                             | suspender: 2 leituras e 2 gravações; a trava: 0 leitura a mais (o perfil já é lido); o lote: até 24 comentários numa transação, com 2 leituras e até 2 gravações por comentário (o comentário e o item da fila), um shard por post, o membro e a auditoria                   |
-| `users.searchKeys` no cadastro e no gatilho do perfil, mais a carga                                                                                                           | busca por nome e @                                                                      | até 120 entradas de índice por fã; uma transação a mais (o perfil relido) quando o nome ou o @ mudam                                                                                                                                                                         |
-| `section` e `targets` no `writeAudit`, os índices e a carga                                                                                                                   | filtros dos Logs                                                                        | 5 índices compostos; a carga lê e grava cada entrada antiga uma vez                                                                                                                                                                                                          |
-| Regras novas de leitura (26.10)                                                                                                                                               | as telas                                                                                | as regras de equipe já leem `staff/{uid}`; nada muda nisso                                                                                                                                                                                                                   |
-| 18 índices compostos, as isenções e o TTL de `staffLimits` (26.11)                                                                                                            | as listas das telas                                                                     | gravação um pouco maior nas coleções indexadas                                                                                                                                                                                                                               |
-| `createPost` e `createEvent` com o id do painel, que só responde o id ao rascunho de quem chama (o `createReward` passa a conferir igual); `videoPath` ausente mantém o vídeo | retomar a criação sem dizer "criei" para outro documento; não apagar o mp4              | nenhum                                                                                                                                                                                                                                                                       |
-| Conquistas de posição no dia da rodada                                                                                                                                        | não gravar em dia fechado                                                               | nenhum                                                                                                                                                                                                                                                                       |
-| Cargas: `seed-game-config.mjs`, `backfill-fan-search.mjs`, `backfill-audit-index.mjs`; a `backfill-signups.mjs` abre o fechamento e respeita o dia fechado                    | o que falta em produção                                                                 | uma vez, no deploy; a dos cadastros lê `statsMeta/close` em cada transação                                                                                                                                                                                                   |
-| Seed: equipe com três níveis, 60 dias de números fechados, moderação, suspensão, pedidos abertos, meta batida e auditoria                                                     | cada tela com o que mostrar                                                             | só emulador                                                                                                                                                                                                                                                                  |
-| `PANEL_ORIGINS` aceita `http://localhost:3001` a `3009` no emulador (a 3000 já está na lista)                                                                                 | conferir as trilhas do painel em paralelo                                               | só emulador                                                                                                                                                                                                                                                                  |
-| App: `account_suspended` como recusa definitiva do convite; "Editar perfil" desliga o "Salvar" do suspenso                                                                    | a sincronização do convite não repete por 7 dias; o fã não vê "espere 10 s" para sempre | nenhum (chega com o próximo EAS Update ou build, sem mudar o fingerprint)                                                                                                                                                                                                    |
+| Mudança | Para quê | Custo |
+| --- | --- | --- |
+| `closeStatsDays` (agendada, 00:20) grava `statsDaily/{dia}` fechado, com o `snapshot` de ontem | números de um dia em 1 leitura; o estoque da noite; a rede do `fanCount` | por dia fechado, a lista dos shards (até 65 leituras) e 1 gravação; o retrato, umas 17 leituras por central mais as contagens; 1 job do Cloud Scheduler (o segundo do projeto, dentro dos 3 grátis por conta); no painel, 1 leitura de `statsMeta/close` por tela de números |
+| Isenções de índice nos mapas de `statsDaily` | o documento fechado não vira milhares de entradas de índice | nenhum |
+| `adjustFanPoints` | ajuste de pontos na ficha do fã | o membro, o perfil, a carteira, a central (com central), a temporada, o orçamento do dia e o extrato: até 7 leituras; carteira, extrato, centralPoints, shard, orçamento e auditoria: até 6 gravações |
+| `findFanByEmail` | busca por e-mail | 1 membro, 1 orçamento, 1 chamada ao Auth e 1 perfil; o orçamento e a auditoria gravados |
+| `staffLimits/{uid}_{dia}` (orçamento do dia de cada pessoa da equipe, com TTL) | teto diário do ajuste e da busca por e-mail | 1 documento pequeno por pessoa e dia em que ajusta ou busca; some 30 dias depois pelo TTL |
+| Suspensão no `planAwards` (quem não chama) e no `ensureInviteCode` | o suspenso não ganha pelo convite nem ganha código | nenhuma leitura a mais (os dois já leem o perfil) |
+| `getPanelRanking` | ranking ao vivo | a página do app (21 linhas, os perfis delas, até 3 contagens) |
+| `resetFanUsername` e `clearFanPhoto` | trocar o @ e tirar a foto | 3 a 7 leituras e 2 a 4 gravações; a foto põe a fila das cópias que já existe para andar |
+| `setFanSuspended`, `hideFanComments` e a trava na API | suspender e ocultar em lote | suspender: 2 leituras e 2 gravações; a trava: 0 leitura a mais (o perfil já é lido); o lote: até 24 comentários numa transação, com 2 leituras e até 2 gravações por comentário (o comentário e o item da fila), um shard por post, o membro e a auditoria |
+| `users.searchKeys` no cadastro e no gatilho do perfil, mais a carga | busca por nome e @ | até 120 entradas de índice por fã; uma transação a mais (o perfil relido) quando o nome ou o @ mudam |
+| `section` e `targets` no `writeAudit`, os índices e a carga | filtros dos Logs | 5 índices compostos; a carga lê e grava cada entrada antiga uma vez |
+| Regras novas de leitura (26.10) | as telas | as regras de equipe já leem `staff/{uid}`; nada muda nisso |
+| 18 índices compostos, as isenções e o TTL de `staffLimits` (26.11) | as listas das telas | gravação um pouco maior nas coleções indexadas |
+| `createPost` e `createEvent` com o id do painel, que só responde o id ao rascunho de quem chama (o `createReward` passa a conferir igual); `videoPath` ausente mantém o vídeo | retomar a criação sem dizer "criei" para outro documento; não apagar o mp4 | nenhum |
+| Conquistas de posição no dia da rodada | não gravar em dia fechado | nenhum |
+| Cargas: `seed-game-config.mjs`, `backfill-fan-search.mjs`, `backfill-audit-index.mjs`; a `backfill-signups.mjs` abre o fechamento e respeita o dia fechado | o que falta em produção | uma vez, no deploy; a dos cadastros lê `statsMeta/close` em cada transação |
+| Seed: equipe com três níveis, 60 dias de números fechados, moderação, suspensão, pedidos abertos, meta batida e auditoria | cada tela com o que mostrar | só emulador |
+| `PANEL_ORIGINS` aceita `http://localhost:3001` a `3009` no emulador (a 3000 já está na lista) | conferir as trilhas do painel em paralelo | só emulador |
+| App: `account_suspended` como recusa definitiva do convite; "Editar perfil" desliga o "Salvar" do suspenso | a sincronização do convite não repete por 7 dias; o fã não vê "espere 10 s" para sempre | nenhum (chega com o próximo EAS Update ou build, sem mudar o fingerprint) |
 
 Arquivos novos nas funções:
 
@@ -6312,15 +6312,15 @@ Hoje, só pelo botão. O retrato vale o do último dia do período que tem `snap
 
 No molde de 21.9 e 25.8: `onCall` exportada no `src/index.ts` depois do `setGlobalOptions`, com `cors: PANEL_ORIGINS`, erro `HttpsError(código, frase em pt-BR, { reason, ... })`, o acesso por `readPanelActor` fora e de novo dentro da transação (o `PanelActor` passa a trazer o `role`, que o teto do ajuste usa), e uma entrada em `staffAudit` por mudança, na mesma transação. Fora da equipe ativa: `not-staff`; sem a seção, ou só leitura numa mudança: `no-section`. Corpo que não é objeto ou campo errado: `invalid-request` com `details.field`. Nada mudou: `{ ok: true }` (ou a resposta do estado de agora) sem gravar nem auditar. As entradas de auditoria de fã levam o uid em `targetUid` e `targetEmail: ''`, nunca o e-mail. As callables que mudam um fã (o ajuste e as quatro da Moderação) recusam o uid de quem chama com `self`, conferido antes de qualquer leitura.
 
-| Callable           | Seção                | Pedido                                                                                         | Resposta                                                                   | Recusas (`details.reason`)                                                                                                                                                                                                                                               |
-| ------------------ | -------------------- | ---------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `adjustFanPoints`  | `fans`, edição       | `{ uid, adjustmentId, balance?, xp?, season?, central?: { artistId, season?, total? }, note }` | `{ status: 'applied' \| 'duplicate', balance, xp, seasonPoints }`          | `invalid-request`, `self`, `fan-not-found`, `artist-not-found`, `season-required`, `negative-counter` (`details.counter`), `adjust-above-limit` (`details.max`), `adjust-daily-limit` (`details.counter`, `details.remaining`), `adjustment-id-reused` (`details.entry`) |
-| `findFanByEmail`   | `fans`, edição       | `{ email }`                                                                                    | `{ uid: string \| null }`                                                  | `invalid-request`, `lookup-daily-limit`                                                                                                                                                                                                                                  |
-| `getPanelRanking`  | `ranking`, ver       | `{ artistId?: string \| null, cursor?: string \| null }`                                       | `{ season, items, nextCursor }`                                            | `invalid-request`, `artist-not-found`                                                                                                                                                                                                                                    |
-| `resetFanUsername` | `moderation`, edição | `{ uid, username, reason? }` (o `reason` desde a seção 32)                                     | `{ ok: true, username, changeableAt }` (o `changeableAt` desde a seção 32) | `invalid-request`, `self`, `fan-not-found`, `username-changed`, `username-of-central`                                                                                                                                                                                    |
-| `clearFanPhoto`    | `moderation`, edição | `{ uid }`                                                                                      | `{ ok: true }`                                                             | `invalid-request`, `self`, `fan-not-found`                                                                                                                                                                                                                               |
-| `setFanSuspended`  | `moderation`, edição | `{ uid, suspended, reason?, note? }`                                                           | `{ ok: true, suspended }`                                                  | `invalid-request`, `self`, `fan-not-found`                                                                                                                                                                                                                               |
-| `hideFanComments`  | `moderation`, edição | `{ uid }`                                                                                      | `{ hidden, more }`                                                         | `invalid-request`, `self`                                                                                                                                                                                                                                                |
+| Callable | Seção | Pedido | Resposta | Recusas (`details.reason`) |
+| --- | --- | --- | --- | --- |
+| `adjustFanPoints` | `fans`, edição | `{ uid, adjustmentId, balance?, xp?, season?, central?: { artistId, season?, total? }, note }` | `{ status: 'applied' \| 'duplicate', balance, xp, seasonPoints }` | `invalid-request`, `self`, `fan-not-found`, `artist-not-found`, `season-required`, `negative-counter` (`details.counter`), `adjust-above-limit` (`details.max`), `adjust-daily-limit` (`details.counter`, `details.remaining`), `adjustment-id-reused` (`details.entry`) |
+| `findFanByEmail` | `fans`, edição | `{ email }` | `{ uid: string \| null }` | `invalid-request`, `lookup-daily-limit` |
+| `getPanelRanking` | `ranking`, ver | `{ artistId?: string \| null, cursor?: string \| null }` | `{ season, items, nextCursor }` | `invalid-request`, `artist-not-found` |
+| `resetFanUsername` | `moderation`, edição | `{ uid, username, reason? }` (o `reason` desde a seção 32) | `{ ok: true, username, changeableAt }` (o `changeableAt` desde a seção 32) | `invalid-request`, `self`, `fan-not-found`, `username-changed`, `username-of-central` |
+| `clearFanPhoto` | `moderation`, edição | `{ uid }` | `{ ok: true }` | `invalid-request`, `self`, `fan-not-found` |
+| `setFanSuspended` | `moderation`, edição | `{ uid, suspended, reason?, note? }` | `{ ok: true, suspended }` | `invalid-request`, `self`, `fan-not-found` |
+| `hideFanComments` | `moderation`, edição | `{ uid }` | `{ hidden, more }` | `invalid-request`, `self` |
 
 Mensagens: `self` "Você não pode mudar a sua própria conta de fã pelo painel."; `fan-not-found` "Fã não encontrado."; `artist-not-found` "Central não encontrada."; `season-required` "Não há temporada em andamento para ajustar os pontos da temporada."; `negative-counter` "O ajuste deixaria {saldo, XP, pontos da temporada ou pontos da central} negativo."; `adjust-above-limit` "O ajuste passa do limite de {N} pontos por contador. Fale com um admin."; `adjust-daily-limit` "Hoje você ainda pode ajustar {N} pontos em {contador}. Fale com um admin."; `adjustment-id-reused` "Um ajuste desta tentativa já foi gravado. Confira o extrato antes de ajustar de novo."; `lookup-daily-limit` "Você chegou ao limite de 50 buscas por e-mail hoje."; `username-changed` "O @ deste fã mudou. Confira o @ de agora antes de trocar."; `username-of-central` "Este @ é de uma central, não de um fã.".
 
@@ -6417,75 +6417,75 @@ staffAudit/{autoId} {
 
 Rótulos (o painel mostra estes, de `src/lib/audit.ts`; o servidor só grava o `action`):
 
-| Ação                          | Rótulo                                                                       | Seção       |
-| ----------------------------- | ---------------------------------------------------------------------------- | ----------- |
-| `invite.created`              | Convite enviado                                                              | Equipe      |
-| `invite.resent`               | Convite reenviado                                                            | Equipe      |
-| `invite.canceled`             | Convite cancelado                                                            | Equipe      |
-| `invite.accepted`             | Convite aceito                                                               | Equipe      |
-| `member.updated`              | Acesso alterado                                                              | Equipe      |
-| `member.disabled`             | Acesso desativado                                                            | Equipe      |
-| `member.enabled`              | Acesso reativado                                                             | Equipe      |
-| `member.removed`              | Membro removido                                                              | Equipe      |
-| `artist.created`              | Central criada                                                               | Artistas    |
-| `artist.updated`              | Central editada                                                              | Artistas    |
-| `artist.published`            | Central publicada                                                            | Artistas    |
-| `artist.unpublished`          | Central tirada do ar                                                         | Artistas    |
-| `artist.deleted`              | Central apagada                                                              | Artistas    |
-| `artist.reordered`            | Centrais reordenadas                                                         | Artistas    |
-| `post.created`                | Post criado                                                                  | Artistas    |
-| `post.updated`                | Post editado                                                                 | Artistas    |
-| `post.published`              | Post publicado                                                               | Artistas    |
-| `post.unpublished`            | Post tirado do ar                                                            | Artistas    |
-| `post.deleted`                | Post apagado                                                                 | Artistas    |
-| `event.created`               | Show criado                                                                  | Artistas    |
-| `event.updated`               | Show editado                                                                 | Artistas    |
-| `event.published`             | Show publicado                                                               | Artistas    |
-| `event.unpublished`           | Show tirado do ar                                                            | Artistas    |
-| `event.deleted`               | Show apagado                                                                 | Artistas    |
-| `comment.hidden`              | Comentário ocultado                                                          | Moderação   |
-| `comment.kept`                | Comentário mantido                                                           | Moderação   |
-| `comment.restored`            | Comentário reexibido                                                         | Moderação   |
-| `fan.username.reset`          | @ do fã trocado                                                              | Moderação   |
-| `fan.photo.removed`           | Foto do fã removida                                                          | Moderação   |
-| `fan.suspended`               | Conta suspensa                                                               | Moderação   |
-| `fan.unsuspended`             | Suspensão retirada                                                           | Moderação   |
-| `fan.comments.hidden`         | Comentários do fã ocultados                                                  | Moderação   |
-| `fan.profile.cleared`         | Bio e redes do fã apagadas                                                   | Moderação   |
-| `fan.profile.report.resolved` | Denúncia de perfil resolvida                                                 | Moderação   |
-| `points.config.updated`       | Régua de pontos alterada                                                     | Missões     |
-| `mission.created`             | Missão criada                                                                | Missões     |
-| `mission.updated`             | Missão editada                                                               | Missões     |
-| `mission.published`           | Missão publicada (com `restored: true`, "Missão trazida de volta")           | Missões     |
-| `mission.archived`            | Missão arquivada                                                             | Missões     |
-| `mission.reordered`           | Missões reordenadas                                                          | Missões     |
-| `season.goal.updated`         | Meta da temporada alterada                                                   | Missões     |
-| `achievement.created`         | Conquista criada                                                             | Missões     |
-| `achievement.updated`         | Conquista editada                                                            | Missões     |
-| `achievement.published`       | Conquista publicada                                                          | Missões     |
-| `achievement.archived`        | Conquista arquivada                                                          | Missões     |
-| `achievement.reordered`       | Conquistas reordenadas                                                       | Missões     |
-| `config.seeded`               | Configuração inicial gravada                                                 | Missões     |
-| `season.updated`              | Temporada alterada                                                           | Ranking     |
-| `season.next.updated`         | Próxima temporada alterada                                                   | Ranking     |
-| `season.ended`                | Temporada encerrada antes da hora                                            | Ranking     |
-| `season.close.requested`      | Fechamento da temporada pedido                                               | Ranking     |
-| `season.closed`               | Temporada fechada                                                            | Ranking     |
-| `reward.created`              | Recompensa criada                                                            | Recompensas |
-| `reward.updated`              | Recompensa editada                                                           | Recompensas |
-| `reward.published`            | Recompensa publicada (com `reopened: true`, "Recompensa reaberta")           | Recompensas |
-| `reward.closed`               | Recompensa encerrada                                                         | Recompensas |
-| `reward.stock.updated`        | Estoque alterado                                                             | Recompensas |
-| `reward.reordered`            | Recompensas reordenadas                                                      | Recompensas |
-| `reward.deleted`              | Recompensa apagada                                                           | Recompensas |
-| `redemption.approved`         | Resgate aprovado                                                             | Recompensas |
-| `redemption.delivered`        | Resgate entregue                                                             | Recompensas |
-| `redemption.refused`          | Resgate recusado                                                             | Recompensas |
-| `redemption.contacts.viewed`  | Contatos de resgate vistos                                                   | Recompensas |
-| `wallet.adjusted`             | Pontos ajustados                                                             | Fãs         |
-| `fan.email.lookup`            | Fã buscado por e-mail (com `found: false`, "Busca por e-mail sem resultado") | Fãs         |
-| `fan.data.exported`           | Dados do fã exportados (LGPD)                                                | Fãs         |
-| `fan.account.deleted`         | Conta do fã excluída (LGPD)                                                  | Fãs         |
+| Ação | Rótulo | Seção |
+| --- | --- | --- |
+| `invite.created` | Convite enviado | Equipe |
+| `invite.resent` | Convite reenviado | Equipe |
+| `invite.canceled` | Convite cancelado | Equipe |
+| `invite.accepted` | Convite aceito | Equipe |
+| `member.updated` | Acesso alterado | Equipe |
+| `member.disabled` | Acesso desativado | Equipe |
+| `member.enabled` | Acesso reativado | Equipe |
+| `member.removed` | Membro removido | Equipe |
+| `artist.created` | Central criada | Artistas |
+| `artist.updated` | Central editada | Artistas |
+| `artist.published` | Central publicada | Artistas |
+| `artist.unpublished` | Central tirada do ar | Artistas |
+| `artist.deleted` | Central apagada | Artistas |
+| `artist.reordered` | Centrais reordenadas | Artistas |
+| `post.created` | Post criado | Artistas |
+| `post.updated` | Post editado | Artistas |
+| `post.published` | Post publicado | Artistas |
+| `post.unpublished` | Post tirado do ar | Artistas |
+| `post.deleted` | Post apagado | Artistas |
+| `event.created` | Show criado | Artistas |
+| `event.updated` | Show editado | Artistas |
+| `event.published` | Show publicado | Artistas |
+| `event.unpublished` | Show tirado do ar | Artistas |
+| `event.deleted` | Show apagado | Artistas |
+| `comment.hidden` | Comentário ocultado | Moderação |
+| `comment.kept` | Comentário mantido | Moderação |
+| `comment.restored` | Comentário reexibido | Moderação |
+| `fan.username.reset` | @ do fã trocado | Moderação |
+| `fan.photo.removed` | Foto do fã removida | Moderação |
+| `fan.suspended` | Conta suspensa | Moderação |
+| `fan.unsuspended` | Suspensão retirada | Moderação |
+| `fan.comments.hidden` | Comentários do fã ocultados | Moderação |
+| `fan.profile.cleared` | Bio e redes do fã apagadas | Moderação |
+| `fan.profile.report.resolved` | Denúncia de perfil resolvida | Moderação |
+| `points.config.updated` | Régua de pontos alterada | Missões |
+| `mission.created` | Missão criada | Missões |
+| `mission.updated` | Missão editada | Missões |
+| `mission.published` | Missão publicada (com `restored: true`, "Missão trazida de volta") | Missões |
+| `mission.archived` | Missão arquivada | Missões |
+| `mission.reordered` | Missões reordenadas | Missões |
+| `season.goal.updated` | Meta da temporada alterada | Missões |
+| `achievement.created` | Conquista criada | Missões |
+| `achievement.updated` | Conquista editada | Missões |
+| `achievement.published` | Conquista publicada | Missões |
+| `achievement.archived` | Conquista arquivada | Missões |
+| `achievement.reordered` | Conquistas reordenadas | Missões |
+| `config.seeded` | Configuração inicial gravada | Missões |
+| `season.updated` | Temporada alterada | Ranking |
+| `season.next.updated` | Próxima temporada alterada | Ranking |
+| `season.ended` | Temporada encerrada antes da hora | Ranking |
+| `season.close.requested` | Fechamento da temporada pedido | Ranking |
+| `season.closed` | Temporada fechada | Ranking |
+| `reward.created` | Recompensa criada | Recompensas |
+| `reward.updated` | Recompensa editada | Recompensas |
+| `reward.published` | Recompensa publicada (com `reopened: true`, "Recompensa reaberta") | Recompensas |
+| `reward.closed` | Recompensa encerrada | Recompensas |
+| `reward.stock.updated` | Estoque alterado | Recompensas |
+| `reward.reordered` | Recompensas reordenadas | Recompensas |
+| `reward.deleted` | Recompensa apagada | Recompensas |
+| `redemption.approved` | Resgate aprovado | Recompensas |
+| `redemption.delivered` | Resgate entregue | Recompensas |
+| `redemption.refused` | Resgate recusado | Recompensas |
+| `redemption.contacts.viewed` | Contatos de resgate vistos | Recompensas |
+| `wallet.adjusted` | Pontos ajustados | Fãs |
+| `fan.email.lookup` | Fã buscado por e-mail (com `found: false`, "Busca por e-mail sem resultado") | Fãs |
+| `fan.data.exported` | Dados do fã exportados (LGPD) | Fãs |
+| `fan.account.deleted` | Conta do fã excluída (LGPD) | Fãs |
 
 Os `changed[]` e `fields[]` vêm com o nome do campo em inglês (`title`, `cost`, `dailyLimits`...): o painel tem um dicionário de rótulos por entidade e mostra o nome cru quando não conhece. Ação que o painel não conhece aparece com o `action` cru e a seção "Outros". `actorUid: null` aparece como o `actorName` gravado ("Virada automática", "Equipe ImagineUP", "Carga inicial").
 
@@ -6614,152 +6614,44 @@ Acréscimo ao `firestore.indexes.json` (os de hoje ficam):
 ```json
 {
   "indexes": [
-    {
-      "collectionGroup": "staffAudit",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "actorUid", "order": "ASCENDING" },
-        { "fieldPath": "createdAt", "order": "DESCENDING" }
-      ]
-    },
-    {
-      "collectionGroup": "staffAudit",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "section", "order": "ASCENDING" },
-        { "fieldPath": "createdAt", "order": "DESCENDING" }
-      ]
-    },
-    {
-      "collectionGroup": "staffAudit",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "actorUid", "order": "ASCENDING" },
-        { "fieldPath": "section", "order": "ASCENDING" },
-        { "fieldPath": "createdAt", "order": "DESCENDING" }
-      ]
-    },
-    {
-      "collectionGroup": "staffAudit",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "action", "order": "ASCENDING" },
-        { "fieldPath": "createdAt", "order": "DESCENDING" }
-      ]
-    },
-    {
-      "collectionGroup": "staffAudit",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "targets", "arrayConfig": "CONTAINS" },
-        { "fieldPath": "createdAt", "order": "DESCENDING" }
-      ]
-    },
-    {
-      "collectionGroup": "centrals",
-      "queryScope": "COLLECTION_GROUP",
-      "fields": [
-        { "fieldPath": "artistId", "order": "ASCENDING" },
-        { "fieldPath": "joinedAt", "order": "DESCENDING" }
-      ]
-    },
-    {
-      "collectionGroup": "referrals",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "inviterUid", "order": "ASCENDING" },
-        { "fieldPath": "claimedAt", "order": "DESCENDING" }
-      ]
-    },
-    {
-      "collectionGroup": "postLikes",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "liked", "order": "ASCENDING" },
-        { "fieldPath": "updatedAt", "order": "DESCENDING" }
-      ]
-    },
-    {
-      "collectionGroup": "eventRsvps",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "going", "order": "ASCENDING" },
-        { "fieldPath": "updatedAt", "order": "DESCENDING" }
-      ]
-    },
-    {
-      "collectionGroup": "postComments",
-      "queryScope": "COLLECTION_GROUP",
-      "fields": [
-        { "fieldPath": "authorUid", "order": "ASCENDING" },
-        { "fieldPath": "createdAt", "order": "DESCENDING" }
-      ]
-    },
-    {
-      "collectionGroup": "postComments",
-      "queryScope": "COLLECTION_GROUP",
-      "fields": [
-        { "fieldPath": "authorUid", "order": "ASCENDING" },
-        { "fieldPath": "status", "order": "ASCENDING" }
-      ]
-    },
-    {
-      "collectionGroup": "postComments",
-      "queryScope": "COLLECTION_GROUP",
-      "fields": [
-        { "fieldPath": "status", "order": "ASCENDING" },
-        { "fieldPath": "hiddenAt", "order": "DESCENDING" }
-      ]
-    },
-    {
-      "collectionGroup": "posts",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "status", "order": "ASCENDING" },
-        { "fieldPath": "createdAt", "order": "DESCENDING" }
-      ]
-    },
-    {
-      "collectionGroup": "posts",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "artistId", "order": "ASCENDING" },
-        { "fieldPath": "status", "order": "ASCENDING" },
-        { "fieldPath": "createdAt", "order": "DESCENDING" }
-      ]
-    },
-    {
-      "collectionGroup": "events",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "artistIds", "arrayConfig": "CONTAINS" },
-        { "fieldPath": "startsAt", "order": "ASCENDING" }
-      ]
-    },
-    {
-      "collectionGroup": "events",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "artistIds", "arrayConfig": "CONTAINS" },
-        { "fieldPath": "startsAt", "order": "DESCENDING" }
-      ]
-    },
-    {
-      "collectionGroup": "moderationQueue",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "status", "order": "ASCENDING" },
-        { "fieldPath": "resolvedAt", "order": "DESCENDING" }
-      ]
-    },
-    {
-      "collectionGroup": "moderationQueue",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "authorUid", "order": "ASCENDING" },
-        { "fieldPath": "lastReportedAt", "order": "DESCENDING" }
-      ]
-    }
+    { "collectionGroup": "staffAudit", "queryScope": "COLLECTION", "fields": [
+      { "fieldPath": "actorUid", "order": "ASCENDING" }, { "fieldPath": "createdAt", "order": "DESCENDING" } ] },
+    { "collectionGroup": "staffAudit", "queryScope": "COLLECTION", "fields": [
+      { "fieldPath": "section", "order": "ASCENDING" }, { "fieldPath": "createdAt", "order": "DESCENDING" } ] },
+    { "collectionGroup": "staffAudit", "queryScope": "COLLECTION", "fields": [
+      { "fieldPath": "actorUid", "order": "ASCENDING" }, { "fieldPath": "section", "order": "ASCENDING" },
+      { "fieldPath": "createdAt", "order": "DESCENDING" } ] },
+    { "collectionGroup": "staffAudit", "queryScope": "COLLECTION", "fields": [
+      { "fieldPath": "action", "order": "ASCENDING" }, { "fieldPath": "createdAt", "order": "DESCENDING" } ] },
+    { "collectionGroup": "staffAudit", "queryScope": "COLLECTION", "fields": [
+      { "fieldPath": "targets", "arrayConfig": "CONTAINS" }, { "fieldPath": "createdAt", "order": "DESCENDING" } ] },
+    { "collectionGroup": "centrals", "queryScope": "COLLECTION_GROUP", "fields": [
+      { "fieldPath": "artistId", "order": "ASCENDING" }, { "fieldPath": "joinedAt", "order": "DESCENDING" } ] },
+    { "collectionGroup": "referrals", "queryScope": "COLLECTION", "fields": [
+      { "fieldPath": "inviterUid", "order": "ASCENDING" }, { "fieldPath": "claimedAt", "order": "DESCENDING" } ] },
+    { "collectionGroup": "postLikes", "queryScope": "COLLECTION", "fields": [
+      { "fieldPath": "liked", "order": "ASCENDING" }, { "fieldPath": "updatedAt", "order": "DESCENDING" } ] },
+    { "collectionGroup": "eventRsvps", "queryScope": "COLLECTION", "fields": [
+      { "fieldPath": "going", "order": "ASCENDING" }, { "fieldPath": "updatedAt", "order": "DESCENDING" } ] },
+    { "collectionGroup": "postComments", "queryScope": "COLLECTION_GROUP", "fields": [
+      { "fieldPath": "authorUid", "order": "ASCENDING" }, { "fieldPath": "createdAt", "order": "DESCENDING" } ] },
+    { "collectionGroup": "postComments", "queryScope": "COLLECTION_GROUP", "fields": [
+      { "fieldPath": "authorUid", "order": "ASCENDING" }, { "fieldPath": "status", "order": "ASCENDING" } ] },
+    { "collectionGroup": "postComments", "queryScope": "COLLECTION_GROUP", "fields": [
+      { "fieldPath": "status", "order": "ASCENDING" }, { "fieldPath": "hiddenAt", "order": "DESCENDING" } ] },
+    { "collectionGroup": "posts", "queryScope": "COLLECTION", "fields": [
+      { "fieldPath": "status", "order": "ASCENDING" }, { "fieldPath": "createdAt", "order": "DESCENDING" } ] },
+    { "collectionGroup": "posts", "queryScope": "COLLECTION", "fields": [
+      { "fieldPath": "artistId", "order": "ASCENDING" }, { "fieldPath": "status", "order": "ASCENDING" },
+      { "fieldPath": "createdAt", "order": "DESCENDING" } ] },
+    { "collectionGroup": "events", "queryScope": "COLLECTION", "fields": [
+      { "fieldPath": "artistIds", "arrayConfig": "CONTAINS" }, { "fieldPath": "startsAt", "order": "ASCENDING" } ] },
+    { "collectionGroup": "events", "queryScope": "COLLECTION", "fields": [
+      { "fieldPath": "artistIds", "arrayConfig": "CONTAINS" }, { "fieldPath": "startsAt", "order": "DESCENDING" } ] },
+    { "collectionGroup": "moderationQueue", "queryScope": "COLLECTION", "fields": [
+      { "fieldPath": "status", "order": "ASCENDING" }, { "fieldPath": "resolvedAt", "order": "DESCENDING" } ] },
+    { "collectionGroup": "moderationQueue", "queryScope": "COLLECTION", "fields": [
+      { "fieldPath": "authorUid", "order": "ASCENDING" }, { "fieldPath": "lastReportedAt", "order": "DESCENDING" } ] }
   ],
   "fieldOverrides": [
     { "collectionGroup": "statsDaily", "fieldPath": "totals", "indexes": [] },
@@ -6892,18 +6784,18 @@ Testes da fundação (`tests/*.test.mjs`): `format`, `day` (perto da meia-noite 
 
 Cabeçalho "Visão geral", com o resumo "Números fechados até ontem.", o seletor de período (7, 30 ou 90 dias, padrão 30) e a linha do `DataFreshness`.
 
-| O que mostra                                                                          | De onde vem                                                                                                                 |
-| ------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
-| Fãs (total, e a variação no período)                                                  | `snapshot.fans` do último dia fechado do período, menos o do dia antes do período; sem retrato, "Sai no próximo fechamento" |
-| Cadastros (com a variação contra o período anterior)                                  | soma de `signups.total`                                                                                                     |
-| Pontos distribuídos (lima), com "Ajustes da equipe no saldo: +N em M ajustes" na dica | soma de `totals.earned`; os ajustes de `bySource.adjustment` (`points` e `events`; decisão 23)                              |
-| Ativos por dia (média), com "Nesta semana: N. Neste mês: M."                          | média de `actives.day`; os únicos da semana e do mês de agora até ontem pela soma de `newInWeek` e `newInMonth` (decisão 5) |
-| Engajamento: curtidas, comentários, presenças e denúncias                             | `totals.likes`, `comments`, `rsvps`, `reports`                                                                              |
-| Loja: pedidos, pontos gastos (lima), devolvidos (lima), entregues                     | `totals.redeemRequested`, `bySource.redeem.points`, `totals.refunded`, `totals.redeemDelivered`                             |
-| Gráfico por dia, com abas Cadastros, Ativos, Pontos (lima) e Engajamento              | os mesmos campos, dia a dia                                                                                                 |
-| Pontos por origem (tabela)                                                            | `bySource`, com os rótulos de `SOURCE_LABELS`, pontos (lima) e eventos                                                      |
-| Missões mais concluídas (as 5 primeiras)                                              | `byMission[id].completed`; o título de `config/missions` e, para as arquivadas, `missionArchive/{id}`                       |
-| Conquistas desbloqueadas                                                              | `byAchievement[id].unlocked`; o nome de `config/achievements` (regra nova, 26.10)                                           |
+| O que mostra | De onde vem |
+| --- | --- |
+| Fãs (total, e a variação no período) | `snapshot.fans` do último dia fechado do período, menos o do dia antes do período; sem retrato, "Sai no próximo fechamento" |
+| Cadastros (com a variação contra o período anterior) | soma de `signups.total` |
+| Pontos distribuídos (lima), com "Ajustes da equipe no saldo: +N em M ajustes" na dica | soma de `totals.earned`; os ajustes de `bySource.adjustment` (`points` e `events`; decisão 23) |
+| Ativos por dia (média), com "Nesta semana: N. Neste mês: M." | média de `actives.day`; os únicos da semana e do mês de agora até ontem pela soma de `newInWeek` e `newInMonth` (decisão 5) |
+| Engajamento: curtidas, comentários, presenças e denúncias | `totals.likes`, `comments`, `rsvps`, `reports` |
+| Loja: pedidos, pontos gastos (lima), devolvidos (lima), entregues | `totals.redeemRequested`, `bySource.redeem.points`, `totals.refunded`, `totals.redeemDelivered` |
+| Gráfico por dia, com abas Cadastros, Ativos, Pontos (lima) e Engajamento | os mesmos campos, dia a dia |
+| Pontos por origem (tabela) | `bySource`, com os rótulos de `SOURCE_LABELS`, pontos (lima) e eventos |
+| Missões mais concluídas (as 5 primeiras) | `byMission[id].completed`; o título de `config/missions` e, para as arquivadas, `missionArchive/{id}` |
+| Conquistas desbloqueadas | `byAchievement[id].unlocked`; o nome de `config/achievements` (regra nova, 26.10) |
 
 - Leitura única dos dias do período e do anterior (`getStatsDays`, uma consulta por 90 dias, mais o `statsMeta/close`), dos títulos (`game-names-data.ts`: um `getDoc` de cada catálogo e um por missão arquivada que apareça) e, só no botão, dos shards de hoje, que entram como "hoje, parcial" no gráfico e na dica dos cartões. Sem escuta: os dias fechados só mudam uma vez por noite.
 - Sem ação de mudança: Leitor, Editor e Admin veem o mesmo. Quem não vê a Visão geral vai para a primeira seção liberada, como hoje.
@@ -6916,20 +6808,20 @@ Abas: "Cadastros e origem", "Ativos e retenção" e "Comparativo". O período va
 
 **Cadastros e origem:**
 
-| O que mostra                                                                            | De onde vem                                                                                                                                                                |
-| --------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| O que mostra | De onde vem |
+| --- | --- |
 | Cadastros; vindos de convite (com a parte do total); visitas pelos links; links criados | `signups.total`, `signups.invited`, `invites.visits`, `invites.links`. A dica do convite: "Conta no dia em que o convite foi usado, até 7 dias depois do cadastro." (20.7) |
-| Cadastros por dia, com a parte por convite em ciano dentro da barra                     | os mesmos, dia a dia                                                                                                                                                       |
-| Por tipo de link: cadastros, visitas e links                                            | `byOrigin.kind`, com `ORIGIN_KIND_LABELS`                                                                                                                                  |
-| Campanhas (`utm_campaign`) e origens (`utm_source`): cadastros e a parte de cada uma    | `byOrigin.utmCampaign` e `utmSource` (só cadastros por convite); `_none` é "Sem campanha", `_other` é "Outras"                                                             |
+| Cadastros por dia, com a parte por convite em ciano dentro da barra | os mesmos, dia a dia |
+| Por tipo de link: cadastros, visitas e links | `byOrigin.kind`, com `ORIGIN_KIND_LABELS` |
+| Campanhas (`utm_campaign`) e origens (`utm_source`): cadastros e a parte de cada uma | `byOrigin.utmCampaign` e `utmSource` (só cadastros por convite); `_none` é "Sem campanha", `_other` é "Outras" |
 
 **Ativos e retenção:**
 
-| O que mostra                                                                                                                                     | De onde vem                                                                                                                                                                                                    |
-| ------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Ativos por dia (média) e o gráfico por dia                                                                                                       | `actives.day`                                                                                                                                                                                                  |
-| Semana: os únicos desta semana até ontem, com a semana passada inteira na dica                                                                   | soma de `newInWeek` nos dias de cada semana ISO                                                                                                                                                                |
-| Mês: os únicos deste mês até ontem, com o mês passado na dica                                                                                    | soma de `newInMonth` nos dias de cada mês                                                                                                                                                                      |
+| O que mostra | De onde vem |
+| --- | --- |
+| Ativos por dia (média) e o gráfico por dia | `actives.day` |
+| Semana: os únicos desta semana até ontem, com a semana passada inteira na dica | soma de `newInWeek` nos dias de cada semana ISO |
+| Mês: os únicos deste mês até ontem, com o mês passado na dica | soma de `newInMonth` nos dias de cada mês |
 | Retenção por coorte: as 8 últimas semanas de cadastro nas linhas, as semanas depois dele nas colunas, com a porcentagem e os cadastros da coorte | `cohorts[C].active` somado nos dias da semana C + n, dividido pela soma de `signups.total` nos dias da semana C (seção 7); a célula mostra o número, com o fundo em ciano mais ou menos forte (nunca só a cor) |
 
 A retenção lê as 8 semanas inteiras mais a de agora (até 63 dias), numa consulta, à parte do período.
@@ -6948,13 +6840,13 @@ Para as três abas: Leitor, Editor e Admin veem o mesmo, sem ação. Vazio: "Nen
 
 Cabeçalho com o resumo vivo ("São João em andamento, termina em 12 dias.").
 
-| O que mostra                                                                                                                      | De onde vem                                                                                                                                                                                                                                                                                                                                                                |
-| --------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| O que mostra | De onde vem |
+| --- | --- |
 | Temporada atual: nome, identificador, de quando a quando, situação, tamanho do top, título do 1º lugar, "encerrada antes da hora" | `config/season.season`, em leitura única (`getDoc`) ao abrir e no "Atualizar" (decisão 19); a situação pelo relógio e por `seasons/{id}` (um `getDoc`): "Agendada" (começa no futuro), "Em andamento", "Esperando a virada" (passou do fim), "Virada em andamento" (`status: 'closing'`), "Virada atrasada" (mais de 30 min depois do fim, sem arquivo ou ainda `closing`) |
-| Próxima temporada                                                                                                                 | `config/season.next`                                                                                                                                                                                                                                                                                                                                                       |
-| Ranking ao vivo: posição, fã, cidade, pontos (lima), seta da semana                                                               | `getPanelRanking`, geral ou de uma central, 20 por página com "Carregar mais"; a temporada mostrada (a em andamento, ou a última fechada)                                                                                                                                                                                                                                  |
-| Temporadas passadas: nome, datas, fãs no ranking, encerrada antes da hora                                                         | `seasons` com `orderBy('startsAt', 'desc')` e `limit(20)`; `config/season.lastClosed` no topo                                                                                                                                                                                                                                                                              |
-| Pódio de uma temporada passada (os 10 primeiros, no geral ou numa central)                                                        | `seasons/{id}/standings` com `orderBy('position')` (ou `centrals.<id>.position`) e `limit(10)`, com o nome, a foto e a cidade guardados na virada                                                                                                                                                                                                                          |
+| Próxima temporada | `config/season.next` |
+| Ranking ao vivo: posição, fã, cidade, pontos (lima), seta da semana | `getPanelRanking`, geral ou de uma central, 20 por página com "Carregar mais"; a temporada mostrada (a em andamento, ou a última fechada) |
+| Temporadas passadas: nome, datas, fãs no ranking, encerrada antes da hora | `seasons` com `orderBy('startsAt', 'desc')` e `limit(20)`; `config/season.lastClosed` no topo |
+| Pódio de uma temporada passada (os 10 primeiros, no geral ou numa central) | `seasons/{id}/standings` com `orderBy('position')` (ou `centrals.<id>.position`) e `limit(10)`, com o nome, a foto e a cidade guardados na virada |
 
 Ações (editor com `ranking` e admin), todas com o `version` de `config/season` lido na abertura (ou no último "Atualizar") como `expectedVersion`:
 
@@ -6977,18 +6869,18 @@ Leitor vê tudo, sem os botões. O nome de um fã no ranking leva à ficha só p
 
 **Ficha (`/fas/[uid]`).** A UP-33 está pronta quando esta tela mostra o histórico e a origem.
 
-| O que mostra                                                                                                                                                                                                                                                                                                                                                                                                             | De onde vem                                                                                                                                                                                                                                                                                                                                                                                                                 |
-| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Cabeçalho: foto, nome, @, cidade, no app desde, o selo "Suspenso" com o motivo                                                                                                                                                                                                                                                                                                                                           | `users/{uid}` (regra nova)                                                                                                                                                                                                                                                                                                                                                                                                  |
-| Saldo, XP e nível, pontos da temporada (com a posição do retrato da semana), ganhos nos últimos 7 dias, todos em lima                                                                                                                                                                                                                                                                                                    | `wallets/{uid}` (sem documento, tudo 0 e nível 1); o nível pela régua de `config/points` (`levels.ts`); os pontos da temporada só quando o `seasonId` da carteira é o de `config/season.season`, senão 0 (a carteira só troca de temporada quando o fã age); `rankWeek` quando é da temporada de agora; a soma de `days` só dos dias de `shiftDay(hoje, -6)` até hoje (a carteira só corta os dias velhos quando é gravada) |
-| **Origem do cadastro**: "Cadastro direto, sem convite." ou "Veio pelo convite de {nome}" com o link usado ("pelo link do post {título}", "da central {nome}", "da agenda", "de convite" ou "pelo código digitado"), a campanha, a origem e o meio, a data, e o que quem convidou ganhou ("rendeu 2 pontos pela visita e 10 pelo cadastro", "não rendeu: a mesma pessoa em outra conta", "quem convidou excluiu a conta") | `referrals/{uid}`, o perfil de quem convidou e o título do post ou o nome da central do link                                                                                                                                                                                                                                                                                                                                |
-| Aba **Extrato**: data e hora, origem, contexto, pontos (lima no ganho), saldo depois, e quem ajustou com o motivo                                                                                                                                                                                                                                                                                                        | `wallets/{uid}/ledger` por `createdAt` decrescente, 20 por vez; `actor.name` e `note` nos ajustes                                                                                                                                                                                                                                                                                                                           |
-| Aba **Centrais**: central, como entrou ("escolha inicial", "página da central", "seed"), desde quando, se é membro, pontos da temporada e de sempre (lima)                                                                                                                                                                                                                                                               | `users/{uid}/centrals` e `wallets/{uid}/centralPoints`, com os pontos da temporada só quando o `seasonId` do documento é o da temporada de agora                                                                                                                                                                                                                                                                            |
-| Aba **Curtidas e presenças**                                                                                                                                                                                                                                                                                                                                                                                             | `postLikes` com `liked == true` e `eventRsvps` com `going == true`, das mais novas, 20 por vez, com o post e o show                                                                                                                                                                                                                                                                                                         |
-| Aba **Comentários**: texto, post, central, data, visível ou oculto                                                                                                                                                                                                                                                                                                                                                       | grupo `postComments` com `authorUid ==`, do mais novo, 20 por vez (regra e índice novos)                                                                                                                                                                                                                                                                                                                                    |
-| Aba **Convites**: o código, os links criados e as pessoas trazidas (com o total)                                                                                                                                                                                                                                                                                                                                         | `fanInvites/{uid}`, `inviteLinks`, `referrals` com `inviterUid ==` por `claimedAt` e o `count()`, com o nome de cada pessoa                                                                                                                                                                                                                                                                                                 |
-| Aba **Missões e conquistas**: o progresso do dia e da semana, a meta da temporada, as conquistas com a data e as temporadas jogadas                                                                                                                                                                                                                                                                                      | a carteira (`missions`, `seasonMissions`, `goalReached`, `achievements`, `stats.pastSeasons`), com os nomes de `config/missions`, `missionArchive` e `config/achievements`                                                                                                                                                                                                                                                  |
-| Aba **Resgates**, só para quem também vê Recompensas: código, recompensa, pontos, situação e data                                                                                                                                                                                                                                                                                                                        | `redemptions` com `uid ==` por `requestedAt` decrescente (índice existe); a regra continua só da seção `rewards` (decisão 8). Sem a seção, a aba não aparece                                                                                                                                                                                                                                                                |
+| O que mostra | De onde vem |
+| --- | --- |
+| Cabeçalho: foto, nome, @, cidade, no app desde, o selo "Suspenso" com o motivo | `users/{uid}` (regra nova) |
+| Saldo, XP e nível, pontos da temporada (com a posição do retrato da semana), ganhos nos últimos 7 dias, todos em lima | `wallets/{uid}` (sem documento, tudo 0 e nível 1); o nível pela régua de `config/points` (`levels.ts`); os pontos da temporada só quando o `seasonId` da carteira é o de `config/season.season`, senão 0 (a carteira só troca de temporada quando o fã age); `rankWeek` quando é da temporada de agora; a soma de `days` só dos dias de `shiftDay(hoje, -6)` até hoje (a carteira só corta os dias velhos quando é gravada) |
+| **Origem do cadastro**: "Cadastro direto, sem convite." ou "Veio pelo convite de {nome}" com o link usado ("pelo link do post {título}", "da central {nome}", "da agenda", "de convite" ou "pelo código digitado"), a campanha, a origem e o meio, a data, e o que quem convidou ganhou ("rendeu 2 pontos pela visita e 10 pelo cadastro", "não rendeu: a mesma pessoa em outra conta", "quem convidou excluiu a conta") | `referrals/{uid}`, o perfil de quem convidou e o título do post ou o nome da central do link |
+| Aba **Extrato**: data e hora, origem, contexto, pontos (lima no ganho), saldo depois, e quem ajustou com o motivo | `wallets/{uid}/ledger` por `createdAt` decrescente, 20 por vez; `actor.name` e `note` nos ajustes |
+| Aba **Centrais**: central, como entrou ("escolha inicial", "página da central", "seed"), desde quando, se é membro, pontos da temporada e de sempre (lima) | `users/{uid}/centrals` e `wallets/{uid}/centralPoints`, com os pontos da temporada só quando o `seasonId` do documento é o da temporada de agora |
+| Aba **Curtidas e presenças** | `postLikes` com `liked == true` e `eventRsvps` com `going == true`, das mais novas, 20 por vez, com o post e o show |
+| Aba **Comentários**: texto, post, central, data, visível ou oculto | grupo `postComments` com `authorUid ==`, do mais novo, 20 por vez (regra e índice novos) |
+| Aba **Convites**: o código, os links criados e as pessoas trazidas (com o total) | `fanInvites/{uid}`, `inviteLinks`, `referrals` com `inviterUid ==` por `claimedAt` e o `count()`, com o nome de cada pessoa |
+| Aba **Missões e conquistas**: o progresso do dia e da semana, a meta da temporada, as conquistas com a data e as temporadas jogadas | a carteira (`missions`, `seasonMissions`, `goalReached`, `achievements`, `stats.pastSeasons`), com os nomes de `config/missions`, `missionArchive` e `config/achievements` |
+| Aba **Resgates**, só para quem também vê Recompensas: código, recompensa, pontos, situação e data | `redemptions` com `uid ==` por `requestedAt` decrescente (índice existe); a regra continua só da seção `rewards` (decisão 8). Sem a seção, a aba não aparece |
 
 - Ação (editor com `fans` e admin): "Ajustar pontos" (`adjustFanPoints`). O diálogo tem Saldo, XP, Pontos da temporada (desligado sem temporada em andamento, com a dica), a central opcional com os pontos da temporada e os de sempre nela, e o Motivo (obrigatório, até 200, "O fã não vê o motivo."). Mostra o antes e o depois ("Saldo: 12.480 para 12.580", com os pontos da temporada pela mesma regra do cartão) e o teto do papel ("Até 50.000 por contador em cada ajuste e 100.000 por dia." para o editor; "Até 1.000.000 por contador." para o admin). O `adjustmentId` é da tentativa, guardada fora do diálogo por fã: depois de uma falha incerta, os campos ficam travados com o corpo que foi, e o diálogo oferece "Tentar de novo" (o mesmo id e o mesmo corpo) e "Conferir o extrato", que lê `wallets/{uid}/ledger/adjustment:<id>` (um `getDoc`): achou, "O ajuste foi gravado." e a tentativa fecha; não achou e já passaram 30 s do envio (o `timeoutSeconds` do ajuste, depois do qual nada mais grava), a tentativa fecha e os campos se soltam; antes disso, "Confira de novo em alguns segundos.". Uma recusa definitiva fecha a tentativa; o `adjustment-id-reused` mostra o lançamento de `details.entry` ("Já entrou: saldo +100, em 7 out às 14:32.") e fecha a tentativa sem abrir outra sozinho. Sucesso: "Pontos ajustados.", e a ficha lê a carteira e o extrato de novo.
 - Quem vê a Moderação tem o link "Moderação deste fã" (`/moderacao/fas/[uid]`). As ferramentas de moderação não ficam aqui (decisão 12).
@@ -7002,10 +6894,10 @@ Abas: "Missões", "Conquistas" e "Régua de pontos". Os documentos `config/missi
 
 **Missões:**
 
-| O que mostra                                                                                                                         | De onde vem                                                                                                                                                                                                                                                                      |
-| ------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Meta da temporada: título, métrica ("missões concluídas" ou "pontos da temporada"), alvo, temporada                                  | `config/missions.seasonGoal` e `config/season.season`                                                                                                                                                                                                                            |
-| Uso do catálogo: "18 de 30 no ar. 26 de 60 no catálogo."                                                                             | o catálogo, contra `ACTIVE_MISSIONS_MAX` e `MISSIONS_MAX`                                                                                                                                                                                                                        |
+| O que mostra | De onde vem |
+| --- | --- |
+| Meta da temporada: título, métrica ("missões concluídas" ou "pontos da temporada"), alvo, temporada | `config/missions.seasonGoal` e `config/season.season` |
+| Uso do catálogo: "18 de 30 no ar. 26 de 60 no catálogo." | o catálogo, contra `ACTIVE_MISSIONS_MAX` e `MISSIONS_MAX` |
 | Tabela: ordem, título (com a estrela do destaque), tipo, alvo, meta, período, pontos (lima), janela, situação, conclusões no período | `config/missions.missions` e, no filtro "Arquivadas", `missionArchive` por `archivedAt` decrescente; o nome do alvo pela central, pelo post ou pelo show (regra nova para `posts` e `events`); as conclusões pela soma de `byMission[id].completed` nos dias fechados do período |
 
 - Situação, como o app (22.9): "Rascunho" (`draft`), "No ar" (`active`, já começou, sem fim passado), "Agendada" (`active` com `startsAt` no futuro), "Encerrada" (`endsAt` no passado; continua no catálogo e ocupando vaga) e "Arquivada".
@@ -7032,11 +6924,11 @@ Abas: "Pedidos" (a primeira, porque é o trabalho do dia), "Catálogo" e "Númer
 
 **Pedidos:**
 
-| O que mostra                                                                                                                                                                                                  | De onde vem                                                                                                                                       |
-| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Situações com a contagem: Solicitados, Aprovados, Entregues, Recusados, Cancelados e Todos                                                                                                                    | `count()` de `redemptions` com `status ==` (abertos de agora, 25.8)                                                                               |
+| O que mostra | De onde vem |
+| --- | --- |
+| Situações com a contagem: Solicitados, Aprovados, Entregues, Recusados, Cancelados e Todos | `count()` de `redemptions` com `status ==` (abertos de agora, 25.8) |
 | Tabela: código (com copiar), recompensa, fã (cópia do nome e do @, com o link para a ficha a quem vê Fãs; "Conta excluída" no pedido anonimizado), pontos (lima), pedido em, situação e quem mudou por último | `redemptions` com `status ==`, abertos do mais antigo e fechados do mais novo; com o filtro de recompensa, `rewardId ==` junto (índices de 25.10) |
-| Busca pelo código                                                                                                                                                                                             | `getDoc(redemptions/{código})`, com o código normalizado (`up4kd9tm` vira `UP-4KD9TM`)                                                            |
+| Busca pelo código | `getDoc(redemptions/{código})`, com o código normalizado (`up4kd9tm` vira `UP-4KD9TM`) |
 
 - Ações (editor com `rewards` e admin): "Aprovar" (solicitado; confirmação: "O fã vê Aprovado no app."), "Marcar entregue" (solicitado ou aprovado; "Isso não se desfaz.") e "Recusar" (solicitado ou aprovado; diálogo vermelho com o Motivo opcional, até 200, "O fã vê este texto.", e "Devolver a vaga ao estoque", marcado por padrão, com a dica "Desmarque quando o show foi cancelado ou a recompensa não deve voltar a vender."; diz "Os N pontos voltam para o saldo do fã."), todas pelo `setRedemptionStatus`.
 - Contatos: a seleção dos pedidos abertos (até 50) e "Ver contatos" (`getRedemptionContacts`): o nome, o @ e o e-mail de cada código, com "Copiar e-mails" e a frase "Fica registrado em Logs e auditoria que você viu estes contatos." Os contatos vivem só no diálogo: fechou, saem da memória (nada de cache nem armazenamento local). O Leitor não tem o botão.
@@ -7055,12 +6947,12 @@ Leitor vê as três abas sem botões e sem os contatos. Editor com `rewards` e A
 
 Cabeçalho com "N comentários na fila" (`count()` dos abertos, lido ao abrir, no "Atualizar" e depois de cada decisão) e, quando a fila inteira está na tela (sem mais nada para carregar), "o mais antigo há 3 h". Abas: "Fila", "Resolvidos", "Comentários ocultos" e "Fãs suspensos".
 
-| O que mostra                                                                                                                                                                                                                                                     | De onde vem                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
-| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| O que mostra | De onde vem |
+| --- | --- |
 | Fila: o comentário (ou "O autor excluiu a conta."), o autor (`FanAvatar`, nome e o link "Ver fã"), o post (trecho e central), as denúncias por motivo ("Spam 2", "Ofensivo 1", "Sem motivo 1"), a primeira e a última denúncia, e se o comentário já está oculto | `moderationQueue` com `status == 'open'` por `lastReportedAt` decrescente (índice de 21.11), em leitura única (decisão 19): os 25 primeiros ao abrir e no "Atualizar" (que lê de novo do topo e troca a lista), os de antes por "Carregar mais" (`getDocs` com `startAfter` do último, 25 por vez; um item que voltou ao topo por uma denúncia nova depois da leitura aparece no próximo "Atualizar"). O comentário e o post por `getDoc` (guardados enquanto a tela está aberta) |
-| Resolvidos: a decisão (Ocultado, Mantido, Autor excluiu a conta, Denúncia retirada), quem e quando                                                                                                                                                               | `moderationQueue` com `status == 'resolved'` por `resolvedAt` decrescente (índice novo), 25 por vez                                                                                                                                                                                                                                                                                                                                                                               |
-| Comentários ocultos: texto, autor, post, quando                                                                                                                                                                                                                  | grupo `postComments` com `status == 'hidden'` por `hiddenAt` decrescente (índice novo), 25 por vez; o nome de quem ocultou só para quem lista a equipe (admin e `audit`), senão "Equipe"                                                                                                                                                                                                                                                                                          |
-| Fãs suspensos: fã, @, desde, motivo                                                                                                                                                                                                                              | `users` com `suspendedAt` (26.6), 25 por vez                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| Resolvidos: a decisão (Ocultado, Mantido, Autor excluiu a conta, Denúncia retirada), quem e quando | `moderationQueue` com `status == 'resolved'` por `resolvedAt` decrescente (índice novo), 25 por vez |
+| Comentários ocultos: texto, autor, post, quando | grupo `postComments` com `status == 'hidden'` por `hiddenAt` decrescente (índice novo), 25 por vez; o nome de quem ocultou só para quem lista a equipe (admin e `audit`), senão "Equipe" |
+| Fãs suspensos: fã, @, desde, motivo | `users` com `suspendedAt` (26.6), 25 por vez |
 
 Quem denunciou nunca aparece: só a contagem por motivo e as datas. A tela não lê `commentReports`, que a regra fecha para a equipe (26.10).
 
@@ -7076,11 +6968,11 @@ Leitor vê tudo, sem botões. Editor com `moderation` e Admin, tudo. Estados: fi
 
 #### Logs e auditoria (`/logs`, seção `audit`)
 
-| O que mostra                                                    | De onde vem                                                                                                                                                                           |
-| --------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Quando, quem, seção, o que (o rótulo de 26.8) e o alvo          | `staffAudit` por `createdAt` decrescente, 50 por vez, com o período como faixa                                                                                                        |
+| O que mostra | De onde vem |
+| --- | --- |
+| Quando, quem, seção, o que (o rótulo de 26.8) e o alvo | `staffAudit` por `createdAt` decrescente, 50 por vez, com o período como faixa |
 | Detalhes de uma linha (o botão "Detalhes", com `aria-expanded`) | o `details`, com os nomes dos campos em pt-BR ("Campos mudados: título, custo"), "de X para Y" nas mudanças de status e de acesso, a nota e as contagens; listas longas como contagem |
-| Lista de pessoas do filtro                                      | `staff` (regra nova para `audit`), com "Automático" para `actorUid == null`                                                                                                           |
+| Lista de pessoas do filtro | `staff` (regra nova para `audit`), com "Automático" para `actorUid == null` |
 
 - Filtros: período (7, 30 ou 90 dias, ou "Tudo"; padrão 30), seção (Equipe e as seções do painel), pessoa, ação (a lista de ações aparece com uma seção escolhida; a consulta manda só `action ==`, sem a seção, e a pessoa sai) e alvo (o tipo e o id, @ ou código: "Fã", "Central", "Post", "Show", "Comentário", "Missão", "Conquista", "Temporada", "Recompensa", "Pedido", "Membro", "Convite"; com o alvo, só o período). No tipo "Fã", o alvo é o uid; o @ só vira uid para quem vê Fãs, porque a busca é uma consulta em `users` (`where('username', '==', ...)`, no `findFanUidByHandle` de `src/lib/audit-data.ts`) e a Moderação só lista os suspensos (`firestore.rules`:144-146). Sem Fãs e sem Moderação, a tela nem consulta e diz "Cole o identificador do fã (o @ precisa da seção Fãs ou Moderação)."; com a Moderação e sem Fãs, a consulta volta `permission-denied`, e a tela diz "Cole o identificador do fã: o @ só vira identificador para quem vê a seção Fãs.". A central é o próprio @, e o pedido, o código normalizado. As combinações aceitas são as dos índices de 26.11 (pessoa, seção, pessoa e seção, ação, alvo); a tela desliga o filtro que não combina e diz por quê.
 - O alvo fã leva à ficha (com `fans`) e à página da Moderação (com `moderation`); os outros ficam em texto.
@@ -7093,11 +6985,11 @@ As três páginas de Artistas ganham, abaixo do título, a navegação "Centrais
 
 **Mural:**
 
-| O que mostra                                                                                                                                                                                    | De onde vem                                                                                                                                                   |
-| ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| "N posts no ar"                                                                                                                                                                                 | `count()` de `posts` com `status == 'published'` (e a central, com o filtro)                                                                                  |
+| O que mostra | De onde vem |
+| --- | --- |
+| "N posts no ar" | `count()` de `posts` com `status == 'published'` (e a central, com o filtro) |
 | Tabela: mídia (miniatura; ícone para texto e show), texto em 2 linhas, central, tipo, situação, publicado em, curtidas e comentários (com a dica "As contagens chegam alguns segundos depois.") | `posts` por `createdAt` decrescente; com a central, `artistId ==` (índice existe); com a situação, `status ==` (índices novos); 25 por vez; sem escuta (21.9) |
-| Comentários de um post (diálogo grande): autor, texto, data, situação                                                                                                                           | `posts/{id}/postComments` por `createdAt` decrescente, 20 por vez                                                                                             |
+| Comentários de um post (diálogo grande): autor, texto, data, situação | `posts/{id}/postComments` por `createdAt` decrescente, 20 por vez |
 
 - Ações (editor com `artists` e admin): "Novo post" e "Editar", "Publicar" e "Tirar do ar" (`setPostStatus`, confirmação para tirar), "Apagar" (`deletePost`, só o que nunca foi ao ar; confirmação vermelha) e, nos comentários, "Ocultar" e "Reexibir" (`moderateComment`, só para quem edita `moderation`).
 - Diálogo do post: central e tipo (Foto, Vídeo, Texto, Show; travados depois de criado), texto (até 2.000, com o contador e a limpeza do `cleanMultiline`; obrigatório em texto e show), mídia pelo tipo (foto na proporção dela entre 4:5 e 16:9, com a foto até 1080 de largura e a miniatura de 480; no vídeo, a capa obrigatória, enviada ou tirada de um quadro do vídeo no navegador, e o mp4 opcional, conferido no navegador antes do envio (H.264, faststart, nada fragmentado, até 720p, 20 MiB e 1 minuto, 21.19) e enviado com o progresso; HEIC e MOV recusados com a frase), e o show (só os da central, com o aviso "Este show ainda não está no ar: o post só publica depois dele."). Botões "Salvar rascunho" e "Salvar e publicar".
@@ -7105,11 +6997,11 @@ As três páginas de Artistas ganham, abaixo do título, a navegação "Centrais
 
 **Agenda:**
 
-| O que mostra                                                                                                                                                     | De onde vem                                                                                                                                                                                                                                                                                      |
-| ---------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| "N shows por vir"                                                                                                                                                | `count()` de `events` com `startsAt` desde o começo de hoje em São Paulo                                                                                                                                                                                                                         |
+| O que mostra | De onde vem |
+| --- | --- |
+| "N shows por vir" | `count()` de `events` com `startsAt` desde o começo de hoje em São Paulo |
 | Tabela: data e hora no fuso do show ("sáb, 21 nov, 22:00, horário de Brasília"), título e destaque, centrais (a principal marcada), cidade e UF, local, situação | Próximos (padrão): `events` com `startsAt >=` o começo de hoje, do mais perto; com a situação, `status ==` (índice existe); com a central, `artistIds array-contains` (índices novos, e o de 21.11 com a situação). Passados: `startsAt <`, do mais novo, só com o filtro de central. 25 por vez |
-| Detalhe da linha: posts ligados, confirmados e recompensas ligadas                                                                                               | `count()` de `posts` com `eventId ==`; `count()` do grupo `eventRsvps` com `eventId ==` e `going == true`, só para quem vê Fãs (a frase "Os confirmados aparecem para quem vê a seção Fãs."); `rewards` com `eventId ==`, só para quem vê Recompensas                                            |
+| Detalhe da linha: posts ligados, confirmados e recompensas ligadas | `count()` de `posts` com `eventId ==`; `count()` do grupo `eventRsvps` com `eventId ==` e `going == true`, só para quem vê Fãs (a frase "Os confirmados aparecem para quem vê a seção Fãs."); `rewards` com `eventId ==`, só para quem vê Recompensas |
 
 - Ações (editor com `artists` e admin): "Novo show" e "Editar" (`createEvent` com o `eventId` do painel, a foto 16:9 depois de criado, `updateEvent`; título, centrais de 1 a 6 em ordem, cidade, UF, fuso sugerido pela UF pela cópia de `DEFAULT_TIME_ZONE_BY_STATE`, data e hora local, local opcional e destaque), "Publicar" e "Tirar do ar" (`setEventStatus`; antes de tirar, "N posts de show perdem a linha do show."), "Apagar" (`deleteEvent`, só o rascunho que nunca foi ao ar; o `event-has-posts` e o `event-has-rewards` viram a lista com os links).
 
@@ -7142,16 +7034,16 @@ Regras das trilhas:
 - Cada worktree roda `npm install`. Sem `.env.local` (é arquivo de ambiente, e a tarefa não mexe neles): o painel sobe com a variável na linha de comando, `NEXT_PUBLIC_FIREBASE_EMULATOR_HOST=127.0.0.1 npm run dev -- -p 300N` (no Git Bash; o `firebase.ts` cai sozinho nas chaves do projeto demo). Cada trilha usa a porta dela (3001 a 3008, tabela abaixo), que o `PANEL_ORIGINS` do emulador aceita (26.5). O `npm run build` não precisa da variável.
 - Sem push, sem deploy, sem mexer em `.env`.
 
-| Trilha                    | O que constrói                             | Caminhos que só ela escreve                                                                                                                                                                                                                                                                                                                                                                                                                 | Precisa do servidor                                                                                                                   | Porta |
-| ------------------------- | ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- | ----- |
-| `visao-geral-crescimento` | Visão geral, Crescimento com o Comparativo | `src/app/(painel)/page.tsx`, `src/app/(painel)/crescimento/**`, `src/components/visao-geral/**`, `src/components/crescimento/**`, `src/lib/overview.ts`, `src/lib/growth.ts`, `src/lib/compare.ts`, `tests/overview.test.mjs`, `tests/growth.test.mjs`, `tests/compare.test.mjs`                                                                                                                                                            | sim (o fechamento, o `statsMeta/close` e os 60 dias do seed)                                                                          | 3001  |
-| `ranking`                 | Ranking e temporadas                       | `src/app/(painel)/ranking/**`, `src/components/ranking/**`, `src/lib/season.ts`, `src/lib/season-data.ts`, `src/lib/season-api.ts`, `tests/season*.test.mjs`                                                                                                                                                                                                                                                                                | sim (`getPanelRanking`, o `PANEL_ORIGINS`)                                                                                            | 3002  |
-| `fas`                     | Fãs: lista, busca e ficha, com o ajuste    | `src/app/(painel)/fas/**`, `src/components/fas/**`, `src/lib/fans.ts`, `src/lib/fan-search.ts`, `src/lib/fan-data.ts`, `src/lib/fan-api.ts`, `tests/fan*.test.mjs`                                                                                                                                                                                                                                                                          | sim (regras de `users`, busca, `adjustFanPoints`, `findFanByEmail`)                                                                   | 3003  |
-| `missoes`                 | Missões, conquistas e régua                | `src/app/(painel)/missoes/**`, `src/components/missoes/**`, `src/lib/missions.ts`, `src/lib/achievements.ts`, `src/lib/points-config.ts`, `src/lib/game-data.ts`, `src/lib/game-api.ts`, `tests/missions.test.mjs`, `tests/achievements.test.mjs`, `tests/points-config.test.mjs`, `tests/game-data.test.mjs`                                                                                                                               | sim (carga da versão 1, `posts` e `events` para `missions`, os índices do alvo)                                                       | 3004  |
-| `recompensas`             | Recompensas e resgates                     | `src/app/(painel)/recompensas/**`, `src/components/recompensas/**`, `src/lib/rewards.ts`, `src/lib/reward-data.ts`, `src/lib/reward-api.ts`, `tests/reward*.test.mjs`                                                                                                                                                                                                                                                                       | sim (o `PANEL_ORIGINS` com a porta dela: o de hoje só aceita a 3000; os pedidos abertos dos `rank-*` e os dias fechados do seed novo) | 3005  |
-| `moderacao`               | Moderação e a página do fã                 | `src/app/(painel)/moderacao/**`, `src/components/moderacao/**`, `src/lib/moderation.ts`, `src/lib/moderation-data.ts`, `tests/moderation*.test.mjs`                                                                                                                                                                                                                                                                                         | sim (suspensão, ocultar em lote, @ e foto, regras e índices)                                                                          | 3006  |
-| `logs`                    | Logs e auditoria                           | `src/app/(painel)/logs/**`, `src/components/logs/**`, `src/lib/audit.ts`, `src/lib/audit-data.ts`, `tests/audit*.test.mjs`                                                                                                                                                                                                                                                                                                                  | sim (`section`, `targets`, regra de `staff` e o seed da auditoria)                                                                    | 3007  |
-| `artistas`                | Mural e Agenda, e a navegação de Artistas  | `src/app/(painel)/artistas/**`, `src/components/artistas/**`, `src/lib/posts.ts`, `src/lib/post-data.ts`, `src/lib/post-api.ts`, `src/lib/post-media.ts`, `src/lib/events.ts`, `src/lib/event-data.ts`, `src/lib/event-api.ts` e os de Artistas que já existem: `src/lib/artists.ts`, `artist-data.ts`, `artist-api.ts`, `artist-photo.ts` e `artist-storage.ts`; `tests/post*.test.mjs`, `tests/event*.test.mjs`, `tests/artist*.test.mjs` | sim (o id do painel no `createPost` e no `createEvent`, o `videoPath`)                                                                | 3008  |
+| Trilha | O que constrói | Caminhos que só ela escreve | Precisa do servidor | Porta |
+| --- | --- | --- | --- | --- |
+| `visao-geral-crescimento` | Visão geral, Crescimento com o Comparativo | `src/app/(painel)/page.tsx`, `src/app/(painel)/crescimento/**`, `src/components/visao-geral/**`, `src/components/crescimento/**`, `src/lib/overview.ts`, `src/lib/growth.ts`, `src/lib/compare.ts`, `tests/overview.test.mjs`, `tests/growth.test.mjs`, `tests/compare.test.mjs` | sim (o fechamento, o `statsMeta/close` e os 60 dias do seed) | 3001 |
+| `ranking` | Ranking e temporadas | `src/app/(painel)/ranking/**`, `src/components/ranking/**`, `src/lib/season.ts`, `src/lib/season-data.ts`, `src/lib/season-api.ts`, `tests/season*.test.mjs` | sim (`getPanelRanking`, o `PANEL_ORIGINS`) | 3002 |
+| `fas` | Fãs: lista, busca e ficha, com o ajuste | `src/app/(painel)/fas/**`, `src/components/fas/**`, `src/lib/fans.ts`, `src/lib/fan-search.ts`, `src/lib/fan-data.ts`, `src/lib/fan-api.ts`, `tests/fan*.test.mjs` | sim (regras de `users`, busca, `adjustFanPoints`, `findFanByEmail`) | 3003 |
+| `missoes` | Missões, conquistas e régua | `src/app/(painel)/missoes/**`, `src/components/missoes/**`, `src/lib/missions.ts`, `src/lib/achievements.ts`, `src/lib/points-config.ts`, `src/lib/game-data.ts`, `src/lib/game-api.ts`, `tests/missions.test.mjs`, `tests/achievements.test.mjs`, `tests/points-config.test.mjs`, `tests/game-data.test.mjs` | sim (carga da versão 1, `posts` e `events` para `missions`, os índices do alvo) | 3004 |
+| `recompensas` | Recompensas e resgates | `src/app/(painel)/recompensas/**`, `src/components/recompensas/**`, `src/lib/rewards.ts`, `src/lib/reward-data.ts`, `src/lib/reward-api.ts`, `tests/reward*.test.mjs` | sim (o `PANEL_ORIGINS` com a porta dela: o de hoje só aceita a 3000; os pedidos abertos dos `rank-*` e os dias fechados do seed novo) | 3005 |
+| `moderacao` | Moderação e a página do fã | `src/app/(painel)/moderacao/**`, `src/components/moderacao/**`, `src/lib/moderation.ts`, `src/lib/moderation-data.ts`, `tests/moderation*.test.mjs` | sim (suspensão, ocultar em lote, @ e foto, regras e índices) | 3006 |
+| `logs` | Logs e auditoria | `src/app/(painel)/logs/**`, `src/components/logs/**`, `src/lib/audit.ts`, `src/lib/audit-data.ts`, `tests/audit*.test.mjs` | sim (`section`, `targets`, regra de `staff` e o seed da auditoria) | 3007 |
+| `artistas` | Mural e Agenda, e a navegação de Artistas | `src/app/(painel)/artistas/**`, `src/components/artistas/**`, `src/lib/posts.ts`, `src/lib/post-data.ts`, `src/lib/post-api.ts`, `src/lib/post-media.ts`, `src/lib/events.ts`, `src/lib/event-data.ts`, `src/lib/event-api.ts` e os de Artistas que já existem: `src/lib/artists.ts`, `artist-data.ts`, `artist-api.ts`, `artist-photo.ts` e `artist-storage.ts`; `tests/post*.test.mjs`, `tests/event*.test.mjs`, `tests/artist*.test.mjs` | sim (o id do painel no `createPost` e no `createEvent`, o `videoPath`) | 3008 |
 
 O que a fundação escreve (e mais ninguém, até a integração): `src/lib/callable.ts`, `format.ts`, `day.ts`, `stats.ts`, `stats-data.ts`, `firestore-page.ts`, `fan-profile.ts`, `fan-profile-data.ts`, `levels.ts`, `game-names-data.ts`, `artist-names-data.ts`, `moderation-api.ts`, `image-prep.ts`, `media-storage.ts`, `batch.ts`, `errors.ts`, `staff.ts`, `staff-api.ts`; `src/components/ui/use-load.ts`, `metric-card.tsx`, `bar-chart.tsx`, `period-picker.tsx`, `data-table.tsx`, `search-field.tsx`, `filter-bar.tsx`, `status-chip.tsx`, `tabs.tsx`, `empty-state.tsx`, `detail-list.tsx`, `image-field.tsx`, `batch-progress.tsx`; `src/components/painel/data-freshness.tsx`, `fan-avatar.tsx`, `section-gate.tsx`, `section-page.tsx`, `app-shell.tsx`; `tests/fakes/firestore.mjs` e os testes dela; e `README.md`. A fundação não mexe nos arquivos de Artistas: o `Kpi`, o `Detail`, o `call` e a foto genérica chegam lá pela trilha `artistas`.
 
@@ -7421,13 +7313,13 @@ Estado: feito em 08/10/2026 (PR #16) e publicado de 08 a 09/10/2026, junto com o
 
 ### 27.1 O que entra e o que fica fora
 
-| Item                        | O que faz                                                                                   | Seção |
-| --------------------------- | ------------------------------------------------------------------------------------------- | ----- |
-| Páginas de até 20           | o `?limit=` do mural, da grade, dos comentários, da agenda e do extrato vai de 50 para 20   | 27.2  |
-| Ritmo por fã na `api`       | cada instância barra o fã que passa de 60 pedidos de uma vez e 1 por segundo depois         | 27.3  |
-| Vaga de envio da foto       | a regra do Storage só aceita o arquivo que a API liberou, e a API conta os arquivos por dia | 27.4  |
-| App Check pronto, desligado | a `api` confere o token do aparelho quando o modo for ligado                                | 27.5  |
-| `artists` fechado para o fã | o fã não lê mais as centrais direto do Firestore (o app lê pela API desde o bloco 4)        | 27.6  |
+| Item                                                     | O que faz                                                                                     | Seção |
+| -------------------------------------------------------- | --------------------------------------------------------------------------------------------- | ----- |
+| Páginas de até 20                                        | o `?limit=` do mural, da grade, dos comentários, da agenda e do extrato vai de 50 para 20     | 27.2  |
+| Ritmo por fã na `api`                                    | cada instância barra o fã que passa de 60 pedidos de uma vez e 1 por segundo depois           | 27.3  |
+| Vaga de envio da foto                                    | a regra do Storage só aceita o arquivo que a API liberou, e a API conta os arquivos por dia   | 27.4  |
+| App Check pronto, desligado                              | a `api` confere o token do aparelho quando o modo for ligado                                  | 27.5  |
+| `artists` fechado para o fã                              | o fã não lê mais as centrais direto do Firestore (o app lê pela API desde o bloco 4)          | 27.6  |
 
 Fica fora:
 
@@ -7567,10 +7459,10 @@ Cada item traz a escolha e o motivo. Onde o rascunho do orquestrador, um mapa ou
 
 ### 28.2 Rotas
 
-| Método e caminho   | Grava | Função do app                      | Resposta           |
-| ------------------ | ----- | ---------------------------------- | ------------------ |
-| `PUT /me/profile`  | sim   | `profile/api.ts` `updateMyProfile` | `EditableProfile`  |
-| `GET /fans/:fanId` | não   | `profile/api.ts` `fetchFanProfile` | `FanPublicProfile` |
+| Método e caminho | Grava | Função do app | Resposta |
+| --- | --- | --- | --- |
+| `PUT /me/profile` | sim | `profile/api.ts` `updateMyProfile` | `EditableProfile` |
+| `GET /fans/:fanId` | não | `profile/api.ts` `fetchFanProfile` | `FanPublicProfile` |
 
 Ficam como estão: `GET /me/username/availability` (o app continua perguntando enquanto o fã digita), `PUT /me/username` (o app novo não chama; fica para o APK de antes, com o núcleo dividido de 28.4), `POST /me/photo/upload`, `PUT` e `DELETE /me/photo`.
 
@@ -7591,9 +7483,9 @@ Arquivos nas funções:
 
 Código novo na tabela da seção 1:
 
-| code              | status | kind no app | quando                                      |
-| ----------------- | ------ | ----------- | ------------------------------------------- |
-| `profile_invalid` | 400    | validation  | um campo do `PUT /me/profile` fora da regra |
+| code | status | kind no app | quando |
+| --- | --- | --- | --- |
+| `profile_invalid` | 400 | validation | um campo do `PUT /me/profile` fora da regra |
 
 Mensagem: "Perfil fora do formato. Confira os campos.". `details: { field, reason }`. `field`: `displayName`, `bio`, `city`, `gender`, `socials.instagram`, `socials.tiktok`, `socials.linkedin` ou `socials.x`. `reason`: no nome, `empty`, `too_long` ou `invisible`; na bio, `too_long`, `too_many_lines` ou `invisible`; na cidade, `too_long` ou `invisible`; no gênero, `unknown`; nas redes, `format` ou `host` (link de outro domínio). Desde a seção 30, o nome, a bio, a cidade e as redes também recusam com `not_allowed` (um termo da lista do filtro), depois das outras regras do campo (30.5). Corpo que não é objeto, chave desconhecida (no topo ou dentro de `socials`, `__proto__` e `constructor` inclusive), nenhuma chave ou tipo errado (o nome que não é texto, `privateAccount` que não é booleano, `socials` que não é objeto ou vem vazio, uma rede que não é texto nem `null`): 400 `invalid_request` com o `field` (`body` sem chave; `socials.<chave>` dentro das redes). Os outros já existem: `username_invalid`, `username_taken`, `username_change_too_soon`, `too_many_requests` (com `details.action` `profile` ou `name`), `account_suspended`, `profile_not_ready`, `not_fan` e `fan_not_found`, cuja linha na seção 1 passa a dizer "no bloqueio (bloco 6) e no perfil público (seção 28)".
 
@@ -7680,12 +7572,12 @@ users/{uid} {
 
 Formato de cada rede (`normalizeSocialHandle(network, raw)` e `isSocialHandle(network, handle)`, iguais no servidor e no app):
 
-| Rede      | Usuário guardado                                        | Link aceito ao colar                                                                  | Link montado pelo app e pelo painel                           |
-| --------- | ------------------------------------------------------- | ------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
-| Instagram | `^(?!\.)(?!.*\.\.)(?!.*\.$)[a-z0-9._]{1,30}$`           | `instagram.com/<usuário>`, com `www.` ou `m.`                                         | `https://www.instagram.com/<usuário>/`                        |
-| TikTok    | `^(?!.*\.$)[a-z0-9._]{2,24}$`                           | `tiktok.com/@<usuário>`, com `www.` ou `m.`                                           | `https://www.tiktok.com/@<usuário>`                           |
-| LinkedIn  | `^[a-z0-9ß-öø-ÿĀ-ſ-]{3,100}$` (flag `u`, depois do NFC) | `linkedin.com/in/<endereço>`, com `www.` ou duas letras de país (`br.`), decodificado | `https://www.linkedin.com/in/<encodeURIComponent(endereço)>/` |
-| X         | `^[a-z0-9_]{1,15}$`                                     | `x.com/<usuário>` ou `twitter.com/<usuário>`, com `www.` ou `mobile.`                 | `https://x.com/<usuário>`                                     |
+| Rede | Usuário guardado | Link aceito ao colar | Link montado pelo app e pelo painel |
+| --- | --- | --- | --- |
+| Instagram | `^(?!\.)(?!.*\.\.)(?!.*\.$)[a-z0-9._]{1,30}$` | `instagram.com/<usuário>`, com `www.` ou `m.` | `https://www.instagram.com/<usuário>/` |
+| TikTok | `^(?!.*\.$)[a-z0-9._]{2,24}$` | `tiktok.com/@<usuário>`, com `www.` ou `m.` | `https://www.tiktok.com/@<usuário>` |
+| LinkedIn | `^[a-z0-9ß-öø-ÿĀ-ſ-]{3,100}$` (flag `u`, depois do NFC) | `linkedin.com/in/<endereço>`, com `www.` ou duas letras de país (`br.`), decodificado | `https://www.linkedin.com/in/<encodeURIComponent(endereço)>/` |
+| X | `^[a-z0-9_]{1,15}$` | `x.com/<usuário>` ou `twitter.com/<usuário>`, com `www.` ou `mobile.` | `https://x.com/<usuário>` |
 
 Passos do `normalizeSocialHandle`, nesta ordem: corta as pontas; vazio vira `null`; acima de 300 caracteres (`SOCIAL_INPUT_MAX`) é `format`; texto com `/` ou com um dos domínios é link (o `https://` e o `http://` são opcionais), lido por expressão regular e nunca por `new URL` (o app não usa `URL` no React Native): domínio de outra rede ou de fora é `host`, caminho fora do formato da rede (o `/company/` do LinkedIn, o TikTok sem `@`, o `/p/<post>` do Instagram) é `format`, e a busca, o `#` e a barra do fim saem; senão, tira um `@` do começo; passa para minúsculas e NFC; confere o padrão e as páginas da rede que cabem nele (`RESERVED_PATHS`, as duas `format`). O `%` quebrado no LinkedIn é `format`. O `isSocialHandle` é só o último passo, para quem mostra conferir o que leu.
 
@@ -7695,17 +7587,17 @@ Tetos em `config/points.actionCaps`: `profile_save` (padrão 20, `PROFILE_SAVES_
 
 Constantes novas:
 
-| Constante                 | Valor                                      | Onde                                                                            | Para quê                                         |
-| ------------------------- | ------------------------------------------ | ------------------------------------------------------------------------------- | ------------------------------------------------ |
-| `BIO_MAX`                 | 200                                        | `fan-profile/details.ts` e `profile/details.ts`                                 | teto da bio, em UTF-16                           |
-| `BIO_MAX_LINES`           | 6                                          | idem                                                                            | teto de linhas da bio limpa                      |
-| `FAN_CITY_MAX`            | 80                                         | `fan-profile/details.ts` (o app já tem o `CITY_MAX` em `utils/visible-line.ts`) | teto da cidade do fã, em UTF-16                  |
-| `SOCIAL_INPUT_MAX`        | 300                                        | `details.ts` dos dois lados                                                     | texto cru de uma rede                            |
-| `GENDERS`                 | `woman`, `man`, `nonbinary`, `undisclosed` | idem                                                                            | a ordem da tela                                  |
-| `SOCIAL_NETWORKS`         | `instagram`, `tiktok`, `linkedin`, `x`     | idem                                                                            | a ordem da tela, das respostas e do mapa gravado |
-| `PROFILE_SAVES_PER_DAY`   | 20                                         | `fan-profile/model.ts`                                                          | padrão de `profile_save`                         |
-| `NAME_CHANGES_PER_DAY`    | 5                                          | `fan-profile/model.ts`                                                          | padrão de `name_change`                          |
-| `PROFILE_SAVE_TIMEOUT_MS` | 20.000                                     | `profile/consts.ts` (o de 10 s sai)                                             | prazo da tentativa do ✓, com o token             |
+| Constante | Valor | Onde | Para quê |
+| --- | --- | --- | --- |
+| `BIO_MAX` | 200 | `fan-profile/details.ts` e `profile/details.ts` | teto da bio, em UTF-16 |
+| `BIO_MAX_LINES` | 6 | idem | teto de linhas da bio limpa |
+| `FAN_CITY_MAX` | 80 | `fan-profile/details.ts` (o app já tem o `CITY_MAX` em `utils/visible-line.ts`) | teto da cidade do fã, em UTF-16 |
+| `SOCIAL_INPUT_MAX` | 300 | `details.ts` dos dois lados | texto cru de uma rede |
+| `GENDERS` | `woman`, `man`, `nonbinary`, `undisclosed` | idem | a ordem da tela |
+| `SOCIAL_NETWORKS` | `instagram`, `tiktok`, `linkedin`, `x` | idem | a ordem da tela, das respostas e do mapa gravado |
+| `PROFILE_SAVES_PER_DAY` | 20 | `fan-profile/model.ts` | padrão de `profile_save` |
+| `NAME_CHANGES_PER_DAY` | 5 | `fan-profile/model.ts` | padrão de `name_change` |
+| `PROFILE_SAVE_TIMEOUT_MS` | 20.000 | `profile/consts.ts` (o de 10 s sai) | prazo da tentativa do ✓, com o token |
 
 Nenhuma coleção nova e nenhum índice novo (28.8).
 
@@ -7804,15 +7696,15 @@ Nada muda no servidor: os campos novos moram em `users/{uid}`, que o `deleteUser
 
 **Tabela** (`SEED_FAN_DETAILS`, por e-mail, em `functions/src/fan-profile/seed.ts`; as linhas do ranking também nas fixtures do app):
 
-| Conta                     | Id nas fixtures | Nome             | @            | Bio                                                                     | Gênero        | Privada | Redes                                                                                         |
-| ------------------------- | --------------- | ---------------- | ------------ | ----------------------------------------------------------------------- | ------------- | ------- | --------------------------------------------------------------------------------------------- |
-| `camila@teste.imagineup`  | (o fã, `me`)    | Camila Ribeiro   | `camilarib`  | "Feira de Santana.\nFã do Netto desde o primeiro show."                 | `woman`       | não     | Instagram e TikTok `camila.teste.up`, LinkedIn `camila-teste-imagineup`, X `camilatesteup`    |
-| `bia@teste.imagineup`     | (só no seed)    | Bia Santos       | `biasan`     | "Salvador.\nMando todo clipe novo para o grupo da família."             | `woman`       | não     | Instagram e TikTok `bia.teste.up`                                                             |
-| `spam@teste.imagineup`    | (só no seed)    | Promo Seguidores | `promoseg`   | "Seguidores reais e baratos! Chama no direct."                          | null          | não     | Instagram `promo.teste.up`, X `promotesteup`                                                  |
-| `rank-01@teste.imagineup` | `fa-rank-01`    | Thalita Santos   | `thalitasan` | "Do arrocha ao piseiro, sigo o Netto em todo São João.\nIrará na veia." | `woman`       | não     | Instagram e TikTok `thalita.teste.up`, LinkedIn `thalita-teste-imagineup`, X `thalitatesteup` |
-| `rank-05@teste.imagineup` | `fa-rank-05`    | Aline Ferreira   | `alinefer`   | "Conta de teste privada. Esta bio não aparece para os outros fãs."      | `undisclosed` | sim     | Instagram `aline.teste.up`, X `alinetesteup`                                                  |
-| `rank-48@teste.imagineup` | `fa-rank-48`    | Renata Teixeira  | `renatatei`  | nenhuma                                                                 | null          | não     | nenhuma; suspensa (`SEED_SUSPENDED_EMAIL`, como hoje)                                         |
-| as outras                 |                 |                  |              | nenhuma                                                                 | null          | não     | nenhuma                                                                                       |
+| Conta | Id nas fixtures | Nome | @ | Bio | Gênero | Privada | Redes |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `camila@teste.imagineup` | (o fã, `me`) | Camila Ribeiro | `camilarib` | "Feira de Santana.\nFã do Netto desde o primeiro show." | `woman` | não | Instagram e TikTok `camila.teste.up`, LinkedIn `camila-teste-imagineup`, X `camilatesteup` |
+| `bia@teste.imagineup` | (só no seed) | Bia Santos | `biasan` | "Salvador.\nMando todo clipe novo para o grupo da família." | `woman` | não | Instagram e TikTok `bia.teste.up` |
+| `spam@teste.imagineup` | (só no seed) | Promo Seguidores | `promoseg` | "Seguidores reais e baratos! Chama no direct." | null | não | Instagram `promo.teste.up`, X `promotesteup` |
+| `rank-01@teste.imagineup` | `fa-rank-01` | Thalita Santos | `thalitasan` | "Do arrocha ao piseiro, sigo o Netto em todo São João.\nIrará na veia." | `woman` | não | Instagram e TikTok `thalita.teste.up`, LinkedIn `thalita-teste-imagineup`, X `thalitatesteup` |
+| `rank-05@teste.imagineup` | `fa-rank-05` | Aline Ferreira | `alinefer` | "Conta de teste privada. Esta bio não aparece para os outros fãs." | `undisclosed` | sim | Instagram `aline.teste.up`, X `alinetesteup` |
+| `rank-48@teste.imagineup` | `fa-rank-48` | Renata Teixeira | `renatatei` | nenhuma | null | não | nenhuma; suspensa (`SEED_SUSPENDED_EMAIL`, como hoje) |
+| as outras | | | | nenhuma | null | não | nenhuma |
 
 Por que essas: no seed, quem comenta são a Bia, a Duda, o Enzo, o Alan e o fã de propaganda (`SEED_ENGAGEMENT` em `posts/seed.ts` e os comentários da Moderação); a Bia comenta no clipe e no show (a entrada pelo comentário mostra a completa no emulador) e o Promo mostra a bio de propaganda que a Moderação apaga. A Thalita é o 1º do pódio, o top 1 do Nenho e, nas fixtures do app, autora de comentário (a completa, com gênero para provar que ele não sai); a Aline é a 5ª no geral e a 2ª no Netto (top fãs da 1d), privada com bio e redes preenchidas para provar que não saem; a Renata já é suspensa no seed. Os usuários das redes levam "teste" e "up" de propósito, mas isso não impede ninguém de registrá-los: por isso os links não abrem nas fixtures nem no emulador (decisão 25). O do X cabe nos 15.
 
@@ -8256,12 +8148,12 @@ Cada item traz a escolha e o motivo, e a alternativa trocada quando há. As perg
 
 ### 29.2 Rotas
 
-| Método e caminho                        | Grava | Função do app                             | Resposta                              |
-| --------------------------------------- | ----- | ----------------------------------------- | ------------------------------------- |
-| `POST /fans/:fanId/report`              | sim   | `posts/api.ts` `reportFan`                | `ReportFanResult`                     |
-| `GET /me/blocks`                        | não   | `posts/api.ts` `fetchBlockedFans`         | `BlockedFansPage`                     |
-| `GET /fans/:fanId` (muda)               | não   | `profile/api.ts` `fetchFanProfile`        | `FanPublicProfile`, com `blockedByMe` |
-| `DELETE /me/blocks/:fanId` (ganha tela) | sim   | `posts/api.ts` `unblockFan` (novo no app) | `BlockFanResult`                      |
+| Método e caminho | Grava | Função do app | Resposta |
+| --- | --- | --- | --- |
+| `POST /fans/:fanId/report` | sim | `posts/api.ts` `reportFan` | `ReportFanResult` |
+| `GET /me/blocks` | não | `posts/api.ts` `fetchBlockedFans` | `BlockedFansPage` |
+| `GET /fans/:fanId` (muda) | não | `profile/api.ts` `fetchFanProfile` | `FanPublicProfile`, com `blockedByMe` |
+| `DELETE /me/blocks/:fanId` (ganha tela) | sim | `posts/api.ts` `unblockFan` (novo no app) | `BlockFanResult` |
 
 Ficam como estão: `PUT /me/blocks/:fanId` e `POST /posts/:postId/comments/:commentId/report`. A `API_ROUTES` passa de 42 a 44. `POST /fans/:fanId/report` não colide com o `GET /fans/:fanId` (o `PUT /fans/:fanId` continua 405), e `GET /me/blocks` não colide com `/me/blocks/:fanId` (o `GET /me/blocks/x` continua 405).
 
@@ -8709,7 +8601,6 @@ Decisão do dono de 13/10/2026: publicar tudo junto. Este bloco saiu junto com o
 **Para o dono, antes da construção: respondidas em 13/10/2026.** As três mudam o contrato da API e o do painel, e a etapa 1 (o servidor) e o README de passagem dependem delas.
 
 - **Fila** (levantada depois da crítica): a denúncia de perfil entra na `moderationQueue`, com `type: 'profile'`, ou numa coleção separada? Resposta: numa coleção separada, `profileReportQueue/{uid}`, um item por fã denunciado, com o mesmo espírito do item de 29.3 (o tipo implícito na coleção, o `round`, o `openedAt`, o `resolvedDigest`, a contagem e os motivos da rodada, o `status` com a `resolution`, o `lastReportedAt` e o `resolvedAt`), lida pela equipe com a seção `moderation` (regra nova, com os testes de regras) e com os índices compostos da fila dos abertos e da dos resolvidos. Motivo do dono: o painel publicado (`QueueCard`) quebra com um item de perfil na `moderationQueue`, e com a coleção separada o app e as funções saem sem esperar a outra conversa do painel. Consequências: a `moderationQueue`, o `moderateComment` e o painel publicado não mudam; o painel vê as denúncias de perfil só quando ganhar a lista nova (29.7); a publicação vira regras e índices, funções, EAS Update e o painel sem ordem obrigatória (29.14). Aplicada nas decisões 1 e 9 e em 29.3, 29.4, 29.6 a 29.10, 29.12, 29.14 e 29.17.
-
 1. Como a equipe fecha a denúncia de perfil? Opções: (a) a callable nova `resolveProfileReport({ uid, resolution, round })`, com "Manter" e "Resolver" (com ação), as ferramentas do fã sem fechar o item (decisão 6): 66 funções, 0,84 vCPU de sobra na cota de 20, e o `allUsers` depois do deploy; (b) um ramo no `moderateComment`, pela chave `{ profileUid, action, round }`: nenhuma função nova, nenhum `allUsers` novo, sem CPU a mais, mas a moderação de comentário, que o painel publicado usa, muda de código e passa a ter dois formatos; (c) cada ferramenta do fã fecha o item, republicando as quatro callables e mudando o contrato delas. Resposta: (a), como proposto, com 66 funções, a soma de CPU do `cpu.test.ts` atualizada e o `allUsers` depois do deploy.
 2. Como a denúncia de perfil reabre depois de resolvida? Opções: (a) outra pessoa reabre sempre, com a contagem do zero, e quem já denunciou na rodada resolvida só reabre se o perfil mudou desde a resolução (o resumo da decisão 3); (b) a mesma pessoa reabre depois de N dias do `resolvedAt`, sem resumo; (c) a mesma pessoa nunca reabre; (d) qualquer pessoa reabre sempre, como no primeiro desenho, e um fã sozinho devolve à fila cada perfil mantido. Nas quatro, a rodada é o `round` e a callable recusa a rodada velha. Resposta: (a), como proposto: outra pessoa reabre sempre; quem já denunciou na rodada resolvida só reabre com o perfil mudado desde a resolução (`resolvedDigest`).
 
@@ -8899,12 +8790,12 @@ Implementado em 13/10/2026 na branch `exigencias-lojas`, nas seis etapas de 29.1
 
 Conferência do `verifyBeforeUpdateEmail` no emulador do Auth (pedida em 29.11), com o SDK JS do app, no projeto `demo-imagine-up-app`, com e sem o `emailPrivacyConfig.enableImprovedEmailPrivacy`:
 
-| Caso                                                      | O que voltou                                                           |
-| --------------------------------------------------------- | ---------------------------------------------------------------------- |
-| `verifyBeforeUpdateEmail` para um e-mail que já tem conta | `auth/email-already-in-use` na hora, sem link                          |
-| O mesmo para um e-mail livre                              | o link sai; abrir o link troca o e-mail (`emailVerified: true`)        |
-| Outra conta pega o e-mail antes de o fã abrir o link      | abrir o link dá 400 `EMAIL_EXISTS`, e a conta fica com o e-mail antigo |
-| `updateEmail` direto, com a proteção ligada               | passou                                                                 |
+| Caso | O que voltou |
+| --- | --- |
+| `verifyBeforeUpdateEmail` para um e-mail que já tem conta | `auth/email-already-in-use` na hora, sem link |
+| O mesmo para um e-mail livre | o link sai; abrir o link troca o e-mail (`emailVerified: true`) |
+| Outra conta pega o e-mail antes de o fã abrir o link | abrir o link dá 400 `EMAIL_EXISTS`, e a conta fica com o e-mail antigo |
+| `updateEmail` direto, com a proteção ligada | passou |
 
 A última linha mostra que o emulador não imita a proteção contra enumeração; em produção, o `updateEmail` é barrado com `operation-not-allowed`. Por isso o emulador não garante o comportamento de produção: lá, o e-mail que já tem conta pode passar sem erro e só falhar ao abrir o link (29.14, passo 5, confere com uma conta do dono).
 
@@ -9009,7 +8900,7 @@ Cada item traz a escolha e o motivo, e a alternativa trocada quando há. As perg
     - no `createProfile`, depois do `profileDisplayName` (fora dele, para o `hasName` do gatilho não mudar), o nome barrado por `isBlockedText(nome, 'displayName')` vira "Fã" (`FILTERED_NAME`, o mesmo texto que o app mostra para o perfil sem nome), e a base do @ barrada por `isBlockedHandle(base)` vira `fa`;
     - no gatilho `queueFanProfileSync`, quando o `displayName` do evento mudou, a transação do `syncFanSearchKeys` (que já relê o perfil) troca o nome barrado por "Fã", com o `searchKeys` recalculado e sem `updatedAt`. Isso cobre o cadastro lento (`fillMissingProfileName`) e quem cria a conta pela REST sem nome e grava o nome pela regra. O nome fica à vista por alguns segundos, até o gatilho; as cópias nos comentários se acertam pela fila de hoje.
     - Nunca `null`: com `null`, a regra reabre e o cliente regrava em laço (cada volta, dois gatilhos e uma transação).
-      Sem mudança de regra nem de app. Custos: o `createUserProfile` e o `queueFanProfileSync` publicam junto com a `api`, do mesmo commit, para valer a mesma lista (30.13); o painel mostra "Fã" como nome, sem dizer que foi o filtro. O filtro continua fora do `profileDisplayName` (o `hasName` leria o nome barrado como "nome ainda não chegou" e esperaria os 3,75 s à toa) e do `isReservedUsername`. A (a), a resposta de antes, e a (b), que tiraria a regra, ficaram de fora (30.14).
+    Sem mudança de regra nem de app. Custos: o `createUserProfile` e o `queueFanProfileSync` publicam junto com a `api`, do mesmo commit, para valer a mesma lista (30.13); o painel mostra "Fã" como nome, sem dizer que foi o filtro. O filtro continua fora do `profileDisplayName` (o `hasName` leria o nome barrado como "nome ainda não chegou" e esperaria os 3,75 s à toa) e do `isReservedUsername`. A (a), a resposta de antes, e a (b), que tiraria a regra, ficaram de fora (30.14).
 12. **Nada na Moderação, no painel, nas regras, nos índices, nas filas ou nos tetos.** Nenhuma função nova (66 funções, a conta de CPU do `cpu.test.ts` igual; pela (b'), duas que já existem mudam), nenhuma ação de auditoria, nenhum rótulo novo no painel e nenhum README de passagem (30.7). O filtro não cria item em fila nenhuma: o texto recusado não existe para a equipe.
 13. **A linha do log da `api` ganha o `code` e o `reason` da recusa.** Hoje ela tem `method`, `route`, `status`, `ms`, `uid` e `replayed`; na resposta de erro, entram o `code` e o `reason`, este só quando o `details.reason` casa com `^[a-z_]{1,40}$` (assim, nem no futuro um texto do cliente chega ao log). Com eles o dono conta no Cloud Logging as recusas do filtro no comentário e no perfil (`not_allowed`). As do @ não se contam: saem como `reserved`, iguais às da marca, e a disponibilidade é um 200. Nunca o texto, o termo nem o `details.field` (no `invalid_request`, o `field` pode ser uma chave qualquer que o cliente mandou). A linha de sucesso não muda.
 14. **Sem teto novo.** A recusa no `validate` não conta nos tetos do dia nem grava nada; quem repete tentativas para descobrir a lista fica só com o ritmo de 27.3 (60 de uma vez e 1 por segundo, por instância). Contar a recusa num teto pediria uma gravação fora da transação, que a recusa aborta. Com a lista no repositório público, mesmo por chaves que um dicionário refaz (decisão 2), sondar ensina pouco que o repositório não diga.
@@ -9026,12 +8917,12 @@ Cada item traz a escolha e o motivo, e a alternativa trocada quando há. As perg
 
 Nenhuma rota nova (a `API_ROUTES` continua com 44), nenhum código novo na tabela da seção 1 e nenhum status novo na disponibilidade do @. Mudam as recusas de quatro rotas:
 
-| Rota                                         | Recusa nova                                                                                                                        | Onde                                                                                            |
-| -------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
-| `POST /posts/:postId/comments`               | 400 `comment_invalid`, `details: { reason: 'not_allowed' }`                                                                        | `validate` (`parseCommentText`), sem leitura                                                    |
-| `PUT /me/profile`                            | 400 `profile_invalid`, `details: { field, reason: 'not_allowed' }`, com o `field` `displayName`, `bio`, `city` ou `socials.<rede>` | `validate` (`parseProfileChanges`), sem leitura                                                 |
-| `PUT /me/profile` e `PUT /me/username` (o @) | 400 `username_invalid`, `details: { reason: 'reserved' }`                                                                          | transação (`usernameChangeProblem`), como o reservado de hoje                                   |
-| `GET /me/username/availability`              | 200 `{ "username": "...", "status": "reserved" }`                                                                                  | `readUsernameAvailability`, depois da leitura da reserva e do `current`: uma leitura, como hoje |
+| Rota | Recusa nova | Onde |
+| --- | --- | --- |
+| `POST /posts/:postId/comments` | 400 `comment_invalid`, `details: { reason: 'not_allowed' }` | `validate` (`parseCommentText`), sem leitura |
+| `PUT /me/profile` | 400 `profile_invalid`, `details: { field, reason: 'not_allowed' }`, com o `field` `displayName`, `bio`, `city` ou `socials.<rede>` | `validate` (`parseProfileChanges`), sem leitura |
+| `PUT /me/profile` e `PUT /me/username` (o @) | 400 `username_invalid`, `details: { reason: 'reserved' }` | transação (`usernameChangeProblem`), como o reservado de hoje |
+| `GET /me/username/availability` | 200 `{ "username": "...", "status": "reserved" }` | `readUsernameAvailability`, depois da leitura da reserva e do `current`: uma leitura, como hoje |
 
 Exemplo:
 
@@ -9077,14 +8968,14 @@ O resultado é a lista de pedaços do texto (`filterTokens`). O esqueleto de um 
 
 **Por campo** (o `FIELD_BLOCKS`, decisão 8):
 
-| Campo                    | Regra                                                                       | Categorias barradas |
-| ------------------------ | --------------------------------------------------------------------------- | ------------------- |
-| Comentário (`comment`)   | palavra e frase                                                             | todas               |
-| Bio (`bio`)              | palavra e frase                                                             | todas               |
-| Nome (`displayName`)     | palavra, frase e trecho em cada pedaço                                      | todas               |
-| Cidade (`city`)          | palavra, frase e trecho em cada pedaço                                      | todas               |
-| Redes (`socials.<rede>`) | palavra, frase e trecho em cada pedaço; o esqueleto colado só por igualdade | todas               |
-| @ (`username`)           | o esqueleto: igualdade e trecho                                             | todas               |
+| Campo | Regra | Categorias barradas |
+| --- | --- | --- |
+| Comentário (`comment`) | palavra e frase | todas |
+| Bio (`bio`) | palavra e frase | todas |
+| Nome (`displayName`) | palavra, frase e trecho em cada pedaço | todas |
+| Cidade (`city`) | palavra, frase e trecho em cada pedaço | todas |
+| Redes (`socials.<rede>`) | palavra, frase e trecho em cada pedaço; o esqueleto colado só por igualdade | todas |
+| @ (`username`) | o esqueleto: igualdade e trecho | todas |
 
 O nome e a cidade ganharam o trecho porque "Fulano" colado a um termo, num pedaço só, passava no nome e era recusado como @. Os termos `inHandle` já passam pelo teste de colisão contra os nomes colados e os municípios inteiros (30.11).
 
@@ -9097,23 +8988,23 @@ type FilterCategory = 'insult' | 'profanity' | 'hate' | 'sexual' | 'violence';
 
 // A lista legível: filtro-lista/termos.json, fora de todo repositório (a').
 type FilterTerm = {
-  term: string; // como se escreve, com acento; a frase com espaço entre as palavras
+  term: string;             // como se escreve, com acento; a frase com espaço entre as palavras
   category: FilterCategory;
-  forms?: string[]; // feminino, plural em -ões e -ães, diminutivo, aumentativo, formas verbais
-  inHandle?: true; // vale como trecho nos campos de identidade (5 letras ou mais, sem colisão)
+  forms?: string[];         // feminino, plural em -ões e -ães, diminutivo, aumentativo, formas verbais
+  inHandle?: true;          // vale como trecho nos campos de identidade (5 letras ou mais, sem colisão)
 };
 
 // O que o terms.ts guarda: as chaves, nunca o texto.
 type FilterEntryKeys = {
   category: FilterCategory;
-  forms: string[][]; // o termo e cada forma, como as chaves dos pedaços
-  joined: string[]; // a chave de cada um com os pedaços juntos
+  forms: string[][];        // o termo e cada forma, como as chaves dos pedaços
+  joined: string[];         // a chave de cada um com os pedaços juntos
   handleLengths?: number[]; // com inHandle: o tamanho de cada um junto, para os trechos
 };
 
-export const FILTER_NORMALIZATION_VERSION: number; // normalize.ts, copiada no terms.ts
+export const FILTER_NORMALIZATION_VERSION: number;       // normalize.ts, copiada no terms.ts
 export const FILTER_ENTRIES: readonly FilterEntryKeys[]; // content-filter/terms.ts, gerado
-export const FILTER_EXCEPTIONS: readonly string[]; // content-filter/terms.ts, legível
+export const FILTER_EXCEPTIONS: readonly string[];       // content-filter/terms.ts, legível
 ```
 
 - **Categorias:** `insult`, xingamento dirigido a alguém; `profanity`, palavrão solto, de exclamação; `hate`, ódio por raça e cor, gênero (misoginia e transfobia), orientação sexual, religião (com as de matriz africana), deficiência e origem (o preconceito contra o Nordeste quase só em frases, porque os gentílicos são palavras neutras); `sexual`, sexual explícito e assédio; `violence`, ameaça, incitação ao suicídio e à automutilação, e apologia ao nazismo.
@@ -9201,31 +9092,31 @@ Nada muda: nenhuma regra (a `firstProfileName` fica; a (b') a fecha pelo nome qu
 
 **Textos novos** (`translations.json`):
 
-| Chave                                     | Texto                                                                                             |
-| ----------------------------------------- | ------------------------------------------------------------------------------------------------- |
-| `post.composer.contentRefused`            | "Conforme os Termos de uso do ImagineUP, este comentário não pode ser publicado. Revise o texto." |
-| `post.comments.refused`                   | "Não publicado. Toque para editar o texto"                                                        |
-| `post.comments.refusedLabel`              | "{{author}}, não publicado: {{text}}"                                                             |
-| `post.comments.refusedHint`               | "Volta o texto para o campo"                                                                      |
-| `post.comments.refusedAnnouncement`       | "Comentário não publicado, conforme os Termos de uso. Toque nele para editar o texto."            |
-| `post.comments.refusedBusy`               | "Esvazie o campo para editar o comentário não publicado."                                         |
-| `post.comments.refusedLocked`             | "Não publicado, conforme os Termos de uso"                                                        |
-| `post.comments.refusedLockedAnnouncement` | "Comentário não publicado, conforme os Termos de uso."                                            |
-| `editProfile.contentRefused`              | "Conforme os Termos de uso do ImagineUP, este texto não pode ser usado."                          |
-| `editProfile.contentRefusedNotice`        | "Se for um engano, fale com a equipe."                                                            |
-| `contentFilter.mailSubject`               | "Texto recusado no ImagineUP"                                                                     |
+| Chave | Texto |
+| --- | --- |
+| `post.composer.contentRefused` | "Conforme os Termos de uso do ImagineUP, este comentário não pode ser publicado. Revise o texto." |
+| `post.comments.refused` | "Não publicado. Toque para editar o texto" |
+| `post.comments.refusedLabel` | "{{author}}, não publicado: {{text}}" |
+| `post.comments.refusedHint` | "Volta o texto para o campo" |
+| `post.comments.refusedAnnouncement` | "Comentário não publicado, conforme os Termos de uso. Toque nele para editar o texto." |
+| `post.comments.refusedBusy` | "Esvazie o campo para editar o comentário não publicado." |
+| `post.comments.refusedLocked` | "Não publicado, conforme os Termos de uso" |
+| `post.comments.refusedLockedAnnouncement` | "Comentário não publicado, conforme os Termos de uso." |
+| `editProfile.contentRefused` | "Conforme os Termos de uso do ImagineUP, este texto não pode ser usado." |
+| `editProfile.contentRefusedNotice` | "Se for um engano, fale com a equipe." |
+| `contentFilter.mailSubject` | "Texto recusado no ImagineUP" |
 
 Sem citar o termo nem a categoria, sem travessão nem meia-risca e sem e-mail escrito (o link usa o `SUPPORT_EMAIL`). "Termos de uso" é o nome do documento em Ajustes, Sobre.
 
 **Com o servidor do filtro no ar**, em cada geração de JS (o JS novo só entra na segunda abertura depois do update, 29.14, passo 3):
 
-| Superfície                           | Embutido no APK (perto de `3e1f2ae`)                                               | `7b87a48` (o EAS Update de 09/10/2026) e `4ac6e99`                                                                                                                                               | JS novo                                                                                                                     |
-| ------------------------------------ | ---------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------- |
-| Comentário, campo vazio              | o texto volta ao campo e o celular vibra; só o anúncio genérico, sem frase na tela | igual                                                                                                                                                                                            | a frase embaixo do compositor, com o link, anunciada; o texto volta ao campo, com o foco                                    |
-| Comentário, campo ocupado ou da fila | "Não enviado"; tocar recusa de novo; o da fila some com o app fechado              | igual                                                                                                                                                                                            | "Não publicado"; tocar devolve o texto ao campo vazio, com a frase, ou pede para esvaziar o campo; sobrevive ao app fechado |
-| Nome, bio, cidade e redes            | nome e cidade já não salvam (regra fechada); sem bio nem redes                     | "Confira este campo." no campo, com foco e anúncio; numa rede, a frase sai quando o fã deixa o campo (o `settleSocial` de lá revalida pelo zod do aparelho), e ficam o anúncio e o toque de erro | a frase nova no campo, também numa rede depois de sair dele, e a saída embaixo do header                                    |
-| @ (troca e disponibilidade)          | "Este @ não está disponível."                                                      | "Indisponível: este @ é reservado."                                                                                                                                                              | igual                                                                                                                       |
-| Nome do cadastro                     | o nome barrado vira "Fã" e o @ `fa`, pelo servidor (b')                            | igual                                                                                                                                                                                            | igual                                                                                                                       |
+| Superfície | Embutido no APK (perto de `3e1f2ae`) | `7b87a48` (o EAS Update de 09/10/2026) e `4ac6e99` | JS novo |
+| --- | --- | --- | --- |
+| Comentário, campo vazio | o texto volta ao campo e o celular vibra; só o anúncio genérico, sem frase na tela | igual | a frase embaixo do compositor, com o link, anunciada; o texto volta ao campo, com o foco |
+| Comentário, campo ocupado ou da fila | "Não enviado"; tocar recusa de novo; o da fila some com o app fechado | igual | "Não publicado"; tocar devolve o texto ao campo vazio, com a frase, ou pede para esvaziar o campo; sobrevive ao app fechado |
+| Nome, bio, cidade e redes | nome e cidade já não salvam (regra fechada); sem bio nem redes | "Confira este campo." no campo, com foco e anúncio; numa rede, a frase sai quando o fã deixa o campo (o `settleSocial` de lá revalida pelo zod do aparelho), e ficam o anúncio e o toque de erro | a frase nova no campo, também numa rede depois de sair dele, e a saída embaixo do header |
+| @ (troca e disponibilidade) | "Este @ não está disponível." | "Indisponível: este @ é reservado." | igual |
+| Nome do cadastro | o nome barrado vira "Fã" e o @ `fa`, pelo servidor (b') | igual | igual |
 
 Nenhuma geração quebra: nenhum código novo, nenhum status novo e nenhuma chave que falte no `translations.json` do JS no ar.
 
@@ -9556,19 +9447,19 @@ Como era antes:
 
 Ligado em 14/10/2026, a partir das 10h44 de Brasília, na ordem do plano:
 
-| Medida                                                                                      | Estado em 14 e 15/10/2026                                                                                                                                                                                                                     |
-| ------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| PITR de 7 dias no Firestore `(default)`                                                     | ligado (`versionRetentionPeriod: 604800s`); o `earliestVersionTime` recua até ficar 7 dias atrás, em 21/10/2026                                                                                                                               |
-| Proteção contra apagar o banco                                                              | ligada (`DELETE_PROTECTION_ENABLED`)                                                                                                                                                                                                          |
-| Backup diário                                                                               | uma agenda diária com retenção de 14 dias (`1209600s`), na mesma região; o primeiro saiu `READY` em 15/10/2026, às 07:08 UTC, com validade até 29/10/2026                                                                                     |
-| Canal de e-mail "ImagineUP: alertas do servidor"                                            | o e-mail do dono, testado pela política de teste (31.4), que foi apagada depois                                                                                                                                                               |
-| Métricas de log `funcoes_erros`, `ranking_tick_ok` e `close_stats_days_ok`                  | criadas; contam só a partir da criação, sem olhar o passado                                                                                                                                                                                   |
-| Políticas de alerta com o rótulo `app=imagineup`                                            | 4 em 14/10/2026: erros nas funções, `api` com 5xx, função agendada falhou ou job parado, `rankingTick` parado; 5 desde 15/10/2026 (UTC), com a `api` fora do ar (abaixo); 6 desde as 03:21 UTC de 15/10/2026, com a `close-stats-days-parado` |
-| 6ª política, `close-stats-days-parado` (a "5ª" de 31.4: a da `api` fora do ar entrou antes) | criada pelo Claude em 15/10/2026, às 03:21 UTC, logo depois da rodada das 00:20 (03:20 UTC), a primeira com a métrica (31.4)                                                                                                                  |
-| Teste de disponibilidade "ImagineUP: api no ar" e a política "ImagineUP: api fora do ar"    | criados pelo Claude em 15/10/2026 (UTC), depois do deploy da seção 32: o teste nas 3 regiões, com o caminho `/api/health`, e a política no canal acima (32.7 e 32.12, "Como foi")                                                             |
-| Registro de acesso (bucket `registros-de-acesso` com 184 dias, e o sink)                    | criados depois do deploy da linha `acesso`, no mesmo dia, com a primeira linha no bucket às 18:32 UTC (31.12, "Como foi")                                                                                                                     |
-| Silenciamento de alerta                                                                     | nenhum                                                                                                                                                                                                                                        |
-| Orçamento de R$ 50                                                                          | não criado: é da cliente (31.13)                                                                                                                                                                                                              |
+| Medida | Estado em 14 e 15/10/2026 |
+| --- | --- |
+| PITR de 7 dias no Firestore `(default)` | ligado (`versionRetentionPeriod: 604800s`); o `earliestVersionTime` recua até ficar 7 dias atrás, em 21/10/2026 |
+| Proteção contra apagar o banco | ligada (`DELETE_PROTECTION_ENABLED`) |
+| Backup diário | uma agenda diária com retenção de 14 dias (`1209600s`), na mesma região; o primeiro saiu `READY` em 15/10/2026, às 07:08 UTC, com validade até 29/10/2026 |
+| Canal de e-mail "ImagineUP: alertas do servidor" | o e-mail do dono, testado pela política de teste (31.4), que foi apagada depois |
+| Métricas de log `funcoes_erros`, `ranking_tick_ok` e `close_stats_days_ok` | criadas; contam só a partir da criação, sem olhar o passado |
+| Políticas de alerta com o rótulo `app=imagineup` | 4 em 14/10/2026: erros nas funções, `api` com 5xx, função agendada falhou ou job parado, `rankingTick` parado; 5 desde 15/10/2026 (UTC), com a `api` fora do ar (abaixo); 6 desde as 03:21 UTC de 15/10/2026, com a `close-stats-days-parado` |
+| 6ª política, `close-stats-days-parado` (a "5ª" de 31.4: a da `api` fora do ar entrou antes) | criada pelo Claude em 15/10/2026, às 03:21 UTC, logo depois da rodada das 00:20 (03:20 UTC), a primeira com a métrica (31.4) |
+| Teste de disponibilidade "ImagineUP: api no ar" e a política "ImagineUP: api fora do ar" | criados pelo Claude em 15/10/2026 (UTC), depois do deploy da seção 32: o teste nas 3 regiões, com o caminho `/api/health`, e a política no canal acima (32.7 e 32.12, "Como foi") |
+| Registro de acesso (bucket `registros-de-acesso` com 184 dias, e o sink) | criados depois do deploy da linha `acesso`, no mesmo dia, com a primeira linha no bucket às 18:32 UTC (31.12, "Como foi") |
+| Silenciamento de alerta | nenhum |
+| Orçamento de R$ 50 | não criado: é da cliente (31.13) |
 
 Conferir, no Git Bash:
 
@@ -9591,20 +9482,20 @@ Esperado hoje: PITR e proteção ligados; uma agenda; o canal numa linha só; as
 
 Os arquivos da proteção ficam em `docs/protecao/`: os aplicados em 14/10/2026 (o filtro do sink, 31.7, depois do deploy da linha `acesso`), os aplicados em 15/10/2026 (UTC; a política da `api` fora do ar, 32.7, e a `close-stats-days-parado`, a 6ª política, 31.4). São cópias byte a byte dos de `Projetos/protecao-imagineup/`, sem e-mail, sem id de canal, de política ou de conta e sem segredo. Não passam pelo prettier: a pasta está no `.prettierignore`, porque ele reescreveria os JSON, e a cópia deixaria de ser igual ao que está ligado.
 
-| Arquivo                                   | O que é                                                                                                                                                                                      |
-| ----------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `canal-email.json`                        | o canal de e-mail; o endereço entra pelo comando, nunca no arquivo                                                                                                                           |
-| `metricas/funcoes_erros.yaml`             | conta os erros das funções, sem o ruído das sondas do deploy                                                                                                                                 |
-| `metricas/ranking_tick_ok.yaml`           | conta as rodadas do `rankingTick` com HTTP 200                                                                                                                                               |
-| `metricas/close_stats_days_ok.yaml`       | conta as linhas "closeStatsDays: dias fechados"                                                                                                                                              |
-| `politicas/funcoes-erros.json`            | alerta (a): erros nas funções                                                                                                                                                                |
-| `politicas/api-5xx.json`                  | alerta (b): `api` com 5xx                                                                                                                                                                    |
-| `politicas/agendadas-falha.json`          | alerta (c): falha do `closeStatsDays`, ou job pausado ou apagado                                                                                                                             |
-| `politicas/ranking-tick-parado.json`      | alerta (c): `rankingTick` sem rodar                                                                                                                                                          |
-| `politicas/close-stats-days-parado.json`  | alerta (c): `closeStatsDays` sem fechar o dia                                                                                                                                                |
-| `politicas/api-fora-do-ar.json`           | alerta (d): a `api` fora do ar, sobre o teste de disponibilidade (seção 32). O teste não tem arquivo: o `gcloud monitoring uptime create` não lê configuração, e o comando dele fica em 32.7 |
-| `politicas/teste-canal.json`              | a política de teste do canal, criada e apagada a cada teste (31.4)                                                                                                                           |
-| `registro-acesso/filtro-linha-acesso.txt` | o filtro do sink: só a linha `acesso` (31.7)                                                                                                                                                 |
+| Arquivo | O que é |
+| --- | --- |
+| `canal-email.json` | o canal de e-mail; o endereço entra pelo comando, nunca no arquivo |
+| `metricas/funcoes_erros.yaml` | conta os erros das funções, sem o ruído das sondas do deploy |
+| `metricas/ranking_tick_ok.yaml` | conta as rodadas do `rankingTick` com HTTP 200 |
+| `metricas/close_stats_days_ok.yaml` | conta as linhas "closeStatsDays: dias fechados" |
+| `politicas/funcoes-erros.json` | alerta (a): erros nas funções |
+| `politicas/api-5xx.json` | alerta (b): `api` com 5xx |
+| `politicas/agendadas-falha.json` | alerta (c): falha do `closeStatsDays`, ou job pausado ou apagado |
+| `politicas/ranking-tick-parado.json` | alerta (c): `rankingTick` sem rodar |
+| `politicas/close-stats-days-parado.json` | alerta (c): `closeStatsDays` sem fechar o dia |
+| `politicas/api-fora-do-ar.json` | alerta (d): a `api` fora do ar, sobre o teste de disponibilidade (seção 32). O teste não tem arquivo: o `gcloud monitoring uptime create` não lê configuração, e o comando dele fica em 32.7 |
+| `politicas/teste-canal.json` | a política de teste do canal, criada e apagada a cada teste (31.4) |
+| `registro-acesso/filtro-linha-acesso.txt` | o filtro do sink: só a linha `acesso` (31.7) |
 
 Regras dos comandos desta seção:
 
@@ -9894,17 +9785,17 @@ A palavra final é do jurídico. Ficam registradas:
 
 Premissas (as do plano): R$ 5,50 por dólar; os preços de tabela do Google lidos em 14/10/2026, em dólar (a conta paga em real, e o valor pode variar um pouco); o banco de hoje com uns 195 KB; com 10 mil fãs (hipótese, não medida), banco de 1 GiB (de 0,5 a 2 GiB), 3 mil fãs abrindo o app por dia e 40 pedidos à `api` por fã nesse dia, uns 120 mil pedidos por dia.
 
-| Medida                                                      | Hoje (sem fã)    | Com 10 mil fãs              |
-| ----------------------------------------------------------- | ---------------- | --------------------------- |
-| PITR de 7 dias                                              | menos de R$ 0,01 | R$ 0,74 (R$ 0,37 a R$ 1,49) |
-| Proteção contra apagar o banco                              | R$ 0             | R$ 0                        |
-| Backup diário com 14 dias                                   | menos de R$ 0,01 | R$ 3,47 (R$ 1,73 a R$ 6,93) |
-| Canal, 3 métricas e 5 alertas                               | R$ 0             | R$ 0                        |
-| Teste de disponibilidade da `api` e o alerta (d) (seção 32) | R$ 0             | R$ 0                        |
-| O mesmo, a partir de 01/09/2027                             | uns R$ 15        | uns R$ 15                   |
-| Registro de acesso por 184 dias                             | R$ 0,00          | R$ 1,16                     |
-| Total até 08/2027                                           | perto de R$ 0    | uns R$ 5,40                 |
-| Total a partir de 09/2027                                   | uns R$ 15        | uns R$ 20,40                |
+| Medida | Hoje (sem fã) | Com 10 mil fãs |
+| --- | --- | --- |
+| PITR de 7 dias | menos de R$ 0,01 | R$ 0,74 (R$ 0,37 a R$ 1,49) |
+| Proteção contra apagar o banco | R$ 0 | R$ 0 |
+| Backup diário com 14 dias | menos de R$ 0,01 | R$ 3,47 (R$ 1,73 a R$ 6,93) |
+| Canal, 3 métricas e 5 alertas | R$ 0 | R$ 0 |
+| Teste de disponibilidade da `api` e o alerta (d) (seção 32) | R$ 0 | R$ 0 |
+| O mesmo, a partir de 01/09/2027 | uns R$ 15 | uns R$ 15 |
+| Registro de acesso por 184 dias | R$ 0,00 | R$ 1,16 |
+| Total até 08/2027 | perto de R$ 0 | uns R$ 5,40 |
+| Total a partir de 09/2027 | uns R$ 15 | uns R$ 20,40 |
 
 - **Firestore STANDARD em São Paulo:** o PITR custa o mesmo que o armazenamento (US$ 0,135 por GiB por mês) e fica perto do tamanho do banco; o backup, US$ 0,045 por GiB por mês, com 14 cópias guardadas. Nenhum dos dois tem cota grátis. Restaurar e clonar só custam quando usados (31.3).
 - **Alertas:** grátis até 31/08/2027. A partir de 01/09/2027 (a data mínima anunciada pelo Google), US$ 0,35 por mês por métrica citada numa condição, mais US$ 0,50 por milhão de pontos lidos: uns R$ 15 por mês, que não mudam com o número de fãs. As 3 métricas de log ficam longe dos 150 MiB grátis.
@@ -9950,7 +9841,6 @@ Só servidor: nenhuma regra, índice, EAS Update nem mudança no painel. As fun�
    ```
 
    Esperado: o 401 da `api` e o `unauthenticated` da callable; as duas linhas `acesso` com o `uid` vazio e o `ip` igual ao `remoteIp` do mesmo pedido, nunca o `203.0.113.7`. Sem o trace na linha, o pedido sai pelo horário. Se o IP não bater: parar. Os lotes seguintes esperam, o código é corrigido e o lote 1 vai de novo; o sink não é criado.
-
 5. **Lotes 2 a 5**, com uns minutos entre um e o seguinte. Um lote que falhar pela cota de CPU vai de novo depois de uns 30 minutos sem deploy ("Publicar", passo 3).
 
    ```powershell
@@ -9961,7 +9851,6 @@ Só servidor: nenhuma regra, índice, EAS Update nem mudança no painel. As fun�
    ```
 
    Os cinco lotes somam as 66 funções, na ordem do `index.ts`, com a `api` no primeiro (15, 15, 15, 15 e 6). A etapa 2 conferiu a lista contra os exports do `index.ts` em 14/10/2026: 66, sem repetição, as 55 do `onPanelCall`, a `api`, as 2 agendadas, os 2 gatilhos do Auth, os 3 do Firestore e as 3 filas. Função nova até a publicação entra num lote. Os mesmos comandos, com o `cd` da pasta do deploy na frente, o silenciamento antes e o cancelamento e a conferência depois, estão em `Projetos/protecao-imagineup/lotes-registro-acesso.txt`, fora do repositório, para o dono copiar sem redigitar.
-
 6. **Conferir** ("Publicar", passo 6): o `functions:list` com as 66; o `node scripts/check-public-functions.mjs` com as 56 chamáveis com o `allUsers`; a CPU de cada função como antes (`0.1666` e `1`; o `rankingTick` e o `createUserProfile`, `0.3333` e `1`; a `api`, `1` e `80`); o 401 da `api` sem login e o 404 `not_found` numa rota que não existe; os logs do `rankingTick`.
 7. **Fim do silenciamento** (31.5, passo 3): cancelado se ainda valer, nenhum terminando no futuro, nenhum incidente aberto.
 8. **Bucket e sink** (31.7), pelo Claude, com o ok do dono.
@@ -10133,14 +10022,14 @@ Cada item traz a escolha e o motivo, e a alternativa trocada quando há. As perg
 
 **Motivos novos** (`PanelErrorReason` e `ERRORS` de `staff/panel-errors.ts`; o `admin-only` no `PanelAccessReason` e no `panelAccessError` de `staff/panel-actor.ts`, ao lado dos de acesso):
 
-| Motivo                  | Código                | Mensagem                                                                                     |
-| ----------------------- | --------------------- | -------------------------------------------------------------------------------------------- |
-| `admin-only`            | `permission-denied`   | "Só um admin do painel pode fazer isso."                                                     |
-| `recent-login-required` | `failed-precondition` | "Entre de novo com a sua senha para continuar."                                              |
-| `email-mismatch`        | `failed-precondition` | "Este e-mail não é o da conta deste fã. Confira o e-mail do pedido."                         |
-| `fan-is-staff`          | `failed-precondition` | "Esta conta também é da equipe do painel. Tire a pessoa da Equipe antes de excluir a conta." |
-| `export-daily-limit`    | `resource-exhausted`  | "Você chegou ao limite de 20 exportações de dados hoje."                                     |
-| `deletion-daily-limit`  | `resource-exhausted`  | "Você chegou ao limite de 5 exclusões de conta hoje."                                        |
+| Motivo | Código | Mensagem |
+| --- | --- | --- |
+| `admin-only` | `permission-denied` | "Só um admin do painel pode fazer isso." |
+| `recent-login-required` | `failed-precondition` | "Entre de novo com a sua senha para continuar." |
+| `email-mismatch` | `failed-precondition` | "Este e-mail não é o da conta deste fã. Confira o e-mail do pedido." |
+| `fan-is-staff` | `failed-precondition` | "Esta conta também é da equipe do painel. Tire a pessoa da Equipe antes de excluir a conta." |
+| `export-daily-limit` | `resource-exhausted` | "Você chegou ao limite de 20 exportações de dados hoje." |
+| `deletion-daily-limit` | `resource-exhausted` | "Você chegou ao limite de 5 exclusões de conta hoje." |
 
 Os de hoje que as duas usam: `invalid-request`, `self` e `fan-not-found` (`panel-errors.ts`) e `unauthenticated` e `not-staff` (`panel-actor.ts`).
 
@@ -10154,38 +10043,38 @@ Os de hoje que as duas usam: `invalid-request`, `self` e `fan-not-found` (`panel
 
 **As fontes (`FAN_DATA_SOURCES`):** cada fonte com o lugar no arquivo (a primeira chamada, uma parte ou fora, com o motivo) e o que a exclusão faz com ela. É a lista que a exportação percorre e que o teste de 32.10 prende ao `deleteUserData`.
 
-| Fonte                                                                                          | No arquivo                                                                                                                                                                                                                               | Na exclusão                                                                           |
-| ---------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
-| Auth (`getUser`)                                                                               | `conta`: o nome do Auth (o do cadastro, que a edição do perfil não muda), o e-mail, se ele foi confirmado, cada provedor com o e-mail dele, a criação e o último login; nunca o hash da senha nem os tokens                              | começa por ela                                                                        |
-| `users/{uid}`                                                                                  | `perfil`, sem `searchKeys`, `signupCounted` e `photoPath`                                                                                                                                                                                | apagado                                                                               |
-| `users/{uid}/contact/main` (seção 35)                                                          | `contato`, inteiro: o WhatsApp, a origem e a data                                                                                                                                                                                        | apagado, com o `recursiveDelete` do perfil                                            |
-| `users/{uid}/centrals`                                                                         | parte `centrais`                                                                                                                                                                                                                         | apagado, com o `fanCount`                                                             |
-| `users/{uid}/postLikes`                                                                        | parte `curtidas`                                                                                                                                                                                                                         | apagado, com a contagem do post                                                       |
-| `users/{uid}/eventRsvps`                                                                       | parte `presencas`                                                                                                                                                                                                                        | apagado                                                                               |
-| `users/{uid}/profileSync` e `users/{uid}/uploads`                                              | fora: técnicos (o orçamento das cópias e a vaga do envio da foto)                                                                                                                                                                        | apagados                                                                              |
-| `usernames` com `uid ==`                                                                       | `arrobasReservados`, só os ids                                                                                                                                                                                                           | apagado                                                                               |
-| `wallets/{uid}`                                                                                | `carteira`, sem os resumos `keys` das missões                                                                                                                                                                                            | apagado                                                                               |
-| `wallets/{uid}/ledger`                                                                         | parte `extrato`, sem o `uid` e o `note` (o motivo do ajuste, que o painel diz que o fã não vê) e com o `actor` só com o `type`; nos `invite_visit` e `invite_signup`, o id só com a origem e sem o `eventId` (a chave da pessoa trazida) | apagado                                                                               |
-| `wallets/{uid}/centralPoints`                                                                  | parte `pontosPorCentral`                                                                                                                                                                                                                 | apagado                                                                               |
-| `fanInvites/{uid}`                                                                             | `convite`                                                                                                                                                                                                                                | apagado                                                                               |
-| `fanInvites/{uid}/inviteLinks`                                                                 | parte `linksDeConvite`                                                                                                                                                                                                                   | apagado                                                                               |
-| `fanInvites/{uid}/inviteVisitors`                                                              | fora: chaves HMAC do e-mail de outras pessoas                                                                                                                                                                                            | apagado                                                                               |
-| `inviteCodes` com `uid ==`                                                                     | `codigosDeConvite`, sem o `ownerKey`                                                                                                                                                                                                     | apagado                                                                               |
-| `referrals/{uid}`                                                                              | `origem`, sem o `inviterUid`, o `award` e o `inviterRemovedAt` (de quem convidou: o uid, o pagamento a ela e quando ela excluiu a conta)                                                                                                 | apagado                                                                               |
-| `referrals` com `inviterUid ==`                                                                | `pessoasTrazidas`, só a contagem                                                                                                                                                                                                         | desligado (`inviterUid` null)                                                         |
-| `wallets/<quem convidou>/ledger` (os `invite_*` e as missões que o fã pagou a quem o convidou) | fora: são da carteira de outra pessoa                                                                                                                                                                                                    | ficam, com o uid do fã no `actor` e a chave dele no id (pergunta 16; jurídico, UP-45) |
-| grupo `postComments` com `authorUid ==`                                                        | parte `comentarios`, com o `postId` e sem o `hiddenBy`                                                                                                                                                                                   | apagado, com a contagem e a fila                                                      |
-| `commentReports` com `reporterUid ==`                                                          | `denunciasDeComentario`, inteiras                                                                                                                                                                                                        | apagado, descontado da fila                                                           |
-| `profileReports` com `reporterUid ==`                                                          | `denunciasDePerfil`, inteiras, sem o `round`                                                                                                                                                                                             | apagado                                                                               |
-| `blockLists/{uid}`                                                                             | `bloqueios`                                                                                                                                                                                                                              | apagado, e o uid sai das listas dos outros                                            |
-| `redemptions` com `uid ==`                                                                     | parte `pedidosDaLoja`, sem o `updatedBy`                                                                                                                                                                                                 | o aberto cancelado, e todos sem o uid e as cópias                                     |
-| `seasons/*/standings/{uid}`                                                                    | `temporadas`, com o id da temporada                                                                                                                                                                                                      | apagado                                                                               |
-| `moderationQueue` (os comentários do fã) e `profileReportQueue/{uid}`                          | fora: denúncias contra o fã, de quem denunciou (jurídico, UP-45)                                                                                                                                                                         | ficam: o item do comentário sem o texto, e o do perfil sem o `resolvedDigest`         |
-| `idempotency` com `uid ==`                                                                     | fora: cópias técnicas das respostas, 30 dias                                                                                                                                                                                             | apagado                                                                               |
-| `staff/{uid}`                                                                                  | fora: o acesso ao painel não é dado de fã                                                                                                                                                                                                | apagado (a exclusão pela equipe recusa antes, `fan-is-staff`)                         |
-| Storage `fans/{uid}/`                                                                          | o `photoURL` do perfil                                                                                                                                                                                                                   | apagado                                                                               |
-| `staffAudit` com o uid                                                                         | fora: registro interno, com o nome de quem é da equipe                                                                                                                                                                                   | fica (seção 8 da política)                                                            |
-| registro de acesso (31.7)                                                                      | fora: aviso no arquivo (decisão 9)                                                                                                                                                                                                       | fica 184 dias                                                                         |
+| Fonte | No arquivo | Na exclusão |
+| --- | --- | --- |
+| Auth (`getUser`) | `conta`: o nome do Auth (o do cadastro, que a edição do perfil não muda), o e-mail, se ele foi confirmado, cada provedor com o e-mail dele, a criação e o último login; nunca o hash da senha nem os tokens | começa por ela |
+| `users/{uid}` | `perfil`, sem `searchKeys`, `signupCounted` e `photoPath` | apagado |
+| `users/{uid}/contact/main` (seção 35) | `contato`, inteiro: o WhatsApp, a origem e a data | apagado, com o `recursiveDelete` do perfil |
+| `users/{uid}/centrals` | parte `centrais` | apagado, com o `fanCount` |
+| `users/{uid}/postLikes` | parte `curtidas` | apagado, com a contagem do post |
+| `users/{uid}/eventRsvps` | parte `presencas` | apagado |
+| `users/{uid}/profileSync` e `users/{uid}/uploads` | fora: técnicos (o orçamento das cópias e a vaga do envio da foto) | apagados |
+| `usernames` com `uid ==` | `arrobasReservados`, só os ids | apagado |
+| `wallets/{uid}` | `carteira`, sem os resumos `keys` das missões | apagado |
+| `wallets/{uid}/ledger` | parte `extrato`, sem o `uid` e o `note` (o motivo do ajuste, que o painel diz que o fã não vê) e com o `actor` só com o `type`; nos `invite_visit` e `invite_signup`, o id só com a origem e sem o `eventId` (a chave da pessoa trazida) | apagado |
+| `wallets/{uid}/centralPoints` | parte `pontosPorCentral` | apagado |
+| `fanInvites/{uid}` | `convite` | apagado |
+| `fanInvites/{uid}/inviteLinks` | parte `linksDeConvite` | apagado |
+| `fanInvites/{uid}/inviteVisitors` | fora: chaves HMAC do e-mail de outras pessoas | apagado |
+| `inviteCodes` com `uid ==` | `codigosDeConvite`, sem o `ownerKey` | apagado |
+| `referrals/{uid}` | `origem`, sem o `inviterUid`, o `award` e o `inviterRemovedAt` (de quem convidou: o uid, o pagamento a ela e quando ela excluiu a conta) | apagado |
+| `referrals` com `inviterUid ==` | `pessoasTrazidas`, só a contagem | desligado (`inviterUid` null) |
+| `wallets/<quem convidou>/ledger` (os `invite_*` e as missões que o fã pagou a quem o convidou) | fora: são da carteira de outra pessoa | ficam, com o uid do fã no `actor` e a chave dele no id (pergunta 16; jurídico, UP-45) |
+| grupo `postComments` com `authorUid ==` | parte `comentarios`, com o `postId` e sem o `hiddenBy` | apagado, com a contagem e a fila |
+| `commentReports` com `reporterUid ==` | `denunciasDeComentario`, inteiras | apagado, descontado da fila |
+| `profileReports` com `reporterUid ==` | `denunciasDePerfil`, inteiras, sem o `round` | apagado |
+| `blockLists/{uid}` | `bloqueios` | apagado, e o uid sai das listas dos outros |
+| `redemptions` com `uid ==` | parte `pedidosDaLoja`, sem o `updatedBy` | o aberto cancelado, e todos sem o uid e as cópias |
+| `seasons/*/standings/{uid}` | `temporadas`, com o id da temporada | apagado |
+| `moderationQueue` (os comentários do fã) e `profileReportQueue/{uid}` | fora: denúncias contra o fã, de quem denunciou (jurídico, UP-45) | ficam: o item do comentário sem o texto, e o do perfil sem o `resolvedDigest` |
+| `idempotency` com `uid ==` | fora: cópias técnicas das respostas, 30 dias | apagado |
+| `staff/{uid}` | fora: o acesso ao painel não é dado de fã | apagado (a exclusão pela equipe recusa antes, `fan-is-staff`) |
+| Storage `fans/{uid}/` | o `photoURL` do perfil | apagado |
+| `staffAudit` com o uid | fora: registro interno, com o nome de quem é da equipe | fica (seção 8 da política) |
+| registro de acesso (31.7) | fora: aviso no arquivo (decisão 9) | fica 184 dias |
 
 **O arquivo.** A primeira chamada devolve o começo, e o painel acrescenta cada parte como uma lista com o nome dela, tira o `partes` e baixa como `imagineup-dados-<uid>-<AAAA-MM-DD>.json`. Os nomes do nível de cima ficam em português, porque o arquivo vai para o fã; os campos de dentro ficam como estão gravados. Cada documento de lista leva o `id` (e o comentário, o `postId`).
 
@@ -10200,7 +10089,7 @@ Os de hoje que as duas usam: `invalid-request`, `self` e `fan-not-found` (`panel
     "nome": "Nome do cadastro",
     "email": "pessoa@exemplo.com",
     "emailConfirmado": false,
-    "provedores": [{ "id": "password", "email": "pessoa@exemplo.com" }],
+    "provedores": [{"id": "password", "email": "pessoa@exemplo.com"}],
     "criadaEm": "2026-10-10T12:00:00.000Z",
     "ultimoLoginEm": "2026-10-19T22:10:00.000Z"
   },
@@ -10216,16 +10105,7 @@ Os de hoje que as duas usam: `invalid-request`, `self` e `fan-not-found` (`panel
   "denunciasDeComentario": [],
   "denunciasDePerfil": [],
   "temporadas": [],
-  "partes": [
-    "extrato",
-    "pontosPorCentral",
-    "centrais",
-    "curtidas",
-    "presencas",
-    "comentarios",
-    "linksDeConvite",
-    "pedidosDaLoja"
-  ]
+  "partes": ["extrato", "pontosPorCentral", "centrais", "curtidas", "presencas", "comentarios", "linksDeConvite", "pedidosDaLoja"]
 }
 ```
 
@@ -10306,15 +10186,15 @@ O que o painel precisa (outra conversa, no `imagineup-admin`, a partir da `origi
 
 ### 32.7 Aviso de api fora do ar: o teste, a política e os comandos
 
-| Item               | Valor                                                                                                                                                            |
-| ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Nome               | "ImagineUP: api no ar"                                                                                                                                           |
-| Endereço           | `https://southamerica-east1-imagine-up-app.cloudfunctions.net/api/health`, `GET`, porta 443, certificado conferido                                               |
-| Esperado           | status 2xx e o corpo com `"ok":true` (`contains-string`)                                                                                                         |
-| Frequência e prazo | 5 minutos e 30 s                                                                                                                                                 |
-| Regiões            | `south-america`, `usa-virginia` e `usa-oregon`                                                                                                                   |
-| Rótulo             | `app=imagineup`                                                                                                                                                  |
-| Política           | "ImagineUP: api fora do ar" (`docs/protecao/politicas/api-fora-do-ar.json`): 2 ou mais regiões falhando por 5 minutos, ao canal "ImagineUP: alertas do servidor" |
+| Item | Valor |
+| --- | --- |
+| Nome | "ImagineUP: api no ar" |
+| Endereço | `https://southamerica-east1-imagine-up-app.cloudfunctions.net/api/health`, `GET`, porta 443, certificado conferido |
+| Esperado | status 2xx e o corpo com `"ok":true` (`contains-string`) |
+| Frequência e prazo | 5 minutos e 30 s |
+| Regiões | `south-america`, `usa-virginia` e `usa-oregon` |
+| Rótulo | `app=imagineup` |
+| Política | "ImagineUP: api fora do ar" (`docs/protecao/politicas/api-fora-do-ar.json`): 2 ou mais regiões falhando por 5 minutos, ao canal "ImagineUP: alertas do servidor" |
 
 Os comandos seguem as regras de 31.2: no Git Bash, da raiz do repositório, com `--project=imagine-up-app` escrito, copiados da nota. A exceção é o `gcloud monitoring uptime create` e o `update` de um teste, que rodam no PowerShell, pela armadilha do caminho (abaixo do bloco "Criar o teste"). Os flags foram conferidos no `--help` do gcloud 588.0.0, em 14/10/2026: as regiões aceitas são `asia-pacific`, `europe`, `south-america`, `usa-iowa`, `usa-oregon` e `usa-virginia`, com no mínimo 3; os períodos, 1, 5, 10 e 15 minutos; o `update` aceita `--path`, `--set-status-codes`, `--clear-status-codes`, `--set-regions` e `--matcher-content`; o `delete` e o `describe` recebem o `CHECK_ID`, que o `list-configs` mostra.
 
@@ -10350,7 +10230,7 @@ Esperado: uma política a mais no `list` (5, ou 6 com a 5ª de 31.4) e nenhuma c
 ```json
 {
   "displayName": "ImagineUP: api fora do ar",
-  "userLabels": { "app": "imagineup" },
+  "userLabels": {"app": "imagineup"},
   "severity": "CRITICAL",
   "combiner": "OR",
   "conditions": [
@@ -10370,11 +10250,11 @@ Esperado: uma política a mais no `list` (5, ou 6 com a 5ª de 31.4) e nenhuma c
         "thresholdValue": 1,
         "duration": "300s",
         "evaluationMissingData": "EVALUATION_MISSING_DATA_INACTIVE",
-        "trigger": { "count": 1 }
+        "trigger": {"count": 1}
       }
     }
   ],
-  "alertStrategy": { "autoClose": "3600s" },
+  "alertStrategy": {"autoClose": "3600s"},
   "documentation": {
     "subject": "ImagineUP: api fora do ar",
     "mimeType": "text/markdown",
@@ -10417,21 +10297,21 @@ Só a A5. Só JS: `profile/types.ts`, `profile/api.ts`, `profile/username.ts`, `
 
 Textos novos (`translations.json`, em `editProfile.username`):
 
-| Chave                                    | Texto                                                             |
-| ---------------------------------------- | ----------------------------------------------------------------- |
-| `editProfile.username.lockedByTeam`      | "A equipe trocou seu @. Você escolhe outro a partir de {{date}}." |
-| `editProfile.username.lockedByTeamSoon`  | "A equipe trocou seu @ há menos de 30 dias."                      |
-| `editProfile.username.lockedMailSubject` | "Troca do @ no ImagineUP"                                         |
+| Chave | Texto |
+| --- | --- |
+| `editProfile.username.lockedByTeam` | "A equipe trocou seu @. Você escolhe outro a partir de {{date}}." |
+| `editProfile.username.lockedByTeamSoon` | "A equipe trocou seu @ há menos de 30 dias." |
+| `editProfile.username.lockedMailSubject` | "Troca do @ no ImagineUP" |
 
 O `lockedByTeamSoon` só aparece sem data nenhuma (nem no perfil, nem no 409), como o `tooSoon` de hoje. Sem e-mail, sem travessão e sem meia-risca.
 
 **Com o servidor novo no ar**, em cada geração de JS:
 
-| Superfície                           | JS no ar (o EAS Update de 14/10/2026)                                | JS novo                                                                                                |
-| ------------------------------------ | -------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| Superfície | JS no ar (o EAS Update de 14/10/2026) | JS novo |
+| --- | --- | --- |
 | Editar perfil, @ trocado pela equipe | "Você troca o @ de novo em {{date}}." (certo, sem dizer quem trocou) | "A equipe trocou seu @. Você escolhe outro a partir de {{date}}.", com o link "Escrever para a equipe" |
-| Recusa 409 com o cache sem o prazo   | "Você trocou o @ há menos de 30 dias." (errado para a equipe)        | a frase com a data do 409                                                                              |
-| Ajustes, @ automático travado        | "Seu @ ainda é automático"                                           | "Foto, nome, @, bio e redes"                                                                           |
+| Recusa 409 com o cache sem o prazo | "Você trocou o @ há menos de 30 dias." (errado para a equipe) | a frase com a data do 409 |
+| Ajustes, @ automático travado | "Seu @ ainda é automático" | "Foto, nome, @, bio e redes" |
 
 Nenhuma geração quebra: o campo novo é ignorado pelo JS no ar, e a ordem entre o EAS Update e o servidor é livre (o JS novo sem o campo mostra as frases de hoje).
 
@@ -10534,7 +10414,6 @@ Só servidor, configuração e um EAS Update: nenhuma regra, índice, fila ou TT
    ```
 
    Os cinco lotes somam as 68 funções (15, 15, 15, 15 e 8), na ordem do `index.ts`, com as duas novas logo depois do `hideFanComments`. A etapa 4 confere a lista contra os exports do `index.ts`: 68, sem repetição, as 57 do `onPanelCall`. Os comandos, com o `cd` da pasta do deploy na frente, ficam em `Projetos/protecao-imagineup/lotes-lgpd-moderacao.txt`, fora do repositório, escrito na etapa 8, para o dono copiar sem redigitar.
-
 6. **O `allUsers` das duas novas:** `gcloud functions add-invoker-policy-binding exportFanData --region=southamerica-east1 --member=allUsers --project=imagine-up-app` e o mesmo com `deleteFanAccount`.
 7. **Conferir** ("Publicar", passo 6): o `functions:list` com as 68; as 68 com a data do deploy, pela mais antiga, que é do dia, depois do lote 1 (`gcloud functions list --regions=southamerica-east1 --v2 --sort-by=updateTime --limit=3 --format="table(name.basename(),updateTime)" --project=imagine-up-app`); o `node scripts/check-public-functions.mjs` com as 58 chamáveis, nenhuma barrada; a CPU das duas novas (`0.1666` e `1`) e das outras como antes; o POST sem login às duas novas (`curl -s -X POST -H "Content-Type: application/json" -d '{"data":{}}' https://southamerica-east1-imagine-up-app.cloudfunctions.net/exportFanData`, e o mesmo com `deleteFanAccount`) com o `unauthenticated`; o 401 da `api`, o 404 `not_found` e os logs do `rankingTick`.
 8. **Fim do silenciamento** (31.5, passo 3).
@@ -10947,79 +10826,79 @@ Todas de 16/10/2026, nas seções "Decisões do dono" e "Decisões do dono sobre
 
 **As 30 decisões da proposta:**
 
-| #   | Pergunta                                                              | Resposta                                                                   | Item   | Onde entra                                                                                                        |
-| --- | --------------------------------------------------------------------- | -------------------------------------------------------------------------- | ------ | ----------------------------------------------------------------------------------------------------------------- |
-| 1   | Aditivo próprio, ou dentro da UP-42?                                  | Sem aditivo: pode fazer                                                    | 1      | `CLAUDE.md:17` e `AGENTS.md` (34.20)                                                                              |
-| 2   | Modelo A, B ou C?                                                     | O A, com prêmios de verdade ao gestor                                      | 2, 40  | `fan-clubs/` (módulo novo) e `rewards/`                                                                           |
-| 3   | O corte do primeiro bloco                                             | Completo com foto e seguidores, mais o prêmio                              | 3      | as etapas de 34.14                                                                                                |
-| 4   | Seção nova ou página filha de Artistas?                               | Seção nova                                                                 | 5      | `staff/model.ts:5-15`, `staff/panel-actor.ts:43-53`, painel `src/lib/staff.ts:10-49`                              |
-| 5   | Gastar uma callable da sobra de CPU?                                  | Sim, uma só                                                                | 6, 55  | `index.ts` (`decideFanClub`), `cpu.test.ts`                                                                       |
-| 6   | O editor aprova, e só o admin encerra?                                | Sim, as duas                                                               | 7      | `fan-clubs/panel.ts` (`readPanelActor` e `admin-only`)                                                            |
-| 7   | O nome livre, revisado, ou fixo?                                      | Proposto pelo fã (3 a 40), revisado, sem edição                            | 10     | `fan-clubs/model.ts` (`parseClubName`), `content-filter/match.ts:58`                                              |
-| 8   | Os tetos (3, 3 rodadas com 30 dias, 3, 5 e 10)                        | Sim                                                                        | 11     | `points/model.ts:205-218`, `moderation/model.ts:68-79`, `points/config.ts:61-98`, painel `points-config.ts:25-78` |
-| 9   | A entrada trazida: primeira da vida e, pelo código, até 30 dias       | Sim                                                                        | 23     | `centrals/service.ts` (`joinCentrals`), `invites/service.ts` (`claimInvite`), `users/{uid}/fanClubCredits`        |
-| 10  | O motivo de denúncia "uso indevido de imagem"                         | Sim, nas publicações de fã-clube                                           | 18     | `moderation/model.ts` (`parseFanClubReportReason`), `fan-clubs/reports.ts`                                        |
-| 11  | Na exclusão do gestor, apagar as publicações e a lápide               | Sim                                                                        | 21     | `store.ts:205-237` (`removeFanClubData`) e `fan-data/sources.ts:130`                                              |
-| 12  | A UP-49 junto                                                         | Sim, feita no mesmo dia (`imagineup-LP` `2447ca2`)                         | 22     | o site (`site/vercel.json:7-10`) e o `classifyInvitePath`                                                         |
-| 13  | Depois de encerrado, nova candidatura?                                | Nunca mais                                                                 | 13     | `fanClubApplications.closedByStaff`                                                                               |
-| 14  | Seguir também entra na central?                                       | Sim, com o botão avisando                                                  | 26     | `PUT /me/fan-club-follows/:clubId` com o `joinCentrals`                                                           |
-| 15  | Sair da central deixa de seguir?                                      | Sim                                                                        | 27     | `centrals/service.ts:309-326` (`leaveCentral`)                                                                    |
-| 16  | `count()` com a cópia noturna, ou shards?                             | `count()` com a cópia                                                      | 28, 37 | rotas da `api` e o passo novo no `closeStatsDays` (`index.ts:545-555`)                                            |
-| 17  | Quem lê a lista de quem segue                                         | Só a seção Fãs, no painel                                                  | 29     | `firestore.rules` (o vínculo com `canSeeSection('fans')`)                                                         |
-| 18  | "Dos seus fã-clubes" na Início já?                                    | Entra já                                                                   | 30     | `GET /me/fan-club-feed`, `home.tsx:39-40`                                                                         |
-| 19  | Seguir rende 0 e nada por seguidor?                                   | Sim                                                                        | 31     | nenhum ponto novo no `planAwards`                                                                                 |
-| 20  | A recompensa pelo Ajuste ou com título no extrato?                    | Substituída pelo prêmio: os pontos na mesma ação, com "Prêmio do fã-clube" | 45     | `points/model.ts:511` (a origem `fanclub_prize`), `fan-clubs/panel.ts`                                            |
-| 21  | Os pontos do prêmio no saldo, ou no saldo e no XP?                    | Só no saldo                                                                | 45     | o `adjust` só com o `balance`                                                                                     |
-| 22  | Destaque até 31 dias e até 3 por artista?                             | Sim                                                                        | 35     | `fan-clubs/panel.ts` (`feature`), a cópia noturna                                                                 |
-| 23  | Sem nota, só colunas?                                                 | Sem nota, só colunas                                                       | 36     | painel, aba Fã-clubes, e os índices de 34.6                                                                       |
-| 24  | Os retratos do mês na cópia já?                                       | Sim                                                                        | 37     | `fan-clubs/copy.ts`, chamado pelo `closeStatsDays`                                                                |
-| 25  | Bloquear o gestor desfaz o seguir; o bloqueio dele não impede ninguém | Sim, as duas                                                               | 32     | `moderation/service.ts:257-286` (`blockFan`)                                                                      |
-| 26  | Suspender apaga os seguimentos, sem devolver?                         | Sim                                                                        | 33     | `moderation/fans.ts:79-115` (`applyFanSuspension`)                                                                |
-| 27  | 30 seguimentos por dia e 50 seguidos?                                 | Sim                                                                        | 34     | `fanclub_follow` (decisão 11) e o `follow_limit`                                                                  |
-| 28  | O gestor vê o número ou a lista?                                      | Só o número                                                                | 29     | `GET /me/fan-club` (só `followers` e `followers30d`)                                                              |
-| 29  | Fã-clube no app, nas rotas, no painel e no site?                      | Sim                                                                        | 4      | `src/app/fa-clube/[clubeId].tsx`, `src/app/meu-fa-clube/`, painel `/fa-clubes`                                    |
-| 30  | Ciclo mensal com o checklist?                                         | Não: sem ciclo nem prazo, a critério da equipe; o checklist só avisa       | 38     | o diálogo Recompensar do painel                                                                                   |
+| # | Pergunta | Resposta | Item | Onde entra |
+| --- | --- | --- | --- | --- |
+| 1 | Aditivo próprio, ou dentro da UP-42? | Sem aditivo: pode fazer | 1 | `CLAUDE.md:17` e `AGENTS.md` (34.20) |
+| 2 | Modelo A, B ou C? | O A, com prêmios de verdade ao gestor | 2, 40 | `fan-clubs/` (módulo novo) e `rewards/` |
+| 3 | O corte do primeiro bloco | Completo com foto e seguidores, mais o prêmio | 3 | as etapas de 34.14 |
+| 4 | Seção nova ou página filha de Artistas? | Seção nova | 5 | `staff/model.ts:5-15`, `staff/panel-actor.ts:43-53`, painel `src/lib/staff.ts:10-49` |
+| 5 | Gastar uma callable da sobra de CPU? | Sim, uma só | 6, 55 | `index.ts` (`decideFanClub`), `cpu.test.ts` |
+| 6 | O editor aprova, e só o admin encerra? | Sim, as duas | 7 | `fan-clubs/panel.ts` (`readPanelActor` e `admin-only`) |
+| 7 | O nome livre, revisado, ou fixo? | Proposto pelo fã (3 a 40), revisado, sem edição | 10 | `fan-clubs/model.ts` (`parseClubName`), `content-filter/match.ts:58` |
+| 8 | Os tetos (3, 3 rodadas com 30 dias, 3, 5 e 10) | Sim | 11 | `points/model.ts:205-218`, `moderation/model.ts:68-79`, `points/config.ts:61-98`, painel `points-config.ts:25-78` |
+| 9 | A entrada trazida: primeira da vida e, pelo código, até 30 dias | Sim | 23 | `centrals/service.ts` (`joinCentrals`), `invites/service.ts` (`claimInvite`), `users/{uid}/fanClubCredits` |
+| 10 | O motivo de denúncia "uso indevido de imagem" | Sim, nas publicações de fã-clube | 18 | `moderation/model.ts` (`parseFanClubReportReason`), `fan-clubs/reports.ts` |
+| 11 | Na exclusão do gestor, apagar as publicações e a lápide | Sim | 21 | `store.ts:205-237` (`removeFanClubData`) e `fan-data/sources.ts:130` |
+| 12 | A UP-49 junto | Sim, feita no mesmo dia (`imagineup-LP` `2447ca2`) | 22 | o site (`site/vercel.json:7-10`) e o `classifyInvitePath` |
+| 13 | Depois de encerrado, nova candidatura? | Nunca mais | 13 | `fanClubApplications.closedByStaff` |
+| 14 | Seguir também entra na central? | Sim, com o botão avisando | 26 | `PUT /me/fan-club-follows/:clubId` com o `joinCentrals` |
+| 15 | Sair da central deixa de seguir? | Sim | 27 | `centrals/service.ts:309-326` (`leaveCentral`) |
+| 16 | `count()` com a cópia noturna, ou shards? | `count()` com a cópia | 28, 37 | rotas da `api` e o passo novo no `closeStatsDays` (`index.ts:545-555`) |
+| 17 | Quem lê a lista de quem segue | Só a seção Fãs, no painel | 29 | `firestore.rules` (o vínculo com `canSeeSection('fans')`) |
+| 18 | "Dos seus fã-clubes" na Início já? | Entra já | 30 | `GET /me/fan-club-feed`, `home.tsx:39-40` |
+| 19 | Seguir rende 0 e nada por seguidor? | Sim | 31 | nenhum ponto novo no `planAwards` |
+| 20 | A recompensa pelo Ajuste ou com título no extrato? | Substituída pelo prêmio: os pontos na mesma ação, com "Prêmio do fã-clube" | 45 | `points/model.ts:511` (a origem `fanclub_prize`), `fan-clubs/panel.ts` |
+| 21 | Os pontos do prêmio no saldo, ou no saldo e no XP? | Só no saldo | 45 | o `adjust` só com o `balance` |
+| 22 | Destaque até 31 dias e até 3 por artista? | Sim | 35 | `fan-clubs/panel.ts` (`feature`), a cópia noturna |
+| 23 | Sem nota, só colunas? | Sem nota, só colunas | 36 | painel, aba Fã-clubes, e os índices de 34.6 |
+| 24 | Os retratos do mês na cópia já? | Sim | 37 | `fan-clubs/copy.ts`, chamado pelo `closeStatsDays` |
+| 25 | Bloquear o gestor desfaz o seguir; o bloqueio dele não impede ninguém | Sim, as duas | 32 | `moderation/service.ts:257-286` (`blockFan`) |
+| 26 | Suspender apaga os seguimentos, sem devolver? | Sim | 33 | `moderation/fans.ts:79-115` (`applyFanSuspension`) |
+| 27 | 30 seguimentos por dia e 50 seguidos? | Sim | 34 | `fanclub_follow` (decisão 11) e o `follow_limit` |
+| 28 | O gestor vê o número ou a lista? | Só o número | 29 | `GET /me/fan-club` (só `followers` e `followers30d`) |
+| 29 | Fã-clube no app, nas rotas, no painel e no site? | Sim | 4 | `src/app/fa-clube/[clubeId].tsx`, `src/app/meu-fa-clube/`, painel `/fa-clubes` |
+| 30 | Ciclo mensal com o checklist? | Não: sem ciclo nem prazo, a critério da equipe; o checklist só avisa | 38 | o diálogo Recompensar do painel |
 
 **As 12 do prêmio** ("segue as recomendadas, nas doze"):
 
-| #   | Pergunta                                                         | Resposta                                                      | Item  | Onde entra                                                                                      |
-| --- | ---------------------------------------------------------------- | ------------------------------------------------------------- | ----- | ----------------------------------------------------------------------------------------------- |
-| P1  | Um pedido da loja, a partir de uma recompensa "Só para prêmios"? | Sim                                                           | 40    | `rewards/model.ts:25` (`prize`) e `:121-246`, `rewards/service.ts` (`grantPrize`)               |
-| P2  | Só recompensas "Só para prêmios" no primeiro bloco?              | Sim                                                           | 41    | `grantPrize` recusa a recompensa sem o status `prize`                                           |
-| P3  | O tipo novo Desconto, só nos prêmios, com o ícone de reserva?    | Sim                                                           | 42    | `rewards/model.ts:21`, `api/contract.ts:573`, app `rewards/consts.ts:20-26` e `reward-icon.tsx` |
-| P4  | O cupom e a mensagem, com o pedido nascendo Aprovado?            | Sim                                                           | 43    | `redemptions` (`coupon`, `message`, `origin`), `redeem-steps.tsx:106-153`                       |
-| P5  | Cada parte do Recompensar pede a seção dona dela?                | Sim                                                           | 7, 44 | `fan-clubs/panel.ts` (`fanClubs`, `fans` e `rewards`)                                           |
-| P6  | Os pontos na mesma ação, com "Prêmio do fã-clube"?               | Sim                                                           | 45    | `points/model.ts`, `describe-ledger.ts:41-84`, painel `stats.ts:423-439`                        |
-| P7  | Só três travas, sem teto de um a cada 30 dias?                   | Sim                                                           | 46    | `grantPrize` (`prize-not-allowed`)                                                              |
-| P8  | O texto do anúncio desligado até o parecer?                      | Sim; depois, o parecer foi dispensado, e o texto nasce ligado | 47    | `FAN_CLUB_PRIZE_NOTICE`, com o texto e a troca por `null` para desligar                         |
-| P9  | A página pública só com o Destaque, sem divulgar ganhadores?     | Sim                                                           | 48    | `GET /fan-clubs/:clubId` sem prêmio                                                             |
-| P10 | Cancelar pelo Recusar de Pedidos, sem desfazer os pontos?        | Sim                                                           | 49    | `rewards/panel.ts:480` (`setRedemptionStatus`)                                                  |
-| P11 | O registro numa subcoleção do fã-clube?                          | Sim                                                           | 50    | `fanClubs/{clubId}/prizes/{grantId}`                                                            |
-| P12 | A fileira "Seus prêmios" na loja, além do card?                  | Sim                                                           | 51    | `GET /rewards` (`prizes`), `rewards.tsx:42-60`                                                  |
+| # | Pergunta | Resposta | Item | Onde entra |
+| --- | --- | --- | --- | --- |
+| P1 | Um pedido da loja, a partir de uma recompensa "Só para prêmios"? | Sim | 40 | `rewards/model.ts:25` (`prize`) e `:121-246`, `rewards/service.ts` (`grantPrize`) |
+| P2 | Só recompensas "Só para prêmios" no primeiro bloco? | Sim | 41 | `grantPrize` recusa a recompensa sem o status `prize` |
+| P3 | O tipo novo Desconto, só nos prêmios, com o ícone de reserva? | Sim | 42 | `rewards/model.ts:21`, `api/contract.ts:573`, app `rewards/consts.ts:20-26` e `reward-icon.tsx` |
+| P4 | O cupom e a mensagem, com o pedido nascendo Aprovado? | Sim | 43 | `redemptions` (`coupon`, `message`, `origin`), `redeem-steps.tsx:106-153` |
+| P5 | Cada parte do Recompensar pede a seção dona dela? | Sim | 7, 44 | `fan-clubs/panel.ts` (`fanClubs`, `fans` e `rewards`) |
+| P6 | Os pontos na mesma ação, com "Prêmio do fã-clube"? | Sim | 45 | `points/model.ts`, `describe-ledger.ts:41-84`, painel `stats.ts:423-439` |
+| P7 | Só três travas, sem teto de um a cada 30 dias? | Sim | 46 | `grantPrize` (`prize-not-allowed`) |
+| P8 | O texto do anúncio desligado até o parecer? | Sim; depois, o parecer foi dispensado, e o texto nasce ligado | 47 | `FAN_CLUB_PRIZE_NOTICE`, com o texto e a troca por `null` para desligar |
+| P9 | A página pública só com o Destaque, sem divulgar ganhadores? | Sim | 48 | `GET /fan-clubs/:clubId` sem prêmio |
+| P10 | Cancelar pelo Recusar de Pedidos, sem desfazer os pontos? | Sim | 49 | `rewards/panel.ts:480` (`setRedemptionStatus`) |
+| P11 | O registro numa subcoleção do fã-clube? | Sim | 50 | `fanClubs/{clubId}/prizes/{grantId}` |
+| P12 | A fileira "Seus prêmios" na loja, além do card? | Sim | 51 | `GET /rewards` (`prizes`), `rewards.tsx:42-60` |
 
 **As quatro perguntas da cliente que seguravam a ida ao ar,** respondidas pelo dono por ela no mesmo dia (registradas na proposta e na UP-65), entram como decisões:
 
-| Pergunta                   | Resposta                                                                                                                                           | Item | Onde entra                                                                                 |
-| -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- | ---- | ------------------------------------------------------------------------------------------ |
-| Os artistas e as fotos     | Todos assinam, ao entrar, o documento que autoriza o uso de imagem no app; as caixas nascem ligadas para toda central com o `imageRightsConfirmed` | 9    | `artistPrivate.fanClubs` (o ausente segue o `imageRightsConfirmed`) e o diálogo do artista |
-| A idade                    | 18 anos para ter fã-clube, declarados; seguir é livre; a idade do app segue em aberto                                                              | 52   | `adultDeclared` na candidatura                                                             |
-| Quem revisa                | A equipe com a seção Fã-clubes com edição; a meta de 24 h vai nas notas de revisão (o prazo exato veio em 19/10/2026, abaixo)                      | 7    | `readPanelActor(..., 'fanClubs', 'edit')` e 34.11                                          |
-| O parecer sobre os prêmios | Dispensado, com o risco aceito; o texto nasce ligado e desliga sem build                                                                           | 47   | `FAN_CLUB_PRIZE_NOTICE`                                                                    |
+| Pergunta | Resposta | Item | Onde entra |
+| --- | --- | --- | --- |
+| Os artistas e as fotos | Todos assinam, ao entrar, o documento que autoriza o uso de imagem no app; as caixas nascem ligadas para toda central com o `imageRightsConfirmed` | 9 | `artistPrivate.fanClubs` (o ausente segue o `imageRightsConfirmed`) e o diálogo do artista |
+| A idade | 18 anos para ter fã-clube, declarados; seguir é livre; a idade do app segue em aberto | 52 | `adultDeclared` na candidatura |
+| Quem revisa | A equipe com a seção Fã-clubes com edição; a meta de 24 h vai nas notas de revisão (o prazo exato veio em 19/10/2026, abaixo) | 7 | `readPanelActor(..., 'fanClubs', 'edit')` e 34.11 |
+| O parecer sobre os prêmios | Dispensado, com o risco aceito; o texto nasce ligado e desliga sem build | 47 | `FAN_CLUB_PRIZE_NOTICE` |
 
 **Os pontos em aberto do documento para a cliente,** respondidos pelo dono em 19/10/2026 (registrados na proposta, na seção "Respostas do dono de 19/10/2026", e na UP-65):
 
-| Ponto                             | Resposta                                                                                                                           | Item     | Onde entra                                                                                  |
-| --------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- | -------- | ------------------------------------------------------------------------------------------- |
-| Regulamento, termos e privacidade | Ficam para depois e não seguram a construção nem a abertura                                                                        | 8, 9, 56 | o `FAN_CLUB_RULES_URL` vazio, o aceite pelos Termos (`TERMS_URL`) e a chave `FAN_CLUB_OPEN` |
-| Dono do conteúdo                  | O fã, que autoriza a Imagine a mostrar no app                                                                                      | 58       | os termos, quando vierem                                                                    |
-| Entrega dos prêmios               | A equipe combina pelo WhatsApp ou pelo Instagram, também nos digitais; quem paga, o imposto e o valor máximo a critério da Imagine | 43       | o `getRedemptionContacts` com o WhatsApp e o Instagram nos pedidos de prêmio                |
-| Prazo da equipe                   | Até 24 horas úteis, de segunda a sexta, das 8h às 17h, para denúncias, pedidos e publicações                                       | 7        | as notas de revisão das lojas (34.11)                                                       |
-| Quem da equipe                    | Por enquanto, toda a equipe recebe a seção Fã-clubes                                                                               | 7        | 34.15, passo 8 (a tela Equipe)                                                              |
-| Número de seguidores              | Público, na página do fã-clube e no card do artista                                                                                | 28       | `GET /fan-clubs/:clubId` e `GET /artists/:artistId/fan-clubs`                               |
-| Divulgação                        | A Imagine e os artistas podem divulgar os premiados fora do app, combinado antes com o gestor                                      | 48       | fora do app                                                                                 |
-| Idade                             | Seguir livre para todos, inclusive adolescentes; ter fã-clube continua 18+                                                         | 52       | nenhum código novo                                                                          |
-| WhatsApp do candidato             | Entra, como outro canal de contato, só a equipe vê, guardado enquanto o fã-clube existir                                           | 14       | `users/{uid}/contact/main`, o contato do fã, sem TTL                                        |
-| O resgate da loja sem WhatsApp    | A loja inteira também vai pedir o WhatsApp, para a equipe falar com o fã mais rápido (a UP-66, construída à parte)                 | 14       | o mesmo `users/{uid}/contact/main` e o "Ver contatos" com o WhatsApp nos dois casos         |
+| Ponto | Resposta | Item | Onde entra |
+| --- | --- | --- | --- |
+| Regulamento, termos e privacidade | Ficam para depois e não seguram a construção nem a abertura | 8, 9, 56 | o `FAN_CLUB_RULES_URL` vazio, o aceite pelos Termos (`TERMS_URL`) e a chave `FAN_CLUB_OPEN` |
+| Dono do conteúdo | O fã, que autoriza a Imagine a mostrar no app | 58 | os termos, quando vierem |
+| Entrega dos prêmios | A equipe combina pelo WhatsApp ou pelo Instagram, também nos digitais; quem paga, o imposto e o valor máximo a critério da Imagine | 43 | o `getRedemptionContacts` com o WhatsApp e o Instagram nos pedidos de prêmio |
+| Prazo da equipe | Até 24 horas úteis, de segunda a sexta, das 8h às 17h, para denúncias, pedidos e publicações | 7 | as notas de revisão das lojas (34.11) |
+| Quem da equipe | Por enquanto, toda a equipe recebe a seção Fã-clubes | 7 | 34.15, passo 8 (a tela Equipe) |
+| Número de seguidores | Público, na página do fã-clube e no card do artista | 28 | `GET /fan-clubs/:clubId` e `GET /artists/:artistId/fan-clubs` |
+| Divulgação | A Imagine e os artistas podem divulgar os premiados fora do app, combinado antes com o gestor | 48 | fora do app |
+| Idade | Seguir livre para todos, inclusive adolescentes; ter fã-clube continua 18+ | 52 | nenhum código novo |
+| WhatsApp do candidato | Entra, como outro canal de contato, só a equipe vê, guardado enquanto o fã-clube existir | 14 | `users/{uid}/contact/main`, o contato do fã, sem TTL |
+| O resgate da loja sem WhatsApp | A loja inteira também vai pedir o WhatsApp, para a equipe falar com o fã mais rápido (a UP-66, construída à parte) | 14 | o mesmo `users/{uid}/contact/main` e o "Ver contatos" com o WhatsApp nos dois casos |
 
 ### 34.3 Contrato: rotas, a callable e os erros
 
@@ -11027,28 +10906,28 @@ Todas de 16/10/2026, nas seções "Decisões do dono" e "Decisões do dono sobre
 
 Não custam cota de CPU. Todas usam o ritmo de 27.3. As que gravam passam pelo `runIdempotent` (a `Idempotency-Key`, o `requireFan` e o 403 do suspenso, menos as marcadas "desfazer", que levam o `allowSuspended`) e, quando recebem texto, pelo filtro antes de gravar. O módulo novo é `functions/src/fan-clubs/` (`model.ts`, `store.ts`, `service.ts`, `follows.ts`, `posts.ts`, `reports.ts`, `panel.ts`, `copy.ts`, `seed.ts` e `index.ts`), e as rotas ficam em `api/routes/fan-clubs.ts`. A `API_ROUTES` passa de 44 a 64.
 
-| Método e caminho                      | Grava         | Função do app                      | Resposta                                               |
-| ------------------------------------- | ------------- | ---------------------------------- | ------------------------------------------------------ |
-| `GET /me/fan-club`                    | não           | `fan-club/api.ts` `fetchMyFanClub` | `MyFanClub`                                            |
-| `GET /me/fan-club/numbers`            | não           | `fetchMyFanClubNumbers`            | `FanClubNumbers`                                       |
-| `GET /me/fan-club/artists`            | não           | `fetchFanClubArtists`              | `{ items: FanClubArtist[] }`                           |
-| `POST /me/fan-club/application`       | sim           | `applyForFanClub`                  | `MyFanClub`                                            |
-| `DELETE /me/fan-club/application`     | sim, desfazer | `withdrawApplication`              | `MyFanClub`                                            |
-| `PUT /me/fan-club/rules`              | sim           | `acceptFanClubRules`               | `MyFanClub`                                            |
-| `GET /me/contact`                     | não           | `profile/api.ts` `fetchContact`    | `{ whatsapp: string \| null }`                         |
-| `PUT /me/contact`                     | sim           | `profile/api.ts` `updateContact`   | `{ whatsapp: string \| null }`                         |
-| `GET /me/fan-club/posts`              | não           | `fetchMyFanClubPosts`              | `Page<OwnFanClubPost>`                                 |
-| `POST /me/fan-club/upload`            | sim           | `openFanClubUpload`                | `FanClubUploadSlot`                                    |
-| `POST /me/fan-club/posts`             | sim           | `createFanClubPost`                | `OwnFanClubPost`                                       |
-| `DELETE /me/fan-club/posts/:postId`   | sim, desfazer | `removeFanClubPost`                | `OwnFanClubPost`                                       |
-| `GET /artists/:artistId/fan-clubs`    | não           | `fetchArtistFanClubs`              | `Page<FanClubCard>`                                    |
-| `GET /fan-clubs/:clubId`              | não           | `fetchFanClub`                     | `FanClubPage`                                          |
-| `GET /fan-clubs/:clubId/posts`        | não           | `fetchFanClubPosts`                | `Page<FanClubPost>`                                    |
-| `POST /fan-club-posts/:postId/report` | sim           | `reportFanClubPost`                | `{ postId, status: 'reported' \| 'already_reported' }` |
-| `PUT /me/fan-club-follows/:clubId`    | sim           | `followFanClub`                    | `FollowFanClubResult`                                  |
-| `DELETE /me/fan-club-follows/:clubId` | sim, desfazer | `unfollowFanClub`                  | `{ clubId, following: false }`                         |
-| `GET /me/fan-club-follows`            | não           | `fetchFollowedFanClubs`            | `{ items: FollowedFanClub[] }`                         |
-| `GET /me/fan-club-feed`               | não           | `fetchFanClubFeed`                 | `Page<FanClubPost>`                                    |
+| Método e caminho | Grava | Função do app | Resposta |
+| --- | --- | --- | --- |
+| `GET /me/fan-club` | não | `fan-club/api.ts` `fetchMyFanClub` | `MyFanClub` |
+| `GET /me/fan-club/numbers` | não | `fetchMyFanClubNumbers` | `FanClubNumbers` |
+| `GET /me/fan-club/artists` | não | `fetchFanClubArtists` | `{ items: FanClubArtist[] }` |
+| `POST /me/fan-club/application` | sim | `applyForFanClub` | `MyFanClub` |
+| `DELETE /me/fan-club/application` | sim, desfazer | `withdrawApplication` | `MyFanClub` |
+| `PUT /me/fan-club/rules` | sim | `acceptFanClubRules` | `MyFanClub` |
+| `GET /me/contact` | não | `profile/api.ts` `fetchContact` | `{ whatsapp: string \| null }` |
+| `PUT /me/contact` | sim | `profile/api.ts` `updateContact` | `{ whatsapp: string \| null }` |
+| `GET /me/fan-club/posts` | não | `fetchMyFanClubPosts` | `Page<OwnFanClubPost>` |
+| `POST /me/fan-club/upload` | sim | `openFanClubUpload` | `FanClubUploadSlot` |
+| `POST /me/fan-club/posts` | sim | `createFanClubPost` | `OwnFanClubPost` |
+| `DELETE /me/fan-club/posts/:postId` | sim, desfazer | `removeFanClubPost` | `OwnFanClubPost` |
+| `GET /artists/:artistId/fan-clubs` | não | `fetchArtistFanClubs` | `Page<FanClubCard>` |
+| `GET /fan-clubs/:clubId` | não | `fetchFanClub` | `FanClubPage` |
+| `GET /fan-clubs/:clubId/posts` | não | `fetchFanClubPosts` | `Page<FanClubPost>` |
+| `POST /fan-club-posts/:postId/report` | sim | `reportFanClubPost` | `{ postId, status: 'reported' \| 'already_reported' }` |
+| `PUT /me/fan-club-follows/:clubId` | sim | `followFanClub` | `FollowFanClubResult` |
+| `DELETE /me/fan-club-follows/:clubId` | sim, desfazer | `unfollowFanClub` | `{ clubId, following: false }` |
+| `GET /me/fan-club-follows` | não | `fetchFollowedFanClubs` | `{ items: FollowedFanClub[] }` |
+| `GET /me/fan-club-feed` | não | `fetchFanClubFeed` | `Page<FanClubPost>` |
 
 O que cada uma faz (os passos em 34.5):
 
@@ -11083,12 +10962,12 @@ O que cada uma faz (os passos em 34.5):
 
 #### Códigos de erro novos na `api`
 
-| Código                    | Status | Quando                                                                                           | Kind no app  |
-| ------------------------- | ------ | ------------------------------------------------------------------------------------------------ | ------------ |
-| `fan_club_not_found`      | 404    | fã-clube que não existe ou que a pessoa não pode ver                                             | `notFound`   |
-| `fan_club_post_not_found` | 404    | publicação que não existe, fora do ar ou de outro autor                                          | `notFound`   |
-| `fan_club_invalid`        | 400    | campo fora do formato, com `details: { field, reason: 'format' \| 'not_allowed' \| 'official' }` | `validation` |
-| `fan_club_refused`        | 409    | recusa de negócio, com `details: { reason }` (abaixo)                                            | `validation` |
+| Código | Status | Quando | Kind no app |
+| --- | --- | --- | --- |
+| `fan_club_not_found` | 404 | fã-clube que não existe ou que a pessoa não pode ver | `notFound` |
+| `fan_club_post_not_found` | 404 | publicação que não existe, fora do ar ou de outro autor | `notFound` |
+| `fan_club_invalid` | 400 | campo fora do formato, com `details: { field, reason: 'format' \| 'not_allowed' \| 'official' }` | `validation` |
+| `fan_club_refused` | 409 | recusa de negócio, com `details: { reason }` (abaixo) | `validation` |
 
 Os `details.reason` do `fan_club_refused`: `username_required` (o @ automático), `not_member` (fora da central do artista), `artist_closed` (fora do ar ou sem `enabled`), `already_applied`, `has_fan_club`, `cooldown` (com `canReapplyAt`), `too_many_rounds`, `not_allowed` (encerrado pela equipe), `club_not_active`, `photos_not_allowed`, `rules_outdated` (o regulamento aceito numa versão velha, só no publicar), `upload_missing` (a vaga vencida ou os arquivos que não chegaram), `too_many_pending`, `own_fan_club`, `follow_limit` e `contact_required`. Os tetos do dia saem no 429 `too_many_requests` de sempre, com o `details.action` da `CapAction` nova (`club_apply`, `club_post`, `club_upload` ou `club_follow`), que o app não lê: a frase sai da superfície (`src/services/api/refusal.ts:6`). O app mostra uma frase por motivo, no campo da tela (34.9). A tabela da seção 1 ganha as quatro linhas. No app, os códigos ficam no domínio (`FAN_CLUB_ERROR_CODES` em `fan-club/consts.ts`, como o `REDEEM_ERROR_CODES`, `rewards/consts.ts:35-40`), porque o `API_ERROR_CODES` guarda só os que mais de um domínio trata (`src/services/api/errors.ts:21-25`); o `isContentRefusal` (`:118-140`) passa a aceitar o `fan_club_invalid`, para o texto barrado ganhar a frase da seção 30.
 
@@ -11099,36 +10978,36 @@ O núcleo fica em `fan-clubs/panel.ts`, exportado pelo `fan-clubs/index.ts`; o `
 - **Entrada comum:** `{ subject, id, decision, expected }`. O `subject` é `application`, `club`, `post` ou `report`; fora da lista, `invalid-request` com `field: 'subject'`. O `id` é o uid (na candidatura, pelo `targetFanUid`, `staff/panel-errors.ts:100-105`) ou o id do documento.
 - **Acesso:** `readPanelActor(..., 'fanClubs', 'edit')` direto e de novo na transação: `not-staff` e `no-section` (o Leitor não decide). Quem é o candidato, o gestor ou o autor recebe `self`.
 
-| `subject`     | `decision`                   | `expected`         | Campos                                                                                | Seção a mais                               |
-| ------------- | ---------------------------- | ------------------ | ------------------------------------------------------------------------------------- | ------------------------------------------ |
-| `application` | `approve`                    | a rodada (`round`) | `name?` (3 a 40; sem ele, o proposto)                                                 | nenhuma                                    |
-| `application` | `reject`                     | a rodada           | `reason`: `incomplete`, `not_fit`, `artist_limit`, `image_rights`, `rules` ou `other` | nenhuma                                    |
-| `club`        | `pause`, `resume`            | o status           | nenhum                                                                                | nenhuma                                    |
-| `club`        | `close`                      | o status           | `reason`: `staff` (o padrão) ou `owner_request` (decisão 13)                          | o papel `admin`                            |
-| `club`        | `feature`                    | o status           | `featuredUntil` (`AAAA-MM-DD`, de amanhã a 31 dias)                                   | nenhuma                                    |
-| `club`        | `unfeature`                  | o status           | nenhum                                                                                | nenhuma                                    |
-| `club`        | `reward`                     | o status           | `grantId`, `points?`, `prize?`, `note` (1 a 200)                                      | `fans` com `points`, `rewards` com `prize` |
-| `post`        | `approve`, `hide`, `restore` | o status           | nenhum                                                                                | nenhuma                                    |
-| `post`        | `reject`                     | o status           | `reason`: `image_rights`, `off_topic`, `quality`, `rules` ou `other`                  | nenhuma                                    |
-| `report`      | `keep`, `action`             | a rodada           | nenhum                                                                                | nenhuma                                    |
+| `subject` | `decision` | `expected` | Campos | Seção a mais |
+| --- | --- | --- | --- | --- |
+| `application` | `approve` | a rodada (`round`) | `name?` (3 a 40; sem ele, o proposto) | nenhuma |
+| `application` | `reject` | a rodada | `reason`: `incomplete`, `not_fit`, `artist_limit`, `image_rights`, `rules` ou `other` | nenhuma |
+| `club` | `pause`, `resume` | o status | nenhum | nenhuma |
+| `club` | `close` | o status | `reason`: `staff` (o padrão) ou `owner_request` (decisão 13) | o papel `admin` |
+| `club` | `feature` | o status | `featuredUntil` (`AAAA-MM-DD`, de amanhã a 31 dias) | nenhuma |
+| `club` | `unfeature` | o status | nenhum | nenhuma |
+| `club` | `reward` | o status | `grantId`, `points?`, `prize?`, `note` (1 a 200) | `fans` com `points`, `rewards` com `prize` |
+| `post` | `approve`, `hide`, `restore` | o status | nenhum | nenhuma |
+| `post` | `reject` | o status | `reason`: `image_rights`, `off_topic`, `quality`, `rules` ou `other` | nenhuma |
+| `report` | `keep`, `action` | a rodada | nenhum | nenhuma |
 
 - **O `reward`:** `grantId` no formato do `adjustmentId` (o painel sorteia, como o `newAdjustmentId`, `imagineup-admin` `src/lib/fans.ts:537`); pelo menos um de `points` e `prize`. `points`: inteiro de 1 ao teto do papel (decisão 45). `prize`: `{ rewardId, delivered: boolean, coupon: string | null, message: string | null }`, com o cupom até 60 (limpo, sem quebra de linha) e a mensagem até 140 (limpa). O mesmo `grantId` de novo, com o registro já gravado e os mesmos campos: `{ ok: true }` com o que foi feito, sem gravar; com outros campos, `grant-id-reused`.
 - **Saída:** `{ ok: true, subject, id, status }`, e no `reward`, `{ ok: true, grantId, code: string | null, points: number | null }`.
 - **Motivos novos** (`PanelErrorReason` e `ERRORS` de `staff/panel-errors.ts`):
 
-| Motivo                      | Código                | Mensagem                                                                                                                                                               |
-| --------------------------- | --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `fan-club-not-found`        | `not-found`           | "Esse fã-clube não existe mais."                                                                                                                                       |
-| `application-not-found`     | `not-found`           | "Essa candidatura não existe mais."                                                                                                                                    |
-| `fan-club-post-not-found`   | `not-found`           | "Essa publicação não existe mais."                                                                                                                                     |
-| `fan-club-report-not-found` | `not-found`           | "Essa publicação não está na fila de denúncias."                                                                                                                       |
-| `stale-decision`            | `failed-precondition` | "Isso mudou desde que a tela abriu. Abra de novo."                                                                                                                     |
-| `artist-not-open`           | `failed-precondition` | "O artista está fora do ar ou não aceita fã-clubes."                                                                                                                   |
-| `feature-limit`             | `failed-precondition` | "Este artista já tem 3 fã-clubes em destaque."                                                                                                                         |
-| `prize-not-allowed`         | `failed-precondition` | "O prêmio pede o fã-clube ativo, o gestor com 18 anos ou mais declarados e sem suspensão." (com `details.reason`: `club_not_active`, `not_adult` ou `owner_suspended`) |
-| `owner-suspended`           | `failed-precondition` | "O gestor está suspenso. Tire a suspensão antes de reativar o fã-clube."                                                                                               |
-| `grant-id-reused`           | `failed-precondition` | "Esse reconhecimento já foi dado com outros valores. Abra o diálogo de novo."                                                                                          |
-| `reward-not-prize`          | `failed-precondition` | "Essa recompensa não é só para prêmios de fã-clube."                                                                                                                   |
+| Motivo | Código | Mensagem |
+| --- | --- | --- |
+| `fan-club-not-found` | `not-found` | "Esse fã-clube não existe mais." |
+| `application-not-found` | `not-found` | "Essa candidatura não existe mais." |
+| `fan-club-post-not-found` | `not-found` | "Essa publicação não existe mais." |
+| `fan-club-report-not-found` | `not-found` | "Essa publicação não está na fila de denúncias." |
+| `stale-decision` | `failed-precondition` | "Isso mudou desde que a tela abriu. Abra de novo." |
+| `artist-not-open` | `failed-precondition` | "O artista está fora do ar ou não aceita fã-clubes." |
+| `feature-limit` | `failed-precondition` | "Este artista já tem 3 fã-clubes em destaque." |
+| `prize-not-allowed` | `failed-precondition` | "O prêmio pede o fã-clube ativo, o gestor com 18 anos ou mais declarados e sem suspensão." (com `details.reason`: `club_not_active`, `not_adult` ou `owner_suspended`) |
+| `owner-suspended` | `failed-precondition` | "O gestor está suspenso. Tire a suspensão antes de reativar o fã-clube." |
+| `grant-id-reused` | `failed-precondition` | "Esse reconhecimento já foi dado com outros valores. Abra o diálogo de novo." |
+| `reward-not-prize` | `failed-precondition` | "Essa recompensa não é só para prêmios de fã-clube." |
 
 Os de hoje que ela usa: `invalid-request`, `self`, `admin-only` (32.1, decisão 6), `not-staff` e `no-section`, as recusas de estoque da loja (`rewards/errors.ts`) e as de teto do Ajuste (`points/adjust.ts`).
 
@@ -11361,29 +11240,29 @@ Quem garante que o fã é gestor de fã-clube ativo, de artista com `photosAllow
 
 **Índices compostos novos (21),** cada um com a linha num `functions/src/fan-clubs/indexes.test.ts` novo, pelo ajudante de `functions/test/indexes.ts`:
 
-| Coleção                | Campos                                                  | Quem consulta                                              |
-| ---------------------- | ------------------------------------------------------- | ---------------------------------------------------------- |
-| `fanClubApplications`  | `status`, `submittedAt`                                 | a fila das pendentes, da mais antiga                       |
-| `fanClubApplications`  | `artistId`, `status`, `submittedAt`                     | a fila por artista e "Centrais que eu cuido" (`in`)        |
-| `fanClubApplications`  | `status`, `decidedAt` decrescente                       | as resolvidas                                              |
-| `fanClubs`             | `status`, `counts.followers` decrescente                | a lista por seguidores                                     |
-| `fanClubs`             | `status`, `counts.followers30d` decrescente             | a lista por novos em 30 dias                               |
-| `fanClubs`             | `status`, `approvedAt` decrescente                      | a lista pela aprovação                                     |
-| `fanClubs`             | `artistId`, `status`, `counts.followers` decrescente    | a lista por artista e o `GET /artists/:artistId/fan-clubs` |
-| `fanClubs`             | `artistId`, `status`, `counts.followers30d` decrescente | a lista por artista                                        |
-| `fanClubs`             | `artistId`, `status`, `approvedAt` decrescente          | a lista por artista                                        |
-| `fanClubs`             | `featured`, `featuredUntil`                             | o filtro Destaque do painel                                |
-| `fanClubs`             | `status`, `counts.at`                                   | a cópia da noite (`in` em `active` e `paused`)             |
-| `fanClubPosts`         | `clubId`, `status`, `publishedAt` decrescente           | a página do fã-clube e a Início (`in`)                     |
-| `fanClubPosts`         | `status`, `submittedAt`                                 | a fila de revisão                                          |
-| `fanClubPosts`         | `authorUid`, `submittedAt` decrescente                  | "Minhas publicações"                                       |
-| `fanClubPosts`         | `clubId`, `submittedAt` decrescente                     | a ficha do fã-clube, em todos os status                    |
-| `fanClubReportQueue`   | `status`, `lastReportedAt` decrescente                  | as denúncias abertas                                       |
-| `fanClubReportQueue`   | `status`, `resolvedAt` decrescente                      | as resolvidas                                              |
-| grupo `fanClubFollows` | `clubId`, `followedAt` decrescente                      | os seguidores recentes e os novos em 30 dias               |
-| grupo `fanClubFollows` | `clubId`, `newAccount`                                  | a cópia (contas novas)                                     |
-| grupo `fanClubFollows` | `clubId`, `chosenUsername`                              | a cópia (@ automático)                                     |
-| grupo `fanClubFollows` | `clubId`, `byOwnerCode`                                 | a cópia (trazidos pelo gestor)                             |
+| Coleção | Campos | Quem consulta |
+| --- | --- | --- |
+| `fanClubApplications` | `status`, `submittedAt` | a fila das pendentes, da mais antiga |
+| `fanClubApplications` | `artistId`, `status`, `submittedAt` | a fila por artista e "Centrais que eu cuido" (`in`) |
+| `fanClubApplications` | `status`, `decidedAt` decrescente | as resolvidas |
+| `fanClubs` | `status`, `counts.followers` decrescente | a lista por seguidores |
+| `fanClubs` | `status`, `counts.followers30d` decrescente | a lista por novos em 30 dias |
+| `fanClubs` | `status`, `approvedAt` decrescente | a lista pela aprovação |
+| `fanClubs` | `artistId`, `status`, `counts.followers` decrescente | a lista por artista e o `GET /artists/:artistId/fan-clubs` |
+| `fanClubs` | `artistId`, `status`, `counts.followers30d` decrescente | a lista por artista |
+| `fanClubs` | `artistId`, `status`, `approvedAt` decrescente | a lista por artista |
+| `fanClubs` | `featured`, `featuredUntil` | o filtro Destaque do painel |
+| `fanClubs` | `status`, `counts.at` | a cópia da noite (`in` em `active` e `paused`) |
+| `fanClubPosts` | `clubId`, `status`, `publishedAt` decrescente | a página do fã-clube e a Início (`in`) |
+| `fanClubPosts` | `status`, `submittedAt` | a fila de revisão |
+| `fanClubPosts` | `authorUid`, `submittedAt` decrescente | "Minhas publicações" |
+| `fanClubPosts` | `clubId`, `submittedAt` decrescente | a ficha do fã-clube, em todos os status |
+| `fanClubReportQueue` | `status`, `lastReportedAt` decrescente | as denúncias abertas |
+| `fanClubReportQueue` | `status`, `resolvedAt` decrescente | as resolvidas |
+| grupo `fanClubFollows` | `clubId`, `followedAt` decrescente | os seguidores recentes e os novos em 30 dias |
+| grupo `fanClubFollows` | `clubId`, `newAccount` | a cópia (contas novas) |
+| grupo `fanClubFollows` | `clubId`, `chosenUsername` | a cópia (@ automático) |
+| grupo `fanClubFollows` | `clubId`, `byOwnerCode` | a cópia (trazidos pelo gestor) |
 
 São 65 índices compostos com estes. Os destacados de um artista (a página e o teto de 3) são só igualdades (`artistId`, `status` e `featured`) e saem da junção dos índices de um campo. As combinações do painel ficam presas às que têm índice: o filtro de status é sempre escolhido (o padrão é ativo), o de artista é opcional, e o filtro Destaque lista todos os destacados pelo `featuredUntil`, sem combinar com os outros dois. As consultas de igualdade num campo só (a candidatura e o fã-clube do gestor por `ownerUid`, as publicações e as denúncias de um fã na exclusão, os seguimentos de um artista no `leaveCentral`) usam os índices automáticos. Os `fieldOverrides` novos: o `clubId` de `fanClubFollows` e o `fanClubId` de `centrals` no escopo de grupo (o `count()` de todos os seguidores e dos trazidos que ficaram); e as isenções de `fanClubPosts.text`, `fanClubApplicationPrivate.pitch`, `fanClubReportQueue.reasons`, `fanClubs/{clubId}/prizes.note`, `redemptions.coupon` e `redemptions.message` (textos que ninguém consulta). O emulador não cobra índice: os de grupo só aparecem em produção, e o teste de índices é a rede.
 
@@ -11402,19 +11281,19 @@ O `recursiveDelete` leva o contato do fã, os seguimentos, os créditos e a vaga
 
 **`FAN_DATA_SOURCES`** (`fan-data/sources.ts:130`, hoje 31 fontes) ganha 11, presas às duas pontas pelo teste de 32.10:
 
-| Fonte                              | No arquivo                                                                                                                                                                             | `omit`                                                                                          | Exclusão                            |
-| ---------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- | ----------------------------------- |
-| `fanClubApplications/{uid}`        | primeira chamada                                                                                                                                                                       | `decidedBy`                                                                                     | apagada                             |
-| `fanClubApplicationPrivate/{uid}`  | primeira chamada                                                                                                                                                                       | nada                                                                                            | apagada                             |
-| `fanClubs` (`ownerUid`)            | primeira chamada                                                                                                                                                                       | `approvedBy`, `closedBy`, `featuredBy`                                                          | lápide (`stripped`)                 |
-| `fanClubs/{clubId}/prizes`         | fora: os mesmos dados estão no extrato (`fanclub_prize:*`) e no pedido, e nenhuma leitura da lista acha a subcoleção de um documento achado por consulta (`fan-data/sources.ts:64-81`) | nada                                                                                            | fica, sem dado dele (`kept`)        |
-| `fanClubPosts` (`authorUid`)       | uma parte nova, `fanClubPosts`                                                                                                                                                         | `reviewedBy`                                                                                    | apagada                             |
-| `fanClubReports` (`reporterUid`)   | primeira chamada                                                                                                                                                                       | `round`                                                                                         | apagada                             |
-| `fanClubReportQueue` (`authorUid`) | fora: a fila é de quem denunciou, como a `moderationQueue` e a `profileReportQueue` (`sources.ts:348-369`)                                                                             | nada                                                                                            | fica, com `author_deleted` (`kept`) |
-| `users/{uid}/contact/main`         | primeira chamada                                                                                                                                                                       | nada                                                                                            | apagada (`recursiveDelete`)         |
-| `users/{uid}/fanClubFollows`       | primeira chamada                                                                                                                                                                       | `byOwnerCode` (diria quem convidou, que o arquivo já tira do `referrals`, `sources.ts:263-266`) | apagada (`recursiveDelete`)         |
-| `users/{uid}/fanClubCredits`       | fora: marcador técnico da antifraude, e o `via: 'owner_code'` diria quem convidou                                                                                                      | nada                                                                                            | apagada (`recursiveDelete`)         |
-| Storage `fanClubMedia/{uid}/`      | como a `storage.fans`                                                                                                                                                                  | nada                                                                                            | apagada                             |
+| Fonte | No arquivo | `omit` | Exclusão |
+| --- | --- | --- | --- |
+| `fanClubApplications/{uid}` | primeira chamada | `decidedBy` | apagada |
+| `fanClubApplicationPrivate/{uid}` | primeira chamada | nada | apagada |
+| `fanClubs` (`ownerUid`) | primeira chamada | `approvedBy`, `closedBy`, `featuredBy` | lápide (`stripped`) |
+| `fanClubs/{clubId}/prizes` | fora: os mesmos dados estão no extrato (`fanclub_prize:*`) e no pedido, e nenhuma leitura da lista acha a subcoleção de um documento achado por consulta (`fan-data/sources.ts:64-81`) | nada | fica, sem dado dele (`kept`) |
+| `fanClubPosts` (`authorUid`) | uma parte nova, `fanClubPosts` | `reviewedBy` | apagada |
+| `fanClubReports` (`reporterUid`) | primeira chamada | `round` | apagada |
+| `fanClubReportQueue` (`authorUid`) | fora: a fila é de quem denunciou, como a `moderationQueue` e a `profileReportQueue` (`sources.ts:348-369`) | nada | fica, com `author_deleted` (`kept`) |
+| `users/{uid}/contact/main` | primeira chamada | nada | apagada (`recursiveDelete`) |
+| `users/{uid}/fanClubFollows` | primeira chamada | `byOwnerCode` (diria quem convidou, que o arquivo já tira do `referrals`, `sources.ts:263-266`) | apagada (`recursiveDelete`) |
+| `users/{uid}/fanClubCredits` | fora: marcador técnico da antifraude, e o `via: 'owner_code'` diria quem convidou | nada | apagada (`recursiveDelete`) |
+| Storage `fanClubMedia/{uid}/` | como a `storage.fans` | nada | apagada |
 
 O `redemptions` que já é fonte leva o `coupon` e a `message` (dados dele) e o `fanClubId`. O `users/{uid}/centrals`, que já é fonte, ganha o `fanClubId` no `omit` (pelo mesmo motivo do `byOwnerCode`); o `firstJoin` vai. As denúncias contra as publicações dele ficam fora do arquivo e na exclusão (são de quem denunciou, 21.12). O teste de emulador (`functions/test/fan-data.emulator.test.ts`) ganha os dados de um gestor com fã-clube, publicações, prêmio e seguidores, e os ramos do `leftovers` (`:388-484`) para as fontes novas e a pasta nova (`:431`); sem a fonte, o `listCollections()` de `users/{uid}` quebra o teste (`:733-743`). O `sources.test.ts` e o `fan-data/indexes.test.ts` ganham as linhas. O painel percorre as partes que a primeira chamada lista (`imagineup-admin` `src/lib/fan-data-export.ts:84-118`) e não muda.
 
@@ -11991,8 +11870,8 @@ users/{uid}/contact/main {
 
 **`FAN_DATA_SOURCES`:** 32 fontes. A nova, na tabela de 32.3:
 
-| Fonte                      | No arquivo                                       | Na exclusão                                |
-| -------------------------- | ------------------------------------------------ | ------------------------------------------ |
+| Fonte | No arquivo | Na exclusão |
+| --- | --- | --- |
 | `users/{uid}/contact/main` | `contato`, inteiro (o número, a origem e a data) | apagado, com o `recursiveDelete` do perfil |
 
 O leitor `subdoc` (`{ kind: 'subdoc', parent, name, id }`) lê o documento único de uma subcoleção do fã no mesmo `getAll` dos documentos da primeira chamada; o `knownSubcollections` o conta, para o teste do `listCollections()`, e o `accountSources` da restauração o trata como o `sub` (os ids de `users`).
@@ -12036,26 +11915,26 @@ Só JS: `src/utils/whatsapp.ts` (novo), `services/fixtures` (o `fixtureContact`)
 
 Textos novos (`translations.json`):
 
-| Chave                                  | Texto                                                                                                                 |
-| -------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
-| `rewards.confirm.whatsapp.label`       | "Seu WhatsApp"                                                                                                        |
-| `rewards.confirm.whatsapp.prefix`      | "+55"                                                                                                                 |
-| `rewards.confirm.whatsapp.placeholder` | "(00) 00000-0000"                                                                                                     |
-| `rewards.confirm.whatsapp.hint`        | "Celular com DDD e o 9 na frente, para a equipe falar com você sobre a entrega."                                      |
-| `rewards.confirm.whatsapp.locked`      | "É o número da tentativa anterior, que vale até ela ter resposta." (só com a tentativa parada, e não durante o envio) |
-| `rewards.confirm.whatsapp.required`    | "Informe seu WhatsApp com o DDD."                                                                                     |
-| `rewards.confirm.whatsapp.invalid`     | "Confira o número: o DDD e o celular, com o 9 na frente."                                                             |
-| `rewards.errors.whatsappInvalid`       | "Confira o número: o DDD e o celular, com o 9 na frente." (o anúncio com a sheet fechada)                             |
-| `rewards.success.whatsapp`             | "Se precisar, a equipe fala com você pelo WhatsApp +55 {{number}}."                                                   |
+| Chave | Texto |
+| --- | --- |
+| `rewards.confirm.whatsapp.label` | "Seu WhatsApp" |
+| `rewards.confirm.whatsapp.prefix` | "+55" |
+| `rewards.confirm.whatsapp.placeholder` | "(00) 00000-0000" |
+| `rewards.confirm.whatsapp.hint` | "Celular com DDD e o 9 na frente, para a equipe falar com você sobre a entrega." |
+| `rewards.confirm.whatsapp.locked` | "É o número da tentativa anterior, que vale até ela ter resposta." (só com a tentativa parada, e não durante o envio) |
+| `rewards.confirm.whatsapp.required` | "Informe seu WhatsApp com o DDD." |
+| `rewards.confirm.whatsapp.invalid` | "Confira o número: o DDD e o celular, com o 9 na frente." |
+| `rewards.errors.whatsappInvalid` | "Confira o número: o DDD e o celular, com o 9 na frente." (o anúncio com a sheet fechada) |
+| `rewards.success.whatsapp` | "Se precisar, a equipe fala com você pelo WhatsApp +55 {{number}}." |
 
 Sem e-mail, sem travessão e sem meia-risca. A nota da confirmação (`rewards.confirm.note`) não muda.
 
 **Com cada geração de JS e de servidor:**
 
-|                                       | `api` de antes                                                                                                                     | `api` nova                                                                                         |
-| ------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
-| JS no ar (o EAS Update de 14/10/2026) | o resgate de hoje                                                                                                                  | o resgate passa sem o número; o contato fica como estava, e a equipe vê "Sem WhatsApp" (decisão 9) |
-| JS novo                               | o campo vem vazio (o 404 do `GET /me/contact`); o resgate passa, e o número não é guardado, embora o sucesso o mostre (decisão 10) | o campo preenchido com o guardado; o número vai com o pedido                                       |
+| | `api` de antes | `api` nova |
+| --- | --- | --- |
+| JS no ar (o EAS Update de 14/10/2026) | o resgate de hoje | o resgate passa sem o número; o contato fica como estava, e a equipe vê "Sem WhatsApp" (decisão 9) |
+| JS novo | o campo vem vazio (o 404 do `GET /me/contact`); o resgate passa, e o número não é guardado, embora o sucesso o mostre (decisão 10) | o campo preenchido com o guardado; o número vai com o pedido |
 
 Nenhuma combinação quebra o resgate. A ordem recomendada é a de 35.10: funções, EAS Update, painel.
 
