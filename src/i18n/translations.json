@@ -1287,7 +1287,7 @@
         "withPhoto": "Com foto.",
         "dateWithPhoto": "{{date}}, com foto",
         "reason": "Motivo: {{reason}}",
-        "rowLabel": "{{status}}. {{text}}. Enviada em {{date}}.",
+        "rowLabel": "{{status}}. {{text}} Enviada em {{date}}.",
         "withdraw": "Retirar",
         "withdrawLabel": "Retirar a publicação: {{excerpt}}",
         "withdrawTitle": "Retirar a publicação?",
@@ -1385,8 +1385,8 @@
       "loading": "Carregando o fã-clube"
     },
     "post": {
-      "label": "{{text}}. Publicado {{when}}.",
-      "labelPhoto": "{{text}}. Com foto. Publicado {{when}}.",
+      "label": "{{text}} Publicado {{when}}.",
+      "labelPhoto": "{{text}} Com foto. Publicado {{when}}.",
       "share": "Compartilhar",
       "shareLabel": "Compartilhar o fã-clube {{name}}. Publicação: {{excerpt}}",
       "report": "Denunciar",

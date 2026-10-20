@@ -1,7 +1,7 @@
 import { QueryClientProvider } from '@tanstack/react-query';
 import { router, Stack } from 'expo-router';
 import { Tabs } from 'expo-router/js-tabs';
-import { act, fireEvent, renderRouter, screen, waitFor } from 'expo-router/testing-library';
+import { act, fireEvent, renderRouter, screen, waitFor, within } from 'expo-router/testing-library';
 import { getDoc } from 'firebase/firestore';
 import type { ReactNode } from 'react';
 import { AccessibilityInfo, Alert, Share, Text, type AlertButton } from 'react-native';
@@ -817,6 +817,8 @@ describe('a espera e a recusa (34.9, item 4)', () => {
     const view = renderRouter(appTree, { initialUrl: '/meu-fa-clube' });
 
     expect(await screen.findByText('Você já pode enviar uma nova candidatura.')).toBeTruthy();
+    // Numa fileira, como o "Aceitar": o aviso alinha as ações ao começo (etapa 10).
+    expect(screen.getByTestId('fan-club-apply-again-row')).toHaveStyle({ flexDirection: 'row' });
     fireEvent.press(screen.getByTestId('fan-club-apply-again'));
     await waitFor(() => expect(view.getPathname()).toBe('/meu-fa-clube/candidatura'));
   });
@@ -845,6 +847,23 @@ describe('o "Meu fã-clube" (34.9, item 5)', () => {
     expect(screen.getByText(PROGRAM.notice)).toBeTruthy();
     fireEvent.press(screen.getByTestId('fan-club-prizes-open'));
     await waitFor(() => expect(view.getPathname()).toBe('/recompensas'));
+  });
+
+  it('"Ver meus prêmios" e "Aceitar" ficam numa fileira, da altura do conteúdo', async () => {
+    // Direto na coluna e alinhado ao começo, o desenho do Button cresce para
+    // ocupar a altura que o pai der e esticava sem fim dentro da rolagem (o
+    // card Prêmios no emulador Android, na conferência da etapa 10 de 34.14).
+    // O Jest não mede o layout: o teste prende a fileira em volta de cada um.
+    mocked.fetchMyFanClub.mockResolvedValue(manager({ rulesOutdated: true }));
+    serverAnswers();
+    renderRouter(appTree, { initialUrl: '/meu-fa-clube' });
+
+    const prizesRow = await screen.findByTestId('fan-club-prizes-open-row');
+    expect(prizesRow).toHaveStyle({ flexDirection: 'row' });
+    expect(within(prizesRow).getByTestId('fan-club-prizes-open')).toBeTruthy();
+    const acceptRow = screen.getByTestId('fan-club-rules-accept-row');
+    expect(acceptRow).toHaveStyle({ flexDirection: 'row' });
+    expect(within(acceptRow).getByTestId('fan-club-rules-accept')).toBeTruthy();
   });
 
   it('"Compartilhar meu fã-clube": o link com o código, o código na mensagem e o link fanclub:<id>', async () => {
@@ -928,6 +947,15 @@ describe('o "Meu fã-clube" (34.9, item 5)', () => {
     renderRouter(appTree, { initialUrl: '/meu-fa-clube' });
 
     expect(await screen.findByText('Motivo: Fora do assunto do artista.')).toBeTruthy();
+    // O rótulo da linha: o ponto depois do texto só quando falta (etapa 10).
+    expect(
+      screen.getByLabelText('Em análise. Que show em Feira! Enviada em 19/10/2026.'),
+    ).toBeTruthy();
+    expect(
+      screen.getByLabelText(
+        'Recusada. Outro texto. Enviada em 19/10/2026. Motivo: Fora do assunto do artista.',
+      ),
+    ).toBeTruthy();
     expect(screen.queryByTestId('fan-club-own-post-fcp-2-remove')).toBeNull();
     // Cada botão diz de qual publicação é.
     expect(screen.getByRole('button', { name: 'Tirar do ar a publicação: No ar' })).toBeTruthy();

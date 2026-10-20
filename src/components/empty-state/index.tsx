@@ -7,6 +7,7 @@ import { Icon } from '@/components/icon';
 import { Text } from '@/components/text';
 import { t } from '@/i18n';
 import { colors, spacing } from '@/theme';
+import { sentence } from '@/utils/text';
 
 export type EmptyStateTone = 'empty' | 'error';
 
@@ -61,7 +62,7 @@ export function EmptyState({
       <View
         ref={ref}
         accessible
-        accessibilityLabel={title ? `${title}. ${message}` : message}
+        accessibilityLabel={title ? `${sentence(title)} ${message}` : message}
         style={styles.copy}
       >
         {title ? (

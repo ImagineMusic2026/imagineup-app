@@ -42,9 +42,9 @@ import {
 // fã-clube terem um link. Na etapa 4: os seguidores (a Bia, da central, e uma
 // conta do ranking que entra junto, a entrada trazida) e a primeira cópia da
 // noite. Na etapa 5: a recompensa "Só para prêmios" e o prêmio da Camila, com
-// os pontos. A candidatura pendente da Duda não está em nenhuma etapa de
-// 34.14 (34.22). Rodar de novo não muda nada. Nunca roda em produção: o
-// script fixa os emuladores.
+// os pontos. Na etapa 10: a candidatura pendente da Duda para o Nenho, para a
+// fila do painel e o "Candidatura em análise" do app (34.22). Rodar de novo
+// não muda nada. Nunca roda em produção: o script fixa os emuladores.
 
 /** A central com as fotos de fã desligadas (só texto). */
 export const SEED_TEXT_ONLY_ARTIST = 'nenho';
@@ -375,5 +375,64 @@ export async function seedFanClubPrize(
     { actor: input.actor, now, config: DEFAULT_POINTS_CONFIG, role: 'admin' },
   );
   result.granted = true;
+  return result;
+}
+
+/**
+ * A candidatura da Duda para o Nenho (34.12), com redes e WhatsApp de teste
+ * (o perfil dela não tem redes, 28.10). O Nenho só aceita texto: o fã-clube,
+ * se a equipe aprovar no painel local, publica sem foto.
+ */
+export const SEED_DUDA_FAN_CLUB: ApplicationInput = {
+  artistId: SEED_TEXT_ONLY_ARTIST,
+  name: 'Turma do Nenho',
+  instagram: 'duda.teste.up',
+  tiktok: null,
+  whatsapp: '+5575900000011',
+  pitch:
+    'Junto a turma de Alagoinhas para ouvir os lançamentos do Nenho e divulgo os shows ' +
+    'no grupo da faculdade.',
+};
+
+export type SeedFanClubPendingResult = {
+  /** A Duda entrou agora na central do Nenho, antes da candidatura. */
+  joined: boolean;
+  /** A candidatura da Duda entrou agora. */
+  applied: boolean;
+};
+
+/**
+ * A candidatura pendente da Duda (34.12, etapa 10 de 34.14), para a fila das
+ * candidaturas do painel e o "Candidatura em análise" dos Ajustes do app. Só
+ * quem é da central se candidata (decisão 8): a Duda, que não era de central
+ * nenhuma, entra antes no Nenho pela página, pelo núcleo da entrada, com o
+ * ator de sistema e o `central_join` em 0, como os seguidores (os pontos e as
+ * posições do seed não mudam; o fã-clube da Camila, que a trouxe, é do Netto,
+ * e a entrada no Nenho não leva crédito). A candidatura só nasce sem nenhuma da
+ * Duda (a recusada ou aprovada no painel local fica como está): rodar de novo
+ * não muda nada.
+ */
+export async function seedFanClubPending(
+  db: Firestore,
+  dudaUid: string,
+  now: number = Date.now(),
+): Promise<SeedFanClubPendingResult> {
+  const result: SeedFanClubPendingResult = { joined: false, applied: false };
+  if ((await applicationRef(db, dudaUid).get()).exists) return result;
+  const options = {
+    now,
+    config: {
+      ...DEFAULT_POINTS_CONFIG,
+      values: { ...DEFAULT_POINTS_CONFIG.values, central_join: 0 },
+    },
+    actor: SEED_ACTOR,
+    game: NO_GAME,
+  };
+  if (!(await membershipRef(db, dudaUid, SEED_DUDA_FAN_CLUB.artistId).get()).exists) {
+    await runJoinCentrals(db, dudaUid, [SEED_DUDA_FAN_CLUB.artistId], { ...options, via: 'page' });
+    result.joined = true;
+  }
+  await runApplyForFanClub(db, dudaUid, SEED_DUDA_FAN_CLUB, options);
+  result.applied = true;
   return result;
 }

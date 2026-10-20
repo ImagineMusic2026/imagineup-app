@@ -10,11 +10,13 @@ import { FILTER_ENTRIES } from '../src/content-filter/terms';
 import { dayKey, shiftDay } from '../src/day';
 import {
   SEED_CAMILA_FAN_CLUB,
+  SEED_DUDA_FAN_CLUB,
   SEED_FAN_CLUB_FOLLOWER,
   SEED_FAN_CLUB_GRANT,
   SEED_FAN_CLUB_POSTS,
   seedFanClubFollows,
   seedFanClubLink,
+  seedFanClubPending,
   seedFanClubPosts,
   seedFanClubPrize,
   seedFanClubs,
@@ -91,7 +93,9 @@ import { localApi, signIn, useEmulators } from './support';
  * fã-clube que ela compartilhou, nos números do fã-clube; desde a etapa 4, os
  * seguidores (a Bia, que entra antes na central, e o rank-40, que entra junto,
  * a entrada trazida) e a primeira cópia da noite do fã-clube; desde a etapa 5,
- * a recompensa "Só para prêmios" e o prêmio da Camila, com os pontos.
+ * a recompensa "Só para prêmios" e o prêmio da Camila, com os pontos; desde a
+ * etapa 10, a candidatura pendente da Duda para o Nenho, que entra antes na
+ * central.
  */
 const env = useEmulators('painel-seed', ['api', 'createUserProfile']);
 const { db, bucket } = env;
@@ -226,6 +230,8 @@ async function seed(ranking: Map<string, string>): Promise<void> {
   );
   // A recompensa "Só para prêmios" e o prêmio da Camila (etapa 5).
   await seedFanClubPrize(db, { camilaUid: 'camila', actor: ACTOR }, T0);
+  // A candidatura pendente da Duda, que entra antes no Nenho (etapa 10).
+  await seedFanClubPending(db, 'duda', T0);
   await seedPanelStats(db, T0);
   await seedPanelClose(db, T0, quiet);
 }
@@ -617,6 +623,42 @@ describe('o seed das telas do painel (26.13)', () => {
       prize: true,
     });
     expect(audit.filter((entry) => entry.action === 'fanClub.rewarded')).toHaveLength(1);
+    // A candidatura pendente da Duda (etapa 10): ela entra antes no Nenho pela
+    // página, com o central_join em 0 e sem crédito (no teste, ela não chegou por
+    // convite e o perfil tem 200 dias; no script, o fã-clube da Camila, que a
+    // trouxe, é do Netto), e se candidata, com o WhatsApp no contato e as redes e o
+    // texto no privado. A candidatura não audita (é do fã).
+    expect(await read('fanClubApplications/duda')).toMatchObject({
+      uid: 'duda',
+      status: 'pending',
+      artistId: SEED_DUDA_FAN_CLUB.artistId,
+      round: 1,
+      proposedName: SEED_DUDA_FAN_CLUB.name,
+      clubId: null,
+      adultDeclared: true,
+    });
+    expect(await read('fanClubApplicationPrivate/duda')).toMatchObject({
+      instagram: SEED_DUDA_FAN_CLUB.instagram,
+      tiktok: null,
+      pitch: SEED_DUDA_FAN_CLUB.pitch,
+    });
+    expect(await read('users/duda/contact/main')).toMatchObject({
+      whatsapp: SEED_DUDA_FAN_CLUB.whatsapp,
+      source: 'fanclub',
+    });
+    expect(await read(`users/duda/centrals/${SEED_DUDA_FAN_CLUB.artistId}`)).toMatchObject({
+      via: 'page',
+      firstJoin: true,
+      fanClubId: null,
+    });
+    expect(
+      await read(`wallets/duda/ledger/central_join:${SEED_DUDA_FAN_CLUB.artistId}`),
+    ).toBeUndefined();
+    expect(
+      (await db.collection('fanClubApplications').where('status', '==', 'pending').get()).docs.map(
+        (doc) => doc.id,
+      ),
+    ).toEqual(['duda']);
     for (let index = 1; index <= 20; index += 1) {
       const id = `seed-audit-${String(index).padStart(2, '0')}`;
       const entry = (await read(`staffAudit/${id}`))!;

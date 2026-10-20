@@ -62,15 +62,21 @@ export function PrizesCard({ lastReward, notice }: PrizesCardProps) {
       <Text variant="caption" color={colors.textMuted} testID="fan-club-prizes-conditions">
         {t('fanClub.mine.prizes.conditions')}
       </Text>
-      <Button
-        label={t('fanClub.mine.prizes.open')}
-        variant="pointsTinted"
-        size="md"
-        onPress={() => router.navigate('/recompensas', { withAnchor: true })}
-        accessibilityHint={t('fanClub.mine.prizes.openHint')}
-        style={styles.open}
-        testID="fan-club-prizes-open"
-      />
+      {/* Numa fileira, o botão fica da altura do conteúdo, como no
+          `EmptyState`: direto na coluna e alinhado ao começo, o desenho do
+          Button, que cresce para ocupar a altura que o pai der, esticava sem
+          fim dentro da rolagem (visto no emulador Android na etapa 10). */}
+      <View style={styles.openRow} testID="fan-club-prizes-open-row">
+        <Button
+          label={t('fanClub.mine.prizes.open')}
+          variant="pointsTinted"
+          size="md"
+          onPress={() => router.navigate('/recompensas', { withAnchor: true })}
+          accessibilityHint={t('fanClub.mine.prizes.openHint')}
+          style={styles.open}
+          testID="fan-club-prizes-open"
+        />
+      </View>
       <TeamEmailLink
         label="fanClub.mine.prizes.contact"
         hint="fanClub.mine.prizes.contactHint"
@@ -95,7 +101,11 @@ const styles = StyleSheet.create({
     minWidth: 0,
     gap: spacing.xxs,
   },
+  openRow: {
+    flexDirection: 'row',
+  },
+  // Com a fonte grande, o rótulo quebra dentro da largura do card.
   open: {
-    alignSelf: 'flex-start',
+    flexShrink: 1,
   },
 });

@@ -4,6 +4,7 @@ import { StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 import { Card } from '@/components/card';
 import { Text } from '@/components/text';
 import { colors, spacing } from '@/theme';
+import { sentence } from '@/utils/text';
 
 export interface FanClubNoticeProps {
   /** O título curto ("O regulamento mudou"), ou nada. */
@@ -36,7 +37,7 @@ export function FanClubNotice({
       style={[styles.card, tone === 'warning' && styles.warning, style]}
       testID={testID}
     >
-      <View accessible accessibilityLabel={title ? `${title}. ${body}` : body}>
+      <View accessible accessibilityLabel={title ? `${sentence(title)} ${body}` : body}>
         {title ? <Text variant="label">{title}</Text> : null}
         <Text variant="body" color={colors.textSecondary} style={title ? styles.body : null}>
           {body}

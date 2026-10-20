@@ -118,14 +118,19 @@ function RulesNotice({ mine }: { mine: MyFanClub }) {
           {t(failure)}
         </Text>
       ) : null}
-      <Button
-        label={t('fanClub.mine.rules.accept')}
-        size="md"
-        onPress={run}
-        loading={accept.isPending}
-        disabled={!online || accept.isPending}
-        testID="fan-club-rules-accept"
-      />
+      {/* Numa fileira, como o "Ver meus prêmios": o aviso alinha as ações ao
+          começo, e o Button direto nele esticaria sem fim na rolagem. */}
+      <View style={styles.acceptRow} testID="fan-club-rules-accept-row">
+        <Button
+          label={t('fanClub.mine.rules.accept')}
+          size="md"
+          onPress={run}
+          loading={accept.isPending}
+          disabled={!online || accept.isPending}
+          style={styles.accept}
+          testID="fan-club-rules-accept"
+        />
+      </View>
     </FanClubNotice>
   );
 }
@@ -174,7 +179,7 @@ export function ClubDashboard({ mine, club, next }: ClubDashboardProps) {
               <Text variant="body" testID="fan-club-next-round">
                 {nextRoundText(next)}
               </Text>
-              <ApplyAgain next={next} />
+              <ApplyAgain next={next} inline />
             </>
           ) : null}
         </FanClubNotice>
@@ -282,6 +287,13 @@ export function ClubDashboard({ mine, club, next }: ClubDashboardProps) {
 }
 
 const styles = StyleSheet.create({
+  acceptRow: {
+    flexDirection: 'row',
+  },
+  // Com a fonte grande, o rótulo quebra dentro da largura do aviso.
+  accept: {
+    flexShrink: 1,
+  },
   block: {
     marginTop: spacing.lg,
   },

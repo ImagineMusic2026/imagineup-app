@@ -4,6 +4,7 @@ import {
   matchesSearch,
   nameBeforePeriod,
   searchKey,
+  sentence,
 } from '../text';
 
 describe('iniciais do avatar sem foto', () => {
@@ -88,5 +89,23 @@ describe('nome antes do ponto final (seção 29)', () => {
     expect(nameBeforePeriod('Thalita Santos')).toBe('Thalita Santos');
     expect(nameBeforePeriod('@jean.p')).toBe('@jean.p');
     expect(nameBeforePeriod('Fã...')).toBe('Fã');
+  });
+});
+
+describe('texto como frase de um rótulo', () => {
+  it.each([
+    ['Quem vem com a gente?', 'Quem vem com a gente?'],
+    ['Bora assistir juntos!', 'Bora assistir juntos!'],
+    ['Você ainda não segue nenhum fã-clube.', 'Você ainda não segue nenhum fã-clube.'],
+    ['Faltam 3 dias…', 'Faltam 3 dias…'],
+    ['Ele disse "vem!"', 'Ele disse "vem!"'],
+    ['(e o show?)', '(e o show?)'],
+    ['O ensaio foi lindo', 'O ensaio foi lindo.'],
+    ['Bora 🎉', 'Bora 🎉.'],
+    ['Com espaço no fim   ', 'Com espaço no fim.'],
+    ['Pergunta? ', 'Pergunta?'],
+    ['', ''],
+  ])('%j vira %j', (text, expected) => {
+    expect(sentence(text)).toBe(expected);
   });
 });

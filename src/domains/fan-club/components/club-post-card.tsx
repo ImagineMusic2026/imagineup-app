@@ -9,6 +9,7 @@ import { Text } from '@/components/text';
 import { t } from '@/i18n';
 import { colors, layout, radii, spacing } from '@/theme';
 import { formatRelativeAgo, formatRelativeAgoSpoken } from '@/utils/date';
+import { sentence } from '@/utils/text';
 
 import { excerptOf } from '../format';
 import type { FanClubPost } from '../types';
@@ -66,8 +67,9 @@ export function FanClubPostCard({
   const when = formatRelativeAgoSpoken(post.publishedAt, now);
   // Os botões dizem de qual publicação são: na página, todos são do mesmo fã-clube.
   const excerpt = excerptOf(post.text);
+  // O texto do fã já pode terminar em "?" ou "!": o ponto entra só quando falta.
   const label = t(post.kind === 'photo' ? 'fanClub.post.labelPhoto' : 'fanClub.post.label', {
-    text: post.text,
+    text: sentence(post.text),
     when,
   });
 
