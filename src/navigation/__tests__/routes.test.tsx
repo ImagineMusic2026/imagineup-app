@@ -44,6 +44,7 @@ const appTree = {
   'meu-fa-clube/index': label('my-fan-club'),
   'meu-fa-clube/candidatura': label('fan-club-apply'),
   'meu-fa-clube/nova-publicacao': label('fan-club-new-post'),
+  'meu-fa-clube/regras': label('fan-club-rules'),
   'fa-clube/[clubeId]': label('fan-club'),
   'denunciar-publicacao/[publicacaoId]': label('report-fan-club-post'),
   'deixar-de-seguir/[clubeId]': label('unfollow-fan-club'),
@@ -161,6 +162,7 @@ describe('rotas do app', () => {
       'meu-fa-clube/nova-publicacao',
       'fan-club-new-post',
     ],
+    ['/meu-fa-clube/regras', ['meu-fa-clube', 'regras'], 'meu-fa-clube/regras', 'fan-club-rules'],
   ])('%s abre a frio fora das abas, na pilha raiz (seção 34)', (url, segments, route, text) => {
     const view = renderRouter(appTree, { initialUrl: url });
     expect(view.getByText(text)).toBeTruthy();

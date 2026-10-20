@@ -18,7 +18,7 @@ import {
   RejectedState,
 } from '../components/application-state';
 import { ClubDashboard } from '../components/club-dashboard';
-import { IntroSteps } from '../components/intro-steps';
+import { FanClubIntro } from '../components/fan-club-intro';
 import { fanClubStageOf, type FanClubStage } from '../entry';
 import { useShownFanClub } from '../queries';
 import type { MyFanClub } from '../types';
@@ -36,10 +36,11 @@ function titleOf(stage: FanClubStage | null): string {
   return t('fanClub.intro.title');
 }
 
-function StageBody({ mine, stage }: { mine: MyFanClub; stage: FanClubStage }) {
+/** A apresentação fica de fora: ela desenha a própria rolagem, com o botão preso ao pé. */
+type StateStage = Exclude<FanClubStage, { kind: 'intro' }>;
+
+function StageBody({ mine, stage }: { mine: MyFanClub; stage: StateStage }) {
   switch (stage.kind) {
-    case 'intro':
-      return <IntroSteps notice={mine.notice} />;
     case 'programClosed':
       return <ProgramClosedState />;
     case 'pending':
@@ -80,8 +81,16 @@ export function MyFanClubScreen() {
     if (hydrated && uid && seenAt) markSeen(uid, seenAt);
   }, [hydrated, uid, seenAt, markSeen]);
 
+  if (mine && stage?.kind === 'intro') {
+    return (
+      <Screen padded={false} contentStyle={styles.edgeToEdge}>
+        <FanClubIntro mine={mine} />
+      </Screen>
+    );
+  }
+
   let body;
-  if (mine && stage) {
+  if (mine && stage && stage.kind !== 'intro') {
     body = <StageBody mine={mine} stage={stage} />;
   } else if (query.isPending) {
     body = (
@@ -118,5 +127,9 @@ export function MyFanClubScreen() {
 const styles = StyleSheet.create({
   body: {
     gap: spacing.md,
+  },
+  // A apresentação vai de ponta a ponta, e o rodapé dela já tem a área segura.
+  edgeToEdge: {
+    paddingBottom: 0,
   },
 });

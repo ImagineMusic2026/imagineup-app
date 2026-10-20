@@ -1153,38 +1153,74 @@
     },
     "intro": {
       "title": "Tenha seu fã-clube",
-      "lead": "Crie o fã-clube de um artista da Imagine, divulgue e traga mais fãs para a central dele.",
       "stepLabel": "Passo {{current}} de {{total}}. {{title}}. {{body}}",
       "steps": {
         "apply": {
-          "title": "Envie sua candidatura",
-          "body": "Escolha o artista, proponha o nome do fã-clube e conte como você vai divulgar."
+          "title": "Candidate-se",
+          "body": "Escolha o artista e proponha o nome do fã-clube."
         },
         "review": {
           "title": "A equipe analisa",
-          "body": "A equipe confere a candidatura, e o resultado aparece aqui."
-        },
-        "page": {
-          "title": "Seu fã-clube na página do artista",
-          "body": "Aprovado, o fã-clube aparece na página do artista, e os fãs podem seguir."
+          "body": "Aprovado, o fã-clube aparece na página do artista."
         },
         "posts": {
-          "title": "Publique textos e fotos",
-          "body": "A equipe confere cada publicação antes de ela ir ao ar."
+          "title": "Publique",
+          "body": "Textos e fotos, conferidos pela equipe antes de irem ao ar."
         },
         "share": {
-          "title": "Compartilhe seu link",
-          "body": "Divulgue o link do fã-clube e veja quantas pessoas você trouxe."
+          "title": "Compartilhe",
+          "body": "Divulgue seu link e traga fãs para a central."
         }
       },
-      "conditionsTitle": "Condições",
-      "conditions": "Ter 18 anos ou mais, manter o fã-clube ativo e a conta sem suspensão.",
-      "requirements": "Para se candidatar, entre na central do artista e escolha seu @ em Editar perfil.",
-      "noticeTitle": "Reconhecimento",
-      "next": "Continuar",
-      "nextHint": "Mostra o próximo passo",
-      "skip": "Pular",
-      "applyHint": "Abre a candidatura"
+      "previous": "Passo anterior",
+      "next": "Próximo passo",
+      "benefitsTitle": "Vantagens de ter um fã-clube",
+      "benefitLabel": "{{title}}. {{body}}",
+      "benefits": {
+        "page": {
+          "title": "Sua página no artista",
+          "body": "O fã-clube aparece na página do artista, e qualquer fã pode seguir."
+        },
+        "central": {
+          "title": "Mais fãs na central",
+          "body": "Quem segue o seu fã-clube também entra na central do artista."
+        },
+        "link": {
+          "title": "Seu link",
+          "body": "Compartilhe o link com o seu código e veja quantas pessoas você trouxe."
+        },
+        "numbers": {
+          "title": "Seus números",
+          "body": "Seguidores, visitas e cadastros em Meu fã-clube."
+        },
+        "featured": {
+          "title": "Destaque",
+          "body": "A equipe pode destacar o fã-clube, que aparece primeiro na página do artista."
+        },
+        "reward": {
+          "title": "Reconhecimento",
+          "body": "A equipe pode dar pontos e prêmios, como ingressos, a critério dela e sem garantia."
+        }
+      },
+      "rules": "Regras do fã-clube",
+      "rulesHint": "Abre as condições e o reconhecimento",
+      "apply": "Quero meu fã-clube",
+      "applyHint": "Abre a candidatura",
+      "termsNotice": "Ao se candidatar, você aceita os {{link}}.",
+      "regulationNotice": "Ao se candidatar, você aceita o {{link}}.",
+      "termsLink": "Termos de Uso",
+      "regulationLink": "Regulamento do Fã-clube"
+    },
+    "rulesSheet": {
+      "title": "Regras do fã-clube",
+      "whoTitle": "Quem pode ter um fã-clube",
+      "who": {
+        "adult": "Ter 18 anos ou mais.",
+        "central": "Estar na central do artista.",
+        "username": "Ter o seu @ escolhido em Editar perfil.",
+        "keep": "Manter o fã-clube ativo e a conta sem suspensão."
+      },
+      "noticeTitle": "Reconhecimento"
     },
     "state": {
       "summary": "{{name}}, fã-clube de {{artist}}",
@@ -1245,7 +1281,7 @@
         "paused": "Pausado",
         "closed": "Encerrado"
       },
-      "headerLabel": "Fã-clube, não oficial. {{name}}, de {{artist}}. {{status}}.",
+      "headerLabel": "{{name}}, de {{artist}}. {{status}}.",
       "featured": "Seu fã-clube é destaque até {{date}}",
       "followers": "Seguidores",
       "followers30d": "Novos em 30 dias",
@@ -1277,7 +1313,8 @@
         "contact": "Falar com a equipe",
         "contactHint": "Abre o app de e-mail, para quem não quer ou não pode usar um prêmio",
         "contactSubject": "Prêmio do fã-clube no ImagineUP",
-        "conditions": "Para o reconhecimento: 18 anos ou mais, o fã-clube ativo e a conta sem suspensão."
+        "rules": "Regras do fã-clube",
+        "rulesHint": "Abre as condições e o reconhecimento"
       },
       "posts": {
         "title": "Minhas publicações",

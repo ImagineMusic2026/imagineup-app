@@ -83,4 +83,5 @@ export { FollowedFanClubsScreen } from './views/followed-fan-clubs';
 export { MyFanClubScreen } from './views/my-fan-club';
 export { NewFanClubPostScreen } from './views/new-fan-club-post';
 export { ReportFanClubPostSheetScreen } from './views/report-post-sheet';
+export { FanClubRulesSheetScreen } from './views/rules-sheet';
 export { UnfollowFanClubSheetScreen } from './views/unfollow-sheet';

@@ -37,7 +37,6 @@ import { maskWhatsapp, whatsappFieldValue } from '@/utils/whatsapp';
 
 import { CheckRow } from '../components/check-row';
 import { FanClubNotice } from '../components/fan-club-notice';
-import { UnofficialBand } from '../components/unofficial-band';
 import { FAN_CLUB_NAME_MAX, FAN_CLUB_PITCH_MAX, type FanClubInvalidField } from '../consts';
 import { fanClubErrorText } from '../describe';
 import { canApplyNow } from '../entry';
@@ -313,8 +312,7 @@ function ApplyFormBody({ mine, failure, onFailure: setFailure }: ApplyFormBodyPr
 
   return (
     <View>
-      <UnofficialBand />
-      <Text variant="bodyLead" color={colors.textSecondary} style={styles.lead}>
+      <Text variant="bodyLead" color={colors.textSecondary}>
         {t('fanClub.apply.lead')}
       </Text>
       {usernameAutomatic ? (
@@ -609,9 +607,6 @@ export function FanClubApplyScreen() {
 }
 
 const styles = StyleSheet.create({
-  lead: {
-    marginTop: spacing.md,
-  },
   notice: {
     marginTop: spacing.lg,
   },

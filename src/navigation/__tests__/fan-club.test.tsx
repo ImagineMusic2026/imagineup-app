@@ -2,14 +2,16 @@ import { QueryClientProvider } from '@tanstack/react-query';
 import { router, Stack } from 'expo-router';
 import { Tabs } from 'expo-router/js-tabs';
 import { act, fireEvent, renderRouter, screen, waitFor, within } from 'expo-router/testing-library';
+import * as WebBrowser from 'expo-web-browser';
 import { getDoc } from 'firebase/firestore';
 import type { ReactNode } from 'react';
-import { AccessibilityInfo, Alert, Share, Text, type AlertButton } from 'react-native';
+import { AccessibilityInfo, Alert, Dimensions, Share, Text, type AlertButton } from 'react-native';
 
 import SettingsRoute from '@/app/(tabs)/(perfil)/ajustes';
 import ApplyRoute from '@/app/meu-fa-clube/candidatura';
 import MyFanClubRoute from '@/app/meu-fa-clube/index';
 import NewPostRoute from '@/app/meu-fa-clube/nova-publicacao';
+import RulesRoute from '@/app/meu-fa-clube/regras';
 import * as fanClubApi from '@/domains/fan-club/api';
 import type {
   FanClubApplication,
@@ -110,6 +112,7 @@ function RootLayout() {
           <Stack.Screen name="meu-fa-clube/index" />
           <Stack.Screen name="meu-fa-clube/candidatura" />
           <Stack.Screen name="meu-fa-clube/nova-publicacao" />
+          <Stack.Screen name="meu-fa-clube/regras" />
         </Stack.Protected>
       </Stack>
     </QueryClientProvider>
@@ -147,6 +150,7 @@ const appTree = {
   'meu-fa-clube/index': MyFanClubRoute,
   'meu-fa-clube/candidatura': ApplyRoute,
   'meu-fa-clube/nova-publicacao': NewPostRoute,
+  'meu-fa-clube/regras': RulesRoute,
 };
 
 // --- Os dados -------------------------------------------------------------------------
@@ -474,36 +478,201 @@ describe('as rotas novas a frio, antes da abertura', () => {
 // --- A apresentação e a candidatura ---------------------------------------------------
 
 describe('a apresentação (34.9, item 2)', () => {
-  it('os 5 passos, um de cada vez, com "Passo N de 5"; o último abre a candidatura', async () => {
+  const FIRST = 'Passo 1 de 4. Candidate-se. Escolha o artista e proponha o nome do fã-clube.';
+
+  /** O passo do centro, o único que o leitor de tela vê. */
+  const currentStep = () => screen.getByTestId('fan-club-intro-step');
+
+  it('os 4 passos no carrossel e as setas, que trocam o passo e levam o foco a ele', async () => {
+    mocked.fetchMyFanClub.mockResolvedValue(mine());
+    const focus = jest
+      .spyOn(AccessibilityInfo, 'sendAccessibilityEvent')
+      .mockImplementation(() => undefined);
+    renderRouter(appTree, { initialUrl: '/meu-fa-clube' });
+
+    expect(await screen.findByLabelText(FIRST)).toBeTruthy();
+    expect(screen.getByRole('header', { name: 'Tenha seu fã-clube' })).toBeTruthy();
+    // Um passo de cada vez para o leitor; os pontos não falam.
+    expect(screen.getAllByLabelText(/^Passo \d de 4\./)).toHaveLength(1);
+    expect(screen.queryByTestId('fan-club-intro-dots')).toBeNull();
+    expect(screen.getByTestId('fan-club-intro-dots', hidden)).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Passo anterior' })).toBeDisabled();
+
+    for (let step = 2; step <= 4; step += 1) {
+      fireEvent.press(screen.getByRole('button', { name: 'Próximo passo' }));
+      expect(currentStep().props.accessibilityLabel).toMatch(new RegExp(`^Passo ${step} de 4\\.`));
+    }
+    expect(currentStep().props.accessibilityLabel).toBe(
+      'Passo 4 de 4. Compartilhe. Divulgue seu link e traga fãs para a central.',
+    );
+    expect(screen.getByRole('button', { name: 'Próximo passo' })).toBeDisabled();
+    await waitFor(() => expect(focus).toHaveBeenCalledWith(expect.anything(), 'focus'));
+
+    fireEvent.press(screen.getByRole('button', { name: 'Passo anterior' }));
+    expect(currentStep().props.accessibilityLabel).toMatch(/^Passo 3 de 4\./);
+  });
+
+  it('o passo troca pelas ações do leitor de tela e pelo arrasto', async () => {
+    mocked.fetchMyFanClub.mockResolvedValue(mine());
+    renderRouter(appTree, { initialUrl: '/meu-fa-clube' });
+
+    await screen.findByLabelText(FIRST);
+    expect(currentStep().props.accessibilityActions).toEqual([
+      { name: 'previous', label: 'Passo anterior' },
+      { name: 'next', label: 'Próximo passo' },
+    ]);
+    fireEvent(currentStep(), 'accessibilityAction', { nativeEvent: { actionName: 'next' } });
+    expect(currentStep().props.accessibilityLabel).toMatch(/^Passo 2 de 4\./);
+    fireEvent(currentStep(), 'accessibilityAction', { nativeEvent: { actionName: 'previous' } });
+    expect(currentStep().props.accessibilityLabel).toMatch(/^Passo 1 de 4\./);
+
+    // O arrasto para na terceira página.
+    const { width } = Dimensions.get('window');
+    fireEvent(screen.getByTestId('fan-club-intro-pages'), 'scrollBeginDrag');
+    fireEvent(screen.getByTestId('fan-club-intro-pages'), 'momentumScrollEnd', {
+      nativeEvent: { contentOffset: { x: width * 2, y: 0 } },
+    });
+    expect(currentStep().props.accessibilityLabel).toBe(
+      'Passo 3 de 4. Publique. Textos e fotos, conferidos pela equipe antes de irem ao ar.',
+    );
+  });
+
+  it('com toques seguidos na seta, o fim de uma rolagem interrompida não volta o passo', async () => {
+    mocked.fetchMyFanClub.mockResolvedValue(mine());
+    renderRouter(appTree, { initialUrl: '/meu-fa-clube' });
+
+    await screen.findByLabelText(FIRST);
+    const pages = screen.getByTestId('fan-club-intro-pages');
+    const { width } = Dimensions.get('window');
+    const stopAt = (x: number) =>
+      fireEvent(pages, 'momentumScrollEnd', { nativeEvent: { contentOffset: { x, y: 0 } } });
+
+    fireEvent.press(screen.getByRole('button', { name: 'Próximo passo' }));
+    fireEvent.press(screen.getByRole('button', { name: 'Próximo passo' }));
+    // O Android avisa o fim da primeira rolagem, cortada pela segunda, no caminho.
+    stopAt(width * 0.25);
+    expect(currentStep().props.accessibilityLabel).toMatch(/^Passo 3 de 4\./);
+    fireEvent.press(screen.getByRole('button', { name: 'Próximo passo' }));
+    stopAt(width * 2.4);
+    expect(currentStep().props.accessibilityLabel).toMatch(/^Passo 4 de 4\./);
+    stopAt(width * 3);
+    expect(currentStep().props.accessibilityLabel).toMatch(/^Passo 4 de 4\./);
+
+    // O arrasto do dedo vale de novo, onde quer que pare.
+    fireEvent(pages, 'scrollBeginDrag');
+    stopAt(width);
+    expect(currentStep().props.accessibilityLabel).toMatch(/^Passo 2 de 4\./);
+  });
+
+  it('as vantagens, cada uma um foco só, com o reconhecimento por último', async () => {
+    mocked.fetchMyFanClub.mockResolvedValue(mine());
+    renderRouter(appTree, { initialUrl: '/meu-fa-clube' });
+
+    expect(
+      await screen.findByRole('header', { name: 'Vantagens de ter um fã-clube' }),
+    ).toBeTruthy();
+    const benefits = within(screen.getByTestId('fan-club-intro-benefits'));
+    expect(benefits.getAllByLabelText(/\. /).map((node) => node.props.accessibilityLabel)).toEqual([
+      'Sua página no artista. O fã-clube aparece na página do artista, e qualquer fã pode seguir.',
+      'Mais fãs na central. Quem segue o seu fã-clube também entra na central do artista.',
+      'Seu link. Compartilhe o link com o seu código e veja quantas pessoas você trouxe.',
+      'Seus números. Seguidores, visitas e cadastros em Meu fã-clube.',
+      'Destaque. A equipe pode destacar o fã-clube, que aparece primeiro na página do artista.',
+      'Reconhecimento. A equipe pode dar pontos e prêmios, como ingressos, a critério dela e sem garantia.',
+    ]);
+    // O texto inteiro do reconhecimento fica na sheet das regras.
+    expect(screen.queryByText(PROGRAM.notice)).toBeNull();
+  });
+
+  it('sem o texto do reconhecimento, a vantagem do prêmio some', async () => {
+    mocked.fetchMyFanClub.mockResolvedValue(mine({ notice: null }));
+    renderRouter(appTree, { initialUrl: '/meu-fa-clube' });
+
+    expect(await screen.findByTestId('fan-club-intro-benefit-featured')).toBeTruthy();
+    expect(screen.queryByTestId('fan-club-intro-benefit-reward')).toBeNull();
+    expect(screen.queryByText(/prêmio/i)).toBeNull();
+  });
+
+  it('o botão do pé abre a candidatura de qualquer passo; os requisitos ficam só nas regras', async () => {
     mocked.fetchMyFanClub.mockResolvedValue(mine());
     serverAnswers();
     const view = renderRouter(appTree, { initialUrl: '/meu-fa-clube' });
 
-    expect(
-      await screen.findByLabelText(
-        'Passo 1 de 5. Envie sua candidatura. Escolha o artista, proponha o nome do fã-clube e conte como você vai divulgar.',
-      ),
-    ).toBeTruthy();
-    expect(screen.getByText(PROGRAM.notice)).toBeTruthy();
-    for (let step = 2; step <= 5; step += 1) {
-      fireEvent.press(screen.getByTestId('fan-club-intro-next'));
-      expect(screen.getByTestId('fan-club-intro-step').props.accessibilityLabel).toMatch(
-        new RegExp(`^Passo ${step} de 5\\.`),
-      );
-    }
-    expect(screen.queryByTestId('fan-club-intro-skip')).toBeNull();
-    fireEvent.press(screen.getByTestId('fan-club-intro-next'));
+    const footer = within(await screen.findByTestId('fan-club-intro-footer'));
+    expect(footer.queryByText(/18 anos/)).toBeNull();
+    fireEvent.press(footer.getByRole('button', { name: 'Quero meu fã-clube' }));
     await waitFor(() => expect(view.getPathname()).toBe('/meu-fa-clube/candidatura'));
   });
 
-  it('"Pular" abre a candidatura de qualquer passo; sem o texto do reconhecimento, ele some', async () => {
-    mocked.fetchMyFanClub.mockResolvedValue(mine({ notice: null }));
-    serverAnswers();
+  it('o aceite dos Termos de Uso no pé, com o link; com o regulamento, o link passa a ele', async () => {
+    mocked.fetchMyFanClub.mockResolvedValue(mine());
+    const first = renderRouter(appTree, { initialUrl: '/meu-fa-clube' });
+
+    expect(await screen.findByText(/^Ao se candidatar, você aceita os /)).toBeTruthy();
+    fireEvent.press(screen.getByRole('link', { name: 'Termos de Uso' }));
+    expect(WebBrowser.openBrowserAsync).toHaveBeenLastCalledWith(
+      'https://imagineup-painel.vercel.app/termos/',
+      expect.anything(),
+    );
+    first.unmount();
+
+    queryClient.clear();
+    mocked.fetchMyFanClub.mockResolvedValue(
+      mine({ rulesUrl: 'https://imagineup-painel.vercel.app/fa-clube/regulamento/' }),
+    );
+    renderRouter(appTree, { initialUrl: '/meu-fa-clube' });
+    fireEvent.press(await screen.findByRole('link', { name: 'Regulamento do Fã-clube' }));
+    expect(WebBrowser.openBrowserAsync).toHaveBeenLastCalledWith(
+      'https://imagineup-painel.vercel.app/fa-clube/regulamento/',
+      expect.anything(),
+    );
+  });
+
+  it('"Regras do fã-clube" abre a sheet com as condições e o texto inteiro do reconhecimento', async () => {
+    mocked.fetchMyFanClub.mockResolvedValue(mine());
     const view = renderRouter(appTree, { initialUrl: '/meu-fa-clube' });
 
-    fireEvent.press(await screen.findByTestId('fan-club-intro-skip'));
-    expect(screen.queryByTestId('fan-club-intro-notice')).toBeNull();
-    await waitFor(() => expect(view.getPathname()).toBe('/meu-fa-clube/candidatura'));
+    fireEvent.press(await screen.findByRole('button', { name: 'Regras do fã-clube' }));
+    await waitFor(() => expect(view.getPathname()).toBe('/meu-fa-clube/regras'));
+    const sheet = within(screen.getByTestId('fan-club-rules-sheet'));
+    expect(sheet.getByRole('header', { name: 'Regras do fã-clube' })).toBeTruthy();
+    for (const text of [
+      'Ter 18 anos ou mais.',
+      'Estar na central do artista.',
+      'Ter o seu @ escolhido em Editar perfil.',
+      'Manter o fã-clube ativo e a conta sem suspensão.',
+    ]) {
+      expect(sheet.getByText(text)).toBeTruthy();
+    }
+    expect(sheet.getByText(PROGRAM.notice)).toBeTruthy();
+    fireEvent.press(sheet.getByRole('link', { name: 'Ler os Termos de Uso' }));
+    expect(WebBrowser.openBrowserAsync).toHaveBeenLastCalledWith(
+      'https://imagineup-painel.vercel.app/termos/',
+      expect.anything(),
+    );
+
+    fireEvent.press(sheet.getByRole('button', { name: 'Fechar' }));
+    await waitFor(() => expect(view.getPathname()).toBe('/meu-fa-clube'));
+    // A sheet lê o estado já em cache: nenhuma busca a mais.
+    expect(mocked.fetchMyFanClub).toHaveBeenCalledTimes(1);
+  });
+
+  it('sem o texto do reconhecimento, a sheet mostra só as condições', async () => {
+    mocked.fetchMyFanClub.mockResolvedValue(mine({ notice: null }));
+    renderRouter(appTree, { initialUrl: '/meu-fa-clube' });
+
+    fireEvent.press(await screen.findByRole('button', { name: 'Regras do fã-clube' }));
+    expect(await screen.findByText('Ter 18 anos ou mais.')).toBeTruthy();
+    expect(screen.queryByTestId('fan-club-rules-notice')).toBeNull();
+  });
+
+  it('a sheet das regras a frio, com a api de antes, fecha e não chama mais nada', async () => {
+    mocked.fetchMyFanClub.mockRejectedValue(notFound());
+    const view = renderRouter(appTree, { initialUrl: '/meu-fa-clube/regras' });
+
+    await waitFor(() => expect(view.getPathname()).toBe('/'));
+    expect(screen.queryByTestId('fan-club-rules-sheet')).toBeNull();
+    expectOnlyTheGate();
   });
 });
 
@@ -524,7 +693,7 @@ describe('a candidatura (34.9, item 3)', () => {
     mocked.applyForFanClub.mockResolvedValue(mine({ application: application() }));
     serverAnswers();
     const view = renderRouter(appTree, { initialUrl: '/meu-fa-clube' });
-    fireEvent.press(await screen.findByTestId('fan-club-intro-skip'));
+    fireEvent.press(await screen.findByTestId('fan-club-intro-apply'));
 
     await waitFor(() =>
       expect(screen.getByTestId('fan-club-apply-whatsapp').props.value).toBe('(75) 99123-4567'),
@@ -827,14 +996,14 @@ describe('a espera e a recusa (34.9, item 4)', () => {
 // --- O "Meu fã-clube" -----------------------------------------------------------------
 
 describe('o "Meu fã-clube" (34.9, item 5)', () => {
-  it('o cabeçalho com a faixa não oficial, os números com rótulo e o card Prêmios', async () => {
+  it('o cabeçalho, os números com rótulo e o card Prêmios', async () => {
     mocked.fetchMyFanClub.mockResolvedValue(manager({ featuredUntil: '2026-10-25' }));
     serverAnswers();
     const view = renderRouter(appTree, { initialUrl: '/meu-fa-clube' });
 
     expect(
       await screen.findByRole('header', {
-        name: 'Fã-clube, não oficial. Netto de Coração, de Netto Brito. Ativo.',
+        name: 'Netto de Coração, de Netto Brito. Ativo.',
       }),
     ).toBeTruthy();
     expect(screen.getByText('Seu fã-clube é destaque até 25/10/2026')).toBeTruthy();
@@ -844,7 +1013,6 @@ describe('o "Meu fã-clube" (34.9, item 5)', () => {
     expect(screen.getByLabelText('Publicações no ar: 2')).toBeTruthy();
     expect(screen.getByLabelText('Em análise: 1')).toBeTruthy();
     expect(screen.getByText('+200 pontos e um prêmio em 18/10/2026')).toBeTruthy();
-    expect(screen.getByText(PROGRAM.notice)).toBeTruthy();
     fireEvent.press(screen.getByTestId('fan-club-prizes-open'));
     await waitFor(() => expect(view.getPathname()).toBe('/recompensas'));
   });
@@ -986,15 +1154,21 @@ describe('o "Meu fã-clube" (34.9, item 5)', () => {
     expect(screen.getByText('Não deu para carregar os números.')).toBeTruthy();
   });
 
-  it('o card Prêmios traz as condições de conduta ao lado do texto do reconhecimento', async () => {
+  it('o card Prêmios fica só com as ações; o texto do reconhecimento abre pelas regras', async () => {
     mocked.fetchMyFanClub.mockResolvedValue(manager());
     serverAnswers();
-    renderRouter(appTree, { initialUrl: '/meu-fa-clube' });
+    const view = renderRouter(appTree, { initialUrl: '/meu-fa-clube' });
 
+    const card = within(await screen.findByTestId('fan-club-prizes'));
+    expect(card.getByRole('button', { name: 'Ver meus prêmios' })).toBeTruthy();
+    expect(card.getByRole('link', { name: 'Falar com a equipe' })).toBeTruthy();
+    expect(card.queryByText(PROGRAM.notice)).toBeNull();
+    expect(card.queryByText(/18 anos/)).toBeNull();
+
+    fireEvent.press(card.getByRole('button', { name: 'Regras do fã-clube' }));
+    await waitFor(() => expect(view.getPathname()).toBe('/meu-fa-clube/regras'));
     expect(
-      await screen.findByText(
-        'Para o reconhecimento: 18 anos ou mais, o fã-clube ativo e a conta sem suspensão.',
-      ),
+      within(screen.getByTestId('fan-club-rules-sheet')).getByText(PROGRAM.notice),
     ).toBeTruthy();
   });
 
@@ -1069,8 +1243,10 @@ describe('a nova publicação (34.9, item 6)', () => {
     serverAnswers();
     renderRouter(appTree, { initialUrl: '/meu-fa-clube/nova-publicacao' });
 
-    fireEvent.press(await screen.findByTestId('fan-club-post-pick-photo'));
+    fireEvent.press(await screen.findByRole('button', { name: 'Escolher foto da galeria' }));
     expect(await screen.findByLabelText('A foto escolhida, recortada em 4 por 5')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Trocar foto' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Escolher foto da galeria' })).toBeNull();
     expect(pickPhoto).toHaveBeenCalledWith('library', 'none');
     expect(prepareFanClubPhoto).toHaveBeenCalledWith({
       uri: 'file:///original.jpg',
@@ -1088,6 +1264,25 @@ describe('a nova publicação (34.9, item 6)', () => {
     expect(mocked.createFanClubPost.mock.calls[0]![0]).toEqual(
       expect.objectContaining({ text: 'Que show!', photo: true }),
     );
+  });
+
+  it('o "×" da prévia tira a foto, e o ícone do campo volta a escolher', async () => {
+    mocked.fetchMyFanClub.mockResolvedValue(manager());
+    jest
+      .mocked(pickPhoto)
+      .mockResolvedValue({ uri: 'file:///original.jpg', width: 4000, height: 3000 });
+    jest.mocked(prepareFanClubPhoto).mockResolvedValue({
+      photo: { uri: 'file:///foto.jpg', size: 900_000, width: 1080, height: 1350 },
+      thumb: { uri: 'file:///mini.jpg', size: 90_000, width: 480, height: 600 },
+    });
+    serverAnswers();
+    renderRouter(appTree, { initialUrl: '/meu-fa-clube/nova-publicacao' });
+
+    fireEvent.press(await screen.findByRole('button', { name: 'Escolher foto da galeria' }));
+    expect(await screen.findByTestId('fan-club-post-preview')).toBeTruthy();
+    fireEvent.press(screen.getByRole('button', { name: 'Tirar a foto' }));
+    expect(screen.queryByTestId('fan-club-post-preview')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Escolher foto da galeria' })).toBeTruthy();
   });
 
   it('a foto grande demais aparece já na escolha, sem enviar nada', async () => {
@@ -1151,5 +1346,36 @@ describe('a nova publicação (34.9, item 6)', () => {
     expect(
       await screen.findByText('Você chegou ao limite de publicações de hoje. Tente amanhã.'),
     ).toBeTruthy();
+  });
+});
+
+// --- A faixa não oficial --------------------------------------------------------------
+
+describe('a faixa "Fã-clube, não oficial" fica só nas telas públicas (pedido do dono, 20/10/2026)', () => {
+  it.each([
+    ['a apresentação', mine(), '/meu-fa-clube', 'fan-club-intro'],
+    [
+      'a candidatura em análise',
+      mine({ application: application() }),
+      '/meu-fa-clube',
+      'fan-club-pending',
+    ],
+    [
+      'a candidatura recusada',
+      mine({ application: application({ status: 'rejected', rejectReason: 'other' }) }),
+      '/meu-fa-clube',
+      'fan-club-rejected',
+    ],
+    ['o "Meu fã-clube"', manager(), '/meu-fa-clube', 'fan-club-dashboard'],
+    ['a candidatura', mine(), '/meu-fa-clube/candidatura', 'fan-club-apply-name'],
+    ['a nova publicação', manager(), '/meu-fa-clube/nova-publicacao', 'fan-club-post-text'],
+    ['as regras', mine(), '/meu-fa-clube/regras', 'fan-club-rules-sheet'],
+  ])('%s, do gestor, não mostra a faixa', async (_name, state, url, testID) => {
+    mocked.fetchMyFanClub.mockResolvedValue(state);
+    serverAnswers();
+    renderRouter(appTree, { initialUrl: url });
+
+    expect(await screen.findByTestId(testID)).toBeTruthy();
+    expect(screen.queryByText('Fã-clube, não oficial', hidden)).toBeNull();
   });
 });

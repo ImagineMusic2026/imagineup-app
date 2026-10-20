@@ -1,7 +1,7 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useIsMutating } from '@tanstack/react-query';
 import { router } from 'expo-router';
-import { ImagePlus } from 'lucide-react-native';
+import { ImagePlus, X } from 'lucide-react-native';
 import { useState } from 'react';
 import { Controller, useForm, useWatch } from 'react-hook-form';
 import { AccessibilityInfo, ActivityIndicator, StyleSheet, View } from 'react-native';
@@ -10,11 +10,13 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Button } from '@/components/button';
 import { EmptyState } from '@/components/empty-state';
 import { goBack, LargeTitleHeader } from '@/components/header';
+import { Icon } from '@/components/icon';
+import { PressableScale } from '@/components/pressable-scale';
 import { RemoteImage } from '@/components/remote-image';
 import { Screen } from '@/components/screen';
 import { Skeleton, SkeletonGroup } from '@/components/skeleton';
 import { Text } from '@/components/text';
-import { TextInput } from '@/components/text-input';
+import { TextInput, TextInputAction } from '@/components/text-input';
 import {
   PhotoPickError,
   pickPhoto,
@@ -27,11 +29,10 @@ import { useStayOnScreen } from '@/hooks/use-stay-on-screen';
 import { t, type TranslationKey, type TranslationParams } from '@/i18n';
 import { actionRefusal } from '@/services/api/refusal';
 import { haptics } from '@/services/haptics';
-import { colors, radii, spacing } from '@/theme';
+import { colors, layout, radii, spacing } from '@/theme';
 import { announceFirstError } from '@/utils/form-errors';
 
 import { FanClubNotice } from '../components/fan-club-notice';
-import { UnofficialBand } from '../components/unofficial-band';
 import { FAN_CLUB_PENDING_MAX, FAN_CLUB_POST_TEXT_MAX } from '../consts';
 import { fanClubErrorText } from '../describe';
 import { fanClubStageOf } from '../entry';
@@ -41,6 +42,65 @@ import type { MyFanClubClub } from '../types';
 
 const PHOTO_ASPECT = 4 / 5;
 const SKELETON_HEIGHT = 160;
+// A miniatura da foto dentro do campo, em 4:5, e o "×" no canto dela.
+const THUMB_WIDTH = 112;
+const REMOVE_CIRCLE = 26;
+const REMOVE_ICON = 14;
+const REMOVE_STROKE = 2.4;
+
+interface PhotoThumbProps {
+  photo: PreparedFanClubPhoto | null;
+  /** A foto sendo preparada: o lugar dela, com o indicador. */
+  preparing: boolean;
+  disabled: boolean;
+  onRemove: () => void;
+}
+
+/**
+ * A foto escolhida dentro do campo, pequena, como nos apps de mensagem
+ * (pedido do dono, 20/10/2026, 34.22): o recorte 4:5 que vai e, no canto, o
+ * "×" que tira a foto. O alvo do "×" tem 44 e fica dentro da miniatura, porque
+ * o toque fora do pai não chega no Fabric do iOS; o círculo é menor, no canto.
+ */
+function PhotoThumb({ photo, preparing, disabled, onRemove }: PhotoThumbProps) {
+  if (!photo) {
+    // Chaves diferentes: reaproveitada, a view da espera levava o rótulo dela
+    // para a da foto no leitor de tela do Android.
+    return preparing ? (
+      <View
+        key="waiting"
+        accessible
+        accessibilityLabel={t('fanClub.newPost.preparing')}
+        style={[styles.thumb, styles.thumbWaiting]}
+        testID="fan-club-post-preparing"
+      >
+        <ActivityIndicator color={colors.textMuted} />
+      </View>
+    ) : null;
+  }
+  return (
+    <View key="photo" style={styles.thumb}>
+      <RemoteImage
+        uri={photo.photo.uri}
+        fallback={{ kind: 'surface', seed: photo.photo.uri }}
+        accessibilityLabel={t('fanClub.newPost.photoLabel')}
+        style={styles.thumbImage}
+        testID="fan-club-post-preview"
+      />
+      <PressableScale
+        onPress={onRemove}
+        disabled={disabled}
+        accessibilityLabel={t('fanClub.newPost.removePhoto')}
+        style={styles.removeTarget}
+        testID="fan-club-post-remove-photo"
+      >
+        <View style={styles.removeCircle}>
+          <Icon icon={X} size={REMOVE_ICON} color={colors.text} strokeWidth={REMOVE_STROKE} />
+        </View>
+      </PressableScale>
+    </View>
+  );
+}
 
 /** A recusa que fica no pé, acima do botão. */
 type Failure = { key: TranslationKey; params?: TranslationParams; contact?: boolean };
@@ -144,7 +204,6 @@ function NewPostForm({ club, failure, onFailure: setFailure }: NewPostFormProps)
 
   return (
     <View>
-      <UnofficialBand />
       <Text variant="bodyLead" color={colors.textSecondary} style={styles.lead}>
         {t('fanClub.newPost.lead')}
       </Text>
@@ -181,6 +240,33 @@ function NewPostForm({ club, failure, onFailure: setFailure }: NewPostFormProps)
               count: text.length,
               max: FAN_CLUB_POST_TEXT_MAX,
             })}
+            // A foto entra pelo ícone no canto do campo, como nos apps de
+            // mensagem (pedido do dono, 20/10/2026, 34.22), e só com fotos.
+            trailing={
+              club.photosAllowed ? (
+                <TextInputAction
+                  icon={ImagePlus}
+                  accessibilityLabel={t(
+                    photo ? 'fanClub.newPost.changePhoto' : 'fanClub.newPost.pickPhoto',
+                  )}
+                  accessibilityHint={t('fanClub.newPost.pickHint')}
+                  onPress={() => void choose()}
+                  disabled={create.isPending || preparing}
+                  testID="fan-club-post-pick-photo"
+                />
+              ) : undefined
+            }
+            trailingAtEnd
+            attachment={
+              club.photosAllowed && (photo || preparing) ? (
+                <PhotoThumb
+                  photo={photo}
+                  preparing={preparing}
+                  disabled={create.isPending || preparing}
+                  onRemove={() => setPhoto(null)}
+                />
+              ) : undefined
+            }
             footer={
               <Text
                 variant="caption"
@@ -198,66 +284,16 @@ function NewPostForm({ club, failure, onFailure: setFailure }: NewPostFormProps)
       />
 
       {club.photosAllowed ? (
-        <View style={styles.photoBlock}>
-          {photo ? (
-            <>
-              <RemoteImage
-                uri={photo.photo.uri}
-                fallback={{ kind: 'surface', seed: photo.photo.uri }}
-                accessibilityLabel={t('fanClub.newPost.photoLabel')}
-                style={styles.preview}
-                testID="fan-club-post-preview"
-              />
-              <View style={styles.photoActions}>
-                <Button
-                  label={t('fanClub.newPost.changePhoto')}
-                  variant="secondary"
-                  size="md"
-                  onPress={() => void choose()}
-                  disabled={create.isPending || preparing}
-                  accessibilityHint={t('fanClub.newPost.pickHint')}
-                  testID="fan-club-post-change-photo"
-                />
-                <Button
-                  label={t('fanClub.newPost.removePhoto')}
-                  variant="ghost"
-                  size="md"
-                  onPress={() => setPhoto(null)}
-                  disabled={create.isPending || preparing}
-                  testID="fan-club-post-remove-photo"
-                />
-              </View>
-            </>
-          ) : (
-            <Button
-              label={t('fanClub.newPost.pickPhoto')}
-              variant="secondary"
-              icon={ImagePlus}
-              onPress={() => void choose()}
-              loading={preparing}
-              disabled={create.isPending || preparing}
-              accessibilityHint={t('fanClub.newPost.pickHint')}
-              testID="fan-club-post-pick-photo"
-            />
-          )}
-          {preparing ? (
-            <View
-              accessible
-              accessibilityLabel={t('fanClub.newPost.preparing')}
-              style={styles.preparing}
-            >
-              <ActivityIndicator color={colors.textMuted} />
-              <Text variant="caption" color={colors.textMuted}>
-                {t('fanClub.newPost.preparing')}
-              </Text>
-            </View>
-          ) : null}
-          {photoError ? (
-            <Text variant="caption" color={colors.danger} testID="fan-club-post-photo-error">
-              {t(photoError)}
-            </Text>
-          ) : null}
-        </View>
+        photoError ? (
+          <Text
+            variant="caption"
+            color={colors.danger}
+            style={styles.photoError}
+            testID="fan-club-post-photo-error"
+          >
+            {t(photoError)}
+          </Text>
+        ) : null
       ) : (
         <Text variant="caption" color={colors.textMuted} style={styles.textOnly}>
           {t('fanClub.newPost.textOnly')}
@@ -289,8 +325,8 @@ function NewPostForm({ club, failure, onFailure: setFailure }: NewPostFormProps)
 /**
  * Nova publicação (`/meu-fa-clube/nova-publicacao`, 34.9, item 6), na pilha
  * raiz, por causa do teclado: o texto de 1 a 1.000 e, só com o
- * `photosAllowed`, "Escolher foto da galeria" (o seletor do sistema, sem
- * permissão e sem o recorte dele), com a prévia do recorte 4:5 que o
+ * `photosAllowed`, o ícone da galeria no canto do campo (o seletor do sistema,
+ * sem permissão e sem o recorte dele), com a prévia do recorte 4:5 que o
  * `prepareFanClubPhoto` faz (a foto em 1080 × 1350 e a miniatura em 480 × 600,
  * em JPEG, sem EXIF). O envio é a vaga, os dois arquivos e o `POST`, com a
  * tentativa guardada, e confirma com "Enviado para revisão". Só abre com o
@@ -348,7 +384,6 @@ export function NewFanClubPostScreen() {
 
 const styles = StyleSheet.create({
   lead: {
-    marginTop: spacing.md,
     marginBottom: spacing.lg,
   },
   notice: {
@@ -358,25 +393,40 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-end',
     marginTop: spacing.xs,
   },
-  photoBlock: {
-    marginTop: spacing.lg,
-    gap: spacing.md,
+  photoError: {
+    marginTop: spacing.sm,
   },
-  preview: {
-    width: '100%',
+  thumb: {
+    width: THUMB_WIDTH,
     aspectRatio: PHOTO_ASPECT,
-    borderRadius: radii.lg,
+    borderRadius: radii.md,
     overflow: 'hidden',
   },
-  photoActions: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: spacing.sm,
-  },
-  preparing: {
-    flexDirection: 'row',
+  thumbWaiting: {
     alignItems: 'center',
-    gap: spacing.sm,
+    justifyContent: 'center',
+    backgroundColor: colors.surfaceRaised,
+  },
+  thumbImage: {
+    width: '100%',
+    height: '100%',
+  },
+  removeTarget: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    width: layout.minTouchTarget,
+    height: layout.minTouchTarget,
+    alignItems: 'flex-end',
+    padding: spacing.xs,
+  },
+  removeCircle: {
+    width: REMOVE_CIRCLE,
+    height: REMOVE_CIRCLE,
+    borderRadius: radii.pill,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.glassDarkStrong,
   },
   textOnly: {
     marginTop: spacing.md,
