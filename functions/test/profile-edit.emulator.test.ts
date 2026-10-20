@@ -659,7 +659,8 @@ describe('vaga de envio da foto (POST /me/photo/upload, 27.4)', () => {
     const second = photoPath(fan.uid);
     expect((await reserve(call, fan, second)).status).toBe(200);
     expect((await slotOf(fan.uid))!.fileName).toBe(second.split('/').at(-1));
-    expect(await uploadsToday(fan.uid, now)).toBe(2);
+    // A segunda vaga conta no dia dela: perto da meia-noite, os 5 min levam ao dia seguinte.
+    expect(await uploadsToday(fan.uid, clock.now)).toBe(dayKey(clock.now) === dayKey(now) ? 2 : 1);
   });
 
   it('a renovação vale até 30 min depois da vaga que contou; depois, o mesmo arquivo conta de novo', async () => {
