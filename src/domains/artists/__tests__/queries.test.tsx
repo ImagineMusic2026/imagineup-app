@@ -1,8 +1,9 @@
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query';
 import { act, renderHook, waitFor } from '@testing-library/react-native';
 import type { ReactNode } from 'react';
 import { AccessibilityInfo } from 'react-native';
 
+import { fanClubKeys } from '@/domains/fan-club/keys';
 import * as actionRewards from '@/domains/profile/action-rewards';
 import { ApiError } from '@/services/api/errors';
 import { fixtureWallet } from '@/services/fixtures';
@@ -67,6 +68,22 @@ beforeEach(() => {
 });
 
 afterEach(() => client.clear());
+
+/**
+ * Os Ajustes montados com o 404 da `api` de antes (34.15, passo 9): um
+ * observador ligado do estado do gestor, que contaria uma busca a mais.
+ */
+async function mountRefusedSettings(): Promise<jest.Mock> {
+  const refused = jest.fn(() =>
+    Promise.reject(new ApiError('notFound', 'Não encontrado.', 404, 'not_found')),
+  );
+  const settings = renderHook(
+    () => useQuery({ queryKey: fanClubKeys.mine(), queryFn: refused, retry: false }),
+    { wrapper },
+  );
+  await waitFor(() => expect(settings.result.current.isError).toBe(true));
+  return refused;
+}
 
 describe('seguir centrais', () => {
   it('depois de seguir, as centrais do carrossel da home buscam de novo; a lista de artistas, não', async () => {
@@ -405,6 +422,38 @@ describe('sair da central', () => {
     expect(client.getQueryState(['ranking', 'season'])?.isInvalidated).toBe(true);
   });
 
+  it('sair zera o que os fãs veem dos fã-clubes (seção 34, decisão 27); sem a trava, o estado do gestor não é pedido', async () => {
+    client.setQueryData(fanClubKeys.follows(), { items: [] });
+    client.setQueryData(fanClubKeys.feed(), { pages: [], pageParams: [] });
+    client.setQueryData(fanClubKeys.club('fc-1'), { id: 'fc-1' });
+    const refused = await mountRefusedSettings();
+    const response = holdLeave();
+    const { result } = renderHook(() => useLeaveCentralMutation('nenho'), { wrapper });
+    act(() => result.current.leave());
+    await waitFor(() => expect(result.current.isPending).toBe(true));
+    await response.resolve({ artistId: 'nenho' });
+
+    await waitFor(() =>
+      expect(client.getQueryState(fanClubKeys.follows())?.isInvalidated).toBe(true),
+    );
+    expect(client.getQueryState(fanClubKeys.feed())?.isInvalidated).toBe(true);
+    expect(client.getQueryState(fanClubKeys.club('fc-1'))?.isInvalidated).toBe(true);
+    // Antes da abertura (o 404 da trava), o estado do gestor não é pedido de
+    // novo: nem uma busca a mais nos Ajustes abertos.
+    await act(async () => undefined);
+    expect(refused).toHaveBeenCalledTimes(1);
+  });
+
+  it('com a resposta da trava, o estado do gestor busca de novo (o fã-clube fica sem publicar)', async () => {
+    client.setQueryData(fanClubKeys.mine(), { open: true, application: null, club: null });
+    const response = holdLeave();
+    const { result } = renderHook(() => useLeaveCentralMutation('nenho'), { wrapper });
+    act(() => result.current.leave());
+    await waitFor(() => expect(result.current.isPending).toBe(true));
+    await response.resolve({ artistId: 'nenho' });
+    await waitFor(() => expect(client.getQueryState(fanClubKeys.mine())?.isInvalidated).toBe(true));
+  });
+
   it('no erro, tudo fica como estava, e o erro chega à sheet', async () => {
     const response = holdLeave();
     const onError = jest.fn();
@@ -528,5 +577,22 @@ describe('useJoinCelebration', () => {
     expect(toast).not.toHaveBeenCalled();
     expect(client.getQueryState(artistKeys.centrals())?.isInvalidated).toBe(true);
     toast.mockRestore();
+  });
+
+  it('a volta à central busca de novo as páginas de fã-clube e o estado do gestor, este só se a trava já respondeu (seção 34)', async () => {
+    client.setQueryData(fanClubKeys.club('fc-1'), { id: 'fc-1' });
+    const refused = await mountRefusedSettings();
+    const { result } = renderHook(() => useJoinCelebration(), { wrapper });
+    act(() => result.current.celebrate({ artistId: 'nenho', pointsAwarded: 0 }));
+    // O "Você também entra na central" das páginas some.
+    expect(client.getQueryState(fanClubKeys.club('fc-1'))?.isInvalidated).toBe(true);
+    // Com o 404 da trava, nada é pedido de novo.
+    await act(async () => undefined);
+    expect(refused).toHaveBeenCalledTimes(1);
+
+    // O gestor que tinha saído e voltou: o "Meu fã-clube" deixa o "fora da central".
+    client.setQueryData(fanClubKeys.mine(), { open: true, application: null, club: null });
+    act(() => result.current.celebrate({ artistId: 'nenho', pointsAwarded: 0 }));
+    await waitFor(() => expect(refused).toHaveBeenCalledTimes(2));
   });
 });

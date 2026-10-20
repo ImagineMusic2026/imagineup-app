@@ -52,6 +52,22 @@ export function focusedTab(state: NavState | undefined): TabGroup | null {
 }
 
 /**
+ * Abre a central de uma tela que fica fora das abas, por cima delas (o post e
+ * a página do fã-clube). `push` e `navigate` empilhariam outra árvore de abas
+ * em cima dela; o `dismissTo` a fecha e abre a central na aba que já existe,
+ * com a raiz dela embaixo (`withAnchor`). Sem o grupo no endereço, o Expo
+ * Router escolheria a aba pelos segmentos da tela (nenhum) e cairia na
+ * Explorar: vai a aba de onde o fã veio, ou o Início.
+ */
+export function openArtistOverStack(rootState: unknown, artistId: string): void {
+  const tab = focusedTab(rootState as NavState | undefined) ?? '(inicio)';
+  router.dismissTo(
+    { pathname: ARTIST_IN_TAB[tab], params: { artistaId: artistId } },
+    { withAnchor: true },
+  );
+}
+
+/**
  * Autor do post (da 1a): avatar de 38, nome com o selo e "Artista Imagine · há
  * 2 h". A linha inteira é um pressável que abre a central do artista, e o
  * leitor de tela ouve tudo numa frase só, com o tempo por extenso. Com a fonte
@@ -62,18 +78,9 @@ export function PostAuthorRow({ post, now }: PostAuthorRowProps) {
   const { artist } = post;
   const lines = useWindowDimensions().fontScale >= LARGE_TEXT_SCALE ? undefined : 1;
 
-  // O post fica fora das abas, por cima delas. `push` e `navigate` empilhariam
-  // outra árvore de abas em cima do post; o `dismissTo` fecha o post e abre a
-  // central na aba que já existe, com a raiz dela embaixo (`withAnchor`). Sem o
-  // grupo no endereço, o Expo Router escolheria a aba pelos segmentos do post
-  // (nenhum) e cairia na Explorar: vai a aba de onde o fã veio, ou o Início.
-  const openArtist = (): void => {
-    const tab = focusedTab(navigation.getRootState() as NavState | undefined) ?? '(inicio)';
-    router.dismissTo(
-      { pathname: ARTIST_IN_TAB[tab], params: { artistaId: artist.id } },
-      { withAnchor: true },
-    );
-  };
+  // O post fica fora das abas, por cima delas: o `dismissTo` fecha o post e
+  // abre a central na aba de onde o fã veio (`openArtistOverStack`).
+  const openArtist = (): void => openArtistOverStack(navigation.getRootState(), artist.id);
   const role = t('post.details.artistRole');
   const author = artist.verified ? t('post.author', { name: artist.name }) : artist.name;
 

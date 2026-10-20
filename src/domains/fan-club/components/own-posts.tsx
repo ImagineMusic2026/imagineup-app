@@ -17,19 +17,13 @@ import { colors, radii, spacing } from '@/theme';
 import { formatDate } from '@/utils/date';
 
 import { POST_REJECT_REASON_TEXTS, POST_STATUS_TEXTS } from '../describe';
+import { excerptOf } from '../format';
 import { useMyFanClubPostsQuery, useRemoveFanClubPostMutation } from '../queries';
 import type { OwnFanClubPost } from '../types';
 
 const THUMB_WIDTH = 48;
 const THUMB_HEIGHT = 60;
 const TEXT_LINES = 3;
-const EXCERPT_MAX = 40;
-
-/** O começo do texto, para o rótulo do botão de cada linha não ser igual ao das outras. */
-function excerptOf(text: string): string {
-  const line = text.replace(/\s+/g, ' ').trim();
-  return line.length > EXCERPT_MAX ? `${line.slice(0, EXCERPT_MAX).trimEnd()}...` : line;
-}
 
 /** O rótulo da linha: o status, o texto, a foto, a data e, na recusada, o motivo. */
 function rowLabel(post: OwnFanClubPost): string {

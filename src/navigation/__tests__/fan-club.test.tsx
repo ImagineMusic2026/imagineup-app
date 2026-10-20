@@ -339,13 +339,15 @@ describe('o bloco "Fã-clube" dos Ajustes (34.9, item 1)', () => {
     expectOnlyTheGate();
   });
 
-  it('com o programa fechado e sem candidatura, nada aparece', async () => {
+  it('com o programa fechado e sem candidatura, a linha "Tenha seu fã-clube" não aparece', async () => {
     mocked.fetchMyFanClub.mockResolvedValue(mine({ open: false }));
     renderRouter(appTree, { initialUrl: '/ajustes' });
 
     await waitFor(() => expect(mocked.fetchMyFanClub).toHaveBeenCalled());
     await act(async () => undefined);
     expect(screen.queryByTestId('settings-fan-club')).toBeNull();
+    // "Fã-clubes que sigo" fica (etapa 8): os fã-clubes que existem continuam (decisão 9).
+    expect(await screen.findByTestId('settings-fan-club-follows')).toBeTruthy();
     expectOnlyTheGate();
   });
 

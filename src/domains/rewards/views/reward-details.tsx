@@ -23,6 +23,7 @@ import { t } from '@/i18n';
 import { colors, motion, spacing } from '@/theme';
 import { maskWhatsapp, parseWhatsapp, whatsappFieldValue } from '@/utils/whatsapp';
 
+import { PrizeBody } from '../components/prize-cards';
 import {
   ConfirmActions,
   ConfirmBody,
@@ -34,7 +35,7 @@ import {
   type RedeemStep,
 } from '../components/redeem-steps';
 import { redeemFailure, rewardAvailability, type RedeemFailure } from '../describe-reward';
-import { useRedeemRewardMutation, useRewardQuery } from '../queries';
+import { usePrizeQuery, useRedeemRewardMutation, useRewardQuery } from '../queries';
 import type { Reward } from '../types';
 
 const isIOS = Platform.OS === 'ios';
@@ -129,10 +130,102 @@ function useFocusOnChange(key: string, target: RefObject<View | null>): void {
  * saldo que não cobre ou o esgotado voltam ao detalhe com o aviso.
  * Os pedidos do fã aparecem no detalhe com o status (solicitado, aprovado,
  * entregue ou recusado, com o motivo e os pontos de volta).
+ *
+ * Com o `?pedido=CODIGO` (a fileira "Seus prêmios", seção 34, decisão 51), a
+ * sheet abre em modo prêmio: o prêmio de fã-clube sai do `prizes` da loja, e
+ * não do `rewards`.
  */
 export function RewardDetailsScreen() {
-  const { recompensaId } = useLocalSearchParams<{ recompensaId?: string }>();
+  const { recompensaId, pedido } = useLocalSearchParams<{
+    recompensaId?: string;
+    pedido?: string;
+  }>();
   const rewardId = recompensaId ?? '';
+  return typeof pedido === 'string' && pedido !== '' ? (
+    <PrizeSheet rewardId={rewardId} code={pedido} />
+  ) : (
+    <RedeemSheet rewardId={rewardId} />
+  );
+}
+
+/**
+ * O detalhe em modo prêmio (seção 34, decisão 51): sem custo e sem Resgatar,
+ * com o código, o status, o cupom, a mensagem e as instruções do prêmio. Sem
+ * o prêmio na loja (a `api` de antes, sem o campo, ou o prêmio que saiu), diz
+ * que ele não está mais disponível.
+ */
+function PrizeSheet({ rewardId, code }: { rewardId: string; code: string }) {
+  const insets = useSafeAreaInsets();
+  const [standalone] = useState(() => !router.canGoBack());
+  const query = usePrizeQuery(rewardId, code);
+  const heading = useRef<View>(null);
+  const prize = query.data;
+  // Como no resgate: o "Tentar de novo" fica na tela enquanto busca, e o
+  // prêmio que chegou leva o foco ao título.
+  const [retrying, setRetrying] = useState(false);
+  const [recoveries, setRecoveries] = useState(0);
+  useFocusOnChange(String(recoveries), heading);
+  useAnnounceWhen(
+    prize === undefined && query.isError && !query.isFetching,
+    t('rewards.details.loadError'),
+  );
+  useAnnounceWhen(prize === null, t('rewards.prizes.notFound'));
+
+  const retry = (): void => {
+    setRetrying(true);
+    void query
+      .refetch()
+      .then((result) => {
+        if (result.data) setRecoveries((count) => count + 1);
+      })
+      .finally(() => setRetrying(false));
+  };
+
+  let body: ReactNode;
+  if (prize) {
+    body = <PrizeBody prize={prize} headingRef={heading} />;
+  } else if (prize === null) {
+    body = <EmptyState message={t('rewards.prizes.notFound')} />;
+  } else if (query.isError || retrying) {
+    body = (
+      <EmptyState
+        tone="error"
+        message={t('rewards.details.loadError')}
+        onAction={retry}
+        actionLoading={retrying}
+      />
+    );
+  } else {
+    body = <DetailsSkeleton />;
+  }
+
+  return (
+    <View style={styles.root}>
+      {standalone ? null : <SheetGrabber />}
+      <View
+        style={[
+          styles.header,
+          styles.headerEnd,
+          standalone && { paddingTop: insets.top + spacing.xs },
+        ]}
+      >
+        <BackButton variant="close" onPress={closeSheet} />
+      </View>
+      <ScrollView
+        style={styles.fill}
+        contentContainerStyle={[
+          styles.body,
+          { paddingBottom: Math.max(insets.bottom, spacing.lg) + spacing.xl },
+        ]}
+        showsVerticalScrollIndicator={false}
+      >
+        {body}
+      </ScrollView>
+    </View>
+  );
+}
+
+function RedeemSheet({ rewardId }: { rewardId: string }) {
   const insets = useSafeAreaInsets();
   // Aberta a frio (link), a sheet é a única tela da pilha e ocupa a tela toda:
   // sem cantos nem puxador, e o topo desce abaixo da barra de status.

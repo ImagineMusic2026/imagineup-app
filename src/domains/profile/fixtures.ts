@@ -190,16 +190,34 @@ const shopSample = (
 
 /**
  * O extrato da Camila do seed dos emuladores (22.13, com as temporadas
- * passadas, 23.15, e com a loja, 25.13): os mesmos 23 ids, valores, títulos e
+ * passadas, 23.15, e com a loja, 25.13): os mesmos 24 ids, valores, títulos e
  * dias, do mais novo ao mais antigo. Os dois ajustes só de central (o Netto e
  * o Nenho) vêm com saldo, XP e temporada em 0: a tela os esconde. Os das
  * temporadas passadas só mexem na temporada e aparecem. Os da loja (os
  * resgates, a devolução da videochamada recusada e o ajuste que paga os
- * pedidos antigos) só mexem no saldo, às 18 h.
+ * pedidos antigos) só mexem no saldo, às 18 h. O prêmio do fã-clube (seção
+ * 34, 34.12) também só mexe no saldo, às 15 h, com a origem própria; a
+ * carteira de exemplo segue nos 12.480 do protótipo (34.22, etapa 6).
  */
 const LEDGER_SAMPLES: readonly LedgerSample[] = [
   missionSample(4, 1, 100, 'nenho', CURTIR),
   shopSample('redeem:UP-C3NWPB', 2, -15_000, 'camisa', 'Camisa oficial'),
+  {
+    // Os 200 pontos do prêmio do fã-clube da Camila (o `SEED_FAN_CLUB_GRANT`).
+    id: 'fanclub_prize:seed-camila-cortesia',
+    daysAgo: 2,
+    hour: 15,
+    kind: 'adjust',
+    source: 'fanclub_prize',
+    points: 200,
+    xp: 0,
+    season: 0,
+    artistId: null,
+    artistName: null,
+    central: 0,
+    subject: null,
+    title: null,
+  },
   missionSample(3, 2, 300, 'nettobrito', COMENTAR),
   shopSample('redeem:UP-7QXH2R', 4, -3_000, 'passagem-de-som', 'Passagem de som'),
   missionSample(2, 4, 240, 'nenho', CURTIR),

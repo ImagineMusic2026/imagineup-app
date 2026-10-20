@@ -585,6 +585,19 @@
       "notice": "As recompensas são oferecidas pela Imagine Music. A Apple não patrocina nem participa delas de nenhuma forma.",
       "rules": "Regulamento",
       "rulesHint": "Abre o regulamento das recompensas"
+    },
+    "prizes": {
+      "title": "Seus prêmios",
+      "badge": "Prêmio do fã-clube",
+      "cardLabel": "Prêmio do fã-clube: {{title}}. {{status}}.",
+      "cardHint": "Abre o prêmio, com o código",
+      "codeLabel": "Código do prêmio: {{code}}. {{status}}.",
+      "code": "Código do prêmio",
+      "coupon": "Cupom",
+      "couponLabel": "Cupom: {{coupon}}",
+      "message": "Mensagem da equipe",
+      "howTo": "Como usar",
+      "notFound": "Este prêmio não está mais disponível."
     }
   },
   "agenda": {
@@ -714,7 +727,8 @@
       "adjustment": "Ajuste da equipe",
       "seed": "Ajuste",
       "other": "Pontos",
-      "redeem_refund": "Resgate devolvido"
+      "redeem_refund": "Resgate devolvido",
+      "fanclub_prize": "Prêmio do fã-clube"
     },
     "days": {
       "today": "Hoje",
@@ -1307,7 +1321,11 @@
       },
       "close": "Quero encerrar meu fã-clube",
       "closeHint": "Abre o app de e-mail para pedir à equipe",
-      "closeSubject": "Encerrar meu fã-clube no ImagineUP"
+      "closeSubject": "Encerrar meu fã-clube no ImagineUP",
+      "preview": "Ver como os fãs veem",
+      "previewHint": "Abre a página do seu fã-clube",
+      "shareMessageNoArtist": "Siga o fã-clube {{name}} no ImagineUP",
+      "shareMessageCodeNoArtist": "Siga o fã-clube {{name}} no ImagineUP. Use o meu código de convite: {{code}}"
     },
     "newPost": {
       "title": "Nova publicação",
@@ -1326,6 +1344,115 @@
       "submit": "Enviar para revisão",
       "sent": "Enviado para revisão.",
       "unavailable": "Você não pode publicar agora."
+    },
+    "page": {
+      "headerLabel": "Fã-clube, não oficial. {{name}}",
+      "by": "feito por {{owner}}",
+      "byLabel": "Feito por {{owner}}",
+      "artistLabel": "Central de {{artist}}",
+      "artistHint": "Abre a central do artista",
+      "followers": "{{count}} seguidores",
+      "followersOne": "1 seguidor",
+      "featured": "Destaque",
+      "follow": "Seguir o fã-clube",
+      "followJoinLine": "Você também entra na central de {{artist}}",
+      "followLabel": "Seguir o fã-clube {{name}}",
+      "followJoinLabel": "Seguir o fã-clube {{name}}. Você também entra na central de {{artist}}",
+      "following": "Seguindo",
+      "followingLabel": "Seguindo o fã-clube {{name}}",
+      "followingHint": "Abre a opção de deixar de seguir",
+      "own": "Seu fã-clube",
+      "ownLabel": "Seu fã-clube, {{name}}",
+      "followed": "Você está seguindo o fã-clube {{name}}.",
+      "seeFollows": "Ver fã-clubes que sigo",
+      "share": "Compartilhar o fã-clube",
+      "shareHint": "Abre as opções de compartilhar, com o seu código de convite",
+      "more": "Mais opções do fã-clube",
+      "moreHint": "Mostra a opção de bloquear e denunciar quem gere o fã-clube",
+      "blockTitle": "Bloquear e denunciar {{name}}?",
+      "blockMessage": "Você deixa de seguir este fã-clube e para de ver o fã-clube e as publicações de {{name}}. Em seguida, conte para a equipe o que aconteceu. {{name}} não fica sabendo do bloqueio.",
+      "blockMessageNotFollowing": "Você para de ver o fã-clube e as publicações de {{name}}. Em seguida, conte para a equipe o que aconteceu. {{name}} não fica sabendo do bloqueio.",
+      "blockConfirm": "Bloquear e denunciar",
+      "cancel": "Cancelar",
+      "blocked": "Você bloqueou {{name}} e deixou de seguir o fã-clube.",
+      "blockedNotFollowing": "Você bloqueou {{name}}.",
+      "blockedState": "Você bloqueou {{name}}. Este fã-clube não aparece mais para você.",
+      "postsTitle": "Publicações",
+      "postsEmpty": "Ainda não há publicações no ar.",
+      "postsError": "Não deu para carregar as publicações.",
+      "postsMoreError": "Não deu para carregar mais publicações.",
+      "postsLoading": "Carregando as publicações",
+      "loading": "Carregando o fã-clube"
+    },
+    "post": {
+      "label": "{{text}}. Publicado {{when}}.",
+      "labelPhoto": "{{text}}. Com foto. Publicado {{when}}.",
+      "share": "Compartilhar",
+      "shareLabel": "Compartilhar o fã-clube {{name}}. Publicação: {{excerpt}}",
+      "report": "Denunciar",
+      "reportLabel": "Denunciar a publicação: {{excerpt}}",
+      "reportHint": "Abre os motivos da denúncia",
+      "openClub": "Fã-clube, não oficial. {{name}}",
+      "openClubHint": "Abre o fã-clube"
+    },
+    "report": {
+      "title": "Denunciar publicação",
+      "body": "Conte por que esta publicação não deveria estar no ar. A equipe analisa, e quem publicou não fica sabendo.",
+      "imageMisuse": "Uso indevido de imagem",
+      "submit": "Enviar denúncia",
+      "sent": "Denúncia enviada. A equipe vai analisar."
+    },
+    "unfollow": {
+      "title": "Deixar de seguir?",
+      "body": "As publicações dele saem da sua Início. Você continua na central de {{artist}}.",
+      "confirm": "Deixar de seguir",
+      "cancel": "Continuar seguindo",
+      "done": "Você deixou de seguir o fã-clube {{name}}."
+    },
+    "artistCard": {
+      "title": "Fã-clubes",
+      "seeAll": "Ver todos",
+      "seeAllLabel": "Ver todos os fã-clubes de {{artist}}",
+      "seeAllHint": "Abre a lista dos fã-clubes do artista",
+      "rowMeta": "por {{owner}} · {{posts}} · {{followers}}",
+      "posts": "{{count}} publicações",
+      "postsOne": "1 publicação",
+      "rowLabel": "Fã-clube não oficial {{name}}, feito por {{owner}}. {{followers}}. {{posts}}.",
+      "featuredLabel": "Em destaque.",
+      "followingLabel": "Você segue.",
+      "hint": "Abre o fã-clube",
+      "listTitle": "Fã-clubes",
+      "listSubtitle": "Os fã-clubes de {{artist}}, feitos por fãs. Não são oficiais.",
+      "listSubtitleNoName": "Os fã-clubes deste artista, feitos por fãs. Não são oficiais.",
+      "listEmpty": "Este artista ainda não tem fã-clubes.",
+      "listError": "Não deu para carregar os fã-clubes.",
+      "listMoreError": "Não deu para carregar mais fã-clubes.",
+      "listLoading": "Carregando os fã-clubes"
+    },
+    "follows": {
+      "title": "Fã-clubes que sigo",
+      "settingsMeta": "As publicações deles aparecem na sua Início",
+      "settingsHint": "Abre a lista dos fã-clubes que você segue",
+      "intro": "As publicações dos fã-clubes que você segue aparecem na sua Início. Você pode seguir até 50.",
+      "unavailable": "Indisponível",
+      "unavailableName": "Fã-clube indisponível",
+      "of": "de {{artist}}",
+      "rowLabel": "{{name}}, fã-clube de {{artist}}.",
+      "rowUnavailableLabel": "{{name}}, fã-clube de {{artist}}. Indisponível.",
+      "unfollow": "Deixar de seguir",
+      "unfollowLabel": "Deixar de seguir {{name}}, de {{artist}}",
+      "empty": "Você ainda não segue nenhum fã-clube.",
+      "emptyText": "Os fã-clubes ficam na página de cada artista.",
+      "loading": "Carregando os fã-clubes que você segue",
+      "loadError": "Não deu para carregar os fã-clubes que você segue."
+    },
+    "feed": {
+      "title": "Dos seus fã-clubes",
+      "moreError": "Não deu para carregar mais publicações dos seus fã-clubes."
+    },
+    "leave": {
+      "follows": "Você também deixa de seguir os fã-clubes deste artista.",
+      "manager": "Seu fã-clube fica sem publicar até você voltar à central."
     }
   },
   "notFound": {

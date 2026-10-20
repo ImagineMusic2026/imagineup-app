@@ -451,4 +451,22 @@ describe('retirar e tirar do ar', () => {
     expect(data?.pages[0]!.items[0]!.status).toBe('withdrawn');
     expect(client.getQueryState(fanClubKeys.mine())?.isInvalidated).toBe(true);
   });
+
+  it('tirar do ar zera também o que os fãs veem (o "Ver como os fãs veem"); retirar a em análise, não', async () => {
+    client.setQueryData(fanClubKeys.clubPosts('fc-1'), { pages: [], pageParams: [null] });
+    client.setQueryData(fanClubKeys.byArtist('nettobrito'), { pages: [], pageParams: [null] });
+    jest.mocked(removeFanClubPost).mockResolvedValueOnce({ ...POST, status: 'withdrawn' });
+    const { result } = renderHook(() => useRemoveFanClubPostMutation(), { wrapper });
+    await settle(() => result.current.mutateAsync('fcp-1'));
+    expect(client.getQueryState(fanClubKeys.clubPosts('fc-1'))?.isInvalidated).toBe(false);
+
+    jest.mocked(removeFanClubPost).mockResolvedValueOnce({
+      ...POST,
+      status: 'removed',
+      publishedAt: '2026-10-19T15:00:00.000Z',
+    });
+    await settle(() => result.current.mutateAsync('fcp-1'));
+    expect(client.getQueryState(fanClubKeys.clubPosts('fc-1'))?.isInvalidated).toBe(true);
+    expect(client.getQueryState(fanClubKeys.byArtist('nettobrito'))?.isInvalidated).toBe(true);
+  });
 });

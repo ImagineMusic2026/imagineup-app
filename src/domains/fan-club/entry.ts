@@ -9,17 +9,62 @@ import type { FanClubApplication, MyFanClub, MyFanClubClub } from './types';
 // estado da tela "/meu-fa-clube". Puro, para o teste em tabela.
 
 /**
- * A linha "Tenha seu fã-clube" e as telas só existem com a resposta do
- * servidor novo: o programa aberto (`FAN_CLUB_OPEN`) ou uma candidatura
- * (decisão 9). Sem resposta, com a `api` de antes da publicação (o 404 de
- * rota que não existe) ou com outra recusa definitiva, nada aparece, mesmo
- * com uma resposta antiga no cache. A falha incerta (rede, servidor) e o
- * ritmo deixam a resposta que já estava.
+ * Uma recusa definitiva do `GET /me/fan-club`: o 404 de rota que não existe,
+ * que a `api` de antes da publicação dá, ou outra que não muda tentando de
+ * novo, sempre com a resposta do servidor (o status). A falha incerta (rede,
+ * servidor), o ritmo e o pedido que nem saiu (o `getIdToken` que falhou, sem
+ * status) não contam, como no `isFinalInviteRejection`.
+ */
+export function isDefinitiveRefusal(error: unknown): boolean {
+  return (
+    error instanceof ApiError && error.status !== null && !error.isRetryable && !error.isRateLimited
+  );
+}
+
+/**
+ * A trava do que os fãs veem (a página, o card da 1d, a Início, os seguidos e
+ * o link do fã-clube): a resposta do servidor novo ao `GET /me/fan-club` nesta
+ * abertura do app (34.15, passo 9). Sem resposta, com a `api` de antes da
+ * publicação ou com outra recusa definitiva, nada aparece, mesmo com uma
+ * resposta antiga no cache; a falha incerta e o ritmo deixam a resposta que
+ * já estava. Não olha o `open`: com o programa fechado, os fã-clubes que
+ * existem continuam (decisão 9).
+ */
+export function liveFanClub(data: MyFanClub | undefined, error: unknown): MyFanClub | null {
+  if (!data || isDefinitiveRefusal(error)) return null;
+  return data;
+}
+
+/**
+ * A linha "Tenha seu fã-clube" e as telas do gestor só existem com a resposta
+ * do servidor novo (`liveFanClub`) e, nela, o programa aberto
+ * (`FAN_CLUB_OPEN`) ou uma candidatura (decisão 9).
  */
 export function shownFanClub(data: MyFanClub | undefined, error: unknown): MyFanClub | null {
-  if (!data) return null;
-  if (error instanceof ApiError && !error.isRetryable && !error.isRateLimited) return null;
-  return data.open || data.application !== null ? data : null;
+  const live = liveFanClub(data, error);
+  return live && (live.open || live.application !== null) ? live : null;
+}
+
+/**
+ * As frases do fã-clube na sheet "Sair da central" (34.9, item 11, e decisão
+ * 27), pela resposta da trava (`liveFanClub`): sem ela, nenhuma (nada novo
+ * antes da abertura). Com ela, quem sai deixa de seguir os fã-clubes do
+ * artista; e o gestor de um fã-clube ativo ou pausado desse artista fica sem
+ * publicar até voltar. O texto não diz o nome do artista: a sheet só recebe o
+ * id (decisão 27).
+ */
+export function leaveCentralNotes(live: MyFanClub | null, artistId: string): TranslationKey[] {
+  if (!live) return [];
+  const notes: TranslationKey[] = ['fanClub.leave.follows'];
+  const club = live.club;
+  if (
+    live.application?.status === 'approved' &&
+    club?.artistId === artistId &&
+    club.status !== 'closed'
+  ) {
+    notes.push('fanClub.leave.manager');
+  }
+  return notes;
 }
 
 /** Quando a próxima candidatura pode ir, para a recusa e o fã-clube encerrado. */

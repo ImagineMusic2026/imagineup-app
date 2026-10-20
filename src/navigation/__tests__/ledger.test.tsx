@@ -282,8 +282,13 @@ describe('extrato de pontos (bloco 7, provisório)', () => {
     expect(screen.getByText('Ontem', hidden)).toBeTruthy();
     expect(screen.getByText('dom., 27 set', hidden)).toBeTruthy();
     expect(screen.getByText('seg., 21 set', hidden)).toBeTruthy();
-    // A primeira página (20): os dias de 2 a 16 de setembro com lançamento, já com a loja (bloco 10).
-    expect(screen.getAllByText(/^\p{L}+\., \d+ set$/u, hidden)).toHaveLength(13);
+    // A primeira página (20): os dias de 2 a 17 de setembro com lançamento, já com a loja
+    // (bloco 10) e o prêmio do fã-clube (seção 34), que empurra o dia 16 para a seguinte.
+    expect(screen.getAllByText(/^\p{L}+\., \d+ set$/u, hidden)).toHaveLength(12);
+    expect(screen.getByTestId('ledger-fanclub_prize:seed-camila-cortesia')).toHaveProp(
+      'accessibilityLabel',
+      'Prêmio do fã-clube, mais 200 pontos, em 27 de setembro às 15:00.',
+    );
     // A loja da Camila (bloco 10, 25.13): o resgate com o título da recompensa, às 18 h,
     // e a devolução da videochamada recusada, em lima.
     expect(screen.getByTestId('ledger-redeem:UP-C3NWPB')).toHaveProp(

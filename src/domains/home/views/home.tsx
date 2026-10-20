@@ -6,6 +6,7 @@ import { EmptyState } from '@/components/empty-state';
 import { Screen } from '@/components/screen';
 import { SectionHeader } from '@/components/section-header';
 import { useFanCentralsQuery } from '@/domains/artists';
+import { FanClubFeedSection } from '@/domains/fan-club';
 import { DailyMissionSection, useDailyMissionQuery } from '@/domains/missions';
 import { PostDivider, PostRow, PostRowsSkeleton, useFeedQuery, type Post } from '@/domains/posts';
 import { SuspendedNotice, useWatchMyProfile } from '@/domains/profile';
@@ -37,6 +38,8 @@ function HomeListHeader({ focused }: { focused: boolean }) {
       <SuspendedNotice style={styles.suspended} />
       <DailyMissionSection celebrate={focused} style={styles.mission} />
       <CentralsSection />
+      {/* "Dos seus fã-clubes" (seção 34): só depois da trava e só com publicação. */}
+      <FanClubFeedSection />
       <SectionHeader title={t('home.feed.title')} style={styles.feedTitle} />
     </View>
   );
@@ -113,9 +116,10 @@ function useAnnounceHomeFailures(postCount: number): void {
 }
 
 /**
- * 1b. Home gamificada: saudação com o avatar, missão do dia, "Suas centrais"
- * e o mural "Do seu fandom", numa FlashList só que rola junto. O header e o
- * mural passam por baixo da tab bar. Puxar para baixo atualiza tudo.
+ * 1b. Home gamificada: saudação com o avatar, missão do dia, "Suas centrais",
+ * "Dos seus fã-clubes" (seção 34, só com publicação) e o mural "Do seu
+ * fandom", numa FlashList só que rola junto. O header e o mural passam por
+ * baixo da tab bar. Puxar para baixo atualiza tudo.
  */
 export function HomeScreen() {
   const bottomInset = useTabBarInset();

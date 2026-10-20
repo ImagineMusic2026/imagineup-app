@@ -6,6 +6,7 @@ import {
   Heart,
   MessageCircle,
   Ticket,
+  Trophy,
   Undo2,
   UserPlus,
   Users,
@@ -81,6 +82,14 @@ const SOURCES: Readonly<Record<string, SourceSpec>> = {
     context: 'none',
   },
   seed: { title: 'ledger.sources.seed', icon: Award, tone: 'points', context: 'none' },
+  // Os pontos de um prêmio de fã-clube (seção 34, decisão 45): só no saldo, sem
+  // a nota da equipe, que é interna.
+  fanclub_prize: {
+    title: 'ledger.sources.fanclub_prize',
+    icon: Trophy,
+    tone: 'points',
+    context: 'none',
+  },
 };
 
 const OTHER: SourceSpec = {

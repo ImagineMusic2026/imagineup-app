@@ -23,8 +23,9 @@ import { formatDayKey, nextRoundText } from '../format';
 import {
   useAcceptFanClubRulesMutation,
   useMyFanClubNumbersQuery,
-  useShareMyFanClub,
+  useShareFanClub,
 } from '../queries';
+import { fanClubHref } from '../share';
 import type { FanClubStatus, MyFanClub, MyFanClubClub } from '../types';
 import { ApplyAgain } from './application-state';
 import { ContactCard } from './contact-card';
@@ -145,12 +146,12 @@ export interface ClubDashboardProps {
  * aqui, com os números (o servidor os dá em qualquer status, 34.22, etapa 3),
  * o aviso de que acabou e a próxima rodada no aviso, sem o pedido de
  * encerramento. Os números vêm do `GET /me/fan-club/numbers`; as publicações
- * no ar e em análise, do estado do fã. O "Ver como os fãs veem" chega com a
- * página pública, na etapa 8.
+ * no ar e em análise, do estado do fã. "Ver como os fãs veem" abre a página
+ * pública (etapa 8), só com o fã-clube no ar.
  */
 export function ClubDashboard({ mine, club, next }: ClubDashboardProps) {
   const numbers = useMyFanClubNumbersQuery(true);
-  const share = useShareMyFanClub();
+  const share = useShareFanClub();
   const value = (field: keyof NonNullable<typeof numbers.data>) =>
     numbers.data ? numbers.data[field] : null;
   // A leitura dos números falhou: os cartões dizem "Sem dado", e não carregando.
@@ -217,14 +218,23 @@ export function ClubDashboard({ mine, club, next }: ClubDashboardProps) {
         <PrizesCard lastReward={club.lastReward} notice={mine.notice} />
       </View>
       {club.available ? (
-        <Button
-          label={t('fanClub.mine.share')}
-          variant="secondary"
-          onPress={() => share(club)}
-          accessibilityHint={t('fanClub.mine.shareHint')}
-          style={styles.block}
-          testID="fan-club-share"
-        />
+        <>
+          <Button
+            label={t('fanClub.mine.share')}
+            variant="secondary"
+            onPress={() => share(club)}
+            accessibilityHint={t('fanClub.mine.shareHint')}
+            style={styles.block}
+            testID="fan-club-share"
+          />
+          <TextLink
+            label={t('fanClub.mine.preview')}
+            onPress={() => router.push(fanClubHref(club.id))}
+            accessibilityHint={t('fanClub.mine.previewHint')}
+            style={styles.preview}
+            testID="fan-club-preview"
+          />
+        </>
       ) : null}
       <SectionLabel>{t('fanClub.mine.numbersTitle')}</SectionLabel>
       <NumberGrid
@@ -287,6 +297,10 @@ const styles = StyleSheet.create({
   featured: {
     alignSelf: 'flex-start',
     marginTop: spacing.md,
+  },
+  preview: {
+    alignSelf: 'center',
+    marginTop: spacing.sm,
   },
   numbersError: {
     marginTop: spacing.sm,

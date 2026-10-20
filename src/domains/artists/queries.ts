@@ -8,8 +8,10 @@ import {
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { AccessibilityInfo } from 'react-native';
 
-// Chaves de outros domínios pelo arquivo, fora do index: o perfil, os posts e
-// o ranking leem as centrais daqui (ou o perfil, que lê), e pelo index seria um ciclo.
+// Chaves de outros domínios pelo arquivo, fora do index: o perfil, os posts, o
+// ranking e o fã-clube leem as centrais daqui (ou o perfil, que lê), e pelo
+// index seria um ciclo.
+import { fanClubKeys } from '@/domains/fan-club/keys';
 import { missionKeys, rewardsRefresh, type ActionRewards } from '@/domains/missions';
 import { postKeys } from '@/domains/posts/keys';
 // O "+N" das recompensas, pelo arquivo (fora do index), como o do curtir.
@@ -233,13 +235,19 @@ function refreshRewards(client: QueryClient, result: ActionRewards): void {
  * O servidor confirmou: a página e as centrais buscam de novo (a posição do
  * fã na central nova vem de lá), o mural da home também, que mostra os posts
  * das centrais do fã, e o ranking, sempre: o fã entra no ranking da central
- * com os pontos que já tinha nela (bloco 8). Com pontos, o saldo e o nível
- * também mudaram.
+ * com os pontos que já tinha nela (bloco 8). As páginas de fã-clube em cache
+ * também (a linha "Você também entra na central" do seguir, seção 34), e o
+ * estado do gestor que tinha saído e voltou, só se já veio (a trava, como no
+ * sair). Com pontos, o saldo e o nível também mudaram.
  */
 function refreshAfterJoin(client: QueryClient, result: JoinCentralResult): void {
   void client.invalidateQueries({ queryKey: artistKeys.centrals() });
   void client.invalidateQueries({ queryKey: artistKeys.detail(result.artistId) });
   void client.invalidateQueries({ queryKey: postKeys.feed() });
+  void client.invalidateQueries({ queryKey: fanClubKeys.pages() });
+  if (client.getQueryData(fanClubKeys.mine()) !== undefined) {
+    void client.invalidateQueries({ queryKey: fanClubKeys.mine() });
+  }
   refreshRanking(client);
   refreshRewards(client, result);
   if (result.pointsAwarded <= 0) return;
@@ -481,6 +489,13 @@ export function useLeaveCentralMutation(
       // A missão de entrar nesta central some para quem é membro (alvo único,
       // 22.2): fora dela, volta na 1g e na aba Missões da 1d.
       void queryClient.invalidateQueries({ queryKey: missionKeys.all });
+      // Sair deixa de seguir os fã-clubes do artista (seção 34, decisão 27): o
+      // que os fãs veem deles busca de novo, e o gestor que saiu vê o fã-clube
+      // sem publicar. O estado do gestor só busca de novo se já veio (a trava).
+      void queryClient.invalidateQueries({ queryKey: fanClubKeys.public() });
+      if (queryClient.getQueryData(fanClubKeys.mine()) !== undefined) {
+        void queryClient.invalidateQueries({ queryKey: fanClubKeys.mine() });
+      }
       if (mounted.current) onLeft?.(result);
       else AccessibilityInfo.announceForAccessibility(t('artist.leave.left'));
     },

@@ -288,7 +288,9 @@ export type LedgerSource =
   | 'redeem'
   | 'redeem_refund'
   | 'adjustment'
-  | 'seed';
+  | 'seed'
+  /** Os pontos de um prêmio de fã-clube, dados pela equipe (seção 34, decisão 45). */
+  | 'fanclub_prize';
 
 /**
  * Uma linha do extrato de pontos (`GET /me/ledger`, blocos 1, 7 e 10). O app

@@ -1,3 +1,4 @@
+export { openArtistOverStack } from './components/post-author-row';
 export { PostDivider, PostRow, PostRowsSkeleton, type PostRowProps } from './components/post-row';
 export { useSharePost } from './hooks/use-share-post';
 export {
