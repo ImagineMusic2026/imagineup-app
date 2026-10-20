@@ -151,6 +151,46 @@ describe('TextInput', () => {
     expect(screen.getByLabelText('Senha')).toBeTruthy();
   });
 
+  it('a ação desligada do campo de várias linhas não toca', () => {
+    const onPress = jest.fn();
+    render(
+      <TextInput
+        label="Texto"
+        multiline
+        trailingAtEnd
+        trailing={
+          <TextInputAction
+            icon={Search}
+            onPress={onPress}
+            accessibilityLabel="Escolher foto"
+            disabled
+          />
+        }
+      />,
+    );
+
+    const action = screen.getByRole('button', { name: 'Escolher foto' });
+    expect(action).toBeDisabled();
+    fireEvent.press(action);
+    expect(onPress).not.toHaveBeenCalled();
+  });
+
+  it('com o anexo, o campo continua com o rótulo, e o anexo e a ação aparecem', () => {
+    render(
+      <TextInput
+        label="Texto"
+        multiline
+        trailingAtEnd
+        attachment={<Text testID="anexo">foto</Text>}
+        trailing={<TextInputAction icon={Search} onPress={jest.fn()} accessibilityLabel="Foto" />}
+      />,
+    );
+
+    expect(screen.getByLabelText('Texto')).toBeTruthy();
+    expect(screen.getByTestId('anexo')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Foto' })).toBeTruthy();
+  });
+
   it('o ícone da ação é decorativo: quem fala é o botão', () => {
     render(<TextInputAction icon={Search} onPress={jest.fn()} accessibilityLabel="Buscar" />);
     expect(screen.UNSAFE_getByType(Search).props.accessibilityElementsHidden).toBe(true);

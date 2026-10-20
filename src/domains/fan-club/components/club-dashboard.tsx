@@ -34,7 +34,6 @@ import { NumberGrid } from './number-card';
 import { OwnPosts } from './own-posts';
 import { PrizesCard } from './prizes-card';
 import { TeamEmailLink } from './team-email-link';
-import { UnofficialBand } from './unofficial-band';
 
 const STATUS_TEXTS: Record<FanClubStatus, TranslationKey> = {
   active: 'fanClub.mine.status.active',
@@ -43,8 +42,9 @@ const STATUS_TEXTS: Record<FanClubStatus, TranslationKey> = {
 };
 
 /**
- * O cabeçalho: a faixa não oficial, o nome, o artista e o status, num foco
- * só, com a faixa lida antes do nome (34.9, acessibilidade).
+ * O cabeçalho: o nome, o artista e o status, num foco só. A faixa não oficial
+ * fica nas telas públicas, e não nas do gestor (pedido do dono de 20/10/2026,
+ * 34.22).
  */
 function ClubHeader({ club }: { club: MyFanClubClub }) {
   const status = t(STATUS_TEXTS[club.status]);
@@ -61,7 +61,6 @@ function ClubHeader({ club }: { club: MyFanClubClub }) {
       style={styles.header}
       testID="fan-club-header"
     >
-      <UnofficialBand />
       <Text variant="titleCard">{club.name}</Text>
       <Text variant="body" color={colors.textSecondary}>
         {club.artistName}
@@ -220,7 +219,7 @@ export function ClubDashboard({ mine, club, next }: ClubDashboardProps) {
         </View>
       ) : null}
       <View style={styles.block}>
-        <PrizesCard lastReward={club.lastReward} notice={mine.notice} />
+        <PrizesCard lastReward={club.lastReward} />
       </View>
       {club.available ? (
         <>

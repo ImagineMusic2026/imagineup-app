@@ -18,7 +18,6 @@ import type { NextRound } from '../entry';
 import { nextRoundText } from '../format';
 import { useWithdrawApplicationMutation } from '../queries';
 import type { FanClubApplication } from '../types';
-import { UnofficialBand } from './unofficial-band';
 
 /** O nome proposto e o artista da candidatura, numa linha. */
 function Summary({ application }: { application: FanClubApplication }) {
@@ -96,7 +95,6 @@ export function PendingState({ application }: { application: FanClubApplication 
 
   return (
     <View testID="fan-club-pending">
-      <UnofficialBand />
       <Card variant="large" style={styles.card}>
         <Text variant="titleCard" accessibilityRole="header">
           {t('fanClub.state.pendingTitle')}
@@ -144,7 +142,6 @@ export function RejectedState({
 }) {
   return (
     <View testID="fan-club-rejected">
-      <UnofficialBand />
       <Card variant="large" style={styles.card}>
         <Text variant="titleCard" accessibilityRole="header">
           {t('fanClub.state.rejectedTitle')}
@@ -170,7 +167,6 @@ export function RejectedState({
 export function EndedState({ next }: { next: NextRound }) {
   return (
     <View testID="fan-club-ended">
-      <UnofficialBand />
       <Card variant="large" style={styles.card}>
         <Text variant="titleCard" accessibilityRole="header">
           {t('fanClub.state.endedTitle')}
@@ -188,7 +184,6 @@ export function EndedState({ next }: { next: NextRound }) {
 export function ProgramClosedState() {
   return (
     <View testID="fan-club-program-closed">
-      <UnofficialBand />
       <Card variant="large" style={styles.card}>
         <Text variant="titleCard" accessibilityRole="header">
           {t('fanClub.state.closedTitle')}
@@ -203,7 +198,6 @@ export function ProgramClosedState() {
 
 const styles = StyleSheet.create({
   card: {
-    marginTop: spacing.md,
     gap: spacing.sm,
   },
   summary: {

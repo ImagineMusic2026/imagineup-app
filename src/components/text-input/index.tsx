@@ -20,7 +20,16 @@ import { PressableScale } from '@/components/pressable-scale';
 import { MAX_FONT_SCALE, Text } from '@/components/text';
 import { usePrefersReducedMotion } from '@/hooks/use-prefers-reduced-motion';
 import type { HapticEvent } from '@/services/haptics';
-import { borderWidths, colors, layout, motion, radii, spacing, typography } from '@/theme';
+import {
+  borderWidths,
+  colors,
+  layout,
+  motion,
+  opacities,
+  radii,
+  spacing,
+  typography,
+} from '@/theme';
 
 /**
  * - `default`: os formulários do app;
@@ -60,6 +69,17 @@ export interface TextInputProps extends Omit<NativeTextInputProps, 'style'> {
    * do leitor, e o texto dele chega pelo `accessibilityStatus`.
    */
   trailing?: ReactNode;
+  /**
+   * No campo de várias linhas, a ação do `trailing` fica no canto de baixo, e
+   * não no de cima (o ícone da foto na nova publicação do fã-clube).
+   */
+  trailingAtEnd?: boolean;
+  /**
+   * Dentro da caixa, embaixo do texto e à esquerda (a miniatura da foto da nova
+   * publicação, como nos apps de mensagem). Com o `trailingAtEnd`, a ação fica
+   * na mesma altura, no canto de baixo.
+   */
+  attachment?: ReactNode;
   /** Sem rótulo visível (busca); o leitor de tela continua ouvindo o `label`. */
   labelHidden?: boolean;
   /**
@@ -114,6 +134,8 @@ export const TextInput = forwardRef<NativeTextInput, TextInputProps>(function Te
     leadingGlyph,
     prefix,
     trailing,
+    trailingAtEnd = false,
+    attachment,
     labelHidden = false,
     footer,
     accessibilityStatus,
@@ -147,6 +169,40 @@ export const TextInput = forwardRef<NativeTextInput, TextInputProps>(function Te
   const textStart = prefix ? leadingInset + prefixWidth : hasLeading ? leadingInset : undefined;
   const messages = !!error || !!hint || !!footer;
 
+  const input = (
+    <NativeTextInput
+      ref={ref}
+      maxFontSizeMultiplier={MAX_FONT_SCALE}
+      textAlignVertical={multiline ? 'top' : undefined}
+      {...props}
+      accessibilityLabel={label}
+      accessibilityHint={joinSentences(error, hint, accessibilityStatus)}
+      placeholderTextColor={colors.textMuted}
+      selectionColor={colors.accent}
+      cursorColor={colors.accent}
+      onFocus={(event) => {
+        setFocused(true);
+        onFocus?.(event);
+      }}
+      onBlur={(event) => {
+        setFocused(false);
+        onBlur?.(event);
+      }}
+      style={[
+        styles.input,
+        multiline && styles.inputMultiline,
+        textStart !== undefined && { paddingLeft: textStart },
+        !!trailing && styles.inputBeforeTrailing,
+        // Com o anexo, o texto fica com a altura dele (2 linhas no mínimo) e
+        // o anexo vem logo embaixo, na mesma caixa.
+        !!attachment && [
+          styles.inputAboveAttachment,
+          { minHeight: lineHeight * 2 + INPUT_PADDING_MULTILINE * 2 },
+        ],
+      ]}
+    />
+  );
+
   return (
     <View style={styles.container}>
       {labelHidden ? null : (
@@ -170,31 +226,14 @@ export const TextInput = forwardRef<NativeTextInput, TextInputProps>(function Te
           borderStyle,
         ]}
       >
-        <NativeTextInput
-          ref={ref}
-          maxFontSizeMultiplier={MAX_FONT_SCALE}
-          textAlignVertical={multiline ? 'top' : undefined}
-          {...props}
-          accessibilityLabel={label}
-          accessibilityHint={joinSentences(error, hint, accessibilityStatus)}
-          placeholderTextColor={colors.textMuted}
-          selectionColor={colors.accent}
-          cursorColor={colors.accent}
-          onFocus={(event) => {
-            setFocused(true);
-            onFocus?.(event);
-          }}
-          onBlur={(event) => {
-            setFocused(false);
-            onBlur?.(event);
-          }}
-          style={[
-            styles.input,
-            multiline && styles.inputMultiline,
-            textStart !== undefined && { paddingLeft: textStart },
-            !!trailing && styles.inputBeforeTrailing,
-          ]}
-        />
+        {attachment ? (
+          <View style={styles.body}>
+            {input}
+            <View style={styles.attachment}>{attachment}</View>
+          </View>
+        ) : (
+          input
+        )}
         {/* Por cima do campo e sem receber toque: o campo ocupa a caixa inteira. */}
         {hasLeading ? (
           <View pointerEvents="none" style={[styles.leading, firstLine]}>
@@ -220,7 +259,14 @@ export const TextInput = forwardRef<NativeTextInput, TextInputProps>(function Te
           </View>
         ) : null}
         {trailing ? (
-          <View style={[styles.trailing, multiline && styles.trailingMultiline]}>{trailing}</View>
+          <View
+            style={[
+              styles.trailing,
+              multiline && (trailingAtEnd ? styles.trailingMultilineEnd : styles.trailingMultiline),
+            ]}
+          >
+            {trailing}
+          </View>
         ) : null}
       </Animated.View>
       {messages ? (
@@ -283,7 +329,11 @@ export interface TextInputActionProps {
   onPress: () => void;
   /** O que o toque faz, via `t()` ("Mostrar senha"). Troca junto com o estado. */
   accessibilityLabel: string;
+  accessibilityHint?: string;
+  /** Apagado e sem toque (o envio andando). */
+  disabled?: boolean;
   haptic?: HapticEvent | null;
+  testID?: string;
 }
 
 const ACTION_ICON_SIZE = 20;
@@ -300,14 +350,20 @@ export function TextInputAction({
   icon,
   onPress,
   accessibilityLabel,
+  accessibilityHint,
+  disabled = false,
   haptic = 'selection',
+  testID,
 }: TextInputActionProps) {
   return (
     <PressableScale
       onPress={onPress}
       haptic={haptic}
+      disabled={disabled}
       accessibilityLabel={accessibilityLabel}
-      style={styles.action}
+      accessibilityHint={accessibilityHint}
+      testID={testID}
+      style={[styles.action, disabled && styles.actionDisabled]}
     >
       <Icon icon={icon} size={ACTION_ICON_SIZE} color={colors.textSecondary} />
     </PressableScale>
@@ -355,6 +411,21 @@ const styles = StyleSheet.create({
   inputBeforeTrailing: {
     paddingRight: 0,
   },
+  // A coluna do texto com o anexo embaixo, no lugar do texto sozinho.
+  body: {
+    flex: 1,
+    alignSelf: 'stretch',
+  },
+  inputAboveAttachment: {
+    flex: 0,
+    flexGrow: 1,
+    flexBasis: 'auto',
+  },
+  attachment: {
+    alignItems: 'flex-start',
+    paddingHorizontal: spacing.lg,
+    paddingBottom: spacing.md,
+  },
   leading: {
     position: 'absolute',
     top: 0,
@@ -375,6 +446,9 @@ const styles = StyleSheet.create({
   trailingMultiline: {
     alignSelf: 'flex-start',
   },
+  trailingMultilineEnd: {
+    alignSelf: 'flex-end',
+  },
   messages: {
     gap: spacing.metaGap,
   },
@@ -388,5 +462,8 @@ const styles = StyleSheet.create({
     height: layout.minTouchTarget,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  actionDisabled: {
+    opacity: opacities.disabled,
   },
 });

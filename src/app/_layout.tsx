@@ -168,6 +168,19 @@ export default function RootLayout() {
               contentStyle: { backgroundColor: colors.surface },
             }}
           />
+          {/* "Regras do fã-clube", aberta pela apresentação: as condições e o
+              texto do reconhecimento dentro do app (seção 34, decisão 47), na
+              altura do conteúdo, no molde do "Gerar meu link". */}
+          <Stack.Screen
+            name="meu-fa-clube/regras"
+            options={{
+              presentation: 'formSheet',
+              sheetAllowedDetents: 'fitToContents',
+              sheetGrabberVisible: true,
+              sheetCornerRadius: radii.sheet,
+              contentStyle: { backgroundColor: colors.surface },
+            }}
+          />
           {/* Detalhe, confirmação e instruções do resgate (1h), em altura cheia:
               a foto, o quadro de pontos e o botão preso no pé. */}
           <Stack.Screen
