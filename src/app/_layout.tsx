@@ -86,6 +86,14 @@ export default function RootLayout() {
               "Editar perfil". */}
           <Stack.Screen name="trocar-senha" />
           <Stack.Screen name="trocar-email" />
+          {/* O fã-clube gerido pelo fã (seção 34): o estado do fã ou o "Meu
+              fã-clube", a candidatura e a nova publicação, abertos pelos
+              Ajustes, fora das abas e com push padrão (as duas últimas têm
+              teclado). Sem o programa aberto no servidor, só dizem que o
+              fã-clube não está disponível. */}
+          <Stack.Screen name="meu-fa-clube/index" />
+          <Stack.Screen name="meu-fa-clube/candidatura" />
+          <Stack.Screen name="meu-fa-clube/nova-publicacao" />
           {/* "Gerar meu link" na altura do conteúdo: o link, as regras e o botão
               aparecem sem o fã puxar a sheet. */}
           <Stack.Screen

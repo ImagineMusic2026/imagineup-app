@@ -41,6 +41,9 @@ const appTree = {
   'editar-perfil': label('edit-profile'),
   'trocar-senha': label('change-password'),
   'trocar-email': label('change-email'),
+  'meu-fa-clube/index': label('my-fan-club'),
+  'meu-fa-clube/candidatura': label('fan-club-apply'),
+  'meu-fa-clube/nova-publicacao': label('fan-club-new-post'),
   'recompensa/[recompensaId]': label('reward'),
   'convite/[codigo]': label('invite'),
 };
@@ -135,6 +138,28 @@ describe('rotas do app', () => {
     expect(view.getByText(text)).toBeTruthy();
     expect(view.getPathname()).toBe(url);
     expect(view.getSegments()).toEqual([route]);
+    expect(rootRoutes(view)).toEqual([route]);
+  });
+
+  it.each([
+    ['/meu-fa-clube', ['meu-fa-clube'], 'meu-fa-clube/index', 'my-fan-club'],
+    [
+      '/meu-fa-clube/candidatura',
+      ['meu-fa-clube', 'candidatura'],
+      'meu-fa-clube/candidatura',
+      'fan-club-apply',
+    ],
+    [
+      '/meu-fa-clube/nova-publicacao',
+      ['meu-fa-clube', 'nova-publicacao'],
+      'meu-fa-clube/nova-publicacao',
+      'fan-club-new-post',
+    ],
+  ])('%s abre a frio fora das abas, na pilha raiz (seção 34)', (url, segments, route, text) => {
+    const view = renderRouter(appTree, { initialUrl: url });
+    expect(view.getByText(text)).toBeTruthy();
+    expect(view.getPathname()).toBe(url);
+    expect(view.getSegments()).toEqual(segments);
     expect(rootRoutes(view)).toEqual([route]);
   });
 

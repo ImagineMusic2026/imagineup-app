@@ -180,11 +180,12 @@ export function registerProfileQueryDefaults(client: QueryClient): void {
 
 /**
  * Troca ou apaga o WhatsApp do fã (`PUT /me/contact`, seção 35, no desenho da
- * decisão 14 da seção 34): o número digitado, ou `null` para apagar. Nenhuma
- * tela chama ainda: a tela "WhatsApp para a equipe" vem com a seção 34. A
- * chave é da tentativa e do número: o mesmo número de novo, depois de uma
- * falha incerta, repete a chave; outro número é outra gravação, com chave nova
- * (vale a última). No sucesso, o contato em cache fica com o número de agora.
+ * decisão 14 da seção 34): o número digitado, ou `null` para apagar. Quem
+ * chama é o "WhatsApp para a equipe" do "Meu fã-clube" (seção 34), que mostra
+ * a frase do suspenso, sem o `Alert`. A chave é da tentativa e do número: o
+ * mesmo número de novo, depois de uma falha incerta, repete a chave; outro
+ * número é outra gravação, com chave nova (vale a última). No sucesso, o
+ * contato em cache fica com o número de agora.
  */
 export function useUpdateContactMutation() {
   const queryClient = useQueryClient();
@@ -199,6 +200,7 @@ export function useUpdateContactMutation() {
     },
     networkMode: 'always',
     retry: false,
+    meta: { suspendedAlert: false },
     onSuccess: (contact) => {
       attempt.current = null;
       // A sessão que saiu no meio não deixa o número no cache do fã seguinte.

@@ -1,4 +1,5 @@
 import { sourceOf } from '@/config/data-source';
+import { storageFileExists, uploadLocalFile } from '@/firebase';
 import { api } from '@/services/api';
 import { fixtureDelay } from '@/services/fixtures';
 
@@ -30,7 +31,10 @@ import type {
 // cacheia é o queries.ts das telas (etapas 7 e 8 de 34.14). As que gravam
 // levam a chave da tentativa no `Idempotency-Key`. O contato do fã (`GET` e
 // `PUT /me/contact`) mora no perfil (`fetchContact` e `updateContact`), que a
-// loja também usa. Nenhuma tela chama estas funções antes das etapas 7 e 8.
+// loja também usa. Desde a etapa 7, os Ajustes chamam só o `fetchMyFanClub`; o
+// resto, só as telas do fã-clube, depois de ele responder com o programa
+// aberto ou com a candidatura do fã. As da página, do seguir e da Início
+// chegam às telas na etapa 8.
 
 const isFixtures = () => sourceOf('fanClub') === 'fixtures';
 
@@ -154,6 +158,29 @@ export async function openFanClubUpload({
     headers: idempotency(idempotencyKey),
   });
   return data;
+}
+
+/**
+ * Envia um arquivo preparado (a foto ou a miniatura) para o caminho da vaga,
+ * em JPEG. A regra do Storage só aceita o nome da vaga aberta e não
+ * sobrescreve: a nova tentativa confere antes (`fanClubFileUploaded`). Nas
+ * fixtures, nada sobe (as publicações de exemplo não guardam arquivo).
+ */
+export async function uploadFanClubFile(path: string, localUri: string): Promise<void> {
+  if (isFixtures()) {
+    await fixtureDelay();
+    return;
+  }
+  await uploadLocalFile(path, localUri, 'image/jpeg');
+}
+
+/**
+ * O arquivo desta vaga já chegou? Pelos metadados, que a regra deixa o dono
+ * ler enquanto a vaga está aberta. Um erro lança, e nunca vira "já subiu".
+ */
+export function fanClubFileUploaded(path: string): Promise<boolean> {
+  if (isFixtures()) return Promise.resolve(true);
+  return storageFileExists(path);
 }
 
 /** Publicar: sempre em análise; com `photo`, os dois arquivos da vaga já enviados. */
