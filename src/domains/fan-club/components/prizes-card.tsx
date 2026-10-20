@@ -34,7 +34,8 @@ export interface PrizesCardProps {
 /**
  * O card Prêmios do "Meu fã-clube" (34.9, item 5, e decisão 51): o último
  * reconhecimento da equipe (do `lastReward`, a data e os pontos), o texto do
- * reconhecimento quando o servidor o manda, "Ver meus prêmios", que abre a
+ * reconhecimento quando o servidor o manda e, ao lado, as condições de conduta
+ * (18+, ativo, sem suspensão, decisão 47), "Ver meus prêmios", que abre a
  * loja (a fileira "Seus prêmios" chega com a etapa 8), e "Falar com a
  * equipe", para quem não quer ou não pode usar um prêmio. Nunca mostra
  * prêmio prometido nem ranking (decisão 47).
@@ -58,6 +59,9 @@ export function PrizesCard({ lastReward, notice }: PrizesCardProps) {
           {notice}
         </Text>
       ) : null}
+      <Text variant="caption" color={colors.textMuted} testID="fan-club-prizes-conditions">
+        {t('fanClub.mine.prizes.conditions')}
+      </Text>
       <Button
         label={t('fanClub.mine.prizes.open')}
         variant="pointsTinted"

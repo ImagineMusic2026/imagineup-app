@@ -11,8 +11,10 @@ const SKELETON_WIDTH = 34;
 
 export interface NumberCardProps {
   label: string;
-  /** `null` enquanto o número carrega (o esqueleto no lugar). */
+  /** `null` enquanto o número carrega (o esqueleto no lugar) ou quando não veio. */
   value: number | null;
+  /** O número não veio (a leitura falhou): "Sem dado" no lugar do esqueleto. */
+  failed?: boolean;
   testID?: string;
 }
 
@@ -21,23 +23,30 @@ export interface NumberCardProps {
  * número da 1e: não é tocável, e o leitor ouve o rótulo com o valor (34.9,
  * acessibilidade). O rótulo quebra em vez de cortar com a fonte grande.
  */
-export function NumberCard({ label, value, testID }: NumberCardProps) {
+export function NumberCard({ label, value, failed = false, testID }: NumberCardProps) {
+  const missing = value === null && failed;
   return (
     <Card
       variant="compact"
       accessible
       accessibilityLabel={
-        value === null
-          ? label
-          : t('fanClub.mine.numberLabel', { label, value: formatNumber(value) })
+        value !== null
+          ? t('fanClub.mine.numberLabel', { label, value: formatNumber(value) })
+          : missing
+            ? t('fanClub.mine.numberLabel', { label, value: t('fanClub.mine.numberMissing') })
+            : label
       }
       testID={testID}
       style={styles.card}
     >
-      {value === null ? (
-        <Skeleton width={SKELETON_WIDTH} height={spacing.lg} tone="line" />
-      ) : (
+      {value !== null ? (
         <Text variant="titleHeader">{formatNumber(value)}</Text>
+      ) : missing ? (
+        <Text variant="label" color={colors.textSecondary}>
+          {t('fanClub.mine.numberMissing')}
+        </Text>
+      ) : (
+        <Skeleton width={SKELETON_WIDTH} height={spacing.lg} tone="line" />
       )}
       <Text variant="caption" color={colors.textMuted} style={styles.label}>
         {label}

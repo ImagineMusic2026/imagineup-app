@@ -88,31 +88,46 @@ const startedBy = (): StartedBy => ({ uid: sessionUid() });
 const sameSession = (started: StartedBy | undefined): boolean => started?.uid === sessionUid();
 
 /**
- * Uma recusa definitiva do fã-clube (o 409, os dois 404) pode dizer que o
- * estado mudou noutro aparelho ou pela equipe: o estado do fã busca de novo.
+ * Uma recusa definitiva do fã-clube (o 409, os dois 404, a versão das regras
+ * que mudou) pode dizer que o estado mudou noutro aparelho, pela equipe ou no
+ * servidor: o estado do fã busca de novo (e, com ele, a `rulesVersion` nova).
  */
 function refreshAfterRefusal(client: QueryClient, error: unknown): void {
-  if (
-    error instanceof ApiError &&
-    (error.code === FAN_CLUB_ERROR_CODES.refused ||
-      error.code === FAN_CLUB_ERROR_CODES.notFound ||
-      error.code === FAN_CLUB_ERROR_CODES.postNotFound)
-  ) {
-    void client.invalidateQueries({ queryKey: fanClubKeys.mine() });
-  }
+  if (!(error instanceof ApiError)) return;
+  const changed =
+    error.code === FAN_CLUB_ERROR_CODES.refused ||
+    error.code === FAN_CLUB_ERROR_CODES.notFound ||
+    error.code === FAN_CLUB_ERROR_CODES.postNotFound ||
+    (error.code === FAN_CLUB_ERROR_CODES.invalid && error.details?.field === 'rulesVersion');
+  if (changed) void client.invalidateQueries({ queryKey: fanClubKeys.mine() });
+}
+
+/**
+ * Depois de uma falha incerta, o servidor pode ter gravado: o estado do fã (e
+ * as publicações, quando for o caso) busca de novo, para a tela não seguir
+ * com o que era antes, no molde do resgate.
+ */
+function refreshAfterUncertain(client: QueryClient, error: unknown, posts = false): void {
+  if (!isUncertainFailure(error)) return;
+  void client.invalidateQueries({ queryKey: fanClubKeys.mine() });
+  if (posts) void client.invalidateQueries({ queryKey: fanClubKeys.myPosts() });
 }
 
 /**
  * O estado do fã (`GET /me/fan-club`): a candidatura, o fã-clube e o programa.
  * É a única rota do fã-clube que os Ajustes chamam, a cada abertura (34.3):
  * com a `api` de antes da publicação, responde 404, que não tenta de novo, e
- * nada aparece. Vai para o disco, para os Ajustes abrirem sem rede.
+ * nada aparece. Fica fora do disco: sem a resposta desta abertura do app, nada
+ * do fã-clube aparece, nem o que um servidor publicado e depois desfeito (ou a
+ * chave `FAN_CLUB_OPEN` desligada depois) respondeu antes.
  */
 export function useMyFanClubQuery() {
+  const options = queryOptionsFor('fanClub');
   return useQuery({
-    ...queryOptionsFor('fanClub'),
+    ...options,
     queryKey: fanClubKeys.mine(),
     queryFn: fetchMyFanClub,
+    meta: { ...options.meta, persist: false },
   });
 }
 
@@ -127,13 +142,18 @@ export function useShownFanClub() {
   return { query, mine: shownFanClub(query.data, query.error) };
 }
 
-/** Os números do "Meu fã-clube" (`GET /me/fan-club/numbers`), só com o fã-clube aprovado. */
+/**
+ * Os números do "Meu fã-clube" (`GET /me/fan-club/numbers`), só com o fã-clube
+ * aprovado. Fora do disco, como o estado do fã, que os mostra.
+ */
 export function useMyFanClubNumbersQuery(enabled: boolean) {
+  const options = queryOptionsFor('fanClub');
   return useQuery({
-    ...queryOptionsFor('fanClub'),
+    ...options,
     queryKey: fanClubKeys.numbers(),
     queryFn: fetchMyFanClubNumbers,
     enabled,
+    meta: { ...options.meta, persist: false },
   });
 }
 
@@ -171,6 +191,15 @@ export function useMyFanClubPostsQuery(enabled: boolean) {
   });
 }
 
+/**
+ * As chaves das gravações que a tela espera: o voltar do título fica preso
+ * enquanto uma delas vai (`useIsMutating`).
+ */
+export const fanClubMutationKeys = {
+  apply: ['fanClub', 'apply'] as const,
+  post: ['fanClub', 'post'] as const,
+};
+
 /** Uma tentativa: o corpo que foi (em texto, para comparar) e a chave dele. */
 type Attempt = { body: string; key: string };
 
@@ -194,7 +223,11 @@ function attemptKey(ref: { current: Attempt | null }, prefix: string, body: unkn
 export function useApplyForFanClubMutation() {
   const client = useQueryClient();
   const attempt = useRef<Attempt | null>(null);
-  return useMutation({
+  // Um toque só por vez (o `inFlight` do resgate): o `isPending` desliga o
+  // botão só depois do aviso do Query e de um render; o `onSettled` solta.
+  const inFlight = useRef(false);
+  const mutation = useMutation({
+    mutationKey: fanClubMutationKeys.apply,
     mutationFn: (body: FanClubApplicationBody) =>
       applyForFanClub({ body, idempotencyKey: attemptKey(attempt, 'club-apply', body) }),
     networkMode: 'always',
@@ -212,8 +245,18 @@ export function useApplyForFanClubMutation() {
     onError: (error) => {
       if (!isUncertainFailure(error)) attempt.current = null;
       refreshAfterRefusal(client, error);
+      refreshAfterUncertain(client, error);
+    },
+    onSettled: () => {
+      inFlight.current = false;
     },
   });
+  const mutate: typeof mutation.mutate = (body, options) => {
+    if (inFlight.current) return;
+    inFlight.current = true;
+    mutation.mutate(body, options);
+  };
+  return { ...mutation, mutate };
 }
 
 /** Desistir da candidatura em análise (`DELETE /me/fan-club/application`). */
@@ -325,7 +368,8 @@ export type FanClubPostStep = 'slot' | 'upload' | 'post';
 
 /**
  * Uma tentativa de publicar: o que foi, as duas chaves (a vaga e a
- * publicação), a vaga aberta e os arquivos que já começaram a subir.
+ * publicação), a vaga aberta, os arquivos que já começaram a subir e se o
+ * `POST` já foi.
  */
 type PostAttempt = {
   post: NewFanClubPost;
@@ -333,6 +377,7 @@ type PostAttempt = {
   postKey: string;
   slot: FanClubUploadSlot | null;
   sent: { photo: boolean; thumb: boolean };
+  posted: boolean;
 };
 
 const freshPostAttempt = (post: NewFanClubPost): PostAttempt => ({
@@ -341,6 +386,7 @@ const freshPostAttempt = (post: NewFanClubPost): PostAttempt => ({
   postKey: `club-post-${createIdempotencyKey()}`,
   slot: null,
   sent: { photo: false, thumb: false },
+  posted: false,
 });
 
 /**
@@ -349,15 +395,22 @@ const freshPostAttempt = (post: NewFanClubPost): PostAttempt => ({
  * dois arquivos no Storage e o `POST` com `photo: true`. A tentativa é guardada
  * (o mesmo texto e a mesma foto): depois de uma falha incerta, a vaga aberta
  * serve de novo, o arquivo que já chegou não sobe outra vez (o Storage não
- * sobrescreve) e o `POST` leva a mesma chave. A vaga vencida (10 minutos) abre
- * outra; o `upload_missing` abre sozinho uma tentativa nova, uma vez, com a
- * mesma foto preparada. Sempre em análise: no sucesso, "Minhas publicações" e
- * o estado do fã buscam de novo.
+ * sobrescreve) e o `POST` leva a mesma chave. Depois que o `POST` foi, a nova
+ * tentativa vai direto a ele, com a mesma chave: se ele gravou, o servidor
+ * apagou a vaga, e a regra do Storage já não deixa o dono ler os arquivos; a
+ * chave devolve a publicação que nasceu. A vaga vencida (10 minutos) abre
+ * outra; o `upload_missing` (o `POST` que não gravou e cuja vaga venceu)
+ * abre sozinho uma tentativa nova, uma vez, com a mesma foto preparada. Sempre
+ * em análise: no sucesso, e também depois de uma falha incerta, "Minhas
+ * publicações" e o estado do fã buscam de novo.
  */
 export function useCreateFanClubPostMutation() {
   const client = useQueryClient();
   const attempt = useRef<PostAttempt | null>(null);
   const step = useRef<FanClubPostStep>('post');
+  // Um toque só por vez: dois toques antes do render dividiriam a mesma
+  // tentativa (a mesma vaga e os mesmos arquivos). O `onSettled` solta.
+  const inFlight = useRef(false);
 
   const sendFile = async (
     current: PostAttempt,
@@ -372,7 +425,7 @@ export function useCreateFanClubPostMutation() {
 
   const send = async (current: PostAttempt): Promise<OwnFanClubPost> => {
     const { photo } = current.post;
-    if (photo) {
+    if (photo && !current.posted) {
       if (current.slot && Date.parse(current.slot.expiresAt) <= Date.now()) {
         current.slot = null;
         current.slotKey = `club-upload-${createIdempotencyKey()}`;
@@ -385,6 +438,7 @@ export function useCreateFanClubPostMutation() {
       await sendFile(current, 'thumb', current.slot.thumbPath, photo.thumb.uri);
     }
     step.current = 'post';
+    current.posted = true;
     return createFanClubPost({
       text: current.post.text,
       photo: photo !== null,
@@ -393,6 +447,7 @@ export function useCreateFanClubPostMutation() {
   };
 
   const mutation = useMutation({
+    mutationKey: fanClubMutationKeys.post,
     mutationFn: async (post: NewFanClubPost) => {
       const open = attempt.current;
       if (!open || open.post.text !== post.text || open.post.photo !== post.photo) {
@@ -421,13 +476,22 @@ export function useCreateFanClubPostMutation() {
     onError: (error) => {
       if (!isUncertainFailure(error)) attempt.current = null;
       refreshAfterRefusal(client, error);
+      refreshAfterUncertain(client, error, true);
+    },
+    onSettled: () => {
+      inFlight.current = false;
     },
   });
 
   // O passo em que a última tentativa parou: a vaga e o envio têm a frase da
   // foto (`clubUpload`), o `POST` a da publicação (`clubPost`).
   const failedStep = (): FanClubPostStep => step.current;
-  return { ...mutation, failedStep };
+  const mutate: typeof mutation.mutate = (post, options) => {
+    if (inFlight.current) return;
+    inFlight.current = true;
+    mutation.mutate(post, options);
+  };
+  return { ...mutation, mutate, failedStep };
 }
 
 /**

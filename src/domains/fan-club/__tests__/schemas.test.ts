@@ -61,6 +61,11 @@ describe('applySchema: a candidatura', () => {
     );
     // "oficialmente" não é a palavra inteira, como no servidor.
     expect(errorsOf({ ...VALID, name: 'Netto oficialmente' }).name).toBeUndefined();
+    expect(errorsOf({ ...VALID, name: 'Netto-oficial' }).name).toBeDefined();
+    // Os @ $ ! | são letras no filtro do servidor, que aceita estes: o aparelho também.
+    for (const name of ['Clube!Oficial', 'Fãs@oficial', 'Netto|oficial', 'Clube$oficial']) {
+      expect([name, errorsOf({ ...VALID, name }).name]).toEqual([name, undefined]);
+    }
   });
 
   it('o texto de divulgação: de 20 a 1.000', () => {

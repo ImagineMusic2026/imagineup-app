@@ -1,4 +1,5 @@
 import { zodResolver } from '@hookform/resolvers/zod';
+import { useIsMutating } from '@tanstack/react-query';
 import { router } from 'expo-router';
 import { ImagePlus } from 'lucide-react-native';
 import { useState } from 'react';
@@ -8,7 +9,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Button } from '@/components/button';
 import { EmptyState } from '@/components/empty-state';
-import { LargeTitleHeader } from '@/components/header';
+import { goBack, LargeTitleHeader } from '@/components/header';
 import { RemoteImage } from '@/components/remote-image';
 import { Screen } from '@/components/screen';
 import { Skeleton, SkeletonGroup } from '@/components/skeleton';
@@ -21,20 +22,20 @@ import {
   SuspensionContact,
   type PreparedFanClubPhoto,
 } from '@/domains/profile';
-import { useAnnounceWhen } from '@/hooks/use-announce-when';
 import { useIsOnline } from '@/hooks/use-is-online';
 import { useStayOnScreen } from '@/hooks/use-stay-on-screen';
 import { t, type TranslationKey, type TranslationParams } from '@/i18n';
 import { actionRefusal } from '@/services/api/refusal';
 import { haptics } from '@/services/haptics';
 import { colors, radii, spacing } from '@/theme';
+import { announceFirstError } from '@/utils/form-errors';
 
 import { FanClubNotice } from '../components/fan-club-notice';
 import { UnofficialBand } from '../components/unofficial-band';
 import { FAN_CLUB_PENDING_MAX, FAN_CLUB_POST_TEXT_MAX } from '../consts';
 import { fanClubErrorText } from '../describe';
 import { fanClubStageOf } from '../entry';
-import { useCreateFanClubPostMutation, useShownFanClub } from '../queries';
+import { fanClubMutationKeys, useCreateFanClubPostMutation, useShownFanClub } from '../queries';
 import { postSchema, type PostFormInput } from '../schemas';
 import type { MyFanClubClub } from '../types';
 
@@ -50,15 +51,26 @@ function leave(): void {
   else router.replace('/meu-fa-clube');
 }
 
-function NewPostForm({ club }: { club: MyFanClubClub }) {
+interface NewPostFormProps {
+  club: MyFanClubClub;
+  /** A recusa do pé, guardada na tela: a recusa que tira o fã-clube do ar tira o formulário. */
+  failure: Failure | null;
+  onFailure: (failure: Failure | null) => void;
+}
+
+function NewPostForm({ club, failure, onFailure: setFailure }: NewPostFormProps) {
   const online = useIsOnline();
   const create = useCreateFanClubPostMutation();
   const [photo, setPhoto] = useState<PreparedFanClubPhoto | null>(null);
   const [preparing, setPreparing] = useState(false);
   const [photoError, setPhotoError] = useState<TranslationKey | null>(null);
-  const [failure, setFailure] = useState<Failure | null>(null);
   useStayOnScreen(create.isPending || preparing);
-  useAnnounceWhen(failure !== null, failure ? t(failure.key, failure.params) : '');
+
+  /** A recusa no pé, anunciada. */
+  const fail = (next: Failure): void => {
+    setFailure(next);
+    AccessibilityInfo.announceForAccessibility(t(next.key, next.params));
+  };
 
   const { control, handleSubmit, setError } = useForm<PostFormInput>({
     resolver: zodResolver(postSchema),
@@ -90,41 +102,45 @@ function NewPostForm({ club }: { club: MyFanClubClub }) {
     }
   };
 
-  const submit = handleSubmit((form) => {
-    setFailure(null);
-    setPhotoError(null);
-    create.mutate(
-      { text: form.text, photo: club.photosAllowed ? photo : null },
-      {
-        onSuccess: () => {
-          haptics.trigger('success');
-          AccessibilityInfo.announceForAccessibility(t('fanClub.newPost.sent'));
-          leave();
+  // O envio inválido (só espaços) anuncia o erro do campo, como os outros formulários.
+  const submit = handleSubmit(
+    (form) => {
+      setFailure(null);
+      setPhotoError(null);
+      create.mutate(
+        { text: form.text, photo: club.photosAllowed ? photo : null },
+        {
+          onSuccess: () => {
+            haptics.trigger('success');
+            AccessibilityInfo.announceForAccessibility(t('fanClub.newPost.sent'));
+            leave();
+          },
+          onError: (error) => {
+            haptics.trigger('error');
+            const known = fanClubErrorText(error);
+            if (known?.field === 'text') {
+              setError('text', { message: t(known.key) }, { shouldFocus: true });
+              AccessibilityInfo.announceForAccessibility(t(known.key));
+              return;
+            }
+            if (known?.field === 'photo') {
+              setPhotoError(known.key);
+              AccessibilityInfo.announceForAccessibility(t(known.key));
+              return;
+            }
+            if (known) {
+              fail({ key: known.key, params: known.params });
+              return;
+            }
+            const action = create.failedStep() === 'post' ? 'clubPost' : 'clubUpload';
+            const refusal = actionRefusal(error, action);
+            fail({ key: refusal.key, contact: refusal.type === 'suspended' });
+          },
         },
-        onError: (error) => {
-          haptics.trigger('error');
-          const known = fanClubErrorText(error);
-          if (known?.field === 'text') {
-            setError('text', { message: t(known.key) }, { shouldFocus: true });
-            AccessibilityInfo.announceForAccessibility(t(known.key));
-            return;
-          }
-          if (known?.field === 'photo') {
-            setPhotoError(known.key);
-            AccessibilityInfo.announceForAccessibility(t(known.key));
-            return;
-          }
-          if (known) {
-            setFailure({ key: known.key, params: known.params });
-            return;
-          }
-          const action = create.failedStep() === 'post' ? 'clubPost' : 'clubUpload';
-          const refusal = actionRefusal(error, action);
-          setFailure({ key: refusal.key, contact: refusal.type === 'suspended' });
-        },
-      },
-    );
-  });
+      );
+    },
+    (errors) => announceFirstError(errors, ['text']),
+  );
 
   return (
     <View>
@@ -284,12 +300,26 @@ function NewPostForm({ club }: { club: MyFanClubClub }) {
 export function NewFanClubPostScreen() {
   const insets = useSafeAreaInsets();
   const { query, mine } = useShownFanClub();
+  const sending = useIsMutating({ mutationKey: fanClubMutationKeys.post }) > 0;
+  const [failure, setFailure] = useState<Failure | null>(null);
   const stage = mine ? fanClubStageOf(mine) : null;
   const club = stage?.kind === 'club' && stage.club.available ? stage.club : null;
 
   let body;
   if (club) {
-    body = <NewPostForm club={club} />;
+    body = <NewPostForm club={club} failure={failure} onFailure={setFailure} />;
+  } else if (mine && failure) {
+    // A recusa que tirou o fã-clube do ar para o gestor (pausado, fora da
+    // central, o artista fechado) tira o formulário: a frase dela fica.
+    body = (
+      <View testID="fan-club-post-unavailable">
+        <EmptyState
+          message={t(failure.key, failure.params)}
+          actionLabel={t('common.back')}
+          onAction={leave}
+        />
+      </View>
+    );
   } else if (!mine && query.isPending) {
     body = (
       <SkeletonGroup>
@@ -302,7 +332,7 @@ export function NewFanClubPostScreen() {
         <EmptyState
           message={t(mine ? 'fanClub.newPost.unavailable' : 'fanClub.notAvailable')}
           actionLabel={t('common.back')}
-          onAction={leave}
+          onAction={mine ? leave : goBack}
         />
       </View>
     );
@@ -310,7 +340,7 @@ export function NewFanClubPostScreen() {
 
   return (
     <Screen scroll bottomInset={insets.bottom}>
-      <LargeTitleHeader title={t('fanClub.newPost.title')} showBack />
+      <LargeTitleHeader title={t('fanClub.newPost.title')} showBack backDisabled={sending} />
       {body}
     </Screen>
   );

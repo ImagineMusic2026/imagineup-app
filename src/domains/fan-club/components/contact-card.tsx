@@ -137,11 +137,11 @@ export function ContactCard() {
         <>
           <View
             accessible
-            accessibilityLabel={
+            accessibilityLabel={`${
               shown
                 ? t('fanClub.mine.contact.label', { number: shown })
                 : `${t('fanClub.mine.contact.title')}. ${t('fanClub.mine.contact.empty')}`
-            }
+            }. ${t('fanClub.apply.whatsappHint')}`}
           >
             <Text variant="label">{t('fanClub.mine.contact.title')}</Text>
             <Text variant="body" color={colors.textSecondary} style={styles.number}>

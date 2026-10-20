@@ -25,9 +25,14 @@ import type { MyFanClub } from '../types';
 
 const SKELETON_HEIGHT = 180;
 
-/** O título da tela: "Meu fã-clube" com o fã-clube aprovado, "Tenha seu fã-clube" antes. */
+/**
+ * O título da tela: "Meu fã-clube" com o fã-clube aprovado, "Tenha seu
+ * fã-clube" antes e, sem o estado (carregando ou antes da abertura), só
+ * "Fã-clube", que não convida.
+ */
 function titleOf(stage: FanClubStage | null): string {
-  if (stage?.kind === 'club') return t('fanClub.mine.title');
+  if (!stage) return t('fanClub.settings.section');
+  if (stage.kind === 'club') return t('fanClub.mine.title');
   return t('fanClub.intro.title');
 }
 
@@ -66,11 +71,14 @@ export function MyFanClubScreen() {
   const stage = mine ? fanClubStageOf(mine) : null;
   const uid = useSessionStore((state) => state.user?.uid ?? null);
   const markSeen = useFanClubPrizeStore((state) => state.markSeen);
+  const hydrated = useFanClubPrizeStore((state) => state.hydrated);
   const seenAt = stage?.kind === 'club' ? stage.club.lastReward?.at : undefined;
 
+  // Só depois de o disco responder: a marca feita antes seria trocada pela
+  // guardada quando ele responde (o `merge` do `persist`).
   useEffect(() => {
-    if (uid && seenAt) markSeen(uid, seenAt);
-  }, [uid, seenAt, markSeen]);
+    if (hydrated && uid && seenAt) markSeen(uid, seenAt);
+  }, [hydrated, uid, seenAt, markSeen]);
 
   let body;
   if (mine && stage) {

@@ -23,6 +23,13 @@ import type { OwnFanClubPost } from '../types';
 const THUMB_WIDTH = 48;
 const THUMB_HEIGHT = 60;
 const TEXT_LINES = 3;
+const EXCERPT_MAX = 40;
+
+/** O começo do texto, para o rótulo do botão de cada linha não ser igual ao das outras. */
+function excerptOf(text: string): string {
+  const line = text.replace(/\s+/g, ' ').trim();
+  return line.length > EXCERPT_MAX ? `${line.slice(0, EXCERPT_MAX).trimEnd()}...` : line;
+}
 
 /** O rótulo da linha: o status, o texto, a foto, a data e, na recusada, o motivo. */
 function rowLabel(post: OwnFanClubPost): string {
@@ -44,7 +51,7 @@ function rowLabel(post: OwnFanClubPost): string {
 
 interface RowProps {
   post: OwnFanClubPost;
-  /** Retirar ou tirar do ar esta linha, ou nada (outro status, ou o fã-clube fora do ar). */
+  /** Retirar ou tirar do ar esta linha, ou nada (outro status). */
   onRemove?: () => void;
   removing: boolean;
   disabled: boolean;
@@ -93,6 +100,7 @@ function OwnPostRow({ post, onRemove, removing, disabled, error }: RowProps) {
           label={t(pending ? 'fanClub.mine.posts.withdraw' : 'fanClub.mine.posts.remove')}
           accessibilityLabel={t(
             pending ? 'fanClub.mine.posts.withdrawLabel' : 'fanClub.mine.posts.removeLabel',
+            { excerpt: excerptOf(post.text) },
           )}
           variant="secondary"
           size="sm"
@@ -112,18 +120,14 @@ function OwnPostRow({ post, onRemove, removing, disabled, error }: RowProps) {
   );
 }
 
-export interface OwnPostsProps {
-  /** O fã-clube no ar para o gestor: só então ele retira e tira do ar. */
-  canRemove: boolean;
-}
-
 /**
  * "Minhas publicações" (34.9, item 5): as do gestor em todos os status, 10 por
  * página, com "Ver mais publicações". Retirar a em análise e tirar do ar a
- * publicada pedem confirmação; no sucesso, a linha troca de status e o leitor
- * ouve o resultado, e a falha fica na própria linha.
+ * publicada pedem confirmação e valem em qualquer status do fã-clube, como no
+ * servidor; no sucesso, a linha troca de status e o leitor ouve o resultado
+ * pelo status que o servidor devolveu, e a falha fica na própria linha.
  */
-export function OwnPosts({ canRemove }: OwnPostsProps) {
+export function OwnPosts() {
   const online = useIsOnline();
   const posts = useMyFanClubPostsQuery(true);
   const remove = useRemoveFanClubPostMutation();
@@ -132,12 +136,16 @@ export function OwnPosts({ canRemove }: OwnPostsProps) {
 
   const run = (post: OwnFanClubPost) => {
     setFailure(null);
-    const done =
-      post.status === 'pending' ? 'fanClub.mine.posts.withdrawn' : 'fanClub.mine.posts.removed';
     remove.mutate(post.id, {
-      onSuccess: () => {
+      onSuccess: (updated) => {
         haptics.trigger('success');
-        AccessibilityInfo.announceForAccessibility(t(done));
+        AccessibilityInfo.announceForAccessibility(
+          t(
+            updated.status === 'withdrawn'
+              ? 'fanClub.mine.posts.withdrawn'
+              : 'fanClub.mine.posts.removed',
+          ),
+        );
       },
       onError: (error) => {
         const key = actionRefusal(error, 'clubRemovePost').key;
@@ -183,8 +191,7 @@ export function OwnPosts({ canRemove }: OwnPostsProps) {
       ) : (
         <View style={styles.list}>
           {items.map((post) => {
-            const removable =
-              canRemove && (post.status === 'pending' || post.status === 'published');
+            const removable = post.status === 'pending' || post.status === 'published';
             const busy = remove.isPending && remove.variables === post.id;
             return (
               <OwnPostRow

@@ -1,4 +1,5 @@
 import { zodResolver } from '@hookform/resolvers/zod';
+import { useIsMutating } from '@tanstack/react-query';
 import { router } from 'expo-router';
 import { useEffect, useRef, useState, type Ref } from 'react';
 import { Controller, useForm, useWatch, type UseFormSetError } from 'react-hook-form';
@@ -7,7 +8,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Button } from '@/components/button';
 import { EmptyState } from '@/components/empty-state';
-import { LargeTitleHeader } from '@/components/header';
+import { goBack, LargeTitleHeader } from '@/components/header';
 import { PressableScale } from '@/components/pressable-scale';
 import { RemoteImage } from '@/components/remote-image';
 import { Screen } from '@/components/screen';
@@ -23,7 +24,6 @@ import {
   useMyContactQuery,
   useMyProfileQuery,
 } from '@/domains/profile';
-import { useAnnounceWhen } from '@/hooks/use-announce-when';
 import { useIsOnline } from '@/hooks/use-is-online';
 import { useStayOnScreen } from '@/hooks/use-stay-on-screen';
 import { t, type TranslationKey, type TranslationParams } from '@/i18n';
@@ -41,7 +41,12 @@ import { UnofficialBand } from '../components/unofficial-band';
 import { FAN_CLUB_NAME_MAX, FAN_CLUB_PITCH_MAX, type FanClubInvalidField } from '../consts';
 import { fanClubErrorText } from '../describe';
 import { canApplyNow } from '../entry';
-import { useApplyForFanClubMutation, useFanClubArtistsQuery, useShownFanClub } from '../queries';
+import {
+  fanClubMutationKeys,
+  useApplyForFanClubMutation,
+  useFanClubArtistsQuery,
+  useShownFanClub,
+} from '../queries';
 import {
   APPLY_FIELD_ORDER,
   applySchema,
@@ -101,28 +106,32 @@ interface ArtistPickerProps {
   value: string;
   onChange: (artistId: string) => void;
   error?: string;
-  inputRef: Ref<View>;
+  /** A primeira linha, que recebe o foco do leitor no envio sem artista. */
+  firstRowRef: Ref<View>;
 }
 
 /**
  * O artista, de escolha única, entre as centrais do fã que aceitam fã-clubes:
  * uma linha por central, com o papel de rádio no Android e o `selected` no
- * iOS (`selectionAccessibility`).
+ * iOS (`selectionAccessibility`). O erro ("Escolha o artista.") entra no
+ * rótulo de cada linha, como na caixa de marcar, e o texto embaixo fica fora
+ * do leitor.
  */
-function ArtistPicker({ artists, value, onChange, error, inputRef }: ArtistPickerProps) {
+function ArtistPicker({ artists, value, onChange, error, firstRowRef }: ArtistPickerProps) {
   return (
-    <View ref={inputRef} style={styles.artists} testID="fan-club-apply-artists">
-      {artists.map((artist) => {
+    <View style={styles.artists} testID="fan-club-apply-artists">
+      {artists.map((artist, index) => {
         const selected = artist.artistId === value;
         const { role, state } = selectionAccessibility('radio', selected);
         return (
           <PressableScale
             key={artist.artistId}
+            ref={index === 0 ? firstRowRef : undefined}
             onPress={() => onChange(artist.artistId)}
             haptic="selection"
             accessibilityRole={role}
             accessibilityState={state}
-            accessibilityLabel={error && selected ? `${artist.name}. ${error}` : artist.name}
+            accessibilityLabel={error ? `${artist.name}. ${error}` : artist.name}
             style={[styles.artist, selected && styles.artistSelected]}
             testID={`fan-club-apply-artist-${artist.artistId}`}
           >
@@ -139,7 +148,12 @@ function ArtistPicker({ artists, value, onChange, error, inputRef }: ArtistPicke
         );
       })}
       {error ? (
-        <Text variant="caption" color={colors.danger}>
+        <Text
+          variant="caption"
+          color={colors.danger}
+          accessibilityElementsHidden
+          importantForAccessibility="no"
+        >
           {error}
         </Text>
       ) : null}
@@ -147,14 +161,17 @@ function ArtistPicker({ artists, value, onChange, error, inputRef }: ArtistPicke
   );
 }
 
-/** Põe no campo a recusa do servidor; devolve se achou o campo. */
-function applyFieldError(error: unknown, setError: UseFormSetError<ApplyFormInput>): boolean {
+/** Põe no campo a recusa do servidor e anuncia; devolve o campo, ou null sem campo na tela. */
+function applyFieldError(
+  error: unknown,
+  setError: UseFormSetError<ApplyFormInput>,
+): ApplyField | null {
   const text = fanClubErrorText(error);
   const field = text?.field ? FIELD_OF[text.field] : undefined;
-  if (!text || !field) return false;
-  setError(field, { message: t(text.key, text.params) }, { shouldFocus: true });
+  if (!text || !field) return null;
+  setError(field, { message: t(text.key, text.params) });
   AccessibilityInfo.announceForAccessibility(t(text.key, text.params));
-  return true;
+  return field;
 }
 
 /** A recusa que não é de um campo: o 409 do fã-clube, o 403, o 429, a rede. */
@@ -168,25 +185,33 @@ function topFailure(error: unknown): Failure {
   return { key: refusal.key, contact: refusal.type === 'suspended' };
 }
 
-function ApplyFormBody({ mine }: { mine: MyFanClub }) {
+interface ApplyFormBodyProps {
+  mine: MyFanClub;
+  /** A recusa do pé, guardada na tela: a recusa que muda o estado tira o formulário. */
+  failure: Failure | null;
+  onFailure: (failure: Failure | null) => void;
+}
+
+function ApplyFormBody({ mine, failure, onFailure: setFailure }: ApplyFormBodyProps) {
   const online = useIsOnline();
   const artists = useFanClubArtistsQuery(true);
   const contact = useMyContactQuery();
   const profile = useMyProfileQuery().data;
   const apply = useApplyForFanClubMutation();
-  const [failure, setFailure] = useState<Failure | null>(null);
   const artistRef = useRef<View>(null);
   const adultRef = useRef<View>(null);
   const rulesRef = useRef<View>(null);
   useStayOnScreen(apply.isPending);
-  useAnnounceWhen(failure !== null, failure ? t(failure.key, failure.params) : '');
 
-  const { control, handleSubmit, setError, setValue, getFieldState } = useForm<
+  const { control, handleSubmit, setError, setValue, setFocus, getFieldState } = useForm<
     ApplyFormInput,
     unknown,
     ApplyForm
   >({
     resolver: zodResolver(applySchema),
+    // O foco vai à mão (`focusField`): o padrão iria ao primeiro campo de texto,
+    // e o artista e as caixas vêm antes ou não têm `focus`.
+    shouldFocusError: false,
     defaultValues: {
       artistId: '',
       name: '',
@@ -225,6 +250,24 @@ function ApplyFormBody({ mine }: { mine: MyFanClub }) {
   const regulation = mine.rulesUrl !== null;
   const usernameAutomatic = profile ? isAutomaticUsername(profile.username) : false;
 
+  // O foco do leitor no campo: o de texto pelo `setFocus`; o artista e as
+  // caixas, que não são campos de texto, pelo evento de foco no pressável.
+  const focusField = (field: ApplyField): void => {
+    const target =
+      field === 'artistId'
+        ? artistRef
+        : field === 'adult'
+          ? adultRef
+          : field === 'rules'
+            ? rulesRef
+            : null;
+    if (!target) {
+      setFocus(field);
+      return;
+    }
+    if (target.current) AccessibilityInfo.sendAccessibilityEvent(target.current, 'focus');
+  };
+
   // O `handleSubmit` só no toque: fora dele, o compilador do React veria as refs no render.
   const submit = () =>
     handleSubmit(
@@ -249,25 +292,22 @@ function ApplyFormBody({ mine }: { mine: MyFanClub }) {
             },
             onError: (error) => {
               haptics.trigger('error');
-              if (applyFieldError(error, setError)) return;
-              setFailure(topFailure(error));
+              const field = applyFieldError(error, setError);
+              if (field) {
+                focusField(field);
+                return;
+              }
+              const top = topFailure(error);
+              setFailure(top);
+              AccessibilityInfo.announceForAccessibility(t(top.key, top.params));
             },
           },
         );
       },
       (errors) => {
         announceFirstError(errors, APPLY_FIELD_ORDER);
-        // As caixas e o artista não são campos de texto: o foco vai até eles à mão.
         const first = APPLY_FIELD_ORDER.find((field) => errors[field]);
-        const target =
-          first === 'artistId'
-            ? artistRef
-            : first === 'adult'
-              ? adultRef
-              : first === 'rules'
-                ? rulesRef
-                : null;
-        if (target?.current) AccessibilityInfo.sendAccessibilityEvent(target.current, 'focus');
+        if (first) focusField(first);
       },
     )();
 
@@ -326,7 +366,7 @@ function ApplyFormBody({ mine }: { mine: MyFanClub }) {
               value={value}
               onChange={onChange}
               error={fieldState.error?.message}
-              inputRef={artistRef}
+              firstRowRef={artistRef}
             />
           )}
         />
@@ -524,10 +564,24 @@ function ApplyFormBody({ mine }: { mine: MyFanClub }) {
 export function FanClubApplyScreen() {
   const insets = useSafeAreaInsets();
   const { query, mine } = useShownFanClub();
+  const sending = useIsMutating({ mutationKey: fanClubMutationKeys.apply }) > 0;
+  const [failure, setFailure] = useState<Failure | null>(null);
 
   let body;
   if (mine && canApplyNow(mine)) {
-    body = <ApplyFormBody mine={mine} />;
+    body = <ApplyFormBody mine={mine} failure={failure} onFailure={setFailure} />;
+  } else if (mine && failure) {
+    // A recusa que mudou o estado do fã (o prazo, a candidatura de outro
+    // aparelho, o programa fechado) tira o formulário: a frase dela fica.
+    body = (
+      <View testID="fan-club-apply-unavailable">
+        <EmptyState
+          message={t(failure.key, failure.params)}
+          actionLabel={t('common.back')}
+          onAction={leave}
+        />
+      </View>
+    );
   } else if (!mine && query.isPending) {
     body = (
       <SkeletonGroup>
@@ -540,7 +594,7 @@ export function FanClubApplyScreen() {
         <EmptyState
           message={t(mine ? 'fanClub.apply.unavailable' : 'fanClub.notAvailable')}
           actionLabel={t('common.back')}
-          onAction={leave}
+          onAction={mine ? leave : goBack}
         />
       </View>
     );
@@ -548,7 +602,7 @@ export function FanClubApplyScreen() {
 
   return (
     <Screen scroll bottomInset={insets.bottom}>
-      <LargeTitleHeader title={t('fanClub.apply.title')} showBack />
+      <LargeTitleHeader title={t('fanClub.apply.title')} showBack backDisabled={sending} />
       {body}
     </Screen>
   );

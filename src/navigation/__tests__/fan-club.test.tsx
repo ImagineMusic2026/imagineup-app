@@ -266,6 +266,9 @@ function expectOnlyTheGate(): void {
 /** Os textos do campo (o erro e a dica) ficam fora do leitor: o campo os lê pela dica. */
 const hidden = { includeHiddenElements: true } as const;
 
+const HINT =
+  'Seu WhatsApp fica só com a equipe, para falar com você sobre o fã-clube e os prêmios.';
+
 const announced = () =>
   jest.mocked(AccessibilityInfo.announceForAccessibility).mock.calls.map(([text]) => text);
 
@@ -420,6 +423,24 @@ describe('as rotas novas a frio, antes da abertura', () => {
       expectOnlyTheGate();
     },
   );
+
+  it('a frio, o "Voltar" da tela indisponível vai ao início, e o título não convida', async () => {
+    mocked.fetchMyFanClub.mockRejectedValue(notFound());
+    const view = renderRouter(appTree, { initialUrl: '/meu-fa-clube/candidatura' });
+
+    fireEvent.press(await screen.findByText('Voltar', { exact: true }));
+    await waitFor(() => expect(view.getPathname()).toBe('/'));
+    expect(mocked.fetchMyFanClub).toHaveBeenCalledTimes(1);
+  });
+
+  it('o "Meu fã-clube" a frio, sem o estado, tem o título "Fã-clube"', async () => {
+    mocked.fetchMyFanClub.mockRejectedValue(notFound());
+    renderRouter(appTree, { initialUrl: '/meu-fa-clube' });
+
+    expect(await screen.findByText('O fã-clube não está disponível agora.')).toBeTruthy();
+    expect(screen.getByRole('header', { name: 'Fã-clube' })).toBeTruthy();
+    expect(screen.queryByText('Tenha seu fã-clube')).toBeNull();
+  });
 
   it('sem sessão, o link do "Meu fã-clube" não abre a tela e cai na entrada', async () => {
     useSessionStore.setState({ status: 'signedOut', user: null, authHolds: 0 });
@@ -583,11 +604,16 @@ describe('a candidatura (34.9, item 3)', () => {
     expect(screen.queryByTestId('fan-club-apply-error')).toBeNull();
   });
 
-  it('a recusa de negócio fica no pé: o prazo com a data do servidor', async () => {
-    mocked.fetchMyFanClub.mockResolvedValue(mine());
-    mocked.applyForFanClub.mockRejectedValue(
-      refused('cooldown', { canReapplyAt: '2026-11-17T15:00:00.000Z' }),
+  it('a recusa de negócio fica: o prazo com a data do servidor, também quando o estado novo tira o formulário', async () => {
+    const canReapplyAt = '2026-11-17T15:00:00.000Z';
+    // A tela abriu com a vez do fã; a recusa faz o estado buscar de novo, e ele
+    // já diz que a vez não é agora (outro aparelho, a recusa da equipe).
+    mocked.fetchMyFanClub.mockResolvedValueOnce(mine()).mockResolvedValue(
+      mine({
+        application: application({ status: 'rejected', rejectReason: 'other', canReapplyAt }),
+      }),
     );
+    mocked.applyForFanClub.mockRejectedValue(refused('cooldown', { canReapplyAt }));
     serverAnswers();
     renderRouter(appTree, { initialUrl: '/meu-fa-clube/candidatura' });
     await screen.findByTestId('fan-club-apply-artist-nettobrito');
@@ -597,6 +623,56 @@ describe('a candidatura (34.9, item 3)', () => {
     expect(
       await screen.findByText('Você pode enviar de novo a partir de 17/11/2026.'),
     ).toBeTruthy();
+    await waitFor(() => expect(mocked.fetchMyFanClub).toHaveBeenCalledTimes(2));
+    expect(await screen.findByTestId('fan-club-apply-unavailable')).toBeTruthy();
+    expect(screen.getByText('Você pode enviar de novo a partir de 17/11/2026.')).toBeTruthy();
+    expect(announced()).toContain('Você pode enviar de novo a partir de 17/11/2026.');
+  });
+
+  it('o envio sem artista: o erro no rótulo de cada central e o foco na primeira', async () => {
+    mocked.fetchMyFanClub.mockResolvedValue(mine());
+    mocked.fetchFanClubArtists.mockResolvedValue({
+      items: [
+        {
+          artistId: 'nettobrito',
+          name: 'Netto Brito',
+          shortName: 'Netto',
+          thumbUrl: null,
+          photosAllowed: true,
+        },
+        { artistId: 'nenho', name: 'Nenho', shortName: null, thumbUrl: null, photosAllowed: false },
+      ],
+    });
+    serverAnswers();
+    const focus = jest
+      .spyOn(AccessibilityInfo, 'sendAccessibilityEvent')
+      .mockImplementation(() => undefined);
+    renderRouter(appTree, { initialUrl: '/meu-fa-clube/candidatura' });
+
+    await screen.findByTestId('fan-club-apply-artist-nenho');
+    fireEvent.press(screen.getByTestId('fan-club-apply-submit'));
+
+    expect(await screen.findByLabelText('Netto Brito. Escolha o artista.')).toBeTruthy();
+    expect(screen.getByLabelText('Nenho. Escolha o artista.')).toBeTruthy();
+    expect(announced()).toContain('Escolha o artista.');
+    expect(focus).toHaveBeenCalledWith(expect.anything(), 'focus');
+  });
+
+  it('enquanto a candidatura vai, o voltar do título fica preso', async () => {
+    mocked.fetchMyFanClub.mockResolvedValue(mine());
+    mocked.applyForFanClub.mockReturnValue(new Promise(() => undefined));
+    serverAnswers();
+    renderRouter(appTree, { initialUrl: '/meu-fa-clube/candidatura' });
+    await screen.findByTestId('fan-club-apply-artist-nettobrito');
+    await fillRest();
+    fireEvent.press(screen.getByTestId('fan-club-apply-submit'));
+
+    await waitFor(() => expect(mocked.applyForFanClub).toHaveBeenCalled());
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Voltar' }).props.accessibilityState).toEqual(
+        expect.objectContaining({ disabled: true }),
+      ),
+    );
   });
 
   it('o @ automático: o aviso no topo e "Editar perfil", também na recusa do servidor', async () => {
@@ -659,6 +735,19 @@ describe('a espera e a recusa (34.9, item 4)', () => {
     await waitFor(() => expect(mocked.withdrawApplication).toHaveBeenCalled());
     expect(await screen.findByTestId('fan-club-intro')).toBeTruthy();
     expect(announced()).toContain('Você desistiu da candidatura.');
+  });
+
+  it('a equipe decidiu antes: o "Desistir" volta o estado de agora, sem dizer que desistiu', async () => {
+    mocked.fetchMyFanClub.mockResolvedValue(mine({ application: application() }));
+    mocked.withdrawApplication.mockResolvedValue(
+      mine({ application: application({ status: 'rejected', rejectReason: 'other' }) }),
+    );
+    confirmAlerts();
+    renderRouter(appTree, { initialUrl: '/meu-fa-clube' });
+
+    fireEvent.press(await screen.findByTestId('fan-club-withdraw'));
+    expect(await screen.findByTestId('fan-club-rejected')).toBeTruthy();
+    expect(announced()).not.toContain('Você desistiu da candidatura.');
   });
 
   it.each([
@@ -838,8 +927,11 @@ describe('o "Meu fã-clube" (34.9, item 5)', () => {
 
     expect(await screen.findByText('Motivo: Fora do assunto do artista.')).toBeTruthy();
     expect(screen.queryByTestId('fan-club-own-post-fcp-2-remove')).toBeNull();
-    expect(screen.getByRole('button', { name: 'Tirar a publicação do ar' })).toBeTruthy();
-    fireEvent.press(screen.getByRole('button', { name: 'Retirar a publicação' }));
+    // Cada botão diz de qual publicação é.
+    expect(screen.getByRole('button', { name: 'Tirar do ar a publicação: No ar' })).toBeTruthy();
+    fireEvent.press(
+      screen.getByRole('button', { name: 'Retirar a publicação: Que show em Feira!' }),
+    );
 
     await waitFor(() =>
       expect(mocked.removeFanClubPost).toHaveBeenCalledWith({
@@ -851,13 +943,38 @@ describe('o "Meu fã-clube" (34.9, item 5)', () => {
     expect(announced()).toContain('Publicação retirada.');
   });
 
+  it('os números que não vieram: "Sem dado", e não carregando', async () => {
+    mocked.fetchMyFanClub.mockResolvedValue(manager());
+    mocked.fetchMyFanClubNumbers.mockRejectedValue(
+      new ApiError('notFound', 'Não encontrado.', 404, 'fan_club_not_found'),
+    );
+    serverAnswers();
+    renderRouter(appTree, { initialUrl: '/meu-fa-clube' });
+
+    expect(await screen.findByLabelText('Seguidores: Sem dado')).toBeTruthy();
+    expect(screen.getByLabelText('Visitas: Sem dado')).toBeTruthy();
+    expect(screen.getByText('Não deu para carregar os números.')).toBeTruthy();
+  });
+
+  it('o card Prêmios traz as condições de conduta ao lado do texto do reconhecimento', async () => {
+    mocked.fetchMyFanClub.mockResolvedValue(manager());
+    serverAnswers();
+    renderRouter(appTree, { initialUrl: '/meu-fa-clube' });
+
+    expect(
+      await screen.findByText(
+        'Para o reconhecimento: 18 anos ou mais, o fã-clube ativo e a conta sem suspensão.',
+      ),
+    ).toBeTruthy();
+  });
+
   it('o WhatsApp para a equipe: o número guardado, Editar e Salvar pelo PUT /me/contact', async () => {
     mocked.fetchMyFanClub.mockResolvedValue(manager());
     serverAnswers();
     renderRouter(appTree, { initialUrl: '/meu-fa-clube' });
 
     expect(
-      await screen.findByLabelText('WhatsApp para a equipe, +55 (75) 99123-4567'),
+      await screen.findByLabelText(`WhatsApp para a equipe, +55 (75) 99123-4567. ${HINT}`),
     ).toBeTruthy();
     fireEvent.press(screen.getByTestId('fan-club-contact-edit'));
     fireEvent.changeText(screen.getByTestId('fan-club-contact-input'), '75988887777');
@@ -871,7 +988,7 @@ describe('o "Meu fã-clube" (34.9, item 5)', () => {
       ),
     );
     expect(
-      await screen.findByLabelText('WhatsApp para a equipe, +55 (75) 98888-7777'),
+      await screen.findByLabelText(`WhatsApp para a equipe, +55 (75) 98888-7777. ${HINT}`),
     ).toBeTruthy();
   });
 });
@@ -956,6 +1073,18 @@ describe('a nova publicação (34.9, item 6)', () => {
     fireEvent.press(await screen.findByTestId('fan-club-post-pick-photo'));
     expect(await screen.findByText('Foto grande demais. Escolha outra.')).toBeTruthy();
     expect(mocked.openFanClubUpload).not.toHaveBeenCalled();
+  });
+
+  it('o envio só com espaços: o erro do campo, anunciado, sem ir ao servidor', async () => {
+    mocked.fetchMyFanClub.mockResolvedValue(manager({ photosAllowed: false }));
+    serverAnswers();
+    renderRouter(appTree, { initialUrl: '/meu-fa-clube/nova-publicacao' });
+
+    fireEvent.changeText(await screen.findByTestId('fan-club-post-text'), '   ');
+    fireEvent.press(screen.getByTestId('fan-club-post-submit'));
+
+    await waitFor(() => expect(announced()).toContain('Escreva de 1 a 1.000 caracteres.'));
+    expect(mocked.createFanClubPost).not.toHaveBeenCalled();
   });
 
   it('com 3 em análise: o aviso, e o envio desligado', async () => {

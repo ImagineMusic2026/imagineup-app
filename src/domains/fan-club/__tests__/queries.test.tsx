@@ -120,7 +120,8 @@ function wrapper({ children }: { children: ReactNode }) {
 }
 
 beforeEach(() => {
-  jest.clearAllMocks();
+  // O `resetAllMocks` tira também o que um teste deixou na resposta dos mocks.
+  jest.resetAllMocks();
   client = new QueryClient({ defaultOptions: { mutations: { gcTime: Infinity } } });
   useSessionStore.setState({
     status: 'signedIn',
@@ -182,6 +183,44 @@ describe('candidatar e desistir', () => {
     expect(client.getQueryData(fanClubKeys.mine())).toBeUndefined();
   });
 
+  it('a versão das regras que mudou: o estado do fã busca de novo, com a versão nova', async () => {
+    client.setQueryData(fanClubKeys.mine(), MINE);
+    jest.mocked(applyForFanClub).mockRejectedValueOnce(
+      new ApiError('validation', 'Inválido.', 400, 'fan_club_invalid', {
+        field: 'rulesVersion',
+        reason: 'format',
+      }),
+    );
+    const { result } = renderHook(() => useApplyForFanClubMutation(), { wrapper });
+    await settle(() => result.current.mutateAsync(BODY));
+    expect(client.getQueryState(fanClubKeys.mine())?.isInvalidated).toBe(true);
+  });
+
+  it('depois da falha incerta, o estado do fã busca de novo (o servidor pode ter gravado)', async () => {
+    client.setQueryData(fanClubKeys.mine(), MINE);
+    jest.mocked(applyForFanClub).mockRejectedValueOnce(network());
+    const { result } = renderHook(() => useApplyForFanClubMutation(), { wrapper });
+    await settle(() => result.current.mutateAsync(BODY));
+    expect(client.getQueryState(fanClubKeys.mine())?.isInvalidated).toBe(true);
+  });
+
+  it('dois toques antes do render: uma candidatura só', async () => {
+    let finish: (value: MyFanClub) => void = () => undefined;
+    jest.mocked(applyForFanClub).mockReturnValueOnce(
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+    );
+    const { result } = renderHook(() => useApplyForFanClubMutation(), { wrapper });
+    await act(async () => {
+      result.current.mutate(BODY);
+      result.current.mutate(BODY);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    await settle(async () => finish(MINE));
+    expect(applyForFanClub).toHaveBeenCalledTimes(1);
+  });
+
   it('desistir põe o estado novo no cache', async () => {
     const withdrawn = { ...MINE, application: null };
     jest.mocked(withdrawApplication).mockResolvedValueOnce(withdrawn);
@@ -230,20 +269,30 @@ describe('publicar', () => {
     expect(client.getQueryState(fanClubKeys.mine())?.isInvalidated).toBe(true);
   });
 
-  it('a falha incerta no POST: a nova tentativa usa a mesma vaga, não sobe de novo o que chegou e repete a chave', async () => {
+  it('a falha incerta no POST: a nova tentativa vai direto a ele, com a mesma chave, sem ler a vaga que ele apagou', async () => {
     jest.mocked(openFanClubUpload).mockResolvedValueOnce(slot('a1b2c3d4'));
-    jest.mocked(fanClubFileUploaded).mockResolvedValue(true);
+    // Se o POST gravou, a vaga saiu, e a regra do Storage recusa a leitura do dono.
+    jest
+      .mocked(fanClubFileUploaded)
+      .mockRejectedValue(Object.assign(new Error('Negado.'), { code: 'storage/unauthorized' }));
     jest.mocked(createFanClubPost).mockRejectedValueOnce(network()).mockResolvedValueOnce(POST);
+    client.setQueryData(fanClubKeys.mine(), MINE);
+    client.setQueryData(fanClubKeys.myPosts(), { pages: [], pageParams: [] });
     const { result } = renderHook(() => useCreateFanClubPostMutation(), { wrapper });
 
     await settle(() => result.current.mutateAsync({ text: 'Que show!', photo: PHOTO }));
     expect(result.current.failedStep()).toBe('post');
+    // O POST pode ter gravado: o estado do fã e "Minhas publicações" buscam de novo.
+    expect(client.getQueryState(fanClubKeys.mine())?.isInvalidated).toBe(true);
+    expect(client.getQueryState(fanClubKeys.myPosts())?.isInvalidated).toBe(true);
     await settle(() => result.current.mutateAsync({ text: 'Que show!', photo: PHOTO }));
 
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(openFanClubUpload).toHaveBeenCalledTimes(1);
     expect(uploadFanClubFile).toHaveBeenCalledTimes(2);
-    expect(fanClubFileUploaded).toHaveBeenCalledTimes(2);
+    expect(fanClubFileUploaded).not.toHaveBeenCalled();
     const keys = jest.mocked(createFanClubPost).mock.calls.map(([vars]) => vars.idempotencyKey);
+    expect(keys).toHaveLength(2);
     expect(keys[1]).toBe(keys[0]);
   });
 
@@ -283,7 +332,59 @@ describe('publicar', () => {
 
     await settle(() => result.current.mutateAsync({ text: 'Que show!', photo: PHOTO }));
 
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(openFanClubUpload).toHaveBeenCalledTimes(2);
+    expect(createFanClubPost).toHaveBeenCalledTimes(2);
     const slotKeys = jest.mocked(openFanClubUpload).mock.calls.map(([vars]) => vars.idempotencyKey);
+    expect(slotKeys[1]).not.toBe(slotKeys[0]);
+    expect(jest.mocked(uploadFanClubFile).mock.calls).toEqual([
+      ['fanClubMedia/uid-camila/club-photo-a1b2c3d4.jpg', 'file:///foto.jpg'],
+      ['fanClubMedia/uid-camila/club-thumb-a1b2c3d4.jpg', 'file:///mini.jpg'],
+      ['fanClubMedia/uid-camila/club-photo-e5f6a7b8.jpg', 'file:///foto.jpg'],
+      ['fanClubMedia/uid-camila/club-thumb-e5f6a7b8.jpg', 'file:///mini.jpg'],
+    ]);
+    const postKeys = jest.mocked(createFanClubPost).mock.calls.map(([vars]) => vars.idempotencyKey);
+    expect(postKeys[1]).not.toBe(postKeys[0]);
+  });
+
+  it('o upload_missing de novo na tentativa nova: a recusa fica, sem uma terceira vaga', async () => {
+    jest
+      .mocked(openFanClubUpload)
+      .mockResolvedValueOnce(slot('a1b2c3d4'))
+      .mockResolvedValueOnce(slot('e5f6a7b8'));
+    jest.mocked(createFanClubPost).mockRejectedValue(refused('upload_missing'));
+    const { result } = renderHook(() => useCreateFanClubPostMutation(), { wrapper });
+
+    await settle(() => result.current.mutateAsync({ text: 'Que show!', photo: PHOTO }));
+
+    await waitFor(() => expect(result.current.isError).toBe(true));
+    expect(result.current.error?.details?.reason).toBe('upload_missing');
+    expect(openFanClubUpload).toHaveBeenCalledTimes(2);
+    expect(createFanClubPost).toHaveBeenCalledTimes(2);
+  });
+
+  it('a vaga vencida abre outra, com chave nova, e os dois arquivos sobem nela', async () => {
+    jest
+      .mocked(openFanClubUpload)
+      .mockResolvedValueOnce(slot('a1b2c3d4', '2000-01-01T00:00:00.000Z'))
+      .mockResolvedValueOnce(slot('e5f6a7b8'));
+    // A miniatura falha na primeira; os metadados diriam que tudo chegou, mas a
+    // vaga nova não tem nada: a tentativa esquece o que subiu na vencida.
+    jest
+      .mocked(uploadFanClubFile)
+      .mockResolvedValueOnce(undefined)
+      .mockRejectedValueOnce(new TypeError('Não deu para ler o arquivo local.'))
+      .mockResolvedValue(undefined);
+    jest.mocked(fanClubFileUploaded).mockResolvedValue(true);
+    jest.mocked(createFanClubPost).mockResolvedValueOnce(POST);
+    const { result } = renderHook(() => useCreateFanClubPostMutation(), { wrapper });
+
+    await settle(() => result.current.mutateAsync({ text: 'Que show!', photo: PHOTO }));
+    expect(result.current.failedStep()).toBe('upload');
+    await settle(() => result.current.mutateAsync({ text: 'Que show!', photo: PHOTO }));
+
+    const slotKeys = jest.mocked(openFanClubUpload).mock.calls.map(([vars]) => vars.idempotencyKey);
+    expect(slotKeys).toHaveLength(2);
     expect(slotKeys[1]).not.toBe(slotKeys[0]);
     expect(jest.mocked(uploadFanClubFile).mock.calls.map(([path]) => path)).toEqual([
       'fanClubMedia/uid-camila/club-photo-a1b2c3d4.jpg',
@@ -291,26 +392,31 @@ describe('publicar', () => {
       'fanClubMedia/uid-camila/club-photo-e5f6a7b8.jpg',
       'fanClubMedia/uid-camila/club-thumb-e5f6a7b8.jpg',
     ]);
-    const postKeys = jest.mocked(createFanClubPost).mock.calls.map(([vars]) => vars.idempotencyKey);
-    expect(postKeys[1]).not.toBe(postKeys[0]);
+    expect(fanClubFileUploaded).not.toHaveBeenCalled();
   });
 
-  it('a vaga vencida abre outra, com chave nova', async () => {
-    jest
-      .mocked(openFanClubUpload)
-      .mockResolvedValueOnce(slot('a1b2c3d4', '2000-01-01T00:00:00.000Z'))
-      .mockResolvedValueOnce(slot('e5f6a7b8'));
-    jest.mocked(createFanClubPost).mockRejectedValueOnce(network()).mockResolvedValueOnce(POST);
-    const { result } = renderHook(() => useCreateFanClubPostMutation(), { wrapper });
-
-    await settle(() => result.current.mutateAsync({ text: 'Que show!', photo: PHOTO }));
-    await settle(() => result.current.mutateAsync({ text: 'Que show!', photo: PHOTO }));
-
-    expect(openFanClubUpload).toHaveBeenCalledTimes(2);
-    expect(jest.mocked(uploadFanClubFile)).toHaveBeenLastCalledWith(
-      'fanClubMedia/uid-camila/club-thumb-e5f6a7b8.jpg',
-      'file:///mini.jpg',
+  it('dois toques antes do render: um envio só', async () => {
+    let finish: (value: OwnFanClubPost) => void = () => undefined;
+    jest.mocked(createFanClubPost).mockReturnValueOnce(
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
     );
+    const { result } = renderHook(() => useCreateFanClubPostMutation(), { wrapper });
+    await act(async () => {
+      result.current.mutate({ text: 'Que show!', photo: null });
+      result.current.mutate({ text: 'Que show!', photo: null });
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    await settle(async () => finish(POST));
+    expect(createFanClubPost).toHaveBeenCalledTimes(1);
+    // A trava solta no fim: o toque seguinte envia.
+    jest.mocked(createFanClubPost).mockResolvedValueOnce(POST);
+    await act(async () => {
+      result.current.mutate({ text: 'Outro', photo: null });
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    expect(createFanClubPost).toHaveBeenCalledTimes(2);
   });
 
   it('outro texto depois da falha é outra publicação, com chaves novas', async () => {

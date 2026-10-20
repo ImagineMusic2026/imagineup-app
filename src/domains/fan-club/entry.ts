@@ -38,16 +38,23 @@ export type NextRound =
 /**
  * A próxima rodada, pelo que a resposta diz. O servidor dá só o `canApply`
  * (o programa aberto e a vez do fã, `applicationTurn`) e o `canReapplyAt`; o
- * resto sai deles: sem prazo e sem vez, a recusa da 3ª rodada não tem outra,
- * e o fim de outro jeito é o encerramento pela equipe.
+ * resto sai deles. Os fins vêm antes do programa fechado, que vale para todos:
+ * a recusa da 3ª rodada não tem prazo nem outra rodada, e o fã-clube encerrado
+ * sem prazo é o encerramento pela equipe (o encerrado a pedido tem os 30
+ * dias). O prazo vem depois do programa fechado: com ele desligado, a data
+ * não diria nada de verdade.
  */
 export function nextRoundOf(mine: MyFanClub, application: FanClubApplication): NextRound {
   if (application.canApply) return { kind: 'now' };
-  if (!mine.open) return { kind: 'programClosed' };
-  if (application.canReapplyAt) return { kind: 'date', date: application.canReapplyAt };
-  if (application.status === 'rejected' && application.round >= FAN_CLUB_ROUNDS_MAX) {
+  const noDate = application.canReapplyAt === null;
+  if (application.status === 'rejected' && application.round >= FAN_CLUB_ROUNDS_MAX && noDate) {
     return { kind: 'roundsOver' };
   }
+  if (application.status === 'approved' && mine.club?.status === 'closed' && noDate) {
+    return { kind: 'never' };
+  }
+  if (!mine.open) return { kind: 'programClosed' };
+  if (application.canReapplyAt) return { kind: 'date', date: application.canReapplyAt };
   return { kind: 'never' };
 }
 

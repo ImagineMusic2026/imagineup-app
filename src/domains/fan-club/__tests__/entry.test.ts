@@ -175,6 +175,20 @@ describe('nextRoundOf: quando vem a próxima candidatura', () => {
   ])('%s', (_name, item, open, expected) => {
     expect(nextRoundOf(mine({ open }), item)).toEqual(expected);
   });
+
+  it('com o programa fechado, os fins vêm antes: a 3ª rodada e o encerrado pela equipe', () => {
+    const closed = club({ status: 'closed', available: false, unavailableReason: 'closed' });
+    expect(nextRoundOf(mine({ open: false }), rejected({ round: 3 }))).toEqual({
+      kind: 'roundsOver',
+    });
+    expect(
+      nextRoundOf(mine({ open: false, club: closed }), application({ status: 'approved' })),
+    ).toEqual({ kind: 'never' });
+    // O prazo com o programa fechado não diria nada de verdade.
+    expect(
+      nextRoundOf(mine({ open: false }), rejected({ canReapplyAt: '2026-11-17T15:00:00.000Z' })),
+    ).toEqual({ kind: 'programClosed' });
+  });
 });
 
 describe('canApplyNow', () => {

@@ -20,10 +20,16 @@ import {
 // servidor (o filtro e o "oficial" moram lá); o aparelho confere antes para o
 // fã ver o erro no campo.
 
-/** A palavra "oficial" inteira, sem acento nem caixa: o servidor recusa (decisão 10). */
+/**
+ * A palavra "oficial" inteira, sem acento nem caixa, entre separadores certos
+ * (o começo, o fim, o espaço e a pontuação comum): o servidor recusa (decisão
+ * 10). Os `@ $ ! |` contam como letras no filtro do servidor (o leet), e ele
+ * aceita "Clube!Oficial": o aparelho não recusa o que ele aceita, e o resto
+ * fica para a recusa do servidor, no campo.
+ */
 function hasOfficialWord(name: string): boolean {
   const plain = name.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase();
-  return /(^|[^a-z0-9])oficial([^a-z0-9]|$)/.test(plain);
+  return /(^|[ \-_.,;:/()])oficial([ \-_.,;:/()]|$)/.test(plain);
 }
 
 const nameField = z

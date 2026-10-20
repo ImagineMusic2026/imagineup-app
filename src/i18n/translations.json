@@ -1243,6 +1243,7 @@
       "published": "Publicações no ar",
       "pendingPosts": "Em análise",
       "numberLabel": "{{label}}: {{value}}",
+      "numberMissing": "Sem dado",
       "numbersError": "Não deu para carregar os números.",
       "share": "Compartilhar meu fã-clube",
       "shareHint": "Abre as opções de compartilhar, com o seu código de convite",
@@ -1261,7 +1262,8 @@
         "openHint": "Abre a loja",
         "contact": "Falar com a equipe",
         "contactHint": "Abre o app de e-mail, para quem não quer ou não pode usar um prêmio",
-        "contactSubject": "Prêmio do fã-clube no ImagineUP"
+        "contactSubject": "Prêmio do fã-clube no ImagineUP",
+        "conditions": "Para o reconhecimento: 18 anos ou mais, o fã-clube ativo e a conta sem suspensão."
       },
       "posts": {
         "title": "Minhas publicações",
@@ -1273,11 +1275,11 @@
         "reason": "Motivo: {{reason}}",
         "rowLabel": "{{status}}. {{text}}. Enviada em {{date}}.",
         "withdraw": "Retirar",
-        "withdrawLabel": "Retirar a publicação",
+        "withdrawLabel": "Retirar a publicação: {{excerpt}}",
         "withdrawTitle": "Retirar a publicação?",
         "withdrawBody": "Ela sai da análise, e a foto é apagada.",
         "remove": "Tirar do ar",
-        "removeLabel": "Tirar a publicação do ar",
+        "removeLabel": "Tirar do ar a publicação: {{excerpt}}",
         "removeTitle": "Tirar do ar?",
         "removeBody": "A publicação sai da página do fã-clube e não volta.",
         "cancel": "Cancelar",

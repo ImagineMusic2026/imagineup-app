@@ -153,6 +153,8 @@ export function ClubDashboard({ mine, club, next }: ClubDashboardProps) {
   const share = useShareMyFanClub();
   const value = (field: keyof NonNullable<typeof numbers.data>) =>
     numbers.data ? numbers.data[field] : null;
+  // A leitura dos números falhou: os cartões dizem "Sem dado", e não carregando.
+  const failed = numbers.isError && !numbers.data;
   const closed = club.status === 'closed';
   const full = club.pendingPosts >= FAN_CLUB_PENDING_MAX;
   const canPost = club.available && !club.rulesOutdated && !full;
@@ -185,8 +187,8 @@ export function ClubDashboard({ mine, club, next }: ClubDashboardProps) {
       <View style={styles.block}>
         <NumberGrid
           items={[
-            { label: t('fanClub.mine.followers'), value: value('followers') },
-            { label: t('fanClub.mine.followers30d'), value: value('followers30d') },
+            { label: t('fanClub.mine.followers'), value: value('followers'), failed },
+            { label: t('fanClub.mine.followers30d'), value: value('followers30d'), failed },
           ]}
           testID="fan-club-followers"
         />
@@ -227,10 +229,10 @@ export function ClubDashboard({ mine, club, next }: ClubDashboardProps) {
       <SectionLabel>{t('fanClub.mine.numbersTitle')}</SectionLabel>
       <NumberGrid
         items={[
-          { label: t('fanClub.mine.links'), value: value('links') },
-          { label: t('fanClub.mine.visits'), value: value('visits') },
-          { label: t('fanClub.mine.signups'), value: value('signups') },
-          { label: t('fanClub.mine.joins'), value: value('joins') },
+          { label: t('fanClub.mine.links'), value: value('links'), failed },
+          { label: t('fanClub.mine.visits'), value: value('visits'), failed },
+          { label: t('fanClub.mine.signups'), value: value('signups'), failed },
+          { label: t('fanClub.mine.joins'), value: value('joins'), failed },
           { label: t('fanClub.mine.published'), value: club.postCount },
           { label: t('fanClub.mine.pendingPosts'), value: club.pendingPosts },
         ]}
@@ -252,7 +254,7 @@ export function ClubDashboard({ mine, club, next }: ClubDashboardProps) {
           />
         </View>
       ) : null}
-      <OwnPosts canRemove />
+      <OwnPosts />
       <SectionLabel>{t('fanClub.mine.contact.title')}</SectionLabel>
       <ContactCard />
       {closed ? null : (

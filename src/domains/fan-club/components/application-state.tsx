@@ -61,7 +61,10 @@ export function PendingState({ application }: { application: FanClubApplication 
   const run = () => {
     setFailure(null);
     withdraw.mutate(undefined, {
-      onSuccess: () => {
+      // Sem a pendente (a equipe decidiu antes), o servidor devolve o estado de
+      // agora sem gravar: só a desistência que valeu é anunciada; a tela troca.
+      onSuccess: (mine) => {
+        if (mine.application?.status !== 'withdrawn') return;
         haptics.trigger('success');
         AccessibilityInfo.announceForAccessibility(t('fanClub.state.withdrawn'));
       },
