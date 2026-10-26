@@ -1,11 +1,15 @@
 const expoPreset = require('jest-expo/jest-preset');
 
-// A FlashList publica o dist em ESM desde a 2.1 (import/export): o Jest só roda
-// o pacote transformado. Os outros pacotes seguem a lista do jest-expo.
+// A FlashList publica o dist em ESM desde a 2.1 (import/export), e o Phosphor
+// das conquistas vem pelo fonte .tsx de cada ícone: o Jest só roda os dois
+// pacotes transformados. Os outros seguem a lista do jest-expo.
 const PRESET_ALLOWLIST = '/node_modules/(?!(';
 const transformIgnorePatterns = expoPreset.transformIgnorePatterns.map((pattern) =>
   pattern.startsWith(PRESET_ALLOWLIST)
-    ? pattern.replace(PRESET_ALLOWLIST, `${PRESET_ALLOWLIST}@shopify/flash-list|`)
+    ? pattern.replace(
+        PRESET_ALLOWLIST,
+        `${PRESET_ALLOWLIST}@shopify/flash-list|phosphor-react-native|`,
+      )
     : pattern,
 );
 

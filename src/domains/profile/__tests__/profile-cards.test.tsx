@@ -1,15 +1,13 @@
 import { act, fireEvent, render, screen, within } from '@testing-library/react-native';
 import { router } from 'expo-router';
-import { Dimensions, Text } from 'react-native';
+import { Dimensions, StyleSheet, Text } from 'react-native';
 import * as Reanimated from 'react-native-reanimated';
-import { Path, Polygon } from 'react-native-svg';
+import { Polygon } from 'react-native-svg';
 
 import type { FanCentral } from '@/domains/artists';
-import { borderWidths, colors, layout, spacing, tints, typography } from '@/theme';
-import { withAlpha } from '@/utils/color';
+import { colors, layout, typography } from '@/theme';
 
-import { AchievementTile } from '../components/achievement-tile';
-import { ACHIEVEMENT_SLOTS } from '../consts';
+import { AchievementsRow, AchievementTile } from '../components/achievement-tile';
 import { CentralRow } from '../components/central-row';
 import { LevelBadge } from '../components/level-badge';
 import { LevelProgress } from '../components/level-progress';
@@ -116,11 +114,11 @@ describe('ProfileNumbers', () => {
     ]) {
       const cell = screen.getByTestId(id);
       expect(cell).toHaveStyle({ alignItems: 'flex-start' });
-      // Nenhuma coluna estica: a largura é a do que ela mostra.
-      expect(cell.props.style).not.toEqual(expect.objectContaining({ flex: expect.anything() }));
-      expect(cell.props.style).not.toEqual(
-        expect.objectContaining({ flexGrow: expect.anything() }),
-      );
+      // Nenhuma coluna estica: a largura é a do que ela mostra. O estilo chega
+      // ao host como lista: achatado, a conferência vale.
+      const flat = StyleSheet.flatten(cell.props.style);
+      expect(flat).not.toHaveProperty('flex');
+      expect(flat).not.toHaveProperty('flexGrow');
     }
   });
 
@@ -403,50 +401,74 @@ describe('AchievementTile', () => {
     unlockedAt: '2026-09-24T20:00:00.000Z',
   };
 
-  it('conquistada: tingida na cor do assunto, com o rótulo em branco', () => {
+  /** O Svg do ícone do Phosphor, pelo testID que ele mesmo põe (nome e peso). */
+  const phosphor = (name: string) =>
+    screen.getByTestId(`phosphor-react-native-${name}-duotone`, hidden);
+
+  it('conquistada: a medalha do Phosphor em duotone na cor do assunto, sem quadro, e o nome em branco', () => {
     render(<AchievementTile testID="tile" achievement={unlocked} />);
-    const tile = screen.getByLabelText('Top 20, conquistada');
-    expect(tile).toHaveStyle({
-      backgroundColor: withAlpha(colors.points, tints.soft.fill),
-      borderColor: withAlpha(colors.points, tints.soft.border),
-    });
+    // O estilo chega ao host como lista: achatado, a conferência vale.
+    const flat = StyleSheet.flatten(screen.getByLabelText('Top 20, conquistada').props.style);
+    expect(flat).not.toHaveProperty('backgroundColor');
+    expect(flat).not.toHaveProperty('borderWidth');
+    expect(flat).not.toHaveProperty('borderStyle');
+    expect(phosphor('trophy')).toHaveProp('color', colors.points);
     expect(screen.getByText('Top 20', hidden)).toHaveStyle({ color: colors.text });
     expect(screen.queryByRole('button')).toBeNull();
   });
 
-  it('a taça do "Top 20" é a fina do protótipo, e não o troféu do lucide', () => {
-    render(<AchievementTile achievement={unlocked} />);
-    const cup = screen.root.findAll(
-      (node) => node.type === Path && node.props.d === 'M8 4h8v5a4 4 0 0 1-8 0z',
-    );
-    expect(cup).toHaveLength(1);
+  it.each([
+    ['share', 'share-fat'],
+    ['ticket', 'ticket'],
+    ['star', 'star'],
+    ['users', 'users-three'],
+    ['heart', 'heart'],
+    ['comment', 'chat-circle-dots'],
+    ['calendar', 'calendar-check'],
+    ['flame', 'fire'],
+    ['chave-que-o-app-nao-conhece', 'medal'],
+  ])('a chave "%s" do painel vira o ícone %s do Phosphor', (icon, name) => {
+    render(<AchievementTile achievement={{ ...unlocked, icon, tone: 'action' }} />);
+    expect(phosphor(name)).toHaveProp('color', colors.accent);
   });
 
-  it('com a fonte maior, a peça não fica mais baixa que o quadrado da fonte padrão', () => {
-    // O Jest abre com a fonte do sistema a 200%.
-    const { width } = Dimensions.get('window');
-    const gaps = (ACHIEVEMENT_SLOTS - 1) * spacing.tileGap;
-    render(<AchievementTile testID="tile" achievement={unlocked} />);
-    expect(screen.getByTestId('tile')).toHaveStyle({
-      minHeight: (width - 2 * spacing.gutter - gaps) / ACHIEVEMENT_SLOTS,
-    });
-  });
-
-  it('bloqueada: borda tracejada e rótulo em textMuted, nunca abaixo de .5', () => {
+  it('bloqueada: o cadeado e o nome em textMuted, nunca abaixo de .5', () => {
     render(
       <AchievementTile
         testID="tile"
         achievement={{ ...unlocked, id: 'backstage', title: 'Backstage', unlockedAt: null }}
       />,
     );
-    expect(screen.getByLabelText('Backstage, bloqueada')).toHaveStyle({
-      borderStyle: 'dashed',
-      borderColor: colors.borderOutline,
-      borderWidth: borderWidths.default,
-      backgroundColor: colors.surface,
-    });
+    expect(screen.getByLabelText('Backstage, bloqueada')).toBeTruthy();
+    expect(phosphor('lock-simple')).toHaveProp('color', colors.textMuted);
+    expect(screen.queryByTestId('phosphor-react-native-trophy-duotone', hidden)).toBeNull();
     expect(screen.getByText('Backstage', hidden)).toHaveStyle({ color: colors.textMuted });
   });
+
+  const FOUR: Achievement[] = ['a', 'b', 'c', 'd'].map((id) => ({ ...unlocked, id, title: id }));
+
+  it.each([1, 1.15])('a %sx, as quatro numa linha só, da mesma largura', (scale) => {
+    setFontScale(scale);
+    render(<AchievementsRow testID="row" achievements={FOUR} />);
+    expect(StyleSheet.flatten(screen.getByTestId('row').props.style)).not.toHaveProperty(
+      'flexWrap',
+    );
+    const tile = StyleSheet.flatten(screen.getByTestId('profile-achievement-a').props.style);
+    expect(tile).toEqual(expect.objectContaining({ flex: 1 }));
+    expect(tile).not.toHaveProperty('flexBasis');
+  });
+
+  it.each([Math.fround(1.3), 2])(
+    'a %sx, duas por linha, para o nome não quebrar no meio da palavra',
+    (scale) => {
+      setFontScale(scale);
+      render(<AchievementsRow testID="row" achievements={FOUR} />);
+      expect(screen.getByTestId('row')).toHaveStyle({ flexDirection: 'row', flexWrap: 'wrap' });
+      for (const id of ['a', 'b', 'c', 'd']) {
+        expect(screen.getByTestId(`profile-achievement-${id}`)).toHaveStyle({ flexBasis: '40%' });
+      }
+    },
+  );
 });
 
 describe('CentralRow', () => {

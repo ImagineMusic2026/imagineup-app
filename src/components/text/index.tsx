@@ -38,7 +38,6 @@ const MAX_FONT_SIZE_MULTIPLIER: Partial<Record<TypographyVariant, number>> = {
   statLabel: FIXED_LAYOUT_MULTIPLIER,
   labelTiny: FIXED_LAYOUT_MULTIPLIER,
   dateMonth: FIXED_LAYOUT_MULTIPLIER,
-  microLabel: FIXED_LAYOUT_MULTIPLIER,
   podiumTitle: FIXED_LAYOUT_MULTIPLIER,
   overlineStrong: FIXED_LAYOUT_MULTIPLIER,
   thumbLabel: FIXED_LAYOUT_MULTIPLIER,

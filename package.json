@@ -59,6 +59,7 @@
     "expo-web-browser": "~57.0.3",
     "firebase": "^12.19.0",
     "lucide-react-native": "^1.48.0",
+    "phosphor-react-native": "^3.0.6",
     "react": "19.2.3",
     "react-hook-form": "^7.89.0",
     "react-native": "0.86.3",

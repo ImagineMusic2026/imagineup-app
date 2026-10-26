@@ -21,6 +21,11 @@ const restrictedImports = {
       message: 'Use a camada semântica de @/services/haptics.',
     },
     { name: '@expo/vector-icons', message: 'Use lucide-react-native pelo @/components/icon.' },
+    {
+      name: 'phosphor-react-native',
+      message:
+        'Importe cada ícone pelo caminho (phosphor-react-native/src/icons/<Nome>): o índice leva os 1.500 ícones para o bundle.',
+    },
     { name: 'moment', message: 'Use date-fns pelo @/utils/date.' },
     { name: 'dayjs', message: 'Use date-fns pelo @/utils/date.' },
     { name: 'yup', message: 'Use zod.' },
