@@ -97,7 +97,6 @@ const appTree = {
   '(tabs)/(perfil)/perfil': label('profile'),
   '(tabs)/(perfil)/ajustes': SettingsRoute,
   '(tabs)/(perfil)/fas-bloqueados': BlockedFansRoute,
-  '(tabs)/(perfil)/excluir-conta': label('delete'),
   'editar-perfil': label('edit-profile'),
 };
 
@@ -185,7 +184,7 @@ describe('Fãs bloqueados (seção 29, frente B)', () => {
     const view = renderRouter(appTree, { initialUrl: '/ajustes' });
 
     expect(screen.getByRole('header', { name: 'Privacidade e segurança' })).toBeTruthy();
-    const entry = screen.getByRole('button', { name: 'Fãs bloqueados. Veja e desbloqueie' });
+    const entry = screen.getByRole('button', { name: 'Fãs bloqueados' });
     expect(entry.props.accessibilityHint).toBe('Abre a lista de fãs bloqueados');
     fireEvent.press(entry);
 

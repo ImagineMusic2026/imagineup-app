@@ -355,18 +355,34 @@ describe('o bloco "Fã-clube" dos Ajustes (34.9, item 1)', () => {
     expectOnlyTheGate();
   });
 
-  it('com o programa aberto, "Tenha seu fã-clube" entre Perfil e Privacidade e segurança, e abre a apresentação', async () => {
+  it('com o programa aberto, "Tenha seu fã-clube" entre Perfil e conta e Privacidade e segurança, e abre a apresentação', async () => {
     mocked.fetchMyFanClub.mockResolvedValue(mine());
+    // Na conta com senha, as duas trocas ficam no Perfil e conta, antes do fã-clube.
+    useSessionStore.setState((state) => ({
+      user: state.user ? { ...state.user, hasPassword: true } : state.user,
+    }));
     const view = renderRouter(appTree, { initialUrl: '/ajustes' });
 
-    const row = await screen.findByRole('button', {
-      name: 'Tenha seu fã-clube. Divulgue um artista e traga fãs',
-    });
-    expect(screen.getAllByRole('header').map((node) => node.props.children)).toEqual([
+    const row = await screen.findByRole('button', { name: 'Tenha seu fã-clube' });
+    const order = screen.UNSAFE_root.findAll(
+      (node) =>
+        typeof node.type === 'string' &&
+        (node.props.accessibilityRole === 'header' ||
+          /^settings-(change-password|fan-club|fan-club-follows|blocked-fans)$/.test(
+            node.props.testID ?? '',
+          )),
+    ).map((node) =>
+      node.props.accessibilityRole === 'header' ? String(node.props.children) : node.props.testID,
+    );
+    expect(order).toEqual([
       'Ajustes',
-      'Perfil',
+      'Perfil e conta',
+      'settings-change-password',
       'Fã-clube',
+      'settings-fan-club',
+      'settings-fan-club-follows',
       'Privacidade e segurança',
+      'settings-blocked-fans',
       'Sobre',
       'Zona de perigo',
     ]);
@@ -379,12 +395,14 @@ describe('o bloco "Fã-clube" dos Ajustes (34.9, item 1)', () => {
     [
       'em análise',
       mine({ application: application() }),
-      'Tenha seu fã-clube. Candidatura em análise',
+      'Tenha seu fã-clube',
+      'Candidatura em análise',
     ],
     [
       'recusada',
       mine({ application: application({ status: 'rejected', rejectReason: 'other' }) }),
-      'Tenha seu fã-clube. Não aprovada, toque para ver',
+      'Tenha seu fã-clube',
+      'Não aprovada, toque para ver',
     ],
     [
       'fora do ar',
@@ -394,27 +412,30 @@ describe('o bloco "Fã-clube" dos Ajustes (34.9, item 1)', () => {
         unavailableReason: 'paused',
         lastReward: null,
       }),
-      'Meu fã-clube. Fora do ar, toque para ver',
+      'Meu fã-clube',
+      'Fora do ar, toque para ver',
     ],
-    ['no ar', manager({ lastReward: null }), 'Meu fã-clube. Seu fã-clube de Netto Brito'],
-  ])('a meta da linha: %s', async (_name, state, name) => {
-    mocked.fetchMyFanClub.mockResolvedValue(state);
-    renderRouter(appTree, { initialUrl: '/ajustes' });
-    expect(await screen.findByRole('button', { name })).toBeTruthy();
-  });
+    ['no ar', manager({ lastReward: null }), 'Meu fã-clube', 'Seu fã-clube de Netto Brito'],
+  ])(
+    'a linha só com o título, sem o estado embaixo (26/10/2026): %s',
+    async (_name, state, name, meta) => {
+      mocked.fetchMyFanClub.mockResolvedValue(state);
+      renderRouter(appTree, { initialUrl: '/ajustes' });
+      expect(await screen.findByRole('button', { name })).toBeTruthy();
+      expect(screen.queryByText(meta)).toBeNull();
+    },
+  );
 
-  it('"Novo prêmio" até o gestor abrir o "Meu fã-clube", que marca o visto no aparelho', async () => {
+  it('a linha não diz mais "Novo prêmio", e o "Meu fã-clube" segue marcando o visto no aparelho', async () => {
     mocked.fetchMyFanClub.mockResolvedValue(manager());
     serverAnswers();
     renderRouter(appTree, { initialUrl: '/ajustes' });
 
-    fireEvent.press(await screen.findByRole('button', { name: 'Meu fã-clube. Novo prêmio' }));
+    const row = await screen.findByRole('button', { name: 'Meu fã-clube' });
+    expect(screen.queryByText('Novo prêmio')).toBeNull();
+    fireEvent.press(row);
     expect(await screen.findByTestId('fan-club-dashboard')).toBeTruthy();
     expect(useFanClubPrizeStore.getState().seen['uid-camila']).toBe('2026-10-18T15:00:00.000Z');
-    act(() => router.back());
-    expect(
-      await screen.findByRole('button', { name: 'Meu fã-clube. Seu fã-clube de Netto Brito' }),
-    ).toBeTruthy();
   });
 });
 

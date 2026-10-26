@@ -38,15 +38,6 @@ describe('IconTile', () => {
     expect(screen.UNSAFE_getByType(Video).props.size).toBe(30);
   });
 
-  it('danger: a zona de perigo dos Ajustes, na cor de perigo a .14 e o ícone na cor cheia', () => {
-    render(<IconTile icon={Lock} tone="danger" testID="tile" />);
-
-    expect(screen.getByTestId('tile', { includeHiddenElements: true })).toHaveStyle({
-      backgroundColor: withAlpha(colors.danger, tints.soft.fill),
-    });
-    expect(screen.UNSAFE_getByType(Lock).props.color).toBe(colors.danger);
-  });
-
   it('glass: o bloqueado fica em vidro com o ícone apagado', () => {
     render(<IconTile icon={Lock} tone="glass" strokeWidth={1.7} testID="tile" />);
 

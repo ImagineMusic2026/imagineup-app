@@ -29,6 +29,7 @@ import { haptics } from '@/services/haptics';
 import * as webPage from '@/services/web-page';
 import { usePreferencesStore } from '@/stores/preferences';
 import { useSessionStore } from '@/stores/session';
+import { colors } from '@/theme';
 
 // A tela "Editar perfil" (seção 28 de docs/arquitetura-api.md, sobre a 24.12):
 // fora das abas, com o X, o título e o ✓; toda a edição pela API num
@@ -145,6 +146,8 @@ const appTree = {
   '(tabs)/(inicio,explorar,ranking,perfil)/artista/[artistaId]': label('artist'),
   // Na pilha raiz, fora das abas (seção 28).
   'editar-perfil': EditProfileRoute,
+  // Por cima do "Editar perfil", também na pilha raiz (26/10/2026).
+  'excluir-conta': label('excluir conta'),
 };
 
 /** A árvore com a 1e de verdade (nas fixtures), para o toque no hero. */
@@ -1714,5 +1717,100 @@ describe('Editar perfil: o estilo das linhas', () => {
     expect(usernameInput()).toHaveProp('placeholder', 'seunome');
     expect(bioInput()).toHaveProp('placeholder', 'Conte um pouco sobre você...');
     expect(cityInput()).toHaveProp('placeholder', 'Sua cidade (opcional)');
+  });
+});
+
+describe('Editar perfil: excluir conta, a última opção (26/10/2026)', () => {
+  /** A linha de excluir, pelo testID: um foco só, com o rótulo do título. */
+  const deleteRow = () => screen.getByTestId('edit-profile-delete-account');
+
+  it('no fim da tela, depois das redes, na cor de perigo, abre a confirmação por cima, e o voltar devolve aqui', async () => {
+    const view = await openEditProfile();
+
+    const row = screen.getByRole('button', { name: 'Excluir conta' });
+    expect(row).toHaveProp('accessibilityHint', 'Mostra o que se perde antes de confirmar');
+    expect(screen.getByText('Excluir conta')).toHaveStyle({ color: colors.danger });
+    const order = screen
+      .getAllByTestId(/^edit-profile-(basic|social-x|delete-account)$/)
+      .map((node) => node.props.testID);
+    expect(order).toEqual([
+      'edit-profile-basic',
+      'edit-profile-social-x',
+      'edit-profile-delete-account',
+    ]);
+
+    fireEvent.press(row);
+    await waitFor(() => expect(view.getPathname()).toBe('/excluir-conta'));
+    expect(view.getSegments()).toEqual(['excluir-conta']);
+    expect(screen.getByText('excluir conta')).toBeTruthy();
+
+    act(() => router.back());
+    await waitFor(() => expect(view.getPathname()).toBe('/editar-perfil'));
+  });
+
+  it('só leitura, sem a API, a linha continua no fim', async () => {
+    mockDataSource = 'fixtures';
+    await openEditProfile();
+
+    expect(screen.getByRole('button', { name: 'Excluir conta' })).toBeTruthy();
+    const order = screen
+      .getAllByTestId(/^edit-profile-(read-only|delete-account)$/)
+      .map((node) => node.props.testID);
+    expect(order).toEqual(['edit-profile-read-only', 'edit-profile-delete-account']);
+  });
+
+  it('carregando o perfil, a linha já está lá, embaixo do indicador', async () => {
+    jest.mocked(getDoc).mockReturnValue(new Promise(() => undefined) as never);
+    renderRouter(appTree, { initialUrl: '/editar-perfil' });
+
+    expect(await screen.findByLabelText('Carregando seu perfil')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Excluir conta' })).toBeTruthy();
+  });
+
+  it('com mudança, o voltar do Android na confirmação por cima não pergunta o "Descartar alterações?" daqui', async () => {
+    const backPress = jest.spyOn(BackHandler, 'addEventListener');
+    const view = await openEditProfile();
+    fireEvent.changeText(bioInput(), 'Salvador.');
+    fireEvent.press(screen.getByRole('button', { name: 'Excluir conta' }));
+    await waitFor(() => expect(view.getPathname()).toBe('/excluir-conta'));
+
+    // A escuta do "Editar perfil" coberto deixa o voltar para a tela de cima.
+    expect(pressAndroidBack(backPress)).toBe(false);
+    expect(Alert.alert).not.toHaveBeenCalled();
+  });
+
+  it('sem o perfil (ainda não criado), a linha continua: a exclusão não depende dele', async () => {
+    jest.mocked(getDoc).mockResolvedValue({
+      exists: () => false,
+      data: () => undefined,
+      metadata: { fromCache: false },
+    } as never);
+    const view = renderRouter(appTree, { initialUrl: '/editar-perfil' });
+    expect(
+      await screen.findByText('Seu perfil ainda não está pronto. Espere alguns segundos.'),
+    ).toBeTruthy();
+
+    fireEvent.press(screen.getByRole('button', { name: 'Excluir conta' }));
+    await waitFor(() => expect(view.getPathname()).toBe('/excluir-conta'));
+  });
+
+  it('enquanto o texto salva, a linha fica desligada e não sai da tela, como a foto', async () => {
+    const answer = deferred<{ data: ReturnType<typeof editable> }>();
+    put.mockReturnValueOnce(answer.promise as never);
+    const view = await openEditProfile();
+    const before = deleteRow();
+    fireEvent.changeText(bioInput(), 'Salvador.');
+    fireEvent.press(saveButton());
+
+    await waitFor(() => expect(deleteRow()).toBeDisabled());
+    // O mesmo elemento, para o foco do leitor não pular quando o salvamento
+    // acaba, e sem a dica de uma ação que não sai.
+    expect(deleteRow()).toBe(before);
+    expect(deleteRow().props.accessibilityHint).toBeUndefined();
+    fireEvent.press(deleteRow());
+    expect(view.getPathname()).toBe('/editar-perfil');
+
+    await act(async () => answer.resolve({ data: editable({ ...CAMILA, bio: 'Salvador.' }) }));
+    await waitFor(() => expect(view.getPathname()).toBe('/'));
   });
 });

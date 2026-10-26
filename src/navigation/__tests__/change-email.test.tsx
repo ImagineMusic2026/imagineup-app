@@ -232,14 +232,13 @@ describe('"Trocar e-mail" (seção 29, frente D)', () => {
     // O formulário sai, e o e-mail novo fica guardado para o login.
     expect(screen.queryByLabelText('Novo e-mail')).toBeNull();
     expect(readHandedOffEmail()).toBe(NEW_EMAIL);
-    // Nada muda até o link: o "Entrou como" segue com o e-mail de agora.
+    // Nada muda até o link: a sessão segue com o e-mail de agora.
     expect(useSessionStore.getState().user?.email).toBe('alan@teste.imagineup');
 
     fireEvent.press(screen.getByRole('button', { name: 'Voltar aos ajustes' }));
     await waitFor(() => expect(view.getPathname()).toBe('/ajustes'));
-    expect(
-      screen.getByRole('button', { name: 'Sair da conta. Entrou como alan@teste.imagineup' }),
-    ).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Sair da conta' })).toBeTruthy();
+    expect(useSessionStore.getState().user?.email).toBe('alan@teste.imagineup');
   });
 
   it.each(['alan@teste.imagineup', ' ALAN@Teste.imagineup '])(

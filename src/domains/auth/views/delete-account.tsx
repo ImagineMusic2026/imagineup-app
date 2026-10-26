@@ -5,6 +5,7 @@ import { useState } from 'react';
 import { Controller, useForm } from 'react-hook-form';
 import { StyleSheet, View } from 'react-native';
 import Animated, { FadeIn } from 'react-native-reanimated';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Button } from '@/components/button';
 import { Card } from '@/components/card';
@@ -15,7 +16,6 @@ import { Text } from '@/components/text';
 import { isFirebaseConfigured } from '@/firebase';
 import { useIsOnline } from '@/hooks/use-is-online';
 import { useStayOnScreen } from '@/hooks/use-stay-on-screen';
-import { useTabBarInset } from '@/hooks/use-tab-bar-inset';
 import { t, type TranslationKey } from '@/i18n';
 import { colors, motion, spacing } from '@/theme';
 import { announceFirstError } from '@/utils/form-errors';
@@ -43,8 +43,10 @@ function goBack(): void {
 }
 
 /**
- * Excluir conta (sem desenho, no visual das outras telas), aberta pelos
- * Ajustes. A própria tela é a confirmação: diz o que se perde e só então
+ * Excluir conta (sem desenho, no visual das outras telas), aberta pela última
+ * linha do "Editar perfil", na pilha raiz, por cima dele e sem a tab bar
+ * (desde 26/10/2026; antes, pela zona de perigo dos Ajustes, na pilha do
+ * Perfil). A própria tela é a confirmação: diz o que se perde e só então
  * oferece o botão. Se o Firebase pedir o login recente, aparece o campo de
  * senha, e a exclusão sai depois de reautenticar com a credencial de e-mail.
  * Sem rede, o botão fica desligado; erro de rede deixa a conta como estava.
@@ -52,7 +54,8 @@ function goBack(): void {
  * @ somem no servidor.
  */
 export function DeleteAccountScreen() {
-  const bottomInset = useTabBarInset();
+  // Fora das abas, a tela soma a área segura de baixo (a tab bar não está).
+  const bottomInset = useSafeAreaInsets().bottom;
   const online = useIsOnline();
   const deletion = useDeleteAccount();
   const failure = deletion.isError ? deleteAccountFailure(deletion.error) : null;

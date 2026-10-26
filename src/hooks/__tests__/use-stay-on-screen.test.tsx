@@ -8,9 +8,12 @@ type TabPressListener = (event: { preventDefault: () => void }) => void;
 const mockSetOptions = jest.fn();
 // A aba em volta da pilha: guarda quem escuta o toque nela.
 const mockTabPress = { listeners: [] as TabPressListener[], stop: jest.fn() };
+// A tela em foco por padrão; o caso da tela coberta troca.
+let mockFocused = true;
 // O mesmo objeto a cada render, como o navegador de verdade.
 const mockNavigation = {
   setOptions: mockSetOptions,
+  isFocused: () => mockFocused,
   getParent: () => ({
     addListener: (_type: 'tabPress', listener: TabPressListener) => {
       mockTabPress.listeners.push(listener);
@@ -31,6 +34,7 @@ let listeners: BackListener[];
 let remove: jest.Mock;
 
 beforeEach(() => {
+  mockFocused = true;
   mockSetOptions.mockClear();
   mockTabPress.listeners = [];
   mockTabPress.stop.mockClear();
@@ -53,6 +57,19 @@ describe('useStayOnScreen', () => {
     expect(listeners).toHaveLength(1);
     // `true` diz ao Android que o voltar já foi tratado: a tela fica.
     expect(listeners[0]?.(backEvent)).toBe(true);
+  });
+
+  it('coberta por outra tela, não trata o voltar: nem pergunta nem prende (é da tela de cima)', () => {
+    const onAsk = jest.fn();
+    renderHook(() => useStayOnScreen('confirm', onAsk));
+    mockFocused = false;
+    // `false` deixa o voltar seguir para a tela de cima.
+    expect(listeners[0]?.(backEvent)).toBe(false);
+    expect(onAsk).not.toHaveBeenCalled();
+
+    mockFocused = true;
+    expect(listeners[0]?.(backEvent)).toBe(true);
+    expect(onAsk).toHaveBeenCalledTimes(1);
   });
 
   it('preso: tocar de novo na aba não volta a pilha ao topo', () => {

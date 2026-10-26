@@ -49,6 +49,9 @@ export function useStayOnScreen(mode: StayOnScreenMode | boolean, onAsk?: () => 
     navigation.setOptions({ gestureEnabled: resolved === 'free' });
     if (resolved === 'free') return;
     const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
+      // Coberta por outra tela (a exclusão da conta por cima do "Editar perfil"
+      // com mudança), o voltar é da tela de cima: esta não pergunta nem prende.
+      if (!navigation.isFocused()) return false;
       if (resolved === 'confirm') ask.current?.();
       // `true` diz ao Android que o voltar já foi tratado: a tela fica (ou a pergunta decide).
       return true;

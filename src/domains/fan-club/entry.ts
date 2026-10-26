@@ -155,7 +155,11 @@ export function hasNewPrize(club: MyFanClubClub | null, seenAt: string | undefin
   return Date.parse(at) > Date.parse(seenAt);
 }
 
-/** A linha do bloco "Fã-clube" dos Ajustes: o título, a meta e o que o leitor ouve. */
+/**
+ * A linha do bloco "Fã-clube" dos Ajustes: o título e a meta. Desde
+ * 26/10/2026 os Ajustes usam só o título; a meta fica para quem voltar a
+ * mostrar o estado.
+ */
 export interface FanClubSettingsRow {
   titleKey: TranslationKey;
   metaKey: TranslationKey;

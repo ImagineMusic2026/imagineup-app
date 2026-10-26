@@ -1,14 +1,7 @@
 import { onlineManager, QueryClientProvider } from '@tanstack/react-query';
 import { router, Stack } from 'expo-router';
 import { Tabs } from 'expo-router/js-tabs';
-import {
-  act,
-  fireEvent,
-  renderRouter,
-  screen,
-  waitFor,
-  within,
-} from 'expo-router/testing-library';
+import { act, fireEvent, renderRouter, screen, waitFor, within } from 'expo-router/testing-library';
 import * as WebBrowser from 'expo-web-browser';
 import { FirebaseError } from 'firebase/app';
 import {
@@ -18,11 +11,11 @@ import {
   reauthenticateWithCredential,
   signOut as firebaseSignOut,
 } from 'firebase/auth';
-import { LogOut, Trash2 } from 'lucide-react-native';
+import { LogOut } from 'lucide-react-native';
 import type { ReactNode } from 'react';
-import { AccessibilityInfo, Linking, Text } from 'react-native';
+import { AccessibilityInfo, BackHandler, Linking, Text } from 'react-native';
 
-import DeleteAccountRoute from '@/app/(tabs)/(perfil)/excluir-conta';
+import DeleteAccountRoute from '@/app/excluir-conta';
 import SettingsRoute from '@/app/(tabs)/(perfil)/ajustes';
 import { PRIVACY_URL, SUPPORT_EMAIL, TERMS_URL } from '@/config/links';
 import { useAuthListener } from '@/domains/auth';
@@ -33,7 +26,7 @@ import { queryClient, queryPersister } from '@/services/query';
 import { haptics } from '@/services/haptics';
 import { usePreferencesStore } from '@/stores/preferences';
 import { useSessionStore } from '@/stores/session';
-import { colors } from '@/theme';
+import { colors, spacing } from '@/theme';
 
 jest.mock('firebase/app', () => ({
   FirebaseError: class FirebaseError extends Error {
@@ -138,6 +131,7 @@ function RootLayout() {
           <Stack.Screen name="editar-perfil" />
           <Stack.Screen name="trocar-senha" />
           <Stack.Screen name="trocar-email" />
+          <Stack.Screen name="excluir-conta" />
         </Stack.Protected>
       </Stack>
     </QueryClientProvider>
@@ -170,11 +164,11 @@ const appTree = {
   '(tabs)/(ranking)/ranking': label('ranking'),
   '(tabs)/(perfil)/perfil': label('profile'),
   '(tabs)/(perfil)/ajustes': SettingsRoute,
-  '(tabs)/(perfil)/excluir-conta': DeleteAccountRoute,
   '(tabs)/(perfil)/fas-bloqueados': label('fas bloqueados'),
   'editar-perfil': label('editar perfil'),
   'trocar-senha': label('trocar senha'),
   'trocar-email': label('trocar email'),
+  'excluir-conta': DeleteAccountRoute,
   '(tabs)/(inicio,explorar,ranking,perfil)/artista/[artistaId]': label('artist'),
 };
 
@@ -193,8 +187,6 @@ const announced = () =>
 
 const DELETE = 'Excluir minha conta';
 
-/** O botão da aba Perfil na barra de abas padrão do Jest. */
-const profileTab = () => screen.getByRole('button', { name: /perfil/ });
 const hidden = { includeHiddenElements: true } as const;
 const CONFIRM = 'Confirmar e excluir';
 
@@ -251,84 +243,139 @@ afterEach(() => {
   jest.restoreAllMocks();
 });
 
+/** As linhas dos Ajustes, as divisórias e os avisos, pelo testID (o rodapé da versão é o último). */
+const MENU_ROW =
+  /^settings-(menu-divider|edit-profile|change-email|change-password|fan-club|fan-club-follows|blocked-fans|terms|privacy|rules|contact|contact-error|sign-out|delete-account|version)$/;
+
+/** Os cabeçalhos e as linhas na ordem da tela: prende cada linha à seção dela. */
+function menuOrder(): string[] {
+  return screen.UNSAFE_root.findAll(
+    (node) =>
+      typeof node.type === 'string' &&
+      (node.props.accessibilityRole === 'header' || MENU_ROW.test(node.props.testID ?? '')),
+  ).map((node) =>
+    node.props.accessibilityRole === 'header' ? String(node.props.children) : node.props.testID,
+  );
+}
+
 describe('Ajustes', () => {
-  it('mostra a conta com quem o fã entrou, Sair e Excluir conta', () => {
+  it('as seções e as linhas na ordem do menu de referência, cada linha na seção dela, e o rodapé no fim', () => {
+    setSessionPassword(true);
+    queryClient.setQueryData(['rewards', 'list'], {
+      rulesUrl: 'https://imagineup-painel.vercel.app/regulamento/',
+      rewards: [],
+    });
     renderRouter(appTree, { initialUrl: '/ajustes' });
 
-    expect(screen.getByRole('header', { name: 'Ajustes' })).toBeTruthy();
-    expect(
-      screen.getByRole('button', { name: 'Sair da conta. Entrou como descarte@teste.imagineup' }),
-    ).toBeTruthy();
-    expect(
-      screen.getByRole('button', { name: 'Excluir conta. Apaga seu perfil, seus pontos e seu @' }),
-    ).toBeTruthy();
-    // Só o que abre outra tela leva a seta: Sair sai na hora.
-    expect(screen.queryByTestId('settings-sign-out-trailing', hidden)).toBeNull();
-    expect(screen.getByTestId('settings-delete-account-trailing', hidden)).toBeTruthy();
-  });
-
-  it('Sair e Excluir conta na zona de perigo: o título e o ícone na cor de perigo', () => {
-    renderRouter(appTree, { initialUrl: '/ajustes' });
-
-    expect(screen.getByRole('header', { name: 'Zona de perigo' })).toBeTruthy();
-    expect(screen.getByText('Sair')).toHaveStyle({ color: colors.danger });
-    expect(screen.getByText('Excluir conta')).toHaveStyle({ color: colors.danger });
-    for (const icon of [LogOut, Trash2]) {
-      expect(screen.UNSAFE_getByType(icon).props.color).toBe(colors.danger);
-    }
-    // A meta do Sair continua dizendo com quem o fã entrou.
-    expect(screen.getByText('Entrou como descarte@teste.imagineup')).toBeTruthy();
-  });
-
-  it('as seções na ordem do menu de referência: Perfil, Privacidade e segurança, Sobre e a zona de perigo', () => {
-    renderRouter(appTree, { initialUrl: '/ajustes' });
-
-    // Sem a conta com senha, a Conta não tem linha e some.
-    expect(screen.getAllByRole('header').map((node) => node.props.children)).toEqual([
+    expect(menuOrder()).toEqual([
       'Ajustes',
-      'Perfil',
+      'Perfil e conta',
+      'settings-edit-profile',
+      'settings-change-email',
+      'settings-change-password',
+      'settings-menu-divider',
       'Privacidade e segurança',
+      'settings-blocked-fans',
+      'settings-terms',
+      'settings-privacy',
+      'settings-menu-divider',
       'Sobre',
+      'settings-rules',
+      'settings-contact',
+      'settings-menu-divider',
       'Zona de perigo',
+      'settings-sign-out',
+      'settings-version',
     ]);
     // Sem a suspensão, nada de aviso no topo.
     expect(screen.queryByTestId('suspended-notice')).toBeNull();
   });
 
-  it('na conta com senha, a Conta vem depois do Perfil, antes da Privacidade e segurança', () => {
-    setSessionPassword(true);
+  it('sem a conta com senha e sem a loja no cache, o Perfil e conta fica só com "Editar perfil"', () => {
     renderRouter(appTree, { initialUrl: '/ajustes' });
 
-    expect(screen.getAllByRole('header').map((node) => node.props.children)).toEqual([
+    expect(menuOrder()).toEqual([
       'Ajustes',
-      'Perfil',
-      'Conta',
+      'Perfil e conta',
+      'settings-edit-profile',
+      'settings-menu-divider',
       'Privacidade e segurança',
-      'Sobre',
-      'Zona de perigo',
-    ]);
-  });
-
-  it('Privacidade e segurança: "Fãs bloqueados", os termos e a privacidade, nessa ordem', () => {
-    renderRouter(appTree, { initialUrl: '/ajustes' });
-
-    const rows = screen
-      .getAllByTestId(/^settings-(blocked-fans|terms|privacy|contact|sign-out|delete-account)$/)
-      .map((node) => node.props.testID);
-    expect(rows).toEqual([
       'settings-blocked-fans',
       'settings-terms',
       'settings-privacy',
+      'settings-menu-divider',
+      'Sobre',
       'settings-contact',
+      'settings-menu-divider',
+      'Zona de perigo',
       'settings-sign-out',
-      'settings-delete-account',
+      'settings-version',
     ]);
+  });
+
+  it('a linha fina entre as seções vai de ponta a ponta, por cima do recuo da tela, e fica fora do leitor', () => {
+    renderRouter(appTree, { initialUrl: '/ajustes' });
+
+    const dividers = screen.getAllByTestId('settings-menu-divider', hidden);
+    expect(dividers).toHaveLength(3);
+    for (const divider of dividers) {
+      expect(divider).toHaveStyle({ marginHorizontal: -spacing.gutter, height: 1 });
+      expect(divider.props.accessible).toBeFalsy();
+    }
+  });
+
+  it('as linhas mostram só o título, sem a linha cinza embaixo, e o leitor ouve o título', () => {
+    setSessionPassword(true);
+    renderRouter(appTree, { initialUrl: '/ajustes' });
+
+    for (const name of [
+      'Editar perfil',
+      'Trocar e-mail',
+      'Trocar senha',
+      'Fãs bloqueados',
+      'Sair da conta',
+    ]) {
+      expect(screen.getByRole('button', { name })).toBeTruthy();
+    }
+    expect(screen.getByRole('link', { name: 'Fale com a equipe' })).toBeTruthy();
+    for (const meta of [
+      'Só leitura nesta versão do app',
+      'Manda um link para o e-mail novo',
+      'Pede a senha atual',
+      'Veja e desbloqueie',
+      'Entrou como descarte@teste.imagineup',
+      SUPPORT_EMAIL,
+    ]) {
+      expect(screen.queryByText(meta)).toBeNull();
+    }
+  });
+
+  it('os nomes das seções saem como escritos, sem a caixa alta das outras telas', () => {
+    renderRouter(appTree, { initialUrl: '/ajustes' });
+
+    expect(screen.getByRole('header', { name: 'Perfil e conta' })).not.toHaveStyle({
+      textTransform: 'uppercase',
+    });
+    expect(screen.getByRole('header', { name: 'Zona de perigo' })).toHaveStyle({
+      color: colors.textMuted,
+    });
+  });
+
+  it('a zona de perigo só com o Sair: o título e o ícone na cor de perigo, e sem a seta, porque sai na hora', () => {
+    renderRouter(appTree, { initialUrl: '/ajustes' });
+
+    expect(screen.getByText('Sair')).toHaveStyle({ color: colors.danger });
+    expect(screen.UNSAFE_getByType(LogOut).props.color).toBe(colors.danger);
+    expect(screen.queryByTestId('settings-sign-out-trailing', hidden)).toBeNull();
+    // Excluir conta saiu dos Ajustes: é a última opção do "Editar perfil".
+    expect(screen.queryByTestId('settings-delete-account')).toBeNull();
+    expect(screen.queryByText('Excluir conta')).toBeNull();
   });
 
   it('"Fãs bloqueados" abre a lista na pilha do Perfil', async () => {
     const view = renderRouter(appTree, { initialUrl: '/ajustes' });
 
-    const row = screen.getByRole('button', { name: 'Fãs bloqueados. Veja e desbloqueie' });
+    const row = screen.getByRole('button', { name: 'Fãs bloqueados' });
     expect(row).toHaveProp('accessibilityHint', 'Abre a lista de fãs bloqueados');
     expect(screen.getByTestId('settings-blocked-fans-trailing', hidden)).toBeTruthy();
 
@@ -352,17 +399,15 @@ describe('Ajustes', () => {
     expect(screen.getByRole('link', { name: 'Escrever para a equipe' })).toBeTruthy();
     // O aviso vem antes da primeira seção.
     const headers = screen.getAllByRole('header').map((node) => node.props.children);
-    expect(headers.indexOf('Sua conta está suspensa')).toBeLessThan(headers.indexOf('Perfil'));
+    expect(headers.indexOf('Sua conta está suspensa')).toBeLessThan(
+      headers.indexOf('Perfil e conta'),
+    );
   });
 
-  it('a seção Perfil traz "Editar perfil", que abre a tela fora das abas; nas fixtures, a meta de só leitura', async () => {
+  it('"Editar perfil" abre a tela fora das abas', async () => {
     const view = renderRouter(appTree, { initialUrl: '/ajustes' });
 
-    expect(screen.getByRole('header', { name: 'Perfil' })).toBeTruthy();
-    const row = screen.getByRole('button', {
-      name: 'Editar perfil. Só leitura nesta versão do app',
-    });
-    expect(screen.getByText('Só leitura nesta versão do app')).toBeTruthy();
+    const row = screen.getByRole('button', { name: 'Editar perfil' });
     expect(row).toHaveProp('accessibilityHint', 'Abre a edição do perfil');
     expect(screen.getByTestId('settings-edit-profile-trailing', hidden)).toBeTruthy();
 
@@ -372,74 +417,14 @@ describe('Ajustes', () => {
     expect(screen.getByText('editar perfil')).toBeTruthy();
   });
 
-  it('com a API, a meta diz o que a tela edita; com o @ automático, avisa dele', async () => {
-    mockDataSource = 'api';
-    renderRouter(appTree, { initialUrl: '/ajustes' });
-    // O perfil semeado tem o @ automático (fa711224).
-    expect(
-      await screen.findByRole('button', { name: 'Editar perfil. Seu @ ainda é automático' }),
-    ).toBeTruthy();
-    expect(screen.queryByText('Só leitura nesta versão do app')).toBeNull();
-  });
-
-  it('com a API e o @ automático travado pelo prazo (seção 32), a meta não convida a trocar o @', async () => {
-    mockDataSource = 'api';
-    const inTenDays = new Date(Date.now() + 10 * 24 * 60 * 60 * 1000).toISOString();
-    // O @ trocado pela equipe: o automático novo, com o prazo de 30 dias correndo.
-    queryClient.setQueryData(['profile', 'me', 'uid-descarte'], {
-      username: 'fa711224',
-      usernameChangeableAt: inTenDays,
-      usernameLockReason: 'moderation',
-    });
-    renderRouter(appTree, { initialUrl: '/ajustes' });
-    expect(
-      await screen.findByRole('button', { name: 'Editar perfil. Foto, nome, @, bio e redes' }),
-    ).toBeTruthy();
-    expect(screen.queryByText('Seu @ ainda é automático')).toBeNull();
-  });
-
-  it('com a API e o prazo do @ vencido, o @ automático volta a ser avisado', async () => {
-    mockDataSource = 'api';
-    queryClient.setQueryData(['profile', 'me', 'uid-descarte'], {
-      username: 'fa711224',
-      usernameChangeableAt: '2026-01-01T12:00:00.000Z',
-      usernameLockReason: 'moderation',
-    });
-    renderRouter(appTree, { initialUrl: '/ajustes' });
-    expect(
-      await screen.findByRole('button', { name: 'Editar perfil. Seu @ ainda é automático' }),
-    ).toBeTruthy();
-  });
-
-  it('com a API e o @ escolhido, a meta é "Foto, nome, @, bio e redes"', async () => {
-    mockDataSource = 'api';
-    queryClient.setQueryData(['profile', 'me', 'uid-descarte'], { username: 'camilarib' });
-    renderRouter(appTree, { initialUrl: '/ajustes' });
-    expect(
-      await screen.findByRole('button', { name: 'Editar perfil. Foto, nome, @, bio e redes' }),
-    ).toBeTruthy();
-  });
-
   it('"Trocar e-mail" e "Trocar senha" só aparecem na conta com senha (seção 29, frente D)', () => {
     setSessionPassword(true);
     renderRouter(appTree, { initialUrl: '/ajustes' });
 
-    const email = screen.getByRole('button', {
-      name: 'Trocar e-mail. Manda um link para o e-mail novo',
-    });
+    const email = screen.getByRole('button', { name: 'Trocar e-mail' });
     expect(email).toHaveProp('accessibilityHint', 'Abre a troca de e-mail');
-    const password = screen.getByRole('button', { name: 'Trocar senha. Pede a senha atual' });
+    const password = screen.getByRole('button', { name: 'Trocar senha' });
     expect(password).toHaveProp('accessibilityHint', 'Abre a troca de senha');
-    // As duas trocas na Conta, lá em cima; Sair e Excluir conta na zona de perigo, no fim.
-    const rows = screen
-      .getAllByTestId(/^settings-(change-email|change-password|sign-out|delete-account)$/)
-      .map((node) => node.props.testID);
-    expect(rows).toEqual([
-      'settings-change-email',
-      'settings-change-password',
-      'settings-sign-out',
-      'settings-delete-account',
-    ]);
   });
 
   it.each([
@@ -496,26 +481,6 @@ describe('Ajustes', () => {
     expect(removeClient).toHaveBeenCalled();
     expect(usePreferencesStore.getState().lastSessionUid).toBeNull();
     expect(useSessionStore.getState().status).toBe('signedOut');
-  });
-
-  it('Excluir conta abre a confirmação, que diz o que se perde, sem excluir nada ainda', async () => {
-    const view = renderRouter(appTree, { initialUrl: '/ajustes' });
-
-    fireEvent.press(screen.getByTestId('settings-delete-account'));
-
-    await waitFor(() => expect(view.getPathname()).toBe('/excluir-conta'));
-    expect(view.getSegments()).toEqual(['(tabs)', '(perfil)', 'excluir-conta']);
-    expect(screen.getByRole('header', { name: 'Excluir conta' })).toBeTruthy();
-    expect(screen.getByText(/A exclusão é definitiva/)).toBeTruthy();
-    expect(screen.getByText(/bio, cidade e redes\. O @ fica livre para outra pessoa/)).toBeTruthy();
-    expect(screen.getByText(/o saldo, o nível e as conquistas/)).toBeTruthy();
-    expect(screen.getByRole('button', { name: DELETE })).toBeTruthy();
-    expect(deleteUser).not.toHaveBeenCalled();
-
-    // "Manter minha conta" volta aos Ajustes.
-    fireEvent.press(screen.getByRole('button', { name: 'Manter minha conta' }));
-    await waitFor(() => expect(view.getPathname()).toBe('/ajustes'));
-    expect(deleteUser).not.toHaveBeenCalled();
   });
 });
 
@@ -651,29 +616,48 @@ describe('excluir conta', () => {
     expect(deleteUser).toHaveBeenCalledTimes(1);
   });
 
-  it('enquanto exclui, tocar de novo na aba Perfil não tira o fã da tela', async () => {
+  it('na pilha raiz, por cima das abas: diz o que se perde, sem excluir nada, e "Manter minha conta" volta', async () => {
+    const view = renderRouter(appTree, { initialUrl: '/ajustes' });
+
+    act(() => router.push('/excluir-conta'));
+
+    await waitFor(() => expect(view.getPathname()).toBe('/excluir-conta'));
+    expect(view.getSegments()).toEqual(['excluir-conta']);
+    expect(screen.getByRole('header', { name: 'Excluir conta' })).toBeTruthy();
+    expect(screen.getByText(/A exclusão é definitiva/)).toBeTruthy();
+    expect(screen.getByText(/bio, cidade e redes\. O @ fica livre para outra pessoa/)).toBeTruthy();
+    expect(screen.getByText(/o saldo, o nível e as conquistas/)).toBeTruthy();
+    expect(screen.getByRole('button', { name: DELETE })).toBeTruthy();
+    expect(deleteUser).not.toHaveBeenCalled();
+
+    fireEvent.press(screen.getByRole('button', { name: 'Manter minha conta' }));
+    await waitFor(() => expect(view.getPathname()).toBe('/ajustes'));
+    expect(deleteUser).not.toHaveBeenCalled();
+  });
+
+  it('enquanto exclui, fora das abas, o voltar do Android não tira o fã da tela', async () => {
     const pending = new Promise<void>(() => undefined);
     jest.mocked(deleteUser).mockReturnValueOnce(pending);
+    const backPress = jest.spyOn(BackHandler, 'addEventListener');
     const view = renderRouter(appTree, { initialUrl: '/ajustes' });
-    fireEvent.press(screen.getByTestId('settings-delete-account'));
+    act(() => router.push('/excluir-conta'));
     await waitFor(() => expect(view.getPathname()).toBe('/excluir-conta'));
 
     fireEvent.press(screen.getByRole('button', { name: DELETE }));
     await waitFor(() => expect(deleteUser).toHaveBeenCalled());
-    fireEvent.press(profileTab());
-    // A pilha só volta ao topo no quadro seguinte, se ninguém impedir (o
-    // `renderRouter` liga os timers falsos).
-    act(() => jest.advanceTimersByTime(100));
 
+    const listener = backPress.mock.calls
+      .filter(([event]) => event === 'hardwareBackPress')
+      .at(-1)?.[1] as (() => boolean | null | undefined) | undefined;
+    // `true` diz ao Android que o voltar já foi tratado: a tela fica.
+    expect(listener?.()).toBe(true);
     expect(view.getPathname()).toBe('/excluir-conta');
   });
 
-  it('sem exclusão andando, tocar de novo na aba Perfil volta ao topo dela', async () => {
-    const view = renderRouter(appTree, { initialUrl: '/ajustes' });
-    fireEvent.press(screen.getByTestId('settings-delete-account'));
-    await waitFor(() => expect(view.getPathname()).toBe('/excluir-conta'));
+  it('aberta a frio, "Manter minha conta" cai no Perfil, e não numa pilha vazia', async () => {
+    const view = renderRouter(appTree, { initialUrl: '/excluir-conta' });
 
-    fireEvent.press(profileTab());
+    fireEvent.press(screen.getByRole('button', { name: 'Manter minha conta' }));
 
     await waitFor(() => expect(view.getPathname()).toBe('/perfil'));
   });
@@ -749,12 +733,11 @@ describe('as páginas, o Sobre e o rodapé (seção 29, frente C)', () => {
     expect(screen.queryByTestId('settings-rules')).toBeNull();
   });
 
-  it('"Fale com a equipe" abre o app de e-mail, com o endereço na meta', async () => {
+  it('"Fale com a equipe" abre o app de e-mail com o endereço da equipe', async () => {
     renderRouter(appTree, { initialUrl: '/ajustes' });
 
-    const contact = screen.getByRole('link', { name: `Fale com a equipe. ${SUPPORT_EMAIL}` });
+    const contact = screen.getByRole('link', { name: 'Fale com a equipe' });
     expect(contact).toHaveProp('accessibilityHint', 'Abre o seu app de e-mail');
-    expect(screen.getByText(SUPPORT_EMAIL)).toBeTruthy();
     fireEvent.press(contact);
 
     await waitFor(() =>
@@ -765,7 +748,7 @@ describe('as páginas, o Sobre e o rodapé (seção 29, frente C)', () => {
     expect(screen.queryByTestId('settings-contact-error')).toBeNull();
   });
 
-  it('sem app de e-mail, o endereço aparece embaixo da lista, selecionável, e é anunciado', async () => {
+  it('sem app de e-mail, o endereço aparece embaixo da seção, selecionável, e é anunciado', async () => {
     jest.mocked(Linking.openURL).mockRejectedValueOnce(new Error('sem app de e-mail'));
     renderRouter(appTree, { initialUrl: '/ajustes' });
 
@@ -776,6 +759,11 @@ describe('as páginas, o Sobre e o rodapé (seção 29, frente C)', () => {
     expect(error).toHaveTextContent(message);
     expect(error).toHaveProp('selectable', true);
     expect(announced()).toContain(message);
+    // Logo depois do contato, antes da seção seguinte.
+    const order = menuOrder();
+    expect(order.slice(order.indexOf('settings-contact'), order.indexOf('Zona de perigo'))).toEqual(
+      ['settings-contact', 'settings-contact-error', 'settings-menu-divider'],
+    );
   });
 
   it('o rodapé: o nome e a versão do binário embutido, centralizados, sem toque', () => {

@@ -109,11 +109,11 @@ function BlockedFanRow({ fan }: { fan: BlockedFan }) {
 
 /**
  * "Fãs bloqueados" (`/fas-bloqueados`, seção 29, frente B), na pilha do
- * Perfil, aberta pela linha da seção "Segurança" dos Ajustes. Sem desenho, no
- * visual do extrato: o título com o voltar, o que o bloqueio faz, e a lista do
- * mais novo ao mais antigo (`GET /me/blocks`), uma página por vez pelo fim da
- * lista. A lista fica fora do disco (o hook), e os anúncios de falha só saem
- * com a tela em foco.
+ * Perfil, aberta pela linha da seção "Privacidade e segurança" dos Ajustes.
+ * Sem desenho, no visual do extrato: o título com o voltar, o que o bloqueio
+ * faz, e a lista do mais novo ao mais antigo (`GET /me/blocks`), uma página
+ * por vez pelo fim da lista. A lista fica fora do disco (o hook), e os
+ * anúncios de falha só saem com a tela em foco.
  *
  * Desbloquear tira a linha sem buscar a lista de novo. Quando as linhas
  * carregadas acabam e ainda há página, a tela pede a seguinte sozinha, em vez

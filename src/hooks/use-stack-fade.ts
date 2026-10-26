@@ -11,7 +11,8 @@ import { usePrefersReducedMotion } from './use-prefers-reduced-motion';
  * três também saem para ele (`playStackExit`) antes de o guard trocar de
  * grupo: as telas de conta ao entrar, a 1l ao concluir, e as abas quando a
  * sessão termina (sair, excluir a conta, sessão que caiu), pelo
- * `useAuthListener`.
+ * `useAuthListener`. Na exclusão, aberta na pilha raiz por cima das abas, elas
+ * saem por baixo da tela dela.
  */
 export type FadingStack = 'auth' | 'onboarding' | 'tabs';
 

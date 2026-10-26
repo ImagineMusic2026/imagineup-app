@@ -15,10 +15,12 @@ interface FanClubPrizeState {
 }
 
 /**
- * A marca de visto do prêmio do fã-clube, no aparelho: os Ajustes mostram
- * "Novo prêmio" na linha até o gestor abrir o "Meu fã-clube" (decisão 51).
- * Fica num arquivo e numa chave próprios, fora das preferências. Antes de o
- * disco responder (`hydrated`), ninguém mostra "Novo prêmio".
+ * A marca de visto do prêmio do fã-clube, no aparelho, gravada quando o
+ * gestor abre o "Meu fã-clube" (decisão 51). Até 26/10/2026, os Ajustes
+ * mostravam "Novo prêmio" na linha até essa marca; desde então a linha só tem
+ * o título, e a marca fica para quem voltar a mostrar o aviso. Fica num
+ * arquivo e numa chave próprios, fora das preferências. Antes de o disco
+ * responder (`hydrated`), ninguém deve mostrar "Novo prêmio".
  */
 export const useFanClubPrizeStore = create<FanClubPrizeState>()(
   persist(

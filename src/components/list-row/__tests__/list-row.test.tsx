@@ -255,6 +255,28 @@ describe('ListRow', () => {
     expect(row).not.toHaveStyle({ backgroundColor: colors.surface });
   });
 
+  it('a do menu não tem fundo nem linha, e o título é maior, com a linha acima do alvo de 44', () => {
+    const onPress = jest.fn();
+    render(
+      <ListRow
+        testID="linha"
+        variant="menu"
+        title="Fãs bloqueados"
+        onPress={onPress}
+        accessibilityHint="Abre a lista de fãs bloqueados"
+      />,
+    );
+    const row = screen.getByRole('button', { name: 'Fãs bloqueados' });
+    expect(row).toHaveStyle({ paddingVertical: spacing.md });
+    expect(row).not.toHaveStyle({ backgroundColor: colors.surface });
+    expect(row).not.toHaveStyle({ borderBottomWidth: borderWidths.default });
+    const title = screen.getByText('Fãs bloqueados');
+    expect(title).toHaveStyle({ fontSize: typography.bodyLead.fontSize });
+    expect(typography.bodyLead.lineHeight + 2 * spacing.md).toBeGreaterThanOrEqual(44);
+    fireEvent.press(row);
+    expect(onPress).toHaveBeenCalledTimes(1);
+  });
+
   it('o botão da direita pode descer para baixo do conteúdo, alinhado à esquerda', () => {
     render(
       <ListRow

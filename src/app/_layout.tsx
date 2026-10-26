@@ -86,6 +86,10 @@ export default function RootLayout() {
               "Editar perfil". */}
           <Stack.Screen name="trocar-senha" />
           <Stack.Screen name="trocar-email" />
+          {/* "Excluir conta", a última opção do "Editar perfil" (26/10/2026):
+              por cima dele, fora das abas e com push padrão (o campo de senha
+              tem teclado), e o "Manter minha conta" volta para ele. */}
+          <Stack.Screen name="excluir-conta" />
           {/* O fã-clube gerido pelo fã (seção 34): o estado do fã ou o "Meu
               fã-clube", a candidatura e a nova publicação, abertos pelos
               Ajustes, fora das abas e com push padrão (as duas últimas têm

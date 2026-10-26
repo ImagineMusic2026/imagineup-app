@@ -1,6 +1,16 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useIsMutating } from '@tanstack/react-query';
-import { Check, CircleCheck, CircleX, Lock, MapPin, User } from 'lucide-react-native';
+import { router } from 'expo-router';
+import {
+  Check,
+  ChevronRight,
+  CircleCheck,
+  CircleX,
+  Lock,
+  MapPin,
+  Trash2,
+  User,
+} from 'lucide-react-native';
 import { useEffect, useRef, useState, type Ref } from 'react';
 import { Controller, useForm, useWatch } from 'react-hook-form';
 import {
@@ -77,6 +87,8 @@ import { isAutomaticUsername, normalizeUsername, usernameLock } from '../usernam
 
 const ICON_SIZE = 18;
 const STATUS_ICON_SIZE = 18;
+// O ícone das linhas do menu dos Ajustes, o mesmo desenho.
+const DELETE_ICON_SIZE = 22;
 
 /** Todos os campos do formulário, para acompanhar o perfil vivo. */
 const ALL_FIELDS: readonly EditProfileField[] = [...EDIT_PROFILE_FIELD_ORDER, 'privateAccount'];
@@ -793,7 +805,53 @@ function ProfileForm({ profile, fallbackName, online }: ProfileFormProps) {
           {t('editProfile.socials.publicHint')}
         </Text>
       )}
+      <DeleteAccountRow locked={saving} />
     </Screen>
+  );
+}
+
+interface DeleteAccountRowProps {
+  /** Enquanto o texto salva, a tela fica presa, e a linha também não sai dela. */
+  locked?: boolean;
+}
+
+/**
+ * Excluir conta, a última opção da tela (decisão do dono de 26/10/2026, no
+ * lugar da zona de perigo dos Ajustes): a linha solta do menu dos Ajustes, na
+ * cor de perigo, que abre a confirmação na pilha raiz, por cima desta tela; o
+ * "Manter minha conta" volta para cá. Fica em todo estado da tela (a edição,
+ * só leitura e sem o perfil), porque a exclusão tem de ser fácil de achar.
+ * Enquanto o texto salva, a linha fica desligada, como a foto: o sucesso
+ * fecha a tela de cima, e com a confirmação aberta ele a fecharia no lugar
+ * desta.
+ */
+function DeleteAccountRow({ locked = false }: DeleteAccountRowProps) {
+  const title = t('editProfile.deleteAccount.title');
+  // O mesmo pressável nos dois estados: trocar de elemento tiraria o foco do
+  // leitor da linha quando o salvamento acaba. Desligada, sem dica nem toque.
+  return (
+    <ListRow
+      variant="menu"
+      tone={locked ? 'locked' : 'danger'}
+      leading={
+        <Icon
+          icon={Trash2}
+          size={DELETE_ICON_SIZE}
+          color={locked ? colors.textMuted : colors.danger}
+        />
+      }
+      title={title}
+      trailing={<Icon icon={ChevronRight} size={ICON_SIZE} color={colors.textMuted} />}
+      onPress={() => {
+        if (!locked) router.push('/excluir-conta');
+      }}
+      haptic={locked ? null : undefined}
+      accessibilityState={locked ? { disabled: true } : undefined}
+      accessibilityLabel={title}
+      accessibilityHint={locked ? undefined : t('editProfile.deleteAccount.hint')}
+      style={styles.deleteAccount}
+      testID="edit-profile-delete-account"
+    />
   );
 }
 
@@ -852,8 +910,9 @@ function profileProblem(query: ReturnType<typeof useMyProfileQuery>): Translatio
 /**
  * Editar perfil (seção 28 de docs/arquitetura-api.md, sobre o bloco 9): fora
  * das abas, na pilha raiz, com o header fixo (X, título e ✓), a foto grande e
- * os grupos "Informações básicas", "Detalhes" e "Redes sociais". Aberta pelos
- * Ajustes e pelo hero do Perfil. O perfil atualiza pela escuta que já existe.
+ * os grupos "Informações básicas", "Detalhes" e "Redes sociais" e, no fim,
+ * "Excluir conta". Aberta pelos Ajustes e pelo hero do Perfil. O perfil
+ * atualiza pela escuta que já existe.
  *
  * Sem a API (`sourceOf('profile')`), a tela é só leitura: os valores como
  * texto, sem campos e sem ✓, e o X fecha sem pergunta. Sem o perfil (ainda não
@@ -925,6 +984,7 @@ export function EditProfileScreen() {
           accessibilityLabel={t('profile.loading')}
         />
       )}
+      <DeleteAccountRow />
     </Screen>
   );
 }
@@ -978,5 +1038,10 @@ const styles = StyleSheet.create({
   },
   loading: {
     marginTop: spacing.xl,
+  },
+  // A última opção, afastada do resto, com o recuo do conteúdo dos grupos.
+  deleteAccount: {
+    marginTop: spacing.xxl,
+    paddingHorizontal: spacing.lg,
   },
 });
