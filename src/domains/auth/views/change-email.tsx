@@ -32,9 +32,9 @@ const EMAIL_FIELD_FAILURES: readonly ChangeEmailFailure[] = ['emailInUse', 'inva
  * "Trocar e-mail" (seção 29, frente D), no molde do "Trocar senha": o e-mail
  * novo e a senha atual, para reautenticar. Nada muda até o fã abrir o link no
  * e-mail novo; então o Firebase revoga as sessões, e este aparelho sai quando
- * o SDK renova o token, em até 1 hora. Até lá, o "Entrou como" dos Ajustes
- * segue com o e-mail de agora. Mandado o link, a tela troca o formulário pelo
- * aviso de "enviado", com "Voltar aos ajustes".
+ * o SDK renova o token, em até 1 hora. Até lá, a sessão segue com o e-mail
+ * de agora. Mandado o link, a tela troca o formulário pelo aviso de
+ * "enviado", com "Voltar aos ajustes".
  */
 export function ChangeEmailScreen() {
   const insets = useSafeAreaInsets();

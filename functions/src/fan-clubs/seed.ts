@@ -403,7 +403,7 @@ export type SeedFanClubPendingResult = {
 
 /**
  * A candidatura pendente da Duda (34.12, etapa 10 de 34.14), para a fila das
- * candidaturas do painel e o "Candidatura em análise" dos Ajustes do app. Só
+ * candidaturas do painel e o "Candidatura em análise" do "Meu fã-clube" do app. Só
  * quem é da central se candidata (decisão 8): a Duda, que não era de central
  * nenhuma, entra antes no Nenho pela página, pelo núcleo da entrada, com o
  * ator de sistema e o `central_join` em 0, como os seguidores (os pontos e as

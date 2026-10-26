@@ -31,11 +31,13 @@ async function clearSessionData(): Promise<void> {
  * dentro do app: a sessão também cai por fora (conta excluída, senha trocada),
  * e o próximo fã não pode ver dados do anterior.
  *
- * A troca de grupo na pilha raiz é seca: com as abas na tela (sair e excluir
- * a conta nos Ajustes, sessão que caiu com o app aberto), elas saem em fade
- * até o fundo escuro antes de o cache ir embora e de o guard levar à entrada,
- * que entra do escuro. Sem as abas montadas, ou com reduzir movimento, segue
- * na hora.
+ * A troca de grupo na pilha raiz é seca: com as abas na tela (sair nos
+ * Ajustes, sessão que caiu com o app aberto), elas saem em fade até o fundo
+ * escuro antes de o cache ir embora e de o guard levar à entrada, que entra do
+ * escuro. Com uma tela da pilha raiz por cima delas (a exclusão da conta,
+ * aberta pelo "Editar perfil" desde 26/10/2026, ou o post), as abas saem por
+ * baixo, e a tela de cima some num quadro quando o guard troca. Sem as abas
+ * montadas, ou com reduzir movimento, segue na hora.
  *
  * Um aviso de sessão nova que chega no meio da saída vence o de saída: se for
  * de outro fã, os dados do anterior vão embora ali mesmo; se for o mesmo (o

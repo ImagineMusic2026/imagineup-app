@@ -872,9 +872,7 @@ describe('a linha "Fã-clubes que sigo" dos Ajustes (34.9, itens 1 e 10)', () =>
     mocked.fetchMyFanClub.mockResolvedValue(mine({ open: false }));
     const view = renderRouter(appTree, { initialUrl: '/ajustes' });
 
-    const row = await screen.findByRole('button', {
-      name: 'Fã-clubes que sigo. As publicações deles aparecem na sua Início',
-    });
+    const row = await screen.findByRole('button', { name: 'Fã-clubes que sigo' });
     expect(screen.queryByTestId('settings-fan-club')).toBeNull();
     fireEvent.press(row);
     await waitFor(() => expect(view.getPathname()).toBe('/fa-clubes-que-sigo'));

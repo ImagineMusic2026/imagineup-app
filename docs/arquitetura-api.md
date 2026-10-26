@@ -8423,6 +8423,8 @@ O resultado do `removeFanEngagement` ganha `profileReports`. O `store.test.ts` n
 
 **Frente C: Ajustes (`SettingsScreen`, `settings/views/settings.tsx`)**
 
+(26/10/2026, pedidos do dono: os Ajustes ficaram no molde do menu de referência dele, com linhas soltas, sem card, o ícone simples, só o título e a seta, sem a descrição cinza embaixo (nem o estado do fã-clube), e uma linha fina entre as seções, com o nome sem caixa alta. A ordem: Perfil e conta, juntos, com "Editar perfil" e, na conta com senha, as duas trocas; Fã-clube; Privacidade e segurança, com "Fãs bloqueados", "Termos de uso" e "Política de privacidade"; Sobre, com o regulamento e "Fale com a equipe"; Zona de perigo, só com "Sair" no `colors.danger` (o `tone="danger"` do `ListRow`); e, no lugar da linha "Versão do app", um rodapé centralizado com "ImagineUP" e a versão embaixo, com o mesmo rótulo e o mesmo `testID`. "Excluir conta" foi para o fim do "Editar perfil", a última opção da tela, e a rota `/excluir-conta` saiu da pilha do Perfil para a pilha raiz, por cima dele. O que segue é o desenho da seção 29.)
+
 De cima para baixo:
 
 - O aviso de conta suspensa (frente E), só com a suspensão.
@@ -8600,7 +8602,7 @@ Decisão do dono de 13/10/2026: publicar tudo junto. Este bloco saiu junto com o
    - uma conta de demonstração com o onboarding feito, com a senha só nas notas de revisão;
    - uma segunda conta de fã com bio, um comentário num post publicado e pontos numa temporada ativa;
    - centrais no ar (pelo menos uma; três deixam a 1l como desenhada) e um show marcado;
-   - as notas de revisão: o bloco "Segurança" do perfil público ("Denunciar perfil", "Bloquear" e "Bloquear e denunciar"), os três pontos do comentário (denunciar e bloquear), "Fãs bloqueados" em Perfil > Ajustes > Segurança, o contato em Ajustes > Sobre, "Excluir conta" em Perfil > Ajustes > Conta, o prazo da equipe na fila (pergunta 4 da cliente) e o filtro (seção 30): onde ele vale (o comentário, o nome, o @, a bio, a cidade e as redes), que a recusa vem com uma frase e o link para a equipe e nada é publicado, e um texto de exemplo para o revisor tentar, tirado da lista legível (`filtro-lista/termos.json`) e escrito só nas notas de revisão das lojas, nunca no repositório;
+   - as notas de revisão: o bloco "Segurança" do perfil público ("Denunciar perfil", "Bloquear" e "Bloquear e denunciar"), os três pontos do comentário (denunciar e bloquear), "Fãs bloqueados" em Perfil > Ajustes > Privacidade e segurança, o contato em Ajustes > Sobre, "Excluir conta" em Perfil > Ajustes > Editar perfil, a última opção da tela, o prazo da equipe na fila (pergunta 4 da cliente) e o filtro (seção 30): onde ele vale (o comentário, o nome, o @, a bio, a cidade e as redes), que a recusa vem com uma frase e o link para a equipe e nada é publicado, e um texto de exemplo para o revisor tentar, tirado da lista legível (`filtro-lista/termos.json`) e escrito só nas notas de revisão das lojas, nunca no repositório;
    - no Play Console, o endereço web para pedir a exclusão da conta: `https://imagineup-painel.vercel.app/privacidade/#exclusao` (o `contato/` do site já aponta para lá; muda na UP-46), com o texto da seção acertado pela cliente (o caminho real no app e o e-mail para quem não consegue entrar, pergunta 3 da cliente);
    - o painel com a lista "Perfis denunciados" no ar (passo 4): sem ela, a denúncia de perfil não chega à equipe, e a 1.2 pede ação rápida sobre as denúncias. No ar desde 14/10/2026 (PR #3 do `imagineup-admin`);
    - o filtro do que é publicado (pergunta 3 do dono): feito na seção 30 e publicado junto com este bloco em 14/10/2026 (passo 2). Para as lojas, faltam a lista revisada pela cliente (pergunta 2 da cliente em 30.14) e o palavrão barrado em todo campo até a aprovação (pergunta 1 da cliente em 30.14);
@@ -8635,16 +8637,16 @@ Decisão do dono de 13/10/2026: publicar tudo junto. Este bloco saiu junto com o
 
 **Para a cliente** (abertas; o código segue a proposta, e o `SUPPORT_EMAIL` provisório é `music@imaginegroup.com.br`, o único do site):
 
-1. O e-mail oficial de contato do app para os fãs. Proposta: `music@imaginegroup.com.br`, o único do site (12 links), que já recebe mensagens. A Apple pede um contato publicado (1.2), e o e-mail aparece no Sobre e no aviso do suspenso; trocar é mudar o `SUPPORT_EMAIL` e publicar um EAS Update.
+1. O e-mail oficial de contato do app para os fãs. Proposta: `music@imaginegroup.com.br`, o único do site (12 links), que já recebe mensagens. A Apple pede um contato publicado (1.2), e o e-mail sai pelo "Fale com a equipe" do Sobre (o endereço aparece na tela só quando o app de e-mail não abre, desde 26/10/2026) e pelo aviso do suspenso; trocar é mudar o `SUPPORT_EMAIL` e publicar um EAS Update.
 2. O regulamento das recompensas (texto e página). Proposta: uma página `/regulamento/` no site, com o endereço no `REWARDS_RULES_URL` do servidor; até lá, o link fica escondido no pé da 1h e no Sobre (UP-45). Um prêmio de temporada, do pódio ou um sorteio só entra no ar com o regulamento (5.3.2 da App Store).
 3. Os termos de uso e a política de privacidade do site contradizem o app em vários pontos. Os termos (seções 8 e 9) e a privacidade (seções 2 e 5) revisados bloqueiam o envio às lojas (29.14, passo 7). Proposta, na revisão jurídica (UP-45):
    - termos, seção 8: os comentários, a bio e as redes como conteúdo do fã que já existe (hoje: "quando o recurso existir", sem bio nem redes);
    - termos, seção 9: tolerância zero a conteúdo ofensivo e a abuso, com ação da equipe em até 24 h (hoje: "de acordo com a gravidade"), como pede a App Review;
    - privacidade, seção 2: sem a data de nascimento e sem o login com Apple e Google enquanto o app não tiver os dois;
    - privacidade, seção 5: a bio e as redes (visíveis para qualquer fã sem a conta privada), o gênero (só para a equipe), as denúncias de perfil e os bloqueios;
-   - termos, seção 13, privacidade, seção 9, e o FAQ: o caminho real, "Perfil > Ajustes > Excluir conta" (hoje "Configurações"), e o que acontece com os resgates (o app e o servidor cancelam os solicitados e os aprovados, 25.11; o site diz que os aprovados continuam valendo). A seção 9 da privacidade (`#exclusao`) é o endereço que vai no Play Console (29.14, passo 7).
+   - termos, seção 13, privacidade, seção 9, e o FAQ: o caminho real, "Perfil > Ajustes > Editar perfil > Excluir conta", a última opção da tela desde 26/10/2026 (hoje "Configurações"), e o que acontece com os resgates (o app e o servidor cancelam os solicitados e os aprovados, 25.11; o site diz que os aprovados continuam valendo). A seção 9 da privacidade (`#exclusao`) é o endereço que vai no Play Console (29.14, passo 7).
 4. Quem olha a fila da Moderação e em quanto tempo. Proposta: a equipe da cliente, todo dia útil, em até 24 h (a App Store pede ação rápida sobre denúncias; 21.8).
-5. O domínio próprio (UP-46): os links do Sobre e da abertura mudam por EAS Update quando ele existir, e o endereço de exclusão do Play Console muda junto.
+5. O domínio próprio (UP-46): os links da Privacidade e segurança dos Ajustes e da abertura mudam por EAS Update quando ele existir, e o endereço de exclusão do Play Console muda junto.
 
 ### 29.16 Fora deste bloco (só documentado)
 
@@ -9954,7 +9956,7 @@ Como era antes:
 - O `resetFanUsername` (26.4) troca o @ do fã por um automático novo e grava `usernameChangeableAt: null` (`releaseUsernameIn`, em `fan-profile/service.ts`). A primeira troca a partir do automático é livre (24.1), então o fã que não está suspenso pega de novo o @ ofensivo pelo app segundos depois (pergunta 23 de 26.19). Até a resposta, a equipe suspendia quem pegava o @ de volta.
 - O app diz "Você troca o @ de novo em {{date}}." quando o perfil tem o prazo, e "Você trocou o @ há menos de 30 dias." quando o servidor recusa com o 409 e o perfil em cache não tem o prazo (`edit-profile.tsx:292-339` e `:416-420`). O painel publicado diz, no diálogo da troca, "O fã fica com um @ automático novo e pode escolher outro na hora." (`imagineup-admin`, `src/lib/moderation.ts:66`).
 - O pedido de dados (art. 18 da LGPD: acesso, portabilidade e eliminação) só se atendia pelo console: o Firestore documento a documento, o Auth e o Storage. A seção 12 da política de privacidade publicada manda o pedido ao e-mail de atendimento, e a seção 9 pede a exclusão "do email cadastrado". A cópia completa (o acesso) tem prazo de 15 dias (art. 19, II); a eliminação pede providência imediata, ou uma resposta com os motivos (art. 18, §4º).
-- A exclusão pela própria pessoa existe no app (Ajustes, "Excluir conta"), e o gatilho `deleteUserProfile` apaga tudo (seção 12). Nenhuma ferramenta da equipe dispara essa exclusão.
+- A exclusão pela própria pessoa existe no app ("Excluir conta", a última opção do "Editar perfil" desde 26/10/2026; antes, nos Ajustes), e o gatilho `deleteUserProfile` apaga tudo (seção 12). Nenhuma ferramenta da equipe dispara essa exclusão.
 - Nenhum teste de disponibilidade. O alerta (b) de 31.4 olha só a taxa de 5xx da `api`: com a `api` fora do ar e nenhum pedido chegando, ninguém é avisado (31.4 e 31.13). A `api` não tem rota sem login que responda 200: o 401 de `/me/wallet` e o 404 de uma rota que não existe são as conferências manuais de hoje ("Publicar", passo 6).
 
 ### 32.1 Decisões

@@ -12,9 +12,17 @@ import { colors, spacing } from '@/theme';
  */
 export type SectionLabelSpacing = 'default' | 'tight' | 'month';
 
+/**
+ * - `overline` (padrão): a sobrelinha em caixa alta das outras telas;
+ * - `plain`: como vem escrito, sem caixa alta (o menu dos Ajustes, no molde
+ *   do menu de referência do dono).
+ */
+export type SectionLabelVariant = 'overline' | 'plain';
+
 export interface SectionLabelProps {
   /** Escrito como frase ("Esta semana"); a caixa alta vem da variante `overline`. */
   children: string;
+  variant?: SectionLabelVariant;
   spacing?: SectionLabelSpacing;
   style?: StyleProp<TextStyle>;
   /** O cabeçalho, para levar o foco do leitor de tela até ele (o chip do mês na 1m). */
@@ -29,6 +37,7 @@ export interface SectionLabelProps {
  */
 export function SectionLabel({
   children,
+  variant = 'overline',
   spacing: preset = 'default',
   style,
   ref,
@@ -37,7 +46,7 @@ export function SectionLabel({
   return (
     <Text
       ref={ref}
-      variant="overline"
+      variant={variant === 'plain' ? 'labelSmall' : 'overline'}
       color={colors.textMuted}
       accessibilityRole="header"
       testID={testID}

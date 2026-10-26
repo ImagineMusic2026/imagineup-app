@@ -48,8 +48,8 @@ export interface UsernameLock {
 /**
  * O @ está travado agora? O prazo do perfil no futuro, pelo relógio do
  * aparelho, com quem o pôs (`moderation`: a equipe trocou o @, seção 32); sem
- * prazo, com ele vencido ou fora do formato, `null`. A tela "Editar perfil" e
- * os Ajustes leem daqui. A recusa 409 do servidor (o relógio do aparelho
+ * prazo, com ele vencido ou fora do formato, `null`. A tela "Editar perfil"
+ * lê daqui (os Ajustes, até 26/10/2026). A recusa 409 do servidor (o relógio do aparelho
  * adiantado, ou o cache sem o prazo) a tela trata à parte.
  */
 export function usernameLock(

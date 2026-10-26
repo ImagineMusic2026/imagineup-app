@@ -18,6 +18,13 @@ describe('SectionLabel', () => {
     });
   });
 
+  it('plain: como vem escrito, sem caixa alta, ainda cabeçalho e no mesmo cinza (o menu dos Ajustes)', () => {
+    render(<SectionLabel variant="plain">Zona de perigo</SectionLabel>);
+    const label = screen.getByRole('header', { name: 'Zona de perigo' });
+    expect(label).not.toHaveStyle({ textTransform: 'uppercase' });
+    expect(label).toHaveStyle({ color: colors.textMuted });
+  });
+
   it.each<[SectionLabelSpacing, number]>([
     ['default', spacing.sectionLabelTop],
     ['tight', spacing.sectionTopTight],

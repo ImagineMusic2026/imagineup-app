@@ -18,11 +18,16 @@ import { borderWidths, colors, spacing, type TypographyVariant } from '@/theme';
  * - `card`: card de lista (missões 1g, shows 1m): raio 16, padding 14, vão 12.
  * - `compact`: card baixo (centrais 1e): raio 14, padding 9 x 12, vão 11, meta menor.
  * - `divided`: sem fundo, com linha embaixo (ranking 1f).
+ * - `menu`: sem fundo e sem linha, com o título maior (o menu dos Ajustes, no
+ *   molde do menu de referência do dono).
  */
-export type ListRowVariant = 'card' | 'compact' | 'divided';
+export type ListRowVariant = 'card' | 'compact' | 'divided' | 'menu';
 
-/** `locked`: ainda não abriu (missão bloqueada 1g). Borda e textos apagados, sem opacidade no todo. */
-export type ListRowTone = 'default' | 'locked';
+/**
+ * - `locked`: ainda não abriu (missão bloqueada 1g). Borda e textos apagados, sem opacidade no todo.
+ * - `danger`: Sair e Excluir conta. Só o título na cor de perigo.
+ */
+export type ListRowTone = 'default' | 'locked' | 'danger';
 
 interface ListRowBaseProps {
   title: string;
@@ -35,7 +40,7 @@ interface ListRowBaseProps {
   titleNumberOfLines?: number;
   /** Troca o vão da variante (a linha da agenda usa 13). */
   gap?: keyof typeof spacing;
-  /** Troca o padding do card (a linha da agenda usa 12). Não vale para `divided`. */
+  /** Troca o padding do card (a linha da agenda usa 12). Não vale para `divided` nem `menu`. */
   padding?: CardPadding;
   /**
    * Onde fica o `trailing`: à direita (padrão) ou embaixo do selo, do título
@@ -121,10 +126,18 @@ interface StaticRow extends RowLabel {
 
 export type ListRowProps = ListRowBaseProps & (PressableRow | StaticRow);
 
+const TITLE_VARIANT: Record<ListRowVariant, TypographyVariant> = {
+  card: 'label',
+  compact: 'label',
+  divided: 'label',
+  menu: 'bodyLead',
+};
+
 const META_VARIANT: Record<ListRowVariant, TypographyVariant> = {
   card: 'caption',
   compact: 'metaSmall',
   divided: 'metaSmall',
+  menu: 'caption',
 };
 
 // Peça dentro de um pressável que repete a ação dele: fora do leitor de tela.
@@ -158,6 +171,7 @@ export function ListRow(props: ListRowProps) {
     ref,
   } = props;
   const locked = tone === 'locked';
+  const titleColor = locked ? colors.textMuted : tone === 'danger' ? colors.danger : colors.text;
   const below = trailing ? trailingPlacement === 'below' : false;
   const pressable = props.onPress !== undefined;
   const group = pressable ? 'row' : (props.accessibilityGroup ?? 'row');
@@ -196,8 +210,8 @@ export function ListRow(props: ListRowProps) {
         {leading ? <View style={[styles.leading, gapStyle]}>{leading}</View> : null}
         <View style={styles.texts}>
           <Text
-            variant="label"
-            color={locked ? colors.textMuted : colors.text}
+            variant={TITLE_VARIANT[variant]}
+            color={titleColor}
             numberOfLines={titleNumberOfLines}
           >
             {title}
@@ -228,8 +242,8 @@ export function ListRow(props: ListRowProps) {
 
   const haptic = pressable && props.haptic !== undefined ? props.haptic : locked ? 'locked' : 'tap';
 
-  if (variant === 'divided') {
-    const rowStyle = [styles.row, styles.divided, gapStyle, below && styles.stacked, style];
+  if (variant === 'divided' || variant === 'menu') {
+    const rowStyle = [styles.row, styles[variant], gapStyle, below && styles.stacked, style];
     if (pressable) {
       return (
         <PressableScale
@@ -297,6 +311,10 @@ const styles = StyleSheet.create({
     // Branco a .06 do protótipo, o mesmo tom do card bloqueado.
     borderBottomColor: colors.borderSubtle,
   },
+  // Com o título de 22 de linha, a linha fica com 46: acima do alvo de 44.
+  menu: {
+    paddingVertical: spacing.md,
+  },
   lockedBorder: {
     borderColor: colors.borderSubtle,
   },
@@ -338,6 +356,7 @@ const gapStyles = StyleSheet.create({
   card: { gap: spacing.itemGap },
   compact: { gap: spacing.gridGap },
   divided: { gap: spacing.itemGap },
+  menu: { gap: spacing.lg },
 });
 
 // Título até meta: 6 nos cards (5 a 6 no protótipo), 4 no ranking.
@@ -345,4 +364,5 @@ const metaStyles = StyleSheet.create({
   card: { marginTop: spacing.metaGap },
   compact: { marginTop: spacing.metaGap },
   divided: { marginTop: spacing.xs },
+  menu: { marginTop: spacing.xs },
 });

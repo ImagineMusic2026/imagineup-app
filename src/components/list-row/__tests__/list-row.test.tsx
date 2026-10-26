@@ -147,6 +147,28 @@ describe('ListRow', () => {
     expect(screen.getByLabelText('Backstage. Bloqueada.')).toBeDisabled();
   });
 
+  it('de perigo: só o título na cor de perigo, com a meta e o toque de sempre', () => {
+    const onPress = jest.fn();
+    render(
+      <ListRow
+        testID="linha"
+        tone="danger"
+        title="Sair"
+        meta="Entrou como descarte@teste.imagineup"
+        onPress={onPress}
+      />,
+    );
+
+    expect(screen.getByText('Sair')).toHaveStyle({ color: colors.danger });
+    expect(screen.getByText('Entrou como descarte@teste.imagineup')).toHaveStyle({
+      color: colors.textMuted,
+    });
+    expect(screen.getByTestId('linha')).not.toHaveStyle({ borderColor: colors.borderSubtle });
+    fireEvent.press(screen.getByTestId('linha'));
+    expect(onPress).toHaveBeenCalledTimes(1);
+    expect(haptics.trigger).toHaveBeenCalledWith('tap');
+  });
+
   it('pressável ocupada: o leitor ouve que a ação está andando', () => {
     render(<ListRow title="Sair" onPress={jest.fn()} busy />);
     expect(screen.getByRole('button', { name: 'Sair' })).toBeBusy();
@@ -231,6 +253,28 @@ describe('ListRow', () => {
       borderBottomColor: colors.borderSubtle,
     });
     expect(row).not.toHaveStyle({ backgroundColor: colors.surface });
+  });
+
+  it('a do menu não tem fundo nem linha, e o título é maior, com a linha acima do alvo de 44', () => {
+    const onPress = jest.fn();
+    render(
+      <ListRow
+        testID="linha"
+        variant="menu"
+        title="Fãs bloqueados"
+        onPress={onPress}
+        accessibilityHint="Abre a lista de fãs bloqueados"
+      />,
+    );
+    const row = screen.getByRole('button', { name: 'Fãs bloqueados' });
+    expect(row).toHaveStyle({ paddingVertical: spacing.md });
+    expect(row).not.toHaveStyle({ backgroundColor: colors.surface });
+    expect(row).not.toHaveStyle({ borderBottomWidth: borderWidths.default });
+    const title = screen.getByText('Fãs bloqueados');
+    expect(title).toHaveStyle({ fontSize: typography.bodyLead.fontSize });
+    expect(typography.bodyLead.lineHeight + 2 * spacing.md).toBeGreaterThanOrEqual(44);
+    fireEvent.press(row);
+    expect(onPress).toHaveBeenCalledTimes(1);
   });
 
   it('o botão da direita pode descer para baixo do conteúdo, alinhado à esquerda', () => {
