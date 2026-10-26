@@ -24,7 +24,6 @@ describe('Text', () => {
     'statLabel',
     'labelTiny',
     'dateMonth',
-    'microLabel',
     'overlineStrong',
     'thumbLabel',
   ])('a variante %s, presa a layout fixo, para em 150%', (variant) => {

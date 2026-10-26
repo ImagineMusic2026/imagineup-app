@@ -137,10 +137,8 @@ export const typography = {
   },
   // O "/20" ao lado do número no anel da temporada (1g): sem o espaçamento do mês.
   counterSuffix: { fontFamily: fonts.manropeBold, fontSize: 9, lineHeight: 11 },
-  // 8,5 fica abaixo do mínimo recomendado, como a tab bar: rótulo das conquistas
-  // (1e) e título do 1º no pódio (1f). Pergunta aberta com a cliente.
-  microLabel: { fontFamily: fonts.manropeBold, fontSize: 8.5, lineHeight: 11 },
-  // O título do 1º no pódio (1f): o `microLabel` em caixa alta, com o espaçamento do protótipo.
+  // O título do 1º no pódio (1f), em caixa alta, com o espaçamento do protótipo.
+  // 8,5 fica abaixo do mínimo recomendado, como a tab bar. Pergunta aberta com a cliente.
   podiumTitle: {
     fontFamily: fonts.manropeBold,
     fontSize: 8.5,

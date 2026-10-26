@@ -1,45 +1,42 @@
-import {
-  Award,
-  CalendarCheck,
-  Flame,
-  Heart,
-  MessageCircle,
-  Star,
-  Ticket,
-  Users,
-  type LucideIcon,
-} from 'lucide-react-native';
+// Cada ícone pelo próprio caminho: o índice do pacote leva os 1.500 ícones
+// para o bundle (o Metro não descarta o que não é usado).
+import { CalendarCheckIcon } from 'phosphor-react-native/src/icons/CalendarCheck';
+import { ChatCircleDotsIcon } from 'phosphor-react-native/src/icons/ChatCircleDots';
+import { FireIcon } from 'phosphor-react-native/src/icons/Fire';
+import { HeartIcon } from 'phosphor-react-native/src/icons/Heart';
+import { MedalIcon } from 'phosphor-react-native/src/icons/Medal';
+import { ShareFatIcon } from 'phosphor-react-native/src/icons/ShareFat';
+import { StarIcon } from 'phosphor-react-native/src/icons/Star';
+import { TicketIcon } from 'phosphor-react-native/src/icons/Ticket';
+import { TrophyIcon } from 'phosphor-react-native/src/icons/Trophy';
+import { UsersThreeIcon } from 'phosphor-react-native/src/icons/UsersThree';
 
-import type { GlyphName } from '@/components/glyph';
 import { colors } from '@/theme';
 
 import type { AchievementTone } from './types';
 
-/**
- * Ícones das conquistas desenhados no protótipo, pela chave que vem do
- * painel: a seta cheia de compartilhar ("Boca a boca") e a taça fina ("Top
- * 20"). Vencem `ACHIEVEMENT_ICONS`.
- */
-export const ACHIEVEMENT_GLYPHS: Readonly<Record<string, GlyphName>> = {
-  share: 'share',
-  trophy: 'goblet',
-};
+/** Um ícone do Phosphor (todos têm a mesma assinatura). */
+export type AchievementIconComponent = typeof MedalIcon;
 
 /**
- * Ícones do lucide para as outras chaves que vêm do painel. Chave
+ * Ícones das conquistas pela chave que vem do painel, no Phosphor (o estilo
+ * duotone de medalha, decisão do dono de 26/10/2026; o resto do app segue no
+ * lucide). As chaves não mudam: o painel continua mandando as mesmas. Chave
  * desconhecida cai em `FALLBACK_ACHIEVEMENT_ICON`.
  */
-export const ACHIEVEMENT_ICONS: Readonly<Record<string, LucideIcon>> = {
-  ticket: Ticket,
-  star: Star,
-  users: Users,
-  heart: Heart,
-  comment: MessageCircle,
-  calendar: CalendarCheck,
-  flame: Flame,
+export const ACHIEVEMENT_ICONS: Readonly<Record<string, AchievementIconComponent>> = {
+  share: ShareFatIcon,
+  trophy: TrophyIcon,
+  ticket: TicketIcon,
+  star: StarIcon,
+  users: UsersThreeIcon,
+  heart: HeartIcon,
+  comment: ChatCircleDotsIcon,
+  calendar: CalendarCheckIcon,
+  flame: FireIcon,
 };
 
-export const FALLBACK_ACHIEVEMENT_ICON = Award;
+export const FALLBACK_ACHIEVEMENT_ICON: AchievementIconComponent = MedalIcon;
 
 /** Rosa para ação e convite, lima para pontos e ranking, ciano para shows. */
 export const ACHIEVEMENT_TONE_COLORS: Readonly<Record<AchievementTone, string>> = {
