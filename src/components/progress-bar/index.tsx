@@ -17,7 +17,7 @@ export type ProgressBarSize = keyof typeof layout.progressBar;
 export interface ProgressBarProps {
   /** De 0 a 1. */
   value: number;
-  /** `sm` (7) na 1g e na 1e; `md` (8) no card da missão do dia (1b). */
+  /** `xs` (4) no nível da 1e; `sm` (7) na 1g; `md` (8) no card da missão do dia (1b). */
   size?: ProgressBarSize;
   track?: string;
   /**
@@ -104,6 +104,9 @@ const styles = StyleSheet.create({
   track: {
     borderRadius: radii.pill,
     overflow: 'hidden',
+  },
+  xs: {
+    height: layout.progressBar.xs,
   },
   sm: {
     height: layout.progressBar.sm,

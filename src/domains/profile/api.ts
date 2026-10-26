@@ -223,7 +223,7 @@ export async function fetchMyInvite(): Promise<MyInvite> {
 }
 
 /**
- * Conta o link que o fã compartilhou ("links criados" do Perfil): um por
+ * Conta o link que o fã compartilhou (os "links criados" do `/me/progress`): um por
  * destino (`invite`, `agenda`, `post:<id>`, `artist:<id>`). Nas fixtures,
  * não chama nada: nas builds há o código de exemplo, e o `PUT` sairia com o
  * endereço da API vazio; os links de exemplo não mudam.

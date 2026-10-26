@@ -150,7 +150,7 @@ const appTree = {
   'excluir-conta': label('excluir conta'),
 };
 
-/** A árvore com a 1e de verdade (nas fixtures), para o toque no hero. */
+/** A árvore com a 1e de verdade (nas fixtures), para o botão "Editar perfil" dela. */
 const treeWithProfile = { ...appTree, '(tabs)/(perfil)/perfil': ProfileRoute };
 
 const get = jest.mocked(api.get);
@@ -377,7 +377,7 @@ describe('Editar perfil: sem o perfil', () => {
 });
 
 describe('Editar perfil: entradas e saída', () => {
-  it('abre pelos Ajustes e pelo hero, fora das abas, e o X fecha sem pergunta sem mudança', async () => {
+  it('abre pelos Ajustes e pelo botão da 1e, fora das abas, e o X fecha sem pergunta sem mudança', async () => {
     // A 1e e os Ajustes nas fixtures: a tela fica só leitura, com o mesmo header.
     mockDataSource = 'fixtures';
     jest.mocked(getDoc).mockResolvedValue(snapshot(CAMILA) as never);
@@ -392,7 +392,7 @@ describe('Editar perfil: entradas e saída', () => {
 
     act(() => router.navigate('/perfil'));
     await waitFor(() => expect(view.getPathname()).toBe('/perfil'));
-    fireEvent.press(await screen.findByRole('button', { name: /^Camila Ribeiro, @camilarib/ }));
+    fireEvent.press(await screen.findByRole('button', { name: 'Editar perfil' }));
     await waitFor(() => expect(view.getPathname()).toBe('/editar-perfil'));
     fireEvent.press(closeButton());
     await waitFor(() => expect(view.getPathname()).toBe('/perfil'));

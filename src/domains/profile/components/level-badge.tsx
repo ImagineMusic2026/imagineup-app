@@ -43,8 +43,9 @@ export interface LevelBadgeProps {
 }
 
 /**
- * Selo lima "NÍVEL 7 · PURAINHA" do hero da 1e, com as barras da marca. Não é
- * tocável, e o hero em volta diz o nível para o leitor de tela.
+ * Selo lima "NÍVEL 7 · PURAINHA" do nível da 1e, com as barras da marca. Não é
+ * tocável: o nome no hero diz o nível para o leitor de tela, e o selo fica
+ * dentro do elemento do nível (`LevelProgress`).
  */
 export function LevelBadge({ level, celebration = null, style, testID }: LevelBadgeProps) {
   const reducedMotion = usePrefersReducedMotion();

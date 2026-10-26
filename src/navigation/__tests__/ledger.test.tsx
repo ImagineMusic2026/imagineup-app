@@ -120,8 +120,8 @@ const rootRoutes = (view: Router): string[] => {
   return container?.routes?.[0]?.state?.routes?.map((route) => route.name) ?? [];
 };
 
-const POINTS_CARD =
-  'Seus pontos: 12.480. Esta semana: mais 840. Faltam 2.520 pontos para o nível 8, Xodó.';
+// O número de pontos do topo da 1e (o saldo), ao lado do avatar.
+const POINTS = '12.480 pontos';
 
 const announcements = () =>
   jest
@@ -244,12 +244,12 @@ afterEach(() => {
 });
 
 describe('extrato de pontos (bloco 7, provisório)', () => {
-  it('o card de pontos da 1e é um botão que abre o extrato na pilha do Perfil', async () => {
+  it('o número de pontos da 1e é um botão que abre o extrato na pilha do Perfil', async () => {
     const view = renderRouter(appTree, { initialUrl: '/perfil' });
 
-    const card = await screen.findByRole('button', { name: POINTS_CARD });
-    expect(card).toHaveProp('accessibilityHint', 'Abre o extrato de pontos.');
-    fireEvent.press(card);
+    const points = await screen.findByRole('button', { name: POINTS });
+    expect(points).toHaveProp('accessibilityHint', 'Abre o extrato de pontos.');
+    fireEvent.press(points);
 
     await waitFor(() => expect(view.getPathname()).toBe('/extrato'));
     // Dentro das abas, com a tab bar, e não por cima delas.

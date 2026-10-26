@@ -35,7 +35,7 @@ export const spacing = {
   titleToChips: 15,
   // Título até o primeiro card (1g 1h), chips até o destaque (1m).
   blockGap: 18,
-  // "Esta semana" (1g), card de pontos (1e), vão das abas (1d).
+  // "Esta semana" (1g), vão das abas (1d).
   sectionTopTight: 20,
   // Sobrelinha de seção: "Hoje", "Ao seu alcance" (1g 1h).
   sectionLabelTop: 22,
@@ -58,7 +58,7 @@ export const layout = {
   buttonHeight: {
     lg: 50,
     md: 44,
-    // Botões do card da missão do dia (1b).
+    // Botões do card da missão do dia (1b) e do topo da 1e.
     mdCompact: 36,
     // Botões do destaque da agenda (1m): "Eu vou" e "Chamar amigos".
     sm: 30,
@@ -80,7 +80,8 @@ export const layout = {
   // Trilho e polegar do `Switch` (a conta privada da tela "Editar perfil"),
   // nas medidas do switch do iOS; o polegar fica a 2 da borda do trilho.
   switch: { width: 51, height: 31, thumb: 27 },
-  progressBar: { sm: 7, md: 8 },
+  // `xs`: a barra fina do nível no topo da 1e.
+  progressBar: { xs: 4, sm: 7, md: 8 },
   stepBar: 3,
   // minWidth da coluna do selo de data (1m).
   dateColumn: 50,

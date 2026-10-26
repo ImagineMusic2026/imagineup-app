@@ -66,7 +66,7 @@ const WEEK_EARNED_BEFORE = 840;
 
 /**
  * Nível e números do fã. O XP é o da carteira das fixtures (cresce com as
- * ações que valem ponto e não cai no resgate), e o "Esta semana" soma aos
+ * ações que valem ponto e não cai no resgate), e o `weekEarned` soma aos
  * ganhos de exemplo o que o fã ganhou desde a abertura do app, sem descontar
  * resgates. Os números são os do protótipo, com "3 temporadas" no lugar das
  * playlists (fora do contrato).

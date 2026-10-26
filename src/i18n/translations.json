@@ -653,19 +653,15 @@
       "up": "Você subiu para o nível {{number}}, {{name}}."
     },
     "points": {
-      "title": "Seus pontos",
-      "week": "Esta semana",
       "toNext": "Faltam {{points}} para o nível {{number}} · {{name}}",
       "toNextOne": "Falta {{points}} para o nível {{number}} · {{name}}",
       "amount": "{{points}} pts",
       "amountOne": "{{points}} pt",
       "maxLevel": "Você chegou ao nível máximo",
-      "label": "Seus pontos: {{balance}}. Esta semana: {{week}}. {{next}}.",
       "loading": "Carregando seus pontos",
       "loadError": "Não deu para carregar seus pontos.",
       "loaded": "Pontos carregados.",
       "spoken": {
-        "weekGain": "mais {{points}}",
         "toNext": "Faltam {{points}} pontos para o nível {{number}}, {{name}}",
         "toNextOne": "Falta 1 ponto para o nível {{number}}, {{name}}"
       },
@@ -673,10 +669,10 @@
     },
     "stats": {
       "label": "{{value}} {{label}}",
-      "links": "links criados",
-      "linksOne": "link criado",
-      "people": "pessoas trazidas",
-      "peopleOne": "pessoa trazida",
+      "points": "pontos",
+      "pointsOne": "ponto",
+      "people": "convidados",
+      "peopleOne": "convidado",
       "seasons": "temporadas",
       "seasonsOne": "temporada"
     },
@@ -710,7 +706,12 @@
       "empty": "Você ainda não entrou em nenhuma central.",
       "explore": "Explorar artistas"
     },
-    "heroHint": "Abre a edição do perfil"
+    "actions": {
+      "edit": "Editar perfil",
+      "editHint": "Abre a edição do perfil",
+      "invite": "Convidar amigos",
+      "inviteHint": "Abre o seu link de convite"
+    }
   },
   "ledger": {
     "title": "Extrato",
