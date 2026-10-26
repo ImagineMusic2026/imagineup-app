@@ -11,9 +11,9 @@ import { colors, layout, radii, spacing } from '@/theme';
 import { formatRelativeAgo, formatRelativeAgoSpoken } from '@/utils/date';
 import { sentence } from '@/utils/text';
 
-import { excerptOf } from '../format';
+import { clubNameLabel, excerptOf } from '../format';
 import type { FanClubPost } from '../types';
-import { UnofficialBand } from './unofficial-band';
+import { ClubName } from './club-name';
 
 /** A foto do fã-clube é sempre 4:5 (decisão 15). */
 const PHOTO_ASPECT = 4 / 5;
@@ -30,15 +30,15 @@ export interface FanClubPostCardProps {
   now: Date;
   /**
    * - `page`: na página do fã-clube, o texto inteiro e a foto grande;
-   * - `feed`: na Início, com a faixa e o nome do fã-clube (que abrem a página),
-   *   o texto em 4 linhas e a miniatura ao lado.
+   * - `feed`: na Início, com o nome do fã-clube e o selo do oficial (que abrem
+   *   a página), o texto em 4 linhas e a miniatura ao lado.
    */
   variant: FanClubPostCardVariant;
   /** Quem vê não é o gestor: o Denunciar aparece (a própria publicação não se denuncia). */
   canReport: boolean;
   onShare: (post: FanClubPost) => void;
   onReport: (post: FanClubPost) => void;
-  /** Só na Início: a faixa e o nome abrem a página do fã-clube. */
+  /** Só na Início: o nome abre a página do fã-clube. */
   onOpenClub?: (post: FanClubPost) => void;
   style?: StyleProp<ViewStyle>;
   testID?: string;
@@ -48,8 +48,8 @@ export interface FanClubPostCardProps {
  * Uma publicação no ar de um fã-clube (34.9, itens 7 e 9). O texto, a foto e
  * a data são um foco só; o Compartilhar (o link do fã-clube, sem link próprio
  * por publicação) e o Denunciar são botões irmãos, nunca dentro de outro
- * pressável. Na Início, a faixa "Fã-clube, não oficial" vem antes do nome, e
- * os dois abrem a página.
+ * pressável. Na Início, o nome do fã-clube, com o selo do oficial ao lado
+ * (34.23), abre a página.
  */
 export function FanClubPostCard({
   post,
@@ -79,13 +79,12 @@ export function FanClubPostCard({
         <PressableScale
           onPress={() => onOpenClub(post)}
           accessibilityRole="link"
-          accessibilityLabel={t('fanClub.post.openClub', { name: post.clubName })}
+          accessibilityLabel={clubNameLabel(post.clubName, post.clubOfficial)}
           accessibilityHint={t('fanClub.post.openClubHint')}
           style={styles.club}
           testID={testID ? `${testID}-club` : undefined}
         >
-          <UnofficialBand />
-          <Text variant="label">{post.clubName}</Text>
+          <ClubName name={post.clubName} official={post.clubOfficial} />
         </PressableScale>
       ) : null}
       <View accessible accessibilityLabel={label} style={feed ? styles.feedBody : undefined}>

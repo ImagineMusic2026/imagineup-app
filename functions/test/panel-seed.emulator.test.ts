@@ -204,7 +204,7 @@ async function seed(ranking: Map<string, string>): Promise<void> {
   }
   // As exigências das lojas (29.10), depois dos detalhes do perfil.
   await seedProfileModeration(db, (email) => uidOf(ranking, email), T0);
-  // O fã-clube (34.12, etapa 1 de 34.14): a Camila aprovada no Netto.
+  // O fã-clube (34.12, etapa 1 de 34.14): a Camila aprovada no Netto, com o selo (34.23).
   await seedFanClubs(db, 'camila', ACTOR, T0);
   // As publicações e a denúncia (etapa 2).
   await seedFanClubPosts(
@@ -475,12 +475,16 @@ describe('o seed das telas do painel (26.13)', () => {
       proposedName: SEED_CAMILA_FAN_CLUB.name,
       decidedBy: { uid: SEED_STAFF_ADMIN.uid, name: SEED_STAFF_ADMIN.displayName },
     });
+    // Oficializado pelo admin do seed junto da aprovação (34.23).
     expect(await read(`fanClubs/${application.clubId as string}`)).toMatchObject({
       artistId: 'nettobrito',
       ownerUid: 'camila',
       name: SEED_CAMILA_FAN_CLUB.name,
       status: 'active',
+      official: true,
+      officialBy: { uid: SEED_STAFF_ADMIN.uid, name: SEED_STAFF_ADMIN.displayName },
     });
+    expect(audit.filter((entry) => entry.action === 'fanClub.officialized')).toHaveLength(1);
     expect(await read('fanClubApplicationPrivate/camila')).toMatchObject({ pitch: null });
     // O WhatsApp de teste da candidatura, no contato do fã (decisão 14).
     expect(await read('users/camila/contact/main')).toMatchObject({

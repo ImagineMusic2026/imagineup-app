@@ -76,6 +76,7 @@ const PAGE: FanClubPage = {
   followerCount: 41,
   postCount: 2,
   featured: false,
+  official: false,
   isFollowing: false,
   isOwner: false,
   isMember: false,
@@ -87,6 +88,7 @@ const CARD: FanClubCard = {
   owner: OWNER,
   followers: 41,
   featured: false,
+  official: false,
   postCount: 2,
   isFollowing: false,
 };
@@ -95,6 +97,7 @@ const POST: FanClubPost = {
   id: 'p1',
   clubId: 'fc-1',
   clubName: 'Nenho Sempre',
+  clubOfficial: false,
   artistId: 'nenho',
   author: OWNER,
   kind: 'text',
@@ -285,6 +288,7 @@ describe('seguir e deixar de seguir no cache', () => {
           owner: OWNER,
           followedAt: '2026-10-15T15:00:00.000Z',
           available: true,
+          official: false,
         },
       ],
     });
@@ -315,7 +319,11 @@ describe('a resposta perdida (o servidor pode ter gravado)', () => {
     const { result } = renderHook(() => useFollowFanClubMutation(), { wrapper });
     act(() => result.current.mutate({ id: 'fc-1', artistId: 'nenho' }));
     await waitFor(() => expect(result.current.isError).toBe(true));
-    for (const key of [fanClubKeys.club('fc-1'), fanClubKeys.byArtist('nenho'), fanClubKeys.feed()]) {
+    for (const key of [
+      fanClubKeys.club('fc-1'),
+      fanClubKeys.byArtist('nenho'),
+      fanClubKeys.feed(),
+    ]) {
       expect(client.getQueryState(key)?.isInvalidated).toBe(true);
     }
   });

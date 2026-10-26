@@ -261,6 +261,17 @@ export const FEATURE_OFF = {
 } as const;
 
 /**
+ * O selo de oficial desligado (34.23): o fã-clube que nasce, o encerramento e
+ * a lápide. A pausa, pela equipe ou pela suspensão, mantém o selo, que volta
+ * com o fã-clube reativado.
+ */
+export const OFFICIAL_OFF = {
+  official: false,
+  officialAt: null,
+  officialBy: null,
+} as const;
+
+/**
  * Os fã-clubes ativos ou pausados de um artista, um basta: o `removeArtist`
  * recusa `has-content` com eles (34.14, etapa 1). Igualdade e `in`: a junção
  * dos índices de um campo atende.

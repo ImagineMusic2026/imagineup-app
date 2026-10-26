@@ -43,8 +43,10 @@ import {
 // conta do ranking que entra junto, a entrada trazida) e a primeira cópia da
 // noite. Na etapa 5: a recompensa "Só para prêmios" e o prêmio da Camila, com
 // os pontos. Na etapa 10: a candidatura pendente da Duda para o Nenho, para a
-// fila do painel e o "Candidatura em análise" do app (34.22). Rodar de novo
-// não muda nada. Nunca roda em produção: o script fixa os emuladores.
+// fila do painel e o "Candidatura em análise" do app (34.22). Desde 34.23, o
+// fã-clube da Camila oficializado pelo admin do seed, junto da aprovação (o
+// selo de oficial; o da Duda, quando aprovado no painel local, fica sem ele).
+// Rodar de novo não muda nada. Nunca roda em produção: o script fixa os emuladores.
 
 /** A central com as fotos de fã desligadas (só texto). */
 export const SEED_TEXT_ONLY_ARTIST = 'nenho';
@@ -71,13 +73,16 @@ export type SeedFanClubsResult = {
   applied: boolean;
   /** A candidatura da Camila foi aprovada agora. */
   approved: boolean;
+  /** O fã-clube da Camila foi oficializado agora (34.23). */
+  officialized: boolean;
 };
 
 /**
- * O seed do fã-clube: o Nenho só com texto e a Camila aprovada. Cada passo só
- * roda quando o que ele cria ainda não existe: a candidatura só nasce sem
- * nenhuma, e a aprovação só vai com ela pendente (a recusada ou retirada no
- * painel local fica como está).
+ * O seed do fã-clube: o Nenho só com texto e a Camila aprovada, com o
+ * fã-clube oficializado. Cada passo só roda quando o que ele cria ainda não
+ * existe: a candidatura só nasce sem nenhuma, a aprovação só vai com ela
+ * pendente (a recusada ou retirada no painel local fica como está), e o selo
+ * só entra junto da aprovação (o tirado no painel local fica como está).
  */
 export async function seedFanClubs(
   db: Firestore,
@@ -85,7 +90,12 @@ export async function seedFanClubs(
   actor: { uid: string; name: string },
   now: number = Date.now(),
 ): Promise<SeedFanClubsResult> {
-  const result: SeedFanClubsResult = { textOnly: false, applied: false, approved: false };
+  const result: SeedFanClubsResult = {
+    textOnly: false,
+    applied: false,
+    approved: false,
+    officialized: false,
+  };
   const textOnly = db.collection('artistPrivate').doc(SEED_TEXT_ONLY_ARTIST);
   const privateDoc = await textOnly.get();
   if (!privateDoc.exists) throw new Error(`Falta a central ${SEED_TEXT_ONLY_ARTIST} do seed.`);
@@ -116,6 +126,18 @@ export async function seedFanClubs(
       { actor, now },
     );
     result.approved = true;
+    const approved = applicationRecord(
+      camilaUid,
+      (await applicationRef(db, camilaUid).get()).data() ?? {},
+    );
+    if (approved.clubId !== null) {
+      await runFanClubDecision(
+        db,
+        { subject: 'club', id: approved.clubId, decision: 'officialize', expected: 'active' },
+        { actor, now },
+      );
+      result.officialized = true;
+    }
   }
   return result;
 }

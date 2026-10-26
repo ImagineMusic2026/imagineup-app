@@ -6,8 +6,9 @@ import { Pill } from '@/components/pill';
 import { t } from '@/i18n';
 import { isLargeText, spacing } from '@/theme';
 
-import { personName, postsCountText, roundFollowersText } from '../format';
+import { clubNameLabel, personName, postsCountText, roundFollowersText } from '../format';
 import type { FanClubCard } from '../types';
+import { OfficialBadge } from './official-badge';
 
 export interface FanClubRowProps {
   club: FanClubCard;
@@ -18,11 +19,12 @@ export interface FanClubRowProps {
 }
 
 /**
- * Um fã-clube da lista do artista (34.9, item 8): o gestor, o nome, "por @x ·
- * N publicações · N seguidores" (os seguidores da cópia da noite,
- * arredondados) e as pílulas "Destaque" e "Seguindo". Um botão só, que abre a
- * página; o leitor ouve a faixa "não oficial" antes do nome, e as pílulas no
- * rótulo. Com a fonte grande, as pílulas descem para baixo do nome.
+ * Um fã-clube da lista do artista (34.9, item 8): o gestor, o nome (com o selo
+ * do fã-clube oficial, 34.23), "por @x · N publicações · N seguidores" (os
+ * seguidores da cópia da noite, arredondados) e as pílulas "Destaque" e
+ * "Seguindo". Um botão só, que abre a página; o leitor ouve o "fã-clube
+ * oficial" logo depois do nome, e as pílulas no rótulo. Com a fonte grande, as
+ * pílulas descem para baixo do nome.
  */
 export function FanClubRow({ club, onPress, variant = 'compact', testID }: FanClubRowProps) {
   const { fontScale } = useWindowDimensions();
@@ -30,7 +32,12 @@ export function FanClubRow({ club, onPress, variant = 'compact', testID }: FanCl
   const posts = postsCountText(club.postCount);
   const followers = roundFollowersText(club.followers);
   const label = [
-    t('fanClub.artistCard.rowLabel', { name: club.name, owner, followers, posts }),
+    t('fanClub.artistCard.rowLabel', {
+      name: clubNameLabel(club.name, club.official),
+      owner,
+      followers,
+      posts,
+    }),
     club.featured ? t('fanClub.artistCard.featuredLabel') : null,
     club.isFollowing ? t('fanClub.artistCard.followingLabel') : null,
   ]
@@ -54,6 +61,7 @@ export function FanClubRow({ club, onPress, variant = 'compact', testID }: FanCl
       <Avatar name={club.owner.name} id={club.owner.uid} photoUrl={club.owner.photoURL} size="sm" />
     ),
     title: club.name,
+    titleBadge: club.official ? <OfficialBadge /> : undefined,
     meta: t('fanClub.artistCard.rowMeta', { owner, posts, followers }),
     onPress: () => onPress(club),
     accessibilityHint: t('fanClub.artistCard.hint'),

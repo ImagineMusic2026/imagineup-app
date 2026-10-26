@@ -28,6 +28,7 @@ import {
 import { fanClubHref } from '../share';
 import type { FanClubStatus, MyFanClub, MyFanClubClub } from '../types';
 import { ApplyAgain } from './application-state';
+import { ClubName } from './club-name';
 import { ContactCard } from './contact-card';
 import { FanClubNotice } from './fan-club-notice';
 import { NumberGrid } from './number-card';
@@ -42,9 +43,8 @@ const STATUS_TEXTS: Record<FanClubStatus, TranslationKey> = {
 };
 
 /**
- * O cabeçalho: o nome, o artista e o status, num foco só. A faixa não oficial
- * fica nas telas públicas, e não nas do gestor (pedido do dono de 20/10/2026,
- * 34.22).
+ * O cabeçalho: o nome, com o selo quando a equipe oficializou (34.23), o
+ * artista e o status, num foco só.
  */
 function ClubHeader({ club }: { club: MyFanClubClub }) {
   const status = t(STATUS_TEXTS[club.status]);
@@ -53,15 +53,14 @@ function ClubHeader({ club }: { club: MyFanClubClub }) {
       variant="large"
       accessible
       accessibilityRole="header"
-      accessibilityLabel={t('fanClub.mine.headerLabel', {
-        name: club.name,
-        artist: club.artistName,
-        status,
-      })}
+      accessibilityLabel={t(
+        club.official ? 'fanClub.mine.headerOfficialLabel' : 'fanClub.mine.headerLabel',
+        { name: club.name, artist: club.artistName, status },
+      )}
       style={styles.header}
       testID="fan-club-header"
     >
-      <Text variant="titleCard">{club.name}</Text>
+      <ClubName name={club.name} official={club.official} variant="titleCard" badgeSize={20} />
       <Text variant="body" color={colors.textSecondary}>
         {club.artistName}
       </Text>

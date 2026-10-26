@@ -148,6 +148,8 @@ interface ClubRecord {
   status: FanClubStatus;
   /** O fim do Destaque em dias a partir de hoje, ou null. */
   featuredDays: number | null;
+  /** Oficializado pela equipe (34.23): o da Camila, como no seed. */
+  official: boolean;
   /** Quem segue além da Camila (a página conta ela junto quando segue). */
   followers: number;
   followers30d: number;
@@ -200,6 +202,7 @@ const INITIAL_CLUBS: readonly ClubRecord[] = [
     owner: CAMILA,
     status: 'active',
     featuredDays: null,
+    official: true,
     // A Bia e a conta do ranking que entrou junto (as duas entradas trazidas)
     // e o link do fã-clube que a Camila compartilhou, como no seed.
     followers: 2,
@@ -218,6 +221,7 @@ const INITIAL_CLUBS: readonly ClubRecord[] = [
     owner: THALITA,
     status: 'active',
     featuredDays: 12,
+    official: false,
     followers: 41,
     followers30d: 9,
     links: 6,
@@ -234,6 +238,7 @@ const INITIAL_CLUBS: readonly ClubRecord[] = [
     owner: DAVI,
     status: 'active',
     featuredDays: null,
+    official: false,
     followers: 12,
     followers30d: 4,
     links: 2,
@@ -511,6 +516,7 @@ function clubView(club: ClubRecord, record: ApplicationRecord, now: Date): MyFan
     pendingPosts: mine.filter((post) => post.status === 'pending').length,
     photosAllowed: !TEXT_ONLY_ARTISTS.has(club.artistId),
     featuredUntil: club.status === 'active' ? featuredUntilOf(club, now) : null,
+    official: club.official,
     lastReward: lastRewardOf(club, now),
     available: unavailableReason === null,
     unavailableReason,
@@ -569,6 +575,7 @@ function postView(post: PostRecord, club: ClubRecord, now: Date): FanClubPost {
     id: post.id,
     clubId: club.id,
     clubName: club.name,
+    clubOfficial: club.official,
     artistId: club.artistId,
     author: club.owner,
     kind: post.kind,
@@ -789,6 +796,7 @@ export const fanClubFixture = {
         owner: club.owner,
         followers: copiedFollowers(club),
         featured,
+        official: club.official,
         postCount: posts.filter((post) => post.clubId === club.id && post.status === 'published')
           .length,
         isFollowing: followed.has(club.id),
@@ -815,6 +823,7 @@ export const fanClubFixture = {
       postCount: posts.filter((post) => post.clubId === club.id && post.status === 'published')
         .length,
       featured: featuredUntilOf(club, now) !== null,
+      official: club.official,
       isFollowing: followed.has(club.id),
       isOwner: club.owner.uid === FIXTURE_FAN_ID,
       isMember: fixtureMembership.isMember(club.artistId),
@@ -908,6 +917,7 @@ export const fanClubFixture = {
           owner: available ? club.owner : null,
           followedAt: at,
           available,
+          official: available && club.official,
         };
       });
     return { items };

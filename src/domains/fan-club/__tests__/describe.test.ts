@@ -44,7 +44,7 @@ describe('fanClubErrorText', () => {
   it('o "oficial" no nome e o texto barrado pelo filtro têm frase própria', () => {
     expect(text(invalid({ field: 'name', reason: 'official' }))).toEqual({
       field: 'name',
-      text: 'O nome não pode ter a palavra oficial, porque o fã-clube não é oficial.',
+      text: 'O nome não pode ter a palavra oficial. Só a equipe oficializa um fã-clube, com o selo.',
     });
     expect(text(invalid({ field: 'pitch', reason: 'not_allowed' }))).toEqual({
       field: 'pitch',

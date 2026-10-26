@@ -801,6 +801,7 @@ describe('a página, a lista do artista e o bloqueio (decisão 19)', () => {
         followerCount: 0,
         postCount: 0,
         featured: false,
+        official: false,
         isFollowing: false,
         isOwner: false,
         isMember: false,

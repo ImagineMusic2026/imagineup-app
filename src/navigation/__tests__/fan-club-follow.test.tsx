@@ -1,7 +1,7 @@
 import { QueryClientProvider } from '@tanstack/react-query';
 import { router, Stack, useLocalSearchParams } from 'expo-router';
 import { Tabs } from 'expo-router/js-tabs';
-import { act, fireEvent, renderRouter, screen, waitFor } from 'expo-router/testing-library';
+import { act, fireEvent, renderRouter, screen, waitFor, within } from 'expo-router/testing-library';
 import { getDoc } from 'firebase/firestore';
 import type { ReactNode } from 'react';
 import { AccessibilityInfo, Alert, Share, Text, View, type AlertButton } from 'react-native';
@@ -197,6 +197,7 @@ const ownClub = (patch: Partial<MyFanClubClub> = {}): MyFanClubClub => ({
   pendingPosts: 0,
   photosAllowed: true,
   featuredUntil: null,
+  official: false,
   lastReward: null,
   available: true,
   unavailableReason: null,
@@ -231,6 +232,7 @@ const page = (patch: Partial<FanClubPage> = {}): FanClubPage => ({
   followerCount: 41,
   postCount: 2,
   featured: true,
+  official: false,
   isFollowing: false,
   isOwner: false,
   isMember: false,
@@ -241,6 +243,7 @@ const post = (id: string, patch: Partial<FanClubPost> = {}): FanClubPost => ({
   id,
   clubId: 'fc-1',
   clubName: 'Nenho Sempre',
+  clubOfficial: false,
   artistId: 'nenho',
   author: OWNER,
   kind: 'text',
@@ -257,6 +260,7 @@ const card = (id: string, patch: Partial<FanClubCard> = {}): FanClubCard => ({
   owner: OWNER,
   followers: 41,
   featured: false,
+  official: false,
   postCount: 2,
   isFollowing: false,
   ...patch,
@@ -426,12 +430,13 @@ describe('antes da abertura (o 404 da api de antes), nada aparece e nada mais é
 // --- A página pública -------------------------------------------------------------------
 
 describe('a página do fã-clube (34.9, item 7)', () => {
-  it('a faixa antes do nome, o gestor, o artista, os seguidores, o Destaque e as publicações', async () => {
+  it('o nome sem rótulo de não oficial, o gestor, o artista, os seguidores, o Destaque e as publicações', async () => {
     renderRouter(appTree, { initialUrl: '/fa-clube/fc-1' });
 
-    expect(
-      await screen.findByRole('header', { name: 'Fã-clube, não oficial. Nenho Sempre' }),
-    ).toBeTruthy();
+    const header = await screen.findByRole('header', { name: 'Nenho Sempre' });
+    expect(within(header).queryByTestId('fan-club-official-badge', hiddenOk)).toBeNull();
+    expect(screen.queryByText(/não oficia/iu, hiddenOk)).toBeNull();
+    expect(screen.queryByLabelText(/não oficia/iu, hiddenOk)).toBeNull();
     expect(screen.getByText('feito por @thalitasan')).toBeTruthy();
     expect(screen.getByRole('link', { name: 'Central de Nenho' })).toBeTruthy();
     expect(screen.getByLabelText('41 seguidores. Em destaque.')).toBeTruthy();
@@ -448,6 +453,14 @@ describe('a página do fã-clube (34.9, item 7)', () => {
       }),
     ).toBeTruthy();
     expect(mocked.fetchFanClub).toHaveBeenCalledWith('fc-1');
+  });
+
+  it('oficializado pela equipe (34.23): o selo ao lado do nome, e o leitor ouve "fã-clube oficial"', async () => {
+    mocked.fetchFanClub.mockResolvedValue(page({ official: true }));
+    renderRouter(appTree, { initialUrl: '/fa-clube/fc-1' });
+
+    const header = await screen.findByRole('header', { name: 'Nenho Sempre, fã-clube oficial' });
+    expect(within(header).getByTestId('fan-club-official-badge', hiddenOk)).toBeTruthy();
   });
 
   it('o rótulo da publicação: o ponto depois do texto só quando ele não termina em "?" ou "!"', async () => {
@@ -724,7 +737,7 @@ describe('"Bloquear e denunciar" o gestor (decisões 19 e 32)', () => {
 // --- As listas ------------------------------------------------------------------------------
 
 describe('"Fã-clubes que sigo" (34.9, item 10)', () => {
-  it('o disponível abre a página; o indisponível aparece com o nome, quando há, e "Indisponível"', async () => {
+  it('o disponível abre a página, com o selo do oficial; o indisponível aparece com o nome, quando há, e "Indisponível", sem o selo', async () => {
     mocked.fetchFollowedFanClubs.mockResolvedValue({
       items: [
         {
@@ -735,6 +748,7 @@ describe('"Fã-clubes que sigo" (34.9, item 10)', () => {
           owner: OWNER,
           followedAt: '2026-10-15T15:00:00.000Z',
           available: true,
+          official: true,
         },
         {
           id: 'fc-2',
@@ -744,6 +758,7 @@ describe('"Fã-clubes que sigo" (34.9, item 10)', () => {
           owner: null,
           followedAt: '2026-10-10T15:00:00.000Z',
           available: false,
+          official: false,
         },
         {
           id: 'fc-3',
@@ -753,17 +768,20 @@ describe('"Fã-clubes que sigo" (34.9, item 10)', () => {
           owner: null,
           followedAt: '2026-10-05T15:00:00.000Z',
           available: false,
+          official: false,
         },
       ],
     });
     const view = renderRouter(appTree, { initialUrl: '/fa-clubes-que-sigo' });
 
-    expect(await screen.findByLabelText('Nenho Sempre, fã-clube de Nenho.')).toBeTruthy();
-    expect(screen.getByLabelText('Rock Raiz, fã-clube de Rock Salles. Indisponível.')).toBeTruthy();
+    const official = await screen.findByLabelText('Nenho Sempre, fã-clube oficial de Nenho.');
+    expect(within(official).getByTestId('fan-club-official-badge', hiddenOk)).toBeTruthy();
+    const unavailable = screen.getByLabelText('Rock Raiz, fã-clube de Rock Salles. Indisponível.');
+    expect(within(unavailable).queryByTestId('fan-club-official-badge', hiddenOk)).toBeNull();
     expect(
       screen.getByLabelText('Fã-clube indisponível, fã-clube de Netto Brito. Indisponível.'),
     ).toBeTruthy();
-    fireEvent.press(screen.getByLabelText('Nenho Sempre, fã-clube de Nenho.'));
+    fireEvent.press(official);
     await waitFor(() => expect(view.getPathname()).toBe('/fa-clube/fc-1'));
   });
 
@@ -778,6 +796,7 @@ describe('"Fã-clubes que sigo" (34.9, item 10)', () => {
           owner: null,
           followedAt: '2026-10-10T15:00:00.000Z',
           available: false,
+          official: false,
         },
       ],
     });
@@ -802,10 +821,10 @@ describe('"Fã-clubes que sigo" (34.9, item 10)', () => {
 });
 
 describe('o card da 1d e a lista do artista (34.9, item 8)', () => {
-  it('até 3, com a faixa, e "Ver todos" abre a lista inteira na pilha da aba', async () => {
+  it('até 3, o oficial com o selo, sem "não oficial", e "Ver todos" abre a lista inteira na pilha da aba', async () => {
     mocked.fetchArtistFanClubs.mockResolvedValue({
       items: [
-        card('a', { featured: true, isFollowing: true, followers: 4_800 }),
+        card('a', { featured: true, isFollowing: true, followers: 4_800, official: true }),
         card('b'),
         card('c', { followers: 1, postCount: 1 }),
         card('d'),
@@ -815,16 +834,17 @@ describe('o card da 1d e a lista do artista (34.9, item 8)', () => {
     const view = renderRouter(appTree, { initialUrl: '/artista/nenho' });
 
     expect(await screen.findByTestId('artist-fan-clubs')).toBeTruthy();
+    const official = screen.getByLabelText(
+      'Fã-clube a, fã-clube oficial, feito por @thalitasan. 4,8 mil seguidores. 2 publicações. Em destaque. Você segue.',
+    );
+    expect(within(official).getByTestId('fan-club-official-badge', hiddenOk)).toBeTruthy();
+    const other = screen.getByLabelText(
+      'Fã-clube c, feito por @thalitasan. 1 seguidor. 1 publicação.',
+    );
+    expect(within(other).queryByTestId('fan-club-official-badge', hiddenOk)).toBeNull();
     expect(
-      screen.getByLabelText(
-        'Fã-clube não oficial Fã-clube a, feito por @thalitasan. 4,8 mil seguidores. 2 publicações. Em destaque. Você segue.',
-      ),
-    ).toBeTruthy();
-    expect(
-      screen.getByLabelText(
-        'Fã-clube não oficial Fã-clube c, feito por @thalitasan. 1 seguidor. 1 publicação.',
-      ),
-    ).toBeTruthy();
+      within(screen.getByTestId('artist-fan-clubs')).queryByText(/não oficia/iu, hiddenOk),
+    ).toBeNull();
     expect(screen.queryByTestId('artist-fan-club-d')).toBeNull();
     expect(mocked.fetchArtistFanClubs).toHaveBeenCalledWith('nenho', null);
 
@@ -843,8 +863,14 @@ describe('o card da 1d e a lista do artista (34.9, item 8)', () => {
 });
 
 describe('"Dos seus fã-clubes" na Início (34.9, item 9)', () => {
-  it('só com publicação; a faixa e o nome abrem a página', async () => {
-    mocked.fetchFanClubFeed.mockResolvedValue({ items: [post('p1')], nextCursor: null });
+  it('só com publicação; o nome, com o selo do oficial, abre a página', async () => {
+    mocked.fetchFanClubFeed.mockResolvedValue({
+      items: [
+        post('p1', { clubOfficial: true }),
+        post('p2', { clubId: 'fc-2', clubName: 'Rock Raiz' }),
+      ],
+      nextCursor: null,
+    });
     const view = renderRouter(appTree, { initialUrl: '/' });
 
     expect(await screen.findByText('Dos seus fã-clubes')).toBeTruthy();
@@ -853,7 +879,11 @@ describe('"Dos seus fã-clubes" na Início (34.9, item 9)', () => {
         name: 'Denunciar a publicação: Quem vai no show? Publicação p1',
       }),
     ).toBeTruthy();
-    fireEvent.press(screen.getByRole('link', { name: 'Fã-clube, não oficial. Nenho Sempre' }));
+    const official = screen.getByRole('link', { name: 'Nenho Sempre, fã-clube oficial' });
+    expect(within(official).getByTestId('fan-club-official-badge', hiddenOk)).toBeTruthy();
+    const other = screen.getByRole('link', { name: 'Rock Raiz' });
+    expect(within(other).queryByTestId('fan-club-official-badge', hiddenOk)).toBeNull();
+    fireEvent.press(official);
     await waitFor(() => expect(view.getPathname()).toBe('/fa-clube/fc-1'));
   });
 

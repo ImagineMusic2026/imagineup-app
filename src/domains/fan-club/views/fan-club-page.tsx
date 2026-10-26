@@ -29,11 +29,11 @@ import { haptics } from '@/services/haptics';
 import { colors, layout, radii, spacing } from '@/theme';
 
 import { FanClubPostCard } from '../components/club-post-card';
-import { UnofficialBand } from '../components/unofficial-band';
+import { ClubName } from '../components/club-name';
 import { FAN_CLUB_ERROR_CODES } from '../consts';
 import { fanClubErrorText } from '../describe';
 import { isDefinitiveRefusal } from '../entry';
-import { followersText, personName } from '../format';
+import { clubNameLabel, followersText, personName } from '../format';
 import {
   useFanClubGate,
   useFanClubPageQuery,
@@ -309,9 +309,10 @@ function BlockMenu({ club, onBlocked }: { club: FanClubPage; onBlocked: (name: s
 }
 
 /**
- * O topo da página: a faixa não oficial antes do nome (um foco, com o papel de
- * cabeçalho), "feito por @gestor" (abre o perfil público dele), o artista (abre
- * a central), os seguidores e o Destaque, e o seguir.
+ * O topo da página: o nome, com o selo do oficial ao lado (34.23; um foco,
+ * com o papel de cabeçalho, "Netto de Coração, fã-clube oficial"), "feito por
+ * @gestor" (abre o perfil público dele), o artista (abre a central), os
+ * seguidores e o Destaque, e o seguir.
  */
 function ClubHeader({ club }: { club: FanClubPage }) {
   const navigation = useNavigationContainerRef();
@@ -322,11 +323,10 @@ function ClubHeader({ club }: { club: FanClubPage }) {
       <View
         accessible
         accessibilityRole="header"
-        accessibilityLabel={t('fanClub.page.headerLabel', { name: club.name })}
-        style={styles.title}
+        accessibilityLabel={clubNameLabel(club.name, club.official)}
+        testID="fan-club-page-title"
       >
-        <UnofficialBand />
-        <Text variant="titlePage">{club.name}</Text>
+        <ClubName name={club.name} official={club.official} variant="titlePage" badgeSize={22} />
       </View>
       <TextLink
         label={t('fanClub.page.by', { owner })}
@@ -588,10 +588,6 @@ const styles = StyleSheet.create({
   },
   top: {
     paddingTop: spacing.md,
-  },
-  title: {
-    alignItems: 'flex-start',
-    gap: spacing.sm,
   },
   owner: {
     alignSelf: 'flex-start',

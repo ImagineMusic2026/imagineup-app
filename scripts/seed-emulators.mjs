@@ -664,7 +664,7 @@ if (camilaUid) {
   const { seedFanClubs } = functionsBuild('fan-clubs');
   const fanClubs = await withFirestore((db) => seedFanClubs(db, camilaUid, staffActor));
   console.log(
-    `Fã-clube: a Camila gere o fã-clube do Netto (${fanClubs.applied ? 'candidatura agora' : 'candidatura já existia'}, ${fanClubs.approved ? 'aprovada agora' : 'já aprovada'}); o Nenho só aceita texto (${fanClubs.textOnly ? 'gravado agora' : 'já estava'}).`,
+    `Fã-clube: a Camila gere o fã-clube do Netto (${fanClubs.applied ? 'candidatura agora' : 'candidatura já existia'}, ${fanClubs.approved ? 'aprovada agora' : 'já aprovada'}${fanClubs.officialized ? ', oficializado agora' : ''}); o Nenho só aceita texto (${fanClubs.textOnly ? 'gravado agora' : 'já estava'}).`,
   );
   // As publicações e a denúncia (etapa 2): rodar de novo não grava.
   const { fanPhotoFiles: clubFiles } = functionsBuild('fan-profile');

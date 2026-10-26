@@ -442,6 +442,17 @@ const ROWS: Record<AuditAction, Row> = {
     section: 'fanClubs',
     targets: ['artist:nettobrito', 'fanClub:clube1', 'fan:uid-camila'],
   },
+  // O selo do fã-clube oficial (34.23), só do admin.
+  'fanClub.officialized': {
+    details: { clubId: 'clube1', artistId: 'nettobrito', fanUid: 'uid-camila' },
+    section: 'fanClubs',
+    targets: ['artist:nettobrito', 'fanClub:clube1', 'fan:uid-camila'],
+  },
+  'fanClub.unofficialized': {
+    details: { clubId: 'clube1', artistId: 'nettobrito', fanUid: 'uid-camila' },
+    section: 'fanClubs',
+    targets: ['artist:nettobrito', 'fanClub:clube1', 'fan:uid-camila'],
+  },
   // O Recompensar (etapa 5): a recompensa e o pedido de prêmio viram alvos, e
   // nunca o cupom nem a mensagem, que não vão aos `details`.
   'fanClub.rewarded': {

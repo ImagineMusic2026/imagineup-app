@@ -14,6 +14,14 @@ export function personName(person: Pick<FanClubPerson, 'name' | 'username'>): st
   return person.name ?? t('profile.fallbackName');
 }
 
+/**
+ * O nome do fã-clube para o leitor de tela: com o selo, "Netto de Coração,
+ * fã-clube oficial" (34.23); sem ele, só o nome, sem dizer que não é oficial.
+ */
+export function clubNameLabel(name: string, official: boolean): string {
+  return official ? t('fanClub.officialName', { name }) : name;
+}
+
 /** "41 seguidores", "1 seguidor": o número exato da página (o `count()`, decisão 28). */
 export function followersText(count: number): string {
   if (count === 1) return t('fanClub.page.followersOne');

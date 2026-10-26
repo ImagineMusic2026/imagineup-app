@@ -57,7 +57,7 @@ describe('applySchema: a candidatura', () => {
     expect(errorsOf({ ...VALID, name: 'x'.repeat(41) }).name).toBeDefined();
     expect(errorsOf({ ...VALID, name: 'x'.repeat(40) }).name).toBeUndefined();
     expect(errorsOf({ ...VALID, name: 'Fã-clube OFICIÁL do Netto' }).name).toBe(
-      'O nome não pode ter a palavra oficial, porque o fã-clube não é oficial.',
+      'O nome não pode ter a palavra oficial. Só a equipe oficializa um fã-clube, com o selo.',
     );
     // "oficialmente" não é a palavra inteira, como no servidor.
     expect(errorsOf({ ...VALID, name: 'Netto oficialmente' }).name).toBeUndefined();

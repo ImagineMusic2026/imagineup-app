@@ -17,7 +17,7 @@ import { useTabBarInset } from '@/hooks/use-tab-bar-inset';
 import { t } from '@/i18n';
 import { colors, isLargeText, radii, spacing } from '@/theme';
 
-import { UnofficialBand } from '../components/unofficial-band';
+import { ClubName } from '../components/club-name';
 import { isDefinitiveRefusal } from '../entry';
 import { personName } from '../format';
 import { useFanClubGate, useFollowedFanClubsQuery } from '../queries';
@@ -33,8 +33,8 @@ function ItemGap() {
 }
 
 /**
- * Um fã-clube seguido: o gestor, o nome e o artista, num botão que abre a
- * página; e o "Deixar de seguir" irmão (nunca dentro do outro pressável), que
+ * Um fã-clube seguido: o gestor, o nome (com o selo do oficial, só no
+ * disponível, 34.23) e o artista, num botão que abre a página; e o "Deixar de seguir" irmão (nunca dentro do outro pressável), que
  * abre a sheet. O indisponível (pausado, encerrado, fora do ar, fechado para o
  * artista, ou de gestor bloqueado) aparece com o nome, quando há, e
  * "Indisponível", sem abrir nada, só com o Deixar de seguir: é aqui que o fã
@@ -45,7 +45,10 @@ function FollowedRow({ club }: { club: FollowedFanClub }) {
   const name = club.name ?? t('fanClub.follows.unavailableName');
   const of = t('fanClub.follows.of', { artist: club.artistName });
   const label = club.available
-    ? t('fanClub.follows.rowLabel', { name, artist: club.artistName })
+    ? t(club.official ? 'fanClub.follows.rowOfficialLabel' : 'fanClub.follows.rowLabel', {
+        name,
+        artist: club.artistName,
+      })
     : t('fanClub.follows.rowUnavailableLabel', { name, artist: club.artistName });
   const content = (
     <View style={styles.content}>
@@ -58,9 +61,11 @@ function FollowedRow({ club }: { club: FollowedFanClub }) {
         />
       ) : null}
       <View style={styles.texts}>
-        <Text variant="label" color={club.available ? colors.text : colors.textSecondary}>
-          {name}
-        </Text>
+        <ClubName
+          name={name}
+          official={club.available && club.official}
+          color={club.available ? colors.text : colors.textSecondary}
+        />
         <Text variant="caption" color={colors.textSecondary}>
           {club.owner ? `${of} · ${personName(club.owner)}` : of}
         </Text>
@@ -170,17 +175,12 @@ export function FollowedFanClubsScreen() {
         renderItem={({ item }) => <FollowedRow key={item.id} club={item} />}
         ItemSeparatorComponent={ItemGap}
         ListHeaderComponent={
-          <View>
+          <View style={live === null ? undefined : styles.header}>
             <LargeTitleHeader
               title={t('fanClub.follows.title')}
               subtitle={live === null ? undefined : t('fanClub.follows.intro')}
               showBack
             />
-            {live === null ? null : (
-              <View style={styles.band}>
-                <UnofficialBand />
-              </View>
-            )}
           </View>
         }
         ListEmptyComponent={empty}
@@ -210,8 +210,7 @@ const styles = StyleSheet.create({
   gap: {
     height: spacing.listGap,
   },
-  band: {
-    alignItems: 'flex-start',
+  header: {
     marginBottom: spacing.md,
   },
   row: {

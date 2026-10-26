@@ -11,7 +11,6 @@ import { useArtistFanClubsQuery, useFanClubGate } from '../queries';
 import { fanClubHref } from '../share';
 import type { FanClubCard } from '../types';
 import { FanClubRow } from './fan-club-row';
-import { UnofficialBand } from './unofficial-band';
 
 /** O card mostra até 3: os destacados primeiro, depois os mais seguidos (a ordem do servidor). */
 const CARD_CLUBS = 3;
@@ -27,10 +26,10 @@ export interface ArtistFanClubsCardProps {
 /**
  * O card "Fã-clubes" da página do artista (34.9, item 8), no cabeçalho da 1d,
  * depois do botão da central, no molde do card dos top fãs: até 3 fã-clubes,
- * com a faixa não oficial, e "Ver todos", que abre a lista paginada na pilha
- * da aba. Só depois da trava; some sem fã-clube, enquanto a lista chega e
- * quando a consulta falha: o resto da página continua. O conteúdo de fã nunca
- * entra no Mural, na grade nem no `/feed`.
+ * o oficial com o selo ao lado do nome (34.23), e "Ver todos", que abre a
+ * lista paginada na pilha da aba. Só depois da trava; some sem fã-clube,
+ * enquanto a lista chega e quando a consulta falha: o resto da página
+ * continua. O conteúdo de fã nunca entra no Mural, na grade nem no `/feed`.
  */
 export function ArtistFanClubsCard({ artistId, artistName }: ArtistFanClubsCardProps) {
   const { live } = useFanClubGate();
@@ -75,9 +74,6 @@ export function ArtistFanClubsCard({ artistId, artistName }: ArtistFanClubsCardP
             testID="artist-fan-clubs-see-all"
           />
         </View>
-        <View style={styles.band}>
-          <UnofficialBand />
-        </View>
         <View style={styles.rows}>
           {clubs.map((club) => (
             <FanClubRow
@@ -116,12 +112,8 @@ const styles = StyleSheet.create({
   link: {
     marginVertical: -LINK_OUTSET,
   },
-  band: {
-    alignItems: 'flex-start',
-    marginTop: spacing.sm,
-    marginBottom: spacing.md,
-  },
   rows: {
+    marginTop: spacing.md,
     gap: spacing.listGap,
   },
 });

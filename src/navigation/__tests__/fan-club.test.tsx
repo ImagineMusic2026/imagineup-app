@@ -186,6 +186,7 @@ const club = (patch: Partial<MyFanClubClub> = {}): MyFanClubClub => ({
   pendingPosts: 1,
   photosAllowed: true,
   featuredUntil: null,
+  official: false,
   lastReward: { at: '2026-10-18T15:00:00.000Z', points: 200, prize: true },
   available: true,
   unavailableReason: null,
@@ -665,6 +666,19 @@ describe('a apresentação (34.9, item 2)', () => {
     ]) {
       expect(sheet.getByText(text)).toBeTruthy();
     }
+    // O selo de oficial (34.23): o único lugar que explica o fã-clube como espaço de fãs.
+    expect(sheet.getByRole('header', { name: 'Fã-clube oficial' })).toBeTruthy();
+    expect(
+      sheet.getByText(
+        'O fã-clube é um espaço de fãs. Os oficializados pela equipe levam o selo de oficial ao lado do nome.',
+      ),
+    ).toBeTruthy();
+    expect(
+      within(sheet.getByTestId('fan-club-rules-official')).getByTestId(
+        'fan-club-official-badge',
+        hidden,
+      ),
+    ).toBeTruthy();
     expect(sheet.getByText(PROGRAM.notice)).toBeTruthy();
     fireEvent.press(sheet.getByRole('link', { name: 'Ler os Termos de Uso' }));
     expect(WebBrowser.openBrowserAsync).toHaveBeenLastCalledWith(
@@ -789,7 +803,7 @@ describe('a candidatura (34.9, item 3)', () => {
 
     expect(
       await screen.findByText(
-        'O nome não pode ter a palavra oficial, porque o fã-clube não é oficial.',
+        'O nome não pode ter a palavra oficial. Só a equipe oficializa um fã-clube, com o selo.',
         hidden,
       ),
     ).toBeTruthy();
@@ -1034,8 +1048,20 @@ describe('o "Meu fã-clube" (34.9, item 5)', () => {
     expect(screen.getByLabelText('Publicações no ar: 2')).toBeTruthy();
     expect(screen.getByLabelText('Em análise: 1')).toBeTruthy();
     expect(screen.getByText('+200 pontos e um prêmio em 18/10/2026')).toBeTruthy();
+    expect(screen.queryByTestId('fan-club-official-badge', hidden)).toBeNull();
     fireEvent.press(screen.getByTestId('fan-club-prizes-open'));
     await waitFor(() => expect(view.getPathname()).toBe('/recompensas'));
+  });
+
+  it('oficializado pela equipe (34.23): o selo ao lado do nome, e o leitor ouve "fã-clube oficial"', async () => {
+    mocked.fetchMyFanClub.mockResolvedValue(manager({ official: true }));
+    serverAnswers();
+    renderRouter(appTree, { initialUrl: '/meu-fa-clube' });
+
+    const header = await screen.findByRole('header', {
+      name: 'Netto de Coração, fã-clube oficial de Netto Brito. Ativo.',
+    });
+    expect(within(header).getByTestId('fan-club-official-badge', hidden)).toBeTruthy();
   });
 
   it('"Ver meus prêmios" e "Aceitar" ficam numa fileira, da altura do conteúdo', async () => {
@@ -1370,9 +1396,9 @@ describe('a nova publicação (34.9, item 6)', () => {
   });
 });
 
-// --- A faixa não oficial --------------------------------------------------------------
+// --- Sem o "não oficial" --------------------------------------------------------------
 
-describe('a faixa "Fã-clube, não oficial" fica só nas telas públicas (pedido do dono, 20/10/2026)', () => {
+describe('nenhuma tela do gestor diz "não oficial" (34.23: o selo no lugar da faixa)', () => {
   it.each([
     ['a apresentação', mine(), '/meu-fa-clube', 'fan-club-intro'],
     [
@@ -1391,12 +1417,13 @@ describe('a faixa "Fã-clube, não oficial" fica só nas telas públicas (pedido
     ['a candidatura', mine(), '/meu-fa-clube/candidatura', 'fan-club-apply-name'],
     ['a nova publicação', manager(), '/meu-fa-clube/nova-publicacao', 'fan-club-post-text'],
     ['as regras', mine(), '/meu-fa-clube/regras', 'fan-club-rules-sheet'],
-  ])('%s, do gestor, não mostra a faixa', async (_name, state, url, testID) => {
+  ])('%s, do gestor, não diz "não oficial"', async (_name, state, url, testID) => {
     mocked.fetchMyFanClub.mockResolvedValue(state);
     serverAnswers();
     renderRouter(appTree, { initialUrl: url });
 
     expect(await screen.findByTestId(testID)).toBeTruthy();
-    expect(screen.queryByText('Fã-clube, não oficial', hidden)).toBeNull();
+    expect(screen.queryByText(/não oficia/iu, hidden)).toBeNull();
+    expect(screen.queryByLabelText(/não oficia/iu, hidden)).toBeNull();
   });
 });
