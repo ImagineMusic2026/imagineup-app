@@ -54,7 +54,8 @@ export type ButtonVariant =
 
 /**
  * `lg` e `md` são desenhados com o alvo inteiro; `mdCompact` (os do card da
- * missão do dia, 1b), `sm` e `xs` desenham menos que o alvo de 44.
+ * missão do dia, 1b, e os do topo da 1e), `sm` e `xs` desenham menos que o
+ * alvo de 44.
  */
 export type ButtonSize = 'lg' | 'md' | 'mdCompact' | 'sm' | 'xs';
 

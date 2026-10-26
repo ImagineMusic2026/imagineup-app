@@ -95,8 +95,10 @@ const appTree = {
   '(tabs)/(ranking)/ranking': label('ranking'),
   '(tabs)/(perfil)/perfil': ProfileRoute,
   '(tabs)/(perfil)/ajustes': SettingsRoute,
-  // "Editar perfil" fica na pilha raiz, fora das abas (seção 28).
+  '(tabs)/(perfil)/extrato': label('extrato'),
+  // "Editar perfil" fica na pilha raiz, fora das abas (seção 28), como o convite.
   'editar-perfil': label('editar perfil'),
+  convidar: label('convidar'),
   '(tabs)/(inicio,explorar,ranking,perfil)/artista/[artistaId]': label('artist'),
 };
 
@@ -110,8 +112,10 @@ const rootRoutes = (view: Router): string[] => {
 };
 
 const HERO = 'Camila Ribeiro, @camilarib, Feira de Santana, BA. Nível 7, Purainha.';
-const pointsCard = (balance: string, week: string, left: string) =>
-  `Seus pontos: ${balance}. Esta semana: mais ${week}. Faltam ${left} pontos para o nível 8, Xodó.`;
+/** O número de pontos ao lado do avatar: o saldo, que abre o extrato. */
+const points = (balance: string) => `${balance} pontos`;
+/** A barra do nível embaixo da bio, no XP de nível. */
+const toNextLevel = (left: string) => `Faltam ${left} pontos para o nível 8, Xodó`;
 
 type SnapshotCallback = (snapshot: typeof profileSnapshot) => void;
 
@@ -195,13 +199,14 @@ describe('perfil (1e)', () => {
 
     expect(await screen.findByLabelText(HERO)).toBeTruthy();
     expect(getDocMock).toHaveBeenCalled();
-    expect(
-      await screen.findByRole('button', { name: pointsCard('12.480', '840', '2.520') }),
-    ).toBeTruthy();
-    expect(screen.getByLabelText('63 links criados')).toBeTruthy();
-    expect(screen.getByLabelText('418 pessoas trazidas')).toBeTruthy();
+    expect(await screen.findByRole('button', { name: points('12.480') })).toBeTruthy();
+    expect(screen.getByLabelText('418 convidados')).toBeTruthy();
     // No lugar das playlists (fora do contrato).
     expect(screen.getByLabelText('3 temporadas')).toBeTruthy();
+    expect(screen.getByRole('progressbar', { name: toNextLevel('2.520') })).toBeTruthy();
+    // Os links criados e os ganhos da semana ficam fora do topo no molde do Instagram.
+    expect(screen.queryByLabelText(/links? criados?/)).toBeNull();
+    expect(screen.queryByText(/Esta semana/i, hidden)).toBeNull();
     expect(
       await screen.findByRole('header', { name: 'Conquistas, 14 de 32 conquistadas' }),
     ).toBeTruthy();
@@ -260,16 +265,61 @@ describe('perfil (1e)', () => {
     expect(rootRoutes(view)).toEqual(['(tabs)']);
   });
 
-  it('o hero é um botão (bloco 9): o rótulo de sempre, a dica, e abre "Editar perfil" por cima das abas', async () => {
+  it('"Editar perfil" abre a edição por cima das abas; o hero não é botão', async () => {
     const view = renderRouter(appTree, { initialUrl: '/perfil' });
 
-    const hero = await screen.findByRole('button', { name: HERO });
-    expect(hero).toHaveProp('accessibilityHint', 'Abre a edição do perfil');
-    fireEvent.press(hero);
+    expect(await screen.findByLabelText(HERO)).not.toHaveProp('accessibilityRole', 'button');
+    expect(screen.queryByRole('button', { name: HERO })).toBeNull();
+    const edit = screen.getByRole('button', { name: 'Editar perfil' });
+    expect(edit).toHaveProp('accessibilityHint', 'Abre a edição do perfil');
+    fireEvent.press(edit);
 
     await waitFor(() => expect(view.getPathname()).toBe('/editar-perfil'));
     expect(view.getSegments()).toEqual(['editar-perfil']);
     expect(rootRoutes(view)).toEqual(['(tabs)', 'editar-perfil']);
+  });
+
+  it('"Convidar amigos" abre o "Gerar meu link" por cima das abas', async () => {
+    const view = renderRouter(appTree, { initialUrl: '/perfil' });
+
+    fireEvent.press(await screen.findByRole('button', { name: 'Convidar amigos' }));
+
+    await waitFor(() => expect(view.getPathname()).toBe('/convidar'));
+    expect(rootRoutes(view)).toEqual(['(tabs)', 'convidar']);
+  });
+
+  it('o número de pontos abre o extrato na pilha do Perfil', async () => {
+    const view = renderRouter(appTree, { initialUrl: '/perfil' });
+
+    fireEvent.press(await screen.findByRole('button', { name: points('12.480') }));
+
+    await waitFor(() => expect(view.getPathname()).toBe('/extrato'));
+    expect(view.getSegments()).toEqual(['(tabs)', '(perfil)', 'extrato']);
+    expect(rootRoutes(view)).toEqual(['(tabs)']);
+  });
+
+  it('a bio e as redes do perfil vêm embaixo da foto, e saem quando o fã as apaga', async () => {
+    const bio = 'Feira de Santana.\nFã do Netto desde o primeiro show.';
+    const withDetails = {
+      ...profileSnapshot,
+      data: () => ({
+        ...profileSnapshot.data(),
+        bio,
+        socials: { instagram: 'camila.teste.up', tiktok: null, linkedin: null, x: null },
+      }),
+    };
+    getDocMock.mockResolvedValue(withDetails as never);
+    renderRouter(appTree, { initialUrl: '/perfil' });
+
+    expect(await screen.findByText(bio)).toBeTruthy();
+    // Nas fixtures, o ícone não abre (o usuário de exemplo pode ser de um estranho).
+    expect(screen.getByLabelText('Instagram, @camila.teste.up')).toBeTruthy();
+    expect(screen.queryByRole('link')).toBeNull();
+    expect(screen.getByText('Perfil de exemplo: os links não abrem nesta versão.')).toBeTruthy();
+
+    act(() => profileListener()(profileSnapshot));
+    await waitFor(() => expect(screen.queryByText(bio, hidden)).not.toBeOnTheScreen());
+    expect(screen.queryByTestId('profile-socials')).toBeNull();
   });
 
   it('a engrenagem abre os Ajustes na pilha do Perfil', async () => {
@@ -315,31 +365,28 @@ describe('perfil (1e)', () => {
     expect(screen.getByText('@camilarib · Salvador, BA', hidden)).toBeTruthy();
   });
 
-  it('o resgate da loja desconta o saldo grande; a barra e o "Faltam" seguem no XP', async () => {
+  it('o resgate da loja desconta o saldo; a barra e o "Faltam" seguem no XP', async () => {
     renderRouter(appTree, { initialUrl: '/perfil' });
-    await screen.findByRole('button', { name: pointsCard('12.480', '840', '2.520') });
+    await screen.findByRole('button', { name: points('12.480') });
 
     // O que o resgate da 1h faz: desconta no servidor e invalida o perfil.
     fixtureWallet.spend(6_000);
     await act(() => client.invalidateQueries({ queryKey: profileKeys.all }));
 
-    const card = await screen.findByRole('button', {
-      name: pointsCard('6.480', '840', '2.520'),
-    });
-    // O card é o botão do extrato (bloco 7): a barra fica no rótulo, sem o papel de progresso.
-    expect(card).toHaveProp('accessibilityHint', 'Abre o extrato de pontos.');
+    const balance = await screen.findByRole('button', { name: points('6.480') });
+    expect(balance).toHaveProp('accessibilityHint', 'Abre o extrato de pontos.');
+    expect(screen.getByRole('progressbar', { name: toNextLevel('2.520') })).toBeTruthy();
   });
 
-  it('ganho que invalida só a carteira (o "Eu vou") também atualiza a semana e o nível', async () => {
+  it('ganho que invalida só a carteira (o "Eu vou") também atualiza o nível', async () => {
     renderRouter(appTree, { initialUrl: '/perfil' });
-    await screen.findByRole('button', { name: pointsCard('12.480', '840', '2.520') });
+    await screen.findByRole('button', { name: points('12.480') });
 
     fixtureWallet.earn(15);
     await act(() => client.invalidateQueries({ queryKey: profileKeys.wallet() }));
 
-    expect(
-      await screen.findByRole('button', { name: pointsCard('12.495', '855', '2.505') }),
-    ).toBeTruthy();
+    expect(await screen.findByRole('button', { name: points('12.495') })).toBeTruthy();
+    expect(await screen.findByRole('progressbar', { name: toNextLevel('2.505') })).toBeTruthy();
     expect(haptics.trigger).not.toHaveBeenCalledWith('levelUp');
   });
 
@@ -356,12 +403,14 @@ describe('perfil (1e)', () => {
     expect(announcements()).toContain('Você subiu para o nível 8, Xodó.');
   });
 
-  it('sem o nível e o saldo, o card vira erro com "Tentar de novo", anunciado uma vez', async () => {
+  it('sem o nível e o saldo, os números somem e o nível vira erro com "Tentar de novo", anunciado uma vez', async () => {
     mockApi(['/me/progress']);
     renderRouter(appTree, { initialUrl: '/perfil' });
 
     expect(await screen.findByText('Não deu para carregar seus pontos.')).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Tentar de novo' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /pontos$/ })).toBeNull();
+    expect(screen.queryByLabelText('Carregando seus pontos')).toBeNull();
     await waitFor(() =>
       expect(
         announcements().filter((text) => text === 'Não deu para carregar seus pontos.'),
@@ -377,9 +426,8 @@ describe('perfil (1e)', () => {
       throw new Error(`rota sem resposta no teste: ${url}`);
     });
     fireEvent.press(screen.getByRole('button', { name: 'Tentar de novo' }));
-    expect(
-      await screen.findByRole('button', { name: pointsCard('12.480', '840', '2.520') }),
-    ).toBeTruthy();
+    expect(await screen.findByRole('button', { name: points('12.480') })).toBeTruthy();
+    expect(screen.getByRole('progressbar', { name: toNextLevel('2.520') })).toBeTruthy();
     // O botão que tinha o foco sumiu com o erro: o fã ouve que os pontos chegaram.
     await waitFor(() => expect(announcements()).toContain('Pontos carregados.'));
   });

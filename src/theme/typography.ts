@@ -23,12 +23,6 @@ export const fonts = {
 export const typography = {
   displayXl: { fontFamily: fonts.soraExtraBold, fontSize: 42, lineHeight: 46, letterSpacing: -2 },
   displayLg: { fontFamily: fonts.soraExtraBold, fontSize: 38, lineHeight: 42, letterSpacing: -1.8 },
-  numberHero: {
-    fontFamily: fonts.soraExtraBold,
-    fontSize: 34,
-    lineHeight: 38,
-    letterSpacing: -1.4,
-  },
   titleOnboarding: {
     fontFamily: fonts.soraExtraBold,
     fontSize: 27,
@@ -62,7 +56,6 @@ export const typography = {
   },
   numberDate: { fontFamily: fonts.soraExtraBold, fontSize: 19, lineHeight: 21 },
   numberStat: { fontFamily: fonts.soraExtraBold, fontSize: 16, lineHeight: 19 },
-  numberSmall: { fontFamily: fonts.soraExtraBold, fontSize: 15, lineHeight: 18 },
   headingSection: {
     fontFamily: fonts.soraExtraBold,
     fontSize: 14,
@@ -112,10 +105,6 @@ export const typography = {
     textTransform: 'uppercase',
   },
   labelTiny: { fontFamily: fonts.manropeBold, fontSize: 10, lineHeight: 12 },
-  // Rótulo das caixas de número da 1e ("links criados"): o 9,5 do protótipo,
-  // em minúsculas e com a entrelinha 1,3 dele, abaixo do mínimo recomendado
-  // como a tab bar (pergunta aberta com a cliente).
-  statCaption: { fontFamily: fonts.manropeSemiBold, fontSize: 9.5, lineHeight: 12.5 },
   overline: {
     fontFamily: fonts.manropeBold,
     fontSize: 10,

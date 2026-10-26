@@ -7955,7 +7955,7 @@ Para o dono. Respondidas em 08/10/2026: a 1, a 6, a 8 e a 10 com resposta própr
 2. A conta privada continua mostrando a cidade no ranking, como diz a decisão 4? Proposta: sim, e a meta da linha diz só que a bio e as redes fecham. Esconder a cidade da privada mexe no `profileView` do ranking, no arquivo da virada e nas fixtures. **Resposta:** a proposta.
 3. O perfil fechado mostra o aviso "Perfil fechado" igual para a conta privada, a suspensa e quem bloqueou quem vê? Proposta: sim, o mesmo aviso nos três, para o bloqueio não aparecer. Alternativa: nenhum aviso (só foto, nome e @). **Resposta:** a proposta.
 4. Quem bloqueou um fã continua vendo o perfil inteiro dele? Proposta: sim (o bloqueio esconde os comentários do outro). **Resposta:** a proposta.
-5. A 1e (o perfil do próprio fã) passa a mostrar a bio e as redes? Proposta: não agora; o fã vê e muda pelo "Editar perfil". **Resposta:** a proposta.
+5. A 1e (o perfil do próprio fã) passa a mostrar a bio e as redes? Proposta: não agora; o fã vê e muda pelo "Editar perfil". **Resposta:** a proposta. **Revista em 26/10/2026**, com o topo da 1e no molde do perfil do Instagram (pedido do dono, aprovado nas capturas): a 1e passa a mostrar a bio embaixo da foto, como texto, e as redes logo depois, um ícone por rede que abre o perfil na rede fora do app, com as regras do perfil público (nas fixtures e no emulador, sem toque, com o aviso de exemplo).
 6. O gênero fica em `users/{uid}`, que a seção Moderação consegue ler pelo Firestore (a tela dela não mostra)? Proposta: aceitar e levar à revisão LGPD (UP-45), com a política de privacidade citando o gênero (só para a equipe), a bio e as redes (visíveis para qualquer fã sem a conta privada) e a finalidade. Alternativa: um documento só da seção Fãs, com o app escutando dois documentos. **Resposta:** pode ficar em `users/{uid}`. A política de privacidade segue para a revisão LGPD (UP-45), com a cliente.
 7. Com o @ agora à vista no perfil público: o @ antigo continua livre na hora para outra pessoa, e o fã pode ficar com o @ de um artista que ainda não tem central? Proposta: sim aos dois, como hoje, com a equipe criando em rascunho a central de cada artista contratado assim que o nome é conhecido (o rascunho reserva o @) e o `resetFanUsername` como saída; a pergunta 2 de 24.15 volta à cliente com esses dados. **Resposta:** a proposta; a pergunta 2 de 24.15 segue com a cliente.
 8. Os tetos do dia: 20 salvamentos do perfil e 5 trocas de nome, e a bio com até 6 linhas? Proposta: sim, editáveis no painel (as linhas, só no código). **Resposta:** assim.
@@ -7968,7 +7968,7 @@ Ainda dependem da cliente: a pergunta 2 de 24.15 (volta com os dados da 7), a id
 
 - Denunciar ou bloquear pelo perfil público (resposta 1 de 28.15; feito na seção 29); ver posição, pontos, nível ou conquistas no perfil público; seguir outros fãs.
 - Um selo que diferencie fã de artista no perfil público (o @ de artista sem central, pergunta 7).
-- A bio e as redes na 1e e um "ver como os outros veem" (pergunta 5).
+- Um "ver como os outros veem" na 1e (pergunta 5; a bio e as redes entraram na 1e em 26/10/2026).
 - A tela "Fãs bloqueados" (feita na seção 29, com o `GET /me/blocks`).
 - Abrir as redes dentro do app; conferir que a conta da rede é do fã (seria integração com as redes, fora do contrato).
 - A Moderação apagar ou trocar o nome (segue pela suspensão, 26.19); guardar o texto apagado (pergunta 1).

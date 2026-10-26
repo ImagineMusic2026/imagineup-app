@@ -9,7 +9,7 @@ import { shareArtist } from '../share-artist';
  * Compartilhar a central com o código de convite do fã. Se o código ainda não
  * chegou (offline na primeira abertura), sai o link puro: compartilhar
  * funciona, só não rende pontos. Com o código e a folha voltando
- * compartilhada, o link conta nos "links criados" do Perfil (`artist:<id>`).
+ * compartilhada, o link conta nos "links criados" do fã (`artist:<id>`).
  */
 export function useShareArtist(): (artist: Pick<ArtistDetails, 'id' | 'name'>) => void {
   const invite = useMyInviteQuery();

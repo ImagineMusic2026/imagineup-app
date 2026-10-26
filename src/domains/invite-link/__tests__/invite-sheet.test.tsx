@@ -179,7 +179,7 @@ async function settleRegister(): Promise<void> {
   });
 }
 
-describe('o link nos "links criados" do Perfil', () => {
+describe('o link nos "links criados" do fã', () => {
   beforeEach(() => {
     mockDataSource = 'api';
     mockParams = {};

@@ -1,5 +1,6 @@
 import { router, useIsFocused } from 'expo-router';
 import { Settings } from 'lucide-react-native';
+import type { ReactNode } from 'react';
 import { AccessibilityInfo, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
 import Animated, { FadeIn } from 'react-native-reanimated';
 
@@ -20,9 +21,11 @@ import { formatNumber } from '@/utils/number';
 
 import { AchievementsRow, AchievementsSkeleton } from '../components/achievement-tile';
 import { CentralRow, CentralRowsSkeleton } from '../components/central-row';
-import { PointsCard, PointsCardSkeleton } from '../components/points-card';
+import { LevelProgress, LevelProgressSkeleton } from '../components/level-progress';
+import { ProfileActions } from '../components/profile-actions';
 import { ProfileHero } from '../components/profile-hero';
-import { FanStatsRow, FanStatsSkeleton } from '../components/stat-tile';
+import { ProfileNumbers, ProfileNumbersSkeleton } from '../components/profile-numbers';
+import { SocialIcons } from '../components/social-icons';
 import { SuspendedNotice } from '../components/suspended-notice';
 import { levelFraction } from '../describe-profile';
 import { useFanIdentity } from '../hooks/use-fan-identity';
@@ -35,6 +38,7 @@ import {
   useWalletQuery,
   useWatchMyProfile,
 } from '../queries';
+import type { MyProgress } from '../types';
 
 // O engrenagem de 21 com o traço do protótipo (.7, 1,7), num alvo de 44.
 const SETTINGS_ICON_SIZE = 21;
@@ -90,53 +94,102 @@ function ProfileHeader() {
   );
 }
 
+const hiddenFromReader = {
+  accessible: false,
+  importantForAccessibility: 'no-hide-descendants',
+  accessibilityElementsHidden: true,
+} as const;
+
+type Points =
+  | { status: 'ready'; balance: number; progress: MyProgress }
+  | { status: 'loading' }
+  | { status: 'error'; retry: () => void; retrying: boolean };
+
 /**
- * Card de pontos e os três números. Saldo (carteira) e nível (progresso)
- * chegam juntos: um sem o outro deixaria o card pela metade.
+ * Os números e o nível do topo. Saldo (carteira) e nível com os números
+ * (progresso) chegam juntos: um sem o outro deixaria o topo pela metade.
  */
-function PointsSection() {
+function usePoints(): Points {
   const wallet = useWalletQuery();
   const progress = useMyProgressQuery();
 
   if (wallet.data && progress.data) {
-    return (
-      <Animated.View entering={CONTENT_ENTERING}>
-        <PointsCard
-          balance={wallet.data.balance}
-          progress={progress.data}
-          onPress={() => router.push('/extrato')}
-          testID="profile-points"
-          style={styles.points}
-        />
-        <FanStatsRow stats={progress.data.stats} style={styles.stats} />
-      </Animated.View>
-    );
+    return { status: 'ready', balance: wallet.data.balance, progress: progress.data };
   }
-
   const failed =
     (wallet.data === undefined && wallet.isError) ||
     (progress.data === undefined && progress.isError);
-  if (failed) {
-    // Só o que faltou vai de novo; o card volta quando os dois estiverem aqui.
-    const missing: Refetch[] = [];
-    if (!wallet.data) missing.push(() => wallet.refetch());
-    if (!progress.data) missing.push(() => progress.refetch());
+  if (!failed) return { status: 'loading' };
+
+  // Só o que faltou vai de novo; o topo se completa quando os dois estiverem aqui.
+  const missing: Refetch[] = [];
+  if (!wallet.data) missing.push(() => wallet.refetch());
+  if (!progress.data) missing.push(() => progress.refetch());
+  return {
+    status: 'error',
+    retry: () => void retrySection(missing, 'profile.points.loaded'),
+    retrying: wallet.isFetching || progress.isFetching,
+  };
+}
+
+/**
+ * Os números ao lado do avatar, embaixo do nome. Enquanto chegam, o esqueleto
+ * diz "Carregando seus pontos" (o do nível fica calado); se não vierem, nada
+ * aqui (`null`, para o hero não guardar o vão), e o erro com "Tentar de novo"
+ * vai no lugar do nível.
+ */
+function pointsNumbers(points: Points): ReactNode {
+  if (points.status === 'ready') {
     return (
-      <EmptyState
-        tone="error"
-        message={t('profile.points.loadError')}
-        onAction={() => void retrySection(missing, 'profile.points.loaded')}
-        actionLoading={wallet.isFetching || progress.isFetching}
-        style={styles.points}
-      />
+      <Animated.View entering={CONTENT_ENTERING}>
+        <ProfileNumbers
+          balance={points.balance}
+          stats={points.progress.stats}
+          onPointsPress={() => router.push('/extrato')}
+        />
+      </Animated.View>
     );
   }
+  if (points.status === 'loading') {
+    return (
+      <SkeletonGroup accessibilityLabel={t('profile.points.loading')}>
+        <ProfileNumbersSkeleton />
+      </SkeletonGroup>
+    );
+  }
+  return null;
+}
 
+/** O selo, a barra e o "Faltam ..." do nível, embaixo da bio. */
+function LevelSection({ points, celebration }: { points: Points; celebration: number | null }) {
+  if (points.status === 'ready') {
+    return (
+      <Animated.View entering={CONTENT_ENTERING} style={styles.level}>
+        <LevelProgress
+          progress={points.progress}
+          celebration={celebration}
+          testID="profile-level"
+        />
+      </Animated.View>
+    );
+  }
+  if (points.status === 'loading') {
+    return (
+      <View {...hiddenFromReader} style={styles.level}>
+        <SkeletonGroup>
+          <LevelProgressSkeleton />
+        </SkeletonGroup>
+      </View>
+    );
+  }
   return (
-    <SkeletonGroup accessibilityLabel={t('profile.points.loading')}>
-      <PointsCardSkeleton style={styles.points} />
-      <FanStatsSkeleton style={styles.stats} />
-    </SkeletonGroup>
+    <EmptyState
+      tone="error"
+      message={t('profile.points.loadError')}
+      onAction={points.retry}
+      actionLoading={points.retrying}
+      style={styles.level}
+    />
   );
 }
 
@@ -283,12 +336,15 @@ function useAnnounceProfileFailures(focused: boolean): void {
 }
 
 /**
- * 1e. Meu perfil: o hero com o nome, o @ e a cidade do Firestore (a escuta o
- * mantém em dia) e o nível no anel e no selo; o card de pontos (saldo para
- * resgatar, ganhos da semana e o caminho até o próximo nível); os números;
- * as conquistas e as centrais do fã. Tudo o que é ponto vem do servidor
- * (fixtures até a API do M2). O brilho rosa com as listras fica parado no
- * topo e o conteúdo rola por cima; puxar para baixo atualiza.
+ * 1e. Meu perfil, com o topo no molde do perfil do Instagram (pedido do dono
+ * de 26/10/2026, aprovado nas capturas): o avatar no anel do nível e, ao lado
+ * dele, o nome, o @ e a cidade do Firestore (a escuta o mantém em dia) e,
+ * embaixo deles, o saldo para resgatar (abre o extrato), os convidados e as
+ * temporadas; embaixo do avatar, a bio, as redes, o nível com a barra até o
+ * próximo e os botões "Editar perfil" e "Convidar amigos"; depois, as
+ * conquistas e as centrais do fã. Tudo o que é ponto vem do servidor. O
+ * brilho rosa com as listras fica parado no topo e o conteúdo rola por cima;
+ * puxar para baixo atualiza.
  */
 export function ProfileScreen() {
   const bottomInset = useTabBarInset();
@@ -297,6 +353,7 @@ export function ProfileScreen() {
   const identity = useFanIdentity();
   const profile = useMyProfileQuery();
   const progress = useMyProgressQuery();
+  const points = usePoints();
   const { refreshing, refresh } = useProfileRefresh();
   const celebration = useLevelUp(progress.data?.level, focused);
   useAnnounceProfileFailures(focused);
@@ -325,15 +382,21 @@ export function ProfileScreen() {
           photoURL={identity.photoURL}
           username={profile.data?.username ?? null}
           city={profile.data?.city ?? null}
+          bio={profile.data?.bio ?? null}
           loading={identity.loading && !identity.name}
           level={progress.data?.level ?? null}
           levelFraction={progress.data ? levelFraction(progress.data) : 0}
-          celebration={celebration}
-          onPress={() => router.push('/editar-perfil')}
+          numbers={pointsNumbers(points)}
           testID="profile-hero"
           style={styles.hero}
         />
-        <PointsSection />
+        <SocialIcons
+          socials={profile.data?.socials}
+          testID="profile-socials"
+          style={styles.socials}
+        />
+        <LevelSection points={points} celebration={celebration} />
+        <ProfileActions testID="profile-actions" style={styles.actions} />
         <AchievementsSection />
         <CentralsSection />
       </ScrollView>
@@ -370,11 +433,15 @@ const styles = StyleSheet.create({
   hero: {
     paddingTop: spacing.sm,
   },
-  points: {
-    marginTop: spacing.sectionTopTight,
+  socials: {
+    marginTop: spacing.sm,
   },
-  stats: {
-    marginTop: spacing.cardPadding,
+  level: {
+    marginTop: spacing.lg,
+  },
+  // O alvo de 44 dos botões desenhados com 36 deixa 4 de sobra em cima.
+  actions: {
+    marginTop: spacing.md,
   },
   centrals: {
     gap: spacing.tileGap,

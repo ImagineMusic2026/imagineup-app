@@ -9,11 +9,10 @@ import {
   levelFraction,
   nextLevelCaption,
   nextLevelSpoken,
-  pointsCardLabel,
   pointsToNextLevel,
   profileMeta,
   statLabel,
-  weekEarnedText,
+  statSpoken,
 } from '../describe-profile';
 import type { Achievement, MyProgress } from '../types';
 
@@ -88,27 +87,6 @@ describe('progresso do nível', () => {
   });
 });
 
-describe('card de pontos', () => {
-  it('um elemento só para o leitor: saldo, semana e o que falta', () => {
-    expect(pointsCardLabel(12_480, progress())).toBe(
-      'Seus pontos: 12.480. Esta semana: mais 840. Faltam 2.520 pontos para o nível 8, Xodó.',
-    );
-  });
-
-  it('o saldo que caiu no resgate não mexe no que falta para o nível', () => {
-    expect(pointsCardLabel(3_980, progress())).toBe(
-      'Seus pontos: 3.980. Esta semana: mais 840. Faltam 2.520 pontos para o nível 8, Xodó.',
-    );
-  });
-
-  it('semana sem ganhos mostra 0, sem o sinal', () => {
-    expect(weekEarnedText(840)).toBe('+840');
-    expect(weekEarnedText(1_250)).toBe('+1.250');
-    expect(weekEarnedText(0)).toBe('0');
-    expect(pointsCardLabel(100, progress({ weekEarned: 0 }))).toContain('Esta semana: 0.');
-  });
-});
-
 describe('hero', () => {
   it('@ e cidade numa linha só, com o que o perfil tiver', () => {
     expect(profileMeta('camilarib', 'Feira de Santana, BA')).toBe(
@@ -136,15 +114,23 @@ describe('hero', () => {
 
 describe('números do fã', () => {
   it.each([
-    ['linksCreated', 63, 'links criados'],
-    ['linksCreated', 1, 'link criado'],
-    ['peopleBrought', 418, 'pessoas trazidas'],
-    ['peopleBrought', 1, 'pessoa trazida'],
+    ['points', 12_480, 'pontos'],
+    ['points', 1, 'ponto'],
+    ['points', 0, 'pontos'],
+    ['peopleBrought', 418, 'convidados'],
+    ['peopleBrought', 1, 'convidado'],
     ['seasons', 3, 'temporadas'],
     ['seasons', 1, 'temporada'],
     ['seasons', 0, 'temporadas'],
   ] as const)('%s com %s: "%s"', (kind, value, label) => {
     expect(statLabel(kind, value)).toBe(label);
+  });
+
+  it('o leitor ouve o número e o rótulo num foco só', () => {
+    expect(statSpoken('points', 12_480)).toBe('12.480 pontos');
+    expect(statSpoken('points', 1)).toBe('1 ponto');
+    expect(statSpoken('peopleBrought', 418)).toBe('418 convidados');
+    expect(statSpoken('seasons', 1)).toBe('1 temporada');
   });
 });
 

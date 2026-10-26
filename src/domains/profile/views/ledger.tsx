@@ -48,7 +48,7 @@ function LedgerSkeleton() {
 /**
  * O extrato de pontos (tela provisória do bloco 7, sem desenho; segue a
  * aprovação de 28/09 de telas sem desenho no visual das outras, e a cliente
- * valida o que ela mostra). Aberta pelo card de pontos da 1e, na pilha do
+ * valida o que ela mostra). Aberta pelo número de pontos da 1e, na pilha do
  * Perfil: cada lançamento diz de onde veio (curtida, comentário, convite,
  * missão, entrada na central, resgate, ajuste), o contexto (a central ou o
  * título da missão), o valor e a hora, agrupados por dia. Pagina pelo fim da

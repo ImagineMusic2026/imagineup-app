@@ -6,8 +6,8 @@ import type { Achievement, FanStats, Level, MyProgress } from './types';
 
 /**
  * Quanto do caminho até o próximo nível o fã já andou, de 0 a 1: o anel do
- * avatar e a barra do card de pontos. Conta o XP de nível, que nunca cai. No
- * nível máximo, a barra fica cheia.
+ * avatar e a barra do nível. Conta o XP de nível, que nunca cai. No nível
+ * máximo, a barra fica cheia.
  */
 export function levelFraction({ xp, level, nextLevel }: MyProgress): number {
   if (!nextLevel) return 1;
@@ -39,7 +39,7 @@ export function profileMeta(username: string | null, city: string | null): strin
 
 /**
  * O hero num elemento só para o leitor: "Camila Ribeiro, @camilarib, Feira de
- * Santana, BA. Nível 7, Purainha." O progresso fica com o card de pontos.
+ * Santana, BA. Nível 7, Purainha." O progresso fica com a barra do nível.
  */
 export function heroLabel({
   name,
@@ -61,7 +61,7 @@ function capitalize(text: string): string {
 }
 
 /**
- * A legenda do card de pontos em três pedaços, para o do meio ("2.520 pts")
+ * A legenda da barra do nível em três pedaços, para o do meio ("2.520 pts")
  * sair em negrito: "Faltam ", "2.520 pts", " para o nível 8 · Xodó". No
  * nível máximo, uma frase só.
  */
@@ -94,39 +94,28 @@ export function nextLevelSpoken(progress: MyProgress): string {
   });
 }
 
-/** "+840"; sem ganhos na semana, "0". */
-export function weekEarnedText(points: number): string {
-  return points > 0 ? `+${formatNumber(points)}` : formatNumber(points);
-}
-
 /**
- * O card de pontos num elemento só: "Seus pontos: 12.480. Esta semana: mais
- * 840. Faltam 2.520 pontos para o nível 8, Xodó."
+ * Os três números do topo da 1e: o saldo (o mesmo da pílula da loja) e dois
+ * dos números do fã, as pessoas trazidas pelo convite ("convidados", pedido do
+ * dono) e as temporadas. Os links criados e os ganhos da semana ficam fora da 1e.
  */
-export function pointsCardLabel(balance: number, progress: MyProgress): string {
-  const week =
-    progress.weekEarned > 0
-      ? t('profile.points.spoken.weekGain', { points: formatNumber(progress.weekEarned) })
-      : formatNumber(progress.weekEarned);
-  return t('profile.points.label', {
-    balance: formatNumber(balance),
-    week,
-    next: nextLevelSpoken(progress),
-  });
-}
-
-export type StatKind = keyof FanStats;
+export type StatKind = 'points' | Exclude<keyof FanStats, 'linksCreated'>;
 
 const STAT_LABELS = {
-  linksCreated: { one: 'profile.stats.linksOne', other: 'profile.stats.links' },
+  points: { one: 'profile.stats.pointsOne', other: 'profile.stats.points' },
   peopleBrought: { one: 'profile.stats.peopleOne', other: 'profile.stats.people' },
   seasons: { one: 'profile.stats.seasonsOne', other: 'profile.stats.seasons' },
 } as const satisfies Record<StatKind, { one: string; other: string }>;
 
-/** "links criados", "1 link criado": o rótulo embaixo do número. */
+/** "pontos", "convidado": o rótulo embaixo do número. */
 export function statLabel(kind: StatKind, value: number): string {
   const keys = STAT_LABELS[kind];
   return t(value === 1 ? keys.one : keys.other);
+}
+
+/** "12.480 pontos", "1 temporada": o número e o rótulo num foco só. */
+export function statSpoken(kind: StatKind, value: number): string {
+  return t('profile.stats.label', { value: formatNumber(value), label: statLabel(kind, value) });
 }
 
 /** "Boca a boca, conquistada" ou "Backstage, bloqueada". */

@@ -82,7 +82,8 @@ export const fixtureWallet = {
 
   /**
    * Quanto o fã ganhou desde que o app abriu, sem descontar resgates: o que o
-   * "Esta semana" do perfil (1e) soma aos ganhos de exemplo da semana.
+   * `weekEarned` do progresso soma aos ganhos de exemplo da semana (a 1e não
+   * mostra mais o "Esta semana" desde 26/10/2026).
    */
   earned(): number {
     return earnedSinceStart;

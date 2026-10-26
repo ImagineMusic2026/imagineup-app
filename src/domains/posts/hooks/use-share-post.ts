@@ -22,7 +22,7 @@ export function useSharePoints(post: Pick<Post, 'sharePointsPerVisit'>): number 
  * Compartilhar um post com o código de convite do fã. Se o código ainda não
  * chegou (offline na primeira abertura), sai o link puro: compartilhar
  * funciona, só não rende pontos. Com o código e a folha voltando
- * compartilhada, o link conta nos "links criados" do Perfil (`post:<id>`).
+ * compartilhada, o link conta nos "links criados" do fã (`post:<id>`).
  */
 export function useSharePost(): (post: Pick<Post, 'id' | 'artist'>) => void {
   const invite = useMyInviteQuery();

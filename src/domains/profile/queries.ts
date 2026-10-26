@@ -235,8 +235,8 @@ export type RegisterInviteLinkVariables = {
 /**
  * Conta o link compartilhado quando a folha de compartilhar voltou
  * compartilhada. Sem fila offline e sem aviso na tela: o fã já compartilhou,
- * e um link que não contou não muda nada para ele. Link novo faz o Perfil
- * buscar os números de novo ("links criados"). As novas tentativas são as do
+ * e um link que não contou não muda nada para ele. Link novo faz o
+ * progresso buscar os números de novo ("links criados"). As novas tentativas são as do
  * padrão (o ritmo e a falha incerta, com a mesma chave); a conta suspensa não
  * abre o `Alert`: a sheet do convite já diz que o link sai sem os pontos.
  */
