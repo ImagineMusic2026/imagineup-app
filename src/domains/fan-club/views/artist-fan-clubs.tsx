@@ -14,7 +14,6 @@ import { t } from '@/i18n';
 import { colors, radii, spacing } from '@/theme';
 
 import { FanClubRow } from '../components/fan-club-row';
-import { UnofficialBand } from '../components/unofficial-band';
 import { isDefinitiveRefusal } from '../entry';
 import { useArtistFanClubsQuery, useFanClubGate } from '../queries';
 import { fanClubHref } from '../share';
@@ -35,9 +34,9 @@ function openClub(club: FanClubCard): void {
  * "Fã-clubes do artista" (`/fa-clubes-do-artista/[artistaId]`, 34.9, item 8):
  * o "Ver todos" do card da 1d, na pilha da aba de onde veio, como a central. A
  * lista paginada do `GET /artists/:artistId/fan-clubs` (20 por página, os
- * destacados primeiro), com a faixa não oficial no topo. Inerte antes da
- * abertura: sem a resposta da trava, diz que o fã-clube não está disponível e
- * não chama mais nada.
+ * destacados primeiro), com o selo ao lado do nome dos oficiais (34.23).
+ * Inerte antes da abertura: sem a resposta da trava, diz que o fã-clube não
+ * está disponível e não chama mais nada.
  */
 export function ArtistFanClubsScreen() {
   const params = useLocalSearchParams<{ artistaId: string }>();
@@ -103,7 +102,7 @@ export function ArtistFanClubsScreen() {
         )}
         ItemSeparatorComponent={ItemGap}
         ListHeaderComponent={
-          <View>
+          <View style={live === null ? undefined : styles.header}>
             <LargeTitleHeader
               title={t('fanClub.artistCard.listTitle')}
               subtitle={
@@ -115,11 +114,6 @@ export function ArtistFanClubsScreen() {
               }
               showBack
             />
-            {live === null ? null : (
-              <View style={styles.band}>
-                <UnofficialBand />
-              </View>
-            )}
           </View>
         }
         ListEmptyComponent={empty}
@@ -163,8 +157,7 @@ const styles = StyleSheet.create({
   screen: {
     paddingBottom: 0,
   },
-  band: {
-    alignItems: 'flex-start',
+  header: {
     marginBottom: spacing.md,
   },
   gap: {

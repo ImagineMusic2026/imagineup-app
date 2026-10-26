@@ -193,6 +193,8 @@ export type FanClubRecord = {
   pendingPosts: number;
   featured: boolean;
   featuredUntil: string | null;
+  /** Oficializado pela equipe: o selo do fã-clube oficial (34.23). */
+  official: boolean;
   lastReward: { at: number | null; points: number | null; prize: boolean } | null;
   /** Os seguidores da cópia da noite (`counts.followers`, decisão 28): a ordem das listas. */
   followers: number;
@@ -284,6 +286,7 @@ export function fanClubRecord(id: string, data: Record<string, unknown>): FanClu
     pendingPosts: count(data.pendingPosts),
     featured: data.featured === true,
     featuredUntil: typeof data.featuredUntil === 'string' ? data.featuredUntil : null,
+    official: data.official === true,
     lastReward: reward
       ? {
           at: millisOf(reward.at),

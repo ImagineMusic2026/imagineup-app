@@ -1,4 +1,5 @@
 import { fireEvent, render, screen } from '@testing-library/react-native';
+import { View } from 'react-native';
 
 import { PressableScale } from '@/components/pressable-scale';
 import { Text } from '@/components/text';
@@ -313,5 +314,22 @@ describe('ListRow', () => {
       paddingVertical: spacing.md,
       paddingHorizontal: spacing.md,
     });
+  });
+
+  it('o selo do título fica logo depois dele, fora do leitor, e o título quebra ao lado', () => {
+    render(
+      <ListRow
+        title="Netto de Coração"
+        titleBadge={<View testID="selo" />}
+        onPress={jest.fn()}
+        accessibilityLabel="Netto de Coração, fã-clube oficial"
+      />,
+    );
+
+    expect(screen.getByRole('button', { name: 'Netto de Coração, fã-clube oficial' })).toBeTruthy();
+    // Fora do leitor: só aparece pedindo os elementos escondidos.
+    expect(screen.queryByTestId('selo')).toBeNull();
+    expect(screen.getByTestId('selo', { includeHiddenElements: true })).toBeTruthy();
+    expect(screen.getByText('Netto de Coração')).toHaveStyle({ flexShrink: 1 });
   });
 });

@@ -68,6 +68,7 @@ import {
   fanClubsOf,
   fanClubsOfOwner,
   followersQuery,
+  OFFICIAL_OFF,
   ownerCopiesOf,
 } from './store';
 
@@ -162,6 +163,7 @@ export function clubView(
     pendingPosts: club.pendingPosts,
     photosAllowed: boxes.enabled && boxes.photosAllowed,
     featuredUntil: isFeaturedNow(club, now) ? club.featuredUntil : null,
+    official: club.official,
     lastReward: club.lastReward ? { ...club.lastReward, at: iso(club.lastReward.at) } : null,
     available: unavailableReason === null,
     unavailableReason,
@@ -530,6 +532,7 @@ export async function readFanClubPage(
     followerCount,
     postCount: club.postCount,
     featured: isFeaturedNow(club, now),
+    official: club.official,
     isFollowing: follow?.exists === true,
     isOwner: club.ownerUid === uid,
     isMember: membership?.exists === true,
@@ -621,6 +624,7 @@ export async function readArtistFanClubs(
       owner: ownerOf(club),
       followers: club.followers,
       featured: isFeaturedNow(club, now),
+      official: club.official,
       postCount: club.postCount,
       isFollowing: follows[index]?.exists === true,
     })),
@@ -686,6 +690,7 @@ async function removeLeadership(db: Firestore, uid: string, now: number): Promis
         ownerPhotoURL: null,
         name: null,
         ...FEATURE_OFF,
+        ...OFFICIAL_OFF,
         closedAt: club.get('closedAt') ?? at,
         updatedAt: at,
       });

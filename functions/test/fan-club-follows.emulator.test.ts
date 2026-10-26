@@ -585,6 +585,7 @@ describe('as listas do fã: "Fã-clubes que sigo" e a Início (decisão 30)', ()
         owner: null,
         followedAt: expect.any(String),
         available: false,
+        official: false,
       },
       expect.objectContaining({ id: tombstone.clubId, name: null, owner: null, available: false }),
       expect.objectContaining({
@@ -625,6 +626,7 @@ describe('as listas do fã: "Fã-clubes que sigo" e a Início (decisão 30)', ()
       owner: null,
       followedAt: expect.any(String),
       available: false,
+      official: false,
     });
   });
 

@@ -38,6 +38,11 @@ interface ListRowBaseProps {
   tone?: ListRowTone;
   /** Nomes do ranking cabem numa linha com reticências; o resto quebra, para a fonte a 200%. */
   titleNumberOfLines?: number;
+  /**
+   * Selo decorativo logo depois do título (o do fã-clube oficial): fora do
+   * leitor, e quem chama põe o que ele diz no rótulo da linha.
+   */
+  titleBadge?: ReactNode;
   /** Troca o vão da variante (a linha da agenda usa 13). */
   gap?: keyof typeof spacing;
   /** Troca o padding do card (a linha da agenda usa 12). Não vale para `divided` nem `menu`. */
@@ -161,6 +166,7 @@ export function ListRow(props: ListRowProps) {
     variant = 'card',
     tone = 'default',
     titleNumberOfLines,
+    titleBadge,
     gap,
     padding,
     trailingPlacement = 'end',
@@ -209,13 +215,27 @@ export function ListRow(props: ListRowProps) {
       >
         {leading ? <View style={[styles.leading, gapStyle]}>{leading}</View> : null}
         <View style={styles.texts}>
-          <Text
-            variant={TITLE_VARIANT[variant]}
-            color={titleColor}
-            numberOfLines={titleNumberOfLines}
-          >
-            {title}
-          </Text>
+          {titleBadge ? (
+            <View style={styles.titleRow}>
+              <Text
+                variant={TITLE_VARIANT[variant]}
+                color={titleColor}
+                numberOfLines={titleNumberOfLines}
+                style={styles.titleShrink}
+              >
+                {title}
+              </Text>
+              <View {...HIDDEN_FROM_READER}>{titleBadge}</View>
+            </View>
+          ) : (
+            <Text
+              variant={TITLE_VARIANT[variant]}
+              color={titleColor}
+              numberOfLines={titleNumberOfLines}
+            >
+              {title}
+            </Text>
+          )}
           {meta ? (
             <Text
               variant={META_VARIANT[variant]}
@@ -331,6 +351,15 @@ const styles = StyleSheet.create({
   texts: {
     flex: 1,
     minWidth: 0,
+  },
+  titleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.iconLabelGap,
+  },
+  // O título quebra e o selo fica ao lado dele, sem sair da linha.
+  titleShrink: {
+    flexShrink: 1,
   },
   trailing: {
     flexShrink: 0,

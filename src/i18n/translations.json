@@ -1069,7 +1069,7 @@
     "errors": {
       "invalid": {
         "name": "O nome precisa ter de 3 a 40 caracteres.",
-        "nameOfficial": "O nome não pode ter a palavra oficial, porque o fã-clube não é oficial.",
+        "nameOfficial": "O nome não pode ter a palavra oficial. Só a equipe oficializa um fã-clube, com o selo.",
         "pitch": "Conte em 20 a 1.000 caracteres como e onde você vai divulgar.",
         "instagram": "Confira o @ do Instagram.",
         "tiktok": "Confira o @ do TikTok.",
@@ -1130,7 +1130,7 @@
       "notMember": "Você saiu da central do artista. Volte para publicar.",
       "closed": "Seu fã-clube foi encerrado."
     },
-    "unofficial": "Fã-clube, não oficial",
+    "officialName": "{{name}}, fã-clube oficial",
     "loadError": "Não deu para abrir o fã-clube.",
     "notAvailable": "O fã-clube não está disponível agora.",
     "settings": {
@@ -1216,6 +1216,8 @@
         "username": "Ter o seu @ escolhido em Editar perfil.",
         "keep": "Manter o fã-clube ativo e a conta sem suspensão."
       },
+      "officialTitle": "Fã-clube oficial",
+      "official": "O fã-clube é um espaço de fãs. Os oficializados pela equipe levam o selo de oficial ao lado do nome.",
       "noticeTitle": "Reconhecimento"
     },
     "state": {
@@ -1278,6 +1280,7 @@
         "closed": "Encerrado"
       },
       "headerLabel": "{{name}}, de {{artist}}. {{status}}.",
+      "headerOfficialLabel": "{{name}}, fã-clube oficial de {{artist}}. {{status}}.",
       "featured": "Seu fã-clube é destaque até {{date}}",
       "followers": "Seguidores",
       "followers30d": "Novos em 30 dias",
@@ -1379,7 +1382,6 @@
       "unavailable": "Você não pode publicar agora."
     },
     "page": {
-      "headerLabel": "Fã-clube, não oficial. {{name}}",
       "by": "feito por {{owner}}",
       "byLabel": "Feito por {{owner}}",
       "artistLabel": "Central de {{artist}}",
@@ -1425,7 +1427,6 @@
       "report": "Denunciar",
       "reportLabel": "Denunciar a publicação: {{excerpt}}",
       "reportHint": "Abre os motivos da denúncia",
-      "openClub": "Fã-clube, não oficial. {{name}}",
       "openClubHint": "Abre o fã-clube"
     },
     "report": {
@@ -1450,13 +1451,13 @@
       "rowMeta": "por {{owner}} · {{posts}} · {{followers}}",
       "posts": "{{count}} publicações",
       "postsOne": "1 publicação",
-      "rowLabel": "Fã-clube não oficial {{name}}, feito por {{owner}}. {{followers}}. {{posts}}.",
+      "rowLabel": "{{name}}, feito por {{owner}}. {{followers}}. {{posts}}.",
       "featuredLabel": "Em destaque.",
       "followingLabel": "Você segue.",
       "hint": "Abre o fã-clube",
       "listTitle": "Fã-clubes",
-      "listSubtitle": "Os fã-clubes de {{artist}}, feitos por fãs. Não são oficiais.",
-      "listSubtitleNoName": "Os fã-clubes deste artista, feitos por fãs. Não são oficiais.",
+      "listSubtitle": "Os fã-clubes de {{artist}}, feitos por fãs.",
+      "listSubtitleNoName": "Os fã-clubes deste artista, feitos por fãs.",
       "listEmpty": "Este artista ainda não tem fã-clubes.",
       "listError": "Não deu para carregar os fã-clubes.",
       "listMoreError": "Não deu para carregar mais fã-clubes.",
@@ -1470,6 +1471,7 @@
       "unavailableName": "Fã-clube indisponível",
       "of": "de {{artist}}",
       "rowLabel": "{{name}}, fã-clube de {{artist}}.",
+      "rowOfficialLabel": "{{name}}, fã-clube oficial de {{artist}}.",
       "rowUnavailableLabel": "{{name}}, fã-clube de {{artist}}. Indisponível.",
       "unfollow": "Deixar de seguir",
       "unfollowLabel": "Deixar de seguir {{name}}, de {{artist}}",

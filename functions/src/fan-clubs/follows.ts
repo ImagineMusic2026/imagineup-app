@@ -289,6 +289,7 @@ export async function readFollowedFanClubs(db: Firestore, uid: string): Promise<
         owner: available ? ownerOf(visible) : null,
         followedAt: iso(millisOf(doc.get('followedAt'))),
         available,
+        official: available && visible.official,
       };
     }),
   };

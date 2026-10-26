@@ -102,8 +102,14 @@ describe('a candidatura', () => {
 });
 
 describe('o fã-clube', () => {
-  it('pausar, reativar e tirar o destaque só com o status', () => {
-    for (const decision of ['pause', 'resume', 'unfeature'] as const) {
+  it('pausar, reativar, tirar o destaque, oficializar e tirar a oficialização só com o status', () => {
+    for (const decision of [
+      'pause',
+      'resume',
+      'unfeature',
+      'officialize',
+      'unofficialize',
+    ] as const) {
       expect(club({ decision, expected: 'active' })).toEqual({
         subject: 'club',
         id: 'clube1',
@@ -171,6 +177,8 @@ describe('o fã-clube', () => {
     [{ decision: 'reward', grantId: 'concessao-0001', points: 1, note: 'N' }, 'expected'],
     [{ decision: 'pause' }, 'expected'],
     [{ decision: 'pause', expected: 'ativo' }, 'expected'],
+    [{ decision: 'officialize' }, 'expected'],
+    [{ decision: 'verify', expected: 'active' }, 'decision'],
     [{ decision: 'close', expected: 'active', reason: 'account_deleted' }, 'reason'],
     [{ decision: 'feature', expected: 'active' }, 'featuredUntil'],
     [{ decision: 'feature', expected: 'active', featuredUntil: '2026-10-19' }, 'featuredUntil'],

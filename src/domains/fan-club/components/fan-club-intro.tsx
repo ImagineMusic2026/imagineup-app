@@ -53,9 +53,8 @@ export interface FanClubIntroProps {
  * e o link "Regras do fã-clube", que abre a sheet com as condições (a idade,
  * a central e o @) e o texto do reconhecimento. O botão fica preso ao pé e
  * abre a candidatura de qualquer passo, com o aceite dos termos embaixo dele.
- * Sem a faixa "Fã-clube, não oficial": ela fica nas telas públicas (pedido do
- * dono de 20/10/2026, 34.22). A tela é de ponta a ponta: o carrossel passa de
- * uma borda à outra, e o resto leva a margem.
+ * A tela é de ponta a ponta: o carrossel passa de uma borda à outra, e o resto
+ * leva a margem.
  */
 export function FanClubIntro({ mine }: FanClubIntroProps) {
   const [barHeight, setBarHeight] = useState(0);

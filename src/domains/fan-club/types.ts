@@ -76,6 +76,8 @@ export interface MyFanClubClub {
   photosAllowed: boolean;
   /** O fim do Destaque (`AAAA-MM-DD`), só dentro do prazo. */
   featuredUntil: string | null;
+  /** Oficializado pela equipe: o selo do fã-clube oficial (34.23). */
+  official: boolean;
   lastReward: FanClubLastReward | null;
   available: boolean;
   unavailableReason: FanClubUnavailableReason | null;
@@ -222,6 +224,8 @@ export interface FanClubPost {
   id: string;
   clubId: string;
   clubName: string;
+  /** O fã-clube oficializado pela equipe: o selo ao lado do nome (34.23). */
+  clubOfficial: boolean;
   artistId: string;
   author: FanClubPerson;
   kind: 'text' | 'photo';
@@ -249,6 +253,8 @@ export interface FanClubPage {
   postCount: number;
   /** O Destaque, com o prazo conferido. */
   featured: boolean;
+  /** Oficializado pela equipe: o selo do fã-clube oficial (34.23). */
+  official: boolean;
   isFollowing: boolean;
   isOwner: boolean;
   /** Quem pede é da central oficial do artista. */
@@ -263,6 +269,8 @@ export interface FanClubCard {
   /** Os seguidores da cópia da noite (o app arredonda). */
   followers: number;
   featured: boolean;
+  /** Oficializado pela equipe: o selo do fã-clube oficial (34.23). */
+  official: boolean;
   postCount: number;
   isFollowing: boolean;
 }
@@ -318,6 +326,8 @@ export interface FollowedFanClub {
   owner: FanClubPerson | null;
   followedAt: string;
   available: boolean;
+  /** Oficializado pela equipe, só no disponível (34.23). */
+  official: boolean;
 }
 
 /** `GET /me/fan-club-follows`: até 50, do mais novo ao mais antigo. */

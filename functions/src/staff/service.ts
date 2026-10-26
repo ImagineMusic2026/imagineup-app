@@ -163,6 +163,8 @@ export type AuditAction =
   | 'fanClub.closed'
   | 'fanClub.featured'
   | 'fanClub.unfeatured'
+  | 'fanClub.officialized'
+  | 'fanClub.unofficialized'
   | 'fanClub.rewarded'
   | 'fanClub.post.approved'
   | 'fanClub.post.rejected'

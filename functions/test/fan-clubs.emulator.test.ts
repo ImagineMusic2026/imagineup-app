@@ -1097,6 +1097,125 @@ describe('decideFanClub: o fã-clube', () => {
   });
 });
 
+describe('decideFanClub: o selo de oficial (34.23)', () => {
+  it('oficializar é só do admin: o selo nas respostas da API, a mesma decisão sem gravar, o pausado mantém, tirar e encerrar tiram', async () => {
+    const { call } = clockApi();
+    const artistId = await openArtist();
+    const admin = await seedMember(env, 'Admin', 'admin');
+    const editor = await seedMember(env, 'Editora', 'editor', ['fanClubs']);
+    const fan = await candidate(call, artistId);
+    await approve(editor, fan);
+    const clubId = await clubOf(fan);
+    // O fã-clube nasce sem o selo.
+    expect(await read(`fanClubs/${clubId}`)).toMatchObject({
+      official: false,
+      officialAt: null,
+      officialBy: null,
+    });
+    // O editor da seção não oficializa nem tira o selo: admin-only, antes de ler o fã-clube.
+    for (const decision of ['officialize', 'unofficialize']) {
+      expect(
+        (
+          await failure(
+            'decideFanClub',
+            { subject: 'club', id: clubId, decision, expected: 'active' },
+            editor,
+          )
+        ).details?.reason,
+      ).toBe('admin-only');
+    }
+    expect(await audits('fanClub.officialized')).toEqual([]);
+
+    expect(await decideClub(admin, clubId, 'officialize', 'active')).toEqual({
+      ok: true,
+      subject: 'club',
+      id: clubId,
+      status: 'active',
+    });
+    expect(await read(`fanClubs/${clubId}`)).toMatchObject({
+      official: true,
+      officialAt: expect.any(Timestamp),
+      officialBy: { uid: admin.uid, name: 'Admin' },
+    });
+    expect((await audits('fanClub.officialized'))[0]).toMatchObject({
+      section: 'fanClubs',
+      actorUid: admin.uid,
+      details: { clubId, artistId, fanUid: fan.uid },
+    });
+    // A mesma decisão de novo: ok, sem gravar nem auditar.
+    await decideClub(admin, clubId, 'officialize', 'active');
+    expect(await audits('fanClub.officialized')).toHaveLength(1);
+
+    // O selo nas respostas: o "Meu fã-clube", a página, a lista do artista e os seguidos.
+    const follower = await signUpFan(db, 'Bia Santos');
+    expect((await join(call, follower, artistId)).status).toBe(200);
+    expect(
+      (
+        await call('PUT', `/me/fan-club-follows/${clubId}`, {
+          token: follower.token,
+          key: unique('chave-segue-'),
+        })
+      ).status,
+    ).toBe(200);
+    expect((await myFanClub(call, fan)).body).toMatchObject({ club: { official: true } });
+    expect(await call('GET', `/fan-clubs/${clubId}`, { token: follower.token })).toMatchObject({
+      status: 200,
+      body: { id: clubId, official: true },
+    });
+    expect(
+      await call('GET', `/artists/${artistId}/fan-clubs`, { token: follower.token }),
+    ).toMatchObject({ status: 200, body: { items: [{ id: clubId, official: true }] } });
+    expect(await call('GET', '/me/fan-club-follows', { token: follower.token })).toMatchObject({
+      status: 200,
+      body: { items: [{ id: clubId, available: true, official: true }] },
+    });
+
+    // Pausado, o selo fica (o indisponível não mostra o selo nos seguidos) e volta com o reativar.
+    await decideClub(admin, clubId, 'pause', 'active');
+    expect(await read(`fanClubs/${clubId}`)).toMatchObject({ status: 'paused', official: true });
+    expect(await call('GET', '/me/fan-club-follows', { token: follower.token })).toMatchObject({
+      body: { items: [{ id: clubId, available: false, official: false }] },
+    });
+    // O pausado não é oficializado de novo, mas o selo sai em qualquer status.
+    expect(
+      (
+        await failure(
+          'decideFanClub',
+          { subject: 'club', id: clubId, decision: 'officialize', expected: 'paused' },
+          admin,
+        )
+      ).details,
+    ).toMatchObject({ reason: 'invalid-request', field: 'decision' });
+    await decideClub(admin, clubId, 'resume', 'paused');
+    expect((await myFanClub(call, fan)).body).toMatchObject({ club: { official: true } });
+
+    expect((await decideClub(admin, clubId, 'unofficialize', 'active')).status).toBe('active');
+    expect(await read(`fanClubs/${clubId}`)).toMatchObject({
+      official: false,
+      officialAt: null,
+      officialBy: null,
+    });
+    expect((await audits('fanClub.unofficialized'))[0]).toMatchObject({
+      details: { clubId, artistId, fanUid: fan.uid },
+    });
+    // Tirar de quem não tem: ok, sem auditar.
+    await decideClub(admin, clubId, 'unofficialize', 'active');
+    expect(await audits('fanClub.unofficialized')).toHaveLength(1);
+    expect(await call('GET', `/fan-clubs/${clubId}`, { token: follower.token })).toMatchObject({
+      body: { official: false },
+    });
+
+    // Encerrar tira o selo.
+    await decideClub(admin, clubId, 'officialize', 'active');
+    await decideClub(admin, clubId, 'close', 'active');
+    expect(await read(`fanClubs/${clubId}`)).toMatchObject({
+      status: 'closed',
+      official: false,
+      officialBy: null,
+    });
+  });
+});
+
 describe('o artista (decisão 9 e 34.14)', () => {
   it('as caixas no updateArtist: só a que muda vai, com o merge; o diálogo vale o imageRightsConfirmed sem elas', async () => {
     const editor = await seedMember(env, 'Editora', 'editor', ['artists']);

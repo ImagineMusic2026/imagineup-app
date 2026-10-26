@@ -32,8 +32,8 @@ const SCROLL_THROTTLE = 64;
  * segue, numa fileira que rola de lado, de ponta a ponta (10 por página: a
  * seguinte chega perto do fim). Só depois da trava e só com publicação:
  * carregando, sem nada ou com a consulta falhando, nada aparece, e o mural
- * continua. Cada cartão tem a faixa não oficial antes do nome do fã-clube (que
- * abrem a página), o Compartilhar e o Denunciar (a mesma sheet da página),
+ * continua. Cada cartão tem o nome do fã-clube, com o selo do oficial (que
+ * abre a página), o Compartilhar e o Denunciar (a mesma sheet da página),
  * como a App Store 1.2 e o Google Play pedem junto do conteúdo. O `/feed`
  * oficial não muda.
  */

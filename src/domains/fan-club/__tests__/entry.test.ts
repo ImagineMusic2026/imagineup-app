@@ -47,6 +47,7 @@ const club = (patch: Partial<MyFanClubClub> = {}): MyFanClubClub => ({
   pendingPosts: 1,
   photosAllowed: true,
   featuredUntil: null,
+  official: false,
   lastReward: null,
   available: true,
   unavailableReason: null,

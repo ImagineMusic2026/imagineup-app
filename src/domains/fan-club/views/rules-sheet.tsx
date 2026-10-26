@@ -14,6 +14,7 @@ import { t, type TranslationKey } from '@/i18n';
 import { openWebPage } from '@/services/web-page';
 import { colors, spacing } from '@/theme';
 
+import { OfficialBadge } from '../components/official-badge';
 import { useShownFanClub } from '../queries';
 
 const CHECK_SIZE = 16;
@@ -36,7 +37,9 @@ function closeSheet(): void {
 /**
  * Sheet "Regras do fã-clube" (`/meu-fa-clube/regras`), aberta pela
  * apresentação, na altura do conteúdo, no visual do "Gerar meu link": quem
- * pode ter um fã-clube e, só com o `notice` do servidor, o texto inteiro do
+ * pode ter um fã-clube, o que é o selo de oficial (34.23: o único lugar do app
+ * que explica que o fã-clube é um espaço de fãs, sem rotular cada um como não
+ * oficial) e, só com o `notice` do servidor, o texto inteiro do
  * reconhecimento, com o aviso de que a Apple não patrocina (decisão 47 e a
  * regra 5.3 da App Store: as regras ficam dentro do app). Embaixo, o link dos
  * Termos de Uso, ou do regulamento quando ele existir (decisão 8).
@@ -88,6 +91,19 @@ export function FanClubRulesSheetScreen() {
               </Text>
             </View>
           ))}
+        </View>
+        <View style={styles.section} testID="fan-club-rules-official">
+          <Text variant="label" accessibilityRole="header">
+            {t('fanClub.rulesSheet.officialTitle')}
+          </Text>
+          <View style={styles.item}>
+            <View style={styles.check}>
+              <OfficialBadge size={16} />
+            </View>
+            <Text variant="body" color={colors.textSecondary} style={styles.itemText}>
+              {t('fanClub.rulesSheet.official')}
+            </Text>
+          </View>
         </View>
         {mine.notice ? (
           <View style={styles.section} testID="fan-club-rules-notice">

@@ -82,6 +82,7 @@ import {
   fanClubRef,
   fanClubReportQueueRef,
   fanClubsOf,
+  OFFICIAL_OFF,
   ownerCopiesOf,
 } from './store';
 
@@ -94,7 +95,8 @@ import {
 // A etapa 1 de 34.14 decide a candidatura e o fã-clube (com o Destaque); a
 // etapa 2, as publicações e as denúncias delas, com os arquivos apagados e os
 // tokens trocados depois da transação; a etapa 5, o Recompensar (os pontos só
-// no saldo e o prêmio, que vira pedido da loja).
+// no saldo e o prêmio, que vira pedido da loja). Desde 34.23, o Oficializar e
+// o Tirar a oficialização, só do admin, como o Encerrar.
 
 /** Os assuntos que a callable decide. */
 export const DECISION_SUBJECTS = ['application', 'club', 'post', 'report'] as const;
@@ -127,7 +129,8 @@ export type DecisionInput =
   | {
       subject: 'club';
       id: string;
-      decision: 'pause' | 'resume' | 'unfeature';
+      /** `officialize` e `unofficialize`: o selo do fã-clube oficial, só do admin (34.23). */
+      decision: 'pause' | 'resume' | 'unfeature' | 'officialize' | 'unofficialize';
       /** O status que a tela mostrou. */
       expected: FanClubStatus;
     }
@@ -207,7 +210,19 @@ type RewardDecisionInput = Extract<DecisionInput, { decision: 'reward' }>;
 const invalid = (field: string, extra: Record<string, unknown> = {}) =>
   panelError('invalid-request', { field, ...extra });
 
-const CLUB_DECISIONS = ['pause', 'resume', 'close', 'feature', 'unfeature', 'reward'] as const;
+const CLUB_DECISIONS = [
+  'pause',
+  'resume',
+  'close',
+  'feature',
+  'unfeature',
+  'officialize',
+  'unofficialize',
+  'reward',
+] as const;
+
+/** As decisões só do admin (decisão 7 e 34.23): encerrar e o selo de oficial. */
+const ADMIN_DECISIONS: readonly string[] = ['close', 'officialize', 'unofficialize'];
 const POST_DECISIONS = ['approve', 'reject', 'hide', 'restore'] as const;
 const REPORT_DECISIONS = ['keep', 'action'] as const;
 
@@ -316,7 +331,7 @@ export function parseDecision(
   return {
     subject,
     id,
-    decision: decision as 'pause' | 'resume' | 'unfeature',
+    decision: decision as 'pause' | 'resume' | 'unfeature' | 'officialize' | 'unofficialize',
     expected: status,
   };
 }
@@ -523,6 +538,7 @@ async function decideApplication(
     monthStart: null,
     lastMonth: null,
     ...FEATURE_OFF,
+    ...OFFICIAL_OFF,
     lastReward: null,
     createdAt: at,
     updatedAt: at,
@@ -588,16 +604,19 @@ async function featuredOthers(
 }
 
 /**
- * Pausar, reativar, encerrar, destacar e tirar o destaque (34.5), na
- * transação de quem chama: o fã-clube (`fan-club-not-found`); o gestor é quem
- * chama, `self`; a mesma decisão já tomada (pausado pela equipe, reativado,
- * encerrado com o mesmo motivo, o mesmo prazo do destaque, sem destaque),
- * `ok` sem gravar; o status diferente do da tela, `stale-decision`; a decisão
- * que não cabe no status, `invalid-request` com `field: 'decision'`. Pausar e encerrar tiram o
- * destaque; reativar só do pausado, com o gestor sem suspensão
- * (`owner-suspended`) e o artista aberto (`artist-not-open`); encerrar apaga
- * o privado e marca a candidatura: `closedByStaff` com `staff`, ou o
- * `canReapplyAt` de 30 dias e a rodada 0 com `owner_request`.
+ * Pausar, reativar, encerrar, destacar, tirar o destaque, oficializar e tirar
+ * a oficialização (34.5 e 34.23), na transação de quem chama: o fã-clube
+ * (`fan-club-not-found`); o gestor é quem chama, `self`; a mesma decisão já
+ * tomada (pausado pela equipe, reativado, encerrado com o mesmo motivo, o
+ * mesmo prazo do destaque, sem destaque, oficial, sem o selo), `ok` sem
+ * gravar; o status diferente do da tela, `stale-decision`; a decisão que não
+ * cabe no status, `invalid-request` com `field: 'decision'`. Pausar e
+ * encerrar tiram o destaque, e encerrar também o selo; reativar só do
+ * pausado, com o gestor sem suspensão (`owner-suspended`) e o artista aberto
+ * (`artist-not-open`); encerrar apaga o privado e marca a candidatura:
+ * `closedByStaff` com `staff`, ou o `canReapplyAt` de 30 dias e a rodada 0
+ * com `owner_request`. Oficializar só o ativo; tirar o selo, em qualquer
+ * status.
  */
 async function decideClub(
   tx: Transaction,
@@ -678,6 +697,7 @@ async function decideClub(
         closedAt: at,
         closedBy: { uid: actor.uid, name: actor.name },
         ...FEATURE_OFF,
+        ...OFFICIAL_OFF,
         updatedAt: at,
       });
       if (owner && application?.exists) {
@@ -724,6 +744,24 @@ async function decideClub(
       if (!club.featured && club.featuredUntil === null) return result(club.status);
       tx.update(ref, { ...FEATURE_OFF, updatedAt: at });
       audit(tx, db, 'fanClub.unfeatured', actor, details, at);
+      return result(club.status);
+    }
+    case 'officialize': {
+      if (club.status !== 'active') throw notInStatus();
+      if (club.official) return result('active');
+      tx.update(ref, {
+        official: true,
+        officialAt: at,
+        officialBy: { uid: actor.uid, name: actor.name },
+        updatedAt: at,
+      });
+      audit(tx, db, 'fanClub.officialized', actor, details, at);
+      return result('active');
+    }
+    case 'unofficialize': {
+      if (!club.official) return result(club.status);
+      tx.update(ref, { ...OFFICIAL_OFF, updatedAt: at });
+      audit(tx, db, 'fanClub.unofficialized', actor, details, at);
       return result(club.status);
     }
   }
@@ -1277,7 +1315,8 @@ export async function applyFanClubDecision(
  * `unauthenticated`; o assunto fora da lista, `invalid-request` com
  * `field: 'subject'`; o id fora do formato, com `field: 'id'`; a própria
  * candidatura, `self` (o próprio fã-clube, a própria publicação e a denúncia
- * dela, na transação). Encerrar pede o papel admin (`admin-only`). O
+ * dela, na transação). Encerrar, oficializar e tirar a oficialização pedem o
+ * papel admin (`admin-only`, 34.23). O
  * Recompensar pede também, fora e de novo na transação, a seção `fans` com
  * pontos e a `rewards` com prêmio, e confere o teto do papel nos pontos
  * (`adjust-above-limit`), com a transação dentro do `retryOnAlreadyExists`: o
@@ -1315,13 +1354,12 @@ export async function decideFanClub(
   const direct = await readPanelActor(directRead, db, caller, 'fanClubs', 'edit');
   const now = (deps.now ?? Date.now)();
   const input = parseDecision(subject as DecisionSubject, id, fields, now);
-  if (input.decision === 'close' && direct.role !== 'admin') throw panelAccessError('admin-only');
+  const adminOnly = ADMIN_DECISIONS.includes(input.decision);
+  if (adminOnly && direct.role !== 'admin') throw panelAccessError('admin-only');
   if (input.decision === 'reward') return rewardFanClub(deps, caller, input, direct, now);
   const decided = await db.runTransaction(async (tx) => {
     const actor = await readPanelActor(transactionRead(tx), db, caller, 'fanClubs', 'edit');
-    if (input.decision === 'close' && actor.role !== 'admin') {
-      throw panelAccessError('admin-only');
-    }
+    if (adminOnly && actor.role !== 'admin') throw panelAccessError('admin-only');
     return applyFanClubDecision(tx, db, input, {
       actor,
       now,

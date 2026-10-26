@@ -190,12 +190,13 @@ export function ownPostView(post: FanClubPostRecord): OwnFanClubPost {
   };
 }
 
-/** A publicação no ar, como os fãs veem, com o nome do fã-clube. */
+/** A publicação no ar, como os fãs veem, com o nome do fã-clube e o selo de oficial. */
 export function publicPostView(post: FanClubPostRecord, club: FanClubRecord): FanClubPost {
   return {
     id: post.id,
     clubId: post.clubId,
     clubName: club.name ?? '',
+    clubOfficial: club.official,
     artistId: post.artistId,
     author: {
       uid: post.authorUid,
