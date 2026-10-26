@@ -355,7 +355,7 @@ describe('o bloco "Fã-clube" dos Ajustes (34.9, item 1)', () => {
     expectOnlyTheGate();
   });
 
-  it('com o programa aberto, "Tenha seu fã-clube" entre Perfil e Segurança, e abre a apresentação', async () => {
+  it('com o programa aberto, "Tenha seu fã-clube" entre Perfil e Privacidade e segurança, e abre a apresentação', async () => {
     mocked.fetchMyFanClub.mockResolvedValue(mine());
     const view = renderRouter(appTree, { initialUrl: '/ajustes' });
 
@@ -366,9 +366,9 @@ describe('o bloco "Fã-clube" dos Ajustes (34.9, item 1)', () => {
       'Ajustes',
       'Perfil',
       'Fã-clube',
-      'Segurança',
-      'Conta',
+      'Privacidade e segurança',
       'Sobre',
+      'Zona de perigo',
     ]);
     fireEvent.press(row);
     await waitFor(() => expect(view.getPathname()).toBe('/meu-fa-clube'));

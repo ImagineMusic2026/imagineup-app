@@ -4,7 +4,6 @@ import {
   ChevronRight,
   ExternalLink,
   FileText,
-  Info,
   KeyRound,
   LogOut,
   Mail,
@@ -57,7 +56,7 @@ function External() {
   return <Icon icon={ExternalLink} size={TRAILING_ICON_SIZE} color={colors.textMuted} />;
 }
 
-/** A meta e o rótulo da linha "Versão do app": com o EAS Update, a data e o id curto dele. */
+/** A linha de baixo e o rótulo do rodapé da versão: com o EAS Update, a data e o id curto dele. */
 function versionTexts({ version, update }: AppVersionInfo): { meta?: string; label: string } {
   if (!version) return { label: t('settings.version') };
   if (!update) {
@@ -113,17 +112,18 @@ function editProfileMeta(profile: FanProfile | null | undefined, now: Date): str
 
 /**
  * Ajustes (sem desenho, no visual das outras telas), aberto pela engrenagem
- * do perfil. De cima para baixo: o aviso da conta suspensa (só com a
- * suspensão, seção 29, frente E); o perfil, com "Editar perfil" (bloco 9); o
- * fã-clube, só com o programa aberto ou com candidatura (seção 34); a
- * segurança, com "Fãs bloqueados" (seção 29, frente B: a mesma palavra do
- * bloco do perfil público); a conta, com "Trocar e-mail" e "Trocar senha" (só
- * na conta com senha, frente D), Sair e Excluir conta; e o "Sobre" (frente C),
- * com a privacidade, os termos, o regulamento (só com o endereço no cache da
- * loja), o contato e a versão. Sair não pede confirmação (dá para entrar de
- * novo) e por isso não leva a seta de "abre outra tela"; excluir abre uma
- * tela que diz o que se perde. As páginas abrem no navegador dentro do app,
- * com a seta de "fora do app".
+ * do perfil, na ordem do menu de referência do dono. De cima para baixo: o
+ * aviso da conta suspensa (só com a suspensão, seção 29, frente E); o perfil,
+ * com "Editar perfil" (bloco 9); o fã-clube, só com o programa aberto ou com
+ * candidatura (seção 34); a conta, com "Trocar e-mail" e "Trocar senha" (só
+ * na conta com senha, frente D; sem elas, a seção some); a privacidade e a
+ * segurança, juntas, com "Fãs bloqueados" (frente B) e as páginas dos termos
+ * e da privacidade; o "Sobre" (frente C), com o regulamento (só com o
+ * endereço no cache da loja) e o contato; a zona de perigo, com Sair e
+ * Excluir conta na cor de perigo; e, no rodapé, o nome e a versão. Sair não
+ * pede confirmação (dá para entrar de novo) e por isso não leva a seta de
+ * "abre outra tela"; excluir abre uma tela que diz o que se perde. As páginas
+ * abrem no navegador dentro do app, com a seta de "fora do app".
  *
  * Mora no domínio de composição `settings` (seção 29, decisão 11): os Ajustes
  * juntam o perfil, a conta (`auth`), a lista de bloqueados (`posts`) e o
@@ -172,23 +172,10 @@ export function SettingsScreen() {
         />
       </View>
       <FanClubSection />
-      <SectionLabel>{t('settings.security')}</SectionLabel>
-      <View style={styles.rows}>
-        <ListRow
-          leading={<IconTile icon={Ban} tone="glass" />}
-          title={t('settings.blockedFans')}
-          meta={t('settings.blockedFansMeta')}
-          trailing={<Chevron />}
-          onPress={() => router.push('/fas-bloqueados')}
-          accessibilityLabel={`${t('settings.blockedFans')}. ${t('settings.blockedFansMeta')}`}
-          accessibilityHint={t('settings.blockedFansHint')}
-          testID="settings-blocked-fans"
-        />
-      </View>
-      <SectionLabel>{t('settings.account')}</SectionLabel>
-      <View style={styles.rows}>
-        {canChangeCredentials ? (
-          <>
+      {canChangeCredentials ? (
+        <>
+          <SectionLabel>{t('settings.account')}</SectionLabel>
+          <View style={styles.rows}>
             <ListRow
               leading={<IconTile icon={Mail} tone="glass" />}
               title={t('settings.changeEmail')}
@@ -209,48 +196,20 @@ export function SettingsScreen() {
               accessibilityHint={t('settings.changePasswordHint')}
               testID="settings-change-password"
             />
-          </>
-        ) : null}
-        <ListRow
-          leading={<IconTile icon={LogOut} tone="glass" />}
-          title={t('settings.signOut')}
-          meta={email ? t('settings.signOutMeta', { email }) : undefined}
-          trailing={leaving ? <ActivityIndicator color={colors.textMuted} /> : undefined}
-          onPress={() => {
-            if (!leaving) signOut.mutate();
-          }}
-          busy={leaving}
-          accessibilityLabel={
-            email
-              ? `${t('settings.signOutLabel')}. ${t('settings.signOutMeta', { email })}`
-              : t('settings.signOutLabel')
-          }
-          accessibilityHint={t('settings.signOutHint')}
-          testID="settings-sign-out"
-        />
-        <ListRow
-          leading={<IconTile icon={Trash2} tone="action" />}
-          title={t('settings.deleteAccount')}
-          meta={t('settings.deleteAccountMeta')}
-          trailing={<Chevron />}
-          onPress={() => router.push('/excluir-conta')}
-          accessibilityLabel={`${t('settings.deleteAccount')}. ${t('settings.deleteAccountMeta')}`}
-          accessibilityHint={t('settings.deleteAccountHint')}
-          testID="settings-delete-account"
-        />
-      </View>
-      {signOut.isError ? (
-        <Text variant="caption" color={colors.danger} style={styles.message}>
-          {t('settings.signOutError')}
-        </Text>
+          </View>
+        </>
       ) : null}
-      <SectionLabel>{t('settings.about')}</SectionLabel>
+      <SectionLabel>{t('settings.privacySecurity')}</SectionLabel>
       <View style={styles.rows}>
-        <PageRow
-          icon={Shield}
-          titleKey="settings.privacy"
-          url={PRIVACY_URL}
-          testID="settings-privacy"
+        <ListRow
+          leading={<IconTile icon={Ban} tone="glass" />}
+          title={t('settings.blockedFans')}
+          meta={t('settings.blockedFansMeta')}
+          trailing={<Chevron />}
+          onPress={() => router.push('/fas-bloqueados')}
+          accessibilityLabel={`${t('settings.blockedFans')}. ${t('settings.blockedFansMeta')}`}
+          accessibilityHint={t('settings.blockedFansHint')}
+          testID="settings-blocked-fans"
         />
         <PageRow
           icon={FileText}
@@ -258,6 +217,15 @@ export function SettingsScreen() {
           url={TERMS_URL}
           testID="settings-terms"
         />
+        <PageRow
+          icon={Shield}
+          titleKey="settings.privacy"
+          url={PRIVACY_URL}
+          testID="settings-privacy"
+        />
+      </View>
+      <SectionLabel>{t('settings.about')}</SectionLabel>
+      <View style={styles.rows}>
         {rulesUrl ? (
           <PageRow
             icon={ScrollText}
@@ -276,13 +244,6 @@ export function SettingsScreen() {
           accessibilityHint={t('settings.contactHint')}
           testID="settings-contact"
         />
-        <ListRow
-          leading={<IconTile icon={Info} tone="glass" />}
-          title={t('settings.version')}
-          meta={version.meta}
-          accessibilityLabel={version.label}
-          testID="settings-version"
-        />
       </View>
       {contactFailed ? (
         <Text
@@ -295,6 +256,59 @@ export function SettingsScreen() {
           {contactError}
         </Text>
       ) : null}
+      <SectionLabel>{t('settings.dangerZone')}</SectionLabel>
+      <View style={styles.rows}>
+        <ListRow
+          leading={<IconTile icon={LogOut} tone="danger" />}
+          tone="danger"
+          title={t('settings.signOut')}
+          meta={email ? t('settings.signOutMeta', { email }) : undefined}
+          trailing={leaving ? <ActivityIndicator color={colors.textMuted} /> : undefined}
+          onPress={() => {
+            if (!leaving) signOut.mutate();
+          }}
+          busy={leaving}
+          accessibilityLabel={
+            email
+              ? `${t('settings.signOutLabel')}. ${t('settings.signOutMeta', { email })}`
+              : t('settings.signOutLabel')
+          }
+          accessibilityHint={t('settings.signOutHint')}
+          testID="settings-sign-out"
+        />
+        <ListRow
+          leading={<IconTile icon={Trash2} tone="danger" />}
+          tone="danger"
+          title={t('settings.deleteAccount')}
+          meta={t('settings.deleteAccountMeta')}
+          trailing={<Chevron />}
+          onPress={() => router.push('/excluir-conta')}
+          accessibilityLabel={`${t('settings.deleteAccount')}. ${t('settings.deleteAccountMeta')}`}
+          accessibilityHint={t('settings.deleteAccountHint')}
+          testID="settings-delete-account"
+        />
+      </View>
+      {signOut.isError ? (
+        <Text variant="caption" color={colors.danger} style={styles.message}>
+          {t('settings.signOutError')}
+        </Text>
+      ) : null}
+      {/* O nome e a versão, sem toque: um elemento só para o leitor de tela. */}
+      <View
+        accessible
+        accessibilityLabel={version.label}
+        testID="settings-version"
+        style={styles.footer}
+      >
+        <Text variant="label" color={colors.textSecondary} style={styles.footerText}>
+          {t('settings.appName')}
+        </Text>
+        {version.meta ? (
+          <Text variant="caption" color={colors.textMuted} style={styles.footerText}>
+            {version.meta}
+          </Text>
+        ) : null}
+      </View>
     </Screen>
   );
 }
@@ -313,6 +327,15 @@ const styles = StyleSheet.create({
   },
   message: {
     marginTop: spacing.md,
+    textAlign: 'center',
+  },
+  // O rodapé centralizado do menu de referência: o nome e, embaixo, a versão.
+  footer: {
+    marginTop: spacing.xxl,
+    alignItems: 'center',
+    gap: spacing.xs,
+  },
+  footerText: {
     textAlign: 'center',
   },
 });

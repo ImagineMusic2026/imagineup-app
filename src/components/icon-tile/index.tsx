@@ -6,7 +6,7 @@ import { Icon } from '@/components/icon';
 import { colors, layout, radii, tints } from '@/theme';
 import { withAlpha } from '@/utils/color';
 
-export type IconTileTone = 'action' | 'points' | 'events' | 'glass' | 'ink';
+export type IconTileTone = 'action' | 'points' | 'events' | 'danger' | 'glass' | 'ink';
 export type IconTileSize = 'md' | 'wide';
 
 type IconSource =
@@ -19,8 +19,9 @@ type IconSource =
 
 export type IconTileProps = IconSource & {
   /**
-   * Rosa, lima e ciano pelo assunto da missão ou recompensa; `glass` no que
-   * está bloqueado ou fora do saldo; `ink` sobre o card lima (ícone lima).
+   * Rosa, lima e ciano pelo assunto da missão ou recompensa; `danger` na zona
+   * de perigo dos Ajustes; `glass` no que está bloqueado ou fora do saldo;
+   * `ink` sobre o card lima (ícone lima).
    */
   tone?: IconTileTone;
   /** `md`: quadrado de 38 (1g). `wide`: largura toda e 74 de altura (1h). */
@@ -43,6 +44,7 @@ const TINTED = {
   action: colors.accent,
   points: colors.points,
   events: colors.events,
+  danger: colors.danger,
 } as const;
 
 function paint(tone: IconTileTone, size: IconTileSize): { background: string; foreground: string } {

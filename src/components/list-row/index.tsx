@@ -21,8 +21,11 @@ import { borderWidths, colors, spacing, type TypographyVariant } from '@/theme';
  */
 export type ListRowVariant = 'card' | 'compact' | 'divided';
 
-/** `locked`: ainda não abriu (missão bloqueada 1g). Borda e textos apagados, sem opacidade no todo. */
-export type ListRowTone = 'default' | 'locked';
+/**
+ * - `locked`: ainda não abriu (missão bloqueada 1g). Borda e textos apagados, sem opacidade no todo.
+ * - `danger`: a zona de perigo dos Ajustes (Sair e Excluir conta). Só o título na cor de perigo.
+ */
+export type ListRowTone = 'default' | 'locked' | 'danger';
 
 interface ListRowBaseProps {
   title: string;
@@ -158,6 +161,7 @@ export function ListRow(props: ListRowProps) {
     ref,
   } = props;
   const locked = tone === 'locked';
+  const titleColor = locked ? colors.textMuted : tone === 'danger' ? colors.danger : colors.text;
   const below = trailing ? trailingPlacement === 'below' : false;
   const pressable = props.onPress !== undefined;
   const group = pressable ? 'row' : (props.accessibilityGroup ?? 'row');
@@ -195,11 +199,7 @@ export function ListRow(props: ListRowProps) {
       >
         {leading ? <View style={[styles.leading, gapStyle]}>{leading}</View> : null}
         <View style={styles.texts}>
-          <Text
-            variant="label"
-            color={locked ? colors.textMuted : colors.text}
-            numberOfLines={titleNumberOfLines}
-          >
+          <Text variant="label" color={titleColor} numberOfLines={titleNumberOfLines}>
             {title}
           </Text>
           {meta ? (

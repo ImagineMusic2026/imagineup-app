@@ -147,6 +147,28 @@ describe('ListRow', () => {
     expect(screen.getByLabelText('Backstage. Bloqueada.')).toBeDisabled();
   });
 
+  it('de perigo: só o título na cor de perigo, com a meta e o toque de sempre', () => {
+    const onPress = jest.fn();
+    render(
+      <ListRow
+        testID="linha"
+        tone="danger"
+        title="Sair"
+        meta="Entrou como descarte@teste.imagineup"
+        onPress={onPress}
+      />,
+    );
+
+    expect(screen.getByText('Sair')).toHaveStyle({ color: colors.danger });
+    expect(screen.getByText('Entrou como descarte@teste.imagineup')).toHaveStyle({
+      color: colors.textMuted,
+    });
+    expect(screen.getByTestId('linha')).not.toHaveStyle({ borderColor: colors.borderSubtle });
+    fireEvent.press(screen.getByTestId('linha'));
+    expect(onPress).toHaveBeenCalledTimes(1);
+    expect(haptics.trigger).toHaveBeenCalledWith('tap');
+  });
+
   it('pressável ocupada: o leitor ouve que a ação está andando', () => {
     render(<ListRow title="Sair" onPress={jest.fn()} busy />);
     expect(screen.getByRole('button', { name: 'Sair' })).toBeBusy();

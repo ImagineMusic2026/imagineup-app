@@ -1,7 +1,14 @@
 import { onlineManager, QueryClientProvider } from '@tanstack/react-query';
 import { router, Stack } from 'expo-router';
 import { Tabs } from 'expo-router/js-tabs';
-import { act, fireEvent, renderRouter, screen, waitFor } from 'expo-router/testing-library';
+import {
+  act,
+  fireEvent,
+  renderRouter,
+  screen,
+  waitFor,
+  within,
+} from 'expo-router/testing-library';
 import * as WebBrowser from 'expo-web-browser';
 import { FirebaseError } from 'firebase/app';
 import {
@@ -11,6 +18,7 @@ import {
   reauthenticateWithCredential,
   signOut as firebaseSignOut,
 } from 'firebase/auth';
+import { LogOut, Trash2 } from 'lucide-react-native';
 import type { ReactNode } from 'react';
 import { AccessibilityInfo, Linking, Text } from 'react-native';
 
@@ -25,6 +33,7 @@ import { queryClient, queryPersister } from '@/services/query';
 import { haptics } from '@/services/haptics';
 import { usePreferencesStore } from '@/stores/preferences';
 import { useSessionStore } from '@/stores/session';
+import { colors } from '@/theme';
 
 jest.mock('firebase/app', () => ({
   FirebaseError: class FirebaseError extends Error {
@@ -258,21 +267,65 @@ describe('Ajustes', () => {
     expect(screen.getByTestId('settings-delete-account-trailing', hidden)).toBeTruthy();
   });
 
-  it('as seções na ordem: Perfil, Segurança, Conta e Sobre (seção 29)', () => {
+  it('Sair e Excluir conta na zona de perigo: o título e o ícone na cor de perigo', () => {
     renderRouter(appTree, { initialUrl: '/ajustes' });
 
+    expect(screen.getByRole('header', { name: 'Zona de perigo' })).toBeTruthy();
+    expect(screen.getByText('Sair')).toHaveStyle({ color: colors.danger });
+    expect(screen.getByText('Excluir conta')).toHaveStyle({ color: colors.danger });
+    for (const icon of [LogOut, Trash2]) {
+      expect(screen.UNSAFE_getByType(icon).props.color).toBe(colors.danger);
+    }
+    // A meta do Sair continua dizendo com quem o fã entrou.
+    expect(screen.getByText('Entrou como descarte@teste.imagineup')).toBeTruthy();
+  });
+
+  it('as seções na ordem do menu de referência: Perfil, Privacidade e segurança, Sobre e a zona de perigo', () => {
+    renderRouter(appTree, { initialUrl: '/ajustes' });
+
+    // Sem a conta com senha, a Conta não tem linha e some.
     expect(screen.getAllByRole('header').map((node) => node.props.children)).toEqual([
       'Ajustes',
       'Perfil',
-      'Segurança',
-      'Conta',
+      'Privacidade e segurança',
       'Sobre',
+      'Zona de perigo',
     ]);
     // Sem a suspensão, nada de aviso no topo.
     expect(screen.queryByTestId('suspended-notice')).toBeNull();
   });
 
-  it('a seção Segurança traz "Fãs bloqueados", que abre a lista na pilha do Perfil', async () => {
+  it('na conta com senha, a Conta vem depois do Perfil, antes da Privacidade e segurança', () => {
+    setSessionPassword(true);
+    renderRouter(appTree, { initialUrl: '/ajustes' });
+
+    expect(screen.getAllByRole('header').map((node) => node.props.children)).toEqual([
+      'Ajustes',
+      'Perfil',
+      'Conta',
+      'Privacidade e segurança',
+      'Sobre',
+      'Zona de perigo',
+    ]);
+  });
+
+  it('Privacidade e segurança: "Fãs bloqueados", os termos e a privacidade, nessa ordem', () => {
+    renderRouter(appTree, { initialUrl: '/ajustes' });
+
+    const rows = screen
+      .getAllByTestId(/^settings-(blocked-fans|terms|privacy|contact|sign-out|delete-account)$/)
+      .map((node) => node.props.testID);
+    expect(rows).toEqual([
+      'settings-blocked-fans',
+      'settings-terms',
+      'settings-privacy',
+      'settings-contact',
+      'settings-sign-out',
+      'settings-delete-account',
+    ]);
+  });
+
+  it('"Fãs bloqueados" abre a lista na pilha do Perfil', async () => {
     const view = renderRouter(appTree, { initialUrl: '/ajustes' });
 
     const row = screen.getByRole('button', { name: 'Fãs bloqueados. Veja e desbloqueie' });
@@ -377,7 +430,7 @@ describe('Ajustes', () => {
     expect(email).toHaveProp('accessibilityHint', 'Abre a troca de e-mail');
     const password = screen.getByRole('button', { name: 'Trocar senha. Pede a senha atual' });
     expect(password).toHaveProp('accessibilityHint', 'Abre a troca de senha');
-    // Na conta: as duas trocas antes de Sair e Excluir conta.
+    // As duas trocas na Conta, lá em cima; Sair e Excluir conta na zona de perigo, no fim.
     const rows = screen
       .getAllByTestId(/^settings-(change-email|change-password|sign-out|delete-account)$/)
       .map((node) => node.props.testID);
@@ -646,7 +699,7 @@ describe('excluir conta', () => {
   });
 });
 
-describe('Sobre (seção 29, frente C)', () => {
+describe('as páginas, o Sobre e o rodapé (seção 29, frente C)', () => {
   it('privacidade e termos abrem no navegador dentro do app, com a seta de fora do app', () => {
     renderRouter(appTree, { initialUrl: '/ajustes' });
 
@@ -725,13 +778,18 @@ describe('Sobre (seção 29, frente C)', () => {
     expect(announced()).toContain(message);
   });
 
-  it('a versão do binário embutido, sem toque', () => {
+  it('o rodapé: o nome e a versão do binário embutido, centralizados, sem toque', () => {
     renderRouter(appTree, { initialUrl: '/ajustes' });
 
     const version = screen.getByTestId('settings-version');
     expect(version).toHaveProp('accessibilityLabel', 'Versão do app, 0.1.0');
     expect(version).not.toHaveProp('accessibilityRole', 'button');
-    expect(screen.getByText('Versão 0.1.0')).toBeTruthy();
+    expect(version).toHaveStyle({ alignItems: 'center' });
+    // Um elemento só para o leitor: o nome e a versão ficam dentro dele.
+    expect(within(version).getByText('ImagineUP')).toBeTruthy();
+    expect(within(version).getByText('Versão 0.1.0')).toBeTruthy();
+    // A antiga linha "Versão do app" saiu: o rodapé tomou o lugar dela.
+    expect(screen.queryByText('Versão do app')).toBeNull();
   });
 
   it('num EAS Update, a versão traz a data e o id curto do update', () => {

@@ -22,7 +22,7 @@ const TRAILING_ICON_SIZE = 18;
 
 /**
  * O bloco "Fã-clube" dos Ajustes (seção 34, 34.9, item 1), entre o Perfil e a
- * Segurança: a linha "Tenha seu fã-clube" (ou "Meu fã-clube", com o fã-clube
+ * Conta: a linha "Tenha seu fã-clube" (ou "Meu fã-clube", com o fã-clube
  * aprovado), com a meta do estado, que abre o "/meu-fa-clube", e embaixo a
  * entrada fixa "Fã-clubes que sigo" (item 10). Nada aparece sem a resposta do
  * servidor novo: com a `api` de antes da publicação (o 404) ou sem resposta,

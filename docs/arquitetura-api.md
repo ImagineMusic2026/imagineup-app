@@ -8423,6 +8423,8 @@ O resultado do `removeFanEngagement` ganha `profileReports`. O `store.test.ts` n
 
 **Frente C: Ajustes (`SettingsScreen`, `settings/views/settings.tsx`)**
 
+(26/10/2026: a ordem mudou para a do menu de referência do dono. Perfil; Fã-clube; Conta, só com as duas trocas, e sem elas a seção some; Privacidade e segurança, com "Fãs bloqueados", "Termos de uso" e "Política de privacidade"; Sobre, com o regulamento e "Fale com a equipe"; Zona de perigo, com "Sair" e "Excluir conta" no `colors.danger` (o `tone="danger"` do `ListRow` e do `IconTile`); e, no lugar da linha "Versão do app", um rodapé centralizado com "ImagineUP" e a versão embaixo, com o mesmo rótulo e o mesmo `testID`. O que segue é o desenho da seção 29.)
+
 De cima para baixo:
 
 - O aviso de conta suspensa (frente E), só com a suspensão.
@@ -8600,7 +8602,7 @@ Decisão do dono de 13/10/2026: publicar tudo junto. Este bloco saiu junto com o
    - uma conta de demonstração com o onboarding feito, com a senha só nas notas de revisão;
    - uma segunda conta de fã com bio, um comentário num post publicado e pontos numa temporada ativa;
    - centrais no ar (pelo menos uma; três deixam a 1l como desenhada) e um show marcado;
-   - as notas de revisão: o bloco "Segurança" do perfil público ("Denunciar perfil", "Bloquear" e "Bloquear e denunciar"), os três pontos do comentário (denunciar e bloquear), "Fãs bloqueados" em Perfil > Ajustes > Segurança, o contato em Ajustes > Sobre, "Excluir conta" em Perfil > Ajustes > Conta, o prazo da equipe na fila (pergunta 4 da cliente) e o filtro (seção 30): onde ele vale (o comentário, o nome, o @, a bio, a cidade e as redes), que a recusa vem com uma frase e o link para a equipe e nada é publicado, e um texto de exemplo para o revisor tentar, tirado da lista legível (`filtro-lista/termos.json`) e escrito só nas notas de revisão das lojas, nunca no repositório;
+   - as notas de revisão: o bloco "Segurança" do perfil público ("Denunciar perfil", "Bloquear" e "Bloquear e denunciar"), os três pontos do comentário (denunciar e bloquear), "Fãs bloqueados" em Perfil > Ajustes > Privacidade e segurança, o contato em Ajustes > Sobre, "Excluir conta" em Perfil > Ajustes > Zona de perigo, o prazo da equipe na fila (pergunta 4 da cliente) e o filtro (seção 30): onde ele vale (o comentário, o nome, o @, a bio, a cidade e as redes), que a recusa vem com uma frase e o link para a equipe e nada é publicado, e um texto de exemplo para o revisor tentar, tirado da lista legível (`filtro-lista/termos.json`) e escrito só nas notas de revisão das lojas, nunca no repositório;
    - no Play Console, o endereço web para pedir a exclusão da conta: `https://imagineup-painel.vercel.app/privacidade/#exclusao` (o `contato/` do site já aponta para lá; muda na UP-46), com o texto da seção acertado pela cliente (o caminho real no app e o e-mail para quem não consegue entrar, pergunta 3 da cliente);
    - o painel com a lista "Perfis denunciados" no ar (passo 4): sem ela, a denúncia de perfil não chega à equipe, e a 1.2 pede ação rápida sobre as denúncias. No ar desde 14/10/2026 (PR #3 do `imagineup-admin`);
    - o filtro do que é publicado (pergunta 3 do dono): feito na seção 30 e publicado junto com este bloco em 14/10/2026 (passo 2). Para as lojas, faltam a lista revisada pela cliente (pergunta 2 da cliente em 30.14) e o palavrão barrado em todo campo até a aprovação (pergunta 1 da cliente em 30.14);

@@ -17,7 +17,7 @@ import { usePreferencesStore } from '@/stores/preferences';
 import { useSessionStore } from '@/stores/session';
 
 // "Fãs bloqueados" (seção 29 de docs/arquitetura-api.md, frente B): a lista
-// para desbloquear, aberta pela seção "Segurança" dos Ajustes.
+// para desbloquear, aberta pela seção "Privacidade e segurança" dos Ajustes.
 
 jest.mock('firebase/app', () => ({ FirebaseError: class FirebaseError extends Error {} }));
 jest.mock('firebase/auth', () => ({}));
@@ -181,10 +181,10 @@ afterEach(() => {
 });
 
 describe('Fãs bloqueados (seção 29, frente B)', () => {
-  it('nas fixtures, a entrada pelos Ajustes, na seção "Segurança", e a linha da fa-rank-13 do seed', async () => {
+  it('nas fixtures, a entrada pelos Ajustes, na seção "Privacidade e segurança", e a linha da fa-rank-13 do seed', async () => {
     const view = renderRouter(appTree, { initialUrl: '/ajustes' });
 
-    expect(screen.getByRole('header', { name: 'Segurança' })).toBeTruthy();
+    expect(screen.getByRole('header', { name: 'Privacidade e segurança' })).toBeTruthy();
     const entry = screen.getByRole('button', { name: 'Fãs bloqueados. Veja e desbloqueie' });
     expect(entry.props.accessibilityHint).toBe('Abre a lista de fãs bloqueados');
     fireEvent.press(entry);
