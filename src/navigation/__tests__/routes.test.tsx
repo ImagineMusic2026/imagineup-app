@@ -46,6 +46,7 @@ const appTree = {
   'meu-fa-clube/nova-publicacao': label('fan-club-new-post'),
   'meu-fa-clube/regras': label('fan-club-rules'),
   'fa-clube/[clubeId]': label('fan-club'),
+  'fa-clube/publicacao/[publicacaoId]': label('fan-club-post'),
   'denunciar-publicacao/[publicacaoId]': label('report-fan-club-post'),
   'deixar-de-seguir/[clubeId]': label('unfollow-fan-club'),
   '(tabs)/(perfil)/fa-clubes-que-sigo': label('followed-fan-clubs'),
@@ -195,6 +196,14 @@ describe('rotas do app', () => {
       expect(rootRoutes(view)).toEqual([route]);
     },
   );
+
+  it('a tela da publicação do fã-clube abre a frio fora das abas, na pilha raiz, sem confundir com a página (seção 37)', () => {
+    const view = renderRouter(appTree, { initialUrl: '/fa-clube/publicacao/fcp-1' });
+    expect(view.getByText('fan-club-post')).toBeTruthy();
+    expect(view.getPathname()).toBe('/fa-clube/publicacao/fcp-1');
+    expect(view.getSegments()).toEqual(['fa-clube', 'publicacao', '[publicacaoId]']);
+    expect(rootRoutes(view)).toEqual(['fa-clube/publicacao/[publicacaoId]']);
+  });
 
   it('"Fã-clubes que sigo" por link abre na pilha do Perfil, com a raiz da aba embaixo (seção 34)', () => {
     const view = renderRouter(appTree, { initialUrl: '/fa-clubes-que-sigo' });

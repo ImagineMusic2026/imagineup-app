@@ -1,6 +1,9 @@
 import {
+  keepPreviousData,
+  notifyManager,
   useInfiniteQuery,
   useMutation,
+  useMutationState,
   useQuery,
   useQueryClient,
   type InfiniteData,
@@ -11,10 +14,11 @@ import { AccessibilityInfo, Alert } from 'react-native';
 
 import { artistKeys, useJoinCelebration } from '@/domains/artists';
 import { inviteLinkId } from '@/domains/invites';
-import { missionKeys, rewardsRefresh } from '@/domains/missions';
+import { describeRewards, missionKeys, rewardsRefresh } from '@/domains/missions';
 import { postKeys } from '@/domains/posts';
 import {
   profileKeys,
+  useFanIdentity,
   useMyInviteQuery,
   useRegisterInviteLinkMutation,
   type FanContact,
@@ -32,6 +36,7 @@ import { parseWhatsapp } from '@/utils/whatsapp';
 
 import {
   acceptFanClubRules,
+  addFanClubComment,
   applyForFanClub,
   clearFanClubReaction,
   createFanClubPost,
@@ -39,7 +44,10 @@ import {
   fetchArtistFanClubs,
   fetchFanClub,
   fetchFanClubArtists,
+  fetchFanClubComments,
   fetchFanClubFeed,
+  fetchFanClubMentions,
+  fetchFanClubPost,
   fetchFanClubPosts,
   fetchFollowedFanClubs,
   fetchMyFanClub,
@@ -61,8 +69,12 @@ import { fanClubKeys } from './keys';
 import { withReaction } from './reactions';
 import { shareFanClub, type ShareableFanClub } from './share';
 import type {
+  AddFanClubCommentResult,
   FanClubApplicationBody,
   FanClubCard,
+  FanClubCommentLine,
+  FanClubCommentLineStatus,
+  FanClubCommentPage,
   FanClubListPage,
   FanClubPage,
   FanClubPerson,
@@ -251,6 +263,8 @@ export const fanClubMutationKeys = {
   report: ['fanClub', 'report'] as const,
   /** As reações (seção 37), em fila por publicação (o `scope`). */
   react: ['fanClub', 'react'] as const,
+  /** Os comentários e as respostas (seção 37), em fila por publicação, só na memória. */
+  comment: ['fanClub', 'comment'] as const,
 };
 
 /** Uma tentativa: o corpo que foi (em texto, para comparar) e a chave dele. */
@@ -706,23 +720,13 @@ const isPost = (item: unknown): item is FanClubPost =>
 
 /**
  * A publicação que a sheet "Denunciar publicação" mostra, lida na abertura
- * das páginas já carregadas (a página do fã-clube e a Início), no molde do
- * `useCachedComment`. Aberta a frio, sem ela, `undefined`, e a sheet fecha:
- * nada do fã-clube abre antes da trava.
+ * das páginas já carregadas (a página do fã-clube e a Início) ou da tela da
+ * publicação (seção 37, 37.9), no molde do `useCachedComment`. Aberta a frio,
+ * sem ela, `undefined`, e a sheet fecha: nada do fã-clube abre antes da trava.
  */
 export function useCachedFanClubPost(postId: string): FanClubPost | undefined {
   const client = useQueryClient();
-  const [post] = useState(() => {
-    if (!postId) return undefined;
-    for (const [, data] of client.getQueriesData({ queryKey: fanClubKeys.public() })) {
-      if (!isPostPages(data)) continue;
-      for (const page of data.pages) {
-        const found = page.items.find((item) => isPost(item) && item.id === postId);
-        if (found) return found;
-      }
-    }
-    return undefined;
-  });
+  const [post] = useState(() => (postId ? readCachedPost(client, postId) : undefined));
   return post;
 }
 
@@ -1253,4 +1257,566 @@ export function useReactToFanClubPostMutation(postId: string) {
         idempotencyKey: `club-react-${createIdempotencyKey()}`,
       }),
   };
+}
+
+// --- A tela da publicação (seção 37, 37.9; a etapa 6 de 37.13) -------------------------
+
+/**
+ * A publicação no ar (`GET /fan-club-posts/:postId`), só depois da trava. Fora
+ * do disco, como a página: a publicação sai do ar, e o gestor pode ser
+ * bloqueado. O 404 não tenta de novo (`shouldRetry`).
+ */
+export function useFanClubPostQuery(postId: string, enabled: boolean) {
+  const options = queryOptionsFor('fanClub');
+  return useQuery({
+    ...options,
+    queryKey: fanClubKeys.post(postId),
+    queryFn: () => fetchFanClubPost(postId),
+    enabled: enabled && postId !== '',
+    staleTime: 30_000,
+    meta: { ...options.meta, persist: false },
+  });
+}
+
+/**
+ * Os comentários de cima (`replyTo` null), do mais novo, ou as respostas de um
+ * deles, da mais antiga, 20 por página. Fora do disco, como tudo o que os fãs
+ * veem do fã-clube.
+ */
+export function useFanClubCommentsQuery(postId: string, replyTo: string | null, enabled: boolean) {
+  const options = queryOptionsFor('fanClub');
+  return useInfiniteQuery({
+    ...options,
+    queryKey: fanClubKeys.comments(postId, replyTo),
+    queryFn: ({ pageParam }) => fetchFanClubComments({ postId, replyTo, cursor: pageParam }),
+    initialPageParam: null as string | null,
+    getNextPageParam: (lastPage) => lastPage.nextCursor,
+    enabled: enabled && postId !== '',
+    meta: { ...options.meta, persist: false },
+  });
+}
+
+/**
+ * A conversa da sugestão do @ (`GET /fan-clubs/:clubId/mentions`, sem o `q`,
+ * 37.7): pedida uma vez, quando o campo ganha o foco, e guardada só enquanto
+ * a tela está aberta (sai do cache quando ninguém a observa).
+ */
+export function useFanClubMentionsQuery(clubId: string, postId: string | null, enabled: boolean) {
+  const options = queryOptionsFor('fanClub');
+  return useQuery({
+    ...options,
+    queryKey: fanClubKeys.mentions(clubId, postId),
+    queryFn: () => fetchFanClubMentions({ clubId, postId, q: null }),
+    enabled: enabled && clubId !== '',
+    staleTime: Infinity,
+    gcTime: 0,
+    meta: { ...options.meta, persist: false },
+  });
+}
+
+/**
+ * A busca do @ pelo começo (`?q=`, de 2 letras em diante, 37.7). Enquanto a
+ * próxima não chega, a de antes fica na barra (filtrada pelo começo de agora).
+ */
+export function useFanClubMentionSearchQuery(
+  clubId: string,
+  postId: string | null,
+  q: string,
+  enabled: boolean,
+) {
+  const options = queryOptionsFor('fanClub');
+  return useQuery({
+    ...options,
+    queryKey: fanClubKeys.mentionSearch(clubId, q),
+    queryFn: () => fetchFanClubMentions({ clubId, postId, q }),
+    enabled: enabled && clubId !== '',
+    staleTime: 60_000,
+    placeholderData: keepPreviousData,
+    meta: { ...options.meta, persist: false },
+  });
+}
+
+/** O que o comentário leva, e o que a linha local mostra enquanto ele vai. */
+interface AddCommentVariables {
+  postId: string;
+  clubId: string;
+  text: string;
+  /** O comentário respondido (o de cima ou uma resposta); null no comentário de cima. */
+  replyToId: string | null;
+  /** O comentário de cima da conversa, embaixo do qual a linha aparece; null no de cima. */
+  threadId: string | null;
+  idempotencyKey: string;
+  /** O id da linha local, que fica na tela depois de o servidor gravar. */
+  localId: string;
+  sentAt: string;
+  author: FanClubPerson;
+  /** Quem comenta é o gestor: a marca "Gestor" na linha local. */
+  isManager: boolean;
+}
+
+/** Para quem a resposta vai: o comentário respondido e o de cima da conversa dele. */
+export interface FanClubReplyTarget {
+  commentId: string;
+  threadId: string;
+}
+
+/**
+ * O comentário fica com a tentativa (a linha "Não enviado" e a mesma chave na
+ * nova tentativa): na falha incerta, que pode ter gravado, e no ritmo depois
+ * das novas tentativas, que não gravou nada, como no Mural.
+ */
+function keepsCommentAttempt(error: unknown): boolean {
+  return isUncertainFailure(error) || (error instanceof ApiError && error.isRateLimited);
+}
+
+const commentVariables = (mutation: { state: { variables: unknown } }) =>
+  mutation.state.variables as AddCommentVariables | undefined;
+
+/** A mutação que deu certo, ou que foi trocada por outra, sai das linhas locais. */
+function forgetComment(client: QueryClient, localId: string): void {
+  const cache = client.getMutationCache();
+  cache
+    .findAll({
+      mutationKey: fanClubMutationKeys.comment,
+      predicate: (mutation) => commentVariables(mutation)?.localId === localId,
+    })
+    .forEach((mutation) => cache.remove(mutation));
+}
+
+/** A linha do comentário do fã enquanto ele não está na lista do servidor. */
+function localCommentLine(
+  variables: AddCommentVariables,
+  status: FanClubCommentLineStatus,
+): FanClubCommentLine {
+  return {
+    id: variables.localId,
+    postId: variables.postId,
+    clubId: variables.clubId,
+    author: variables.author,
+    isManager: variables.isManager,
+    text: variables.text,
+    mentions: [],
+    replyToId: variables.threadId,
+    replyCount: 0,
+    createdAt: variables.sentAt,
+    hidden: null,
+    review: null,
+    status,
+  };
+}
+
+/**
+ * O estado da linha pelo da mutação: o texto recusado pelo filtro é "Não
+ * publicado", e o resto dos erros, "Não enviado".
+ */
+function localCommentStatus(state: { status: string; error: unknown }): FanClubCommentLineStatus {
+  if (state.status !== 'error') return 'pending';
+  return actionRefusal(state.error, 'clubComment').type === 'content' ? 'refused' : 'failed';
+}
+
+export interface LocalFanClubComments {
+  /** Indo ou recusados, do mais novo ao mais antigo, os de cima e as respostas. */
+  comments: FanClubCommentLine[];
+  /** Algum está indo agora. */
+  sending: boolean;
+}
+
+/**
+ * Os comentários do fã que ainda não estão na lista do servidor saem das
+ * próprias mutações (o `useMutationState`, como no Mural), só na memória: sem
+ * fila offline e sem disco (decisão 23 de 37.1). O que o servidor gravou sai
+ * daqui e entra na lista.
+ */
+export function useLocalFanClubComments(postId: string): LocalFanClubComments {
+  const entries = useMutationState({
+    filters: {
+      mutationKey: fanClubMutationKeys.comment,
+      predicate: (mutation) =>
+        commentVariables(mutation)?.postId === postId &&
+        (mutation.state.status === 'pending' || mutation.state.status === 'error'),
+    },
+    select: (mutation) => ({
+      variables: commentVariables(mutation) as AddCommentVariables,
+      status: localCommentStatus(mutation.state),
+      sending: mutation.state.status === 'pending',
+    }),
+  });
+  return {
+    // O cache guarda do mais antigo ao mais novo; a lista é ao contrário.
+    comments: entries.map((entry) => localCommentLine(entry.variables, entry.status)).reverse(),
+    sending: entries.some((entry) => entry.sending),
+  };
+}
+
+type CommentPages = InfiniteData<FanClubCommentPage, string | null>;
+
+/**
+ * A lista não pode perder o que acabou de ser gravado: a busca que saiu antes
+ * da gravação voltaria sem ele, por cima dele. Ela é cancelada e sai de novo,
+ * já com ele (o molde do Mural).
+ */
+function refetchCommentList(client: QueryClient, postId: string, replyTo: string | null): void {
+  const queryKey = fanClubKeys.comments(postId, replyTo);
+  void client
+    .cancelQueries({ queryKey, exact: true })
+    .then(() => client.invalidateQueries({ queryKey, exact: true }));
+}
+
+/** O comentário que o servidor gravou na lista: o de cima no topo; a resposta no fim das carregadas. */
+function placeComment(data: CommentPages, line: FanClubCommentLine): CommentPages {
+  if (data.pages.some((page) => page.items.some((item) => item.id === line.id))) return data;
+  const target = line.replyToId === null ? 0 : data.pages.length - 1;
+  return {
+    ...data,
+    pages: data.pages.map((page, index) =>
+      index !== target
+        ? page
+        : {
+            ...page,
+            items: line.replyToId === null ? [line, ...page.items] : [...page.items, line],
+          },
+    ),
+  };
+}
+
+/**
+ * O servidor gravou: o comentário entra na lista com o id local de quando ia,
+ * para a linha seguir a mesma na tela (o de cima no topo; a resposta no fim
+ * das respostas carregadas da conversa dele, que ganha +1 no `replyCount`), e
+ * o `commentCount` da publicação sobe em todo cache do que os fãs veem e em
+ * "Minhas publicações" do gestor. Sem pontos (37.5): só as missões e as
+ * conquistas buscam de novo quando pedem.
+ */
+function commitComment(
+  client: QueryClient,
+  variables: AddCommentVariables,
+  result: AddFanClubCommentResult,
+): void {
+  const {
+    completedMissions: _missions,
+    levelUp: _level,
+    unlockedAchievements: _achievements,
+    missionsChanged: _changed,
+    ...comment
+  } = result;
+  const line: FanClubCommentLine = { ...comment, localId: variables.localId };
+  const { postId } = variables;
+  const threadId = comment.replyToId;
+  notifyManager.batch(() => {
+    const listKey = fanClubKeys.comments(postId, threadId);
+    let placed = false;
+    client.setQueryData<CommentPages>(listKey, (data) => {
+      if (!data || data.pages.length === 0) return data;
+      placed = true;
+      return placeComment(data, line);
+    });
+    if (threadId !== null) {
+      client.setQueryData<CommentPages>(fanClubKeys.comments(postId, null), (data) =>
+        data
+          ? {
+              ...data,
+              pages: data.pages.map((page) => ({
+                ...page,
+                items: page.items.map((item) =>
+                  item.id === threadId ? { ...item, replyCount: item.replyCount + 1 } : item,
+                ),
+              })),
+            }
+          : data,
+      );
+    }
+    patchFanClubPost(client, postId, (post) =>
+      post.commentCount === undefined ? post : { ...post, commentCount: post.commentCount + 1 },
+    );
+    // O "Ver comentários (N)" de "Minhas publicações" do gestor, fora do `public()`.
+    client.setQueryData<InfiniteData<FanClubListPage<OwnFanClubPost>, string | null>>(
+      fanClubKeys.myPosts(),
+      (data) =>
+        data && {
+          ...data,
+          pages: data.pages.map((page) => ({
+            ...page,
+            items: page.items.map((item) =>
+              item.id === postId && item.commentCount !== undefined
+                ? { ...item, commentCount: item.commentCount + 1 }
+                : item,
+            ),
+          })),
+        },
+    );
+    const listQuery = client.getQueryCache().find({ queryKey: listKey, exact: true });
+    if (listQuery && (!placed || listQuery.state.fetchStatus !== 'idle')) {
+      refetchCommentList(client, postId, threadId);
+    }
+  });
+  const refresh = rewardsRefresh(result);
+  if (refresh.missions) void client.invalidateQueries({ queryKey: missionKeys.all });
+  if (refresh.achievements) void client.invalidateQueries({ queryKey: profileKeys.achievements() });
+}
+
+export interface AddFanClubCommentOptions {
+  /**
+   * O servidor recusou com a tela aberta: devolve o texto ao campo se o fã não
+   * começou outro. `true` quando devolveu (a linha some). O `localId` é o da
+   * linha do envio, para a tela devolver também o modo resposta dele; null
+   * quando o respondido saiu da vista (o modo resposta não volta).
+   */
+  restoreDraft?: (text: string, localId: string | null) => boolean;
+  /** Leva o foco ao campo: o texto recusado pelo filtro volta para o fã revisar. */
+  focusDraft?: () => void;
+  /** A conta suspensa: o campo dá lugar à frase, e o texto não tem para onde voltar. */
+  suspended?: boolean;
+  /**
+   * O comentário respondido saiu da vista (o `replyToId` do envio): a tela
+   * sai do modo resposta, se ele ainda é para esse comentário.
+   */
+  onReplyGone?: (replyToId: string | null) => void;
+}
+
+/**
+ * Por que o último comentário foi recusado, para a frase embaixo do campo: o
+ * teto do dia, a conta suspensa, o texto fora dos Termos de uso ou o
+ * comentário respondido que saiu da vista. A tela tira do tipo o link
+ * "Escrever para a equipe".
+ */
+export interface FanClubCommentRefusal {
+  key: TranslationKey;
+  type: 'suspended' | 'dailyLimit' | 'content' | 'replyGone';
+}
+
+/** A publicação em que se comenta: o fã-clube e se quem comenta é o gestor. */
+export interface CommentTarget {
+  id: string;
+  clubId: string;
+  isOwner: boolean;
+}
+
+/**
+ * Comentar e responder numa publicação do fã-clube (`POST
+ * /fan-club-posts/:postId/comments`, 37.3). A linha aparece na hora
+ * (`useLocalFanClubComments`), e o que o servidor devolve entra na lista e no
+ * total, com o toque e o anúncio. Sem fila offline e sem disco (decisão 23 de
+ * 37.1): `networkMode: 'always'` e a mutação fora do cache salvo; o `scope`
+ * por publicação manda os comentários na ordem em que o fã escreveu, e a
+ * falha fica na memória enquanto o app está aberto.
+ *
+ * Recusado pelo servidor, com o campo vazio, o texto volta para ele (a linha
+ * some), e o próximo envio leva chave nova; a falha incerta e o ritmo deixam a
+ * linha "Não enviado", e tocar tenta de novo com a mesma chave. O teto do dia
+ * e a conta suspensa têm a frase embaixo do campo, anunciada; o texto barrado
+ * pelo filtro, a frase com o foco no campo, ou a linha "Não publicado" quando
+ * o campo já tem outro texto (como no Mural). O `not_following` (deixou de
+ * seguir noutro aparelho) deixa a linha "Não enviado" e busca de novo o que os
+ * fãs veem, como a reação: o campo dá lugar ao "Seguir o fã-clube", e, depois
+ * de seguir, o toque na linha manda de novo. O comentário respondido que saiu
+ * da vista (o 404 do comentário) devolve o texto sem o modo resposta e busca
+ * de novo os de cima e a conversa dele; a publicação que saiu do ar some das
+ * telas. O último comentário a terminar busca a publicação de novo, para o
+ * total acertar com o servidor (o molde do Mural).
+ */
+export function useAddFanClubCommentMutation(
+  target: CommentTarget,
+  { restoreDraft, focusDraft, suspended = false, onReplyGone }: AddFanClubCommentOptions = {},
+) {
+  const client = useQueryClient();
+  const identity = useFanIdentity();
+  const [refusal, setRefusal] = useState<FanClubCommentRefusal | null>(null);
+  const restoreRef = useRef(restoreDraft);
+  const focusRef = useRef(focusDraft);
+  const suspendedRef = useRef(suspended);
+  const replyGoneRef = useRef(onReplyGone);
+  const mounted = useMounted();
+  const postId = target.id;
+
+  useEffect(() => {
+    restoreRef.current = restoreDraft;
+    focusRef.current = focusDraft;
+    suspendedRef.current = suspended;
+    replyGoneRef.current = onReplyGone;
+  }, [restoreDraft, focusDraft, suspended, onReplyGone]);
+
+  /**
+   * O texto recusado pelo filtro: com o campo vazio, ele volta, com a frase, o
+   * toque de erro, o anúncio e o foco no campo; com o campo ocupado, a linha
+   * fica "Não publicado"; com a conta suspensa, sem campo, o anúncio só diz o
+   * motivo. No toque da linha (`retrying`), pede para esvaziar o campo.
+   */
+  const refuseContent = (
+    variables: AddCommentVariables,
+    key: TranslationKey,
+    retrying: boolean,
+  ): void => {
+    if (suspendedRef.current) {
+      haptics.trigger('error');
+      AccessibilityInfo.announceForAccessibility(t('post.comments.refusedLockedAnnouncement'));
+      return;
+    }
+    if (restoreRef.current?.(variables.text, variables.localId)) {
+      forgetComment(client, variables.localId);
+      setRefusal({ key, type: 'content' });
+      haptics.trigger('error');
+      AccessibilityInfo.announceForAccessibility(t(key));
+      focusRef.current?.();
+      return;
+    }
+    haptics.trigger(retrying ? 'warning' : 'error');
+    AccessibilityInfo.announceForAccessibility(
+      t(retrying ? 'post.comments.refusedBusy' : 'post.comments.refusedAnnouncement'),
+    );
+  };
+
+  /** A recusa que não é de conteúdo, com a tela aberta. */
+  const refuse = (error: unknown, variables: AddCommentVariables): void => {
+    haptics.trigger('error');
+    if (isRefused(error, 'not_following')) {
+      AccessibilityInfo.announceForAccessibility(t('fanClub.errors.refused.notFollowing'));
+      return;
+    }
+    const replyGone =
+      error instanceof ApiError && error.code === FAN_CLUB_ERROR_CODES.commentNotFound;
+    const refused = actionRefusal(error, 'clubComment');
+    let told: FanClubCommentRefusal | null = null;
+    if (replyGone) {
+      replyGoneRef.current?.(variables.replyToId);
+      told = { key: 'fanClub.commentNotFound', type: 'replyGone' };
+    } else if (refused.type === 'dailyLimit' || refused.type === 'suspended') {
+      told = { key: refused.key, type: refused.type };
+    }
+    if (told) setRefusal(told);
+    // O respondido que saiu não reabre o modo resposta: o texto volta como comentário de cima.
+    if (
+      !keepsCommentAttempt(error) &&
+      restoreRef.current?.(variables.text, replyGone ? null : variables.localId)
+    ) {
+      forgetComment(client, variables.localId);
+      AccessibilityInfo.announceForAccessibility(t(told ? told.key : 'post.composer.error'));
+      return;
+    }
+    AccessibilityInfo.announceForAccessibility(
+      t(told ? told.key : 'post.comments.failedAnnouncement'),
+    );
+  };
+
+  const mutation = useMutation<AddFanClubCommentResult, Error, AddCommentVariables, StartedBy>({
+    mutationKey: fanClubMutationKeys.comment,
+    scope: { id: `fan-club-comment-${postId}` },
+    // A falha fica na tela como "Não enviado" até o fã tentar de novo; as que
+    // dão certo saem na hora (`forgetComment`), e sair da conta limpa o resto.
+    gcTime: Infinity,
+    networkMode: 'always',
+    meta: { persist: false, suspendedAlert: false },
+    mutationFn: ({ postId: id, text, replyToId, idempotencyKey }) =>
+      addFanClubComment({ postId: id, text, replyToId, idempotencyKey }),
+    onMutate: startedBy,
+    onSuccess: (result, variables, started) => {
+      if (!sameSession(started)) return;
+      commitComment(client, variables, result);
+      forgetComment(client, variables.localId);
+      // A contagem certa vem do servidor, mas com outro comentário ainda indo
+      // ela voltaria sem ele: o último a terminar busca a publicação de novo,
+      // como no Mural (a busca que leu o servidor antes da resposta contaria
+      // este duas vezes, com o +1 de cima).
+      const othersGoing = client.getMutationCache().findAll({
+        mutationKey: fanClubMutationKeys.comment,
+        status: 'pending',
+        predicate: (mutation) => {
+          const other = commentVariables(mutation);
+          return other?.postId === variables.postId && other.localId !== variables.localId;
+        },
+      });
+      if (othersGoing.length === 0) refreshPost(client, variables.postId);
+      if (!mounted.current) return;
+      haptics.trigger('commentSent');
+      const { announcement } = describeRewards(0, result);
+      AccessibilityInfo.announceForAccessibility(
+        announcement ? `${t('post.composer.sent')} ${announcement}` : t('post.composer.sent'),
+      );
+    },
+    onError: (error, variables, started) => {
+      if (!sameSession(started)) return;
+      if (error instanceof ApiError && error.code === FAN_CLUB_ERROR_CODES.commentNotFound) {
+        // O respondido pode ser uma resposta: a conversa aberta dele busca de novo também.
+        refetchCommentList(client, variables.postId, null);
+        if (variables.threadId !== null) {
+          refetchCommentList(client, variables.postId, variables.threadId);
+        }
+      } else if (error instanceof ApiError && error.kind === 'notFound') {
+        // A publicação saiu do ar (ou a rota não existe: o servidor de antes).
+        void client.invalidateQueries({ queryKey: fanClubKeys.public() });
+      } else if (isRefused(error, 'not_following')) {
+        // Como na reação: a página, as listas, os seguidos e a Início dizem que segue.
+        void client.invalidateQueries({ queryKey: fanClubKeys.public() });
+      }
+      if (!mounted.current) return;
+      const refused = actionRefusal(error, 'clubComment');
+      if (refused.type === 'content') {
+        refuseContent(variables, refused.key, false);
+        return;
+      }
+      refuse(error, variables);
+    },
+  });
+
+  /** Manda o texto (já validado), de cima ou em resposta; devolve o id local da linha nova. */
+  const send = (text: string, reply: FanClubReplyTarget | null): string => {
+    setRefusal(null);
+    const localId = `club-comment-local-${createIdempotencyKey()}`;
+    mutation.mutate({
+      postId,
+      clubId: target.clubId,
+      text,
+      replyToId: reply?.commentId ?? null,
+      threadId: reply?.threadId ?? null,
+      idempotencyKey: `club-comment-${createIdempotencyKey()}`,
+      localId,
+      sentAt: new Date().toISOString(),
+      author: {
+        uid: identity.uid ?? '',
+        name: identity.name ?? t('post.comments.fallbackName'),
+        username: null,
+        photoURL: identity.photoURL,
+      },
+      isManager: target.isOwner,
+    });
+    return localId;
+  };
+
+  /**
+   * Toque na linha "Não enviado" ou "Não publicado". A recusa de conteúdo
+   * nunca manda de novo: devolve o texto ao campo vazio, ou pede para
+   * esvaziá-lo. O resto manda de novo, com a mesma chave depois da falha
+   * incerta e do ritmo, e com chave nova depois de uma recusa.
+   */
+  const retry = (localId: string): void => {
+    const failed = client.getMutationCache().findAll({
+      mutationKey: fanClubMutationKeys.comment,
+      status: 'error',
+      predicate: (item) => commentVariables(item)?.localId === localId,
+    });
+    const last = failed.at(-1);
+    const variables = last && commentVariables(last);
+    if (!last || !variables) return;
+    const refused = actionRefusal(last.state.error, 'clubComment');
+    if (refused.type === 'content') {
+      refuseContent(variables, refused.key, true);
+      return;
+    }
+    forgetComment(client, localId);
+    setRefusal(null);
+    mutation.mutate({
+      ...variables,
+      idempotencyKey: keepsCommentAttempt(last.state.error)
+        ? variables.idempotencyKey
+        : `club-comment-${createIdempotencyKey()}`,
+    });
+  };
+
+  /** O fã digitou: a frase de conteúdo e a do respondido que saiu somem; as outras ficam até o próximo envio. */
+  const dismissEditableRefusal = (): void => {
+    setRefusal((current) =>
+      current?.type === 'content' || current?.type === 'replyGone' ? null : current,
+    );
+  };
+
+  return { send, retry, refusal, dismissEditableRefusal };
 }

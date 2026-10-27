@@ -187,9 +187,38 @@ export function ReactionTotal({
 }
 
 /**
- * O total dos comentários, só como número na etapa 5 de 37.13 (o toque que
- * abre a tela da publicação entra na etapa 6, junto com a rota): "4
- * comentários".
+ * O botão dos comentários (37.9, itens 1 e 3; a etapa 6 de 37.13): o ícone e o
+ * total, lido "4 comentários", tocável para todos. Na página e na Início,
+ * abre a tela da publicação; no cabeçalho dela, leva o foco ao campo.
+ */
+export function CommentButton({
+  count,
+  onPress,
+  hint,
+  testID,
+}: {
+  count: number;
+  onPress: () => void;
+  hint: string;
+  testID?: string;
+}) {
+  return (
+    <PillButton
+      size="md"
+      label={countText(count)}
+      labelColor={ACTION_COUNT_COLOR}
+      leading={<Icon icon={MessageCircle} size={ACTION_ICON_SIZE} color={ACTION_ICON_COLOR} />}
+      accessibilityLabel={commentsSpoken(count)}
+      accessibilityHint={hint}
+      onPress={onPress}
+      testID={testID}
+    />
+  );
+}
+
+/**
+ * O total dos comentários só como número, onde o card não tem para onde levar
+ * (quem desenha o card sem o `onOpenComments`): "4 comentários".
  */
 export function CommentTotal({ count, testID }: { count: number; testID?: string }) {
   return (

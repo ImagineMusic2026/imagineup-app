@@ -4,7 +4,8 @@
 // Início e os seguidos). Os domínios de composição importam daqui, e o
 // `artists` e os `posts`, as chaves pelo arquivo (`fan-club/keys.ts`). Da
 // Fase 2 (seção 37, etapa 5 de 37.13): os tipos, a api, as chaves, as
-// fixtures e a reação no card.
+// fixtures e a reação no card; da etapa 6, a tela da publicação, com os
+// comentários, as respostas e as menções.
 export { ArtistFanClubsCard } from './components/artist-fan-clubs-card';
 export { FanClubFeedSection } from './components/fan-club-feed-section';
 export {
@@ -59,14 +60,16 @@ export {
   type FanClubPostStep,
   type NewFanClubPost,
 } from './queries';
-export { fanClubHref } from './share';
+export { fanClubHref, fanClubPostHref } from './share';
 export type {
+  AddFanClubCommentResult,
   FanClubApplication,
   FanClubApplicationBody,
   FanClubApplicationStatus,
   FanClubArtist,
   FanClubCard,
   FanClubComment,
+  FanClubCommentLine,
   FanClubCommentPage,
   FanClubEngagement,
   FanClubListPage,
@@ -95,6 +98,7 @@ export type {
 export { ArtistFanClubsScreen } from './views/artist-fan-clubs';
 export { FanClubApplyScreen } from './views/fan-club-apply';
 export { FanClubPageScreen } from './views/fan-club-page';
+export { FanClubPostScreen } from './views/fan-club-post';
 export { FollowedFanClubsScreen } from './views/followed-fan-clubs';
 export { MyFanClubScreen } from './views/my-fan-club';
 export { NewFanClubPostScreen } from './views/new-fan-club-post';

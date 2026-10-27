@@ -14,6 +14,18 @@ export function fanClubHref(clubId: string) {
 }
 
 /**
+ * A tela da publicação (seção 37, 37.9, item 3), na pilha raiz, por cima das
+ * abas, no molde do `post/[postId]`: aberta pelo botão dos comentários do
+ * card e pelo "Ver comentários" do gestor.
+ */
+export function fanClubPostHref(postId: string) {
+  return {
+    pathname: '/fa-clube/publicacao/[publicacaoId]',
+    params: { publicacaoId: postId },
+  } as const;
+}
+
+/**
  * O fã-clube que vai na folha: o id (o link), o nome e o artista da mensagem.
  * Sem o artista (a publicação da Início de um artista que não está nas
  * centrais em cache), a mensagem sai sem ele.

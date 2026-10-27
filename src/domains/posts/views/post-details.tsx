@@ -31,6 +31,7 @@ import { ApiError } from '@/services/api/errors';
 import { borderWidths, colors, spacing } from '@/theme';
 import { formatNumber } from '@/utils/number';
 
+import { commentKey, mergeComments } from '../comment-list';
 import { CommentComposer, type CommentComposerHandle } from '../components/comment-composer';
 import { CommentRow, CommentRowsSkeleton } from '../components/comment-row';
 import { PostActions } from '../components/post-actions';
@@ -59,32 +60,6 @@ const REFUSAL_CONTACT: Record<CommentRefusal['type'], TranslationKey | null> = {
   content: 'contentFilter.mailSubject',
   dailyLimit: null,
 };
-
-/** A mesma linha antes e depois de chegar ao servidor: o id local fica. */
-export function commentKey(comment: PostComment): string {
-  return comment.localId ?? comment.id;
-}
-
-/**
- * Os do fã que ainda não chegaram (os mais novos) em cima, depois os do
- * servidor, sem repetir: o que o servidor gravou fica escondido enquanto a
- * linha local dele ainda está na tela, e o comentário que uma página nova
- * traz de novo (a lista andou uma casa) aparece uma vez só.
- */
-export function mergeComments(
-  local: readonly PostComment[],
-  server: readonly PostComment[],
-): PostComment[] {
-  const seen = new Set<string>();
-  const merged: PostComment[] = [];
-  for (const comment of [...local, ...server]) {
-    const key = commentKey(comment);
-    if (seen.has(key)) continue;
-    seen.add(key);
-    merged.push(comment);
-  }
-  return merged;
-}
 
 /**
  * Comentários do fã que ainda vão e que a lista do servidor não tem: a

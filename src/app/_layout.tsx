@@ -102,6 +102,10 @@ export default function RootLayout() {
               modelo do perfil público e do post, o destino do link de convite.
               Sem a resposta do servidor novo, só diz que não está disponível. */}
           <Stack.Screen name="fa-clube/[clubeId]" />
+          {/* A tela da publicação do fã-clube (seção 37, etapa 6 de 37.13): os
+              comentários, as respostas e o campo com teclado, fora das abas,
+              no modelo do post. */}
+          <Stack.Screen name="fa-clube/publicacao/[publicacaoId]" />
           {/* "Gerar meu link" na altura do conteúdo: o link, as regras e o botão
               aparecem sem o fã puxar a sheet. */}
           <Stack.Screen
