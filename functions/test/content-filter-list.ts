@@ -56,6 +56,27 @@ export function barredWordOf(list: LegibleList | null): BarredWord | null {
 }
 
 /**
+ * O @ que só é barrado com o "@" na frente (seção 37, 37.7), escolhido por
+ * regra, sem nunca ser escrito: o resto de uma entrada de uma palavra só que
+ * começa com "a" (de 3 a 20 letras depois dele), em que o resto sozinho não é
+ * barrado e o "@" com o resto é (o "@" na ponta vira "a" na troca do filtro).
+ * O `isBlocked` é o filtro de verdade, no campo de quem chama. Null sem a
+ * lista ou sem uma entrada assim.
+ */
+export function mentionWordOf(
+  list: LegibleList | null,
+  isBlocked: (text: string) => boolean,
+): string | null {
+  for (const item of list?.terms ?? []) {
+    const word = folded(item.term.trim());
+    if (!/^a[a-z]{3,20}$/.test(word)) continue;
+    const rest = word.slice(1);
+    if (!isBlocked(rest) && isBlocked(`@${rest}`)) return rest;
+  }
+  return null;
+}
+
+/**
  * O aviso dos casos pulados (`what`: o arquivo e o que ficou de fora), direto
  * no stderr: o vitest esconde o console dos testes que passam.
  */

@@ -21,12 +21,16 @@ import {
   type FanContext,
   type RunOptions,
 } from '../points/award';
-import { COMMENT_PAGE_ROUNDS } from '../posts/model';
+import { COMMENT_PAGE_ROUNDS, PostError } from '../posts/model';
 import {
   fanClubCommentNotFound,
   fanClubCommentRecord,
+  findMentionTokens,
+  isBlockedWithMentions,
+  mentionHandles,
   newCommentCounts,
   replyTarget,
+  resolvedMentions,
   type CommentInput,
   type FanClubCommentRecord,
   type FanClubRecord,
@@ -36,7 +40,9 @@ import {
   fanClubCommentRef,
   fanClubCommentsOf,
   fanClubPostRef,
+  mentionTargetsOf,
   ownerCopiesOf,
+  usernameRef,
   writeFanClubDay,
 } from './store';
 
@@ -47,7 +53,8 @@ import {
 // shard do fã-clube (37.11). Fora dos nomes do Mural: a coleção é a
 // `fanClubComments`, na raiz (decisão 9), e o comentário nunca vai ao
 // `postStats` nem às missões. O ocultar, a denúncia e o pedido de revisão são
-// da etapa 3; as marcações, da etapa 2 (o comentário nasce com a lista vazia).
+// da etapa 3. As marcações (a etapa 2, 37.7) são resolvidas no envio, dentro
+// da transação, e o filtro confere o texto com o "@" tirado dos resolvidos.
 
 const tsOf = (ms: number) => Timestamp.fromMillis(ms);
 
@@ -184,16 +191,21 @@ export type AddCommentOutcome = { plan: AwardPlan; comment: FanClubComment | nul
  * runIdempotent, com o corpo já conferido e limpo (`parseFanClubComment`),
  * nesta ordem: o que reagir e comentar pedem (`readActionPost`: a publicação
  * no ar, o fã-clube visível e seguir ou ser o gestor, senão 409
- * `not_following`), com o comentário respondido lido junto da publicação; o
- * respondido tem de ser desta publicação, visível e de autor que quem comenta
- * não bloqueou (o gestor, que vê todos no próprio fã-clube, responde a todos),
- * e a resposta a uma resposta vai para o comentário de cima dela
- * (R7), lido depois, com as mesmas condições e de cima (senão, 404
- * `fan_club_comment_not_found`); o teto `club_comment`; o `planAwards` com a
- * origem `fanclub_comment` e o id do comentário, só quando quem comenta não é
- * o gestor (37.5; o valor 0 não lança nada); o comentário visível, com as
+ * `not_following`), com o comentário respondido e as reservas dos @ do texto
+ * (`usernames/{@}`, 37.7) lidos junto da publicação; o respondido tem de ser
+ * desta publicação, visível e de autor que quem comenta não bloqueou (o
+ * gestor, que vê todos no próprio fã-clube, responde a todos), e a resposta a
+ * uma resposta vai para o comentário de cima dela (R7), lido depois, com as
+ * mesmas condições e de cima (senão, 404 `fan_club_comment_not_found`); as
+ * centrais dos @ reservados por central, conferidas no ar; o filtro de novo,
+ * com o "@" tirado só dos @ resolvidos (barrado: 400 `comment_invalid` com
+ * `not_allowed`, sem gravar a chave, sem contar o teto e sem guardar o
+ * texto); o teto `club_comment`; o `planAwards` com a origem
+ * `fanclub_comment` e o id do comentário, só quando quem comenta não é o
+ * gestor (37.5; o valor 0 não lança nada); o comentário visível, com as
  * cópias do perfil lido no runIdempotent (o nome, o @ e a foto; o
- * `FanContext` não traz o @), as marcações vazias (a etapa 2 resolve) e o
+ * `FanContext` não traz o @), as marcações resolvidas (as `mentions`, por
+ * ocorrência, e os `mentionUids`) e o
  * `replyToId` sempre gravado, também null (a lista dos de cima filtra o null,
  * 37.16); o `commentCount` mais 1 na publicação e, na resposta, o
  * `replyCount` mais 1 no comentário de cima (`newCommentCounts`); o
@@ -217,12 +229,16 @@ export async function addFanClubComment(
   const { fan, award, profile, postId, input } = options;
   const fixed = options.commentId ? fanClubCommentRef(db, options.commentId) : null;
   const repliedRef = input.replyToId === null ? null : fanClubCommentRef(db, input.replyToId);
+  const tokens = findMentionTokens(input.text);
+  const handles = mentionHandles(tokens);
   const { club, isOwner, blocked, extra } = await readActionPost(tx, db, fan.uid, postId, [
     ...(repliedRef ? [repliedRef] : []),
     ...(fixed ? [fixed] : []),
+    ...handles.map((handle) => usernameRef(db, handle)),
   ]);
   const repliedSnap = repliedRef ? extra[0] : undefined;
-  const fixedSnap = fixed ? extra[extra.length - 1] : undefined;
+  const fixedSnap = fixed ? extra[repliedRef ? 1 : 0] : undefined;
+  const reservations = extra.slice(extra.length - handles.length);
   if (fixedSnap?.exists) {
     return {
       plan: await planAwards(tx, db, [{ uid: fan.uid, fan, entries: [] }], award),
@@ -242,6 +258,13 @@ export async function addFanClubComment(
       }
     }
   }
+  // As marcações (37.7): as reservas vieram com a publicação; as centrais, agora.
+  // O filtro de novo, com o "@" tirado só dos resolvidos: barrado, nada é gravado.
+  const targets = await mentionTargetsOf(tx, db, handles, reservations);
+  if (isBlockedWithMentions(input.text, tokens, targets, 'comment')) {
+    throw new PostError('comment_invalid', { reason: 'not_allowed' });
+  }
+  const { mentions, mentionUids } = resolvedMentions(tokens, targets);
   enforceDailyCap(fan, award, 'club_comment');
   const ref = fixed ?? fanClubCommentsOf(db).doc();
   const plan = await planAwards(
@@ -269,8 +292,8 @@ export async function addFanClubComment(
     authorUsername: copies.username,
     authorPhotoURL: copies.photoURL,
     text: input.text,
-    mentions: [],
-    mentionUids: [],
+    mentions,
+    mentionUids,
     replyToId: topId,
     replyCount: 0,
     managerHiddenReplyCount: 0,
@@ -291,8 +314,8 @@ export async function addFanClubComment(
     authorUsername: record.authorUsername,
     authorPhotoURL: record.authorPhotoURL,
     text: record.text,
-    mentions: [],
-    mentionUids: [],
+    mentions,
+    mentionUids,
     replyToId: topId,
     replyCount: 0,
     managerHiddenReplyCount: 0,

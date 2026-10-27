@@ -1,9 +1,10 @@
-import { isArtistId } from '../centrals/model';
+import type { MentionSuggestion } from '../api/contract';
+import { isArtistId, isPublished, type ArtistRecord } from '../centrals/model';
 import { filterTokens, isBlockedSocial, isBlockedText } from '../content-filter';
 import { dayKey, shiftDay } from '../day';
 import { parseWhatsapp } from '../fan-contact/model';
 import { normalizeSocialHandle } from '../fan-profile/details';
-import { isAutomaticUsername, type PhotoLimits } from '../fan-profile/model';
+import { FAN_UID_PATTERN, isAutomaticUsername, type PhotoLimits } from '../fan-profile/model';
 import { isContentId } from '../page-cursor';
 import { commentTextProblem, PostError } from '../posts/model';
 import { cleanLine, cleanMultiline, isVisibleLine, isVisibleMultiline } from '../visible-line';
@@ -13,7 +14,8 @@ import { cleanLine, cleanMultiline, isVisibleLine, isVisibleMultiline } from '..
 // campos da candidatura e da publicação, as recusas da API, a leitura dos
 // documentos e o prazo do Destaque; desde a Fase 2 (seção 37), as reações e
 // os comentários, com o texto pelas regras do comentário do Mural
-// (posts/model.ts). Este módulo não importa a moderação, os pontos nem a
+// (posts/model.ts), e as menções: os @ do texto, o filtro com as marcações e
+// as sugestões do @. Este módulo não importa a moderação, os pontos nem a
 // equipe: os tetos do dia (moderation/model.ts e points/config.ts) importam
 // daqui.
 
@@ -1035,7 +1037,10 @@ export type ParsedPost = { ok: true; value: PostInput } | { ok: false; field: st
  * chave desconhecida, o `text` que não é texto e o `photo` que não é booleano
  * são `{ ok: false }` com o campo (400 `invalid_request`); o texto de 1 a
  * 1.000 em linhas visíveis (`format`) e fora do filtro (`not_allowed`, o campo
- * `fanClubPost`) lança `fan_club_invalid` com `field: 'text'`.
+ * `fanClubPost`) lança `fan_club_invalid` com `field: 'text'`. Desde a Fase 2
+ * (seção 37, 37.7), o filtro confere o texto com o "@" tirado de todo @ que
+ * pode virar marcação, como o do comentário; a conferência que vale é a da
+ * transação, depois de resolver (`isBlockedWithMentions`).
  */
 export function parsePost(body: unknown): ParsedPost {
   if (!isRecord(body)) return { ok: false, field: 'body' };
@@ -1053,7 +1058,8 @@ export function parsePost(body: unknown): ParsedPost {
   ) {
     throw fanClubInvalid('text', 'format');
   }
-  if (isBlockedText(cleaned, 'fanClubPost')) throw fanClubInvalid('text', 'not_allowed');
+  const filtered = mentionFilterText(cleaned, findMentionTokens(cleaned));
+  if (isBlockedText(filtered, 'fanClubPost')) throw fanClubInvalid('text', 'not_allowed');
   return { ok: true, value: { text: cleaned, photo: body.photo } };
 }
 
@@ -1531,7 +1537,10 @@ export type ParsedComment = { ok: true; value: CommentInput } | { ok: false; fie
  * `fan_club_comment_not_found`, como o id do caminho; e o texto passa pela
  * limpeza e pelas regras do comentário do Mural (`commentTextProblem`: de 1 a
  * 500 em UTF-16, as linhas visíveis e o filtro no campo `comment`, decisão 9
- * de 36.1), com o `comment_invalid` e o motivo.
+ * de 36.1), com o `comment_invalid` e o motivo. O filtro confere o texto com
+ * o "@" tirado de todo @ que pode virar marcação (seção 37, 37.7), a
+ * conferência mais fraca, que nunca barra o que a da transação aceitaria: a
+ * que vale vem depois de resolver (`isBlockedWithMentions`).
  */
 export function parseFanClubComment(body: unknown): ParsedComment {
   if (!isRecord(body)) return { ok: false, field: 'body' };
@@ -1546,7 +1555,10 @@ export function parseFanClubComment(body: unknown): ParsedComment {
   }
   if (typeof replyTo === 'string' && !isContentId(replyTo)) throw fanClubCommentNotFound();
   const cleaned = cleanMultiline(body.text);
-  const problem = commentTextProblem(cleaned);
+  const problem = commentTextProblem(
+    cleaned,
+    mentionFilterText(cleaned, findMentionTokens(cleaned)),
+  );
   if (problem) throw new PostError('comment_invalid', { reason: problem });
   return {
     ok: true,
@@ -1571,4 +1583,372 @@ export function newCommentCounts(replyToId: string | null): {
   replyCount: number;
 } {
   return { commentCount: 1, replyCount: replyToId === null ? 0 : 1 };
+}
+
+// --- As menções (seção 37, 37.7; a etapa 2 de 37.13) ---------------------------------------
+
+/** Os @ diferentes que viram marcação num texto: os primeiros que aparecem (37.7). */
+export const FAN_CLUB_MENTIONS_MAX = 5;
+
+/** As sugestões do @ por pedido, da conversa ou da busca (37.3). */
+export const MENTION_SUGGESTIONS_MAX = 8;
+
+/** Os últimos comentários da publicação que a conversa da sugestão lê (37.7). */
+export const MENTION_CONVERSATION_COMMENTS = 30;
+
+/** As reservas do @ que a busca da sugestão lê, fãs e centrais juntos (37.7). */
+export const MENTION_SEARCH_READS = 12;
+
+/**
+ * O `q` da busca do @ (37.3): de 2 a 30 de `a-z`, `0-9` e `_`, sem o "@" e em
+ * minúsculas, o começo de um @ de fã ou de central, fora dos ids `__.*__`, que
+ * o Firestore reserva (o `q` vira o cursor `usernames/{q}` do `startAt`, e o
+ * reservado derrubaria a busca com 500).
+ */
+export const MENTION_QUERY_PATTERN = /^(?!__.*__$)[a-z0-9_]{2,30}$/;
+
+/**
+ * Uma ocorrência de @ que pode virar marcação (37.7): o @ normalizado (em
+ * minúsculas, o id da reserva em `usernames/`), o @ como foi escrito (sem o
+ * "@") e as posições no texto, em unidades UTF-16: o `start` no "@" e o `end`
+ * logo depois da última letra do @.
+ */
+export type MentionToken = { handle: string; written: string; start: number; end: number };
+
+// O que forma o @ depois do "@": o padrão do @ das centrais (o
+// `HANDLE_PATTERN`, que contém o `USERNAME_PATTERN` dos fãs), em qualquer caixa.
+const HANDLE_CHAR = /[A-Za-z0-9_]/;
+// O que, colado no @, o tira da marcação: letra, número ou "_" antes do "@" (o
+// e-mail, o "a_@bia") e letra ou número logo depois do @ (o "@joséfina" não
+// marca o "@jos").
+const WORD_CHAR = /^[\p{L}\p{N}_]$/u;
+
+/** O caractere inteiro (o ponto de código, com o par de surrogates) que termina antes da posição, ou ''. */
+function codePointBefore(text: string, index: number): string {
+  if (index <= 0) return '';
+  const low = text.charCodeAt(index - 1);
+  if (index >= 2 && low >= 0xdc00 && low <= 0xdfff) {
+    const high = text.charCodeAt(index - 2);
+    if (high >= 0xd800 && high <= 0xdbff) return text.slice(index - 2, index);
+  }
+  return text.charAt(index - 1);
+}
+
+/** O caractere inteiro que começa na posição, ou ''. */
+const codePointFrom = (text: string, index: number): string =>
+  index < text.length ? String.fromCodePoint(text.codePointAt(index)!) : '';
+
+/**
+ * Os @ do texto que podem virar marcação (37.7), na ordem do texto: um "@" no
+ * começo ou depois de um caractere que não é letra, número nem "_", seguido de
+ * 3 a 30 de `a-z`, `0-9` e `_` (o maiúsculo vale, lido em minúsculas, como no
+ * `normalizeUsername`) e sem letra nem número colado depois. O @ no formato
+ * que o Firestore reserva (`__.*__`) nunca vira documento e fica texto. Valem
+ * os `max` primeiros @ diferentes, com todas as ocorrências deles; os
+ * seguintes ficam texto.
+ */
+export function findMentionTokens(
+  text: string,
+  max: number = FAN_CLUB_MENTIONS_MAX,
+): MentionToken[] {
+  const tokens: MentionToken[] = [];
+  const handles = new Set<string>();
+  for (let start = text.indexOf('@'); start !== -1; start = text.indexOf('@', start + 1)) {
+    let end = start + 1;
+    while (end < text.length && HANDLE_CHAR.test(text.charAt(end))) end += 1;
+    const written = text.slice(start + 1, end);
+    const handle = written.toLowerCase();
+    if (
+      WORD_CHAR.test(codePointBefore(text, start)) ||
+      WORD_CHAR.test(codePointFrom(text, end)) ||
+      !isArtistId(handle)
+    ) {
+      continue;
+    }
+    if (!handles.has(handle)) {
+      if (handles.size >= max) continue;
+      handles.add(handle);
+    }
+    tokens.push({ handle, written, start, end });
+  }
+  return tokens;
+}
+
+/** Os @ diferentes das ocorrências, na ordem em que aparecem: as reservas que a transação lê. */
+export const mentionHandles = (tokens: readonly MentionToken[]): string[] => [
+  ...new Set(tokens.map((token) => token.handle)),
+];
+
+/**
+ * O texto que o filtro da seção 30 confere (37.7): o "@" tirado das
+ * ocorrências cujo @ o `strip` aceita (sem ele, todas), que passam a ser
+ * conferidas como palavra, o @ sozinho, sem a troca do "@" por "a" do
+ * `pieceVersions`; o resto fica como está. A normalização e as chaves do
+ * filtro não mudam (a `FILTER_NORMALIZATION_VERSION` fica): muda só o texto
+ * que vai a ele. Nada daqui é gravado.
+ */
+export function mentionFilterText(
+  text: string,
+  tokens: readonly MentionToken[],
+  strip: (handle: string) => boolean = () => true,
+): string {
+  let out = '';
+  let from = 0;
+  for (const token of tokens) {
+    if (!strip(token.handle)) continue;
+    out += text.slice(from, token.start);
+    from = token.start + 1;
+  }
+  return out + text.slice(from);
+}
+
+/** O alvo de um @ resolvido: o fã (o uid, qualquer conta, R3) ou a central no ar (o id). */
+export type MentionTarget = { kind: 'fan' | 'artist'; id: string };
+
+/**
+ * A reserva do @ lida (`usernames/{@}`, 37.7): com o `uid`, é fã; com o
+ * `artistId`, é central, que ainda precisa estar no ar (o rascunho também
+ * reserva o @). Sem reserva, ou sem um dos dois no formato, null: fica texto.
+ */
+export function reservationTargetOf(
+  data: Record<string, unknown> | undefined,
+): MentionTarget | null {
+  if (!data) return null;
+  if (typeof data.uid === 'string' && FAN_UID_PATTERN.test(data.uid)) {
+    return { kind: 'fan', id: data.uid };
+  }
+  if (isArtistId(data.artistId)) return { kind: 'artist', id: data.artistId };
+  return null;
+}
+
+/**
+ * As marcações que o texto grava (37.2 e 37.7): cada ocorrência de um @
+ * resolvido, com o @ como foi escrito, o alvo e as posições, e os uids dos
+ * fãs marcados, sem repetir, na ordem do texto. O @ sem alvo fica texto. O
+ * link segue a pessoa (o `id`), e não o @, que muda.
+ */
+export function resolvedMentions(
+  tokens: readonly MentionToken[],
+  targets: ReadonlyMap<string, MentionTarget>,
+): { mentions: FanClubMention[]; mentionUids: string[] } {
+  const mentions: FanClubMention[] = [];
+  const uids = new Set<string>();
+  for (const token of tokens) {
+    const target = targets.get(token.handle);
+    if (!target) continue;
+    mentions.push({
+      handle: token.written,
+      kind: target.kind,
+      id: target.id,
+      start: token.start,
+      end: token.end,
+    });
+    if (target.kind === 'fan') uids.add(target.id);
+  }
+  return { mentions, mentionUids: [...uids] };
+}
+
+/**
+ * O texto bate no filtro da seção 30 com as marcações resolvidas (37.7): o
+ * "@" tirado só das ocorrências dos @ resolvidos; o @ que não resolveu fica
+ * com o "@" e a troca, como antes. É a conferência que vale, na transação,
+ * depois de resolver; a do corpo, antes de ler, tira o "@" de todos.
+ */
+export const isBlockedWithMentions = (
+  text: string,
+  tokens: readonly MentionToken[],
+  targets: ReadonlyMap<string, MentionTarget>,
+  field: 'comment' | 'fanClubPost',
+): boolean =>
+  isBlockedText(
+    mentionFilterText(text, tokens, (handle) => targets.has(handle)),
+    field,
+  );
+
+/**
+ * A conversa da sugestão do @ (37.7, sem o `q`), nesta ordem: o gestor (as
+ * cópias do fã-clube, menos para ele mesmo), o artista do fã-clube (o @ é o
+ * id) e quem comentou na publicação, do comentário mais novo ao mais antigo,
+ * sem repetir. O comentário conta como aparece na tela de quem pede: visível
+ * e, na resposta, embaixo de um comentário de cima visível de autor que ele
+ * não bloqueou (o gestor, no próprio fã-clube, vê também os de quem ele
+ * bloqueou, 37.8). Ficam de fora quem pede, quem ele bloqueou e o autor sem o
+ * @ na cópia. Ficam quem bloqueou quem pede e o suspenso: os comentários deles
+ * estão na tela, e tirá-los daqui contaria o bloqueio ou a suspensão (decisão
+ * 14 de 28.1). Nada diz quem segue (R5). Até 8.
+ */
+export function conversationSuggestions(input: {
+  uid: string;
+  club: Pick<FanClubRecord, 'ownerUid' | 'ownerName' | 'ownerUsername' | 'ownerPhotoURL'>;
+  artist: Pick<ArtistRecord, 'id' | 'name' | 'thumbUrl'>;
+  blocked: readonly string[];
+  /** Os últimos comentários da publicação, do mais novo ao mais antigo. */
+  comments: readonly FanClubCommentRecord[];
+  /** Os comentários de cima das respostas, pelo id (os da consulta e os lidos à parte). */
+  tops: ReadonlyMap<string, FanClubCommentRecord>;
+}): MentionSuggestion[] {
+  const { uid, club, artist } = input;
+  const blocked = new Set(input.blocked);
+  const isOwner = club.ownerUid === uid;
+  const items: MentionSuggestion[] = [];
+  const seen = new Set<string>();
+  const add = (item: MentionSuggestion) => {
+    const key = `${item.kind}:${item.id}`;
+    if (seen.has(key) || items.length >= MENTION_SUGGESTIONS_MAX) return;
+    seen.add(key);
+    items.push(item);
+  };
+  if (club.ownerUid !== null && !isOwner && club.ownerUsername !== null) {
+    add({
+      kind: 'fan',
+      id: club.ownerUid,
+      username: club.ownerUsername,
+      name: club.ownerName,
+      photoURL: club.ownerPhotoURL,
+      role: 'manager',
+      inConversation: true,
+    });
+  }
+  add({
+    kind: 'artist',
+    id: artist.id,
+    username: artist.id,
+    name: artist.name,
+    photoURL: artist.thumbUrl,
+    role: 'artist',
+    inConversation: true,
+  });
+  for (const comment of input.comments) {
+    if (comment.status !== 'visible') continue;
+    if (comment.replyToId !== null) {
+      const top = input.tops.get(comment.replyToId);
+      if (
+        !top ||
+        top.status !== 'visible' ||
+        top.replyToId !== null ||
+        top.postId !== comment.postId ||
+        (!isOwner && blocked.has(top.authorUid))
+      ) {
+        continue;
+      }
+    }
+    const author = comment.authorUid;
+    if (author === uid || blocked.has(author) || comment.authorUsername === null) continue;
+    add({
+      kind: 'fan',
+      id: author,
+      username: comment.authorUsername,
+      name: comment.authorName,
+      photoURL: comment.authorPhotoURL,
+      role: author === club.ownerUid ? 'manager' : null,
+      inConversation: true,
+    });
+  }
+  return items;
+}
+
+/** O fã achado pela busca do @: o perfil lido com `select` e a lista de quem ele bloqueou. */
+export type MentionSearchFan = {
+  name: string | null;
+  photoURL: string | null;
+  privateAccount: boolean;
+  suspended: boolean;
+  /** Já trocou o @ (o `usernameChangedAt` gravado): o @ foi escolhido, e não gerado do nome. */
+  chosenUsername: boolean;
+  /** Os fãs que ele bloqueou. */
+  blocked: readonly string[];
+};
+
+/** Os campos do perfil que a busca do @ lê (o `select` do `getAll`, 37.7). */
+export const MENTION_SEARCH_PROFILE_FIELDS = [
+  'displayName',
+  'username',
+  'photoURL',
+  'privateAccount',
+  'suspendedAt',
+  'usernameChangedAt',
+] as const;
+
+/** O fã da busca, do perfil lido (null sem perfil: conta excluída ou só da equipe). */
+export function mentionSearchFanOf(
+  profile: Record<string, unknown> | undefined,
+  blocked: readonly string[],
+): MentionSearchFan | null {
+  if (!profile) return null;
+  return {
+    name: text(profile.displayName),
+    photoURL: text(profile.photoURL),
+    privateAccount: profile.privateAccount === true,
+    suspended: profile.suspendedAt !== undefined && profile.suspendedAt !== null,
+    chosenUsername: millisOf(profile.usernameChangedAt) !== null,
+    blocked,
+  };
+}
+
+/**
+ * A busca da sugestão do @ (37.7, com o `q`): as reservas achadas pelo
+ * começo do @, na ordem do @, fãs e centrais juntos. Ficam de fora quem pede,
+ * quem ele bloqueou, a central fora do ar, o fã sem perfil, o fã com o @
+ * gerado do nome (sem o `usernameChangedAt`, resposta do dono, 37.15,
+ * pergunta 8) e, do mesmo jeito e sem dizer qual, a conta privada, a suspensa
+ * e a de quem bloqueou quem pede (decisão 14 de 28.1; 37.15, pergunta 7).
+ * Nunca pelo nome (R6) e nunca quem segue (R5). O gestor e o artista do
+ * fã-clube levam o papel e o `inConversation`: os dois estão sempre na
+ * conversa. Até 8.
+ */
+export function searchSuggestions(input: {
+  uid: string;
+  club: Pick<FanClubRecord, 'ownerUid' | 'artistId'>;
+  blocked: readonly string[];
+  hits: readonly { handle: string; target: MentionTarget }[];
+  fans: ReadonlyMap<string, MentionSearchFan>;
+  artists: ReadonlyMap<string, ArtistRecord>;
+}): MentionSuggestion[] {
+  const blocked = new Set(input.blocked);
+  const items: MentionSuggestion[] = [];
+  const seen = new Set<string>();
+  for (const { handle, target } of input.hits) {
+    if (items.length >= MENTION_SUGGESTIONS_MAX) break;
+    const key = `${target.kind}:${target.id}`;
+    if (seen.has(key)) continue;
+    if (target.kind === 'artist') {
+      const artist = input.artists.get(target.id);
+      if (!isPublished(artist)) continue;
+      const role = artist.id === input.club.artistId ? 'artist' : null;
+      seen.add(key);
+      items.push({
+        kind: 'artist',
+        id: artist.id,
+        username: artist.id,
+        name: artist.name,
+        photoURL: artist.thumbUrl,
+        role,
+        inConversation: role !== null,
+      });
+      continue;
+    }
+    if (target.id === input.uid || blocked.has(target.id)) continue;
+    const fan = input.fans.get(target.id);
+    if (
+      !fan ||
+      !fan.chosenUsername ||
+      fan.privateAccount ||
+      fan.suspended ||
+      fan.blocked.includes(input.uid)
+    ) {
+      continue;
+    }
+    const role = target.id === input.club.ownerUid ? 'manager' : null;
+    seen.add(key);
+    items.push({
+      kind: 'fan',
+      id: target.id,
+      username: handle,
+      name: fan.name,
+      photoURL: fan.photoURL,
+      role,
+      inConversation: role !== null,
+    });
+  }
+  return items;
 }

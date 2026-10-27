@@ -2,7 +2,8 @@
 // candidatura, o fã-clube, as publicações e as denúncias delas, a atribuição
 // (o crédito das entradas trazidas e os números em shards), os seguidores, a
 // cópia da noite, a callable `decideFanClub` do painel (com o Recompensar) e o passo da exclusão
-// de conta; desde a Fase 2 (seção 37), as reações e os comentários. A API
+// de conta; desde a Fase 2 (seção 37), as reações, os comentários e as
+// menções (as marcações resolvidas no envio e as sugestões do @). A API
 // (src/api/routes/fan-clubs.ts) usa daqui; a callable e o
 // passo da cópia no `closeStatsDays` ficam em src/index.ts; o seed dos
 // emuladores carrega o build (functions/lib/fan-clubs). As centrais, o
@@ -15,6 +16,7 @@ export {
   applyReactionDelta,
   ARTIST_FAN_CLUBS_PAGE,
   checkClubName,
+  conversationSuggestions,
   CLOSE_REASONS,
   CLUB_PHOTO_LIMITS,
   CLUB_THUMB_LIMITS,
@@ -33,6 +35,7 @@ export {
   FAN_CLUB_FOLLOWS_MAX,
   FAN_CLUB_FOLLOWS_PER_DAY,
   FAN_CLUB_GRANT_ID_PATTERN,
+  FAN_CLUB_MENTIONS_MAX,
   FAN_CLUB_MEMBER_NOTICE_VERSION,
   FAN_CLUB_NAME_MAX,
   FAN_CLUB_NAME_MIN,
@@ -67,14 +70,24 @@ export {
   fanClubRecord,
   fanClubRefused,
   fanClubReportId,
+  findMentionTokens,
   followerQuality,
   FOLLOWERS_RECENT_MS,
   followSignals,
   hasOfficialWord,
+  isBlockedWithMentions,
   isFeatureExpired,
   isFeaturedNow,
   isLiveFanClub,
   isWithinCreditWindow,
+  MENTION_CONVERSATION_COMMENTS,
+  MENTION_QUERY_PATTERN,
+  MENTION_SEARCH_PROFILE_FIELDS,
+  MENTION_SEARCH_READS,
+  MENTION_SUGGESTIONS_MAX,
+  mentionFilterText,
+  mentionHandles,
+  mentionSearchFanOf,
   mentionsOf,
   monthOf,
   monthTurn,
@@ -98,9 +111,12 @@ export {
   reactionCountsOf,
   reactionDelta,
   replyTarget,
+  reservationTargetOf,
+  resolvedMentions,
   REWARD_NOTE_MAX,
   sameProportion,
   sameRewardGrant,
+  searchSuggestions,
   slotFileNames,
   sumFanClubShards,
   type ApplicationInput,
@@ -129,6 +145,9 @@ export {
   type FanClubStatus,
   type FollowerQuality,
   type FollowSignals,
+  type MentionSearchFan,
+  type MentionTarget,
+  type MentionToken,
   type PostInput,
   type PostRejectReason,
   type PrizeBlock,
@@ -163,13 +182,18 @@ export {
   contactRequired,
   followersQuery,
   liveFanClubsOfArtist,
+  mentionTargetsOf,
   pauseForSuspension,
   readActiveClubOf,
   readFollowOfOwner,
   readFollowsOf,
   readFollowsOfArtist,
+  readMentionedArtists,
+  readMentionTargets,
   readReactionsOf,
   syncFanClubCopies,
+  usernameRef,
+  usernamesOf,
   writeFanClubDay,
   type FanClubDayField,
 } from './store';
@@ -225,6 +249,7 @@ export {
   type ReactionBody,
   type ReactionOutcome,
 } from './reactions';
+export { readMentionSuggestions, type MentionsQuery } from './mentions';
 export {
   followFanClub,
   readFanClubFeed,

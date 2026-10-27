@@ -635,8 +635,38 @@ describe('rotas da Fase 2 do fã-clube (seção 37, etapa 1 de 37.13)', () => {
       'not_found',
     );
   });
+});
 
-  it('a API tem 69 rotas: as 64 de antes e as 5 da etapa 1 da Fase 2', () => {
-    expect(API_ROUTES).toHaveLength(69);
+describe('a rota das sugestões do @ (seção 37, etapa 2 de 37.13)', () => {
+  it('as sugestões são do fã-clube, só de leitura, e não se confundem com a página nem com as publicações', () => {
+    const cases: [string, string, string, boolean, Record<string, string>][] = [
+      [
+        'GET',
+        '/fan-clubs/clube1/mentions',
+        '/fan-clubs/:clubId/mentions',
+        false,
+        { clubId: 'clube1' },
+      ],
+      ['GET', '/fan-clubs/clube1/posts', '/fan-clubs/:clubId/posts', false, { clubId: 'clube1' }],
+      ['GET', '/fan-clubs/clube1', '/fan-clubs/:clubId', false, { clubId: 'clube1' }],
+    ];
+    for (const [method, path, pattern, writes, params] of cases) {
+      expect(matchRoute(API_ROUTES, method, path), `${method} ${path}`).toMatchObject({
+        kind: 'match',
+        route: { method, pattern, writes },
+        params,
+      });
+    }
+    expect(matchRoute(API_ROUTES, 'POST', '/fan-clubs/clube1/mentions')).toEqual({
+      kind: 'method_not_allowed',
+      allow: ['GET'],
+    });
+    // A busca vai no `?q=`: não há caminho por @, nem sugestão por publicação.
+    expect(matchRoute(API_ROUTES, 'GET', '/fan-clubs/clube1/mentions/bia').kind).toBe('not_found');
+    expect(matchRoute(API_ROUTES, 'GET', '/fan-club-posts/pub1/mentions').kind).toBe('not_found');
+  });
+
+  it('a API tem 70 rotas: as 64 de antes, as 5 da etapa 1 e a da etapa 2 da Fase 2', () => {
+    expect(API_ROUTES).toHaveLength(70);
   });
 });

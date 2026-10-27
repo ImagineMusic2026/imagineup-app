@@ -10,6 +10,7 @@ import {
   FAN_CLUB_POSTS_PAGE,
   fanClubCommentNotFound,
   followFanClub,
+  MENTION_QUERY_PATTERN,
   openFanClubUpload,
   parseApplication,
   parseFanClubComment,
@@ -25,6 +26,7 @@ import {
   readFanClubPost,
   readFanClubPosts,
   readFollowedFanClubs,
+  readMentionSuggestions,
   readMyFanClub,
   readMyFanClubNumbers,
   readMyFanClubPosts,
@@ -37,6 +39,7 @@ import {
   type CommentInput,
   type CommentsQuery,
   type FanClubReactionKey,
+  type MentionsQuery,
   type PostInput,
 } from '../../fan-clubs';
 import { parseFanClubReportReason, type FanClubReportReason } from '../../moderation';
@@ -56,6 +59,7 @@ import type {
   FanClubUploadSlot,
   FollowedFanClubs,
   FollowFanClubResult,
+  MentionSuggestions,
   MyFanClub,
   OwnFanClubPost,
   Page,
@@ -81,6 +85,9 @@ import { pageQuery, queryText } from './paging';
 // Fase 2 (seção 37, 37.3; a etapa 1 de 37.13): a publicação no ar pelo id, os
 // comentários com as respostas de um nível, comentar e a reação; tirar a
 // reação é de desfazer e aceita o suspenso. Nenhuma rota diz quem reagiu (R8).
+// A etapa 2 de 37.13: as sugestões do @ (a conversa e a busca); as marcações
+// do comentário e da publicação do gestor são resolvidas no envio, nas rotas
+// que já existem.
 
 /**
  * O corpo da candidatura conferido e limpo (`parseApplication`), sem leitura:
@@ -154,6 +161,26 @@ function bodyComment(input: RouteInput): CommentInput {
   const parsed = parseFanClubComment(input.body);
   if (!parsed.ok) throw apiError('invalid_request', { field: parsed.field });
   return parsed.value;
+}
+
+/**
+ * A busca das sugestões do @ (seção 37, 37.3), sem leitura: o `postId`
+ * opcional, no formato dos ids (fora dele, 404 `fan_club_post_not_found`), e
+ * o `q` opcional, de 2 a 30 de `a-z`, `0-9` e `_`, sem o "@" e em minúsculas,
+ * fora dos ids `__.*__`, que o Firestore reserva (o `q` vira o cursor de id da
+ * busca; fora disso, 400 `invalid_request` com `field: 'q'`). Vazios valem
+ * ausentes.
+ */
+function mentionsQuery(input: RouteInput): MentionsQuery {
+  const postId = queryText(input.query, 'postId');
+  if (postId !== undefined && postId !== '' && !isContentId(postId)) {
+    throw apiError('fan_club_post_not_found');
+  }
+  const q = queryText(input.query, 'q');
+  if (q !== undefined && q !== '' && !MENTION_QUERY_PATTERN.test(q)) {
+    throw apiError('invalid_request', { field: 'q' });
+  }
+  return { postId: postId || null, q: q || null };
 }
 
 /** A reação do corpo (`parseReaction`), de uma lista fechada; fora dela, 400 sem ler. */
@@ -530,6 +557,22 @@ export const fanClubRoutes: ApiRoute[] = [
       });
       const result: FanClubReactionResult = { ...body, ...rewardsOf(plan) };
       return { body: result, plan };
+    },
+  },
+  {
+    // As sugestões do @ (a etapa 2 de 37.13): sem o `q`, a conversa (o
+    // gestor, o artista e quem comentou na publicação do `postId`); com o
+    // `q`, a busca pelo começo do @. Só para quem pode comentar ali (seguir
+    // ou ser o gestor). Nunca diz quem segue (R5) nem busca pelo nome (R6).
+    method: 'GET',
+    pattern: '/fan-clubs/:clubId/mentions',
+    writes: false,
+    validate: (input) => {
+      clubParam(input);
+      mentionsQuery(input);
+    },
+    async handle(ctx): Promise<MentionSuggestions> {
+      return readMentionSuggestions(ctx.deps.db, ctx.uid, ctx.params.clubId!, mentionsQuery(ctx));
     },
   },
 ];

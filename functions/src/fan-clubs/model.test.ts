@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
+import { artistRecord } from '../centrals/model';
 import { ADJUSTMENT_ID_PATTERN } from '../points/adjust';
 import { PostError } from '../posts/model';
 import {
@@ -10,7 +11,9 @@ import {
   checkClubName,
   CLUB_PHOTO_LIMITS,
   CLUB_THUMB_LIMITS,
+  conversationSuggestions,
   emptyReactionCounts,
+  FAN_CLUB_MENTIONS_MAX,
   FAN_CLUB_COMMENTS_PAGE,
   FAN_CLUB_COMMENTS_PER_DAY,
   FAN_CLUB_COUNT_FIELDS,
@@ -44,12 +47,19 @@ import {
   fanClubRecord,
   fanClubReportId,
   fanClubRulesUrl,
+  findMentionTokens,
   followerQuality,
   FOLLOWERS_RECENT_MS,
   followSignals,
   hasOfficialWord,
+  isBlockedWithMentions,
   isFeaturedNow,
   isWithinCreditWindow,
+  MENTION_QUERY_PATTERN,
+  MENTION_SUGGESTIONS_MAX,
+  mentionFilterText,
+  mentionHandles,
+  mentionSearchFanOf,
   mentionsOf,
   NEW_ACCOUNT_MS,
   newCommentCounts,
@@ -70,14 +80,20 @@ import {
   reactionDelta,
   reapplyAfterRejection,
   replyTarget,
+  reservationTargetOf,
+  resolvedMentions,
   sameProportion,
   sameRewardGrant,
+  searchSuggestions,
   slotFileNames,
   slotNamesOf,
   sumFanClubShards,
   withHistory,
   type ApplicationHistoryItem,
   type ApplicationRecord,
+  type FanClubCommentRecord,
+  type MentionSearchFan,
+  type MentionTarget,
 } from './model';
 
 // O fã-clube gerido pelo fã, puro (docs/arquitetura-api.md, 34.13): as
@@ -91,7 +107,8 @@ import {
 // Desde a Fase 2 (seção 37, etapa 1 de 37.13): o corpo da reação e do
 // comentário, as contas dos contadores (a troca de emoji, o comentário de
 // cima e a resposta), a leitura dos documentos novos e o corpo do seguir com
-// a versão do aviso de membro.
+// a versão do aviso de membro. Na etapa 2: as menções (os @ do texto, as
+// posições, o filtro com as marcações e as sugestões do @).
 
 // O filtro do que o fã publica (seção 30) trocado por um de palavras neutras:
 // nenhum termo da lista de verdade entra no repositório (30.11).
@@ -1178,5 +1195,498 @@ describe('os comentários (seção 37, 37.2, 37.3 e R7)', () => {
       ]),
     ).toEqual([good]);
     expect(mentionsOf(undefined)).toEqual([]);
+  });
+});
+
+describe('as menções (seção 37, 37.7; etapa 2 de 37.13)', () => {
+  /** As ocorrências como `[@ normalizado, como foi escrito, start, end]`. */
+  const tokensOf = (text: string) =>
+    findMentionTokens(text).map((token) => [token.handle, token.written, token.start, token.end]);
+
+  /** O motivo do `comment_invalid` que a chamada lança. */
+  function invalidOf(run: () => unknown): string | undefined {
+    try {
+      run();
+    } catch (error) {
+      if (error instanceof PostError) return `${error.reason}:${String(error.details?.reason)}`;
+      throw error;
+    }
+    return undefined;
+  }
+
+  it('o @ no começo, depois de espaço, de pontuação ou de quebra de linha, e com o "_" dentro', () => {
+    expect(tokensOf('@bia vem!')).toEqual([['bia', 'bia', 0, 4]]);
+    expect(tokensOf('Vem, @bia_fan.')).toEqual([['bia_fan', 'bia_fan', 5, 13]]);
+    expect(tokensOf('(@netto)\n@duda')).toEqual([
+      ['netto', 'netto', 1, 7],
+      ['duda', 'duda', 9, 14],
+    ]);
+  });
+
+  it('o "@" colado numa letra, num número ou num "_" não marca (o e-mail, o "a_@bia")', () => {
+    for (const text of ['bia@teste.dev', 'a_@bia', '2@bia', 'é@bia', '\u{1D400}@bia']) {
+      expect(tokensOf(text), text).toEqual([]);
+    }
+  });
+
+  it('o @ curto, longo, com letra colada depois ou no formato reservado fica texto', () => {
+    for (const text of ['@joséfina', '@bi', `@${'a'.repeat(31)}`, '@__bia__', '@', 'oi @ bia']) {
+      expect(tokensOf(text), text).toEqual([]);
+    }
+    expect(tokensOf(`@${'a'.repeat(30)}`)).toEqual([['a'.repeat(30), 'a'.repeat(30), 0, 31]]);
+    // O "@" logo depois não cola no @ de antes; o segundo, colado numa letra, fica texto.
+    expect(tokensOf('@bia@duda')).toEqual([['bia', 'bia', 0, 4]]);
+  });
+
+  it('o maiúsculo vale, lido em minúsculas, e a ocorrência guarda o @ como foi escrito', () => {
+    expect(tokensOf('Oi @BiaSan!')).toEqual([['biasan', 'BiaSan', 3, 10]]);
+  });
+
+  it('até 5 @ diferentes, os primeiros; o repetido conta uma vez e marca em todas as ocorrências', () => {
+    expect(FAN_CLUB_MENTIONS_MAX).toBe(5);
+    const tokens = findMentionTokens('@aaa @bbb @ccc @aaa @ddd @eee @fff @bbb');
+    expect(tokens.map((token) => token.handle)).toEqual([
+      'aaa',
+      'bbb',
+      'ccc',
+      'aaa',
+      'ddd',
+      'eee',
+      'bbb',
+    ]);
+    expect(mentionHandles(tokens)).toEqual(['aaa', 'bbb', 'ccc', 'ddd', 'eee']);
+    // O repetido em outra caixa é o mesmo @.
+    expect(mentionHandles(findMentionTokens('@Bia e @bia e @BIA'))).toEqual(['bia']);
+  });
+
+  it('as posições contam unidades UTF-16 do texto: um emoji antes conta 2', () => {
+    const cases: [string, number][] = [
+      ['\u{1F525}@bia', 2],
+      ['❤️ @bia', 3],
+      ['❤️@bia', 2],
+      ['\u{1F469}‍\u{1F469}‍\u{1F467} @bia', 9],
+    ];
+    for (const [text, start] of cases) {
+      const [token] = findMentionTokens(text);
+      expect(token, text).toMatchObject({ handle: 'bia', start, end: start + 4 });
+      expect(text.slice(token!.start, token!.end)).toBe('@bia');
+    }
+  });
+
+  it('o texto do filtro: o "@" tirado das marcações dadas, e o resto como está', () => {
+    const text = 'Oi @bacaxi e @Bia, bia@teste.dev';
+    const tokens = findMentionTokens(text);
+    expect(mentionFilterText(text, tokens)).toBe('Oi bacaxi e Bia, bia@teste.dev');
+    expect(mentionFilterText(text, tokens, (handle) => handle === 'bia')).toBe(
+      'Oi @bacaxi e Bia, bia@teste.dev',
+    );
+    expect(mentionFilterText(text, tokens, () => false)).toBe(text);
+  });
+
+  it('a marcação legítima passa, e o @ não resolvido continua barrado (o "abacaxi" do filtro falso)', () => {
+    // O "@" na ponta vira "a" na troca do filtro: "@bacaxi" bate no termo.
+    const text = 'Que foto, @bacaxi!';
+    const tokens = findMentionTokens(text);
+    const resolved = new Map<string, MentionTarget>([['bacaxi', { kind: 'fan', id: 'uidB' }]]);
+    expect(isBlockedWithMentions(text, tokens, new Map(), 'comment')).toBe(true);
+    expect(isBlockedWithMentions(text, tokens, new Map(), 'fanClubPost')).toBe(true);
+    expect(isBlockedWithMentions(text, tokens, resolved, 'comment')).toBe(false);
+    expect(isBlockedWithMentions(text, tokens, resolved, 'fanClubPost')).toBe(false);
+    // O @ que é ele mesmo um termo continua barrado, marcado ou não (conferido como palavra).
+    const own = 'Oi @pepino';
+    const pepino = new Map<string, MentionTarget>([['pepino', { kind: 'fan', id: 'uidP' }]]);
+    expect(isBlockedWithMentions(own, findMentionTokens(own), pepino, 'comment')).toBe(true);
+  });
+
+  it('o corpo do comentário e o da publicação conferem com o "@" tirado de todo @ que pode virar marcação', () => {
+    expect(parseFanClubComment({ text: 'Que foto, @bacaxi!' })).toEqual({
+      ok: true,
+      value: { text: 'Que foto, @bacaxi!', replyToId: null },
+    });
+    expect(parsePost({ text: 'Que foto, @bacaxi!', photo: false })).toMatchObject({ ok: true });
+    // Colado numa letra, não é marcação: o "@" fica, e o termo bate.
+    expect(invalidOf(() => parseFanClubComment({ text: 'Que foto, a@bacaxi!' }))).toBe(
+      'comment_invalid:not_allowed',
+    );
+    expect(errorOf(() => parsePost({ text: 'Que foto, a@bacaxi!', photo: false })).details).toEqual(
+      { field: 'text', reason: 'not_allowed' },
+    );
+    // O sexto @ diferente fica texto, e o filtro o confere com o "@".
+    expect(invalidOf(() => parseFanClubComment({ text: '@aaa @bbb @ccc @ddd @eee @bacaxi' }))).toBe(
+      'comment_invalid:not_allowed',
+    );
+    expect(parseFanClubComment({ text: '@bacaxi @aaa @bbb @ccc @ddd @eee' })).toMatchObject({
+      ok: true,
+    });
+    // O termo sozinho, com ou sem "@", continua barrado.
+    expect(invalidOf(() => parseFanClubComment({ text: 'Oi @pepino' }))).toBe(
+      'comment_invalid:not_allowed',
+    );
+  });
+
+  it('a reserva do @: o fã pelo uid e a central pelo id; o resto fica texto', () => {
+    expect(reservationTargetOf({ uid: 'uidBia', createdAt: 1 })).toEqual({
+      kind: 'fan',
+      id: 'uidBia',
+    });
+    expect(reservationTargetOf({ artistId: 'nettobrito' })).toEqual({
+      kind: 'artist',
+      id: 'nettobrito',
+    });
+    for (const data of [
+      undefined,
+      {},
+      { uid: '' },
+      { uid: 'a/b' },
+      { artistId: '__x__' },
+      { artistId: 7 },
+    ]) {
+      expect(reservationTargetOf(data), JSON.stringify(data)).toBeNull();
+    }
+  });
+
+  it('as marcações gravadas: cada ocorrência resolvida, com o @ como foi escrito, e os uids sem repetir', () => {
+    const text = '@Bia e @duda, @bia de novo, @nettobrito e @ninguem';
+    const targets = new Map<string, MentionTarget>([
+      ['bia', { kind: 'fan', id: 'uidBia' }],
+      ['duda', { kind: 'fan', id: 'uidDuda' }],
+      ['nettobrito', { kind: 'artist', id: 'nettobrito' }],
+    ]);
+    const { mentions, mentionUids } = resolvedMentions(findMentionTokens(text), targets);
+    expect(mentions).toEqual([
+      { handle: 'Bia', kind: 'fan', id: 'uidBia', start: 0, end: 4 },
+      { handle: 'duda', kind: 'fan', id: 'uidDuda', start: 7, end: 12 },
+      { handle: 'bia', kind: 'fan', id: 'uidBia', start: 14, end: 18 },
+      { handle: 'nettobrito', kind: 'artist', id: 'nettobrito', start: 28, end: 39 },
+    ]);
+    expect(mentionUids).toEqual(['uidBia', 'uidDuda']);
+    for (const mention of mentions) {
+      expect(text.slice(mention.start, mention.end)).toBe(`@${mention.handle}`);
+    }
+    // A leitura do documento aceita o que a gravação guarda.
+    expect(mentionsOf(mentions)).toEqual(mentions);
+    expect(resolvedMentions(findMentionTokens(text), new Map())).toEqual({
+      mentions: [],
+      mentionUids: [],
+    });
+  });
+
+  it('o `q` da busca: de 2 a 30 de a-z, 0-9 e _, sem o "@" e em minúsculas, fora dos `__.*__`', () => {
+    // Os de 2 e 3 caracteres não são reservados (o `__.*__` tem 4 ou mais).
+    for (const q of ['bi', 'bia_fan', 'fa123', 'a'.repeat(30), '__', '___', '__ab']) {
+      expect(MENTION_QUERY_PATTERN.test(q), q).toBe(true);
+    }
+    for (const q of ['', 'b', '@bi', 'Bia', 'bi a', 'biá', 'a'.repeat(31), '____', '__ab__']) {
+      expect(MENTION_QUERY_PATTERN.test(q), q).toBe(false);
+    }
+  });
+
+  // --- As sugestões ---
+
+  const club = fanClubRecord('clube1', {
+    artistId: 'nettobrito',
+    ownerUid: 'uidCamila',
+    name: 'Turma da Camila',
+    status: 'active',
+    ownerName: 'Camila Ribeiro',
+    ownerUsername: 'camilarib',
+    ownerPhotoURL: 'https://foto/camila',
+  });
+  const artist = artistRecord('nettobrito', {
+    name: 'Netto Brito',
+    status: 'published',
+    thumb: { url: 'https://foto/netto' },
+  });
+
+  const comment = (
+    id: string,
+    fields: Partial<FanClubCommentRecord> = {},
+  ): FanClubCommentRecord => ({
+    id,
+    clubId: 'clube1',
+    postId: 'pub1',
+    artistId: 'nettobrito',
+    authorUid: `uid-${id}`,
+    authorName: null,
+    authorUsername: `fa-${id}`,
+    authorPhotoURL: null,
+    text: 'Bora!',
+    mentions: [],
+    mentionUids: [],
+    replyToId: null,
+    replyCount: 0,
+    managerHiddenReplyCount: 0,
+    status: 'visible',
+    hiddenAt: null,
+    hiddenBy: null,
+    restoredByStaffAt: null,
+    reviewRequestedAt: null,
+    reviewOutcome: null,
+    createdAt: NOW,
+    ...fields,
+  });
+
+  const byId = (list: readonly FanClubCommentRecord[]) =>
+    new Map(list.map((item) => [item.id, item] as const));
+
+  it('a conversa: o gestor, o artista e quem comentou, do mais novo, sem repetir e sem quem pede', () => {
+    const comments = [
+      comment('c5', { authorUid: 'uidDuda', authorUsername: 'dudalima', authorName: 'Duda Lima' }),
+      comment('c4', { authorUid: 'uidEu', authorUsername: 'eumesmo' }),
+      comment('c3', { authorUid: 'uidCamila', authorUsername: 'camilarib' }),
+      comment('c2', { authorUid: 'uidBia', authorUsername: 'biasan', authorName: 'Bia Santos' }),
+      comment('c1', { authorUid: 'uidDuda', authorUsername: 'dudalima', authorName: 'Duda Lima' }),
+    ];
+    expect(
+      conversationSuggestions({
+        uid: 'uidEu',
+        club,
+        artist,
+        blocked: [],
+        comments,
+        tops: byId(comments),
+      }),
+    ).toEqual([
+      {
+        kind: 'fan',
+        id: 'uidCamila',
+        username: 'camilarib',
+        name: 'Camila Ribeiro',
+        photoURL: 'https://foto/camila',
+        role: 'manager',
+        inConversation: true,
+      },
+      {
+        kind: 'artist',
+        id: 'nettobrito',
+        username: 'nettobrito',
+        name: 'Netto Brito',
+        photoURL: 'https://foto/netto',
+        role: 'artist',
+        inConversation: true,
+      },
+      {
+        kind: 'fan',
+        id: 'uidDuda',
+        username: 'dudalima',
+        name: 'Duda Lima',
+        photoURL: null,
+        role: null,
+        inConversation: true,
+      },
+      {
+        kind: 'fan',
+        id: 'uidBia',
+        username: 'biasan',
+        name: 'Bia Santos',
+        photoURL: null,
+        role: null,
+        inConversation: true,
+      },
+    ]);
+  });
+
+  it('a conversa como está na tela: o visível, a resposta embaixo de um de cima visível e sem quem pede bloqueou', () => {
+    const comments = [
+      // A resposta cujo comentário de cima é de outra publicação: fora.
+      comment('r6', { authorUid: 'uidIvo', authorUsername: 'ivozin', replyToId: 'c8' }),
+      // A resposta embaixo de outra resposta: fora.
+      comment('r5', { authorUid: 'uidRui', authorUsername: 'ruizin', replyToId: 'r1' }),
+      // Embaixo do comentário oculto pelo gestor: fora.
+      comment('r4', { authorUid: 'uidZe', authorUsername: 'zezin', replyToId: 'c3' }),
+      // A resposta cujo comentário de cima não veio nem foi achado: fora.
+      comment('r3', { authorUid: 'uidEnzo', authorUsername: 'enzorocha', replyToId: 'c9' }),
+      // Embaixo do comentário de quem pede bloqueou: fora para o seguidor.
+      comment('r2', { authorUid: 'uidLeo', authorUsername: 'leozin', replyToId: 'c2' }),
+      comment('r1', { authorUid: 'uidAna', authorUsername: 'anafer', replyToId: 'c1' }),
+      comment('c3', { authorUid: 'uidOculto', authorUsername: 'oculto', status: 'manager_hidden' }),
+      comment('c2', { authorUid: 'uidBloqueado', authorUsername: 'bloqueado' }),
+      comment('c1', { authorUid: 'uidBia', authorUsername: 'biasan' }),
+      // Sem o @ na cópia, não dá para marcar: fora.
+      comment('c0', { authorUid: 'uidSemArroba', authorUsername: null }),
+    ];
+    const ids = (uid: string) =>
+      conversationSuggestions({
+        uid,
+        club,
+        artist,
+        blocked: ['uidBloqueado'],
+        comments,
+        // O `c8` veio só no mapa (o `getAll` dos de cima que faltam): é de outra publicação.
+        tops: byId([
+          ...comments,
+          comment('c8', { authorUid: 'uidOutra', authorUsername: 'outra', postId: 'pub2' }),
+        ]),
+      }).map((item) => item.id);
+    expect(ids('uidEu')).toEqual(['uidCamila', 'nettobrito', 'uidAna', 'uidBia']);
+    // O gestor vê no próprio fã-clube também os comentários de quem ele
+    // bloqueou (37.8): a resposta embaixo deles conta; quem ele bloqueou, não.
+    expect(ids('uidCamila')).toEqual(['nettobrito', 'uidLeo', 'uidAna', 'uidBia']);
+  });
+
+  it('a conversa: até 8, e sem a publicação, só o gestor e o artista', () => {
+    const many = Array.from({ length: 12 }, (_, index) =>
+      comment(`c${index}`, { authorUid: `uid${index}`, authorUsername: `fanum${index}` }),
+    );
+    const input = { club, artist, blocked: [], comments: many, tops: byId(many) };
+    expect(conversationSuggestions({ uid: 'uidEu', ...input })).toHaveLength(
+      MENTION_SUGGESTIONS_MAX,
+    );
+    const empty = { club, artist, blocked: [], comments: [], tops: new Map() };
+    expect(conversationSuggestions({ uid: 'uidEu', ...empty }).map((item) => item.role)).toEqual([
+      'manager',
+      'artist',
+    ]);
+    // A nova publicação do gestor: só o artista.
+    expect(
+      conversationSuggestions({ uid: 'uidCamila', ...empty }).map((item) => item.role),
+    ).toEqual(['artist']);
+  });
+
+  const searchFan = (fields: Partial<MentionSearchFan> = {}): MentionSearchFan => ({
+    name: null,
+    photoURL: null,
+    privateAccount: false,
+    suspended: false,
+    chosenUsername: true,
+    blocked: [],
+    ...fields,
+  });
+
+  it('a busca: as centrais no ar e os fãs do @ escolhido; a privada, a suspensa e a de quem bloqueou somem do mesmo jeito', () => {
+    const fan = (handle: string, id: string) => ({ handle, target: { kind: 'fan', id } as const });
+    const central = (handle: string) => ({
+      handle,
+      target: { kind: 'artist', id: handle } as const,
+    });
+    const hits = [
+      fan('biaa', 'uidBiaa'),
+      fan('biab', 'uidGerado'),
+      fan('biac', 'uidPrivada'),
+      fan('biad', 'uidSuspensa'),
+      fan('biae', 'uidBloqueou'),
+      fan('biaf', 'uidEu'),
+      fan('biag', 'uidBloqueado'),
+      fan('biah', 'uidSemPerfil'),
+      fan('biai', 'uidCamila'),
+      central('biaj'),
+      central('biak'),
+      central('nettobrito'),
+    ];
+    const fans = new Map<string, MentionSearchFan>([
+      ['uidBiaa', searchFan({ name: 'Bia A', photoURL: 'https://foto/biaa' })],
+      ['uidGerado', searchFan({ chosenUsername: false })],
+      ['uidPrivada', searchFan({ privateAccount: true })],
+      ['uidSuspensa', searchFan({ suspended: true })],
+      ['uidBloqueou', searchFan({ blocked: ['uidOutro', 'uidEu'] })],
+      ['uidEu', searchFan()],
+      ['uidBloqueado', searchFan()],
+      ['uidCamila', searchFan({ name: 'Camila Ribeiro' })],
+    ]);
+    const artists = new Map([
+      ['biaj', artistRecord('biaj', { name: 'Rascunho', status: 'draft' })],
+      ['biak', artistRecord('biak', { name: 'Bia K', status: 'published' })],
+      ['nettobrito', artist],
+    ]);
+    expect(
+      searchSuggestions({ uid: 'uidEu', club, blocked: ['uidBloqueado'], hits, fans, artists }),
+    ).toEqual([
+      {
+        kind: 'fan',
+        id: 'uidBiaa',
+        username: 'biaa',
+        name: 'Bia A',
+        photoURL: 'https://foto/biaa',
+        role: null,
+        inConversation: false,
+      },
+      {
+        kind: 'fan',
+        id: 'uidCamila',
+        username: 'biai',
+        name: 'Camila Ribeiro',
+        photoURL: null,
+        role: 'manager',
+        inConversation: true,
+      },
+      {
+        kind: 'artist',
+        id: 'biak',
+        username: 'biak',
+        name: 'Bia K',
+        photoURL: null,
+        role: null,
+        inConversation: false,
+      },
+      {
+        kind: 'artist',
+        id: 'nettobrito',
+        username: 'nettobrito',
+        name: 'Netto Brito',
+        photoURL: 'https://foto/netto',
+        role: 'artist',
+        inConversation: true,
+      },
+    ]);
+  });
+
+  it('a busca: até 8, sem repetir a mesma pessoa', () => {
+    // As reservas "bia0" e "bia1" apontam para o mesmo fã, antes do limite: ele sai uma vez só.
+    const hits = Array.from({ length: 12 }, (_, index) => ({
+      handle: `bia${index}`,
+      target: { kind: 'fan', id: index < 2 ? 'uid0' : `uid${index}` } as const,
+    }));
+    const fans = new Map(hits.map((hit) => [hit.target.id, searchFan()] as const));
+    const items = searchSuggestions({
+      uid: 'uidEu',
+      club,
+      blocked: [],
+      hits,
+      fans,
+      artists: new Map(),
+    });
+    expect(items).toHaveLength(MENTION_SUGGESTIONS_MAX);
+    expect(new Set(items.map((item) => item.id)).size).toBe(items.length);
+    expect(items.map((item) => item.id)).toEqual([
+      'uid0',
+      'uid2',
+      'uid3',
+      'uid4',
+      'uid5',
+      'uid6',
+      'uid7',
+      'uid8',
+    ]);
+    expect(items[0]!.username).toBe('bia0');
+  });
+
+  it('o fã da busca lido do perfil: o @ escolhido, a conta privada e a suspensa', () => {
+    const at = { toMillis: () => NOW };
+    expect(
+      mentionSearchFanOf(
+        {
+          displayName: 'Bia Santos',
+          username: 'biazinha',
+          photoURL: '',
+          privateAccount: false,
+          usernameChangedAt: at,
+        },
+        ['uidX'],
+      ),
+    ).toEqual({
+      name: 'Bia Santos',
+      photoURL: null,
+      privateAccount: false,
+      suspended: false,
+      chosenUsername: true,
+      blocked: ['uidX'],
+    });
+    expect(mentionSearchFanOf({ privateAccount: true, suspendedAt: at }, [])).toMatchObject({
+      privateAccount: true,
+      suspended: true,
+      chosenUsername: false,
+    });
+    expect(mentionSearchFanOf({ suspendedAt: null }, [])).toMatchObject({ suspended: false });
+    expect(mentionSearchFanOf(undefined, [])).toBeNull();
   });
 });

@@ -49,6 +49,7 @@ import {
   FAN_CLUB_RULES_VERSION,
   FAN_CLUB_UPLOAD_SLOT_MS,
   fanClubBoxes,
+  fanClubInvalid,
   fanClubMediaFolder,
   FanClubError,
   fanClubNotFound,
@@ -57,8 +58,12 @@ import {
   fanClubReactionOf,
   fanClubRecord,
   fanClubRefused,
+  findMentionTokens,
+  isBlockedWithMentions,
+  mentionHandles,
   millisOf,
   postMediaPaths,
+  resolvedMentions,
   sameProportion,
   slotFileNames,
   slotNamesOf,
@@ -82,6 +87,7 @@ import {
   fanClubReportQueueRef,
   fanClubUploadSlotRef,
   ownerCopiesOf,
+  readMentionTargets,
   readReactionsOf,
 } from './store';
 
@@ -91,9 +97,11 @@ import {
 // e o passo da exclusão de conta. Desde a Fase 2 (seção 37, 37.3), a
 // publicação no ar pelo id (`GET /fan-club-posts/:postId`), os contadores e a
 // reação de quem pede nas vistas e o que reagir e comentar pedem da
-// publicação (`readActionPost`). O que mexe em arquivo do Storage fora da
-// leitura (apagar e trocar o token) fica para depois da transação, no
-// `FanClubFileWork` que a rota e a callable rodam depois de gravar.
+// publicação (`readActionPost`); desde a etapa 2 de 37.13, as marcações do
+// texto do gestor, resolvidas no envio (37.7). O que mexe em arquivo do
+// Storage fora da leitura (apagar e trocar o token) fica para depois da
+// transação, no `FanClubFileWork` que a rota e a callable rodam depois de
+// gravar.
 
 const tsOf = (ms: number) => Timestamp.fromMillis(ms);
 
@@ -622,12 +630,16 @@ async function readPostMedia(
 
 /**
  * `POST /me/fan-club/posts` (34.5), na transação do runIdempotent, com o corpo
- * já conferido (`parsePost`): o que publicar pede (`readPublishContext`); o
+ * já conferido (`parsePost`): o que publicar pede (`readPublishContext`); as
+ * marcações do texto (seção 37, 37.7), com as reservas dos @ e as centrais
+ * delas, e o filtro `fanClubPost` de novo, com o "@" tirado só dos resolvidos
+ * (barrado: 400 `fan_club_invalid` com `not_allowed`, sem gravar nada); o
  * teto `fanclub_post`; com foto, a vaga (`upload_missing` sem ela ou vencida)
  * e os dois arquivos (`readPostMedia`), lidos antes de qualquer gravação, como
  * no `PUT /me/photo`; o `planAwards` sem entradas; e grava a publicação em
- * análise, com as cópias do perfil, o `pendingPosts` mais 1 e, com foto, apaga
- * a vaga. Toda publicação nasce em análise (decisão 16).
+ * análise, com as cópias do perfil, as marcações (as `mentions` e os
+ * `mentionUids`), o `pendingPosts` mais 1 e, com foto, apaga a vaga. Toda
+ * publicação nasce em análise (decisão 16).
  */
 export async function createFanClubPost(
   tx: Transaction,
@@ -637,6 +649,15 @@ export async function createFanClubPost(
 ): Promise<{ body: OwnFanClubPost; plan: AwardPlan }> {
   const { fan, award, profile, input } = options;
   const context = await readPublishContext(tx, db, fan.uid, input.photo);
+  // As marcações do texto (seção 37, 37.7), resolvidas no envio; a revisão
+  // da equipe vê o texto e os marcados. O filtro de novo, com o "@" tirado só
+  // dos resolvidos.
+  const tokens = findMentionTokens(input.text);
+  const targets = await readMentionTargets(tx, db, mentionHandles(tokens));
+  if (isBlockedWithMentions(input.text, tokens, targets, 'fanClubPost')) {
+    throw fanClubInvalid('text', 'not_allowed');
+  }
+  const { mentions, mentionUids } = resolvedMentions(tokens, targets);
   enforceDailyCap(fan, award, 'club_post');
   const slotRef = fanClubUploadSlotRef(db, fan.uid);
   let media: PostMedia | null = null;
@@ -675,7 +696,7 @@ export async function createFanClubPost(
     reactionCount: 0,
     reactionCounts: emptyReactionCounts(),
     commentCount: 0,
-    mentions: [],
+    mentions,
   };
   tx.create(ref, {
     clubId: record.clubId,
@@ -686,6 +707,8 @@ export async function createFanClubPost(
     authorPhotoURL: record.authorPhotoURL,
     kind: record.kind,
     text: record.text,
+    mentions,
+    mentionUids,
     media,
     status: 'pending',
     rejectReason: null,
