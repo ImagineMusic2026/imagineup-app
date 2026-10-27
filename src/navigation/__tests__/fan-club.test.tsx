@@ -5,7 +5,16 @@ import { act, fireEvent, renderRouter, screen, waitFor, within } from 'expo-rout
 import * as WebBrowser from 'expo-web-browser';
 import { getDoc } from 'firebase/firestore';
 import type { ReactNode } from 'react';
-import { AccessibilityInfo, Alert, Dimensions, Share, Text, type AlertButton } from 'react-native';
+import {
+  AccessibilityInfo,
+  Alert,
+  BackHandler,
+  Dimensions,
+  Platform,
+  Share,
+  Text,
+  type AlertButton,
+} from 'react-native';
 
 import SettingsRoute from '@/app/(tabs)/(perfil)/ajustes';
 import ApplyRoute from '@/app/meu-fa-clube/candidatura';
@@ -15,7 +24,6 @@ import RulesRoute from '@/app/meu-fa-clube/regras';
 import * as fanClubApi from '@/domains/fan-club/api';
 import type {
   FanClubApplication,
-  FanClubListPage,
   MyFanClub,
   MyFanClubClub,
   OwnFanClubPost,
@@ -92,6 +100,19 @@ jest.mock('@/domains/profile/photo', () => ({
   prepareFanClubPhoto: jest.fn(),
 }));
 
+// Sem layout nativo no Jest, a FlashList não mede nada e não desenha item
+// nenhum (as Publicações do modo gestor, 34.24).
+jest.mock('@shopify/flash-list/dist/recyclerview/utils/measureLayout', () => {
+  const actual = jest.requireActual('@shopify/flash-list/dist/recyclerview/utils/measureLayout');
+  const screenSize = { x: 0, y: 0, width: 402, height: 874 };
+  return {
+    ...actual,
+    measureParentSize: jest.fn(() => screenSize),
+    measureFirstChildLayout: jest.fn(() => screenSize),
+    measureItemLayout: jest.fn(() => ({ x: 0, y: 0, width: 402, height: 64 })),
+  };
+});
+
 const mocked = jest.mocked(fanClubApi);
 
 /** Os guards do app e o cache do app. */
@@ -113,6 +134,7 @@ function RootLayout() {
           <Stack.Screen name="meu-fa-clube/candidatura" />
           <Stack.Screen name="meu-fa-clube/nova-publicacao" />
           <Stack.Screen name="meu-fa-clube/regras" />
+          <Stack.Screen name="fa-clube/[clubeId]" />
         </Stack.Protected>
       </Stack>
     </QueryClientProvider>
@@ -151,6 +173,22 @@ const appTree = {
   'meu-fa-clube/candidatura': ApplyRoute,
   'meu-fa-clube/nova-publicacao': NewPostRoute,
   'meu-fa-clube/regras': RulesRoute,
+  // A página pública, só como destino do olho do modo gestor (34.24).
+  'fa-clube/[clubeId]': label('página do fã-clube'),
+};
+
+/**
+ * Uma aba da barra do modo gestor: "button" no iOS, "tab" no Android, como a
+ * do app. Pelo rótulo exato: o nome do `getByRole` casa também com o texto de
+ * dentro, e o card de atalho do Painel tem o título "Publicações".
+ */
+const managerTab = (name: string) => {
+  const role = Platform.OS === 'ios' ? 'button' : 'tab';
+  const found = screen
+    .getAllByRole(role, { name })
+    .filter((node) => node.props.accessibilityLabel === name);
+  expect(found).toHaveLength(1);
+  return found[0]!;
 };
 
 // --- Os dados -------------------------------------------------------------------------
@@ -441,16 +479,18 @@ describe('o bloco "Fã-clube" dos Ajustes (34.9, item 1)', () => {
 });
 
 describe('as rotas novas a frio, antes da abertura', () => {
-  it.each(['/meu-fa-clube', '/meu-fa-clube/candidatura', '/meu-fa-clube/nova-publicacao'])(
-    '%s com o 404 da api de antes: "não está disponível", e nada mais é chamado',
-    async (url) => {
-      mocked.fetchMyFanClub.mockRejectedValue(notFound());
-      renderRouter(appTree, { initialUrl: url });
+  it.each([
+    '/meu-fa-clube',
+    '/meu-fa-clube?aba=publicacoes',
+    '/meu-fa-clube/candidatura',
+    '/meu-fa-clube/nova-publicacao',
+  ])('%s com o 404 da api de antes: "não está disponível", e nada mais é chamado', async (url) => {
+    mocked.fetchMyFanClub.mockRejectedValue(notFound());
+    renderRouter(appTree, { initialUrl: url });
 
-      expect(await screen.findByText('O fã-clube não está disponível agora.')).toBeTruthy();
-      expectOnlyTheGate();
-    },
-  );
+    expect(await screen.findByText('O fã-clube não está disponível agora.')).toBeTruthy();
+    expectOnlyTheGate();
+  });
 
   it('a frio, o "Voltar" da tela indisponível vai ao início, e o título não convida', async () => {
     mocked.fetchMyFanClub.mockRejectedValue(notFound());
@@ -994,19 +1034,30 @@ describe('a espera e a recusa (34.9, item 4)', () => {
     await waitFor(() => expect(view.getPathname()).toBe('/meu-fa-clube/candidatura'));
   });
 
-  it('encerrado pela equipe: o "Meu fã-clube" com o aviso, a frase do fim e os números, sem botão', async () => {
+  it('encerrado pela equipe: o modo gestor com o aviso, a frase do fim e os números, sem botão', async () => {
     mocked.fetchMyFanClub.mockResolvedValue(
       manager({ status: 'closed', available: false, unavailableReason: 'closed' }),
     );
     serverAnswers();
+    const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => undefined);
     renderRouter(appTree, { initialUrl: '/meu-fa-clube' });
 
     expect(await screen.findByText('Você não pode mais ter um fã-clube.')).toBeTruthy();
     expect(screen.getByText('Seu fã-clube foi encerrado.')).toBeTruthy();
-    expect(await screen.findByLabelText('Seguidores: 12')).toBeTruthy();
+    expect(await screen.findByLabelText('Seguidores: 12. +5 nos últimos 30 dias.')).toBeTruthy();
     expect(screen.queryByTestId('fan-club-apply-again')).toBeNull();
     expect(screen.queryByTestId('fan-club-share')).toBeNull();
-    expect(screen.queryByTestId('fan-club-new-post')).toBeNull();
+    expect(screen.queryByTestId('fan-club-preview')).toBeNull();
+    // O "+" fica na barra e diz que acabou, em vez de abrir a nova publicação.
+    fireEvent.press(screen.getByRole('button', { name: 'Nova publicação' }));
+    expect(alert).toHaveBeenCalledWith(
+      'Você não pode publicar agora',
+      'Seu fã-clube foi encerrado.',
+      expect.any(Array),
+    );
+    // Sem o pedido de encerramento na Conta.
+    fireEvent.press(managerTab('Conta'));
+    expect(await screen.findByRole('header', { name: 'Conta' })).toBeTruthy();
     expect(screen.queryByTestId('fan-club-close')).toBeNull();
   });
 
@@ -1030,8 +1081,8 @@ describe('a espera e a recusa (34.9, item 4)', () => {
 
 // --- O "Meu fã-clube" -----------------------------------------------------------------
 
-describe('o "Meu fã-clube" (34.9, item 5)', () => {
-  it('o cabeçalho, os números com rótulo e o card Prêmios', async () => {
+describe('o modo gestor do "Meu fã-clube" (34.24)', () => {
+  it('o cabeçalho com o selo "Gestor", a barra com o "+" e o Painel com os números e os atalhos', async () => {
     mocked.fetchMyFanClub.mockResolvedValue(manager({ featuredUntil: '2026-10-25' }));
     serverAnswers();
     const view = renderRouter(appTree, { initialUrl: '/meu-fa-clube' });
@@ -1041,14 +1092,46 @@ describe('o "Meu fã-clube" (34.9, item 5)', () => {
         name: 'Netto de Coração, de Netto Brito. Ativo.',
       }),
     ).toBeTruthy();
-    expect(screen.getByText('Seu fã-clube é destaque até 25/10/2026')).toBeTruthy();
-    expect(await screen.findByLabelText('Seguidores: 12')).toBeTruthy();
-    expect(screen.getByLabelText('Novos em 30 dias: 5')).toBeTruthy();
-    expect(screen.getByLabelText('Entradas trazidas: 2')).toBeTruthy();
-    expect(screen.getByLabelText('Publicações no ar: 2')).toBeTruthy();
-    expect(screen.getByLabelText('Em análise: 1')).toBeTruthy();
-    expect(screen.getByText('+200 pontos e um prêmio em 18/10/2026')).toBeTruthy();
+    expect(screen.getByText('Gestor')).toBeTruthy();
+    expect(screen.queryByText(/dono/iu)).toBeNull();
+    for (const name of ['Painel', 'Publicações', 'Prêmios', 'Conta']) {
+      expect(managerTab(name)).toBeTruthy();
+    }
+    expect(managerTab('Painel')).toBeSelected();
+    expect(screen.getByRole('button', { name: 'Nova publicação' }).props.accessibilityHint).toBe(
+      'Abre o formulário da publicação',
+    );
+
+    expect(await screen.findByLabelText('Seguidores: 12. +5 nos últimos 30 dias.')).toBeTruthy();
+    expect(
+      screen.getByLabelText('Links compartilhados: 4. Fãs que compartilharam o seu fã-clube.'),
+    ).toBeTruthy();
+    expect(
+      screen.getByLabelText('Visitas pelos links: 9. Pessoas que abriram o link.'),
+    ).toBeTruthy();
+    expect(
+      screen.getByLabelText('Cadastros pelo link: 3. Contas novas criadas pelo link.'),
+    ).toBeTruthy();
+    expect(
+      screen.getByLabelText('Entradas na central: 2. Novos fãs na central de Netto Brito.'),
+    ).toBeTruthy();
+    expect(screen.getByLabelText('Seu fã-clube é destaque até 25/10/2026')).toBeTruthy();
+    expect(
+      screen.getByRole('button', { name: 'Publicações: 2 no ar, 1 de 3 em análise.' }),
+    ).toBeTruthy();
+    // Sem o que a API não manda: o gráfico, os períodos, a posição e quem trouxe quem.
+    expect(screen.queryByText(/^(7 dias|30 dias|Temporada)$|Quem mais traz/u)).toBeNull();
     expect(screen.queryByTestId('fan-club-official-badge', hidden)).toBeNull();
+
+    // O card de Prêmios leva à aba, e "Ver meus prêmios" abre a loja.
+    fireEvent.press(
+      screen.getByRole('button', { name: 'Prêmios. +200 pontos e um prêmio em 18/10/2026' }),
+    );
+    expect(await screen.findByRole('header', { name: 'Prêmios' })).toBeTruthy();
+    expect(managerTab('Prêmios')).toBeSelected();
+    // A troca pedida de dentro da aba diz ao leitor para onde foi.
+    expect(announced()).toContain('Prêmios');
+    expect(screen.getByText('+200 pontos e um prêmio em 18/10/2026')).toBeTruthy();
     fireEvent.press(screen.getByTestId('fan-club-prizes-open'));
     await waitFor(() => expect(view.getPathname()).toBe('/recompensas'));
   });
@@ -1064,7 +1147,19 @@ describe('o "Meu fã-clube" (34.9, item 5)', () => {
     expect(within(header).getByTestId('fan-club-official-badge', hidden)).toBeTruthy();
   });
 
-  it('"Ver meus prêmios" e "Aceitar" ficam numa fileira, da altura do conteúdo', async () => {
+  it('a aba e o filtro ficam no endereço, e a marca do prêmio visto vale em qualquer aba', async () => {
+    mocked.fetchMyFanClub.mockResolvedValue(manager());
+    serverAnswers();
+    renderRouter(appTree, { initialUrl: '/meu-fa-clube?aba=conta' });
+
+    expect(await screen.findByRole('header', { name: 'Conta' })).toBeTruthy();
+    expect(managerTab('Conta')).toBeSelected();
+    expect(useFanClubPrizeStore.getState().seen['uid-camila']).toBe('2026-10-18T15:00:00.000Z');
+    // O Painel não está montado: nada dos números.
+    expect(mocked.fetchMyFanClubNumbers).not.toHaveBeenCalled();
+  });
+
+  it('"Aceitar" e "Ver meus prêmios" ficam numa fileira, da altura do conteúdo', async () => {
     // Direto na coluna e alinhado ao começo, o desenho do Button cresce para
     // ocupar a altura que o pai der e esticava sem fim dentro da rolagem (o
     // card Prêmios no emulador Android, na conferência da etapa 10 de 34.14).
@@ -1073,15 +1168,16 @@ describe('o "Meu fã-clube" (34.9, item 5)', () => {
     serverAnswers();
     renderRouter(appTree, { initialUrl: '/meu-fa-clube' });
 
+    const acceptRow = await screen.findByTestId('fan-club-rules-accept-row');
+    expect(acceptRow).toHaveStyle({ flexDirection: 'row' });
+    expect(within(acceptRow).getByTestId('fan-club-rules-accept')).toBeTruthy();
+    fireEvent.press(managerTab('Prêmios'));
     const prizesRow = await screen.findByTestId('fan-club-prizes-open-row');
     expect(prizesRow).toHaveStyle({ flexDirection: 'row' });
     expect(within(prizesRow).getByTestId('fan-club-prizes-open')).toBeTruthy();
-    const acceptRow = screen.getByTestId('fan-club-rules-accept-row');
-    expect(acceptRow).toHaveStyle({ flexDirection: 'row' });
-    expect(within(acceptRow).getByTestId('fan-club-rules-accept')).toBeTruthy();
   });
 
-  it('"Compartilhar meu fã-clube": o link com o código, o código na mensagem e o link fanclub:<id>', async () => {
+  it('"Compartilhar meu fã-clube" no cabeçalho: o link com o código, o código na mensagem e o link fanclub:<id>', async () => {
     mocked.fetchMyFanClub.mockResolvedValue(manager());
     serverAnswers();
     const share = jest.spyOn(Share, 'share').mockResolvedValue({ action: Share.sharedAction });
@@ -1093,7 +1189,7 @@ describe('o "Meu fã-clube" (34.9, item 5)', () => {
     });
     renderRouter(appTree, { initialUrl: '/meu-fa-clube' });
 
-    fireEvent.press(await screen.findByTestId('fan-club-share'));
+    fireEvent.press(await screen.findByRole('button', { name: 'Compartilhar meu fã-clube' }));
 
     await waitFor(() => expect(share).toHaveBeenCalled());
     const content = JSON.stringify(share.mock.calls[0]![0]);
@@ -1106,28 +1202,87 @@ describe('o "Meu fã-clube" (34.9, item 5)', () => {
     );
   });
 
-  it('fora do ar: o aviso com o motivo, sem Compartilhar nem Nova publicação', async () => {
+  it('o olho abre a página como os fãs veem, por cima do modo gestor', async () => {
+    mocked.fetchMyFanClub.mockResolvedValue(manager());
+    serverAnswers();
+    const view = renderRouter(appTree, { initialUrl: '/meu-fa-clube' });
+
+    fireEvent.press(await screen.findByRole('button', { name: 'Ver como os fãs veem' }));
+    await waitFor(() => expect(view.getPathname()).toBe('/fa-clube/fc-1'));
+    expect(screen.getByText('página do fã-clube')).toBeTruthy();
+  });
+
+  it('o "+" abre a nova publicação quando o gestor pode publicar', async () => {
+    mocked.fetchMyFanClub.mockResolvedValue(manager());
+    serverAnswers();
+    const alert = jest.spyOn(Alert, 'alert');
+    const view = renderRouter(appTree, { initialUrl: '/meu-fa-clube?aba=premios' });
+
+    fireEvent.press(await screen.findByRole('button', { name: 'Nova publicação' }));
+    await waitFor(() => expect(view.getPathname()).toBe('/meu-fa-clube/nova-publicacao'));
+    expect(alert).not.toHaveBeenCalled();
+  });
+
+  it('pausado: o aviso com "Falar com a equipe", sem Compartilhar nem o olho; o "+" diz o motivo', async () => {
     mocked.fetchMyFanClub.mockResolvedValue(
       manager({ status: 'paused', available: false, unavailableReason: 'paused' }),
     );
     serverAnswers();
-    renderRouter(appTree, { initialUrl: '/meu-fa-clube' });
+    const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => undefined);
+    const view = renderRouter(appTree, { initialUrl: '/meu-fa-clube' });
 
     expect(await screen.findByText('Seu fã-clube está pausado pela equipe.')).toBeTruthy();
+    expect(
+      within(screen.getByTestId('fan-club-unavailable')).getByRole('link', {
+        name: 'Falar com a equipe',
+      }),
+    ).toBeTruthy();
     expect(screen.queryByTestId('fan-club-share')).toBeNull();
-    expect(screen.queryByTestId('fan-club-new-post')).toBeNull();
+    expect(screen.queryByTestId('fan-club-preview')).toBeNull();
+
+    const plus = screen.getByRole('button', { name: 'Nova publicação' });
+    expect(plus.props.accessibilityHint).toBe('Diz por que você não pode publicar agora');
+    fireEvent.press(plus);
+    expect(alert).toHaveBeenCalledWith(
+      'Você não pode publicar agora',
+      'Seu fã-clube está pausado pela equipe.',
+      [expect.objectContaining({ text: 'Fechar' })],
+    );
+    expect(view.getPathname()).toBe('/meu-fa-clube');
   });
 
-  it('o regulamento mudou: o aviso e "Aceitar", com a versão de agora', async () => {
+  it('fora da central: o aviso leva de volta a ela', async () => {
+    mocked.fetchMyFanClub.mockResolvedValue(
+      manager({ available: false, unavailableReason: 'not_member' }),
+    );
+    serverAnswers();
+    const dismissTo = jest.spyOn(router, 'dismissTo').mockImplementation(() => undefined);
+    renderRouter(appTree, { initialUrl: '/meu-fa-clube' });
+
+    fireEvent.press(
+      await screen.findByRole('link', { name: 'Voltar para a central de Netto Brito' }),
+    );
+    expect(dismissTo).toHaveBeenCalledWith(
+      expect.objectContaining({ params: { artistaId: 'nettobrito' } }),
+      { withAnchor: true },
+    );
+  });
+
+  it('o regulamento mudou: o "+" leva ao aviso, e o "Aceitar" manda a versão de agora', async () => {
     mocked.fetchMyFanClub.mockResolvedValue(manager({ rulesOutdated: true }));
     mocked.acceptFanClubRules.mockResolvedValue(manager());
     serverAnswers();
-    renderRouter(appTree, { initialUrl: '/meu-fa-clube' });
+    jest.spyOn(Alert, 'alert').mockImplementation((_title, message, buttons?: AlertButton[]) => {
+      expect(message).toBe(
+        'O regulamento mudou. Aceite o novo, no Painel, para voltar a publicar.',
+      );
+      buttons?.find((button) => button.text === 'Ver no Painel')?.onPress?.();
+    });
+    renderRouter(appTree, { initialUrl: '/meu-fa-clube?aba=publicacoes' });
 
+    fireEvent.press(await screen.findByRole('button', { name: 'Nova publicação' }));
     expect(await screen.findByText('O regulamento mudou')).toBeTruthy();
-    expect(screen.getByTestId('fan-club-new-post').props.accessibilityState).toEqual(
-      expect.objectContaining({ disabled: true }),
-    );
+    expect(managerTab('Painel')).toBeSelected();
     fireEvent.press(screen.getByTestId('fan-club-rules-accept'));
     await waitFor(() =>
       expect(mocked.acceptFanClubRules).toHaveBeenCalledWith({
@@ -1138,10 +1293,41 @@ describe('o "Meu fã-clube" (34.9, item 5)', () => {
     await waitFor(() =>
       expect(screen.queryByTestId('fan-club-rules-notice')).not.toBeOnTheScreen(),
     );
+    expect(screen.getByRole('button', { name: 'Nova publicação' }).props.accessibilityHint).toBe(
+      'Abre o formulário da publicação',
+    );
   });
 
-  it('"Minhas publicações": o status, o motivo da recusada, e Retirar com a confirmação', async () => {
-    const page: FanClubListPage<OwnFanClubPost> = {
+  it('com 3 em análise, o "+" diz o motivo e leva às em análise', async () => {
+    mocked.fetchMyFanClub.mockResolvedValue(manager({ pendingPosts: 3 }));
+    mocked.fetchMyFanClubPosts.mockResolvedValue({
+      items: [
+        ownPost({ id: 'fcp-1', text: 'Primeira' }),
+        ownPost({ id: 'fcp-2', text: 'Segunda' }),
+        ownPost({ id: 'fcp-3', text: 'Terceira' }),
+        ownPost({ id: 'fcp-4', status: 'published', text: 'Já no ar' }),
+      ],
+      nextCursor: null,
+    });
+    serverAnswers();
+    jest.spyOn(Alert, 'alert').mockImplementation((_title, message, buttons?: AlertButton[]) => {
+      expect(message).toBe('Você já tem 3 publicações em análise. Espere a equipe revisar.');
+      buttons?.find((button) => button.text === 'Ver as em análise')?.onPress?.();
+    });
+    const view = renderRouter(appTree, { initialUrl: '/meu-fa-clube' });
+
+    fireEvent.press(await screen.findByRole('button', { name: 'Nova publicação' }));
+    expect(await screen.findByText('Terceira')).toBeTruthy();
+    expect(managerTab('Publicações')).toBeSelected();
+    expect(screen.getByTestId('fan-club-posts-filter-em-analise')).toBeSelected();
+    expect(screen.getByLabelText('Em análise, 3')).toBeTruthy();
+    expect(screen.queryByText('Já no ar')).toBeNull();
+    expect(view.getPathname()).toBe('/meu-fa-clube');
+  });
+
+  it('Publicações: os filtros, o status, o motivo da recusada, e Retirar com a confirmação', async () => {
+    mocked.fetchMyFanClub.mockResolvedValue(manager());
+    mocked.fetchMyFanClubPosts.mockResolvedValue({
       items: [
         ownPost({ id: 'fcp-1', status: 'pending' }),
         ownPost({
@@ -1153,42 +1339,77 @@ describe('o "Meu fã-clube" (34.9, item 5)', () => {
         ownPost({ id: 'fcp-3', status: 'published', text: 'No ar' }),
       ],
       nextCursor: null,
-    };
-    mocked.fetchMyFanClub.mockResolvedValue(manager());
-    mocked.fetchMyFanClubPosts.mockResolvedValue(page);
+    });
     mocked.removeFanClubPost.mockResolvedValue(ownPost({ id: 'fcp-1', status: 'withdrawn' }));
     serverAnswers();
     confirmAlerts();
-    renderRouter(appTree, { initialUrl: '/meu-fa-clube' });
+    renderRouter(appTree, { initialUrl: '/meu-fa-clube?aba=publicacoes' });
 
-    expect(await screen.findByText('Motivo: Fora do assunto do artista.')).toBeTruthy();
-    // O rótulo da linha: o ponto depois do texto só quando falta (etapa 10).
+    expect(await screen.findByRole('header', { name: 'Publicações' })).toBeTruthy();
     expect(
-      screen.getByLabelText('Em análise. Que show em Feira! Enviada em 19/10/2026.'),
+      screen.getByText(
+        'A equipe revisa cada publicação antes de ela ir ao ar, e até 3 esperam a revisão por vez.',
+      ),
     ).toBeTruthy();
+    // No ar, o filtro de partida, com as contagens do servidor nos dois primeiros.
+    expect(screen.getByTestId('fan-club-posts-filter-no-ar')).toBeSelected();
+    expect(screen.getByLabelText('No ar, 2')).toBeTruthy();
+    expect(screen.getByLabelText('Em análise, 1')).toBeTruthy();
+    expect(
+      await screen.findByRole('button', { name: 'Tirar do ar a publicação: No ar' }),
+    ).toBeTruthy();
+    expect(screen.queryByText('Que show em Feira!')).toBeNull();
+
+    fireEvent.press(screen.getByTestId('fan-club-posts-filter-recusadas'));
+    expect(await screen.findByText('Motivo: Fora do assunto do artista.')).toBeTruthy();
     expect(
       screen.getByLabelText(
         'Recusada. Outro texto. Enviada em 19/10/2026. Motivo: Fora do assunto do artista.',
       ),
     ).toBeTruthy();
     expect(screen.queryByTestId('fan-club-own-post-fcp-2-remove')).toBeNull();
-    // Cada botão diz de qual publicação é.
-    expect(screen.getByRole('button', { name: 'Tirar do ar a publicação: No ar' })).toBeTruthy();
+
+    fireEvent.press(screen.getByTestId('fan-club-posts-filter-em-analise'));
+    // O rótulo da linha: o ponto depois do texto só quando falta (etapa 10).
+    expect(
+      await screen.findByLabelText('Em análise. Que show em Feira! Enviada em 19/10/2026.'),
+    ).toBeTruthy();
     fireEvent.press(
       screen.getByRole('button', { name: 'Retirar a publicação: Que show em Feira!' }),
     );
-
     await waitFor(() =>
       expect(mocked.removeFanClubPost).toHaveBeenCalledWith({
         postId: 'fcp-1',
         idempotencyKey: expect.stringMatching(/^club-remove-/),
       }),
     );
-    expect(await screen.findByText('Retirada')).toBeTruthy();
     expect(announced()).toContain('Publicação retirada.');
+    // A retirada sai de "Em análise" e fica em "Outras".
+    expect(await screen.findByText('Nenhuma publicação em análise.')).toBeTruthy();
+    fireEvent.press(screen.getByTestId('fan-club-posts-filter-outras'));
+    expect(await screen.findByText('Retirada')).toBeTruthy();
   });
 
-  it('os números que não vieram: "Sem dado", e não carregando', async () => {
+  it('Publicações: com poucas no filtro, a página seguinte vem sozinha', async () => {
+    mocked.fetchMyFanClub.mockResolvedValue(manager());
+    mocked.fetchMyFanClubPosts.mockImplementation((cursor) =>
+      Promise.resolve(
+        cursor === null
+          ? { items: [ownPost({ id: 'fcp-1', status: 'published' })], nextCursor: 'c2' }
+          : {
+              items: [ownPost({ id: 'fcp-9', status: 'rejected', text: 'Bem antiga' })],
+              nextCursor: null,
+            },
+      ),
+    );
+    serverAnswers();
+    renderRouter(appTree, { initialUrl: '/meu-fa-clube?aba=publicacoes&filtro=recusadas' });
+
+    expect(await screen.findByText('Bem antiga')).toBeTruthy();
+    expect(mocked.fetchMyFanClubPosts.mock.calls).toEqual([[null], ['c2']]);
+  });
+
+  it('os números que não vieram: "Sem dado", e não carregando, com "Tentar de novo"', async () => {
     mocked.fetchMyFanClub.mockResolvedValue(manager());
     mocked.fetchMyFanClubNumbers.mockRejectedValue(
       new ApiError('notFound', 'Não encontrado.', 404, 'fan_club_not_found'),
@@ -1197,32 +1418,33 @@ describe('o "Meu fã-clube" (34.9, item 5)', () => {
     renderRouter(appTree, { initialUrl: '/meu-fa-clube' });
 
     expect(await screen.findByLabelText('Seguidores: Sem dado')).toBeTruthy();
-    expect(screen.getByLabelText('Visitas: Sem dado')).toBeTruthy();
+    expect(
+      screen.getByLabelText('Visitas pelos links: Sem dado. Pessoas que abriram o link.'),
+    ).toBeTruthy();
     expect(screen.getByText('Não deu para carregar os números.')).toBeTruthy();
+    fireEvent.press(screen.getByTestId('fan-club-numbers-retry'));
+    await waitFor(() => expect(mocked.fetchMyFanClubNumbers).toHaveBeenCalledTimes(2));
   });
 
-  it('o card Prêmios fica só com as ações; o texto do reconhecimento abre pelas regras', async () => {
+  it('Prêmios: o último reconhecimento, "Ver meus prêmios" e "Falar com a equipe"', async () => {
     mocked.fetchMyFanClub.mockResolvedValue(manager());
     serverAnswers();
-    const view = renderRouter(appTree, { initialUrl: '/meu-fa-clube' });
+    renderRouter(appTree, { initialUrl: '/meu-fa-clube?aba=premios' });
 
     const card = within(await screen.findByTestId('fan-club-prizes'));
+    expect(
+      card.getByLabelText('Último reconhecimento: +200 pontos e um prêmio em 18/10/2026'),
+    ).toBeTruthy();
     expect(card.getByRole('button', { name: 'Ver meus prêmios' })).toBeTruthy();
     expect(card.getByRole('link', { name: 'Falar com a equipe' })).toBeTruthy();
     expect(card.queryByText(PROGRAM.notice)).toBeNull();
     expect(card.queryByText(/18 anos/)).toBeNull();
-
-    fireEvent.press(card.getByRole('button', { name: 'Regras do fã-clube' }));
-    await waitFor(() => expect(view.getPathname()).toBe('/meu-fa-clube/regras'));
-    expect(
-      within(screen.getByTestId('fan-club-rules-sheet')).getByText(PROGRAM.notice),
-    ).toBeTruthy();
   });
 
-  it('o WhatsApp para a equipe: o número guardado, Editar e Salvar pelo PUT /me/contact', async () => {
+  it('Conta: o WhatsApp para a equipe, as regras, falar com a equipe e o encerrar no fim', async () => {
     mocked.fetchMyFanClub.mockResolvedValue(manager());
     serverAnswers();
-    renderRouter(appTree, { initialUrl: '/meu-fa-clube' });
+    const view = renderRouter(appTree, { initialUrl: '/meu-fa-clube?aba=conta' });
 
     expect(
       await screen.findByLabelText(`WhatsApp para a equipe, +55 (75) 99123-4567. ${HINT}`),
@@ -1230,7 +1452,6 @@ describe('o "Meu fã-clube" (34.9, item 5)', () => {
     fireEvent.press(screen.getByTestId('fan-club-contact-edit'));
     fireEvent.changeText(screen.getByTestId('fan-club-contact-input'), '75988887777');
     fireEvent.press(screen.getByTestId('fan-club-contact-save'));
-
     await waitFor(() =>
       expect(api.put).toHaveBeenCalledWith(
         '/me/contact',
@@ -1241,6 +1462,29 @@ describe('o "Meu fã-clube" (34.9, item 5)', () => {
     expect(
       await screen.findByLabelText(`WhatsApp para a equipe, +55 (75) 98888-7777. ${HINT}`),
     ).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Falar com a equipe' })).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Quero encerrar meu fã-clube' })).toBeTruthy();
+
+    fireEvent.press(screen.getByRole('button', { name: 'Regras do fã-clube' }));
+    await waitFor(() => expect(view.getPathname()).toBe('/meu-fa-clube/regras'));
+    expect(
+      within(screen.getByTestId('fan-club-rules-sheet')).getByText(PROGRAM.notice),
+    ).toBeTruthy();
+  });
+
+  it('o voltar do Android fora do Painel volta ao Painel', async () => {
+    mocked.fetchMyFanClub.mockResolvedValue(manager());
+    serverAnswers();
+    const backPress = jest.spyOn(BackHandler, 'addEventListener');
+    renderRouter(appTree, { initialUrl: '/meu-fa-clube?aba=conta' });
+
+    expect(await screen.findByRole('header', { name: 'Conta' })).toBeTruthy();
+    const [, stay] =
+      backPress.mock.calls.filter(([event]) => event === 'hardwareBackPress').at(-1) ?? [];
+    act(() => {
+      expect(stay?.({} as Parameters<NonNullable<typeof stay>>[0])).toBe(true);
+    });
+    await waitFor(() => expect(managerTab('Painel')).toBeSelected());
   });
 });
 
@@ -1267,9 +1511,37 @@ describe('a nova publicação (34.9, item 6)', () => {
         idempotencyKey: expect.stringMatching(/^club-post-/),
       }),
     );
+    // De volta ao modo gestor, em Publicações, com o filtro "Em análise".
     await waitFor(() => expect(view.getPathname()).toBe('/meu-fa-clube'));
+    expect(await screen.findByRole('header', { name: 'Publicações' })).toBeTruthy();
+    expect(managerTab('Publicações')).toBeSelected();
+    expect(screen.getByTestId('fan-club-posts-filter-em-analise')).toBeSelected();
+    expect(router.canGoBack()).toBe(false);
     expect(announced()).toContain('Enviado para revisão.');
     expect(mocked.openFanClubUpload).not.toHaveBeenCalled();
+  });
+
+  it('o topo da 4b: "Cancelar", "Nova publicação", "Enviar", "Publicando como" e a revisão com as vagas', async () => {
+    mocked.fetchMyFanClub.mockResolvedValue(manager());
+    serverAnswers();
+    const view = renderRouter(appTree, { initialUrl: '/meu-fa-clube' });
+    fireEvent.press(await screen.findByRole('button', { name: 'Nova publicação' }));
+    await waitFor(() => expect(view.getPathname()).toBe('/meu-fa-clube/nova-publicacao'));
+
+    expect(screen.getByRole('header', { name: 'Nova publicação' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Enviar' })).toBeTruthy();
+    expect(screen.getByText('Publicando como Netto de Coração')).toBeTruthy();
+    expect(
+      screen.getByLabelText(
+        'Revisada pela equipe. A equipe confere a publicação antes de ela ir ao ar. 1 de 3 em análise, 2 vagas livres.',
+      ),
+    ).toBeTruthy();
+    // Nada do que o fã-clube não tem: vídeo, enquete, música, evento, missão e o resto.
+    expect(
+      screen.queryByText(/vídeo|Enquete|Música|Evento|missão|nível|Fixar|Agendar|Comentários/u),
+    ).toBeNull();
+    fireEvent.press(screen.getByRole('button', { name: 'Cancelar' }));
+    await waitFor(() => expect(view.getPathname()).toBe('/meu-fa-clube'));
   });
 
   it('com foto: a galeria sem o recorte do sistema, a prévia 4:5 e os três passos do envio', async () => {
@@ -1414,6 +1686,9 @@ describe('nenhuma tela do gestor diz "não oficial" (34.23: o selo no lugar da f
       'fan-club-rejected',
     ],
     ['o "Meu fã-clube"', manager(), '/meu-fa-clube', 'fan-club-dashboard'],
+    ['as Publicações', manager(), '/meu-fa-clube?aba=publicacoes', 'fan-club-posts-note'],
+    ['os Prêmios', manager(), '/meu-fa-clube?aba=premios', 'fan-club-prizes'],
+    ['a Conta', manager(), '/meu-fa-clube?aba=conta', 'fan-club-account-rules'],
     ['a candidatura', mine(), '/meu-fa-clube/candidatura', 'fan-club-apply-name'],
     ['a nova publicação', manager(), '/meu-fa-clube/nova-publicacao', 'fan-club-post-text'],
     ['as regras', mine(), '/meu-fa-clube/regras', 'fan-club-rules-sheet'],

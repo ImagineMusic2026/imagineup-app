@@ -1273,7 +1273,6 @@
       "unavailable": "Você não pode enviar uma candidatura agora."
     },
     "mine": {
-      "title": "Meu fã-clube",
       "status": {
         "active": "Ativo",
         "paused": "Pausado",
@@ -1282,15 +1281,6 @@
       "headerLabel": "{{name}}, de {{artist}}. {{status}}.",
       "headerOfficialLabel": "{{name}}, fã-clube oficial de {{artist}}. {{status}}.",
       "featured": "Seu fã-clube é destaque até {{date}}",
-      "followers": "Seguidores",
-      "followers30d": "Novos em 30 dias",
-      "numbersTitle": "Seus números",
-      "links": "Links compartilhados",
-      "visits": "Visitas",
-      "signups": "Cadastros",
-      "joins": "Entradas trazidas",
-      "published": "Publicações no ar",
-      "pendingPosts": "Em análise",
       "numberLabel": "{{label}}: {{value}}",
       "numberMissing": "Sem dado",
       "numbersError": "Não deu para carregar os números.",
@@ -1298,10 +1288,7 @@
       "shareHint": "Abre as opções de compartilhar, com o seu código de convite",
       "shareMessage": "Siga o fã-clube {{name}}, de {{artist}}, no ImagineUP",
       "shareMessageCode": "Siga o fã-clube {{name}}, de {{artist}}, no ImagineUP. Use o meu código de convite: {{code}}",
-      "newPost": "Nova publicação",
-      "newPostHint": "Abre o formulário da publicação",
       "prizes": {
-        "title": "Prêmios",
         "points": "+{{points}} pontos em {{date}}",
         "pointsOne": "+1 ponto em {{date}}",
         "prize": "Um prêmio em {{date}}",
@@ -1311,15 +1298,11 @@
         "openHint": "Abre a loja",
         "contact": "Falar com a equipe",
         "contactHint": "Abre o app de e-mail, para quem não quer ou não pode usar um prêmio",
-        "contactSubject": "Prêmio do fã-clube no ImagineUP",
-        "rules": "Regras do fã-clube",
-        "rulesHint": "Abre as condições e o reconhecimento"
+        "contactSubject": "Prêmio do fã-clube no ImagineUP"
       },
       "posts": {
-        "title": "Minhas publicações",
         "empty": "Você ainda não publicou nada.",
         "error": "Não deu para carregar suas publicações.",
-        "more": "Ver mais publicações",
         "withPhoto": "Com foto.",
         "dateWithPhoto": "{{date}}, com foto",
         "reason": "Motivo: {{reason}}",
@@ -1363,6 +1346,83 @@
       "shareMessageNoArtist": "Siga o fã-clube {{name}} no ImagineUP",
       "shareMessageCodeNoArtist": "Siga o fã-clube {{name}} no ImagineUP. Use o meu código de convite: {{code}}"
     },
+    "manager": {
+      "badge": "Gestor",
+      "headerMeta": "{{artist}} · {{status}}",
+      "tabs": {
+        "panel": "Painel",
+        "posts": "Publicações",
+        "prizes": "Prêmios",
+        "account": "Conta"
+      },
+      "newPost": "Nova publicação",
+      "newPostHint": "Abre o formulário da publicação",
+      "newPostBlockedHint": "Diz por que você não pode publicar agora",
+      "blocked": {
+        "title": "Você não pode publicar agora",
+        "rules": "O regulamento mudou. Aceite o novo, no Painel, para voltar a publicar.",
+        "seeRules": "Ver no Painel",
+        "seePending": "Ver as em análise",
+        "close": "Fechar"
+      },
+      "panel": {
+        "followers": "Seguidores",
+        "recent": "+{{count}} nos últimos 30 dias",
+        "followersLabel": "Seguidores: {{value}}. {{recent}}.",
+        "links": "Links compartilhados",
+        "linksNote": "Fãs que compartilharam o seu fã-clube",
+        "visits": "Visitas pelos links",
+        "visitsNote": "Pessoas que abriram o link",
+        "signups": "Cadastros pelo link",
+        "signupsNote": "Contas novas criadas pelo link",
+        "joins": "Entradas na central",
+        "joinsNote": "Novos fãs na central de {{artist}}",
+        "statLabel": "{{label}}: {{value}}. {{note}}.",
+        "prizes": "Prêmios",
+        "prizesLabel": "Prêmios. {{text}}",
+        "prizesHint": "Abre a aba Prêmios",
+        "posts": "{{published}} no ar · {{pending}} de {{max}} em análise",
+        "postsLabel": "Publicações: {{published}} no ar, {{pending}} de {{max}} em análise.",
+        "postsHint": "Abre a aba Publicações",
+        "backToCentral": "Voltar para a central de {{artist}}",
+        "pausedContact": "Falar com a equipe",
+        "pausedContactHint": "Abre o app de e-mail para falar com a equipe",
+        "pausedSubject": "Fã-clube pausado no ImagineUP"
+      },
+      "posts": {
+        "title": "Publicações",
+        "note": "A equipe revisa cada publicação antes de ela ir ao ar, e até 3 esperam a revisão por vez.",
+        "filterCount": "{{label}} · {{count}}",
+        "filterCountLabel": "{{label}}, {{count}}",
+        "filters": {
+          "published": "No ar",
+          "pending": "Em análise",
+          "rejected": "Recusadas",
+          "others": "Outras"
+        },
+        "empty": {
+          "published": "Nenhuma publicação no ar.",
+          "pending": "Nenhuma publicação em análise.",
+          "rejected": "Nenhuma publicação recusada.",
+          "others": "Nenhuma outra publicação."
+        },
+        "moreError": "Não deu para carregar mais publicações.",
+        "loading": "Carregando as publicações"
+      },
+      "prizes": {
+        "title": "Prêmios",
+        "last": "Último reconhecimento"
+      },
+      "account": {
+        "title": "Conta",
+        "help": "Ajuda",
+        "rules": "Regras do fã-clube",
+        "rulesHint": "Abre as condições e o reconhecimento",
+        "contact": "Falar com a equipe",
+        "contactHint": "Abre o app de e-mail para escrever à equipe",
+        "contactSubject": "Meu fã-clube no ImagineUP"
+      }
+    },
     "newPost": {
       "title": "Nova publicação",
       "lead": "A equipe confere a publicação antes de ela ir ao ar.",
@@ -1377,14 +1437,22 @@
       "photoTooBig": "Foto grande demais. Escolha outra.",
       "photoError": "Não deu para usar esta foto. Escolha outra.",
       "textOnly": "Este artista aceita só texto no fã-clube.",
-      "submit": "Enviar para revisão",
       "sent": "Enviado para revisão.",
-      "unavailable": "Você não pode publicar agora."
+      "unavailable": "Você não pode publicar agora.",
+      "cancel": "Cancelar",
+      "send": "Enviar",
+      "postingAs": "Publicando como {{name}}",
+      "addPhoto": "Foto",
+      "reviewTitle": "Revisada pela equipe",
+      "reviewPending": "em análise",
+      "reviewFree": "vagas livres",
+      "reviewFreeOne": "vaga livre",
+      "reviewSlots": "{{pending}} de {{max}} em análise, {{free}} {{freeWord}}.",
+      "reviewLabel": "{{title}}. {{body}} {{slots}}"
     },
     "page": {
       "by": "feito por {{owner}}",
       "byLabel": "Feito por {{owner}}",
-      "artistLabel": "Central de {{artist}}",
       "artistHint": "Abre a central do artista",
       "followers": "{{count}} seguidores",
       "followersOne": "1 seguidor",
@@ -1396,8 +1464,6 @@
       "following": "Seguindo",
       "followingLabel": "Seguindo o fã-clube {{name}}",
       "followingHint": "Abre a opção de deixar de seguir",
-      "own": "Seu fã-clube",
-      "ownLabel": "Seu fã-clube, {{name}}",
       "followed": "Você está seguindo o fã-clube {{name}}.",
       "seeFollows": "Ver fã-clubes que sigo",
       "share": "Compartilhar o fã-clube",
@@ -1417,7 +1483,15 @@
       "postsError": "Não deu para carregar as publicações.",
       "postsMoreError": "Não deu para carregar mais publicações.",
       "postsLoading": "Carregando as publicações",
-      "loading": "Carregando o fã-clube"
+      "loading": "Carregando o fã-clube",
+      "artistOf": "Fã-clube de {{artist}}",
+      "followersWord": "seguidores",
+      "followersWordOne": "seguidor",
+      "postsWord": "publicações",
+      "postsWordOne": "publicação",
+      "manage": "Gerenciar meu fã-clube",
+      "manageHint": "Abre o modo gestor do seu fã-clube",
+      "ownerEmpty": "Suas publicações aparecem aqui quando a equipe aprova."
     },
     "post": {
       "label": "{{text}} Publicado {{when}}.",

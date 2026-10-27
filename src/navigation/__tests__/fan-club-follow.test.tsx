@@ -109,6 +109,7 @@ function RootLayout() {
           <Stack.Screen name="deixar-de-seguir/[clubeId]" />
           <Stack.Screen name="denunciar-perfil/[fanId]" />
           <Stack.Screen name="sair-da-central/[artistaId]" />
+          <Stack.Screen name="meu-fa-clube/index" />
         </Stack.Protected>
       </Stack>
     </QueryClientProvider>
@@ -169,6 +170,8 @@ const appTree = {
   'deixar-de-seguir/[clubeId]': UnfollowRoute,
   'denunciar-perfil/[fanId]': ReportFanRoute,
   'sair-da-central/[artistaId]': LeaveRoute,
+  // O modo gestor, só como destino do "Gerenciar meu fã-clube" (34.24).
+  'meu-fa-clube/index': label('meu fã-clube'),
 };
 
 // --- Os dados -------------------------------------------------------------------------
@@ -438,8 +441,15 @@ describe('a página do fã-clube (34.9, item 7)', () => {
     expect(screen.queryByText(/não oficia/iu, hiddenOk)).toBeNull();
     expect(screen.queryByLabelText(/não oficia/iu, hiddenOk)).toBeNull();
     expect(screen.getByText('feito por @thalitasan')).toBeTruthy();
-    expect(screen.getByRole('link', { name: 'Central de Nenho' })).toBeTruthy();
-    expect(screen.getByLabelText('41 seguidores. Em destaque.')).toBeTruthy();
+    // 34.24: "Fã-clube de" com a foto do artista, o gestor numa linha só e os
+    // números no molde do perfil, cada um um foco.
+    expect(screen.getByRole('link', { name: 'Fã-clube de Nenho' })).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Feito por @thalitasan' })).toBeTruthy();
+    expect(screen.getByLabelText('41 seguidores')).toBeTruthy();
+    expect(screen.getByLabelText('2 publicações')).toBeTruthy();
+    expect(screen.getByLabelText('Em destaque.')).toBeTruthy();
+    // Sem prêmio e sem pontos (decisão 48).
+    expect(screen.queryByText(/prêmio|pontos/iu, hiddenOk)).toBeNull();
     expect(screen.getByText('Você também entra na central de Nenho', hiddenOk)).toBeTruthy();
     expect(
       screen.getByRole('button', {
@@ -494,14 +504,48 @@ describe('a página do fã-clube (34.9, item 7)', () => {
     expect(announced()).toContain('Este fã-clube não está disponível.');
   });
 
-  it('o gestor vê "Seu fã-clube", sem Denunciar e sem o menu de bloquear', async () => {
+  it('o gestor vê "Gerenciar meu fã-clube", sem Denunciar e sem o menu de bloquear', async () => {
     mocked.fetchFanClub.mockResolvedValue(page({ isOwner: true, isMember: true }));
-    renderRouter(appTree, { initialUrl: '/fa-clube/fc-1' });
+    const view = renderRouter(appTree, { initialUrl: '/fa-clube/fc-1' });
 
-    expect(await screen.findByLabelText('Seu fã-clube, Nenho Sempre')).toBeTruthy();
+    const manage = await screen.findByRole('button', { name: 'Gerenciar meu fã-clube' });
     expect(screen.queryByRole('button', { name: /Denunciar/ })).toBeNull();
     expect(screen.queryByLabelText('Mais opções do fã-clube')).toBeNull();
     expect(screen.queryByText('Você também entra na central de Nenho', hiddenOk)).toBeNull();
+    // Aberta a frio, sem o modo gestor embaixo: o "Meu fã-clube" toma o lugar dela.
+    fireEvent.press(manage);
+    await waitFor(() => expect(view.getPathname()).toBe('/meu-fa-clube'));
+    expect(screen.getByText('meu fã-clube')).toBeTruthy();
+  });
+
+  it('vindo do modo gestor, "Gerenciar meu fã-clube" fecha a página e volta a ele', async () => {
+    mocked.fetchFanClub.mockResolvedValue(page({ isOwner: true, isMember: true }));
+    const view = renderRouter(appTree, { initialUrl: '/meu-fa-clube' });
+    act(() => router.push('/fa-clube/fc-1'));
+
+    fireEvent.press(await screen.findByRole('button', { name: 'Gerenciar meu fã-clube' }));
+    await waitFor(() => expect(view.getPathname()).toBe('/meu-fa-clube'));
+    expect(router.canGoBack()).toBe(false);
+  });
+
+  it('na lista vazia, o gestor lê que as publicações dele aparecem quando a equipe aprova', async () => {
+    mocked.fetchFanClub.mockResolvedValue(page({ isOwner: true, isMember: true, postCount: 0 }));
+    mocked.fetchFanClubPosts.mockResolvedValue({ items: [], nextCursor: null });
+    renderRouter(appTree, { initialUrl: '/fa-clube/fc-1' });
+
+    expect(
+      await screen.findByText('Suas publicações aparecem aqui quando a equipe aprova.'),
+    ).toBeTruthy();
+    expect(screen.getByLabelText('0 publicações')).toBeTruthy();
+    expect(screen.queryByText('Ainda não há publicações no ar.')).toBeNull();
+  });
+
+  it('quem visita, na lista vazia, continua lendo que não há publicações no ar', async () => {
+    mocked.fetchFanClubPosts.mockResolvedValue({ items: [], nextCursor: null });
+    renderRouter(appTree, { initialUrl: '/fa-clube/fc-1' });
+
+    expect(await screen.findByText('Ainda não há publicações no ar.')).toBeTruthy();
+    expect(screen.queryByText('Suas publicações aparecem aqui quando a equipe aprova.')).toBeNull();
   });
 });
 
@@ -532,7 +576,7 @@ describe('seguir (decisão 26)', () => {
       clubId: 'fc-1',
       idempotencyKey: expect.stringMatching(/^club-follow-/),
     });
-    expect(screen.getByLabelText('42 seguidores. Em destaque.')).toBeTruthy();
+    expect(screen.getByLabelText('42 seguidores')).toBeTruthy();
     expect(screen.queryByText('Você também entra na central de Nenho', hiddenOk)).toBeNull();
     expect(announced()).toEqual(
       expect.arrayContaining([
@@ -637,7 +681,7 @@ describe('seguir (decisão 26)', () => {
     expect(
       await screen.findByRole('button', { name: 'Seguir o fã-clube Nenho Sempre' }),
     ).toBeTruthy();
-    expect(screen.getByLabelText('40 seguidores. Em destaque.')).toBeTruthy();
+    expect(screen.getByLabelText('40 seguidores')).toBeTruthy();
     expect(announced()).toContain('Você deixou de seguir o fã-clube Nenho Sempre.');
   });
 

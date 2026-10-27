@@ -1,3 +1,4 @@
+import { router, useLocalSearchParams } from 'expo-router';
 import { useEffect } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -17,29 +18,28 @@ import {
   ProgramClosedState,
   RejectedState,
 } from '../components/application-state';
-import { ClubDashboard } from '../components/club-dashboard';
 import { FanClubIntro } from '../components/fan-club-intro';
+import { ManagerMode } from '../components/manager-mode';
 import { fanClubStageOf, type FanClubStage } from '../entry';
+import { managerTabOf, postFilterOf, type ManagerTab, type PostFilter } from '../manager';
 import { useShownFanClub } from '../queries';
-import type { MyFanClub } from '../types';
 
 const SKELETON_HEIGHT = 180;
 
 /**
- * O título da tela: "Meu fã-clube" com o fã-clube aprovado, "Tenha seu
- * fã-clube" antes e, sem o estado (carregando ou antes da abertura), só
- * "Fã-clube", que não convida.
+ * O título da tela: "Tenha seu fã-clube" antes do fã-clube e, sem o estado
+ * (carregando ou antes da abertura), só "Fã-clube", que não convida. Com o
+ * fã-clube aprovado, o modo gestor desenha o próprio cabeçalho.
  */
 function titleOf(stage: FanClubStage | null): string {
   if (!stage) return t('fanClub.settings.section');
-  if (stage.kind === 'club') return t('fanClub.mine.title');
   return t('fanClub.intro.title');
 }
 
-/** A apresentação fica de fora: ela desenha a própria rolagem, com o botão preso ao pé. */
-type StateStage = Exclude<FanClubStage, { kind: 'intro' }>;
+/** Os estágios que mostram um estado só, sem a apresentação e sem o modo gestor. */
+type StateStage = Exclude<FanClubStage, { kind: 'intro' } | { kind: 'club' }>;
 
-function StageBody({ mine, stage }: { mine: MyFanClub; stage: StateStage }) {
+function StageBody({ stage }: { stage: StateStage }) {
   switch (stage.kind) {
     case 'programClosed':
       return <ProgramClosedState />;
@@ -47,19 +47,23 @@ function StageBody({ mine, stage }: { mine: MyFanClub; stage: StateStage }) {
       return <PendingState application={stage.application} />;
     case 'rejected':
       return <RejectedState application={stage.application} next={stage.next} />;
-    case 'club':
-      return <ClubDashboard mine={mine} club={stage.club} next={stage.next} />;
     case 'ended':
       return <EndedState next={stage.next} />;
   }
 }
 
+/** Troca a aba do modo gestor (e o filtro de Publicações) no endereço da tela. */
+function openManagerTab(tab: ManagerTab, filter?: PostFilter): void {
+  router.setParams(filter ? { aba: tab, filtro: filter } : { aba: tab });
+}
+
 /**
  * "/meu-fa-clube" (seção 34, 34.9, itens 2, 4 e 5): o estado do fã pelo
- * `GET /me/fan-club`, na pilha raiz, sem a tab bar. Sem candidatura, a
+ * `GET /me/fan-club`, na pilha raiz, sem a tab bar do app. Sem candidatura, a
  * apresentação; em análise ou recusada, o estado com o que vem depois;
- * aprovada, o "Meu fã-clube", também com o fã-clube encerrado. Abrir a tela com o fã-clube marca o
- * último prêmio como visto no aparelho (decisão 51).
+ * aprovada, o modo gestor (34.24), com a barra própria, também com o
+ * fã-clube encerrado. Abrir a tela com o fã-clube marca o último prêmio como
+ * visto no aparelho (decisão 51), em qualquer aba.
  *
  * Inerte antes da abertura: com a `api` de antes da publicação (o 404), sem
  * resposta ou com o programa fechado para quem nunca se candidatou, a tela diz
@@ -68,6 +72,7 @@ function StageBody({ mine, stage }: { mine: MyFanClub; stage: StateStage }) {
  */
 export function MyFanClubScreen() {
   const insets = useSafeAreaInsets();
+  const params = useLocalSearchParams<{ aba?: string; filtro?: string }>();
   const { query, mine } = useShownFanClub();
   const stage = mine ? fanClubStageOf(mine) : null;
   const uid = useSessionStore((state) => state.user?.uid ?? null);
@@ -89,9 +94,22 @@ export function MyFanClubScreen() {
     );
   }
 
+  if (mine && stage?.kind === 'club') {
+    return (
+      <ManagerMode
+        mine={mine}
+        club={stage.club}
+        next={stage.next}
+        tab={managerTabOf(params.aba)}
+        filter={postFilterOf(params.filtro)}
+        onOpen={openManagerTab}
+      />
+    );
+  }
+
   let body;
-  if (mine && stage && stage.kind !== 'intro') {
-    body = <StageBody mine={mine} stage={stage} />;
+  if (stage && stage.kind !== 'intro' && stage.kind !== 'club') {
+    body = <StageBody stage={stage} />;
   } else if (query.isPending) {
     body = (
       <SkeletonGroup>

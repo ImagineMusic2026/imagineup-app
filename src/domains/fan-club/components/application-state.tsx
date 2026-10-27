@@ -162,7 +162,7 @@ export function RejectedState({
 /**
  * Sem fã-clube para mostrar e sem a vez do fã de mandar outra candidatura: a
  * frase da próxima rodada, e o botão só quando ela chega. O fã-clube
- * encerrado fica no "Meu fã-clube", com o aviso (o `ClubDashboard`).
+ * encerrado fica no "Meu fã-clube", com o aviso (o Painel do modo gestor).
  */
 export function EndedState({ next }: { next: NextRound }) {
   return (
