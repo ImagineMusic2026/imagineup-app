@@ -812,8 +812,10 @@ export const resolveProfileReport = onPanelCall({ cors: PANEL_ORIGINS }, async (
  * 6): aprovar ou recusar a candidatura; pausar, reativar, encerrar (só
  * admin), destacar, tirar o destaque e recompensar o fã-clube (os pontos só
  * no saldo, com a seção Fãs, e o prêmio, que vira pedido da loja, com a seção
- * Recompensas); aprovar, recusar, ocultar e reexibir a publicação; e manter ou
- * ocultar a denunciada, com o estado que a tela mostrou e a auditoria na mesma
+ * Recompensas); aprovar, recusar, ocultar e reexibir a publicação; manter ou
+ * ocultar a denunciada; e, desde a Fase 2 (seção 37, 37.6), manter, ocultar e
+ * reexibir um comentário de fã-clube (o assunto `comment`, com a fila dos
+ * comentários), com o estado que a tela mostrou e a auditoria na mesma
  * transação. Depois dela, os arquivos da publicação recusada saem e os tokens
  * da ocultada mudam, no Storage. 256 MiB (1/6 de vCPU), o padrão:
  * a sobra da cota cai de uns 0,51 para uns 0,34 vCPU (decisão 55). O log leva
@@ -851,7 +853,9 @@ export const setFanSuspended = onPanelCall({ cors: PANEL_ORIGINS }, async (reque
 /**
  * Oculta até 24 comentários visíveis de um fã por chamada
  * (HIDE_FAN_COMMENTS_PAGE; o painel chama de novo enquanto vier `more`), com
- * uma auditoria por chamada. O painel espera até 130 s.
+ * uma auditoria por chamada: primeiro os do Mural e, desde a Fase 2 do
+ * fã-clube (seção 37, 37.6), depois os dos fã-clubes (também os ocultos pelo
+ * gestor). O painel espera até 130 s.
  */
 export const hideFanComments = onPanelCall(
   { cors: PANEL_ORIGINS, timeoutSeconds: 120 },

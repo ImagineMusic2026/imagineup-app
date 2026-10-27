@@ -171,6 +171,9 @@ export type AuditAction =
   | 'fanClub.post.hidden'
   | 'fanClub.post.restored'
   | 'fanClub.report.resolved'
+  | 'fanClub.comment.kept'
+  | 'fanClub.comment.hidden'
+  | 'fanClub.comment.restored'
   | 'config.seeded';
 
 /**
@@ -185,7 +188,11 @@ export type AuditAction =
  * (o autor da publicação, em `details.authorUid`), nunca no targetUid, e
  * nunca o texto de divulgação, as redes, o WhatsApp, o texto da publicação,
  * o cupom nem a mensagem do prêmio; a publicação vai em
- * `details.fanClubPostId`, nunca em `postId` (o alvo `post:` do Mural).
+ * `details.fanClubPostId`, nunca em `postId` (o alvo `post:` do Mural). Os
+ * comentários de fã-clube (`fanClub.comment.*` e a etapa do fã-clube do
+ * `fan.comments.hidden`, seção 37, 37.6) vão em `details.fanClubCommentId` e
+ * `details.fanClubCommentIds`, nunca em `commentId` (o alvo `comment:` do
+ * Mural), com as publicações em `details.fanClubPostIds` no lote.
  */
 export type AuditEntry = {
   action: AuditAction;

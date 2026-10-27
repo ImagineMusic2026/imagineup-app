@@ -15,7 +15,8 @@ import {
 
 // As consultas do fã-clube gerido pelo fã (docs/arquitetura-api.md, 34.6),
 // as do servidor e as do painel, com os 21 índices compostos e os de um
-// campo; desde a Fase 2 (seção 37, 37.4), os 3 dos comentários. O emulador
+// campo; desde a Fase 2 (seção 37, 37.4), os 3 dos comentários e, desde a
+// etapa 3 de 37.13, os 3 da fila da equipe e do registro do ocultar. O emulador
 // não cobra índice nenhum (e os de grupo só aparecem em produção): este teste
 // é a rede. A trilha que mudar uma consulta muda a forma aqui.
 
@@ -124,6 +125,18 @@ const COMPOSITE: CompositeShape[] = [
     asc('postId'),
     desc('createdAt'),
   ]),
+  // A fila da equipe e o registro do ocultar do gestor (a etapa 3 de 37.13):
+  // a aba Comentários do painel, pela última atividade (a denúncia ou o
+  // pedido) e pela resolução, e a seção "Ocultos pelo gestor" da ficha.
+  shape('os comentários abertos na fila, pela última atividade', 'fanClubCommentQueue', [
+    asc('status'),
+    desc('lastActivityAt'),
+  ]),
+  shape('os comentários resolvidos na fila', 'fanClubCommentQueue', [
+    asc('status'),
+    desc('resolvedAt'),
+  ]),
+  shape('o registro do ocultar do gestor na ficha', 'fanClubHideLog', [asc('clubId'), desc('at')]),
 ];
 
 const single = (
@@ -159,12 +172,23 @@ const SINGLE: SingleFieldShape[] = [
   single('redemptions.grantId', 'redemptions', asc('grantId')),
   // O histórico de `prizes` da ficha, pela data (34.10, item 5): o automático.
   single('prizes.at (decrescente)', 'prizes', desc('at')),
+  // A moderação dos comentários (seção 37, 37.4; a etapa 3 de 37.13), só
+  // igualdades, pela junção dos índices de um campo: o ocultar em lote (o
+  // `authorUid` com o `in` do status), os próprios ocultos de quem lê
+  // (`postId`, `authorUid` e `status`, o `ownHidden`) e as contagens da fila
+  // por status e tipo (o "Aguardando a equipe" do painel).
+  single('fanClubComments.authorUid', 'fanClubComments', asc('authorUid')),
+  single('fanClubComments.status', 'fanClubComments', asc('status')),
+  single('fanClubComments.postId', 'fanClubComments', asc('postId')),
+  single('fanClubCommentQueue.status', 'fanClubCommentQueue', asc('status')),
+  single('fanClubCommentQueue.kind', 'fanClubCommentQueue', asc('kind')),
+  single('fanClubCommentReports.reporterUid', 'fanClubCommentReports', asc('reporterUid')),
 ];
 
 describe('os índices do fã-clube (34.6)', () => {
-  it('são 24 compostos do fã-clube (21 da seção 34 e 3 da 37), 68 no total', () => {
-    expect(COMPOSITE).toHaveLength(24);
-    expect(file.indexes).toHaveLength(68);
+  it('são 27 compostos do fã-clube (21 da seção 34 e 6 da 37), 71 no total', () => {
+    expect(COMPOSITE).toHaveLength(27);
+    expect(file.indexes).toHaveLength(71);
   });
 
   it.each(COMPOSITE.map((item) => [item.name, item] as const))(
@@ -196,6 +220,8 @@ describe('os índices do fã-clube (34.6)', () => {
       ['fanClubComments', 'mentions'],
       ['fanClubPosts', 'mentions'],
       ['fanClubShards', 'days'],
+      // A etapa 3: a contagem por motivo da fila dos comentários.
+      ['fanClubCommentQueue', 'reasons'],
     ] as const;
     expect(exemptions(file)).toEqual(
       expect.arrayContaining(exempt.map(([group, field]) => `${group}.${field}`)),

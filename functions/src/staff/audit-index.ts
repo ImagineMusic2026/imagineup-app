@@ -87,6 +87,12 @@ const DETAIL_TARGETS: readonly [field: string, type: string][] = [
   ['clubId', 'fanClub'],
   ['fanUid', 'fan'],
   ['fanClubPostId', 'fanClubPost'],
+  // Os comentários de fã-clube (seção 37, 37.6): o comentário em
+  // `fanClubCommentId`, porque o `commentId` é o alvo `comment:` do Mural; no
+  // ocultar em lote, as listas, dentro dos 50 alvos (1 + 24 + 24).
+  ['fanClubPostIds', 'fanClubPost'],
+  ['fanClubCommentId', 'fanClubComment'],
+  ['fanClubCommentIds', 'fanClubComment'],
 ];
 
 /** Id que vira alvo: texto de 1 a 200 caracteres, sem `/`. */

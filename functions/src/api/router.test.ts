@@ -665,8 +665,76 @@ describe('a rota das sugestões do @ (seção 37, etapa 2 de 37.13)', () => {
     expect(matchRoute(API_ROUTES, 'GET', '/fan-clubs/clube1/mentions/bia').kind).toBe('not_found');
     expect(matchRoute(API_ROUTES, 'GET', '/fan-club-posts/pub1/mentions').kind).toBe('not_found');
   });
+});
 
-  it('a API tem 70 rotas: as 64 de antes, as 5 da etapa 1 e a da etapa 2 da Fase 2', () => {
-    expect(API_ROUTES).toHaveLength(70);
+describe('as rotas da moderação dos comentários (seção 37, etapa 3 de 37.13)', () => {
+  it('a denúncia e o pedido de revisão são do comentário; o ocultar do gestor mora no "Meu fã-clube"', () => {
+    const cases: [string, string, string, boolean, Record<string, string>][] = [
+      [
+        'POST',
+        '/fan-club-comments/c1/report',
+        '/fan-club-comments/:commentId/report',
+        true,
+        { commentId: 'c1' },
+      ],
+      [
+        'POST',
+        '/fan-club-comments/c1/review',
+        '/fan-club-comments/:commentId/review',
+        true,
+        { commentId: 'c1' },
+      ],
+      [
+        'PUT',
+        '/me/fan-club/hidden-comments/c1',
+        '/me/fan-club/hidden-comments/:commentId',
+        true,
+        { commentId: 'c1' },
+      ],
+      [
+        'DELETE',
+        '/me/fan-club/hidden-comments/c1',
+        '/me/fan-club/hidden-comments/:commentId',
+        true,
+        { commentId: 'c1' },
+      ],
+      // A denúncia da publicação não se confunde com a do comentário.
+      [
+        'POST',
+        '/fan-club-posts/c1/report',
+        '/fan-club-posts/:postId/report',
+        true,
+        { postId: 'c1' },
+      ],
+    ];
+    for (const [method, path, pattern, writes, params] of cases) {
+      expect(matchRoute(API_ROUTES, method, path), `${method} ${path}`).toMatchObject({
+        kind: 'match',
+        route: { method, pattern, writes },
+        params,
+      });
+    }
+  });
+
+  it('os métodos errados são 405 com os aceitos; não há leitura de um comentário pelo id', () => {
+    expect(matchRoute(API_ROUTES, 'GET', '/fan-club-comments/c1/report')).toEqual({
+      kind: 'method_not_allowed',
+      allow: ['POST'],
+    });
+    expect(matchRoute(API_ROUTES, 'PUT', '/fan-club-comments/c1/review')).toEqual({
+      kind: 'method_not_allowed',
+      allow: ['POST'],
+    });
+    expect(matchRoute(API_ROUTES, 'POST', '/me/fan-club/hidden-comments/c1')).toEqual({
+      kind: 'method_not_allowed',
+      allow: ['PUT', 'DELETE'],
+    });
+    expect(matchRoute(API_ROUTES, 'GET', '/fan-club-comments/c1').kind).toBe('not_found');
+    // A lista dos ocultos não tem rota: o gestor os vê na lista da publicação.
+    expect(matchRoute(API_ROUTES, 'GET', '/me/fan-club/hidden-comments').kind).toBe('not_found');
+  });
+
+  it('a API tem 74 rotas: as 64 de antes e as 10 da Fase 2 (5 da etapa 1, 1 da etapa 2 e 4 da etapa 3)', () => {
+    expect(API_ROUTES).toHaveLength(74);
   });
 });

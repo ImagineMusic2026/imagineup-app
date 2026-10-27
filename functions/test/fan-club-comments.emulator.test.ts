@@ -384,9 +384,10 @@ describe('quem reage e comenta (decisão 10 de 36.1 e 37.5)', () => {
     expect((await call('GET', `/fan-club-posts/${postId}`, { token: visitor.token })).status).toBe(
       200,
     );
+    // A primeira página dos de cima traz o `ownHidden` (etapa 3 de 37.13), vazio aqui.
     expect(await comments(call, visitor, postId)).toEqual({
       status: 200,
-      body: { items: [], nextCursor: null },
+      body: { items: [], nextCursor: null, ownHidden: [] },
     });
 
     // Deixar de seguir também tira a vez de comentar e reagir; o que ficou, fica.

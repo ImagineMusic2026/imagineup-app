@@ -146,4 +146,32 @@ describe('a página do hideFanComments', () => {
       ...commentIds.map((id) => `comment:${id}`),
     ]);
   });
+
+  it('a página do fã-clube (seção 37, 37.6) também cabe, com os alvos novos e nunca os do Mural', () => {
+    const fanClubPostIds = Array.from(
+      { length: HIDE_FAN_COMMENTS_PAGE },
+      (_, index) => `pub${index}`,
+    );
+    const fanClubCommentIds = Array.from(
+      { length: HIDE_FAN_COMMENTS_PAGE },
+      (_, index) => `fc${index}`,
+    );
+    const { section, targets } = auditIndex({
+      action: 'fan.comments.hidden',
+      targetUid: 'uid-fa',
+      details: {
+        uid: 'uid-fa',
+        count: HIDE_FAN_COMMENTS_PAGE,
+        fanClubPostIds,
+        fanClubCommentIds,
+      },
+    });
+    expect(section).toBe('moderation');
+    expect(targets).toHaveLength(1 + 2 * HIDE_FAN_COMMENTS_PAGE);
+    expect(targets).toEqual([
+      'fan:uid-fa',
+      ...fanClubPostIds.map((id) => `fanClubPost:${id}`),
+      ...fanClubCommentIds.map((id) => `fanClubComment:${id}`),
+    ]);
+  });
 });

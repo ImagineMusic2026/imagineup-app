@@ -389,8 +389,10 @@ export type FanClubInvalidField =
  * para o artista). O `contact_required` é do `PUT /me/contact` (decisão 14).
  * Os da publicação (etapa 2): `club_not_active`, `photos_not_allowed`,
  * `rules_outdated`, `upload_missing` e `too_many_pending`. Os do seguir
- * (etapa 4): `own_fan_club` e `follow_limit`. O da Fase 2 (seção 37, 37.3):
- * `not_following`, comentar e reagir sem seguir e sem ser o gestor.
+ * (etapa 4): `own_fan_club` e `follow_limit`. Os da Fase 2 (seção 37, 37.3):
+ * `not_following`, comentar e reagir sem seguir e sem ser o gestor, e
+ * `staff_decided`, o gestor ocultando o que a equipe reexibiu (decisão 21 de
+ * 37.1; a etapa 3 de 37.13).
  */
 export type FanClubRefusal =
   | 'applications_closed'
@@ -410,7 +412,8 @@ export type FanClubRefusal =
   | 'too_many_pending'
   | 'own_fan_club'
   | 'follow_limit'
-  | 'not_following';
+  | 'not_following'
+  | 'staff_decided';
 
 export type FanClubErrorCode =
   | 'fan_club_invalid'
@@ -1583,6 +1586,180 @@ export function newCommentCounts(replyToId: string | null): {
   replyCount: number;
 } {
   return { commentCount: 1, replyCount: replyToId === null ? 0 : 1 };
+}
+
+// --- A moderação dos comentários (seção 37, 37.6; a etapa 3 de 37.13) ------------------------
+
+/** Os comentários do próprio fã ocultos pelo gestor na primeira página (o `ownHidden`, 37.3). */
+export const FAN_CLUB_OWN_HIDDEN_MAX = 10;
+
+/** O que abriu a rodada do item da `fanClubCommentQueue`: a denúncia ou o pedido de revisão. */
+export const COMMENT_QUEUE_KINDS = ['report', 'review'] as const;
+export type CommentQueueKind = (typeof COMMENT_QUEUE_KINDS)[number];
+
+/**
+ * Como o item da `fanClubCommentQueue` termina (37.6): pela equipe (`kept`,
+ * `hidden` e `restored`), pelas denúncias que saíram ou pelo gestor que
+ * reexibiu antes da decisão do pedido (`withdrawn`), pela exclusão da conta do
+ * autor (`author_deleted`) e pelo comentário que saiu com a publicação ou com
+ * o de cima (`removed`). Os três últimos são da etapa 4.
+ */
+export const COMMENT_QUEUE_RESOLUTIONS = [
+  'kept',
+  'hidden',
+  'restored',
+  'withdrawn',
+  'author_deleted',
+  'removed',
+] as const;
+export type CommentQueueResolution = (typeof COMMENT_QUEUE_RESOLUTIONS)[number];
+
+/**
+ * As decisões da equipe sobre um comentário (a `decideFanClub` com o assunto
+ * `comment`, 37.6): manter como está (visível ou oculto), ocultar pela equipe
+ * e reexibir.
+ */
+export const COMMENT_DECISIONS = ['keep', 'hide', 'restore'] as const;
+export type CommentDecision = (typeof COMMENT_DECISIONS)[number];
+
+/**
+ * O id da denúncia de comentário (37.2): uma por fã e comentário, regravada a
+ * cada rodada do item, na ordem do `fanClubReportId`. O `_` separa sem
+ * ambiguidade (o uid não tem `_`).
+ */
+export const fanClubCommentReportId = (reporterUid: string, commentId: string): string =>
+  `${reporterUid}_${commentId}`;
+
+/** `fanClubCommentQueue/{commentId}` lido (37.2): o que a fila e as decisões olham. */
+export type CommentQueueRecord = {
+  status: 'open' | 'resolved';
+  resolution: CommentQueueResolution | null;
+  kind: CommentQueueKind;
+  /** A rodada: inteiro de 1 em diante, ou 0 quando falta ou está torta. */
+  round: number;
+  reportCount: number;
+  reviewRequested: boolean;
+  /** A primeira denúncia da vida do item; null no aberto só pelo pedido de revisão. */
+  firstReportedAt: number | null;
+  lastReportedAt: number | null;
+};
+
+/** O item lido. O status estranho vale `resolved` (não há o que decidir), e o tipo estranho, `report`. */
+export function commentQueueRecord(data: Record<string, unknown>): CommentQueueRecord {
+  const round = data.round;
+  return {
+    status: data.status === 'open' ? 'open' : 'resolved',
+    resolution: oneOf(COMMENT_QUEUE_RESOLUTIONS, data.resolution),
+    kind: data.kind === 'review' ? 'review' : 'report',
+    round: typeof round === 'number' && Number.isSafeInteger(round) && round >= 1 ? round : 0,
+    reportCount: count(data.reportCount),
+    reviewRequested: data.reviewRequested === true,
+    firstReportedAt: millisOf(data.firstReportedAt),
+    lastReportedAt: millisOf(data.lastReportedAt),
+  };
+}
+
+/**
+ * O pedido de revisão como o autor vê (o `review`, 37.3): `kept` quando a
+ * equipe manteve oculto, `requested` depois do "Pedir revisão" e null antes.
+ */
+export function commentReview(
+  comment: Pick<FanClubCommentRecord, 'reviewRequestedAt' | 'reviewOutcome'>,
+): 'requested' | 'kept' | null {
+  if (comment.reviewOutcome === 'kept') return 'kept';
+  return comment.reviewRequestedAt !== null ? 'requested' : null;
+}
+
+/**
+ * O pedido de revisão deste ocultar já foi feito, ou a equipe já manteve o
+ * comentário oculto (o "Manter" de uma denúncia, 37.6): o pedido responde
+ * `already_requested`, sem gravar. Cada ocultar novo do gestor zera os dois.
+ */
+export const reviewTaken = (
+  comment: Pick<FanClubCommentRecord, 'reviewRequestedAt' | 'reviewOutcome'>,
+): boolean => comment.reviewRequestedAt !== null || comment.reviewOutcome === 'kept';
+
+/** O estado de um comentário que os contadores olham: o status e, no de cima, as respostas visíveis. */
+export type CommentCountState = { status: FanClubCommentStatus; replyCount: number };
+
+/**
+ * Os `increment` que a transação grava (37.6): o `commentCount` por
+ * publicação e, por comentário de cima, o `replyCount` (as respostas
+ * visíveis) e o `managerHiddenReplyCount` (as respostas no `manager_hidden`).
+ */
+export type CommentCountChanges = {
+  posts: Map<string, number>;
+  tops: Map<string, { replyCount: number; managerHiddenReplyCount: number }>;
+};
+
+export const emptyCountChanges = (): CommentCountChanges => ({
+  posts: new Map(),
+  tops: new Map(),
+});
+
+/** Os estados dos comentários lidos na transação (os que mudam e os de cima deles), pelo id. */
+export function commentCountStates(
+  comments: readonly Pick<FanClubCommentRecord, 'id' | 'status' | 'replyCount'>[],
+): Map<string, CommentCountState> {
+  return new Map(
+    comments.map((comment) => [
+      comment.id,
+      { status: comment.status, replyCount: comment.replyCount },
+    ]),
+  );
+}
+
+/**
+ * Os contadores quando um comentário troca de status (37.6), as mesmas regras
+ * no gestor, na equipe e no ocultar em lote. O comentário de cima que sai do
+ * visível tira `1 + replyCount` do `commentCount` da publicação, porque as
+ * respostas saem da vista com ele, e o que volta devolve. A resposta que sai
+ * do visível tira 1 do `replyCount` do de cima e, com ele visível, 1 do
+ * `commentCount`; a que entra no `manager_hidden` soma 1 no
+ * `managerHiddenReplyCount` do de cima, e a que sai tira 1; a que volta faz o
+ * contrário. Entre os dois ocultos, o de cima não mexe em número nenhum. O
+ * `states` traz o estado de agora dos comentários lidos (o próprio e o de
+ * cima; o de cima que não existe mais não conta) e é atualizado aqui: numa
+ * página do ocultar em lote com uma resposta e o de cima dela, cada um
+ * desconta uma vez, em qualquer ordem. O comentário fora do `states` não muda
+ * nada.
+ */
+export function addStatusChange(
+  changes: CommentCountChanges,
+  states: Map<string, CommentCountState>,
+  comment: Pick<FanClubCommentRecord, 'id' | 'postId' | 'replyToId'>,
+  to: FanClubCommentStatus,
+): void {
+  const current = states.get(comment.id);
+  if (!current || current.status === to) return;
+  const wasVisible = current.status === 'visible';
+  const isVisible = to === 'visible';
+  const addPost = (delta: number) => {
+    if (delta !== 0) {
+      changes.posts.set(comment.postId, (changes.posts.get(comment.postId) ?? 0) + delta);
+    }
+  };
+  if (comment.replyToId === null) {
+    if (wasVisible !== isVisible) addPost((isVisible ? 1 : -1) * (1 + current.replyCount));
+  } else {
+    const top = states.get(comment.replyToId);
+    if (top) {
+      const replyDelta = wasVisible === isVisible ? 0 : isVisible ? 1 : -1;
+      const wasManager = current.status === 'manager_hidden';
+      const isManager = to === 'manager_hidden';
+      const hiddenDelta = wasManager === isManager ? 0 : isManager ? 1 : -1;
+      const sums = changes.tops.get(comment.replyToId) ?? {
+        replyCount: 0,
+        managerHiddenReplyCount: 0,
+      };
+      sums.replyCount += replyDelta;
+      sums.managerHiddenReplyCount += hiddenDelta;
+      changes.tops.set(comment.replyToId, sums);
+      top.replyCount = Math.max(0, top.replyCount + replyDelta);
+      if (top.status === 'visible') addPost(replyDelta);
+    }
+  }
+  current.status = to;
 }
 
 // --- As menções (seção 37, 37.7; a etapa 2 de 37.13) ---------------------------------------

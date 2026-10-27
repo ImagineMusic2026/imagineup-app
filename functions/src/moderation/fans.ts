@@ -1,5 +1,10 @@
 import { FieldValue, Timestamp, type Firestore, type Transaction } from 'firebase-admin/firestore';
 
+import {
+  fanClubCommentsToHideOf,
+  hasFanClubCommentsToHide,
+  hideFanClubCommentsPage,
+} from '../fan-clubs/comment-queue';
 import { pauseForSuspension, readActiveClubOf, readFollowsOf } from '../fan-clubs/store';
 import { requestFields } from '../staff/model';
 import { directRead, readPanelActor, transactionRead, type PanelActor } from '../staff/panel-actor';
@@ -12,8 +17,9 @@ import { bumpCommentCount, readModerationTargets, writeModeration } from './pane
 // As ferramentas da Moderação sobre a conta de um fã (bloco 11,
 // docs/arquitetura-api.md, 26.4 e 26.6): suspender e tirar a suspensão
 // (`setFanSuspended`) e ocultar todos os comentários visíveis dele, em páginas
-// (`hideFanComments`). As duas com a seção moderation e edição, e nunca na
-// própria conta de fã de quem chama (`self`). A suspensão mora no perfil
+// (`hideFanComments`; desde a Fase 2 do fã-clube, seção 37, também os dos
+// fã-clubes, numa segunda etapa). As duas com a seção moderation e edição, e
+// nunca na própria conta de fã de quem chama (`self`). A suspensão mora no perfil
 // (`suspendedAt` e `suspensionReason`): as rotas da API que gravam recusam o
 // suspenso com 403 `account_suspended`, salvo as de desfazer e de segurança.
 
@@ -190,9 +196,16 @@ export async function setFanSuspended(
  * fila como `hidden`; na mesma transação, uma entrada `fan.comments.hidden`
  * com a contagem, os posts e os comentários. Nunca há comentário oculto sem a
  * auditoria: quem perde o acesso no meio, um prazo estourado ou uma falha não
- * deixam nada pela metade. `more` quando a página veio cheia: o painel chama
- * de novo até `more: false`. Ocultar não tira pontos. Nada oculto: `{ hidden:
- * 0, more }` sem auditar.
+ * deixam nada pela metade. O painel chama de novo até `more: false`. Ocultar
+ * não tira pontos. Nada oculto: `{ hidden: 0, more }` sem auditar. Desde a
+ * Fase 2 do fã-clube (seção 37, 37.6), uma segunda etapa, quando o Mural
+ * acaba: os comentários do fã nos fã-clubes (os visíveis e os ocultos pelo
+ * gestor, que o autor ainda vê), em páginas próprias do mesmo tamanho, cada
+ * uma numa transação com os contadores e o item aberto em `hidden`, e uma
+ * auditoria por página com os `fanClubCommentIds` e os `fanClubPostIds`
+ * (nunca os alvos do Mural). Uma etapa por chamada: o `more` só fica `false`
+ * quando as duas acabam (a última página do Mural confere, numa leitura, se
+ * sobrou comentário nos fã-clubes).
  */
 export async function hideFanComments(
   deps: ModerationFansDeps,
@@ -214,8 +227,9 @@ export async function hideFanComments(
     const postId = doc.ref.parent.parent?.id;
     return postId ? [{ postId, commentId: doc.id }] : [];
   });
-  const more = page.size === pageSize;
-  if (keys.length === 0) return { hidden: 0, more };
+  // O Mural acabou: a etapa do fã-clube.
+  if (keys.length === 0) return hideFanClubStage(deps, caller, uid, pageSize);
+  const more = page.size === pageSize || (await hasFanClubCommentsToHide(db, uid));
   await deps.onPage?.();
 
   const hidden = await db.runTransaction(async (tx) => {
@@ -256,6 +270,59 @@ export async function hideFanComments(
         details: { uid, count: commentIds.length, postIds, commentIds },
       },
       at,
+    );
+    return commentIds.length;
+  });
+  return { hidden, more };
+}
+
+/**
+ * A etapa do fã-clube do `hideFanComments` (seção 37, 37.6): uma página dos
+ * comentários do fã nos fã-clubes (os visíveis e os ocultos pelo gestor, pela
+ * igualdade do `authorUid` e o `in` do status), numa transação que relê quem
+ * chama, oculta pela equipe (`hideFanClubCommentsPage`: os contadores e o item
+ * aberto em `hidden`) e grava a auditoria `fan.comments.hidden` com os
+ * `fanClubCommentIds` e os `fanClubPostIds`, dentro dos 50 alvos (1 + 24 +
+ * 24). O que mudou no meio fica de fora, sem gravar; nada oculto, nada
+ * auditado. `more` quando a página veio cheia.
+ */
+async function hideFanClubStage(
+  deps: ModerationFansDeps,
+  caller: CallerAuth | undefined,
+  uid: string,
+  pageSize: number,
+): Promise<{ hidden: number; more: boolean }> {
+  const { db } = deps;
+  const page = await fanClubCommentsToHideOf(db, uid, pageSize).get();
+  const more = page.size === pageSize;
+  if (page.empty) return { hidden: 0, more };
+  await deps.onPage?.();
+  const refs = page.docs.map((doc) => doc.ref);
+  const hidden = await db.runTransaction(async (tx) => {
+    const actor = await readPanelActor(transactionRead(tx), db, caller, 'moderation', 'edit');
+    const now = clock(deps);
+    const { commentIds, postIds } = await hideFanClubCommentsPage(tx, db, uid, refs, {
+      actor,
+      now,
+    });
+    if (commentIds.length === 0) return 0;
+    writeAudit(
+      tx,
+      db,
+      {
+        action: 'fan.comments.hidden',
+        actorUid: actor.uid,
+        actorName: actor.name,
+        targetEmail: '',
+        targetUid: uid,
+        details: {
+          uid,
+          count: commentIds.length,
+          fanClubPostIds: postIds,
+          fanClubCommentIds: commentIds,
+        },
+      },
+      Timestamp.fromMillis(now),
     );
     return commentIds.length;
   });

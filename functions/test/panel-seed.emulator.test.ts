@@ -14,10 +14,13 @@ import {
   SEED_FAN_CLUB_COMMENTS,
   SEED_FAN_CLUB_FOLLOWER,
   SEED_FAN_CLUB_GRANT,
+  SEED_FAN_CLUB_HIDDEN_COMMENT,
   SEED_FAN_CLUB_POSTS,
+  SEED_FAN_CLUB_SPAM_COMMENT,
   seedFanClubEngagement,
   seedFanClubFollows,
   seedFanClubLink,
+  seedFanClubModeration,
   seedFanClubPending,
   seedFanClubPosts,
   seedFanClubPrize,
@@ -97,7 +100,10 @@ import { localApi, signIn, useEmulators } from './support';
  * a entrada trazida) e a primeira cópia da noite do fã-clube; desde a etapa 5,
  * a recompensa "Só para prêmios" e o prêmio da Camila, com os pontos; desde a
  * etapa 10, a candidatura pendente da Duda para o Nenho, que entra antes na
- * central.
+ * central. Na Fase 2 (seção 37), depois dos seguidores, os comentários e as
+ * reações (etapa 1 de 37.13) e a moderação dos comentários (etapa 3): o
+ * comentário do rank-40 oculto pela Camila, com o pedido de revisão, e a
+ * propaganda do Promo, que passa a seguir, denunciada pela Bia.
  */
 const env = useEmulators('painel-seed', ['api', 'createUserProfile']);
 const { db, bucket } = env;
@@ -236,6 +242,19 @@ async function seed(ranking: Map<string, string>): Promise<void> {
     { camilaUid: 'camila', biaUid: 'bia', followerUid: uidOf(ranking, SEED_FAN_CLUB_FOLLOWER) },
     T0,
   );
+  // A moderação dos comentários (etapa 3 de 37.13): o comentário do rank-40
+  // oculto pela Camila, com o pedido de revisão, e a propaganda do Promo,
+  // denunciada pela Bia.
+  await seedFanClubModeration(
+    db,
+    {
+      camilaUid: 'camila',
+      biaUid: 'bia',
+      followerUid: uidOf(ranking, SEED_FAN_CLUB_FOLLOWER),
+      spamUid: 'spam',
+    },
+    T0,
+  );
   // A recompensa "Só para prêmios" e o prêmio da Camila (etapa 5).
   await seedFanClubPrize(db, { camilaUid: 'camila', actor: ACTOR }, T0);
   // A candidatura pendente da Duda, que entra antes no Nenho (etapa 10).
@@ -270,6 +289,9 @@ async function dump(): Promise<Record<string, [string, DocumentData][]>> {
     'fanClubReportQueue',
     'fanClubComments',
     'fanClubReactions',
+    'fanClubCommentReports',
+    'fanClubCommentQueue',
+    'fanClubHideLog',
   ]) {
     out[name] = (await db.collection(name).get()).docs.map((doc) => [doc.id, doc.data()]);
   }
@@ -603,13 +625,16 @@ describe('o seed das telas do painel (26.13)', () => {
     });
     // Os comentários e as reações (Fase 2, seção 37): 4 comentários de cima e a
     // resposta da Camila com o @ da Bia, embaixo do comentário dela; as
-    // reações dos três. Os contadores na própria publicação, e os dias da taxa
-    // nos shards sem o que a gestora faz (3 reações e 4 comentários). As duas
-    // origens valem 0: nada no extrato.
+    // reações dos três. Desde a etapa 3 de 37.13, mais 2: o do rank-40 na de
+    // texto, oculto pela Camila, e a propaganda do Promo na da foto. Os
+    // contadores na própria publicação (o oculto saiu do da de texto), e os
+    // dias da taxa nos shards sem o que a gestora faz (3 reações e 6
+    // comentários: o oculto depois não desconta, 37.11). As duas origens valem
+    // 0: nada no extrato.
     const textPost = byText.get(textItem!.text)!;
     expect(await db.collection('fanClubComments').get()).toHaveProperty(
       'size',
-      SEED_FAN_CLUB_COMMENTS.length,
+      SEED_FAN_CLUB_COMMENTS.length + 2,
     );
     expect(await read('fanClubComments/seed-fa-clube-bia-1')).toMatchObject({
       clubId,
@@ -635,7 +660,7 @@ describe('o seed das telas do painel (26.13)', () => {
       mentionUids: [],
     });
     expect(await read(`fanClubPosts/${photoPost.id}`)).toMatchObject({
-      commentCount: 3,
+      commentCount: 4,
       reactionCount: 3,
       reactionCounts: { heart: 2, clap: 1 },
     });
@@ -653,9 +678,93 @@ describe('o seed das telas do painel (26.13)', () => {
       await db.collection(`fanClubStats/${clubId}/fanClubShards`).get()
     ).docs.map((doc) => (doc.get(`days.${TODAY}`) ?? {}) as Record<string, number>);
     expect(engagementShards.reduce((sum, day) => sum + (day.reactions ?? 0), 0)).toBe(3);
-    expect(engagementShards.reduce((sum, day) => sum + (day.comments ?? 0), 0)).toBe(4);
+    expect(engagementShards.reduce((sum, day) => sum + (day.comments ?? 0), 0)).toBe(6);
     expect(await read(`wallets/bia/ledger/fanclub_like:${photoPost.id}`)).toBeUndefined();
     expect(await read('wallets/bia/ledger/fanclub_comment:seed-fa-clube-bia-1')).toBeUndefined();
+    // A moderação dos comentários (etapa 3 de 37.13). O do rank-40, oculto pela
+    // Camila, com o pedido de revisão: o comentário no `manager_hidden`, a
+    // linha `hidden` no registro (sem o texto) e o item da fila aberto pelo
+    // pedido, sem denúncia. A de texto ficou com os 2 de antes.
+    const hiddenId = SEED_FAN_CLUB_HIDDEN_COMMENT.id;
+    expect(await read(`fanClubComments/${hiddenId}`)).toMatchObject({
+      postId: textPost.id,
+      authorUid: follower,
+      replyToId: null,
+      status: 'manager_hidden',
+      hiddenBy: 'camila',
+      hiddenAt: Timestamp.fromMillis(T0),
+      reviewRequestedAt: Timestamp.fromMillis(T0),
+      reviewOutcome: null,
+      restoredByStaffAt: null,
+    });
+    expect(await read(`fanClubPosts/${textPost.id}`)).toMatchObject({ commentCount: 2 });
+    const hideLog = await db.collection('fanClubHideLog').get();
+    expect(hideLog.docs.map((doc) => doc.data())).toEqual([
+      {
+        clubId,
+        postId: textPost.id,
+        commentId: hiddenId,
+        authorUid: follower,
+        managerUid: 'camila',
+        action: 'hidden',
+        at: Timestamp.fromMillis(T0),
+        schemaVersion: 1,
+      },
+    ]);
+    expect(await read(`fanClubCommentQueue/${hiddenId}`)).toMatchObject({
+      commentId: hiddenId,
+      postId: textPost.id,
+      clubId,
+      artistId: 'nettobrito',
+      authorUid: follower,
+      kind: 'review',
+      reportCount: 0,
+      reviewRequested: true,
+      status: 'open',
+      resolution: null,
+      round: 1,
+      firstReportedAt: null,
+      reviewRequestedAt: Timestamp.fromMillis(T0),
+      lastActivityAt: Timestamp.fromMillis(T0),
+    });
+    // O Promo: entrou na central pela página (sem o crédito do seguir), segue e
+    // comentou propaganda na da foto, denunciado pela Bia como spam (o item
+    // aberto pela denúncia, a denúncia fechada com a rodada e o dia).
+    const spamId = SEED_FAN_CLUB_SPAM_COMMENT.id;
+    expect(await read('users/spam/centrals/nettobrito')).toMatchObject({
+      via: 'page',
+      fanClubId: null,
+    });
+    expect(await read(`users/spam/fanClubFollows/${clubId}`)).toMatchObject({ clubId });
+    expect(await read('users/spam/fanClubCredits/nettobrito')).toBeUndefined();
+    expect(await read(`fanClubComments/${spamId}`)).toMatchObject({
+      postId: photoPost.id,
+      authorUid: 'spam',
+      authorName: 'Promo Seguidores',
+      status: 'visible',
+      text: SEED_FAN_CLUB_SPAM_COMMENT.text,
+    });
+    expect(await read(`fanClubCommentQueue/${spamId}`)).toMatchObject({
+      kind: 'report',
+      reportCount: 1,
+      reasons: { spam: 1, offensive: 0, harassment: 0, other: 0, none: 0 },
+      reviewRequested: false,
+      status: 'open',
+      round: 1,
+      authorUid: 'spam',
+    });
+    expect(await read(`fanClubCommentReports/bia_${spamId}`)).toMatchObject({
+      commentId: spamId,
+      postId: photoPost.id,
+      clubId,
+      reporterUid: 'bia',
+      reason: 'spam',
+      round: 1,
+      day: TODAY,
+    });
+    expect(
+      (await db.collection('fanClubCommentQueue').where('status', '==', 'open').get()).size,
+    ).toBe(2);
     // O prêmio (etapa 5): a recompensa "Só para prêmios" fora da ordem, o pedido
     // Aprovado com o cupom e a mensagem, os 200 pontos só no saldo, o registro
     // sem o código e o resumo no fã-clube.

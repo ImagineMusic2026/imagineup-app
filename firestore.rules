@@ -573,6 +573,20 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    // A fila da equipe dos comentários (seção 37, 37.4; a etapa 3 de 37.13):
+    // as denúncias e os pedidos de revisão, na aba Comentários da seção
+    // fanClubs. E o registro do ocultar e do reexibir do gestor, que a ficha
+    // do fã-clube mostra (fora do staffAudit, que é só da equipe).
+    match /fanClubCommentQueue/{commentId} {
+      allow read: if canSeeSection('fanClubs');
+      allow write: if false;
+    }
+
+    match /fanClubHideLog/{id} {
+      allow read: if canSeeSection('fanClubs');
+      allow write: if false;
+    }
+
     // Resultado congelado das temporadas (bloco 8): o cabeçalho e a posição
     // final de cada fã que pontuou, com o nome, a foto e a cidade da virada.
     // Só o servidor grava (a virada e a exclusão de conta). A seção ranking

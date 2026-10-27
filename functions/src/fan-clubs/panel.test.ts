@@ -4,8 +4,8 @@ import { decideFanClub, parseDecision } from './panel';
 
 // A entrada da callable decideFanClub (docs/arquitetura-api.md, 34.3), em
 // tabela, sem Firestore: cada assunto (a candidatura, o fã-clube com o
-// Recompensar desde a etapa 5 e, desde a etapa 2, a publicação e a denúncia),
-// decisão, `expected` e campo; e as recusas que vêm antes de qualquer leitura
+// Recompensar desde a etapa 5, desde a etapa 2, a publicação e a denúncia, e,
+// desde a Fase 2 (seção 37, etapa 3 de 37.13), o comentário), decisão, `expected` e campo; e as recusas que vêm antes de qualquer leitura
 // (o login, o assunto, o id e a própria candidatura). Os campos do
 // Recompensar um a um ficam no `model.test.ts` (`parseRewardGrant`).
 
@@ -35,6 +35,8 @@ const club = (fields: Record<string, unknown>) => parseDecision('club', 'clube1'
 const post = (fields: Record<string, unknown>) => parseDecision('post', 'pub1', fields, NOW);
 
 const report = (fields: Record<string, unknown>) => parseDecision('report', 'pub1', fields, NOW);
+
+const comment = (fields: Record<string, unknown>) => parseDecision('comment', 'c1', fields, NOW);
 
 describe('a candidatura', () => {
   it('aprovar com o nome proposto ou ajustado; recusar com o motivo da lista', () => {
@@ -242,6 +244,47 @@ describe('a denúncia (etapa 2)', () => {
   });
 });
 
+describe('o comentário (seção 37, 37.6; etapa 3 de 37.13)', () => {
+  it('manter, ocultar e reexibir com o status da tela; a rodada da aba Comentários, obrigatória no Manter', () => {
+    expect(comment({ decision: 'keep', expected: 'manager_hidden', round: 2 })).toEqual({
+      subject: 'comment',
+      id: 'c1',
+      decision: 'keep',
+      expected: 'manager_hidden',
+      round: 2,
+    });
+    for (const decision of ['hide', 'restore'] as const) {
+      for (const expected of ['visible', 'manager_hidden', 'staff_hidden'] as const) {
+        // O Ocultar e o Reexibir do diálogo da ficha vão sem a rodada.
+        expect(comment({ decision, expected })).toEqual({
+          subject: 'comment',
+          id: 'c1',
+          decision,
+          expected,
+          round: null,
+        });
+        expect(comment({ decision, expected, round: null })).toMatchObject({ round: null });
+        expect(comment({ decision, expected, round: 3 })).toMatchObject({ round: 3 });
+      }
+    }
+  });
+
+  it.each([
+    [{ decision: 'action', expected: 'visible', round: 1 }, 'decision'],
+    [{ decision: 'approve', expected: 'visible' }, 'decision'],
+    [{ decision: 'hide' }, 'expected'],
+    [{ decision: 'hide', expected: 'hidden' }, 'expected'],
+    [{ decision: 'hide', expected: 1 }, 'expected'],
+    [{ decision: 'keep', expected: 'visible' }, 'round'],
+    [{ decision: 'keep', expected: 'visible', round: null }, 'round'],
+    [{ decision: 'keep', expected: 'visible', round: 0 }, 'round'],
+    [{ decision: 'hide', expected: 'visible', round: 1.5 }, 'round'],
+    [{ decision: 'restore', expected: 'staff_hidden', round: '1' }, 'round'],
+  ])('%j: invalid-request com o campo %s', (fields, field) => {
+    expect(detailsOf(() => comment(fields))).toEqual({ reason: 'invalid-request', field });
+  });
+});
+
 describe('antes de qualquer leitura', () => {
   const noReads = {
     collection: () => {
@@ -276,7 +319,7 @@ describe('antes de qualquer leitura', () => {
       reason: 'invalid-request',
       field: 'id',
     });
-    for (const subject of ['club', 'post', 'report']) {
+    for (const subject of ['club', 'post', 'report', 'comment']) {
       expect(await detailsOfCall({ subject, id: 'a/b' })).toEqual({
         reason: 'invalid-request',
         field: 'id',

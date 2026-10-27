@@ -575,6 +575,30 @@
         { "fieldPath": "postId", "order": "ASCENDING" },
         { "fieldPath": "createdAt", "order": "DESCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "fanClubCommentQueue",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "lastActivityAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "fanClubCommentQueue",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "resolvedAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "fanClubHideLog",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "clubId", "order": "ASCENDING" },
+        { "fieldPath": "at", "order": "DESCENDING" }
+      ]
     }
   ],
   "fieldOverrides": [
@@ -687,6 +711,7 @@
     { "collectionGroup": "fanClubComments", "fieldPath": "text", "indexes": [] },
     { "collectionGroup": "fanClubComments", "fieldPath": "mentions", "indexes": [] },
     { "collectionGroup": "fanClubPosts", "fieldPath": "mentions", "indexes": [] },
-    { "collectionGroup": "fanClubShards", "fieldPath": "days", "indexes": [] }
+    { "collectionGroup": "fanClubShards", "fieldPath": "days", "indexes": [] },
+    { "collectionGroup": "fanClubCommentQueue", "fieldPath": "reasons", "indexes": [] }
   ]
 }

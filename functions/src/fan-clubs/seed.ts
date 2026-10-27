@@ -8,6 +8,11 @@ import { DEFAULT_POINTS_CONFIG } from '../points/config';
 import { NO_GAME } from '../points/model';
 import { SEED_ACTOR } from '../points/seed';
 import { SEED_PRIZE_REWARD, seedPrizeReward } from '../rewards/seed';
+import {
+  runHideFanClubComment,
+  runReportFanClubComment,
+  runRequestFanClubCommentReview,
+} from './comment-queue';
 import { runAddFanClubComment } from './comments';
 import { copyFanClubCount } from './copy';
 import { runFollowFanClub } from './follows';
@@ -25,8 +30,11 @@ import { runReportFanClubPost } from './reports';
 import { runApplyForFanClub } from './service';
 import {
   applicationRef,
+  fanClubCommentQueueRef,
   fanClubCommentRef,
+  fanClubCommentReportRef,
   fanClubFollowRef,
+  fanClubHideLogOf,
   fanClubPostsOfAuthor,
   fanClubPrizeRef,
   fanClubReactionRef,
@@ -53,7 +61,10 @@ import {
 // selo de oficial; o da Duda, quando aprovado no painel local, fica sem ele).
 // Na Fase 2 (seção 37, etapa 1 de 37.13): os comentários e as reações nas duas
 // publicações no ar da Camila, com a resposta dela com o @ da Bia (desde a
-// etapa 2, a marcação resolvida no envio).
+// etapa 2, a marcação resolvida no envio). Na etapa 3 de 37.13: o comentário
+// do rank-40 oculto pela Camila, com o pedido de revisão dele, e o fã de
+// propaganda da Moderação seguindo e comentando propaganda, denunciado pela
+// Bia (a aba Comentários e o ocultar em lote).
 // Rodar de novo não muda nada. Nunca roda em produção: o script fixa os emuladores.
 
 /** A central com as fotos de fã desligadas (só texto). */
@@ -494,6 +505,169 @@ export async function seedFanClubEngagement(
     if (!post || (await fanClubReactionRef(db, uid, post.id).get()).exists) continue;
     await runSetFanClubReaction(db, uid, { postId: post.id, reaction: item.reaction }, options);
     result.reactions += 1;
+  }
+  return result;
+}
+
+/**
+ * O comentário do seed que a Camila oculta (seção 37, 37.13, o seed da etapa
+ * 3): do rank-40 que segue, na publicação de texto, com o pedido de revisão
+ * dele, para o "Oculto pelo gestor" com o "Revisão pedida" no app e a aba
+ * Comentários do painel com um pedido de revisão.
+ */
+export const SEED_FAN_CLUB_HIDDEN_COMMENT: SeedFanClubComment = {
+  id: 'seed-fa-clube-seguidor-oculto',
+  author: 'follower',
+  post: 1,
+  minutesAgo: 15,
+  text: 'Alguém tem ingresso sobrando? Me chama no privado.',
+  replyTo: null,
+};
+
+/**
+ * O comentário de propaganda do seed (37.13): do fã de propaganda da
+ * Moderação (o `SEED_SPAM_FAN`), que passa a seguir o fã-clube da Camila, na
+ * publicação da foto, denunciado pela Bia como spam, para a aba Comentários
+ * com uma denúncia e o ocultar em lote da Moderação com a etapa do fã-clube.
+ */
+export const SEED_FAN_CLUB_SPAM_COMMENT = {
+  id: 'seed-fa-clube-spam-1',
+  post: 0,
+  minutesAgo: 25,
+  text: 'Ganhe seguidores reais hoje! Chama no meu perfil que eu passo o pacote.',
+} as const;
+
+export type SeedFanClubModerationResult = {
+  /** Comentários gravados agora (2 no total: o que a Camila oculta e o de propaganda). */
+  comments: number;
+  /** A Camila ocultou agora o comentário do rank-40. */
+  hidden: boolean;
+  /** O rank-40 pediu a revisão agora. */
+  reviewed: boolean;
+  /** O fã de propaganda passou a seguir agora (entrando antes na central pela página, se faltava). */
+  followed: boolean;
+  /** A Bia denunciou agora o comentário de propaganda. */
+  reported: boolean;
+};
+
+/**
+ * A moderação dos comentários no seed (seção 37, 37.13, o seed da etapa 3),
+ * pelos núcleos das rotas, com o ator de sistema (os tetos não contam) e a
+ * configuração padrão, depois do `seedFanClubEngagement`: o comentário do
+ * rank-40 na publicação de texto, que a Camila oculta (a linha `hidden` no
+ * registro) e o rank-40 pede revisão (o item da fila com o `kind: 'review'`);
+ * e o fã de propaganda, que entra na central do Netto pela página (sem o
+ * crédito do seguir: a entrada não é do fã-clube) com o `central_join` em 0,
+ * segue o fã-clube e comenta propaganda na publicação da foto, denunciado pela
+ * Bia como spam (o item com o `kind: 'report'`). Cada passo só roda quando o
+ * que ele cria falta: o ocultar, só sem linha no registro para o comentário (o
+ * reexibir do painel local ou do app fica); o pedido, só no oculto pelo gestor
+ * sem pedido e sem item na fila; a denúncia, só sem a denúncia da Bia. Rodar
+ * de novo não muda nada.
+ */
+export async function seedFanClubModeration(
+  db: Firestore,
+  input: { camilaUid: string; biaUid: string; followerUid: string; spamUid: string },
+  now: number = Date.now(),
+): Promise<SeedFanClubModerationResult> {
+  const result: SeedFanClubModerationResult = {
+    comments: 0,
+    hidden: false,
+    reviewed: false,
+    followed: false,
+    reported: false,
+  };
+  const application = await applicationRef(db, input.camilaUid).get();
+  const clubId = application.exists
+    ? applicationRecord(input.camilaUid, application.data() ?? {}).clubId
+    : null;
+  if (clubId === null) return result;
+  const club = await fanClubRef(db, clubId).get();
+  const artistId = club.get('artistId');
+  if (club.get('status') !== 'active' || typeof artistId !== 'string') return result;
+  const existing = await fanClubPostsOfAuthor(db, input.camilaUid).get();
+  const byText = new Map(
+    existing.docs.map((doc) => [doc.get('text'), fanClubPostRecord(doc.id, doc.data())]),
+  );
+  const posts = SEED_FAN_CLUB_POSTS.filter((item) => item.publish).map((item) => {
+    const post = byText.get(item.text);
+    return post?.status === 'published' ? post : null;
+  });
+  const options = { now, config: DEFAULT_POINTS_CONFIG, actor: SEED_ACTOR, game: NO_GAME };
+
+  // O comentário do rank-40 que a Camila oculta, com o pedido de revisão dele.
+  const hiddenItem = SEED_FAN_CLUB_HIDDEN_COMMENT;
+  const hiddenPost = posts[hiddenItem.post];
+  if (hiddenPost && !(await fanClubCommentRef(db, hiddenItem.id).get()).exists) {
+    const { comment } = await runAddFanClubComment(
+      db,
+      input.followerUid,
+      { postId: hiddenPost.id, text: hiddenItem.text, replyToId: null, commentId: hiddenItem.id },
+      { ...options, now: now - hiddenItem.minutesAgo * 60_000 },
+    );
+    if (comment) result.comments += 1;
+  }
+  const logged = await fanClubHideLogOf(db).where('commentId', '==', hiddenItem.id).limit(1).get();
+  const before = await fanClubCommentRef(db, hiddenItem.id).get();
+  if (logged.empty && before.get('status') === 'visible') {
+    await runHideFanClubComment(db, input.camilaUid, hiddenItem.id, options);
+    result.hidden = true;
+  }
+  const hidden = await fanClubCommentRef(db, hiddenItem.id).get();
+  if (
+    hidden.get('status') === 'manager_hidden' &&
+    hidden.get('reviewRequestedAt') === null &&
+    hidden.get('reviewOutcome') === null &&
+    !(await fanClubCommentQueueRef(db, hiddenItem.id).get()).exists
+  ) {
+    const { status } = await runRequestFanClubCommentReview(
+      db,
+      input.followerUid,
+      hiddenItem.id,
+      options,
+    );
+    result.reviewed = status === 'requested';
+  }
+
+  // O fã de propaganda: entra na central pela página, segue, comenta e a Bia denuncia.
+  const spamItem = SEED_FAN_CLUB_SPAM_COMMENT;
+  const spamPost = posts[spamItem.post];
+  if (!spamPost) return result;
+  if (!(await fanClubFollowRef(db, input.spamUid, clubId).get()).exists) {
+    const joinOptions = {
+      ...options,
+      config: {
+        ...DEFAULT_POINTS_CONFIG,
+        values: { ...DEFAULT_POINTS_CONFIG.values, central_join: 0 },
+      },
+    };
+    if (!(await membershipRef(db, input.spamUid, artistId).get()).exists) {
+      await runJoinCentrals(db, input.spamUid, [artistId], { ...joinOptions, via: 'page' });
+    }
+    await runFollowFanClub(db, input.spamUid, clubId, joinOptions);
+    result.followed = true;
+  }
+  if (!(await fanClubCommentRef(db, spamItem.id).get()).exists) {
+    const { comment } = await runAddFanClubComment(
+      db,
+      input.spamUid,
+      { postId: spamPost.id, text: spamItem.text, replyToId: null, commentId: spamItem.id },
+      { ...options, now: now - spamItem.minutesAgo * 60_000 },
+    );
+    if (comment) result.comments += 1;
+  }
+  const spam = await fanClubCommentRef(db, spamItem.id).get();
+  if (
+    spam.get('status') === 'visible' &&
+    !(await fanClubCommentReportRef(db, input.biaUid, spamItem.id).get()).exists
+  ) {
+    const { status } = await runReportFanClubComment(
+      db,
+      input.biaUid,
+      { commentId: spamItem.id, reason: 'spam' },
+      options,
+    );
+    result.reported = status === 'reported';
   }
   return result;
 }

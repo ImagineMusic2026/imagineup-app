@@ -44,6 +44,7 @@ export type PanelErrorReason =
   | 'owner-suspended'
   | 'fan-club-post-not-found'
   | 'fan-club-report-not-found'
+  | 'fan-club-comment-not-found'
   | 'prize-not-allowed'
   | 'grant-id-reused'
   | 'reward-not-prize';
@@ -103,6 +104,8 @@ const ERRORS: Record<PanelErrorReason, [FunctionsErrorCode, string]> = {
   ],
   'fan-club-post-not-found': ['not-found', 'Essa publicação não existe mais.'],
   'fan-club-report-not-found': ['not-found', 'Essa publicação não está na fila de denúncias.'],
+  // O comentário de fã-clube (seção 37, 37.3), no assunto `comment`.
+  'fan-club-comment-not-found': ['not-found', 'Esse comentário não existe mais.'],
   // O Recompensar (34.3). O `prize-not-allowed` leva qual trava falhou em
   // `details.problem` (`club_not_active`, `not_adult` ou `owner_suspended`),
   // porque o `details.reason` é o do erro.

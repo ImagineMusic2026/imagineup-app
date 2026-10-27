@@ -10,6 +10,7 @@ import {
   FAN_CLUB_POSTS_PAGE,
   fanClubCommentNotFound,
   followFanClub,
+  hideFanClubComment,
   MENTION_QUERY_PATTERN,
   openFanClubUpload,
   parseApplication,
@@ -31,9 +32,12 @@ import {
   readMyFanClubNumbers,
   readMyFanClubPosts,
   removeFanClubPost,
+  reportFanClubComment,
   reportFanClubPost,
+  requestFanClubCommentReview,
   setFanClubReaction,
   unfollowFanClub,
+  unhideFanClubComment,
   withdrawApplication,
   type ApplicationInput,
   type CommentInput,
@@ -42,7 +46,12 @@ import {
   type MentionsQuery,
   type PostInput,
 } from '../../fan-clubs';
-import { parseFanClubReportReason, type FanClubReportReason } from '../../moderation';
+import {
+  parseFanClubReportReason,
+  parseReportReason,
+  type FanClubReportReason,
+  type ReportReason,
+} from '../../moderation';
 import { isContentId } from '../../page-cursor';
 import { rewardsOf } from '../../points/award';
 import type {
@@ -50,7 +59,9 @@ import type {
   AddFanClubCommentResult,
   FanClubArtists,
   FanClubCard,
+  FanClubCommentHiddenResult,
   FanClubCommentPage,
+  FanClubCommentReviewResult,
   FanClubNumbers,
   FanClubPage,
   FanClubPost,
@@ -63,6 +74,7 @@ import type {
   MyFanClub,
   OwnFanClubPost,
   Page,
+  ReportFanClubCommentResult,
   ReportFanClubPostResult,
   UnfollowFanClubResult,
 } from '../contract';
@@ -87,7 +99,10 @@ import { pageQuery, queryText } from './paging';
 // reação é de desfazer e aceita o suspenso. Nenhuma rota diz quem reagiu (R8).
 // A etapa 2 de 37.13: as sugestões do @ (a conversa e a busca); as marcações
 // do comentário e da publicação do gestor são resolvidas no envio, nas rotas
-// que já existem.
+// que já existem. A etapa 3 (37.6): a denúncia de comentário de quem vê, o
+// pedido de revisão do autor do oculto pelo gestor e o ocultar e o reexibir
+// do gestor no próprio fã-clube, todas no runIdempotent, sem o
+// `allowSuspended` (o suspenso não denuncia, não pede revisão e não oculta).
 
 /**
  * O corpo da candidatura conferido e limpo (`parseApplication`), sem leitura:
@@ -193,6 +208,22 @@ function bodyReaction(input: RouteInput): FanClubReactionKey {
 /** O motivo da denúncia (a lista do fã-clube, com o `image_misuse`, ou null); outro valor é 400. */
 function reportReason(input: RouteInput): FanClubReportReason | null {
   const reason = parseFanClubReportReason(input.body);
+  if (reason === undefined) throw apiError('invalid_request', { field: 'reason' });
+  return reason;
+}
+
+/** O `:commentId` no formato dos ids; fora dele, 404 `fan_club_comment_not_found` sem ler nada. */
+function commentParam(input: RouteInput): void {
+  if (!isContentId(input.params.commentId)) throw apiError('fan_club_comment_not_found');
+}
+
+/**
+ * O motivo da denúncia de comentário (seção 37, 37.3): os 4 do comentário do
+ * Mural ou null (`parseReportReason`), sem o `image_misuse`, que é de imagem;
+ * outro valor é 400.
+ */
+function commentReportReason(input: RouteInput): ReportReason | null {
+  const reason = parseReportReason(input.body);
   if (reason === undefined) throw apiError('invalid_request', { field: 'reason' });
   return reason;
 }
@@ -573,6 +604,83 @@ export const fanClubRoutes: ApiRoute[] = [
     },
     async handle(ctx): Promise<MentionSuggestions> {
       return readMentionSuggestions(ctx.deps.db, ctx.uid, ctx.params.clubId!, mentionsQuery(ctx));
+    },
+  },
+  {
+    // Denunciar um comentário à vista de quem pede (a etapa 3 de 37.13), sem
+    // exigir seguir, com o teto `report` de sempre. O próprio é 400
+    // `own_comment`; na mesma rodada do item, `already_reported`.
+    method: 'POST',
+    pattern: '/fan-club-comments/:commentId/report',
+    writes: true,
+    validate: (input) => {
+      commentParam(input);
+      commentReportReason(input);
+    },
+    async handle(ctx) {
+      const commentId = ctx.params.commentId!;
+      const { plan, status } = await reportFanClubComment(ctx.tx, ctx.deps.db, {
+        fan: ctx.fan,
+        award: ctx.award,
+        commentId,
+        reason: commentReportReason(ctx),
+      });
+      const body: ReportFanClubCommentResult = { commentId, status };
+      return { body, plan };
+    },
+  },
+  {
+    // O "Pedir revisão" do autor do comentário oculto pelo gestor, uma vez por
+    // ocultar, no teto `report`. O comentário alheio ou em outro status é 404.
+    method: 'POST',
+    pattern: '/fan-club-comments/:commentId/review',
+    writes: true,
+    validate: commentParam,
+    async handle(ctx) {
+      const commentId = ctx.params.commentId!;
+      const { plan, status } = await requestFanClubCommentReview(ctx.tx, ctx.deps.db, {
+        fan: ctx.fan,
+        award: ctx.award,
+        commentId,
+      });
+      const body: FanClubCommentReviewResult = { commentId, status };
+      return { body, plan };
+    },
+  },
+  {
+    // O gestor oculta um comentário do próprio fã-clube (rota de estado:
+    // repetir não muda nada). Sem teto; o reexibido pela equipe é 409
+    // `staff_decided`, e o dele, 400 `own_comment`.
+    method: 'PUT',
+    pattern: '/me/fan-club/hidden-comments/:commentId',
+    writes: true,
+    validate: commentParam,
+    async handle(ctx) {
+      const commentId = ctx.params.commentId!;
+      const { plan, hidden } = await hideFanClubComment(ctx.tx, ctx.deps.db, {
+        fan: ctx.fan,
+        award: ctx.award,
+        commentId,
+      });
+      const body: FanClubCommentHiddenResult = { commentId, hidden };
+      return { body, plan };
+    },
+  },
+  {
+    // O gestor reexibe só o que ele ocultou; o resto é 404.
+    method: 'DELETE',
+    pattern: '/me/fan-club/hidden-comments/:commentId',
+    writes: true,
+    validate: commentParam,
+    async handle(ctx) {
+      const commentId = ctx.params.commentId!;
+      const { plan, hidden } = await unhideFanClubComment(ctx.tx, ctx.deps.db, {
+        fan: ctx.fan,
+        award: ctx.award,
+        commentId,
+      });
+      const body: FanClubCommentHiddenResult = { commentId, hidden };
+      return { body, plan };
     },
   },
 ];
