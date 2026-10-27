@@ -23,6 +23,8 @@ import {
 } from '../points/award';
 import { COMMENT_PAGE_ROUNDS, PostError } from '../posts/model';
 import {
+  commentReview,
+  FAN_CLUB_OWN_HIDDEN_MAX,
   fanClubCommentNotFound,
   fanClubCommentRecord,
   findMentionTokens,
@@ -33,6 +35,7 @@ import {
   resolvedMentions,
   type CommentInput,
   type FanClubCommentRecord,
+  type FanClubCommentStatus,
   type FanClubRecord,
 } from './model';
 import { readActionPost, readVisiblePost } from './posts';
@@ -52,23 +55,38 @@ import {
 // própria publicação (decisão 10 de 37.1) e o dia da taxa de engajamento num
 // shard do fã-clube (37.11). Fora dos nomes do Mural: a coleção é a
 // `fanClubComments`, na raiz (decisão 9), e o comentário nunca vai ao
-// `postStats` nem às missões. O ocultar, a denúncia e o pedido de revisão são
-// da etapa 3. As marcações (a etapa 2, 37.7) são resolvidas no envio, dentro
-// da transação, e o filtro confere o texto com o "@" tirado dos resolvidos.
+// `postStats` nem às missões. As marcações (a etapa 2, 37.7) são resolvidas
+// no envio, dentro da transação, e o filtro confere o texto com o "@" tirado
+// dos resolvidos. Desde a etapa 3 (37.6), a lista mostra ao gestor, no
+// próprio fã-clube, também os que ele ocultou, e ao autor, na primeira página,
+// os dele ocultos pelo gestor (o `ownHidden`); o ocultar, a denúncia e o
+// pedido de revisão moram no `comment-queue.ts`.
 
 const tsOf = (ms: number) => Timestamp.fromMillis(ms);
 
 const iso = (ms: number): string => new Date(ms).toISOString();
 
+/** O que cada um vê na lista: todos, só o visível; o gestor no próprio fã-clube, também o que ele ocultou. */
+const VISIBLE_ONLY: readonly FanClubCommentStatus[] = ['visible'];
+const MANAGER_SHOWN: readonly FanClubCommentStatus[] = ['visible', 'manager_hidden'];
+
 /**
- * O comentário como o app recebe (37.3). O `isManager` é calculado na leitura,
- * pelo `ownerUid` de agora (decisão 19 de 37.1). O `hidden` sai só do status
- * (o visível é null), e o `review` fica com o pedido de revisão (etapa 3).
+ * O comentário como o app recebe (37.3), para quem pede (`viewerUid`). O
+ * `isManager` é calculado na leitura, pelo `ownerUid` de agora (decisão 19 de
+ * 37.1). O `hidden: 'manager'` sai só para o autor e para o gestor; o
+ * `review`, só para o autor do oculto pelo gestor; e o `hiddenReplyCount` (as
+ * respostas no `manager_hidden`), só para o gestor no próprio fã-clube, no
+ * comentário de cima. O oculto pela equipe não sai em rota nenhuma (decisão
+ * 22).
  */
 export function fanClubCommentView(
   comment: FanClubCommentRecord,
   club: Pick<FanClubRecord, 'ownerUid'>,
+  viewerUid: string,
 ): FanClubComment {
+  const isManagerView = club.ownerUid !== null && club.ownerUid === viewerUid;
+  const isAuthor = comment.authorUid === viewerUid;
+  const managerHidden = comment.status === 'manager_hidden' && (isManagerView || isAuthor);
   return {
     id: comment.id,
     postId: comment.postId,
@@ -84,24 +102,59 @@ export function fanClubCommentView(
     mentions: comment.mentions,
     replyToId: comment.replyToId,
     replyCount: comment.replyCount,
+    ...(isManagerView && comment.replyToId === null
+      ? { hiddenReplyCount: comment.managerHiddenReplyCount }
+      : {}),
     createdAt: iso(comment.createdAt),
-    hidden: comment.status === 'manager_hidden' ? 'manager' : null,
-    review: null,
+    hidden: managerHidden ? 'manager' : null,
+    review: managerHidden && isAuthor ? commentReview(comment) : null,
   };
 }
 
-/** O comentário que quem pede vê: visível, da publicação e de autor que ele não bloqueou. */
-function isVisibleComment(
+/**
+ * O comentário que quem pede vê: da publicação, num dos status que ele vê
+ * (`shown`) e de autor que ele não bloqueou.
+ */
+function isShownComment(
   comment: FanClubCommentRecord | null,
   postId: string,
   blocked: ReadonlySet<string>,
+  shown: readonly FanClubCommentStatus[] = VISIBLE_ONLY,
 ): comment is FanClubCommentRecord {
   return (
     comment !== null &&
     comment.postId === postId &&
-    comment.status === 'visible' &&
+    shown.includes(comment.status) &&
     !blocked.has(comment.authorUid)
   );
+}
+
+/** O filtro do status na consulta: a igualdade do visível, ou o `in` do gestor (o mesmo índice). */
+const withStatus = (query: Query, shown: readonly FanClubCommentStatus[]): Query =>
+  shown.length === 1
+    ? query.where('status', '==', shown[0])
+    : query.where('status', 'in', [...shown]);
+
+/**
+ * O `ownHidden` (37.3): os comentários de quem pede ocultos pelo gestor
+ * naquela publicação, de cima e respostas, até 10, do mais novo ao mais
+ * antigo. Só igualdades (`postId`, `authorUid` e `status`), pela junção dos
+ * índices de um campo; a ordem sai na memória.
+ */
+async function readOwnHidden(
+  db: Firestore,
+  uid: string,
+  postId: string,
+): Promise<FanClubCommentRecord[]> {
+  const snap = await fanClubCommentsOf(db)
+    .where('postId', '==', postId)
+    .where('authorUid', '==', uid)
+    .where('status', '==', 'manager_hidden')
+    .limit(FAN_CLUB_OWN_HIDDEN_MAX)
+    .get();
+  return snap.docs
+    .map((doc) => fanClubCommentRecord(doc.id, doc.data()))
+    .sort((a, b) => b.createdAt - a.createdAt || (a.id < b.id ? 1 : a.id > b.id ? -1 : 0));
 }
 
 const commentOf = (snap: DocumentSnapshot | undefined): FanClubCommentRecord | null =>
@@ -125,9 +178,12 @@ export type CommentsQuery = { limit: number; cursor: PageCursor | null; replyTo:
  * página, busca de novo a partir do último lido, até 5 rodadas, como o
  * `readComments` do Mural; a página pode vir menor, até vazia, com o
  * `nextCursor`. No próprio fã-clube, o gestor vê todos, também os de quem ele
- * bloqueou, para poder ocultá-los (37.8; resposta do dono, 37.15, pergunta 9).
- * Os ocultos pelo gestor na lista dele e o `ownHidden` do autor vêm com o
- * ocultar (a etapa 3).
+ * bloqueou, para poder ocultá-los (37.8; resposta do dono, 37.15, pergunta 9),
+ * e também os que ele ocultou (o `in` do status, com o `hidden: 'manager'`, o
+ * `hiddenReplyCount` nos de cima e as respostas embaixo do de cima oculto por
+ * ele, etapa 3). Na primeira página dos de cima, quem não é o gestor recebe o
+ * `ownHidden`: os dele ocultos pelo gestor naquela publicação, com o `review`
+ * (lidos junto da página).
  */
 export async function readFanClubComments(
   db: Firestore,
@@ -138,27 +194,33 @@ export async function readFanClubComments(
   const { club, blocked, extra } = await readVisiblePost(db, uid, postId, () =>
     query.replyTo === null ? [] : [fanClubCommentRef(db, query.replyTo)],
   );
+  const isManager = club.ownerUid === uid;
   // O gestor no próprio fã-clube não filtra: ele precisa ver para ocultar (37.8).
-  const hidden = new Set(club.ownerUid === uid ? [] : blocked);
+  const hidden = new Set(isManager ? [] : blocked);
+  const shown = isManager ? MANAGER_SHOWN : VISIBLE_ONLY;
   let base: Query;
   if (query.replyTo !== null) {
     const top = commentOf(extra[0]);
-    if (!isVisibleComment(top, postId, hidden) || top.replyToId !== null) {
+    if (!isShownComment(top, postId, hidden, shown) || top.replyToId !== null) {
       throw fanClubCommentNotFound();
     }
-    base = fanClubCommentsOf(db)
-      .where('replyToId', '==', top.id)
-      .where('status', '==', 'visible')
+    base = withStatus(fanClubCommentsOf(db).where('replyToId', '==', top.id), shown)
       .orderBy('createdAt', 'asc')
       .orderBy(FieldPath.documentId(), 'asc');
   } else {
-    base = fanClubCommentsOf(db)
-      .where('postId', '==', postId)
-      .where('replyToId', '==', null)
-      .where('status', '==', 'visible')
+    base = withStatus(
+      fanClubCommentsOf(db).where('postId', '==', postId).where('replyToId', '==', null),
+      shown,
+    )
       .orderBy('createdAt', 'desc')
       .orderBy(FieldPath.documentId(), 'desc');
   }
+  const ownHidden =
+    !isManager && query.replyTo === null && query.cursor === null
+      ? readOwnHidden(db, uid, postId)
+      : null;
+  // Lida junto da página: a falha dela chega no `await` do fim, nunca solta.
+  void ownHidden?.catch(() => undefined);
 
   const items: FanClubCommentRecord[] = [];
   let cursor = query.cursor;
@@ -175,10 +237,12 @@ export async function readFanClubComments(
     if (!hasMore || items.length >= query.limit || !lastRead) break;
     cursor = { at: lastRead.createdAt, id: lastRead.id };
   }
+  const own = ownHidden ? await ownHidden : null;
   return {
-    items: items.map((comment) => fanClubCommentView(comment, club)),
+    items: items.map((comment) => fanClubCommentView(comment, club, uid)),
     nextCursor:
       hasMore && lastRead ? encodePageCursor({ at: lastRead.createdAt, id: lastRead.id }) : null,
+    ...(own ? { ownHidden: own.map((comment) => fanClubCommentView(comment, club, uid)) } : {}),
   };
 }
 
@@ -249,11 +313,11 @@ export async function addFanClubComment(
   let topId: string | null = null;
   if (repliedRef) {
     const replied = commentOf(repliedSnap);
-    if (!isVisibleComment(replied, postId, hidden)) throw fanClubCommentNotFound();
+    if (!isShownComment(replied, postId, hidden)) throw fanClubCommentNotFound();
     topId = replyTarget(replied);
     if (topId !== replied.id) {
       const top = commentOf(await tx.get(fanClubCommentRef(db, topId)));
-      if (!isVisibleComment(top, postId, hidden) || top.replyToId !== null) {
+      if (!isShownComment(top, postId, hidden) || top.replyToId !== null) {
         throw fanClubCommentNotFound();
       }
     }
@@ -342,7 +406,7 @@ export async function addFanClubComment(
     writeFanClubDay(tx, db, club.id, 'comments', dayKey(award.now), award.shard, at);
   }
   countDailyAction(plan, fan, award, 'club_comment');
-  return { plan, comment: fanClubCommentView(record, club) };
+  return { plan, comment: fanClubCommentView(record, club, fan.uid) };
 }
 
 /** Comentar fora da API (o seed dos emuladores), com o id fixo: rodar de novo não duplica. */

@@ -3,12 +3,16 @@
 // (o crédito das entradas trazidas e os números em shards), os seguidores, a
 // cópia da noite, a callable `decideFanClub` do painel (com o Recompensar) e o passo da exclusão
 // de conta; desde a Fase 2 (seção 37), as reações, os comentários e as
-// menções (as marcações resolvidas no envio e as sugestões do @). A API
+// menções (as marcações resolvidas no envio e as sugestões do @) e a
+// moderação dos comentários (a denúncia, o pedido de revisão, o ocultar do
+// gestor, a fila da equipe e a etapa do ocultar em lote). A API
 // (src/api/routes/fan-clubs.ts) usa daqui; a callable e o
 // passo da cópia no `closeStatsDays` ficam em src/index.ts; o seed dos
 // emuladores carrega o build (functions/lib/fan-clubs). As centrais, o
-// convite e a Moderação importam o store e o credit pelo arquivo.
+// convite e a Moderação importam o store e o credit pelo arquivo, e a
+// Moderação também o comment-queue (a etapa do fã-clube do ocultar em lote).
 export {
+  addStatusChange,
   APPLICATION_KEYS,
   APPLICATION_REJECT_REASONS,
   applicationRecord,
@@ -20,7 +24,14 @@ export {
   CLOSE_REASONS,
   CLUB_PHOTO_LIMITS,
   CLUB_THUMB_LIMITS,
+  COMMENT_DECISIONS,
   COMMENT_KEYS,
+  COMMENT_QUEUE_KINDS,
+  COMMENT_QUEUE_RESOLUTIONS,
+  commentCountStates,
+  commentQueueRecord,
+  commentReview,
+  emptyCountChanges,
   emptyReactionCounts,
   FAN_CLUB_APPLIES_PER_DAY,
   FAN_CLUB_COMMENT_STATUSES,
@@ -51,6 +62,7 @@ export {
   FAN_CLUB_REACTIONS,
   FAN_CLUB_REACTIONS_PER_DAY,
   FAN_CLUB_REAPPLY_MS,
+  FAN_CLUB_OWN_HIDDEN_MAX,
   FAN_CLUB_ROUNDS_MAX,
   FAN_CLUB_RULES_URL,
   FAN_CLUB_RULES_VERSION,
@@ -60,6 +72,7 @@ export {
   fanClubBoxValue,
   fanClubCommentNotFound,
   fanClubCommentRecord,
+  fanClubCommentReportId,
   FanClubError,
   fanClubMediaFolder,
   fanClubMonthOf,
@@ -113,6 +126,7 @@ export {
   replyTarget,
   reservationTargetOf,
   resolvedMentions,
+  reviewTaken,
   REWARD_NOTE_MAX,
   sameProportion,
   sameRewardGrant,
@@ -123,7 +137,13 @@ export {
   type ApplicationRecord,
   type ApplicationRejectReason,
   type CloseReason,
+  type CommentCountChanges,
+  type CommentCountState,
+  type CommentDecision,
   type CommentInput,
+  type CommentQueueKind,
+  type CommentQueueRecord,
+  type CommentQueueResolution,
   type FanClubBoxes,
   type FanClubCommentRecord,
   type FanClubCommentStatus,
@@ -160,11 +180,17 @@ export {
 export {
   applicationPrivateRef,
   applicationRef,
+  fanClubCommentQueueOf,
+  fanClubCommentQueueRef,
   fanClubCommentRef,
+  fanClubCommentReportRef,
+  fanClubCommentReportsOf,
   fanClubCommentsOf,
+  fanClubCommentsToHide,
   fanClubCreditRef,
   fanClubFollowRef,
   fanClubFollowsOf,
+  fanClubHideLogOf,
   fanClubPostRef,
   fanClubPostsOf,
   fanClubPrizeRef,
@@ -249,6 +275,26 @@ export {
   type ReactionBody,
   type ReactionOutcome,
 } from './reactions';
+export {
+  fanClubCommentsToHideOf,
+  hasFanClubCommentsToHide,
+  hideFanClubComment,
+  hideFanClubCommentsPage,
+  readCommentScene,
+  reportFanClubComment,
+  requestFanClubCommentReview,
+  runHideFanClubComment,
+  runReportFanClubComment,
+  runRequestFanClubCommentReview,
+  unhideFanClubComment,
+  writeStaffStatus,
+  type CommentScene,
+  type HiddenFanClubPage,
+  type ManagerHideOutcome,
+  type ReportCommentOutcome,
+  type ReviewCommentOutcome,
+  type StaffCommentTarget,
+} from './comment-queue';
 export { readMentionSuggestions, type MentionsQuery } from './mentions';
 export {
   followFanClub,
@@ -297,12 +343,15 @@ export {
   SEED_FAN_CLUB_COMMENTS,
   SEED_FAN_CLUB_FOLLOWER,
   SEED_FAN_CLUB_GRANT,
+  SEED_FAN_CLUB_HIDDEN_COMMENT,
   SEED_FAN_CLUB_POSTS,
   SEED_FAN_CLUB_REACTIONS,
+  SEED_FAN_CLUB_SPAM_COMMENT,
   SEED_TEXT_ONLY_ARTIST,
   seedFanClubEngagement,
   seedFanClubFollows,
   seedFanClubLink,
+  seedFanClubModeration,
   seedFanClubPending,
   seedFanClubPosts,
   seedFanClubPrize,
@@ -311,6 +360,7 @@ export {
   type SeedFanClubComment,
   type SeedFanClubEngagementResult,
   type SeedFanClubFollowsResult,
+  type SeedFanClubModerationResult,
   type SeedFanClubPendingResult,
   type SeedFanClubPost,
   type SeedFanClubPostsResult,

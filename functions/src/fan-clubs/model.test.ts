@@ -4,6 +4,7 @@ import { artistRecord } from '../centrals/model';
 import { ADJUSTMENT_ID_PATTERN } from '../points/adjust';
 import { PostError } from '../posts/model';
 import {
+  addStatusChange,
   APPLICATION_KEYS,
   applyReactionDelta,
   applicationRecord,
@@ -11,8 +12,18 @@ import {
   checkClubName,
   CLUB_PHOTO_LIMITS,
   CLUB_THUMB_LIMITS,
+  COMMENT_DECISIONS,
+  COMMENT_QUEUE_KINDS,
+  COMMENT_QUEUE_RESOLUTIONS,
+  commentCountStates,
+  commentQueueRecord,
+  commentReview,
   conversationSuggestions,
+  emptyCountChanges,
   emptyReactionCounts,
+  FAN_CLUB_OWN_HIDDEN_MAX,
+  fanClubCommentReportId,
+  reviewTaken,
   FAN_CLUB_MENTIONS_MAX,
   FAN_CLUB_COMMENTS_PAGE,
   FAN_CLUB_COMMENTS_PER_DAY,
@@ -91,7 +102,9 @@ import {
   withHistory,
   type ApplicationHistoryItem,
   type ApplicationRecord,
+  type CommentCountChanges,
   type FanClubCommentRecord,
+  type FanClubCommentStatus,
   type MentionSearchFan,
   type MentionTarget,
 } from './model';
@@ -1195,6 +1208,242 @@ describe('os comentários (seção 37, 37.2, 37.3 e R7)', () => {
       ]),
     ).toEqual([good]);
     expect(mentionsOf(undefined)).toEqual([]);
+  });
+});
+
+describe('a moderação dos comentários (seção 37, 37.6; etapa 3 de 37.13)', () => {
+  /** Os `increment` como objetos simples, para comparar. */
+  const plain = (changes: CommentCountChanges) => ({
+    posts: Object.fromEntries(changes.posts),
+    tops: Object.fromEntries(changes.tops),
+  });
+
+  type Row = {
+    id: string;
+    replyToId: string | null;
+    status: FanClubCommentStatus;
+    replyCount: number;
+  };
+
+  /** Uma conversa na publicação `pub1`: o de cima `c1` e o que mais vier. */
+  const scene = (rows: Row[]) => ({
+    rows: new Map(rows.map((row) => [row.id, { ...row, postId: 'pub1' }])),
+    states: commentCountStates(rows),
+  });
+
+  const change = (
+    at: ReturnType<typeof scene>,
+    id: string,
+    to: FanClubCommentStatus,
+    changes = emptyCountChanges(),
+  ) => {
+    addStatusChange(changes, at.states, at.rows.get(id)!, to);
+    return changes;
+  };
+
+  const top = (status: FanClubCommentStatus, replyCount = 2): Row => ({
+    id: 'c1',
+    replyToId: null,
+    status,
+    replyCount,
+  });
+  const reply = (id: string, status: FanClubCommentStatus): Row => ({
+    id,
+    replyToId: 'c1',
+    status,
+    replyCount: 0,
+  });
+
+  it('as listas, os ids e o teto do `ownHidden`', () => {
+    expect(FAN_CLUB_OWN_HIDDEN_MAX).toBe(10);
+    expect(COMMENT_DECISIONS).toEqual(['keep', 'hide', 'restore']);
+    expect(COMMENT_QUEUE_KINDS).toEqual(['report', 'review']);
+    expect(COMMENT_QUEUE_RESOLUTIONS).toEqual([
+      'kept',
+      'hidden',
+      'restored',
+      'withdrawn',
+      'author_deleted',
+      'removed',
+    ]);
+    // Na ordem do `fanClubReportId`: quem denunciou e o alvo.
+    expect(fanClubCommentReportId('uidBia', 'c1')).toBe('uidBia_c1');
+  });
+
+  it('o item da fila lido: o tipo, a rodada e as datas; o torto vale resolvido, sem rodada', () => {
+    const at = { toMillis: () => NOW };
+    expect(
+      commentQueueRecord({
+        status: 'open',
+        resolution: null,
+        kind: 'review',
+        round: 2,
+        reportCount: 3,
+        reviewRequested: true,
+        firstReportedAt: at,
+        lastReportedAt: at,
+      }),
+    ).toEqual({
+      status: 'open',
+      resolution: null,
+      kind: 'review',
+      round: 2,
+      reportCount: 3,
+      reviewRequested: true,
+      firstReportedAt: NOW,
+      lastReportedAt: NOW,
+    });
+    expect(
+      commentQueueRecord({
+        status: 'aberto',
+        resolution: 'apagado',
+        kind: 'outro',
+        round: 1.5,
+        reportCount: -2,
+        reviewRequested: 'sim',
+      }),
+    ).toEqual({
+      status: 'resolved',
+      resolution: null,
+      kind: 'report',
+      round: 0,
+      reportCount: 0,
+      reviewRequested: false,
+      firstReportedAt: null,
+      lastReportedAt: null,
+    });
+    expect(commentQueueRecord({ status: 'resolved', resolution: 'kept', round: 1 })).toMatchObject({
+      status: 'resolved',
+      resolution: 'kept',
+      round: 1,
+    });
+  });
+
+  it('o pedido de revisão como o autor vê, e quando ele já foi feito neste ocultar', () => {
+    const fresh = { reviewRequestedAt: null, reviewOutcome: null } as const;
+    expect(commentReview(fresh)).toBeNull();
+    expect(reviewTaken(fresh)).toBe(false);
+    expect(commentReview({ reviewRequestedAt: NOW, reviewOutcome: null })).toBe('requested');
+    expect(reviewTaken({ reviewRequestedAt: NOW, reviewOutcome: null })).toBe(true);
+    expect(commentReview({ reviewRequestedAt: NOW, reviewOutcome: 'kept' })).toBe('kept');
+    // O "Manter oculto" de uma denúncia, antes do pedido: a equipe já decidiu este ocultar.
+    expect(commentReview({ reviewRequestedAt: null, reviewOutcome: 'kept' })).toBe('kept');
+    expect(reviewTaken({ reviewRequestedAt: null, reviewOutcome: 'kept' })).toBe(true);
+  });
+
+  it('o de cima que sai da vista leva as respostas visíveis do `commentCount`, e o que volta devolve', () => {
+    for (const to of ['manager_hidden', 'staff_hidden'] as const) {
+      expect(plain(change(scene([top('visible')]), 'c1', to))).toEqual({
+        posts: { pub1: -3 },
+        tops: {},
+      });
+      expect(plain(change(scene([top(to)]), 'c1', 'visible'))).toEqual({
+        posts: { pub1: 3 },
+        tops: {},
+      });
+    }
+    // Entre os dois ocultos, nada muda; sem resposta, só ele.
+    expect(plain(change(scene([top('manager_hidden')]), 'c1', 'staff_hidden'))).toEqual({
+      posts: {},
+      tops: {},
+    });
+    expect(plain(change(scene([top('visible', 0)]), 'c1', 'manager_hidden'))).toEqual({
+      posts: { pub1: -1 },
+      tops: {},
+    });
+  });
+
+  it('a resposta: o `replyCount` e o `managerHiddenReplyCount` do de cima e, com ele visível, o `commentCount`', () => {
+    const cases: [
+      FanClubCommentStatus,
+      FanClubCommentStatus,
+      FanClubCommentStatus,
+      ReturnType<typeof plain>,
+    ][] = [
+      [
+        'visible',
+        'visible',
+        'manager_hidden',
+        { posts: { pub1: -1 }, tops: { c1: { replyCount: -1, managerHiddenReplyCount: 1 } } },
+      ],
+      [
+        'visible',
+        'visible',
+        'staff_hidden',
+        { posts: { pub1: -1 }, tops: { c1: { replyCount: -1, managerHiddenReplyCount: 0 } } },
+      ],
+      [
+        'visible',
+        'manager_hidden',
+        'staff_hidden',
+        { posts: {}, tops: { c1: { replyCount: 0, managerHiddenReplyCount: -1 } } },
+      ],
+      [
+        'visible',
+        'manager_hidden',
+        'visible',
+        { posts: { pub1: 1 }, tops: { c1: { replyCount: 1, managerHiddenReplyCount: -1 } } },
+      ],
+      [
+        'visible',
+        'staff_hidden',
+        'visible',
+        { posts: { pub1: 1 }, tops: { c1: { replyCount: 1, managerHiddenReplyCount: 0 } } },
+      ],
+      // O de cima oculto: a resposta já estava fora da vista, e o `commentCount` não muda.
+      [
+        'manager_hidden',
+        'visible',
+        'manager_hidden',
+        { posts: {}, tops: { c1: { replyCount: -1, managerHiddenReplyCount: 1 } } },
+      ],
+      [
+        'staff_hidden',
+        'staff_hidden',
+        'visible',
+        { posts: {}, tops: { c1: { replyCount: 1, managerHiddenReplyCount: 0 } } },
+      ],
+    ];
+    for (const [topStatus, from, to, expected] of cases) {
+      const at = scene([top(topStatus), reply('r1', from)]);
+      expect(plain(change(at, 'r1', to)), `${topStatus}: ${from} para ${to}`).toEqual(expected);
+      expect(at.states.get('r1')?.status).toBe(to);
+    }
+  });
+
+  it('a resposta e o de cima na mesma transação descontam uma vez, em qualquer ordem', () => {
+    for (const order of [
+      ['r1', 'c1'],
+      ['c1', 'r1'],
+    ]) {
+      const at = scene([top('visible', 2), reply('r1', 'visible'), reply('r2', 'visible')]);
+      const changes = emptyCountChanges();
+      for (const id of order) change(at, id, 'staff_hidden', changes);
+      // O de cima e as duas respostas saíram da vista: 3 a menos, e o r1 sai do `replyCount`.
+      expect(plain(changes), order.join(' e ')).toEqual({
+        posts: { pub1: -3 },
+        tops: { c1: { replyCount: -1, managerHiddenReplyCount: 0 } },
+      });
+      expect(at.states.get('c1')).toEqual({ status: 'staff_hidden', replyCount: 1 });
+    }
+  });
+
+  it('o mesmo status, o comentário fora do estado lido e a resposta sem o de cima não mexem nos números', () => {
+    expect(plain(change(scene([top('visible')]), 'c1', 'visible'))).toEqual({
+      posts: {},
+      tops: {},
+    });
+    const orphan = scene([reply('r1', 'visible')]);
+    expect(plain(change(orphan, 'r1', 'manager_hidden'))).toEqual({ posts: {}, tops: {} });
+    expect(orphan.states.get('r1')?.status).toBe('manager_hidden');
+    const changes = emptyCountChanges();
+    addStatusChange(
+      changes,
+      new Map(),
+      { id: 'c9', postId: 'pub1', replyToId: null },
+      'staff_hidden',
+    );
+    expect(plain(changes)).toEqual({ posts: {}, tops: {} });
   });
 });
 

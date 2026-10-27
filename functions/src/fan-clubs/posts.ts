@@ -376,7 +376,9 @@ export type ActionPost = {
  * seguir o fã-clube ou ser o gestor dele (senão, 409 `not_following`, decisão
  * 10 de 36.1). Três rodadas de leitura: a publicação com o `extra` de quem
  * chama; o fã-clube, a lista de bloqueios e o vínculo de seguir; o artista e o
- * `artistPrivate`. Só leituras (quem chama grava depois de ler tudo).
+ * `artistPrivate`. Só leituras (quem chama grava depois de ler tudo). Com o
+ * `follow: false` (a denúncia de comentário, que é de quem vê, 37.6), o
+ * vínculo não é lido nem exigido.
  */
 export async function readActionPost(
   tx: Transaction,
@@ -384,6 +386,7 @@ export async function readActionPost(
   uid: string,
   postId: string,
   extra: DocumentReference[] = [],
+  options: { follow: boolean } = { follow: true },
 ): Promise<ActionPost> {
   const [postSnap, ...rest] = await tx.getAll(fanClubPostRef(db, postId), ...extra);
   const post = postSnap!.exists ? fanClubPostRecord(postSnap!.id, postSnap!.data() ?? {}) : null;
@@ -393,7 +396,7 @@ export async function readActionPost(
   const [clubSnap, blockList, follow] = await tx.getAll(
     fanClubRef(db, post.clubId),
     blockListRef(db, uid),
-    fanClubFollowRef(db, uid, post.clubId),
+    ...(options.follow ? [fanClubFollowRef(db, uid, post.clubId)] : []),
   );
   const club = clubSnap!.exists ? fanClubRecord(clubSnap!.id, clubSnap!.data() ?? {}) : null;
   if (
@@ -416,7 +419,7 @@ export async function readActionPost(
     throw fanClubPostNotFound();
   }
   const isOwner = owned.ownerUid === uid;
-  if (!isOwner && !follow!.exists) throw fanClubRefused('not_following');
+  if (options.follow && !isOwner && !follow!.exists) throw fanClubRefused('not_following');
   return { post, club: owned, isOwner, blocked, extra: rest };
 }
 

@@ -39,16 +39,21 @@ import {
 } from '../staff/panel-actor';
 import { aboveLimitError, dailyLimitError, panelError, targetFanUid } from '../staff/panel-errors';
 import { writeAudit, type AuditAction, type CallerAuth } from '../staff/service';
+import { readCommentScene, writeStaffStatus } from './comment-queue';
 import {
   APPLICATION_REJECT_REASONS,
   applicationRecord,
   checkClubName,
   CLOSE_REASONS,
+  COMMENT_DECISIONS,
+  commentQueueRecord,
+  FAN_CLUB_COMMENT_STATUSES,
   FAN_CLUB_POST_STATUSES,
   FAN_CLUB_REAPPLY_MS,
   FAN_CLUB_STATUSES,
   FEATURED_PER_ARTIST_MAX,
   fanClubBoxes,
+  fanClubCommentRecord,
   fanClubPostRecord,
   fanClubPrizeRecord,
   fanClubRecord,
@@ -65,6 +70,8 @@ import {
   type ApplicationRecord,
   type ApplicationRejectReason,
   type CloseReason,
+  type CommentDecision,
+  type FanClubCommentStatus,
   type FanClubPostStatus,
   type FanClubRecord,
   type FanClubStatus,
@@ -77,6 +84,8 @@ import {
   applicationPrivateRef,
   applicationRef,
   FEATURE_OFF,
+  fanClubCommentQueueRef,
+  fanClubCommentRef,
   fanClubPostRef,
   fanClubPrizeRef,
   fanClubRef,
@@ -96,10 +105,12 @@ import {
 // etapa 2, as publicações e as denúncias delas, com os arquivos apagados e os
 // tokens trocados depois da transação; a etapa 5, o Recompensar (os pontos só
 // no saldo e o prêmio, que vira pedido da loja). Desde 34.23, o Oficializar e
-// o Tirar a oficialização, só do admin, como o Encerrar.
+// o Tirar a oficialização, só do admin, como o Encerrar. Desde a Fase 2 (seção
+// 37, 37.6; a etapa 3 de 37.13), o assunto `comment`: manter, ocultar e
+// reexibir um comentário de fã-clube, com a fila `fanClubCommentQueue`.
 
 /** Os assuntos que a callable decide. */
-export const DECISION_SUBJECTS = ['application', 'club', 'post', 'report'] as const;
+export const DECISION_SUBJECTS = ['application', 'club', 'post', 'report', 'comment'] as const;
 export type DecisionSubject = (typeof DECISION_SUBJECTS)[number];
 
 export type DecisionInput =
@@ -172,6 +183,19 @@ export type DecisionInput =
       decision: 'keep' | 'action';
       /** A rodada do item que a tela mostrou. */
       expected: number;
+    }
+  | {
+      subject: 'comment';
+      /** O id do comentário, que é o do item da `fanClubCommentQueue`. */
+      id: string;
+      decision: CommentDecision;
+      /** O status do comentário que a tela mostrou. */
+      expected: FanClubCommentStatus;
+      /**
+       * A rodada do item que a tela mostrou (a aba Comentários), obrigatória no
+       * `keep`; null no Ocultar e no Reexibir do diálogo da ficha, sem o item.
+       */
+      round: number | null;
     };
 
 export type DecisionResult = {
@@ -180,7 +204,7 @@ export type DecisionResult = {
   id: string;
   /**
    * O status do assunto depois da decisão: da candidatura, do fã-clube, da
-   * publicação ou do item da fila de denúncias (`resolved`).
+   * publicação, do item da fila de denúncias (`resolved`) ou do comentário.
    */
   status: string;
 };
@@ -229,11 +253,13 @@ const REPORT_DECISIONS = ['keep', 'action'] as const;
 /**
  * O corpo da callable depois do assunto e do id (puro): a decisão da lista do
  * assunto, o `expected` (a rodada, inteiro de 0 em diante, na candidatura; o
- * status, no fã-clube e na publicação; a rodada, inteiro de 1 em diante, na
- * denúncia) e os campos de cada decisão (34.3); senão `invalid-request` com o
- * campo. Na candidatura, o `submittedAt` opcional (o da tela, em ms). O nome
- * da aprovação passa pelas regras da candidatura (`checkClubName`), com o
- * motivo no `details.problem`.
+ * status, no fã-clube, na publicação e no comentário; a rodada, inteiro de 1
+ * em diante, na denúncia) e os campos de cada decisão (34.3); senão
+ * `invalid-request` com o campo. Na candidatura, o `submittedAt` opcional (o
+ * da tela, em ms). O nome da aprovação passa pelas regras da candidatura
+ * (`checkClubName`), com o motivo no `details.problem`. No comentário (seção
+ * 37, 37.6), a `round` (inteiro de 1 em diante; ausente ou null vale null),
+ * obrigatória no `keep`.
  */
 export function parseDecision(
   subject: DecisionSubject,
@@ -242,6 +268,29 @@ export function parseDecision(
   now: number,
 ): DecisionInput {
   const { decision, expected } = fields;
+  if (subject === 'comment') {
+    if (!(COMMENT_DECISIONS as readonly unknown[]).includes(decision)) throw invalid('decision');
+    if (!(FAN_CLUB_COMMENT_STATUSES as readonly unknown[]).includes(expected)) {
+      throw invalid('expected');
+    }
+    const shown = fields.round;
+    if (
+      shown !== undefined &&
+      shown !== null &&
+      (typeof shown !== 'number' || !Number.isSafeInteger(shown) || shown < 1)
+    ) {
+      throw invalid('round');
+    }
+    const round = typeof shown === 'number' ? shown : null;
+    if (decision === 'keep' && round === null) throw invalid('round');
+    return {
+      subject,
+      id,
+      decision: decision as CommentDecision,
+      expected: expected as FanClubCommentStatus,
+      round,
+    };
+  }
   if (subject === 'application') {
     if (decision !== 'approve' && decision !== 'reject') throw invalid('decision');
     if (typeof expected !== 'number' || !Number.isSafeInteger(expected) || expected < 0) {
@@ -1260,6 +1309,115 @@ async function decideReport(
   return { ...done, files: work };
 }
 
+// --- O comentário (seção 37, 37.6) -----------------------------------------------------
+
+/** A auditoria de cada decisão do comentário. */
+const COMMENT_AUDIT = {
+  keep: 'fanClub.comment.kept',
+  hide: 'fanClub.comment.hidden',
+  restore: 'fanClub.comment.restored',
+} as const satisfies Record<CommentDecision, AuditAction>;
+
+/**
+ * Manter, ocultar e reexibir um comentário de fã-clube (37.6, a tabela das
+ * decisões), na transação de quem chama: o comentário e o item da fila num
+ * `getAll` (sem o comentário, `fan-club-comment-not-found`); depois, noutro, o
+ * fã-clube, a publicação e o de cima da resposta (os contadores). O autor e o
+ * gestor do fã-clube, que é parte do ocultar, são quem chama: `self`. A
+ * repetição (ocultar o oculto pela equipe e reexibir o visível) responde `ok`
+ * sem gravar nem auditar. O status diferente do da tela e, com a `round`, a
+ * rodada diferente da do item (o `keep` não muda o status: só a rodada barra
+ * o Manter de uma tela velha sobre uma rodada aberta depois da leitura), dão
+ * `stale-decision`. O `keep` sem item aberto também responde `ok` sem gravar;
+ * com ele, resolve o item com `kept` e, no `manager_hidden`, grava o
+ * `reviewOutcome: 'kept'` ("A equipe manteve oculto"). O `hide` leva o
+ * `visible` e o `manager_hidden` a `staff_hidden`, e o `restore` leva os dois
+ * ocultos a `visible`, com o `restoredByStaffAt` (o gestor não oculta de novo,
+ * decisão 21); os dois com os contadores e o item aberto resolvido (`hidden`
+ * ou `restored`; com a `round`, também o resolvido naquela rodada troca de
+ * resolução, como na denúncia de publicação). A auditoria vai na mesma
+ * transação, com o comentário em `fanClubCommentId` e a publicação em
+ * `fanClubPostId` (nunca em `commentId` nem em `postId`, os alvos do Mural), o
+ * gestor em `fanUid`, o status de antes e a rodada do item resolvido; nunca o
+ * texto.
+ */
+async function decideComment(
+  tx: Transaction,
+  db: Firestore,
+  input: Extract<DecisionInput, { subject: 'comment' }>,
+  options: { actor: Actor; now: number },
+): Promise<DecisionResult> {
+  const { actor, now } = options;
+  const itemRef = fanClubCommentQueueRef(db, input.id);
+  const [commentSnap, itemSnap] = await tx.getAll(fanClubCommentRef(db, input.id), itemRef);
+  if (!commentSnap!.exists) throw panelError('fan-club-comment-not-found');
+  const comment = fanClubCommentRecord(commentSnap!.id, commentSnap!.data() ?? {});
+  const scene = await readCommentScene(
+    tx,
+    db,
+    [comment],
+    isContentId(comment.clubId) ? [fanClubRef(db, comment.clubId)] : [],
+  );
+  const clubSnap = scene.extra[0];
+  const ownerUid = clubSnap?.exists
+    ? fanClubRecord(clubSnap.id, clubSnap.data() ?? {}).ownerUid
+    : null;
+  if (comment.authorUid === actor.uid || (ownerUid !== null && ownerUid === actor.uid)) {
+    throw panelError('self');
+  }
+  const target: FanClubCommentStatus =
+    input.decision === 'keep'
+      ? comment.status
+      : input.decision === 'hide'
+        ? 'staff_hidden'
+        : 'visible';
+  const done: DecisionResult = { ok: true, subject: 'comment', id: input.id, status: target };
+  // A repetição (a nova tentativa do painel): o status que a decisão deixa já está lá.
+  if (input.decision !== 'keep' && comment.status === target) return done;
+  if (comment.status !== input.expected) throw panelError('stale-decision');
+  const item = itemSnap!.exists ? commentQueueRecord(itemSnap!.data() ?? {}) : null;
+  if (input.round !== null && item?.round !== input.round) throw panelError('stale-decision');
+  const open = item?.status === 'open';
+  if (input.decision === 'keep' && !open) return done;
+  // Com a rodada da tela, o item daquela rodada recebe a resolução, aberto ou já resolvido.
+  const resolves = item !== null && (open || input.round !== null);
+  const at = tsOf(now);
+  if (input.decision === 'keep') {
+    tx.update(itemRef, {
+      status: 'resolved',
+      resolution: 'kept',
+      resolvedAt: at,
+      resolvedBy: { uid: actor.uid, name: actor.name },
+    });
+    if (comment.status === 'manager_hidden') {
+      tx.update(commentSnap!.ref, { reviewOutcome: 'kept' });
+    }
+  } else {
+    writeStaffStatus(tx, db, [{ comment, item, itemRef, resolve: resolves }], scene, {
+      to: input.decision === 'hide' ? 'staff_hidden' : 'visible',
+      actor,
+      now,
+    });
+  }
+  audit(
+    tx,
+    db,
+    COMMENT_AUDIT[input.decision],
+    actor,
+    {
+      fanClubCommentId: comment.id,
+      fanClubPostId: comment.postId || null,
+      clubId: comment.clubId || null,
+      authorUid: comment.authorUid || null,
+      fanUid: ownerUid,
+      from: comment.status,
+      round: resolves ? item.round : null,
+    },
+    at,
+  );
+  return done;
+}
+
 /**
  * O núcleo, na transação de quem chama (a callable, o seed e os testes): a
  * decisão e o que fica para depois da transação (só as publicações mexem em
@@ -1306,6 +1464,8 @@ export async function applyFanClubDecision(
       });
     case 'report':
       return decideReport(tx, db, input, { actor, now });
+    case 'comment':
+      return { result: await decideComment(tx, db, input, { actor, now }), files: NO_FILE_WORK };
   }
 }
 
@@ -1315,7 +1475,8 @@ export async function applyFanClubDecision(
  * `unauthenticated`; o assunto fora da lista, `invalid-request` com
  * `field: 'subject'`; o id fora do formato, com `field: 'id'`; a própria
  * candidatura, `self` (o próprio fã-clube, a própria publicação e a denúncia
- * dela, na transação). Encerrar, oficializar e tirar a oficialização pedem o
+ * dela, e o comentário do qual quem chama é o autor ou o gestor, na
+ * transação). Encerrar, oficializar e tirar a oficialização pedem o
  * papel admin (`admin-only`, 34.23). O
  * Recompensar pede também, fora e de novo na transação, a seção `fans` com
  * pontos e a `rewards` com prêmio, e confere o teto do papel nos pontos

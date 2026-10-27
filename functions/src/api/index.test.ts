@@ -2027,6 +2027,11 @@ describe('fã-clube gerido pelo fã (seção 34)', () => {
       ['POST', '/fan-club-posts/pub1/comments'],
       ['PUT', '/fan-club-posts/pub1/reaction'],
       ['DELETE', '/fan-club-posts/pub1/reaction'],
+      // A moderação dos comentários (etapa 3 de 37.13).
+      ['POST', '/fan-club-comments/c1/report'],
+      ['POST', '/fan-club-comments/c1/review'],
+      ['PUT', '/me/fan-club/hidden-comments/c1'],
+      ['DELETE', '/me/fan-club/hidden-comments/c1'],
     ] as const) {
       const sent = await call(request(method, path, { body: {} }), API_ROUTES, noReads);
       expect(sent.status, `${method} ${path}`).toBe(400);
@@ -2065,10 +2070,17 @@ describe('fã-clube gerido pelo fã (seção 34)', () => {
       ['DELETE', '/fan-club-posts/:postId/reaction', true],
       // As sugestões do @ (etapa 2 de 37.13), só de leitura.
       ['GET', '/fan-clubs/:clubId/mentions', false],
+      // A moderação dos comentários (etapa 3 de 37.13): todas gravam, e o
+      // reexibir do gestor não é de desfazer (o suspenso não oculta nem reexibe).
+      ['POST', '/fan-club-comments/:commentId/report', true],
+      ['POST', '/fan-club-comments/:commentId/review', true],
+      ['PUT', '/me/fan-club/hidden-comments/:commentId', true],
+      ['DELETE', '/me/fan-club/hidden-comments/:commentId', true],
     ]);
     // Candidatar, publicar, abrir a vaga, o novo aceite, denunciar, seguir,
-    // comentar e reagir criam: o suspenso não manda (sem `allowSuspended`);
-    // retirar, deixar de seguir e tirar a reação são de desfazer.
+    // comentar, reagir, pedir revisão, ocultar e reexibir criam ou mudam: o
+    // suspenso não manda (sem `allowSuspended`); retirar, deixar de seguir e
+    // tirar a reação são de desfazer.
     for (const route of routes.filter((item) => item.writes)) {
       const undo =
         route.method === 'DELETE' &&
@@ -2101,6 +2113,11 @@ describe('fã-clube gerido pelo fã (seção 34)', () => {
       ['DELETE', '/fan-club-posts/__pub__/reaction', 'fan_club_post_not_found'],
       // As sugestões do @ (etapa 2 de 37.13).
       ['GET', '/fan-clubs/__clube__/mentions', 'fan_club_not_found'],
+      // A moderação dos comentários (etapa 3 de 37.13).
+      ['POST', '/fan-club-comments/__c__/report', 'fan_club_comment_not_found'],
+      ['POST', '/fan-club-comments/__c__/review', 'fan_club_comment_not_found'],
+      ['PUT', '/me/fan-club/hidden-comments/__c__', 'fan_club_comment_not_found'],
+      ['DELETE', '/me/fan-club/hidden-comments/__c__', 'fan_club_comment_not_found'],
     ];
     for (const [method, path, code] of cases) {
       const sent = await call(request(method, path, { headers: key }), API_ROUTES, noReads);
@@ -2440,5 +2457,33 @@ describe('fã-clube gerido pelo fã (seção 34)', () => {
       status: 400,
       body: { code: 'fan_club_invalid', details: { field: 'text', reason: 'not_allowed' } },
     });
+  });
+
+  it('a denúncia de comentário confere o motivo antes de ler: os 4 do comentário, sem o de imagem (seção 37, etapa 3 de 37.13)', async () => {
+    const key = { 'Idempotency-Key': 'chave-fa-clube-0008' };
+    for (const body of [
+      { reason: 'image_misuse' },
+      { reason: 'chato' },
+      { reason: 7 },
+      'spam',
+      ['spam'],
+    ]) {
+      const sent = await call(
+        request('POST', '/fan-club-comments/c1/report', { body, headers: key }),
+        API_ROUTES,
+        noReads,
+      );
+      expect(sent.status, JSON.stringify(body)).toBe(400);
+      expect(sent.body).toMatchObject({ code: 'invalid_request', details: { field: 'reason' } });
+    }
+    // Os motivos da lista e o sem motivo passam do corpo: a rota vai ler (o `noReads` falha).
+    for (const body of [{ reason: 'spam' }, { reason: null }, {}, undefined]) {
+      const sent = await call(
+        request('POST', '/fan-club-comments/c1/report', { body, headers: key }),
+        API_ROUTES,
+        noReads,
+      );
+      expect(sent.status, JSON.stringify(body)).toBe(500);
+    }
   });
 });

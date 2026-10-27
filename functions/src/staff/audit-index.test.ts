@@ -533,6 +533,65 @@ const ROWS: Record<AuditAction, Row> = {
     section: 'fanClubs',
     targets: ['fanClub:clube1', 'fanClubPost:pub1'],
   },
+  // Os comentários de fã-clube (seção 37, 37.6): o comentário no alvo novo
+  // `fanClubComment`, o autor e o gestor como fãs, nunca os alvos do Mural.
+  'fanClub.comment.kept': {
+    details: {
+      fanClubCommentId: 'c1',
+      fanClubPostId: 'pub1',
+      clubId: 'clube1',
+      authorUid: 'uid-bia',
+      fanUid: 'uid-camila',
+      from: 'manager_hidden',
+      round: 2,
+    },
+    section: 'fanClubs',
+    targets: [
+      'fan:uid-bia',
+      'fanClub:clube1',
+      'fan:uid-camila',
+      'fanClubPost:pub1',
+      'fanClubComment:c1',
+    ],
+  },
+  'fanClub.comment.hidden': {
+    details: {
+      fanClubCommentId: 'c1',
+      fanClubPostId: 'pub1',
+      clubId: 'clube1',
+      authorUid: 'uid-bia',
+      fanUid: 'uid-camila',
+      from: 'visible',
+      round: 1,
+    },
+    section: 'fanClubs',
+    targets: [
+      'fan:uid-bia',
+      'fanClub:clube1',
+      'fan:uid-camila',
+      'fanClubPost:pub1',
+      'fanClubComment:c1',
+    ],
+  },
+  'fanClub.comment.restored': {
+    details: {
+      fanClubCommentId: 'c1',
+      fanClubPostId: 'pub1',
+      clubId: 'clube1',
+      authorUid: 'uid-bia',
+      fanUid: 'uid-camila',
+      from: 'staff_hidden',
+      round: null,
+    },
+    section: 'fanClubs',
+    targets: [
+      'fan:uid-bia',
+      'fanClub:clube1',
+      'fan:uid-camila',
+      'fanClubPost:pub1',
+      'fanClubComment:c1',
+    ],
+  },
 };
 
 describe('auditIndex: uma linha por ação', () => {
@@ -562,6 +621,31 @@ describe('auditIndex: as pontas', () => {
         details: { uid: 'uid-camila', reason: 'spam', clubId: 'clube1' },
       }),
     ).toEqual({ section: 'moderation', targets: ['fan:uid-camila', 'fanClub:clube1'] });
+  });
+
+  it('o ocultar em lote nos fã-clubes leva os comentários e as publicações nos alvos novos, nunca nos do Mural (seção 37, 37.6)', () => {
+    expect(
+      auditIndex({
+        action: 'fan.comments.hidden',
+        targetUid: 'uid-fa',
+        details: {
+          uid: 'uid-fa',
+          count: 3,
+          fanClubPostIds: ['pub1', 'pub2'],
+          fanClubCommentIds: ['c1', 'c2', 'c3'],
+        },
+      }),
+    ).toEqual({
+      section: 'moderation',
+      targets: [
+        'fan:uid-fa',
+        'fanClubPost:pub1',
+        'fanClubPost:pub2',
+        'fanClubComment:c1',
+        'fanClubComment:c2',
+        'fanClubComment:c3',
+      ],
+    });
   });
 
   it('a busca por e-mail sem resultado não tem alvo', () => {

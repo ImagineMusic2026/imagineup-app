@@ -146,7 +146,13 @@
  * Bia e do rank-40 nas duas publicações no ar da Camila, a resposta da Camila
  * com o @ da Bia e as reações dos três (a da Camila na publicação dela), pelos
  * núcleos das rotas, com o ator de sistema e as duas origens em 0. A
- * publicação em análise não recebe nada.
+ * publicação em análise não recebe nada. Na etapa 3 de 37.13, logo depois: um
+ * comentário do rank-40 na publicação de texto, oculto pela Camila (a linha no
+ * registro do ocultar), com o pedido de revisão dele (o item da fila de
+ * comentários com o tipo review); e o Promo Seguidores, que entra na central do
+ * Netto pela página (com o central_join em 0, sem o crédito do seguir), segue o
+ * fã-clube e comenta propaganda na publicação da foto, denunciado pela Bia como
+ * spam (o item com o tipo report), para a aba Comentários e o ocultar em lote.
  *
  * Rodar de novo não muda nada. Depois da meia-noite, o progresso do dia volta
  * a 0, como o de qualquer fã: para ver de novo o 3 de 5 e o 2 de 5, feche os
@@ -717,6 +723,19 @@ if (camilaUid) {
   console.log(
     `Comentários e reações do fã-clube: ${clubEngagement.comments} comentários e ${clubEngagement.reactions} reações agora (5 e 4 no total: a Bia e o ${SEED_FAN_CLUB_FOLLOWER.split('@')[0]} nas duas publicações no ar, a resposta da Camila com o @ da Bia e a reação dela na da foto).`,
   );
+  // A moderação dos comentários (etapa 3 de 37.13), depois dos comentários: rodar de novo não grava.
+  const { seedFanClubModeration } = functionsBuild('fan-clubs');
+  const clubModeration = await withFirestore((db) =>
+    seedFanClubModeration(db, {
+      camilaUid,
+      biaUid: fanUids.bia,
+      followerUid,
+      spamUid: fanUids.spam,
+    }),
+  );
+  console.log(
+    `Moderação dos comentários do fã-clube: ${clubModeration.comments} comentários agora (2 no total); o do ${SEED_FAN_CLUB_FOLLOWER.split('@')[0]} ${clubModeration.hidden ? 'ocultado agora pela Camila' : 'já tinha passado pelo ocultar'}, com o pedido de revisão ${clubModeration.reviewed ? 'feito agora' : 'já feito'}; o Promo Seguidores ${clubModeration.followed ? 'segue agora' : 'já seguia'}, e a denúncia da Bia contra a propaganda ${clubModeration.reported ? 'gravada agora' : 'já estava'}.`,
+  );
   // O prêmio da Camila (etapa 5), depois dos seguidores: rodar de novo não grava.
   const { seedFanClubPrize } = functionsBuild('fan-clubs');
   const clubPrize = await withFirestore((db) =>
@@ -732,7 +751,7 @@ if (camilaUid) {
     `Candidatura pendente: a da Duda para o Nenho ${clubPending.applied ? `entrou agora${clubPending.joined ? ', depois da entrada dela na central' : ''}` : 'já estava'}.`,
   );
   console.log(
-    'Fã-clube: a Camila gere o fã-clube do Netto, com seguidores, comentários e reações, uma publicação em análise, uma denúncia e um prêmio; a Duda espera a aprovação.',
+    'Fã-clube: a Camila gere o fã-clube do Netto, com seguidores, comentários e reações, um comentário oculto por ela com o pedido de revisão, um comentário de propaganda denunciado, uma publicação em análise, uma denúncia e um prêmio; a Duda espera a aprovação.',
   );
 }
 

@@ -17,6 +17,7 @@ import { artistRecord, fanShardOf, isPublished, type ArtistRecord } from '../cen
 import {
   applicationRecord,
   FAN_CLUB_FOLLOWS_MAX,
+  fanClubCommentReportId,
   fanClubReactionId,
   fanClubReactionOf,
   fanClubRecord,
@@ -39,7 +40,8 @@ import {
 // as leituras dos seguimentos que sair da central, o bloqueio e a suspensão
 // apagam. Desde a Fase 2 (seção 37), os comentários, as reações, os dias da
 // taxa de engajamento nos shards e as leituras das marcações (as reservas do
-// @ e as centrais delas). Só importa o model (e o puro das centrais),
+// @ e as centrais delas); desde a etapa 3 de 37.13, a denúncia de comentário,
+// a fila da equipe e o registro do ocultar do gestor. Só importa o model (e o puro das centrais),
 // para nenhum desses módulos puxar a API, os pontos ou a equipe por aqui.
 
 export const fanClubsOf = (db: Firestore): CollectionReference => db.collection('fanClubs');
@@ -203,6 +205,50 @@ export const fanClubCommentsOf = (db: Firestore): CollectionReference =>
 
 export const fanClubCommentRef = (db: Firestore, commentId: string): DocumentReference =>
   fanClubCommentsOf(db).doc(commentId);
+
+/**
+ * Os comentários de um fã que o ocultar em lote da Moderação leva (37.6): os
+ * visíveis e os ocultos pelo gestor, que o autor ainda vê. Só igualdades (o
+ * `in` do status), pela junção dos índices de um campo.
+ */
+export const fanClubCommentsToHide = (db: Firestore, uid: string): Query =>
+  fanClubCommentsOf(db)
+    .where('authorUid', '==', uid)
+    .where('status', 'in', ['visible', 'manager_hidden']);
+
+/**
+ * `fanClubCommentReports/{reporterUid}_{commentId}`: a denúncia de comentário
+ * (37.2), uma por fã e comentário por rodada, fechada para todos.
+ */
+export const fanClubCommentReportsOf = (db: Firestore): CollectionReference =>
+  db.collection('fanClubCommentReports');
+
+export const fanClubCommentReportRef = (
+  db: Firestore,
+  reporterUid: string,
+  commentId: string,
+): DocumentReference =>
+  fanClubCommentReportsOf(db).doc(fanClubCommentReportId(reporterUid, commentId));
+
+/**
+ * `fanClubCommentQueue/{commentId}`: a fila da equipe dos comentários de
+ * fã-clube (decisão 14 de 37.1), com o tipo e a rodada; a denúncia e o pedido
+ * de revisão caem no mesmo item. Fora da `moderationQueue` e da
+ * `fanClubReportQueue`.
+ */
+export const fanClubCommentQueueOf = (db: Firestore): CollectionReference =>
+  db.collection('fanClubCommentQueue');
+
+export const fanClubCommentQueueRef = (db: Firestore, commentId: string): DocumentReference =>
+  fanClubCommentQueueOf(db).doc(commentId);
+
+/**
+ * `fanClubHideLog/{id}`: o registro do ocultar e do reexibir do gestor
+ * (decisão 11 de 36.1), uma linha por ação, com o id automático e nunca o
+ * texto. A seção Fã-clubes lê na ficha; o `staffAudit` é só da equipe.
+ */
+export const fanClubHideLogOf = (db: Firestore): CollectionReference =>
+  db.collection('fanClubHideLog');
 
 /**
  * `fanClubReactions/{uid}_{postId}`: a reação de um fã numa publicação (37.2),

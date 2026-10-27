@@ -1060,7 +1060,9 @@ export type FanClubComment = {
  * `GET /fan-club-posts/:postId/comments`: os comentários de cima, do mais novo,
  * ou, com o `?replyTo=`, as respostas de um deles, da mais antiga. O
  * `ownHidden` vem só na primeira página dos de cima, com os do próprio fã
- * ocultos pelo gestor.
+ * ocultos pelo gestor (até 10, de cima e respostas; vazio sem nenhum), para
+ * quem não é o gestor: ele vê os que ocultou na própria lista, com o
+ * `hidden: 'manager'`.
  */
 export type FanClubCommentPage = Page<FanClubComment> & { ownHidden?: FanClubComment[] };
 
@@ -1102,3 +1104,30 @@ export type MentionSuggestion = {
  * pelo começo do @.
  */
 export type MentionSuggestions = { items: MentionSuggestion[] };
+
+// --- A moderação dos comentários (seção 37, 37.3 e 37.6; a etapa 3 de 37.13) ----------------
+
+/**
+ * A denúncia de um comentário de fã-clube (`POST
+ * /fan-club-comments/:commentId/report`): de quem vê, uma por rodada do item.
+ */
+export type ReportFanClubCommentResult = {
+  commentId: string;
+  status: 'reported' | 'already_reported';
+};
+
+/**
+ * O pedido de revisão do autor do comentário oculto pelo gestor (`POST
+ * /fan-club-comments/:commentId/review`): um por ocultar do gestor.
+ */
+export type FanClubCommentReviewResult = {
+  commentId: string;
+  status: 'requested' | 'already_requested';
+};
+
+/**
+ * O ocultar e o reexibir do gestor no próprio fã-clube (`PUT` e `DELETE
+ * /me/fan-club/hidden-comments/:commentId`): `hidden: true` depois do ocultar
+ * (também no já oculto por ele) e `hidden: false` depois do reexibir.
+ */
+export type FanClubCommentHiddenResult = { commentId: string; hidden: boolean };

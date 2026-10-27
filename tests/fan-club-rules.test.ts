@@ -36,7 +36,9 @@ import { resolve } from 'node:path';
  * fechado até para o admin. O Leitor, a seção Fãs e o próprio fã não leem;
  * ninguém lista. A Fase 2 (seção 37, 37.4): os comentários, lidos pela seção
  * fanClubs e pela Moderação; as reações e as denúncias de comentário uma a
- * uma, fechadas para todos.
+ * uma, fechadas para todos. Desde a etapa 3 de 37.13: a fila da equipe dos
+ * comentários e o registro do ocultar do gestor, lidos só pela seção
+ * fanClubs (a Moderação não).
  */
 let env: RulesTestEnvironment;
 
@@ -111,6 +113,9 @@ const CONTACT = `users/${GESTOR}/contact/main`;
 const COMMENT = 'fanClubComments/comentario-1';
 const REACTION = `fanClubReactions/${FOLLOWER}_publicacao-1`;
 const COMMENT_REPORT = `fanClubCommentReports/${GESTOR}_comentario-1`;
+// A etapa 3 de 37.13: o item da fila do comentário e uma linha do registro do ocultar.
+const COMMENT_QUEUE = 'fanClubCommentQueue/comentario-1';
+const HIDE_LOG = 'fanClubHideLog/registro-1';
 // O contato de quem só resgatou na loja, sem candidatura.
 const STORE_ONLY = 'uid-davi';
 const STORE_CONTACT = `users/${STORE_ONLY}/contact/main`;
@@ -197,6 +202,27 @@ beforeEach(async () => {
       reporterUid: GESTOR,
       reason: 'spam',
       round: 1,
+    });
+    await setDoc(doc(db, COMMENT_QUEUE), {
+      commentId: 'comentario-1',
+      postId: 'publicacao-1',
+      clubId: CLUB,
+      authorUid: FOLLOWER,
+      kind: 'review',
+      reportCount: 0,
+      reviewRequested: true,
+      status: 'open',
+      round: 1,
+      lastActivityAt: at,
+    });
+    await setDoc(doc(db, HIDE_LOG), {
+      clubId: CLUB,
+      postId: 'publicacao-1',
+      commentId: 'comentario-1',
+      authorUid: FOLLOWER,
+      managerUid: GESTOR,
+      action: 'hidden',
+      at,
     });
     await setDoc(doc(db, CONTACT), {
       whatsapp: '+5575991234567',
@@ -368,6 +394,61 @@ describe('os comentários e as reações (seção 37, 37.4)', () => {
   });
 });
 
+describe('a fila dos comentários e o registro do ocultar (seção 37, 37.4; etapa 3 de 37.13)', () => {
+  /** O que a aba Comentários, o "Aguardando a equipe" e a ficha leem: os documentos e as consultas. */
+  async function readsQueue(db: Db, outcome: 'succeeds' | 'fails'): Promise<void> {
+    const check = outcome === 'succeeds' ? assertSucceeds : assertFails;
+    await check(getDoc(doc(db, COMMENT_QUEUE)));
+    await check(
+      getDocs(
+        query(
+          collection(db, 'fanClubCommentQueue'),
+          where('status', '==', 'open'),
+          orderBy('lastActivityAt', 'desc'),
+        ),
+      ),
+    );
+    await check(
+      getDocs(
+        query(
+          collection(db, 'fanClubCommentQueue'),
+          where('status', '==', 'open'),
+          where('kind', '==', 'review'),
+        ),
+      ),
+    );
+    await check(getDoc(doc(db, HIDE_LOG)));
+    await check(
+      getDocs(
+        query(collection(db, 'fanClubHideLog'), where('clubId', '==', CLUB), orderBy('at', 'desc')),
+      ),
+    );
+  }
+
+  it('a seção Fã-clubes (o editor, o Leitor e o admin) lê a fila e o registro', async () => {
+    for (const uid of ['admin', 'faClubes', 'leitorFaClubes']) {
+      await readsQueue(as(uid), 'succeeds');
+    }
+    await readsQueue(as('ligadaFaClubes', LINKED_AT), 'succeeds');
+  });
+
+  it('a Moderação, o fã (o autor e o gestor também), outras seções, a desativada, a pendente e a sessão de antes do authValidAfter não leem', async () => {
+    for (const uid of [
+      'moderacao',
+      GESTOR,
+      FOLLOWER,
+      'fas',
+      'artistas',
+      'desativada',
+      'pendente',
+    ]) {
+      await readsQueue(as(uid), 'fails');
+    }
+    await readsQueue(as('ligadaFaClubes', LINKED_AT - 1), 'fails');
+    await readsQueue(env.unauthenticatedContext().firestore(), 'fails');
+  });
+});
+
 describe('o contato do fã (decisão 14)', () => {
   const editors = () => [
     as('admin'),
@@ -461,6 +542,13 @@ describe('ninguém grava pelo cliente', () => {
       );
       await assertFails(updateDoc(doc(db, REACTION), { reaction: null }));
       await assertFails(setDoc(doc(db, COMMENT_REPORT), { reason: 'other' }));
+      // A etapa 3: a fila e o registro, só pelo servidor.
+      await assertFails(updateDoc(doc(db, COMMENT_QUEUE), { status: 'resolved' }));
+      await assertFails(setDoc(doc(db, 'fanClubCommentQueue/outro'), { status: 'open' }));
+      await assertFails(deleteDoc(doc(db, COMMENT_QUEUE)));
+      await assertFails(setDoc(doc(db, 'fanClubHideLog/outro'), { action: 'hidden' }));
+      await assertFails(updateDoc(doc(db, HIDE_LOG), { action: 'restored' }));
+      await assertFails(deleteDoc(doc(db, HIDE_LOG)));
     }
   });
 });
