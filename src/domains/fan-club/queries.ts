@@ -7,10 +7,11 @@ import {
   type QueryClient,
 } from '@tanstack/react-query';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { AccessibilityInfo } from 'react-native';
+import { AccessibilityInfo, Alert } from 'react-native';
 
 import { artistKeys, useJoinCelebration } from '@/domains/artists';
 import { inviteLinkId } from '@/domains/invites';
+import { missionKeys, rewardsRefresh } from '@/domains/missions';
 import { postKeys } from '@/domains/posts';
 import {
   profileKeys,
@@ -24,6 +25,7 @@ import { ApiError } from '@/services/api/errors';
 import { actionRefusal } from '@/services/api/refusal';
 import { haptics } from '@/services/haptics';
 import { queryOptionsFor } from '@/services/query/client';
+import { alertActionRefusal } from '@/services/refusal-alert';
 import { useSessionStore } from '@/stores/session';
 import { createIdempotencyKey } from '@/utils/id';
 import { parseWhatsapp } from '@/utils/whatsapp';
@@ -31,6 +33,7 @@ import { parseWhatsapp } from '@/utils/whatsapp';
 import {
   acceptFanClubRules,
   applyForFanClub,
+  clearFanClubReaction,
   createFanClubPost,
   fanClubFileUploaded,
   fetchArtistFanClubs,
@@ -46,14 +49,16 @@ import {
   openFanClubUpload,
   removeFanClubPost,
   reportFanClubPost,
+  setFanClubReaction,
   unfollowFanClub,
   uploadFanClubFile,
   withdrawApplication,
 } from './api';
-import { FAN_CLUB_ERROR_CODES } from './consts';
+import { FAN_CLUB_ERROR_CODES, type FanClubReaction } from './consts';
 import { fanClubErrorText } from './describe';
 import { isDefinitiveRefusal, leaveCentralNotes, liveFanClub, shownFanClub } from './entry';
 import { fanClubKeys } from './keys';
+import { withReaction } from './reactions';
 import { shareFanClub, type ShareableFanClub } from './share';
 import type {
   FanClubApplicationBody,
@@ -62,6 +67,8 @@ import type {
   FanClubPage,
   FanClubPerson,
   FanClubPost,
+  FanClubPostDetails,
+  FanClubReactionResult,
   FanClubReportReason,
   FanClubUploadSlot,
   FollowedFanClubs,
@@ -242,6 +249,8 @@ export const fanClubMutationKeys = {
   follow: ['fanClub', 'follow'] as const,
   unfollow: ['fanClub', 'unfollow'] as const,
   report: ['fanClub', 'report'] as const,
+  /** As reações (seção 37), em fila por publicação (o `scope`). */
+  react: ['fanClub', 'react'] as const,
 };
 
 /** Uma tentativa: o corpo que foi (em texto, para comparar) e a chave dele. */
@@ -777,7 +786,11 @@ export function useCachedFanClubOwner(clubId: string, fanId: string): FanClubPer
   return owner;
 }
 
-/** O seguir de agora na página e nas listas do artista em cache, sem buscar de novo. */
+/**
+ * O seguir de agora na página, nas publicações abertas daquele fã-clube (a
+ * tela da publicação, seção 37, 37.9) e nas listas do artista em cache, sem
+ * buscar de novo.
+ */
 function setFollowing(
   client: QueryClient,
   clubId: string,
@@ -794,6 +807,16 @@ function setFollowing(
       isMember: page.isMember || joined,
     };
   });
+  for (const [queryKey, post] of client.getQueriesData<FanClubPostDetails>({
+    queryKey: fanClubKeys.posts(),
+  })) {
+    if (post?.clubId !== clubId) continue;
+    client.setQueryData<FanClubPostDetails>(queryKey, {
+      ...post,
+      isFollowing: following,
+      isMember: post.isMember || joined,
+    });
+  }
   client.setQueriesData<InfiniteData<FanClubListPage<FanClubCard>, string | null>>(
     { queryKey: fanClubKeys.artistLists() },
     (data) =>
@@ -1028,4 +1051,206 @@ export function useReportFanClubPostMutation() {
     mutation.mutate(variables, options);
   };
   return { ...mutation, mutate };
+}
+
+// --- As reações (seção 37, 37.9; a etapa 5 de 37.13) -----------------------------------
+
+/** A publicação em cache: numa página de publicações, ou a da tela dela. */
+function postIn(data: unknown, postId: string): FanClubPost | undefined {
+  if (isPostPages(data)) {
+    for (const page of data.pages) {
+      const found = page.items.find((item) => isPost(item) && item.id === postId);
+      if (found) return found;
+    }
+    return undefined;
+  }
+  return isPost(data) && data.id === postId ? data : undefined;
+}
+
+/** A publicação de agora no cache do que os fãs veem (a primeira achada). */
+function readCachedPost(client: QueryClient, postId: string): FanClubPost | undefined {
+  for (const [, data] of client.getQueriesData({ queryKey: fanClubKeys.public() })) {
+    const found = postIn(data, postId);
+    if (found) return found;
+  }
+  return undefined;
+}
+
+/**
+ * A publicação trocada em todo cache do que os fãs veem: as páginas da
+ * página do fã-clube, a Início e a tela dela. Só as consultas que têm a
+ * publicação mudam (as outras ficam como estavam, sem contar como novas).
+ */
+function patchFanClubPost(
+  client: QueryClient,
+  postId: string,
+  patch: <T extends FanClubPost>(post: T) => T,
+): void {
+  for (const [queryKey, data] of client.getQueriesData({ queryKey: fanClubKeys.public() })) {
+    if (!postIn(data, postId)) continue;
+    if (isPostPages(data)) {
+      client.setQueryData<PostPages>(queryKey, {
+        ...data,
+        pages: data.pages.map((page) => ({
+          ...page,
+          items: page.items.map((item) => (item.id === postId ? patch(item) : item)),
+        })),
+      });
+    } else if (isPost(data)) {
+      client.setQueryData<FanClubPost>(queryKey, patch(data));
+    }
+  }
+}
+
+/** As consultas que têm a publicação buscam de novo (a falha incerta pode ter gravado). */
+function refreshPost(client: QueryClient, postId: string): void {
+  void client.invalidateQueries({
+    queryKey: fanClubKeys.public(),
+    predicate: (query) => postIn(query.state.data, postId) !== undefined,
+  });
+}
+
+/**
+ * As buscas com a publicação ainda indo (o puxar para atualizar, a volta ao
+ * app, o `refreshPost` de um toque anterior da fila) podem ter lido o servidor
+ * antes da gravação e chegar por cima da resposta: recomeçam (o
+ * `invalidateQueries` cancela a que está indo e busca de novo). As paradas não buscam.
+ */
+function restartPostFetches(client: QueryClient, postId: string): void {
+  void client.invalidateQueries({
+    queryKey: fanClubKeys.public(),
+    refetchType: 'all',
+    predicate: (query) =>
+      query.state.fetchStatus === 'fetching' && postIn(query.state.data, postId) !== undefined,
+  });
+}
+
+/** Um toque: a reação nova (null tira) e a chave dele. */
+interface ReactVariables {
+  postId: string;
+  reaction: FanClubReaction | null;
+  idempotencyKey: string;
+}
+
+/** A sessão que pediu e a reação de antes do toque, para voltar no erro. */
+interface ReactContext extends StartedBy {
+  before: FanClubReaction | null;
+  /** O `before` é o otimista de um toque ainda indo, e não o que o servidor confirmou. */
+  queued: boolean;
+}
+
+/**
+ * As reações desta publicação ainda indo, contando a que chama (o
+ * `onSuccess` roda com ela pendente).
+ */
+const reactionsGoing = (client: QueryClient, postId: string): number =>
+  client.isMutating({
+    mutationKey: fanClubMutationKeys.react,
+    predicate: (mutation) =>
+      (mutation.state.variables as ReactVariables | undefined)?.postId === postId,
+  });
+
+/**
+ * Reagir, trocar de emoji e tirar a reação (`PUT` e `DELETE
+ * /fan-club-posts/:postId/reaction`, R1), otimista na memória (decisão 23 de
+ * 37.1): o toque troca o card na hora, em todas as páginas do `public()` com
+ * a publicação e na tela dela, no molde do `setFollowing`. As reações da mesma
+ * publicação vão em fila (o `scope` por publicação, como o comentário do
+ * Mural), e cada toque leva a chave dele (o corpo entra na chave). A resposta
+ * acerta os números, menos com outro toque da mesma publicação ainda na fila
+ * (ele já deixou o card como o fã quer), e a busca que estava indo recomeça
+ * (ela pode ter lido o servidor antes da gravação). No erro, volta ao que
+ * era, se nada mudou depois, e diz a recusa: o teto do dia e a conta suspensa
+ * no `Alert` (o do suspenso pelo `SuspensionWatcher`), o `not_following`
+ * (deixou de seguir noutro aparelho) no `Alert` com a frase, e o resto
+ * anunciado. Sem fila offline e sem disco: `networkMode: 'always'`, sem nova
+ * tentativa e o toque da fila fora do cache salvo. A publicação que saiu do
+ * ar some das telas; o `not_following`, a falha incerta e a volta ao
+ * otimista de um toque da fila buscam de novo. Sempre 0 ponto (37.5): só as
+ * missões e as conquistas buscam de novo quando a resposta pede.
+ */
+export function useReactToFanClubPostMutation(postId: string) {
+  const client = useQueryClient();
+  const mutation = useMutation<FanClubReactionResult, Error, ReactVariables, ReactContext>({
+    mutationKey: fanClubMutationKeys.react,
+    scope: { id: `fan-club-react-${postId}` },
+    // O toque que espera na fila do `scope` fica pausado; a fila é só na memória (decisão 23 de 37.1).
+    meta: { persist: false },
+    mutationFn: (variables) =>
+      variables.reaction === null
+        ? clearFanClubReaction({
+            postId: variables.postId,
+            idempotencyKey: variables.idempotencyKey,
+          })
+        : setFanClubReaction({
+            postId: variables.postId,
+            reaction: variables.reaction,
+            idempotencyKey: variables.idempotencyKey,
+          }),
+    networkMode: 'always',
+    retry: false,
+    onMutate: ({ postId: id, reaction }) => {
+      const before = readCachedPost(client, id)?.myReaction ?? null;
+      patchFanClubPost(client, id, (post) => withReaction(post, reaction));
+      // Reagir vibra pelo evento `like`; tirar, com o toque comum do botão.
+      if (reaction !== null) haptics.trigger('like');
+      // O `onMutate` roda com esta já pendente: ela entra na conta.
+      return { ...startedBy(), before, queued: reactionsGoing(client, id) > 1 };
+    },
+    onSuccess: (result, { postId: id }, context) => {
+      if (!sameSession(context)) return;
+      const refresh = rewardsRefresh(result);
+      if (refresh.missions) void client.invalidateQueries({ queryKey: missionKeys.all });
+      if (refresh.achievements) {
+        void client.invalidateQueries({ queryKey: profileKeys.achievements() });
+      }
+      if (reactionsGoing(client, id) > 1) return;
+      patchFanClubPost(client, id, (post) => ({
+        ...post,
+        myReaction: result.reaction,
+        reactionCount: result.reactionCount,
+        reactionCounts: result.reactionCounts,
+      }));
+      restartPostFetches(client, id);
+    },
+    onError: (error, { postId: id, reaction }, context) => {
+      if (context && sameSession(context)) {
+        // Volta só se nada mudou depois: o toque seguinte já deixou o card como o fã quer.
+        if ((readCachedPost(client, id)?.myReaction ?? null) === reaction) {
+          patchFanClubPost(client, id, (post) => withReaction(post, context.before));
+        }
+        const gone =
+          error instanceof ApiError &&
+          (error.code === FAN_CLUB_ERROR_CODES.postNotFound ||
+            error.code === FAN_CLUB_ERROR_CODES.notFound);
+        if (gone || isRefused(error, 'not_following')) {
+          void client.invalidateQueries({ queryKey: fanClubKeys.public() });
+        } else if (isUncertainFailure(error)) {
+          refreshPost(client, id);
+        } else if (reactionsGoing(client, id) === 1) {
+          // A volta foi ao otimista do toque de antes, que o servidor pode não ter gravado.
+          if (context.queued) refreshPost(client, id);
+          else restartPostFetches(client, id);
+        }
+      }
+      haptics.trigger('error');
+      const refusal = actionRefusal(error, 'clubReact');
+      if (alertActionRefusal(refusal.type, 'clubReact')) return;
+      if (isRefused(error, 'not_following')) {
+        Alert.alert(t('fanClub.errors.refused.notFollowing'));
+        return;
+      }
+      AccessibilityInfo.announceForAccessibility(t(fanClubErrorText(error)?.key ?? refusal.key));
+    },
+  });
+  return {
+    ...mutation,
+    /** Um toque: o emoji (null tira a reação), com a chave dele. */
+    react: (reaction: FanClubReaction | null) =>
+      mutation.mutate({
+        postId,
+        reaction,
+        idempotencyKey: `club-react-${createIdempotencyKey()}`,
+      }),
+  };
 }

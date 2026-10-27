@@ -1,9 +1,44 @@
-import { t } from '@/i18n';
+import { t, type TranslationKey } from '@/i18n';
 import { formatDate } from '@/utils/date';
 import { formatCompact, formatNumber } from '@/utils/number';
 
+import type { FanClubReaction } from './consts';
 import type { NextRound } from './entry';
 import type { FanClubPerson } from './types';
+
+/** O nome de cada reação para o leitor de tela, sem o emoji (37.9, item 2). */
+const REACTION_NAMES: Record<FanClubReaction, TranslationKey> = {
+  heart: 'fanClub.reactions.names.heart',
+  fire: 'fanClub.reactions.names.fire',
+  laugh: 'fanClub.reactions.names.laugh',
+  wow: 'fanClub.reactions.names.wow',
+  clap: 'fanClub.reactions.names.clap',
+};
+
+/** "coração", "fogo", "risada", "espanto" e "aplauso". */
+export function reactionName(reaction: FanClubReaction): string {
+  return t(REACTION_NAMES[reaction]);
+}
+
+// A partir daqui, o total vira "12 mil" para caber na pílula (como no mural).
+const COMPACT_FROM = 10_000;
+
+/** O total na pílula: "4.812", ou "12 mil" a partir de 10 mil. */
+export function countText(count: number): string {
+  return count >= COMPACT_FROM ? formatCompact(count) : formatNumber(count);
+}
+
+/** "12 reações", "1 reação": o total para o leitor, sem dizer quem reagiu (R8). */
+export function reactionsSpoken(count: number): string {
+  if (count === 1) return t('fanClub.reactions.countOne');
+  return t('fanClub.reactions.count', { count: formatNumber(count) });
+}
+
+/** "4 comentários", "1 comentário". */
+export function commentsSpoken(count: number): string {
+  if (count === 1) return t('fanClub.comments.countOne');
+  return t('fanClub.comments.count', { count: formatNumber(count) });
+}
 
 /**
  * Quem gere o fã-clube nas frases ("feito por @camilarib"): o @, que a equipe

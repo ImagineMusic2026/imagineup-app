@@ -729,7 +729,9 @@
       "seed": "Ajuste",
       "other": "Pontos",
       "redeem_refund": "Resgate devolvido",
-      "fanclub_prize": "Prêmio do fã-clube"
+      "fanclub_prize": "Prêmio do fã-clube",
+      "fanclub_like": "Reação no fã-clube",
+      "fanclub_comment": "Comentário no fã-clube"
     },
     "days": {
       "today": "Hoje",
@@ -1048,6 +1050,7 @@
   "fanClub": {
     "notFound": "Este fã-clube não está disponível.",
     "postNotFound": "Esta publicação não está mais disponível.",
+    "commentNotFound": "Este comentário não está mais disponível.",
     "refusal": {
       "applyDailyLimit": "Você chegou ao limite de candidaturas de hoje. Tente amanhã.",
       "applySuspended": "Sua conta está suspensa. Você não pode se candidatar a um fã-clube.",
@@ -1064,7 +1067,14 @@
       "followDailyLimit": "Você chegou ao limite de hoje para seguir fã-clubes e entrar em centrais. Tente amanhã.",
       "followSuspended": "Sua conta está suspensa. Você não pode seguir fã-clubes.",
       "followError": "Não deu para seguir o fã-clube. Tente de novo.",
-      "unfollowError": "Não deu para deixar de seguir. Tente de novo."
+      "unfollowError": "Não deu para deixar de seguir. Tente de novo.",
+      "reactDailyLimit": "Você chegou ao limite de reações de hoje no fã-clube. Tente amanhã.",
+      "reactSuspended": "Sua conta está suspensa. Você não pode reagir no fã-clube.",
+      "reactError": "Não deu para reagir. Tente de novo.",
+      "commentDailyLimit": "Você chegou ao limite de comentários de hoje no fã-clube. Tente amanhã.",
+      "reviewDailyLimit": "Você chegou ao limite de denúncias e pedidos de revisão de hoje. Tente amanhã.",
+      "reviewError": "Não deu para pedir a revisão. Tente de novo.",
+      "hideError": "Não deu para ocultar ou reexibir o comentário. Tente de novo."
     },
     "errors": {
       "invalid": {
@@ -1097,7 +1107,9 @@
         "uploadMissing": "A foto não chegou. Escolha de novo e tente outra vez.",
         "tooManyPending": "Você já tem 3 publicações em análise. Espere a equipe revisar.",
         "ownFanClub": "Este fã-clube é seu.",
-        "followLimit": "Você já segue 50 fã-clubes. Deixe de seguir algum para seguir este."
+        "followLimit": "Você já segue 50 fã-clubes. Deixe de seguir algum para seguir este.",
+        "notFollowing": "Siga o fã-clube para comentar e reagir.",
+        "staffDecided": "A equipe reexibiu este comentário, e ele não pode ser ocultado de novo."
       }
     },
     "rejectReason": {
@@ -1459,8 +1471,8 @@
       "featured": "Destaque",
       "follow": "Seguir o fã-clube",
       "followJoinLine": "Você também entra na central de {{artist}}",
-      "followLabel": "Seguir o fã-clube {{name}}",
-      "followJoinLabel": "Seguir o fã-clube {{name}}. Você também entra na central de {{artist}}",
+      "followLabel": "Seguir o fã-clube {{name}}. O gestor do fã-clube vê que você é membro",
+      "followJoinLabel": "Seguir o fã-clube {{name}}. Você também entra na central de {{artist}}. O gestor do fã-clube vê que você é membro",
       "following": "Seguindo",
       "followingLabel": "Seguindo o fã-clube {{name}}",
       "followingHint": "Abre a opção de deixar de seguir",
@@ -1486,7 +1498,8 @@
       "loading": "Carregando o fã-clube",
       "manage": "Gerenciar meu fã-clube",
       "manageHint": "Abre o modo gestor do seu fã-clube",
-      "ownerEmpty": "Suas publicações aparecem aqui quando a equipe aprova."
+      "ownerEmpty": "Suas publicações aparecem aqui quando a equipe aprova.",
+      "memberNotice": "O gestor do fã-clube vê que você é membro."
     },
     "post": {
       "label": "{{text}} Publicado {{when}}.",
@@ -1556,6 +1569,32 @@
     "leave": {
       "follows": "Você também deixa de seguir os fã-clubes deste artista.",
       "manager": "Seu fã-clube fica sem publicar até você voltar à central."
+    },
+    "reactions": {
+      "names": {
+        "heart": "coração",
+        "fire": "fogo",
+        "laugh": "risada",
+        "wow": "espanto",
+        "clap": "aplauso"
+      },
+      "count": "{{count}} reações",
+      "countOne": "1 reação",
+      "label": "Reagir, {{reactions}}",
+      "labelMine": "Reagir, {{reactions}}, você reagiu com {{name}}",
+      "hint": "Reage com coração. Para escolher outra reação, toque e segure ou use as ações",
+      "hintMine": "Tira a sua reação. Para trocar, toque e segure ou use as ações",
+      "choose": "Escolher reação",
+      "reactWith": "Reagir com {{name}}",
+      "clear": "Tirar a reação",
+      "close": "Fechar",
+      "closeLabel": "Fechar as reações",
+      "reacted": "Você reagiu com {{name}}.",
+      "cleared": "Você tirou a reação."
+    },
+    "comments": {
+      "count": "{{count}} comentários",
+      "countOne": "1 comentário"
     }
   },
   "notFound": {

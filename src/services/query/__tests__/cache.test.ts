@@ -194,6 +194,42 @@ describe('mutações salvas no aparelho', () => {
     expect(shouldPersistMutation(paused)).toBe(true);
     expect(savedToDisk().mutations).toHaveLength(1);
   });
+
+  it('a que pediu para ficar de fora (a fila só na memória, como a reação do fã-clube) não vai, nem pausada na fila', async () => {
+    const scope = { id: 'fan-club-react-p1' };
+    const meta: MutationMeta = { persist: false };
+    let release = (): void => undefined;
+    const first = client.getMutationCache().build<unknown, ApiError, unknown, unknown>(client, {
+      mutationKey: ['fan-club', 'react'],
+      scope,
+      meta,
+      networkMode: 'always',
+      retry: false,
+      mutationFn: () =>
+        new Promise<void>((resolve) => {
+          release = resolve;
+        }),
+    });
+    const second = client.getMutationCache().build<unknown, ApiError, unknown, unknown>(client, {
+      mutationKey: ['fan-club', 'react'],
+      scope,
+      meta,
+      networkMode: 'always',
+      retry: false,
+      mutationFn: async () => undefined,
+    });
+    const running = first.execute('heart');
+    const waiting = second.execute('fire');
+    // A segunda espera a primeira na fila do `scope`: fica pausada.
+    await Promise.resolve();
+    expect(second.state.isPaused).toBe(true);
+    expect(shouldPersistMutation(second)).toBe(false);
+    expect(shouldPersistMutation(first)).toBe(false);
+    expect(savedToDisk().mutations).toEqual([]);
+
+    release();
+    await Promise.all([running, waiting]);
+  });
 });
 
 describe('consultas no modo fixtures', () => {

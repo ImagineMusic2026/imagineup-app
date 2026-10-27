@@ -3,25 +3,35 @@ import { resetFixtureSession, setFixtureNow } from '@/services/fixtures';
 
 import {
   acceptFanClubRules,
+  addFanClubComment,
   applyForFanClub,
+  clearFanClubReaction,
   createFanClubPost,
   fetchArtistFanClubs,
   fetchFanClub,
   fetchFanClubArtists,
+  fetchFanClubComments,
   fetchFanClubFeed,
+  fetchFanClubMentions,
+  fetchFanClubPost,
   fetchFanClubPosts,
   fetchFollowedFanClubs,
   fetchMyFanClub,
   fetchMyFanClubNumbers,
   fetchMyFanClubPosts,
   followFanClub,
+  hideFanClubComment,
   openFanClubUpload,
   removeFanClubPost,
+  reportFanClubComment,
   reportFanClubPost,
+  requestFanClubCommentReview,
+  setFanClubReaction,
   unfollowFanClub,
+  unhideFanClubComment,
   withdrawApplication,
 } from '../api';
-import { OWN_CLUB_ID } from '../fixtures';
+import { FOLLOWED_CLUB_ID, OWN_CLUB_ID } from '../fixtures';
 import type { FanClubApplicationBody } from '../types';
 
 // As rotas do fã-clube (seção 34, 34.3) pelo api.ts: com a API, o método, a
@@ -188,7 +198,13 @@ describe('as gravações pela API, com a chave da tentativa', () => {
     [
       'seguir',
       () => followFanClub({ clubId: 'fc-1', idempotencyKey: 'chave-1234' }),
-      { method: 'PUT', url: '/me/fan-club-follows/fc-1', headers: KEY },
+      {
+        method: 'PUT',
+        url: '/me/fan-club-follows/fc-1',
+        headers: KEY,
+        // A versão do aviso de membro (seção 37, "Estado").
+        data: { memberNoticeVersion: 'membros-2026-10' },
+      },
     ],
     [
       'deixar de seguir',
@@ -230,6 +246,172 @@ describe('nas fixtures, nada vai para a rede', () => {
     await expect(
       createFanClubPost({ text: 'Outro texto', photo: false, idempotencyKey: 'chave-1234' }),
     ).resolves.toEqual(posted);
+    expect(get).not.toHaveBeenCalled();
+    expect(request).not.toHaveBeenCalled();
+  });
+});
+
+// --- A Fase 2 (seção 37, 37.3) ------------------------------------------------------------
+
+describe('as leituras da Fase 2 pela API', () => {
+  beforeEach(() => {
+    mockDataSource = 'api';
+    get.mockResolvedValue({ data: { marcador: true } });
+  });
+
+  it.each<[string, () => Promise<unknown>, string, object | null]>([
+    ['a publicação', () => fetchFanClubPost('fcp-1'), '/fan-club-posts/fcp-1', null],
+    [
+      'os comentários de cima, sem o replyTo',
+      () => fetchFanClubComments({ postId: 'fcp-1', replyTo: null, cursor: 'c1' }),
+      '/fan-club-posts/fcp-1/comments',
+      { params: { cursor: 'c1' } },
+    ],
+    [
+      'as respostas de um comentário',
+      () => fetchFanClubComments({ postId: 'fcp-1', replyTo: 'fcc-1', cursor: null }),
+      '/fan-club-posts/fcp-1/comments',
+      { params: { cursor: null, replyTo: 'fcc-1' } },
+    ],
+    [
+      'a conversa da sugestão do @, com a publicação e sem o q',
+      () => fetchFanClubMentions({ clubId: 'fc-1', postId: 'fcp-1', q: null }),
+      '/fan-clubs/fc-1/mentions',
+      { params: { postId: 'fcp-1' } },
+    ],
+    [
+      'a busca do @ na nova publicação, sem a publicação',
+      () => fetchFanClubMentions({ clubId: 'fc-1', postId: null, q: 'ne' }),
+      '/fan-clubs/fc-1/mentions',
+      { params: { q: 'ne' } },
+    ],
+  ])('%s: GET %s', async (_name, call, url, config) => {
+    await expect(call()).resolves.toEqual({ marcador: true });
+    if (config) expect(get).toHaveBeenCalledWith(url, config);
+    else expect(get).toHaveBeenCalledWith(url);
+    expect(request).not.toHaveBeenCalled();
+  });
+});
+
+describe('as gravações da Fase 2 pela API, com a chave', () => {
+  beforeEach(() => {
+    mockDataSource = 'api';
+    request.mockResolvedValue({ data: { marcador: true } });
+  });
+
+  it.each<[string, () => Promise<unknown>, object]>([
+    [
+      'comentar, só com o texto',
+      () =>
+        addFanClubComment({
+          postId: 'fcp-1',
+          text: 'Bora!',
+          replyToId: null,
+          idempotencyKey: 'chave-1234',
+        }),
+      {
+        method: 'POST',
+        url: '/fan-club-posts/fcp-1/comments',
+        headers: KEY,
+        data: { text: 'Bora!' },
+      },
+    ],
+    [
+      'responder, com o comentário respondido',
+      () =>
+        addFanClubComment({
+          postId: 'fcp-1',
+          text: '@thalitasan bora!',
+          replyToId: 'fcc-1',
+          idempotencyKey: 'chave-1234',
+        }),
+      {
+        method: 'POST',
+        url: '/fan-club-posts/fcp-1/comments',
+        headers: KEY,
+        data: { text: '@thalitasan bora!', replyToId: 'fcc-1' },
+      },
+    ],
+    [
+      'reagir com um emoji',
+      () => setFanClubReaction({ postId: 'fcp-1', reaction: 'fire', idempotencyKey: 'chave-1234' }),
+      {
+        method: 'PUT',
+        url: '/fan-club-posts/fcp-1/reaction',
+        headers: KEY,
+        data: { reaction: 'fire' },
+      },
+    ],
+    [
+      'tirar a reação, sem corpo',
+      () => clearFanClubReaction({ postId: 'fcp-1', idempotencyKey: 'chave-1234' }),
+      { method: 'DELETE', url: '/fan-club-posts/fcp-1/reaction', headers: KEY },
+    ],
+    [
+      'denunciar um comentário sem motivo',
+      () =>
+        reportFanClubComment({ commentId: 'fcc-1', reason: null, idempotencyKey: 'chave-1234' }),
+      {
+        method: 'POST',
+        url: '/fan-club-comments/fcc-1/report',
+        headers: KEY,
+        data: { reason: null },
+      },
+    ],
+    [
+      'pedir revisão, sem corpo',
+      () => requestFanClubCommentReview({ commentId: 'fcc-1', idempotencyKey: 'chave-1234' }),
+      { method: 'POST', url: '/fan-club-comments/fcc-1/review', headers: KEY },
+    ],
+    [
+      'o gestor oculta',
+      () => hideFanClubComment({ commentId: 'fcc-1', idempotencyKey: 'chave-1234' }),
+      { method: 'PUT', url: '/me/fan-club/hidden-comments/fcc-1', headers: KEY },
+    ],
+    [
+      'o gestor reexibe',
+      () => unhideFanClubComment({ commentId: 'fcc-1', idempotencyKey: 'chave-1234' }),
+      { method: 'DELETE', url: '/me/fan-club/hidden-comments/fcc-1', headers: KEY },
+    ],
+  ])('%s', async (_name, call, config) => {
+    await expect(call()).resolves.toEqual({ marcador: true });
+    expect(request).toHaveBeenCalledWith(config);
+    expect(get).not.toHaveBeenCalled();
+  });
+
+  it('os ids da publicação e do comentário vão escapados no caminho', async () => {
+    await setFanClubReaction({ postId: 'a/b', reaction: 'heart', idempotencyKey: 'chave-1234' });
+    await hideFanClubComment({ commentId: 'c/d', idempotencyKey: 'chave-1234' });
+    expect(request.mock.calls.map(([config]) => (config as { url: string }).url)).toEqual([
+      '/fan-club-posts/a%2Fb/reaction',
+      '/me/fan-club/hidden-comments/c%2Fd',
+    ]);
+  });
+});
+
+describe('a Fase 2 nas fixtures, sem rede', () => {
+  it('a reação, o comentário e a publicação respondem pelo "servidor" de exemplo', async () => {
+    const reacted = await setFanClubReaction({
+      postId: 'fcp-nenho-musica',
+      reaction: 'clap',
+      idempotencyKey: 'chave-1',
+    });
+    expect(reacted).toMatchObject({ reaction: 'clap', reactionCount: 7, missionsChanged: false });
+    await expect(fetchFanClubPost('fcp-nenho-musica')).resolves.toMatchObject({
+      clubId: FOLLOWED_CLUB_ID,
+      myReaction: 'clap',
+      isFollowing: true,
+    });
+    const comment = await addFanClubComment({
+      postId: 'fcp-nenho-musica',
+      text: 'Concordo!',
+      replyToId: null,
+      idempotencyKey: 'chave-2',
+    });
+    expect(comment).toMatchObject({ text: 'Concordo!', isManager: false });
+    await expect(
+      clearFanClubReaction({ postId: 'fcp-nenho-musica', idempotencyKey: 'chave-3' }),
+    ).resolves.toMatchObject({ reaction: null, reactionCount: 6 });
     expect(get).not.toHaveBeenCalled();
     expect(request).not.toHaveBeenCalled();
   });

@@ -38,13 +38,16 @@ export function shouldPersistQuery(query: Query, fixturesInUse: boolean = usesFi
 
 /**
  * As mutações que vão para o disco: as pausadas, como no padrão do TanStack (a
- * fila offline), e a que pediu para ficar quando o servidor recusou o texto
- * pelo filtro (`meta: { keepRefused: true }` e o erro de conteúdo, seção 30):
- * o comentário da fila que volta recusado com o app fechado não some sem aviso,
- * e a linha "Não publicado" volta com o app reaberto. Quem marca é o `meta`,
- * para o `services` não conhecer o domínio dos posts.
+ * fila offline), menos a que pediu para ficar de fora (`meta: { persist: false
+ * }`, a fila só na memória, como a reação do fã-clube), e a que pediu para
+ * ficar quando o servidor recusou o texto pelo filtro (`meta: { keepRefused:
+ * true }` e o erro de conteúdo, seção 30): o comentário da fila que volta
+ * recusado com o app fechado não some sem aviso, e a linha "Não publicado"
+ * volta com o app reaberto. Quem marca é o `meta`, para o `services` não
+ * conhecer o domínio dos posts.
  */
 export function shouldPersistMutation(mutation: Mutation): boolean {
+  if (mutation.meta?.persist === false) return false;
   if (defaultShouldDehydrateMutation(mutation)) return true;
   return (
     mutation.meta?.keepRefused === true &&

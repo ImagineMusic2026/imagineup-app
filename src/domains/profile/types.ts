@@ -290,7 +290,13 @@ export type LedgerSource =
   | 'adjustment'
   | 'seed'
   /** Os pontos de um prêmio de fã-clube, dados pela equipe (seção 34, decisão 45). */
-  | 'fanclub_prize';
+  | 'fanclub_prize'
+  /**
+   * A reação e o comentário no fã-clube (seção 37, 37.5): nascem valendo 0 e
+   * só aparecem no extrato quando a equipe sobe o valor no painel.
+   */
+  | 'fanclub_like'
+  | 'fanclub_comment';
 
 /**
  * Uma linha do extrato de pontos (`GET /me/ledger`, blocos 1, 7 e 10). O app

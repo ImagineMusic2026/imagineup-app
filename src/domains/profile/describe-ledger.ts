@@ -90,6 +90,20 @@ const SOURCES: Readonly<Record<string, SourceSpec>> = {
     tone: 'points',
     context: 'none',
   },
+  // A reação e o comentário no fã-clube (seção 37, 37.5): sem central, porque o
+  // valor que subir não vira ponto da central oficial.
+  fanclub_like: {
+    title: 'ledger.sources.fanclub_like',
+    icon: Heart,
+    tone: 'action',
+    context: 'none',
+  },
+  fanclub_comment: {
+    title: 'ledger.sources.fanclub_comment',
+    icon: MessageCircle,
+    tone: 'action',
+    context: 'none',
+  },
 };
 
 const OTHER: SourceSpec = {

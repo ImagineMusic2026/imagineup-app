@@ -33,6 +33,11 @@ export interface PillProps {
   caps?: boolean;
   /** Peça antes do texto (barras da marca, ícone). Decorativa: some para o leitor de tela. */
   leading?: ReactNode;
+  /**
+   * Peça depois do texto, como os emojis mais usados ao lado do total das
+   * reações do fã-clube (seção 37, 37.9). Decorativa, como o `leading`.
+   */
+  trailing?: ReactNode;
   /** Cor do texto fora a do tom, como o número branco do curtir ligado (post). */
   labelColor?: string;
   /**
@@ -71,6 +76,7 @@ export function Pill({
   size = 'sm',
   caps = false,
   leading,
+  trailing,
   labelColor,
   accessibilityLabel,
   style,
@@ -86,18 +92,24 @@ export function Pill({
       accessibilityLabel={accessibilityLabel}
       style={[styles.base, styles[size], styles[tone], style]}
     >
-      {leading ? (
-        <View
-          accessible={false}
-          importantForAccessibility="no-hide-descendants"
-          accessibilityElementsHidden
-        >
-          {leading}
-        </View>
-      ) : null}
+      {leading ? <Decoration>{leading}</Decoration> : null}
       <Text variant={variant} color={labelColor ?? pillForeground[tone]}>
         {label}
       </Text>
+      {trailing ? <Decoration>{trailing}</Decoration> : null}
+    </View>
+  );
+}
+
+/** A peça de fora do texto, fora do leitor de tela: quem fala é o texto, ou o rótulo. */
+function Decoration({ children }: { children: ReactNode }) {
+  return (
+    <View
+      accessible={false}
+      importantForAccessibility="no-hide-descendants"
+      accessibilityElementsHidden
+    >
+      {children}
     </View>
   );
 }

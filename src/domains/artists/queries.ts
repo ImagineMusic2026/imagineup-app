@@ -245,6 +245,8 @@ function refreshAfterJoin(client: QueryClient, result: JoinCentralResult): void 
   void client.invalidateQueries({ queryKey: artistKeys.detail(result.artistId) });
   void client.invalidateQueries({ queryKey: postKeys.feed() });
   void client.invalidateQueries({ queryKey: fanClubKeys.pages() });
+  // A tela da publicação do fã-clube também diz se quem pede é da central (37.9).
+  void client.invalidateQueries({ queryKey: fanClubKeys.posts() });
   if (client.getQueryData(fanClubKeys.mine()) !== undefined) {
     void client.invalidateQueries({ queryKey: fanClubKeys.mine() });
   }

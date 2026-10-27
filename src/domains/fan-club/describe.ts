@@ -66,6 +66,8 @@ const REFUSED_TEXTS: Record<FanClubRefusal, TranslationKey> = {
   too_many_pending: 'fanClub.errors.refused.tooManyPending',
   own_fan_club: 'fanClub.errors.refused.ownFanClub',
   follow_limit: 'fanClub.errors.refused.followLimit',
+  not_following: 'fanClub.errors.refused.notFollowing',
+  staff_decided: 'fanClub.errors.refused.staffDecided',
 };
 
 const isInvalidField = (value: unknown): value is FanClubInvalidField =>
@@ -96,9 +98,9 @@ function refusedText(reason: FanClubRefusal, canReapplyAt: unknown): FanClubErro
 }
 
 /**
- * A frase de uma recusa do fã-clube (os quatro códigos de 34.3): o 400
- * `fan_club_invalid` no campo dele, o 409 `fan_club_refused` no topo, com o
- * motivo, e os dois 404. Null para o resto (a rede, o 403 do suspenso, o 429
+ * A frase de uma recusa do fã-clube (os quatro códigos de 34.3 e o 404 do
+ * comentário de 37.3): o 400 `fan_club_invalid` no campo dele, o 409
+ * `fan_club_refused` no topo, com o motivo, e os três 404. Null para o resto (a rede, o 403 do suspenso, o 429
  * do teto e o motivo que o app ainda não conhece): a tela usa o
  * `actionRefusal` da ação, que dá a frase deles.
  */
@@ -114,6 +116,8 @@ export function fanClubErrorText(error: unknown): FanClubErrorText | null {
       return { field: null, key: 'fanClub.notFound' };
     case FAN_CLUB_ERROR_CODES.postNotFound:
       return { field: null, key: 'fanClub.postNotFound' };
+    case FAN_CLUB_ERROR_CODES.commentNotFound:
+      return { field: null, key: 'fanClub.commentNotFound' };
     default:
       return null;
   }

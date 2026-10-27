@@ -34,8 +34,10 @@ const SCROLL_THROTTLE = 64;
  * carregando, sem nada ou com a consulta falhando, nada aparece, e o mural
  * continua. Cada cartão tem o nome do fã-clube, com o selo do oficial (que
  * abre a página), o Compartilhar e o Denunciar (a mesma sheet da página),
- * como a App Store 1.2 e o Google Play pedem junto do conteúdo. O `/feed`
- * oficial não muda.
+ * como a App Store 1.2 e o Google Play pedem junto do conteúdo. Desde a Fase
+ * 2 (seção 37, 37.9), a reação e o total dos comentários antes deles: a
+ * fileira quebra em duas linhas quando não cabe, e a dos emojis abre dentro
+ * do cartão. O `/feed` oficial não muda.
  */
 export function FanClubFeedSection() {
   const { live } = useFanClubGate();
@@ -100,6 +102,8 @@ function FeedCarousel({
             now={now}
             variant="feed"
             canReport
+            // A Início traz só os fã-clubes que o fã segue: ele reage.
+            canReact
             onShare={(post) =>
               share({ id: post.clubId, name: post.clubName, artistName: artistName(post.artistId) })
             }

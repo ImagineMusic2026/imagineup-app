@@ -38,4 +38,29 @@ export const fanClubKeys = {
   follows: () => [...fanClubKeys.public(), 'follows'] as const,
   /** "Dos seus fã-clubes" da Início (`GET /me/fan-club-feed`). */
   feed: () => [...fanClubKeys.public(), 'feed'] as const,
+  /**
+   * Todas as publicações abertas pela tela da publicação (seção 37, 37.9): o
+   * seguir acerta o `isFollowing` e o `isMember` delas, e a entrada na
+   * central as busca de novo.
+   */
+  posts: () => [...fanClubKeys.public(), 'post'] as const,
+  /** A publicação no ar (`GET /fan-club-posts/:postId`). */
+  post: (postId: string) => [...fanClubKeys.posts(), postId] as const,
+  /**
+   * Os comentários de uma publicação (`GET /fan-club-posts/:postId/comments`):
+   * os de cima (`replyTo` null) ou as respostas de um deles. Debaixo do
+   * `public()`: bloquear e desbloquear mudam quem aparece.
+   */
+  comments: (postId: string, replyTo: string | null) =>
+    [...fanClubKeys.public(), 'comments', postId, replyTo ?? 'top'] as const,
+  /**
+   * A conversa da sugestão do @ (`GET /fan-clubs/:clubId/mentions`, sem o
+   * `q`), guardada enquanto a tela está aberta. Debaixo do `public()`: quem
+   * bloqueia sai dela.
+   */
+  mentions: (clubId: string, postId: string | null) =>
+    [...fanClubKeys.public(), 'mentions', clubId, postId ?? 'new'] as const,
+  /** A busca do @ pelo começo (`?q=`), fora do `public()`: a busca não guarda a conversa. */
+  mentionSearch: (clubId: string, q: string) =>
+    [...fanClubKeys.all, 'mentionSearch', clubId, q] as const,
 };

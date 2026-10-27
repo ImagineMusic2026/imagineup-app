@@ -219,12 +219,16 @@ function ClubContent({
         data={posts.data?.pages.flatMap((item) => item.items) ?? []}
         keyExtractor={(post) => post.id}
         getItemType={(post) => post.kind}
+        // A chave pelo id: a fileira dos emojis aberta é estado do card, e a
+        // célula reciclada para outra publicação não pode herdá-la (37.9).
         renderItem={({ item }) => (
           <FanClubPostCard
+            key={item.id}
             post={item}
             now={now}
             variant="page"
             canReport={!club.isOwner}
+            canReact={club.isFollowing || club.isOwner}
             onShare={shareClub}
             onReport={(post) =>
               router.push({
@@ -379,9 +383,11 @@ function ClubHeader({ club }: { club: FanClubPage }) {
 
 /**
  * O seguir (decisão 26): "Seguir o fã-clube", com a linha "Você também entra
- * na central de {{artist}}" para quem não é membro (que entra no rótulo do
- * botão); depois, "Seguindo", que abre a sheet "Deixar de seguir". É o mesmo
- * botão, para o foco do leitor ficar nele quando o rótulo troca. O gestor não
+ * na central de {{artist}}" para quem não é membro e o aviso "O gestor do
+ * fã-clube vê que você é membro." (decisão 5 de 36.1; seção 37, "Estado"), os
+ * dois também no rótulo do botão; depois, "Seguindo", que abre a sheet
+ * "Deixar de seguir". É o mesmo botão, para o foco do leitor ficar nele
+ * quando o rótulo troca. O gestor não
  * segue o próprio fã-clube: no lugar do botão, ele tem a engrenagem do
  * cabeçalho (34.24). O seguir que fez a entrada sobe o "+N" e diz que
  * entrou na central. A recusa fica embaixo, anunciada: o limite de 50 leva a
@@ -491,6 +497,21 @@ function FollowArea({ club }: { club: FanClubPage }) {
           {t('fanClub.page.followJoinLine', { artist: club.artist.name })}
         </Text>
       ) : null}
+      {following ? null : (
+        // O aviso de membro (decisão 5 de 36.1; seção 37, "Estado"), antes de
+        // seguir: o seguir manda a versão dele, e o vínculo guarda a marca. No
+        // rótulo do botão; aqui, só para quem vê.
+        <Text
+          variant="caption"
+          color={colors.textSecondary}
+          accessibilityElementsHidden
+          importantForAccessibility="no-hide-descendants"
+          style={styles.joinLine}
+          testID="fan-club-member-notice"
+        >
+          {t('fanClub.page.memberNotice')}
+        </Text>
+      )}
       {failure ? (
         <View style={styles.failure}>
           <Text variant="caption" color={colors.danger} style={styles.center}>

@@ -3,27 +3,44 @@ import { storageFileExists, uploadLocalFile } from '@/firebase';
 import { api } from '@/services/api';
 import { fixtureDelay } from '@/services/fixtures';
 
+import { FAN_CLUB_MEMBER_NOTICE_VERSION } from './consts';
 import { fanClubFixture } from './fixtures';
 import type {
   AcceptFanClubRulesVariables,
+  AddFanClubCommentResult,
+  AddFanClubCommentVariables,
   ApplyForFanClubVariables,
+  ClearFanClubReactionVariables,
   CreateFanClubPostVariables,
   FanClubArtists,
   FanClubCard,
+  FanClubCommentHiddenResult,
+  FanClubCommentPage,
+  FanClubCommentReviewResult,
+  FanClubCommentsQuery,
+  FanClubCommentWriteVariables,
   FanClubListPage,
+  FanClubMentionsQuery,
   FanClubNumbers,
   FanClubPage,
   FanClubPost,
+  FanClubPostDetails,
+  FanClubReactionResult,
   FanClubUploadSlot,
   FanClubWriteVariables,
   FollowedFanClubs,
+  FollowFanClubBody,
   FollowFanClubResult,
   FollowFanClubVariables,
+  MentionSuggestions,
   MyFanClub,
   OwnFanClubPost,
   RemoveFanClubPostVariables,
+  ReportFanClubCommentResult,
+  ReportFanClubCommentVariables,
   ReportFanClubPostResult,
   ReportFanClubPostVariables,
+  SetFanClubReactionVariables,
   UnfollowFanClubResult,
 } from './types';
 
@@ -34,13 +51,23 @@ import type {
 // loja também usa. Desde a etapa 7, os Ajustes chamam só o `fetchMyFanClub`; o
 // resto, só as telas do fã-clube, depois de ele responder com o programa
 // aberto ou com a candidatura do fã. As da página, do seguir e da Início
-// chegam às telas na etapa 8.
+// chegam às telas na etapa 8. As dez da Fase 2 (seção 37, 37.3: a publicação,
+// os comentários, a reação, as sugestões do @ e a moderação dos comentários)
+// entram na etapa 5 de 37.13: o card usa as da reação, e as outras chegam às
+// telas nas etapas 6 e 7.
 
 const isFixtures = () => sourceOf('fanClub') === 'fixtures';
 
 const idempotency = (idempotencyKey: string) => ({ 'Idempotency-Key': idempotencyKey });
 
 const clubPath = (clubId: string) => `/fan-clubs/${encodeURIComponent(clubId)}`;
+
+const postPath = (postId: string) => `/fan-club-posts/${encodeURIComponent(postId)}`;
+
+const commentPath = (commentId: string) => `/fan-club-comments/${encodeURIComponent(commentId)}`;
+
+const hiddenCommentPath = (commentId: string) =>
+  `/me/fan-club/hidden-comments/${encodeURIComponent(commentId)}`;
 
 /** O estado do fã nos Ajustes e no "Meu fã-clube" (`GET /me/fan-club`). */
 export async function fetchMyFanClub(): Promise<MyFanClub> {
@@ -279,19 +306,26 @@ export async function reportFanClubPost({
   return data;
 }
 
-/** Seguir: quando falta, entra junto na central oficial (com as recompensas da entrada). */
+/**
+ * Seguir: quando falta, entra junto na central oficial (com as recompensas da
+ * entrada). O corpo leva a versão do aviso "o gestor vê que você é membro"
+ * (seção 37, "Estado"): todo botão de seguir do app mostra o aviso, e o
+ * vínculo novo guarda a marca.
+ */
 export async function followFanClub({
   clubId,
   idempotencyKey,
 }: FollowFanClubVariables): Promise<FollowFanClubResult> {
+  const body: FollowFanClubBody = { memberNoticeVersion: FAN_CLUB_MEMBER_NOTICE_VERSION };
   if (isFixtures()) {
     await fixtureDelay();
-    return fanClubFixture.follow(clubId, idempotencyKey);
+    return fanClubFixture.follow(clubId, idempotencyKey, body);
   }
   const { data } = await api.request<FollowFanClubResult>({
     method: 'PUT',
     url: `/me/fan-club-follows/${encodeURIComponent(clubId)}`,
     headers: idempotency(idempotencyKey),
+    data: body,
   });
   return data;
 }
@@ -334,5 +368,186 @@ export async function fetchFanClubFeed(
   const { data } = await api.get<FanClubListPage<FanClubPost>>('/me/fan-club-feed', {
     params: { cursor },
   });
+  return data;
+}
+
+// --- A Fase 2: a publicação, os comentários e a reação (seção 37, 37.3) ---------------
+
+/** A publicação no ar (`GET /fan-club-posts/:postId`): a tela da publicação. */
+export async function fetchFanClubPost(postId: string): Promise<FanClubPostDetails> {
+  if (isFixtures()) {
+    await fixtureDelay();
+    return fanClubFixture.post(postId);
+  }
+  const { data } = await api.get<FanClubPostDetails>(postPath(postId));
+  return data;
+}
+
+/**
+ * Os comentários de cima, do mais novo (20 por página), ou, com o `replyTo`,
+ * as respostas de um deles, da mais antiga. O `replyTo` só vai quando há.
+ */
+export async function fetchFanClubComments({
+  postId,
+  replyTo,
+  cursor,
+}: FanClubCommentsQuery): Promise<FanClubCommentPage> {
+  if (isFixtures()) {
+    await fixtureDelay();
+    return fanClubFixture.comments(postId, replyTo, cursor);
+  }
+  const { data } = await api.get<FanClubCommentPage>(`${postPath(postId)}/comments`, {
+    params: replyTo === null ? { cursor } : { cursor, replyTo },
+  });
+  return data;
+}
+
+/** Comentar ou responder. O `replyToId` só vai na resposta: o de cima manda só o texto. */
+export async function addFanClubComment({
+  postId,
+  text,
+  replyToId,
+  idempotencyKey,
+}: AddFanClubCommentVariables): Promise<AddFanClubCommentResult> {
+  if (isFixtures()) {
+    await fixtureDelay();
+    return fanClubFixture.addComment(postId, { text, replyToId }, idempotencyKey);
+  }
+  const { data } = await api.request<AddFanClubCommentResult>({
+    method: 'POST',
+    url: `${postPath(postId)}/comments`,
+    headers: idempotency(idempotencyKey),
+    data: replyToId === null ? { text } : { text, replyToId },
+  });
+  return data;
+}
+
+/**
+ * Reagir ou trocar de emoji (`PUT`). Cada toque leva a chave dele: o corpo
+ * entra na chave, e a mesma chave com outro emoji dá 422.
+ */
+export async function setFanClubReaction({
+  postId,
+  reaction,
+  idempotencyKey,
+}: SetFanClubReactionVariables): Promise<FanClubReactionResult> {
+  if (isFixtures()) {
+    await fixtureDelay();
+    return fanClubFixture.react(postId, reaction, idempotencyKey);
+  }
+  const { data } = await api.request<FanClubReactionResult>({
+    method: 'PUT',
+    url: `${postPath(postId)}/reaction`,
+    headers: idempotency(idempotencyKey),
+    data: { reaction },
+  });
+  return data;
+}
+
+/** Tirar a reação (`DELETE`, sem corpo): desfazer, aceito do suspenso e nunca recusado. */
+export async function clearFanClubReaction({
+  postId,
+  idempotencyKey,
+}: ClearFanClubReactionVariables): Promise<FanClubReactionResult> {
+  if (isFixtures()) {
+    await fixtureDelay();
+    return fanClubFixture.clearReaction(postId, idempotencyKey);
+  }
+  const { data } = await api.request<FanClubReactionResult>({
+    method: 'DELETE',
+    url: `${postPath(postId)}/reaction`,
+    headers: idempotency(idempotencyKey),
+  });
+  return data;
+}
+
+/** Denunciar um comentário, com o motivo (ou null). */
+export async function reportFanClubComment({
+  commentId,
+  reason,
+  idempotencyKey,
+}: ReportFanClubCommentVariables): Promise<ReportFanClubCommentResult> {
+  if (isFixtures()) {
+    await fixtureDelay();
+    return fanClubFixture.reportComment(commentId, reason, idempotencyKey);
+  }
+  const { data } = await api.request<ReportFanClubCommentResult>({
+    method: 'POST',
+    url: `${commentPath(commentId)}/report`,
+    headers: idempotency(idempotencyKey),
+    data: { reason },
+  });
+  return data;
+}
+
+/** O "Pedir revisão" do autor do comentário oculto pelo gestor (sem corpo). */
+export async function requestFanClubCommentReview({
+  commentId,
+  idempotencyKey,
+}: FanClubCommentWriteVariables): Promise<FanClubCommentReviewResult> {
+  if (isFixtures()) {
+    await fixtureDelay();
+    return fanClubFixture.requestReview(commentId, idempotencyKey);
+  }
+  const { data } = await api.request<FanClubCommentReviewResult>({
+    method: 'POST',
+    url: `${commentPath(commentId)}/review`,
+    headers: idempotency(idempotencyKey),
+  });
+  return data;
+}
+
+/** O gestor oculta um comentário do próprio fã-clube (`PUT`, rota de estado). */
+export async function hideFanClubComment({
+  commentId,
+  idempotencyKey,
+}: FanClubCommentWriteVariables): Promise<FanClubCommentHiddenResult> {
+  if (isFixtures()) {
+    await fixtureDelay();
+    return fanClubFixture.hideComment(commentId, idempotencyKey);
+  }
+  const { data } = await api.request<FanClubCommentHiddenResult>({
+    method: 'PUT',
+    url: hiddenCommentPath(commentId),
+    headers: idempotency(idempotencyKey),
+  });
+  return data;
+}
+
+/** O gestor reexibe o que ele ocultou (`DELETE`). */
+export async function unhideFanClubComment({
+  commentId,
+  idempotencyKey,
+}: FanClubCommentWriteVariables): Promise<FanClubCommentHiddenResult> {
+  if (isFixtures()) {
+    await fixtureDelay();
+    return fanClubFixture.unhideComment(commentId, idempotencyKey);
+  }
+  const { data } = await api.request<FanClubCommentHiddenResult>({
+    method: 'DELETE',
+    url: hiddenCommentPath(commentId),
+    headers: idempotency(idempotencyKey),
+  });
+  return data;
+}
+
+/**
+ * As sugestões do @: sem o `q`, a conversa (o gestor, o artista e quem
+ * comentou na publicação); com ele, a busca pelo começo do @. Cada parâmetro
+ * só vai quando há.
+ */
+export async function fetchFanClubMentions({
+  clubId,
+  postId,
+  q,
+}: FanClubMentionsQuery): Promise<MentionSuggestions> {
+  if (isFixtures()) {
+    await fixtureDelay();
+    return fanClubFixture.mentions(clubId, postId, q);
+  }
+  const params: { postId?: string; q?: string } = {};
+  if (postId !== null) params.postId = postId;
+  if (q !== null) params.q = q;
+  const { data } = await api.get<MentionSuggestions>(`${clubPath(clubId)}/mentions`, { params });
   return data;
 }
