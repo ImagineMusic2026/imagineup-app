@@ -252,6 +252,9 @@ describe('publicar (34.5)', () => {
       authorPhotoURL: null,
       kind: 'text',
       text: 'Show de ontem foi lindo!',
+      // As marcações do texto, resolvidas no envio (seção 37, 37.7): sem @, vazias.
+      mentions: [],
+      mentionUids: [],
       media: null,
       status: 'pending',
       rejectReason: null,

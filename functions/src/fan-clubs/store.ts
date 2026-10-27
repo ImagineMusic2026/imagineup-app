@@ -5,6 +5,7 @@ import {
   type CollectionReference,
   type DocumentData,
   type DocumentReference,
+  type DocumentSnapshot,
   type Firestore,
   type Query,
   type QueryDocumentSnapshot,
@@ -12,7 +13,7 @@ import {
   type Transaction,
 } from 'firebase-admin/firestore';
 
-import { fanShardOf } from '../centrals/model';
+import { artistRecord, fanShardOf, isPublished, type ArtistRecord } from '../centrals/model';
 import {
   applicationRecord,
   FAN_CLUB_FOLLOWS_MAX,
@@ -20,11 +21,13 @@ import {
   fanClubReactionOf,
   fanClubRecord,
   isLiveFanClub,
+  reservationTargetOf,
   type ApplicationRecord,
   type FanClubCountField,
   type FanClubCredit,
   type FanClubReactionKey,
   type FanClubRecord,
+  type MentionTarget,
 } from './model';
 
 // Onde o fã-clube mora no Firestore (docs/arquitetura-api.md, 34.4) e os
@@ -34,8 +37,9 @@ import {
 // etapa 3 de 34.14, as gravações da atribuição (o marcador do crédito e os
 // shards dos números, que as centrais e o convite gravam) e, desde a etapa 4,
 // as leituras dos seguimentos que sair da central, o bloqueio e a suspensão
-// apagam. Desde a Fase 2 (seção 37), os comentários, as reações e os dias da
-// taxa de engajamento nos shards. Só importa o model (e o puro das centrais),
+// apagam. Desde a Fase 2 (seção 37), os comentários, as reações, os dias da
+// taxa de engajamento nos shards e as leituras das marcações (as reservas do
+// @ e as centrais delas). Só importa o model (e o puro das centrais),
 // para nenhum desses módulos puxar a API, os pontos ou a equipe por aqui.
 
 export const fanClubsOf = (db: Firestore): CollectionReference => db.collection('fanClubs');
@@ -68,6 +72,83 @@ export const applicationPrivateRef = (db: Firestore, uid: string): DocumentRefer
 /** `artistPrivate/{id}`: as caixas do fã-clube (decisão 9) moram aqui. */
 export const artistPrivateRef = (db: Firestore, artistId: string): DocumentReference =>
   db.collection('artistPrivate').doc(artistId);
+
+/**
+ * `usernames/{@}`: a reserva do @, do fã (`uid`) ou da central (`artistId`),
+ * o único mapa de @ para dono (seção 37, 37.7). Só lida aqui: quem grava é a
+ * troca do @ e a criação da central.
+ */
+export const usernamesOf = (db: Firestore): CollectionReference => db.collection('usernames');
+
+export const usernameRef = (db: Firestore, handle: string): DocumentReference =>
+  usernamesOf(db).doc(handle);
+
+/** `artists/{id}`: a central que uma marcação aponta, conferida no ar (37.7). */
+const mentionedArtistRef = (db: Firestore, artistId: string): DocumentReference =>
+  db.collection('artists').doc(artistId);
+
+/**
+ * Os alvos dos @ a partir das reservas já lidas (na ordem dos @), na
+ * transação de quem chama (37.7): a do fã resolve na hora (qualquer conta,
+ * R3); a da central pede a central no ar, lida num `getAll` só das centrais,
+ * antes de qualquer gravação. O @ sem reserva e a central fora do ar ficam de
+ * fora (texto). Só lê.
+ */
+export async function mentionTargetsOf(
+  tx: Transaction,
+  db: Firestore,
+  handles: readonly string[],
+  reservations: readonly (DocumentSnapshot | undefined)[],
+): Promise<Map<string, MentionTarget>> {
+  const targets = new Map<string, MentionTarget>();
+  const centrals: { handle: string; id: string }[] = [];
+  handles.forEach((handle, index) => {
+    const snap = reservations[index];
+    const target = reservationTargetOf(snap?.exists ? snap.data() : undefined);
+    if (target?.kind === 'fan') targets.set(handle, target);
+    else if (target) centrals.push({ handle, id: target.id });
+  });
+  if (centrals.length === 0) return targets;
+  const snaps = await tx.getAll(...centrals.map((central) => mentionedArtistRef(db, central.id)));
+  centrals.forEach((central, index) => {
+    const snap = snaps[index]!;
+    const artist = snap.exists ? artistRecord(snap.id, snap.data() ?? {}) : null;
+    if (isPublished(artist)) targets.set(central.handle, { kind: 'artist', id: artist.id });
+  });
+  return targets;
+}
+
+/**
+ * Os alvos dos @, lendo as reservas na transação (um `getAll` de
+ * `usernames/{@}`) e, com elas, as centrais (`mentionTargetsOf`): até 10
+ * leituras. Sem @, nenhuma leitura. Só lê.
+ */
+export async function readMentionTargets(
+  tx: Transaction,
+  db: Firestore,
+  handles: readonly string[],
+): Promise<Map<string, MentionTarget>> {
+  if (handles.length === 0) return new Map();
+  const reservations = await tx.getAll(...handles.map((handle) => usernameRef(db, handle)));
+  return mentionTargetsOf(tx, db, handles, reservations);
+}
+
+/**
+ * As centrais da busca do @ (37.7), fora de transação, num `getAll`: as que
+ * existem, pelo id (quem chama confere o no ar). Sem central, nenhuma leitura.
+ */
+export async function readMentionedArtists(
+  db: Firestore,
+  artistIds: readonly string[],
+): Promise<Map<string, ArtistRecord>> {
+  if (artistIds.length === 0) return new Map();
+  const snaps = await db.getAll(...artistIds.map((id) => mentionedArtistRef(db, id)));
+  const artists = new Map<string, ArtistRecord>();
+  for (const snap of snaps) {
+    if (snap.exists) artists.set(snap.id, artistRecord(snap.id, snap.data() ?? {}));
+  }
+  return artists;
+}
 
 /**
  * `users/{uid}/fanClubFollows`: os vínculos de seguir de um fã (decisões 26 a

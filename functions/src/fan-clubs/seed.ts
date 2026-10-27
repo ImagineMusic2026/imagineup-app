@@ -52,7 +52,8 @@ import {
 // fã-clube da Camila oficializado pelo admin do seed, junto da aprovação (o
 // selo de oficial; o da Duda, quando aprovado no painel local, fica sem ele).
 // Na Fase 2 (seção 37, etapa 1 de 37.13): os comentários e as reações nas duas
-// publicações no ar da Camila, com a resposta dela com o @ da Bia.
+// publicações no ar da Camila, com a resposta dela com o @ da Bia (desde a
+// etapa 2, a marcação resolvida no envio).
 // Rodar de novo não muda nada. Nunca roda em produção: o script fixa os emuladores.
 
 /** A central com as fotos de fã desligadas (só texto). */
@@ -352,8 +353,10 @@ export type SeedFanClubActor = 'bia' | 'follower' | 'camila';
  * Um comentário do seed da Fase 2 (seção 37, 37.13): o id fixo, quem comenta,
  * a publicação no ar da Camila pela ordem do `SEED_FAN_CLUB_POSTS` (0, a da
  * foto; 1, a de texto), há quantos minutos e o comentário respondido. A
- * resposta da Camila começa pelo @ da Bia (R7); a marcação vira link na
- * etapa 2.
+ * resposta da Camila começa pelo @ da Bia (R7), que o comentário resolve no
+ * envio, como no app (a etapa 2 de 37.13): com a reserva do @ dela, a
+ * marcação vira link; sem a reserva (os perfis gravados direto no teste do
+ * seed do painel), fica texto.
  */
 export type SeedFanClubComment = {
   id: string;

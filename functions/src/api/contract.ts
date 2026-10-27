@@ -1078,3 +1078,27 @@ export type FanClubReactionResult = {
   reactionCount: number;
   reactionCounts: FanClubReactionCounts;
 } & ActionRewards;
+
+/**
+ * Uma sugestão do @ (`GET /fan-clubs/:clubId/mentions`, seção 37, 37.7): o
+ * fã ou a central, com o @ (o da central é o id), o nome e a foto. O `role` é
+ * o papel no fã-clube (o gestor ou o artista dele); o `inConversation`, que a
+ * pessoa está na conversa da publicação (o gestor e o artista sempre estão).
+ * Nada diz quem segue (R5).
+ */
+export type MentionSuggestion = {
+  kind: 'fan' | 'artist';
+  id: string;
+  username: string;
+  name: string | null;
+  photoURL: string | null;
+  role: 'manager' | 'artist' | null;
+  inConversation: boolean;
+};
+
+/**
+ * `GET /fan-clubs/:clubId/mentions`: até 8. Sem o `q`, a conversa (o gestor,
+ * o artista e quem comentou na publicação do `postId`); com o `q`, a busca
+ * pelo começo do @.
+ */
+export type MentionSuggestions = { items: MentionSuggestion[] };

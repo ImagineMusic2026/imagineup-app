@@ -622,12 +622,17 @@ describe('o seed das telas do painel (26.13)', () => {
       mentions: [],
       mentionUids: [],
     });
+    // A marcação é resolvida no envio (etapa 2 de 37.13): aqui os perfis nascem
+    // direto, sem a reserva do @ em `usernames/`, e o @ da Bia fica texto. No
+    // script, com o cadastro de verdade, vira a marcação dela.
     expect(await read('fanClubComments/seed-fa-clube-camila-1')).toMatchObject({
       postId: photoPost.id,
       authorUid: 'camila',
       text: '@bia Te espero na frente do palco!',
       replyToId: 'seed-fa-clube-bia-1',
       status: 'visible',
+      mentions: [],
+      mentionUids: [],
     });
     expect(await read(`fanClubPosts/${photoPost.id}`)).toMatchObject({
       commentCount: 3,

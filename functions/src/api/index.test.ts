@@ -2063,6 +2063,8 @@ describe('fã-clube gerido pelo fã (seção 34)', () => {
       ['POST', '/fan-club-posts/:postId/comments', true],
       ['PUT', '/fan-club-posts/:postId/reaction', true],
       ['DELETE', '/fan-club-posts/:postId/reaction', true],
+      // As sugestões do @ (etapa 2 de 37.13), só de leitura.
+      ['GET', '/fan-clubs/:clubId/mentions', false],
     ]);
     // Candidatar, publicar, abrir a vaga, o novo aceite, denunciar, seguir,
     // comentar e reagir criam: o suspenso não manda (sem `allowSuspended`);
@@ -2097,6 +2099,8 @@ describe('fã-clube gerido pelo fã (seção 34)', () => {
       ['POST', '/fan-club-posts/__pub__/comments', 'fan_club_post_not_found'],
       ['PUT', '/fan-club-posts/__pub__/reaction', 'fan_club_post_not_found'],
       ['DELETE', '/fan-club-posts/__pub__/reaction', 'fan_club_post_not_found'],
+      // As sugestões do @ (etapa 2 de 37.13).
+      ['GET', '/fan-clubs/__clube__/mentions', 'fan_club_not_found'],
     ];
     for (const [method, path, code] of cases) {
       const sent = await call(request(method, path, { headers: key }), API_ROUTES, noReads);
@@ -2363,5 +2367,78 @@ describe('fã-clube gerido pelo fã (seção 34)', () => {
       expect(sent.status, JSON.stringify(query)).toBe(status);
       expect(sent.body).toMatchObject(expected);
     }
+  });
+
+  it('as sugestões do @ conferem a busca antes de ler (seção 37, etapa 2 de 37.13)', async () => {
+    const badQ = { code: 'invalid_request', details: { field: 'q' } };
+    const noPost = { code: 'fan_club_post_not_found' };
+    const cases: [Record<string, unknown>, number, Record<string, unknown>][] = [
+      // O `q`: de 2 a 30 de a-z, 0-9 e _, sem o "@" e em minúsculas, fora dos
+      // ids `__.*__`, que o Firestore reserva (o `q` vira o cursor da busca).
+      [{ q: 'b' }, 400, badQ],
+      [{ q: '@bia' }, 400, badQ],
+      [{ q: 'Bia' }, 400, badQ],
+      [{ q: 'bia san' }, 400, badQ],
+      [{ q: 'biá' }, 400, badQ],
+      [{ q: 'b'.repeat(31) }, 400, badQ],
+      [{ q: ['bi', 'bo'] }, 400, badQ],
+      [{ q: '____' }, 400, badQ],
+      [{ q: '__ab__' }, 400, badQ],
+      // O `postId` fora do formato dos ids não existe: 404 sem ler.
+      [{ postId: '__pub__' }, 404, noPost],
+      [{ postId: 'pub/1' }, 404, noPost],
+      [{ postId: '__pub__', q: 'bia' }, 404, noPost],
+    ];
+    for (const [query, status, expected] of cases) {
+      const sent = await call(
+        request('GET', '/fan-clubs/clube1/mentions', { query }),
+        API_ROUTES,
+        noReads,
+      );
+      expect(sent.status, JSON.stringify(query)).toBe(status);
+      expect(sent.body).toMatchObject(expected);
+    }
+    expect(logger.error).not.toHaveBeenCalled();
+  });
+
+  it('comentar e publicar conferem o filtro com o "@" tirado das marcações, antes de ler (seção 37, 37.7)', async () => {
+    const key = { 'Idempotency-Key': 'chave-fa-clube-0007' };
+    // O "@" colado num termo: com o "@", vira o termo pela troca do "@" por "a";
+    // como marcação, o @ é conferido como palavra, e a conferência que vale é a
+    // da transação (aqui, o `noReads` mostra que o corpo passou e a rota foi ler).
+    for (const [path, body] of [
+      ['/fan-club-posts/pub1/comments', { text: 'Olha a foto, @bacaxi!' }],
+      ['/me/fan-club/posts', { text: 'Olha a foto, @bacaxi!', photo: false }],
+    ] as const) {
+      const sent = await call(request('POST', path, { body, headers: key }), API_ROUTES, noReads);
+      expect(sent.status, path).toBe(500);
+    }
+    // Sem virar marcação (colado numa letra), o "@" continua trocado: barrado sem ler.
+    expect(
+      await call(
+        request('POST', '/fan-club-posts/pub1/comments', {
+          body: { text: 'Olha a foto, a@bacaxi!' },
+          headers: key,
+        }),
+        API_ROUTES,
+        noReads,
+      ),
+    ).toMatchObject({
+      status: 400,
+      body: { code: 'comment_invalid', details: { reason: 'not_allowed' } },
+    });
+    expect(
+      await call(
+        request('POST', '/me/fan-club/posts', {
+          body: { text: 'Olha a foto, @pepino!', photo: false },
+          headers: key,
+        }),
+        API_ROUTES,
+        noReads,
+      ),
+    ).toMatchObject({
+      status: 400,
+      body: { code: 'fan_club_invalid', details: { field: 'text', reason: 'not_allowed' } },
+    });
   });
 });

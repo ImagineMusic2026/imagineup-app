@@ -355,13 +355,18 @@ export type CommentTextProblem = 'empty' | 'too_long' | 'invisible' | 'not_allow
  * (21.1, decisão 20): vazio depois da limpeza, acima de 500 unidades de
  * UTF-16 ou com uma linha que não é visível. Por último, o filtro do que o
  * fã publica (seção 30, 30.5): o texto que bate na lista é `not_allowed`,
- * sem leitura, e o motivo nunca diz o termo nem a categoria.
+ * sem leitura, e o motivo nunca diz o termo nem a categoria. O `filtered` é o
+ * texto que vai ao filtro: o do Mural é o próprio texto; o do fã-clube vai
+ * com o "@" tirado das marcações (seção 37, 37.7).
  */
-export function commentTextProblem(cleaned: string): CommentTextProblem | null {
+export function commentTextProblem(
+  cleaned: string,
+  filtered: string = cleaned,
+): CommentTextProblem | null {
   if (cleaned.length === 0) return 'empty';
   if (cleaned.length > COMMENT_MAX) return 'too_long';
   if (!isVisibleMultiline(cleaned)) return 'invisible';
-  if (isBlockedText(cleaned, 'comment')) return 'not_allowed';
+  if (isBlockedText(filtered, 'comment')) return 'not_allowed';
   return null;
 }
 
