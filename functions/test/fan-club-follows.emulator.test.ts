@@ -854,6 +854,7 @@ describe('a cópia da noite (decisões 28, 35 e 37)', () => {
       deferred: 0,
       unfeatured: 1,
       monthsClosed: 0,
+      daysCut: 0,
     });
     expect(log.error).not.toHaveBeenCalled();
     const copied = (await read(`fanClubs/${owner.clubId}`))!;

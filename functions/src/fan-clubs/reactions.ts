@@ -9,6 +9,7 @@ import {
 import type { FanClubReactionCounts } from '../api/contract';
 import { dayKey } from '../day';
 import { countDailyAction, enforceDailyCap } from '../moderation/caps';
+import { isContentId } from '../page-cursor';
 import {
   planAwards,
   runAsFan,
@@ -28,7 +29,7 @@ import {
   type ReactionDelta,
 } from './model';
 import { readActionPost } from './posts';
-import { fanClubPostRef, fanClubReactionRef, writeFanClubDay } from './store';
+import { fanClubPostRef, fanClubReactionRef, fanClubReactionsOf, writeFanClubDay } from './store';
 
 // As reações às publicações do fã-clube (docs/arquitetura-api.md, seção 37,
 // R1, 37.2 e 37.3; a etapa 1 de 37.13): uma reação por fã e publicação, de
@@ -36,7 +37,8 @@ import { fanClubPostRef, fanClubReactionRef, writeFanClubDay } from './store';
 // do `postLikes` do Mural), e os contadores por `increment` na própria
 // publicação, sem gatilho nem fila (decisão 10 de 37.1). Na taxa de
 // engajamento, a reação conta como curtida, uma vez na vida por fã e
-// publicação (37.11).
+// publicação (37.11). Desde a etapa 4 (37.8), o passo das reações na exclusão
+// de conta.
 
 const tsOf = (ms: number) => Timestamp.fromMillis(ms);
 
@@ -197,4 +199,62 @@ export function runSetFanClubReaction(
   return runAsFan(db, uid, options, (tx, fan, award) =>
     setFanClubReaction(tx, db, { fan, award, ...input }),
   );
+}
+
+// --- A exclusão de conta (37.8) -----------------------------------------------------------
+
+/** Reações por página (e por transação) na exclusão de conta. */
+export const REACTIONS_DELETE_PAGE = 100;
+
+/**
+ * As reações do fã na exclusão de conta (37.8, passo 2), por `uid`, em
+ * páginas de 100, cada uma numa transação que relê as reações e as
+ * publicações delas: a reação sai e, a ativa com a publicação ainda lá, tira
+ * 1 do total e do emoji dela, como o `DELETE` da reação, em qualquer status da
+ * publicação (os números ficam certos quando ela volta). Os descontos de uma
+ * página vão juntos, numa gravação por publicação. O dia da taxa não desconta
+ * (37.11). Devolve quantas saíram.
+ */
+export async function removeFanClubReactionsOf(db: Firestore, uid: string): Promise<number> {
+  const query = fanClubReactionsOf(db).where('uid', '==', uid).limit(REACTIONS_DELETE_PAGE);
+  let removed = 0;
+  for (;;) {
+    const snap = await query.get();
+    if (snap.empty) return removed;
+    const refs = snap.docs.map((doc) => doc.ref);
+    const count = await db.runTransaction(async (tx) => {
+      const reactions = await tx.getAll(...refs);
+      const active = reactions.flatMap((reaction) => {
+        if (!reaction.exists) return [];
+        const key = fanClubReactionOf(reaction.get('reaction'));
+        const postId = reaction.get('postId');
+        return key !== null && isContentId(postId) ? [{ postId, key }] : [];
+      });
+      const postIds = [...new Set(active.map((item) => item.postId))];
+      const posts =
+        postIds.length > 0 ? await tx.getAll(...postIds.map((id) => fanClubPostRef(db, id))) : [];
+      const existing = new Set(postIds.filter((_id, index) => posts[index]?.exists === true));
+      const deltas = new Map<string, ReactionDelta>();
+      for (const { postId, key } of active) {
+        if (!existing.has(postId)) continue;
+        const delta = deltas.get(postId) ?? { total: 0, counts: {} };
+        delta.total -= 1;
+        delta.counts[key] = (delta.counts[key] ?? 0) - 1;
+        deltas.set(postId, delta);
+      }
+      let deleted = 0;
+      for (const reaction of reactions) {
+        if (!reaction.exists) continue;
+        tx.delete(reaction.ref);
+        deleted += 1;
+      }
+      for (const [postId, delta] of deltas) {
+        tx.update(fanClubPostRef(db, postId), reactionUpdate(delta));
+      }
+      return deleted;
+    });
+    removed += count;
+    // Nada saiu (outra entrega da exclusão levou tudo no meio): a seguinte vê vazio.
+    if (count === 0 && snap.size < REACTIONS_DELETE_PAGE) return removed;
+  }
 }

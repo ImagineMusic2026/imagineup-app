@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   asc,
+  contains,
   desc,
   exemptions,
   hasComposite,
@@ -16,7 +17,8 @@ import {
 // As consultas do fã-clube gerido pelo fã (docs/arquitetura-api.md, 34.6),
 // as do servidor e as do painel, com os 21 índices compostos e os de um
 // campo; desde a Fase 2 (seção 37, 37.4), os 3 dos comentários e, desde a
-// etapa 3 de 37.13, os 3 da fila da equipe e do registro do ocultar. O emulador
+// etapa 3 de 37.13, os 3 da fila da equipe e do registro do ocultar; a etapa 4
+// só soma consultas de um campo (a exclusão de conta e as cópias). O emulador
 // não cobra índice nenhum (e os de grupo só aparecem em produção): este teste
 // é a rede. A trilha que mudar uma consulta muda a forma aqui.
 
@@ -183,6 +185,19 @@ const SINGLE: SingleFieldShape[] = [
   single('fanClubCommentQueue.status', 'fanClubCommentQueue', asc('status')),
   single('fanClubCommentQueue.kind', 'fanClubCommentQueue', asc('kind')),
   single('fanClubCommentReports.reporterUid', 'fanClubCommentReports', asc('reporterUid')),
+  // A exclusão de conta e as cópias (a etapa 4 de 37.13, 37.8), só igualdades
+  // pela ordem do id: os comentários do fã (o `authorUid`, acima), as respostas
+  // embaixo de um comentário de cima, os comentários e as reações de uma
+  // publicação do gestor, as reações do fã, o registro do ocultar com ele como
+  // autor e como gestor, e as marcações dele nos textos dos outros (o
+  // `array-contains`, no automático do campo de lista).
+  single('fanClubComments.replyToId', 'fanClubComments', asc('replyToId')),
+  single('fanClubReactions.uid', 'fanClubReactions', asc('uid')),
+  single('fanClubReactions.postId', 'fanClubReactions', asc('postId')),
+  single('fanClubHideLog.authorUid', 'fanClubHideLog', asc('authorUid')),
+  single('fanClubHideLog.managerUid', 'fanClubHideLog', asc('managerUid')),
+  single('fanClubComments.mentionUids', 'fanClubComments', contains('mentionUids')),
+  single('fanClubPosts.mentionUids', 'fanClubPosts', contains('mentionUids')),
 ];
 
 describe('os índices do fã-clube (34.6)', () => {

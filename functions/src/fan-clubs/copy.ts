@@ -1,4 +1,4 @@
-import { Timestamp, type Firestore, type Query } from 'firebase-admin/firestore';
+import { FieldValue, Timestamp, type Firestore, type Query } from 'firebase-admin/firestore';
 import * as logger from 'firebase-functions/logger';
 
 import {
@@ -9,6 +9,7 @@ import {
   fanClubRecord,
   isFeatureExpired,
   monthTurn,
+  staleEngagementDays,
   sumFanClubShards,
   type FanClubCopyCounts,
 } from './model';
@@ -21,11 +22,19 @@ import { FEATURE_OFF, fanClubRef, fanClubShardsOf, fanClubsOf, followersQuery } 
 // desligado. É um passo próprio do handler do `closeStatsDays`, num `finally`
 // depois do `runStatsClose` e com o `try/catch` dele (`runFanClubCopyStep`): o
 // fechamento volta antes quando não há dia a fechar e lança quando um dia
-// falha (34.19). Sem função nova (decisão 55).
+// falha (34.19). Sem função nova (decisão 55). Desde a Fase 2 (seção 37,
+// 37.11; a etapa 4 de 37.13), o corte dos dias da taxa de engajamento com
+// mais de 35 dias nos shards que a cópia já lê.
 
 type Log = Pick<typeof logger, 'info' | 'error'>;
 
 const count = async (query: Query): Promise<number> => (await query.count().get()).data().count;
+
+/** Os dias velhos de um shard que a cópia apaga (37.11): o id do shard e os dias. */
+export type StaleShardDays = { shard: string; days: string[] };
+
+/** O que a cópia lê de um fã-clube: os números e os dias velhos de cada shard. */
+export type FanClubCopyRead = { counts: FanClubCopyCounts; staleDays: StaleShardDays[] };
 
 /**
  * Os números de um fã-clube, fora de transação: os 16 shards (uma consulta,
@@ -35,13 +44,15 @@ const count = async (query: Query): Promise<number> => (await query.count().get(
  * grupo de 34.6) e o `count()` no grupo `centrals` com o `fanClubId` (os
  * trazidos que ficaram, pela isenção do campo no grupo). Umas 22 leituras.
  * Sem o índice (só em produção), a contagem lança, e o fã-clube não é copiado:
- * um 0 gravado apagaria o número de verdade.
+ * um 0 gravado apagaria o número de verdade. Desde a Fase 2 (37.11), dos
+ * mesmos shards, os dias da taxa com mais de 35 dias (`staleEngagementDays`),
+ * só dos shards que têm algum.
  */
 export async function readFanClubCounts(
   db: Firestore,
   clubId: string,
   now: number,
-): Promise<FanClubCopyCounts> {
+): Promise<FanClubCopyRead> {
   const followers = () => followersQuery(db, clubId);
   const [shards, all, recent, newAccounts, automaticUsername, byOwnerCode, retained] =
     await Promise.all([
@@ -53,22 +64,35 @@ export async function readFanClubCounts(
       count(followers().where('byOwnerCode', '==', true)),
       count(db.collectionGroup('centrals').where('fanClubId', '==', clubId)),
     ]);
-  const sums = sumFanClubShards(shards.docs.map((doc) => doc.data()));
+  const days = shards.docs.map((doc) => doc.data());
+  const sums = sumFanClubShards(days);
   return {
-    followers: all,
-    followers30d: recent,
-    newAccounts,
-    automaticUsername,
-    byOwnerCode,
-    joins: sums.joins,
-    retained,
-    signups: sums.signups,
-    visits: sums.visits,
-    links: sums.links,
+    counts: {
+      followers: all,
+      followers30d: recent,
+      newAccounts,
+      automaticUsername,
+      byOwnerCode,
+      joins: sums.joins,
+      retained,
+      signups: sums.signups,
+      visits: sums.visits,
+      links: sums.links,
+    },
+    staleDays: shards.docs.flatMap((doc, index) => {
+      const stale = staleEngagementDays(days[index]!, now);
+      return stale.length > 0 ? [{ shard: doc.id, days: stale }] : [];
+    }),
   };
 }
 
-export type FanClubCopyOne = { copied: boolean; unfeatured: boolean; monthClosed: boolean };
+export type FanClubCopyOne = {
+  copied: boolean;
+  unfeatured: boolean;
+  monthClosed: boolean;
+  /** Os dias velhos da taxa apagados dos shards (37.11). */
+  daysCut: number;
+};
 
 export type ReadFanClubCounts = typeof readFanClubCounts;
 
@@ -79,8 +103,12 @@ export type ReadFanClubCounts = typeof readFanClubCounts;
  * o `lastMonth` e o `monthStart` novo (`monthTurn`, pelo `monthStart` relido:
  * a cópia repetida no mesmo mês não fecha o mês de novo); e, com o prazo do
  * Destaque vencido no `featuredUntil` relido, o destaque desligado (um
- * Destaque dado depois da leitura não é desfeito). O fã-clube que sumiu não
- * grava nada.
+ * Destaque dado depois da leitura não é desfeito). Desde a Fase 2 (37.11), na
+ * mesma transação, o corte dos dias da taxa com mais de 35 dias: um `update`
+ * com o `FieldValue.delete()` de cada dia velho, só nos shards que têm algum
+ * (o `set` com `merge` da ação junta os mapas, e sem o corte os dias velhos
+ * nunca sairiam); o dia que a ação soma depois da leitura é outro campo, e o
+ * corte não o toca. O fã-clube que sumiu não grava nada.
  */
 export async function copyFanClubCount(
   db: Firestore,
@@ -88,11 +116,13 @@ export async function copyFanClubCount(
   now: number,
   readCounts: ReadFanClubCounts = readFanClubCounts,
 ): Promise<FanClubCopyOne> {
-  const counts = await readCounts(db, clubId, now);
+  const { counts, staleDays } = await readCounts(db, clubId, now);
   const at = Timestamp.fromMillis(now);
   return db.runTransaction(async (tx): Promise<FanClubCopyOne> => {
     const snap = await tx.get(fanClubRef(db, clubId));
-    if (!snap.exists) return { copied: false, unfeatured: false, monthClosed: false };
+    if (!snap.exists) {
+      return { copied: false, unfeatured: false, monthClosed: false, daysCut: 0 };
+    }
     const data = snap.data() ?? {};
     const turn = monthTurn(fanClubMonthOf(data.monthStart), counts, now);
     const unfeatured = isFeatureExpired(fanClubRecord(snap.id, data), now);
@@ -102,7 +132,15 @@ export async function copyFanClubCount(
       ...(turn?.lastMonth ? { lastMonth: turn.lastMonth } : {}),
       ...(unfeatured ? { ...FEATURE_OFF, updatedAt: at } : {}),
     });
-    return { copied: true, unfeatured, monthClosed: turn?.lastMonth != null };
+    let daysCut = 0;
+    for (const { shard, days } of staleDays) {
+      tx.update(
+        fanClubShardsOf(db, clubId).doc(shard),
+        Object.fromEntries(days.map((day) => [`days.${day}`, FieldValue.delete()])),
+      );
+      daysCut += days.length;
+    }
+    return { copied: true, unfeatured, monthClosed: turn?.lastMonth != null, daysCut };
   });
 }
 
@@ -118,6 +156,8 @@ export type FanClubCopyResult = {
   unfeatured: number;
   /** Os meses fechados (o `lastMonth` gravado). */
   monthsClosed: number;
+  /** Os dias velhos da taxa apagados dos shards, somados (37.11). */
+  daysCut: number;
 };
 
 export type FanClubCopyOptions = {
@@ -141,6 +181,8 @@ export type FanClubCopyOptions = {
  * `counts.at`), copiados 10 de cada vez (`copyFanClubCount`). Depois do prazo,
  * nenhum começa: o que sobrou fica para a noite seguinte, que começa pelos de
  * cópia mais antiga. A falha de um vai ao log com o id e não para os outros.
+ * O corte dos dias da taxa anda junto, dentro do mesmo prazo: o fã-clube que a
+ * cópia não alcança numa noite só guarda dias a mais (37.11).
  */
 export async function copyFanClubCounts(
   db: Firestore,
@@ -161,6 +203,7 @@ export async function copyFanClubCounts(
     deferred: 0,
     unfeatured: 0,
     monthsClosed: 0,
+    daysCut: 0,
   };
   let next = 0;
   const worker = async () => {
@@ -172,6 +215,7 @@ export async function copyFanClubCounts(
         if (one.copied) result.copied += 1;
         if (one.unfeatured) result.unfeatured += 1;
         if (one.monthClosed) result.monthsClosed += 1;
+        result.daysCut += one.daysCut;
       } catch (error) {
         result.failed += 1;
         log.error('fan-clubs: a cópia da noite de um fã-clube falhou', {

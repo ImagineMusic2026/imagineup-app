@@ -52,7 +52,16 @@ import {
  * deixa a lápide. Desde a etapa 2, ele publica com foto (a parte
  * `publicacoesDeFaClube`, sem quem revisou) e denuncia uma publicação de outro
  * fã-clube (sem a rodada); a exclusão apaga as duas, a pasta das fotos e deixa
- * o item da fila da publicação dele em `author_deleted`.
+ * o item da fila da publicação dele em `author_deleted`. Desde a Fase 2 do
+ * fã-clube (seção 37, 37.8; a etapa 4 de 37.13), ele comenta, responde, reage
+ * e denuncia comentário num fã-clube de outra gestora, que oculta um
+ * comentário dele, e oculta, como gestor, um comentário na publicação dele: o
+ * arquivo leva as quatro fontes novas sem quem ocultou, sem as marcações, sem
+ * a rodada e sem o autor do ocultado; a exclusão apaga os comentários (com a
+ * resposta de outra pessoa embaixo do de cima dele), as reações, a denúncia e
+ * o registro como gestor, desconta os números, tira a marcação dele do texto
+ * dos outros, deixa a linha do registro com ele como autor sem o autor e os
+ * itens da fila em `author_deleted`, `removed` e `withdrawn`.
  */
 const env = useEmulators('dados-do-fa', [
   'createUserProfile',
@@ -405,6 +414,8 @@ async function leftovers(
     /** O prêmio que ele recebeu (etapa 5): o registro fica, e o pedido aberto é cancelado. */
     grantId: string;
     prizeCode: string;
+    /** O comentário dele que a gestora de outro fã-clube ocultou (seção 37): a linha do registro fica. */
+    hiddenCommentId: string;
   },
 ): Promise<string[]> {
   const left: string[] = [];
@@ -480,6 +491,18 @@ async function leftovers(
         (await read(`referrals/${known.inviteeUid}`))?.inviterUid === null
       );
     }
+    if (effect === 'detached' && source.id === 'fanClubHideLog.author' && how.kind === 'equal') {
+      // A linha do ocultar da gestora fica, sem o autor (seção 37, 37.8).
+      const lines = await db
+        .collection('fanClubHideLog')
+        .where('commentId', '==', known.hiddenCommentId)
+        .get();
+      return (
+        (await none(db.collection(how.collection).where(how.field, '==', uid))) &&
+        !lines.empty &&
+        lines.docs.every((doc) => doc.get('authorUid') === null)
+      );
+    }
     if (effect === 'kept') {
       switch (source.id) {
         case 'inviterLedger': {
@@ -509,6 +532,20 @@ async function leftovers(
           // O item aberto da publicação dele vai a `author_deleted` (etapa 2).
           const items = await db
             .collection('fanClubReportQueue')
+            .where('authorUid', '==', uid)
+            .get();
+          return (
+            !items.empty &&
+            items.docs.every(
+              (doc) =>
+                doc.get('status') === 'resolved' && doc.get('resolution') === 'author_deleted',
+            )
+          );
+        }
+        case 'fanClubCommentQueue': {
+          // O item aberto do comentário dele vai a `author_deleted`, com o autor (seção 37, 37.8).
+          const items = await db
+            .collection('fanClubCommentQueue')
             .where('authorUid', '==', uid)
             .get();
           return (
@@ -710,6 +747,75 @@ describe('o arquivo de um fã com dado em toda fonte, e a exclusão', () => {
         schemaVersion: 1,
       });
       expect((await report(fan, `/fan-club-posts/${otherClubPost}/report`)).status).toBe(200);
+
+      // A Fase 2 do fã-clube (seção 37, 37.8; a etapa 4 de 37.13). Na
+      // publicação da Duda: ele comenta marcando a Duda (as marcações saem do
+      // arquivo), responde ao comentário dela, que o marca, e reage; a Duda
+      // responde embaixo do comentário dele e oculta outro dele (o `hiddenBy`
+      // sai do arquivo, e a linha do registro com ele como autor fica fora); o
+      // Enzo denuncia o comentário dele (a fila, fora do arquivo) e a resposta
+      // da Duda, e ele denuncia o comentário da Duda (sem a rodada). Na
+      // publicação dele: o Enzo segue, comenta duas vezes e reage; a Duda
+      // denuncia um comentário do Enzo, e ele, como gestor, oculta o outro (a
+      // linha do registro vai ao arquivo sem o autor).
+      const handleOf = async (who: Fan) => (await read(`users/${who.uid}`))?.username as string;
+      const fanHandle = await handleOf(fan);
+      const dudaHandle = await handleOf(inviter);
+      const dudaPublished = await as(inviter)('POST', '/me/fan-club/posts', {
+        text: 'Ensaio aberto no sábado',
+        photo: false,
+      });
+      expect(dudaPublished.status).toBe(200);
+      const dudaPostId = dudaPublished.body.id as string;
+      await ok(
+        'decideFanClub',
+        { subject: 'post', id: dudaPostId, decision: 'approve', expected: 'pending' },
+        admin,
+      );
+      const say = async (who: Fan, onPost: string, text: string, replyToId?: string) => {
+        const sent = await as(who)(
+          'POST',
+          `/fan-club-posts/${onPost}/comments`,
+          replyToId === undefined ? { text } : { text, replyToId },
+        );
+        expect(sent.status, text).toBe(200);
+        return sent.body.id as string;
+      };
+      const reactTo = (who: Fan, onPost: string, reaction: string) =>
+        as(who)('PUT', `/fan-club-posts/${onPost}/reaction`, { reaction });
+      const dudaTop = await say(inviter, dudaPostId, `Quem vem, @${fanHandle}?`);
+      const fanTop = await say(fan, dudaPostId, `Eu vou com a @${dudaHandle}`);
+      const fanReply = await say(fan, dudaPostId, 'Eu também!', dudaTop);
+      const dudaReply = await say(inviter, dudaPostId, 'Combinado!', fanTop);
+      const fanHidden = await say(fan, dudaPostId, 'Esse a Duda ocultou');
+      expect((await as(inviter)('PUT', `/me/fan-club/hidden-comments/${fanHidden}`)).status).toBe(
+        200,
+      );
+      expect((await reactTo(fan, dudaPostId, 'fire')).status).toBe(200);
+      expect((await reactTo(inviter, dudaPostId, 'heart')).status).toBe(200);
+      expect((await report(invitee, `/fan-club-comments/${fanTop}/report`)).status).toBe(200);
+      expect((await report(invitee, `/fan-club-comments/${dudaReply}/report`)).status).toBe(200);
+      expect((await report(fan, `/fan-club-comments/${dudaTop}/report`)).status).toBe(200);
+      expect(await read(`fanClubComments/${fanTop}`)).toMatchObject({
+        mentionUids: [inviter.uid],
+        replyCount: 1,
+      });
+      expect(await read(`fanClubComments/${dudaTop}`)).toMatchObject({
+        mentionUids: [fan.uid],
+        replyCount: 1,
+      });
+      // Os 4 que aparecem (o oculto pela Duda saiu do número) e as duas reações.
+      expect(await read(`fanClubPosts/${dudaPostId}`)).toMatchObject({
+        commentCount: 4,
+        reactionCount: 2,
+        reactionCounts: { heart: 1, fire: 1 },
+      });
+      expect((await as(invitee)('PUT', `/me/fan-club-follows/${clubId}`)).status).toBe(200);
+      const enzoSeen = await say(invitee, fanClubPostId, 'Que foto boa!');
+      const enzoHidden = await say(invitee, fanClubPostId, 'Esse o gestor ocultou');
+      expect((await reactTo(invitee, fanClubPostId, 'clap')).status).toBe(200);
+      expect((await report(inviter, `/fan-club-comments/${enzoSeen}/report`)).status).toBe(200);
+      expect((await as(fan)('PUT', `/me/fan-club/hidden-comments/${enzoHidden}`)).status).toBe(200);
 
       // A equipe: um ajuste, um pedido recusado e um comentário ocultado.
       await ok(
@@ -961,6 +1067,53 @@ describe('o arquivo de um fã com dado em toda fonte, e a exclusão', () => {
         }),
       ]);
       expect((file.faClubesSeguidos as Item[])[0]).not.toHaveProperty('byOwnerCode');
+      // A Fase 2 (seção 37, 37.8): os comentários dele, com o texto como foi
+      // escrito (o @ da Duda) e sem quem ocultou nem as marcações; a reação; a
+      // denúncia do comentário da Duda, sem a rodada; e o registro do ocultar
+      // como gestor, sem o autor.
+      expect((file.comentariosDeFaClube as Item[]).map((item) => item.id).sort()).toEqual(
+        [fanTop, fanReply, fanHidden].sort(),
+      );
+      expect(file.comentariosDeFaClube as Item[]).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            id: fanTop,
+            postId: dudaPostId,
+            text: `Eu vou com a @${dudaHandle}`,
+            replyToId: null,
+            replyCount: 1,
+            status: 'visible',
+          }),
+          expect.objectContaining({ id: fanReply, replyToId: dudaTop }),
+          expect.objectContaining({ id: fanHidden, status: 'manager_hidden' }),
+        ]),
+      );
+      for (const item of file.comentariosDeFaClube as Item[]) {
+        for (const field of ['hiddenBy', 'mentions', 'mentionUids']) {
+          expect(item, `${String(item.id)} ${field}`).not.toHaveProperty(field);
+        }
+      }
+      expect(file.reacoesDeFaClube as Item[]).toEqual([
+        expect.objectContaining({
+          id: `${fan.uid}_${dudaPostId}`,
+          postId: dudaPostId,
+          reaction: 'fire',
+        }),
+      ]);
+      expect(file.denunciasDeComentarioDeFaClube as Item[]).toEqual([
+        expect.objectContaining({ commentId: dudaTop, reason: 'spam' }),
+      ]);
+      expect((file.denunciasDeComentarioDeFaClube as Item[])[0]).not.toHaveProperty('round');
+      expect(file.comentariosOcultadosComoGestor as Item[]).toEqual([
+        expect.objectContaining({
+          clubId,
+          postId: fanClubPostId,
+          commentId: enzoHidden,
+          managerUid: fan.uid,
+          action: 'hidden',
+        }),
+      ]);
+      expect((file.comentariosOcultadosComoGestor as Item[])[0]).not.toHaveProperty('authorUid');
 
       // Nada de outra pessoa (pergunta 7: os alvos das denúncias e dos
       // bloqueios ficam) e nada da equipe, da chave do convidado ou do ownerKey.
@@ -986,8 +1139,17 @@ describe('o arquivo de um fã com dado em toda fonte, e a exclusão', () => {
       // estaria no `fanClubId` do vínculo, que sai. Pelo link `/fa-clube/<id>`,
       // ele iria na `origem.link.targetId`, de propósito (34.22). Ele segue o
       // fã-clube da Duda: o id vai nos seguidos, porque seguir é dele, e sem o
-      // `byOwnerCode` nada ali diz quem convidou.
-      expect(JSON.stringify({ ...file, faClubesSeguidos: null })).not.toContain(inviterClubId);
+      // `byOwnerCode` nada ali diz quem convidou. Pelo mesmo motivo, o id vai
+      // nos comentários, na reação e na denúncia que ele fez lá (seção 37).
+      expect(
+        JSON.stringify({
+          ...file,
+          faClubesSeguidos: null,
+          comentariosDeFaClube: null,
+          reacoesDeFaClube: null,
+          denunciasDeComentarioDeFaClube: null,
+        }),
+      ).not.toContain(inviterClubId);
       // Os lançamentos que a equipe mexeu estão lá, sem quem mexeu.
       expect((file.extrato as Item[]).map((item) => item.source)).toEqual(
         expect.arrayContaining([
@@ -1035,6 +1197,7 @@ describe('o arquivo de um fã com dado em toda fonte, e a exclusão', () => {
         clubId,
         grantId,
         prizeCode,
+        hiddenCommentId: fanHidden,
       };
       expect(await ok('deleteFanAccount', request(fan), admin)).toEqual({ status: 'deleted' });
       await waitFor(
@@ -1043,6 +1206,70 @@ describe('o arquivo de um fã com dado em toda fonte, e a exclusão', () => {
         90_000,
       );
       expect(await leftovers(fan.uid, known)).toEqual([]);
+      // A Fase 2 (seção 37, 37.8), uma linha por coleção de raiz nova (o
+      // `listCollections()` só acha as subcoleções do fã). Os comentários dele
+      // saíram com a resposta da Duda embaixo do de cima dele, e os números da
+      // publicação da Duda descontam cada um uma vez (o oculto já estava fora);
+      // a reação dele sai do total; o comentário da Duda perde a resposta dele
+      // e a marcação dele, com o @ no texto.
+      for (const id of [fanTop, fanReply, fanHidden, dudaReply]) {
+        expect(await exists(`fanClubComments/${id}`), id).toBe(false);
+      }
+      expect(await read(`fanClubPosts/${dudaPostId}`)).toMatchObject({
+        commentCount: 1,
+        reactionCount: 1,
+        reactionCounts: { heart: 1, fire: 0 },
+      });
+      expect(await read(`fanClubComments/${dudaTop}`)).toMatchObject({
+        text: `Quem vem, @${fanHandle}?`,
+        replyCount: 0,
+        mentions: [],
+        mentionUids: [],
+        status: 'visible',
+      });
+      expect(await exists(`fanClubReactions/${fan.uid}_${dudaPostId}`)).toBe(false);
+      expect(await exists(`fanClubReactions/${inviter.uid}_${dudaPostId}`)).toBe(true);
+      // A fila: o item dele em `author_deleted`, com o autor; o da resposta da
+      // Duda em `removed`; o do comentário da Duda, sem a denúncia dele, em
+      // `withdrawn`.
+      expect(await read(`fanClubCommentQueue/${fanTop}`)).toMatchObject({
+        authorUid: fan.uid,
+        status: 'resolved',
+        resolution: 'author_deleted',
+      });
+      expect(await read(`fanClubCommentQueue/${dudaReply}`)).toMatchObject({
+        status: 'resolved',
+        resolution: 'removed',
+      });
+      expect(await read(`fanClubCommentQueue/${dudaTop}`)).toMatchObject({
+        reportCount: 0,
+        reasons: { spam: 0 },
+        status: 'resolved',
+        resolution: 'withdrawn',
+      });
+      expect(await exists(`fanClubCommentReports/${fan.uid}_${dudaTop}`)).toBe(false);
+      // Como gestor: a publicação dele levou os comentários e a reação do Enzo,
+      // com o item do comentário denunciado em `removed`, e o registro do
+      // ocultar dele saiu; o da Duda, com ele como autor, ficou sem o autor.
+      for (const id of [enzoSeen, enzoHidden]) {
+        expect(await exists(`fanClubComments/${id}`), id).toBe(false);
+      }
+      expect(await exists(`fanClubReactions/${invitee.uid}_${fanClubPostId}`)).toBe(false);
+      expect(await read(`fanClubCommentQueue/${enzoSeen}`)).toMatchObject({
+        authorUid: invitee.uid,
+        status: 'resolved',
+        resolution: 'removed',
+      });
+      expect(
+        (await db.collection('fanClubHideLog').where('clubId', '==', clubId).get()).empty,
+      ).toBe(true);
+      expect(
+        (await db.collection('fanClubHideLog').where('commentId', '==', fanHidden).get()).docs.map(
+          (doc) => doc.data(),
+        ),
+      ).toEqual([
+        expect.objectContaining({ authorUid: null, managerUid: inviter.uid, action: 'hidden' }),
+      ]);
       // Quem segue sai junto: o `count()` dos seguidores cai, sem passo novo.
       const followers = await db
         .collectionGroup('fanClubFollows')

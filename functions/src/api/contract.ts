@@ -778,10 +778,25 @@ export type MyFanClub = {
 };
 
 /**
+ * A taxa de engajamento de 30 dias do fã-clube (seção 37, 37.11): as reações
+ * novas e os comentários dos fãs nos últimos 30 dias de São Paulo (hoje
+ * incluído) e a taxa, a soma dos dois sobre os seguidores de agora, em
+ * porcentagem com uma casa decimal. Sem seguidor, `rate30d` é null, e o app
+ * diz "Sem seguidores ainda". O que o gestor faz no próprio fã-clube não
+ * conta, e o oculto depois e a conta excluída não descontam.
+ */
+export type FanClubEngagement = {
+  reactions30d: number;
+  comments30d: number;
+  rate30d: number | null;
+};
+
+/**
  * `GET /me/fan-club/numbers`: os números do fã-clube do gestor, só no "Meu
  * fã-clube" (etapa 3 de 34.14). Os seguidores pelo `count()` de quem segue
  * agora (o seguir é da etapa 4) e os do convite e da atribuição pela soma dos
- * 16 shards (decisão 24).
+ * 16 shards (decisão 24). Desde a Fase 2 (seção 37, 37.11), o `engagement`,
+ * somado dos dias nos mesmos shards, sem leitura nova.
  */
 export type FanClubNumbers = {
   followers: number;
@@ -799,6 +814,8 @@ export type FanClubNumbers = {
   signups: number;
   /** Entradas trazidas para a central oficial (decisão 23). */
   joins: number;
+  /** A taxa de engajamento de 30 dias (seção 37, 37.11). */
+  engagement?: FanClubEngagement;
 };
 
 /** Uma central do fã que aceita fã-clubes, no `GET /me/fan-club/artists`. */

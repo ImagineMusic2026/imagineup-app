@@ -1,4 +1,4 @@
-import type { MentionSuggestion } from '../api/contract';
+import type { FanClubEngagement, MentionSuggestion } from '../api/contract';
 import { isArtistId, isPublished, type ArtistRecord } from '../centrals/model';
 import { filterTokens, isBlockedSocial, isBlockedText } from '../content-filter';
 import { dayKey, shiftDay } from '../day';
@@ -15,9 +15,11 @@ import { cleanLine, cleanMultiline, isVisibleLine, isVisibleMultiline } from '..
 // documentos e o prazo do Destaque; desde a Fase 2 (seção 37), as reações e
 // os comentários, com o texto pelas regras do comentário do Mural
 // (posts/model.ts), e as menções: os @ do texto, o filtro com as marcações e
-// as sugestões do @. Este módulo não importa a moderação, os pontos nem a
-// equipe: os tetos do dia (moderation/model.ts e points/config.ts) importam
-// daqui.
+// as sugestões do @; desde a etapa 4 de 37.13, os contadores da saída dos
+// comentários na exclusão de conta, a saída das marcações de quem excluiu a
+// conta, a taxa de engajamento e o corte dos dias velhos nos shards. Este
+// módulo não importa a moderação, os pontos nem a equipe: os tetos do dia
+// (moderation/model.ts e points/config.ts) importam daqui.
 
 // --- O programa (decisões 8, 9 e 47) --------------------------------------------
 
@@ -1762,6 +1764,27 @@ export function addStatusChange(
   current.status = to;
 }
 
+/**
+ * Os contadores quando comentários saem de vez (a exclusão de conta, 37.8):
+ * sair conta como sair da vista, pelas regras do `addStatusChange` (o de cima
+ * visível tira `1 + replyCount` do `commentCount`; a resposta visível tira 1
+ * do `replyCount` do de cima e, com ele visível, 1 do `commentCount`; a que
+ * estava no `manager_hidden` tira 1 do `managerHiddenReplyCount`; a oculta
+ * pela equipe já não conta em lugar nenhum). Cada um desconta uma vez, em
+ * qualquer ordem, pelo `states` lido na transação, que é atualizado: com a
+ * resposta e o de cima dela saindo juntos, o `1 + replyCount` do de cima já a
+ * leva. O de cima que sai junto não recebe gravação (o documento sai).
+ */
+export function removalCountChanges(
+  states: Map<string, CommentCountState>,
+  comments: readonly Pick<FanClubCommentRecord, 'id' | 'postId' | 'replyToId'>[],
+): CommentCountChanges {
+  const changes = emptyCountChanges();
+  for (const comment of comments) addStatusChange(changes, states, comment, 'staff_hidden');
+  for (const comment of comments) changes.tops.delete(comment.id);
+  return changes;
+}
+
 // --- As menções (seção 37, 37.7; a etapa 2 de 37.13) ---------------------------------------
 
 /** Os @ diferentes que viram marcação num texto: os primeiros que aparecem (37.7). */
@@ -1896,6 +1919,28 @@ export function reservationTargetOf(
   }
   if (isArtistId(data.artistId)) return { kind: 'artist', id: data.artistId };
   return null;
+}
+
+/**
+ * As marcações de um texto sem um fã (a exclusão da conta de quem foi
+ * marcado, 37.7 e 37.8): o uid sai dos `mentionUids`, e as ocorrências dele
+ * (as do fã com o `id` dele) saem das `mentions`; o resto fica como está
+ * gravado, e o @ continua no texto, sem link. Null quando o uid não está nos
+ * `mentionUids`: nada a gravar.
+ */
+export function mentionsWithout(
+  data: Record<string, unknown>,
+  uid: string,
+): { mentions: unknown[]; mentionUids: unknown[] } | null {
+  const uids: unknown[] = Array.isArray(data.mentionUids) ? data.mentionUids : [];
+  if (!uids.includes(uid)) return null;
+  const mentions: unknown[] = Array.isArray(data.mentions) ? data.mentions : [];
+  return {
+    mentions: mentions.filter(
+      (item) => !(isRecord(item) && item.kind === 'fan' && item.id === uid),
+    ),
+    mentionUids: uids.filter((item) => item !== uid),
+  };
 }
 
 /**
@@ -2128,4 +2173,71 @@ export function searchSuggestions(input: {
     });
   }
   return items;
+}
+
+// --- A taxa de engajamento (seção 37, 37.11; a etapa 4 de 37.13) -------------------------
+
+/** O período da taxa: os últimos 30 dias de São Paulo, hoje incluído (37.11). */
+export const ENGAGEMENT_DAYS = 30;
+
+/** Os dias que ficam nos shards: a cópia da noite apaga os com mais de 35 dias (37.11). */
+export const ENGAGEMENT_KEEP_DAYS = 35;
+
+/** Um dia de São Paulo no formato das chaves do mapa `days` (`AAAA-MM-DD`). */
+const DAY_KEY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+
+/** O mapa `days` de um shard (37.2), ou vazio sem ele. */
+const shardDaysOf = (shard: Record<string, unknown>): Record<string, unknown> =>
+  isRecord(shard.days) ? shard.days : {};
+
+/** Um número somado dos shards: o que não é número conta 0, e a parte quebrada sai. */
+const shardNumber = (value: unknown): number =>
+  typeof value === 'number' && Number.isFinite(value) ? Math.trunc(value) : 0;
+
+/**
+ * A taxa de engajamento de 30 dias (37.11), pura: as reações novas e os
+ * comentários dos dias de hoje e dos 29 antes, somados nos shards do
+ * fã-clube, só com as chaves do período (o dia velho que a cópia da noite
+ * ainda não cortou e um dia depois de hoje não contam), divididos pelos
+ * seguidores de agora, em porcentagem com uma casa decimal. Sem seguidor, a
+ * taxa é null. As somas nunca saem negativas, como no `sumFanClubShards`. O
+ * dia que não está no formato e o valor estranho ficam de fora sem derrubar a
+ * tela.
+ */
+export function fanClubEngagement(
+  shards: readonly Record<string, unknown>[],
+  followers: number,
+  now: number,
+): FanClubEngagement {
+  const today = dayKey(now);
+  const first = shiftDay(today, -(ENGAGEMENT_DAYS - 1));
+  let reactions = 0;
+  let comments = 0;
+  for (const shard of shards) {
+    for (const [day, value] of Object.entries(shardDaysOf(shard))) {
+      if (!DAY_KEY_PATTERN.test(day) || day < first || day > today || !isRecord(value)) continue;
+      reactions += shardNumber(value.reactions);
+      comments += shardNumber(value.comments);
+    }
+  }
+  reactions = Math.max(0, reactions);
+  comments = Math.max(0, comments);
+  return {
+    reactions30d: reactions,
+    comments30d: comments,
+    rate30d: followers > 0 ? Math.round(((reactions + comments) * 1000) / followers) / 10 : null,
+  };
+}
+
+/**
+ * Os dias de um shard que a cópia da noite apaga (37.11), em ordem: os com
+ * mais de 35 dias pelo dia de São Paulo (o de 35 dias fica). O corte só tira
+ * dias para trás: um dia depois de hoje fica, e a chave fora do formato não é
+ * mexida.
+ */
+export function staleEngagementDays(shard: Record<string, unknown>, now: number): string[] {
+  const oldest = shiftDay(dayKey(now), -ENGAGEMENT_KEEP_DAYS);
+  return Object.keys(shardDaysOf(shard))
+    .filter((day) => DAY_KEY_PATTERN.test(day) && day < oldest)
+    .sort();
 }
