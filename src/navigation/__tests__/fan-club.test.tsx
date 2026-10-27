@@ -1474,6 +1474,105 @@ describe('o modo gestor do "Meu fã-clube" (34.24)', () => {
     },
   );
 
+  it('Publicações: a no ar da Fase 2 traz os totais dentro do foco do card, também com o fã-clube fora da vista (37.9, item 8)', async () => {
+    mocked.fetchMyFanClub.mockResolvedValue(
+      manager({ status: 'paused', available: false, unavailableReason: 'paused' }),
+    );
+    mocked.fetchMyFanClubPosts.mockResolvedValue({
+      items: [
+        ownPost({
+          id: 'fcp-3',
+          status: 'published',
+          text: 'No ar',
+          reactionCount: 12,
+          reactionCounts: { heart: 7, fire: 4, laugh: 1, wow: 0, clap: 0 },
+          commentCount: 1,
+        }),
+        // O servidor de antes, sem os contadores, e a em análise: sem os totais.
+        ownPost({ id: 'fcp-4', status: 'published', text: 'Antiga' }),
+        ownPost({ id: 'fcp-5', status: 'pending', reactionCount: 0, commentCount: 0 }),
+      ],
+      nextCursor: null,
+    });
+    serverAnswers();
+    renderRouter(appTree, { initialUrl: '/meu-fa-clube?aba=publicacoes' });
+
+    const content = await screen.findByLabelText(
+      /^No ar\. No ar\. Enviada em .+ 12 reações, 1 comentário\.$/u,
+    );
+    const totals = screen.getByTestId('fan-club-own-post-fcp-3-totals');
+    expect(within(totals).getByText('12')).toBeTruthy();
+    expect(within(totals).getByText('1')).toBeTruthy();
+    // Os totais ficam no foco só do card: nada tocável dentro dele.
+    expect(within(content).getByTestId('fan-club-own-post-fcp-3-totals')).toBe(totals);
+    expect(within(content).queryAllByRole('button')).toHaveLength(0);
+    // Fora da vista: só os totais, sem o "Ver comentários".
+    expect(screen.queryByTestId('fan-club-own-post-fcp-3-comments')).toBeNull();
+    expect(screen.queryByTestId('fan-club-own-post-fcp-4-totals')).toBeNull();
+    expect(screen.queryByTestId('fan-club-own-post-fcp-5-totals')).toBeNull();
+  });
+
+  it('o Painel: "Engajamento em 30 dias", com a taxa, as partes e a frase de que ela não decide prêmio (37.11)', async () => {
+    mocked.fetchMyFanClub.mockResolvedValue(manager());
+    mocked.fetchMyFanClubNumbers.mockResolvedValue({
+      followers: 571,
+      followers30d: 40,
+      links: 4,
+      visits: 9,
+      signups: 3,
+      joins: 2,
+      engagement: { reactions30d: 18, comments30d: 6, rate30d: 4.2 },
+    });
+    serverAnswers();
+    renderRouter(appTree, { initialUrl: '/meu-fa-clube' });
+
+    const card = await screen.findByLabelText(
+      'Engajamento em 30 dias: 4,2%. 18 reações e 6 comentários, 571 seguidores. A taxa é só para você acompanhar. Ela não decide prêmio.',
+    );
+    expect(card.props.testID).toBe('fan-club-engagement');
+    expect(within(card).getByText('4,2%')).toBeTruthy();
+    expect(within(card).getByText('18 reações e 6 comentários, 571 seguidores')).toBeTruthy();
+    // Um foco só, sem toque.
+    expect(card.props.onPress).toBeUndefined();
+    expect(within(card).queryAllByRole('button')).toHaveLength(0);
+  });
+
+  it('o Painel: sem seguidor, "Sem seguidores ainda"; com o servidor de antes, sem o card', async () => {
+    mocked.fetchMyFanClub.mockResolvedValue(manager());
+    mocked.fetchMyFanClubNumbers.mockResolvedValue({
+      followers: 0,
+      followers30d: 0,
+      links: 0,
+      visits: 0,
+      signups: 0,
+      joins: 0,
+      engagement: { reactions30d: 0, comments30d: 0, rate30d: null },
+    });
+    serverAnswers();
+    const view = renderRouter(appTree, { initialUrl: '/meu-fa-clube' });
+
+    expect(
+      await screen.findByLabelText(
+        'Engajamento em 30 dias: Sem seguidores ainda. A taxa é só para você acompanhar. Ela não decide prêmio.',
+      ),
+    ).toBeTruthy();
+    expect(screen.getByText('Sem seguidores ainda')).toBeTruthy();
+    view.unmount();
+    queryClient.clear();
+
+    mocked.fetchMyFanClubNumbers.mockResolvedValue({
+      followers: 12,
+      followers30d: 5,
+      links: 4,
+      visits: 9,
+      signups: 3,
+      joins: 2,
+    });
+    renderRouter(appTree, { initialUrl: '/meu-fa-clube' });
+    expect(await screen.findByLabelText('Seguidores: 12. +5 nos últimos 30 dias.')).toBeTruthy();
+    expect(screen.queryByTestId('fan-club-engagement')).toBeNull();
+  });
+
   it('os números que não vieram: "Sem dado", e não carregando, com "Tentar de novo"', async () => {
     mocked.fetchMyFanClub.mockResolvedValue(manager());
     mocked.fetchMyFanClubNumbers.mockRejectedValue(
@@ -1595,7 +1694,9 @@ describe('a nova publicação (34.9, item 6)', () => {
 
     expect(screen.getByRole('header', { name: 'Nova publicação' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Enviar' })).toBeTruthy();
-    expect(screen.getByText('Publicando como Netto de Coração')).toBeTruthy();
+    // O @ do gestor, como a decisão 3 de 36.1 pede (seção 37, a etapa 7 de 37.13).
+    expect(await screen.findByText('Publicando como @camilarib')).toBeTruthy();
+    expect(screen.queryByText('Publicando como Netto de Coração')).toBeNull();
     expect(
       screen.getByLabelText(
         'Revisada pela equipe. A equipe confere a publicação antes de ela ir ao ar. 1 de 3 em análise, 2 vagas livres.',
@@ -1607,6 +1708,72 @@ describe('a nova publicação (34.9, item 6)', () => {
     ).toBeNull();
     fireEvent.press(screen.getByRole('button', { name: 'Cancelar' }));
     await waitFor(() => expect(view.getPathname()).toBe('/meu-fa-clube'));
+  });
+
+  it('a sugestão do @ no texto (37.9, item 9): o artista ao focar, embaixo do campo; escolher troca o @ inteiro; a busca a partir de 2 letras', async () => {
+    mocked.fetchMyFanClub.mockResolvedValue(manager());
+    const ARTISTA = {
+      kind: 'artist',
+      id: 'nettobrito',
+      username: 'nettobrito',
+      name: 'Netto Brito',
+      photoURL: null,
+      role: 'artist',
+      inConversation: true,
+    } as const;
+    const DAVI = {
+      kind: 'fan',
+      id: 'fa-davi',
+      username: 'davilim',
+      name: 'Davi Lima',
+      photoURL: null,
+      role: null,
+      inConversation: false,
+    } as const;
+    // A conversa só tem o artista, e a busca só acha o Davi pelo "da": o "@ne"
+    // só chega à barra pela conversa.
+    mocked.fetchFanClubMentions.mockImplementation(({ q }) =>
+      Promise.resolve({ items: q === null ? [ARTISTA] : q === 'da' ? [DAVI] : [] }),
+    );
+    serverAnswers();
+    renderRouter(appTree, { initialUrl: '/meu-fa-clube/nova-publicacao' });
+
+    const field = await screen.findByTestId('fan-club-post-text');
+    fireEvent(field, 'focus');
+    // A conversa da nova publicação, sem publicação: uma vez, no primeiro foco.
+    await waitFor(() =>
+      expect(mocked.fetchFanClubMentions).toHaveBeenCalledWith({
+        clubId: 'fc-1',
+        postId: null,
+        q: null,
+      }),
+    );
+    expect(screen.queryByTestId('mention-suggestions')).toBeNull();
+
+    fireEvent.changeText(field, 'Show hoje com o @ne');
+    const pick = await screen.findByRole('button', { name: 'Marcar Netto Brito, @nettobrito' });
+    expect(within(screen.getByTestId('mention-suggestions')).getByText('Artista')).toBeTruthy();
+    fireEvent.press(pick);
+
+    expect(screen.getByTestId('fan-club-post-text').props.value).toBe(
+      'Show hoje com o @nettobrito ',
+    );
+    expect(screen.queryByTestId('mention-suggestions')).toBeNull();
+
+    // A busca, depois de 2 letras: quem não está na conversa.
+    fireEvent.changeText(
+      screen.getByTestId('fan-club-post-text'),
+      'Show hoje com o @nettobrito e o @da',
+    );
+    expect(await screen.findByRole('button', { name: 'Marcar Davi Lima, @davilim' })).toBeTruthy();
+    expect(mocked.fetchFanClubMentions).toHaveBeenCalledWith({
+      clubId: 'fc-1',
+      postId: null,
+      q: 'da',
+    });
+    expect(
+      mocked.fetchFanClubMentions.mock.calls.filter(([query]) => query.q === null),
+    ).toHaveLength(1);
   });
 
   it('com foto: a galeria sem o recorte do sistema, a prévia 4:5 e os três passos do envio', async () => {

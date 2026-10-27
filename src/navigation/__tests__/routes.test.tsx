@@ -47,6 +47,7 @@ const appTree = {
   'meu-fa-clube/regras': label('fan-club-rules'),
   'fa-clube/[clubeId]': label('fan-club'),
   'fa-clube/publicacao/[publicacaoId]': label('fan-club-post'),
+  'comentario-fa-clube/[comentarioId]': label('fan-club-comment-options'),
   'denunciar-publicacao/[publicacaoId]': label('report-fan-club-post'),
   'deixar-de-seguir/[clubeId]': label('unfollow-fan-club'),
   '(tabs)/(perfil)/fa-clubes-que-sigo': label('followed-fan-clubs'),
@@ -203,6 +204,23 @@ describe('rotas do app', () => {
     expect(view.getPathname()).toBe('/fa-clube/publicacao/fcp-1');
     expect(view.getSegments()).toEqual(['fa-clube', 'publicacao', '[publicacaoId]']);
     expect(rootRoutes(view)).toEqual(['fa-clube/publicacao/[publicacaoId]']);
+  });
+
+  it('a sheet de opções do comentário do fã-clube abre na pilha raiz, por cima da publicação (seção 37, etapa 7)', () => {
+    const view = renderRouter(appTree, { initialUrl: '/fa-clube/publicacao/fcp-1' });
+    act(() =>
+      router.push({
+        pathname: '/comentario-fa-clube/[comentarioId]',
+        params: { comentarioId: 'fcc-1', publicacao: 'fcp-1' },
+      }),
+    );
+    expect(view.getByText('fan-club-comment-options')).toBeTruthy();
+    expect(view.getPathname()).toBe('/comentario-fa-clube/fcc-1');
+    expect(view.getSearchParams()).toEqual({ comentarioId: 'fcc-1', publicacao: 'fcp-1' });
+    expect(rootRoutes(view)).toEqual([
+      'fa-clube/publicacao/[publicacaoId]',
+      'comentario-fa-clube/[comentarioId]',
+    ]);
   });
 
   it('"Fã-clubes que sigo" por link abre na pilha do Perfil, com a raiz da aba embaixo (seção 34)', () => {

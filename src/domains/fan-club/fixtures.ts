@@ -119,6 +119,13 @@ import type {
  * Raiz", o texto do Davi marca a central (@rocksalles, o link e a ação do
  * corpo do card), e o comentário dele aparece para a Camila, que não segue e
  * vê o "Seguir o fã-clube" no lugar do campo.
+ *
+ * Para a moderação e o modo gestor (a etapa 7 de 37.13), o mesmo retrato: no
+ * fã-clube dela, a Camila oculta e reexibe os comentários da Thalita e do
+ * Davi (o da publicação do clipe recusa com `staff_decided`, e o dela, com
+ * `own_comment`), e "Minhas publicações" e o Painel trazem os totais e a taxa
+ * de 30 dias; no "Nenho Sempre", ela pede revisão do comentário oculto pela
+ * Thalita (o `ownHidden`) e denuncia e bloqueia pela sheet de opções.
  */
 
 /** O fã que pede, como o `ME_ID` do ranking de exemplo: a Camila do protótipo. */

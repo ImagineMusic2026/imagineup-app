@@ -47,9 +47,10 @@ type Failure = { key: TranslationKey; contact: boolean } | null;
  * motivo" manda null) e "Enviar denúncia". O perfil vem do cache do perfil
  * público, lido na abertura (o conteúdo fica fixo, para a altura da sheet não
  * mudar); aberta a frio, sem ele, a sheet fecha. O "Bloquear e denunciar" da
- * página do fã-clube (seção 34, decisão 19) manda o `clube`: sem o perfil no
- * cache, o nome do gestor vem da página em cache, só se o gestor dela for o
- * mesmo fã.
+ * página do fã-clube (seção 34, decisão 19) e o do comentário do gestor
+ * (seção 37, 37.9, item 10) mandam o `clube`: sem o perfil no cache, o nome do
+ * gestor vem da página em cache, ou de uma publicação ou um comentário dele
+ * daquele fã-clube, só se o gestor for o mesmo fã.
  *
  * Não é otimista: o botão fica "carregando" até o servidor responder,
  * desligado sem internet e enquanto vai, e o voltar fica preso

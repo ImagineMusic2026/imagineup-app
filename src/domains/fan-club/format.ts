@@ -34,6 +34,22 @@ export function reactionsSpoken(count: number): string {
   return t('fanClub.reactions.count', { count: formatNumber(count) });
 }
 
+/** "571 seguidores", "1 seguidor": o número de agora, inteiro (o arredondado é o `roundFollowersText`). */
+export function followersText(count: number): string {
+  if (count === 1) return t('fanClub.page.followersOne');
+  return t('fanClub.page.followers', { count: formatNumber(count) });
+}
+
+const rateFormatter = new Intl.NumberFormat('pt-BR', {
+  minimumFractionDigits: 1,
+  maximumFractionDigits: 1,
+});
+
+/** A taxa de engajamento com uma casa decimal e a vírgula (37.11): "4,2%". */
+export function rateText(rate: number): string {
+  return t('fanClub.manager.panel.engagementRate', { rate: rateFormatter.format(rate) });
+}
+
 /** "4 comentários", "1 comentário". */
 export function commentsSpoken(count: number): string {
   if (count === 1) return t('fanClub.comments.countOne');

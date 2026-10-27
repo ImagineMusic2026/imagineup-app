@@ -23,11 +23,12 @@ import { formatNumber } from '@/utils/number';
 import { sentence } from '@/utils/text';
 
 import { POST_REJECT_REASON_TEXTS, POST_STATUS_TEXTS } from '../describe';
-import { commentsSpoken, excerptOf } from '../format';
+import { commentsSpoken, excerptOf, reactionsSpoken } from '../format';
 import { postsIn, type PostFilter } from '../manager';
 import { useMyFanClubPostsQuery, useRemoveFanClubPostMutation } from '../queries';
 import { fanClubPostHref } from '../share';
 import type { FanClubUnavailableReason, MyFanClubClub, OwnFanClubPost } from '../types';
+import { PostTotals } from './post-reactions';
 
 // A miniatura em 4:5, na altura da 4c.
 const THUMB_HEIGHT = 70;
@@ -62,7 +63,17 @@ const EMPTY_TEXTS: Record<PostFilter, TranslationKey> = {
   outras: 'fanClub.manager.posts.empty.others',
 };
 
-/** O rótulo da linha: o status, o texto, a data, a foto e, na recusada, o motivo. */
+/**
+ * Os totais da publicação no ar, só com o servidor da Fase 2 (os contadores,
+ * 37.9, item 8), também com o fã-clube fora da vista dos fãs.
+ */
+function totalsOf(post: OwnFanClubPost): { reactions: number; comments: number } | null {
+  if (post.status !== 'published') return null;
+  if (post.reactionCount === undefined || post.commentCount === undefined) return null;
+  return { reactions: post.reactionCount, comments: post.commentCount };
+}
+
+/** O rótulo da linha: o status, o texto, a data, a foto, os totais e, na recusada, o motivo. */
 function rowLabel(post: OwnFanClubPost): string {
   const parts = [
     t('fanClub.mine.posts.rowLabel', {
@@ -73,6 +84,15 @@ function rowLabel(post: OwnFanClubPost): string {
     }),
   ];
   if (post.kind === 'photo') parts.push(t('fanClub.mine.posts.withPhoto'));
+  const totals = totalsOf(post);
+  if (totals) {
+    parts.push(
+      t('fanClub.mine.posts.totals', {
+        reactions: reactionsSpoken(totals.reactions),
+        comments: commentsSpoken(totals.comments),
+      }),
+    );
+  }
   if (post.status === 'rejected' && post.rejectReason) {
     parts.push(
       t('fanClub.mine.posts.reason', { reason: t(POST_REJECT_REASON_TEXTS[post.rejectReason]) }),
@@ -99,11 +119,14 @@ interface RowProps {
  * "Tirar do ar" (no ar) são irmãos dele, com foco próprio. A linha não guarda
  * estado: o ocupado e a falha vêm da lista, pelo id. Desde a etapa 6 de 37.13,
  * a publicada ganha o "Ver comentários (N)", outro irmão, que abre a tela da
- * publicação como gestor (o card não vira pressável).
+ * publicação como gestor (o card não vira pressável); desde a etapa 7, os
+ * totais das reações e dos comentários, dentro do foco do card, também com o
+ * fã-clube fora da vista (37.9, item 8).
  */
 function OwnPostCard({ post, onRemove, removing, disabled, error, onOpenComments }: RowProps) {
   const pending = post.status === 'pending';
   const comments = post.commentCount ?? 0;
+  const totals = totalsOf(post);
   return (
     <Card variant="compact" style={styles.card} testID={`fan-club-own-post-${post.id}`}>
       <View accessible accessibilityLabel={rowLabel(post)} style={styles.content}>
@@ -130,6 +153,14 @@ function OwnPostCard({ post, onRemove, removing, disabled, error, onOpenComments
           <Text variant="label" numberOfLines={TEXT_LINES}>
             {post.text}
           </Text>
+          {totals ? (
+            <PostTotals
+              reactionCount={totals.reactions}
+              reactionCounts={post.reactionCounts}
+              commentCount={totals.comments}
+              testID={`fan-club-own-post-${post.id}-totals`}
+            />
+          ) : null}
           {post.status === 'rejected' && post.rejectReason ? (
             <Text variant="caption" color={colors.textSecondary}>
               {t('fanClub.mine.posts.reason', {
