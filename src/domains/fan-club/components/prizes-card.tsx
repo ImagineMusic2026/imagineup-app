@@ -6,7 +6,6 @@ import { Button } from '@/components/button';
 import { Card } from '@/components/card';
 import { IconTile } from '@/components/icon-tile';
 import { Text } from '@/components/text';
-import { TextLink } from '@/components/text-link';
 import { t } from '@/i18n';
 import { colors, spacing } from '@/theme';
 import { formatDate } from '@/utils/date';
@@ -31,26 +30,34 @@ export interface PrizesCardProps {
 }
 
 /**
- * O card Prêmios do "Meu fã-clube" (34.9, item 5, e decisão 51): o último
- * reconhecimento da equipe (do `lastReward`, a data e os pontos), "Ver meus
- * prêmios", que abre a loja, "Falar com a equipe", para quem não quer ou não
- * pode usar um prêmio, e "Regras do fã-clube", a sheet com as condições e o
- * texto do reconhecimento (o `notice`, com a linha da Apple). O texto saiu do
- * card a pedido do dono (20/10/2026, 34.22): o gestor já o leu na
- * apresentação, e ele continua a um toque. Nunca mostra prêmio prometido nem
- * ranking (decisão 47).
+ * O card da aba Prêmios do modo gestor (34.9, item 5, decisão 51 e 34.24): o
+ * último reconhecimento da equipe (do `lastReward`, a data e os pontos), "Ver
+ * meus prêmios", que abre a loja, e "Falar com a equipe", para quem não quer
+ * ou não pode usar um prêmio. As "Regras do fã-clube" (a sheet com as
+ * condições e o texto do reconhecimento) moram na aba Conta desde 34.24. O
+ * texto do reconhecimento saiu do card a pedido do dono (20/10/2026, 34.22):
+ * o gestor já o leu na apresentação, e ele continua a um toque. Nunca mostra
+ * prêmio prometido nem ranking (decisão 47).
  */
 export function PrizesCard({ lastReward }: PrizesCardProps) {
+  const text = lastRewardText(lastReward);
   return (
     <Card variant="compact" style={styles.card} testID="fan-club-prizes">
-      <View style={styles.head}>
+      <View
+        accessible
+        accessibilityLabel={t('fanClub.mine.numberLabel', {
+          label: t('fanClub.manager.prizes.last'),
+          value: text,
+        })}
+        style={styles.head}
+      >
         <IconTile icon={Gift} tone="points" />
         <View style={styles.texts}>
-          <Text variant="label" accessibilityRole="header">
-            {t('fanClub.mine.prizes.title')}
+          <Text variant="overline" color={colors.textMuted}>
+            {t('fanClub.manager.prizes.last')}
           </Text>
-          <Text variant="body" color={colors.textSecondary} testID="fan-club-last-reward">
-            {lastRewardText(lastReward)}
+          <Text variant="label" testID="fan-club-last-reward">
+            {text}
           </Text>
         </View>
       </View>
@@ -69,21 +76,12 @@ export function PrizesCard({ lastReward }: PrizesCardProps) {
           testID="fan-club-prizes-open"
         />
       </View>
-      {/* Os dois links lado a lado; com a fonte grande, o segundo desce. */}
-      <View style={styles.links}>
-        <TeamEmailLink
-          label="fanClub.mine.prizes.contact"
-          hint="fanClub.mine.prizes.contactHint"
-          subject="fanClub.mine.prizes.contactSubject"
-          testID="fan-club-prizes-contact"
-        />
-        <TextLink
-          label={t('fanClub.mine.prizes.rules')}
-          accessibilityHint={t('fanClub.mine.prizes.rulesHint')}
-          onPress={() => router.push('/meu-fa-clube/regras')}
-          testID="fan-club-prizes-rules"
-        />
-      </View>
+      <TeamEmailLink
+        label="fanClub.mine.prizes.contact"
+        hint="fanClub.mine.prizes.contactHint"
+        subject="fanClub.mine.prizes.contactSubject"
+        testID="fan-club-prizes-contact"
+      />
     </Card>
   );
 }
@@ -108,11 +106,5 @@ const styles = StyleSheet.create({
   // Com a fonte grande, o rótulo quebra dentro da largura do card.
   open: {
     flexShrink: 1,
-  },
-  links: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    alignItems: 'flex-start',
-    columnGap: spacing.xl,
   },
 });

@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react-native';
+import { fireEvent, render, screen } from '@testing-library/react-native';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Platform, StyleSheet } from 'react-native';
@@ -103,5 +103,42 @@ describe('TabBar', () => {
     renderBar();
     expect(screen.getByLabelText('Início')).toBeSelected();
     expect(screen.getByLabelText('Ranking')).not.toBeSelected();
+  });
+
+  it('com o "+" de ação direta (o modo gestor do fã-clube), ele fica no meio, age no toque e não abre atalhos', () => {
+    const onPress = jest.fn();
+    const onHeightChange = jest.fn();
+    render(
+      <SafeAreaProvider initialMetrics={metrics}>
+        <TabBar
+          items={items}
+          centerAction={{
+            accessibilityLabel: 'Nova publicação',
+            accessibilityHint: 'Abre o formulário da publicação',
+            onPress,
+            testID: 'center',
+          }}
+          onHeightChange={onHeightChange}
+        />
+      </SafeAreaProvider>,
+    );
+
+    const center = screen.getByRole('button', { name: 'Nova publicação' });
+    expect(center.props.accessibilityHint).toBe('Abre o formulário da publicação');
+    expect(screen.queryByLabelText('Abrir atalhos')).toBeNull();
+    // Uma aba de cada lado do "+", na ordem da barra (no iOS, as abas também são "button").
+    expect(screen.getAllByRole('button').map((node) => node.props.accessibilityLabel)).toEqual([
+      'Início',
+      'Nova publicação',
+      'Ranking',
+    ]);
+    fireEvent.press(center);
+    expect(onPress).toHaveBeenCalledTimes(1);
+
+    const bar = screen.root.find(
+      (node) => typeof node.type === 'string' && node.props.accessibilityRole === 'tablist',
+    );
+    fireEvent(bar, 'layout', { nativeEvent: { layout: { x: 0, y: 0, width: 402, height: 80 } } });
+    expect(onHeightChange).toHaveBeenCalledWith(80);
   });
 });

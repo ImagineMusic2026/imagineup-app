@@ -76,6 +76,13 @@ export const gradients = {
     start: { x: 0, y: 0 },
     end: { x: 1, y: 1 },
   } as const satisfies LinearGradientToken,
+  // O ícone quadrado de iniciais do fã-clube no modo gestor (135°, de canto a canto).
+  clubMark: {
+    colors: [palette.pink, palette.electric],
+    locations: [0, 1],
+    start: { x: 0, y: 0 },
+    end: { x: 1, y: 1 },
+  } as const satisfies LinearGradientToken,
   // Foto de show ausente (1m): ciano é a cor de shows.
   eventsTile: {
     colors: [palette.eventsDeep, palette.eventsDeeper],

@@ -12,6 +12,7 @@ import { Icon } from '@/components/icon';
 import { PressableScale } from '@/components/pressable-scale';
 import { Text } from '@/components/text';
 import { t } from '@/i18n';
+import type { HapticEvent } from '@/services/haptics';
 import { blur, blurFallback, colors, layout, motion, radii, shadows, spacing } from '@/theme';
 import { withAlpha } from '@/utils/color';
 
@@ -21,10 +22,26 @@ import type { TabItem } from './tab-items';
 export { type CenterMenuAction } from './center-menu';
 export { toTabItems, type TabItem } from './tab-items';
 
+/** O "+" que age direto, sem abrir os atalhos (o modo gestor do fã-clube). */
+export interface TabBarCenterAction {
+  accessibilityLabel: string;
+  accessibilityHint?: string;
+  haptic?: HapticEvent | null;
+  onPress: () => void;
+  testID?: string;
+}
+
 export interface TabBarProps {
   items: TabItem[];
   /** Atalhos do "+" no meio da barra. Sem eles, a barra fica só com as abas. */
   centerMenu?: CenterMenuAction[];
+  /** O "+" de uma ação só, no lugar dos atalhos. */
+  centerAction?: TabBarCenterAction;
+  /**
+   * A altura da barra, para quem a desenha fora das abas (o modo gestor do
+   * fã-clube): dentro delas, a altura vai pelo contexto do navegador.
+   */
+  onHeightChange?: (height: number) => void;
 }
 
 // No Ranking (1f) o card "Você" flutua sobre a barra, então ela fica sólida.
@@ -80,11 +97,12 @@ function TabButton({ item, onPress }: { item: TabItem; onPress: () => void }) {
  * as telas somam `useTabBarInset()` ao espaço de baixo.
  *
  * O "+" do meio não é aba: gira até virar um "×" e abre os atalhos em leque
- * (`CenterMenu`), no mesmo movimento e com a mesma curva.
+ * (`CenterMenu`), no mesmo movimento e com a mesma curva. Com o
+ * `centerAction`, ele faz uma coisa só e não gira.
  */
-export function TabBar({ items, centerMenu }: TabBarProps) {
+export function TabBar({ items, centerMenu, centerAction, onHeightChange }: TabBarProps) {
   const insets = useSafeAreaInsets();
-  const onHeightChange = useContext(BottomTabBarHeightCallbackContext);
+  const onNavigatorHeight = useContext(BottomTabBarHeightCallbackContext);
   const solid = SOLID_ON.includes(usePathname());
   const blurs = Platform.OS === 'ios';
   const gradientTop = blurs ? GRADIENT_TOP_ALPHA : blurFallback.tabBar;
@@ -119,6 +137,7 @@ export function TabBar({ items, centerMenu }: TabBarProps) {
   const handleLayout = (event: LayoutChangeEvent): void => {
     const { height } = event.nativeEvent.layout;
     setBarHeight(height);
+    onNavigatorHeight?.(height);
     onHeightChange?.(height);
   };
 
@@ -135,9 +154,10 @@ export function TabBar({ items, centerMenu }: TabBarProps) {
   };
 
   const hasMenu = !!centerMenu && centerMenu.length > 0;
+  const hasCenter = hasMenu || !!centerAction;
   const middle = Math.ceil(items.length / 2);
-  const left = hasMenu ? items.slice(0, middle) : items;
-  const right = hasMenu ? items.slice(middle) : [];
+  const left = hasCenter ? items.slice(0, middle) : items;
+  const right = hasCenter ? items.slice(middle) : [];
 
   return (
     <>
@@ -190,6 +210,20 @@ export function TabBar({ items, centerMenu }: TabBarProps) {
                 <Animated.View style={plusStyle}>
                   <Icon icon={Plus} size={20} strokeWidth={2.4} color={colors.onAccent} />
                 </Animated.View>
+              </View>
+            </PressableScale>
+          ) : centerAction ? (
+            <PressableScale
+              onPress={centerAction.onPress}
+              haptic={centerAction.haptic === undefined ? 'tap' : centerAction.haptic}
+              accessibilityRole="button"
+              accessibilityLabel={centerAction.accessibilityLabel}
+              accessibilityHint={centerAction.accessibilityHint}
+              style={styles.item}
+              testID={centerAction.testID}
+            >
+              <View style={styles.centerButton}>
+                <Icon icon={Plus} size={20} strokeWidth={2.4} color={colors.onAccent} />
               </View>
             </PressableScale>
           ) : null}

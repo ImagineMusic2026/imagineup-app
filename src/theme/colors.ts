@@ -40,6 +40,10 @@ export const palette = {
   tangerine: '#FF8A3D',
   magenta: '#C2185B',
   violet: '#9D6BFF',
+
+  // Ponta do degradê do ícone de iniciais do modo gestor do fã-clube (o rosa
+  // para este roxo, o do Claude Design aprovado em 26/10/2026).
+  electric: '#7A2BFF',
 } as const;
 
 export const colors = {
