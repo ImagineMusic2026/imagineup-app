@@ -22,12 +22,6 @@ export function clubNameLabel(name: string, official: boolean): string {
   return official ? t('fanClub.officialName', { name }) : name;
 }
 
-/** "41 seguidores", "1 seguidor": o número exato da página (o `count()`, decisão 28). */
-export function followersText(count: number): string {
-  if (count === 1) return t('fanClub.page.followersOne');
-  return t('fanClub.page.followers', { count: formatNumber(count) });
-}
-
 /** "4,8 mil seguidores": o número da cópia da noite, arredondado, no card da 1d e na lista. */
 export function roundFollowersText(count: number): string {
   if (count === 1) return t('fanClub.page.followersOne');
