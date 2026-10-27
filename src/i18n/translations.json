@@ -1484,11 +1484,6 @@
       "postsMoreError": "Não deu para carregar mais publicações.",
       "postsLoading": "Carregando as publicações",
       "loading": "Carregando o fã-clube",
-      "artistOf": "Fã-clube de {{artist}}",
-      "followersWord": "seguidores",
-      "followersWordOne": "seguidor",
-      "postsWord": "publicações",
-      "postsWordOne": "publicação",
       "manage": "Gerenciar meu fã-clube",
       "manageHint": "Abre o modo gestor do seu fã-clube",
       "ownerEmpty": "Suas publicações aparecem aqui quando a equipe aprova."

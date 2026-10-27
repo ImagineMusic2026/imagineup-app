@@ -1,6 +1,6 @@
 import { FlashList } from '@shopify/flash-list';
-import { router, useIsFocused, useLocalSearchParams, useNavigationContainerRef } from 'expo-router';
-import { Check, ChevronRight, Ellipsis, Share2 } from 'lucide-react-native';
+import { router, useIsFocused, useLocalSearchParams } from 'expo-router';
+import { Check, ChevronRight, Ellipsis, Settings, Share2 } from 'lucide-react-native';
 import { useEffect, useState } from 'react';
 import { AccessibilityInfo, ActivityIndicator, Alert, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -18,7 +18,7 @@ import { SectionLabel } from '@/components/section-label';
 import { Skeleton, SkeletonGroup } from '@/components/skeleton';
 import { Text } from '@/components/text';
 import { TextLink } from '@/components/text-link';
-import { openArtistOverStack, useBlockFanMutation } from '@/domains/posts';
+import { useBlockFanMutation } from '@/domains/posts';
 import { fanProfileHref, SuspensionContact } from '@/domains/profile';
 import { useAnnounceWhen } from '@/hooks/use-announce-when';
 import { useIsOnline } from '@/hooks/use-is-online';
@@ -28,14 +28,13 @@ import { ApiError } from '@/services/api/errors';
 import { actionRefusal } from '@/services/api/refusal';
 import { haptics } from '@/services/haptics';
 import { colors, layout, radii, spacing } from '@/theme';
-import { formatNumber } from '@/utils/number';
 
 import { FanClubPostCard } from '../components/club-post-card';
 import { ClubName } from '../components/club-name';
 import { FAN_CLUB_ERROR_CODES } from '../consts';
 import { fanClubErrorText } from '../describe';
 import { isDefinitiveRefusal } from '../entry';
-import { clubNameLabel, followersText, personName, postsCountText } from '../format';
+import { clubNameLabel, personName } from '../format';
 import {
   useFanClubGate,
   useFanClubPageQuery,
@@ -161,8 +160,8 @@ function ClubScreen({ clubId }: { clubId: string }) {
 
 /**
  * A página com o fã-clube, só depois da trava: o compartilhar (com o código
- * de convite, `GET /me/invite`) e o menu moram aqui, para nada sair antes da
- * abertura.
+ * de convite, `GET /me/invite`), o menu e, para o gestor, o "Gerenciar meu
+ * fã-clube" moram aqui, para nada sair antes da abertura.
  */
 function ClubContent({
   club,
@@ -192,6 +191,18 @@ function ClubContent({
         <View style={styles.headerRow}>
           <BackButton />
           <View style={styles.headerActions}>
+            {club.isOwner ? (
+              // O gestor volta ao modo gestor (34.24): vindo do olho do
+              // cabeçalho dele, o `dismissTo` fecha a página e volta ao Painel;
+              // vindo de outro lugar, troca a página pelo "Meu fã-clube".
+              <HeaderIconButton
+                icon={Settings}
+                onPress={() => router.dismissTo('/meu-fa-clube')}
+                accessibilityLabel={t('fanClub.page.manage')}
+                accessibilityHint={t('fanClub.page.manageHint')}
+                testID="fan-club-manage"
+              />
+            ) : null}
             <HeaderIconButton
               icon={Share2}
               onPress={shareClub}
@@ -309,41 +320,18 @@ function BlockMenu({ club, onBlocked }: { club: FanClubPage; onBlocked: (name: s
   );
 }
 
-/** Um número do topo, no molde dos números do perfil (1e): o valor e a palavra embaixo, um foco só. */
-function PageNumber({
-  value,
-  word,
-  label,
-  testID,
-}: {
-  value: number;
-  word: string;
-  label: string;
-  testID: string;
-}) {
-  return (
-    <View accessible accessibilityLabel={label} style={styles.number} testID={testID}>
-      <Text variant="titleHeader">{formatNumber(value)}</Text>
-      <Text variant="caption" color={colors.textSecondary} style={styles.numberWord}>
-        {word}
-      </Text>
-    </View>
-  );
-}
-
 /**
  * O topo da página (34.24): o nome, com o selo do oficial ao lado (34.23; um
  * foco, com o papel de cabeçalho, "Netto de Coração, fã-clube oficial");
- * "Fã-clube de {{artist}}", com a foto do artista, que abre a central (o
- * visitante entende que é um espaço de fãs do artista, e não a página dele);
- * "feito por @gestor", com a foto dele, que abre o perfil público; os
- * seguidores e as publicações no ar, no molde dos números do perfil, e o
- * Destaque; e o seguir. Nunca prêmio nem pontos (decisão 48).
+ * "feito por @gestor", com a foto dele, que abre o perfil público; o
+ * Destaque; e, para quem não é o gestor, o seguir. A linha "Fã-clube de
+ * {{artist}}" e os números de seguidores e de publicações saíram a pedido do
+ * dono, em 27/10/2026: o gestor vê os números no Painel do modo gestor, e o
+ * de seguidores continua na lista do artista. Nunca prêmio nem pontos
+ * (decisão 48).
  */
 function ClubHeader({ club }: { club: FanClubPage }) {
-  const navigation = useNavigationContainerRef();
   const owner = personName(club.owner);
-  const artistOf = t('fanClub.page.artistOf', { artist: club.artist.name });
   return (
     <View style={styles.top} testID="fan-club-page-header">
       <View
@@ -355,30 +343,11 @@ function ClubHeader({ club }: { club: FanClubPage }) {
         <ClubName name={club.name} official={club.official} variant="titlePage" badgeSize={22} />
       </View>
       <PressableScale
-        onPress={() => openArtistOverStack(navigation.getRootState(), club.artist.id)}
-        accessibilityRole="link"
-        accessibilityLabel={artistOf}
-        accessibilityHint={t('fanClub.page.artistHint')}
-        style={[styles.link, styles.artist]}
-        testID="fan-club-page-artist"
-      >
-        <Avatar
-          name={club.artist.name}
-          id={club.artist.id}
-          photoUrl={club.artist.thumbUrl}
-          size="sm"
-        />
-        <Text variant="label" style={styles.linkText}>
-          {artistOf}
-        </Text>
-        <Icon icon={ChevronRight} size={CHEVRON_SIZE} color={colors.textMuted} />
-      </PressableScale>
-      <PressableScale
         onPress={() => router.push(fanProfileHref(club.owner.uid))}
         accessibilityRole="link"
         accessibilityLabel={t('fanClub.page.byLabel', { owner })}
         accessibilityHint={t('fanProfile.openHint', { name: owner })}
-        style={styles.link}
+        style={[styles.link, styles.owner]}
         testID="fan-club-page-owner"
       >
         <Avatar
@@ -392,35 +361,17 @@ function ClubHeader({ club }: { club: FanClubPage }) {
         </Text>
         <Icon icon={ChevronRight} size={CHEVRON_SIZE} color={colors.textMuted} />
       </PressableScale>
-      <View style={styles.numbers}>
-        <PageNumber
-          value={club.followerCount}
-          word={t(
-            club.followerCount === 1
-              ? 'fanClub.page.followersWordOne'
-              : 'fanClub.page.followersWord',
-          )}
-          label={followersText(club.followerCount)}
-          testID="fan-club-page-followers"
+      {club.featured ? (
+        <Pill
+          label={t('fanClub.page.featured')}
+          accessibilityLabel={t('fanClub.artistCard.featuredLabel')}
+          tone="accentStrong"
+          size="xs"
+          style={styles.featured}
+          testID="fan-club-page-featured"
         />
-        <PageNumber
-          value={club.postCount}
-          word={t(club.postCount === 1 ? 'fanClub.page.postsWordOne' : 'fanClub.page.postsWord')}
-          label={postsCountText(club.postCount)}
-          testID="fan-club-page-posts"
-        />
-        {club.featured ? (
-          <Pill
-            label={t('fanClub.page.featured')}
-            accessibilityLabel={t('fanClub.artistCard.featuredLabel')}
-            tone="accentStrong"
-            size="xs"
-            style={styles.featured}
-            testID="fan-club-page-featured"
-          />
-        ) : null}
-      </View>
-      <FollowArea club={club} />
+      ) : null}
+      {club.isOwner ? null : <FollowArea club={club} />}
       <SectionLabel>{t('fanClub.page.postsTitle')}</SectionLabel>
     </View>
   );
@@ -430,9 +381,9 @@ function ClubHeader({ club }: { club: FanClubPage }) {
  * O seguir (decisão 26): "Seguir o fã-clube", com a linha "Você também entra
  * na central de {{artist}}" para quem não é membro (que entra no rótulo do
  * botão); depois, "Seguindo", que abre a sheet "Deixar de seguir". É o mesmo
- * botão, para o foco do leitor ficar nele quando o rótulo troca. O gestor vê
- * "Gerenciar meu fã-clube", que volta ao modo gestor (34.24; antes, o "Seu
- * fã-clube" parado). O seguir que fez a entrada sobe o "+N" e diz que
+ * botão, para o foco do leitor ficar nele quando o rótulo troca. O gestor não
+ * segue o próprio fã-clube: no lugar do botão, ele tem a engrenagem do
+ * cabeçalho (34.24). O seguir que fez a entrada sobe o "+N" e diz que
  * entrou na central. A recusa fica embaixo, anunciada: o limite de 50 leva a
  * "Fã-clubes que sigo", e a conta suspensa tem o link da equipe. Com
  * "Seguindo" (o sucesso, ou a falha incerta que gravou), a tentativa aberta
@@ -442,7 +393,7 @@ function FollowArea({ club }: { club: FanClubPage }) {
   const online = useIsOnline();
   const follow = useFollowFanClubMutation();
   const [lastFailure, setFailure] = useState<Failure>(null);
-  const joinLine = !club.isOwner && !club.isFollowing && !club.isMember;
+  const joinLine = !club.isFollowing && !club.isMember;
   const { closeAttempt } = follow;
   // O seguir depois de deixar de seguir leva chave nova, e não a resposta guardada.
   useEffect(() => {
@@ -481,56 +432,39 @@ function FollowArea({ club }: { club: FanClubPage }) {
     );
   };
 
-  let button;
-  if (club.isOwner) {
-    // O gestor volta ao modo gestor (34.24): vindo do olho do cabeçalho, o
-    // `dismissTo` fecha a página e volta ao Painel; vindo de outro lugar, troca
-    // a página pelo "Meu fã-clube".
-    button = (
-      <Button
-        label={t('fanClub.page.manage')}
-        variant="secondary"
-        size="md"
-        onPress={() => router.dismissTo('/meu-fa-clube')}
-        accessibilityHint={t('fanClub.page.manageHint')}
-        testID="fan-club-manage"
-      />
-    );
-  } else {
-    const following = club.isFollowing;
-    button = (
-      <Button
-        label={t(following ? 'fanClub.page.following' : 'fanClub.page.follow')}
-        icon={following ? Check : undefined}
-        variant={following ? 'secondary' : 'primary'}
-        size="md"
-        loading={follow.isPending}
-        disabled={!following && !online}
-        haptic={following ? 'tap' : 'confirm'}
-        onPress={
-          following
-            ? () => {
-                setFailure(null);
-                router.push({
-                  pathname: '/deixar-de-seguir/[clubeId]',
-                  params: { clubeId: club.id },
-                });
-              }
-            : run
-        }
-        accessibilityLabel={
-          following
-            ? t('fanClub.page.followingLabel', { name: club.name })
-            : t(joinLine ? 'fanClub.page.followJoinLabel' : 'fanClub.page.followLabel', {
-                name: club.name,
-                artist: club.artist.name,
-              })
-        }
-        accessibilityHint={following ? t('fanClub.page.followingHint') : undefined}
-        testID="fan-club-follow"
-      />
-    );
-  }
+  const following = club.isFollowing;
+  const button = (
+    <Button
+      label={t(following ? 'fanClub.page.following' : 'fanClub.page.follow')}
+      icon={following ? Check : undefined}
+      variant={following ? 'secondary' : 'primary'}
+      size="md"
+      loading={follow.isPending}
+      disabled={!following && !online}
+      haptic={following ? 'tap' : 'confirm'}
+      onPress={
+        following
+          ? () => {
+              setFailure(null);
+              router.push({
+                pathname: '/deixar-de-seguir/[clubeId]',
+                params: { clubeId: club.id },
+              });
+            }
+          : run
+      }
+      accessibilityLabel={
+        following
+          ? t('fanClub.page.followingLabel', { name: club.name })
+          : t(joinLine ? 'fanClub.page.followJoinLabel' : 'fanClub.page.followLabel', {
+              name: club.name,
+              artist: club.artist.name,
+            })
+      }
+      accessibilityHint={following ? t('fanClub.page.followingHint') : undefined}
+      testID="fan-club-follow"
+    />
+  );
 
   return (
     <View style={styles.follow}>
@@ -650,7 +584,7 @@ const styles = StyleSheet.create({
   top: {
     paddingTop: spacing.md,
   },
-  // As linhas do artista e do gestor: a foto, o texto e a seta, um alvo de 44.
+  // A linha do gestor: a foto, o texto e a seta, um alvo de 44.
   link: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -658,30 +592,15 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
     minHeight: layout.minTouchTarget,
   },
-  artist: {
+  owner: {
     marginTop: spacing.xs,
   },
   linkText: {
     flexShrink: 1,
   },
-  // Como os números do perfil: cada coluna da largura do que mostra, e a que não cabe desce.
-  numbers: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    alignItems: 'center',
-    columnGap: spacing.xl,
-    rowGap: spacing.sm,
-    marginTop: spacing.md,
-  },
-  number: {
-    minWidth: layout.minTouchTarget,
-    alignItems: 'flex-start',
-  },
-  numberWord: {
-    marginTop: spacing.xxs,
-  },
   featured: {
-    alignSelf: 'center',
+    alignSelf: 'flex-start',
+    marginTop: spacing.sm,
   },
   follow: {
     marginTop: spacing.lg,
