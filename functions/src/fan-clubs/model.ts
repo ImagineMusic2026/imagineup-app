@@ -5,14 +5,17 @@ import { parseWhatsapp } from '../fan-contact/model';
 import { normalizeSocialHandle } from '../fan-profile/details';
 import { isAutomaticUsername, type PhotoLimits } from '../fan-profile/model';
 import { isContentId } from '../page-cursor';
+import { commentTextProblem, PostError } from '../posts/model';
 import { cleanLine, cleanMultiline, isVisibleLine, isVisibleMultiline } from '../visible-line';
 
 // O fã-clube gerido pelo fã (docs/arquitetura-api.md, seção 34), puro: nada
 // aqui lê ou grava o Firestore. As constantes do programa, as regras dos
 // campos da candidatura e da publicação, as recusas da API, a leitura dos
-// documentos e o prazo do Destaque. Este módulo não importa a moderação, os
-// pontos nem a equipe: os tetos do dia (moderation/model.ts e
-// points/config.ts) importam daqui.
+// documentos e o prazo do Destaque; desde a Fase 2 (seção 37), as reações e
+// os comentários, com o texto pelas regras do comentário do Mural
+// (posts/model.ts). Este módulo não importa a moderação, os pontos nem a
+// equipe: os tetos do dia (moderation/model.ts e points/config.ts) importam
+// daqui.
 
 // --- O programa (decisões 8, 9 e 47) --------------------------------------------
 
@@ -125,6 +128,18 @@ export const NEW_ACCOUNT_MS = 7 * 24 * 60 * 60 * 1000;
 
 /** Os novos seguidores contam os últimos 30 dias (decisão 36). */
 export const FOLLOWERS_RECENT_MS = 30 * 24 * 60 * 60 * 1000;
+
+/**
+ * Trocas de reação por dia (o teto `fanclub_reaction_set`, seção 37, 37.5):
+ * dar e trocar de emoji contam; tirar nunca é recusado.
+ */
+export const FAN_CLUB_REACTIONS_PER_DAY = 300;
+
+/** Comentários por dia, os de cima e as respostas (o teto `fanclub_comment_sent`, 37.5). */
+export const FAN_CLUB_COMMENTS_PER_DAY = 100;
+
+/** Comentários por página, os de cima e as respostas (37.3), como os do Mural. */
+export const FAN_CLUB_COMMENTS_PAGE = 20;
 
 // --- Os valores dos documentos (34.4) -------------------------------------------
 
@@ -372,7 +387,8 @@ export type FanClubInvalidField =
  * para o artista). O `contact_required` é do `PUT /me/contact` (decisão 14).
  * Os da publicação (etapa 2): `club_not_active`, `photos_not_allowed`,
  * `rules_outdated`, `upload_missing` e `too_many_pending`. Os do seguir
- * (etapa 4): `own_fan_club` e `follow_limit`.
+ * (etapa 4): `own_fan_club` e `follow_limit`. O da Fase 2 (seção 37, 37.3):
+ * `not_following`, comentar e reagir sem seguir e sem ser o gestor.
  */
 export type FanClubRefusal =
   | 'applications_closed'
@@ -391,23 +407,29 @@ export type FanClubRefusal =
   | 'upload_missing'
   | 'too_many_pending'
   | 'own_fan_club'
-  | 'follow_limit';
+  | 'follow_limit'
+  | 'not_following';
 
 export type FanClubErrorCode =
-  'fan_club_invalid' | 'fan_club_refused' | 'fan_club_not_found' | 'fan_club_post_not_found';
+  | 'fan_club_invalid'
+  | 'fan_club_refused'
+  | 'fan_club_not_found'
+  | 'fan_club_post_not_found'
+  | 'fan_club_comment_not_found';
 
 const FAN_CLUB_MESSAGES: Record<FanClubErrorCode, string> = {
   fan_club_invalid: 'Campo fora do formato.',
   fan_club_refused: 'Isso não pode ser feito no fã-clube agora.',
   fan_club_not_found: 'Fã-clube não encontrado.',
   fan_club_post_not_found: 'Publicação não encontrada.',
+  fan_club_comment_not_found: 'Comentário não encontrado.',
 };
 
 /**
  * Recusa do fã-clube. A API traduz o `reason` no código dela (400
  * `fan_club_invalid` com `details: { field, reason }`, 409
- * `fan_club_refused` com `details: { reason }` e os 404 `fan_club_not_found`
- * e `fan_club_post_not_found`, sem detalhes).
+ * `fan_club_refused` com `details: { reason }` e os 404 `fan_club_not_found`,
+ * `fan_club_post_not_found` e `fan_club_comment_not_found`, sem detalhes).
  */
 export class FanClubError extends Error {
   readonly reason: FanClubErrorCode;
@@ -432,6 +454,13 @@ export const fanClubNotFound = () => new FanClubError('fan_club_not_found');
 
 /** A publicação que não existe, fora do ar ou de outro autor (404). */
 export const fanClubPostNotFound = () => new FanClubError('fan_club_post_not_found');
+
+/**
+ * O comentário que não existe, que quem pede não vê ou de outra publicação
+ * (404, seção 37, 37.3): o mesmo nos três casos, para ninguém descobrir o
+ * estado de um comentário alheio.
+ */
+export const fanClubCommentNotFound = () => new FanClubError('fan_club_comment_not_found');
 
 // --- O nome e o texto de divulgação (decisões 8 e 10) ------------------------------
 
@@ -927,6 +956,17 @@ export type FanClubPostRecord = {
   submittedAt: number;
   publishedAt: number | null;
   reviewedAt: number | null;
+  /**
+   * Os contadores da Fase 2 (seção 37, 37.2), somados com `increment` na
+   * transação da reação e do comentário: as reações (o total e por emoji) e
+   * os comentários que aparecem. O ausente vale 0, sem carga nas publicações
+   * de antes.
+   */
+  reactionCount: number;
+  reactionCounts: FanClubReactionCounts;
+  commentCount: number;
+  /** As marcações do texto do gestor, resolvidas no envio (37.7); o ausente vale a lista vazia. */
+  mentions: FanClubMention[];
 };
 
 const dimension = (value: unknown): number =>
@@ -970,6 +1010,10 @@ export function fanClubPostRecord(id: string, data: Record<string, unknown>): Fa
     submittedAt: millisOf(data.submittedAt) ?? 0,
     publishedAt: millisOf(data.publishedAt),
     reviewedAt: millisOf(data.reviewedAt),
+    reactionCount: count(data.reactionCount),
+    reactionCounts: reactionCountsOf(data.reactionCounts),
+    commentCount: count(data.commentCount),
+    mentions: mentionsOf(data.mentions),
   };
 }
 
@@ -1095,6 +1139,38 @@ export function followSignals(input: {
       typeof username === 'string' && username !== '' && !isAutomaticUsername(username),
     byOwnerCode: typeof input.inviterUid === 'string' && input.inviterUid === input.ownerUid,
   };
+}
+
+/**
+ * A versão do aviso "o gestor vê que você é membro" (decisão 5 de 36.1; seção
+ * 37, "Estado"), que o app manda ao seguir e o vínculo novo guarda com a data
+ * (`memberNoticeVersion` e `memberNoticeAt`). Muda junto com o texto do app: o
+ * app que manda a versão de antes recebe 400 até o EAS Update.
+ */
+export const FAN_CLUB_MEMBER_NOTICE_VERSION = 'membros-2026-10';
+
+export type ParsedFollow = { ok: true; value: string | null } | { ok: false; field: string };
+
+/**
+ * O corpo do seguir (`PUT /me/fan-club-follows/:clubId`), conferido antes da
+ * transação e sem leitura: `{ memberNoticeVersion }`, a versão do aviso que o
+ * fã viu no botão de seguir. Sem corpo, `null` ou `{}` é o app de antes, que
+ * segue sem o aviso (`value: null`, o vínculo sem a marca, 36.5). O corpo que
+ * não é objeto, a chave desconhecida e a versão que não é texto ou não é a do
+ * servidor são `{ ok: false }` com o campo (400 `invalid_request`).
+ */
+export function parseFollowBody(
+  body: unknown,
+  version: string = FAN_CLUB_MEMBER_NOTICE_VERSION,
+): ParsedFollow {
+  if (body === undefined || body === null) return { ok: true, value: null };
+  if (!isRecord(body)) return { ok: false, field: 'body' };
+  const keys = Object.keys(body);
+  const unknownKey = keys.find((key) => key !== 'memberNoticeVersion');
+  if (unknownKey !== undefined) return { ok: false, field: unknownKey };
+  if (keys.length === 0) return { ok: true, value: null };
+  if (body.memberNoticeVersion !== version) return { ok: false, field: 'memberNoticeVersion' };
+  return { ok: true, value: version };
 }
 
 // --- A cópia da noite (decisões 28, 35 e 37) --------------------------------------------
@@ -1235,3 +1311,264 @@ export type ReportResolution = 'kept' | 'actioned' | 'withdrawn' | 'author_delet
  */
 export const fanClubReportId = (reporterUid: string, postId: string): string =>
   `${reporterUid}_${postId}`;
+
+// --- As reações e os comentários (seção 37, Fase 2) --------------------------------------
+
+/**
+ * As reações (R1): a chave no dado, nunca o emoji, que traria a normalização e
+ * o seletor de variação do coração. A ordem é a da fileira do app: coração,
+ * fogo, risada, espanto e aplauso.
+ */
+export const FAN_CLUB_REACTIONS = ['heart', 'fire', 'laugh', 'wow', 'clap'] as const;
+export type FanClubReactionKey = (typeof FAN_CLUB_REACTIONS)[number];
+
+/** As reações da publicação por emoji (`reactionCounts`, 37.2). */
+export type FanClubReactionCounts = Record<FanClubReactionKey, number>;
+
+export const emptyReactionCounts = (): FanClubReactionCounts => ({
+  heart: 0,
+  fire: 0,
+  laugh: 0,
+  wow: 0,
+  clap: 0,
+});
+
+/** O `reactionCounts` gravado: cada emoji da lista, e o ausente ou estranho vale 0. */
+export function reactionCountsOf(value: unknown): FanClubReactionCounts {
+  const counts = emptyReactionCounts();
+  if (!isRecord(value)) return counts;
+  for (const key of FAN_CLUB_REACTIONS) counts[key] = count(value[key]);
+  return counts;
+}
+
+/** A reação gravada, ou null: sem reação, tirada (`reaction: null`) ou fora da lista. */
+export const fanClubReactionOf = (value: unknown): FanClubReactionKey | null =>
+  oneOf(FAN_CLUB_REACTIONS, value);
+
+/**
+ * O id da reação: uma por fã e publicação (`{uid}_{postId}`), na ordem do
+ * `fanClubReportId`, para os ids compostos do fã-clube terem uma ordem só
+ * (decisão 9 de 37.1). O `_` separa sem ambiguidade (o uid não tem `_`).
+ */
+export const fanClubReactionId = (uid: string, postId: string): string => `${uid}_${postId}`;
+
+export type ParsedReaction = { ok: true; value: FanClubReactionKey } | { ok: false; field: string };
+
+/**
+ * O corpo do `PUT /fan-club-posts/:postId/reaction` (`{ reaction }`),
+ * conferido antes da transação e sem leitura: o corpo que não é objeto, a
+ * chave desconhecida e a reação fora da lista fechada são `{ ok: false }` com
+ * o campo (400 `invalid_request`).
+ */
+export function parseReaction(body: unknown): ParsedReaction {
+  if (!isRecord(body)) return { ok: false, field: 'body' };
+  const unknownKey = Object.keys(body).find((key) => key !== 'reaction');
+  if (unknownKey !== undefined) return { ok: false, field: unknownKey };
+  const reaction = fanClubReactionOf(body.reaction);
+  return reaction === null ? { ok: false, field: 'reaction' } : { ok: true, value: reaction };
+}
+
+/** O que uma troca de reação muda na publicação: o total e cada emoji que mexe. */
+export type ReactionDelta = {
+  total: number;
+  counts: Partial<Record<FanClubReactionKey, number>>;
+};
+
+/**
+ * A conta da troca de reação (37.3), de `from` para `to` (null é sem
+ * reação): dar soma 1 no total e no emoji; trocar tira 1 do emoji de antes e
+ * soma 1 no novo, sem mexer no total; tirar tira 1 do total e do emoji. A
+ * mesma reação não muda nada.
+ */
+export function reactionDelta(
+  from: FanClubReactionKey | null,
+  to: FanClubReactionKey | null,
+): ReactionDelta {
+  if (from === to) return { total: 0, counts: {} };
+  const counts: Partial<Record<FanClubReactionKey, number>> = {};
+  if (from !== null) counts[from] = -1;
+  if (to !== null) counts[to] = 1;
+  return { total: (to === null ? 0 : 1) - (from === null ? 0 : 1), counts };
+}
+
+/**
+ * Os contadores depois da troca, a partir dos lidos na transação: a resposta
+ * da reação, que o app usa para acertar o otimista. Nunca abaixo de 0 (um
+ * número torto gravado não vira negativo na tela).
+ */
+export function applyReactionDelta(
+  reactionCount: number,
+  reactionCounts: FanClubReactionCounts,
+  delta: ReactionDelta,
+): { reactionCount: number; reactionCounts: FanClubReactionCounts } {
+  const next = { ...reactionCounts };
+  for (const key of FAN_CLUB_REACTIONS) {
+    next[key] = Math.max(0, next[key] + (delta.counts[key] ?? 0));
+  }
+  return { reactionCount: Math.max(0, reactionCount + delta.total), reactionCounts: next };
+}
+
+/**
+ * O status do comentário (37.2): visível, oculto pelo gestor (o autor ainda
+ * vê, com o "Pedir revisão") ou oculto pela equipe (some também para o autor).
+ */
+export const FAN_CLUB_COMMENT_STATUSES = ['visible', 'manager_hidden', 'staff_hidden'] as const;
+export type FanClubCommentStatus = (typeof FAN_CLUB_COMMENT_STATUSES)[number];
+
+/**
+ * Uma marcação resolvida (37.7): o @ como estava no texto, o tipo, o uid do
+ * fã ou o id da central e as posições no texto gravado, em unidades UTF-16.
+ */
+export type FanClubMention = {
+  handle: string;
+  kind: 'fan' | 'artist';
+  id: string;
+  start: number;
+  end: number;
+};
+
+const position = (value: unknown): number | null =>
+  typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? value : null;
+
+/** As marcações gravadas; a fora do formato fica de fora, e o ausente vale a lista vazia. */
+export function mentionsOf(value: unknown): FanClubMention[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item): FanClubMention[] => {
+    if (!isRecord(item)) return [];
+    const start = position(item.start);
+    const end = position(item.end);
+    const kind = item.kind === 'fan' || item.kind === 'artist' ? item.kind : null;
+    if (
+      typeof item.handle !== 'string' ||
+      typeof item.id !== 'string' ||
+      item.id === '' ||
+      kind === null ||
+      start === null ||
+      end === null ||
+      end <= start
+    ) {
+      return [];
+    }
+    return [{ handle: item.handle, kind, id: item.id, start, end }];
+  });
+}
+
+/** `fanClubComments/{commentId}` lido (37.2), com as datas em ms. */
+export type FanClubCommentRecord = {
+  id: string;
+  clubId: string;
+  postId: string;
+  artistId: string;
+  authorUid: string;
+  /** As cópias do perfil de quem comentou, acertadas pelo `syncFanProfile` (37.8). */
+  authorName: string | null;
+  authorUsername: string | null;
+  authorPhotoURL: string | null;
+  text: string;
+  mentions: FanClubMention[];
+  mentionUids: string[];
+  /** Null no comentário de cima; na resposta, o id do comentário de cima. */
+  replyToId: string | null;
+  /** No comentário de cima: as respostas visíveis. */
+  replyCount: number;
+  /** No comentário de cima: as respostas no `manager_hidden`. */
+  managerHiddenReplyCount: number;
+  status: FanClubCommentStatus;
+  hiddenAt: number | null;
+  hiddenBy: string | null;
+  restoredByStaffAt: number | null;
+  reviewRequestedAt: number | null;
+  reviewOutcome: 'kept' | null;
+  createdAt: number;
+};
+
+/** O comentário lido. O status estranho vale `staff_hidden` (não aparece para ninguém). */
+export function fanClubCommentRecord(
+  id: string,
+  data: Record<string, unknown>,
+): FanClubCommentRecord {
+  return {
+    id,
+    clubId: typeof data.clubId === 'string' ? data.clubId : '',
+    postId: typeof data.postId === 'string' ? data.postId : '',
+    artistId: typeof data.artistId === 'string' ? data.artistId : '',
+    authorUid: typeof data.authorUid === 'string' ? data.authorUid : '',
+    authorName: text(data.authorName),
+    authorUsername: text(data.authorUsername),
+    authorPhotoURL: text(data.authorPhotoURL),
+    text: typeof data.text === 'string' ? data.text : '',
+    mentions: mentionsOf(data.mentions),
+    mentionUids: Array.isArray(data.mentionUids)
+      ? data.mentionUids.filter((uid): uid is string => typeof uid === 'string' && uid !== '')
+      : [],
+    replyToId: text(data.replyToId),
+    replyCount: count(data.replyCount),
+    managerHiddenReplyCount: count(data.managerHiddenReplyCount),
+    status: oneOf(FAN_CLUB_COMMENT_STATUSES, data.status) ?? 'staff_hidden',
+    hiddenAt: millisOf(data.hiddenAt),
+    hiddenBy: text(data.hiddenBy),
+    restoredByStaffAt: millisOf(data.restoredByStaffAt),
+    reviewRequestedAt: millisOf(data.reviewRequestedAt),
+    reviewOutcome: data.reviewOutcome === 'kept' ? 'kept' : null,
+    createdAt: millisOf(data.createdAt) ?? 0,
+  };
+}
+
+/** As chaves aceitas no corpo do `POST /fan-club-posts/:postId/comments`. */
+export const COMMENT_KEYS = ['text', 'replyToId'] as const;
+
+/** O corpo do comentário conferido e limpo. */
+export type CommentInput = { text: string; replyToId: string | null };
+
+export type ParsedComment = { ok: true; value: CommentInput } | { ok: false; field: string };
+
+/**
+ * O corpo do comentário (`{ text, replyToId? }`, 37.3), conferido antes da
+ * transação e sem leitura (o `validate` da rota chama de novo no `handle`):
+ * o corpo que não é objeto, a chave desconhecida, o `text` que não é texto e o
+ * `replyToId` que não é texto nem null são `{ ok: false }` com o campo (400
+ * `invalid_request`); o `replyToId` fora do formato dos ids é 404
+ * `fan_club_comment_not_found`, como o id do caminho; e o texto passa pela
+ * limpeza e pelas regras do comentário do Mural (`commentTextProblem`: de 1 a
+ * 500 em UTF-16, as linhas visíveis e o filtro no campo `comment`, decisão 9
+ * de 36.1), com o `comment_invalid` e o motivo.
+ */
+export function parseFanClubComment(body: unknown): ParsedComment {
+  if (!isRecord(body)) return { ok: false, field: 'body' };
+  const unknownKey = Object.keys(body).find(
+    (key) => !(COMMENT_KEYS as readonly string[]).includes(key),
+  );
+  if (unknownKey !== undefined) return { ok: false, field: unknownKey };
+  if (typeof body.text !== 'string') return { ok: false, field: 'text' };
+  const replyTo = body.replyToId;
+  if (replyTo !== undefined && replyTo !== null && typeof replyTo !== 'string') {
+    return { ok: false, field: 'replyToId' };
+  }
+  if (typeof replyTo === 'string' && !isContentId(replyTo)) throw fanClubCommentNotFound();
+  const cleaned = cleanMultiline(body.text);
+  const problem = commentTextProblem(cleaned);
+  if (problem) throw new PostError('comment_invalid', { reason: problem });
+  return {
+    ok: true,
+    value: { text: cleaned, replyToId: typeof replyTo === 'string' ? replyTo : null },
+  };
+}
+
+/**
+ * Para onde vai a resposta (R7): a resposta a uma resposta fica no mesmo
+ * nível, embaixo do comentário de cima dela.
+ */
+export const replyTarget = (replied: Pick<FanClubCommentRecord, 'id' | 'replyToId'>): string =>
+  replied.replyToId ?? replied.id;
+
+/**
+ * O que um comentário novo soma (37.3): o `commentCount` da publicação,
+ * sempre (ele nasce visível, e a resposta só nasce embaixo de um comentário
+ * de cima visível), e, na resposta, o `replyCount` do comentário de cima.
+ */
+export function newCommentCounts(replyToId: string | null): {
+  commentCount: number;
+  replyCount: number;
+} {
+  return { commentCount: 1, replyCount: replyToId === null ? 0 : 1 };
+}

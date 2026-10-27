@@ -487,7 +487,16 @@ describe('rotas do fã-clube (seção 34, etapa 2)', () => {
       kind: 'method_not_allowed',
       allow: ['POST'],
     });
-    expect(matchRoute(API_ROUTES, 'GET', '/fan-club-posts/pub1').kind).toBe('not_found');
+    // Desde a Fase 2 (seção 37, etapa 1 de 37.13), a publicação tem rota própria, só de leitura.
+    expect(matchRoute(API_ROUTES, 'GET', '/fan-club-posts/pub1')).toMatchObject({
+      kind: 'match',
+      route: { method: 'GET', pattern: '/fan-club-posts/:postId', writes: false },
+      params: { postId: 'pub1' },
+    });
+    expect(matchRoute(API_ROUTES, 'DELETE', '/fan-club-posts/pub1')).toEqual({
+      kind: 'method_not_allowed',
+      allow: ['GET'],
+    });
   });
 });
 
@@ -557,8 +566,77 @@ describe('rotas do fã-clube (seção 34, etapa 4)', () => {
     });
     expect(matchRoute(API_ROUTES, 'GET', '/me/fan-club-feed/clube1').kind).toBe('not_found');
   });
+});
 
-  it('a API tem 64 rotas: as 44 de antes e as 20 do fã-clube e do contato do fã', () => {
-    expect(API_ROUTES).toHaveLength(64);
+describe('rotas da Fase 2 do fã-clube (seção 37, etapa 1 de 37.13)', () => {
+  it('a publicação, os comentários e a reação não se confundem com a denúncia', () => {
+    const cases: [string, string, string, boolean, Record<string, string>][] = [
+      ['GET', '/fan-club-posts/pub1', '/fan-club-posts/:postId', false, { postId: 'pub1' }],
+      [
+        'GET',
+        '/fan-club-posts/pub1/comments',
+        '/fan-club-posts/:postId/comments',
+        false,
+        { postId: 'pub1' },
+      ],
+      [
+        'POST',
+        '/fan-club-posts/pub1/comments',
+        '/fan-club-posts/:postId/comments',
+        true,
+        { postId: 'pub1' },
+      ],
+      [
+        'PUT',
+        '/fan-club-posts/pub1/reaction',
+        '/fan-club-posts/:postId/reaction',
+        true,
+        { postId: 'pub1' },
+      ],
+      [
+        'DELETE',
+        '/fan-club-posts/pub1/reaction',
+        '/fan-club-posts/:postId/reaction',
+        true,
+        { postId: 'pub1' },
+      ],
+      [
+        'POST',
+        '/fan-club-posts/pub1/report',
+        '/fan-club-posts/:postId/report',
+        true,
+        { postId: 'pub1' },
+      ],
+    ];
+    for (const [method, path, pattern, writes, params] of cases) {
+      expect(matchRoute(API_ROUTES, method, path), `${method} ${path}`).toMatchObject({
+        kind: 'match',
+        route: { method, pattern, writes },
+        params,
+      });
+    }
+  });
+
+  it('os métodos errados são 405 com os aceitos', () => {
+    expect(matchRoute(API_ROUTES, 'PUT', '/fan-club-posts/pub1/comments')).toEqual({
+      kind: 'method_not_allowed',
+      allow: ['GET', 'POST'],
+    });
+    expect(matchRoute(API_ROUTES, 'GET', '/fan-club-posts/pub1/reaction')).toEqual({
+      kind: 'method_not_allowed',
+      allow: ['PUT', 'DELETE'],
+    });
+    expect(matchRoute(API_ROUTES, 'POST', '/fan-club-posts/pub1/reaction')).toEqual({
+      kind: 'method_not_allowed',
+      allow: ['PUT', 'DELETE'],
+    });
+    // As respostas são a mesma rota, com o `?replyTo=`: não há caminho por comentário.
+    expect(matchRoute(API_ROUTES, 'GET', '/fan-club-posts/pub1/comments/c1').kind).toBe(
+      'not_found',
+    );
+  });
+
+  it('a API tem 69 rotas: as 64 de antes e as 5 da etapa 1 da Fase 2', () => {
+    expect(API_ROUTES).toHaveLength(69);
   });
 });

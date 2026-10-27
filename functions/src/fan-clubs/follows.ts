@@ -52,6 +52,7 @@ import {
   fanClubFollowsOf,
   fanClubPostsOf,
   fanClubRef,
+  readReactionsOf,
 } from './store';
 
 // Os seguidores do fã-clube (docs/arquitetura-api.md, seção 34, decisões 26 a
@@ -61,7 +62,8 @@ import {
 // fã-clubes" da Início. Seguir é livre para todos, o número de seguidores é
 // público, e o gestor vê só o número: nenhuma rota devolve quem segue. Sair da
 // central, bloquear o gestor e a suspensão apagam o vínculo nos módulos deles
-// (pelo store).
+// (pelo store). Desde a Fase 2 (seção 37, "Estado"), o vínculo novo guarda a
+// marca do aviso "o gestor vê que você é membro" (decisão 5 de 36.1).
 
 const tsOf = (ms: number) => Timestamp.fromMillis(ms);
 
@@ -101,15 +103,24 @@ export type FollowOutcome = { body: FollowFanClubResult; plan: AwardPlan };
  * `joinCentrals` com a via `page` (o `central_join` de sempre, uma vez na
  * vida, o teto `central_entry` e a comemoração) e o crédito do seguir (sem o
  * marcador, `via: 'follow'`; o `joinCentrals` só o grava com o `firstJoin`).
- * Grava o vínculo com os três sinais (decisão 39) e conta o teto. Seguir rende
- * 0 ponto (decisão 31).
+ * Grava o vínculo com os três sinais (decisão 39) e a marca do aviso de membro
+ * (a versão do corpo e a data; null nas duas sem a versão, o app de antes,
+ * decisão 5 de 36.1 e seção 37, "Estado") e conta o teto. Já seguindo, a marca
+ * não é gravada: o vínculo antigo fica sem ela (36.5). Seguir rende 0 ponto
+ * (decisão 31).
  */
 export async function followFanClub(
   tx: Transaction,
   db: Firestore,
-  options: { fan: FanContext; award: AwardContext; profile: DocumentSnapshot; clubId: string },
+  options: {
+    fan: FanContext;
+    award: AwardContext;
+    profile: DocumentSnapshot;
+    clubId: string;
+    memberNoticeVersion: string | null;
+  },
 ): Promise<FollowOutcome> {
-  const { fan, award, profile, clubId } = options;
+  const { fan, award, profile, clubId, memberNoticeVersion } = options;
   const followRef = fanClubFollowRef(db, fan.uid, clubId);
   const [clubSnap, follow, blockList, referral] = await tx.getAll(
     fanClubRef(db, clubId),
@@ -166,6 +177,8 @@ export async function followFanClub(
     artistId: artist.id,
     followedAt: tsOf(award.now),
     ...signals,
+    memberNoticeVersion,
+    memberNoticeAt: memberNoticeVersion === null ? null : tsOf(award.now),
     schemaVersion: 1,
   });
   countDailyAction(plan, fan, award, 'club_follow');
@@ -191,7 +204,10 @@ export async function unfollowFanClub(
   return { body: { clubId, following: false }, plan };
 }
 
-/** Seguir fora da API (o seed dos emuladores), com o ator dado (o de sistema não conta no teto). */
+/**
+ * Seguir fora da API (o seed dos emuladores), com o ator dado (o de sistema
+ * não conta no teto), sem a marca do aviso, como o app de antes.
+ */
 export function runFollowFanClub(
   db: Firestore,
   uid: string,
@@ -199,7 +215,7 @@ export function runFollowFanClub(
   options: RunOptions,
 ): Promise<FollowOutcome> {
   return runAsFan(db, uid, options, (tx, fan, award, profile) =>
-    followFanClub(tx, db, { fan, award, profile, clubId }),
+    followFanClub(tx, db, { fan, award, profile, clubId, memberNoticeVersion: null }),
   );
 }
 
@@ -320,7 +336,8 @@ function comparePublished(a: FanClubPostRecord, b: FanClubPostRecord): number {
  * gestor não bloqueado), em blocos de 30 fã-clubes no `in` (o
  * `FEED_IN_BLOCK`, com o índice `clubId`, `status`, `publishedAt`), cada bloco
  * com os `limit + 1` primeiros, juntados na mesma ordem. 10 por página, com o
- * cursor `[publishedAt, id]`. O `/feed` oficial não muda (decisão 30).
+ * cursor `[publishedAt, id]`, e a reação de quem pede em cada uma, num
+ * `getAll` a mais (seção 37, 37.3). O `/feed` oficial não muda (decisão 30).
  */
 export async function readFanClubFeed(
   db: Firestore,
@@ -354,9 +371,16 @@ export async function readFanClubFeed(
   );
   const all = blocks.flat().sort(comparePublished);
   const posts = all.slice(0, query.limit);
+  const reactions = await readReactionsOf(
+    db,
+    uid,
+    posts.map((post) => post.id),
+  );
   const last = posts.at(-1);
   return {
-    items: posts.map((post) => publicPostView(post, visible.get(post.clubId)!)),
+    items: posts.map((post) =>
+      publicPostView(post, visible.get(post.clubId)!, reactions.get(post.id) ?? null),
+    ),
     nextCursor:
       all.length > query.limit && last
         ? encodePageCursor({ at: last.publishedAt ?? last.submittedAt, id: last.id })

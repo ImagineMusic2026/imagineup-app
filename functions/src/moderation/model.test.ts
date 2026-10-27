@@ -142,6 +142,10 @@ describe('tetos do dia', () => {
       club_post: { key: 'fanclub_post', limit: 5 },
       club_upload: { key: 'fanclub_upload', limit: 10 },
       club_follow: { key: 'fanclub_follow', limit: 30 },
+      // A Fase 2 do fã-clube (seção 37, 37.5): as trocas de reação e os
+      // comentários nas publicações, com os números do Mural.
+      club_react: { key: 'fanclub_reaction_set', limit: 300 },
+      club_comment: { key: 'fanclub_comment_sent', limit: 100 },
     });
     expect(BLOCK_LIST_MAX).toBe(1_000);
   });

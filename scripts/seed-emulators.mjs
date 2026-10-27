@@ -141,7 +141,12 @@
  * "Seus prêmios", o card Prêmios e o extrato com "Prêmio do fã-clube"). Na
  * etapa 10, a candidatura pendente da Duda para o Nenho (a fila do painel e o
  * "Candidatura em análise" do app): ela entra antes na central pela página,
- * com o central_join em 0, e se candidata com o ator de sistema.
+ * com o central_join em 0, e se candidata com o ator de sistema. Na Fase 2
+ * (seção 37, etapa 1 de 37.13), logo depois dos seguidores: os comentários da
+ * Bia e do rank-40 nas duas publicações no ar da Camila, a resposta da Camila
+ * com o @ da Bia e as reações dos três (a da Camila na publicação dela), pelos
+ * núcleos das rotas, com o ator de sistema e as duas origens em 0. A
+ * publicação em análise não recebe nada.
  *
  * Rodar de novo não muda nada. Depois da meia-noite, o progresso do dia volta
  * a 0, como o de qualquer fã: para ver de novo o 3 de 5 e o 2 de 5, feche os
@@ -704,6 +709,14 @@ if (camilaUid) {
   console.log(
     `Seguidores do fã-clube: ${clubFollows.follows} agora (2 no total: a Bia, ${clubFollows.joined ? 'que entrou agora na central do Netto' : 'já da central do Netto'}, e o ${SEED_FAN_CLUB_FOLLOWER.split('@')[0]}, que entrou junto, a entrada trazida); a cópia da noite ${clubFollows.copied ? 'rodou agora' : 'já tinha rodado'}.`,
   );
+  // Os comentários e as reações (Fase 2, seção 37), depois dos seguidores: rodar de novo não grava.
+  const { seedFanClubEngagement } = functionsBuild('fan-clubs');
+  const clubEngagement = await withFirestore((db) =>
+    seedFanClubEngagement(db, { camilaUid, biaUid: fanUids.bia, followerUid }),
+  );
+  console.log(
+    `Comentários e reações do fã-clube: ${clubEngagement.comments} comentários e ${clubEngagement.reactions} reações agora (5 e 4 no total: a Bia e o ${SEED_FAN_CLUB_FOLLOWER.split('@')[0]} nas duas publicações no ar, a resposta da Camila com o @ da Bia e a reação dela na da foto).`,
+  );
   // O prêmio da Camila (etapa 5), depois dos seguidores: rodar de novo não grava.
   const { seedFanClubPrize } = functionsBuild('fan-clubs');
   const clubPrize = await withFirestore((db) =>
@@ -719,7 +732,7 @@ if (camilaUid) {
     `Candidatura pendente: a da Duda para o Nenho ${clubPending.applied ? `entrou agora${clubPending.joined ? ', depois da entrada dela na central' : ''}` : 'já estava'}.`,
   );
   console.log(
-    'Fã-clube: a Camila gere o fã-clube do Netto, com seguidores, uma publicação em análise, uma denúncia e um prêmio; a Duda espera a aprovação.',
+    'Fã-clube: a Camila gere o fã-clube do Netto, com seguidores, comentários e reações, uma publicação em análise, uma denúncia e um prêmio; a Duda espera a aprovação.',
   );
 }
 

@@ -5,6 +5,7 @@ import { dayKey, shiftDay } from '../src/day';
 import {
   copyFanClubCounts,
   FAN_CLUB_FOLLOWS_MAX,
+  FAN_CLUB_MEMBER_NOTICE_VERSION,
   FAN_CLUB_RULES_VERSION,
   monthOf,
   readFanClubCounts,
@@ -35,7 +36,8 @@ import {
  * (sair da central, bloquear o gestor e a suspensão), "Fã-clubes que sigo", a
  * seção "Dos seus fã-clubes" da Início e a cópia da noite (os `counts`, os
  * retratos do mês, o destaque vencido, a ordem, o prazo e a falha de um que
- * não para os outros).
+ * não para os outros). Desde a Fase 2 (seção 37, "Estado"), a marca do aviso
+ * de membro no vínculo novo: a versão do corpo e a data, ou null sem corpo.
  */
 const env = useEmulators('fa-clube-seguidores', ['api', 'createUserProfile', 'decideFanClub']);
 const { db } = env;
@@ -88,8 +90,13 @@ const join = (call: Api, fan: Fan, artistId: string) =>
 const leave = (call: Api, fan: Fan, artistId: string) =>
   call('DELETE', `/me/centrals/${artistId}`, { token: fan.token, key: unique('chave-sai-') });
 
-const follow = (call: Api, fan: Fan, clubId: string) =>
-  call('PUT', `/me/fan-club-follows/${clubId}`, { token: fan.token, key: unique('chave-segue-') });
+/** Seguir; sem corpo, como o app de antes (o vínculo sem a marca do aviso de membro). */
+const follow = (call: Api, fan: Fan, clubId: string, body?: unknown) =>
+  call('PUT', `/me/fan-club-follows/${clubId}`, {
+    token: fan.token,
+    key: unique('chave-segue-'),
+    body,
+  });
 
 const unfollow = (call: Api, fan: Fan, clubId: string) =>
   call('DELETE', `/me/fan-club-follows/${clubId}`, {
@@ -221,6 +228,9 @@ describe('seguir (decisões 26, 31 e 39)', () => {
       newAccount: true,
       chosenUsername: true,
       byOwnerCode: true,
+      // Sem corpo, o app de antes: o vínculo sem a marca do aviso de membro.
+      memberNoticeVersion: null,
+      memberNoticeAt: null,
       schemaVersion: 1,
     });
     expect(await exists(`wallets/${fan.uid}/ledger/central_join:${artistId}`)).toBe(true);
@@ -346,6 +356,58 @@ describe('seguir (decisões 26, 31 e 39)', () => {
     expect(await clubNumber(owner.clubId, 'joins')).toBe(0);
   });
 
+  it('a marca do aviso de membro (seção 37, "Estado"): a versão e a data no vínculo novo; sem corpo, null; já seguindo não grava; outra versão é 400 sem gravar', async () => {
+    const admin = await seedMember(env, 'Admin da Equipe', 'admin');
+    const { call } = clockApi();
+    const artistId = await openArtist();
+    const owner = await manager(call, admin, artistId);
+    const notice = { memberNoticeVersion: FAN_CLUB_MEMBER_NOTICE_VERSION };
+
+    // Com a versão do servidor: a versão e a data, o agora do pedido (o do `followedAt`).
+    const fan = await signUpFan(db, 'Bia Santos');
+    const before = Date.now();
+    expect(await follow(call, fan, owner.clubId, notice)).toMatchObject({
+      status: 200,
+      body: { clubId: owner.clubId, following: true, joined: true },
+    });
+    const after = Date.now();
+    const marked = (await followOf(fan.uid, owner.clubId))!;
+    expect(marked).toMatchObject({
+      memberNoticeVersion: FAN_CLUB_MEMBER_NOTICE_VERSION,
+      memberNoticeAt: expect.any(Timestamp),
+    });
+    expect(marked.memberNoticeAt).toEqual(marked.followedAt);
+    const markedAt = (marked.memberNoticeAt as Timestamp).toMillis();
+    expect(markedAt).toBeGreaterThanOrEqual(before);
+    expect(markedAt).toBeLessThanOrEqual(after);
+
+    // Sem corpo (o app de antes): o vínculo sem a marca, as duas null.
+    const old = await signUpFan(db, 'Duda Lima');
+    expect((await follow(call, old, owner.clubId)).status).toBe(200);
+    const unmarked = { memberNoticeVersion: null, memberNoticeAt: null };
+    expect(await followOf(old.uid, owner.clubId)).toMatchObject(unmarked);
+
+    // Já seguindo, agora com a versão: a mesma resposta, sem gravar a marca (36.5).
+    expect(await follow(call, old, owner.clubId, notice)).toMatchObject({
+      status: 200,
+      body: { following: true, joined: false, pointsAwarded: 0 },
+    });
+    expect(await followOf(old.uid, owner.clubId)).toMatchObject(unmarked);
+    expect(await followCap(old.uid)).toBe(1);
+
+    // Outra versão: 400 antes da transação, sem vínculo, sem central e sem teto.
+    const other = await signUpFan(db, 'Enzo Rocha');
+    expect(
+      await follow(call, other, owner.clubId, { memberNoticeVersion: 'membros-2027-01' }),
+    ).toMatchObject({
+      status: 400,
+      body: { code: 'invalid_request', details: { field: 'memberNoticeVersion' } },
+    });
+    expect(await exists(`users/${other.uid}/fanClubFollows/${owner.clubId}`)).toBe(false);
+    expect(await exists(`users/${other.uid}/centrals/${artistId}`)).toBe(false);
+    expect(await followCap(other.uid)).toBe(0);
+  });
+
   it('pela api de verdade: seguir, os seguidos e deixar de seguir', async () => {
     const admin = await seedMember(env, 'Admin da Equipe', 'admin');
     const { call } = clockApi();
@@ -357,6 +419,11 @@ describe('seguir (decisões 26, 31 e 39)', () => {
     expect(
       await http(env, path, { method: 'PUT', token: fan.token, key: unique('chave-http-') }),
     ).toMatchObject({ status: 200, body: { clubId: owner.clubId, following: true, joined: true } });
+    // O PUT sem corpo de verdade (o app de antes): o vínculo sem a marca.
+    expect(await followOf(fan.uid, owner.clubId)).toMatchObject({
+      memberNoticeVersion: null,
+      memberNoticeAt: null,
+    });
     expect(await http(env, '/me/fan-club-follows', { token: fan.token })).toMatchObject({
       status: 200,
       body: { items: [{ id: owner.clubId, available: true }] },
@@ -367,6 +434,21 @@ describe('seguir (decisões 26, 31 e 39)', () => {
     expect(await http(env, '/me/fan-club-feed', { token: fan.token })).toMatchObject({
       status: 200,
       body: { items: [], nextCursor: null },
+    });
+
+    // Com a versão do aviso no corpo JSON: o vínculo com a marca.
+    const marked = await signUpFan(db, 'Duda Lima');
+    expect(
+      await http(env, path, {
+        method: 'PUT',
+        token: marked.token,
+        key: unique('chave-http-'),
+        body: { memberNoticeVersion: FAN_CLUB_MEMBER_NOTICE_VERSION },
+      }),
+    ).toMatchObject({ status: 200, body: { following: true } });
+    expect(await followOf(marked.uid, owner.clubId)).toMatchObject({
+      memberNoticeVersion: FAN_CLUB_MEMBER_NOTICE_VERSION,
+      memberNoticeAt: expect.any(Timestamp),
     });
   });
 });

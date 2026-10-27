@@ -15,9 +15,9 @@ import {
 
 // As consultas do fã-clube gerido pelo fã (docs/arquitetura-api.md, 34.6),
 // as do servidor e as do painel, com os 21 índices compostos e os de um
-// campo. O emulador não cobra índice nenhum (e os de grupo só aparecem em
-// produção): este teste é a rede. A trilha que mudar uma consulta muda a
-// forma aqui.
+// campo; desde a Fase 2 (seção 37, 37.4), os 3 dos comentários. O emulador
+// não cobra índice nenhum (e os de grupo só aparecem em produção): este teste
+// é a rede. A trilha que mudar uma consulta muda a forma aqui.
 
 const file = readIndexes();
 
@@ -103,6 +103,27 @@ const COMPOSITE: CompositeShape[] = [
     [asc('clubId'), asc('byOwnerCode')],
     'COLLECTION_GROUP',
   ),
+  // A Fase 2 (seção 37, 37.4). Os comentários de cima filtram o `replyToId`
+  // nulo, que o índice cobre (todo comentário nasce com o campo gravado), e o
+  // id desempata na mesma direção da data, como os comentários do Mural.
+  shape('os comentários de cima de uma publicação', 'fanClubComments', [
+    asc('postId'),
+    asc('replyToId'),
+    asc('status'),
+    desc('createdAt'),
+    desc('__name__'),
+  ]),
+  shape('as respostas de um comentário, da mais antiga', 'fanClubComments', [
+    asc('replyToId'),
+    asc('status'),
+    asc('createdAt'),
+    asc('__name__'),
+  ]),
+  // A lista do painel (a etapa 8) e a conversa da sugestão do @ (a etapa 2).
+  shape('os comentários de uma publicação em todos os status', 'fanClubComments', [
+    asc('postId'),
+    desc('createdAt'),
+  ]),
 ];
 
 const single = (
@@ -141,9 +162,9 @@ const SINGLE: SingleFieldShape[] = [
 ];
 
 describe('os índices do fã-clube (34.6)', () => {
-  it('são 21 compostos novos, 65 no total', () => {
-    expect(COMPOSITE).toHaveLength(21);
-    expect(file.indexes).toHaveLength(65);
+  it('são 24 compostos do fã-clube (21 da seção 34 e 3 da 37), 68 no total', () => {
+    expect(COMPOSITE).toHaveLength(24);
+    expect(file.indexes).toHaveLength(68);
   });
 
   it.each(COMPOSITE.map((item) => [item.name, item] as const))(
@@ -168,6 +189,13 @@ describe('os índices do fã-clube (34.6)', () => {
       ['prizes', 'note'],
       ['redemptions', 'coupon'],
       ['redemptions', 'message'],
+      // A Fase 2 (seção 37, 37.4): o texto e as marcações do comentário, as
+      // marcações da publicação e o mapa dos dias da taxa nos shards, que
+      // ganha uma chave por dia e ninguém consulta.
+      ['fanClubComments', 'text'],
+      ['fanClubComments', 'mentions'],
+      ['fanClubPosts', 'mentions'],
+      ['fanClubShards', 'days'],
     ] as const;
     expect(exemptions(file)).toEqual(
       expect.arrayContaining(exempt.map(([group, field]) => `${group}.${field}`)),

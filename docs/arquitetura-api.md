@@ -12543,6 +12543,8 @@ Ninguém grava pelo cliente (`allow write: if false`). O fã lê só pela `api`;
 
 **`fanClubPosts/{postId}`** ganha o `reactionCount`, o `reactionCounts` (`{ heart, fire, laugh, wow, clap }`), o `commentCount` (os comentários que aparecem: os de cima visíveis e as respostas visíveis de um comentário de cima visível), as `mentions` e os `mentionUids` (do texto do gestor, resolvidos no envio). O ausente vale 0 ou lista vazia, sem carga nas publicações de hoje.
 
+**`users/{uid}/fanClubFollows/{clubId}`** (o vínculo de seguir, 34.4) ganha a marca do aviso "o gestor vê que você é membro" (decisão 5 de 36.1; 37, "Estado"): o `memberNoticeVersion`, a versão do texto que o app mandou no seguir (a `FAN_CLUB_MEMBER_NOTICE_VERSION` de `fan-clubs/model.ts`, hoje `membros-2026-10`), e o `memberNoticeAt`, o agora do pedido, igual ao `followedAt`. Só o vínculo novo grava a marca: sem a versão (o app de antes), as duas vão `null`, e o "já seguindo" não grava nada, então o vínculo antigo fica sem ela (36.5). O ausente vale `null`, sem carga nos vínculos de hoje.
+
 **`fanClubStats/{clubId}/fanClubShards/{n}`** ganha o mapa `days`, com `days.{AAAA-MM-DD}.reactions` e `days.{AAAA-MM-DD}.comments` (o dia de São Paulo), somados com `increment` e `merge` no shard sorteado, sem ler.
 
 **`fanClubCommentReports/{reporterUid}_{commentId}`** (nova): `commentId`, `postId`, `clubId`, `reporterUid`, `reason`, `round`, `reportedAt`, `day` e `schemaVersion`. Uma por fã e comentário por rodada, como a `fanClubReports`.
@@ -12581,6 +12583,7 @@ Os tipos novos do `contract.ts` e do espelho `src/domains/fan-club/types.ts` (ca
 - `AddFanClubCommentResult`: `FanClubComment & ActionRewards`. `FanClubReactionResult`: `{ postId, reaction: FanClubReaction | null, reactionCount, reactionCounts } & ActionRewards`.
 - `MentionSuggestion`: `{ kind: 'fan' | 'artist', id, username, name, photoURL, role: 'manager' | 'artist' | null, inConversation }`.
 - O `FanClubNumbers` ganha `engagement?: { reactions30d, comments30d, rate30d: number | null }`.
+- `FollowFanClubBody`: `{ memberNoticeVersion?: string }`, o corpo do seguir com a versão do aviso de membro (37, "Estado").
 
 O que cada uma faz (as transações seguem a ordem fixa da seção 5: as leituras, o `planAwards`, as gravações e o `applyAwards`):
 
@@ -12602,6 +12605,7 @@ O que cada uma faz (as transações seguem a ordem fixa da seção 5: as leitura
 - **`GET /me/fan-club/numbers`:** ganha o `engagement` (37.11).
 - **`POST /me/fan-club/posts`:** o corpo não muda (o `parsePost` continua recusando chave nova, `fan-clubs/model.ts:996`), mas o filtro dele (`fan-clubs/model.ts:1012`), que roda no `validate` e de novo no `handle` antes de ler (`api/routes/fan-clubs.ts:221` e `:227`), passa a conferir o texto com o "@" tirado de todo @, como o do comentário. Na transação, o servidor acha e resolve os @ do texto (as `mentions` e os `mentionUids`) e confere de novo o filtro `fanClubPost` com o "@" tirado só dos resolvidos (37.7).
 - **`DELETE /me/fan-club/posts/:postId`:** não muda. Os comentários e as reações da publicação tirada do ar ficam, sem rota que os mostre (decisão 24).
+- **`PUT /me/fan-club-follows/:clubId`:** aceita o corpo opcional `{ memberNoticeVersion }` (o `FollowFanClubBody`), conferido no `validate` e de novo no `handle`, sem ler (o `parseFollowBody`). Sem corpo, `null` ou `{}` é o app de antes, que segue sem a marca; a versão igual à do servidor vira a marca do vínculo novo (37.2); a chave desconhecida, a versão que não é texto e a outra versão dão 400 `invalid_request` com o `field`. A resposta não muda. O app manda a versão a partir da etapa 5 (37.13), junto com o aviso no botão de seguir.
 
 #### Callables que mudam
 

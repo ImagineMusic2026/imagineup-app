@@ -1,8 +1,10 @@
 import { secondsUntil } from '../centrals/model';
 import {
   FAN_CLUB_APPLIES_PER_DAY,
+  FAN_CLUB_COMMENTS_PER_DAY,
   FAN_CLUB_FOLLOWS_PER_DAY,
   FAN_CLUB_POSTS_PER_DAY,
+  FAN_CLUB_REACTIONS_PER_DAY,
   FAN_CLUB_UPLOADS_PER_DAY,
 } from '../fan-clubs/model';
 import {
@@ -59,7 +61,10 @@ export const REDEEMS_PER_DAY = 10;
  * salvamento do perfil e a troca de nome do `PUT /me/profile` (seção 28,
  * decisão 9); `club_apply`, a candidatura a fã-clube, e `club_post` e
  * `club_upload`, a publicação e a vaga de envio da foto dela (seção 34,
- * decisão 11); `club_follow`, seguir um fã-clube (seção 34, decisão 34).
+ * decisão 11); `club_follow`, seguir um fã-clube (seção 34, decisão 34);
+ * `club_react` e `club_comment`, dar ou trocar a reação e comentar numa
+ * publicação de fã-clube (seção 37, 37.5). A denúncia de comentário de
+ * fã-clube e o pedido de revisão contam no `report` de sempre.
  */
 export type CapAction =
   | 'like'
@@ -75,7 +80,9 @@ export type CapAction =
   | 'club_apply'
   | 'club_post'
   | 'club_upload'
-  | 'club_follow';
+  | 'club_follow'
+  | 'club_react'
+  | 'club_comment';
 
 export const DAILY_CAPS: Record<CapAction, { key: DailyActionKey; limit: number }> = {
   like: { key: 'like_set', limit: LIKES_PER_DAY },
@@ -92,6 +99,8 @@ export const DAILY_CAPS: Record<CapAction, { key: DailyActionKey; limit: number 
   club_post: { key: 'fanclub_post', limit: FAN_CLUB_POSTS_PER_DAY },
   club_upload: { key: 'fanclub_upload', limit: FAN_CLUB_UPLOADS_PER_DAY },
   club_follow: { key: 'fanclub_follow', limit: FAN_CLUB_FOLLOWS_PER_DAY },
+  club_react: { key: 'fanclub_reaction_set', limit: FAN_CLUB_REACTIONS_PER_DAY },
+  club_comment: { key: 'fanclub_comment_sent', limit: FAN_CLUB_COMMENTS_PER_DAY },
 };
 
 /**

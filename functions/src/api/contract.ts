@@ -847,6 +847,13 @@ export type OwnFanClubPost = {
   publishedAt: string | null;
   /** ISO da última decisão da equipe, ou null. */
   reviewedAt: string | null;
+  /** As reações, o total e por emoji (seção 37, 37.3); só o servidor da Fase 2 manda. */
+  reactionCount?: number;
+  reactionCounts?: FanClubReactionCounts;
+  /** Os comentários que aparecem (37.2). */
+  commentCount?: number;
+  /** As marcações do texto, resolvidas no envio (37.7). */
+  mentions?: FanClubMention[];
 };
 
 /**
@@ -878,6 +885,19 @@ export type FanClubPost = {
   thumb: FanClubPostImage | null;
   /** ISO. */
   publishedAt: string;
+  /**
+   * As reações, o total e por emoji (seção 37, 37.3, R8): a contagem é de
+   * todos, e quem reagiu nunca aparece. Só o servidor da Fase 2 manda: o app
+   * mostra a fileira só com o `reactionCount`.
+   */
+  reactionCount?: number;
+  reactionCounts?: FanClubReactionCounts;
+  /** Os comentários que aparecem: os de cima visíveis e as respostas visíveis deles (37.2). */
+  commentCount?: number;
+  /** A reação de quem pede, ou null. */
+  myReaction?: FanClubReaction | null;
+  /** As marcações do texto do gestor, resolvidas no envio (37.7). */
+  mentions?: FanClubMention[];
 };
 
 /** O artista na página do fã-clube. */
@@ -931,6 +951,14 @@ export type ReportFanClubPostResult = { postId: string; status: 'reported' | 'al
 // --- Os seguidores (etapa 4 de 34.14) ------------------------------------------------
 
 /**
+ * Corpo de `PUT /me/fan-club-follows/:clubId` (seção 37, "Estado"): a versão
+ * do aviso "o gestor vê que você é membro" que o fã viu no botão de seguir
+ * (decisão 5 de 36.1), igual à do servidor. Opcional: o app de antes segue sem
+ * corpo, e o vínculo fica sem a marca.
+ */
+export type FollowFanClubBody = { memberNoticeVersion?: string };
+
+/**
  * Seguir (`PUT /me/fan-club-follows/:clubId`), no molde do `JoinCentralResult`
  * (a resposta leva também as recompensas da entrada, `ActionRewards`): o
  * `joined` diz se o seguir fez a entrada na central oficial agora (a
@@ -969,3 +997,84 @@ export type FollowedFanClub = {
 
 /** `GET /me/fan-club-follows`: até 50, do mais novo ao mais antigo (os indisponíveis contam nos 50). */
 export type FollowedFanClubs = { items: FollowedFanClub[] };
+
+// --- A Fase 2: reações e comentários (seção 37, 37.3) --------------------------------
+
+/** As reações (R1), pela chave: coração, fogo, risada, espanto e aplauso. */
+export type FanClubReaction = 'heart' | 'fire' | 'laugh' | 'wow' | 'clap';
+
+/** As reações de uma publicação por emoji. */
+export type FanClubReactionCounts = Record<FanClubReaction, number>;
+
+/**
+ * Uma marcação resolvida no texto (37.7): o @ como foi escrito, o tipo, o uid
+ * do fã ou o id da central e as posições no texto, em unidades UTF-16. O app
+ * confere o trecho antes de ligar o link.
+ */
+export type FanClubMention = {
+  handle: string;
+  kind: 'fan' | 'artist';
+  id: string;
+  start: number;
+  end: number;
+};
+
+/**
+ * A publicação no ar (`GET /fan-club-posts/:postId`): a tela da publicação,
+ * com o que ela pede da página (seguir, ser o gestor e ser da central) e o
+ * nome do artista.
+ */
+export type FanClubPostDetails = FanClubPost & {
+  isOwner: boolean;
+  isFollowing: boolean;
+  isMember: boolean;
+  artistName: string;
+};
+
+/**
+ * Um comentário de publicação de fã-clube. O `isManager` é calculado na
+ * leitura (o autor é o gestor de agora). O `hidden` sai só para o autor e para
+ * o gestor, e o `review`, só para o autor (o ocultar e o pedido de revisão,
+ * 37.6); o `hiddenReplyCount`, só para o gestor no próprio fã-clube.
+ */
+export type FanClubComment = {
+  id: string;
+  postId: string;
+  clubId: string;
+  author: FanClubPerson;
+  isManager: boolean;
+  text: string;
+  mentions: FanClubMention[];
+  /** Null no comentário de cima; na resposta, o id do comentário de cima. */
+  replyToId: string | null;
+  /** No comentário de cima: as respostas visíveis. */
+  replyCount: number;
+  hiddenReplyCount?: number;
+  /** ISO. */
+  createdAt: string;
+  hidden: 'manager' | null;
+  review: 'requested' | 'kept' | null;
+};
+
+/**
+ * `GET /fan-club-posts/:postId/comments`: os comentários de cima, do mais novo,
+ * ou, com o `?replyTo=`, as respostas de um deles, da mais antiga. O
+ * `ownHidden` vem só na primeira página dos de cima, com os do próprio fã
+ * ocultos pelo gestor.
+ */
+export type FanClubCommentPage = Page<FanClubComment> & { ownHidden?: FanClubComment[] };
+
+/** Comentar (`POST /fan-club-posts/:postId/comments`): o comentário e as recompensas. */
+export type AddFanClubCommentResult = FanClubComment & ActionRewards;
+
+/**
+ * Reagir e tirar a reação (`PUT` e `DELETE /fan-club-posts/:postId/reaction`):
+ * a reação de agora e os contadores depois da gravação, com que o app acerta o
+ * otimista.
+ */
+export type FanClubReactionResult = {
+  postId: string;
+  reaction: FanClubReaction | null;
+  reactionCount: number;
+  reactionCounts: FanClubReactionCounts;
+} & ActionRewards;

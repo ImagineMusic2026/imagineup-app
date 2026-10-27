@@ -34,7 +34,9 @@ import { resolve } from 'node:path';
  * lê o documento pelo caminho, na ficha da candidatura, e só de quem tem
  * candidatura (em qualquer status); o número de quem só usou a loja fica
  * fechado até para o admin. O Leitor, a seção Fãs e o próprio fã não leem;
- * ninguém lista.
+ * ninguém lista. A Fase 2 (seção 37, 37.4): os comentários, lidos pela seção
+ * fanClubs e pela Moderação; as reações e as denúncias de comentário uma a
+ * uma, fechadas para todos.
  */
 let env: RulesTestEnvironment;
 
@@ -78,6 +80,7 @@ const MEMBERS: Record<string, Member> = {
   leitorFaClubes: { role: 'viewer', status: 'active', sections: ['fanClubs'] },
   fas: { role: 'viewer', status: 'active', sections: ['fans'] },
   artistas: { role: 'editor', status: 'active', sections: ['artists'] },
+  moderacao: { role: 'editor', status: 'active', sections: ['moderation'] },
   desativada: { role: 'editor', status: 'disabled', sections: ['fanClubs', 'fans'] },
   pendente: { role: 'admin', status: 'pending' },
   ligadaFaClubes: {
@@ -104,6 +107,10 @@ const QUEUE = 'fanClubReportQueue/publicacao-1';
 const FOLLOW = `users/${FOLLOWER}/fanClubFollows/${CLUB}`;
 const CREDIT = `users/${FOLLOWER}/fanClubCredits/nettobrito`;
 const CONTACT = `users/${GESTOR}/contact/main`;
+// A Fase 2 (seção 37): um comentário da Bia, a reação dela e uma denúncia de comentário.
+const COMMENT = 'fanClubComments/comentario-1';
+const REACTION = `fanClubReactions/${FOLLOWER}_publicacao-1`;
+const COMMENT_REPORT = `fanClubCommentReports/${GESTOR}_comentario-1`;
 // O contato de quem só resgatou na loja, sem candidatura.
 const STORE_ONLY = 'uid-davi';
 const STORE_CONTACT = `users/${STORE_ONLY}/contact/main`;
@@ -170,6 +177,27 @@ beforeEach(async () => {
       byOwnerCode: false,
     });
     await setDoc(doc(db, CREDIT), { artistId: 'nettobrito', clubId: CLUB, via: 'follow' });
+    await setDoc(doc(db, COMMENT), {
+      clubId: CLUB,
+      postId: 'publicacao-1',
+      authorUid: FOLLOWER,
+      text: 'Bora!',
+      replyToId: null,
+      status: 'visible',
+      createdAt: at,
+    });
+    await setDoc(doc(db, REACTION), {
+      uid: FOLLOWER,
+      clubId: CLUB,
+      postId: 'publicacao-1',
+      reaction: 'heart',
+    });
+    await setDoc(doc(db, COMMENT_REPORT), {
+      commentId: 'comentario-1',
+      reporterUid: GESTOR,
+      reason: 'spam',
+      round: 1,
+    });
     await setDoc(doc(db, CONTACT), {
       whatsapp: '+5575991234567',
       source: 'fanclub',
@@ -278,6 +306,68 @@ describe('a seção Fã-clubes', () => {
   });
 });
 
+describe('os comentários e as reações (seção 37, 37.4)', () => {
+  /** O que a aba Comentários, a ficha e o ocultar em lote leem: o documento e as consultas. */
+  async function readsComments(db: Db, outcome: 'succeeds' | 'fails'): Promise<void> {
+    const check = outcome === 'succeeds' ? assertSucceeds : assertFails;
+    await check(getDoc(doc(db, COMMENT)));
+    await check(
+      getDocs(
+        query(
+          collection(db, 'fanClubComments'),
+          where('postId', '==', 'publicacao-1'),
+          orderBy('createdAt', 'desc'),
+        ),
+      ),
+    );
+    await check(
+      getDocs(
+        query(
+          collection(db, 'fanClubComments'),
+          where('authorUid', '==', FOLLOWER),
+          where('status', 'in', ['visible', 'manager_hidden']),
+        ),
+      ),
+    );
+  }
+
+  it('a seção Fã-clubes (o editor, o Leitor e o admin) e a Moderação leem os comentários', async () => {
+    for (const uid of ['admin', 'faClubes', 'leitorFaClubes', 'moderacao']) {
+      await readsComments(as(uid), 'succeeds');
+    }
+    await readsComments(as('ligadaFaClubes', LINKED_AT), 'succeeds');
+  });
+
+  it('o fã (o autor e o gestor também), outras seções, a desativada, a pendente e a sessão de antes do authValidAfter não leem os comentários', async () => {
+    for (const uid of [GESTOR, FOLLOWER, 'fas', 'artistas', 'desativada', 'pendente']) {
+      await readsComments(as(uid), 'fails');
+    }
+    await readsComments(as('ligadaFaClubes', LINKED_AT - 1), 'fails');
+    await readsComments(env.unauthenticatedContext().firestore(), 'fails');
+  });
+
+  it('as reações (quem reagiu) e as denúncias de comentário uma a uma ficam fechadas para todos', async () => {
+    for (const uid of [
+      'admin',
+      'faClubes',
+      'leitorFaClubes',
+      'moderacao',
+      'fas',
+      FOLLOWER,
+      GESTOR,
+    ]) {
+      const db = as(uid);
+      await assertFails(getDoc(doc(db, REACTION)));
+      await assertFails(getDocs(collection(db, 'fanClubReactions')));
+      await assertFails(
+        getDocs(query(collection(db, 'fanClubReactions'), where('postId', '==', 'publicacao-1'))),
+      );
+      await assertFails(getDoc(doc(db, COMMENT_REPORT)));
+      await assertFails(getDocs(collection(db, 'fanClubCommentReports')));
+    }
+  });
+});
+
 describe('o contato do fã (decisão 14)', () => {
   const editors = () => [
     as('admin'),
@@ -343,7 +433,7 @@ describe('quem segue (decisão 29)', () => {
 
 describe('ninguém grava pelo cliente', () => {
   it('nem o admin, nem a seção, nem o próprio fã', async () => {
-    for (const uid of ['admin', 'faClubes', GESTOR, FOLLOWER]) {
+    for (const uid of ['admin', 'faClubes', 'moderacao', GESTOR, FOLLOWER]) {
       const db = as(uid);
       await assertFails(updateDoc(doc(db, APPLICATION), { status: 'pending' }));
       await assertFails(setDoc(doc(db, `fanClubApplications/${uid}`), { status: 'pending' }));
@@ -360,6 +450,17 @@ describe('ninguém grava pelo cliente', () => {
       await assertFails(setDoc(doc(db, CREDIT), { via: 'follow' }));
       await assertFails(setDoc(doc(db, CONTACT), { whatsapp: '+5575988887777' }));
       await assertFails(deleteDoc(doc(db, CONTACT)));
+      // A Fase 2 (seção 37): comentar, reagir e denunciar só pela API.
+      await assertFails(updateDoc(doc(db, COMMENT), { status: 'manager_hidden' }));
+      await assertFails(
+        setDoc(doc(db, 'fanClubComments/outro'), { postId: 'publicacao-1', text: 'Oi' }),
+      );
+      await assertFails(deleteDoc(doc(db, COMMENT)));
+      await assertFails(
+        setDoc(doc(db, `fanClubReactions/${uid}_publicacao-1`), { reaction: 'fire' }),
+      );
+      await assertFails(updateDoc(doc(db, REACTION), { reaction: null }));
+      await assertFails(setDoc(doc(db, COMMENT_REPORT), { reason: 'other' }));
     }
   });
 });

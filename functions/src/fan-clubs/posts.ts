@@ -12,6 +12,7 @@ import * as logger from 'firebase-functions/logger';
 
 import type {
   FanClubPost,
+  FanClubPostDetails,
   FanClubPostImage,
   FanClubUploadSlot,
   OwnFanClubPost,
@@ -30,7 +31,7 @@ import {
 import { countDailyAction, enforceDailyCap } from '../moderation/caps';
 import { blockedOf } from '../moderation/model';
 import { blockListRef } from '../moderation/store';
-import { encodePageCursor, type PageCursor } from '../page-cursor';
+import { encodePageCursor, isContentId, type PageCursor } from '../page-cursor';
 import {
   planAwards,
   runAsFan,
@@ -43,6 +44,7 @@ import {
   applicationRecord,
   CLUB_PHOTO_LIMITS,
   CLUB_THUMB_LIMITS,
+  emptyReactionCounts,
   FAN_CLUB_PENDING_MAX,
   FAN_CLUB_RULES_VERSION,
   FAN_CLUB_UPLOAD_SLOT_MS,
@@ -52,6 +54,7 @@ import {
   fanClubNotFound,
   fanClubPostNotFound,
   fanClubPostRecord,
+  fanClubReactionOf,
   fanClubRecord,
   fanClubRefused,
   millisOf,
@@ -61,6 +64,7 @@ import {
   slotNamesOf,
   type FanClubPostRecord,
   type FanClubPostStatus,
+  type FanClubReactionKey,
   type FanClubRecord,
   type PostImage,
   type PostInput,
@@ -69,19 +73,25 @@ import {
 import {
   applicationRef,
   artistPrivateRef,
+  fanClubFollowRef,
   fanClubPostRef,
   fanClubPostsOf,
   fanClubPostsOfAuthor,
+  fanClubReactionRef,
   fanClubRef,
   fanClubReportQueueRef,
   fanClubUploadSlotRef,
   ownerCopiesOf,
+  readReactionsOf,
 } from './store';
 
 // As publicações do fã-clube (docs/arquitetura-api.md, seção 34, 34.3 e 34.5;
 // etapa 2 de 34.14): a vaga de envio da foto, publicar (sempre em análise),
 // "Minhas publicações", retirar e tirar do ar, as publicações no ar da página
-// e o passo da exclusão de conta. O que mexe em arquivo do Storage fora da
+// e o passo da exclusão de conta. Desde a Fase 2 (seção 37, 37.3), a
+// publicação no ar pelo id (`GET /fan-club-posts/:postId`), os contadores e a
+// reação de quem pede nas vistas e o que reagir e comentar pedem da
+// publicação (`readActionPost`). O que mexe em arquivo do Storage fora da
 // leitura (apagar e trocar o token) fica para depois da transação, no
 // `FanClubFileWork` que a rota e a callable rodam depois de gravar.
 
@@ -171,7 +181,10 @@ const imageView = (image: PostImage): FanClubPostImage => ({
 /** A foto só aparece em análise e no ar (a recusada e a retirada perderam os arquivos; a oculta e a tirada do ar, o token). */
 const showsMedia = (status: FanClubPostStatus) => status === 'pending' || status === 'published';
 
-/** A publicação como o gestor vê em "Minhas publicações". */
+/**
+ * A publicação como o gestor vê em "Minhas publicações", com os totais de
+ * reações e de comentários e as marcações (seção 37, 37.3).
+ */
 export function ownPostView(post: FanClubPostRecord): OwnFanClubPost {
   const media = showsMedia(post.status) ? post.media : null;
   return {
@@ -187,11 +200,23 @@ export function ownPostView(post: FanClubPostRecord): OwnFanClubPost {
     submittedAt: iso(post.submittedAt),
     publishedAt: post.publishedAt === null ? null : iso(post.publishedAt),
     reviewedAt: post.reviewedAt === null ? null : iso(post.reviewedAt),
+    reactionCount: post.reactionCount,
+    reactionCounts: post.reactionCounts,
+    commentCount: post.commentCount,
+    mentions: post.mentions,
   };
 }
 
-/** A publicação no ar, como os fãs veem, com o nome do fã-clube e o selo de oficial. */
-export function publicPostView(post: FanClubPostRecord, club: FanClubRecord): FanClubPost {
+/**
+ * A publicação no ar, como os fãs veem, com o nome do fã-clube e o selo de
+ * oficial; desde a Fase 2 (seção 37, 37.3), com os contadores, a reação de
+ * quem pede e as marcações.
+ */
+export function publicPostView(
+  post: FanClubPostRecord,
+  club: FanClubRecord,
+  myReaction: FanClubReactionKey | null,
+): FanClubPost {
   return {
     id: post.id,
     clubId: post.clubId,
@@ -209,6 +234,11 @@ export function publicPostView(post: FanClubPostRecord, club: FanClubRecord): Fa
     photo: post.media ? imageView(post.media.photo) : null,
     thumb: post.media ? imageView(post.media.thumb) : null,
     publishedAt: iso(post.publishedAt ?? post.submittedAt),
+    reactionCount: post.reactionCount,
+    reactionCounts: post.reactionCounts,
+    commentCount: post.commentCount,
+    myReaction,
+    mentions: post.mentions,
   };
 }
 
@@ -220,6 +250,8 @@ const artistOf = (snap: DocumentSnapshot | undefined): ArtistRecord | null =>
 export type VisibleClub = {
   club: FanClubRecord;
   artist: ArtistRecord;
+  /** Os fãs que quem pede bloqueou, da lista lida junto do fã-clube. */
+  blocked: string[];
   /** O que quem chama pediu a mais, lido junto do artista. */
   extra: DocumentSnapshot[];
 };
@@ -244,7 +276,8 @@ export async function readVisibleClub(
   if (club.status !== 'active' || club.ownerUid === null || club.name === null) {
     throw fanClubNotFound();
   }
-  if (blockedOf(blockList!.get('blocked')).includes(club.ownerUid)) throw fanClubNotFound();
+  const blocked = blockedOf(blockList!.get('blocked'));
+  if (blocked.includes(club.ownerUid)) throw fanClubNotFound();
   const [artistSnap, privateDoc, ...rest] = await db.getAll(
     artistRef(db, club.artistId),
     artistPrivateRef(db, club.artistId),
@@ -252,7 +285,131 @@ export async function readVisibleClub(
   );
   const artist = artistOf(artistSnap);
   if (!isPublished(artist) || !fanClubBoxes(privateDoc!.data()).enabled) throw fanClubNotFound();
-  return { club, artist, extra: rest };
+  return { club, artist, blocked, extra: rest };
+}
+
+/**
+ * A publicação no ar e o fã-clube dela como quem pede os vê (seção 37,
+ * 37.3), fora de transação: a publicação e, com o fã-clube dela, o
+ * `readVisibleClub` com o `extra` de quem chama. A que não existe, fora do ar
+ * ou de fã-clube que quem pede não vê é 404 `fan_club_post_not_found`, o mesmo
+ * nos três casos.
+ */
+export async function readVisiblePost(
+  db: Firestore,
+  uid: string,
+  postId: string,
+  extra: (club: FanClubRecord) => DocumentReference[] = () => [],
+): Promise<VisibleClub & { post: FanClubPostRecord }> {
+  const snap = await fanClubPostRef(db, postId).get();
+  const post = snap.exists ? fanClubPostRecord(snap.id, snap.data() ?? {}) : null;
+  if (post === null || post.status !== 'published' || !isContentId(post.clubId)) {
+    throw fanClubPostNotFound();
+  }
+  try {
+    return { post, ...(await readVisibleClub(db, uid, post.clubId, extra)) };
+  } catch (error) {
+    if (error instanceof FanClubError && error.reason === 'fan_club_not_found') {
+      throw fanClubPostNotFound();
+    }
+    throw error;
+  }
+}
+
+/**
+ * `GET /fan-club-posts/:postId` (seção 37, 37.3): a publicação no ar com as
+ * condições da página (`readVisiblePost`), com o vínculo de quem pede com a
+ * central (`isMember`) e com o fã-clube (`isFollowing`) e a reação dele, lidos
+ * junto do artista; os contadores, as marcações, o `isOwner` e o nome do
+ * artista. Fora do ar, de fã-clube que quem pede não vê ou que não existe:
+ * 404 `fan_club_post_not_found`.
+ */
+export async function readFanClubPost(
+  db: Firestore,
+  uid: string,
+  postId: string,
+): Promise<FanClubPostDetails> {
+  const { post, club, artist, extra } = await readVisiblePost(db, uid, postId, (visible) => [
+    membershipRef(db, uid, visible.artistId),
+    fanClubFollowRef(db, uid, visible.id),
+    fanClubReactionRef(db, uid, postId),
+  ]);
+  const [membership, follow, reaction] = extra;
+  return {
+    ...publicPostView(
+      post,
+      club,
+      reaction?.exists ? fanClubReactionOf(reaction.get('reaction')) : null,
+    ),
+    isOwner: club.ownerUid === uid,
+    isFollowing: follow?.exists === true,
+    isMember: membership?.exists === true,
+    artistName: artist.name,
+  };
+}
+
+/** A publicação de uma ação (a reação e o comentário), lida na transação. */
+export type ActionPost = {
+  post: FanClubPostRecord;
+  club: FanClubRecord & { ownerUid: string };
+  /** Quem age é o gestor do fã-clube (o `ownerUid`; o gestor não segue o próprio, 37.12). */
+  isOwner: boolean;
+  /** Os fãs que quem age bloqueou. */
+  blocked: string[];
+  /** O que quem chama pediu junto da publicação, na mesma ordem. */
+  extra: DocumentSnapshot[];
+};
+
+/**
+ * O que reagir e comentar pedem (seção 37, 37.3 e 37.6), na transação do
+ * runIdempotent, nesta ordem: a publicação no ar e o fã-clube visível para
+ * quem age (ativo, de artista no ar e com o fã-clube aberto, de gestor que ele
+ * não bloqueou; senão, 404 `fan_club_post_not_found`, o mesmo do `GET`); e
+ * seguir o fã-clube ou ser o gestor dele (senão, 409 `not_following`, decisão
+ * 10 de 36.1). Três rodadas de leitura: a publicação com o `extra` de quem
+ * chama; o fã-clube, a lista de bloqueios e o vínculo de seguir; o artista e o
+ * `artistPrivate`. Só leituras (quem chama grava depois de ler tudo).
+ */
+export async function readActionPost(
+  tx: Transaction,
+  db: Firestore,
+  uid: string,
+  postId: string,
+  extra: DocumentReference[] = [],
+): Promise<ActionPost> {
+  const [postSnap, ...rest] = await tx.getAll(fanClubPostRef(db, postId), ...extra);
+  const post = postSnap!.exists ? fanClubPostRecord(postSnap!.id, postSnap!.data() ?? {}) : null;
+  if (post === null || post.status !== 'published' || !isContentId(post.clubId)) {
+    throw fanClubPostNotFound();
+  }
+  const [clubSnap, blockList, follow] = await tx.getAll(
+    fanClubRef(db, post.clubId),
+    blockListRef(db, uid),
+    fanClubFollowRef(db, uid, post.clubId),
+  );
+  const club = clubSnap!.exists ? fanClubRecord(clubSnap!.id, clubSnap!.data() ?? {}) : null;
+  if (
+    club === null ||
+    club.status !== 'active' ||
+    club.ownerUid === null ||
+    club.name === null ||
+    club.artistId === ''
+  ) {
+    throw fanClubPostNotFound();
+  }
+  const owned = club as FanClubRecord & { ownerUid: string };
+  const blocked = blockedOf(blockList!.get('blocked'));
+  if (blocked.includes(owned.ownerUid)) throw fanClubPostNotFound();
+  const [artistSnap, privateDoc] = await tx.getAll(
+    artistRef(db, owned.artistId),
+    artistPrivateRef(db, owned.artistId),
+  );
+  if (!isPublished(artistOf(artistSnap)) || !fanClubBoxes(privateDoc!.data()).enabled) {
+    throw fanClubPostNotFound();
+  }
+  const isOwner = owned.ownerUid === uid;
+  if (!isOwner && !follow!.exists) throw fanClubRefused('not_following');
+  return { post, club: owned, isOwner, blocked, extra: rest };
 }
 
 export type PostsQuery = { limit: number; cursor: PageCursor | null };
@@ -260,7 +417,8 @@ export type PostsQuery = { limit: number; cursor: PageCursor | null };
 /**
  * `GET /fan-clubs/:clubId/posts`: as publicações no ar do fã-clube que quem
  * pede pode ver (`readVisibleClub`), da mais nova para a mais antiga, pelo
- * `publishedAt` e o id (o índice `clubId`, `status`, `publishedAt`).
+ * `publishedAt` e o id (o índice `clubId`, `status`, `publishedAt`), com a
+ * reação de quem pede em cada uma, num `getAll` a mais (seção 37, 37.3).
  */
 export async function readFanClubPosts(
   db: Firestore,
@@ -277,9 +435,14 @@ export async function readFanClubPosts(
   if (query.cursor) list = list.startAfter(tsOf(query.cursor.at), query.cursor.id);
   const snap = await list.limit(query.limit + 1).get();
   const posts = snap.docs.slice(0, query.limit).map((doc) => fanClubPostRecord(doc.id, doc.data()));
+  const reactions = await readReactionsOf(
+    db,
+    uid,
+    posts.map((post) => post.id),
+  );
   const last = posts.at(-1);
   return {
-    items: posts.map((post) => publicPostView(post, club)),
+    items: posts.map((post) => publicPostView(post, club, reactions.get(post.id) ?? null)),
     nextCursor:
       snap.size > query.limit && last
         ? encodePageCursor({ at: last.publishedAt ?? last.submittedAt, id: last.id })
@@ -509,6 +672,10 @@ export async function createFanClubPost(
     submittedAt: award.now,
     publishedAt: null,
     reviewedAt: null,
+    reactionCount: 0,
+    reactionCounts: emptyReactionCounts(),
+    commentCount: 0,
+    mentions: [],
   };
   tx.create(ref, {
     clubId: record.clubId,
