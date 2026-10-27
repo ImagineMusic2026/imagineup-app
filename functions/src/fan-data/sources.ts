@@ -8,7 +8,10 @@
 //
 // Fonte nova do fã entra aqui e no `deleteUserData`. Campo novo de uma fonte
 // vai ao arquivo como está gravado; campo novo com uid, nome ou chave de outra
-// pessoa ou da equipe entra no `omit` (32.17).
+// pessoa ou da equipe entra no `omit` (32.17). Desde a Fase 2 do fã-clube
+// (seção 37, 37.8), as seis fontes dos comentários, das reações, das
+// denúncias de comentário, da fila dos comentários e do registro do ocultar
+// do gestor (com o fã como gestor e como autor, em duas fontes).
 
 /** As partes longas, em páginas, na ordem do arquivo (32.3). */
 export const FAN_DATA_PARTS = [
@@ -21,6 +24,8 @@ export const FAN_DATA_PARTS = [
   'linksDeConvite',
   'pedidosDaLoja',
   'publicacoesDeFaClube',
+  'comentariosDeFaClube',
+  'reacoesDeFaClube',
 ] as const;
 
 export type FanDataPart = (typeof FAN_DATA_PARTS)[number];
@@ -45,6 +50,8 @@ export const FAN_DATA_FIRST_KEYS = [
   'faClubes',
   'denunciasDeFaClube',
   'faClubesSeguidos',
+  'denunciasDeComentarioDeFaClube',
+  'comentariosOcultadosComoGestor',
 ] as const;
 
 export type FanDataFirstKey = (typeof FAN_DATA_FIRST_KEYS)[number];
@@ -100,7 +107,10 @@ export type FanDataDeletionEffect =
   | 'deleted'
   /** Fica, sem o uid e as cópias do fã (os pedidos da loja). */
   | 'stripped'
-  /** Fica, desligada do fã (o `inviterUid` dos convidados vira null). */
+  /**
+   * Fica, desligada do fã (o `inviterUid` dos convidados e o `authorUid` do
+   * registro do ocultar do gestor viram null).
+   */
   | 'detached'
   /** Fica como está. */
   | 'kept';
@@ -452,9 +462,14 @@ export const FAN_DATA_SOURCES: readonly FanDataSource[] = [
     label: 'fanClubPosts com authorUid ==',
     place: { in: 'part', part: 'publicacoesDeFaClube' },
     read: { kind: 'equal', collection: 'fanClubPosts', field: 'authorUid' },
-    // O uid e o nome de quem é da equipe e decidiu a publicação.
-    omit: ['reviewedBy'],
-    deletion: { effect: 'deleted', note: 'apagada, com o item aberto da fila em author_deleted' },
+    // O uid e o nome de quem é da equipe e decidiu a publicação; desde a Fase 2
+    // (seção 37, 37.7), as marcações resolvidas, com os uids de outros fãs (o
+    // texto vai como foi escrito, com os @).
+    omit: ['reviewedBy', 'mentions', 'mentionUids'],
+    deletion: {
+      effect: 'deleted',
+      note: 'apagada, com o item aberto da fila em author_deleted e, antes, os comentários e as reações dela',
+    },
   },
   {
     id: 'fanClubReports',
@@ -464,6 +479,47 @@ export const FAN_DATA_SOURCES: readonly FanDataSource[] = [
     // A rodada do item da fila de outro fã.
     omit: ['round'],
     deletion: { effect: 'deleted', note: 'apagada, descontada da rodada aberta' },
+  },
+  {
+    // Os comentários do fã nos fã-clubes (seção 37, 37.8), desde a etapa 4 de 37.13.
+    id: 'fanClubComments',
+    label: 'fanClubComments com authorUid ==',
+    place: { in: 'part', part: 'comentariosDeFaClube' },
+    read: { kind: 'equal', collection: 'fanClubComments', field: 'authorUid' },
+    // Quem ocultou (o gestor ou a equipe) e as marcações resolvidas, com os
+    // uids de outros fãs; o texto vai como foi escrito, com os @ (37.7).
+    omit: ['hiddenBy', 'mentions', 'mentionUids'],
+    deletion: {
+      effect: 'deleted',
+      note: 'apagados, com as respostas embaixo dos de cima dele, os contadores e a fila',
+    },
+  },
+  {
+    id: 'fanClubReactions',
+    label: 'fanClubReactions com uid ==',
+    place: { in: 'part', part: 'reacoesDeFaClube' },
+    read: { kind: 'equal', collection: 'fanClubReactions', field: 'uid' },
+    omit: [],
+    deletion: { effect: 'deleted', note: 'apagadas, descontadas da publicação' },
+  },
+  {
+    id: 'fanClubCommentReports',
+    label: 'fanClubCommentReports com reporterUid ==',
+    place: { in: 'first', key: 'denunciasDeComentarioDeFaClube' },
+    read: { kind: 'equal', collection: 'fanClubCommentReports', field: 'reporterUid' },
+    // A rodada do item da fila de outro fã.
+    omit: ['round'],
+    deletion: { effect: 'deleted', note: 'apagadas, descontadas da rodada aberta' },
+  },
+  {
+    // O registro do ocultar com o fã como gestor (decisão 11 de 36.1).
+    id: 'fanClubHideLog.manager',
+    label: 'fanClubHideLog com managerUid ==',
+    place: { in: 'first', key: 'comentariosOcultadosComoGestor' },
+    read: { kind: 'equal', collection: 'fanClubHideLog', field: 'managerUid' },
+    // O uid do fã que escreveu o comentário ocultado.
+    omit: ['authorUid'],
+    deletion: { effect: 'deleted', note: 'apagadas' },
   },
   {
     id: 'moderationQueue',
@@ -497,6 +553,33 @@ export const FAN_DATA_SOURCES: readonly FanDataSource[] = [
     read: { kind: 'equal', collection: 'fanClubReportQueue', field: 'authorUid' },
     omit: [],
     deletion: { effect: 'kept', note: 'fica o item da publicação, em author_deleted' },
+  },
+  {
+    id: 'fanClubCommentQueue',
+    label: 'fanClubCommentQueue (os comentários do fã)',
+    place: {
+      in: 'out',
+      reason: 'denúncias contra o fã, de quem denunciou (jurídico, UP-45)',
+    },
+    read: { kind: 'equal', collection: 'fanClubCommentQueue', field: 'authorUid' },
+    omit: [],
+    deletion: {
+      effect: 'kept',
+      note: 'fica o item do comentário, com o authorUid, o aberto em author_deleted',
+    },
+  },
+  {
+    // O registro do ocultar com o fã como autor do comentário ocultado.
+    id: 'fanClubHideLog.author',
+    label: 'fanClubHideLog com authorUid ==',
+    place: {
+      in: 'out',
+      reason:
+        'o registro é do ocultar do gestor, e o estado do comentário já vai em comentariosDeFaClube',
+    },
+    read: { kind: 'equal', collection: 'fanClubHideLog', field: 'authorUid' },
+    omit: [],
+    deletion: { effect: 'detached', note: 'desligado (authorUid null)' },
   },
   {
     id: 'idempotency',

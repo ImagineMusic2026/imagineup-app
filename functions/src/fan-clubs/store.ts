@@ -41,8 +41,10 @@ import {
 // apagam. Desde a Fase 2 (seção 37), os comentários, as reações, os dias da
 // taxa de engajamento nos shards e as leituras das marcações (as reservas do
 // @ e as centrais delas); desde a etapa 3 de 37.13, a denúncia de comentário,
-// a fila da equipe e o registro do ocultar do gestor. Só importa o model (e o puro das centrais),
-// para nenhum desses módulos puxar a API, os pontos ou a equipe por aqui.
+// a fila da equipe e o registro do ocultar do gestor; desde a etapa 4, as
+// cópias do perfil nos comentários do fã. Só importa o model (e o puro das
+// centrais), para nenhum desses módulos puxar a API, os pontos ou a equipe
+// por aqui.
 
 export const fanClubsOf = (db: Firestore): CollectionReference => db.collection('fanClubs');
 
@@ -577,25 +579,45 @@ export const fanClubsOfOwner = (db: Firestore, uid: string) =>
 /** Publicações por página (e por transação) nas cópias do autor (34.5). */
 export const POST_COPIES_PAGE = 100;
 
+/** Comentários por página (e por transação) nas cópias do autor (seção 37, 37.8). */
+export const COMMENT_COPIES_PAGE = 100;
+
 /**
  * As cópias do perfil na candidatura, nos fã-clubes e nas publicações do fã
  * (34.5, a tarefa `syncFanProfile`): primeiro uma transação que lê o perfil,
  * a candidatura e os fã-clubes dele (o de agora e os encerrados, que o painel
  * ainda lista) e regrava o `fan*` da candidatura e o `owner*` de cada
  * fã-clube só quando diferem; depois o `author*` das publicações dele, em
- * páginas de 100, cada uma numa transação que relê o perfil. Sem o perfil (a
+ * páginas de 100, cada uma numa transação que relê o perfil. Desde a Fase 2
+ * (seção 37, 37.8), também o `author*` dos comentários dele nos fã-clubes, do
+ * mesmo jeito (o @ já põe na fila, pelo `profileSyncNeeded`). Sem o perfil (a
  * exclusão da conta no meio), não grava. Devolve quantos documentos regravou.
  */
 export async function syncFanClubCopies(db: Firestore, uid: string): Promise<number> {
   const written = await syncOwnerCopies(db, uid);
-  return written === null ? 0 : written + (await syncPostCopies(db, uid));
+  if (written === null) return 0;
+  const posts = await syncAuthorCopies(db, uid, fanClubPostsOfAuthor(db, uid), POST_COPIES_PAGE);
+  const comments = await syncAuthorCopies(
+    db,
+    uid,
+    fanClubCommentsOf(db).where('authorUid', '==', uid),
+    COMMENT_COPIES_PAGE,
+  );
+  return written + posts + comments;
 }
 
-/** O `author*` das publicações do fã, em páginas pela ordem do id; o perfil apagado no meio para. */
-async function syncPostCopies(db: Firestore, uid: string): Promise<number> {
-  const query = fanClubPostsOfAuthor(db, uid)
-    .orderBy(FieldPath.documentId())
-    .limit(POST_COPIES_PAGE);
+/**
+ * O `author*` dos documentos do fã (as publicações e os comentários), em
+ * páginas pela ordem do id, cada uma numa transação que relê o perfil e
+ * regrava só o que difere; o perfil apagado no meio para.
+ */
+async function syncAuthorCopies(
+  db: Firestore,
+  uid: string,
+  byAuthor: Query,
+  pageSize: number,
+): Promise<number> {
+  const query = byAuthor.orderBy(FieldPath.documentId()).limit(pageSize);
   let written = 0;
   let last: QueryDocumentSnapshot | null = null;
   for (;;) {
@@ -606,8 +628,8 @@ async function syncPostCopies(db: Firestore, uid: string): Promise<number> {
       const snap: QuerySnapshot = await tx.get(cursor ? query.startAfter(cursor) : query);
       const copies = ownerCopiesOf(profile.data() ?? {});
       let count = 0;
-      for (const post of snap.docs) {
-        const data = post.data();
+      for (const doc of snap.docs) {
+        const data = doc.data();
         if (
           (data.authorName ?? null) === copies.name &&
           (data.authorUsername ?? null) === copies.username &&
@@ -615,7 +637,7 @@ async function syncPostCopies(db: Firestore, uid: string): Promise<number> {
         ) {
           continue;
         }
-        tx.update(post.ref, {
+        tx.update(doc.ref, {
           authorName: copies.name,
           authorUsername: copies.username,
           authorPhotoURL: copies.photoURL,
@@ -627,7 +649,7 @@ async function syncPostCopies(db: Firestore, uid: string): Promise<number> {
     if (page === null) return written;
     written += page.count;
     last = page.last;
-    if (page.size < POST_COPIES_PAGE) return written;
+    if (page.size < pageSize) return written;
   }
 }
 

@@ -240,8 +240,10 @@ export const fanClubRoutes: ApiRoute[] = [
     },
   },
   {
-    // Só no "Meu fã-clube" (etapa 3): a soma dos shards e os seguidores. Sem
-    // o fã-clube da candidatura aprovada, 404 `fan_club_not_found`.
+    // Só no "Meu fã-clube" (etapa 3): a soma dos shards e os seguidores, e,
+    // desde a Fase 2 (seção 37, 37.11), a taxa de engajamento de 30 dias dos
+    // mesmos shards. Sem o fã-clube da candidatura aprovada, 404
+    // `fan_club_not_found`.
     method: 'GET',
     pattern: '/me/fan-club/numbers',
     writes: false,

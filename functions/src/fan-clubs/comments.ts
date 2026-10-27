@@ -2,9 +2,11 @@ import {
   FieldPath,
   FieldValue,
   Timestamp,
+  type DocumentReference,
   type DocumentSnapshot,
   type Firestore,
   type Query,
+  type QuerySnapshot,
   type Transaction,
 } from 'firebase-admin/firestore';
 
@@ -22,7 +24,9 @@ import {
   type RunOptions,
 } from '../points/award';
 import { COMMENT_PAGE_ROUNDS, PostError } from '../posts/model';
+import { readCommentScene, writeCommentRemoval, type RemovedCommentTarget } from './comment-queue';
 import {
+  commentQueueRecord,
   commentReview,
   FAN_CLUB_OWN_HIDDEN_MAX,
   fanClubCommentNotFound,
@@ -40,6 +44,7 @@ import {
 } from './model';
 import { readActionPost, readVisiblePost } from './posts';
 import {
+  fanClubCommentQueueRef,
   fanClubCommentRef,
   fanClubCommentsOf,
   fanClubPostRef,
@@ -60,7 +65,9 @@ import {
 // dos resolvidos. Desde a etapa 3 (37.6), a lista mostra ao gestor, no
 // próprio fã-clube, também os que ele ocultou, e ao autor, na primeira página,
 // os dele ocultos pelo gestor (o `ownHidden`); o ocultar, a denúncia e o
-// pedido de revisão moram no `comment-queue.ts`.
+// pedido de revisão moram no `comment-queue.ts`. Desde a etapa 4 (37.8), o
+// passo dos comentários na exclusão de conta, com as respostas embaixo dos
+// dele saindo antes e os contadores pelas gravações do `comment-queue.ts`.
 
 const tsOf = (ms: number) => Timestamp.fromMillis(ms);
 
@@ -425,5 +432,164 @@ export function runAddFanClubComment(
       input: { text: input.text, replyToId: input.replyToId },
       commentId: input.commentId,
     }),
+  );
+}
+
+// --- A exclusão de conta (37.8) -----------------------------------------------------------
+
+/** Comentários por página (e por transação) na exclusão de conta. */
+export const COMMENTS_DELETE_PAGE = 100;
+
+/**
+ * Uma página de comentários que saem, numa transação: relê cada um e o item
+ * da fila dele num `getAll`, deixa de fora o que já saiu (a resposta que a
+ * varredura do de cima levou não desconta de novo) e o que o `keep` recusa;
+ * de cada comentário de cima, lê as respostas que chegaram depois da
+ * varredura dele (o `removeRepliesOf`), com os itens, e as leva junto; e lê
+ * o que os contadores pedem (os de cima que não vieram junto e as
+ * publicações, o `readCommentScene`); depois apaga, com os contadores e os
+ * itens (o `writeCommentRemoval`). O do fã que saiu fecha o item com
+ * `author_deleted`; o de outro fã, com `removed`. Devolve quantos saíram.
+ * Exportada para o teste da resposta que chega entre a varredura e a página.
+ */
+export function removeCommentsPage(
+  db: Firestore,
+  refs: readonly DocumentReference[],
+  uid: string,
+  now: number,
+  keep: (comment: FanClubCommentRecord) => boolean,
+): Promise<number> {
+  return db.runTransaction(async (tx) => {
+    const itemRefs = refs.map((ref) => fanClubCommentQueueRef(db, ref.id));
+    const snaps = await tx.getAll(...refs, ...itemRefs);
+    const targets = refs.flatMap((_ref, index): RemovedCommentTarget[] => {
+      const comment = commentOf(snaps[index]);
+      if (comment === null || !keep(comment)) return [];
+      const item = snaps[refs.length + index]!;
+      return [
+        {
+          comment,
+          item: item.exists ? commentQueueRecord(item.data() ?? {}) : null,
+          itemRef: itemRefs[index]!,
+          resolution: comment.authorUid === uid ? 'author_deleted' : 'removed',
+        },
+      ];
+    });
+    if (targets.length === 0) return 0;
+    // As respostas que chegaram depois da varredura do de cima (o removeRepliesOf):
+    // lidas aqui, saem junto, e a leitura do de cima segura a resposta nova
+    // (ela também grava o de cima, então ou entra antes e sai aqui, ou recebe 404).
+    const ids = new Set(targets.map((target) => target.comment.id));
+    const late = (
+      await Promise.all(
+        targets
+          .filter((target) => target.comment.replyToId === null)
+          .map((target) =>
+            tx.get(fanClubCommentsOf(db).where('replyToId', '==', target.comment.id)),
+          ),
+      )
+    )
+      .flatMap((snap) => snap.docs)
+      .filter((doc) => !ids.has(doc.id));
+    if (late.length > 0) {
+      const lateItemRefs = late.map((doc) => fanClubCommentQueueRef(db, doc.id));
+      const lateItems = await tx.getAll(...lateItemRefs);
+      late.forEach((doc, index) => {
+        const comment = fanClubCommentRecord(doc.id, doc.data());
+        const item = lateItems[index]!;
+        targets.push({
+          comment,
+          item: item.exists ? commentQueueRecord(item.data() ?? {}) : null,
+          itemRef: lateItemRefs[index]!,
+          resolution: comment.authorUid === uid ? 'author_deleted' : 'removed',
+        });
+      });
+    }
+    const scene = await readCommentScene(
+      tx,
+      db,
+      targets.map((target) => target.comment),
+    );
+    writeCommentRemoval(tx, db, targets, scene, now);
+    return targets.length;
+  });
+}
+
+/**
+ * Roda `page` sobre a consulta, em páginas de 100, até ela voltar vazia (o
+ * que sai não volta na seguinte, como o `drain` do Mural). Devolve quantos
+ * saíram.
+ */
+async function drainComments(
+  query: Query,
+  page: (snap: QuerySnapshot) => Promise<number>,
+): Promise<number> {
+  let removed = 0;
+  for (;;) {
+    const snap = await query.limit(COMMENTS_DELETE_PAGE).get();
+    if (snap.empty) return removed;
+    const count = await page(snap);
+    removed += count;
+    // Nada saiu (outra entrega da exclusão levou tudo no meio): a seguinte vê vazio.
+    if (count === 0 && snap.size < COMMENTS_DELETE_PAGE) return removed;
+  }
+}
+
+/**
+ * As respostas embaixo de um comentário de cima do fã que saiu, de qualquer
+ * autor (37.8, passo 1): por `replyToId`, pela ordem do id, em páginas de 100,
+ * cada uma numa transação que relê as respostas e o de cima, com os
+ * contadores de 37.6 (o `replyCount` e o `managerHiddenReplyCount` do de cima
+ * e, com ele visível, o `commentCount`). Devolve quantas saíram.
+ */
+function removeRepliesOf(db: Firestore, topId: string, uid: string, now: number) {
+  return drainComments(
+    fanClubCommentsOf(db).where('replyToId', '==', topId).orderBy(FieldPath.documentId()),
+    (snap) =>
+      removeCommentsPage(
+        db,
+        snap.docs.map((doc) => doc.ref),
+        uid,
+        now,
+        (comment) => comment.replyToId === topId,
+      ),
+  );
+}
+
+/**
+ * Os comentários do fã na exclusão de conta (37.8, passo 1), por `authorUid`,
+ * pela ordem do id, em páginas de 100. Antes de um comentário de cima dele
+ * sair, saem as respostas embaixo dele, inclusive as de outros fãs
+ * (`removeRepliesOf`), e só depois a página dele, numa transação que relê e
+ * desconta o que sobrou (o `1 + replyCount` do de cima já leva a resposta
+ * dele que sai junto) e leva também as respostas que chegaram depois da
+ * varredura (a leitura do de cima as segura: ou entram antes e saem junto, ou
+ * recebem 404). Assim a nova tentativa do gatilho (`deleteUserProfile`,
+ * com `retry: true`) ainda acha o de cima pelo `authorUid` e as respostas que
+ * faltaram pelo `replyToId`. Os itens abertos da fila vão a `resolved`, com
+ * `author_deleted` (os dele) ou `removed` (as respostas de outros). Os dias da
+ * taxa não descontam (37.11). Devolve quantos comentários saíram.
+ */
+export async function removeFanClubCommentsOf(
+  db: Firestore,
+  uid: string,
+  now: number = Date.now(),
+): Promise<number> {
+  return drainComments(
+    fanClubCommentsOf(db).where('authorUid', '==', uid).orderBy(FieldPath.documentId()),
+    async (snap) => {
+      let removed = 0;
+      for (const doc of snap.docs) {
+        if (doc.get('replyToId') === null) removed += await removeRepliesOf(db, doc.id, uid, now);
+      }
+      const mine = await removeCommentsPage(
+        db,
+        snap.docs.map((doc) => doc.ref),
+        uid,
+        now,
+        (comment) => comment.authorUid === uid,
+      );
+      return removed + mine;
+    },
   );
 }

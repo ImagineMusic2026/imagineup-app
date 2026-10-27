@@ -1,7 +1,7 @@
-import type { Firestore } from 'firebase-admin/firestore';
+import { FieldValue, type Firestore } from 'firebase-admin/firestore';
 import { describe, expect, it, vi } from 'vitest';
 
-import { runFanClubCopyStep } from './copy';
+import { copyFanClubCount, runFanClubCopyStep } from './copy';
 import {
   FAN_CLUB_COPY_BUDGET_MS,
   FAN_CLUB_COPY_CONCURRENCY,
@@ -10,6 +10,7 @@ import {
   isFeatureExpired,
   monthOf,
   monthTurn,
+  staleEngagementDays,
   type FanClubCopyCounts,
 } from './model';
 
@@ -18,7 +19,10 @@ import {
 // `closeStatsDays` com um Firestore falso (ele nunca lança). A leitura dos
 // números, a transação e a falha de um que não para os outros ficam no teste
 // de emulador (functions/test/fan-club-follows.emulator.test.ts); o `finally`
-// do handler, em src/close-stats-days.test.ts.
+// do handler, em src/close-stats-days.test.ts. Desde a Fase 2 (seção 37,
+// 37.11; a etapa 4 de 37.13), o corte dos dias da taxa com mais de 35 dias:
+// os dias, puros, e as gravações da transação com um Firestore falso; nos
+// emuladores, em functions/test/fan-club-account.emulator.test.ts.
 
 const counts = (values: Partial<FanClubCopyCounts>): FanClubCopyCounts => ({
   followers: 0,
@@ -106,6 +110,76 @@ describe('o destaque vencido (decisão 35)', () => {
   });
 });
 
+describe('o corte dos dias da taxa (seção 37, 37.11)', () => {
+  // 00:20 de 20/10/2026 em São Paulo: os 35 dias vão até 15/09.
+  const now = at('2026-10-20');
+  const day = { reactions: 1, comments: 0 };
+
+  it('sai o dia com mais de 35 dias; o de 35 fica, e o dia depois de hoje também', () => {
+    expect(
+      staleEngagementDays(
+        {
+          days: {
+            '2026-10-20': day,
+            '2026-09-15': day,
+            '2026-09-14': day,
+            '2026-08-01': day,
+            '2026-10-21': day,
+          },
+        },
+        now,
+      ),
+    ).toEqual(['2026-08-01', '2026-09-14']);
+  });
+
+  it('o shard sem dias, sem dia velho ou com chave fora do formato não perde nada', () => {
+    expect(staleEngagementDays({ joins: 3 }, now)).toEqual([]);
+    expect(staleEngagementDays({ days: { '2026-10-01': day } }, now)).toEqual([]);
+    expect(staleEngagementDays({ days: { '01/08/2026': day, velho: day } }, now)).toEqual([]);
+    expect(staleEngagementDays({ days: 'não é mapa' }, now)).toEqual([]);
+  });
+
+  it('a cópia apaga os dias velhos na mesma transação, só nos shards que têm, com o delete de cada dia', async () => {
+    type Ref = { path: string; collection: (name: string) => { doc: (id: string) => Ref } };
+    const ref = (path: string): Ref => ({
+      path,
+      collection: (name) => ({ doc: (id) => ref(`${path}/${name}/${id}`) }),
+    });
+    const updates: [string, Record<string, unknown>][] = [];
+    const tx = {
+      get: async (target: Ref) => ({
+        exists: true,
+        id: 'clube1',
+        ref: target,
+        data: () => ({ status: 'active', featured: false, monthStart: { month: monthOf(now) } }),
+      }),
+      update: (target: Ref, data: Record<string, unknown>) => updates.push([target.path, data]),
+    };
+    const db = {
+      collection: (name: string) => ({ doc: (id: string) => ref(`${name}/${id}`) }),
+      runTransaction: async (run: (transaction: typeof tx) => Promise<unknown>) => run(tx),
+    } as unknown as Firestore;
+    const one = await copyFanClubCount(db, 'clube1', now, async () => ({
+      counts: counts({ followers: 2 }),
+      staleDays: [
+        { shard: '3', days: ['2026-08-01', '2026-09-14'] },
+        { shard: '11', days: ['2026-07-30'] },
+      ],
+    }));
+    expect(one).toEqual({ copied: true, unfeatured: false, monthClosed: false, daysCut: 3 });
+    expect(updates.map(([path]) => path)).toEqual([
+      'fanClubs/clube1',
+      'fanClubStats/clube1/fanClubShards/3',
+      'fanClubStats/clube1/fanClubShards/11',
+    ]);
+    expect(updates[1]![1]).toEqual({
+      'days.2026-08-01': FieldValue.delete(),
+      'days.2026-09-14': FieldValue.delete(),
+    });
+    expect(updates[2]![1]).toEqual({ 'days.2026-07-30': FieldValue.delete() });
+  });
+});
+
 describe('o passo da cópia no closeStatsDays (decisão 37)', () => {
   /** Um Firestore falso: a consulta dos fã-clubes devolve o que o `get` der. */
   const fakeDb = (get: () => Promise<unknown>): Firestore => {
@@ -136,6 +210,7 @@ describe('o passo da cópia no closeStatsDays (decisão 37)', () => {
       deferred: 0,
       unfeatured: 0,
       monthsClosed: 0,
+      daysCut: 0,
     };
     expect(await runFanClubCopyStep(db, { now: at, deadline: at + 1_000, log })).toEqual(result);
     expect(log.info).toHaveBeenCalledWith('fan-clubs: a cópia da noite', result);

@@ -180,7 +180,11 @@ export async function removeSeasonStandings(db: Firestore, uid: string): Promise
  * seção 35, o contato do fã (o WhatsApp, `users/{uid}/contact/main`) sai com o
  * recursiveDelete do perfil, sem passo próprio. Desde o fã-clube (seção 34,
  * 34.7), antes dos pedidos, a candidatura e o privado saem, e o fã-clube do
- * gestor vira lápide (removeFanClubData). Pode rodar
+ * gestor vira lápide (removeFanClubData); desde a Fase 2 do fã-clube (seção
+ * 37, 37.8), o mesmo passo leva os comentários dele nos fã-clubes (com as
+ * respostas embaixo dos de cima dele), as reações, as denúncias de
+ * comentário, os comentários e as reações das publicações dele e as marcações
+ * dele nos textos dos outros, com os contadores. Pode rodar
  * mais de uma vez. Dado novo do fã entra aqui e na `FAN_DATA_SOURCES`
  * (fan-data/sources.ts), a lista que a exportação dos pedidos de dados
  * percorre, com o que esta função faz com cada fonte; um teste de emulador

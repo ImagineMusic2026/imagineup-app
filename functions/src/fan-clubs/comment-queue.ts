@@ -10,7 +10,15 @@ import {
 } from 'firebase-admin/firestore';
 
 import { countDailyAction, enforceDailyCap } from '../moderation/caps';
-import { emptyReasons, ModerationError, reasonKey, type ReportReason } from '../moderation/model';
+import {
+  emptyReasons,
+  ModerationError,
+  reasonKey,
+  reasonsOf,
+  REPORT_REASONS,
+  type ReasonCounts,
+  type ReportReason,
+} from '../moderation/model';
 import { isContentId } from '../page-cursor';
 import {
   addEngagementCounts,
@@ -31,6 +39,8 @@ import {
   fanClubCommentRecord,
   fanClubRecord,
   fanClubRefused,
+  millisOf,
+  removalCountChanges,
   reviewTaken,
   type CommentCountChanges,
   type CommentCountState,
@@ -45,6 +55,7 @@ import {
   fanClubCommentQueueRef,
   fanClubCommentRef,
   fanClubCommentReportRef,
+  fanClubCommentReportsOf,
   fanClubCommentsToHide,
   fanClubHideLogOf,
   fanClubPostRef,
@@ -60,7 +71,11 @@ import {
 // `decideFanClub` com o assunto `comment`) mora no panel.ts, e o ocultar em
 // lote da Moderação (o `hideFanComments`), no moderation/fans.ts; os dois
 // usam daqui as leituras e as gravações dos contadores (37.6). O comentário
-// vai ao ar pelo filtro: nada some sozinho pelo número de denúncias.
+// vai ao ar pelo filtro: nada some sozinho pelo número de denúncias. Desde a
+// etapa 4 (37.8), os passos da exclusão de conta que mexem na fila e no
+// registro: a gravação da saída dos comentários com os contadores (que o
+// comments.ts usa), as denúncias que o fã fez e as linhas do registro com ele
+// como autor (desligadas) e como gestor (apagadas).
 
 const tsOf = (ms: number) => Timestamp.fromMillis(ms);
 
@@ -230,6 +245,48 @@ export function writeStaffStatus(
     }
   }
   pendCounts(db, pending, changes, scene);
+  flush(tx, pending);
+}
+
+/** Um comentário que sai na exclusão de conta (37.8), lido na transação, com o item da fila dele. */
+export type RemovedCommentTarget = {
+  comment: FanClubCommentRecord;
+  item: CommentQueueRecord | null;
+  itemRef: DocumentReference;
+  /** `author_deleted` no do fã que saiu; `removed` na resposta de outro fã que sai com o de cima. */
+  resolution: Extract<CommentQueueResolution, 'author_deleted' | 'removed'>;
+};
+
+/**
+ * Apaga comentários já lidos, na transação de quem chama (a exclusão de
+ * conta, 37.8), depois de todas as leituras: cada comentário sai; os
+ * contadores descontam o que sai da vista, cada um uma vez, pelo estado lido
+ * (`removalCountChanges`: a resposta que sai com o de cima não desconta à
+ * parte, e o de cima que sai não recebe gravação), numa gravação por
+ * documento; e o item aberto da fila de cada um vai a `resolved` com a
+ * resolução dele, sem quem resolveu. O item já resolvido fica como a equipe
+ * deixou. Só grava.
+ */
+export function writeCommentRemoval(
+  tx: Transaction,
+  db: Firestore,
+  targets: readonly RemovedCommentTarget[],
+  scene: CommentScene,
+  now: number,
+): void {
+  const at = tsOf(now);
+  const changes = removalCountChanges(
+    scene.states,
+    targets.map((target) => target.comment),
+  );
+  const pending: Pending = new Map();
+  pendCounts(db, pending, changes, scene);
+  for (const { comment, item, itemRef, resolution } of targets) {
+    tx.delete(fanClubCommentRef(db, comment.id));
+    if (item?.status === 'open') {
+      pend(pending, itemRef, { status: 'resolved', resolution, resolvedAt: at, resolvedBy: null });
+    }
+  }
   flush(tx, pending);
 }
 
@@ -732,4 +789,159 @@ export async function hideFanClubCommentsPage(
     commentIds: targets.map((target) => target.comment.id),
     postIds: [...new Set(targets.map((target) => target.comment.postId))],
   };
+}
+
+// --- A exclusão de conta (37.8) -----------------------------------------------------------------
+
+/** Documentos por página (e por transação) nos passos da exclusão de conta. */
+export const COMMENT_QUEUE_DELETE_PAGE = 100;
+
+/** A chave da contagem por motivo de uma denúncia guardada (o motivo estranho vale `none`). */
+const storedReasonKey = (reason: unknown) =>
+  reasonKey(
+    (REPORT_REASONS as readonly unknown[]).includes(reason) ? (reason as ReportReason) : null,
+  );
+
+const storedCount = (value: unknown): number =>
+  typeof value === 'number' && Number.isFinite(value) && value > 0 ? Math.floor(value) : 0;
+
+/**
+ * As denúncias que o fã fez em comentários de fã-clube, na exclusão de conta
+ * (37.8, passo 3), como as de publicação (o `removeFanClubReportsOf`): em
+ * páginas de 100, cada uma numa transação que relê as denúncias e os itens;
+ * cada denúncia sai, e a da rodada aberta do item (o mesmo `round`) desconta
+ * dele (nunca abaixo de 0). O item que chega a 0 vai a `resolved` com
+ * `withdrawn`, menos o que tem o pedido de revisão do autor (o
+ * `reviewRequested`): esse continua aberto, agora com o `kind: 'review'` e a
+ * última atividade no pedido. A de uma rodada antiga sai sem mexer no item.
+ * Devolve quantas saíram.
+ */
+export async function removeFanClubCommentReportsOf(
+  db: Firestore,
+  uid: string,
+  now: number = Date.now(),
+): Promise<number> {
+  const query = fanClubCommentReportsOf(db)
+    .where('reporterUid', '==', uid)
+    .limit(COMMENT_QUEUE_DELETE_PAGE);
+  let removed = 0;
+  for (;;) {
+    const snap = await query.get();
+    if (snap.empty) return removed;
+    const refs = snap.docs.map((doc) => doc.ref);
+    const count = await db.runTransaction(async (tx) => {
+      const reports = await tx.getAll(...refs);
+      const commentIds = [
+        ...new Set(
+          reports
+            .filter((report) => report.exists)
+            .map((report) => report.get('commentId'))
+            .filter((id): id is string => isContentId(id)),
+        ),
+      ];
+      const itemSnaps =
+        commentIds.length > 0
+          ? await tx.getAll(...commentIds.map((id) => fanClubCommentQueueRef(db, id)))
+          : [];
+      const items = new Map(commentIds.map((id, index) => [id, itemSnaps[index]!]));
+      const updates = new Map<
+        string,
+        { item: DocumentSnapshot; reportCount: number; reasons: ReasonCounts }
+      >();
+      let deleted = 0;
+      for (const report of reports) {
+        if (!report.exists) continue;
+        tx.delete(report.ref);
+        deleted += 1;
+        const commentId = report.get('commentId');
+        const item = typeof commentId === 'string' ? items.get(commentId) : undefined;
+        // Só a denúncia da rodada aberta conta no item; a de uma rodada antiga sai sem mexer nele.
+        if (!item?.exists || item.get('status') !== 'open') continue;
+        if (item.get('round') !== report.get('round')) continue;
+        const current = updates.get(item.id) ?? {
+          item,
+          reportCount: storedCount(item.get('reportCount')),
+          reasons: reasonsOf(item.get('reasons')),
+        };
+        const key = storedReasonKey(report.get('reason'));
+        current.reportCount = Math.max(0, current.reportCount - 1);
+        current.reasons[key] = Math.max(0, current.reasons[key] - 1);
+        updates.set(item.id, current);
+      }
+      const at = tsOf(now);
+      for (const [id, { item, reportCount, reasons }] of updates) {
+        let end: DocumentData = {};
+        if (reportCount === 0) {
+          // O pedido de revisão do autor ainda espera a equipe: o item fica aberto, pelo pedido.
+          const requested = millisOf(item.get('reviewRequestedAt'));
+          end =
+            item.get('reviewRequested') === true
+              ? { kind: 'review', lastActivityAt: requested === null ? at : tsOf(requested) }
+              : { status: 'resolved', resolution: 'withdrawn', resolvedAt: at, resolvedBy: null };
+        }
+        tx.update(fanClubCommentQueueRef(db, id), { reportCount, reasons, ...end });
+      }
+      return deleted;
+    });
+    removed += count;
+    // Nada saiu (outra entrega da exclusão levou tudo no meio): a seguinte vê vazio.
+    if (count === 0 && snap.size < COMMENT_QUEUE_DELETE_PAGE) return removed;
+  }
+}
+
+/**
+ * As linhas do registro do ocultar do gestor com o fã como autor do
+ * comentário, na exclusão de conta (37.8, passo 1): ficam, desligadas (o
+ * `authorUid` em null, como o `inviterUid` dos convidados), para a equipe
+ * continuar vendo quantas vezes o gestor ocultou (decisões 11 e 13 de 36.1).
+ * Em páginas de 100, cada uma numa transação que relê. Devolve quantas
+ * mudaram.
+ */
+export async function detachFanClubHideLogOf(db: Firestore, uid: string): Promise<number> {
+  const query = fanClubHideLogOf(db).where('authorUid', '==', uid).limit(COMMENT_QUEUE_DELETE_PAGE);
+  let detached = 0;
+  for (;;) {
+    const page = await query.get();
+    if (page.empty) return detached;
+    const count = await db.runTransaction(async (tx) => {
+      const snaps = await tx.getAll(...page.docs.map((doc) => doc.ref));
+      let changed = 0;
+      for (const snap of snaps) {
+        if (!snap.exists || snap.get('authorUid') !== uid) continue;
+        tx.update(snap.ref, { authorUid: null });
+        changed += 1;
+      }
+      return changed;
+    });
+    detached += count;
+    if (count === 0 && page.size < COMMENT_QUEUE_DELETE_PAGE) return detached;
+  }
+}
+
+/**
+ * As linhas do registro do ocultar com o fã como gestor, na exclusão de conta
+ * (37.8, passo 5): saem, em páginas de 100, cada uma numa transação que relê.
+ * Devolve quantas saíram.
+ */
+export async function removeFanClubHideLogOf(db: Firestore, uid: string): Promise<number> {
+  const query = fanClubHideLogOf(db)
+    .where('managerUid', '==', uid)
+    .limit(COMMENT_QUEUE_DELETE_PAGE);
+  let removed = 0;
+  for (;;) {
+    const page = await query.get();
+    if (page.empty) return removed;
+    const count = await db.runTransaction(async (tx) => {
+      const snaps = await tx.getAll(...page.docs.map((doc) => doc.ref));
+      let deleted = 0;
+      for (const snap of snaps) {
+        if (!snap.exists) continue;
+        tx.delete(snap.ref);
+        deleted += 1;
+      }
+      return deleted;
+    });
+    removed += count;
+    if (count === 0 && page.size < COMMENT_QUEUE_DELETE_PAGE) return removed;
+  }
 }

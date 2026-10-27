@@ -15,6 +15,7 @@ import {
   MENTION_SEARCH_PROFILE_FIELDS,
   MENTION_SEARCH_READS,
   mentionSearchFanOf,
+  mentionsWithout,
   reservationTargetOf,
   searchSuggestions,
   type FanClubCommentRecord,
@@ -27,6 +28,7 @@ import {
   fanClubCommentsOf,
   fanClubFollowRef,
   fanClubPostRef,
+  fanClubPostsOf,
   readMentionedArtists,
   usernamesOf,
 } from './store';
@@ -39,7 +41,9 @@ import {
 // centrais no ar e dos fãs que escolheram o @. Nenhuma das duas diz quem segue
 // o fã-clube (R5; decisões 29 de 34.1 e 5 de 36.1), e nenhuma busca pelo nome
 // (R6). O resolver das marcações no envio fica no store (as leituras) e no
-// model (o puro), porque a publicação do gestor e o comentário usam.
+// model (o puro), porque a publicação do gestor e o comentário usam. Desde a
+// etapa 4 (37.8), a saída das marcações de quem excluiu a conta dos textos
+// dos outros.
 
 /** A busca das sugestões, já conferida (`?postId=` e `?q=`, os dois opcionais). */
 export type MentionsQuery = { postId: string | null; q: string | null };
@@ -195,4 +199,45 @@ async function searchMentions(
     if (fan) fans.set(fanUid, fan);
   });
   return searchSuggestions({ uid, club, blocked, hits, fans, artists });
+}
+
+// --- A exclusão de conta (37.7 e 37.8) ------------------------------------------------------
+
+/** Documentos por página (e por transação) na saída das marcações. */
+export const MENTIONS_DELETE_PAGE = 100;
+
+/**
+ * As marcações do fã que excluiu a conta nos textos dos outros (37.7 e 37.8,
+ * passo 4), nos comentários e nas publicações do fã-clube com o uid nos
+ * `mentionUids` (`array-contains`), em páginas de 100, cada uma numa transação
+ * que relê cada documento: o uid sai dos `mentionUids`, e as ocorrências dele
+ * saem das `mentions` (`mentionsWithout`), no precedente do `arrayRemove` nas
+ * `blockLists`. O @ fica no texto, sem link. Devolve quantos documentos
+ * mudaram.
+ */
+export async function removeFanClubMentionsOf(db: Firestore, uid: string): Promise<number> {
+  let changed = 0;
+  for (const collection of [fanClubCommentsOf(db), fanClubPostsOf(db)]) {
+    const query = collection
+      .where('mentionUids', 'array-contains', uid)
+      .limit(MENTIONS_DELETE_PAGE);
+    for (;;) {
+      const snap = await query.get();
+      if (snap.empty) break;
+      const count = await db.runTransaction(async (tx) => {
+        const docs = await tx.getAll(...snap.docs.map((doc) => doc.ref));
+        let updated = 0;
+        for (const doc of docs) {
+          const fields = doc.exists ? mentionsWithout(doc.data() ?? {}, uid) : null;
+          if (fields === null) continue;
+          tx.update(doc.ref, fields);
+          updated += 1;
+        }
+        return updated;
+      });
+      changed += count;
+      if (count === 0 && snap.size < MENTIONS_DELETE_PAGE) break;
+    }
+  }
+  return changed;
 }

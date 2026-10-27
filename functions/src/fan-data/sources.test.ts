@@ -40,6 +40,8 @@ describe('a lista das fontes', () => {
       'moderationQueue',
       'profileReportQueue',
       'fanClubReportQueue',
+      'fanClubCommentQueue',
+      'fanClubHideLog.author',
       'idempotency',
       'staff',
       'staffAudit',
@@ -65,7 +67,7 @@ describe('a lista das fontes', () => {
 });
 
 describe('as partes longas', () => {
-  it('as 9 partes, na ordem do arquivo (32.3; as publicações do fã-clube desde a seção 34)', () => {
+  it('as 11 partes, na ordem do arquivo (32.3; as publicações do fã-clube desde a seção 34, os comentários e as reações desde a 37)', () => {
     expect(FAN_DATA_PARTS).toEqual([
       'extrato',
       'pontosPorCentral',
@@ -76,6 +78,8 @@ describe('as partes longas', () => {
       'linksDeConvite',
       'pedidosDaLoja',
       'publicacoesDeFaClube',
+      'comentariosDeFaClube',
+      'reacoesDeFaClube',
     ]);
   });
 
@@ -110,6 +114,12 @@ describe('as partes longas', () => {
         linksDeConvite: { kind: 'sub', parent: 'fanInvites', name: 'inviteLinks' },
         pedidosDaLoja: { kind: 'equal', collection: 'redemptions', field: 'uid' },
         publicacoesDeFaClube: { kind: 'equal', collection: 'fanClubPosts', field: 'authorUid' },
+        comentariosDeFaClube: {
+          kind: 'equal',
+          collection: 'fanClubComments',
+          field: 'authorUid',
+        },
+        reacoesDeFaClube: { kind: 'equal', collection: 'fanClubReactions', field: 'uid' },
       },
     );
   });
@@ -136,6 +146,8 @@ describe('a primeira chamada', () => {
       'faClubes',
       'denunciasDeFaClube',
       'faClubesSeguidos',
+      'denunciasDeComentarioDeFaClube',
+      'comentariosOcultadosComoGestor',
     ]);
   });
 
@@ -168,6 +180,16 @@ describe('a primeira chamada', () => {
       faClubes: { kind: 'equal', collection: 'fanClubs', field: 'ownerUid' },
       denunciasDeFaClube: { kind: 'equal', collection: 'fanClubReports', field: 'reporterUid' },
       faClubesSeguidos: { kind: 'sub', parent: 'users', name: 'fanClubFollows' },
+      denunciasDeComentarioDeFaClube: {
+        kind: 'equal',
+        collection: 'fanClubCommentReports',
+        field: 'reporterUid',
+      },
+      comentariosOcultadosComoGestor: {
+        kind: 'equal',
+        collection: 'fanClubHideLog',
+        field: 'managerUid',
+      },
     });
     expect(firstKeySource('arrobasReservados').idsOnly).toBe(true);
     expect(firstKeySource('temporadas').idFromParent).toBe(true);
@@ -208,8 +230,11 @@ describe('o filtro de campos (decisão 8)', () => {
       redemptions: [['updatedBy'], null],
       fanClubApplications: [['decidedBy'], null],
       fanClubs: [['approvedBy', 'closedBy', 'featuredBy', 'officialBy'], null],
-      fanClubPosts: [['reviewedBy'], null],
+      fanClubPosts: [['reviewedBy', 'mentions', 'mentionUids'], null],
       fanClubReports: [['round'], null],
+      fanClubComments: [['hiddenBy', 'mentions', 'mentionUids'], null],
+      fanClubCommentReports: [['round'], null],
+      'fanClubHideLog.manager': [['authorUid'], null],
     });
     expect(PROFILE_TECHNICAL_FIELDS).toEqual(['searchKeys', 'signupCounted', 'photoPath']);
   });
@@ -263,9 +288,15 @@ describe('o que a exclusão faz', () => {
       'fanClubs.prizes': 'kept',
       fanClubPosts: 'deleted',
       fanClubReports: 'deleted',
+      fanClubComments: 'deleted',
+      fanClubReactions: 'deleted',
+      fanClubCommentReports: 'deleted',
+      'fanClubHideLog.manager': 'deleted',
       moderationQueue: 'kept',
       profileReportQueue: 'kept',
       fanClubReportQueue: 'kept',
+      fanClubCommentQueue: 'kept',
+      'fanClubHideLog.author': 'detached',
       idempotency: 'deleted',
       staff: 'deleted',
       'storage.fans': 'deleted',

@@ -5,7 +5,9 @@
 // de conta; desde a Fase 2 (seção 37), as reações, os comentários e as
 // menções (as marcações resolvidas no envio e as sugestões do @) e a
 // moderação dos comentários (a denúncia, o pedido de revisão, o ocultar do
-// gestor, a fila da equipe e a etapa do ocultar em lote). A API
+// gestor, a fila da equipe e a etapa do ocultar em lote); desde a etapa 4 de
+// 37.13, os passos novos da exclusão de conta, as cópias do perfil nos
+// comentários, a taxa de engajamento e o corte dos dias na cópia da noite. A API
 // (src/api/routes/fan-clubs.ts) usa daqui; a callable e o
 // passo da cópia no `closeStatsDays` ficam em src/index.ts; o seed dos
 // emuladores carrega o build (functions/lib/fan-clubs). As centrais, o
@@ -33,6 +35,8 @@ export {
   commentReview,
   emptyCountChanges,
   emptyReactionCounts,
+  ENGAGEMENT_DAYS,
+  ENGAGEMENT_KEEP_DAYS,
   FAN_CLUB_APPLIES_PER_DAY,
   FAN_CLUB_COMMENT_STATUSES,
   FAN_CLUB_COMMENTS_PAGE,
@@ -73,6 +77,7 @@ export {
   fanClubCommentNotFound,
   fanClubCommentRecord,
   fanClubCommentReportId,
+  fanClubEngagement,
   FanClubError,
   fanClubMediaFolder,
   fanClubMonthOf,
@@ -102,6 +107,7 @@ export {
   mentionHandles,
   mentionSearchFanOf,
   mentionsOf,
+  mentionsWithout,
   monthOf,
   monthTurn,
   NEW_ACCOUNT_MS,
@@ -123,6 +129,7 @@ export {
   QUALITY_WARNING_SHARE,
   reactionCountsOf,
   reactionDelta,
+  removalCountChanges,
   replyTarget,
   reservationTargetOf,
   resolvedMentions,
@@ -132,6 +139,7 @@ export {
   sameRewardGrant,
   searchSuggestions,
   slotFileNames,
+  staleEngagementDays,
   sumFanClubShards,
   type ApplicationInput,
   type ApplicationRecord,
@@ -262,40 +270,56 @@ export {
 } from './posts';
 export {
   addFanClubComment,
+  COMMENTS_DELETE_PAGE,
   fanClubCommentView,
   readFanClubComments,
+  removeCommentsPage,
+  removeFanClubCommentsOf,
   runAddFanClubComment,
   type AddCommentOutcome,
   type CommentsQuery,
 } from './comments';
 export {
   clearFanClubReaction,
+  REACTIONS_DELETE_PAGE,
+  removeFanClubReactionsOf,
   runSetFanClubReaction,
   setFanClubReaction,
   type ReactionBody,
   type ReactionOutcome,
 } from './reactions';
 export {
+  COMMENT_QUEUE_DELETE_PAGE,
+  detachFanClubHideLogOf,
   fanClubCommentsToHideOf,
   hasFanClubCommentsToHide,
   hideFanClubComment,
   hideFanClubCommentsPage,
   readCommentScene,
+  removeFanClubCommentReportsOf,
+  removeFanClubHideLogOf,
   reportFanClubComment,
   requestFanClubCommentReview,
   runHideFanClubComment,
   runReportFanClubComment,
   runRequestFanClubCommentReview,
   unhideFanClubComment,
+  writeCommentRemoval,
   writeStaffStatus,
   type CommentScene,
   type HiddenFanClubPage,
   type ManagerHideOutcome,
+  type RemovedCommentTarget,
   type ReportCommentOutcome,
   type ReviewCommentOutcome,
   type StaffCommentTarget,
 } from './comment-queue';
-export { readMentionSuggestions, type MentionsQuery } from './mentions';
+export {
+  MENTIONS_DELETE_PAGE,
+  readMentionSuggestions,
+  removeFanClubMentionsOf,
+  type MentionsQuery,
+} from './mentions';
 export {
   followFanClub,
   readFanClubFeed,
@@ -311,8 +335,10 @@ export {
   runFanClubCopyStep,
   type FanClubCopyOne,
   type FanClubCopyOptions,
+  type FanClubCopyRead,
   type FanClubCopyResult,
   type ReadFanClubCounts,
+  type StaleShardDays,
 } from './copy';
 export {
   removeFanClubReportsOf,

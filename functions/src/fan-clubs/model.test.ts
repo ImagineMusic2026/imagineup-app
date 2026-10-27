@@ -21,8 +21,13 @@ import {
   conversationSuggestions,
   emptyCountChanges,
   emptyReactionCounts,
+  ENGAGEMENT_DAYS,
+  ENGAGEMENT_KEEP_DAYS,
   FAN_CLUB_OWN_HIDDEN_MAX,
   fanClubCommentReportId,
+  fanClubEngagement,
+  mentionsWithout,
+  removalCountChanges,
   reviewTaken,
   FAN_CLUB_MENTIONS_MAX,
   FAN_CLUB_COMMENTS_PAGE,
@@ -121,7 +126,9 @@ import {
 // comentário, as contas dos contadores (a troca de emoji, o comentário de
 // cima e a resposta), a leitura dos documentos novos e o corpo do seguir com
 // a versão do aviso de membro. Na etapa 2: as menções (os @ do texto, as
-// posições, o filtro com as marcações e as sugestões do @).
+// posições, o filtro com as marcações e as sugestões do @). Na etapa 4: os
+// contadores da saída dos comentários na exclusão de conta, a saída das
+// marcações de quem excluiu a conta e a taxa de engajamento de 30 dias.
 
 // O filtro do que o fã publica (seção 30) trocado por um de palavras neutras:
 // nenhum termo da lista de verdade entra no repositório (30.11).
@@ -1444,6 +1451,200 @@ describe('a moderação dos comentários (seção 37, 37.6; etapa 3 de 37.13)', 
       'staff_hidden',
     );
     expect(plain(changes)).toEqual({ posts: {}, tops: {} });
+  });
+
+  describe('a saída na exclusão de conta (37.8, etapa 4)', () => {
+    const remove = (at: ReturnType<typeof scene>, ids: string[]) =>
+      plain(
+        removalCountChanges(
+          at.states,
+          ids.map((id) => at.rows.get(id)!),
+        ),
+      );
+
+    it('o de cima visível tira 1 mais as respostas visíveis; o oculto não mexe no `commentCount`', () => {
+      expect(remove(scene([top('visible', 2)]), ['c1'])).toEqual({ posts: { pub1: -3 }, tops: {} });
+      expect(remove(scene([top('manager_hidden', 2)]), ['c1'])).toEqual({ posts: {}, tops: {} });
+      expect(remove(scene([top('staff_hidden', 2)]), ['c1'])).toEqual({ posts: {}, tops: {} });
+    });
+
+    it('a resposta que sai sozinha: o `replyCount` ou o `managerHiddenReplyCount` do de cima e, com ele visível, o `commentCount`', () => {
+      expect(remove(scene([top('visible', 1), reply('r1', 'visible')]), ['r1'])).toEqual({
+        posts: { pub1: -1 },
+        tops: { c1: { replyCount: -1, managerHiddenReplyCount: 0 } },
+      });
+      expect(remove(scene([top('manager_hidden', 1), reply('r1', 'visible')]), ['r1'])).toEqual({
+        posts: {},
+        tops: { c1: { replyCount: -1, managerHiddenReplyCount: 0 } },
+      });
+      expect(remove(scene([top('visible', 0), reply('r1', 'manager_hidden')]), ['r1'])).toEqual({
+        posts: {},
+        tops: { c1: { replyCount: 0, managerHiddenReplyCount: -1 } },
+      });
+      // A oculta pela equipe já não conta em lugar nenhum.
+      expect(remove(scene([top('visible', 0), reply('r1', 'staff_hidden')]), ['r1'])).toEqual({
+        posts: {},
+        tops: {},
+      });
+      // Sem o de cima (já saiu), nada a descontar.
+      expect(remove(scene([reply('r1', 'visible')]), ['r1'])).toEqual({ posts: {}, tops: {} });
+    });
+
+    it('a resposta e o de cima saindo juntos descontam uma vez, em qualquer ordem, e o de cima não recebe gravação', () => {
+      for (const order of [
+        ['r1', 'r2', 'c1'],
+        ['c1', 'r1', 'r2'],
+        ['r1', 'c1', 'r2'],
+      ]) {
+        const at = scene([
+          top('visible', 1),
+          reply('r1', 'visible'),
+          reply('r2', 'manager_hidden'),
+        ]);
+        expect(remove(at, order), order.join(' e ')).toEqual({ posts: { pub1: -2 }, tops: {} });
+      }
+    });
+
+    it('a varredura das respostas antes do de cima: cada uma desconta uma vez, e o de cima leva só o que sobrou', () => {
+      const at = scene([top('visible', 2), reply('r1', 'visible'), reply('r2', 'visible')]);
+      // As respostas saem numa transação (o de cima fica e recebe os descontos)...
+      const replies = remove(at, ['r1', 'r2']);
+      expect(replies).toEqual({
+        posts: { pub1: -2 },
+        tops: { c1: { replyCount: -2, managerHiddenReplyCount: 0 } },
+      });
+      // ...e o de cima, relido com o `replyCount` 0, sai noutra.
+      expect(remove(scene([top('visible', 0)]), ['c1'])).toEqual({ posts: { pub1: -1 }, tops: {} });
+    });
+  });
+});
+
+describe('as marcações de quem excluiu a conta (37.7 e 37.8, etapa 4)', () => {
+  const at = (id: string, start: number) => ({
+    handle: `@${id}`,
+    kind: 'fan',
+    id,
+    start,
+    end: start + id.length + 1,
+  });
+
+  it('o uid sai dos `mentionUids` e as ocorrências dele saem das `mentions`; o resto fica como está', () => {
+    const central = { handle: '@nettobrito', kind: 'artist', id: 'uidBia', start: 30, end: 41 };
+    const torta = { start: 'x' };
+    expect(
+      mentionsWithout(
+        {
+          mentions: [at('uidBia', 0), at('uidDuda', 10), at('uidBia', 20), central, torta],
+          mentionUids: ['uidBia', 'uidDuda'],
+        },
+        'uidBia',
+      ),
+    ).toEqual({
+      // A central com o mesmo id não é marcação de fã: fica.
+      mentions: [at('uidDuda', 10), central, torta],
+      mentionUids: ['uidDuda'],
+    });
+  });
+
+  it('sem o uid nos `mentionUids`, nada a gravar', () => {
+    expect(mentionsWithout({ mentions: [at('uidBia', 0)], mentionUids: [] }, 'uidBia')).toBeNull();
+    expect(mentionsWithout({}, 'uidBia')).toBeNull();
+    expect(
+      mentionsWithout({ mentions: [at('uidBia', 0)], mentionUids: 'uidBia' }, 'uidBia'),
+    ).toBeNull();
+  });
+
+  it('o uid sem ocorrência nas `mentions` (o texto torto): sai só dos `mentionUids`', () => {
+    expect(mentionsWithout({ mentionUids: ['uidBia'] }, 'uidBia')).toEqual({
+      mentions: [],
+      mentionUids: [],
+    });
+  });
+});
+
+describe('a taxa de engajamento (seção 37, 37.11; etapa 4 de 37.13)', () => {
+  // NOW é 19/10/2026 em São Paulo: o período vai de 20/09 a 19/10.
+  const day = (reactions: number, comments: number) => ({ reactions, comments });
+
+  it('os 30 dias de São Paulo, hoje incluído, e os 35 que ficam nos shards', () => {
+    expect(ENGAGEMENT_DAYS).toBe(30);
+    expect(ENGAGEMENT_KEEP_DAYS).toBe(35);
+  });
+
+  it('soma os dias do período nos 16 shards e divide pelos seguidores de agora, em porcentagem com uma casa', () => {
+    const shards = [
+      { joins: 2, days: { '2026-10-19': day(3, 1), '2026-09-20': day(1, 0) } },
+      { links: 1, days: { '2026-10-01': day(0, 2) } },
+      { days: { '2026-10-19': { reactions: 1 } } },
+      {},
+    ];
+    expect(fanClubEngagement(shards, 30, NOW)).toEqual({
+      reactions30d: 5,
+      comments30d: 3,
+      // 8 em 30 seguidores: 26,666...%
+      rate30d: 26.7,
+    });
+    expect(fanClubEngagement(shards, 3, NOW).rate30d).toBe(266.7);
+    expect(fanClubEngagement(shards, 8, NOW).rate30d).toBe(100);
+  });
+
+  it('o dia 31 para trás e um dia depois de hoje não contam; o dia de São Paulo vale perto da meia-noite', () => {
+    const shards = [
+      { days: { '2026-09-19': day(5, 5), '2026-10-20': day(7, 7), '2026-10-19': day(1, 0) } },
+    ];
+    expect(fanClubEngagement(shards, 10, NOW)).toEqual({
+      reactions30d: 1,
+      comments30d: 0,
+      rate30d: 10,
+    });
+    // 23:30 de 19/10 em São Paulo já é 20/10 em UTC: o 20/10 ainda não conta.
+    const lateNight = Date.parse('2026-10-20T02:30:00.000Z');
+    expect(fanClubEngagement(shards, 10, lateNight).reactions30d).toBe(1);
+    // 00:30 de 20/10 em São Paulo: o 20/10 conta, e o 20/09 sai do período.
+    const nextDay = Date.parse('2026-10-20T03:30:00.000Z');
+    expect(
+      fanClubEngagement(
+        [{ days: { '2026-09-20': day(4, 0), '2026-10-20': day(2, 0) } }],
+        1,
+        nextDay,
+      ).reactions30d,
+    ).toBe(2);
+  });
+
+  it('sem seguidor, a taxa é null (o app diz "Sem seguidores ainda"); sem dia, tudo 0', () => {
+    expect(fanClubEngagement([{ days: { '2026-10-19': day(2, 1) } }], 0, NOW)).toEqual({
+      reactions30d: 2,
+      comments30d: 1,
+      rate30d: null,
+    });
+    expect(fanClubEngagement([], 5, NOW)).toEqual({
+      reactions30d: 0,
+      comments30d: 0,
+      rate30d: 0,
+    });
+  });
+
+  it('o valor estranho e a chave fora do formato não contam, e a soma nunca sai negativa', () => {
+    const shards = [
+      {
+        days: {
+          '2026-10-19': { reactions: 2.9, comments: 'x' },
+          '2026-10-18': { reactions: -5, comments: null },
+          '19/10/2026': day(9, 9),
+          '2026-10-17': 4,
+        },
+      },
+      { days: 'não é mapa' },
+      { days: { '2026-10-16': { reactions: Number.NaN, comments: Infinity } } },
+    ];
+    expect(fanClubEngagement(shards, 10, NOW)).toEqual({
+      reactions30d: 0,
+      comments30d: 0,
+      rate30d: 0,
+    });
+    expect(
+      fanClubEngagement([{ days: { '2026-10-19': { reactions: 2.9, comments: 1 } } }], 10, NOW),
+    ).toEqual({ reactions30d: 2, comments30d: 1, rate30d: 30 });
   });
 });
 

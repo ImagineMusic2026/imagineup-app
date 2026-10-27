@@ -223,7 +223,16 @@ describe('o crédito pelo código do gestor, na entrada (decisão 23)', () => {
     // O gestor vê o número no "Meu fã-clube" (os seguidores chegam na etapa 4).
     expect(await call('GET', '/me/fan-club/numbers', { token: owner.fan.token })).toEqual({
       status: 200,
-      body: { followers: 0, followers30d: 0, links: 0, visits: 0, signups: 0, joins: 1 },
+      body: {
+        followers: 0,
+        followers30d: 0,
+        links: 0,
+        visits: 0,
+        signups: 0,
+        joins: 1,
+        // A taxa de engajamento (seção 37, 37.11): sem seguidor, null.
+        engagement: { reactions30d: 0, comments30d: 0, rate30d: null },
+      },
     });
   });
 

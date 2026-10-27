@@ -45,6 +45,7 @@ import {
   FEATURED_PER_ARTIST_MAX,
   FOLLOWERS_RECENT_MS,
   fanClubBoxes,
+  fanClubEngagement,
   fanClubNotFound,
   fanClubRecord,
   fanClubRefused,
@@ -55,7 +56,15 @@ import {
   type ApplicationRecord,
   type FanClubRecord,
 } from './model';
+import {
+  detachFanClubHideLogOf,
+  removeFanClubCommentReportsOf,
+  removeFanClubHideLogOf,
+} from './comment-queue';
+import { removeFanClubCommentsOf } from './comments';
+import { removeFanClubMentionsOf } from './mentions';
 import { readVisibleClub, removeFanClubPostsOf, type PostsQuery } from './posts';
+import { removeFanClubReactionsOf } from './reactions';
 import { removeFanClubReportsOf } from './reports';
 import {
   applicationPrivateRef,
@@ -473,7 +482,10 @@ async function countFollowers(db: Firestore, clubId: string, since?: number): Pr
  * status (o encerrado também mostra o que fez); sem ele, 404
  * `fan_club_not_found`. Depois, em paralelo: a soma dos 16 shards (uma
  * consulta, `sumFanClubShards`) e os dois `count()` dos seguidores. Fora de
- * transação: a candidatura, o fã-clube, os shards e as contagens.
+ * transação: a candidatura, o fã-clube, os shards e as contagens. Desde a
+ * Fase 2 (seção 37, 37.11), o `engagement`: os dias dos últimos 30 nos mesmos
+ * shards, sem leitura nova, sobre os seguidores de agora
+ * (`fanClubEngagement`).
  */
 export async function readMyFanClubNumbers(
   db: Firestore,
@@ -493,7 +505,13 @@ export async function readMyFanClubNumbers(
     countFollowers(db, clubId),
     countFollowers(db, clubId, now - FOLLOWERS_RECENT_MS),
   ]);
-  return { followers, followers30d, ...sumFanClubShards(shards.docs.map((doc) => doc.data())) };
+  const days = shards.docs.map((doc) => doc.data());
+  return {
+    followers,
+    followers30d,
+    ...sumFanClubShards(days),
+    engagement: fanClubEngagement(days, followers, now),
+  };
 }
 
 /**
@@ -657,8 +675,19 @@ export function runApplyForFanClub(
  * aberto da fila de cada uma em `author_deleted` (`removeFanClubPostsOf`), e
  * as denúncias que ele fez saem, descontadas da rodada aberta
  * (`removeFanClubReportsOf`); os arquivos de `fanClubMedia/{uid}/` saem no
- * `purgeFanPhotos` do fim. Pode rodar de novo: a lápide já não tem dono e não
- * aparece na consulta, e o que saiu não volta nas consultas seguintes.
+ * `purgeFanPhotos` do fim. Desde a Fase 2 (seção 37, 37.8), depois da lápide,
+ * que já recusa comentário e reação novos no fã-clube dele: os comentários
+ * dele, com as respostas embaixo dos de cima dele saindo antes, e os
+ * contadores (passo 1, `removeFanClubCommentsOf`), com as linhas do registro
+ * do ocultar em que ele é o autor desligadas (`detachFanClubHideLogOf`); as
+ * reações dele, descontadas das publicações (passo 2); as denúncias de
+ * comentário que ele fez, descontadas da rodada aberta (passo 3); as
+ * publicações dele levando antes os comentários e as reações de cada uma, e
+ * as linhas do registro em que ele é o gestor (passo 5); e, por último, as
+ * marcações dele nos textos dos outros (passo 4, depois das publicações para
+ * não regravar o que sai junto com elas). Os dias da taxa nos shards não
+ * descontam, como os agregados. Pode rodar de novo: a lápide já não tem dono
+ * e não aparece na consulta, e o que saiu não volta nas consultas seguintes.
  */
 export async function removeFanClubData(
   db: Firestore,
@@ -666,8 +695,14 @@ export async function removeFanClubData(
   now: number = Date.now(),
 ): Promise<void> {
   await removeLeadership(db, uid, now);
+  await removeFanClubCommentsOf(db, uid, now);
+  await detachFanClubHideLogOf(db, uid);
+  await removeFanClubReactionsOf(db, uid);
+  await removeFanClubCommentReportsOf(db, uid, now);
   await removeFanClubPostsOf(db, uid, now);
+  await removeFanClubHideLogOf(db, uid);
   await removeFanClubReportsOf(db, uid, now);
+  await removeFanClubMentionsOf(db, uid);
 }
 
 /** A candidatura, o privado e a lápide de cada fã-clube do gestor (34.7, passos 1 e 2). */

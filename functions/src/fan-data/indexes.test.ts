@@ -10,7 +10,9 @@ import { FAN_DATA_SOURCES, type FanDataSource } from './sources';
 // índice automático do campo, sem índice composto e sem isenção nova; o grupo
 // `postComments` por `authorUid` usa a isenção com o escopo COLLECTION_GROUP
 // ascendente que já existe (24.10). As subcoleções do fã vão só pela ordem do
-// id, e as temporadas pelos ids (`select()`) e um `getAll`: nenhum índice.
+// id, e as temporadas pelos ids (`select()`) e um `getAll`: nenhum índice. As
+// fontes da Fase 2 do fã-clube (seção 37, 37.8) são igualdades na raiz, sem
+// isenção nos campos lidos.
 
 const file = readIndexes();
 
@@ -58,6 +60,10 @@ describe('os índices da exportação dos dados do fã (32.5)', () => {
       'COLLECTION fanClubs.ownerUid',
       'COLLECTION fanClubPosts.authorUid',
       'COLLECTION fanClubReports.reporterUid',
+      'COLLECTION fanClubComments.authorUid',
+      'COLLECTION fanClubReactions.uid',
+      'COLLECTION fanClubCommentReports.reporterUid',
+      'COLLECTION fanClubHideLog.managerUid',
     ]);
   });
 

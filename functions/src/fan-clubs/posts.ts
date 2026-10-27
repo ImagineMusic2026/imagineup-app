@@ -78,11 +78,14 @@ import {
 import {
   applicationRef,
   artistPrivateRef,
+  fanClubCommentQueueRef,
+  fanClubCommentsOf,
   fanClubFollowRef,
   fanClubPostRef,
   fanClubPostsOf,
   fanClubPostsOfAuthor,
   fanClubReactionRef,
+  fanClubReactionsOf,
   fanClubRef,
   fanClubReportQueueRef,
   fanClubUploadSlotRef,
@@ -98,7 +101,9 @@ import {
 // publicação no ar pelo id (`GET /fan-club-posts/:postId`), os contadores e a
 // reação de quem pede nas vistas e o que reagir e comentar pedem da
 // publicação (`readActionPost`); desde a etapa 2 de 37.13, as marcações do
-// texto do gestor, resolvidas no envio (37.7). O que mexe em arquivo do
+// texto do gestor, resolvidas no envio (37.7); desde a etapa 4, os comentários
+// e as reações de cada publicação saindo antes dela na exclusão do gestor
+// (37.8). O que mexe em arquivo do
 // Storage fora da leitura (apagar e trocar o token) fica para depois da
 // transação, no `FanClubFileWork` que a rota e a callable rodam depois de
 // gravar.
@@ -808,12 +813,86 @@ export function runOpenFanClubUpload(
 export const POSTS_DELETE_PAGE = 100;
 
 /**
+ * Os comentários e as reações de uma publicação do gestor que sai na exclusão
+ * de conta (seção 37, 37.8, passo 5), antes dela: por `postId`, pela ordem do
+ * id, em páginas de 100, cada uma numa transação que relê. O comentário sai, e
+ * o item aberto da fila dele vai a `resolved` com `removed` (o de um
+ * comentário do próprio gestor, que o passo dos comentários dele já costuma
+ * ter levado, com `author_deleted`); a reação sai. Sem contadores: a
+ * publicação sai logo depois, e o fã-clube dela já é lápide (nenhum
+ * comentário nem reação novos chegam). Apagar a publicação antes deixaria os
+ * dois sem nada que os achasse na nova tentativa do gatilho.
+ */
+async function removePostEngagement(
+  db: Firestore,
+  postId: string,
+  uid: string,
+  now: number,
+): Promise<void> {
+  const at = tsOf(now);
+  const comments = fanClubCommentsOf(db)
+    .where('postId', '==', postId)
+    .orderBy(FieldPath.documentId())
+    .limit(POSTS_DELETE_PAGE);
+  for (;;) {
+    const snap = await comments.get();
+    if (snap.empty) break;
+    const refs = snap.docs.map((doc) => doc.ref);
+    const count = await db.runTransaction(async (tx) => {
+      const snaps = await tx.getAll(
+        ...refs,
+        ...refs.map((ref) => fanClubCommentQueueRef(db, ref.id)),
+      );
+      let deleted = 0;
+      refs.forEach((ref, index) => {
+        const comment = snaps[index]!;
+        if (!comment.exists) return;
+        tx.delete(ref);
+        deleted += 1;
+        const item = snaps[refs.length + index]!;
+        if (item.exists && item.get('status') === 'open') {
+          tx.update(item.ref, {
+            status: 'resolved',
+            resolution: comment.get('authorUid') === uid ? 'author_deleted' : 'removed',
+            resolvedAt: at,
+            resolvedBy: null,
+          });
+        }
+      });
+      return deleted;
+    });
+    if (count === 0 && snap.size < POSTS_DELETE_PAGE) break;
+  }
+  const reactions = fanClubReactionsOf(db)
+    .where('postId', '==', postId)
+    .orderBy(FieldPath.documentId())
+    .limit(POSTS_DELETE_PAGE);
+  for (;;) {
+    const snap = await reactions.get();
+    if (snap.empty) break;
+    const count = await db.runTransaction(async (tx) => {
+      const snaps = await tx.getAll(...snap.docs.map((doc) => doc.ref));
+      let deleted = 0;
+      for (const reaction of snaps) {
+        if (!reaction.exists) continue;
+        tx.delete(reaction.ref);
+        deleted += 1;
+      }
+      return deleted;
+    });
+    if (count === 0 && snap.size < POSTS_DELETE_PAGE) break;
+  }
+}
+
+/**
  * As publicações do fã na exclusão de conta (34.7, passo 3), em páginas de
  * 100, cada uma numa transação que relê cada publicação e o item dela na fila
  * de denúncias: a publicação sai, e o item aberto vai a `resolved` com
  * `author_deleted` (as denúncias contra ela ficam: são de quem denunciou). Os
- * arquivos saem com a pasta, no `purgeFanPhotos` do fim. Devolve quantas
- * saíram.
+ * arquivos saem com a pasta, no `purgeFanPhotos` do fim. Desde a Fase 2
+ * (seção 37, 37.8, passo 5), antes de cada página sair, os comentários e as
+ * reações de cada publicação dela (`removePostEngagement`): a publicação só
+ * sai quando eles já saíram. Devolve quantas saíram.
  */
 export async function removeFanClubPostsOf(
   db: Firestore,
@@ -825,6 +904,7 @@ export async function removeFanClubPostsOf(
     const snap = await fanClubPostsOfAuthor(db, uid).limit(POSTS_DELETE_PAGE).get();
     if (snap.empty) return removed;
     const refs = snap.docs.map((doc) => doc.ref);
+    for (const ref of refs) await removePostEngagement(db, ref.id, uid, now);
     const count = await db.runTransaction(async (tx) => {
       const snaps = await tx.getAll(
         ...refs,
