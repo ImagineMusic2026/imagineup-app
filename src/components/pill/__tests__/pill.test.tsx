@@ -1,4 +1,5 @@
 import { render, screen } from '@testing-library/react-native';
+import type { ReactElement } from 'react';
 import { View } from 'react-native';
 
 import { colors, tints, typography } from '@/theme';
@@ -58,6 +59,29 @@ describe('Pill', () => {
     expect(screen.getByTestId('bars', { includeHiddenElements: true })).toBeTruthy();
     expect(screen.queryByTestId('bars')).toBeNull();
     expect(screen.getByText('+20')).toBeTruthy();
+  });
+
+  it('a peça da direita (os emojis ao lado do total do fã-clube) vem depois do texto e também fica escondida', () => {
+    render(
+      <Pill
+        testID="pill"
+        label="12"
+        leading={<View testID="heart" />}
+        trailing={<View testID="top" />}
+      />,
+    );
+    const hidden = { includeHiddenElements: true };
+    expect(screen.getByTestId('top', hidden)).toBeTruthy();
+    expect(screen.queryByTestId('top')).toBeNull();
+    // A ordem dos filhos da pílula: a peça da esquerda, o texto e a da direita.
+    type Piece = ReactElement<{ testID?: string }>;
+    const pieces = screen.getByTestId('pill', hidden).props.children as ReactElement<{
+      children: Piece | string;
+    }>[];
+    const [first, middle, last] = pieces;
+    expect((first?.props.children as Piece).props.testID).toBe('heart');
+    expect(middle?.props.children).toBe('12');
+    expect((last?.props.children as Piece).props.testID).toBe('top');
   });
 
   it('com rótulo, vira um elemento só para o leitor', () => {

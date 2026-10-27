@@ -28,6 +28,12 @@ declare module '@tanstack/react-query' {
        * sobrevive ao app fechado (seção 30).
        */
       keepRefused?: boolean;
+      /**
+       * `false` deixa a mutação fora do cache salvo no aparelho, mesmo
+       * pausada: a fila do `scope` só na memória, como a reação do fã-clube
+       * (seção 37, decisão 23 de 37.1).
+       */
+      persist?: boolean;
     };
   }
 }

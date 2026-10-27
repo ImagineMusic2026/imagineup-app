@@ -20,7 +20,13 @@ import { ApiError, isAccountSuspended, isContentRefusal } from './errors';
  *   publicação (o teto `report` de sempre); `clubFollow`, seguir (o teto
  *   `fanclub_follow` e, quando o seguir faz a entrada, o de entrar em
  *   central); `clubUnfollow`, deixar de seguir. Desistir, retirar e deixar de
- *   seguir são livres para o suspenso e não têm teto.
+ *   seguir são livres para o suspenso e não têm teto;
+ * - as da Fase 2 do fã-clube (seção 37): `clubReact`, reagir e trocar de
+ *   emoji (o teto `club_react`; tirar a reação nunca é recusado);
+ *   `clubComment`, comentar e responder (o teto `club_comment`, com a frase
+ *   do filtro); `clubCommentReport`, denunciar um comentário, e
+ *   `clubCommentReview`, o "Pedir revisão" (os dois no teto `report` de
+ *   sempre); `clubCommentHide`, o ocultar e o reexibir do gestor, sem teto.
  */
 export type RefusalAction =
   | 'like'
@@ -45,7 +51,12 @@ export type RefusalAction =
   | 'clubRemovePost'
   | 'clubReport'
   | 'clubFollow'
-  | 'clubUnfollow';
+  | 'clubUnfollow'
+  | 'clubReact'
+  | 'clubComment'
+  | 'clubCommentReport'
+  | 'clubCommentReview'
+  | 'clubCommentHide';
 
 /**
  * - `suspended`: 403 `account_suspended` (26.6);
@@ -144,6 +155,33 @@ const PHRASES: Record<RefusalAction, ActionPhrases> = {
     generic: 'fanClub.refusal.followError',
   },
   clubUnfollow: { generic: 'fanClub.refusal.unfollowError' },
+  clubReact: {
+    dailyLimit: 'fanClub.refusal.reactDailyLimit',
+    suspended: 'fanClub.refusal.reactSuspended',
+    notFound: 'fanClub.postNotFound',
+    generic: 'fanClub.refusal.reactError',
+  },
+  clubComment: {
+    dailyLimit: 'fanClub.refusal.commentDailyLimit',
+    suspended: 'suspension.comment',
+    notFound: 'fanClub.postNotFound',
+    content: 'post.composer.contentRefused',
+    generic: 'post.composer.error',
+  },
+  clubCommentReport: {
+    dailyLimit: 'errors.dailyLimit.report',
+    notFound: 'fanClub.commentNotFound',
+    generic: 'post.moderation.reportError',
+  },
+  clubCommentReview: {
+    dailyLimit: 'fanClub.refusal.reviewDailyLimit',
+    notFound: 'fanClub.commentNotFound',
+    generic: 'fanClub.refusal.reviewError',
+  },
+  clubCommentHide: {
+    notFound: 'fanClub.commentNotFound',
+    generic: 'fanClub.refusal.hideError',
+  },
 };
 
 /** A frase do teto do dia da ação (o `Alert` "Limite de hoje" e os avisos). */

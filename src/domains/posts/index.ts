@@ -1,3 +1,11 @@
+// O coração do curtir e as cores das pílulas de ação saem também para as
+// reações do fã-clube (seção 37, 37.9).
+export {
+  ACTION_COUNT_COLOR,
+  ACTION_ICON_COLOR,
+  ACTION_ICON_SIZE,
+  LikeHeart,
+} from './components/like-heart';
 export { openArtistOverStack } from './components/post-author-row';
 export { PostDivider, PostRow, PostRowsSkeleton, type PostRowProps } from './components/post-row';
 export { useSharePost } from './hooks/use-share-post';

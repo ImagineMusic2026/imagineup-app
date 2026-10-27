@@ -88,6 +88,17 @@ jest.mock('@/domains/fan-club/api', () => ({
   unfollowFanClub: jest.fn(),
   fetchFollowedFanClubs: jest.fn(),
   fetchFanClubFeed: jest.fn(),
+  // A Fase 2 (seção 37, 37.3).
+  fetchFanClubPost: jest.fn(),
+  fetchFanClubComments: jest.fn(),
+  addFanClubComment: jest.fn(),
+  setFanClubReaction: jest.fn(),
+  clearFanClubReaction: jest.fn(),
+  reportFanClubComment: jest.fn(),
+  requestFanClubCommentReview: jest.fn(),
+  hideFanClubComment: jest.fn(),
+  unhideFanClubComment: jest.fn(),
+  fetchFanClubMentions: jest.fn(),
 }));
 
 const mocked = jest.mocked(fanClubApi);
@@ -268,6 +279,14 @@ const card = (id: string, patch: Partial<FanClubCard> = {}): FanClubCard => ({
   isFollowing: false,
   ...patch,
 });
+
+/**
+ * O rótulo do seguir, com o aviso de membro (seção 37, "Estado"): para quem
+ * já é da central e para quem entra junto.
+ */
+const MEMBER_NOTICE = 'O gestor do fã-clube vê que você é membro';
+const FOLLOW_LABEL = `Seguir o fã-clube Nenho Sempre. ${MEMBER_NOTICE}`;
+const FOLLOW_JOIN_LABEL = `Seguir o fã-clube Nenho Sempre. Você também entra na central de Nenho. ${MEMBER_NOTICE}`;
 
 const routeMissing = () => new ApiError('notFound', 'Não encontrado.', 404, 'not_found');
 const clubGone = () =>
@@ -455,11 +474,10 @@ describe('a página do fã-clube (34.9, item 7)', () => {
     // Sem prêmio e sem pontos (decisão 48).
     expect(screen.queryByText(/prêmio|pontos/iu, hiddenOk)).toBeNull();
     expect(screen.getByText('Você também entra na central de Nenho', hiddenOk)).toBeTruthy();
-    expect(
-      screen.getByRole('button', {
-        name: 'Seguir o fã-clube Nenho Sempre. Você também entra na central de Nenho',
-      }),
-    ).toBeTruthy();
+    // O aviso de membro antes de seguir (seção 37, "Estado"): à vista, e no rótulo do botão.
+    expect(screen.getByText('O gestor do fã-clube vê que você é membro.', hiddenOk)).toBeTruthy();
+    expect(screen.queryByText('O gestor do fã-clube vê que você é membro.')).toBeNull();
+    expect(screen.getByRole('button', { name: FOLLOW_JOIN_LABEL })).toBeTruthy();
     expect(screen.getByTestId('fan-club-post-p1')).toBeTruthy();
     expect(
       screen.getByRole('button', {
@@ -581,11 +599,7 @@ describe('seguir (decisão 26)', () => {
     });
     renderRouter(appTree, { initialUrl: '/fa-clube/fc-1' });
 
-    fireEvent.press(
-      await screen.findByRole('button', {
-        name: 'Seguir o fã-clube Nenho Sempre. Você também entra na central de Nenho',
-      }),
-    );
+    fireEvent.press(await screen.findByRole('button', { name: FOLLOW_JOIN_LABEL }));
     expect(
       await screen.findByRole('button', { name: 'Seguindo o fã-clube Nenho Sempre' }),
     ).toBeTruthy();
@@ -594,6 +608,8 @@ describe('seguir (decisão 26)', () => {
       idempotencyKey: expect.stringMatching(/^club-follow-/),
     });
     expect(screen.queryByText('Você também entra na central de Nenho', hiddenOk)).toBeNull();
+    // O aviso de membro é do "Seguir": com "Seguindo", sai.
+    expect(screen.queryByTestId('fan-club-member-notice', hiddenOk)).toBeNull();
     expect(announced()).toEqual(
       expect.arrayContaining([
         'Você está seguindo o fã-clube Nenho Sempre.',
@@ -610,9 +626,9 @@ describe('seguir (decisão 26)', () => {
     mocked.fetchFanClub.mockResolvedValue(page({ isMember: true }));
     renderRouter(appTree, { initialUrl: '/fa-clube/fc-1' });
 
-    fireEvent.press(await screen.findByRole('button', { name: 'Seguir o fã-clube Nenho Sempre' }));
+    fireEvent.press(await screen.findByRole('button', { name: FOLLOW_LABEL }));
     expect(await screen.findByText('Não deu para seguir o fã-clube. Tente de novo.')).toBeTruthy();
-    fireEvent.press(screen.getByRole('button', { name: 'Seguir o fã-clube Nenho Sempre' }));
+    fireEvent.press(screen.getByRole('button', { name: FOLLOW_LABEL }));
     expect(
       await screen.findByText(
         'Você já segue 50 fã-clubes. Deixe de seguir algum para seguir este.',
@@ -621,7 +637,7 @@ describe('seguir (decisão 26)', () => {
     const [first, second] = mocked.followFanClub.mock.calls.map(([vars]) => vars.idempotencyKey);
     expect(second).toBe(first);
 
-    fireEvent.press(screen.getByRole('button', { name: 'Seguir o fã-clube Nenho Sempre' }));
+    fireEvent.press(screen.getByRole('button', { name: FOLLOW_LABEL }));
     await screen.findByRole('button', { name: 'Seguindo o fã-clube Nenho Sempre' });
     expect(mocked.followFanClub.mock.calls[2]?.[0].idempotencyKey).not.toBe(first);
   });
@@ -644,7 +660,7 @@ describe('seguir (decisão 26)', () => {
     });
     const view = renderRouter(appTree, { initialUrl: '/fa-clube/fc-1' });
 
-    fireEvent.press(await screen.findByRole('button', { name: 'Seguir o fã-clube Nenho Sempre' }));
+    fireEvent.press(await screen.findByRole('button', { name: FOLLOW_LABEL }));
     // A página busca de novo e diz "Seguindo"; o aviso da falha sai.
     const followingButton = await screen.findByRole('button', {
       name: 'Seguindo o fã-clube Nenho Sempre',
@@ -655,7 +671,7 @@ describe('seguir (decisão 26)', () => {
     fireEvent.press(screen.getByTestId('fan-club-unfollow-confirm'));
     await waitFor(() => expect(view.getPathname()).toBe('/fa-clube/fc-1'));
 
-    fireEvent.press(await screen.findByRole('button', { name: 'Seguir o fã-clube Nenho Sempre' }));
+    fireEvent.press(await screen.findByRole('button', { name: FOLLOW_LABEL }));
     await screen.findByRole('button', { name: 'Seguindo o fã-clube Nenho Sempre' });
     const [first, second] = mocked.followFanClub.mock.calls.map(([vars]) => vars.idempotencyKey);
     expect(second).not.toBe(first);
@@ -664,11 +680,7 @@ describe('seguir (decisão 26)', () => {
   it('o limite de 50 mostra o atalho para "Fã-clubes que sigo"', async () => {
     mocked.followFanClub.mockRejectedValue(refused('follow_limit'));
     const view = renderRouter(appTree, { initialUrl: '/fa-clube/fc-1' });
-    fireEvent.press(
-      await screen.findByRole('button', {
-        name: 'Seguir o fã-clube Nenho Sempre. Você também entra na central de Nenho',
-      }),
-    );
+    fireEvent.press(await screen.findByRole('button', { name: FOLLOW_JOIN_LABEL }));
     fireEvent.press(await screen.findByText('Ver fã-clubes que sigo'));
     await waitFor(() => expect(view.getPathname()).toBe('/fa-clubes-que-sigo'));
   });
@@ -694,9 +706,7 @@ describe('seguir (decisão 26)', () => {
       clubId: 'fc-1',
       idempotencyKey: expect.stringMatching(/^club-unfollow-/),
     });
-    expect(
-      await screen.findByRole('button', { name: 'Seguir o fã-clube Nenho Sempre' }),
-    ).toBeTruthy();
+    expect(await screen.findByRole('button', { name: FOLLOW_LABEL })).toBeTruthy();
     expect(announced()).toContain('Você deixou de seguir o fã-clube Nenho Sempre.');
   });
 

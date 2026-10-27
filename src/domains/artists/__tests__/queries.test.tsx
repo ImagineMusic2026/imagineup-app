@@ -581,11 +581,14 @@ describe('useJoinCelebration', () => {
 
   it('a volta à central busca de novo as páginas de fã-clube e o estado do gestor, este só se a trava já respondeu (seção 34)', async () => {
     client.setQueryData(fanClubKeys.club('fc-1'), { id: 'fc-1' });
+    client.setQueryData(fanClubKeys.post('p1'), { id: 'p1', clubId: 'fc-1' });
     const refused = await mountRefusedSettings();
     const { result } = renderHook(() => useJoinCelebration(), { wrapper });
     act(() => result.current.celebrate({ artistId: 'nenho', pointsAwarded: 0 }));
-    // O "Você também entra na central" das páginas some.
+    // O "Você também entra na central" das páginas some, e a tela da
+    // publicação (seção 37, 37.9) também busca o `isMember` de novo.
     expect(client.getQueryState(fanClubKeys.club('fc-1'))?.isInvalidated).toBe(true);
+    expect(client.getQueryState(fanClubKeys.post('p1'))?.isInvalidated).toBe(true);
     // Com o 404 da trava, nada é pedido de novo.
     await act(async () => undefined);
     expect(refused).toHaveBeenCalledTimes(1);

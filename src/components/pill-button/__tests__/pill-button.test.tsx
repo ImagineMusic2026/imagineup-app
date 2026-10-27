@@ -1,7 +1,9 @@
 import { fireEvent, render, screen } from '@testing-library/react-native';
+import { createRef } from 'react';
 import { View } from 'react-native';
 
 import { Pill } from '@/components/pill';
+import { PressableScale } from '@/components/pressable-scale';
 import { haptics } from '@/services/haptics';
 import { colors, layout } from '@/theme';
 
@@ -96,5 +98,41 @@ describe('PillButton', () => {
     expect(button).toBeDisabled();
     fireEvent.press(button);
     expect(onPress).not.toHaveBeenCalled();
+  });
+
+  it('o segurar chama o onLongPress com o atraso pedido, sem o toque', () => {
+    const onPress = jest.fn();
+    const onLongPress = jest.fn();
+    render(
+      <PillButton label="12" onPress={onPress} onLongPress={onLongPress} delayLongPress={400} />,
+    );
+    const button = screen.getByRole('button', { name: '12' });
+    expect(screen.UNSAFE_getByType(PressableScale).props.delayLongPress).toBe(400);
+    fireEvent(button, 'longPress');
+    expect(onLongPress).toHaveBeenCalledTimes(1);
+    expect(onPress).not.toHaveBeenCalled();
+  });
+
+  it('as ações do leitor de tela e o ref vão no pressável de fora', () => {
+    const onAction = jest.fn();
+    const ref = createRef<View>();
+    const actions = [
+      { name: 'longpress', label: 'Escolher reação' },
+      { name: 'react-fire', label: 'Reagir com fogo' },
+    ];
+    render(
+      <PillButton
+        ref={ref}
+        label="12"
+        onPress={jest.fn()}
+        accessibilityActions={actions}
+        onAccessibilityAction={onAction}
+      />,
+    );
+    const button = screen.getByRole('button', { name: '12' });
+    expect(button).toHaveProp('accessibilityActions', actions);
+    fireEvent(button, 'accessibilityAction', { nativeEvent: { actionName: 'react-fire' } });
+    expect(onAction).toHaveBeenCalledWith({ nativeEvent: { actionName: 'react-fire' } });
+    expect(ref.current).not.toBeNull();
   });
 });

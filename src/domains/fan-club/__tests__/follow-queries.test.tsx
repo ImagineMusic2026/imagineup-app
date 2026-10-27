@@ -27,6 +27,7 @@ import type {
   FanClubListPage,
   FanClubPage,
   FanClubPost,
+  FanClubPostDetails,
   FollowedFanClubs,
   MyFanClub,
 } from '../types';
@@ -302,6 +303,43 @@ describe('seguir e deixar de seguir no cache', () => {
     expect(client.getQueryData<FanClubPage>(fanClubKeys.club('fc-1'))).toMatchObject({
       isFollowing: false,
       followerCount: 41,
+    });
+  });
+
+  it('as publicações abertas do fã-clube (a tela dela, seção 37) acompanham o seguir; as de outro, não', async () => {
+    const details = (id: string, clubId: string): FanClubPostDetails => ({
+      ...POST,
+      id,
+      clubId,
+      isOwner: false,
+      isFollowing: false,
+      isMember: false,
+      artistName: 'Nenho',
+    });
+    client.setQueryData(fanClubKeys.post('p1'), details('p1', 'fc-1'));
+    client.setQueryData(fanClubKeys.post('p9'), details('p9', 'fc-9'));
+    jest
+      .mocked(followFanClub)
+      .mockResolvedValue({ clubId: 'fc-1', following: true, joined: true, pointsAwarded: 0 });
+    jest.mocked(unfollowFanClub).mockResolvedValue({ clubId: 'fc-1', following: false });
+    const follow = renderHook(() => useFollowFanClubMutation(), { wrapper });
+
+    act(() => follow.result.current.mutate({ id: 'fc-1', artistId: 'nenho' }));
+    await waitFor(() => expect(follow.result.current.isSuccess).toBe(true));
+    expect(client.getQueryData(fanClubKeys.post('p1'))).toMatchObject({
+      isFollowing: true,
+      isMember: true,
+      artistName: 'Nenho',
+    });
+    expect(client.getQueryData(fanClubKeys.post('p9'))).toMatchObject({ isFollowing: false });
+
+    const unfollow = renderHook(() => useUnfollowFanClubMutation(), { wrapper });
+    act(() => unfollow.result.current.mutate('fc-1'));
+    await waitFor(() => expect(unfollow.result.current.isSuccess).toBe(true));
+    // Deixar de seguir não sai da central (decisão 27 de 34.1).
+    expect(client.getQueryData(fanClubKeys.post('p1'))).toMatchObject({
+      isFollowing: false,
+      isMember: true,
     });
   });
 });

@@ -93,6 +93,17 @@ jest.mock('@/domains/fan-club/api', () => ({
   unfollowFanClub: jest.fn(),
   fetchFollowedFanClubs: jest.fn(),
   fetchFanClubFeed: jest.fn(),
+  // A Fase 2 (seção 37, 37.3).
+  fetchFanClubPost: jest.fn(),
+  fetchFanClubComments: jest.fn(),
+  addFanClubComment: jest.fn(),
+  setFanClubReaction: jest.fn(),
+  clearFanClubReaction: jest.fn(),
+  reportFanClubComment: jest.fn(),
+  requestFanClubCommentReview: jest.fn(),
+  hideFanClubComment: jest.fn(),
+  unhideFanClubComment: jest.fn(),
+  fetchFanClubMentions: jest.fn(),
 }));
 jest.mock('@/domains/profile/photo', () => ({
   ...jest.requireActual('@/domains/profile/photo'),
