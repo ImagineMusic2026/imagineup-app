@@ -1,5 +1,5 @@
 import type { LucideIcon } from 'lucide-react-native';
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, type Ref } from 'react';
 import { ActivityIndicator, StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 import Animated, {
   interpolateColor,
@@ -80,6 +80,8 @@ export interface ButtonProps {
   haptic?: HapticEvent | null;
   accessibilityLabel?: string;
   accessibilityHint?: string;
+  /** O pressável de fora, para levar o foco do leitor de tela até o botão. */
+  ref?: Ref<View>;
   /** Vai no alvo de toque (margem, `flex`, `alignSelf`), não no desenho. */
   style?: StyleProp<ViewStyle>;
   testID?: string;
@@ -187,6 +189,7 @@ export function Button({
   haptic = 'tap',
   accessibilityLabel,
   accessibilityHint,
+  ref,
   style,
   testID,
 }: ButtonProps) {
@@ -227,6 +230,7 @@ export function Button({
 
   return (
     <PressableScale
+      ref={ref}
       onPress={readOnly ? undefined : onPress}
       disabled={inactive}
       // Sem `focusable`, o Android não marca o elemento como tocável ("toque

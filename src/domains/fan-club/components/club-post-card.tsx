@@ -18,7 +18,14 @@ import { clubNameLabel, excerptOf, reactionName } from '../format';
 import { useReactToFanClubPostMutation } from '../queries';
 import type { FanClubPost } from '../types';
 import { ClubName } from './club-name';
-import { CommentTotal, ReactionButton, ReactionPicker, ReactionTotal } from './post-reactions';
+import { mentionActions, MentionText } from './mention-text';
+import {
+  CommentButton,
+  CommentTotal,
+  ReactionButton,
+  ReactionPicker,
+  ReactionTotal,
+} from './post-reactions';
 
 /** A foto do fã-clube é sempre 4:5 (decisão 15). */
 const PHOTO_ASPECT = 4 / 5;
@@ -26,6 +33,11 @@ const PHOTO_ASPECT = 4 / 5;
 const THUMB_WIDTH = 72;
 // O texto do cartão da Início fica em 4 linhas; o leitor ouve o texto inteiro.
 const FEED_TEXT_LINES = 4;
+
+// O toque duplo do VoiceOver no corpo não pode virar um toque simulado no
+// centro, que cairia num @ (o Fabric do iOS simula sem o `onAccessibilityTap`);
+// os @ abrem pelas ações do corpo.
+const ignoreAccessibilityTap = (): void => undefined;
 
 export type FanClubPostCardVariant = 'page' | 'feed';
 
@@ -50,6 +62,19 @@ export interface FanClubPostCardProps {
   onReport: (post: FanClubPost) => void;
   /** Só na Início: o nome abre a página do fã-clube. */
   onOpenClub?: (post: FanClubPost) => void;
+  /**
+   * O botão dos comentários (seção 37, 37.9, itens 1 e 3): na página e na
+   * Início, abre a tela da publicação; no cabeçalho dela, leva o foco ao
+   * campo (ou ao "Seguir o fã-clube"). Sem ele, o total fica só para ler.
+   */
+  onOpenComments?: (post: FanClubPost) => void;
+  /** A dica do botão dos comentários; sem ela, "Abre a publicação com os comentários". */
+  commentsHint?: string;
+  /**
+   * Abre a central de um @ do texto (37.7): por cima das abas, pelo
+   * `openArtistOverStack`; na Início, dentro da aba.
+   */
+  onOpenArtist: (artistId: string) => void;
   style?: StyleProp<ViewStyle>;
   testID?: string;
 }
@@ -77,6 +102,11 @@ function focusSoon(target: RefObject<View | null>): ReturnType<typeof setTimeout
  * o devolve ao botão. O aberto é estado do card, e a célula reciclada para
  * outra publicação volta fechada pela chave do `post.id` (quem desenha a
  * lista passa a chave).
+ *
+ * Na etapa 6 de 37.13, o total dos comentários vira o botão que abre a tela
+ * da publicação (37.9, item 3), e os @ do texto viram links para quem vê
+ * (o `MentionText`); o corpo continua um foco só, com o rótulo de sempre, e o
+ * leitor alcança cada @ pelas ações do corpo ("Abrir o perfil de @fulano").
  */
 export function FanClubPostCard({
   post,
@@ -87,6 +117,9 @@ export function FanClubPostCard({
   onShare,
   onReport,
   onOpenClub,
+  onOpenComments,
+  commentsHint,
+  onOpenArtist,
   style,
   testID,
 }: FanClubPostCardProps) {
@@ -100,6 +133,8 @@ export function FanClubPostCard({
     text: sentence(post.text),
     when,
   });
+  // Os @ do texto, para o leitor: uma ação do corpo por marcado (37.9, item 2).
+  const bodyActions = mentionActions(post.text, post.mentions, onOpenArtist);
   const engaged = post.reactionCount !== undefined;
   const mine = post.myReaction ?? null;
   const reaction = useReactToFanClubPostMutation(post.id);
@@ -177,11 +212,22 @@ export function FanClubPostCard({
           <ClubName name={post.clubName} official={post.clubOfficial} />
         </PressableScale>
       ) : null}
-      <View accessible accessibilityLabel={label} style={feed ? styles.feedBody : undefined}>
+      <View
+        accessible
+        accessibilityLabel={label}
+        {...bodyActions}
+        onAccessibilityTap={ignoreAccessibilityTap}
+        style={feed ? styles.feedBody : undefined}
+        testID={testID ? `${testID}-body` : undefined}
+      >
         <View style={feed ? styles.feedText : undefined}>
-          <Text variant="body" numberOfLines={feed ? FEED_TEXT_LINES : undefined}>
-            {post.text}
-          </Text>
+          <MentionText
+            text={post.text}
+            mentions={post.mentions}
+            onOpenArtist={onOpenArtist}
+            numberOfLines={feed ? FEED_TEXT_LINES : undefined}
+            testID={testID ? `${testID}-text` : undefined}
+          />
           <Text variant="caption" color={colors.textMuted} style={styles.when}>
             {formatRelativeAgo(post.publishedAt, now)}
           </Text>
@@ -205,7 +251,14 @@ export function FanClubPostCard({
       ) : (
         <View style={styles.actions}>
           {engaged ? reactionPart : null}
-          {engaged ? (
+          {engaged && onOpenComments ? (
+            <CommentButton
+              count={post.commentCount ?? 0}
+              onPress={() => onOpenComments(post)}
+              hint={commentsHint ?? t('fanClub.comments.openHint')}
+              testID={testID ? `${testID}-comments` : undefined}
+            />
+          ) : engaged ? (
             <CommentTotal
               count={post.commentCount ?? 0}
               testID={testID ? `${testID}-comments` : undefined}

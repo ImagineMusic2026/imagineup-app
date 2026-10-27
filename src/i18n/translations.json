@@ -1329,7 +1329,9 @@
         "removeBody": "A publicação sai da página do fã-clube e não volta.",
         "cancel": "Cancelar",
         "withdrawn": "Publicação retirada.",
-        "removed": "Publicação tirada do ar."
+        "removed": "Publicação tirada do ar.",
+        "comments": "Ver comentários ({{count}})",
+        "commentsLabel": "Ver os comentários da publicação: {{excerpt}}. {{comments}}"
       },
       "rules": {
         "title": "O regulamento mudou",
@@ -1594,7 +1596,45 @@
     },
     "comments": {
       "count": "{{count}} comentários",
-      "countOne": "1 comentário"
+      "countOne": "1 comentário",
+      "openHint": "Abre a publicação com os comentários",
+      "focusHint": "Vai para o campo de comentário",
+      "focusFollowHint": "Vai para o botão de seguir o fã-clube",
+      "focusSuspendedHint": "Vai para o aviso da suspensão",
+      "manager": "Gestor",
+      "managerLabel": "gestor do fã-clube",
+      "reply": "Responder",
+      "replyLabel": "Responder a {{name}}",
+      "replyHint": "Abre o campo com o @ de quem você responde",
+      "replyingTo": "Respondendo a @{{username}}",
+      "replyingToName": "Respondendo a {{name}}",
+      "cancelReply": "Cancelar a resposta a {{name}}",
+      "replyCanceled": "Resposta cancelada.",
+      "seeReplies": "Ver {{count}} respostas",
+      "seeRepliesOne": "Ver 1 resposta",
+      "seeRepliesLabel": "{{replies}} ao comentário de {{name}}",
+      "moreReplies": "Ver mais respostas",
+      "moreRepliesLabel": "Ver mais respostas ao comentário de {{name}}",
+      "repliesLoading": "Carregando as respostas",
+      "repliesError": "Não deu para carregar as respostas.",
+      "noReplies": "Nenhuma resposta para mostrar.",
+      "hiddenByManager": "Oculto pelo gestor",
+      "hiddenByYou": "Oculto por você"
+    },
+    "postScreen": {
+      "title": "Publicação",
+      "loading": "Carregando a publicação",
+      "loadError": "Não deu para carregar a publicação.",
+      "followToComment": "Siga o fã-clube para comentar e reagir."
+    },
+    "mentions": {
+      "openFan": "Abrir o perfil de @{{handle}}",
+      "openArtist": "Abrir a central de @{{handle}}",
+      "count": "{{count}} sugestões",
+      "countOne": "1 sugestão",
+      "pick": "Marcar {{name}}, @{{username}}",
+      "pickHandle": "Marcar @{{username}}",
+      "artist": "Artista"
     }
   },
   "notFound": {

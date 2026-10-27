@@ -750,6 +750,49 @@ describe('as sugestões do @ (37.7)', () => {
   });
 });
 
+describe('a tela da publicação (a etapa 6 de 37.13)', () => {
+  it('no Nenho, a gestora responde ao Davi com o @ dele: o "Ver 1 resposta" e a resposta com a marca de gestora', () => {
+    const page = fanClubFixture.comments('fcp-nenho-musica', null, null);
+    expect(page.items).toEqual([
+      expect.objectContaining({ id: 'fcc-nenho-musica-davi', replyCount: 1, isManager: false }),
+    ]);
+    const reply = fanClubFixture.comments('fcp-nenho-musica', 'fcc-nenho-musica-davi', null)
+      .items[0];
+    expect(reply).toMatchObject({
+      id: 'fcc-nenho-musica-thalita',
+      replyToId: 'fcc-nenho-musica-davi',
+      isManager: true,
+      mentions: [{ handle: 'davilim', kind: 'fan', id: 'fa-rank-02', start: 0, end: 8 }],
+    });
+    const mention = reply?.mentions[0];
+    expect(reply?.text.slice(mention?.start, mention?.end)).toBe('@davilim');
+    expect(postOf(FOLLOWED_CLUB_ID, 'fcp-nenho-musica')?.commentCount).toBe(2);
+  });
+
+  it('no Rock Salles, que a Camila não segue: ela lê o comentário do gestor, e o texto marca a central', () => {
+    expect(fanClubFixture.comments('fcp-rock-encontro', null, null).items).toEqual([
+      expect.objectContaining({ id: 'fcc-rock-encontro-davi', isManager: true }),
+    ]);
+    const post = fanClubFixture.post('fcp-rock-encontro');
+    expect(post).toMatchObject({ isFollowing: false, commentCount: 1 });
+    const [mention] = post.mentions ?? [];
+    expect(mention).toMatchObject({ kind: 'artist', id: 'rocksalles' });
+    expect(post.text.slice(mention?.start, mention?.end)).toBe('@rocksalles');
+  });
+
+  it('a conversa da sugestão do @ traz quem respondeu, sem a Camila', () => {
+    expect(
+      fanClubFixture
+        .mentions(FOLLOWED_CLUB_ID, 'fcp-nenho-musica', null)
+        .items.map((item) => [item.id, item.role]),
+    ).toEqual([
+      ['fa-rank-01', 'manager'],
+      ['nenho', 'artist'],
+      ['fa-rank-02', null],
+    ]);
+  });
+});
+
 describe('o aviso de membro no seguir (seção 37, "Estado")', () => {
   it('a versão do servidor segue; outra versão é 400 no campo, sem seguir', () => {
     expect(

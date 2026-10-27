@@ -1,5 +1,5 @@
 import { FlashList } from '@shopify/flash-list';
-import { router, useIsFocused, useLocalSearchParams } from 'expo-router';
+import { router, useIsFocused, useLocalSearchParams, useNavigationContainerRef } from 'expo-router';
 import { Check, ChevronRight, Ellipsis, Settings, Share2 } from 'lucide-react-native';
 import { useEffect, useState } from 'react';
 import { AccessibilityInfo, ActivityIndicator, Alert, StyleSheet, View } from 'react-native';
@@ -18,7 +18,7 @@ import { SectionLabel } from '@/components/section-label';
 import { Skeleton, SkeletonGroup } from '@/components/skeleton';
 import { Text } from '@/components/text';
 import { TextLink } from '@/components/text-link';
-import { useBlockFanMutation } from '@/domains/posts';
+import { openArtistOverStack, useBlockFanMutation } from '@/domains/posts';
 import { fanProfileHref, SuspensionContact } from '@/domains/profile';
 import { useAnnounceWhen } from '@/hooks/use-announce-when';
 import { useIsOnline } from '@/hooks/use-is-online';
@@ -42,6 +42,7 @@ import {
   useFollowFanClubMutation,
   useShareFanClub,
 } from '../queries';
+import { fanClubPostHref } from '../share';
 import type { FanClubPage, FanClubPost } from '../types';
 
 const SKELETON_HEIGHT = 180;
@@ -173,6 +174,7 @@ function ClubContent({
   onBlocked: (name: string) => void;
 }) {
   const insets = useSafeAreaInsets();
+  const navigation = useNavigationContainerRef();
   const now = useNow();
   const share = useShareFanClub();
   // A falha das publicações só aparece na lista: o leitor ouve também.
@@ -236,6 +238,10 @@ function ClubContent({
                 params: { publicacaoId: post.id },
               })
             }
+            // A tela da publicação empilha por cima da página (37.9, item 3).
+            onOpenComments={(post) => router.push(fanClubPostHref(post.id))}
+            // A página fica por cima das abas: a central abre na aba de onde o fã veio (37.7).
+            onOpenArtist={(artistId) => openArtistOverStack(navigation.getRootState(), artistId)}
             testID={`fan-club-post-${item.id}`}
           />
         )}

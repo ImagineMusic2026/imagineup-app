@@ -146,6 +146,7 @@ function RootLayout() {
           <Stack.Screen name="meu-fa-clube/nova-publicacao" />
           <Stack.Screen name="meu-fa-clube/regras" />
           <Stack.Screen name="fa-clube/[clubeId]" />
+          <Stack.Screen name="fa-clube/publicacao/[publicacaoId]" />
         </Stack.Protected>
       </Stack>
     </QueryClientProvider>
@@ -186,6 +187,8 @@ const appTree = {
   'meu-fa-clube/regras': RulesRoute,
   // A página pública, só como destino do olho do modo gestor (34.24).
   'fa-clube/[clubeId]': label('página do fã-clube'),
+  // A tela da publicação, destino do "Ver comentários" (seção 37, etapa 6 de 37.13).
+  'fa-clube/publicacao/[publicacaoId]': label('publicação do fã-clube'),
 };
 
 /**
@@ -1419,6 +1422,57 @@ describe('o modo gestor do "Meu fã-clube" (34.24)', () => {
     expect(await screen.findByText('Bem antiga')).toBeTruthy();
     expect(mocked.fetchMyFanClubPosts.mock.calls).toEqual([[null], ['c2']]);
   });
+
+  it('Publicações: a no ar da Fase 2 tem o "Ver comentários (N)", irmão do card, que abre a tela da publicação', async () => {
+    mocked.fetchMyFanClub.mockResolvedValue(manager());
+    mocked.fetchMyFanClubPosts.mockResolvedValue({
+      items: [
+        ownPost({ id: 'fcp-3', status: 'published', text: 'No ar', commentCount: 4 }),
+        // O servidor de antes, sem os contadores: sem o botão.
+        ownPost({ id: 'fcp-4', status: 'published', text: 'Antiga' }),
+        ownPost({ id: 'fcp-5', status: 'pending', commentCount: 0 }),
+      ],
+      nextCursor: null,
+    });
+    serverAnswers();
+    const view = renderRouter(appTree, { initialUrl: '/meu-fa-clube?aba=publicacoes' });
+
+    const button = await screen.findByRole('button', {
+      name: 'Ver os comentários da publicação: No ar. 4 comentários',
+    });
+    expect(within(button).getByText('Ver comentários (4)')).toBeTruthy();
+    // O card continua um foco só: o botão é irmão do conteúdo, não filho.
+    const content = screen.getByLabelText(/^No ar\. No ar\. Enviada em /u);
+    expect(within(content).queryAllByRole('button')).toHaveLength(0);
+    expect(screen.queryByTestId('fan-club-own-post-fcp-4-comments')).toBeNull();
+    expect(screen.queryByTestId('fan-club-own-post-fcp-5-comments')).toBeNull();
+
+    fireEvent.press(button);
+    expect(await screen.findByText('publicação do fã-clube')).toBeTruthy();
+    expect(view.getPathname()).toBe('/fa-clube/publicacao/fcp-3');
+  });
+
+  it.each(['paused', 'artist_off', 'program_closed', 'closed'] as const)(
+    'Publicações: com o fã-clube fora da vista (%s), a tela da publicação daria 404, e o card fica sem o "Ver comentários"',
+    async (reason) => {
+      mocked.fetchMyFanClub.mockResolvedValue(
+        manager({
+          status: reason === 'closed' ? 'closed' : reason === 'paused' ? 'paused' : 'active',
+          available: false,
+          unavailableReason: reason,
+        }),
+      );
+      mocked.fetchMyFanClubPosts.mockResolvedValue({
+        items: [ownPost({ id: 'fcp-3', status: 'published', text: 'No ar', commentCount: 4 })],
+        nextCursor: null,
+      });
+      serverAnswers();
+      renderRouter(appTree, { initialUrl: '/meu-fa-clube?aba=publicacoes' });
+
+      expect(await screen.findByTestId('fan-club-own-post-fcp-3')).toBeTruthy();
+      expect(screen.queryByTestId('fan-club-own-post-fcp-3-comments')).toBeNull();
+    },
+  );
 
   it('os números que não vieram: "Sem dado", e não carregando, com "Tentar de novo"', async () => {
     mocked.fetchMyFanClub.mockResolvedValue(manager());

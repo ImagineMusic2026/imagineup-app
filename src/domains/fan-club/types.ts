@@ -437,6 +437,24 @@ export interface FanClubComment {
 }
 
 /**
+ * O estado da linha do comentário do fã que ainda não está na lista do
+ * servidor (37.9, item 4, no molde do Mural): indo, "Não enviado" (a falha,
+ * que o toque tenta de novo) ou "Não publicado" (o texto recusado pelo filtro).
+ */
+export type FanClubCommentLineStatus = 'pending' | 'failed' | 'refused';
+
+/**
+ * Uma linha da lista de comentários da tela da publicação: o comentário do
+ * servidor ou a linha local do fã. A linha local tem o `status`, e o
+ * comentário que o servidor gravou guarda o `localId` da linha que ele troca,
+ * para a mesma linha seguir na tela.
+ */
+export interface FanClubCommentLine extends FanClubComment {
+  localId?: string;
+  status?: FanClubCommentLineStatus;
+}
+
+/**
  * `GET /fan-club-posts/:postId/comments`: os comentários de cima, do mais
  * novo, ou, com o `replyTo`, as respostas de um deles, da mais antiga. O
  * `ownHidden` vem só na primeira página dos de cima, para quem não é o

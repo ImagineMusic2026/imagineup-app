@@ -1,4 +1,5 @@
 import { FlashList } from '@shopify/flash-list';
+import { router } from 'expo-router';
 import { TextAlignStart } from 'lucide-react-native';
 import { useEffect, useState } from 'react';
 import { AccessibilityInfo, ActivityIndicator, Alert, StyleSheet, View } from 'react-native';
@@ -22,10 +23,11 @@ import { formatNumber } from '@/utils/number';
 import { sentence } from '@/utils/text';
 
 import { POST_REJECT_REASON_TEXTS, POST_STATUS_TEXTS } from '../describe';
-import { excerptOf } from '../format';
+import { commentsSpoken, excerptOf } from '../format';
 import { postsIn, type PostFilter } from '../manager';
 import { useMyFanClubPostsQuery, useRemoveFanClubPostMutation } from '../queries';
-import type { MyFanClubClub, OwnFanClubPost } from '../types';
+import { fanClubPostHref } from '../share';
+import type { FanClubUnavailableReason, MyFanClubClub, OwnFanClubPost } from '../types';
 
 // A miniatura em 4:5, na altura da 4c.
 const THUMB_HEIGHT = 70;
@@ -33,6 +35,18 @@ const THUMB_WIDTH = 56;
 const TEXT_LINES = 3;
 // Com menos que isto no filtro e mais páginas no servidor, a lista busca a seguinte sozinha.
 const FILTER_FILL = 10;
+
+/**
+ * O fã-clube que some para todos (o `readVisibleClub`): a tela da publicação
+ * dá 404 também ao gestor, e o card fica sem o "Ver comentários" (37.9, item
+ * 8). Fora da central (`not_member`), o fã-clube continua à vista.
+ */
+const HIDDEN_CLUB: ReadonlySet<FanClubUnavailableReason> = new Set([
+  'paused',
+  'artist_off',
+  'program_closed',
+  'closed',
+]);
 
 const FILTER_LABELS: Record<PostFilter, TranslationKey> = {
   'no-ar': 'fanClub.manager.posts.filters.published',
@@ -74,6 +88,8 @@ interface RowProps {
   removing: boolean;
   disabled: boolean;
   error: TranslationKey | null;
+  /** Abre a tela da publicação com os comentários: só a no ar, de fã-clube à vista. */
+  onOpenComments?: () => void;
 }
 
 /**
@@ -81,10 +97,13 @@ interface RowProps {
  * texto sem foto leva o ícone de texto), o status, a data, o texto e, na
  * recusada, o motivo. O conteúdo é um foco só; o "Retirar" (em análise) e o
  * "Tirar do ar" (no ar) são irmãos dele, com foco próprio. A linha não guarda
- * estado: o ocupado e a falha vêm da lista, pelo id.
+ * estado: o ocupado e a falha vêm da lista, pelo id. Desde a etapa 6 de 37.13,
+ * a publicada ganha o "Ver comentários (N)", outro irmão, que abre a tela da
+ * publicação como gestor (o card não vira pressável).
  */
-function OwnPostCard({ post, onRemove, removing, disabled, error }: RowProps) {
+function OwnPostCard({ post, onRemove, removing, disabled, error, onOpenComments }: RowProps) {
   const pending = post.status === 'pending';
+  const comments = post.commentCount ?? 0;
   return (
     <Card variant="compact" style={styles.card} testID={`fan-club-own-post-${post.id}`}>
       <View accessible accessibilityLabel={rowLabel(post)} style={styles.content}>
@@ -120,23 +139,39 @@ function OwnPostCard({ post, onRemove, removing, disabled, error }: RowProps) {
           ) : null}
         </View>
       </View>
-      {onRemove ? (
+      {onRemove || onOpenComments ? (
         // Numa fileira, da altura do rótulo: direto na coluna, o Button esticaria.
         <View style={styles.actionRow}>
-          <Button
-            label={t(pending ? 'fanClub.mine.posts.withdraw' : 'fanClub.mine.posts.remove')}
-            accessibilityLabel={t(
-              pending ? 'fanClub.mine.posts.withdrawLabel' : 'fanClub.mine.posts.removeLabel',
-              { excerpt: excerptOf(post.text) },
-            )}
-            variant="secondary"
-            size="sm"
-            onPress={onRemove}
-            loading={removing}
-            disabled={disabled}
-            style={styles.action}
-            testID={`fan-club-own-post-${post.id}-remove`}
-          />
+          {onOpenComments ? (
+            <Button
+              label={t('fanClub.mine.posts.comments', { count: formatNumber(comments) })}
+              accessibilityLabel={t('fanClub.mine.posts.commentsLabel', {
+                excerpt: excerptOf(post.text),
+                comments: commentsSpoken(comments),
+              })}
+              variant="secondary"
+              size="sm"
+              onPress={onOpenComments}
+              style={styles.action}
+              testID={`fan-club-own-post-${post.id}-comments`}
+            />
+          ) : null}
+          {onRemove ? (
+            <Button
+              label={t(pending ? 'fanClub.mine.posts.withdraw' : 'fanClub.mine.posts.remove')}
+              accessibilityLabel={t(
+                pending ? 'fanClub.mine.posts.withdrawLabel' : 'fanClub.mine.posts.removeLabel',
+                { excerpt: excerptOf(post.text) },
+              )}
+              variant="secondary"
+              size="sm"
+              onPress={onRemove}
+              loading={removing}
+              disabled={disabled}
+              style={styles.action}
+              testID={`fan-club-own-post-${post.id}-remove`}
+            />
+          ) : null}
         </View>
       ) : null}
       {error ? (
@@ -312,6 +347,7 @@ export function ManagerPosts({ club, filter, onFilter, bottomInset }: ManagerPos
   );
 
   const busyId = remove.isPending ? remove.variables : null;
+  const commentsOpen = club.unavailableReason === null || !HIDDEN_CLUB.has(club.unavailableReason);
 
   return (
     <FlashList<OwnFanClubPost>
@@ -320,6 +356,9 @@ export function ManagerPosts({ club, filter, onFilter, bottomInset }: ManagerPos
       getItemType={(post) => (post.thumb ? 'photo' : 'text')}
       renderItem={({ item }) => {
         const removable = item.status === 'pending' || item.status === 'published';
+        // Só com o servidor da Fase 2 (o `commentCount`) e com o fã-clube à vista.
+        const withComments =
+          item.status === 'published' && item.commentCount !== undefined && commentsOpen;
         return (
           <OwnPostCard
             post={item}
@@ -327,10 +366,11 @@ export function ManagerPosts({ club, filter, onFilter, bottomInset }: ManagerPos
             removing={busyId === item.id}
             disabled={!online || remove.isPending}
             error={failure?.postId === item.id ? failure.key : null}
+            onOpenComments={withComments ? () => router.push(fanClubPostHref(item.id)) : undefined}
           />
         );
       }}
-      extraData={{ busyId, online, failure }}
+      extraData={{ busyId, online, failure, commentsOpen }}
       ItemSeparatorComponent={ItemGap}
       ListHeaderComponent={
         <View style={styles.header}>
@@ -410,6 +450,8 @@ const styles = StyleSheet.create({
   },
   actionRow: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
   },
   action: {
     flexShrink: 1,

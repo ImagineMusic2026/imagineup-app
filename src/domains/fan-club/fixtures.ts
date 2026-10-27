@@ -113,6 +113,12 @@ import type {
  * (37.5). As marcações resolvem os @ das três pessoas de exemplo e dos
  * artistas; a busca do @ acha só as centrais, porque os três estão com o @
  * gerado pelo cadastro (37.7). O filtro do texto fica no servidor.
+ *
+ * Para a tela da publicação (a etapa 6 de 37.13): no "Nenho Sempre", a
+ * Thalita responde ao Davi com o @ dele (o "Ver 1 resposta"); no "Rock Salles
+ * Raiz", o texto do Davi marca a central (@rocksalles, o link e a ação do
+ * corpo do card), e o comentário dele aparece para a Camila, que não segue e
+ * vê o "Seguir o fã-clube" no lugar do campo.
  */
 
 /** O fã que pede, como o `ME_ID` do ranking de exemplo: a Camila do protótipo. */
@@ -403,14 +409,15 @@ const INITIAL_POSTS: readonly PostRecord[] = [
     clubId: OTHER_CLUB_ID,
     authorUid: DAVI.uid,
     kind: 'text',
-    text: 'Sigam o fã-clube para saber dos encontros antes dos shows do Rock Salles.',
+    // O @ da central no texto do gestor, resolvido no envio (37.7): o link e a ação do corpo.
+    text: 'Sigam o fã-clube para saber dos encontros antes dos shows do @rocksalles.',
     status: 'published',
     rejectReason: null,
     submitted: { hoursAgo: 50 },
     published: { hoursAgo: 48 },
     reviewed: { hoursAgo: 48 },
     reactions: reactionsOf({ heart: 4, fire: 1 }),
-    mentions: [],
+    mentions: [{ handle: 'rocksalles', kind: 'artist', id: 'rocksalles', start: 61, end: 72 }],
   },
 ];
 
@@ -532,6 +539,26 @@ const INITIAL_COMMENTS: readonly CommentRecord[] = [
     author: DAVI,
     text: 'Não pode faltar a do refrão que todo mundo canta junto.',
     created: { hoursAgo: 70 },
+  },
+  {
+    // A gestora do Nenho responde ao Davi com o @ dele: o "Ver 1 resposta" da Camila.
+    ...VISIBLE,
+    id: 'fcc-nenho-musica-thalita',
+    postId: 'fcp-nenho-musica',
+    author: THALITA,
+    text: '@davilim essa já está na lista!',
+    mentions: [{ handle: 'davilim', kind: 'fan', id: DAVI.uid, start: 0, end: 8 }],
+    replyToId: 'fcc-nenho-musica-davi',
+    created: { hoursAgo: 69 },
+  },
+  {
+    // No fã-clube que a Camila não segue: ela lê, e no lugar do campo vê o "Seguir o fã-clube".
+    ...VISIBLE,
+    id: 'fcc-rock-encontro-davi',
+    postId: 'fcp-rock-encontro',
+    author: DAVI,
+    text: 'O primeiro encontro é na porta do show, uma hora antes. Quem vem?',
+    created: { hoursAgo: 47 },
   },
 ];
 

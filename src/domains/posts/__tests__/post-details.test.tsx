@@ -26,6 +26,7 @@ import { usePreferencesStore } from '@/stores/preferences';
 import { useSessionStore } from '@/stores/session';
 import { colors } from '@/theme';
 
+import { mergeComments } from '../comment-list';
 import {
   COMMENT_POINTS,
   buildCommentsPageFixture,
@@ -35,7 +36,7 @@ import {
 } from '../fixtures';
 import { postKeys, postMutationKeys, registerPostMutationDefaults } from '../queries';
 import type { Page, Post, PostComment } from '../types';
-import { mergeComments, PostDetailsScreen, unsentCount } from '../views/post-details';
+import { PostDetailsScreen, unsentCount } from '../views/post-details';
 
 // O nome e a foto de quem comenta vêm do perfil (Firestore).
 jest.mock('firebase/app', () => ({ FirebaseError: class FirebaseError extends Error {} }));

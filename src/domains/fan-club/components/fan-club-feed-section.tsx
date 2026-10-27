@@ -17,7 +17,7 @@ import { t } from '@/i18n';
 import { spacing } from '@/theme';
 
 import { useFanClubFeedQuery, useFanClubGate, useShareFanClub } from '../queries';
-import { fanClubHref } from '../share';
+import { fanClubHref, fanClubPostHref } from '../share';
 import type { FanClubPost } from '../types';
 import { FanClubPostCard } from './club-post-card';
 
@@ -109,6 +109,12 @@ function FeedCarousel({
             }
             onReport={openReport}
             onOpenClub={(post) => router.push(fanClubHref(post.clubId))}
+            // A tela da publicação empilha por cima das abas (37.9, item 3).
+            onOpenComments={(post) => router.push(fanClubPostHref(post.id))}
+            // A Início fica dentro da aba: a central empilha nela, como o `central-tile` (37.7).
+            onOpenArtist={(artistId) =>
+              router.push({ pathname: '/artista/[artistaId]', params: { artistaId: artistId } })
+            }
             style={{ width: cardWidth }}
             testID={`home-fan-club-post-${item.id}`}
           />

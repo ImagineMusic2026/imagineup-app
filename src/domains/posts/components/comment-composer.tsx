@@ -1,5 +1,5 @@
-import { ArrowUp } from 'lucide-react-native';
-import { useEffect, useImperativeHandle, useRef, useState, type Ref } from 'react';
+import { ArrowUp, X } from 'lucide-react-native';
+import { useEffect, useImperativeHandle, useRef, useState, type ReactNode, type Ref } from 'react';
 import {
   AccessibilityInfo,
   ActivityIndicator,
@@ -7,6 +7,7 @@ import {
   StyleSheet,
   View,
   useWindowDimensions,
+  type TextInputSelectionChangeEvent,
 } from 'react-native';
 import Animated, {
   interpolate,
@@ -20,7 +21,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Icon } from '@/components/icon';
 import { PointsToast, pointsToastAnnouncement } from '@/components/points-toast';
 import { PressableScale } from '@/components/pressable-scale';
-import { MAX_FONT_SCALE, Text } from '@/components/text';
+import { MAX_FONT_SCALE, Text, type TextInstance } from '@/components/text';
 import { useFocusBorder } from '@/components/text-input';
 import { SuspensionContact } from '@/domains/profile';
 import { useAnnounceWhen } from '@/hooks/use-announce-when';
@@ -56,13 +57,42 @@ const TOAST_GAP = spacing.xs;
 
 /** O que a tela faz com o compositor sem guardar o texto (digitar não redesenha a lista). */
 export interface CommentComposerHandle {
-  /** "Comentar" do post: leva o foco (e o teclado) ao campo, e o do leitor de tela junto. */
+  /**
+   * "Comentar" do post: leva o foco (e o teclado) ao campo, e o do leitor de
+   * tela junto. Com a conta suspensa, sem campo, o do leitor vai à frase dela.
+   */
   focus: () => void;
   /**
    * O envio falhou: o texto volta ao campo se ele estiver vazio. `false`
    * quando o fã já começou outro comentário.
    */
   restore: (text: string) => boolean;
+  /**
+   * Troca um trecho do texto (de `start` até antes de `end`) e põe o cursor
+   * logo depois do que entrou, com o foco no campo: a sugestão do @ troca o @
+   * que está sendo digitado, e o "Responder" põe o @ de quem foi respondido no
+   * começo (seção 37, 37.9). `false` quando o texto passaria do limite.
+   */
+  replaceRange: (start: number, end: number, replacement: string) => boolean;
+  /** O texto de agora no campo, sem redesenhar quem pergunta. */
+  getText: () => string;
+}
+
+/** O cursor no campo (`onSelectionChange`): o começo e o fim do trecho escolhido. */
+export interface ComposerSelection {
+  start: number;
+  end: number;
+}
+
+/**
+ * O modo resposta do campo (seção 37, 37.9, item 5): a linha "Respondendo a
+ * @fulano" em cima do campo, com o "×" que sai dele.
+ */
+export interface ComposerReply {
+  label: string;
+  /** O rótulo do "×" para o leitor de tela. */
+  cancelLabel: string;
+  onCancel: () => void;
 }
 
 export interface CommentComposerProps {
@@ -91,6 +121,20 @@ export interface CommentComposerProps {
    * e a do suspenso ficam até o próximo envio, seção 30).
    */
   onEditAfterRefusal?: () => void;
+  /** O modo resposta, com a linha e o "×" em cima do campo (só o fã-clube usa). */
+  reply?: ComposerReply | null;
+  /**
+   * O que fica em cima do campo, dentro do compositor (acima do teclado): a
+   * barra das sugestões do @ do fã-clube.
+   */
+  accessory?: ReactNode;
+  /**
+   * O texto e o cursor a cada tecla e a cada toque que move o cursor, sem o
+   * texto sair do campo: o fã-clube acha o @ que está sendo digitado.
+   */
+  onDraftChange?: (text: string, selection: ComposerSelection) => void;
+  /** O campo ganhou o foco: o fã-clube busca a conversa da sugestão do @ uma vez. */
+  onFieldFocus?: () => void;
   ref?: Ref<CommentComposerHandle>;
 }
 
@@ -167,6 +211,31 @@ function SendButton({
   );
 }
 
+const REPLY_CLOSE_ICON_SIZE = 16;
+
+/**
+ * "Respondendo a @fulano", em cima do campo, com o "×" que sai do modo
+ * resposta (seção 37, 37.9, item 5). O texto é lido como está, e o "×" é um
+ * botão irmão dele, num alvo de 44, com o rótulo que diz o que ele cancela.
+ */
+function ReplyLine({ reply }: { reply: ComposerReply }) {
+  return (
+    <View style={styles.reply} testID="comment-reply">
+      <Text variant="caption" color={colors.textSecondary} style={styles.replyText}>
+        {reply.label}
+      </Text>
+      <PressableScale
+        onPress={reply.onCancel}
+        accessibilityLabel={reply.cancelLabel}
+        style={styles.replyClose}
+        testID="comment-reply-cancel"
+      >
+        <Icon icon={X} size={REPLY_CLOSE_ICON_SIZE} color={colors.textMuted} />
+      </PressableScale>
+    </View>
+  );
+}
+
 /**
  * Compositor preso ao pé da tela do post, fora da lista. O campo não tem
  * rótulo visível: o placeholder "Escreva um comentário" é também o rótulo do
@@ -184,6 +253,12 @@ function SendButton({
  * caracteres invisíveis, ou uma linha com eles, mostra o erro abaixo do campo
  * (anunciado) em vez de sumir; digitar de novo tira o erro. O texto limpo é o
  * que vai.
+ *
+ * Serve também ao fã-clube (seção 37, 37.9, itens 5 e 6), que o importa pelo
+ * index: o modo resposta (`reply`), a barra das sugestões do @ em cima do
+ * campo (`accessory`), o texto e o cursor a cada mudança (`onDraftChange`, do
+ * `onSelectionChange`) e o `replaceRange` do handle. Sem eles, o compositor é
+ * o do Mural, como era.
  */
 export function CommentComposer({
   onSend,
@@ -193,10 +268,23 @@ export function CommentComposer({
   suspended = false,
   refusal = null,
   onEditAfterRefusal,
+  reply = null,
+  accessory,
+  onDraftChange,
+  onFieldFocus,
   ref,
 }: CommentComposerProps) {
   const [value, setValue] = useState('');
   const input = useRef<TextInput>(null);
+  // O cursor fica fora do estado: mover o cursor não redesenha o compositor.
+  const selection = useRef<ComposerSelection>({ start: 0, end: 0 });
+  // Sem nenhum aviso do campo ainda (e nos testes, que só trocam o texto), o
+  // cursor fica no fim do texto.
+  const selectionSeen = useRef(false);
+  // O cursor que o `replaceRange` pede, posto no campo depois de o texto novo chegar a ele.
+  const pendingCursor = useRef<number | null>(null);
+  // A frase da conta suspensa, no lugar do campo: o "focus" do handle a leva ao leitor.
+  const suspensionText = useRef<TextInstance>(null);
   const insets = useSafeAreaInsets();
   const { fontScale } = useWindowDimensions();
   const [focused, setFocused] = useState(false);
@@ -215,9 +303,12 @@ export function CommentComposer({
     : Math.max(insets.bottom, spacing.md);
   // A frase embaixo do campo (o erro ou a recusa) vai também na dica dele: o
   // foco que a recusa de conteúdo leva ao campo corta o anúncio da frase, e o
-  // leitor de tela lê a dica do campo focado (seção 30).
+  // leitor de tela lê a dica do campo focado (seção 30). O modo resposta vem
+  // na frente: o "Responder" leva o foco ao campo, e o leitor ouve para quem
+  // vai o texto.
   const fieldHint =
     [
+      reply?.label,
       error ?? refusal?.text,
       showCounter
         ? t('post.composer.counterLabel', { count: length, max: COMMENT_MAX_LENGTH })
@@ -235,24 +326,80 @@ export function CommentComposer({
   // O `maxLength` descarta em silêncio o que passa do limite: o leitor ouve uma vez.
   useAnnounceWhen(full, t('post.composer.limitReached', { max: COMMENT_MAX_LENGTH }));
 
+  // O cursor que o `replaceRange` pediu vai ao campo depois de o texto novo chegar a ele.
+  useEffect(() => {
+    const cursor = pendingCursor.current;
+    const node = input.current;
+    if (cursor === null || !node) return;
+    pendingCursor.current = null;
+    // O campo de teste não tem o `setSelection`.
+    if (typeof node.setSelection === 'function') node.setSelection(cursor, cursor);
+  }, [value]);
+
+  // O foco do teclado não leva o do leitor de tela, que ficaria no
+  // "Comentar": o campo vem depois da lista inteira na ordem de leitura. O
+  // aviso espera o teclado começar a abrir, como nas outras telas.
+  const focusField = (): void => {
+    input.current?.focus();
+    setTimeout(() => {
+      const node = input.current;
+      if (node) AccessibilityInfo.sendAccessibilityEvent(node, 'focus');
+    }, motion.duration.fast);
+  };
+
+  /** Avisa quem escuta (a sugestão do @ do fã-clube) do texto e do cursor de agora. */
+  const notifyDraft = (text: string): void => {
+    onDraftChange?.(text, selection.current);
+  };
+
   useImperativeHandle(ref, () => ({
-    // O foco do teclado não leva o do leitor de tela, que ficaria no
-    // "Comentar": o campo vem depois da lista inteira na ordem de leitura. O
-    // aviso espera o teclado começar a abrir, como nas outras telas.
     focus: () => {
-      input.current?.focus();
-      setTimeout(() => {
-        const node = input.current;
-        if (node) AccessibilityInfo.sendAccessibilityEvent(node, 'focus');
-      }, motion.duration.fast);
+      // Sem o campo (a conta suspensa), o foco do leitor vai à frase da suspensão.
+      if (suspended) {
+        setTimeout(() => {
+          if (suspensionText.current) {
+            AccessibilityInfo.sendAccessibilityEvent(suspensionText.current, 'focus');
+          }
+        }, motion.duration.fast);
+        return;
+      }
+      focusField();
     },
     restore: (text) => {
       // Sem o campo (a conta suspensa), a linha fica "Não enviado" com o texto.
       if (suspended || latest.current.trim().length > 0) return false;
       latest.current = text;
       setValue(text);
+      selection.current = { start: text.length, end: text.length };
+      notifyDraft(text);
       return true;
     },
+    replaceRange: (start, end, replacement) => {
+      const current = latest.current;
+      const from = Math.max(0, Math.min(start, current.length));
+      const to = Math.max(from, Math.min(end, current.length));
+      const next = `${current.slice(0, from)}${replacement}${current.slice(to)}`;
+      if (next.length > COMMENT_MAX_LENGTH) return false;
+      const cursor = from + replacement.length;
+      latest.current = next;
+      selection.current = { start: cursor, end: cursor };
+      if (next === current) {
+        // O texto não muda: o efeito do [value] não roda, então o cursor vai
+        // direto, sem ficar guardado para a próxima tecla.
+        pendingCursor.current = null;
+        const node = input.current;
+        if (node && typeof node.setSelection === 'function') node.setSelection(cursor, cursor);
+      } else {
+        pendingCursor.current = cursor;
+        setValue(next);
+      }
+      if (error) setError(null);
+      if (refusal) onEditAfterRefusal?.();
+      focusField();
+      notifyDraft(next);
+      return true;
+    },
+    getText: () => latest.current,
   }));
 
   // O teclado fica aberto: o fã pode escrever o próximo em seguida.
@@ -265,15 +412,34 @@ export function CommentComposer({
       return;
     }
     latest.current = '';
+    selection.current = { start: 0, end: 0 };
     setValue('');
     setError(null);
     onSend(parsed.data.text);
+    notifyDraft('');
   };
 
   const change = (text: string): void => {
+    // O fã digitou: o cursor que um `replaceRange` deixou pedido não vale mais.
+    pendingCursor.current = null;
+    const previous = latest.current;
+    // O aviso do cursor pode vir antes ou depois do texto novo (muda com a
+    // plataforma): com o cursor no fim do texto de antes, ele segue no fim; no
+    // meio, o aviso que vem depois o acerta.
+    if (!selectionSeen.current || selection.current.end >= previous.length) {
+      selection.current = { start: text.length, end: text.length };
+    }
+    latest.current = text;
     setValue(text);
     if (error) setError(null);
     if (refusal) onEditAfterRefusal?.();
+    notifyDraft(text);
+  };
+
+  const changeSelection = (event: TextInputSelectionChangeEvent): void => {
+    selectionSeen.current = true;
+    selection.current = event.nativeEvent.selection;
+    notifyDraft(latest.current);
   };
 
   if (suspended) {
@@ -283,7 +449,14 @@ export function CommentComposer({
           style={[styles.container, styles.suspended, { paddingBottom }]}
           testID="comment-suspended"
         >
-          <Text variant="bodySmall" color={colors.textSecondary} style={styles.centered}>
+          {/* Sem o `accessible` no contêiner: o link "Escrever para a equipe" segue alcançável. */}
+          <Text
+            ref={suspensionText}
+            variant="bodySmall"
+            color={colors.textSecondary}
+            style={styles.centered}
+            testID="comment-suspended-text"
+          >
             {t('suspension.comment')}
           </Text>
           <SuspensionContact align="center" />
@@ -298,6 +471,8 @@ export function CommentComposer({
         onLayout={(event) => setHeight(event.nativeEvent.layout.height)}
         style={[styles.container, { paddingBottom }]}
       >
+        {accessory}
+        {reply ? <ReplyLine reply={reply} /> : null}
         {showCounter ? (
           // Lido pela dica do campo, junto com o limite.
           <Text
@@ -326,7 +501,11 @@ export function CommentComposer({
               maxFontSizeMultiplier={MAX_FONT_SCALE}
               accessibilityLabel={t('post.commentPlaceholder')}
               accessibilityHint={fieldHint}
-              onFocus={() => setFocused(true)}
+              onSelectionChange={changeSelection}
+              onFocus={() => {
+                setFocused(true);
+                onFieldFocus?.();
+              }}
               onBlur={() => setFocused(false)}
               textAlignVertical="center"
               style={[styles.input, { maxHeight }]}
@@ -401,6 +580,24 @@ const styles = StyleSheet.create({
   },
   contact: {
     paddingHorizontal: INPUT_PADDING_HORIZONTAL,
+  },
+  // A linha do modo resposta: o texto na altura do texto do campo, e o "×" no
+  // alvo de 44 em cima do botão de enviar.
+  reply: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    paddingLeft: INPUT_PADDING_HORIZONTAL,
+    marginTop: TARGET_OUTSET,
+  },
+  replyText: {
+    flex: 1,
+  },
+  replyClose: {
+    width: layout.minTouchTarget,
+    height: layout.minTouchTarget,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   // A frase da conta suspensa no lugar do campo, centrada, com o link embaixo.
   suspended: {

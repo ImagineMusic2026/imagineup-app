@@ -303,10 +303,9 @@ describe('a reação no card da página (37.9, item 1)', () => {
     expect(within(card).getByText('5')).toBeTruthy();
     expect(within(card).getByText('❤️\u{1F525}', hiddenOk)).toBeTruthy();
     expect(within(card).queryByText('❤️\u{1F525}')).toBeNull();
-    // O total dos comentários: lido, sem papel de botão (a tela da publicação é da etapa 6).
-    const comments = within(card).getByLabelText('2 comentários');
-    expect(comments).not.toHaveProp('accessibilityRole', 'button');
-    expect(within(card).queryByRole('button', { name: /coment/u })).toBeNull();
+    // O total dos comentários: desde a etapa 6, o botão que abre a tela da publicação.
+    const comments = within(card).getByRole('button', { name: '2 comentários' });
+    expect(comments).toHaveProp('accessibilityHint', 'Abre a publicação com os comentários');
     // A ordem da fileira: a reação, os comentários, o Compartilhar e o Denunciar.
     const order = within(card)
       .getAllByTestId(/^fan-club-post-p1-(react|comments|share|report)$/u)
