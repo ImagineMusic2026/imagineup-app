@@ -551,6 +551,28 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // Os comentários das publicações (seção 37, 37.4), na raiz e fora dos
+    // nomes do Mural: a seção fanClubs lê (a aba Comentários e a ficha), e a
+    // Moderação também, que conta os comentários do fã para o ocultar em lote.
+    // O fã lê só pela API.
+    match /fanClubComments/{commentId} {
+      allow read: if canSeeSection('fanClubs') || canSeeSection('moderation');
+      allow write: if false;
+    }
+
+    // As reações guardam quem reagiu: fechadas até para a equipe, que leria
+    // por aqui a lista de quem segue (decisão 29 de 34.1). A contagem mora na
+    // publicação.
+    match /fanClubReactions/{reactionId} {
+      allow read, write: if false;
+    }
+
+    // As denúncias de comentário uma a uma guardam quem denunciou: fechadas
+    // para todos, como as de publicação. A tela usa a fila.
+    match /fanClubCommentReports/{reportId} {
+      allow read, write: if false;
+    }
+
     // Resultado congelado das temporadas (bloco 8): o cabeçalho e a posição
     // final de cada fã que pontuou, com o nome, a foto e a cidade da virada.
     // Só o servidor grava (a virada e a exclusão de conta). A seção ranking

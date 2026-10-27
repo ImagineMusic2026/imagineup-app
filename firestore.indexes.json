@@ -546,6 +546,35 @@
         { "fieldPath": "clubId", "order": "ASCENDING" },
         { "fieldPath": "byOwnerCode", "order": "ASCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "fanClubComments",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "postId", "order": "ASCENDING" },
+        { "fieldPath": "replyToId", "order": "ASCENDING" },
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" },
+        { "fieldPath": "__name__", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "fanClubComments",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "replyToId", "order": "ASCENDING" },
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "ASCENDING" },
+        { "fieldPath": "__name__", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "fanClubComments",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "postId", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
     }
   ],
   "fieldOverrides": [
@@ -654,6 +683,10 @@
     { "collectionGroup": "fanClubReportQueue", "fieldPath": "reasons", "indexes": [] },
     { "collectionGroup": "prizes", "fieldPath": "note", "indexes": [] },
     { "collectionGroup": "redemptions", "fieldPath": "coupon", "indexes": [] },
-    { "collectionGroup": "redemptions", "fieldPath": "message", "indexes": [] }
+    { "collectionGroup": "redemptions", "fieldPath": "message", "indexes": [] },
+    { "collectionGroup": "fanClubComments", "fieldPath": "text", "indexes": [] },
+    { "collectionGroup": "fanClubComments", "fieldPath": "mentions", "indexes": [] },
+    { "collectionGroup": "fanClubPosts", "fieldPath": "mentions", "indexes": [] },
+    { "collectionGroup": "fanClubShards", "fieldPath": "days", "indexes": [] }
   ]
 }

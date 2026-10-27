@@ -11,9 +11,11 @@ import { dayKey, shiftDay } from '../src/day';
 import {
   SEED_CAMILA_FAN_CLUB,
   SEED_DUDA_FAN_CLUB,
+  SEED_FAN_CLUB_COMMENTS,
   SEED_FAN_CLUB_FOLLOWER,
   SEED_FAN_CLUB_GRANT,
   SEED_FAN_CLUB_POSTS,
+  seedFanClubEngagement,
   seedFanClubFollows,
   seedFanClubLink,
   seedFanClubPending,
@@ -228,6 +230,12 @@ async function seed(ranking: Map<string, string>): Promise<void> {
     { camilaUid: 'camila', biaUid: 'bia', followerUid: uidOf(ranking, SEED_FAN_CLUB_FOLLOWER) },
     T0,
   );
+  // Os comentários e as reações (Fase 2, seção 37, etapa 1 de 37.13), depois dos seguidores.
+  await seedFanClubEngagement(
+    db,
+    { camilaUid: 'camila', biaUid: 'bia', followerUid: uidOf(ranking, SEED_FAN_CLUB_FOLLOWER) },
+    T0,
+  );
   // A recompensa "Só para prêmios" e o prêmio da Camila (etapa 5).
   await seedFanClubPrize(db, { camilaUid: 'camila', actor: ACTOR }, T0);
   // A candidatura pendente da Duda, que entra antes no Nenho (etapa 10).
@@ -260,6 +268,8 @@ async function dump(): Promise<Record<string, [string, DocumentData][]>> {
     'fanClubPosts',
     'fanClubReports',
     'fanClubReportQueue',
+    'fanClubComments',
+    'fanClubReactions',
   ]) {
     out[name] = (await db.collection(name).get()).docs.map((doc) => [doc.id, doc.data()]);
   }
@@ -553,6 +563,9 @@ describe('o seed das telas do painel (26.13)', () => {
       newAccount: false,
       chosenUsername: true,
       byOwnerCode: false,
+      // O seed segue como o app de antes: sem a marca do aviso de membro.
+      memberNoticeVersion: null,
+      memberNoticeAt: null,
       schemaVersion: 1,
     });
     expect(await read('users/bia/centrals/nettobrito')).toMatchObject({
@@ -588,6 +601,56 @@ describe('o seed das telas do painel (26.13)', () => {
       monthStart: { month: '2026-10', followers: 2, joins: 1, signups: 0, visits: 0, links: 1 },
       lastMonth: null,
     });
+    // Os comentários e as reações (Fase 2, seção 37): 4 comentários de cima e a
+    // resposta da Camila com o @ da Bia, embaixo do comentário dela; as
+    // reações dos três. Os contadores na própria publicação, e os dias da taxa
+    // nos shards sem o que a gestora faz (3 reações e 4 comentários). As duas
+    // origens valem 0: nada no extrato.
+    const textPost = byText.get(textItem!.text)!;
+    expect(await db.collection('fanClubComments').get()).toHaveProperty(
+      'size',
+      SEED_FAN_CLUB_COMMENTS.length,
+    );
+    expect(await read('fanClubComments/seed-fa-clube-bia-1')).toMatchObject({
+      clubId,
+      postId: photoPost.id,
+      authorUid: 'bia',
+      authorUsername: 'bia',
+      replyToId: null,
+      replyCount: 1,
+      status: 'visible',
+      mentions: [],
+      mentionUids: [],
+    });
+    expect(await read('fanClubComments/seed-fa-clube-camila-1')).toMatchObject({
+      postId: photoPost.id,
+      authorUid: 'camila',
+      text: '@bia Te espero na frente do palco!',
+      replyToId: 'seed-fa-clube-bia-1',
+      status: 'visible',
+    });
+    expect(await read(`fanClubPosts/${photoPost.id}`)).toMatchObject({
+      commentCount: 3,
+      reactionCount: 3,
+      reactionCounts: { heart: 2, clap: 1 },
+    });
+    expect(await read(`fanClubPosts/${textPost.id}`)).toMatchObject({
+      commentCount: 2,
+      reactionCount: 1,
+      reactionCounts: { fire: 1 },
+    });
+    expect(byText.get(pendingItem!.text)!.get('commentCount')).toBeUndefined();
+    expect(await read(`fanClubReactions/camila_${photoPost.id}`)).toMatchObject({
+      reaction: 'heart',
+      firstReactedAt: Timestamp.fromMillis(T0),
+    });
+    const engagementShards = (
+      await db.collection(`fanClubStats/${clubId}/fanClubShards`).get()
+    ).docs.map((doc) => (doc.get(`days.${TODAY}`) ?? {}) as Record<string, number>);
+    expect(engagementShards.reduce((sum, day) => sum + (day.reactions ?? 0), 0)).toBe(3);
+    expect(engagementShards.reduce((sum, day) => sum + (day.comments ?? 0), 0)).toBe(4);
+    expect(await read(`wallets/bia/ledger/fanclub_like:${photoPost.id}`)).toBeUndefined();
+    expect(await read('wallets/bia/ledger/fanclub_comment:seed-fa-clube-bia-1')).toBeUndefined();
     // O prêmio (etapa 5): a recompensa "Só para prêmios" fora da ordem, o pedido
     // Aprovado com o cupom e a mensagem, os 200 pontos só no saldo, o registro
     // sem o código e o resumo no fã-clube.

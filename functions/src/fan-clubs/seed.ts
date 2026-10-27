@@ -8,23 +8,28 @@ import { DEFAULT_POINTS_CONFIG } from '../points/config';
 import { NO_GAME } from '../points/model';
 import { SEED_ACTOR } from '../points/seed';
 import { SEED_PRIZE_REWARD, seedPrizeReward } from '../rewards/seed';
+import { runAddFanClubComment } from './comments';
 import { copyFanClubCount } from './copy';
 import { runFollowFanClub } from './follows';
 import {
   applicationRecord,
   fanClubPostRecord,
   type ApplicationInput,
+  type FanClubReactionKey,
   type RewardGrantInput,
 } from './model';
 import { runFanClubDecision } from './panel';
 import { runCreateFanClubPost, runOpenFanClubUpload } from './posts';
+import { runSetFanClubReaction } from './reactions';
 import { runReportFanClubPost } from './reports';
 import { runApplyForFanClub } from './service';
 import {
   applicationRef,
+  fanClubCommentRef,
   fanClubFollowRef,
   fanClubPostsOfAuthor,
   fanClubPrizeRef,
+  fanClubReactionRef,
   fanClubRef,
   fanClubReportQueueRef,
 } from './store';
@@ -46,6 +51,8 @@ import {
 // fila do painel e o "Candidatura em análise" do app (34.22). Desde 34.23, o
 // fã-clube da Camila oficializado pelo admin do seed, junto da aprovação (o
 // selo de oficial; o da Duda, quando aprovado no painel local, fica sem ele).
+// Na Fase 2 (seção 37, etapa 1 de 37.13): os comentários e as reações nas duas
+// publicações no ar da Camila, com a resposta dela com o @ da Bia.
 // Rodar de novo não muda nada. Nunca roda em produção: o script fixa os emuladores.
 
 /** A central com as fotos de fã desligadas (só texto). */
@@ -334,6 +341,156 @@ export async function seedFanClubFollows(
   if ((await fanClubRef(db, clubId).get()).get('counts.at') === null) {
     await copyFanClubCount(db, clubId, now);
     result.copied = true;
+  }
+  return result;
+}
+
+/** Quem reage e comenta no seed da Fase 2: a Bia, a conta do ranking que segue e a gestora. */
+export type SeedFanClubActor = 'bia' | 'follower' | 'camila';
+
+/**
+ * Um comentário do seed da Fase 2 (seção 37, 37.13): o id fixo, quem comenta,
+ * a publicação no ar da Camila pela ordem do `SEED_FAN_CLUB_POSTS` (0, a da
+ * foto; 1, a de texto), há quantos minutos e o comentário respondido. A
+ * resposta da Camila começa pelo @ da Bia (R7); a marcação vira link na
+ * etapa 2.
+ */
+export type SeedFanClubComment = {
+  id: string;
+  author: SeedFanClubActor;
+  post: 0 | 1;
+  minutesAgo: number;
+  text: string;
+  replyTo: string | null;
+};
+
+/** Os comentários do seed, na ordem em que nascem (a resposta depois do respondido). */
+export const SEED_FAN_CLUB_COMMENTS: readonly SeedFanClubComment[] = [
+  {
+    id: 'seed-fa-clube-bia-1',
+    author: 'bia',
+    post: 0,
+    minutesAgo: 50,
+    text: 'Que ensaio lindo! Já estou contando os dias para sábado.',
+    replyTo: null,
+  },
+  {
+    id: 'seed-fa-clube-seguidor-1',
+    author: 'follower',
+    post: 0,
+    minutesAgo: 40,
+    text: 'Vou com a turma do bairro, guarda um lugar para a gente!',
+    replyTo: null,
+  },
+  {
+    id: 'seed-fa-clube-camila-1',
+    author: 'camila',
+    post: 0,
+    minutesAgo: 30,
+    text: 'Te espero na frente do palco!',
+    replyTo: 'seed-fa-clube-bia-1',
+  },
+  {
+    id: 'seed-fa-clube-bia-2',
+    author: 'bia',
+    post: 1,
+    minutesAgo: 20,
+    text: 'Bora! Vou assistir no dia do lançamento.',
+    replyTo: null,
+  },
+  {
+    id: 'seed-fa-clube-seguidor-2',
+    author: 'follower',
+    post: 1,
+    minutesAgo: 10,
+    text: 'Já salvei o lembrete do clipe.',
+    replyTo: null,
+  },
+];
+
+/** As reações do seed: a Bia nas duas, a conta do ranking na da foto e a Camila na dela. */
+export const SEED_FAN_CLUB_REACTIONS: readonly {
+  author: SeedFanClubActor;
+  post: 0 | 1;
+  reaction: FanClubReactionKey;
+}[] = [
+  { author: 'bia', post: 0, reaction: 'heart' },
+  { author: 'bia', post: 1, reaction: 'fire' },
+  { author: 'follower', post: 0, reaction: 'clap' },
+  { author: 'camila', post: 0, reaction: 'heart' },
+];
+
+export type SeedFanClubEngagementResult = {
+  /** Comentários gravados agora (5 no total, com a resposta da Camila). */
+  comments: number;
+  /** Reações gravadas agora (4 no total). */
+  reactions: number;
+};
+
+/**
+ * Os comentários e as reações nas duas publicações no ar da Camila (seção 37,
+ * 37.13, o seed da etapa 1), pelos núcleos de verdade, com o ator de sistema
+ * (os tetos não contam) e a configuração padrão (as duas origens valem 0):
+ * os comentários da Bia e da conta do ranking que segue, a resposta da Camila
+ * com o @ da Bia e as reações dos três. Cada comentário tem o id fixo e só
+ * nasce quando falta (e a resposta, só com o respondido visível); cada reação
+ * só vai sem o documento dela (a trocada no app local fica como está). A
+ * publicação em análise não recebe nada, e a que saiu do ar no painel local
+ * fica sem. Depois do `seedFanClubFollows`: comentar e reagir pedem seguir.
+ */
+export async function seedFanClubEngagement(
+  db: Firestore,
+  input: { camilaUid: string; biaUid: string; followerUid: string },
+  now: number = Date.now(),
+): Promise<SeedFanClubEngagementResult> {
+  const result: SeedFanClubEngagementResult = { comments: 0, reactions: 0 };
+  const application = await applicationRef(db, input.camilaUid).get();
+  const clubId = application.exists
+    ? applicationRecord(input.camilaUid, application.data() ?? {}).clubId
+    : null;
+  if (clubId === null) return result;
+  if ((await fanClubRef(db, clubId).get()).get('status') !== 'active') return result;
+  const existing = await fanClubPostsOfAuthor(db, input.camilaUid).get();
+  const byText = new Map(
+    existing.docs.map((doc) => [doc.get('text'), fanClubPostRecord(doc.id, doc.data())]),
+  );
+  const posts = SEED_FAN_CLUB_POSTS.filter((item) => item.publish).map((item) => {
+    const post = byText.get(item.text);
+    return post?.status === 'published' ? post : null;
+  });
+  const uids: Record<SeedFanClubActor, string> = {
+    bia: input.biaUid,
+    follower: input.followerUid,
+    camila: input.camilaUid,
+  };
+  const biaUsername = (await db.collection('users').doc(input.biaUid).get()).get('username');
+  const options = { now, config: DEFAULT_POINTS_CONFIG, actor: SEED_ACTOR, game: NO_GAME };
+
+  for (const item of SEED_FAN_CLUB_COMMENTS) {
+    const post = posts[item.post];
+    if (!post || (await fanClubCommentRef(db, item.id).get()).exists) continue;
+    if (item.replyTo !== null) {
+      const replied = await fanClubCommentRef(db, item.replyTo).get();
+      if (!replied.exists || replied.get('status') !== 'visible') continue;
+    }
+    const text =
+      item.replyTo !== null && typeof biaUsername === 'string' && biaUsername !== ''
+        ? `@${biaUsername} ${item.text}`
+        : item.text;
+    const { comment } = await runAddFanClubComment(
+      db,
+      uids[item.author],
+      { postId: post.id, text, replyToId: item.replyTo, commentId: item.id },
+      { ...options, now: now - item.minutesAgo * 60_000 },
+    );
+    if (comment) result.comments += 1;
+  }
+  for (const item of SEED_FAN_CLUB_REACTIONS) {
+    const post = posts[item.post];
+    const uid = uids[item.author];
+    if (!post || (await fanClubReactionRef(db, uid, post.id).get()).exists) continue;
+    await runSetFanClubReaction(db, uid, { postId: post.id, reaction: item.reaction }, options);
+    result.reactions += 1;
   }
   return result;
 }

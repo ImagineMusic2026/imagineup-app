@@ -16,11 +16,14 @@ import { fanShardOf } from '../centrals/model';
 import {
   applicationRecord,
   FAN_CLUB_FOLLOWS_MAX,
+  fanClubReactionId,
+  fanClubReactionOf,
   fanClubRecord,
   isLiveFanClub,
   type ApplicationRecord,
   type FanClubCountField,
   type FanClubCredit,
+  type FanClubReactionKey,
   type FanClubRecord,
 } from './model';
 
@@ -31,8 +34,9 @@ import {
 // etapa 3 de 34.14, as gravações da atribuição (o marcador do crédito e os
 // shards dos números, que as centrais e o convite gravam) e, desde a etapa 4,
 // as leituras dos seguimentos que sair da central, o bloqueio e a suspensão
-// apagam. Só importa o model (e o puro das centrais), para nenhum desses
-// módulos puxar a API, os pontos ou a equipe por aqui.
+// apagam. Desde a Fase 2 (seção 37), os comentários, as reações e os dias da
+// taxa de engajamento nos shards. Só importa o model (e o puro das centrais),
+// para nenhum desses módulos puxar a API, os pontos ou a equipe por aqui.
 
 export const fanClubsOf = (db: Firestore): CollectionReference => db.collection('fanClubs');
 
@@ -109,6 +113,48 @@ export const fanClubReportQueueRef = (db: Firestore, postId: string): DocumentRe
   db.collection('fanClubReportQueue').doc(postId);
 
 /**
+ * `fanClubComments/{commentId}`: os comentários das publicações (seção 37,
+ * decisão 9), na raiz e fora dos nomes do Mural (`postComments` tem regra de
+ * grupo). O id é automático, novo a cada tentativa da transação.
+ */
+export const fanClubCommentsOf = (db: Firestore): CollectionReference =>
+  db.collection('fanClubComments');
+
+export const fanClubCommentRef = (db: Firestore, commentId: string): DocumentReference =>
+  fanClubCommentsOf(db).doc(commentId);
+
+/**
+ * `fanClubReactions/{uid}_{postId}`: a reação de um fã numa publicação (37.2),
+ * na raiz, para a publicação apagada levar as dela por uma consulta. Nasce na
+ * primeira reação e fica (tirar grava `reaction: null`).
+ */
+export const fanClubReactionsOf = (db: Firestore): CollectionReference =>
+  db.collection('fanClubReactions');
+
+export const fanClubReactionRef = (db: Firestore, uid: string, postId: string): DocumentReference =>
+  fanClubReactionsOf(db).doc(fanClubReactionId(uid, postId));
+
+/**
+ * As reações de quem pede nas publicações da página (a `myReaction`), num
+ * `getAll` fora de transação, como as curtidas do `postViews` do Mural (até
+ * 10 leituras por página). Sem publicação, nenhuma leitura.
+ */
+export async function readReactionsOf(
+  db: Firestore,
+  uid: string,
+  postIds: readonly string[],
+): Promise<Map<string, FanClubReactionKey | null>> {
+  if (postIds.length === 0) return new Map();
+  const snaps = await db.getAll(...postIds.map((postId) => fanClubReactionRef(db, uid, postId)));
+  return new Map(
+    postIds.map((postId, index) => {
+      const snap = snaps[index]!;
+      return [postId, snap.exists ? fanClubReactionOf(snap.get('reaction')) : null];
+    }),
+  );
+}
+
+/**
  * `users/{uid}/uploads/fanClubPost`: a vaga de envio da foto da publicação
  * (34.6), com os dois nomes e o prazo. Só o servidor grava; a regra do Storage
  * lê. Sai com o perfil, no `recursiveDelete` da exclusão.
@@ -169,6 +215,31 @@ export function writeFanClubCounts(
     }
     tx.set(fanClubShardRef(db, clubId, fanShardOf(shard)), fields, { merge: true });
   }
+}
+
+/** Os dias da taxa de engajamento nos shards (seção 37, 37.11): as reações novas e os comentários. */
+export type FanClubDayField = 'reactions' | 'comments';
+
+/**
+ * Soma 1 no dia de São Paulo da taxa de engajamento (37.2 e 37.11), sem ler:
+ * `days.{AAAA-MM-DD}.{campo}` com `increment` e `merge` no shard sorteado da
+ * transação (o mesmo do `writeFanClubCounts`). O `merge` junta os mapas: os
+ * dias velhos só saem pelo corte da cópia da noite.
+ */
+export function writeFanClubDay(
+  tx: Transaction,
+  db: Firestore,
+  clubId: string,
+  field: FanClubDayField,
+  day: string,
+  shard: number,
+  at: Timestamp,
+): void {
+  tx.set(
+    fanClubShardRef(db, clubId, fanShardOf(shard)),
+    { days: { [day]: { [field]: FieldValue.increment(1) } }, updatedAt: at },
+    { merge: true },
+  );
 }
 
 /** Soma 1 num número só de um fã-clube (o link, a visita): o `writeFanClubCounts` de uma soma. */

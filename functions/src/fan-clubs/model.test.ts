@@ -1,35 +1,46 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import { ADJUSTMENT_ID_PATTERN } from '../points/adjust';
+import { PostError } from '../posts/model';
 import {
   APPLICATION_KEYS,
+  applyReactionDelta,
   applicationRecord,
   applicationTurn,
   checkClubName,
   CLUB_PHOTO_LIMITS,
   CLUB_THUMB_LIMITS,
+  emptyReactionCounts,
+  FAN_CLUB_COMMENTS_PAGE,
+  FAN_CLUB_COMMENTS_PER_DAY,
   FAN_CLUB_COUNT_FIELDS,
   FAN_CLUB_CREDIT_WINDOW_MS,
   FAN_CLUB_FEED_FOLLOWS,
   FAN_CLUB_FOLLOWS_MAX,
   FAN_CLUB_FOLLOWS_PER_DAY,
   FAN_CLUB_HISTORY_MAX,
+  FAN_CLUB_MEMBER_NOTICE_VERSION,
   FAN_CLUB_PENDING_MAX,
   FAN_CLUB_POSTS_PER_DAY,
   FAN_CLUB_UPLOAD_SLOT_MS,
   FAN_CLUB_UPLOADS_PER_DAY,
   FAN_CLUB_OPEN,
   FAN_CLUB_PRIZE_NOTICE,
+  FAN_CLUB_REACTIONS,
+  FAN_CLUB_REACTIONS_PER_DAY,
   FAN_CLUB_REAPPLY_MS,
   FAN_CLUB_RULES_URL,
   FAN_CLUB_RULES_VERSION,
   fanClubBoxes,
   fanClubBoxValue,
+  fanClubCommentRecord,
   FanClubError,
   fanClubMediaFolder,
   FAN_CLUB_GRANT_ID_PATTERN,
   fanClubPostRecord,
   fanClubPrizeRecord,
+  fanClubReactionId,
+  fanClubReactionOf,
   fanClubRecord,
   fanClubReportId,
   fanClubRulesUrl,
@@ -39,18 +50,26 @@ import {
   hasOfficialWord,
   isFeaturedNow,
   isWithinCreditWindow,
+  mentionsOf,
   NEW_ACCOUNT_MS,
+  newCommentCounts,
   parseApplication,
+  parseFanClubComment,
   parseFeaturedUntil,
+  parseFollowBody,
   parsePost,
   parsePrizeCoupon,
   parsePrizeMessage,
+  parseReaction,
   parseRewardGrant,
   parseRulesAcceptance,
   postMediaPaths,
   prizeBlock,
   QUALITY_WARNING_SHARE,
+  reactionCountsOf,
+  reactionDelta,
   reapplyAfterRejection,
+  replyTarget,
   sameProportion,
   sameRewardGrant,
   slotFileNames,
@@ -69,6 +88,10 @@ import {
 // do documento. Desde a etapa 3, a atribuição: a janela do crédito pelo
 // código do gestor e a soma dos shards. Desde a etapa 5, o Recompensar: o
 // `grantId`, o cupom, a mensagem, a nota, o corpo, a repetição e as travas.
+// Desde a Fase 2 (seção 37, etapa 1 de 37.13): o corpo da reação e do
+// comentário, as contas dos contadores (a troca de emoji, o comentário de
+// cima e a resposta), a leitura dos documentos novos e o corpo do seguir com
+// a versão do aviso de membro.
 
 // O filtro do que o fã publica (seção 30) trocado por um de palavras neutras:
 // nenhum termo da lista de verdade entra no repositório (30.11).
@@ -707,6 +730,36 @@ describe('os seguidores (decisões 26 a 34 e 39)', () => {
     expect(byOwner('outro-fa')).toBe(false);
     expect(byOwner(null)).toBe(false);
   });
+
+  it('o corpo do seguir (seção 37, "Estado"): a versão do aviso de membro; sem corpo, o app de antes', () => {
+    expect(FAN_CLUB_MEMBER_NOTICE_VERSION).toBe('membros-2026-10');
+    // Sem corpo, null e `{}`: o app de antes, sem a marca.
+    expect(parseFollowBody(undefined)).toEqual({ ok: true, value: null });
+    expect(parseFollowBody(null)).toEqual({ ok: true, value: null });
+    expect(parseFollowBody({})).toEqual({ ok: true, value: null });
+    expect(parseFollowBody({ memberNoticeVersion: FAN_CLUB_MEMBER_NOTICE_VERSION })).toEqual({
+      ok: true,
+      value: FAN_CLUB_MEMBER_NOTICE_VERSION,
+    });
+    // A versão que o servidor espera vem do parâmetro (a troca do texto).
+    expect(parseFollowBody({ memberNoticeVersion: 'membros-2027-01' }, 'membros-2027-01')).toEqual({
+      ok: true,
+      value: 'membros-2027-01',
+    });
+    for (const value of ['membros-2027-01', '', 'MEMBROS-2026-10', 2026, null, true, {}]) {
+      expect(parseFollowBody({ memberNoticeVersion: value }), String(value)).toEqual({
+        ok: false,
+        field: 'memberNoticeVersion',
+      });
+    }
+    expect(
+      parseFollowBody({ memberNoticeVersion: FAN_CLUB_MEMBER_NOTICE_VERSION, aviso: true }),
+    ).toEqual({ ok: false, field: 'aviso' });
+    expect(parseFollowBody({ outra: 1 })).toEqual({ ok: false, field: 'outra' });
+    for (const value of ['membros-2026-10', 7, true, [FAN_CLUB_MEMBER_NOTICE_VERSION]]) {
+      expect(parseFollowBody(value), JSON.stringify(value)).toEqual({ ok: false, field: 'body' });
+    }
+  });
 });
 
 describe('a qualidade dos seguidores (decisão 39)', () => {
@@ -880,5 +933,250 @@ describe('o Recompensar (etapa 5, decisões 43 a 46)', () => {
     expect(prizeBlock({ club: active, adultDeclared: true, ownerSuspended: true })).toBe(
       'owner_suspended',
     );
+  });
+});
+
+describe('as reações (seção 37, R1 e 37.3)', () => {
+  it('os 5 emojis fixos, pela chave, e os tetos do dia do Mural', () => {
+    expect(FAN_CLUB_REACTIONS).toEqual(['heart', 'fire', 'laugh', 'wow', 'clap']);
+    expect(FAN_CLUB_REACTIONS_PER_DAY).toBe(300);
+    expect(FAN_CLUB_COMMENTS_PER_DAY).toBe(100);
+    expect(FAN_CLUB_COMMENTS_PAGE).toBe(20);
+    expect(fanClubReactionId('uidBia', 'pub1')).toBe('uidBia_pub1');
+  });
+
+  it('o corpo: só `{ reaction }` com uma chave da lista; o emoji, outra chave e o corpo torto são 400', () => {
+    for (const reaction of FAN_CLUB_REACTIONS) {
+      expect(parseReaction({ reaction })).toEqual({ ok: true, value: reaction });
+    }
+    expect(parseReaction(undefined)).toEqual({ ok: false, field: 'body' });
+    expect(parseReaction(['heart'])).toEqual({ ok: false, field: 'body' });
+    expect(parseReaction({})).toEqual({ ok: false, field: 'reaction' });
+    expect(parseReaction({ reaction: null })).toEqual({ ok: false, field: 'reaction' });
+    expect(parseReaction({ reaction: '❤️' })).toEqual({ ok: false, field: 'reaction' });
+    expect(parseReaction({ reaction: 'HEART' })).toEqual({ ok: false, field: 'reaction' });
+    expect(parseReaction({ reaction: 'heart', emoji: '❤️' })).toEqual({
+      ok: false,
+      field: 'emoji',
+    });
+  });
+
+  it('a reação gravada: a chave da lista, ou null (tirada, ausente ou estranha)', () => {
+    expect(fanClubReactionOf('fire')).toBe('fire');
+    expect(fanClubReactionOf(null)).toBeNull();
+    expect(fanClubReactionOf(undefined)).toBeNull();
+    expect(fanClubReactionOf('like')).toBeNull();
+  });
+
+  it('dar: soma 1 no total e no emoji', () => {
+    expect(reactionDelta(null, 'heart')).toEqual({ total: 1, counts: { heart: 1 } });
+  });
+
+  it('trocar de emoji: tira do de antes e soma no novo, sem mexer no total', () => {
+    expect(reactionDelta('heart', 'fire')).toEqual({ total: 0, counts: { heart: -1, fire: 1 } });
+  });
+
+  it('tirar: tira 1 do total e do emoji; a mesma reação não muda nada', () => {
+    expect(reactionDelta('clap', null)).toEqual({ total: -1, counts: { clap: -1 } });
+    expect(reactionDelta('wow', 'wow')).toEqual({ total: 0, counts: {} });
+    expect(reactionDelta(null, null)).toEqual({ total: 0, counts: {} });
+  });
+
+  it('os contadores depois da troca, a partir dos lidos, nunca abaixo de 0', () => {
+    const counts = { ...emptyReactionCounts(), heart: 3, fire: 1 };
+    expect(applyReactionDelta(4, counts, reactionDelta('heart', 'fire'))).toEqual({
+      reactionCount: 4,
+      reactionCounts: { heart: 2, fire: 2, laugh: 0, wow: 0, clap: 0 },
+    });
+    expect(applyReactionDelta(4, counts, reactionDelta(null, 'laugh'))).toEqual({
+      reactionCount: 5,
+      reactionCounts: { heart: 3, fire: 1, laugh: 1, wow: 0, clap: 0 },
+    });
+    // O número torto gravado (a publicação de antes, sem o mapa) não vira negativo.
+    expect(applyReactionDelta(0, emptyReactionCounts(), reactionDelta('wow', null))).toEqual({
+      reactionCount: 0,
+      reactionCounts: emptyReactionCounts(),
+    });
+    // A conta não mexe nos números lidos.
+    expect(counts).toEqual({ heart: 3, fire: 1, laugh: 0, wow: 0, clap: 0 });
+  });
+
+  it('o mapa gravado: cada emoji da lista; o ausente, o estranho e a chave de fora valem 0', () => {
+    expect(reactionCountsOf(undefined)).toEqual(emptyReactionCounts());
+    expect(reactionCountsOf({ heart: 2, fire: -1, laugh: 'x', like: 9, clap: 1.7 })).toEqual({
+      heart: 2,
+      fire: 0,
+      laugh: 0,
+      wow: 0,
+      clap: 1,
+    });
+  });
+
+  it('a publicação de antes, sem os campos novos, vale 0 e a lista vazia; os gravados são lidos', () => {
+    expect(fanClubPostRecord('p1', { status: 'published' })).toMatchObject({
+      reactionCount: 0,
+      reactionCounts: emptyReactionCounts(),
+      commentCount: 0,
+      mentions: [],
+    });
+    expect(
+      fanClubPostRecord('p2', {
+        status: 'published',
+        reactionCount: 3,
+        reactionCounts: { heart: 2, clap: 1 },
+        commentCount: 5,
+      }),
+    ).toMatchObject({
+      reactionCount: 3,
+      reactionCounts: { heart: 2, fire: 0, laugh: 0, wow: 0, clap: 1 },
+      commentCount: 5,
+    });
+  });
+});
+
+describe('os comentários (seção 37, 37.2, 37.3 e R7)', () => {
+  /** O motivo do `comment_invalid` que a chamada lança. */
+  function invalidOf(run: () => unknown): string | undefined {
+    try {
+      run();
+    } catch (error) {
+      if (error instanceof PostError) return `${error.reason}:${String(error.details?.reason)}`;
+      throw error;
+    }
+    return undefined;
+  }
+
+  it('o corpo: o texto limpo, e o `replyToId` ausente vale null', () => {
+    expect(parseFanClubComment({ text: '  Bora, turma!  \r\n\r\n\r\n  Vou sim ' })).toEqual({
+      ok: true,
+      value: { text: 'Bora, turma!\n\nVou sim', replyToId: null },
+    });
+    expect(parseFanClubComment({ text: 'Bora!', replyToId: null })).toEqual({
+      ok: true,
+      value: { text: 'Bora!', replyToId: null },
+    });
+    expect(parseFanClubComment({ text: 'Bora!', replyToId: 'c1' })).toEqual({
+      ok: true,
+      value: { text: 'Bora!', replyToId: 'c1' },
+    });
+  });
+
+  it('o corpo torto é 400 com o campo, sem ler nada', () => {
+    expect(parseFanClubComment(undefined)).toEqual({ ok: false, field: 'body' });
+    expect(parseFanClubComment('Bora!')).toEqual({ ok: false, field: 'body' });
+    expect(parseFanClubComment({ text: 'Bora!', mentions: [] })).toEqual({
+      ok: false,
+      field: 'mentions',
+    });
+    expect(parseFanClubComment({ replyToId: 'c1' })).toEqual({ ok: false, field: 'text' });
+    expect(parseFanClubComment({ text: 'Bora!', replyToId: 3 })).toEqual({
+      ok: false,
+      field: 'replyToId',
+    });
+  });
+
+  it('o `replyToId` fora do formato dos ids é o 404 do comentário', () => {
+    for (const replyToId of ['__c1__', 'c/1', '', 'a'.repeat(129)]) {
+      expect(errorOf(() => parseFanClubComment({ text: 'Bora!', replyToId })).reason).toBe(
+        'fan_club_comment_not_found',
+      );
+    }
+  });
+
+  it.each([
+    ['vazio', '', 'comment_invalid:empty'],
+    ['só espaços e linhas', '  \n \r\n  ', 'comment_invalid:empty'],
+    ['501 em UTF-16', 'a'.repeat(501), 'comment_invalid:too_long'],
+    ['emoji conta 2 (UTF-16)', '\u{1F600}'.repeat(251), 'comment_invalid:too_long'],
+    ['invisível numa linha', 'oi\n​', 'comment_invalid:invisible'],
+    ['o termo do filtro', 'Que pepino esse show', 'comment_invalid:not_allowed'],
+  ])('o texto com as regras do comentário do Mural: recusa %s', (_, text, reason) => {
+    expect(invalidOf(() => parseFanClubComment({ text }))).toBe(reason);
+  });
+
+  it('500 em UTF-16 passa', () => {
+    const parsed = parseFanClubComment({ text: 'a'.repeat(500) });
+    expect(parsed.ok && parsed.value.text).toHaveLength(500);
+  });
+
+  it('a resposta a uma resposta vai para o comentário de cima dela (R7)', () => {
+    expect(replyTarget({ id: 'c1', replyToId: null })).toBe('c1');
+    expect(replyTarget({ id: 'r1', replyToId: 'c1' })).toBe('c1');
+  });
+
+  it('os contadores do comentário novo: o de cima soma só na publicação; a resposta, também no de cima', () => {
+    expect(newCommentCounts(null)).toEqual({ commentCount: 1, replyCount: 0 });
+    expect(newCommentCounts('c1')).toEqual({ commentCount: 1, replyCount: 1 });
+  });
+
+  it('o comentário lido: o `replyToId` null e o status estranho, que não aparece', () => {
+    const at = { toMillis: () => NOW };
+    expect(
+      fanClubCommentRecord('c1', {
+        clubId: 'clube1',
+        postId: 'pub1',
+        artistId: 'nettobrito',
+        authorUid: 'uidBia',
+        authorName: 'Bia Santos',
+        authorUsername: 'biasan',
+        authorPhotoURL: null,
+        text: 'Bora!',
+        mentions: [],
+        mentionUids: [],
+        replyToId: null,
+        replyCount: 2,
+        managerHiddenReplyCount: 1,
+        status: 'visible',
+        hiddenAt: null,
+        hiddenBy: null,
+        restoredByStaffAt: null,
+        reviewRequestedAt: null,
+        reviewOutcome: null,
+        createdAt: at,
+      }),
+    ).toEqual({
+      id: 'c1',
+      clubId: 'clube1',
+      postId: 'pub1',
+      artistId: 'nettobrito',
+      authorUid: 'uidBia',
+      authorName: 'Bia Santos',
+      authorUsername: 'biasan',
+      authorPhotoURL: null,
+      text: 'Bora!',
+      mentions: [],
+      mentionUids: [],
+      replyToId: null,
+      replyCount: 2,
+      managerHiddenReplyCount: 1,
+      status: 'visible',
+      hiddenAt: null,
+      hiddenBy: null,
+      restoredByStaffAt: null,
+      reviewRequestedAt: null,
+      reviewOutcome: null,
+      createdAt: NOW,
+    });
+    expect(fanClubCommentRecord('c2', { status: 'apagado', replyToId: 'c1' })).toMatchObject({
+      status: 'staff_hidden',
+      replyToId: 'c1',
+      replyCount: 0,
+      createdAt: 0,
+    });
+  });
+
+  it('as marcações gravadas: só as no formato, com as posições em UTF-16', () => {
+    const good = { handle: 'biasan', kind: 'fan', id: 'uidBia', start: 0, end: 7 };
+    expect(
+      mentionsOf([
+        good,
+        { ...good, kind: 'central' },
+        { ...good, id: '' },
+        { ...good, start: 7, end: 7 },
+        { ...good, start: -1 },
+        'biasan',
+      ]),
+    ).toEqual([good]);
+    expect(mentionsOf(undefined)).toEqual([]);
   });
 });

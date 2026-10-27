@@ -4,7 +4,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { AgendaError } from '../agenda/model';
 import { CentralError } from '../centrals/model';
-import { FAN_CLUB_PRIZE_NOTICE, FanClubError } from '../fan-clubs/model';
+import {
+  FAN_CLUB_MEMBER_NOTICE_VERSION,
+  FAN_CLUB_PRIZE_NOTICE,
+  FanClubError,
+} from '../fan-clubs/model';
 import { InviteError } from '../invites/model';
 import { ProfileEditError } from '../fan-profile/model';
 import { DailyCapError, ModerationError } from '../moderation/model';
@@ -1479,6 +1483,8 @@ describe('suspensão do fã (bloco 11)', () => {
         'DELETE /me/fan-club/application',
         'DELETE /me/fan-club/posts/:postId',
         'DELETE /me/fan-club-follows/:clubId',
+        // A Fase 2 do fã-clube (seção 37, 37.8): tirar a reação é de desfazer.
+        'DELETE /fan-club-posts/:postId/reaction',
       ].sort(),
     );
     // Toda rota que lê ignora a trava (ela mora no runIdempotent).
@@ -2018,6 +2024,9 @@ describe('fã-clube gerido pelo fã (seção 34)', () => {
       ['POST', '/fan-club-posts/pub1/report'],
       ['PUT', '/me/fan-club-follows/clube1'],
       ['DELETE', '/me/fan-club-follows/clube1'],
+      ['POST', '/fan-club-posts/pub1/comments'],
+      ['PUT', '/fan-club-posts/pub1/reaction'],
+      ['DELETE', '/fan-club-posts/pub1/reaction'],
     ] as const) {
       const sent = await call(request(method, path, { body: {} }), API_ROUTES, noReads);
       expect(sent.status, `${method} ${path}`).toBe(400);
@@ -2048,16 +2057,23 @@ describe('fã-clube gerido pelo fã (seção 34)', () => {
       ['DELETE', '/me/fan-club-follows/:clubId', true],
       ['GET', '/me/fan-club-follows', false],
       ['GET', '/me/fan-club-feed', false],
+      // A Fase 2 (seção 37, etapa 1 de 37.13).
+      ['GET', '/fan-club-posts/:postId', false],
+      ['GET', '/fan-club-posts/:postId/comments', false],
+      ['POST', '/fan-club-posts/:postId/comments', true],
+      ['PUT', '/fan-club-posts/:postId/reaction', true],
+      ['DELETE', '/fan-club-posts/:postId/reaction', true],
     ]);
-    // Candidatar, publicar, abrir a vaga, o novo aceite, denunciar e seguir
-    // criam: o suspenso não manda (sem `allowSuspended`); retirar e deixar de
-    // seguir são de desfazer.
+    // Candidatar, publicar, abrir a vaga, o novo aceite, denunciar, seguir,
+    // comentar e reagir criam: o suspenso não manda (sem `allowSuspended`);
+    // retirar, deixar de seguir e tirar a reação são de desfazer.
     for (const route of routes.filter((item) => item.writes)) {
       const undo =
         route.method === 'DELETE' &&
         (route.pattern === '/me/fan-club/application' ||
           route.pattern === '/me/fan-club/posts/:postId' ||
-          route.pattern === '/me/fan-club-follows/:clubId');
+          route.pattern === '/me/fan-club-follows/:clubId' ||
+          route.pattern === '/fan-club-posts/:postId/reaction');
       expect('allowSuspended' in route && route.allowSuspended, route.pattern).toBe(
         undo ? true : false,
       );
@@ -2075,6 +2091,12 @@ describe('fã-clube gerido pelo fã (seção 34)', () => {
       // O seguir (etapa 4): o id fora do formato não existe, e nada é lido.
       ['PUT', '/me/fan-club-follows/__clube__', 'fan_club_not_found'],
       ['DELETE', '/me/fan-club-follows/__clube__', 'fan_club_not_found'],
+      // A Fase 2 (seção 37): a publicação, os comentários e a reação.
+      ['GET', '/fan-club-posts/__pub__', 'fan_club_post_not_found'],
+      ['GET', '/fan-club-posts/__pub__/comments', 'fan_club_post_not_found'],
+      ['POST', '/fan-club-posts/__pub__/comments', 'fan_club_post_not_found'],
+      ['PUT', '/fan-club-posts/__pub__/reaction', 'fan_club_post_not_found'],
+      ['DELETE', '/fan-club-posts/__pub__/reaction', 'fan_club_post_not_found'],
     ];
     for (const [method, path, code] of cases) {
       const sent = await call(request(method, path, { headers: key }), API_ROUTES, noReads);
@@ -2164,7 +2186,29 @@ describe('fã-clube gerido pelo fã (seção 34)', () => {
     }
   });
 
-  it('os 404 do fã-clube e da publicação saem sem detalhes, e os tetos novos levam a ação', async () => {
+  it('PUT /me/fan-club-follows confere a versão do aviso de membro antes de abrir a transação (seção 37, "Estado")', async () => {
+    const key = { 'Idempotency-Key': 'chave-fa-clube-0006' };
+    const cases: [unknown, string][] = [
+      [{ memberNoticeVersion: 'membros-2027-01' }, 'memberNoticeVersion'],
+      [{ memberNoticeVersion: 2026 }, 'memberNoticeVersion'],
+      [{ memberNoticeVersion: null }, 'memberNoticeVersion'],
+      [{ memberNoticeVersion: FAN_CLUB_MEMBER_NOTICE_VERSION, aviso: true }, 'aviso'],
+      [[FAN_CLUB_MEMBER_NOTICE_VERSION], 'body'],
+      ['membros-2026-10', 'body'],
+    ];
+    for (const [body, field] of cases) {
+      const sent = await call(
+        request('PUT', '/me/fan-club-follows/clube1', { body, headers: key }),
+        API_ROUTES,
+        noReads,
+      );
+      expect(sent.status, JSON.stringify(body)).toBe(400);
+      expect(sent.body).toMatchObject({ code: 'invalid_request', details: { field } });
+    }
+    expect(logger.error).not.toHaveBeenCalled();
+  });
+
+  it('os 404 do fã-clube, da publicação e do comentário saem sem detalhes, e os tetos novos levam a ação', async () => {
     for (const [error, code, message] of [
       [
         new FanClubError('fan_club_not_found'),
@@ -2176,6 +2220,11 @@ describe('fã-clube gerido pelo fã (seção 34)', () => {
         'fan_club_post_not_found',
         'Publicação não encontrada.',
       ],
+      [
+        new FanClubError('fan_club_comment_not_found'),
+        'fan_club_comment_not_found',
+        'Comentário não encontrado.',
+      ],
     ] as const) {
       const sent = await call(request('GET', '/teste/fa-clube'), thrower(error));
       expect(sent).toMatchObject({ status: 404, body: { code, message } });
@@ -2185,6 +2234,8 @@ describe('fã-clube gerido pelo fã (seção 34)', () => {
       ['club_post', 5],
       ['club_upload', 10],
       ['club_follow', 30],
+      ['club_react', 300],
+      ['club_comment', 100],
     ] as const) {
       const sent = await call(
         request('GET', '/teste/fa-clube'),
@@ -2196,5 +2247,121 @@ describe('fã-clube gerido pelo fã (seção 34)', () => {
       });
     }
     expect(logger.error).not.toHaveBeenCalled();
+  });
+
+  it('comentar e reagir conferem o corpo antes de abrir a transação (seção 37, sem leitura)', async () => {
+    const key = { 'Idempotency-Key': 'chave-fa-clube-0005' };
+    const cases: [string, string, unknown, number, Record<string, unknown>][] = [
+      [
+        'POST',
+        '/fan-club-posts/pub1/comments',
+        undefined,
+        400,
+        { code: 'invalid_request', details: { field: 'body' } },
+      ],
+      [
+        'POST',
+        '/fan-club-posts/pub1/comments',
+        { text: 'Bora!', foto: true },
+        400,
+        { code: 'invalid_request', details: { field: 'foto' } },
+      ],
+      [
+        'POST',
+        '/fan-club-posts/pub1/comments',
+        { text: 42 },
+        400,
+        { code: 'invalid_request', details: { field: 'text' } },
+      ],
+      [
+        'POST',
+        '/fan-club-posts/pub1/comments',
+        { text: 'Bora!', replyToId: 7 },
+        400,
+        { code: 'invalid_request', details: { field: 'replyToId' } },
+      ],
+      [
+        'POST',
+        '/fan-club-posts/pub1/comments',
+        { text: '   ' },
+        400,
+        { code: 'comment_invalid', details: { reason: 'empty' } },
+      ],
+      [
+        'POST',
+        '/fan-club-posts/pub1/comments',
+        { text: 'a'.repeat(501) },
+        400,
+        { code: 'comment_invalid', details: { reason: 'too_long' } },
+      ],
+      [
+        'POST',
+        '/fan-club-posts/pub1/comments',
+        { text: 'Que pepino esse show' },
+        400,
+        { code: 'comment_invalid', details: { reason: 'not_allowed' } },
+      ],
+      // O comentário respondido fora do formato dos ids não existe: 404 sem ler.
+      [
+        'POST',
+        '/fan-club-posts/pub1/comments',
+        { text: 'Bora!', replyToId: '__c1__' },
+        404,
+        { code: 'fan_club_comment_not_found' },
+      ],
+      [
+        'PUT',
+        '/fan-club-posts/pub1/reaction',
+        undefined,
+        400,
+        { code: 'invalid_request', details: { field: 'body' } },
+      ],
+      [
+        'PUT',
+        '/fan-club-posts/pub1/reaction',
+        {},
+        400,
+        { code: 'invalid_request', details: { field: 'reaction' } },
+      ],
+      [
+        'PUT',
+        '/fan-club-posts/pub1/reaction',
+        { reaction: '❤️' },
+        400,
+        { code: 'invalid_request', details: { field: 'reaction' } },
+      ],
+      [
+        'PUT',
+        '/fan-club-posts/pub1/reaction',
+        { reaction: 'heart', extra: 1 },
+        400,
+        { code: 'invalid_request', details: { field: 'extra' } },
+      ],
+    ];
+    for (const [method, path, body, status, expected] of cases) {
+      const sent = await call(request(method, path, { body, headers: key }), API_ROUTES, noReads);
+      expect(sent.status, JSON.stringify(body)).toBe(status);
+      expect(sent.body).toMatchObject(expected);
+    }
+    expect(logger.error).not.toHaveBeenCalled();
+  });
+
+  it('a lista dos comentários confere a busca antes de ler (seção 37)', async () => {
+    const cases: [Record<string, string>, number, Record<string, unknown>][] = [
+      [{ limit: '0' }, 400, { code: 'invalid_request', details: { field: 'limit' } }],
+      [{ limit: '21' }, 400, { code: 'invalid_request', details: { field: 'limit' } }],
+      [{ cursor: 'nao-e-cursor' }, 400, { code: 'invalid_request', details: { field: 'cursor' } }],
+      [{ replyTo: '__c1__' }, 404, { code: 'fan_club_comment_not_found' }],
+      [{ replyTo: 'c/1' }, 404, { code: 'fan_club_comment_not_found' }],
+    ];
+    for (const [query, status, expected] of cases) {
+      const sent = await call(
+        request('GET', '/fan-club-posts/pub1/comments', { query }),
+        API_ROUTES,
+        noReads,
+      );
+      expect(sent.status, JSON.stringify(query)).toBe(status);
+      expect(sent.body).toMatchObject(expected);
+    }
   });
 });

@@ -404,7 +404,26 @@ describe('tetos do dia e o limite da missão (bloco 7)', () => {
       fanclub_post: 5,
       fanclub_upload: 10,
       fanclub_follow: 30,
+      // A Fase 2 do fã-clube (seção 37, 37.5): as trocas de reação e os comentários.
+      fanclub_reaction_set: 300,
+      fanclub_comment_sent: 100,
     });
+  });
+
+  it('a reação e o comentário no fã-clube nascem em 0, com os limites do dia do Mural (37.5)', () => {
+    expect(DEFAULT_POINTS_CONFIG.values).toMatchObject({ fanclub_like: 0, fanclub_comment: 0 });
+    expect(DEFAULT_POINTS_CONFIG.dailyLimits).toMatchObject({
+      fanclub_like: 50,
+      fanclub_comment: 20,
+    });
+    // O documento de antes, sem as duas origens, fica com o padrão nelas; o
+    // painel muda o valor e o limite sem código.
+    const config = parsePointsConfig(
+      { version: 4, values: { like: 1, fanclub_comment: 3 }, dailyLimits: { fanclub_like: 5 } },
+      spyLog(),
+    );
+    expect(config.values).toMatchObject({ like: 1, fanclub_like: 0, fanclub_comment: 3 });
+    expect(config.dailyLimits).toMatchObject({ fanclub_like: 5, fanclub_comment: 20 });
   });
 
   it('leitura tolerante: teto desconhecido ignorado, inválido volta ao padrão só nele', () => {

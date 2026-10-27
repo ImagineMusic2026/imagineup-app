@@ -39,7 +39,12 @@ import {
 // Os dias de São Paulo moram em day.ts desde o bloco 7; daqui saem como antes.
 export { dayKey, monthKey, nextDayStart, shiftDay, TIME_ZONE, weekKey } from '../day';
 
-/** Origens que rendem pontos. Origem nova é mudança de código: tipo, padrão e a tabela da nota. */
+/**
+ * Origens que rendem pontos. Origem nova é mudança de código: tipo, padrão e a
+ * tabela da nota. `fanclub_like` e `fanclub_comment` são a reação e o
+ * comentário nas publicações do fã-clube (seção 37, 37.5): nascem em 0, sem
+ * central, sem assunto e fora das missões gerais.
+ */
 export const EARN_SOURCES = [
   'like',
   'comment',
@@ -48,6 +53,8 @@ export const EARN_SOURCES = [
   'mission',
   'invite_visit',
   'invite_signup',
+  'fanclub_like',
+  'fanclub_comment',
 ] as const;
 export type EarnSource = (typeof EARN_SOURCES)[number];
 
@@ -59,6 +66,8 @@ export const VALUE_SOURCES = [
   'central_join',
   'invite_visit',
   'invite_signup',
+  'fanclub_like',
+  'fanclub_comment',
 ] as const satisfies readonly EarnSource[];
 export type ValueSource = (typeof VALUE_SOURCES)[number];
 
@@ -215,7 +224,9 @@ export type AwardResult = { uid: string; entryId: string; status: AwardStatus; p
  * seção 28, decisão 9); `fanclub_apply`, as candidaturas a fã-clube, e
  * `fanclub_post` e `fanclub_upload`, as publicações e as vagas de envio da
  * foto delas (seção 34, decisão 11); `fanclub_follow`, os seguimentos de
- * fã-clube (seção 34, decisão 34).
+ * fã-clube (seção 34, decisão 34); `fanclub_reaction_set` e
+ * `fanclub_comment_sent`, as trocas de reação e os comentários nas publicações
+ * de fã-clube (seção 37, 37.5).
  */
 export type DailyActionKey =
   | 'central_entry'
@@ -234,7 +245,9 @@ export type DailyActionKey =
   | 'fanclub_apply'
   | 'fanclub_post'
   | 'fanclub_upload'
-  | 'fanclub_follow';
+  | 'fanclub_follow'
+  | 'fanclub_reaction_set'
+  | 'fanclub_comment_sent';
 
 export type DayStats = {
   earned: number;

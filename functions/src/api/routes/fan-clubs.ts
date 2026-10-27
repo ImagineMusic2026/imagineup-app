@@ -1,19 +1,28 @@
 import { isArtistId } from '../../centrals/model';
 import {
   acceptFanClubRules,
+  addFanClubComment,
   applyForFanClub,
   ARTIST_FAN_CLUBS_PAGE,
+  clearFanClubReaction,
   createFanClubPost,
+  FAN_CLUB_COMMENTS_PAGE,
   FAN_CLUB_POSTS_PAGE,
+  fanClubCommentNotFound,
   followFanClub,
   openFanClubUpload,
   parseApplication,
+  parseFanClubComment,
+  parseFollowBody,
   parsePost,
+  parseReaction,
   parseRulesAcceptance,
   readArtistFanClubs,
   readFanClubArtists,
+  readFanClubComments,
   readFanClubFeed,
   readFanClubPage,
+  readFanClubPost,
   readFanClubPosts,
   readFollowedFanClubs,
   readMyFanClub,
@@ -21,9 +30,13 @@ import {
   readMyFanClubPosts,
   removeFanClubPost,
   reportFanClubPost,
+  setFanClubReaction,
   unfollowFanClub,
   withdrawApplication,
   type ApplicationInput,
+  type CommentInput,
+  type CommentsQuery,
+  type FanClubReactionKey,
   type PostInput,
 } from '../../fan-clubs';
 import { parseFanClubReportReason, type FanClubReportReason } from '../../moderation';
@@ -31,11 +44,15 @@ import { isContentId } from '../../page-cursor';
 import { rewardsOf } from '../../points/award';
 import type {
   ActionRewards,
+  AddFanClubCommentResult,
   FanClubArtists,
   FanClubCard,
+  FanClubCommentPage,
   FanClubNumbers,
   FanClubPage,
   FanClubPost,
+  FanClubPostDetails,
+  FanClubReactionResult,
   FanClubUploadSlot,
   FollowedFanClubs,
   FollowFanClubResult,
@@ -47,7 +64,7 @@ import type {
 } from '../contract';
 import { apiError } from '../errors';
 import type { ApiRoute, RouteInput } from '../types';
-import { pageQuery } from './paging';
+import { pageQuery, queryText } from './paging';
 
 // Rotas do fã-clube gerido pelo fã (seção 34, 34.3). A etapa 1 de 34.14: o
 // estado do fã nos Ajustes, as centrais que aceitam fã-clube, candidatar e
@@ -60,7 +77,10 @@ import { pageQuery } from './paging';
 // exigido; as de desfazer (desistir, retirar e deixar de seguir) aceitam o
 // suspenso. Os arquivos do Storage que saem ou trocam de token mudam depois da
 // gravação (o `storageWork`, guardado na chave e refeito na repetição).
-// Nenhuma rota devolve quem segue: o gestor vê só o número (decisão 29).
+// Nenhuma rota devolve quem segue: o gestor vê só o número (decisão 29). A
+// Fase 2 (seção 37, 37.3; a etapa 1 de 37.13): a publicação no ar pelo id, os
+// comentários com as respostas de um nível, comentar e a reação; tirar a
+// reação é de desfazer e aceita o suspenso. Nenhuma rota diz quem reagiu (R8).
 
 /**
  * O corpo da candidatura conferido e limpo (`parseApplication`), sem leitura:
@@ -86,6 +106,17 @@ function bodyRules(input: RouteInput): void {
   if (!parsed.ok) throw apiError('invalid_request', { field: parsed.field });
 }
 
+/**
+ * A versão do aviso de membro no corpo do seguir (`parseFollowBody`), sem
+ * leitura: sem corpo, null (o app de antes); o malformado e a outra versão
+ * são 400 `invalid_request` com o campo.
+ */
+function bodyFollow(input: RouteInput): string | null {
+  const parsed = parseFollowBody(input.body);
+  if (!parsed.ok) throw apiError('invalid_request', { field: parsed.field });
+  return parsed.value;
+}
+
 /** O `:clubId` no formato dos ids; fora dele, 404 `fan_club_not_found` sem ler nada. */
 function clubParam(input: RouteInput): void {
   if (!isContentId(input.params.clubId)) throw apiError('fan_club_not_found');
@@ -99,6 +130,37 @@ function postParam(input: RouteInput): void {
 /** O `:artistId` no formato do @ das centrais; fora dele, 404 `artist_not_found`, como no mural. */
 function artistParam(input: RouteInput): void {
   if (!isArtistId(input.params.artistId)) throw apiError('artist_not_found');
+}
+
+/**
+ * A busca dos comentários (seção 37, 37.3): o `limit` de 1 a 20 e o `cursor`
+ * de sempre, e o `replyTo` (as respostas de um comentário de cima), no
+ * formato dos ids; fora dele, 404 `fan_club_comment_not_found` sem ler nada.
+ */
+function commentsQuery(input: RouteInput): CommentsQuery {
+  const page = pageQuery(input, FAN_CLUB_COMMENTS_PAGE);
+  const replyTo = queryText(input.query, 'replyTo');
+  if (replyTo === undefined || replyTo === '') return { ...page, replyTo: null };
+  if (!isContentId(replyTo)) throw fanClubCommentNotFound();
+  return { ...page, replyTo };
+}
+
+/**
+ * O corpo do comentário (`parseFanClubComment`), sem leitura: o malformado é
+ * 400 `invalid_request` com o campo, o `replyToId` fora do formato é 404
+ * `fan_club_comment_not_found` e o texto fora da regra, `comment_invalid`.
+ */
+function bodyComment(input: RouteInput): CommentInput {
+  const parsed = parseFanClubComment(input.body);
+  if (!parsed.ok) throw apiError('invalid_request', { field: parsed.field });
+  return parsed.value;
+}
+
+/** A reação do corpo (`parseReaction`), de uma lista fechada; fora dela, 400 sem ler. */
+function bodyReaction(input: RouteInput): FanClubReactionKey {
+  const parsed = parseReaction(input.body);
+  if (!parsed.ok) throw apiError('invalid_request', { field: parsed.field });
+  return parsed.value;
 }
 
 /** O motivo da denúncia (a lista do fã-clube, com o `image_misuse`, ou null); outro valor é 400. */
@@ -322,17 +384,23 @@ export const fanClubRoutes: ApiRoute[] = [
   },
   {
     // Seguir: quando falta, entra junto na central oficial (o central_join de
-    // sempre, com a comemoração). Já seguindo, a mesma resposta sem gravar.
+    // sempre, com a comemoração). Já seguindo, a mesma resposta sem gravar. A
+    // versão do aviso de membro no corpo vira a marca do vínculo novo (seção
+    // 37, "Estado"); sem corpo, o app de antes, o vínculo fica sem a marca.
     method: 'PUT',
     pattern: '/me/fan-club-follows/:clubId',
     writes: true,
-    validate: clubParam,
+    validate: (input) => {
+      clubParam(input);
+      bodyFollow(input);
+    },
     async handle(ctx) {
       const { body, plan } = await followFanClub(ctx.tx, ctx.deps.db, {
         fan: ctx.fan,
         award: ctx.award,
         profile: ctx.profile,
         clubId: ctx.params.clubId!,
+        memberNoticeVersion: bodyFollow(ctx),
       });
       const result: FollowFanClubResult & ActionRewards = { ...body, ...rewardsOf(plan) };
       return { body: result, plan };
@@ -375,6 +443,93 @@ export const fanClubRoutes: ApiRoute[] = [
     validate: (input) => void pageQuery(input, FAN_CLUB_POSTS_PAGE),
     async handle(ctx): Promise<Page<FanClubPost>> {
       return readFanClubFeed(ctx.deps.db, ctx.uid, pageQuery(ctx, FAN_CLUB_POSTS_PAGE));
+    },
+  },
+  {
+    // A publicação no ar (seção 37, 37.3): a tela da publicação. Fora do ar,
+    // de fã-clube que quem pede não vê ou que não existe: 404.
+    method: 'GET',
+    pattern: '/fan-club-posts/:postId',
+    writes: false,
+    validate: postParam,
+    async handle(ctx): Promise<FanClubPostDetails> {
+      return readFanClubPost(ctx.deps.db, ctx.uid, ctx.params.postId!);
+    },
+  },
+  {
+    // Os comentários de cima, do mais novo, ou as respostas de um deles
+    // (`?replyTo=`), da mais antiga. Não exige seguir: ler é de quem vê.
+    method: 'GET',
+    pattern: '/fan-club-posts/:postId/comments',
+    writes: false,
+    validate: (input) => {
+      postParam(input);
+      commentsQuery(input);
+    },
+    async handle(ctx): Promise<FanClubCommentPage> {
+      return readFanClubComments(ctx.deps.db, ctx.uid, ctx.params.postId!, commentsQuery(ctx));
+    },
+  },
+  {
+    // Comentar ou responder: quem segue e o gestor, com o teto `club_comment`.
+    // A resposta a uma resposta vai para o comentário de cima dela (R7).
+    method: 'POST',
+    pattern: '/fan-club-posts/:postId/comments',
+    writes: true,
+    validate: (input) => {
+      postParam(input);
+      bodyComment(input);
+    },
+    async handle(ctx) {
+      const { plan, comment } = await addFanClubComment(ctx.tx, ctx.deps.db, {
+        fan: ctx.fan,
+        award: ctx.award,
+        profile: ctx.profile,
+        postId: ctx.params.postId!,
+        input: bodyComment(ctx),
+      });
+      // Sem id fixo (só o seed passa), o comentário sempre nasce.
+      const body: AddFanClubCommentResult = { ...comment!, ...rewardsOf(plan) };
+      return { body, plan };
+    },
+  },
+  {
+    // Reagir ou trocar de emoji: quem segue e o gestor, com o teto
+    // `club_react`. A mesma reação responde os números sem gravar.
+    method: 'PUT',
+    pattern: '/fan-club-posts/:postId/reaction',
+    writes: true,
+    validate: (input) => {
+      postParam(input);
+      bodyReaction(input);
+    },
+    async handle(ctx) {
+      const { plan, body } = await setFanClubReaction(ctx.tx, ctx.deps.db, {
+        fan: ctx.fan,
+        award: ctx.award,
+        postId: ctx.params.postId!,
+        reaction: bodyReaction(ctx),
+      });
+      const result: FanClubReactionResult = { ...body, ...rewardsOf(plan) };
+      return { body: result, plan };
+    },
+  },
+  {
+    // Tirar a reação, em qualquer status da publicação: desfazer, então o
+    // suspenso também. Nunca recusa; não tira ponto nem desconta o dia.
+    method: 'DELETE',
+    pattern: '/fan-club-posts/:postId/reaction',
+    writes: true,
+    allowSuspended: true,
+    validate: postParam,
+    async handle(ctx) {
+      const { plan, body } = await clearFanClubReaction(ctx.tx, ctx.deps.db, {
+        fan: ctx.fan,
+        award: ctx.award,
+        postId: ctx.params.postId!,
+      });
+      const result: FanClubReactionResult = { ...body, ...rewardsOf(plan) };
+      return { body: result, plan };
     },
   },
 ];
