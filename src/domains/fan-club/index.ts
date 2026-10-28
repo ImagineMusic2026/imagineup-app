@@ -5,7 +5,8 @@
 // `artists` e os `posts`, as chaves pelo arquivo (`fan-club/keys.ts`). Da
 // Fase 2 (seção 37, etapa 5 de 37.13): os tipos, a api, as chaves, as
 // fixtures e a reação no card; da etapa 6, a tela da publicação, com os
-// comentários, as respostas e as menções.
+// comentários, as respostas e as menções; da etapa 7, a moderação (a sheet de
+// opções do comentário, o ocultar e o pedido de revisão) e o modo gestor.
 export { ArtistFanClubsCard } from './components/artist-fan-clubs-card';
 export { FanClubFeedSection } from './components/fan-club-feed-section';
 export {
@@ -96,6 +97,7 @@ export type {
   OwnFanClubPost,
 } from './types';
 export { ArtistFanClubsScreen } from './views/artist-fan-clubs';
+export { FanClubCommentOptionsSheetScreen } from './views/comment-options-sheet';
 export { FanClubApplyScreen } from './views/fan-club-apply';
 export { FanClubPageScreen } from './views/fan-club-page';
 export { FanClubPostScreen } from './views/fan-club-post';

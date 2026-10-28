@@ -1,10 +1,12 @@
 import { FlashList, type FlashListRef } from '@shopify/flash-list';
+import { useQueryClient } from '@tanstack/react-query';
 import { router, useIsFocused, useLocalSearchParams, useNavigationContainerRef } from 'expo-router';
 import { MessageCircle } from 'lucide-react-native';
 import { useEffect, useEffectEvent, useRef, useState, type RefObject } from 'react';
 import {
   AccessibilityInfo,
   ActivityIndicator,
+  Alert,
   KeyboardAvoidingView,
   Platform,
   StyleSheet,
@@ -30,28 +32,41 @@ import {
 } from '@/domains/posts';
 import { useFanIdentity, useSuspension, useWatchMyProfile } from '@/domains/profile';
 import { useAnnounceWhen } from '@/hooks/use-announce-when';
+import { useIsOnline } from '@/hooks/use-is-online';
 import { useKeyboardVisible } from '@/hooks/use-keyboard-visible';
 import { useNow } from '@/hooks/use-now';
 import { usePrefersReducedMotion } from '@/hooks/use-prefers-reduced-motion';
 import { t, type TranslationKey } from '@/i18n';
 import { ApiError } from '@/services/api/errors';
+import { actionRefusal } from '@/services/api/refusal';
+import { haptics } from '@/services/haptics';
+import { alertActionRefusal } from '@/services/refusal-alert';
 import { borderWidths, colors, motion, radii, spacing } from '@/theme';
 import { formatNumber } from '@/utils/number';
 
 import { FanClubPostCard } from '../components/club-post-card';
-import { CommentThread, type CommentViewer } from '../components/comment-thread';
+import { placeOwnHidden } from '../comments';
+import {
+  CommentThread,
+  type CommentModeration,
+  type CommentViewer,
+} from '../components/comment-thread';
 import { FollowToComment } from '../components/follow-to-comment';
 import { MentionSuggestions } from '../components/mention-suggestions';
+import { fanClubErrorText } from '../describe';
 import { isDefinitiveRefusal } from '../entry';
 import { mentionDraftAt, replyPrefix, sameDraft, type MentionDraft } from '../mentions';
 import {
+  cachedFanClubCommentReview,
   useAddFanClubCommentMutation,
   useFanClubCommentsQuery,
   useFanClubGate,
   useFanClubMentionsQuery,
   useFanClubPostQuery,
   useFollowFanClubMutation,
+  useHideFanClubCommentMutation,
   useLocalFanClubComments,
+  useRequestFanClubCommentReviewMutation,
   useShareFanClub,
   type FanClubCommentRefusal,
   type FanClubReplyTarget,
@@ -60,6 +75,7 @@ import type { FanClubCommentLine, FanClubPostDetails, MentionSuggestion } from '
 
 const isIOS = Platform.OS === 'ios';
 const SKELETON_HEIGHT = 180;
+const NO_LINES: readonly FanClubCommentLine[] = [];
 
 /**
  * O 404 da publicação: a que saiu do ar, a de fã-clube que não aparece e a
@@ -195,9 +211,16 @@ type CommentsState = 'loading' | 'error' | 'ready';
  * começo do texto (R7); a resposta enviada abre as respostas da conversa, e a
  * recusada volta ao campo no modo resposta dela. O seguir mora aqui, e não no
  * pé: o pé troca no próprio sucesso, e o "+N" da entrada sobe da tela.
+ *
+ * A moderação (37.6 e 37.9, itens 4 e 10; a etapa 7 de 37.13): o botão de
+ * opções dos comentários dos outros abre a sheet "Opções do comentário"
+ * (Denunciar e Bloquear); o gestor oculta e reexibe; o autor vê os dele
+ * ocultos pelo gestor (o `ownHidden`), pela data, e pede revisão. Ocultar,
+ * Reexibir e Pedir revisão confirmam por `Alert`.
  */
 function PostContent({ post, updatedAt }: { post: FanClubPostDetails; updatedAt: number }) {
   useWatchMyProfile();
+  const queryClient = useQueryClient();
   const navigation = useNavigationContainerRef();
   const { uid, name: myName, photoURL: myPhotoURL } = useFanIdentity();
   const keyboardVisible = useKeyboardVisible();
@@ -205,6 +228,7 @@ function PostContent({ post, updatedAt }: { post: FanClubPostDetails; updatedAt:
   const reducedMotion = usePrefersReducedMotion();
   const share = useShareFanClub();
   const { suspended } = useSuspension();
+  const online = useIsOnline();
   const comments = useFanClubCommentsQuery(post.id, null, true);
   const local = useLocalFanClubComments(post.id);
   const composer = useRef<CommentComposerHandle>(null);
@@ -252,8 +276,13 @@ function PostContent({ post, updatedAt }: { post: FanClubPostDetails; updatedAt:
   };
 
   const serverComments = comments.data?.pages.flatMap((page) => page.items) ?? [];
+  // Os do fã ocultos pelo gestor entram pela data (o `ownHidden` da primeira página, 37.9, item 4).
+  const placed = placeOwnHidden<FanClubCommentLine>(
+    serverComments,
+    comments.data?.pages[0]?.ownHidden,
+  );
   const localTop = local.comments.filter((line) => line.replyToId === null);
-  const items = mergeComments<FanClubCommentLine>(localTop, serverComments);
+  const items = mergeComments<FanClubCommentLine>(localTop, placed.top);
   const localReplies = (threadId: string): FanClubCommentLine[] =>
     local.comments.filter((line) => line.replyToId === threadId).reverse();
   const commentsState: CommentsState = comments.isPending
@@ -407,6 +436,92 @@ function PostContent({ post, updatedAt }: { post: FanClubPostDetails; updatedAt:
     }
   };
 
+  const hide = useHideFanClubCommentMutation(post.id);
+  const review = useRequestFanClubCommentReviewMutation(post.id);
+
+  // O ocultar e o reexibir do gestor (37.6), confirmados por `Alert`: o
+  // sucesso anuncia, e a recusa (o `staff_decided`, o fã-clube parado, o
+  // comentário que saiu) diz a frase num `Alert`, que foca e anuncia. O
+  // suspenso fica com o "Conta suspensa" do `SuspensionWatcher`.
+  const confirmHidden = (comment: FanClubCommentLine, hidden: boolean): void => {
+    Alert.alert(
+      t(hidden ? 'fanClub.comments.hideTitle' : 'fanClub.comments.unhideTitle'),
+      t(hidden ? 'fanClub.comments.hideBody' : 'fanClub.comments.unhideBody'),
+      [
+        { text: t('fanClub.comments.cancel'), style: 'cancel' },
+        {
+          text: t(hidden ? 'fanClub.comments.hideConfirm' : 'fanClub.comments.unhideConfirm'),
+          style: hidden ? 'destructive' : 'default',
+          onPress: () =>
+            hide.mutate(
+              { comment, hidden },
+              {
+                onSuccess: () => {
+                  haptics.trigger('success');
+                  AccessibilityInfo.announceForAccessibility(
+                    t(hidden ? 'fanClub.comments.hiddenDone' : 'fanClub.comments.unhiddenDone'),
+                  );
+                },
+                onError: (error) => {
+                  haptics.trigger('error');
+                  const refusal = actionRefusal(error, 'clubCommentHide');
+                  // O suspenso: o "Conta suspensa", com "Escrever para a equipe".
+                  if (alertActionRefusal(refusal.type, 'clubCommentHide')) return;
+                  Alert.alert(t(fanClubErrorText(error)?.key ?? refusal.key));
+                },
+              },
+            ),
+        },
+      ],
+    );
+  };
+
+  // O "Pedir revisão" do autor (37.6), uma vez por ocultar, confirmado por
+  // `Alert`. O `already_requested` diz o estado da lista nova: pedido noutro
+  // aparelho, ou mantido pela equipe. O teto do dia abre o "Limite de hoje",
+  // e o suspenso fica com o "Conta suspensa" do `SuspensionWatcher`.
+  const confirmReview = (comment: FanClubCommentLine): void => {
+    Alert.alert(t('fanClub.comments.reviewTitle'), t('fanClub.comments.reviewBody'), [
+      { text: t('fanClub.comments.cancel'), style: 'cancel' },
+      {
+        text: t('fanClub.comments.reviewConfirm'),
+        onPress: () =>
+          review.mutate(comment.id, {
+            onSuccess: (result) => {
+              haptics.trigger('success');
+              const state =
+                result.status === 'requested'
+                  ? 'requested'
+                  : cachedFanClubCommentReview(queryClient, post.id, comment.id);
+              if (state === null) return;
+              AccessibilityInfo.announceForAccessibility(
+                t(state === 'kept' ? 'fanClub.comments.reviewKept' : 'fanClub.comments.reviewSent'),
+              );
+            },
+            onError: (error) => {
+              haptics.trigger('error');
+              const refusal = actionRefusal(error, 'clubCommentReview');
+              if (alertActionRefusal(refusal.type, 'clubCommentReview')) return;
+              Alert.alert(t(fanClubErrorText(error)?.key ?? refusal.key));
+            },
+          }),
+      },
+    ]);
+  };
+
+  const moderation: CommentModeration = {
+    // A sheet "Opções do comentário" do fã-clube (37.9, item 10): Denunciar e Bloquear.
+    onOptions: (comment) =>
+      router.push({
+        pathname: '/comentario-fa-clube/[comentarioId]',
+        params: { comentarioId: comment.id, publicacao: post.id },
+      }),
+    onHide: (comment) => confirmHidden(comment, true),
+    onUnhide: (comment) => confirmHidden(comment, false),
+    onRequestReview: confirmReview,
+    disabled: !online || hide.isPending || review.isPending,
+  };
+
   const renderPlaceholder = () => {
     if (commentsState === 'loading') {
       return <CommentRowsSkeleton accessibilityLabel={t('post.comments.loading')} />;
@@ -507,12 +622,21 @@ function PostContent({ post, updatedAt }: { post: FanClubPostDetails; updatedAt:
               expanded={expanded.has(item.id)}
               onExpand={expand}
               localReplies={localReplies(item.id)}
+              hiddenReplies={placed.replies.get(item.id) ?? NO_LINES}
+              moderation={moderation}
               onReply={startReply}
               onRetry={commenting.retry}
               onOpenArtist={openArtist}
             />
           )}
-          extraData={{ now: now.getTime(), expanded, viewer, local: local.comments, reply }}
+          extraData={{
+            now: now.getTime(),
+            expanded,
+            viewer,
+            local: local.comments,
+            reply,
+            moderationDisabled: moderation.disabled,
+          }}
           ListHeaderComponent={header}
           ListEmptyComponent={renderPlaceholder()}
           ListFooterComponent={renderFooter()}

@@ -1,12 +1,14 @@
 import { router } from 'expo-router';
-import { useEffect, type Ref } from 'react';
-import { StyleSheet, View, useWindowDimensions } from 'react-native';
+import { Ellipsis } from 'lucide-react-native';
+import { useEffect, useRef, type Ref } from 'react';
+import { AccessibilityInfo, StyleSheet, View, useWindowDimensions } from 'react-native';
 import Animated, { useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 
 import { Avatar } from '@/components/avatar';
+import { Icon } from '@/components/icon';
 import { Pill } from '@/components/pill';
 import { PressableScale } from '@/components/pressable-scale';
-import { Text } from '@/components/text';
+import { Text, type TextInstance } from '@/components/text';
 import { TextLink } from '@/components/text-link';
 import { fanProfileHref } from '@/domains/profile';
 import { usePrefersReducedMotion } from '@/hooks/use-prefers-reduced-motion';
@@ -22,14 +24,17 @@ import { MentionText } from './mention-text';
 // dentro de pressável. Aqui a linha não é pressável: o autor (o avatar, o
 // nome, o @ e a marca "Gestor") é o pressável que abre o perfil; o texto é um
 // `Text` com os @ como links em linha, que o leitor acha pelo rotor e pelo
-// menu de links; e o "Responder" é irmão deles. A linha local (enviando, "Não
-// enviado" e "Não publicado") vem do Mural, um pressável só, sem link (os @
-// só se resolvem no servidor).
+// menu de links; e o "Responder", o "Ocultar" e o "Reexibir" do gestor, o
+// "Pedir revisão" do autor e o botão de opções são irmãos deles (a etapa 7 de
+// 37.13). A linha local (enviando, "Não enviado" e "Não publicado") vem do
+// Mural, um pressável só, sem link (os @ só se resolvem no servidor).
 
 // Avatar apagado enquanto vai ou oculto: é imagem, o contraste vale para o texto.
 const DIM_AVATAR_OPACITY = 0.5;
 // O recuo da resposta: um nível, o avatar e o vão, como o texto do comentário de cima.
 const NESTED_INDENT = layout.avatar.sm.size + spacing.listGap;
+// Os três pontos das opções, num alvo de 44, como no Mural.
+const OPTIONS_ICON_SIZE = 16;
 
 export interface FanClubCommentRowProps {
   comment: FanClubCommentLine;
@@ -44,6 +49,19 @@ export interface FanClubCommentRowProps {
   nested?: boolean;
   /** "Responder": de quem pode comentar, no comentário entregue e à vista. */
   onReply?: () => void;
+  /** O botão de opções (Denunciar e Bloquear), no comentário de outro, à vista (37.9, item 10). */
+  onOptions?: () => void;
+  /** "Ocultar", do gestor, no comentário de outro, à vista (37.6). */
+  onHide?: () => void;
+  /** "Reexibir", do gestor, no que ele ocultou. */
+  onUnhide?: () => void;
+  /** "Pedir revisão", do autor, no oculto pelo gestor, uma vez por ocultar. */
+  onRequestReview?: () => void;
+  /**
+   * Um pedido de moderação está indo, ou sem internet: o "Ocultar", o
+   * "Reexibir" e o "Pedir revisão" ficam desligados.
+   */
+  busy?: boolean;
   /** Toque na linha que não foi enviada (tenta de novo) ou não foi publicada (devolve o texto). */
   onRetry?: () => void;
   /** A conta suspensa: o "Não publicado" só diz o motivo, sem toque. */
@@ -76,10 +94,14 @@ function authorLabel(comment: FanClubCommentLine, mine: boolean, now: Date): str
 
 /**
  * Um comentário entregue: o autor (pressável que abre o perfil, menos no
- * "Você"), o texto com os links e o "Responder". O oculto pelo gestor aparece
- * esmaecido com a `Pill` ("Oculto pelo gestor" para o autor, "Oculto por você"
- * para o gestor) e sem "Responder": ninguém responde ao que está oculto. Com a
- * fonte grande, o nome não corta: o @ e a hora descem para baixo dele.
+ * "Você"), o texto com os links e as ações, irmãs deles: "Responder", o
+ * "Ocultar" do gestor e o botão de opções (Denunciar e Bloquear) nos
+ * comentários dos outros (37.9, itens 4 e 10). O oculto pelo gestor aparece
+ * esmaecido com a `Pill` e sem "Responder" (ninguém responde ao que está
+ * oculto): para o gestor, "Oculto por você" e "Reexibir"; para o autor,
+ * "Oculto pelo gestor" e "Pedir revisão" (depois, "Revisão pedida" ou "A
+ * equipe manteve oculto"). Com a fonte grande, o nome não corta: o @ e a hora
+ * descem para baixo dele, e as ações quebram a linha.
  */
 export function FanClubCommentRow(props: FanClubCommentRowProps) {
   if (props.comment.status !== undefined) return <LocalCommentRow {...props} />;
@@ -94,6 +116,11 @@ function DeliveredCommentRow({
   viewerIsOwner,
   nested = false,
   onReply,
+  onOptions,
+  onHide,
+  onUnhide,
+  onRequestReview,
+  busy = false,
   onOpenArtist,
   focusRef,
 }: FanClubCommentRowProps) {
@@ -102,6 +129,31 @@ function DeliveredCommentRow({
   const { author } = comment;
   const name = displayName(comment, mine);
   const testID = `club-comment-${comment.id}`;
+  const reply = onReply && !hidden ? onReply : undefined;
+  // O estado do pedido de revisão, só para o autor (o `review` só vem para ele).
+  const reviewState =
+    comment.review === 'kept'
+      ? t('fanClub.comments.reviewKept')
+      : comment.review === 'requested'
+        ? t('fanClub.comments.reviewRequested')
+        : null;
+  const hasActions = hidden || !!reply || !!onHide;
+  // O "Ocultar" e o "Reexibir" do gestor dividem o mesmo lugar na fileira.
+  const toggleHidden = hidden ? onUnhide : onHide;
+
+  // O "Pedir revisão" que o servidor confirmou dá lugar ao estado: o foco do
+  // leitor vai a ele, no lugar do botão que sumiu.
+  const reviewRef = useRef<TextInstance>(null);
+  const previousReview = useRef(reviewState);
+  useEffect(() => {
+    const appeared = previousReview.current === null && reviewState !== null;
+    previousReview.current = reviewState;
+    if (!appeared) return;
+    const timer = setTimeout(() => {
+      if (reviewRef.current) AccessibilityInfo.sendAccessibilityEvent(reviewRef.current, 'focus');
+    }, motion.duration.fast);
+    return () => clearTimeout(timer);
+  }, [reviewState]);
 
   const head = (
     <>
@@ -142,30 +194,44 @@ function DeliveredCommentRow({
 
   return (
     <View style={[styles.row, nested && styles.nested]} testID={testID}>
-      {mine ? (
-        // O próprio fã não abre o próprio perfil daqui, como no Mural.
-        <View
-          ref={focusRef}
-          accessible
-          accessibilityLabel={authorLabel(comment, mine, now)}
-          style={styles.author}
-          testID={`${testID}-author`}
-        >
-          {head}
-        </View>
-      ) : (
-        <PressableScale
-          ref={focusRef}
-          onPress={() => router.push(fanProfileHref(author.uid))}
-          accessibilityRole="link"
-          accessibilityLabel={authorLabel(comment, mine, now)}
-          accessibilityHint={t('fanProfile.openHint', { name })}
-          style={styles.author}
-          testID={`${testID}-author`}
-        >
-          {head}
-        </PressableScale>
-      )}
+      <View style={styles.top}>
+        {mine ? (
+          // O próprio fã não abre o próprio perfil daqui, como no Mural.
+          <View
+            ref={focusRef}
+            accessible
+            accessibilityLabel={authorLabel(comment, mine, now)}
+            style={styles.author}
+            testID={`${testID}-author`}
+          >
+            {head}
+          </View>
+        ) : (
+          <PressableScale
+            ref={focusRef}
+            onPress={() => router.push(fanProfileHref(author.uid))}
+            accessibilityRole="link"
+            accessibilityLabel={authorLabel(comment, mine, now)}
+            accessibilityHint={t('fanProfile.openHint', { name })}
+            style={styles.author}
+            testID={`${testID}-author`}
+          >
+            {head}
+          </PressableScale>
+        )}
+        {onOptions ? (
+          <PressableScale
+            onPress={onOptions}
+            haptic="tap"
+            accessibilityRole="button"
+            accessibilityLabel={t('fanClub.comments.options', { name })}
+            style={styles.options}
+            testID={`${testID}-options`}
+          >
+            <Icon icon={Ellipsis} size={OPTIONS_ICON_SIZE} color={colors.textMuted} />
+          </PressableScale>
+        ) : null}
+      </View>
       <View style={styles.body}>
         <MentionText
           text={comment.text}
@@ -174,26 +240,65 @@ function DeliveredCommentRow({
           color={hidden ? colors.textTertiary : colors.textBody}
           testID={`${testID}-text`}
         />
-        {hidden ? (
-          <Pill
-            label={t(
-              viewerIsOwner ? 'fanClub.comments.hiddenByYou' : 'fanClub.comments.hiddenByManager',
-            )}
-            size="xs"
-            style={styles.hiddenPill}
-            testID={`${testID}-hidden`}
-          />
-        ) : null}
-        {onReply && !hidden ? (
-          <TextLink
-            label={t('fanClub.comments.reply')}
-            onPress={onReply}
-            textVariant="labelCompact"
-            accessibilityLabel={t('fanClub.comments.replyLabel', { name })}
-            accessibilityHint={t('fanClub.comments.replyHint')}
-            style={styles.reply}
-            testID={`${testID}-reply`}
-          />
+        {hasActions ? (
+          <View style={styles.actions}>
+            {hidden ? (
+              <Pill
+                label={t(
+                  viewerIsOwner
+                    ? 'fanClub.comments.hiddenByYou'
+                    : 'fanClub.comments.hiddenByManager',
+                )}
+                size="xs"
+                testID={`${testID}-hidden`}
+              />
+            ) : null}
+            {reply ? (
+              <TextLink
+                label={t('fanClub.comments.reply')}
+                onPress={reply}
+                textVariant="labelCompact"
+                accessibilityLabel={t('fanClub.comments.replyLabel', { name })}
+                accessibilityHint={t('fanClub.comments.replyHint')}
+                testID={`${testID}-reply`}
+              />
+            ) : null}
+            {/* Um lugar só: a troca segue na mesma view, e o foco do leitor não pula. */}
+            {toggleHidden ? (
+              <TextLink
+                label={t(hidden ? 'fanClub.comments.unhide' : 'fanClub.comments.hide')}
+                onPress={toggleHidden}
+                textVariant="labelCompact"
+                accessibilityLabel={t(
+                  hidden ? 'fanClub.comments.unhideLabel' : 'fanClub.comments.hideLabel',
+                  { name },
+                )}
+                disabled={busy}
+                testID={`${testID}-${hidden ? 'unhide' : 'hide'}`}
+              />
+            ) : null}
+            {hidden && !viewerIsOwner && reviewState ? (
+              <Text
+                ref={reviewRef}
+                variant="caption"
+                color={colors.textSecondary}
+                style={styles.reviewState}
+                testID={`${testID}-review`}
+              >
+                {reviewState}
+              </Text>
+            ) : null}
+            {hidden && !reviewState && onRequestReview ? (
+              <TextLink
+                label={t('fanClub.comments.requestReview')}
+                onPress={onRequestReview}
+                textVariant="labelCompact"
+                accessibilityHint={t('fanClub.comments.requestReviewHint')}
+                disabled={busy}
+                testID={`${testID}-request-review`}
+              />
+            ) : null}
+          </View>
         ) : null}
       </View>
     </View>
@@ -316,8 +421,15 @@ const styles = StyleSheet.create({
   nested: {
     marginLeft: NESTED_INDENT,
   },
+  // O autor e, ao lado dele, o botão de opções: irmãos, nunca um dentro do outro.
+  top: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
   // O autor é um alvo de 44, com o avatar e a linha do nome.
   author: {
+    flex: 1,
+    minWidth: 0,
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.listGap,
@@ -342,16 +454,29 @@ const styles = StyleSheet.create({
   handle: {
     flexShrink: 1,
   },
-  // O texto e o "Responder" ficam alinhados ao nome, depois do avatar.
+  // A ponta do alvo encosta na margem da tela, e o ícone fica alinhado ao texto.
+  options: {
+    width: layout.minTouchTarget,
+    height: layout.minTouchTarget,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: -(layout.minTouchTarget - OPTIONS_ICON_SIZE) / 2,
+  },
+  // O texto e as ações ficam alinhados ao nome, depois do avatar.
   body: {
     marginLeft: NESTED_INDENT,
     alignItems: 'flex-start',
   },
-  hiddenPill: {
-    marginTop: spacing.xs,
+  // "Responder", "Ocultar", a marca do oculto e o pedido de revisão, numa
+  // fileira que quebra com a fonte grande.
+  actions: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    columnGap: spacing.lg,
   },
-  reply: {
-    alignSelf: 'flex-start',
+  reviewState: {
+    paddingVertical: spacing.xs,
   },
   localRow: {
     flexDirection: 'row',

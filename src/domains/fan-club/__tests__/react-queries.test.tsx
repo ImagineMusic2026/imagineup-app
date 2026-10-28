@@ -24,6 +24,7 @@ import type {
   FanClubPostDetails,
   FanClubReactionCounts,
   FanClubReactionResult,
+  OwnFanClubPost,
 } from '../types';
 
 // A reação otimista do card (seção 37, 37.9, "Mutações"; a etapa 5 de 37.13):
@@ -228,6 +229,43 @@ describe('a reação otimista', () => {
     expect(second).not.toBe(first);
     expect(clear).toHaveBeenCalledWith({ postId: 'p1', idempotencyKey: second });
     expect(cached().inPage).toMatchObject({ myReaction: null, reactionCount: 5 });
+  });
+
+  it('o gestor na própria publicação: a resposta acerta também o card de "Minhas publicações"', async () => {
+    const own = (id: string): OwnFanClubPost => ({
+      id,
+      clubId: 'fc-1',
+      artistId: 'nenho',
+      kind: 'text',
+      text: `Publicação ${id}`,
+      photo: null,
+      thumb: null,
+      status: 'published',
+      rejectReason: null,
+      submittedAt: '2026-10-19T14:00:00.000Z',
+      publishedAt: '2026-10-19T15:00:00.000Z',
+      reviewedAt: '2026-10-19T15:00:00.000Z',
+      reactionCount: 5,
+      reactionCounts: counts({ heart: 3, fire: 2 }),
+      commentCount: 2,
+    });
+    type OwnPages = InfiniteData<FanClubListPage<OwnFanClubPost>, string | null>;
+    client.setQueryData<OwnPages>(fanClubKeys.myPosts(), {
+      pages: [{ items: [own('p1'), own('p2')], nextCursor: null }],
+      pageParams: [null],
+    });
+    set.mockResolvedValue(answer('heart', 7, { heart: 5, fire: 2 }));
+    const { result } = renderHook(() => useReactToFanClubPostMutation('p1'), { wrapper });
+
+    act(() => result.current.react('heart'));
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    const items = client.getQueryData<OwnPages>(fanClubKeys.myPosts())?.pages[0]?.items;
+    expect(items?.[0]).toMatchObject({
+      reactionCount: 7,
+      reactionCounts: counts({ heart: 5, fire: 2 }),
+      commentCount: 2,
+    });
+    expect(items?.[1]).toEqual(own('p2'));
   });
 
   it('os toques da mesma publicação vão em fila, e a resposta de um não desfaz o seguinte', async () => {

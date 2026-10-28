@@ -1,5 +1,12 @@
 import { useEffect, useRef } from 'react';
-import { AccessibilityInfo, ScrollView, StyleSheet, View } from 'react-native';
+import {
+  AccessibilityInfo,
+  ScrollView,
+  StyleSheet,
+  View,
+  type StyleProp,
+  type ViewStyle,
+} from 'react-native';
 
 import { Avatar } from '@/components/avatar';
 import { Pill } from '@/components/pill';
@@ -49,6 +56,8 @@ export interface MentionSuggestionsProps {
   /** A conversa (o gestor, o artista e quem comentou), pedida uma vez pelo campo. */
   conversation: readonly MentionSuggestion[];
   onPick: (item: MentionSuggestion) => void;
+  /** A nova publicação põe a barra embaixo do campo, e não em cima dele. */
+  style?: StyleProp<ViewStyle>;
 }
 
 /**
@@ -65,6 +74,7 @@ export function MentionSuggestions({
   draft,
   conversation,
   onPick,
+  style,
 }: MentionSuggestionsProps) {
   const debounced = useDebouncedValue(draft.query, MENTION_SEARCH_DEBOUNCE_MS);
   const searching =
@@ -86,7 +96,9 @@ export function MentionSuggestions({
 
   return (
     <ScrollView
-      style={styles.bar}
+      style={[styles.bar, style]}
+      // Dentro da rolagem da nova publicação: no Android, sem isso, quem rola é a tela.
+      nestedScrollEnabled
       keyboardShouldPersistTaps="always"
       showsVerticalScrollIndicator={false}
       testID="mention-suggestions"

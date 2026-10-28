@@ -142,6 +142,18 @@ export default function RootLayout() {
               contentStyle: { backgroundColor: colors.surface },
             }}
           />
+          {/* "Opções do comentário" do fã-clube (seção 37, etapa 7 de 37.13):
+              denunciar e bloquear, no molde da do post. */}
+          <Stack.Screen
+            name="comentario-fa-clube/[comentarioId]"
+            options={{
+              presentation: 'formSheet',
+              sheetAllowedDetents: 'fitToContents',
+              sheetGrabberVisible: true,
+              sheetCornerRadius: radii.sheet,
+              contentStyle: { backgroundColor: colors.surface },
+            }}
+          />
           {/* "Denunciar perfil", aberta pelo perfil público (seção 29), na altura
               do conteúdo, no molde da "Opções do comentário". */}
           <Stack.Screen

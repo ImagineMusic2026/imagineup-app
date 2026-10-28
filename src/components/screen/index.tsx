@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import type { ReactNode, Ref } from 'react';
 import {
   KeyboardAvoidingView,
   Platform,
@@ -52,6 +52,11 @@ export interface ScreenProps {
    */
   transparent?: boolean;
   contentStyle?: StyleProp<ViewStyle>;
+  /**
+   * A rolagem do `scroll`, para a tela levar à vista o que aparece embaixo de
+   * um campo (a barra das sugestões do @ na nova publicação do fã-clube).
+   */
+  scrollRef?: Ref<ScrollView>;
 }
 
 /**
@@ -69,6 +74,7 @@ export function Screen({
   bannerTop,
   transparent = false,
   contentStyle,
+  scrollRef,
 }: ScreenProps) {
   const insets = useSafeAreaInsets();
   const floatingBanner = !safeTop || bannerTop !== undefined;
@@ -100,6 +106,7 @@ export function Screen({
         // `automaticallyAdjustKeyboardInsets` (os dois juntos somariam o espaço).
         <KeyboardAvoidingView style={styles.fill} behavior="padding" enabled={!isIOS}>
           <ScrollView
+            ref={scrollRef}
             style={styles.fill}
             contentContainerStyle={[styles.grow, inner]}
             automaticallyAdjustKeyboardInsets={isIOS}

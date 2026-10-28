@@ -1331,7 +1331,8 @@
         "withdrawn": "Publicação retirada.",
         "removed": "Publicação tirada do ar.",
         "comments": "Ver comentários ({{count}})",
-        "commentsLabel": "Ver os comentários da publicação: {{excerpt}}. {{comments}}"
+        "commentsLabel": "Ver os comentários da publicação: {{excerpt}}. {{comments}}",
+        "totals": "{{reactions}}, {{comments}}."
       },
       "rules": {
         "title": "O regulamento mudou",
@@ -1401,7 +1402,13 @@
         "backToCentral": "Voltar para a central de {{artist}}",
         "pausedContact": "Falar com a equipe",
         "pausedContactHint": "Abre o app de e-mail para falar com a equipe",
-        "pausedSubject": "Fã-clube pausado no ImagineUP"
+        "pausedSubject": "Fã-clube pausado no ImagineUP",
+        "engagement": "Engajamento em 30 dias",
+        "engagementRate": "{{rate}}%",
+        "engagementParts": "{{reactions}} e {{comments}}, {{followers}}",
+        "engagementNoFollowers": "Sem seguidores ainda",
+        "engagementNote": "A taxa é só para você acompanhar. Ela não decide prêmio.",
+        "engagementLabel": "Engajamento em 30 dias: {{value}}. {{details}}"
       },
       "posts": {
         "title": "Publicações",
@@ -1462,7 +1469,8 @@
       "reviewFree": "vagas livres",
       "reviewFreeOne": "vaga livre",
       "reviewSlots": "{{pending}} de {{max}} em análise, {{free}} {{freeWord}}.",
-      "reviewLabel": "{{title}}. {{body}} {{slots}}"
+      "reviewLabel": "{{title}}. {{body}} {{slots}}",
+      "postingAsHandle": "Publicando como @{{username}}"
     },
     "page": {
       "by": "feito por {{owner}}",
@@ -1619,7 +1627,30 @@
       "repliesError": "Não deu para carregar as respostas.",
       "noReplies": "Nenhuma resposta para mostrar.",
       "hiddenByManager": "Oculto pelo gestor",
-      "hiddenByYou": "Oculto por você"
+      "hiddenByYou": "Oculto por você",
+      "options": "Opções do comentário de {{name}}",
+      "blockBodyOwner": "No seu fã-clube, você continua vendo os comentários de {{name}}, para poder ocultar. Nos outros lugares, eles somem para você. {{name}} não fica sabendo.",
+      "hide": "Ocultar",
+      "hideLabel": "Ocultar o comentário de {{name}}",
+      "hideTitle": "Ocultar o comentário?",
+      "hideBody": "O comentário some para os outros fãs. Quem escreveu continua vendo, com o aviso de que você ocultou, e pode pedir revisão à equipe.",
+      "hideConfirm": "Ocultar",
+      "hiddenDone": "Comentário oculto.",
+      "unhide": "Reexibir",
+      "unhideLabel": "Reexibir o comentário de {{name}}",
+      "unhideTitle": "Reexibir o comentário?",
+      "unhideBody": "O comentário volta a aparecer para os fãs.",
+      "unhideConfirm": "Reexibir",
+      "unhiddenDone": "Comentário reexibido.",
+      "requestReview": "Pedir revisão",
+      "requestReviewHint": "Pede à equipe para revisar o comentário que o gestor ocultou",
+      "reviewTitle": "Pedir revisão?",
+      "reviewBody": "A equipe do ImagineUP revisa o comentário e decide se ele volta a aparecer para os fãs. Você pode pedir uma vez.",
+      "reviewConfirm": "Pedir revisão",
+      "reviewRequested": "Revisão pedida",
+      "reviewSent": "Revisão pedida. A equipe vai analisar.",
+      "reviewKept": "A equipe manteve oculto",
+      "cancel": "Cancelar"
     },
     "postScreen": {
       "title": "Publicação",

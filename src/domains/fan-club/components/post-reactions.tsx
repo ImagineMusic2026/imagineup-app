@@ -235,6 +235,42 @@ export function CommentTotal({ count, testID }: { count: number; testID?: string
   );
 }
 
+/**
+ * Os totais da publicação só para ler, dentro de um foco só (o card de "Minhas
+ * publicações" do gestor, 37.9, item 8): as reações, com os mais usados, e os
+ * comentários, em pílulas pequenas. Quem fala é o rótulo de quem as mostra
+ * ("12 reações, 4 comentários"); quem reagiu nunca aparece (R8).
+ */
+export function PostTotals({
+  reactionCount,
+  reactionCounts,
+  commentCount,
+  testID,
+}: {
+  reactionCount: number;
+  reactionCounts: FanClubReactionCounts | undefined;
+  commentCount: number;
+  testID?: string;
+}) {
+  return (
+    <View style={styles.totals} testID={testID}>
+      <Pill
+        size="sm"
+        label={countText(reactionCount)}
+        labelColor={ACTION_COUNT_COLOR}
+        leading={<Icon icon={Heart} size={ACTION_ICON_SIZE} color={ACTION_ICON_COLOR} />}
+        trailing={topEmojis(reactionCounts)}
+      />
+      <Pill
+        size="sm"
+        label={countText(commentCount)}
+        labelColor={ACTION_COUNT_COLOR}
+        leading={<Icon icon={MessageCircle} size={ACTION_ICON_SIZE} color={ACTION_ICON_COLOR} />}
+      />
+    </View>
+  );
+}
+
 export interface ReactionPickerProps {
   mine: FanClubReaction | null;
   onPick: (reaction: FanClubReaction) => void;
@@ -301,6 +337,11 @@ const styles = StyleSheet.create({
   staticTarget: {
     minHeight: layout.minTouchTarget,
     justifyContent: 'center',
+  },
+  totals: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.xs,
   },
   picker: {
     flexDirection: 'row',

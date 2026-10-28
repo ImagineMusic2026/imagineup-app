@@ -24,7 +24,14 @@ import { formatNumber } from '@/utils/number';
 import { FAN_CLUB_PENDING_MAX } from '../consts';
 import { fanClubErrorText, UNAVAILABLE_TEXTS } from '../describe';
 import type { NextRound } from '../entry';
-import { formatDayKey, nextRoundText } from '../format';
+import {
+  commentsSpoken,
+  followersText,
+  formatDayKey,
+  nextRoundText,
+  rateText,
+  reactionsSpoken,
+} from '../format';
 import type { ManagerTab, PostFilter } from '../manager';
 import { useAcceptFanClubRulesMutation, useMyFanClubNumbersQuery } from '../queries';
 import type { FanClubNumbers, MyFanClub, MyFanClubClub } from '../types';
@@ -301,6 +308,63 @@ function StatGrid({
   );
 }
 
+/**
+ * "Engajamento em 30 dias" (37.9, item 8, e 37.11): a taxa (as reações novas e
+ * os comentários dos fãs nos últimos 30 dias, sobre os seguidores de agora),
+ * as partes e a frase de que ela não decide prêmio (decisão 7 de 36.1). Sem
+ * seguidor, "Sem seguidores ainda". Fica fora do `StatGrid`, cujo `Stat.key` é
+ * das 4 chaves da divulgação, e só aparece com o servidor da Fase 2, que manda
+ * o `engagement`. Um foco só, sem toque.
+ */
+function EngagementCard({ numbers }: { numbers: FanClubNumbers }) {
+  const { engagement } = numbers;
+  if (!engagement) return null;
+  const rate = engagement.rate30d;
+  const value = rate === null ? t('fanClub.manager.panel.engagementNoFollowers') : rateText(rate);
+  const parts =
+    rate === null
+      ? null
+      : t('fanClub.manager.panel.engagementParts', {
+          reactions: reactionsSpoken(engagement.reactions30d),
+          comments: commentsSpoken(engagement.comments30d),
+          followers: followersText(numbers.followers),
+        });
+  const note = t('fanClub.manager.panel.engagementNote');
+  return (
+    <Card
+      variant="compact"
+      accessible
+      accessibilityLabel={t('fanClub.manager.panel.engagementLabel', {
+        value,
+        details: parts ? `${parts}. ${note}` : note,
+      })}
+      style={styles.engagement}
+      testID="fan-club-engagement"
+    >
+      <Text variant="overline" color={colors.textMuted}>
+        {t('fanClub.manager.panel.engagement')}
+      </Text>
+      {rate === null ? (
+        <Text variant="label" color={colors.textSecondary}>
+          {value}
+        </Text>
+      ) : (
+        <Text variant="numberDate" color={colors.points}>
+          {value}
+        </Text>
+      )}
+      {parts ? (
+        <Text variant="caption" color={colors.textSecondary}>
+          {parts}
+        </Text>
+      ) : null}
+      <Text variant="caption" color={colors.textMuted}>
+        {note}
+      </Text>
+    </Card>
+  );
+}
+
 interface ShortcutProps {
   icon: LucideIcon;
   title: string;
@@ -362,7 +426,8 @@ export interface ManagerPanelProps {
  * tem): os avisos de hoje, cada um com a sua ação, o Destaque, o card grande
  * dos seguidores, os quatro números da divulgação (o `GET
  * /me/fan-club/numbers`, que só manda totais: sem gráfico, sem os filtros de
- * período e sem quem trouxe quem), a falha deles com "Tentar de novo", o card
+ * período e sem quem trouxe quem), o "Engajamento em 30 dias" (seção 37,
+ * 37.11), a falha deles com "Tentar de novo", o card
  * que leva a Prêmios e o resumo que leva a Publicações. O encerrado continua
  * aqui, com os números (o servidor os dá em qualquer status, 34.22, etapa 3),
  * o aviso de que acabou e a próxima rodada.
@@ -397,6 +462,7 @@ export function ManagerPanel({ mine, club, next, onOpen }: ManagerPanelProps) {
       ) : null}
       <FollowersCard numbers={numbers.data} failed={failed} />
       <StatGrid club={club} numbers={numbers.data} failed={failed} />
+      {numbers.data ? <EngagementCard numbers={numbers.data} /> : null}
       {numbers.isError ? (
         <View style={styles.numbersError}>
           <Text variant="caption" color={colors.textSecondary}>
@@ -473,6 +539,9 @@ const styles = StyleSheet.create({
   },
   statLabel: {
     marginTop: spacing.xs,
+  },
+  engagement: {
+    gap: spacing.xxs,
   },
   numbersError: {
     alignItems: 'flex-start',

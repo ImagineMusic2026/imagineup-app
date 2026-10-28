@@ -47,12 +47,18 @@ export const fanClubKeys = {
   /** A publicação no ar (`GET /fan-club-posts/:postId`). */
   post: (postId: string) => [...fanClubKeys.posts(), postId] as const,
   /**
+   * Todas as listas de comentários de uma publicação, a dos de cima e as das
+   * respostas: a moderação (a denúncia, o ocultar, o reexibir e o pedido de
+   * revisão, 37.9) acha e troca o comentário em qualquer uma delas.
+   */
+  postComments: (postId: string) => [...fanClubKeys.public(), 'comments', postId] as const,
+  /**
    * Os comentários de uma publicação (`GET /fan-club-posts/:postId/comments`):
    * os de cima (`replyTo` null) ou as respostas de um deles. Debaixo do
    * `public()`: bloquear e desbloquear mudam quem aparece.
    */
   comments: (postId: string, replyTo: string | null) =>
-    [...fanClubKeys.public(), 'comments', postId, replyTo ?? 'top'] as const,
+    [...fanClubKeys.postComments(postId), replyTo ?? 'top'] as const,
   /**
    * A conversa da sugestão do @ (`GET /fan-clubs/:clubId/mentions`, sem o
    * `q`), guardada enquanto a tela está aberta. Debaixo do `public()`: quem

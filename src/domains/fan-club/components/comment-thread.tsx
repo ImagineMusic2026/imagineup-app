@@ -8,13 +8,37 @@ import { t } from '@/i18n';
 import { colors, layout, motion, spacing } from '@/theme';
 import { formatNumber } from '@/utils/number';
 
-import { isDelivered, mergeReplies, replyTotal } from '../comments';
+import {
+  commentActions,
+  isDelivered,
+  mergeReplies,
+  replyTotal,
+  withHiddenReplies,
+} from '../comments';
 import { useFanClubCommentsQuery } from '../queries';
 import type { FanClubCommentLine } from '../types';
 import { FanClubCommentRow } from './comment-row';
 
 // O recuo da resposta, um nível (R7), igual ao da linha.
 const NESTED_INDENT = layout.avatar.sm.size + spacing.listGap;
+
+/**
+ * A moderação das linhas (37.6 e 37.9, itens 4 e 10): a tela confirma, manda e
+ * diz a resposta; a linha só mostra as ações que cabem a quem vê
+ * (`commentActions`).
+ */
+export interface CommentModeration {
+  onOptions: (comment: FanClubCommentLine) => void;
+  onHide: (comment: FanClubCommentLine) => void;
+  onUnhide: (comment: FanClubCommentLine) => void;
+  onRequestReview: (comment: FanClubCommentLine) => void;
+  /**
+   * Um pedido de moderação está indo, ou sem internet: o "Ocultar", o
+   * "Reexibir" e o "Pedir revisão" de todas as linhas ficam desligados (o
+   * segundo pedido seria descartado em silêncio, e o offline só falharia depois).
+   */
+  disabled: boolean;
+}
 
 /** Quem vê a conversa: a conta, o "Você" de agora e o que ela pode fazer. */
 export interface CommentViewer {
@@ -38,6 +62,12 @@ export interface CommentThreadProps {
   onExpand: (commentId: string) => void;
   /** As respostas do fã que ainda não estão na lista do servidor, da mais antiga. */
   localReplies: readonly FanClubCommentLine[];
+  /**
+   * As respostas do fã ocultas pelo gestor (o `ownHidden`), da mais antiga:
+   * embaixo do comentário de cima mesmo com as respostas fechadas (37.9, item 4).
+   */
+  hiddenReplies: readonly FanClubCommentLine[];
+  moderation: CommentModeration;
   onReply: (comment: FanClubCommentLine) => void;
   onRetry: (localId: string) => void;
   onOpenArtist: (artistId: string) => void;
@@ -54,7 +84,9 @@ function seeRepliesText(count: number): string {
  * de cima e, embaixo dele, "Ver N respostas", que carrega as respostas
  * (`?replyTo=`, da mais antiga) e as mostra recuadas um nível, com "Ver mais
  * respostas" quando há outra página. Para o gestor, o "Ver N respostas" soma
- * as que ele ocultou. As do fã que ainda vão ficam no fim. Abrir as respostas
+ * as que ele ocultou. As do fã que ainda vão ficam no fim, e as dele ocultas
+ * pelo gestor (o `ownHidden`) entram pela data, à mostra mesmo com as
+ * respostas fechadas. Abrir as respostas
  * leva o foco do leitor de tela à primeira que chegou (o "Ver" some), e o "Ver
  * mais respostas", à primeira da página nova. Sem nada para mostrar (as
  * respostas sumiram, ou o fã bloqueou quem respondeu), a frase "Nenhuma
@@ -70,15 +102,26 @@ export function CommentThread({
   expanded,
   onExpand,
   localReplies,
+  hiddenReplies,
+  moderation,
   onReply,
   onRetry,
   onOpenArtist,
 }: CommentThreadProps) {
   const delivered = isDelivered(comment);
-  const replies = useFanClubCommentsQuery(postId, comment.id, expanded && delivered);
+  // As respostas do oculto pelo gestor saem da vista com ele (37.6): só o
+  // gestor as abre; para o autor (o `ownHidden`), o servidor daria o 404, e as
+  // que já estavam abertas fecham, ficando só as dele ocultas.
+  const open = expanded && (comment.hidden !== 'manager' || viewer.isOwner);
+  const replies = useFanClubCommentsQuery(postId, comment.id, open && delivered);
   const server = replies.data?.pages.flatMap((page) => page.items) ?? [];
-  const lines = expanded ? mergeReplies(server, localReplies) : [...localReplies];
-  const total = replyTotal(comment, viewer.isOwner);
+  const lines = mergeReplies(
+    open ? withHiddenReplies(server, hiddenReplies) : [...hiddenReplies],
+    localReplies,
+  );
+  // Sem o "Ver N respostas" no oculto pelo gestor, para quem não é o gestor.
+  const total =
+    comment.hidden === 'manager' && !viewer.isOwner ? 0 : replyTotal(comment, viewer.isOwner);
   const name = comment.author.name ?? t('post.comments.fallbackName');
   const focusTarget = useRef<View>(null);
   const emptyRef = useRef<TextInstance>(null);
@@ -87,7 +130,7 @@ export function CommentThread({
   const loaded = server.length;
   // As respostas chegaram todas, sem erro e sem nada indo.
   const settled =
-    expanded &&
+    open &&
     delivered &&
     !replies.isPending &&
     !replies.isFetching &&
@@ -99,6 +142,9 @@ export function CommentThread({
   // vai à última resposta que já estava.
   const focusAt =
     focusIndex !== null && settled && loaded > 0 && loaded <= focusIndex ? loaded - 1 : focusIndex;
+  // O foco vai à resposta do servidor nessa posição, e não à posição em `lines`,
+  // onde as ocultas do fã (o `ownHidden`) entram pela data.
+  const focusId = focusAt === null ? null : (server[focusAt]?.id ?? null);
 
   useEffect(() => {
     if (focusAt === null || (!settledEmpty && loaded <= focusAt)) return;
@@ -115,7 +161,7 @@ export function CommentThread({
   const pages = replies.data?.pages;
   const lastPage = pages?.at(-1);
   const emptyWithMore =
-    expanded && !!lastPage && lastPage.items.length === 0 && lastPage.nextCursor !== null;
+    open && !!lastPage && lastPage.items.length === 0 && lastPage.nextCursor !== null;
   const autoLoaded = useRef(0);
   const pageCount = pages?.length ?? 0;
   useEffect(() => {
@@ -126,7 +172,7 @@ export function CommentThread({
   }, [emptyWithMore, pageCount, replies]);
 
   useAnnounceWhen(
-    expanded && replies.isError && !replies.isFetching,
+    open && replies.isError && !replies.isFetching,
     t('fanClub.comments.repliesError'),
   );
 
@@ -146,6 +192,17 @@ export function CommentThread({
     viewer.canReply && isDelivered(line) && comment.hidden !== 'manager'
       ? () => onReply(line)
       : undefined;
+  // As ações de moderação que cabem a quem vê, e o pedido que está indo.
+  const moderationProps = (line: FanClubCommentLine) => {
+    const actions = commentActions(line, viewer);
+    return {
+      onOptions: actions.options ? () => moderation.onOptions(line) : undefined,
+      onHide: actions.hide ? () => moderation.onHide(line) : undefined,
+      onUnhide: actions.unhide ? () => moderation.onUnhide(line) : undefined,
+      onRequestReview: actions.review ? () => moderation.onRequestReview(line) : undefined,
+      busy: moderation.disabled,
+    };
+  };
 
   return (
     <View testID={`club-thread-${comment.localId ?? comment.id}`}>
@@ -156,6 +213,7 @@ export function CommentThread({
         me={viewer.me}
         viewerIsOwner={viewer.isOwner}
         onReply={replyHandler(comment)}
+        {...moderationProps(comment)}
         onRetry={() => onRetry(comment.id)}
         refusedLocked={viewer.suspended}
         onOpenArtist={onOpenArtist}
@@ -173,14 +231,14 @@ export function CommentThread({
           testID={`club-thread-${comment.id}-replies`}
         />
       ) : null}
-      {expanded && replies.isPending ? (
+      {open && replies.isPending ? (
         <ActivityIndicator
           color={colors.textMuted}
           accessibilityLabel={t('fanClub.comments.repliesLoading')}
           style={[styles.more, styles.loading]}
         />
       ) : null}
-      {expanded && replies.isError && replies.data === undefined ? (
+      {open && replies.isError && replies.data === undefined ? (
         <View style={styles.more}>
           <Text variant="caption" color={colors.danger}>
             {t('fanClub.comments.repliesError')}
@@ -193,7 +251,7 @@ export function CommentThread({
           />
         </View>
       ) : null}
-      {lines.map((line, index) => (
+      {lines.map((line) => (
         <FanClubCommentRow
           key={line.localId ?? line.id}
           comment={line}
@@ -203,10 +261,11 @@ export function CommentThread({
           me={viewer.me}
           viewerIsOwner={viewer.isOwner}
           onReply={replyHandler(line)}
+          {...moderationProps(line)}
           onRetry={() => onRetry(line.id)}
           refusedLocked={viewer.suspended}
           onOpenArtist={onOpenArtist}
-          focusRef={index === focusAt ? focusTarget : undefined}
+          focusRef={line.id === focusId ? focusTarget : undefined}
         />
       ))}
       {settledEmpty ? (
@@ -220,7 +279,7 @@ export function CommentThread({
           {t('fanClub.comments.noReplies')}
         </Text>
       ) : null}
-      {expanded && replies.hasNextPage ? (
+      {open && replies.hasNextPage ? (
         <TextLink
           label={t('fanClub.comments.moreReplies')}
           onPress={loadMore}
@@ -231,7 +290,7 @@ export function CommentThread({
           testID={`club-thread-${comment.id}-more`}
         />
       ) : null}
-      {expanded && replies.isFetchNextPageError ? (
+      {open && replies.isFetchNextPageError ? (
         <Text variant="caption" color={colors.danger} style={styles.more}>
           {t('fanClub.comments.repliesError')}
         </Text>

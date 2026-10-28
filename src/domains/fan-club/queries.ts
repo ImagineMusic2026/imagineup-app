@@ -54,14 +54,19 @@ import {
   fetchMyFanClubNumbers,
   fetchMyFanClubPosts,
   followFanClub,
+  hideFanClubComment,
   openFanClubUpload,
   removeFanClubPost,
+  reportFanClubComment,
   reportFanClubPost,
+  requestFanClubCommentReview,
   setFanClubReaction,
   unfollowFanClub,
+  unhideFanClubComment,
   uploadFanClubFile,
   withdrawApplication,
 } from './api';
+import { hiddenCounterDelta } from './comments';
 import { FAN_CLUB_ERROR_CODES, type FanClubReaction } from './consts';
 import { fanClubErrorText } from './describe';
 import { isDefinitiveRefusal, leaveCentralNotes, liveFanClub, shownFanClub } from './entry';
@@ -72,9 +77,13 @@ import type {
   AddFanClubCommentResult,
   FanClubApplicationBody,
   FanClubCard,
+  FanClubComment,
+  FanClubCommentHiddenResult,
   FanClubCommentLine,
   FanClubCommentLineStatus,
   FanClubCommentPage,
+  FanClubCommentReportReason,
+  FanClubCommentReviewResult,
   FanClubListPage,
   FanClubPage,
   FanClubPerson,
@@ -87,6 +96,7 @@ import type {
   FollowFanClubResult,
   MyFanClub,
   OwnFanClubPost,
+  ReportFanClubCommentResult,
   ReportFanClubPostResult,
   UnfollowFanClubResult,
 } from './types';
@@ -265,6 +275,13 @@ export const fanClubMutationKeys = {
   react: ['fanClub', 'react'] as const,
   /** Os comentários e as respostas (seção 37), em fila por publicação, só na memória. */
   comment: ['fanClub', 'comment'] as const,
+  /**
+   * A moderação dos comentários (seção 37, 37.6): a denúncia, o "Pedir
+   * revisão" do autor e o ocultar e o reexibir do gestor.
+   */
+  commentReport: ['fanClub', 'commentReport'] as const,
+  commentReview: ['fanClub', 'commentReview'] as const,
+  commentHide: ['fanClub', 'commentHide'] as const,
 };
 
 /** Uma tentativa: o corpo que foi (em texto, para comparar) e a chave dele. */
@@ -775,20 +792,58 @@ function cachedFanClubOf(client: QueryClient, clubId: string): CachedFanClub | u
 }
 
 /**
- * O gestor do fã-clube, para o "Bloquear e denunciar" da página (decisão 19):
- * a sheet "Denunciar perfil" lê o nome dele daqui, da página em cache, quando
- * o perfil público não está no cache. Só o gestor desta página: outro id não
- * acha nada.
+ * O gestor do fã-clube, para o "Bloquear e denunciar" da página (decisão 19)
+ * e do comentário do gestor (seção 37, 37.9, item 10): a sheet "Denunciar
+ * perfil" lê o nome dele daqui quando o perfil público não está no cache. Da
+ * página em cache; sem ela (a tela da publicação aberta pela Início), de uma
+ * publicação daquele fã-clube em cache, que traz o gestor como autor, ou de
+ * um comentário dele marcado como do gestor. Só o gestor deste fã-clube:
+ * outro id não acha nada.
  */
 export function useCachedFanClubOwner(clubId: string, fanId: string): FanClubPerson | undefined {
   const client = useQueryClient();
-  const [owner] = useState(() => {
-    if (!clubId || !fanId) return undefined;
-    const page = client.getQueryData<FanClubPage>(fanClubKeys.club(clubId));
-    return page?.owner.uid === fanId ? page.owner : undefined;
-  });
+  const [owner] = useState(() =>
+    clubId && fanId ? cachedClubOwnerOf(client, clubId, fanId) : undefined,
+  );
   return owner;
 }
+
+/** O gestor do fã-clube no cache do que os fãs veem: a página, as publicações e os comentários. */
+function cachedClubOwnerOf(
+  client: QueryClient,
+  clubId: string,
+  fanId: string,
+): FanClubPerson | undefined {
+  const page = client.getQueryData<FanClubPage>(fanClubKeys.club(clubId));
+  if (page) return page.owner.uid === fanId ? page.owner : undefined;
+  for (const [, data] of client.getQueriesData({ queryKey: fanClubKeys.public() })) {
+    // As páginas de publicações e as de comentários; ou a publicação da tela dela.
+    const items: unknown[] = isPostPages(data) ? data.pages.flatMap(itemsOfPage) : [data];
+    for (const item of items) {
+      if (isPost(item) && item.clubId === clubId && item.author.uid === fanId) {
+        return item.author;
+      }
+      if (
+        isComment(item) &&
+        item.clubId === clubId &&
+        item.isManager &&
+        item.author.uid === fanId
+      ) {
+        return item.author;
+      }
+    }
+  }
+  return undefined;
+}
+
+/** Os itens de uma página em cache, com os ocultos do fã da página dos comentários. */
+const itemsOfPage = (page: { items: unknown[]; ownHidden?: unknown[] }): unknown[] => [
+  ...page.items,
+  ...(page.ownHidden ?? []),
+];
+
+const isComment = (item: unknown): item is FanClubComment =>
+  typeof item === 'object' && item !== null && 'replyToId' in item && 'isManager' in item;
 
 /**
  * O seguir de agora na página, nas publicações abertas daquele fã-clube (a
@@ -1106,6 +1161,28 @@ function patchFanClubPost(
   }
 }
 
+/**
+ * A publicação de "Minhas publicações" do gestor, fora do `public()`: os
+ * totais do `OwnPostCard` (o comentário, o ocultar e a reação dele).
+ */
+function patchOwnPost(
+  client: QueryClient,
+  postId: string,
+  patch: (post: OwnFanClubPost) => OwnFanClubPost,
+): void {
+  client.setQueryData<InfiniteData<FanClubListPage<OwnFanClubPost>, string | null>>(
+    fanClubKeys.myPosts(),
+    (data) =>
+      data && {
+        ...data,
+        pages: data.pages.map((page) => ({
+          ...page,
+          items: page.items.map((item) => (item.id === postId ? patch(item) : item)),
+        })),
+      },
+  );
+}
+
 /** As consultas que têm a publicação buscam de novo (a falha incerta pode ter gravado). */
 function refreshPost(client: QueryClient, postId: string): void {
   void client.invalidateQueries({
@@ -1161,8 +1238,9 @@ const reactionsGoing = (client: QueryClient, postId: string): number =>
  * a publicação e na tela dela, no molde do `setFollowing`. As reações da mesma
  * publicação vão em fila (o `scope` por publicação, como o comentário do
  * Mural), e cada toque leva a chave dele (o corpo entra na chave). A resposta
- * acerta os números, menos com outro toque da mesma publicação ainda na fila
- * (ele já deixou o card como o fã quer), e a busca que estava indo recomeça
+ * acerta os números, também no card do gestor em "Minhas publicações", menos
+ * com outro toque da mesma publicação ainda na fila (ele já deixou o card
+ * como o fã quer), e a busca que estava indo recomeça
  * (ela pode ter lido o servidor antes da gravação). No erro, volta ao que
  * era, se nada mudou depois, e diz a recusa: o teto do dia e a conta suspensa
  * no `Alert` (o do suspenso pelo `SuspensionWatcher`), o `not_following`
@@ -1215,6 +1293,12 @@ export function useReactToFanClubPostMutation(postId: string) {
         reactionCount: result.reactionCount,
         reactionCounts: result.reactionCounts,
       }));
+      // O gestor reagiu na própria publicação: o total do card dele em "Minhas publicações".
+      patchOwnPost(client, id, (item) =>
+        item.reactionCount === undefined
+          ? item
+          : { ...item, reactionCount: result.reactionCount, reactionCounts: result.reactionCounts },
+      );
       restartPostFetches(client, id);
     },
     onError: (error, { postId: id, reaction }, context) => {
@@ -1480,6 +1564,22 @@ function placeComment(data: CommentPages, line: FanClubCommentLine): CommentPage
 }
 
 /**
+ * O total de comentários da publicação muda em todo cache do que os fãs veem
+ * e no "Ver comentários (N)" de "Minhas publicações" do gestor, fora do
+ * `public()`. Nunca abaixo de zero; sem o contador (o servidor de antes), nada.
+ */
+function addToCommentCount(client: QueryClient, postId: string, delta: number): void {
+  if (delta === 0) return;
+  const add = (count: number) => Math.max(0, count + delta);
+  patchFanClubPost(client, postId, (post) =>
+    post.commentCount === undefined ? post : { ...post, commentCount: add(post.commentCount) },
+  );
+  patchOwnPost(client, postId, (item) =>
+    item.commentCount === undefined ? item : { ...item, commentCount: add(item.commentCount) },
+  );
+}
+
+/**
  * O servidor gravou: o comentário entra na lista com o id local de quando ia,
  * para a linha seguir a mesma na tela (o de cima no topo; a resposta no fim
  * das respostas carregadas da conversa dele, que ganha +1 no `replyCount`), e
@@ -1525,25 +1625,7 @@ function commitComment(
           : data,
       );
     }
-    patchFanClubPost(client, postId, (post) =>
-      post.commentCount === undefined ? post : { ...post, commentCount: post.commentCount + 1 },
-    );
-    // O "Ver comentários (N)" de "Minhas publicações" do gestor, fora do `public()`.
-    client.setQueryData<InfiniteData<FanClubListPage<OwnFanClubPost>, string | null>>(
-      fanClubKeys.myPosts(),
-      (data) =>
-        data && {
-          ...data,
-          pages: data.pages.map((page) => ({
-            ...page,
-            items: page.items.map((item) =>
-              item.id === postId && item.commentCount !== undefined
-                ? { ...item, commentCount: item.commentCount + 1 }
-                : item,
-            ),
-          })),
-        },
-    );
+    addToCommentCount(client, postId, 1);
     const listQuery = client.getQueryCache().find({ queryKey: listKey, exact: true });
     if (listQuery && (!placed || listQuery.state.fetchStatus !== 'idle')) {
       refetchCommentList(client, postId, threadId);
@@ -1819,4 +1901,369 @@ export function useAddFanClubCommentMutation(
   };
 
   return { send, retry, refusal, dismissEditableRefusal };
+}
+
+// --- A moderação dos comentários (seção 37, 37.6 e 37.9; a etapa 7 de 37.13) -------------
+
+/** Os comentários de uma página de comentários em cache, com os ocultos do fã (o `ownHidden`). */
+const commentsOfPages = (data: CommentPages | undefined): FanClubComment[] =>
+  data ? data.pages.flatMap((page) => [...page.items, ...(page.ownHidden ?? [])]) : [];
+
+/**
+ * O comentário numa das listas da publicação em cache: a dos de cima (com os
+ * ocultos do fã) ou a das respostas de um deles.
+ */
+function findCachedFanClubComment(
+  client: QueryClient,
+  postId: string,
+  commentId: string,
+): FanClubComment | undefined {
+  for (const [, data] of client.getQueriesData<CommentPages>({
+    queryKey: fanClubKeys.postComments(postId),
+  })) {
+    const found = commentsOfPages(data).find((item) => item.id === commentId);
+    if (found) return found;
+  }
+  return undefined;
+}
+
+/**
+ * O comentário que a sheet "Opções do comentário" do fã-clube mostra (37.9,
+ * item 10), lido na abertura das listas da tela da publicação, no molde do
+ * `useCachedComment` do Mural. Aberta a frio, sem ele, `undefined`, e a sheet
+ * fecha.
+ */
+export function useCachedFanClubComment(
+  postId: string,
+  commentId: string,
+): FanClubComment | undefined {
+  const client = useQueryClient();
+  const [comment] = useState(() =>
+    postId && commentId ? findCachedFanClubComment(client, postId, commentId) : undefined,
+  );
+  return comment;
+}
+
+/**
+ * Se quem vê segue o fã-clube, para o texto do "Bloquear e denunciar" no
+ * comentário do gestor (37.9, item 10): só quem segue deixa de seguir
+ * (decisão 32 de 34.1). Lido na abertura, da tela da publicação em cache ou,
+ * sem ela, da página.
+ */
+export function useCachedFanClubFollowing(postId: string, clubId: string): boolean {
+  const client = useQueryClient();
+  const [following] = useState(
+    () =>
+      client.getQueryData<FanClubPostDetails>(fanClubKeys.post(postId))?.isFollowing ??
+      client.getQueryData<FanClubPage>(fanClubKeys.club(clubId))?.isFollowing ??
+      false,
+  );
+  return following;
+}
+
+/**
+ * Se quem vê é o gestor do fã-clube da publicação (o `isOwner` dela em
+ * cache), para a sheet "Opções do comentário" (37.9, item 10): no próprio
+ * fã-clube, a lista dele não filtra bloqueados (37.8), e o servidor aceita a
+ * denúncia do comentário de quem ele bloqueou. Lido na abertura; sem a
+ * publicação em cache, não é.
+ */
+export function useCachedFanClubPostOwner(postId: string): boolean {
+  const client = useQueryClient();
+  const [isOwner] = useState(
+    () => client.getQueryData<FanClubPostDetails>(fanClubKeys.post(postId))?.isOwner ?? false,
+  );
+  return isOwner;
+}
+
+/**
+ * O estado do pedido de revisão do comentário nas listas da publicação em
+ * cache (`requested`, `kept` ou null), para a tela dizer o que a lista nova
+ * trouxe depois do `already_requested`.
+ */
+export function cachedFanClubCommentReview(
+  client: QueryClient,
+  postId: string,
+  commentId: string,
+): FanClubComment['review'] {
+  return findCachedFanClubComment(client, postId, commentId)?.review ?? null;
+}
+
+/**
+ * O comentário trocado em todas as listas da publicação em cache (os de cima,
+ * os ocultos do fã e as respostas), guardando o id local da linha. Só as
+ * listas que têm o comentário mudam.
+ */
+function patchCachedComment(
+  client: QueryClient,
+  postId: string,
+  commentId: string,
+  patch: (comment: FanClubComment) => Partial<FanClubComment>,
+): void {
+  const swap = <T extends FanClubComment>(item: T): T =>
+    item.id === commentId ? { ...item, ...patch(item) } : item;
+  for (const [queryKey, data] of client.getQueriesData<CommentPages>({
+    queryKey: fanClubKeys.postComments(postId),
+  })) {
+    if (!data || !commentsOfPages(data).some((item) => item.id === commentId)) continue;
+    client.setQueryData<CommentPages>(queryKey, {
+      ...data,
+      pages: data.pages.map((page) => ({
+        ...page,
+        items: page.items.map(swap),
+        ...(page.ownHidden ? { ownHidden: page.ownHidden.map(swap) } : {}),
+      })),
+    });
+  }
+}
+
+/** As listas de comentários da publicação buscam de novo: o comentário mudou no servidor. */
+function refetchPostComments(client: QueryClient, postId: string): void {
+  void client.invalidateQueries({ queryKey: fanClubKeys.postComments(postId) });
+}
+
+/** Os retornos da sheet: só rodam com ela montada. */
+export interface FanClubModerationCallbacks<T> {
+  /** O servidor confirmou. */
+  onDone?: (result: T) => void;
+  /** Recusa ou falha: a sheet fica, com a frase acima dos botões. */
+  onError?: (error: Error) => void;
+}
+
+/**
+ * Denunciar o comentário de outro fã (`POST
+ * /fan-club-comments/:commentId/report`, 37.3), na sheet "Opções do
+ * comentário" do fã-clube (37.9, item 10), no molde da denúncia de comentário
+ * do Mural e da de publicação do fã-clube: não é otimista e não entra na fila.
+ * A chave é da tentativa: a mesma depois de uma falha incerta com o mesmo
+ * motivo, nova com outro motivo ou depois de uma resposta clara. Denunciar não
+ * esconde o comentário (os dois status, `reported` e `already_reported`, têm a
+ * mesma frase). O 404 (o comentário saiu da vista) busca de novo as listas da
+ * publicação. `onDone` e `onError` só rodam com a sheet montada; a resposta
+ * que chega com ela fechada só anuncia. Um toque por vez.
+ */
+export function useReportFanClubCommentMutation(
+  postId: string,
+  commentId: string,
+  { onDone, onError }: FanClubModerationCallbacks<ReportFanClubCommentResult> = {},
+) {
+  const client = useQueryClient();
+  const mounted = useMounted();
+  const attempt = useRef<Attempt | null>(null);
+  const inFlight = useRef(false);
+  const mutation = useMutation<
+    ReportFanClubCommentResult,
+    Error,
+    FanClubCommentReportReason | null
+  >({
+    mutationKey: fanClubMutationKeys.commentReport,
+    mutationFn: (reason) =>
+      reportFanClubComment({
+        commentId,
+        reason,
+        idempotencyKey: attemptKey(attempt, `club-comment-report-${commentId}`, {
+          commentId,
+          reason,
+        }),
+      }),
+    networkMode: 'always',
+    retry: false,
+    // A sheet diz a frase do suspenso, com o link: sem o `Alert` por cima.
+    meta: { suspendedAlert: false },
+    onSuccess: (result) => {
+      attempt.current = null;
+      if (mounted.current) {
+        onDone?.(result);
+        return;
+      }
+      AccessibilityInfo.announceForAccessibility(t('post.moderation.reported'));
+    },
+    onError: (error) => {
+      if (!isUncertainFailure(error)) attempt.current = null;
+      if (error instanceof ApiError && error.kind === 'notFound') {
+        refetchPostComments(client, postId);
+      }
+      if (mounted.current) {
+        onError?.(error);
+        return;
+      }
+      haptics.trigger('error');
+      AccessibilityInfo.announceForAccessibility(t(actionRefusal(error, 'clubCommentReport').key));
+    },
+    onSettled: () => {
+      inFlight.current = false;
+    },
+  });
+  const report = (reason: FanClubCommentReportReason | null): void => {
+    if (inFlight.current) return;
+    inFlight.current = true;
+    mutation.mutate(reason);
+  };
+  return { report, isPending: mutation.isPending };
+}
+
+/**
+ * O "Pedir revisão" do autor do comentário oculto pelo gestor (`POST
+ * /fan-club-comments/:commentId/review`, 37.3 e 37.6), uma vez por ocultar.
+ * Não é otimista: a linha passa a "Revisão pedida" quando o servidor
+ * responde, em todas as listas da publicação. O `already_requested` (pedido
+ * noutro aparelho, ou já mantido oculto pela equipe) não marca nada: busca de
+ * novo as listas, que dizem qual dos dois, e o sucesso só termina com elas,
+ * para a tela dizer o estado que chegou (`cachedFanClubCommentReview`). A
+ * chave é da tentativa, por comentário. O 404 (o gestor reexibiu, ou a equipe
+ * ocultou) busca de novo as listas. O suspenso recebe o "Conta suspensa" do
+ * `SuspensionWatcher`, com "Escrever para a equipe", e o teto do dia, o
+ * "Limite de hoje" da tela. Um toque por vez; a tela diz a resposta.
+ */
+export function useRequestFanClubCommentReviewMutation(postId: string) {
+  const client = useQueryClient();
+  const attempts = useRef(new Map<string, string>());
+  const inFlight = useRef(false);
+  const mutation = useMutation<FanClubCommentReviewResult, Error, string, StartedBy>({
+    mutationKey: fanClubMutationKeys.commentReview,
+    mutationFn: (commentId) =>
+      requestFanClubCommentReview({
+        commentId,
+        idempotencyKey: attemptKeyFor(attempts.current, 'club-comment-review', commentId),
+      }),
+    networkMode: 'always',
+    retry: false,
+    onMutate: startedBy,
+    onSuccess: (result, commentId, started) => {
+      attempts.current.delete(commentId);
+      if (!sameSession(started)) return;
+      if (result.status === 'requested') {
+        patchCachedComment(client, postId, commentId, (comment) =>
+          comment.review === null ? { review: 'requested' } : {},
+        );
+        return;
+      }
+      // Pedido noutro aparelho, ou mantido pela equipe: a lista nova diz qual.
+      return client.invalidateQueries({ queryKey: fanClubKeys.postComments(postId) });
+    },
+    onError: (error, commentId, started) => {
+      if (!isUncertainFailure(error)) attempts.current.delete(commentId);
+      if (!sameSession(started)) return;
+      if (error instanceof ApiError && error.kind === 'notFound') {
+        refetchPostComments(client, postId);
+      }
+    },
+    onSettled: () => {
+      inFlight.current = false;
+    },
+  });
+  const mutate: typeof mutation.mutate = (commentId, options) => {
+    if (inFlight.current) return;
+    inFlight.current = true;
+    mutation.mutate(commentId, options);
+  };
+  return { ...mutation, mutate };
+}
+
+/** O comentário que o gestor oculta (`hidden: true`) ou reexibe (`hidden: false`). */
+export interface HideFanClubCommentVariables {
+  comment: FanClubComment;
+  hidden: boolean;
+}
+
+/** A tentativa do ocultar e a do reexibir são de rotas diferentes: cada uma tem a sua. */
+const hideAttemptOf = ({ comment, hidden }: HideFanClubCommentVariables): string =>
+  `${hidden ? 'hide' : 'unhide'}:${comment.id}`;
+
+/**
+ * O ocultar ou o reexibir que o servidor confirmou, no cache: a linha passa a
+ * "Oculto por você" (ou volta ao visível) em todas as listas da publicação, e
+ * os contadores mudam como no servidor (`hiddenCounterDelta`, 37.6): o total
+ * da publicação em todo cache e em "Minhas publicações" e, na resposta, o
+ * `replyCount` e o `hiddenReplyCount` do comentário de cima. O estado é o do
+ * cache de agora: o que já estava como o servidor respondeu não conta de
+ * novo. Depois, a publicação busca de novo, para o total acertar com o
+ * servidor (o já oculto noutro aparelho responde sem gravar).
+ */
+function settleHidden(
+  client: QueryClient,
+  postId: string,
+  commentId: string,
+  hidden: boolean,
+): void {
+  const current = findCachedFanClubComment(client, postId, commentId);
+  if (current && (current.hidden === 'manager') !== hidden) {
+    const topId = current.replyToId;
+    const top = topId === null ? undefined : findCachedFanClubComment(client, postId, topId);
+    const delta = hiddenCounterDelta(current, top, hidden);
+    notifyManager.batch(() => {
+      patchCachedComment(client, postId, commentId, () => ({ hidden: hidden ? 'manager' : null }));
+      if (topId !== null) {
+        patchCachedComment(client, postId, topId, (comment) => ({
+          replyCount: Math.max(0, comment.replyCount + delta.replyCount),
+          hiddenReplyCount: Math.max(0, (comment.hiddenReplyCount ?? 0) + delta.hiddenReplyCount),
+        }));
+      }
+      addToCommentCount(client, postId, delta.commentCount);
+    });
+  }
+  refreshPost(client, postId);
+}
+
+/**
+ * O ocultar e o reexibir do gestor (`PUT` e `DELETE
+ * /me/fan-club/hidden-comments/:commentId`, 37.3 e 37.6), na tela da
+ * publicação. Não é otimista: o comentário muda quando o servidor responde
+ * (`settleHidden`). São rotas de estado, sem teto: a chave é da tentativa, por
+ * comentário e por sentido, a mesma depois de uma falha incerta. O 404 (o
+ * comentário saiu da vista, ou a equipe o ocultou) busca de novo as listas; o
+ * `club_not_active` (o fã-clube parou), o estado do gestor e a publicação. O
+ * suspenso recebe o "Conta suspensa" do `SuspensionWatcher`, com "Escrever
+ * para a equipe". Um toque por vez; a tela confirma antes e diz a resposta.
+ */
+export function useHideFanClubCommentMutation(postId: string) {
+  const client = useQueryClient();
+  const attempts = useRef(new Map<string, string>());
+  const inFlight = useRef(false);
+  const mutation = useMutation<
+    FanClubCommentHiddenResult,
+    Error,
+    HideFanClubCommentVariables,
+    StartedBy
+  >({
+    mutationKey: fanClubMutationKeys.commentHide,
+    mutationFn: (variables) => {
+      const request = {
+        commentId: variables.comment.id,
+        idempotencyKey: attemptKeyFor(
+          attempts.current,
+          variables.hidden ? 'club-comment-hide' : 'club-comment-unhide',
+          hideAttemptOf(variables),
+        ),
+      };
+      return variables.hidden ? hideFanClubComment(request) : unhideFanClubComment(request);
+    },
+    networkMode: 'always',
+    retry: false,
+    onMutate: startedBy,
+    onSuccess: (_result, variables, started) => {
+      attempts.current.delete(hideAttemptOf(variables));
+      if (!sameSession(started)) return;
+      settleHidden(client, postId, variables.comment.id, variables.hidden);
+    },
+    onError: (error, variables, started) => {
+      if (!isUncertainFailure(error)) attempts.current.delete(hideAttemptOf(variables));
+      if (!sameSession(started)) return;
+      if (error instanceof ApiError && error.kind === 'notFound') {
+        refetchPostComments(client, postId);
+      } else if (isRefused(error, 'club_not_active')) {
+        void client.invalidateQueries({ queryKey: fanClubKeys.mine() });
+        refreshPost(client, postId);
+      }
+    },
+    onSettled: () => {
+      inFlight.current = false;
+    },
+  });
+  const mutate: typeof mutation.mutate = (variables, options) => {
+    if (inFlight.current) return;
+    inFlight.current = true;
+    mutation.mutate(variables, options);
+  };
+  return { ...mutation, mutate };
 }

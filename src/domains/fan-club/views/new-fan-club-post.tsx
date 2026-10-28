@@ -2,14 +2,19 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { useIsMutating } from '@tanstack/react-query';
 import { router } from 'expo-router';
 import { Plus, X } from 'lucide-react-native';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Controller, useForm, useWatch } from 'react-hook-form';
 import {
   AccessibilityInfo,
   ActivityIndicator,
+  Dimensions,
+  Keyboard,
   StyleSheet,
   useWindowDimensions,
   View,
+  type LayoutChangeEvent,
+  type TextInput as NativeTextInput,
+  type ScrollView,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -25,29 +30,39 @@ import { Skeleton, SkeletonGroup } from '@/components/skeleton';
 import { Text } from '@/components/text';
 import { TextInput } from '@/components/text-input';
 import { TextLink } from '@/components/text-link';
+import type { ComposerSelection } from '@/domains/posts';
 import {
   PhotoPickError,
   pickPhoto,
   prepareFanClubPhoto,
   SuspensionContact,
+  useMyProfileQuery,
   type PreparedFanClubPhoto,
 } from '@/domains/profile';
 import { useIsOnline } from '@/hooks/use-is-online';
+import { usePrefersReducedMotion } from '@/hooks/use-prefers-reduced-motion';
 import { useStayOnScreen } from '@/hooks/use-stay-on-screen';
 import { t, type TranslationKey, type TranslationParams } from '@/i18n';
 import { actionRefusal } from '@/services/api/refusal';
 import { haptics } from '@/services/haptics';
-import { borderWidths, colors, isLargeText, layout, radii, spacing } from '@/theme';
+import { borderWidths, colors, isLargeText, layout, motion, radii, spacing } from '@/theme';
 import { announceFirstError } from '@/utils/form-errors';
 
 import { ClubMark } from '../components/club-mark';
 import { FanClubNotice } from '../components/fan-club-notice';
+import { MentionSuggestions } from '../components/mention-suggestions';
 import { FAN_CLUB_PENDING_MAX, FAN_CLUB_POST_TEXT_MAX } from '../consts';
 import { fanClubErrorText } from '../describe';
 import { fanClubStageOf } from '../entry';
-import { fanClubMutationKeys, useCreateFanClubPostMutation, useShownFanClub } from '../queries';
+import { mentionDraftAt, sameDraft, type MentionDraft } from '../mentions';
+import {
+  fanClubMutationKeys,
+  useCreateFanClubPostMutation,
+  useFanClubMentionsQuery,
+  useShownFanClub,
+} from '../queries';
 import { postSchema, type PostFormInput } from '../schemas';
-import type { MyFanClubClub } from '../types';
+import type { MentionSuggestion, MyFanClubClub } from '../types';
 
 const SKELETON_HEIGHT = 160;
 // A foto em 4:5 e o quadro tracejado do lado, na altura da 4b. A altura vai
@@ -59,6 +74,35 @@ const REMOVE_CIRCLE = 26;
 const REMOVE_ICON = 14;
 const REMOVE_STROKE = 2.4;
 const ADD_ICON = 20;
+// A folga entre a barra das sugestões do @ e o teclado.
+const REVEAL_GAP = spacing.md;
+
+/** A rolagem com o `getInnerViewRef`, que o React Native tem e o tipo dele não declara. */
+type ScrollWithInner = ScrollView & { getInnerViewRef?: () => View | null };
+
+/**
+ * Rola a tela só o que falta para o nó aparecer inteiro acima do teclado (a
+ * barra das sugestões do @, 37.9, item 9): o `Screen scroll` não tem pé
+ * acima do teclado (no iOS, ele usa o `automaticallyAdjustKeyboardInsets`; o
+ * `KeyboardAvoidingView` dele só liga no Android). Mede onde o nó está na
+ * janela e, se ele passa do topo do teclado, soma a diferença à rolagem de
+ * agora.
+ */
+function revealAboveKeyboard(scroll: ScrollWithInner, node: View, animated: boolean): void {
+  const inner = scroll.getInnerViewRef?.();
+  const frame = scroll.getNativeScrollRef();
+  if (!inner || !frame) return;
+  node.measureInWindow((_x, top, _width, height) => {
+    const keyboardTop = Keyboard.metrics()?.screenY ?? Dimensions.get('window').height;
+    const overflow = top + height + REVEAL_GAP - keyboardTop;
+    if (overflow <= 0) return;
+    frame.measureInWindow((_frameX, frameTop) => {
+      node.measureLayout(inner, (_left, contentTop) => {
+        scroll.scrollTo({ y: frameTop + contentTop - top + overflow, animated });
+      });
+    });
+  });
+}
 
 interface PhotoThumbProps {
   photo: PreparedFanClubPhoto | null;
@@ -242,6 +286,9 @@ interface NewPostFormProps {
 function NewPostForm({ club, failure, onFailure: setFailure }: NewPostFormProps) {
   const insets = useSafeAreaInsets();
   const online = useIsOnline();
+  const reducedMotion = usePrefersReducedMotion();
+  // O @ de quem publica (decisão 3 de 36.1); antes de o perfil chegar, o nome do fã-clube.
+  const username = useMyProfileQuery().data?.username ?? null;
   const create = useCreateFanClubPostMutation();
   const [photo, setPhoto] = useState<PreparedFanClubPhoto | null>(null);
   const [preparing, setPreparing] = useState(false);
@@ -254,11 +301,77 @@ function NewPostForm({ club, failure, onFailure: setFailure }: NewPostFormProps)
     AccessibilityInfo.announceForAccessibility(t(next.key, next.params));
   };
 
-  const { control, handleSubmit, setError } = useForm<PostFormInput>({
+  const { control, handleSubmit, setError, setValue } = useForm<PostFormInput>({
     resolver: zodResolver(postSchema),
     defaultValues: { text: '' },
   });
   const text = useWatch({ control, name: 'text' });
+
+  // A sugestão do @ no texto (37.9, item 9), no molde da do campo de
+  // comentário: o @ que está sendo digitado antes do cursor, a conversa (sem
+  // publicação: o artista do fã-clube) pedida uma vez, no primeiro foco, e a
+  // busca a partir de 2 letras. O texto e o cursor ficam em refs: o aviso do
+  // cursor pode vir antes ou depois do texto novo (muda com a plataforma).
+  const input = useRef<NativeTextInput | null>(null);
+  const scroll = useRef<ScrollView>(null);
+  const bar = useRef<View>(null);
+  const latestText = useRef('');
+  const selection = useRef<ComposerSelection>({ start: 0, end: 0 });
+  const selectionSeen = useRef(false);
+  const pendingCursor = useRef<number | null>(null);
+  const latestDraft = useRef<MentionDraft | null>(null);
+  const [draft, setDraft] = useState<MentionDraft | null>(null);
+  const [mentionsOpened, setMentionsOpened] = useState(false);
+  const conversation = useFanClubMentionsQuery(club.id, null, mentionsOpened);
+
+  const updateDraft = (value: string): void => {
+    const { start, end } = selection.current;
+    const next = start === end ? mentionDraftAt(value, end) : null;
+    if (sameDraft(next, latestDraft.current)) return;
+    latestDraft.current = next;
+    setDraft(next);
+  };
+
+  // O cursor que a escolha de uma sugestão pediu vai ao campo depois de o texto novo chegar a ele.
+  useEffect(() => {
+    const cursor = pendingCursor.current;
+    const node = input.current;
+    if (cursor === null || !node) return;
+    pendingCursor.current = null;
+    // O campo de teste não tem o `setSelection`.
+    if (typeof node.setSelection === 'function') node.setSelection(cursor, cursor);
+  }, [text]);
+
+  // Escolher troca o @ digitado pelo @ inteiro e um espaço, com o foco no campo.
+  const pickMention = (item: MentionSuggestion): void => {
+    const current = latestDraft.current;
+    if (!current) return;
+    const value = latestText.current;
+    const replacement = `@${item.username} `;
+    const next = `${value.slice(0, current.start)}${replacement}${value.slice(current.end)}`;
+    if (next.length > FAN_CLUB_POST_TEXT_MAX) return;
+    const cursor = current.start + replacement.length;
+    latestText.current = next;
+    selection.current = { start: cursor, end: cursor };
+    pendingCursor.current = cursor;
+    // Sem validar aqui: depois de um envio, a tecla do @ já validou o texto, que só cresce.
+    setValue('text', next, { shouldDirty: true });
+    updateDraft(next);
+    input.current?.focus();
+    // O foco do teclado não leva o do leitor de tela, que estava na linha que sumiu com a barra.
+    setTimeout(() => {
+      const node = input.current;
+      if (node) AccessibilityInfo.sendAccessibilityEvent(node, 'focus');
+    }, motion.duration.fast);
+  };
+
+  // A barra apareceu (ou cresceu): a tela rola até ela, se o teclado a cobre.
+  const revealBar = (event: LayoutChangeEvent): void => {
+    if (event.nativeEvent.layout.height === 0) return;
+    if (scroll.current && bar.current) {
+      revealAboveKeyboard(scroll.current, bar.current, !reducedMotion);
+    }
+  };
   const full = club.pendingPosts >= FAN_CLUB_PENDING_MAX;
   const blocked = full || club.rulesOutdated;
 
@@ -338,7 +451,7 @@ function NewPostForm({ club, failure, onFailure: setFailure }: NewPostFormProps)
   );
 
   return (
-    <Screen scroll header={header} bottomInset={insets.bottom}>
+    <Screen scroll header={header} bottomInset={insets.bottom} scrollRef={scroll}>
       {full ? (
         <FanClubNotice
           tone="warning"
@@ -356,8 +469,10 @@ function NewPostForm({ club, failure, onFailure: setFailure }: NewPostFormProps)
       <View style={styles.composer}>
         <ClubMark name={club.name} />
         <View style={styles.composerBody}>
-          <Text variant="labelSmall" color={colors.textMuted}>
-            {t('fanClub.newPost.postingAs', { name: club.name })}
+          <Text variant="labelSmall" color={colors.textMuted} testID="fan-club-post-posting-as">
+            {username
+              ? t('fanClub.newPost.postingAsHandle', { username })
+              : t('fanClub.newPost.postingAs', { name: club.name })}
           </Text>
           <View style={styles.field}>
             <Controller
@@ -365,12 +480,31 @@ function NewPostForm({ club, failure, onFailure: setFailure }: NewPostFormProps)
               name="text"
               render={({ field: { ref, value, onChange, onBlur }, fieldState }) => (
                 <TextInput
-                  ref={ref}
+                  ref={(node) => {
+                    ref(node);
+                    input.current = node;
+                  }}
                   label={t('fanClub.newPost.text')}
                   labelHidden
                   variant="bare"
                   value={value}
-                  onChangeText={onChange}
+                  onChangeText={(next) => {
+                    // O fã digitou: o cursor que uma escolha deixou pedido não vale mais.
+                    pendingCursor.current = null;
+                    const previous = latestText.current;
+                    if (!selectionSeen.current || selection.current.end >= previous.length) {
+                      selection.current = { start: next.length, end: next.length };
+                    }
+                    latestText.current = next;
+                    onChange(next);
+                    updateDraft(next);
+                  }}
+                  onSelectionChange={(event) => {
+                    selectionSeen.current = true;
+                    selection.current = event.nativeEvent.selection;
+                    updateDraft(latestText.current);
+                  }}
+                  onFocus={() => setMentionsOpened(true)}
                   onBlur={onBlur}
                   placeholder={t('fanClub.newPost.textPlaceholder')}
                   error={fieldState.error?.message}
@@ -402,6 +536,19 @@ function NewPostForm({ club, failure, onFailure: setFailure }: NewPostFormProps)
               )}
             />
           </View>
+          {draft ? (
+            // Logo embaixo do campo, dentro da rolagem (37.9, item 9).
+            <View ref={bar} collapsable={false} onLayout={revealBar}>
+              <MentionSuggestions
+                clubId={club.id}
+                postId={null}
+                draft={draft}
+                conversation={conversation.data?.items ?? []}
+                onPick={pickMention}
+                style={styles.mentions}
+              />
+            </View>
+          ) : null}
           {club.photosAllowed ? (
             <View style={styles.photos}>
               <PhotoThumb
@@ -581,6 +728,9 @@ const styles = StyleSheet.create({
   },
   counter: {
     alignSelf: 'flex-end',
+  },
+  mentions: {
+    marginTop: spacing.xs,
   },
   photos: {
     flexDirection: 'row',
