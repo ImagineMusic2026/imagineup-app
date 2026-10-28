@@ -1,4 +1,4 @@
-import { Heart, MessageCircle } from 'lucide-react-native';
+import { Heart, MessageCircle, Share2 } from 'lucide-react-native';
 import { useEffect, type ReactNode, type Ref } from 'react';
 import {
   StyleSheet,
@@ -210,6 +210,33 @@ export function CommentButton({
       leading={<Icon icon={MessageCircle} size={ACTION_ICON_SIZE} color={ACTION_ICON_COLOR} />}
       accessibilityLabel={commentsSpoken(count)}
       accessibilityHint={hint}
+      onPress={onPress}
+      testID={testID}
+    />
+  );
+}
+
+/**
+ * O Compartilhar do card, só com o ícone, no molde do botão dos comentários:
+ * desde 27/10/2026, a pedido do dono, a reação, os comentários e o
+ * Compartilhar cabem numa linha só, também no card estreito da Início. O
+ * leitor ouve o rótulo inteiro ("Compartilhar o fã-clube X. Publicação: ...").
+ */
+export function ShareButton({
+  onPress,
+  accessibilityLabel,
+  testID,
+}: {
+  onPress: () => void;
+  accessibilityLabel: string;
+  testID?: string;
+}) {
+  return (
+    <PillButton
+      size="md"
+      label=""
+      leading={<Icon icon={Share2} size={ACTION_ICON_SIZE} color={ACTION_ICON_COLOR} />}
+      accessibilityLabel={accessibilityLabel}
       onPress={onPress}
       testID={testID}
     />

@@ -1514,9 +1514,7 @@
     "post": {
       "label": "{{text}} Publicado {{when}}.",
       "labelPhoto": "{{text}} Com foto. Publicado {{when}}.",
-      "share": "Compartilhar",
       "shareLabel": "Compartilhar o fã-clube {{name}}. Publicação: {{excerpt}}",
-      "report": "Denunciar",
       "reportLabel": "Denunciar a publicação: {{excerpt}}",
       "reportHint": "Abre os motivos da denúncia",
       "openClubHint": "Abre o fã-clube"
