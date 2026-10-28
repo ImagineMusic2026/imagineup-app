@@ -1,9 +1,9 @@
-import { Flag, Share2 } from 'lucide-react-native';
+import { Flag } from 'lucide-react-native';
 import { useEffect, useRef, useState, type RefObject } from 'react';
 import { AccessibilityInfo, StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 
-import { Button } from '@/components/button';
 import { Card } from '@/components/card';
+import { Icon } from '@/components/icon';
 import { PressableScale } from '@/components/pressable-scale';
 import { RemoteImage } from '@/components/remote-image';
 import { Text } from '@/components/text';
@@ -25,6 +25,7 @@ import {
   ReactionButton,
   ReactionPicker,
   ReactionTotal,
+  ShareButton,
 } from './post-reactions';
 
 /** A foto do fã-clube é sempre 4:5 (decisão 15). */
@@ -33,6 +34,13 @@ const PHOTO_ASPECT = 4 / 5;
 const THUMB_WIDTH = 72;
 // O texto do cartão da Início fica em 4 linhas; o leitor ouve o texto inteiro.
 const FEED_TEXT_LINES = 4;
+// A bandeira do Denunciar no canto: o alvo de 44 é o próprio pressável (o
+// hitSlop fora do pai não recebe toque no Fabric do iOS), com o ícone no meio.
+const REPORT_ICON_SIZE = 20;
+const REPORT_ICON_INSET = (layout.minTouchTarget - REPORT_ICON_SIZE) / 2;
+// O ícone encosta na borda de dentro do card; a primeira linha abre espaço para ele.
+const REPORT_RIGHT = spacing.cardPadding - REPORT_ICON_INSET;
+const REPORT_RESERVE = layout.minTouchTarget - REPORT_ICON_INSET + spacing.xs;
 
 // O toque duplo do VoiceOver no corpo não pode virar um toque simulado no
 // centro, que cairia num @ (o Fabric do iOS simula sem o `onAccessibilityTap`);
@@ -107,6 +115,12 @@ function focusSoon(target: RefObject<View | null>): ReturnType<typeof setTimeout
  * da publicação (37.9, item 3), e os @ do texto viram links para quem vê
  * (o `MentionText`); o corpo continua um foco só, com o rótulo de sempre, e o
  * leitor alcança cada @ pelas ações do corpo ("Abrir o perfil de @fulano").
+ *
+ * Desde 27/10/2026, a pedido do dono, o Denunciar sai da fileira de ações e
+ * vira a bandeira no canto de cima do card, alinhada ao nome do fã-clube (na
+ * Início) ou ao começo do texto (na página e na tela da publicação). Ela é o
+ * último filho do card, para o leitor ouvir a publicação antes, e a primeira
+ * linha abre espaço à direita para o texto não passar por baixo dela.
  */
 export function FanClubPostCard({
   post,
@@ -124,6 +138,8 @@ export function FanClubPostCard({
   testID,
 }: FanClubPostCardProps) {
   const feed = variant === 'feed';
+  // Na Início, a bandeira fica na linha do nome; sem o nome, na do texto.
+  const clubRow = feed && onOpenClub !== undefined;
   const image = feed ? (post.thumb ?? post.photo) : (post.photo ?? post.thumb);
   const when = formatRelativeAgoSpoken(post.publishedAt, now);
   // Os botões dizem de qual publicação são: na página, todos são do mesmo fã-clube.
@@ -200,13 +216,13 @@ export function FanClubPostCard({
 
   return (
     <Card style={[styles.card, style]} testID={testID}>
-      {feed && onOpenClub ? (
+      {clubRow ? (
         <PressableScale
-          onPress={() => onOpenClub(post)}
+          onPress={() => onOpenClub?.(post)}
           accessibilityRole="link"
           accessibilityLabel={clubNameLabel(post.clubName, post.clubOfficial)}
           accessibilityHint={t('fanClub.post.openClubHint')}
-          style={styles.club}
+          style={[styles.club, canReport && styles.reportReserve]}
           testID={testID ? `${testID}-club` : undefined}
         >
           <ClubName name={post.clubName} official={post.clubOfficial} />
@@ -220,7 +236,12 @@ export function FanClubPostCard({
         style={feed ? styles.feedBody : undefined}
         testID={testID ? `${testID}-body` : undefined}
       >
-        <View style={feed ? styles.feedText : undefined}>
+        <View
+          style={[
+            feed ? styles.feedText : undefined,
+            canReport && !clubRow && styles.reportReserve,
+          ]}
+        >
           <MentionText
             text={post.text}
             mentions={post.mentions}
@@ -264,29 +285,24 @@ export function FanClubPostCard({
               testID={testID ? `${testID}-comments` : undefined}
             />
           ) : null}
-          <Button
-            label={t('fanClub.post.share')}
-            variant="ghost"
-            size="sm"
-            icon={Share2}
+          <ShareButton
             onPress={() => onShare(post)}
             accessibilityLabel={t('fanClub.post.shareLabel', { name: post.clubName, excerpt })}
             testID={testID ? `${testID}-share` : undefined}
           />
-          {canReport ? (
-            <Button
-              label={t('fanClub.post.report')}
-              variant="ghost"
-              size="sm"
-              icon={Flag}
-              onPress={() => onReport(post)}
-              accessibilityLabel={t('fanClub.post.reportLabel', { excerpt })}
-              accessibilityHint={t('fanClub.post.reportHint')}
-              testID={testID ? `${testID}-report` : undefined}
-            />
-          ) : null}
         </View>
       )}
+      {canReport ? (
+        <PressableScale
+          onPress={() => onReport(post)}
+          accessibilityLabel={t('fanClub.post.reportLabel', { excerpt })}
+          accessibilityHint={t('fanClub.post.reportHint')}
+          style={[styles.report, clubRow ? styles.reportOnClub : styles.reportOnText]}
+          testID={testID ? `${testID}-report` : undefined}
+        >
+          <Icon icon={Flag} size={REPORT_ICON_SIZE} color={colors.textMuted} />
+        </PressableScale>
+      ) : null}
     </Card>
   );
 }
@@ -329,5 +345,24 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     alignItems: 'center',
     gap: spacing.sm,
+  },
+  report: {
+    position: 'absolute',
+    right: REPORT_RIGHT,
+    width: layout.minTouchTarget,
+    height: layout.minTouchTarget,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  // Na Início, no meio da linha do nome (que tem a altura do alvo).
+  reportOnClub: {
+    top: spacing.cardPadding,
+  },
+  // Na página, o ícone na altura da primeira linha do texto.
+  reportOnText: {
+    top: spacing.cardPadding - REPORT_ICON_INSET,
+  },
+  reportReserve: {
+    paddingRight: REPORT_RESERVE,
   },
 });

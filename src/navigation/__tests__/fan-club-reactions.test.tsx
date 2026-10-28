@@ -306,7 +306,9 @@ describe('a reação no card da página (37.9, item 1)', () => {
     // O total dos comentários: desde a etapa 6, o botão que abre a tela da publicação.
     const comments = within(card).getByRole('button', { name: '2 comentários' });
     expect(comments).toHaveProp('accessibilityHint', 'Abre a publicação com os comentários');
-    // A ordem da fileira: a reação, os comentários, o Compartilhar e o Denunciar.
+    // A ordem: a reação, os comentários e o Compartilhar na fileira; o
+    // Denunciar é a bandeira no canto, a última do card (pedido do dono de
+    // 27/10/2026), só com o ícone e o rótulo do leitor.
     const order = within(card)
       .getAllByTestId(/^fan-club-post-p1-(react|comments|share|report)$/u)
       .map((node) => node.props.testID as string);
@@ -316,6 +318,12 @@ describe('a reação no card da página (37.9, item 1)', () => {
       'fan-club-post-p1-share',
       'fan-club-post-p1-report',
     ]);
+    const report = within(card).getByRole('button', {
+      name: 'Denunciar a publicação: Quem vai no show? Publicação p1',
+    });
+    expect(report).toBe(within(card).getByTestId('fan-club-post-p1-report'));
+    expect(report).toHaveProp('accessibilityHint', 'Abre os motivos da denúncia');
+    expect(within(card).queryByText('Denunciar', hiddenOk)).toBeNull();
     // Nenhum pressável dentro de outro: o corpo é um foco só, sem botão dentro.
     const body = within(card).getByLabelText(/^Quem vai no show\? Publicação p1\. Publicado /u);
     expect(within(body).queryAllByRole('button')).toHaveLength(0);

@@ -26,6 +26,7 @@ export type PillTone = 'points' | 'pointsTint' | 'neutral' | 'accentStrong' | 'e
 export type PillSize = 'xs' | 'sm' | 'md';
 
 export interface PillProps {
+  /** Vazio, a pílula é só o ícone do `leading` (o Compartilhar do fã-clube). */
   label: string;
   tone?: PillTone;
   size?: PillSize;
@@ -93,9 +94,11 @@ export function Pill({
       style={[styles.base, styles[size], styles[tone], style]}
     >
       {leading ? <Decoration>{leading}</Decoration> : null}
-      <Text variant={variant} color={labelColor ?? pillForeground[tone]}>
-        {label}
-      </Text>
+      {label ? (
+        <Text variant={variant} color={labelColor ?? pillForeground[tone]}>
+          {label}
+        </Text>
+      ) : null}
       {trailing ? <Decoration>{trailing}</Decoration> : null}
     </View>
   );
