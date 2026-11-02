@@ -425,6 +425,69 @@ describe('o botão dos comentários do card (37.9, itens 1 e 3)', () => {
   });
 });
 
+describe('o corpo do card abre a publicação (pedido do dono de 01/11/2026)', () => {
+  it('na página, tocar no corpo abre a tela da publicação por cima dela', async () => {
+    const view = renderRouter(appTree, { initialUrl: '/fa-clube/fc-1' });
+
+    const body = await screen.findByTestId('fan-club-post-p1-body');
+    expect(body).toHaveProp('accessibilityRole', 'button');
+    expect(body).toHaveProp('accessibilityHint', 'Abre a publicação com os comentários');
+    expect(body.props.accessibilityLabel).toMatch(/^Quem vai no show do @nenho\? Publicado /u);
+    fireEvent.press(body);
+
+    expect(await screen.findByRole('header', { name: 'Publicação' })).toBeTruthy();
+    expect(view.getPathname()).toBe('/fa-clube/publicacao/p1');
+    expect(rootRoutes(view)).toEqual(['fa-clube/[clubeId]', 'fa-clube/publicacao/[publicacaoId]']);
+  });
+
+  it('na Início, tocar no corpo abre por cima das abas', async () => {
+    mocked.fetchFanClubFeed.mockResolvedValue({ items: [post('p1')], nextCursor: null });
+    const view = renderRouter(appTree, { initialUrl: '/' });
+
+    fireEvent.press(await screen.findByTestId('home-fan-club-post-p1-body'));
+    expect(await screen.findByRole('header', { name: 'Publicação' })).toBeTruthy();
+    expect(rootRoutes(view)).toEqual(['(tabs)', 'fa-clube/publicacao/[publicacaoId]']);
+  });
+
+  it('o toque duplo do leitor de tela no corpo abre a publicação', async () => {
+    const view = renderRouter(appTree, { initialUrl: '/fa-clube/fc-1' });
+
+    fireEvent(await screen.findByTestId('fan-club-post-p1-body'), 'accessibilityTap');
+    expect(await screen.findByRole('header', { name: 'Publicação' })).toBeTruthy();
+    expect(view.getPathname()).toBe('/fa-clube/publicacao/p1');
+  });
+
+  it('o @ do texto continua abrindo a central, e não a publicação', async () => {
+    const view = renderRouter(appTree, { initialUrl: '/fa-clube/fc-1' });
+
+    const text = await screen.findByTestId('fan-club-post-p1-text');
+    fireEvent.press(within(text).getByText('@nenho'));
+    expect(await screen.findByText('artist')).toBeTruthy();
+    expect(view.getPathname()).toBe('/artista/nenho');
+    expect(mocked.fetchFanClubPost).not.toHaveBeenCalled();
+  });
+
+  it('na própria tela da publicação, o corpo do card só se lê', async () => {
+    await openPost();
+
+    const body = screen.getByTestId('fan-club-post-card-body');
+    expect(body.props.accessibilityRole).toBeUndefined();
+    expect(body.props.onPress).toBeUndefined();
+  });
+
+  it('sem o servidor da Fase 2 (sem o reactionCount), o corpo não abre nada', async () => {
+    mocked.fetchFanClubPosts.mockResolvedValue({
+      items: [post('p1', { reactionCount: undefined })],
+      nextCursor: null,
+    });
+    renderRouter(appTree, { initialUrl: '/fa-clube/fc-1' });
+
+    const body = await screen.findByTestId('fan-club-post-p1-body');
+    expect(body.props.accessibilityRole).toBeUndefined();
+    expect(body.props.onPress).toBeUndefined();
+  });
+});
+
 // --- A lista -----------------------------------------------------------------------------
 
 describe('os comentários e as respostas (37.9, itens 3 e 4)', () => {

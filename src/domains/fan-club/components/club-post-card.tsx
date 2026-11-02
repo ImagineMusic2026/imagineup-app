@@ -79,6 +79,12 @@ export interface FanClubPostCardProps {
   /** A dica do botão dos comentários; sem ela, "Abre a publicação com os comentários". */
   commentsHint?: string;
   /**
+   * Tocar no corpo (o texto, a data e a foto) abre a tela da publicação, na
+   * página e na Início, como o bloco do post no Mural. Na própria tela da
+   * publicação fica sem, e o corpo só se lê.
+   */
+  onOpenPost?: (post: FanClubPost) => void;
+  /**
    * Abre a central de um @ do texto (37.7): por cima das abas, pelo
    * `openArtistOverStack`; na Início, dentro da aba.
    */
@@ -121,6 +127,12 @@ function focusSoon(target: RefObject<View | null>): ReturnType<typeof setTimeout
  * Início) ou ao começo do texto (na página e na tela da publicação). Ela é o
  * último filho do card, para o leitor ouvir a publicação antes, e a primeira
  * linha abre espaço à direita para o texto não passar por baixo dela.
+ *
+ * Desde 01/11/2026, a pedido do dono, tocar no corpo abre a tela da
+ * publicação (o `onOpenPost`), como o bloco do post no Mural. O corpo vira o
+ * pressável, com o mesmo rótulo e as mesmas ações dos @; o toque num @ fica
+ * com o link dele. Só com o servidor da Fase 2 (o `reactionCount`), como o
+ * botão dos comentários: antes dele, a tela da publicação não existe.
  */
 export function FanClubPostCard({
   post,
@@ -133,6 +145,7 @@ export function FanClubPostCard({
   onOpenClub,
   onOpenComments,
   commentsHint,
+  onOpenPost,
   onOpenArtist,
   style,
   testID,
@@ -214,6 +227,37 @@ export function FanClubPostCard({
     />
   );
 
+  // O corpo abre a publicação só com a tela dela no ar (o servidor da Fase 2).
+  const openable = engaged && onOpenPost !== undefined;
+  const body = (
+    <>
+      <View
+        style={[
+          feed ? styles.feedText : undefined,
+          canReport && !clubRow && styles.reportReserve,
+        ]}
+      >
+        <MentionText
+          text={post.text}
+          mentions={post.mentions}
+          onOpenArtist={onOpenArtist}
+          numberOfLines={feed ? FEED_TEXT_LINES : undefined}
+          testID={testID ? `${testID}-text` : undefined}
+        />
+        <Text variant="caption" color={colors.textMuted} style={styles.when}>
+          {formatRelativeAgo(post.publishedAt, now)}
+        </Text>
+      </View>
+      {image ? (
+        <RemoteImage
+          uri={image.url}
+          fallback={{ kind: 'surface', seed: post.id }}
+          style={feed ? styles.thumb : styles.photo}
+        />
+      ) : null}
+    </>
+  );
+
   return (
     <Card style={[styles.card, style]} testID={testID}>
       {clubRow ? (
@@ -228,39 +272,29 @@ export function FanClubPostCard({
           <ClubName name={post.clubName} official={post.clubOfficial} />
         </PressableScale>
       ) : null}
-      <View
-        accessible
-        accessibilityLabel={label}
-        {...bodyActions}
-        onAccessibilityTap={ignoreAccessibilityTap}
-        style={feed ? styles.feedBody : undefined}
-        testID={testID ? `${testID}-body` : undefined}
-      >
-        <View
-          style={[
-            feed ? styles.feedText : undefined,
-            canReport && !clubRow && styles.reportReserve,
-          ]}
+      {openable ? (
+        <PressableScale
+          onPress={() => onOpenPost?.(post)}
+          accessibilityLabel={label}
+          accessibilityHint={t('fanClub.comments.openHint')}
+          {...bodyActions}
+          style={feed ? styles.feedBody : undefined}
+          testID={testID ? `${testID}-body` : undefined}
         >
-          <MentionText
-            text={post.text}
-            mentions={post.mentions}
-            onOpenArtist={onOpenArtist}
-            numberOfLines={feed ? FEED_TEXT_LINES : undefined}
-            testID={testID ? `${testID}-text` : undefined}
-          />
-          <Text variant="caption" color={colors.textMuted} style={styles.when}>
-            {formatRelativeAgo(post.publishedAt, now)}
-          </Text>
+          {body}
+        </PressableScale>
+      ) : (
+        <View
+          accessible
+          accessibilityLabel={label}
+          {...bodyActions}
+          onAccessibilityTap={ignoreAccessibilityTap}
+          style={feed ? styles.feedBody : undefined}
+          testID={testID ? `${testID}-body` : undefined}
+        >
+          {body}
         </View>
-        {image ? (
-          <RemoteImage
-            uri={image.url}
-            fallback={{ kind: 'surface', seed: post.id }}
-            style={feed ? styles.thumb : styles.photo}
-          />
-        ) : null}
-      </View>
+      )}
       {canPick && picking ? (
         <ReactionPicker
           mine={mine}

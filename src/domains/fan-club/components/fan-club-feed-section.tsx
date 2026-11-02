@@ -111,6 +111,7 @@ function FeedCarousel({
             onOpenClub={(post) => router.push(fanClubHref(post.clubId))}
             // A tela da publicação empilha por cima das abas (37.9, item 3).
             onOpenComments={(post) => router.push(fanClubPostHref(post.id))}
+            onOpenPost={(post) => router.push(fanClubPostHref(post.id))}
             // A Início fica dentro da aba: a central empilha nela, como o `central-tile` (37.7).
             onOpenArtist={(artistId) =>
               router.push({ pathname: '/artista/[artistaId]', params: { artistaId: artistId } })
