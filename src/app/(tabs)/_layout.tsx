@@ -16,8 +16,9 @@ import { colors } from '@/theme';
  * não servem: não aceitam botão central nem o fundo em gradiente com blur.
  * Cada aba é uma pilha própria (pasta com _layout), para que o artista abra
  * dentro da aba sem esconder a barra. O "+" do meio abre os atalhos de
- * `@/domains/quick-actions` (Convidar, Missões, Recompensas). Deslizar para os
- * lados na base de uma aba troca para a vizinha (`useTabSwipe`), pulando o "+".
+ * `@/domains/quick-actions` (Convidar, Missões, Recompensas). Arrastar para os
+ * lados na base de uma aba traz a vizinha junto com o dedo (`useTabSwipe`),
+ * pulando o "+".
  *
  * A troca de grupo na pilha raiz é seca: as abas entram do fundo escuro em
  * fade, como as telas de conta e a escolha de artistas, que saem para ele.
@@ -26,7 +27,7 @@ export default function TabsLayout() {
   const reducedMotion = usePrefersReducedMotion();
   const quickActions = useQuickActions();
   const fade = useStackFade('tabs');
-  const swipe = useTabSwipe();
+  const swipe = useTabSwipe(fade.entrance);
 
   return (
     <View style={styles.root}>
@@ -37,13 +38,17 @@ export default function TabsLayout() {
         style={[styles.fill, fade.style]}
       >
         <Tabs
+          // As abas fora de foco ficam montadas por trás, para o arraste mostrar a
+          // vizinha. Com o `animation` ligado, o navegador não as esconde; com
+          // reduzir movimento, esconde, e a troca sai seca.
+          detachInactiveScreens={false}
           screenOptions={{
             headerShown: false,
             animation: reducedMotion ? 'none' : 'fade',
-            sceneStyleInterpolator: reducedMotion ? undefined : swipe.sceneStyleInterpolator,
-            sceneStyle: { backgroundColor: colors.background },
+            sceneStyleInterpolator: swipe.sceneStyleInterpolator,
+            // O fundo é da página de cada aba, que anda com o dedo.
+            sceneStyle: styles.scene,
           }}
-          screenListeners={swipe.screenListeners}
           screenLayout={swipe.screenLayout}
           tabBar={(props) => <TabBar items={toTabItems(props)} centerMenu={quickActions} />}
         >
@@ -88,5 +93,8 @@ const styles = StyleSheet.create({
   },
   fill: {
     flex: 1,
+  },
+  scene: {
+    backgroundColor: 'transparent',
   },
 });
