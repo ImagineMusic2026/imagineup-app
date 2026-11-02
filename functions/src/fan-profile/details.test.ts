@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 import { describe, expect, it, vi } from 'vitest';
 
 import { isBlockedSocial, isBlockedText } from '../content-filter';
@@ -16,6 +18,7 @@ import {
   profileDigest,
   profileUpdateOf,
   publicProfileOf,
+  RETIRED_SOCIAL_KEYS,
   SOCIAL_INPUT_MAX,
   SOCIAL_NETWORKS,
   socialsOf,
@@ -43,7 +46,8 @@ describe('constantes', () => {
     expect(FAN_CITY_MAX).toBe(80);
     expect(SOCIAL_INPUT_MAX).toBe(300);
     expect(GENDERS).toEqual(['woman', 'man', 'nonbinary', 'undisclosed']);
-    expect(SOCIAL_NETWORKS).toEqual(['instagram', 'tiktok', 'linkedin', 'x']);
+    expect(SOCIAL_NETWORKS).toEqual(['instagram', 'tiktok', 'x']);
+    expect(RETIRED_SOCIAL_KEYS).toEqual(['linkedin']);
   });
 });
 
@@ -101,28 +105,9 @@ const SOCIAL_CASES: [SocialNetwork, string, Expected][] = [
   ['tiktok', 'camila.', FORMAT],
   ['tiktok', 'a'.repeat(24), 'a'.repeat(24)],
   ['tiktok', 'a'.repeat(25), FORMAT],
-  // LinkedIn: o endereço depois de /in/, com as letras latinas acentuadas.
-  ['linkedin', 'thalita-teste-imagineup', 'thalita-teste-imagineup'],
-  ['linkedin', 'https://www.linkedin.com/in/thalita-teste-imagineup/', 'thalita-teste-imagineup'],
-  ['linkedin', 'https://br.linkedin.com/in/jo%C3%A3o-teste', 'joão-teste'],
-  ['linkedin', 'linkedin.com/in/Jo%C3%A3o-Teste?trk=public_profile', 'joão-teste'],
-  ['linkedin', 'joão-teste', 'joão-teste'],
-  ['linkedin', 'joão-teste', 'joão-teste'],
-  ['linkedin', 'Žofia-Teste', 'žofia-teste'],
-  ['linkedin', 'https://www.linkedin.com/company/imagine-music', FORMAT],
-  ['linkedin', 'https://www.linkedin.com/in/jo%E3o-teste', FORMAT],
-  ['linkedin', 'https://www.linkedin.com/in/%ZZteste', FORMAT],
-  ['linkedin', 'https://x.com/thalitatesteup', HOST],
-  ['linkedin', 'ab', FORMAT],
-  ['linkedin', 'thalitaㅤteste', FORMAT],
-  ['linkedin', 'ᅟthalita-teste', FORMAT],
-  ['linkedin', 'thalita-testeᅠ', FORMAT],
-  ['linkedin', 'thalitaﾠteste', FORMAT],
-  ['linkedin', 'שלום-teste', FORMAT],
-  ['linkedin', 'ｔｈａｌｉｔａ', FORMAT],
-  ['linkedin', 'thalita÷teste', FORMAT],
-  ['linkedin', 'a'.repeat(100), 'a'.repeat(100)],
-  ['linkedin', 'a'.repeat(101), FORMAT],
+  // O LinkedIn saiu em 02/11/2026: o link dele é de fora em toda rede.
+  ['instagram', 'https://www.linkedin.com/in/thalita-teste-imagineup/', HOST],
+  ['tiktok', 'br.linkedin.com/in/thalita-teste', HOST],
   // X.
   ['x', 'thalitatesteup', 'thalitatesteup'],
   ['x', '@ThalitaTesteUp', 'thalitatesteup'],
@@ -249,6 +234,7 @@ describe('parseProfileChanges: o pedido malformado (400 invalid_request)', () =>
     ],
     ['rede que não é texto', { socials: { x: 42 } }, 'socials.x'],
     ['rede objeto', { socials: { instagram: { handle: 'camila' } } }, 'socials.instagram'],
+    ['o LinkedIn (que saiu) como número', { socials: { linkedin: 42 } }, 'socials.linkedin'],
   ])('%s', (_, body, field) => {
     expect(fieldOf(body)).toBe(field);
   });
@@ -282,7 +268,7 @@ describe('parseProfileChanges: os campos fora da regra', () => {
       'host',
     ],
     ['X com 16', { socials: { x: 'a'.repeat(16) } }, 'socials.x', 'format'],
-    ['rede crua com 301', { socials: { linkedin: 'a'.repeat(301) } }, 'socials.linkedin', 'format'],
+    ['rede crua com 301', { socials: { tiktok: 'a'.repeat(301) } }, 'socials.tiktok', 'format'],
   ])('%s: profile_invalid', (_, body, field, reason) => {
     expect(refusalOf(body)).toEqual({ reason: 'profile_invalid', details: { field, reason } });
   });
@@ -327,6 +313,23 @@ describe('parseProfileChanges: o corpo limpo', () => {
     expect(Object.keys(value.socials!)).toEqual(['instagram', 'tiktok', 'x']);
   });
 
+  it('o LinkedIn (que saiu em 02/11/2026) do app de antes passa e fica de fora, sem o que gravar', () => {
+    expect(valueOf({ socials: { linkedin: 'camila-teste-imagineup' } })).toEqual({ socials: {} });
+    expect(valueOf({ socials: { linkedin: null, x: '@CamilaTesteUp' } })).toEqual({
+      socials: { x: 'camilatesteup' },
+    });
+    expect(valueOf({ bio: 'Oi', socials: { linkedin: 'https://golpe.example/x' } })).toEqual({
+      bio: 'Oi',
+      socials: {},
+    });
+    expect(
+      profileDiff(
+        { socials: { linkedin: 'camila-teste-imagineup' } },
+        valueOf({ socials: { linkedin: 'outra-camila' } }),
+      ),
+    ).toEqual({});
+  });
+
   it('o nome no limite (60 em UTF-16, também com emoji), a bio no limite e as 6 linhas passam', () => {
     expect(valueOf({ displayName: 'x'.repeat(60) }).displayName).toBe('x'.repeat(60));
     expect(valueOf({ displayName: '😀'.repeat(30) }).displayName).toBe('😀'.repeat(30));
@@ -367,7 +370,7 @@ describe('parseProfileChanges: o filtro do que o fã publica (seção 30)', () =
     ['o trecho na cidade, colado', { city: 'Altoberinjela' }, 'city'],
     ['o pedaço no Instagram', { socials: { instagram: 'camila.pepino' } }, 'socials.instagram'],
     ['o pedaço no TikTok', { socials: { tiktok: '@pepino_fa' } }, 'socials.tiktok'],
-    ['o palavrão no LinkedIn', { socials: { linkedin: 'camila-abacaxi' } }, 'socials.linkedin'],
+    ['o palavrão no TikTok', { socials: { tiktok: 'camila.abacaxi' } }, 'socials.tiktok'],
     ['o trecho no X', { socials: { x: 'xberinjela9' } }, 'socials.x'],
     [
       'o link colado com o termo',
@@ -459,7 +462,7 @@ describe('profileDiff', () => {
     city: 'Feira de Santana, BA',
     gender: 'woman',
     privateAccount: true,
-    socials: { instagram: 'camila.teste.up', tiktok: null, linkedin: null, x: null, extra: 'zz' },
+    socials: { instagram: 'camila.teste.up', tiktok: null, x: null, extra: 'zz' },
   };
 
   it('o mesmo valor sai: sem diferença, um objeto vazio', () => {
@@ -519,21 +522,28 @@ describe('profileDiff', () => {
 });
 
 describe('profileUpdateOf', () => {
-  it('as redes vão inteiras, com as quatro chaves da lista fixa, sem a chave estranha', () => {
+  it('as redes vão inteiras, com as três chaves da lista fixa, sem a chave estranha nem o LinkedIn de antes', () => {
     const fields = profileUpdateOf(
-      { socials: { instagram: 'camila.teste.up', x: 'Fora Do Padrão', extra: 'zz' } },
+      {
+        socials: {
+          instagram: 'camila.teste.up',
+          linkedin: 'camila-teste-imagineup',
+          x: 'Fora Do Padrão',
+          extra: 'zz',
+        },
+      },
       { socials: { tiktok: 'camila.teste.up' } },
     );
     expect(fields).toEqual({
-      socials: { instagram: 'camila.teste.up', tiktok: 'camila.teste.up', linkedin: null, x: null },
+      socials: { instagram: 'camila.teste.up', tiktok: 'camila.teste.up', x: null },
     });
     expect(Object.keys(fields.socials as object)).toEqual([...SOCIAL_NETWORKS]);
   });
 
-  it('as quatro vazias viram null; nunca o @ nem o updatedAt', () => {
+  it('as três vazias viram null (o LinkedIn de antes não segura o mapa); nunca o @ nem o updatedAt', () => {
     expect(
       profileUpdateOf(
-        { socials: { instagram: 'camila.teste.up' } },
+        { socials: { instagram: 'camila.teste.up', linkedin: 'camila-teste-imagineup' } },
         { socials: { instagram: null } },
       ),
     ).toEqual({ socials: null });
@@ -562,7 +572,7 @@ describe('profileUpdateOf', () => {
 const timestamp = (iso: string) => ({ toMillis: () => Date.parse(iso) });
 
 describe('editableProfileOf', () => {
-  it('o perfil completo, com o prazo do @ em ISO, o motivo dele e as quatro redes', () => {
+  it('o perfil completo, com o prazo do @ em ISO, o motivo dele e as três redes', () => {
     expect(
       editableProfileOf({
         displayName: 'Camila Ribeiro',
@@ -573,7 +583,7 @@ describe('editableProfileOf', () => {
         city: 'Feira de Santana, BA',
         gender: 'woman',
         privateAccount: false,
-        socials: { instagram: 'camila.teste.up', tiktok: null, linkedin: null, x: null },
+        socials: { instagram: 'camila.teste.up', tiktok: null, x: null },
         searchKeys: ['cami'],
         updatedAt: timestamp('2026-10-01T00:00:00.000Z'),
       }),
@@ -586,7 +596,7 @@ describe('editableProfileOf', () => {
       city: 'Feira de Santana, BA',
       gender: 'woman',
       privateAccount: false,
-      socials: { instagram: 'camila.teste.up', tiktok: null, linkedin: null, x: null },
+      socials: { instagram: 'camila.teste.up', tiktok: null, x: null },
     });
   });
 
@@ -600,7 +610,7 @@ describe('editableProfileOf', () => {
       city: null,
       gender: null,
       privateAccount: false,
-      socials: { instagram: null, tiktok: null, linkedin: null, x: null },
+      socials: { instagram: null, tiktok: null, x: null },
     });
     expect(
       editableProfileOf({
@@ -615,7 +625,7 @@ describe('editableProfileOf', () => {
       gender: null,
       privateAccount: false,
       bio: null,
-      socials: { instagram: null, tiktok: null, linkedin: null, x: null },
+      socials: { instagram: null, tiktok: null, x: null },
       usernameChangeableAt: null,
       usernameLockReason: null,
     });
@@ -658,6 +668,7 @@ describe('publicProfileOf', () => {
     socials: {
       instagram: 'thalita.teste.up',
       tiktok: 'thalita.teste.up',
+      // O LinkedIn guardado antes de 02/11/2026 não sai.
       linkedin: 'thalita-teste-imagineup',
       x: 'thalitatesteup',
     },
@@ -675,7 +686,6 @@ describe('publicProfileOf', () => {
       socials: {
         instagram: 'thalita.teste.up',
         tiktok: 'thalita.teste.up',
-        linkedin: 'thalita-teste-imagineup',
         x: 'thalitatesteup',
       },
       blockedByMe: false,
@@ -725,7 +735,7 @@ describe('publicProfileOf', () => {
         false,
         false,
       ).socials,
-    ).toEqual({ instagram: null, tiktok: null, linkedin: null, x: 'thalitatesteup' });
+    ).toEqual({ instagram: null, tiktok: null, x: 'thalitatesteup' });
     expect(
       publicProfileOf(UID, { ...thalita, socials: { x: 'Fora Do Padrão' } }, false, false).socials,
     ).toBeNull();
@@ -806,7 +816,7 @@ describe('profileDigest (seção 29, decisão 3)', () => {
     username: 'promoseg',
     photoURL: 'https://exemplo.test/promo.jpg',
     bio: 'Seguidores reais e baratos! Chama no direct.',
-    socials: { instagram: 'promo.teste.up', tiktok: null, linkedin: null, x: 'promotesteup' },
+    socials: { instagram: 'promo.teste.up', tiktok: null, x: 'promotesteup' },
     city: 'Salvador, BA',
     gender: 'man',
     privateAccount: false,
@@ -852,6 +862,22 @@ describe('profileDigest (seção 29, decisão 3)', () => {
     expect(profileDigest({ ...base, ...change })).toBe(profileDigest(base));
   });
 
+  it('o LinkedIn guardado antes de 02/11/2026 não muda o resumo, e o lugar dele continua null', () => {
+    expect(
+      profileDigest({ ...base, socials: { ...base.socials, linkedin: 'promo-teste-imagineup' } }),
+    ).toBe(profileDigest(base));
+    const shown = [
+      base.displayName,
+      base.username,
+      base.photoURL,
+      base.bio,
+      ['promo.teste.up', null, null, 'promotesteup'],
+    ];
+    expect(profileDigest(base)).toBe(
+      createHash('sha256').update(JSON.stringify(shown), 'utf8').digest('hex'),
+    );
+  });
+
   it('null sem perfil', () => {
     expect(profileDigest(undefined)).toBeNull();
     expect(profileDigest(null)).toBeNull();
@@ -860,22 +886,21 @@ describe('profileDigest (seção 29, decisão 3)', () => {
 
 describe('socialsOf', () => {
   it('lê o mapa pela lista fixa, sem a chave estranha e sem a rede fora do padrão', () => {
-    expect(socialsOf({ x: 'thalitatesteup', outra: 'zz', instagram: 42 })).toEqual({
+    expect(
+      socialsOf({ x: 'thalitatesteup', outra: 'zz', instagram: 42, linkedin: 'thalita-teste' }),
+    ).toEqual({
       instagram: null,
       tiktok: null,
-      linkedin: null,
       x: 'thalitatesteup',
     });
     expect(socialsOf(undefined)).toEqual({
       instagram: null,
       tiktok: null,
-      linkedin: null,
       x: null,
     });
     expect(socialsOf(['thalita'])).toEqual({
       instagram: null,
       tiktok: null,
-      linkedin: null,
       x: null,
     });
   });

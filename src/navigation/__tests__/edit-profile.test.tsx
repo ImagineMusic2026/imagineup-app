@@ -100,7 +100,7 @@ const editable = (data: ProfileData) => ({
   city: data.city ?? null,
   gender: data.gender ?? null,
   privateAccount: data.privateAccount === true,
-  socials: { instagram: null, tiktok: null, linkedin: null, x: null },
+  socials: { instagram: null, tiktok: null, x: null },
 });
 
 const snapshot = (data: ProfileData) => ({
@@ -1018,7 +1018,7 @@ describe('Editar perfil: detalhes', () => {
 });
 
 describe('Editar perfil: redes sociais', () => {
-  it('os campos com as props de teclado: url nas três e o padrão no LinkedIn (acentos)', async () => {
+  it('os três campos com as props de teclado (o LinkedIn saiu em 02/11/2026)', async () => {
     await openEditProfile();
     for (const network of ['instagram', 'tiktok', 'x']) {
       expect(screen.getByTestId(`edit-profile-social-${network}`)).toHaveProp(
@@ -1026,18 +1026,18 @@ describe('Editar perfil: redes sociais', () => {
         'url',
       );
     }
-    const linkedin = screen.getByTestId('edit-profile-social-linkedin');
-    expect(linkedin).toHaveProp('keyboardType', 'default');
-    expect(linkedin.props).toMatchObject({
+    expect(screen.getByTestId('edit-profile-social-instagram').props).toMatchObject({
       autoCapitalize: 'none',
       autoCorrect: false,
       spellCheck: false,
       autoComplete: 'off',
       maxLength: 300,
       returnKeyType: 'next',
-      accessibilityLabel: 'LinkedIn',
+      accessibilityLabel: 'Instagram',
     });
     expect(screen.getByLabelText('X (Twitter)')).toBeTruthy();
+    expect(screen.queryByTestId('edit-profile-social-linkedin')).toBeNull();
+    expect(screen.queryByLabelText('LinkedIn')).toBeNull();
   });
 
   it('o link colado vira o usuário ao sair do campo e vai no socials do corpo', async () => {

@@ -153,7 +153,6 @@ const THALITA = {
   socials: {
     instagram: 'thalita.teste.up',
     tiktok: 'thalita.teste.up',
-    linkedin: 'thalita-teste-imagineup',
     x: 'thalitatesteup',
   },
 };
@@ -161,7 +160,6 @@ const THALITA = {
 const SOCIAL_LABELS = [
   'Instagram, @thalita.teste.up',
   'TikTok, @thalita.teste.up',
-  'LinkedIn, in/thalita-teste-imagineup',
   'X (Twitter), @thalitatesteup',
 ];
 
@@ -287,10 +285,10 @@ describe('perfil público aberto por link (seção 28)', () => {
     await waitFor(() => expect(announced()).toContain('Este fã não está mais no ImagineUP.'));
   });
 
-  it('com a API, as redes abrem fora do app pelo link montado; a rede torta não aparece', async () => {
+  it('com a API, as redes abrem fora do app pelo link montado; o LinkedIn de antes não aparece', async () => {
     mockFanApi(async (url) => {
       if (url === '/fans/fa-rank-01') {
-        return { ...THALITA, socials: { ...THALITA.socials, linkedin: 'Thalita Teste' } };
+        return { ...THALITA, socials: { ...THALITA.socials, linkedin: 'thalita-teste-imagineup' } };
       }
       throw new Error(`rota sem resposta no teste: ${url}`);
     });
@@ -298,8 +296,8 @@ describe('perfil público aberto por link (seção 28)', () => {
 
     const instagram = await screen.findByRole('button', { name: SOCIAL_LABELS[0] });
     expect(instagram.props.accessibilityHint).toBe('Abre o perfil no Instagram, fora do app');
-    expect(screen.getByRole('button', { name: SOCIAL_LABELS[3] })).toBeTruthy();
-    // O LinkedIn fora do padrão não sai, e sem as fixtures não há aviso de exemplo.
+    expect(screen.getByRole('button', { name: SOCIAL_LABELS[2] })).toBeTruthy();
+    // O LinkedIn (que saiu em 02/11/2026) não sai, e sem as fixtures não há aviso de exemplo.
     expect(screen.queryByLabelText(/^LinkedIn/)).toBeNull();
     expect(screen.queryByText(SAMPLE)).toBeNull();
 
@@ -332,7 +330,7 @@ describe('perfil público aberto por link (seção 28)', () => {
     jest.mocked(Linking.openURL).mockRejectedValue(new Error('sem app'));
     renderRouter(appTree, { initialUrl: '/fa/fa-rank-01' });
 
-    fireEvent.press(await screen.findByRole('button', { name: SOCIAL_LABELS[3] }));
+    fireEvent.press(await screen.findByRole('button', { name: SOCIAL_LABELS[2] }));
 
     expect(Linking.openURL).toHaveBeenCalledWith('https://x.com/thalitatesteup');
     expect(await screen.findByText('Não deu para abrir o link.')).toBeTruthy();

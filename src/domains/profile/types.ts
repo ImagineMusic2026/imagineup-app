@@ -5,7 +5,7 @@ export type Gender = 'woman' | 'man' | 'nonbinary' | 'undisclosed';
 export type SuspensionReason = 'spam' | 'offensive' | 'harassment' | 'other';
 
 /** As redes sociais do perfil, na ordem da tela, das respostas e do mapa gravado. */
-export type SocialNetwork = 'instagram' | 'tiktok' | 'linkedin' | 'x';
+export type SocialNetwork = 'instagram' | 'tiktok' | 'x';
 
 /**
  * Quem pôs o prazo do @ (espelho do `UsernameLockReason` do

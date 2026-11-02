@@ -49,24 +49,30 @@ export const GENDERS = [
   'undisclosed',
 ] as const satisfies readonly Gender[];
 
-/** As redes, na ordem da tela, das respostas e do mapa gravado. */
+/**
+ * As redes, na ordem da tela, das respostas e do mapa gravado. O LinkedIn
+ * saiu em 02/11/2026, a pedido do dono (não combina com o app): veja o
+ * `RETIRED_SOCIAL_KEYS`.
+ */
 export const SOCIAL_NETWORKS = [
   'instagram',
   'tiktok',
-  'linkedin',
   'x',
 ] as const satisfies readonly SocialNetwork[];
 
 /**
- * O usuário guardado de cada rede, já em minúsculas e NFC. O LinkedIn aceita
- * as letras latinas acentuadas, e só elas (Latim-1 sem o `÷` e Latim
- * Estendido A, em faixas explícitas): o `\p{L}` deixaria passar letras
- * invisíveis (os preenchedores Hangul) e as da direita para a esquerda.
+ * As redes que saíram do app (o LinkedIn, em 02/11/2026). O app de antes do
+ * EAS Update ainda pode mandar a chave no `socials` do `PUT /me/profile`: o
+ * corpo passa, e o valor (texto ou null) é ignorado, nunca gravado. O que
+ * ficou guardado sai na próxima gravação das redes e na carga
+ * `scripts/drop-linkedin-socials.mjs`.
  */
+export const RETIRED_SOCIAL_KEYS = ['linkedin'] as const;
+
+/** O usuário guardado de cada rede, já em minúsculas e NFC. */
 export const SOCIAL_PATTERNS: Readonly<Record<SocialNetwork, RegExp>> = {
   instagram: /^(?!\.)(?!.*\.\.)(?!.*\.$)[a-z0-9._]{1,30}$/,
   tiktok: /^(?!.*\.$)[a-z0-9._]{2,24}$/,
-  linkedin: /^[a-z0-9ß-öø-ÿĀ-ſ-]{3,100}$/u,
   x: /^[a-z0-9_]{1,15}$/,
 };
 
@@ -74,15 +80,13 @@ export const SOCIAL_PATTERNS: Readonly<Record<SocialNetwork, RegExp>> = {
 const NETWORK_DOMAINS: Readonly<Record<SocialNetwork, readonly string[]>> = {
   instagram: ['instagram.com'],
   tiktok: ['tiktok.com'],
-  linkedin: ['linkedin.com'],
   x: ['x.com', 'twitter.com'],
 };
 
-/** O que pode vir antes do domínio (o `www.`, o celular ou as duas letras do país no LinkedIn). */
+/** O que pode vir antes do domínio (o `www.` ou o celular). */
 const NETWORK_SUBDOMAINS: Readonly<Record<SocialNetwork, RegExp>> = {
   instagram: /^(?:www|m)$/,
   tiktok: /^(?:www|m)$/,
-  linkedin: /^(?:www|[a-z]{2})$/,
   x: /^(?:www|mobile)$/,
 };
 
@@ -90,7 +94,6 @@ const NETWORK_SUBDOMAINS: Readonly<Record<SocialNetwork, RegExp>> = {
 const PROFILE_PATHS: Readonly<Record<SocialNetwork, RegExp>> = {
   instagram: /^\/([^/]+)$/,
   tiktok: /^\/@([^/]+)$/,
-  linkedin: /^\/in\/([^/]+)$/i,
   x: /^\/([^/]+)$/,
 };
 
@@ -98,8 +101,8 @@ const PROFILE_PATHS: Readonly<Record<SocialNetwork, RegExp>> = {
  * As páginas da própria rede que cabem no padrão de um usuário (`x.com/home`,
  * `instagram.com/explore/`, coladas da barra de endereço): o link montado com
  * elas abriria a página da rede, e nunca um perfil, então são `format`,
- * digitadas ou coladas. No TikTok e no LinkedIn, o perfil tem o `@` ou o
- * `/in/` no caminho, e nenhuma página da rede passa por ele.
+ * digitadas ou coladas. No TikTok, o perfil tem o `@` no caminho, e nenhuma
+ * página da rede passa por ele.
  */
 const RESERVED_PATHS: Readonly<Record<SocialNetwork, ReadonlySet<string>>> = {
   instagram: new Set([
@@ -116,7 +119,6 @@ const RESERVED_PATHS: Readonly<Record<SocialNetwork, ReadonlySet<string>>> = {
     'web',
   ]),
   tiktok: new Set(),
-  linkedin: new Set(),
   x: new Set([
     'compose',
     'explore',
@@ -159,11 +161,10 @@ const problem = (reason: SocialProblem): SocialHandleResult => ({ ok: false, rea
  * corta as pontas; vazio vira null; acima de 300 caracteres é `format`; texto
  * com `/` ou com o domínio de uma rede é link (com ou sem `https://`), lido
  * por expressão regular e nunca por `new URL` (o app não usa `URL`): domínio
- * de outra rede ou de fora é `host`, o domínio da rede com outro prefixo ou o
- * caminho fora do formato do perfil (o `/company/` do LinkedIn, o TikTok sem
- * `@`, o `/p/<post>` do Instagram) é `format`, e a busca, o `#` e a barra do
- * fim saem; no LinkedIn, o endereço é decodificado (o `%` quebrado é
- * `format`); senão, tira um `@` do começo; passa para minúsculas e NFC; e
+ * de outra rede ou de fora é `host` (o link do LinkedIn, que saiu, também), o
+ * domínio da rede com outro prefixo ou o caminho fora do formato do perfil (o
+ * TikTok sem `@`, o `/p/<post>` do Instagram) é `format`, e a busca, o `#` e
+ * a barra do fim saem; senão, tira um `@` do começo; passa para minúsculas e NFC; e
  * confere o padrão da rede e as páginas dela que cabem nele (`home`,
  * `explore`), os dois `format`.
  */
@@ -183,13 +184,6 @@ export function normalizeSocialHandle(network: SocialNetwork, raw: string): Soci
     const path = PROFILE_PATHS[network].exec(link[2]!.replace(/\/+$/, ''));
     if (!path) return problem('format');
     candidate = path[1]!;
-    if (network === 'linkedin') {
-      try {
-        candidate = decodeURIComponent(candidate);
-      } catch {
-        return problem('format');
-      }
-    }
   } else {
     candidate = text.replace(/^@/, '');
   }
@@ -228,7 +222,8 @@ export const lockReasonOf = (value: unknown): UsernameLockReason | null =>
 
 /**
  * As redes guardadas, lidas do mapa pela lista fixa: chave estranha no
- * documento é ignorada, e a rede fora do padrão vale como vazia.
+ * documento (o `linkedin` de antes de 02/11/2026 inclusive) é ignorada, e a
+ * rede fora do padrão vale como vazia.
  */
 export function socialsOf(value: unknown): FanSocials {
   const map = isRecord(value) ? value : {};
@@ -239,7 +234,6 @@ export function socialsOf(value: unknown): FanSocials {
   return {
     instagram: read('instagram'),
     tiktok: read('tiktok'),
-    linkedin: read('linkedin'),
     x: read('x'),
   };
 }
@@ -338,7 +332,8 @@ const isTextOrNull = (value: unknown): value is string | null =>
  *   ou dentro de `socials`, `__proto__` e `constructor` inclusive, conferidas
  *   por `Object.keys` contra as listas fixas) ou tipo errado: `{ ok: false }`
  *   com o campo (400 `invalid_request` na rota; `socials.<chave>` dentro das
- *   redes);
+ *   redes). A rede que saiu (`RETIRED_SOCIAL_KEYS`) passa com texto ou null e
+ *   fica de fora do resultado;
  * - o @ cru acima de 64 é tipo errado; fora do formato depois do
  *   `normalizeUsername`, lança `username_invalid` (`reason: 'format'`);
  * - o resto fora da regra lança `profile_invalid` com `field` e `reason`.
@@ -377,7 +372,10 @@ export function parseProfileChanges(body: unknown): ParsedProfileChanges {
     socialKeys = Object.keys(rawSocials);
     if (socialKeys.length === 0) return { ok: false, field: 'socials' };
     for (const key of socialKeys) {
-      if (!(SOCIAL_NETWORKS as readonly string[]).includes(key) || !isTextOrNull(rawSocials[key])) {
+      const known =
+        (SOCIAL_NETWORKS as readonly string[]).includes(key) ||
+        (RETIRED_SOCIAL_KEYS as readonly string[]).includes(key);
+      if (!known || !isTextOrNull(rawSocials[key])) {
         return { ok: false, field: `socials.${key}` };
       }
     }
@@ -469,9 +467,10 @@ export const hasProfileChanges = (diff: ProfileChanges): boolean => Object.keys(
 /**
  * Os campos do `tx.update` do perfil a partir da diferença, sem o @ (as
  * reservas e os campos dele saem do `writeUsernameSwap`) e nunca com
- * `updatedAt`. O `socials` vai inteiro, com as quatro chaves montadas a partir
+ * `updatedAt`. O `socials` vai inteiro, com as três chaves montadas a partir
  * de `SOCIAL_NETWORKS` (a rede mudada e as guardadas), e vira null quando as
- * quatro ficam vazias: nunca `set` com `merge` nem caminho com ponto.
+ * três ficam vazias: nunca `set` com `merge` nem caminho com ponto. O
+ * `linkedin` guardado antes de 02/11/2026 sai junto.
  */
 export function profileUpdateOf(
   stored: Record<string, unknown>,
@@ -493,7 +492,6 @@ export function profileUpdateOf(
     const socials: FanSocials = {
       instagram: pick('instagram'),
       tiktok: pick('tiktok'),
-      linkedin: pick('linkedin'),
       x: pick('x'),
     };
     fields.socials = hasAnySocial(socials) ? socials : null;
@@ -506,7 +504,7 @@ export function profileUpdateOf(
 /**
  * O perfil editável (`EditableProfile`, a resposta do `PUT /me/profile`), do
  * retrato com a diferença aplicada: o ausente vale o padrão (null, `false`), as
- * quatro redes sempre presentes, e o prazo do @ em ISO (null sem prazo), com o
+ * três redes sempre presentes, e o prazo do @ em ISO (null sem prazo), com o
  * motivo dele (`moderation` ou null, seção 32).
  */
 export function editableProfileOf(data: Record<string, unknown>): EditableProfile {
@@ -581,8 +579,10 @@ export function blockedFanOf(uid: string, data: Record<string, unknown>): Blocke
 
 /**
  * O resumo do que o perfil público mostra (seção 29, decisão 3): o sha256 de
- * um JSON com o nome, o @, a foto, a bio e as quatro redes, em ordem fixa e
- * lidos como o `publicProfileOf` os lê. A conta privada, a cidade e o gênero
+ * um JSON com o nome, o @, a foto, a bio e as redes, em ordem fixa e lidos
+ * como o `publicProfileOf` os lê. O lugar do LinkedIn (que saiu em
+ * 02/11/2026) continua no JSON, sempre null, para o resumo dos perfis sem ele
+ * não mudar. A conta privada, a cidade e o gênero
  * ficam fora (o perfil público não os mostra). Sem perfil, null. A callable da
  * Moderação grava o resumo na resolução, e a denúncia de quem já denunciou na
  * rodada resolvida só reabre o item com um resumo diferente. Nunca o texto.
@@ -595,7 +595,7 @@ export function profileDigest(data: Record<string, unknown> | null | undefined):
     textOf(data.username),
     textOf(data.photoURL),
     textOf(data.bio),
-    SOCIAL_NETWORKS.map((network) => socials[network]),
+    [socials.instagram, socials.tiktok, null, socials.x],
   ];
   return createHash('sha256').update(JSON.stringify(shown), 'utf8').digest('hex');
 }

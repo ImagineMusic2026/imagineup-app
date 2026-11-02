@@ -7449,6 +7449,8 @@ Origem: o pedido do dono de 08/10/2026, com as imagens de um app de referência 
 
 Estado: desenho de 08/10/2026, conferido contra o código da branch `perfil-novo` (a partir de `9bb4f35`, que já traz a seção 27) e revisado no mesmo dia por três críticas (segurança, app e coerência; o que mudou está em 28.18). Implementado no mesmo dia nessa branch, nas quatro etapas de 28.13: funções, regras, seed, app, testes e documentos; depois, revisado, com as correções no fim de 28.19. A conferência no emulador Android pelo Expo Go da etapa 4 (28.13) foi feita em 08/10/2026 (as correções no fim de 28.19), e o bloco foi publicado de 08 a 09/10/2026, na ordem de 28.14 (o relato no fim de 28.14 e em 26.21). O dono respondeu as perguntas de 28.15 no mesmo dia. O painel do perfil novo entrou na `main` do `imagineup-admin` em 14/10/2026 (PR #2). O que o código fez diferente do desenho está em 28.19.
 
+**Desde 02/11/2026, as redes são três (Instagram, TikTok e X):** o LinkedIn saiu do perfil a pedido do dono (28.20). O que esta seção diz dele fica como registro do desenho de 08/10/2026.
+
 Como era antes:
 
 - "Editar perfil" (24.12) na pilha do Perfil, com a tab bar: `LargeTitleHeader` com o voltar e três blocos. Nome e cidade iam direto ao Firestore (`updateMyProfile`, com a regra de uma edição a cada 10 s e o "Salvar" contando os 10 s no aparelho); o @ ia pelo `PUT /me/username`, com o botão "Trocar @"; a foto salvava na hora, com "Galeria", "Câmera" e "Remover foto" (a vaga de 27.4).
@@ -8124,6 +8126,24 @@ Implementado em 08/10/2026 na branch `perfil-novo`, nas quatro etapas de 28.13. 
 - **Testes:** o caso da fonte grande do `edit-profile.test.tsx` roda com 2 e com `Math.fround(1.3)` e confere o recuo; a tabela da linha da agenda e o caso do destaque em `event-cards.test.tsx` ganharam o `Math.fround(1.3)`.
 
 **Recusados na conferência:** a linha de status do @ embaixo do card, depois da bio (é o que a 28.11 pede: "Embaixo do card, uma linha"; levar para logo abaixo do campo do @ é decisão do dono), e o sucesso do ✓ sem confirmação visível (a 28.11 pede anúncio, toque `success` e `goBack()`; um aviso visível nos Ajustes é pergunta de desenho para o dono).
+
+### 28.20 O LinkedIn saiu (02/11/2026)
+
+Pedido do dono de 02/11/2026: o LinkedIn não combina com o app e sai do perfil inteiro. Ficam o Instagram, o TikTok e o X. Na conversa, o dono pediu também para ver no painel os seguidores das contas conectadas; isso é outra proposta, sem decisão, e o LinkedIn ficaria de fora dela de qualquer jeito (a API dele não dá os seguidores de um perfil pessoal).
+
+- **App:** o campo some do grupo "Redes sociais" do Editar perfil (com o prefixo "in/", o placeholder "seunome" e o teclado padrão), do perfil só leitura, dos ícones do topo da 1e e do perfil público. O `SocialNetwork` fica com três redes; o desenho do LinkedIn sai do `Glyph`, e as chaves `editProfile.socials.linkedin` e `editProfile.socials.linkedinPlaceholder` saem das traduções. O link do LinkedIn colado em outra rede é `host` ("Esse link não é do TikTok.").
+- **Servidor:** o `SOCIAL_NETWORKS` com três redes, e o `normalizeSocialHandle` sem o caso do LinkedIn (as faixas latinas, o `br.` e a decodificação do `%`). O `RETIRED_SOCIAL_KEYS` (`linkedin`) deixa o app de antes do EAS Update funcionando: o `PUT /me/profile` aceita a chave no `socials`, com texto ou null, e a ignora; só com ela, a resposta é o perfil de agora, sem gravar e sem contar no teto. Outro tipo nela continua 400 `invalid_request` com `socials.linkedin`. O `profile_invalid` não traz mais `socials.linkedin`.
+- **Respostas:** o `EditableProfile` e o `FanPublicProfile` trazem três redes. O app de antes lê o mapa pela lista fixa dele, e a chave que falta vale vazia: o campo do LinkedIn aparece vazio, e o que o fã digitar nele não é gravado.
+- **O que ficou guardado:** o `profileUpdateOf` monta o mapa só com as três, e o `linkedin` de antes sai na próxima vez que o fã salvar as redes. Os outros perfis ficam para a carga `scripts/drop-linkedin-socials.mjs` (no molde da `backfill-fan-search.mjs`, com a lib em `functions/src/fan-profile/drop-linkedin.ts`): lê `users` em páginas de 500 e tira a chave em transações de até 200 perfis, sem `updatedAt` e sem caminho com ponto; o mapa que fica sem nenhuma rede vira null. Rodar de novo não grava nada. A gravação dispara o `queueFanProfileSync`, que não olha as redes.
+- **Resumo da Moderação (`profileDigest`, seção 29, decisão 3):** o JSON continua com quatro lugares nas redes, e o do LinkedIn vai sempre null. O resumo dos perfis sem LinkedIn não muda, e a denúncia repetida de quem já denunciou não reabre esses itens. O perfil que tinha LinkedIn ganha resumo novo, e está certo: o que o perfil público mostra mudou.
+- **Painel:** a ficha do fã, a Moderação e o pedido de dados deixam de ler o `linkedin` (PR próprio no `imagineup-admin`). O `clearFanProfileText` apaga o mapa inteiro, como antes; a chave do LinkedIn sozinha não conta como rede guardada.
+- **Testes:** as tabelas das redes nos dois lados (o link do LinkedIn é `host` em toda rede), o corpo com a chave que saiu (aceita e ignorada, e o tipo errado recusado), o mapa gravado sem ela, o resumo com o lugar null, a carga pura (`drop-linkedin.test.ts`) e no emulador (`profile-edit.emulator.test.ts`, que também manda a chave pelo `PUT /me/profile` como o app de antes), e as telas sem o campo.
+
+**Publicar:**
+
+1. As funções que leem as redes, do mesmo commit: `api` (a edição, o perfil público e a denúncia de perfil, que compara o resumo), `clearFanProfileText` e `resolveProfileReport` (que grava o resumo). Sem regra nem índice novo.
+2. Só depois delas, a carga: `npm --prefix functions run build`, `node scripts/drop-linkedin-socials.mjs --dry-run --project imagine-up-app` e, conferido o número, sem o `--dry-run`. Antes do deploy, o servidor de antes ainda gravaria o LinkedIn que o app de antes manda.
+3. O EAS Update do canal preview (só JS, o fingerprint não muda) e o painel, em qualquer ordem: o app novo funciona com o servidor de antes (não manda a chave e ignora a que vier), e o de antes com o novo.
 
 ## 29. Exigências das lojas no app: denúncia de perfil, bloqueados, Sobre, conta, suspensão, 429 e Explorar
 

@@ -760,11 +760,7 @@ function ProfileForm({ profile, fallbackName, online }: ProfileFormProps) {
                 variant="bare"
                 label={t(SOCIAL_LABEL_KEYS[network])}
                 labelHidden
-                placeholder={t(
-                  network === 'linkedin'
-                    ? 'editProfile.socials.linkedinPlaceholder'
-                    : 'editProfile.socials.placeholder',
-                )}
+                placeholder={t('editProfile.socials.placeholder')}
                 leadingGlyph={network}
                 prefix={SOCIAL_PREFIX[network]}
                 value={value}
@@ -779,7 +775,7 @@ function ProfileForm({ profile, fallbackName, online }: ProfileFormProps) {
                 autoCorrect={false}
                 spellCheck={false}
                 autoComplete="off"
-                keyboardType={network === 'linkedin' ? 'default' : 'url'}
+                keyboardType="url"
                 maxLength={SOCIAL_INPUT_MAX}
                 returnKeyType="next"
                 onSubmitEditing={() => {

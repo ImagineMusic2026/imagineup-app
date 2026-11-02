@@ -307,7 +307,7 @@ describe('perfil público de outro fã (seção 28)', () => {
       city: null,
       gender: null,
       privateAccount: false,
-      socials: { instagram: null, tiktok: null, linkedin: null, x: null },
+      socials: { instagram: null, tiktok: null, x: null },
     };
     jest.mocked(api.put).mockResolvedValue({ data: edited });
     const mine = { uid: 'uid-camila' } as FanPublicProfile;

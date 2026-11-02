@@ -79,7 +79,6 @@ const usernameField = z
 export const SOCIAL_LABEL_KEYS: Readonly<Record<SocialNetwork, TranslationKey>> = {
   instagram: 'editProfile.socials.instagram',
   tiktok: 'editProfile.socials.tiktok',
-  linkedin: 'editProfile.socials.linkedin',
   x: 'editProfile.socials.x',
 };
 
@@ -118,7 +117,6 @@ export const editProfileSchema = z.object({
   privateAccount: z.boolean(),
   instagram: socialField('instagram'),
   tiktok: socialField('tiktok'),
-  linkedin: socialField('linkedin'),
   x: socialField('x'),
 });
 
@@ -136,7 +134,6 @@ export const EDIT_PROFILE_FIELD_ORDER = [
   'gender',
   'instagram',
   'tiktok',
-  'linkedin',
   'x',
 ] as const satisfies readonly EditProfileField[];
 
@@ -151,7 +148,6 @@ export const SERVER_FIELD_TO_FORM: Readonly<Record<string, EditProfileField>> = 
   gender: 'gender',
   'socials.instagram': 'instagram',
   'socials.tiktok': 'tiktok',
-  'socials.linkedin': 'linkedin',
   'socials.x': 'x',
 };
 
@@ -173,7 +169,6 @@ export function formValuesOf(
     privateAccount: profile.privateAccount ?? false,
     instagram: socials?.instagram ?? '',
     tiktok: socials?.tiktok ?? '',
-    linkedin: socials?.linkedin ?? '',
     x: socials?.x ?? '',
   };
 }

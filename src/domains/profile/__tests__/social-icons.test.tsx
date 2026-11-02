@@ -16,7 +16,6 @@ jest.mock('@/config/data-source', () => ({
 const SOCIALS: FanSocials = {
   instagram: 'camila.teste.up',
   tiktok: null,
-  linkedin: 'camila-teste-imagineup',
   x: 'camilatesteup',
 };
 
@@ -42,7 +41,6 @@ describe('SocialIcons (as redes no topo da 1e)', () => {
     const links = screen.getAllByRole('link');
     expect(links.map((link) => link.props.accessibilityLabel)).toEqual([
       'Instagram, @camila.teste.up',
-      'LinkedIn, in/camila-teste-imagineup',
       'X (Twitter), @camilatesteup',
     ]);
     expect(links[0]).toHaveProp('accessibilityHint', 'Abre o perfil no Instagram, fora do app');
@@ -61,7 +59,7 @@ describe('SocialIcons (as redes no topo da 1e)', () => {
     rerender(
       <SocialIcons
         testID="socials"
-        socials={{ instagram: 'não é usuário', tiktok: null, linkedin: null, x: null }}
+        socials={{ instagram: 'não é usuário', tiktok: null, x: null }}
       />,
     );
     expect(screen.queryByTestId('socials')).toBeNull();
@@ -83,7 +81,7 @@ describe('SocialIcons (as redes no topo da 1e)', () => {
     jest.mocked(Linking.openURL).mockRejectedValue(new Error('sem app'));
     render(<SocialIcons socials={SOCIALS} />);
 
-    fireEvent.press(screen.getByRole('link', { name: 'LinkedIn, in/camila-teste-imagineup' }));
+    fireEvent.press(screen.getByRole('link', { name: 'X (Twitter), @camilatesteup' }));
 
     expect(await screen.findByText('Não deu para abrir o link.')).toBeTruthy();
     expect(haptics.trigger).toHaveBeenCalledWith('error');

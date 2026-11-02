@@ -29,7 +29,7 @@ describe('Glyph', () => {
     expect(glyphPath()?.props.stroke).toBeUndefined();
   });
 
-  it.each(['instagram', 'tiktok', 'linkedin', 'x'] as const)(
+  it.each(['instagram', 'tiktok', 'x'] as const)(
     'a marca %s é cheia, na cor de quem usa (nunca a da marca), e decorativa',
     (name) => {
       render(<Glyph name={name} size={18} color={colors.textMuted} />);

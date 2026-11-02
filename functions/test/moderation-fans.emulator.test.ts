@@ -892,7 +892,6 @@ describe('clearFanProfileText', () => {
     expect(afterBio.socials).toEqual({
       instagram: 'promo.teste.up',
       tiktok: null,
-      linkedin: null,
       x: 'promotesteup',
     });
     expect(afterBio.updatedAt).toBeUndefined();

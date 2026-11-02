@@ -285,7 +285,7 @@ function profileSnapshot(username = 'camilarib') {
     data: () => ({
       displayName: 'Camila Ribeiro',
       username,
-      socials: { instagram: 'camila.up', tiktok: null, linkedin: null, x: null },
+      socials: { instagram: 'camila.up', tiktok: null, x: null },
     }),
     metadata: { fromCache: false },
   };

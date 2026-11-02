@@ -305,7 +305,7 @@ describe('perfil (1e)', () => {
       data: () => ({
         ...profileSnapshot.data(),
         bio,
-        socials: { instagram: 'camila.teste.up', tiktok: null, linkedin: null, x: null },
+        socials: { instagram: 'camila.teste.up', tiktok: null, x: null },
       }),
     };
     getDocMock.mockResolvedValue(withDetails as never);

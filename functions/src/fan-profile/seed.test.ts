@@ -33,7 +33,6 @@ describe('a tabela de 28.10', () => {
         socials: {
           instagram: 'camila.teste.up',
           tiktok: 'camila.teste.up',
-          linkedin: 'camila-teste-imagineup',
           x: 'camilatesteup',
         },
       },
@@ -65,7 +64,6 @@ describe('a tabela de 28.10', () => {
         socials: {
           instagram: 'thalita.teste.up',
           tiktok: 'thalita.teste.up',
-          linkedin: 'thalita-teste-imagineup',
           x: 'thalitatesteup',
         },
       },

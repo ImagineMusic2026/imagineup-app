@@ -15,6 +15,7 @@ import {
   UsernameReleaseError,
   type FanPhotoFiles,
 } from '../src/fan-profile';
+import { countLinkedinSocials, dropLinkedinSocials } from '../src/fan-profile/drop-linkedin';
 import { DEFAULT_POINTS_CONFIG, dayKey, nextDayStart, staticConfigSource } from '../src/points';
 import { isReservedUsername } from '../src/profile';
 import { deleteUserData } from '../src/store';
@@ -1001,7 +1002,7 @@ const putProfile = (
 const dayCounts = async (uid: string, now: number) =>
   ((await read(`wallets/${uid}`))?.days?.[dayKey(now)]?.count ?? {}) as Record<string, number>;
 
-const NO_SOCIALS = { instagram: null, tiktok: null, linkedin: null, x: null };
+const NO_SOCIALS = { instagram: null, tiktok: null, x: null };
 
 describe('perfil novo: PUT /me/profile', () => {
   it('grava só o que mudou, num update, sem o updatedAt; o mesmo valor responde sem gravar e sem contar', async () => {
@@ -1067,6 +1068,7 @@ describe('perfil novo: PUT /me/profile', () => {
       bio: 'Oi!',
       city: ' Irará, BA ',
       privateAccount: true,
+      // O LinkedIn do app de antes de 02/11/2026 passa e não é gravado.
       socials: { x: 'https://x.com/CamilaTesteUp', linkedin: 'br.linkedin.com/in/jo%C3%A3o-teste' },
     });
     expect(saved).toEqual({
@@ -1080,7 +1082,7 @@ describe('perfil novo: PUT /me/profile', () => {
         city: 'Irará, BA',
         gender: null,
         privateAccount: true,
-        socials: { ...NO_SOCIALS, linkedin: 'joão-teste', x: 'camilatesteup' },
+        socials: { ...NO_SOCIALS, x: 'camilatesteup' },
       },
     });
     expect(await read(`usernames/${chosen}`)).toMatchObject({ uid: fan.uid });
@@ -1093,7 +1095,7 @@ describe('perfil novo: PUT /me/profile', () => {
       bio: 'Oi!',
       city: 'Irará, BA',
       privateAccount: true,
-      socials: { ...NO_SOCIALS, linkedin: 'joão-teste', x: 'camilatesteup' },
+      socials: { ...NO_SOCIALS, x: 'camilatesteup' },
     });
     expect((profile.usernameChangedAt as Timestamp).toMillis()).toBe(start);
     expect((profile.usernameChangeableAt as Timestamp).toMillis()).toBe(start + 30 * DAY);
@@ -1387,7 +1389,6 @@ describe('perfil novo: GET /fans/:fanId', () => {
       socials: {
         instagram: 'thalita.teste.up',
         tiktok: 'thalita.teste.up',
-        linkedin: 'thalita-teste-imagineup',
         x: 'thalitatesteup',
       },
       blockedByMe: false,
@@ -1536,7 +1537,7 @@ describe('perfil novo: GET /fans/:fanId', () => {
     });
     expect((await getFan(call, viewer, target.uid)).body).toMatchObject({
       restricted: false,
-      socials: { instagram: null, tiktok: null, linkedin: null, x: 'thalitatesteup' },
+      socials: { instagram: null, tiktok: null, x: 'thalitatesteup' },
     });
     await db.doc(`users/${target.uid}`).update({ socials: { instagram: 'Fora Do Padrão' } });
     expect((await getFan(call, viewer, target.uid)).body).toMatchObject({ socials: null });
@@ -1553,7 +1554,7 @@ describe('seed do perfil novo (28.10)', () => {
       bio: aline.bio,
       gender: 'undisclosed',
       privateAccount: true,
-      socials: { instagram: 'aline.teste.up', tiktok: null, linkedin: null, x: 'alinetesteup' },
+      socials: { instagram: 'aline.teste.up', tiktok: null, x: 'alinetesteup' },
     });
     expect(first.get('updatedAt')).toBeUndefined();
     // O ator de sistema não conta no teto do dia, e o plano vazio não grava a carteira.
@@ -1680,5 +1681,42 @@ describe.skipIf(!BARRED)('o filtro do que o fã publica (seção 30, só com a l
     expect(again.status).toBe(400);
     expect(again.body.details).toEqual({ field: 'bio', reason: 'not_allowed' });
     expect((await read(`users/${fan.uid}`))!.city).toBe('Irará, BA');
+  });
+});
+
+describe('a carga drop-linkedin-socials (o LinkedIn saiu em 02/11/2026)', () => {
+  it('tira o linkedin das redes guardadas, só onde ele está, e roda de novo sem gravar', async () => {
+    await db.doc('users/linkedinEOutras').set({
+      displayName: 'Thalita Santos',
+      socials: { instagram: 'thalita.teste.up', tiktok: null, linkedin: 'thalita-teste', x: null },
+    });
+    await db.doc('users/soLinkedin').set({
+      displayName: 'Camila Ribeiro',
+      socials: { instagram: null, tiktok: null, linkedin: 'camila-teste', x: null },
+    });
+    await db.doc('users/semLinkedin').set({
+      displayName: 'Aline Ferreira',
+      socials: { instagram: 'aline.teste.up', x: 'alinetesteup' },
+    });
+    await db.doc('users/semRedes').set({ displayName: 'Bia Santos', socials: null });
+
+    expect(await countLinkedinSocials(db)).toEqual({ total: 4, withLinkedin: 2 });
+    expect(await dropLinkedinSocials(db)).toBe(2);
+
+    expect((await read('users/linkedinEOutras'))!.socials).toEqual({
+      instagram: 'thalita.teste.up',
+      tiktok: null,
+      x: null,
+    });
+    expect((await read('users/soLinkedin'))!.socials).toBeNull();
+    expect((await read('users/semLinkedin'))!.socials).toEqual({
+      instagram: 'aline.teste.up',
+      x: 'alinetesteup',
+    });
+    expect((await read('users/semRedes'))!.socials).toBeNull();
+    expect((await read('users/soLinkedin'))!.updatedAt).toBeUndefined();
+
+    expect(await countLinkedinSocials(db)).toEqual({ total: 4, withLinkedin: 0 });
+    expect(await dropLinkedinSocials(db)).toBe(0);
   });
 });

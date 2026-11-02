@@ -145,7 +145,6 @@ export const SEED_FAN_DETAILS: readonly SeedFanDetails[] = [
     socials: {
       instagram: 'camila.teste.up',
       tiktok: 'camila.teste.up',
-      linkedin: 'camila-teste-imagineup',
       x: 'camilatesteup',
     },
   },
@@ -177,7 +176,6 @@ export const SEED_FAN_DETAILS: readonly SeedFanDetails[] = [
     socials: {
       instagram: 'thalita.teste.up',
       tiktok: 'thalita.teste.up',
-      linkedin: 'thalita-teste-imagineup',
       x: 'thalitatesteup',
     },
   },
