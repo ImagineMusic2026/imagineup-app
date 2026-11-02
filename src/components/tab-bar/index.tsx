@@ -20,6 +20,7 @@ import { CenterMenu, type CenterMenuAction } from './center-menu';
 import type { TabItem } from './tab-items';
 
 export { type CenterMenuAction } from './center-menu';
+export { useTabSwipe } from './swipe';
 export { toTabItems, type TabItem } from './tab-items';
 
 /** O "+" que age direto, sem abrir os atalhos (o modo gestor do fã-clube). */

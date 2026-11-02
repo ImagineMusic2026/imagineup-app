@@ -4,7 +4,7 @@ import { StyleSheet, View } from 'react-native';
 import Animated from 'react-native-reanimated';
 
 import { Icon } from '@/components/icon';
-import { TabBar, toTabItems } from '@/components/tab-bar';
+import { TabBar, toTabItems, useTabSwipe } from '@/components/tab-bar';
 import { useQuickActions } from '@/domains/quick-actions';
 import { usePrefersReducedMotion } from '@/hooks/use-prefers-reduced-motion';
 import { useStackFade } from '@/hooks/use-stack-fade';
@@ -16,7 +16,8 @@ import { colors } from '@/theme';
  * não servem: não aceitam botão central nem o fundo em gradiente com blur.
  * Cada aba é uma pilha própria (pasta com _layout), para que o artista abra
  * dentro da aba sem esconder a barra. O "+" do meio abre os atalhos de
- * `@/domains/quick-actions` (Convidar, Missões, Recompensas).
+ * `@/domains/quick-actions` (Convidar, Missões, Recompensas). Deslizar para os
+ * lados na base de uma aba troca para a vizinha (`useTabSwipe`), pulando o "+".
  *
  * A troca de grupo na pilha raiz é seca: as abas entram do fundo escuro em
  * fade, como as telas de conta e a escolha de artistas, que saem para ele.
@@ -25,6 +26,7 @@ export default function TabsLayout() {
   const reducedMotion = usePrefersReducedMotion();
   const quickActions = useQuickActions();
   const fade = useStackFade('tabs');
+  const swipe = useTabSwipe();
 
   return (
     <View style={styles.root}>
@@ -38,8 +40,11 @@ export default function TabsLayout() {
           screenOptions={{
             headerShown: false,
             animation: reducedMotion ? 'none' : 'fade',
+            sceneStyleInterpolator: reducedMotion ? undefined : swipe.sceneStyleInterpolator,
             sceneStyle: { backgroundColor: colors.background },
           }}
+          screenListeners={swipe.screenListeners}
+          screenLayout={swipe.screenLayout}
           tabBar={(props) => <TabBar items={toTabItems(props)} centerMenu={quickActions} />}
         >
           <Tabs.Screen
