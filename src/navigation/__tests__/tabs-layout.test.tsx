@@ -39,8 +39,16 @@ const appTree = {
 // A largura da tela no Jest é 750: um quarto dela troca de aba.
 const FAR = 300;
 
-/** Um deslize do começo ao fim na base da aba (o dedo para a esquerda é negativo). */
-function swipe(tab: string, translationX: number, velocityX = 0) {
+// As abas fora de foco ficam fora do leitor de tela, e a busca padrão não as vê.
+const HIDDEN = { includeHiddenElements: true };
+
+/**
+ * Um deslize do começo ao fim na base da aba (o dedo para a esquerda é
+ * negativo), com a tela já assentada, como no aparelho: o foco de cada aba chega
+ * à UI no quadro seguinte ao da troca, antes de o dedo pegar a tela.
+ */
+async function swipe(tab: string, translationX: number, velocityX = 0) {
+  await settle();
   fireGestureHandler(getByGestureTestId(`tab-swipe-${tab}`), [
     { state: State.BEGAN, translationX: 0, velocityX: 0 },
     { state: State.ACTIVE, translationX: translationX / 2, velocityX },
@@ -50,13 +58,35 @@ function swipe(tab: string, translationX: number, velocityX = 0) {
 
 /**
  * O deslize que troca de aba vai ao JS pelo `queueMicrotask` (`scheduleOnRN`),
- * que o `renderRouter` finge junto com os timers: antes de dizer que nada
- * mudou, a fila anda.
+ * o foco vai à UI por um quadro (`scheduleOnUI`) e a vizinha monta por um
+ * timer: o `renderRouter` finge tudo isso junto com os timers, e a fila anda
+ * antes de dizer que nada mudou.
  */
 async function settle() {
   await act(async () => {
     jest.runOnlyPendingTimers();
   });
+}
+
+/** O grupo das abas, que entra do fundo escuro em fade. */
+function tabsGroup() {
+  const group = screen
+    .UNSAFE_getAllByType(View)
+    .find((node) => node.props.needsOffscreenAlphaCompositing === true);
+  if (!group) throw new Error('abas sem o grupo que entra em fade');
+  return group;
+}
+
+/**
+ * As abas aparecem na tela e terminam de entrar em fade: só então as vizinhas
+ * montam por trás, um timer depois do outro.
+ */
+async function enterTabs() {
+  fireEvent(tabsGroup(), 'layout', {
+    nativeEvent: { layout: { x: 0, y: 0, width: 402, height: 874 } },
+  });
+  await settle();
+  await settle();
 }
 
 afterEach(() => {
@@ -72,10 +102,7 @@ describe('layout das abas', () => {
     renderRouter(appTree, { initialUrl: '/' });
     expect(screen.getByText('home')).toBeOnTheScreen();
 
-    const group = screen
-      .UNSAFE_getAllByType(View)
-      .find((node) => node.props.needsOffscreenAlphaCompositing === true);
-    if (!group) throw new Error('abas sem o grupo que entra em fade');
+    const group = tabsGroup();
     expect(StyleSheet.flatten(group.props.style) as ViewStyle).toMatchObject({ opacity: 0 });
 
     // A entrada começa quando o grupo aparece na tela.
@@ -96,46 +123,76 @@ describe('deslizar entre as abas', () => {
     const view = renderRouter(appTree, { initialUrl: '/artista/netto-brito' });
     expect(screen.getByText('artist')).toBeOnTheScreen();
 
-    swipe('(inicio)', -FAR);
+    await enterTabs();
+    await swipe('(inicio)', -FAR);
     await settle();
     expect(view.getPathname()).toBe('/artista/netto-brito');
     expect(haptics.trigger).not.toHaveBeenCalled();
+    // Sem o deslize, a vizinha não precisa estar pronta por trás.
+    expect(screen.queryByText('explore', HIDDEN)).not.toBeOnTheScreen();
+  });
+
+  it('a vizinha monta por trás um pouco depois, para o arraste já a encontrar desenhada', async () => {
+    const view = renderRouter(appTree, { initialUrl: '/' });
+    // Enquanto as abas entram em fade, nada monta por trás: no Android, a vizinha
+    // que montava no meio dele deixava as abas apagadas.
+    await settle();
+    await settle();
+    expect(screen.queryByText('explore', HIDDEN)).not.toBeOnTheScreen();
+
+    await enterTabs();
+    expect(screen.getByText('explore', HIDDEN)).toBeOnTheScreen();
+    // Por trás, fora do leitor de tela, e sem trocar de aba.
+    expect(screen.queryByText('explore')).not.toBeOnTheScreen();
+    expect(view.getPathname()).toBe('/');
+    // Só a vizinha: a Ranking fica para quando o fã chegar perto dela.
+    expect(screen.queryByText('ranking', HIDDEN)).not.toBeOnTheScreen();
+  });
+
+  it('no meio da barra, as duas vizinhas montam por trás', async () => {
+    const view = renderRouter(appTree, { initialUrl: '/ranking' });
+
+    await enterTabs();
+    expect(screen.getByText('explore', HIDDEN)).toBeOnTheScreen();
+    expect(screen.getByText('profile', HIDDEN)).toBeOnTheScreen();
+    expect(screen.queryByText('home', HIDDEN)).not.toBeOnTheScreen();
+    expect(view.getPathname()).toBe('/ranking');
   });
 
   it('para a esquerda vai à aba da direita, e o "+" fica de fora', async () => {
     const view = renderRouter(appTree, { initialUrl: '/' });
 
-    swipe('(inicio)', -FAR);
+    await swipe('(inicio)', -FAR);
     await waitFor(() => expect(view.getPathname()).toBe('/explorar'));
     expect(haptics.trigger).toHaveBeenCalledWith('selection');
 
     // Da Explorar, o vizinho da direita é a Ranking, do outro lado do "+".
-    swipe('(explorar)', -FAR);
+    await swipe('(explorar)', -FAR);
     await waitFor(() => expect(view.getPathname()).toBe('/ranking'));
 
-    swipe('(ranking)', -FAR);
+    await swipe('(ranking)', -FAR);
     await waitFor(() => expect(view.getPathname()).toBe('/perfil'));
   });
 
   it('para a direita volta à aba da esquerda', async () => {
     const view = renderRouter(appTree, { initialUrl: '/ranking' });
 
-    swipe('(ranking)', FAR);
+    await swipe('(ranking)', FAR);
     await waitFor(() => expect(view.getPathname()).toBe('/explorar'));
 
-    swipe('(explorar)', FAR);
+    await swipe('(explorar)', FAR);
     await waitFor(() => expect(view.getPathname()).toBe('/'));
   });
 
   it('nas pontas, o deslize não sai da aba', async () => {
     const view = renderRouter(appTree, { initialUrl: '/' });
-    swipe('(inicio)', FAR);
+    await swipe('(inicio)', FAR);
     await settle();
     expect(view.getPathname()).toBe('/');
 
     view.unmount();
     const profile = renderRouter(appTree, { initialUrl: '/perfil' });
-    swipe('(perfil)', -FAR);
+    await swipe('(perfil)', -FAR);
     await settle();
     expect(profile.getPathname()).toBe('/perfil');
     expect(haptics.trigger).not.toHaveBeenCalled();
@@ -144,11 +201,11 @@ describe('deslizar entre as abas', () => {
   it('o deslize curto e devagar devolve a tela ao lugar, e o rápido troca', async () => {
     const view = renderRouter(appTree, { initialUrl: '/' });
 
-    swipe('(inicio)', -60, -200);
+    await swipe('(inicio)', -60, -200);
     await settle();
     expect(view.getPathname()).toBe('/');
 
-    swipe('(inicio)', -60, -900);
+    await swipe('(inicio)', -60, -900);
     await waitFor(() => expect(view.getPathname()).toBe('/explorar'));
   });
 });
