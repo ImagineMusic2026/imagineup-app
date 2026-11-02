@@ -324,9 +324,10 @@ describe('a reação no card da página (37.9, item 1)', () => {
     expect(report).toBe(within(card).getByTestId('fan-club-post-p1-report'));
     expect(report).toHaveProp('accessibilityHint', 'Abre os motivos da denúncia');
     expect(within(card).queryByText('Denunciar', hiddenOk)).toBeNull();
-    // Nenhum pressável dentro de outro: o corpo é um foco só, sem botão dentro.
+    // Nenhum pressável dentro de outro: o corpo é um foco só, que abre a publicação, sem botão dentro.
     const body = within(card).getByLabelText(/^Quem vai no show\? Publicação p1\. Publicado /u);
-    expect(within(body).queryAllByRole('button')).toHaveLength(0);
+    expect(body).toHaveProp('accessibilityRole', 'button');
+    expect(within(body).queryAllByRole('button').filter((node) => node !== body)).toHaveLength(0);
   });
 
   it('tocar curte com o coração na hora; tocar de novo tira; cada toque com a chave dele', async () => {

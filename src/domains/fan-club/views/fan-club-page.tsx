@@ -240,6 +240,7 @@ function ClubContent({
             }
             // A tela da publicação empilha por cima da página (37.9, item 3).
             onOpenComments={(post) => router.push(fanClubPostHref(post.id))}
+            onOpenPost={(post) => router.push(fanClubPostHref(post.id))}
             // A página fica por cima das abas: a central abre na aba de onde o fã veio (37.7).
             onOpenArtist={(artistId) => openArtistOverStack(navigation.getRootState(), artistId)}
             testID={`fan-club-post-${item.id}`}
