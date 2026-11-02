@@ -23,7 +23,7 @@ describe('constantes', () => {
     expect(BIO_MAX_LINES).toBe(6);
     expect(SOCIAL_INPUT_MAX).toBe(300);
     expect(GENDERS).toEqual(['woman', 'man', 'nonbinary', 'undisclosed']);
-    expect(SOCIAL_NETWORKS).toEqual(['instagram', 'tiktok', 'linkedin', 'x']);
+    expect(SOCIAL_NETWORKS).toEqual(['instagram', 'tiktok', 'x']);
   });
 });
 
@@ -81,28 +81,9 @@ const SOCIAL_CASES: [SocialNetwork, string, Expected][] = [
   ['tiktok', 'camila.', FORMAT],
   ['tiktok', 'a'.repeat(24), 'a'.repeat(24)],
   ['tiktok', 'a'.repeat(25), FORMAT],
-  // LinkedIn: o endereço depois de /in/, com as letras latinas acentuadas.
-  ['linkedin', 'thalita-teste-imagineup', 'thalita-teste-imagineup'],
-  ['linkedin', 'https://www.linkedin.com/in/thalita-teste-imagineup/', 'thalita-teste-imagineup'],
-  ['linkedin', 'https://br.linkedin.com/in/jo%C3%A3o-teste', 'joão-teste'],
-  ['linkedin', 'linkedin.com/in/Jo%C3%A3o-Teste?trk=public_profile', 'joão-teste'],
-  ['linkedin', 'joão-teste', 'joão-teste'],
-  ['linkedin', 'joão-teste', 'joão-teste'],
-  ['linkedin', 'Žofia-Teste', 'žofia-teste'],
-  ['linkedin', 'https://www.linkedin.com/company/imagine-music', FORMAT],
-  ['linkedin', 'https://www.linkedin.com/in/jo%E3o-teste', FORMAT],
-  ['linkedin', 'https://www.linkedin.com/in/%ZZteste', FORMAT],
-  ['linkedin', 'https://x.com/thalitatesteup', HOST],
-  ['linkedin', 'ab', FORMAT],
-  ['linkedin', 'thalitaㅤteste', FORMAT],
-  ['linkedin', 'ᅟthalita-teste', FORMAT],
-  ['linkedin', 'thalita-testeᅠ', FORMAT],
-  ['linkedin', 'thalitaﾠteste', FORMAT],
-  ['linkedin', 'שלום-teste', FORMAT],
-  ['linkedin', 'ｔｈａｌｉｔａ', FORMAT],
-  ['linkedin', 'thalita÷teste', FORMAT],
-  ['linkedin', 'a'.repeat(100), 'a'.repeat(100)],
-  ['linkedin', 'a'.repeat(101), FORMAT],
+  // O LinkedIn saiu em 02/11/2026: o link dele é de fora em toda rede.
+  ['instagram', 'https://www.linkedin.com/in/thalita-teste-imagineup/', HOST],
+  ['tiktok', 'br.linkedin.com/in/thalita-teste', HOST],
   // X.
   ['x', 'thalitatesteup', 'thalitatesteup'],
   ['x', '@ThalitaTesteUp', 'thalitatesteup'],
@@ -169,23 +150,15 @@ describe('socialUrl', () => {
   it.each([
     ['instagram', 'camila.teste.up', 'https://www.instagram.com/camila.teste.up/'],
     ['tiktok', 'camila.teste.up', 'https://www.tiktok.com/@camila.teste.up'],
-    ['linkedin', 'thalita-teste-imagineup', 'https://www.linkedin.com/in/thalita-teste-imagineup/'],
     ['x', 'thalitatesteup', 'https://x.com/thalitatesteup'],
   ] as const)('%s: o link com o domínio fixo', (network, handle, url) => {
     expect(socialUrl(network, handle)).toBe(url);
-  });
-
-  it('o LinkedIn com acento vai codificado', () => {
-    expect(socialUrl('linkedin', 'joão-teste')).toBe(
-      'https://www.linkedin.com/in/jo%C3%A3o-teste/',
-    );
   });
 
   it.each([
     ['instagram', 'https://golpe.example/camila'],
     ['instagram', 'Camila.Teste'],
     ['tiktok', '@camila.teste.up'],
-    ['linkedin', 'thalitaㅤteste'],
     ['x', 'a'.repeat(16)],
     ['x', ''],
     // Uma página da rede guardada por seed ou carga abriria a timeline de quem toca.
@@ -217,9 +190,12 @@ describe('leitura do perfil guardado', () => {
         tiktok: 'https://www.tiktok.com/@golpe',
         x: 42,
         facebook: 'camila',
+        linkedin: 'thalita-teste-imagineup',
       }),
-    ).toEqual({ instagram: 'camila.teste.up', tiktok: null, linkedin: null, x: null });
-    expect(socialsOf({ instagram: null, tiktok: null, linkedin: null, x: null })).toBeNull();
+    ).toEqual({ instagram: 'camila.teste.up', tiktok: null, x: null });
+    expect(socialsOf({ instagram: null, tiktok: null, x: null })).toBeNull();
+    // O LinkedIn guardado antes de 02/11/2026 não conta.
+    expect(socialsOf({ linkedin: 'thalita-teste-imagineup' })).toBeNull();
     expect(socialsOf({ instagram: 'Camila' })).toBeNull();
     for (const value of [null, undefined, 'camila', ['camila']]) {
       expect(socialsOf(value)).toBeNull();

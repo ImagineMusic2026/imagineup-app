@@ -200,7 +200,7 @@ describe('perfil do fã (users/{uid})', () => {
         { gender: 'woman' },
         { gender: null },
         { privateAccount: true },
-        { socials: { instagram: 'camila.teste.up', tiktok: null, linkedin: null, x: null } },
+        { socials: { instagram: 'camila.teste.up', tiktok: null, x: null } },
         { socials: null },
         { username: 'camilanova' },
         // Só o updatedAt.

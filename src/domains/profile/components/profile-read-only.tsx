@@ -11,11 +11,10 @@ import type { FanProfile, SocialNetwork } from '../types';
 import { FormGroup } from './form-group';
 import { genderText } from './gender-field';
 
-/** O que vem antes do usuário de cada rede ("@thalita.teste.up", "in/thalita-teste"). */
+/** O que vem antes do usuário de cada rede ("@thalita.teste.up"). */
 export const SOCIAL_PREFIX: Readonly<Record<SocialNetwork, string>> = {
   instagram: '@',
   tiktok: '@',
-  linkedin: 'in/',
   x: '@',
 };
 

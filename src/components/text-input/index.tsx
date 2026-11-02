@@ -58,9 +58,9 @@ export interface TextInputProps extends Omit<NativeTextInputProps, 'style'> {
   /** Como o `leadingIcon`, com um desenho do `Glyph` (as marcas das redes sociais). */
   leadingGlyph?: GlyphName;
   /**
-   * Texto fixo antes do que o fã digita, em cinza (o "@" do usuário, o "in/"
-   * do LinkedIn). Não entra no valor nem no leitor. O texto digitado começa
-   * depois dele, pela largura medida, que cresce com a fonte.
+   * Texto fixo antes do que o fã digita, em cinza (o "@" do usuário). Não
+   * entra no valor nem no leitor. O texto digitado começa depois dele, pela
+   * largura medida, que cresce com a fonte.
    */
   prefix?: string;
   /**

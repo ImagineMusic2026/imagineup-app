@@ -116,7 +116,6 @@ describe('perfil do Firestore', () => {
       socials: {
         instagram: 'camila.teste.up',
         tiktok: 'camila.teste.up',
-        linkedin: 'camila-teste-imagineup',
         x: 'camilatesteup',
       },
     });
@@ -136,6 +135,7 @@ describe('perfil do Firestore', () => {
         socials: {
           instagram: 'https://golpe.example/camila',
           tiktok: 'Camila',
+          // O LinkedIn (que saiu em 02/11/2026) não conta.
           linkedin: 'thalita-teste-imagineup',
           x: 7,
           facebook: 'camila',
@@ -145,7 +145,7 @@ describe('perfil do Firestore', () => {
       bio: null,
       gender: null,
       privateAccount: false,
-      socials: { instagram: null, tiktok: null, linkedin: 'thalita-teste-imagineup', x: null },
+      socials: null,
     });
     expect(
       toFanProfile('uid-camila', { ...CAMILA, socials: { instagram: 'Camila' } }).socials,
@@ -168,7 +168,7 @@ describe('perfil do Firestore', () => {
         city: 'Irará, BA',
         gender: 'woman',
         privateAccount: true,
-        socials: { instagram: 'camila.teste.up', tiktok: 'Torto', linkedin: null, x: null },
+        socials: { instagram: 'camila.teste.up', tiktok: 'Torto', x: null },
       }),
     ).toEqual({
       ...cached,
@@ -179,7 +179,7 @@ describe('perfil do Firestore', () => {
       city: 'Irará, BA',
       gender: 'woman',
       privateAccount: true,
-      socials: { instagram: 'camila.teste.up', tiktok: null, linkedin: null, x: null },
+      socials: { instagram: 'camila.teste.up', tiktok: null, x: null },
     });
   });
 
@@ -224,7 +224,7 @@ describe('perfil do Firestore', () => {
       city: null,
       gender: null,
       privateAccount: false,
-      socials: { instagram: null, tiktok: null, linkedin: null, x: null },
+      socials: { instagram: null, tiktok: null, x: null },
     };
     const reasonAfter = (usernameLockReason: unknown) =>
       applyEditableProfile(cached, {
@@ -445,7 +445,7 @@ describe('perfil editável (bloco 9 e seção 28)', () => {
       city: null,
       gender: null,
       privateAccount: false,
-      socials: { instagram: 'camila.teste.up', tiktok: null, linkedin: null, x: null },
+      socials: { instagram: 'camila.teste.up', tiktok: null, x: null },
     };
     put.mockResolvedValueOnce({ data: edited });
     const controller = new AbortController();
@@ -605,7 +605,6 @@ describe('perfil público de outro fã (seção 28)', () => {
     socials: {
       instagram: 'thalita.teste.up',
       tiktok: 'thalita.teste.up',
-      linkedin: 'thalita-teste-imagineup',
       x: 'thalitatesteup',
     },
     blockedByMe: false,
@@ -632,7 +631,6 @@ describe('perfil público de outro fã (seção 28)', () => {
         socials: {
           instagram: 'https://evil.example/x',
           tiktok: 'thalita.teste.up',
-          linkedin: 'Thalita Teste',
           x: 'muito_comprido_para_o_x',
           site: 'evil.example',
         },
@@ -642,7 +640,6 @@ describe('perfil público de outro fã (seção 28)', () => {
     expect(profile.socials).toEqual({
       instagram: null,
       tiktok: 'thalita.teste.up',
-      linkedin: null,
       x: null,
     });
     expect(Object.keys(profile)).toEqual([
@@ -656,8 +653,10 @@ describe('perfil público de outro fã (seção 28)', () => {
       'blockedByMe',
     ]);
 
-    // Nenhuma rede no padrão: sem redes.
-    get.mockResolvedValue({ data: { ...THALITA, socials: { linkedin: 'Thalita Teste' } } });
+    // Nenhuma rede no padrão (o LinkedIn saiu em 02/11/2026 e não conta): sem redes.
+    get.mockResolvedValue({
+      data: { ...THALITA, socials: { linkedin: 'thalita-teste-imagineup', x: 'Thalita Teste' } },
+    });
     await expect(fetchFanProfile('fa-rank-01')).resolves.toMatchObject({ socials: null });
   });
 

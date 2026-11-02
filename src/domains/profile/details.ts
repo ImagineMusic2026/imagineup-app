@@ -24,25 +24,21 @@ export const GENDERS = [
   'undisclosed',
 ] as const satisfies readonly Gender[];
 
-/** As redes, na ordem da tela, das respostas e do mapa gravado. */
+/**
+ * As redes, na ordem da tela, das respostas e do mapa gravado. O LinkedIn
+ * saiu em 02/11/2026, a pedido do dono (não combina com o app); o servidor
+ * ainda aceita a chave dele do app de antes, e a ignora.
+ */
 export const SOCIAL_NETWORKS = [
   'instagram',
   'tiktok',
-  'linkedin',
   'x',
 ] as const satisfies readonly SocialNetwork[];
 
-/**
- * O usuário guardado de cada rede, já em minúsculas e NFC. O LinkedIn aceita
- * as letras latinas acentuadas, e só elas (Latim-1 sem o `÷` e Latim
- * Estendido A, em faixas explícitas): o `\p{L}` deixaria passar letras
- * invisíveis (os preenchedores Hangul) e as da direita para a esquerda, e as
- * faixas não dependem do `\p{Script=...}` no Hermes.
- */
+/** O usuário guardado de cada rede, já em minúsculas e NFC. */
 export const SOCIAL_PATTERNS: Readonly<Record<SocialNetwork, RegExp>> = {
   instagram: /^(?!\.)(?!.*\.\.)(?!.*\.$)[a-z0-9._]{1,30}$/,
   tiktok: /^(?!.*\.$)[a-z0-9._]{2,24}$/,
-  linkedin: /^[a-z0-9ß-öø-ÿĀ-ſ-]{3,100}$/u,
   x: /^[a-z0-9_]{1,15}$/,
 };
 
@@ -50,15 +46,13 @@ export const SOCIAL_PATTERNS: Readonly<Record<SocialNetwork, RegExp>> = {
 const NETWORK_DOMAINS: Readonly<Record<SocialNetwork, readonly string[]>> = {
   instagram: ['instagram.com'],
   tiktok: ['tiktok.com'],
-  linkedin: ['linkedin.com'],
   x: ['x.com', 'twitter.com'],
 };
 
-/** O que pode vir antes do domínio (o `www.`, o celular ou as duas letras do país no LinkedIn). */
+/** O que pode vir antes do domínio (o `www.` ou o celular). */
 const NETWORK_SUBDOMAINS: Readonly<Record<SocialNetwork, RegExp>> = {
   instagram: /^(?:www|m)$/,
   tiktok: /^(?:www|m)$/,
-  linkedin: /^(?:www|[a-z]{2})$/,
   x: /^(?:www|mobile)$/,
 };
 
@@ -66,7 +60,6 @@ const NETWORK_SUBDOMAINS: Readonly<Record<SocialNetwork, RegExp>> = {
 const PROFILE_PATHS: Readonly<Record<SocialNetwork, RegExp>> = {
   instagram: /^\/([^/]+)$/,
   tiktok: /^\/@([^/]+)$/,
-  linkedin: /^\/in\/([^/]+)$/i,
   x: /^\/([^/]+)$/,
 };
 
@@ -74,8 +67,8 @@ const PROFILE_PATHS: Readonly<Record<SocialNetwork, RegExp>> = {
  * As páginas da própria rede que cabem no padrão de um usuário (`x.com/home`,
  * `instagram.com/explore/`, coladas da barra de endereço): o link montado com
  * elas abriria a página da rede, e nunca um perfil, então são `format`,
- * digitadas ou coladas. No TikTok e no LinkedIn, o perfil tem o `@` ou o
- * `/in/` no caminho, e nenhuma página da rede passa por ele.
+ * digitadas ou coladas. No TikTok, o perfil tem o `@` no caminho, e nenhuma
+ * página da rede passa por ele.
  */
 const RESERVED_PATHS: Readonly<Record<SocialNetwork, ReadonlySet<string>>> = {
   instagram: new Set([
@@ -92,7 +85,6 @@ const RESERVED_PATHS: Readonly<Record<SocialNetwork, ReadonlySet<string>>> = {
     'web',
   ]),
   tiktok: new Set(),
-  linkedin: new Set(),
   x: new Set([
     'compose',
     'explore',
@@ -134,13 +126,12 @@ const problem = (reason: SocialProblem): SocialHandleResult => ({ ok: false, rea
  * O usuário de uma rede a partir do que o fã digitou ou colou, nesta ordem:
  * corta as pontas; vazio vira `null`; acima de 300 caracteres é `format`;
  * texto com `/` ou com o domínio de uma rede é link (com ou sem `https://`),
- * lido por expressão regular: domínio de outra rede ou de fora é `host`, o
- * domínio da rede com outro prefixo ou o caminho fora do formato do perfil (o
- * `/company/` do LinkedIn, o TikTok sem `@`, o `/p/<post>` do Instagram) é
- * `format`, e a busca, o `#` e a barra do fim saem; no LinkedIn, o endereço é
- * decodificado (o `%` quebrado é `format`); senão, tira um `@` do começo; passa
- * para minúsculas e NFC; e confere o padrão da rede e as páginas dela que
- * cabem nele (`home`, `explore`), os dois `format`.
+ * lido por expressão regular: domínio de outra rede ou de fora é `host` (o
+ * link do LinkedIn, que saiu, também), o domínio da rede com outro prefixo ou
+ * o caminho fora do formato do perfil (o TikTok sem `@`, o `/p/<post>` do
+ * Instagram) é `format`, e a busca, o `#` e a barra do fim saem; senão, tira
+ * um `@` do começo; passa para minúsculas e NFC; e confere o padrão da rede e
+ * as páginas dela que cabem nele (`home`, `explore`), os dois `format`.
  */
 export function normalizeSocialHandle(network: SocialNetwork, raw: string): SocialHandleResult {
   const text = raw.trim();
@@ -158,13 +149,6 @@ export function normalizeSocialHandle(network: SocialNetwork, raw: string): Soci
     const path = PROFILE_PATHS[network].exec(link[2]!.replace(/\/+$/, ''));
     if (!path) return problem('format');
     candidate = path[1]!;
-    if (network === 'linkedin') {
-      try {
-        candidate = decodeURIComponent(candidate);
-      } catch {
-        return problem('format');
-      }
-    }
   } else {
     candidate = text.replace(/^@/, '');
   }
@@ -185,7 +169,6 @@ export function isSocialHandle(network: SocialNetwork, handle: unknown): handle 
 /**
  * O link do perfil na rede, com o domínio fixo, montado a partir do usuário
  * guardado e conferido de novo: fora do padrão, `null` (a rede não aparece).
- * O endereço do LinkedIn vai com `encodeURIComponent` (os acentos).
  */
 export function socialUrl(
   network: SocialNetwork,
@@ -197,8 +180,6 @@ export function socialUrl(
       return `https://www.instagram.com/${handle}/`;
     case 'tiktok':
       return `https://www.tiktok.com/@${handle}`;
-    case 'linkedin':
-      return `https://www.linkedin.com/in/${encodeURIComponent(handle)}/`;
     case 'x':
       return `https://x.com/${handle}`;
   }
@@ -215,8 +196,8 @@ export const genderOf = (value: unknown): Gender | null =>
 
 /**
  * As redes guardadas, lidas do mapa pela lista fixa: chave estranha no
- * documento é ignorada, e a rede fora do padrão vale como vazia. Sem nenhuma,
- * `null`.
+ * documento (o `linkedin` de antes de 02/11/2026 inclusive) é ignorada, e a
+ * rede fora do padrão vale como vazia. Sem nenhuma, `null`.
  */
 export function socialsOf(value: unknown): FanSocials | null {
   if (!isRecord(value)) return null;
@@ -227,7 +208,6 @@ export function socialsOf(value: unknown): FanSocials | null {
   const socials: FanSocials = {
     instagram: read('instagram'),
     tiktok: read('tiktok'),
-    linkedin: read('linkedin'),
     x: read('x'),
   };
   return SOCIAL_NETWORKS.some((network) => socials[network] !== null) ? socials : null;

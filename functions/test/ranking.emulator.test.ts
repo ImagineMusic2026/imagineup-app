@@ -1182,7 +1182,6 @@ describe('o seed do ranking (23.15)', () => {
       socials: {
         instagram: 'thalita.teste.up',
         tiktok: 'thalita.teste.up',
-        linkedin: 'thalita-teste-imagineup',
         x: 'thalitatesteup',
       },
     });

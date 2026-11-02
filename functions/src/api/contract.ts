@@ -502,8 +502,11 @@ export type PhotoUploadSlot = { path: string; expiresAt: string };
 /** `Gender` do app: só o próprio fã e a equipe veem; null é "Não informado". */
 export type Gender = 'woman' | 'man' | 'nonbinary' | 'undisclosed';
 
-/** `SocialNetwork` do app, na ordem da tela, das respostas e do mapa gravado. */
-export type SocialNetwork = 'instagram' | 'tiktok' | 'linkedin' | 'x';
+/**
+ * `SocialNetwork` do app, na ordem da tela, das respostas e do mapa gravado
+ * (o LinkedIn saiu em 02/11/2026).
+ */
+export type SocialNetwork = 'instagram' | 'tiktok' | 'x';
 
 /**
  * `FanSocials` do app: o usuário de cada rede, já normalizado (nunca o link;

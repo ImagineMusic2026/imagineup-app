@@ -26,7 +26,6 @@ const BASE: EditProfileFormInput = {
   privateAccount: false,
   instagram: '',
   tiktok: '',
-  linkedin: '',
   x: '',
 };
 
@@ -147,18 +146,16 @@ describe('gênero e conta privada', () => {
   });
 });
 
-describe('as quatro redes, no primeiro nível', () => {
+describe('as três redes, no primeiro nível', () => {
   it('o link colado vira o usuário; vazio vira null', () => {
     const data = parse({
       instagram: 'https://www.instagram.com/camila.teste.up/',
       tiktok: '@Camila.Teste.Up',
-      linkedin: 'https://br.linkedin.com/in/jo%C3%A3o-teste',
       x: '',
     }).data;
     expect(data).toMatchObject({
       instagram: 'camila.teste.up',
       tiktok: 'camila.teste.up',
-      linkedin: 'joão-teste',
       x: null,
     });
   });
@@ -168,8 +165,9 @@ describe('as quatro redes, no primeiro nível', () => {
       'Esse link não é do Instagram.',
     );
     expect(errorOf({ x: 'a'.repeat(16) }, 'x')).toBe('Usuário fora do formato do X (Twitter).');
-    expect(errorOf({ linkedin: 'https://www.linkedin.com/company/imagine' }, 'linkedin')).toBe(
-      'Usuário fora do formato do LinkedIn.',
+    // O LinkedIn saiu em 02/11/2026: o link dele é de outro domínio em toda rede.
+    expect(errorOf({ tiktok: 'https://www.linkedin.com/in/camila' }, 'tiktok')).toBe(
+      'Esse link não é do TikTok.',
     );
   });
 
@@ -182,7 +180,6 @@ describe('as quatro redes, no primeiro nível', () => {
       'gender',
       'instagram',
       'tiktok',
-      'linkedin',
       'x',
     ]);
   });
@@ -199,7 +196,7 @@ const PROFILE: FanProfile = {
   bio: 'Feira de Santana.',
   gender: 'woman',
   privateAccount: false,
-  socials: { instagram: 'camila.teste.up', tiktok: null, linkedin: null, x: null },
+  socials: { instagram: 'camila.teste.up', tiktok: null, x: null },
 };
 
 describe('formValuesOf', () => {
@@ -213,7 +210,6 @@ describe('formValuesOf', () => {
       privateAccount: false,
       instagram: 'camila.teste.up',
       tiktok: '',
-      linkedin: '',
       x: '',
     });
   });
@@ -236,7 +232,6 @@ describe('formValuesOf', () => {
       privateAccount: false,
       instagram: '',
       tiktok: '',
-      linkedin: '',
       x: '',
     });
   });
@@ -332,7 +327,7 @@ describe('SERVER_FIELD_TO_FORM', () => {
   it('o campo do profile_invalid vira o campo do formulário', () => {
     expect(SERVER_FIELD_TO_FORM.displayName).toBe('name');
     expect(SERVER_FIELD_TO_FORM['socials.x']).toBe('x');
-    expect(SERVER_FIELD_TO_FORM['socials.linkedin']).toBe('linkedin');
+    expect(SERVER_FIELD_TO_FORM['socials.linkedin']).toBeUndefined();
     expect(SERVER_FIELD_TO_FORM.bio).toBe('bio');
     expect(SERVER_FIELD_TO_FORM.city).toBe('city');
     expect(SERVER_FIELD_TO_FORM.gender).toBe('gender');

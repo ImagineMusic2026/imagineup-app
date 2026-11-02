@@ -286,14 +286,14 @@ describe('TextInput nos cards da tela "Editar perfil"', () => {
   it('com o ícone e o prefixo, o prefixo vem depois do ícone', () => {
     render(
       <TextInput
-        label="LinkedIn"
+        label="Instagram"
         labelHidden
         variant="bare"
-        prefix="in/"
-        leadingGlyph="linkedin"
+        prefix="@"
+        leadingGlyph="instagram"
       />,
     );
-    const box = hostBox(screen.getByText('in/', { includeHiddenElements: true }));
+    const box = hostBox(screen.getByText('@', { includeHiddenElements: true }));
     expect(box).toHaveStyle({ left: spacing.lg + 18 + spacing.sm });
   });
 

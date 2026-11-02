@@ -446,7 +446,7 @@ describe('o seed das telas do painel (26.13)', () => {
         bio: details.bio,
         gender: details.gender,
         privateAccount: details.privateAccount,
-        socials: { instagram: null, tiktok: null, linkedin: null, x: null, ...details.socials },
+        socials: { instagram: null, tiktok: null, x: null, ...details.socials },
       });
     }
     expect(await read('users/rank05')).toMatchObject({ privateAccount: true });

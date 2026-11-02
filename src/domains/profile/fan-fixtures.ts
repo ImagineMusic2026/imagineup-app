@@ -69,7 +69,6 @@ export const FAN_FIXTURE_DETAILS: Readonly<Record<string, FanFixtureDetails>> = 
     socials: {
       instagram: 'thalita.teste.up',
       tiktok: 'thalita.teste.up',
-      linkedin: 'thalita-teste-imagineup',
       x: 'thalitatesteup',
     },
   },
