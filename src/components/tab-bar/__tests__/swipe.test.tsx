@@ -4,10 +4,13 @@ import { Animated } from 'react-native';
 import { ALREADY_ENTERED } from '@/hooks/use-stack-fade';
 
 import {
+  createSwipeHighlight,
   dragPosition,
   edgeFollow,
   isAtStackRoot,
   neighborTab,
+  settleDuration,
+  settleEasing,
   settlePage,
   swipeDirection,
   useTabSwipe,
@@ -90,6 +93,49 @@ describe('settlePage', () => {
     ['pegou a mola voltando e empurrou: vai à da direita', 0.3, -150, 0, 1],
   ] as const)('%s', (_name, start, translationX, velocityX, expected) => {
     expect(settlePage(start, translationX, velocityX, WIDTH, LAST)).toBe(expected);
+  });
+});
+
+describe('settleDuration', () => {
+  it.each([
+    ['deslize rápido para o destino: sai na velocidade do dedo', 200, 2000, 200],
+    ['tão rápido que passaria do mínimo: 140 ms', 100, 4000, 140],
+    ['devagar: no máximo 280 ms', 200, 300, 280],
+    ['o dedo parado: 280 ms', 200, 0, 280],
+  ] as const)('%s', (_name, distance, speed, expected) => {
+    expect(settleDuration(distance, speed)).toBeCloseTo(expected);
+  });
+});
+
+describe('settleEasing', () => {
+  it('desacelera, da metade a 75% no primeiro terço e a 95% no segundo, como no Instagram', () => {
+    expect(settleEasing(0)).toBe(0);
+    expect(settleEasing(1 / 3)).toBeCloseTo(0.556, 2);
+    expect(settleEasing(2 / 3)).toBeCloseTo(0.889, 2);
+    expect(settleEasing(1)).toBe(1);
+  });
+
+  it('o tempo negativo do primeiro quadro não leva a página para trás, nem o atraso para além do fim', () => {
+    expect(settleEasing(-0.1)).toBe(0);
+    expect(settleEasing(1.2)).toBe(1);
+  });
+});
+
+describe('createSwipeHighlight', () => {
+  it('guarda a aba destacada e avisa quem assina só quando ela muda', () => {
+    const highlight = createSwipeHighlight();
+    const listener = jest.fn();
+    const unsubscribe = highlight.subscribe(listener);
+    expect(highlight.get()).toBeNull();
+
+    highlight.set(2);
+    highlight.set(2);
+    expect(highlight.get()).toBe(2);
+    expect(listener).toHaveBeenCalledTimes(1);
+
+    unsubscribe();
+    highlight.set(null);
+    expect(listener).toHaveBeenCalledTimes(1);
   });
 });
 

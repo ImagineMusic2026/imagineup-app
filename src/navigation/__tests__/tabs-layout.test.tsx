@@ -174,6 +174,37 @@ describe('deslizar entre as abas', () => {
     await waitFor(() => expect(view.getPathname()).toBe('/perfil'));
   });
 
+  it('a aba que abre em foco já nasce à vista, sem o fade na montagem', () => {
+    renderRouter(appTree, { initialUrl: '/' });
+
+    // A página é o primeiro pai com opacidade no estilo.
+    let node = screen.getByText('home').parent;
+    let opacity: unknown;
+    while (node && opacity === undefined) {
+      opacity = (StyleSheet.flatten(node.props.style) as ViewStyle | undefined)?.opacity;
+      node = node.parent;
+    }
+    expect(opacity).toBe(1);
+  });
+
+  it('a barra destaca a aba de destino assim que a página assenta, antes de a troca chegar ao navegador', async () => {
+    const view = renderRouter(appTree, { initialUrl: '/' });
+    await swipe('(inicio)', -FAR);
+
+    // A página assentou: só a barra redesenha, com o destaque na Explorar.
+    await act(async () => {
+      jest.runAllTicks();
+    });
+    expect(screen.getByLabelText('Explorar')).toBeSelected();
+    expect(view.getPathname()).toBe('/');
+
+    // A troca no navegador vem na volta seguinte, e a barra segue com ele.
+    await settle();
+    expect(view.getPathname()).toBe('/explorar');
+    expect(screen.getByLabelText('Explorar')).toBeSelected();
+    expect(screen.getByLabelText('Início')).not.toBeSelected();
+  });
+
   it('para a direita volta à aba da esquerda', async () => {
     const view = renderRouter(appTree, { initialUrl: '/ranking' });
 

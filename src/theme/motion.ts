@@ -27,9 +27,6 @@ export const motion = {
   spring: {
     gentle: { damping: 18, stiffness: 220, mass: 0.7 },
     snappy: { damping: 16, stiffness: 320, mass: 0.6 },
-    // A página que assenta depois do arraste entre as abas: sem passar do lugar,
-    // que mostraria a aba seguinte ou o fundo.
-    page: { damping: 29, stiffness: 220, mass: 1, overshootClamping: true },
   } satisfies Record<string, WithSpringConfig>,
   pressScale: 0.97,
 } as const;

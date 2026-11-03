@@ -18,8 +18,17 @@ export interface TabItem {
  * Único ponto que conhece o navegador de abas: converte as props do navegador
  * em itens que a TabBar desenha. Na SDK 58 o `BottomTabBarProps` perde
  * `navigation` e ganha `emitter` e `navigateToTab`; a migração mexe só aqui.
+ *
+ * O `highlight` é a aba que o arraste destaca enquanto a página assenta, antes
+ * de a troca chegar ao navegador (`useTabSwipe`); o toque segue o foco do
+ * navegador.
  */
-export function toTabItems({ state, descriptors, navigation }: BottomTabBarProps): TabItem[] {
+export function toTabItems(
+  { state, descriptors, navigation }: BottomTabBarProps,
+  highlight: number | null = null,
+): TabItem[] {
+  const focusedKey = state.routes[state.index]?.key;
+  const highlightedKey = state.routes[highlight ?? state.index]?.key ?? focusedKey;
   return state.routes
     .filter((route) => {
       // `href: null` no Tabs.Screen chega aqui como tabBarItemStyle display none.
@@ -29,7 +38,7 @@ export function toTabItems({ state, descriptors, navigation }: BottomTabBarProps
     })
     .map((route) => {
       const options = descriptors[route.key]?.options;
-      const focused = state.routes[state.index]?.key === route.key;
+      const focused = highlightedKey === route.key;
       const label =
         typeof options?.tabBarLabel === 'string'
           ? options.tabBarLabel
@@ -49,7 +58,9 @@ export function toTabItems({ state, descriptors, navigation }: BottomTabBarProps
             target: route.key,
             canPreventDefault: true,
           });
-          if (!focused && !event.defaultPrevented) navigation.navigate(route.name, route.params);
+          if (focusedKey !== route.key && !event.defaultPrevented) {
+            navigation.navigate(route.name, route.params);
+          }
         },
         onLongPress: () => {
           navigation.emit({ type: 'tabLongPress', target: route.key });

@@ -4,7 +4,7 @@ import { StyleSheet, View } from 'react-native';
 import Animated from 'react-native-reanimated';
 
 import { Icon } from '@/components/icon';
-import { TabBar, toTabItems, useTabSwipe } from '@/components/tab-bar';
+import { SwipeTabBar, useTabSwipe } from '@/components/tab-bar';
 import { useQuickActions } from '@/domains/quick-actions';
 import { usePrefersReducedMotion } from '@/hooks/use-prefers-reduced-motion';
 import { useStackFade } from '@/hooks/use-stack-fade';
@@ -50,7 +50,9 @@ export default function TabsLayout() {
             sceneStyle: styles.scene,
           }}
           screenLayout={swipe.screenLayout}
-          tabBar={(props) => <TabBar items={toTabItems(props)} centerMenu={quickActions} />}
+          tabBar={(props) => (
+            <SwipeTabBar navigator={props} highlight={swipe.highlight} centerMenu={quickActions} />
+          )}
         >
           <Tabs.Screen
             name="(inicio)"
