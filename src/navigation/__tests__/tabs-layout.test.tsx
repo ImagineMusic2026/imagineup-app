@@ -180,10 +180,12 @@ describe('deslizar entre as abas', () => {
     await waitFor(() => expect(view.getPathname()).toBe('/perfil'));
   });
 
-  it('com reduzir movimento, a vizinha também monta por trás, à mostra para o arraste, e o deslize troca de aba', async () => {
+  it('com reduzir movimento, a vizinha também monta por trás, à mostra para o arraste, e o deslize troca de aba com a volta animada', async () => {
     // A escala de transição do Android em 0 liga reduzir movimento: no aparelho
     // do dono, a página ficava parada e a troca saía seca depois do dedo andar.
     mockReducedMotion = true;
+    // O worklet do gesto guarda o `withTiming` quando a tela desenha.
+    const timing = jest.spyOn(Reanimated, 'withTiming');
     const view = renderRouter(appTree, { initialUrl: '/' });
     await enterTabs();
 
@@ -197,7 +199,14 @@ describe('deslizar entre as abas', () => {
     }
     expect(display).toBe('flex');
 
+    // A volta ao soltar anima mesmo assim, como o pager do sistema: seca, a
+    // página pulava até o fim num quadro (vídeo do dono de 03/11/2026).
     await swipe('(inicio)', -FAR);
+    expect(timing).toHaveBeenCalledWith(
+      1,
+      expect.objectContaining({ reduceMotion: Reanimated.ReduceMotion.Never }),
+      expect.any(Function),
+    );
     await waitFor(() => expect(view.getPathname()).toBe('/explorar'));
   });
 

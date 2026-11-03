@@ -4,7 +4,9 @@ import { Easing, type WithSpringConfig } from 'react-native-reanimated';
  * Movimento fluido e discreto: curvas suaves, nada de troca seca, e sempre
  * respeitando "reduzir movimento". O AppProviders espelha a opção do sistema no
  * Reanimated (inclusive quando ela muda com o app aberto), então as animações
- * seguem sozinhas; não passe `ReduceMotion.Never` numa animação.
+ * seguem sozinhas; não passe `ReduceMotion.Never` numa animação. A única
+ * exceção é a volta ao soltar do deslize entre as abas (`tab-bar/swipe.tsx`,
+ * decisão do dono de 03/11/2026), que continua o gesto do fã.
  */
 export const motion = {
   duration: {
