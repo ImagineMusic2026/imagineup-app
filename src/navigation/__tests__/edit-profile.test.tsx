@@ -556,17 +556,15 @@ describe('Editar perfil: o perfil vivo', () => {
     expect(profilePuts()[0]?.body).toEqual({ city: 'Salvador, BA' });
   });
 
-  it('a conta privada acompanha a escuta: a chave e o aviso público mudam com o perfil', async () => {
+  it('a conta privada acompanha a escuta: a chave muda com o perfil', async () => {
     const name = 'Conta privada. Os outros fãs não veem sua bio nem suas redes.';
     await openEditProfile({ ...CAMILA, privateAccount: true });
     expect(screen.getByRole('switch', { name, checked: true })).toBeTruthy();
-    expect(screen.queryByTestId('edit-profile-public-hint')).toBeNull();
 
     // Outro aparelho desligou a privada.
     act(() => emitProfile({ ...CAMILA, privateAccount: false, bio: 'Nova bio viva.' }));
     await waitFor(() => expect(bioInput()).toHaveProp('value', 'Nova bio viva.'));
     expect(screen.getByRole('switch', { name, checked: false })).toBeTruthy();
-    expect(screen.getByTestId('edit-profile-public-hint')).toBeTruthy();
     expect(saveButton()).toBeDisabled();
 
     // Ligar de novo é mudança contra o perfil vivo, e vai no corpo.
@@ -1005,12 +1003,10 @@ describe('Editar perfil: detalhes', () => {
     await openEditProfile();
     const name = 'Conta privada. Os outros fãs não veem sua bio nem suas redes.';
     expect(screen.getByRole('switch', { name, checked: false })).toBeTruthy();
-    expect(
-      screen.getByText('Sem a conta privada, qualquer fã do ImagineUP vê sua bio e suas redes.'),
-    ).toBeTruthy();
+    // O aviso embaixo das redes, com a privada desligada, saiu a pedido do dono (03/11/2026).
+    expect(screen.queryByText(/qualquer fã do ImagineUP vê/)).not.toBeOnTheScreen();
     fireEvent.press(screen.getByRole('switch', { name }));
     expect(screen.getByRole('switch', { name, checked: true })).toBeTruthy();
-    expect(screen.queryByTestId('edit-profile-public-hint')).toBeNull();
     fireEvent.press(saveButton());
     await waitFor(() => expect(profilePuts()).toHaveLength(1));
     expect(profilePuts()[0]?.body).toEqual({ privateAccount: true });

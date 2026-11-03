@@ -791,16 +791,6 @@ function ProfileForm({ profile, fallbackName, online }: ProfileFormProps) {
       <Text variant="caption" color={colors.textMuted} style={styles.footnote}>
         {t('editProfile.socials.hint')}
       </Text>
-      {values.privateAccount ? null : (
-        <Text
-          variant="caption"
-          color={colors.textSecondary}
-          style={styles.footnote}
-          testID="edit-profile-public-hint"
-        >
-          {t('editProfile.socials.publicHint')}
-        </Text>
-      )}
       <DeleteAccountRow locked={saving} />
     </Screen>
   );
