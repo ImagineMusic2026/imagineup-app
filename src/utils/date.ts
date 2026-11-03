@@ -106,7 +106,8 @@ type RelativeTime =
 
 /**
  * Minutos, horas e dias até uma semana; depois disso, a data. Com `dayLimit`
- * de 1, os dias não entram: passadas 24 h, já é a data (a publicação).
+ * de 1, os dias não entram: passadas 24 h, já é a data (a publicação e os
+ * comentários do fã-clube).
  */
 function relativeTime(date: Date, now: Date, dayLimit = 7): RelativeTime {
   const minutes = differenceInMinutes(now, date);
@@ -171,7 +172,8 @@ function formatPostDate(date: Date, now: Date): string {
 /**
  * O horário da publicação no topo do card, no estilo do X: "agora", "5 min"
  * e "3 h" no primeiro dia; passadas 24 h, a data, "2 de nov" (com o ano, "2
- * de nov de 2025", quando não é o de agora). Sem o "há", como no X.
+ * de nov de 2025", quando não é o de agora). Sem o "há", como no X. Os
+ * comentários do fã-clube seguem o mesmo, como as respostas no X.
  */
 export function formatPostTime(input: DateInput, now: Date = new Date()): string {
   const date = safe(input);

@@ -630,6 +630,34 @@ describe('os comentários e as respostas (37.9, itens 3 e 4)', () => {
     expect(mine).not.toHaveProp('accessibilityRole', 'link');
   });
 
+  it('o horário segue o da publicação: "3 h" no primeiro dia e, passadas 24 h, a data (pedido do dono de 03/11/2026)', async () => {
+    const hoursAgo = (hours: number) => new Date(Date.now() - hours * 3_600_000).toISOString();
+    mocked.fetchFanClubComments.mockImplementation(({ replyTo }) =>
+      Promise.resolve(
+        replyTo === null
+          ? pageOf([
+              comment('c2', { createdAt: hoursAgo(3) }),
+              comment('c1', { author: OWNER, isManager: true, createdAt: hoursAgo(50) }),
+            ])
+          : pageOf([]),
+      ),
+    );
+    await openPost();
+
+    expect(screen.getByTestId('club-comment-c2-time').props.children).toBe('· 3 h');
+    expect(screen.getByTestId('club-comment-c2-author')).toHaveProp(
+      'accessibilityLabel',
+      'Davi Lima, @davilim, há 3 horas',
+    );
+    // Dois dias depois, a data, como a publicação ("1 de nov"), e não o "2 d" do Mural.
+    const time = screen.getByTestId('club-comment-c1-time').props.children as string;
+    expect(time).toMatch(/^· \d{1,2} de \p{L}{3}/u);
+    expect(time).not.toMatch(/\d d$/u);
+    expect(screen.getByTestId('club-comment-c1-author').props.accessibilityLabel).toMatch(
+      /^Thalita Santos, @thalitasan, gestor do fã-clube, \d{1,2} de \p{L}+( de \d{4})?$/u,
+    );
+  });
+
   it('"Ver mais respostas" pede a página seguinte da conversa', async () => {
     mocked.fetchFanClubComments.mockImplementation(({ replyTo, cursor }) =>
       Promise.resolve(
