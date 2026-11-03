@@ -14,7 +14,7 @@ import { fanProfileHref } from '@/domains/profile';
 import { usePrefersReducedMotion } from '@/hooks/use-prefers-reduced-motion';
 import { t } from '@/i18n';
 import { colors, isLargeText, layout, motion, spacing } from '@/theme';
-import { formatRelativeAgoSpoken, formatRelativeShort } from '@/utils/date';
+import { formatPostTime, formatPostTimeSpoken } from '@/utils/date';
 
 import type { FanClubCommentLine } from '../types';
 import { MentionText } from './mention-text';
@@ -81,14 +81,15 @@ function displayName(comment: FanClubCommentLine, mine: boolean): string {
 
 /**
  * O autor para o leitor de tela: o nome, o @, a marca de gestor e quando
- * ("Thalita Santos, @thalitasan, gestor do fã-clube, há 2 horas").
+ * ("Thalita Santos, @thalitasan, gestor do fã-clube, há 2 horas", ou, passadas
+ * 24 h, "2 de novembro").
  */
 function authorLabel(comment: FanClubCommentLine, mine: boolean, now: Date): string {
   const { name, username } = comment.author;
   const parts = [displayName(comment, mine)];
   if (!mine && name && username) parts.push(`@${username}`);
   if (comment.isManager) parts.push(t('fanClub.comments.managerLabel'));
-  parts.push(formatRelativeAgoSpoken(comment.createdAt, now));
+  parts.push(formatPostTimeSpoken(comment.createdAt, now));
   return parts.join(', ');
 }
 
@@ -185,8 +186,8 @@ function DeliveredCommentRow({
           </Text>
         ) : null}
         {comment.isManager ? <Pill label={t('fanClub.comments.manager')} size="xs" caps /> : null}
-        <Text variant="metaSmall" color={colors.textMuted}>
-          {t('post.meta', { time: formatRelativeShort(comment.createdAt, now) })}
+        <Text variant="metaSmall" color={colors.textMuted} testID={`${testID}-time`}>
+          {t('post.meta', { time: formatPostTime(comment.createdAt, now) })}
         </Text>
       </View>
     </>
