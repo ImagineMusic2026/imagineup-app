@@ -222,6 +222,7 @@ docs/                     # a nota do servidor (arquitetura-api.md, LF e sem o p
 - Tons por opacidade com `withAlpha(cor, alpha)` de `@/utils/color`.
 - Brilho colorido com `boxShadow` (tokens em `shadows`); `elevation` não tinge.
 - Cada peso da fonte é uma família (`Sora_800ExtraBold`, `Manrope_600SemiBold`...). Nunca `fontWeight` com elas. O texto sai pelo `<Text variant>`.
+- Peça colada a um título grande que pode quebrar (o selo e as barras do nome na capa da 1d) vai dentro do `Text`, numa View no fim dele, depois de um word joiner (U+2060): numa fileira com o `flexShrink`, o texto quebrado ocupa a largura toda, e a peça vai para a borda, longe da última palavra. Dentro do texto, ela pousa na linha de base e desce junto com a última palavra. O nome da 1d fica numa linha quando cabe e, longo, quebra entre as palavras, sem limite de linhas nem fonte menor (19.18 da nota, pedido do dono de 03/11/2026).
 - O app é só escuro (`userInterfaceStyle: 'dark'`).
 - Contraste: texto secundário não desce de branco a .5 (o protótipo usa .42, que reprova AA). O botão primário usa `accentStrong` (#D9105A) porque branco sobre #FF2D6F dá 3,59:1. Isso diverge do protótipo e foi aprovado em 2026-09-28. Pela mesma regra, o vidro escuro com texto (`glassDarkStrong`, selos sobre foto) é .9, não o .68 do protótipo.
 

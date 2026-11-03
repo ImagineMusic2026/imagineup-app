@@ -1621,6 +1621,17 @@ App:
 - O teto de entradas mora em `days[dia].count.central_entry` da carteira: a carteira é gravada em toda entrada nova. Sair nunca é recusado.
 - Callback passado ao `useMutation` roda mesmo com a tela desmontada (só os do `mutate` conferem): o que navega ou mexe na tela confere se o hook está montado.
 
+### 19.18 O nome da capa da 1d numa linha (03/11/2026)
+
+Pedido do dono de 03/11/2026, pela captura da central do Netto ("quero deixar alguns nomes de artistas em uma linha ao inves de ter essa quebra"): o nome da capa da 1d quebrava sempre no primeiro espaço, como no protótipo ("Netto" numa linha e "Brito" na outra, com o selo ao lado de "Brito"). O `splitCoverName` saiu do `artist-page/describe.ts`. Agora:
+
+- O nome fica numa linha quando cabe, com o selo de verificado e as barras da marca logo depois dele. No emulador Android (411 de largura), "Netto Brito" e "Juninho Moraes" cabem.
+- O nome longo quebra entre as palavras, sem limite de linhas e sem diminuir a fonte. O `NAME_MAX` do servidor é 60, e 60 caracteres no `displayLg` (38) dão quatro linhas nessa largura: em duas, a fonte cairia a menos da metade, e o `adjustsFontSizeToFit` corta com reticências quando chega no mínimo. A fonte menor também brigaria com a fonte grande do sistema (até 200%, a regra do `Text`), e a capa já cresce com o nome.
+- O selo e as barras vão dentro do `Text`, numa View no fim dele, depois de um word joiner (U+2060). Ao lado do nome, numa fileira com o `flexShrink`, a caixa do texto quebrado ocupava a largura toda (o Yoga mede de novo com a largura exata), e as barras iam para a borda da direita, longe da última palavra. Dentro do texto, a View pousa na linha de base do nome, na altura de antes (2 px de diferença no aparelho), e o word joiner não deixa quebrar entre a última palavra e o selo: quando o selo não cabe na linha, os dois descem juntos ("Banda Forró" e, embaixo, "Pegado" com o selo).
+- O leitor não muda: a capa continua um título só ("Netto Brito, artista verificado, gestão oficial Imagine").
+- Teste: o `artist.test.tsx` confere o nome inteiro com o word joiner, e o selo e as barras dentro do texto. Conferido no emulador Android pelo Expo Go com o seed, nas fontes 1,0 e 2,0, com o Netto Brito, o Juninho Moraes e dois nomes longos gravados só no emulador (31 e 60 caracteres). O iOS fica para o Expo Go no iPhone.
+- Só app, sem servidor nem painel: sai por EAS Update, e o fingerprint não muda.
+
 ## 20. Bloco 5: convite com atribuição e origem do fã
 
 O fã ganha um código de convite do servidor, o link dele passa a trazer gente de verdade, e cada fã novo fica com a origem: quem trouxe, por qual link e por qual campanha. Esta seção é o contrato do bloco 5: rotas, coleções, transações, antifraude, regras, efeitos no painel, exclusão de conta, mudanças no app, seed e testes. Ela segue os padrões dos blocos 1 e 4 (seções 1 a 19) e só diz o que muda ou acrescenta.
