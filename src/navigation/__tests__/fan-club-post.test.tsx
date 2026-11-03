@@ -488,7 +488,7 @@ describe('o corpo do card abre a publicação (pedido do dono de 01/11/2026)', (
   });
 });
 
-describe('o autor no topo do card, no estilo do X (pedido do dono de 03/11/2026)', () => {
+describe('o autor no topo do card, no estilo do X, nas três telas (pedido do dono de 03/11/2026)', () => {
   const HOUR = 3_600_000;
   const hoursAgo = (hours: number) => new Date(Date.now() - hours * HOUR).toISOString();
 
@@ -520,9 +520,10 @@ describe('o autor no topo do card, no estilo do X (pedido do dono de 03/11/2026)
 
     const author = screen.getByTestId('fan-club-post-card-author');
     const time = within(author).getByTestId('fan-club-post-card-author-time');
-    expect(time.props.children).toMatch(/^· \d{1,2} de \p{L}{3}$/u);
+    // Com o ano só quando é outro ("2 de nov de 2025").
+    expect(time.props.children).toMatch(/^· \d{1,2} de \p{L}{3}/u);
     expect(screen.getByTestId('fan-club-post-card-body').props.accessibilityLabel).toMatch(
-      /Publicado \d{1,2} de \p{L}+\.$/u,
+      /Publicado \d{1,2} de \p{L}+/u,
     );
   });
 
@@ -550,18 +551,48 @@ describe('o autor no topo do card, no estilo do X (pedido do dono de 03/11/2026)
     expect(author.props.onPress).toBeUndefined();
   });
 
-  it('a página do fã-clube segue sem o autor no topo, com a data embaixo do texto', async () => {
-    renderRouter(appTree, { initialUrl: '/fa-clube/fc-1' });
-    const body = await screen.findByTestId('fan-club-post-p1-body');
-    expect(within(body).getByText('19 out')).toBeTruthy();
-    expect(screen.queryByTestId('fan-club-post-p1-author')).not.toBeOnTheScreen();
+  it('na página, cada publicação abre pelo autor, que abre o perfil por cima dela', async () => {
+    const view = renderRouter(appTree, { initialUrl: '/fa-clube/fc-1' });
+
+    const card = await screen.findByTestId('fan-club-post-p1');
+    const author = within(card).getByRole('link', { name: 'Thalita Santos, @thalitasan' });
+    expect(within(author).getByTestId('fan-club-post-p1-author-time').props.children).toMatch(
+      /^· 19 de out/u,
+    );
+    // A data de baixo do texto saiu: o horário fica só na linha do autor.
+    const body = screen.getByTestId('fan-club-post-p1-body');
+    expect(within(body).queryByText('19 out')).not.toBeOnTheScreen();
+
+    fireEvent.press(author);
+    expect(await screen.findByText('fan')).toBeTruthy();
+    expect(view.getPathname()).toBe('/fa/fa-thalita');
+    expect(rootRoutes(view)).toEqual(['fa-clube/[clubeId]', 'fa/[fanId]']);
   });
 
-  it('a Início segue sem o autor no topo, com o nome do fã-clube', async () => {
-    mocked.fetchFanClubFeed.mockResolvedValue({ items: [post('p1')], nextCursor: null });
-    renderRouter(appTree, { initialUrl: '/' });
-    expect(await screen.findByTestId('home-fan-club-post-p1-club')).toBeTruthy();
-    expect(screen.queryByTestId('home-fan-club-post-p1-author')).not.toBeOnTheScreen();
+  it('na Início, o nome do fã-clube fica em cima do autor, com o selo só nele, e o autor abre o perfil por cima das abas', async () => {
+    mocked.fetchFanClubFeed.mockResolvedValue({
+      items: [post('p1', { clubOfficial: true })],
+      nextCursor: null,
+    });
+    const view = renderRouter(appTree, { initialUrl: '/' });
+
+    const card = await screen.findByTestId('home-fan-club-post-p1');
+    const links = within(card)
+      .getAllByRole('link')
+      .map((node) => node.props.accessibilityLabel as string);
+    expect(links.slice(0, 2)).toEqual([
+      'Nenho Sempre, fã-clube oficial',
+      'Thalita Santos, @thalitasan',
+    ]);
+    expect(
+      within(card).queryByTestId('home-fan-club-post-p1-author-official', {
+        includeHiddenElements: true,
+      }),
+    ).not.toBeOnTheScreen();
+
+    fireEvent.press(within(card).getByRole('link', { name: 'Thalita Santos, @thalitasan' }));
+    expect(await screen.findByText('fan')).toBeTruthy();
+    expect(rootRoutes(view)).toEqual(['(tabs)', 'fa/[fanId]']);
   });
 });
 
