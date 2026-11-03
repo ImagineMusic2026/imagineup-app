@@ -10,7 +10,7 @@ import { Text } from '@/components/text';
 import { t } from '@/i18n';
 import { haptics } from '@/services/haptics';
 import { colors, layout, motion, radii, spacing } from '@/theme';
-import { formatRelativeAgo, formatRelativeAgoSpoken } from '@/utils/date';
+import { formatPostTimeSpoken, formatRelativeAgo, formatRelativeAgoSpoken } from '@/utils/date';
 import { sentence } from '@/utils/text';
 
 import type { FanClubReaction } from '../consts';
@@ -27,6 +27,7 @@ import {
   ReactionTotal,
   ShareButton,
 } from './post-reactions';
+import { FanClubPostAuthor } from './post-author';
 
 /** A foto do fã-clube é sempre 4:5 (decisão 15). */
 const PHOTO_ASPECT = 4 / 5;
@@ -70,6 +71,14 @@ export interface FanClubPostCardProps {
   onReport: (post: FanClubPost) => void;
   /** Só na Início: o nome abre a página do fã-clube. */
   onOpenClub?: (post: FanClubPost) => void;
+  /**
+   * Só na tela da publicação: o autor no topo, no estilo do X (a foto, o
+   * nome, o selo do oficial, o @ e o horário numa linha), com o texto logo
+   * embaixo e sem a data embaixo dele.
+   */
+  withAuthor?: boolean;
+  /** Com o autor no topo, abre o perfil público dele; sem ele (a própria publicação), só se lê. */
+  onOpenAuthor?: (post: FanClubPost) => void;
   /**
    * O botão dos comentários (seção 37, 37.9, itens 1 e 3): na página e na
    * Início, abre a tela da publicação; no cabeçalho dela, leva o foco ao
@@ -133,6 +142,12 @@ function focusSoon(target: RefObject<View | null>): ReturnType<typeof setTimeout
  * pressável, com o mesmo rótulo e as mesmas ações dos @; o toque num @ fica
  * com o link dele. Só com o servidor da Fase 2 (o `reactionCount`), como o
  * botão dos comentários: antes dele, a tela da publicação não existe.
+ *
+ * Desde 03/11/2026, a pedido do dono, a tela da publicação ganha o autor no
+ * topo (o `withAuthor`, com o `FanClubPostAuthor`), no estilo do X, e o
+ * horário sobe para a linha dele: o relativo no primeiro dia ("3 h") e, depois,
+ * a data ("2 de nov"). A bandeira passa para a linha do autor, como na do nome
+ * do fã-clube na Início. A página e a Início seguem como antes.
  */
 export function FanClubPostCard({
   post,
@@ -143,6 +158,8 @@ export function FanClubPostCard({
   onShare,
   onReport,
   onOpenClub,
+  withAuthor = false,
+  onOpenAuthor,
   onOpenComments,
   commentsHint,
   onOpenPost,
@@ -151,10 +168,15 @@ export function FanClubPostCard({
   testID,
 }: FanClubPostCardProps) {
   const feed = variant === 'feed';
-  // Na Início, a bandeira fica na linha do nome; sem o nome, na do texto.
+  // A bandeira fica na linha do nome do fã-clube (Início) ou na do autor (tela
+  // da publicação); sem nenhuma delas, na do texto.
   const clubRow = feed && onOpenClub !== undefined;
+  const topRow = clubRow || withAuthor;
   const image = feed ? (post.thumb ?? post.photo) : (post.photo ?? post.thumb);
-  const when = formatRelativeAgoSpoken(post.publishedAt, now);
+  // O horário que o leitor ouve segue o que a tela mostra: o do topo do autor ou o de baixo do texto.
+  const when = withAuthor
+    ? formatPostTimeSpoken(post.publishedAt, now)
+    : formatRelativeAgoSpoken(post.publishedAt, now);
   // Os botões dizem de qual publicação são: na página, todos são do mesmo fã-clube.
   const excerpt = excerptOf(post.text);
   // O texto do fã já pode terminar em "?" ou "!": o ponto entra só quando falta.
@@ -232,10 +254,7 @@ export function FanClubPostCard({
   const body = (
     <>
       <View
-        style={[
-          feed ? styles.feedText : undefined,
-          canReport && !clubRow && styles.reportReserve,
-        ]}
+        style={[feed ? styles.feedText : undefined, canReport && !topRow && styles.reportReserve]}
       >
         <MentionText
           text={post.text}
@@ -244,9 +263,11 @@ export function FanClubPostCard({
           numberOfLines={feed ? FEED_TEXT_LINES : undefined}
           testID={testID ? `${testID}-text` : undefined}
         />
-        <Text variant="caption" color={colors.textMuted} style={styles.when}>
-          {formatRelativeAgo(post.publishedAt, now)}
-        </Text>
+        {withAuthor ? null : (
+          <Text variant="caption" color={colors.textMuted} style={styles.when}>
+            {formatRelativeAgo(post.publishedAt, now)}
+          </Text>
+        )}
       </View>
       {image ? (
         <RemoteImage
@@ -271,6 +292,15 @@ export function FanClubPostCard({
         >
           <ClubName name={post.clubName} official={post.clubOfficial} />
         </PressableScale>
+      ) : null}
+      {withAuthor ? (
+        <FanClubPostAuthor
+          post={post}
+          now={now}
+          onOpen={onOpenAuthor ? () => onOpenAuthor(post) : undefined}
+          style={canReport && styles.reportReserve}
+          testID={testID ? `${testID}-author` : undefined}
+        />
       ) : null}
       {openable ? (
         <PressableScale
@@ -331,7 +361,7 @@ export function FanClubPostCard({
           onPress={() => onReport(post)}
           accessibilityLabel={t('fanClub.post.reportLabel', { excerpt })}
           accessibilityHint={t('fanClub.post.reportHint')}
-          style={[styles.report, clubRow ? styles.reportOnClub : styles.reportOnText]}
+          style={[styles.report, topRow ? styles.reportOnRow : styles.reportOnText]}
           testID={testID ? `${testID}-report` : undefined}
         >
           <Icon icon={Flag} size={REPORT_ICON_SIZE} color={colors.textMuted} />
@@ -388,8 +418,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  // Na Início, no meio da linha do nome (que tem a altura do alvo).
-  reportOnClub: {
+  // No meio da linha do nome do fã-clube ou do autor (que têm a altura do alvo).
+  reportOnRow: {
     top: spacing.cardPadding,
   },
   // Na página, o ícone na altura da primeira linha do texto.

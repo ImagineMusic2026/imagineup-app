@@ -30,7 +30,12 @@ import {
   type CommentComposerHandle,
   type ComposerSelection,
 } from '@/domains/posts';
-import { useFanIdentity, useSuspension, useWatchMyProfile } from '@/domains/profile';
+import {
+  fanProfileHref,
+  useFanIdentity,
+  useSuspension,
+  useWatchMyProfile,
+} from '@/domains/profile';
 import { useAnnounceWhen } from '@/hooks/use-announce-when';
 import { useIsOnline } from '@/hooks/use-is-online';
 import { useKeyboardVisible } from '@/hooks/use-keyboard-visible';
@@ -98,9 +103,12 @@ const REFUSAL_CONTACT: Record<FanClubCommentRefusal['type'], TranslationKey | nu
  * "/fa-clube/publicacao/[publicacaoId]" (seção 37, 37.9, item 3; a etapa 6 de
  * 37.13): a tela da publicação, na pilha raiz, por cima das abas, no molde do
  * `post/[postId]`: o card da publicação no cabeçalho e os comentários,
- * com o campo preso ao pé. Inerte antes da abertura, como a página: sem a
- * resposta da trava, diz que o fã-clube não está disponível e não chama mais
- * nada. No 404: "Esta publicação não está mais disponível."
+ * com o campo preso ao pé. Desde 03/11/2026, o card abre pelo autor, no
+ * estilo do X (o `withAuthor`): o avatar, o nome, o selo do oficial, o @ e o
+ * horário numa linha, que abre o perfil público dele. Inerte antes da
+ * abertura, como a página: sem a resposta da trava, diz que o fã-clube não
+ * está disponível e não chama mais nada. No 404: "Esta publicação não está
+ * mais disponível."
  */
 export function FanClubPostScreen() {
   const params = useLocalSearchParams<{ publicacaoId: string }>();
@@ -566,6 +574,13 @@ function PostContent({ post, updatedAt }: { post: FanClubPostDetails; updatedAt:
           post={current}
           now={now}
           variant="page"
+          withAuthor
+          // O próprio autor não abre o próprio perfil daqui, como nos comentários.
+          onOpenAuthor={
+            post.author.uid === uid
+              ? undefined
+              : (item) => router.push(fanProfileHref(item.author.uid))
+          }
           canReport={!post.isOwner}
           canReact={canComment}
           onShare={() =>

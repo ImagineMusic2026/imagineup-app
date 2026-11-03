@@ -488,6 +488,83 @@ describe('o corpo do card abre a publicação (pedido do dono de 01/11/2026)', (
   });
 });
 
+describe('o autor no topo do card, no estilo do X (pedido do dono de 03/11/2026)', () => {
+  const HOUR = 3_600_000;
+  const hoursAgo = (hours: number) => new Date(Date.now() - hours * HOUR).toISOString();
+
+  it('o avatar, o nome, o @ e o " · 3 h" numa linha, que abre o perfil do gestor', async () => {
+    mocked.fetchFanClubPost.mockResolvedValue(details({ publishedAt: hoursAgo(3) }));
+    const view = await openPost();
+
+    const card = screen.getByTestId('fan-club-post-card');
+    const author = within(card).getByRole('link', { name: 'Thalita Santos, @thalitasan' });
+    expect(author).toHaveProp('accessibilityHint', 'Abre o perfil de Thalita Santos');
+    expect(within(author).getByText('@thalitasan')).toBeTruthy();
+    expect(within(author).getByText('· 3 h')).toBeTruthy();
+    // O horário subiu para o topo: embaixo do texto não fica o "há 3 h" de antes.
+    expect(within(card).queryByText('há 3 h')).not.toBeOnTheScreen();
+    expect(screen.getByTestId('fan-club-post-card-body').props.accessibilityLabel).toBe(
+      'Quem vai no show do @nenho? Publicado há 3 horas.',
+    );
+    // A bandeira continua no canto, depois do autor e do corpo para o leitor.
+    expect(within(card).getByLabelText(/^Denunciar a publicação/u)).toBeTruthy();
+
+    fireEvent.press(author);
+    expect(await screen.findByText('fan')).toBeTruthy();
+    expect(view.getPathname()).toBe('/fa/fa-thalita');
+  });
+
+  it('passadas 24 h, o horário vira a data, como "2 de nov"', async () => {
+    mocked.fetchFanClubPost.mockResolvedValue(details({ publishedAt: hoursAgo(26) }));
+    await openPost();
+
+    const author = screen.getByTestId('fan-club-post-card-author');
+    const time = within(author).getByTestId('fan-club-post-card-author-time');
+    expect(time.props.children).toMatch(/^· \d{1,2} de \p{L}{3}$/u);
+    expect(screen.getByTestId('fan-club-post-card-body').props.accessibilityLabel).toMatch(
+      /Publicado \d{1,2} de \p{L}+\.$/u,
+    );
+  });
+
+  it('no fã-clube oficial, o selo vai ao lado do nome do gestor', async () => {
+    mocked.fetchFanClubPost.mockResolvedValue(details({ clubOfficial: true }));
+    await openPost();
+
+    const author = screen.getByRole('link', {
+      name: 'Thalita Santos, @thalitasan, gestor do fã-clube oficial',
+    });
+    expect(
+      within(author).getByTestId('fan-club-post-card-author-official', {
+        includeHiddenElements: true,
+      }),
+    ).toBeTruthy();
+  });
+
+  it('na própria publicação, o autor só se lê, sem abrir o próprio perfil', async () => {
+    mocked.fetchFanClubPost.mockResolvedValue(details({ author: CAMILA, isOwner: true }));
+    await openPost();
+
+    const author = screen.getByTestId('fan-club-post-card-author');
+    expect(author).toHaveProp('accessibilityLabel', 'Camila Ribeiro, @camilarib');
+    expect(author.props.accessibilityRole).toBeUndefined();
+    expect(author.props.onPress).toBeUndefined();
+  });
+
+  it('a página do fã-clube segue sem o autor no topo, com a data embaixo do texto', async () => {
+    renderRouter(appTree, { initialUrl: '/fa-clube/fc-1' });
+    const body = await screen.findByTestId('fan-club-post-p1-body');
+    expect(within(body).getByText('19 out')).toBeTruthy();
+    expect(screen.queryByTestId('fan-club-post-p1-author')).not.toBeOnTheScreen();
+  });
+
+  it('a Início segue sem o autor no topo, com o nome do fã-clube', async () => {
+    mocked.fetchFanClubFeed.mockResolvedValue({ items: [post('p1')], nextCursor: null });
+    renderRouter(appTree, { initialUrl: '/' });
+    expect(await screen.findByTestId('home-fan-club-post-p1-club')).toBeTruthy();
+    expect(screen.queryByTestId('home-fan-club-post-p1-author')).not.toBeOnTheScreen();
+  });
+});
+
 // --- A lista -----------------------------------------------------------------------------
 
 describe('os comentários e as respostas (37.9, itens 3 e 4)', () => {

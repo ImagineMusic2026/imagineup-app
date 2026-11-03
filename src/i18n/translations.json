@@ -1514,7 +1514,8 @@
       "shareLabel": "Compartilhar o fã-clube {{name}}. Publicação: {{excerpt}}",
       "reportLabel": "Denunciar a publicação: {{excerpt}}",
       "reportHint": "Abre os motivos da denúncia",
-      "openClubHint": "Abre o fã-clube"
+      "openClubHint": "Abre o fã-clube",
+      "authorOfficial": "gestor do fã-clube oficial"
     },
     "report": {
       "title": "Denunciar publicação",
