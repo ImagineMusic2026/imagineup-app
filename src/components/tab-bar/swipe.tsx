@@ -13,6 +13,7 @@ import { StyleSheet, useWindowDimensions } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
   cancelAnimation,
+  ReduceMotion,
   useAnimatedStyle,
   useSharedValue,
   withTiming,
@@ -330,10 +331,9 @@ function TabSwipeArea({
       pager.start.set(start);
       pager.target.set(Math.round(start));
       // Com reduzir movimento, a página também acompanha o dedo: é o dedo que a
-      // move, como nos pagers do sistema. Só a volta ao soltar e o fade do toque
-      // saem secos, porque o Reanimated os termina na hora. Parada, com a troca
-      // seca depois de o dedo andar, ela parecia travada no aparelho do dono,
-      // que tinha a escala de transição do Android em 0.
+      // move, como nos pagers do sistema. Parada, com a troca seca depois de o
+      // dedo andar, ela parecia travada no aparelho do dono, que tinha a escala
+      // de transição do Android em 0.
       pager.phase.set(DRAGGING);
     })
     .onUpdate((event) => {
@@ -349,9 +349,19 @@ function TabSwipeArea({
       const from = pager.position.get();
       // O dedo para a esquerda leva a página para a aba de índice maior.
       const towardTarget = (to - from) * -event.velocityX > 0 ? Math.abs(event.velocityX) : 0;
-      const duration = settleDuration(Math.abs(to - from) * width, towardTarget);
+      // A volta ao soltar anima também com reduzir movimento, a única exceção do
+      // app (decisão do dono de 03/11/2026): ela continua o gesto do fã, como o
+      // pager do sistema e a rolagem com impulso, que não seguem a escala de
+      // animação do Android. Seca, a página pulava até o fim num quadro ao
+      // soltar, e o Instagram, no mesmo aparelho, desacelerava por 300 a 700 ms
+      // (vídeo do dono de 03/11/2026).
+      const settle = {
+        duration: settleDuration(Math.abs(to - from) * width, towardTarget),
+        easing: settleEasing,
+        reduceMotion: ReduceMotion.Never,
+      };
       pager.position.set(
-        withTiming(to, { duration, easing: settleEasing }, (done) => {
+        withTiming(to, settle, (done) => {
           if (!done || pager.phase.get() !== SETTLING) return;
           if (pager.focused.get() === to) {
             pager.phase.set(IDLE);
