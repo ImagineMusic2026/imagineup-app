@@ -11,9 +11,11 @@ import {
 import { EmptyState } from '@/components/empty-state';
 import { SectionHeader } from '@/components/section-header';
 import { useFanCentralsQuery } from '@/domains/artists';
+import { fanProfileHref } from '@/domains/profile';
 import { useAnnounceWhen } from '@/hooks/use-announce-when';
 import { useNow } from '@/hooks/use-now';
 import { t } from '@/i18n';
+import { useSessionStore } from '@/stores/session';
 import { spacing } from '@/theme';
 
 import { useFanClubFeedQuery, useFanClubGate, useShareFanClub } from '../queries';
@@ -33,7 +35,8 @@ const SCROLL_THROTTLE = 64;
  * seguinte chega perto do fim). Só depois da trava e só com publicação:
  * carregando, sem nada ou com a consulta falhando, nada aparece, e o mural
  * continua. Cada cartão tem o nome do fã-clube, com o selo do oficial (que
- * abre a página), o Compartilhar e o Denunciar (a mesma sheet da página),
+ * abre a página), o autor embaixo dele (desde 03/11/2026, que abre o perfil
+ * público), o Compartilhar e o Denunciar (a mesma sheet da página),
  * como a App Store 1.2 e o Google Play pedem junto do conteúdo. Desde a Fase
  * 2 (seção 37, 37.9), a reação e o total dos comentários antes deles: a
  * fileira quebra em duas linhas quando não cabe, e a dos emojis abre dentro
@@ -60,6 +63,7 @@ function FeedCarousel({
 }) {
   const { width } = useWindowDimensions();
   const now = useNow();
+  const uid = useSessionStore((state) => state.user?.uid ?? null);
   const share = useShareFanClub();
   const centrals = useFanCentralsQuery();
   useAnnounceWhen(feed.isFetchNextPageError && !feed.isFetching, t('fanClub.feed.moreError'));
@@ -109,6 +113,12 @@ function FeedCarousel({
             }
             onReport={openReport}
             onOpenClub={(post) => router.push(fanClubHref(post.clubId))}
+            // O perfil público empilha por cima das abas; o próprio autor não abre o dele.
+            onOpenAuthor={
+              item.author.uid === uid
+                ? undefined
+                : (post) => router.push(fanProfileHref(post.author.uid))
+            }
             // A tela da publicação empilha por cima das abas (37.9, item 3).
             onOpenComments={(post) => router.push(fanClubPostHref(post.id))}
             onOpenPost={(post) => router.push(fanClubPostHref(post.id))}

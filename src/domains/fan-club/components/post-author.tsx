@@ -17,7 +17,12 @@ import type { FanClubPerson, FanClubPost } from '../types';
 import { OfficialBadge } from './official-badge';
 
 export interface FanClubPostAuthorProps {
-  post: Pick<FanClubPost, 'author' | 'clubOfficial' | 'publishedAt'>;
+  post: Pick<FanClubPost, 'author' | 'publishedAt'>;
+  /**
+   * O selo do fã-clube oficial ao lado do nome (34.23). Na Início, fica só ao
+   * lado do nome do fã-clube, logo em cima, e aqui vem desligado.
+   */
+  official: boolean;
   /** Relógio da tela (`useNow`), para o "3 h" andar sozinho. */
   now: Date;
   /** Abre o perfil público do autor; sem ele (a própria publicação), o autor só se lê. */
@@ -37,30 +42,37 @@ function authorName({ name, username }: FanClubPerson): string {
  * horário fica no rótulo do corpo ("Publicado há 3 horas"), que vem logo
  * depois, para o leitor não ouvir duas vezes.
  */
-export function postAuthorLabel(post: Pick<FanClubPost, 'author' | 'clubOfficial'>): string {
-  const { name, username } = post.author;
-  const parts = [authorName(post.author)];
-  if (name && username) parts.push(`@${username}`);
-  if (post.clubOfficial) parts.push(t('fanClub.post.authorOfficial'));
+export function postAuthorLabel(author: FanClubPerson, official: boolean): string {
+  const parts = [authorName(author)];
+  if (author.name && author.username) parts.push(`@${author.username}`);
+  if (official) parts.push(t('fanClub.post.authorOfficial'));
   return parts.join(', ');
 }
 
 /**
- * O topo da publicação na tela dela (03/11/2026, a pedido do dono), no estilo
- * do X: o avatar à esquerda e, ao lado, numa linha só, o nome em negrito, o
- * selo do fã-clube oficial (34.23; o gestor é fã, e a roseta de verificado é
- * só do artista), o @ em cor secundária e " · 3 h" (`formatPostTime`: o
- * relativo no primeiro dia, depois a data). No molde do autor do comentário
- * logo abaixo (`FanClubCommentRow`), com o avatar do autor do post do Mural:
- * um pressável só, que abre o perfil público. Com a fonte grande, o nome não
- * corta, e o @ e o horário descem para baixo dele.
+ * O topo do card da publicação (03/11/2026, a pedido do dono, na página, na
+ * Início e na tela da publicação), no estilo do X: o avatar à esquerda e, ao
+ * lado, numa linha só, o nome em negrito, o selo do fã-clube oficial (34.23;
+ * o gestor é fã, e a roseta de verificado é só do artista), o @ em cor
+ * secundária e " · 3 h" (`formatPostTime`: o relativo no primeiro dia, depois
+ * a data). No molde do autor do comentário (`FanClubCommentRow`), com o
+ * avatar do autor do post do Mural: um pressável só, que abre o perfil
+ * público. Com a fonte grande, o nome não corta, e o @ e o horário descem
+ * para baixo dele.
  */
-export function FanClubPostAuthor({ post, now, onOpen, style, testID }: FanClubPostAuthorProps) {
+export function FanClubPostAuthor({
+  post,
+  now,
+  official,
+  onOpen,
+  style,
+  testID,
+}: FanClubPostAuthorProps) {
   const largeText = isLargeText(useWindowDimensions().fontScale);
   const { author } = post;
   const name = authorName(author);
   const lines = largeText ? undefined : 1;
-  const label = postAuthorLabel(post);
+  const label = postAuthorLabel(author, official);
 
   const content = (
     <>
@@ -77,9 +89,7 @@ export function FanClubPostAuthor({ post, now, onOpen, style, testID }: FanClubP
         <Text variant="label" numberOfLines={lines} style={styles.shrink}>
           {name}
         </Text>
-        {post.clubOfficial ? (
-          <OfficialBadge testID={testID ? `${testID}-official` : undefined} />
-        ) : null}
+        {official ? <OfficialBadge testID={testID ? `${testID}-official` : undefined} /> : null}
         {author.name && author.username ? (
           <Text
             variant="caption"

@@ -27,6 +27,7 @@ import { t, type TranslationKey, type TranslationParams } from '@/i18n';
 import { ApiError } from '@/services/api/errors';
 import { actionRefusal } from '@/services/api/refusal';
 import { haptics } from '@/services/haptics';
+import { useSessionStore } from '@/stores/session';
 import { colors, layout, radii, spacing } from '@/theme';
 
 import { FanClubPostCard } from '../components/club-post-card';
@@ -176,6 +177,7 @@ function ClubContent({
   const insets = useSafeAreaInsets();
   const navigation = useNavigationContainerRef();
   const now = useNow();
+  const uid = useSessionStore((state) => state.user?.uid ?? null);
   const share = useShareFanClub();
   // A falha das publicações só aparece na lista: o leitor ouve também.
   const focused = useIsFocused();
@@ -184,6 +186,10 @@ function ClubContent({
   useAnnounceWhen(settled && posts.isFetchNextPageError, t('fanClub.page.postsMoreError'));
   const shareClub = (): void =>
     share({ id: club.id, name: club.name, artistName: club.artist.name });
+  // O perfil público empilha por cima da página, como o "feito por @gestor".
+  const openAuthor = (post: FanClubPost): void => {
+    router.push(fanProfileHref(post.author.uid));
+  };
 
   return (
     <Screen
@@ -238,6 +244,8 @@ function ClubContent({
                 params: { publicacaoId: post.id },
               })
             }
+            // O autor abre o perfil público, menos o próprio (como nos comentários).
+            onOpenAuthor={item.author.uid === uid ? undefined : openAuthor}
             // A tela da publicação empilha por cima da página (37.9, item 3).
             onOpenComments={(post) => router.push(fanClubPostHref(post.id))}
             onOpenPost={(post) => router.push(fanClubPostHref(post.id))}
@@ -246,7 +254,7 @@ function ClubContent({
             testID={`fan-club-post-${item.id}`}
           />
         )}
-        extraData={{ now, club }}
+        extraData={{ now, club, uid }}
         ItemSeparatorComponent={ItemGap}
         ListHeaderComponent={<ClubHeader club={club} />}
         ListEmptyComponent={<PostsPlaceholder query={posts} isOwner={club.isOwner} />}
