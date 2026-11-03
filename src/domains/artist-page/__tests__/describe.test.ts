@@ -5,7 +5,6 @@ import {
   artistHeadingLabel,
   compactSpoken,
   postCellLabel,
-  splitCoverName,
   statLabel,
   statValue,
 } from '../describe';
@@ -64,15 +63,6 @@ describe('números da central', () => {
 });
 
 describe('nome da capa', () => {
-  it.each([
-    ['Netto Brito', 'Netto\nBrito'],
-    ['Nenho', 'Nenho'],
-    ['Juninho Moraes Filho', 'Juninho\nMoraes Filho'],
-    ['  Rock Salles ', 'Rock\nSalles'],
-  ])('"%s" quebra no primeiro espaço', (name, shown) => {
-    expect(splitCoverName(name)).toBe(shown);
-  });
-
   it('o título lido junta o selo e a gestão oficial', () => {
     expect(
       artistHeadingLabel({ name: 'Netto Brito', verified: true, managedByImagine: true }),

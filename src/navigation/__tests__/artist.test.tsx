@@ -9,11 +9,14 @@ import {
   screen,
   testRouter,
   waitFor,
+  within,
 } from 'expo-router/testing-library';
 import { AccessibilityInfo, Alert, Share, Text } from 'react-native';
 
 import ArtistRoute from '@/app/(tabs)/(inicio,explorar,ranking,perfil)/artista/[artistaId]';
 import LeaveCentralRoute from '@/app/sair-da-central/[artistaId]';
+import { BrandBars } from '@/components/brand-bars';
+import { VerifiedBadge } from '@/components/verified-badge';
 import {
   artistKeys,
   type FanCentral,
@@ -194,6 +197,19 @@ describe('página do artista (1d)', () => {
     expect(screen.getByLabelText('1.284 posts')).toBeTruthy();
     expect(screen.getByLabelText('8,4 milhões de pontos da central')).toBeTruthy();
     expect(await screen.findByLabelText('Você está na central de Netto Brito')).toBeTruthy();
+  });
+
+  it('o nome da capa vai inteiro, com o selo e as barras colados à última palavra', async () => {
+    await openArtist('nettobrito');
+
+    const heading = screen.getByTestId('artist-heading');
+    // Numa linha só quando cabe: sem a quebra forçada no primeiro espaço (pedido do dono).
+    const name = within(heading).getByText(/^Netto Brito/, hidden);
+    expect(name).toHaveTextContent('Netto Brito\u2060', { exact: true });
+    // O selo e as barras vão dentro do texto, depois do word joiner, que não deixa
+    // a última palavra numa linha e o selo sozinho na de baixo.
+    expect(within(name).UNSAFE_getByType(VerifiedBadge)).toBeTruthy();
+    expect(within(name).UNSAFE_getByType(BrandBars)).toBeTruthy();
   });
 
   it('as abas são Mural, Missões, Agenda e Ranking, com o Mural escolhido; Playlists não existe', async () => {

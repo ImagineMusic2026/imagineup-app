@@ -18,14 +18,17 @@ import { t } from '@/i18n';
 import { colors, motion, spacing, textShadows, typography } from '@/theme';
 
 import { COVER_PARALLAX } from '../consts';
-import { artistHeadingLabel, splitCoverName } from '../describe';
+import { artistHeadingLabel } from '../describe';
 
 // Logo da pílula "gestão oficial": 9 de altura, um pouco apagado (.9).
 const PILL_LOGO_HEIGHT = 9;
 const PILL_LOGO_OPACITY = 0.9;
-// O selo e as barras encostam no pé da última linha do nome.
-const BADGE_BOTTOM = 7;
-const BARS_BOTTOM = spacing.tileGap;
+// O selo e as barras vão dentro do texto, logo depois da última palavra: a
+// peça pousa na linha de base do nome, e as barras sobem 2 acima do pé do selo.
+const BARS_LIFT = 2;
+// Sem largura, e sem quebra de linha dos dois lados: a última palavra e o
+// selo descem juntos para a linha de baixo quando não cabem.
+const WORD_JOINER = '\u2060';
 // Esqueleto do nome enquanto a central chega.
 const NAME_SKELETON_WIDTH = 180;
 // O nome entra em fade no lugar do esqueleto, e as barras da marca acendem
@@ -69,7 +72,12 @@ function ManagedPill() {
 /**
  * Capa da página do artista (1d): a foto (placeholder de marca pelo id sem
  * ela), o véu escuro, as listras e, no pé, a pílula "gestão oficial" e o nome
- * com o selo e as barras da marca. A foto rola na metade da velocidade da
+ * com o selo e as barras da marca. O nome fica numa linha quando cabe e, longo,
+ * quebra entre as palavras, sem limite de linhas nem fonte menor (pedido do
+ * dono de 03/11/2026; o protótipo quebrava sempre no primeiro espaço). O selo
+ * e as barras vão dentro do texto, colados à última palavra: ao lado do nome,
+ * a caixa do texto quebrado ocupava a largura toda, e as barras iam para a
+ * borda, longe dele. A foto rola na metade da velocidade da
  * página e, puxada para baixo no iOS, estica presa no topo; com reduzir
  * movimento, fica parada. Os botões ficam no header compacto, por cima; com
  * a fonte grande, a capa cresce para o nome não subir para baixo deles.
@@ -134,22 +142,20 @@ export function ArtistCover({
               accessibilityRole="header"
               accessibilityLabel={artistHeadingLabel(artist)}
               testID="artist-heading"
-              style={styles.nameRow}
             >
-              <Text variant="displayLg" style={[styles.name, textShadows.hero]}>
-                {splitCoverName(artist.name)}
-              </Text>
-              {artist.verified ? (
-                <View style={styles.badge}>
-                  <VerifiedBadge size={20} />
+              <Text variant="displayLg" style={textShadows.hero}>
+                {artist.name}
+                {WORD_JOINER}
+                <View style={styles.marks}>
+                  {artist.verified ? <VerifiedBadge size={20} /> : null}
+                  <BrandBars
+                    size="title"
+                    lightUp
+                    lightUpDelay={BARS_LIGHT_UP_DELAY}
+                    style={styles.bars}
+                  />
                 </View>
-              ) : null}
-              <BrandBars
-                size="title"
-                lightUp
-                lightUpDelay={BARS_LIGHT_UP_DELAY}
-                style={styles.bars}
-              />
+              </Text>
             </View>
           </Animated.View>
         ) : (
@@ -189,19 +195,14 @@ const styles = StyleSheet.create({
     paddingRight: spacing.listGap,
     marginBottom: spacing.listGap,
   },
-  nameRow: {
+  marks: {
     flexDirection: 'row',
     alignItems: 'flex-end',
     gap: spacing.tileGap,
-  },
-  name: {
-    flexShrink: 1,
-  },
-  badge: {
-    marginBottom: BADGE_BOTTOM,
+    paddingLeft: spacing.tileGap,
   },
   bars: {
-    marginBottom: BARS_BOTTOM,
+    marginBottom: BARS_LIFT,
   },
   nameSkeleton: {
     paddingBottom: spacing.xs,

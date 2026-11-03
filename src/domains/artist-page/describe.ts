@@ -103,14 +103,3 @@ export function postCellLabel(post: Post, now: Date): string {
   const noText = post.text ? undefined : POST_LABEL_NO_TEXT[post.kind];
   return noText ? t(noText, params) : t(POST_LABEL[post.kind], { ...params, text: post.text });
 }
-
-/**
- * O nome da capa em duas linhas a partir do primeiro espaço ("Netto" /
- * "Brito"), como no protótipo; com uma palavra só ("Nenho"), uma linha.
- */
-export function splitCoverName(name: string): string {
-  const trimmed = name.trim();
-  const space = trimmed.indexOf(' ');
-  if (space < 0) return trimmed;
-  return `${trimmed.slice(0, space)}\n${trimmed.slice(space + 1)}`;
-}
