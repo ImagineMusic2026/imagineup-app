@@ -11,6 +11,11 @@ import { motion } from '@/theme';
 
 jest.mock('@/services/haptics', () => ({ haptics: { trigger: jest.fn() } }));
 
+let mockReducedMotion = false;
+jest.mock('@/hooks/use-prefers-reduced-motion', () => ({
+  usePrefersReducedMotion: () => mockReducedMotion,
+}));
+
 const label = (text: string) =>
   function Label() {
     return <Text>{text}</Text>;
@@ -90,6 +95,7 @@ async function enterTabs() {
 }
 
 afterEach(() => {
+  mockReducedMotion = false;
   jest.restoreAllMocks();
   jest.mocked(haptics.trigger).mockClear();
 });
@@ -172,6 +178,27 @@ describe('deslizar entre as abas', () => {
 
     await swipe('(ranking)', -FAR);
     await waitFor(() => expect(view.getPathname()).toBe('/perfil'));
+  });
+
+  it('com reduzir movimento, a vizinha também monta por trás, à mostra para o arraste, e o deslize troca de aba', async () => {
+    // A escala de transição do Android em 0 liga reduzir movimento: no aparelho
+    // do dono, a página ficava parada e a troca saía seca depois do dedo andar.
+    mockReducedMotion = true;
+    const view = renderRouter(appTree, { initialUrl: '/' });
+    await enterTabs();
+
+    // O navegador não esconde a aba fora de foco: com `display: none`, ela
+    // entraria em branco no arraste.
+    let node = screen.getByText('explore', HIDDEN).parent;
+    let display: unknown;
+    while (node && display === undefined) {
+      display = (StyleSheet.flatten(node.props.style) as ViewStyle | undefined)?.display;
+      node = node.parent;
+    }
+    expect(display).toBe('flex');
+
+    await swipe('(inicio)', -FAR);
+    await waitFor(() => expect(view.getPathname()).toBe('/explorar'));
   });
 
   it('a aba que abre em foco já nasce à vista, sem o fade na montagem', () => {

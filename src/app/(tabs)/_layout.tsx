@@ -6,7 +6,6 @@ import Animated from 'react-native-reanimated';
 import { Icon } from '@/components/icon';
 import { SwipeTabBar, useTabSwipe } from '@/components/tab-bar';
 import { useQuickActions } from '@/domains/quick-actions';
-import { usePrefersReducedMotion } from '@/hooks/use-prefers-reduced-motion';
 import { useStackFade } from '@/hooks/use-stack-fade';
 import { t } from '@/i18n';
 import { colors } from '@/theme';
@@ -24,7 +23,6 @@ import { colors } from '@/theme';
  * fade, como as telas de conta e a escolha de artistas, que saem para ele.
  */
 export default function TabsLayout() {
-  const reducedMotion = usePrefersReducedMotion();
   const quickActions = useQuickActions();
   const fade = useStackFade('tabs');
   const swipe = useTabSwipe(fade.entrance);
@@ -40,11 +38,13 @@ export default function TabsLayout() {
         <Tabs
           // As abas fora de foco ficam montadas por trás, para o arraste mostrar a
           // vizinha. Com o `animation` ligado, o navegador não as esconde; com
-          // reduzir movimento, esconde, e a troca sai seca.
+          // `none`, esconderia, e a vizinha entraria no arraste em branco. Com
+          // reduzir movimento também: o fade do toque sai seco pelo Reanimated.
+          // O `fade` daqui não desenha nada (`sceneStyleInterpolator`).
           detachInactiveScreens={false}
           screenOptions={{
             headerShown: false,
-            animation: reducedMotion ? 'none' : 'fade',
+            animation: 'fade',
             sceneStyleInterpolator: swipe.sceneStyleInterpolator,
             // O fundo é da página de cada aba, que anda com o dedo.
             sceneStyle: styles.scene,

@@ -21,7 +21,6 @@ import Animated, {
 import { scheduleOnRN, scheduleOnUI } from 'react-native-worklets';
 
 import { useHaptics } from '@/hooks/use-haptics';
-import { usePrefersReducedMotion } from '@/hooks/use-prefers-reduced-motion';
 import type { StackEntrance } from '@/hooks/use-stack-fade';
 import { colors, motion } from '@/theme';
 
@@ -274,7 +273,6 @@ function TabSwipeArea({
   children,
 }: TabSwipeAreaProps) {
   const { width } = useWindowDimensions();
-  const reducedMotion = usePrefersReducedMotion();
   const playHaptic = useHaptics();
   const index = useNavigationState((state) => state.routes.findIndex((r) => r.key === route.key));
   const last = useNavigationState((state) => state.routes.length - 1);
@@ -302,14 +300,14 @@ function TabSwipeArea({
   }, [mountedRef, route.name]);
 
   useEffect(() => {
-    if (!entered || !focused || !atRoot || reducedMotion) return undefined;
+    if (!entered || !focused || !atRoot) return undefined;
     const timer = setTimeout(() => {
       for (const name of [previous, next]) {
         if (name !== null && !mountedRef.current.has(name)) navigation.preload(name);
       }
     }, PRELOAD_DELAY_MS);
     return () => clearTimeout(timer);
-  }, [entered, focused, atRoot, reducedMotion, previous, next, navigation, mountedRef]);
+  }, [entered, focused, atRoot, previous, next, navigation, mountedRef]);
 
   const goTo = (page: number): void => {
     const state = navigation.getState();
@@ -331,11 +329,14 @@ function TabSwipeArea({
       const start = pager.position.get();
       pager.start.set(start);
       pager.target.set(Math.round(start));
-      // Com reduzir movimento, a tela fica parada e a troca sai seca, como no toque.
-      if (!reducedMotion) pager.phase.set(DRAGGING);
+      // Com reduzir movimento, a página também acompanha o dedo: é o dedo que a
+      // move, como nos pagers do sistema. Só a volta ao soltar e o fade do toque
+      // saem secos, porque o Reanimated os termina na hora. Parada, com a troca
+      // seca depois de o dedo andar, ela parecia travada no aparelho do dono,
+      // que tinha a escala de transição do Android em 0.
+      pager.phase.set(DRAGGING);
     })
     .onUpdate((event) => {
-      if (reducedMotion) return;
       pager.position.set(dragPosition(pager.start.get(), event.translationX, width, last));
     })
     .onEnd((event, success) => {
@@ -344,11 +345,6 @@ function TabSwipeArea({
         ? settlePage(start, event.translationX, event.velocityX, width, last)
         : Math.round(start);
       pager.target.set(to);
-      if (reducedMotion) {
-        pager.position.set(to);
-        scheduleOnRN(goTo, to);
-        return;
-      }
       pager.phase.set(SETTLING);
       const from = pager.position.get();
       // O dedo para a esquerda leva a página para a aba de índice maior.
