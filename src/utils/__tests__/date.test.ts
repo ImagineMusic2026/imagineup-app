@@ -5,6 +5,8 @@ import {
   formatDayMonth,
   formatLongDate,
   formatMonthName,
+  formatPostTime,
+  formatPostTimeSpoken,
   formatRelativeAgo,
   formatRelativeAgoSpoken,
   formatRelativeShort,
@@ -77,6 +79,46 @@ describe('datas em pt-BR', () => {
   ])('meta de autor com %i minutos de diferença', (minutesAgo, expected) => {
     const posted = new Date(JUNE_21.getTime() - minutesAgo * MINUTE);
     expect(formatRelativeAgo(posted, JUNE_21)).toBe(expected);
+  });
+
+  it.each([
+    [0, 'agora'],
+    [5, '5 min'],
+    [3 * 60, '3 h'],
+    [23 * 60 + 59, '23 h'],
+    [24 * 60, '20 de jun'],
+    [60 * 24 * 3, '18 de jun'],
+    [60 * 24 * 10, '11 de jun'],
+  ])('o horário da publicação, no estilo do X, com %i minutos', (minutesAgo, expected) => {
+    const posted = new Date(JUNE_21.getTime() - minutesAgo * MINUTE);
+    expect(formatPostTime(posted, JUNE_21)).toBe(expected);
+  });
+
+  it('o horário da publicação de outro ano leva o ano, e o "2 d" do comentário segue igual', () => {
+    expect(formatPostTime(new Date(2025, 10, 2, 12), JUNE_21)).toBe('2 de nov de 2025');
+    expect(formatPostTime(new Date(2026, 0, 2, 12), JUNE_21)).toBe('2 de jan');
+    // Na mesma tela, o comentário de 2 dias diz "2 d" e a publicação de 2 dias, a data.
+    const twoDays = new Date(JUNE_21.getTime() - 60 * 24 * 2 * MINUTE);
+    expect(formatRelativeShort(twoDays, JUNE_21)).toBe('2 d');
+    expect(formatPostTime(twoDays, JUNE_21)).toBe('19 de jun');
+  });
+
+  it.each([
+    [0, 'agora'],
+    [1, 'há 1 minuto'],
+    [3 * 60, 'há 3 horas'],
+    [24 * 60, '20 de junho'],
+    [60 * 24 * 10, '11 de junho'],
+  ])(
+    'o horário da publicação por extenso, para o leitor, com %i minutos',
+    (minutesAgo, expected) => {
+      const posted = new Date(JUNE_21.getTime() - minutesAgo * MINUTE);
+      expect(formatPostTimeSpoken(posted, JUNE_21)).toBe(expected);
+    },
+  );
+
+  it('o horário da publicação de outro ano, por extenso, leva o ano', () => {
+    expect(formatPostTimeSpoken(new Date(2025, 10, 2, 12), JUNE_21)).toBe('2 de novembro de 2025');
   });
 
   it.each([
@@ -162,5 +204,7 @@ describe('datas em pt-BR', () => {
     expect(formatShowTime('não é data')).toBe('');
     expect(formatShowTimeSpoken('não é data')).toBe('');
     expect(formatLongDate('não é data')).toBe('');
+    expect(formatPostTime('não é data', JUNE_21)).toBe('');
+    expect(formatPostTimeSpoken('não é data', JUNE_21)).toBe('');
   });
 });

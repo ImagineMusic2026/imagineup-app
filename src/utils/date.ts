@@ -104,15 +104,18 @@ type RelativeTime =
   | { kind: 'elapsed'; unit: DurationUnit; count: number }
   | { kind: 'date'; date: Date };
 
-/** Minutos, horas e dias até uma semana; depois disso, a data. */
-function relativeTime(date: Date, now: Date): RelativeTime {
+/**
+ * Minutos, horas e dias até uma semana; depois disso, a data. Com `dayLimit`
+ * de 1, os dias não entram: passadas 24 h, já é a data (a publicação).
+ */
+function relativeTime(date: Date, now: Date, dayLimit = 7): RelativeTime {
   const minutes = differenceInMinutes(now, date);
   if (minutes < 1) return { kind: 'now' };
   if (minutes < 60) return { kind: 'elapsed', unit: 'minute', count: minutes };
   const hours = differenceInHours(now, date);
   if (hours < 24) return { kind: 'elapsed', unit: 'hour', count: hours };
   const days = differenceInCalendarDays(now, date);
-  if (days < 7) return { kind: 'elapsed', unit: 'day', count: days };
+  if (days < dayLimit) return { kind: 'elapsed', unit: 'day', count: days };
   return { kind: 'date', date };
 }
 
@@ -157,6 +160,42 @@ export function formatRelativeAgoSpoken(input: DateInput, now: Date = new Date()
     return t('date.ago', { time: spokenDuration(relative.unit, relative.count) });
   }
   return formatLongDate(relative.date);
+}
+
+/** "2 de nov" e, de outro ano, "2 de nov de 2025". */
+function formatPostDate(date: Date, now: Date): string {
+  const pattern = date.getFullYear() === now.getFullYear() ? "d 'de' MMM" : "d 'de' MMM 'de' yyyy";
+  return format(date, pattern, { locale: ptBR }).replace('.', '');
+}
+
+/**
+ * O horário da publicação no topo do card, no estilo do X: "agora", "5 min"
+ * e "3 h" no primeiro dia; passadas 24 h, a data, "2 de nov" (com o ano, "2
+ * de nov de 2025", quando não é o de agora). Sem o "há", como no X.
+ */
+export function formatPostTime(input: DateInput, now: Date = new Date()): string {
+  const date = safe(input);
+  if (!date) return '';
+  const relative = relativeTime(date, now, 1);
+  if (relative.kind === 'now') return t('date.now');
+  if (relative.kind === 'elapsed') return shortDuration(relative.unit, relative.count);
+  return formatPostDate(relative.date, now);
+}
+
+/**
+ * O `formatPostTime` por extenso, para o leitor de tela: "agora", "há 3
+ * horas", "2 de novembro" e, de outro ano, "2 de novembro de 2025".
+ */
+export function formatPostTimeSpoken(input: DateInput, now: Date = new Date()): string {
+  const date = safe(input);
+  if (!date) return '';
+  const relative = relativeTime(date, now, 1);
+  if (relative.kind === 'now') return t('date.now');
+  if (relative.kind === 'elapsed') {
+    return t('date.ago', { time: spokenDuration(relative.unit, relative.count) });
+  }
+  if (relative.date.getFullYear() === now.getFullYear()) return formatLongDate(relative.date);
+  return format(relative.date, "d 'de' MMMM 'de' yyyy", { locale: ptBR });
 }
 
 type TimeLeft =
