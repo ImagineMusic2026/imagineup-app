@@ -4,6 +4,7 @@ import {
   useEffect,
   useRef,
   useState,
+  useSyncExternalStore,
   type ComponentProps,
   type ReactNode,
   type RefObject,
@@ -14,14 +15,12 @@ import Animated, {
   cancelAnimation,
   useAnimatedStyle,
   useSharedValue,
-  withSpring,
   withTiming,
   type SharedValue,
 } from 'react-native-reanimated';
 import { scheduleOnRN, scheduleOnUI } from 'react-native-worklets';
 
 import { useHaptics } from '@/hooks/use-haptics';
-import { usePrefersReducedMotion } from '@/hooks/use-prefers-reduced-motion';
 import type { StackEntrance } from '@/hooks/use-stack-fade';
 import { colors, motion } from '@/theme';
 
@@ -57,6 +56,15 @@ const EDGE_FOLLOW_MAX = 12;
 const PRELOAD_DELAY_MS = 600;
 // O toque na aba e os links trocam com o fade, sem as páginas andarem.
 const FADE = { duration: motion.duration.fast, easing: motion.easing.out };
+// Ao soltar, a página assenta como no Instagram: da metade da tela a 75%, 95% e
+// 100% a cada 50 ms, a curva quadrática que desacelera, sem passar do lugar. A
+// mola crítica de antes, e a `motion.easing.out`, mais forte, arrastavam os
+// últimos pixels por 200 a 300 ms.
+const SETTLE_MIN_MS = 140;
+const SETTLE_MAX_MS = 280;
+// A inclinação da curva no começo: com ela, a página sai com a velocidade que
+// o dedo deixou.
+const SETTLE_START_SLOPE = 2;
 
 // As fases do arraste. Fora da `IDLE`, as abas ficam lado a lado, como páginas.
 const IDLE = 0;
@@ -144,6 +152,28 @@ export function settlePage(
   return Math.min(Math.max(to, 0), last);
 }
 
+/**
+ * Quanto a página leva para assentar, em ms: o bastante para sair com a
+ * velocidade do dedo, quando ele a leva para o destino, entre 140 e 280 ms.
+ */
+export function settleDuration(distance: number, speedTowardTarget: number): number {
+  'worklet';
+  if (speedTowardTarget <= 0) return SETTLE_MAX_MS;
+  const matched = ((SETTLE_START_SLOPE * distance) / speedTowardTarget) * 1000;
+  return Math.min(Math.max(matched, SETTLE_MIN_MS), SETTLE_MAX_MS);
+}
+
+/**
+ * A curva da página que assenta, presa entre 0 e 1. A animação que começa fora
+ * de um quadro (no fim do gesto) pega um tempo negativo no primeiro, e a curva
+ * solta levava a página de 13 a 33 px para trás (emulador Android).
+ */
+export function settleEasing(progress: number): number {
+  'worklet';
+  const t = Math.min(Math.max(progress, 0), 1);
+  return 1 - (1 - t) * (1 - t);
+}
+
 /** A aba ao lado na ordem da barra, ou null na ponta. O "+" não é aba. */
 export function neighborTab(
   routes: readonly TabRoute[],
@@ -163,6 +193,41 @@ export function isAtStackRoot(routes: readonly TabRoute[], routeKey: string): bo
   const stack = routes.find((route) => route.key === routeKey)?.state;
   if (!stack) return true;
   return (stack.index ?? stack.routes.length - 1) <= 0;
+}
+
+/**
+ * O destaque da barra fora do navegador, que só a barra assina: a aba de
+ * destino acende assim que a página assenta, e a troca no navegador, que
+ * redesenha as abas e chega à tela bem depois, vem em seguida.
+ */
+export interface SwipeHighlight {
+  get: () => number | null;
+  set: (index: number | null) => void;
+  subscribe: (listener: () => void) => () => void;
+}
+
+export function createSwipeHighlight(): SwipeHighlight {
+  let current: number | null = null;
+  const listeners = new Set<() => void>();
+  return {
+    get: () => current,
+    set: (index) => {
+      if (index === current) return;
+      current = index;
+      listeners.forEach((listener) => listener());
+    },
+    subscribe: (listener) => {
+      listeners.add(listener);
+      return () => {
+        listeners.delete(listener);
+      };
+    },
+  };
+}
+
+/** A aba que o arraste destaca na barra agora, ou null para seguir o navegador. */
+export function useSwipeHighlight(highlight: SwipeHighlight): number | null {
+  return useSyncExternalStore(highlight.subscribe, highlight.get);
 }
 
 /**
@@ -194,6 +259,7 @@ interface TabSwipeAreaProps {
   mountedRef: RefObject<Set<string>>;
   /** As abas já entraram: a vizinha pode montar por trás. */
   entered: boolean;
+  highlight: SwipeHighlight;
   children: ReactNode;
 }
 
@@ -203,10 +269,10 @@ function TabSwipeArea({
   pager,
   mountedRef,
   entered,
+  highlight,
   children,
 }: TabSwipeAreaProps) {
   const { width } = useWindowDimensions();
-  const reducedMotion = usePrefersReducedMotion();
   const playHaptic = useHaptics();
   const index = useNavigationState((state) => state.routes.findIndex((r) => r.key === route.key));
   const last = useNavigationState((state) => state.routes.length - 1);
@@ -216,8 +282,10 @@ function TabSwipeArea({
   // Com uma tela empilhada na aba (a central, os Ajustes), o deslize fica para
   // ela e para o voltar por gesto do sistema.
   const atRoot = useNavigationState((state) => isAtStackRoot(state.routes, route.key));
-  // A aba que monta entra em fade, como no toque; a que monta por trás, apagada.
-  const shown = useSharedValue(0);
+  // A aba que monta em foco já nasce à vista, e a que monta por trás, apagada.
+  // Com o fade na montagem, por cima de tudo o que montava junto, a página ou o
+  // card da missão do dia ficavam apagados de vez (emulador Android, Expo Go).
+  const shown = useSharedValue(focused ? 1 : 0);
 
   useEffect(() => {
     scheduleOnUI(syncFocus, pager, shown, index, focused);
@@ -232,21 +300,24 @@ function TabSwipeArea({
   }, [mountedRef, route.name]);
 
   useEffect(() => {
-    if (!entered || !focused || !atRoot || reducedMotion) return undefined;
+    if (!entered || !focused || !atRoot) return undefined;
     const timer = setTimeout(() => {
       for (const name of [previous, next]) {
         if (name !== null && !mountedRef.current.has(name)) navigation.preload(name);
       }
     }, PRELOAD_DELAY_MS);
     return () => clearTimeout(timer);
-  }, [entered, focused, atRoot, reducedMotion, previous, next, navigation, mountedRef]);
+  }, [entered, focused, atRoot, previous, next, navigation, mountedRef]);
 
   const goTo = (page: number): void => {
     const state = navigation.getState();
     const target = state.routes[page];
     if (!target || page === state.index) return;
     playHaptic('selection');
-    navigation.navigate(target.name);
+    // O destaque da barra vem antes e sozinho: só a barra redesenha, num quadro.
+    // A troca no navegador, que redesenha as abas, vem na volta seguinte.
+    highlight.set(page);
+    setTimeout(() => navigation.navigate(target.name), 0);
   };
 
   const pan = Gesture.Pan()
@@ -258,11 +329,14 @@ function TabSwipeArea({
       const start = pager.position.get();
       pager.start.set(start);
       pager.target.set(Math.round(start));
-      // Com reduzir movimento, a tela fica parada e a troca sai seca, como no toque.
-      if (!reducedMotion) pager.phase.set(DRAGGING);
+      // Com reduzir movimento, a página também acompanha o dedo: é o dedo que a
+      // move, como nos pagers do sistema. Só a volta ao soltar e o fade do toque
+      // saem secos, porque o Reanimated os termina na hora. Parada, com a troca
+      // seca depois de o dedo andar, ela parecia travada no aparelho do dono,
+      // que tinha a escala de transição do Android em 0.
+      pager.phase.set(DRAGGING);
     })
     .onUpdate((event) => {
-      if (reducedMotion) return;
       pager.position.set(dragPosition(pager.start.get(), event.translationX, width, last));
     })
     .onEnd((event, success) => {
@@ -271,17 +345,24 @@ function TabSwipeArea({
         ? settlePage(start, event.translationX, event.velocityX, width, last)
         : Math.round(start);
       pager.target.set(to);
-      // A aba troca ao soltar, e a barra acompanha enquanto a página assenta.
-      scheduleOnRN(goTo, to);
-      if (reducedMotion) {
-        pager.position.set(to);
-        return;
-      }
       pager.phase.set(SETTLING);
+      const from = pager.position.get();
+      // O dedo para a esquerda leva a página para a aba de índice maior.
+      const towardTarget = (to - from) * -event.velocityX > 0 ? Math.abs(event.velocityX) : 0;
+      const duration = settleDuration(Math.abs(to - from) * width, towardTarget);
       pager.position.set(
-        withSpring(to, { ...motion.spring.page, velocity: -event.velocityX / width }, (done) => {
+        withTiming(to, { duration, easing: settleEasing }, (done) => {
           if (!done || pager.phase.get() !== SETTLING) return;
-          pager.phase.set(pager.focused.get() === pager.target.get() ? IDLE : ARRIVING);
+          if (pager.focused.get() === to) {
+            pager.phase.set(IDLE);
+            return;
+          }
+          // A aba troca (a barra e o navegador) só com a página assentada:
+          // trocada ao soltar, a troca chegava à tela no meio da volta da página
+          // e a segurava uns 180 ms, com um tranco no fim; e o destaque sozinho,
+          // no meio dela, ainda a parava de 30 a 65 ms (emulador Android, Expo Go).
+          pager.phase.set(ARRIVING);
+          scheduleOnRN(goTo, to);
         }),
       );
     })
@@ -316,7 +397,9 @@ const sceneStyleInterpolator: NonNullable<
  * sempre, e o leitor de tela fica com os próprios gestos.
  *
  * Cada aba é uma página (`TabSwipeArea`, no `screenLayout`), posta pela
- * `position` do arraste. Fora dele, as páginas ficam no lugar, e o toque na aba
+ * `position` do arraste, como no Instagram: as duas páginas encostadas, presas
+ * ao dedo, sem fade nem escala, e a aba troca no navegador quando a página
+ * assenta. Fora do arraste, as páginas ficam no lugar, e o toque na aba
  * troca com o fade. O layout liga as Tabs com `detachInactiveScreens={false}`:
  * sem isso, a aba que não está em foco sai da tela e não aparece no arraste.
  * A `entrance` é a do fade de entrada das abas, que segura as vizinhas.
@@ -332,6 +415,7 @@ export function useTabSwipe(entrance: StackEntrance) {
   const [pager] = useState<Pager>(() => ({ position, start, target, focused, phase }));
   const mountedRef = useRef(new Set<string>());
   const [entered, setEntered] = useState(false);
+  const [highlight] = useState(createSwipeHighlight);
 
   // O fade de entrada das abas (`useStackFade`) dura o `slow`.
   useEffect(() => {
@@ -352,12 +436,13 @@ export function useTabSwipe(entrance: StackEntrance) {
       pager={pager}
       mountedRef={mountedRef}
       entered={entered}
+      highlight={highlight}
     >
       {children}
     </TabSwipeArea>
   );
 
-  return { sceneStyleInterpolator, screenLayout };
+  return { sceneStyleInterpolator, screenLayout, highlight };
 }
 
 const styles = StyleSheet.create({

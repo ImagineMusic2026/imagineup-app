@@ -17,7 +17,8 @@ import { blur, blurFallback, colors, layout, motion, radii, shadows, spacing } f
 import { withAlpha } from '@/utils/color';
 
 import { CenterMenu, type CenterMenuAction } from './center-menu';
-import type { TabItem } from './tab-items';
+import { useSwipeHighlight, type SwipeHighlight } from './swipe';
+import { toTabItems, type TabItem } from './tab-items';
 
 export { type CenterMenuAction } from './center-menu';
 export { useTabSwipe } from './swipe';
@@ -101,6 +102,31 @@ function TabButton({ item, onPress }: { item: TabItem; onPress: () => void }) {
  * (`CenterMenu`), no mesmo movimento e com a mesma curva. Com o
  * `centerAction`, ele faz uma coisa só e não gira.
  */
+export interface SwipeTabBarProps extends Omit<TabBarProps, 'items'> {
+  /** As props que o navegador de abas passa ao `tabBar`. */
+  navigator: Parameters<typeof toTabItems>[0];
+  /** O destaque do arraste entre as abas (`useTabSwipe`). */
+  highlight: SwipeHighlight;
+}
+
+/**
+ * A barra das abas com o destaque do arraste: a aba de destino acende assim que
+ * a página assenta, antes de a troca chegar ao navegador. Só esta barra assina
+ * o destaque, e o resto das abas não redesenha.
+ */
+export function SwipeTabBar({ navigator, highlight, ...props }: SwipeTabBarProps) {
+  const highlighted = useSwipeHighlight(highlight);
+  const focusedIndex = navigator.state.index;
+
+  // A troca chegou ao navegador (ou um toque passou na frente): a barra volta a
+  // seguir o foco dele.
+  useEffect(() => {
+    highlight.set(null);
+  }, [highlight, focusedIndex]);
+
+  return <TabBar items={toTabItems(navigator, highlighted)} {...props} />;
+}
+
 export function TabBar({ items, centerMenu, centerAction, onHeightChange }: TabBarProps) {
   const insets = useSafeAreaInsets();
   const onNavigatorHeight = useContext(BottomTabBarHeightCallbackContext);

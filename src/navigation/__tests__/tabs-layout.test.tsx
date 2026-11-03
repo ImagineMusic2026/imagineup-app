@@ -11,6 +11,11 @@ import { motion } from '@/theme';
 
 jest.mock('@/services/haptics', () => ({ haptics: { trigger: jest.fn() } }));
 
+let mockReducedMotion = false;
+jest.mock('@/hooks/use-prefers-reduced-motion', () => ({
+  usePrefersReducedMotion: () => mockReducedMotion,
+}));
+
 const label = (text: string) =>
   function Label() {
     return <Text>{text}</Text>;
@@ -90,6 +95,7 @@ async function enterTabs() {
 }
 
 afterEach(() => {
+  mockReducedMotion = false;
   jest.restoreAllMocks();
   jest.mocked(haptics.trigger).mockClear();
 });
@@ -172,6 +178,58 @@ describe('deslizar entre as abas', () => {
 
     await swipe('(ranking)', -FAR);
     await waitFor(() => expect(view.getPathname()).toBe('/perfil'));
+  });
+
+  it('com reduzir movimento, a vizinha também monta por trás, à mostra para o arraste, e o deslize troca de aba', async () => {
+    // A escala de transição do Android em 0 liga reduzir movimento: no aparelho
+    // do dono, a página ficava parada e a troca saía seca depois do dedo andar.
+    mockReducedMotion = true;
+    const view = renderRouter(appTree, { initialUrl: '/' });
+    await enterTabs();
+
+    // O navegador não esconde a aba fora de foco: com `display: none`, ela
+    // entraria em branco no arraste.
+    let node = screen.getByText('explore', HIDDEN).parent;
+    let display: unknown;
+    while (node && display === undefined) {
+      display = (StyleSheet.flatten(node.props.style) as ViewStyle | undefined)?.display;
+      node = node.parent;
+    }
+    expect(display).toBe('flex');
+
+    await swipe('(inicio)', -FAR);
+    await waitFor(() => expect(view.getPathname()).toBe('/explorar'));
+  });
+
+  it('a aba que abre em foco já nasce à vista, sem o fade na montagem', () => {
+    renderRouter(appTree, { initialUrl: '/' });
+
+    // A página é o primeiro pai com opacidade no estilo.
+    let node = screen.getByText('home').parent;
+    let opacity: unknown;
+    while (node && opacity === undefined) {
+      opacity = (StyleSheet.flatten(node.props.style) as ViewStyle | undefined)?.opacity;
+      node = node.parent;
+    }
+    expect(opacity).toBe(1);
+  });
+
+  it('a barra destaca a aba de destino assim que a página assenta, antes de a troca chegar ao navegador', async () => {
+    const view = renderRouter(appTree, { initialUrl: '/' });
+    await swipe('(inicio)', -FAR);
+
+    // A página assentou: só a barra redesenha, com o destaque na Explorar.
+    await act(async () => {
+      jest.runAllTicks();
+    });
+    expect(screen.getByLabelText('Explorar')).toBeSelected();
+    expect(view.getPathname()).toBe('/');
+
+    // A troca no navegador vem na volta seguinte, e a barra segue com ele.
+    await settle();
+    expect(view.getPathname()).toBe('/explorar');
+    expect(screen.getByLabelText('Explorar')).toBeSelected();
+    expect(screen.getByLabelText('Início')).not.toBeSelected();
   });
 
   it('para a direita volta à aba da esquerda', async () => {
