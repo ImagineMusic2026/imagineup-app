@@ -892,7 +892,6 @@
       "x": "X (Twitter)",
       "placeholder": "seu.usuario",
       "hint": "Coloque só o seu usuário. Também dá para colar o link do perfil.",
-      "publicHint": "Sem a conta privada, qualquer fã do ImagineUP vê sua bio e suas redes.",
       "host": "Esse link não é do {{network}}.",
       "format": "Usuário fora do formato do {{network}}."
     },
