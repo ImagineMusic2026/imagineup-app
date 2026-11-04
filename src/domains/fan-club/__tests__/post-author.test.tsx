@@ -8,7 +8,8 @@ import type { FanClubPerson } from '../types';
 
 // O topo do card da publicação (03/11/2026, a pedido do dono), no estilo do
 // X: o avatar, o nome, o selo do oficial, o @ e o horário numa linha; na
-// Início (o `stacked`, 37.19), o @ e o horário na linha de baixo do nome.
+// Início e na tela da publicação (o `stacked`, 37.19 e 37.20), o @ e o
+// horário na linha de baixo do nome.
 
 // O Jest abre com a fonte do sistema a 200%; a linha só não quebra na fonte padrão.
 const window = Dimensions.get('window');
@@ -116,7 +117,7 @@ describe('FanClubPostAuthor', () => {
     });
   });
 
-  describe('em duas linhas, na Início (pedido do dono de 03/11/2026, 37.19)', () => {
+  describe('em duas linhas, na Início e na tela da publicação (pedido do dono de 03/11/2026, 37.19 e 37.20)', () => {
     it('o nome em cima e, embaixo dele, o @ e o " · 3 h", com o mesmo rótulo', () => {
       setFontScale(1);
       render(
