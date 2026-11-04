@@ -25,6 +25,12 @@ export interface FanClubPostAuthorProps {
   official: boolean;
   /** Relógio da tela (`useNow`), para o "3 h" andar sozinho. */
   now: Date;
+  /**
+   * Em duas linhas: o nome (com o selo) em cima e, embaixo dele, o @ e o
+   * horário. Só na Início (pedido do dono de 03/11/2026, 37.19), onde o card
+   * é estreito; na página e na tela da publicação, numa linha só.
+   */
+  stacked?: boolean;
   /** Abre o perfil público do autor; sem ele (a própria publicação), o autor só se lê. */
   onOpen?: () => void;
   style?: StyleProp<ViewStyle>;
@@ -58,12 +64,14 @@ export function postAuthorLabel(author: FanClubPerson, official: boolean): strin
  * a data). No molde do autor do comentário (`FanClubCommentRow`), com o
  * avatar do autor do post do Mural: um pressável só, que abre o perfil
  * público. Com a fonte grande, o nome não corta, e o @ e o horário descem
- * para baixo dele.
+ * para baixo dele. Na Início (o `stacked`, 37.19), o @ e o horário ficam
+ * sempre na linha de baixo do nome.
  */
 export function FanClubPostAuthor({
   post,
   now,
   official,
+  stacked = false,
   onOpen,
   style,
   testID,
@@ -73,6 +81,31 @@ export function FanClubPostAuthor({
   const name = authorName(author);
   const lines = largeText ? undefined : 1;
   const label = postAuthorLabel(author, official);
+  const hasHandle = !!(author.name && author.username);
+  const time = formatPostTime(post.publishedAt, now);
+  const lineStyle = [stacked ? styles.stackLine : styles.line, largeText && styles.lineWrap];
+
+  const handle = hasHandle ? (
+    <Text variant="caption" color={colors.textMuted} numberOfLines={lines} style={styles.shrink}>
+      {`@${author.username}`}
+    </Text>
+  ) : null;
+  const when = (
+    <Text variant="caption" color={colors.textMuted} testID={testID ? `${testID}-time` : undefined}>
+      {/* Sozinho na linha de baixo (sem o @), o horário vem sem o ponto. */}
+      {stacked && !hasHandle ? time : t('post.meta', { time })}
+    </Text>
+  );
+  const nameLine = (
+    <View style={lineStyle} testID={testID ? `${testID}-line` : undefined}>
+      <Text variant="label" numberOfLines={lines} style={styles.shrink}>
+        {name}
+      </Text>
+      {official ? <OfficialBadge testID={testID ? `${testID}-official` : undefined} /> : null}
+      {stacked ? null : handle}
+      {stacked ? null : when}
+    </View>
+  );
 
   const content = (
     <>
@@ -82,32 +115,17 @@ export function FanClubPostAuthor({
         photoUrl={author.photoURL}
         size="lg"
       />
-      <View
-        style={[styles.line, largeText && styles.lineWrap]}
-        testID={testID ? `${testID}-line` : undefined}
-      >
-        <Text variant="label" numberOfLines={lines} style={styles.shrink}>
-          {name}
-        </Text>
-        {official ? <OfficialBadge testID={testID ? `${testID}-official` : undefined} /> : null}
-        {author.name && author.username ? (
-          <Text
-            variant="caption"
-            color={colors.textMuted}
-            numberOfLines={lines}
-            style={styles.shrink}
-          >
-            {`@${author.username}`}
-          </Text>
-        ) : null}
-        <Text
-          variant="caption"
-          color={colors.textMuted}
-          testID={testID ? `${testID}-time` : undefined}
-        >
-          {t('post.meta', { time: formatPostTime(post.publishedAt, now) })}
-        </Text>
-      </View>
+      {stacked ? (
+        <View style={styles.stack}>
+          {nameLine}
+          <View style={lineStyle} testID={testID ? `${testID}-meta` : undefined}>
+            {handle}
+            {when}
+          </View>
+        </View>
+      ) : (
+        nameLine
+      )}
     </>
   );
 
@@ -139,6 +157,18 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: spacing.listGap,
     minHeight: layout.minTouchTarget,
+  },
+  // O nome em cima e, embaixo, o @ e o horário (o `stacked`, na Início).
+  stack: {
+    flex: 1,
+    minWidth: 0,
+  },
+  // Cada linha do `stacked` ocupa a largura da coluna, sem o `flex` da altura.
+  stackLine: {
+    minWidth: 0,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.iconLabelGap,
   },
   line: {
     flex: 1,

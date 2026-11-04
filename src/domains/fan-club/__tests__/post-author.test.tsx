@@ -7,7 +7,8 @@ import { FanClubPostAuthor, postAuthorLabel } from '../components/post-author';
 import type { FanClubPerson } from '../types';
 
 // O topo do card da publicação (03/11/2026, a pedido do dono), no estilo do
-// X: o avatar, o nome, o selo do oficial, o @ e o horário numa linha.
+// X: o avatar, o nome, o selo do oficial, o @ e o horário numa linha; na
+// Início (o `stacked`, 37.19), o @ e o horário na linha de baixo do nome.
 
 // O Jest abre com a fonte do sistema a 200%; a linha só não quebra na fonte padrão.
 const window = Dimensions.get('window');
@@ -112,6 +113,54 @@ describe('FanClubPostAuthor', () => {
     expect(screen.getByText('@thalitasan').props.numberOfLines).toBeUndefined();
     expect(StyleSheet.flatten(screen.getByTestId('author-line').props.style)).toMatchObject({
       flexWrap: 'wrap',
+    });
+  });
+
+  describe('em duas linhas, na Início (pedido do dono de 03/11/2026, 37.19)', () => {
+    it('o nome em cima e, embaixo dele, o @ e o " · 3 h", com o mesmo rótulo', () => {
+      setFontScale(1);
+      render(
+        <FanClubPostAuthor
+          post={postBy(THALITA)}
+          now={NOW}
+          official={false}
+          stacked
+          onOpen={jest.fn()}
+          testID="author"
+        />,
+      );
+
+      const line = screen.getByTestId('author-line');
+      expect(within(line).getByText('Thalita Santos')).toHaveProp('numberOfLines', 1);
+      expect(within(line).queryByText('@thalitasan')).not.toBeOnTheScreen();
+      const meta = screen.getByTestId('author-meta');
+      expect(within(meta).getByText('@thalitasan')).toHaveProp('numberOfLines', 1);
+      expect(within(meta).getByText('· 3 h')).toHaveStyle({ color: colors.textMuted });
+      expect(screen.getByRole('link', { name: 'Thalita Santos, @thalitasan' })).toBeTruthy();
+    });
+
+    it('o selo segue ao lado do nome, na linha de cima', () => {
+      render(
+        <FanClubPostAuthor post={postBy(THALITA)} now={NOW} official stacked testID="author" />,
+      );
+      expect(
+        within(screen.getByTestId('author-line')).getByTestId('author-official', hiddenOk),
+      ).toBeTruthy();
+    });
+
+    it('sem o nome, o @ fica em cima, e o horário desce sozinho, sem o ponto', () => {
+      render(
+        <FanClubPostAuthor
+          post={postBy({ ...THALITA, name: null })}
+          now={NOW}
+          official={false}
+          stacked
+          testID="author"
+        />,
+      );
+      expect(screen.getAllByText('@thalitasan')).toHaveLength(1);
+      expect(within(screen.getByTestId('author-line')).getByText('@thalitasan')).toBeTruthy();
+      expect(within(screen.getByTestId('author-meta')).getByText('3 h')).toBeTruthy();
     });
   });
 });
