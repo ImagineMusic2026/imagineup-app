@@ -43,6 +43,7 @@ import {
   REPORTS_PER_DAY,
   RSVPS_PER_DAY,
 } from '../moderation/model';
+import { SUPPORT_MESSAGES_PER_DAY } from '../support/model';
 import { isVisibleLine } from '../visible-line';
 import {
   EARN_SOURCES,
@@ -86,6 +87,7 @@ export const ACTION_CAP_KEYS = [
   'fanclub_follow',
   'fanclub_reaction_set',
   'fanclub_comment_sent',
+  'support_message',
 ] as const satisfies readonly DailyActionKey[];
 
 /**
@@ -94,9 +96,10 @@ export const ACTION_CAP_KEYS = [
  * abuso e, desde o perfil novo, os salvamentos do perfil e as trocas de nome;
  * desde a seção 34, as candidaturas a fã-clube, as publicações, as vagas de
  * envio da foto delas e os seguimentos; desde a seção 37, as trocas de reação
- * e os comentários nas publicações de fã-clube) como padrão do código (22.1,
- * decisão 13; 24.1, decisão 11; 25.1, decisão 15; 28.1, decisão 9; 34.1,
- * decisões 11 e 34; 37.5).
+ * e os comentários nas publicações de fã-clube; desde a seção 38, as
+ * mensagens do Suporte) como padrão do código (22.1, decisão 13; 24.1,
+ * decisão 11; 25.1, decisão 15; 28.1, decisão 9; 34.1, decisões 11 e 34;
+ * 37.5; 38.1).
  */
 export const DEFAULT_ACTION_CAPS: Record<DailyActionKey, number> = {
   central_entry: CENTRAL_ENTRIES_PER_DAY,
@@ -118,6 +121,7 @@ export const DEFAULT_ACTION_CAPS: Record<DailyActionKey, number> = {
   fanclub_follow: FAN_CLUB_FOLLOWS_PER_DAY,
   fanclub_reaction_set: FAN_CLUB_REACTIONS_PER_DAY,
   fanclub_comment_sent: FAN_CLUB_COMMENTS_PER_DAY,
+  support_message: SUPPORT_MESSAGES_PER_DAY,
 };
 
 /** Teto do dia: de 1 a 10.000. */

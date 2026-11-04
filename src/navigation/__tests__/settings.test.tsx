@@ -131,6 +131,7 @@ function RootLayout() {
           <Stack.Screen name="editar-perfil" />
           <Stack.Screen name="trocar-senha" />
           <Stack.Screen name="trocar-email" />
+          <Stack.Screen name="suporte/[tipo]" />
           <Stack.Screen name="excluir-conta" />
         </Stack.Protected>
       </Stack>
@@ -168,6 +169,7 @@ const appTree = {
   'editar-perfil': label('editar perfil'),
   'trocar-senha': label('trocar senha'),
   'trocar-email': label('trocar email'),
+  'suporte/[tipo]': label('suporte'),
   'excluir-conta': DeleteAccountRoute,
   '(tabs)/(inicio,explorar,ranking,perfil)/artista/[artistaId]': label('artist'),
 };
@@ -245,7 +247,7 @@ afterEach(() => {
 
 /** As linhas dos Ajustes, as divisórias e os avisos, pelo testID (o rodapé da versão é o último). */
 const MENU_ROW =
-  /^settings-(menu-divider|edit-profile|change-email|change-password|fan-club|fan-club-follows|blocked-fans|terms|privacy|rules|contact|contact-error|sign-out|delete-account|version)$/;
+  /^settings-(menu-divider|edit-profile|change-email|change-password|fan-club|fan-club-follows|blocked-fans|terms|privacy|report-problem|suggest-feature|general-feedback|rules|contact|contact-error|sign-out|delete-account|version)$/;
 
 /** Os cabeçalhos e as linhas na ordem da tela: prende cada linha à seção dela. */
 function menuOrder(): string[] {
@@ -279,6 +281,11 @@ describe('Ajustes', () => {
       'settings-terms',
       'settings-privacy',
       'settings-menu-divider',
+      'Suporte',
+      'settings-report-problem',
+      'settings-suggest-feature',
+      'settings-general-feedback',
+      'settings-menu-divider',
       'Sobre',
       'settings-rules',
       'settings-contact',
@@ -304,6 +311,11 @@ describe('Ajustes', () => {
       'settings-terms',
       'settings-privacy',
       'settings-menu-divider',
+      'Suporte',
+      'settings-report-problem',
+      'settings-suggest-feature',
+      'settings-general-feedback',
+      'settings-menu-divider',
       'Sobre',
       'settings-contact',
       'settings-menu-divider',
@@ -317,7 +329,7 @@ describe('Ajustes', () => {
     renderRouter(appTree, { initialUrl: '/ajustes' });
 
     const dividers = screen.getAllByTestId('settings-menu-divider', hidden);
-    expect(dividers).toHaveLength(3);
+    expect(dividers).toHaveLength(4);
     for (const divider of dividers) {
       expect(divider).toHaveStyle({ marginHorizontal: -spacing.gutter, height: 1 });
       expect(divider.props.accessible).toBeFalsy();
@@ -438,6 +450,28 @@ describe('Ajustes', () => {
     expect(screen.queryByTestId('settings-change-password')).toBeNull();
     expect(screen.getByTestId('settings-sign-out')).toBeTruthy();
   });
+
+  it.each([
+    ['Reportar problema', 'Abre a tela para contar um problema à equipe', '/suporte/problema'],
+    [
+      'Sugerir funcionalidade',
+      'Abre a tela para mandar uma sugestão à equipe',
+      '/suporte/sugestao',
+    ],
+    ['Feedback geral', 'Abre a tela para mandar a sua opinião sobre o app', '/suporte/feedback'],
+  ])(
+    'Suporte (seção 38): "%s" abre a tela dele fora das abas, na pilha raiz',
+    async (title, hint, path) => {
+      const view = renderRouter(appTree, { initialUrl: '/ajustes' });
+
+      const row = screen.getByRole('button', { name: title });
+      expect(row).toHaveProp('accessibilityHint', hint);
+      fireEvent.press(row);
+      await waitFor(() => expect(view.getPathname()).toBe(path));
+      expect(view.getSegments()).toEqual(['suporte', '[tipo]']);
+      expect(screen.getByText('suporte')).toBeTruthy();
+    },
+  );
 
   it('"Trocar senha" e "Trocar e-mail" abrem fora das abas, na pilha raiz', async () => {
     setSessionPassword(true);

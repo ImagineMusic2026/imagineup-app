@@ -128,6 +128,7 @@ import {
   type StaffDeps,
 } from './staff';
 import { deleteUserData } from './store';
+import { resolveSupportMessage as resolveMessageOfSupport } from './support';
 
 // Mesma região do Firestore. Sem isso, o gatilho de Auth vai para os EUA. As
 // funções abaixo leem esta opção quando são definidas: ela vem antes de todas.
@@ -835,6 +836,19 @@ export const decideFanClub = onPanelCall({ cors: PANEL_ORIGINS }, async (request
   logger.info('Decisão da equipe num fã-clube.', {
     actorUid: request.auth?.uid,
     subject: result.subject,
+    status: result.status,
+  });
+  return result;
+});
+
+/**
+ * Marca como resolvida, ou reabre, uma mensagem do Suporte dos Ajustes (seção
+ * 38, 38.3), com a seção `support` e edição: a 70ª função.
+ */
+export const resolveSupportMessage = onPanelCall({ cors: PANEL_ORIGINS }, async (request) => {
+  const result = await resolveMessageOfSupport({ db: getFirestore() }, request.auth, request.data);
+  logger.info('Mensagem do Suporte alterada pela equipe.', {
+    actorUid: request.auth?.uid,
     status: result.status,
   });
   return result;

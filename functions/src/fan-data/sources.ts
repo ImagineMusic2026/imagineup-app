@@ -11,7 +11,8 @@
 // pessoa ou da equipe entra no `omit` (32.17). Desde a Fase 2 do fã-clube
 // (seção 37, 37.8), as seis fontes dos comentários, das reações, das
 // denúncias de comentário, da fila dos comentários e do registro do ocultar
-// do gestor (com o fã como gestor e como autor, em duas fontes).
+// do gestor (com o fã como gestor e como autor, em duas fontes). Desde o
+// Suporte dos Ajustes (seção 38, 38.4), as mensagens que o fã mandou à equipe.
 
 /** As partes longas, em páginas, na ordem do arquivo (32.3). */
 export const FAN_DATA_PARTS = [
@@ -26,6 +27,7 @@ export const FAN_DATA_PARTS = [
   'publicacoesDeFaClube',
   'comentariosDeFaClube',
   'reacoesDeFaClube',
+  'mensagensDeSuporte',
 ] as const;
 
 export type FanDataPart = (typeof FAN_DATA_PARTS)[number];
@@ -519,6 +521,17 @@ export const FAN_DATA_SOURCES: readonly FanDataSource[] = [
     read: { kind: 'equal', collection: 'fanClubHideLog', field: 'managerUid' },
     // O uid do fã que escreveu o comentário ocultado.
     omit: ['authorUid'],
+    deletion: { effect: 'deleted', note: 'apagadas' },
+  },
+  {
+    // As mensagens do Suporte dos Ajustes (seção 38, 38.4): o texto e o
+    // aparelho vão como foram mandados; numa parte, porque somam até 5 por dia.
+    id: 'supportMessages',
+    label: 'supportMessages com uid ==',
+    place: { in: 'part', part: 'mensagensDeSuporte' },
+    read: { kind: 'equal', collection: 'supportMessages', field: 'uid' },
+    // O uid e o nome de quem é da equipe e resolveu.
+    omit: ['resolvedBy'],
     deletion: { effect: 'deleted', note: 'apagadas' },
   },
   {

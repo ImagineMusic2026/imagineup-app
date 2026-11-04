@@ -86,6 +86,11 @@ export default function RootLayout() {
               "Editar perfil". */}
           <Stack.Screen name="trocar-senha" />
           <Stack.Screen name="trocar-email" />
+          {/* O Suporte dos Ajustes (seção 38): Reportar problema, Sugerir
+              funcionalidade e Feedback geral, uma tela por tipo, com o campo
+              grande e o teclado aberto. Fora das abas e com push padrão, como
+              as telas de conta. */}
+          <Stack.Screen name="suporte/[tipo]" />
           {/* "Excluir conta", a última opção do "Editar perfil" (26/10/2026):
               por cima dele, fora das abas e com push padrão (o campo de senha
               tem teclado), e o "Manter minha conta" volta para ele. */}

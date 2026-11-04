@@ -599,6 +599,40 @@
         { "fieldPath": "clubId", "order": "ASCENDING" },
         { "fieldPath": "at", "order": "DESCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "supportMessages",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "supportMessages",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "resolvedAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "supportMessages",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "kind", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "supportMessages",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "kind", "order": "ASCENDING" },
+        { "fieldPath": "resolvedAt", "order": "DESCENDING" }
+      ]
     }
   ],
   "fieldOverrides": [
@@ -712,6 +746,8 @@
     { "collectionGroup": "fanClubComments", "fieldPath": "mentions", "indexes": [] },
     { "collectionGroup": "fanClubPosts", "fieldPath": "mentions", "indexes": [] },
     { "collectionGroup": "fanClubShards", "fieldPath": "days", "indexes": [] },
-    { "collectionGroup": "fanClubCommentQueue", "fieldPath": "reasons", "indexes": [] }
+    { "collectionGroup": "fanClubCommentQueue", "fieldPath": "reasons", "indexes": [] },
+    { "collectionGroup": "supportMessages", "fieldPath": "text", "indexes": [] },
+    { "collectionGroup": "supportMessages", "fieldPath": "device", "indexes": [] }
   ]
 }

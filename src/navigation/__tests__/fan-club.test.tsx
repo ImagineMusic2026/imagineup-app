@@ -436,6 +436,7 @@ describe('o bloco "Fã-clube" dos Ajustes (34.9, item 1)', () => {
       'settings-fan-club-follows',
       'Privacidade e segurança',
       'settings-blocked-fans',
+      'Suporte',
       'Sobre',
       'Zona de perigo',
     ]);

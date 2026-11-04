@@ -146,6 +146,8 @@ describe('tetos do dia', () => {
       // comentários nas publicações, com os números do Mural.
       club_react: { key: 'fanclub_reaction_set', limit: 300 },
       club_comment: { key: 'fanclub_comment_sent', limit: 100 },
+      // O Suporte dos Ajustes (seção 38, 38.1): as mensagens, somando os três tipos.
+      support: { key: 'support_message', limit: 5 },
     });
     expect(BLOCK_LIST_MAX).toBe(1_000);
   });

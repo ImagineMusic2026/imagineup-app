@@ -226,7 +226,8 @@ export type AwardResult = { uid: string; entryId: string; status: AwardStatus; p
  * foto delas (seção 34, decisão 11); `fanclub_follow`, os seguimentos de
  * fã-clube (seção 34, decisão 34); `fanclub_reaction_set` e
  * `fanclub_comment_sent`, as trocas de reação e os comentários nas publicações
- * de fã-clube (seção 37, 37.5).
+ * de fã-clube (seção 37, 37.5); `support_message`, as mensagens do Suporte dos
+ * Ajustes (seção 38, 38.1).
  */
 export type DailyActionKey =
   | 'central_entry'
@@ -247,7 +248,8 @@ export type DailyActionKey =
   | 'fanclub_upload'
   | 'fanclub_follow'
   | 'fanclub_reaction_set'
-  | 'fanclub_comment_sent';
+  | 'fanclub_comment_sent'
+  | 'support_message';
 
 export type DayStats = {
   earned: number;

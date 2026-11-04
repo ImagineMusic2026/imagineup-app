@@ -49,6 +49,7 @@ describe('seções e papéis', () => {
       'missions',
       'rewards',
       'moderation',
+      'support',
       'audit',
     ]);
   });

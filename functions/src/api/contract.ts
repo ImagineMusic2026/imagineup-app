@@ -1151,3 +1151,30 @@ export type FanClubCommentReviewResult = {
  * (também no já oculto por ele) e `hidden: false` depois do reexibir.
  */
 export type FanClubCommentHiddenResult = { commentId: string; hidden: boolean };
+
+// --- Suporte dos Ajustes (seção 38, 38.2) --------------------------------------------
+// O espelho no app é src/domains/support/types.ts: mudou um, mude o outro.
+
+/** O tipo da mensagem: Reportar problema, Sugerir funcionalidade e Feedback geral. */
+export type SupportKind = 'problem' | 'idea' | 'feedback';
+
+/** O aparelho de quem reporta o problema: o sistema e as versões, nada da pessoa. */
+export type SupportDevice = {
+  platform: 'android' | 'ios';
+  osVersion: string | null;
+  appVersion: string | null;
+  updateId: string | null;
+};
+
+/**
+ * Corpo de `POST /me/support`: o texto de 1 a 2.000 e, só no `problem`, o
+ * aparelho (obrigatório nele; nos outros, ausente ou null).
+ */
+export type SupportMessageBody = {
+  kind: SupportKind;
+  text: string;
+  device?: SupportDevice | null;
+};
+
+/** Resposta de `POST /me/support`: o id da mensagem gravada. */
+export type SupportMessageResult = { id: string; status: 'sent' };

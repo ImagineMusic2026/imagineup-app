@@ -20,6 +20,7 @@ import { postRoutes } from './routes/posts';
 import { profileRoutes } from './routes/profile';
 import { rankingRoutes } from './routes/ranking';
 import { rewardRoutes } from './routes/rewards';
+import { supportRoutes } from './routes/support';
 import type { ApiDeps, ApiRequest, ApiResponse, ApiRoute, ResolvedDeps, RouteInput } from './types';
 
 // API HTTP do app: uma função onRequest com roteador próprio, ID token do
@@ -65,6 +66,7 @@ export const API_ROUTES: readonly ApiRoute[] = [
   ...fanRoutes,
   ...rewardRoutes,
   ...fanClubRoutes,
+  ...supportRoutes,
 ];
 
 /** Sem o segredo do convite nas dependências, só as rotas do convite falham (500). */
