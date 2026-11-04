@@ -379,7 +379,9 @@ describe('as marcações resolvidas no envio (37.7)', () => {
       expect(await keysOf(bia.uid)).toBe(biaKeys);
       expect(await capCount(bia.uid, 'fanclub_comment_sent')).toBe(0);
       expect(await read(`wallets/${bia.uid}`)).toEqual(biaWallet);
-      expect(await read(`fanClubPosts/${postId}`)).toMatchObject({ commentCount: 0 });
+      // A publicação nasce sem o `commentCount` (o primeiro comentário o grava
+      // com o `increment`): o campo ausente diz que nenhum comentário contou.
+      expect(await read(`fanClubPosts/${postId}`)).not.toHaveProperty('commentCount');
 
       const ownerWallet = await read(`wallets/${owner.fan.uid}`);
       const ownerKeys = await keysOf(owner.fan.uid);
