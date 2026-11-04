@@ -1443,6 +1443,8 @@
         "prizesHint": "Abre a aba Prêmios",
         "posts": "{{published}} no ar · {{pending}} de {{max}} em análise",
         "postsLabel": "Publicações: {{published}} no ar, {{pending}} de {{max}} em análise.",
+        "postsDirect": "{{published}} no ar · {{pending}} em análise",
+        "postsDirectLabel": "Publicações: {{published}} no ar, {{pending}} em análise.",
         "postsHint": "Abre a aba Publicações",
         "backToCentral": "Voltar para a central de {{artist}}",
         "pausedContact": "Falar com a equipe",
@@ -1458,6 +1460,7 @@
       "posts": {
         "title": "Publicações",
         "note": "A equipe revisa cada publicação antes de ela ir ao ar, e até 3 esperam a revisão por vez.",
+        "noteDirect": "Seu fã-clube é oficial: as publicações vão ao ar na hora, e a equipe confere depois.",
         "filterCount": "{{label}} · {{count}}",
         "filterCountLabel": "{{label}}, {{count}}",
         "filters": {
@@ -1504,6 +1507,7 @@
       "photoError": "Não deu para usar esta foto. Escolha outra.",
       "textOnly": "Este artista aceita só texto no fã-clube.",
       "sent": "Enviado para revisão.",
+      "sentLive": "Publicado no seu fã-clube.",
       "unavailable": "Você não pode publicar agora.",
       "cancel": "Cancelar",
       "send": "Enviar",
@@ -1515,6 +1519,9 @@
       "reviewFreeOne": "vaga livre",
       "reviewSlots": "{{pending}} de {{max}} em análise, {{free}} {{freeWord}}.",
       "reviewLabel": "{{title}}. {{body}} {{slots}}",
+      "directTitle": "Vai ao ar na hora",
+      "directLead": "Seu fã-clube é oficial: a publicação aparece para os fãs assim que você envia. A equipe confere depois.",
+      "directLabel": "{{title}}. {{body}}",
       "postingAsHandle": "Publicando como @{{username}}"
     },
     "page": {

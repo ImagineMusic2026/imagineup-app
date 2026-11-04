@@ -461,14 +461,26 @@ export const FEATURE_OFF = {
 } as const;
 
 /**
- * O selo de oficial desligado (34.23): o fã-clube que nasce, o encerramento e
- * a lápide. A pausa, pela equipe ou pela suspensão, mantém o selo, que volta
- * com o fã-clube reativado.
+ * A publicação sem revisão desligada (34.25): o que o `OFFICIAL_OFF` leva, e o
+ * "Tirar a publicação sem revisão" do admin.
+ */
+export const DIRECT_POSTS_OFF = {
+  directPosts: false,
+  directPostsAt: null,
+  directPostsBy: null,
+} as const;
+
+/**
+ * O selo de oficial desligado (34.23): o fã-clube que nasce, o encerramento, a
+ * lápide e o "Tirar a oficialização". A pausa, pela equipe ou pela suspensão,
+ * mantém o selo, que volta com o fã-clube reativado. Leva junto a publicação
+ * sem revisão (34.25), que só vale no fã-clube oficial.
  */
 export const OFFICIAL_OFF = {
   official: false,
   officialAt: null,
   officialBy: null,
+  ...DIRECT_POSTS_OFF,
 } as const;
 
 /**

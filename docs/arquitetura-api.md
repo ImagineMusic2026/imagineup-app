@@ -10843,7 +10843,7 @@ Cada item traz a escolha, o motivo e a alternativa trocada, e diz onde entra no 
 **Publicações e moderação**
 
 15. **Só o gestor publica, no próprio fã-clube: texto de 1 a 1.000, ou texto com uma foto da galeria, e a foto só em artista com `photosAllowed`.** Os outros fãs seguem, compartilham, denunciam e bloqueiam; não publicam nem comentam no primeiro bloco. Vídeo e câmera ficam fora: o app não toca vídeo (`src/domains/posts/types.ts:26-27`) e a câmera muda o nativo. O app recorta em 4:5 (o recorte do sistema é sempre quadrado no iOS, `photo.ts:5-7`) e gera a foto em 1080x1350 e a miniatura em 480x600, em JPEG sem EXIF, numa função de preparo nova ao lado do `preparePhoto` (`profile/photo.ts:103-130`, que recorta, reduz e tenta de novo acima de 1 MiB), com os tetos de 2 MiB e 300 KiB, exportada pelo index do `profile` com o `pickPhoto` (`:54-70`). O servidor confere os bytes, no molde da foto do perfil: o `photoProblem` (`fan-profile/model.ts:249-265`) com o `readStart` (`fan-profile/files.ts:32-39`), generalizado para receber o teto (2 MiB e 1350 px na foto, 300 KiB e 600 px na miniatura). Não serve o `storedImage` do painel, que só confere se o arquivo existe e o `contentType` (`posts/panel.ts:180-190`).
-16. **Toda publicação nasce em análise e só vai ao ar com Aprovar.** É isso que segura a imagem de fã, porque o filtro só confere texto (30.15). O app mostra "Enviado para revisão", e a equipe vê a fila em "Publicações para revisar", da mais antiga para a mais nova. Trocadas: publicar e moderar depois (a imagem sem filtro chegaria aos fãs) e a publicação direta para o gestor de confiança, que fica para depois (34.18).
+16. **Toda publicação nasce em análise e só vai ao ar com Aprovar.** É isso que segura a imagem de fã, porque o filtro só confere texto (30.15). O app mostra "Enviado para revisão", e a equipe vê a fila em "Publicações para revisar", da mais antiga para a mais nova. Trocadas: publicar e moderar depois (a imagem sem filtro chegaria aos fãs) e a publicação direta para o gestor de confiança, que fica para depois (34.18). Desde 04/11/2026, o fã-clube oficial com a chave do admin publica sem a revisão antes (34.25).
 17. **As publicações moram fora de `posts/{id}`, em `fanClubPosts/{postId}`.** Por isso não entram no `/feed`, na grade da 1d, no `countArtistPosts`, no `has-content` nem nas missões, e o conteúdo de fã nunca se mistura com o Mural oficial. Na auditoria, o id da publicação vai em `fanClubPostId`, nunca em `postId`, que vira o alvo `post:` do Mural (`staff/audit-index.ts:64`).
 18. **Denúncia: os 4 motivos de hoje mais "Uso indevido de imagem", só nas publicações de fã-clube, numa fila própria.** Resposta do dono. O motivo novo, `image_misuse`, entra num parser próprio (`parseFanClubReportReason`, ao lado do `parseReportReason`, `moderation/model.ts:162-170`); o `REPORT_REASONS` (`:15`) da denúncia de comentário e de perfil não muda. Uma denúncia por fã e publicação por rodada, em `fanClubReports/{reporterUid}_{postId}`, e a fila `fanClubReportQueue/{postId}`, com a rodada, no molde da `profileReportQueue` (29.1, decisões 1 e 3). Nada some sozinho pelo número de denúncias; a equipe decide Manter ou Ocultar. O teto é o de hoje, `report` (30 por dia, somados com as denúncias de comentário e de perfil). A fila fica fora da `moderationQueue`, porque o `QueueCard` publicado quebra com item sem `postId` e `commentId` (`imagineup-admin` `src/components/moderacao/queue-card.tsx:60-65`).
 19. **Bloqueio: quem bloqueou o gestor deixa de ver o fã-clube e as publicações dele.** A página responde 404, e as listas e a Início tiram o fã-clube (o `withoutBlocked`, `moderation/model.ts:193-198`, mapeando o `ownerUid`). O menu da página tem "Bloquear e denunciar" o gestor, que leva a denúncia de perfil de hoje (`profileReportQueue`), como a App Review pede (29.1, decisão 13).
@@ -11447,12 +11447,12 @@ O painel é outra conversa, no `imagineup-admin`, guiada por um README fora de r
 
 ### 34.11 Moderação e lojas
 
-- **Quem publica:** só o gestor aprovado, no próprio fã-clube, sempre com a revisão antes de ir ao ar (decisões 15 e 16). O Mural oficial continua só da equipe.
+- **Quem publica:** só o gestor aprovado, no próprio fã-clube, sempre com a revisão antes de ir ao ar (decisões 15 e 16). O Mural oficial continua só da equipe. Desde 04/11/2026 (34.25), a exceção do fã-clube oficial com a chave do admin: a publicação vai ao ar na hora, e a equipe confere depois, na aba "Publicadas sem revisão".
 - **O que as lojas pedem para conteúdo de usuário** (App Store 1.2 e a política de UGC do Google Play; 29.1 e UP-13): filtrar antes de publicar (o texto pelo filtro, a imagem pela revisão), denunciar com ação da equipe em até 24 horas úteis, de segunda a sexta, das 8h às 17h (decisão 7; o cartão "Aguardando a equipe" é o alarme), bloquear com aviso à equipe ("Bloquear e denunciar"), o contato publicado (o Sobre) e os termos com tolerância zero, aceitos na candidatura (os Termos de Uso, até o regulamento chegar, decisão 8). A ação no prazo é da equipe da cliente (3.1.f e 10.1.f).
 - **Identidade:** a faixa "Fã-clube, não oficial" e "feito por @gestor" em toda tela do fã-clube; o nome com "oficial" recusado; nunca a pílula "gestão oficial"; o selo diz "Destaque", nunca "oficial". Desde 26/10/2026 (34.23, pedido do dono): sem a faixa; o selo de oficial só nos fã-clubes que o admin oficializa; o "feito por @gestor" em toda tela; a frase "O fã-clube é um espaço de fãs. Os oficializados pela equipe levam o selo de oficial ao lado do nome." na sheet das regras; o nome com "oficial" recusado; nunca a pílula "gestão oficial"; e o selo de destaque diz "Destaque". As notas de revisão explicam o selo.
 - **Ferramentas sobre o gestor:** as da Moderação de hoje (suspender, que agora também pausa o fã-clube e apaga os seguimentos; tirar a foto; trocar o @; apagar a bio e as redes) e, na seção nova, Pausar, Reativar e Encerrar.
 - **Prêmio e lojas:** sem sorteio, ranking ligado a prêmio, meta que paga prêmio nem critério anunciado (decisão 47). Um concurso anunciado pede a 5.3 da App Store (a Imagine como patrocinadora, as regras dentro do app e o aviso de que a Apple não patrocina) e a regra de concursos do Google Play.
-- **As notas de revisão das lojas** (29.14, passo 7) ganham o fã-clube: onde fica a candidatura, que toda publicação passa pela equipe, a denúncia com o motivo de imagem e o bloqueio.
+- **As notas de revisão das lojas** (29.14, passo 7) ganham o fã-clube: onde fica a candidatura, que toda publicação passa pela equipe (menos as dos oficiais com a publicação sem revisão, 34.25, que vão ao ar na hora e a equipe confere depois), a denúncia com o motivo de imagem e o bloqueio.
 - **Fora do app:** sem câmera, o primeiro bloco não muda nada nativo. As declarações das lojas (App Privacy e Data safety) e o questionário de classificação etária ganham o conteúdo de usuário, pela cliente (34.16, pergunta 5).
 - **Revisão das lojas e a função ligada pelo servidor:** o fã-clube abre com o EAS Update, e a chave `FAN_CLUB_OPEN` o fecha sem build (decisão 9). A build mandada às lojas sai com o fã-clube já no ar, e as notas de revisão descrevem a função, o texto do reconhecimento (decisão 47) e o prazo da equipe, até 24 horas úteis, de segunda a sexta, das 8h às 17h (decisão 7); ligar depois da aprovação uma função que o revisor não viu é o risco da 2.3.1 da App Store.
 
@@ -11612,7 +11612,7 @@ Da proposta (UP-65), para depois, sem data:
 - As visitas do fã-clube uma vez por pessoa e fã-clube (um marcador pela chave da pessoa debaixo do fã-clube), se a equipe passar a usar o número para decidir (34.22, etapa 3).
 - Pontos por seguidor qualificado, a missão "siga um fã-clube", pontos por publicação aprovada e o selo de gestor no perfil público, com as regras da cliente (2.4, UP-9; decisão 31).
 - O gestor encerrar o próprio fã-clube pelo app; uma regra para o gestor que sai da central do artista ou fica inativo (hoje o fã-clube continua, e a publicação nova pede o vínculo); editar o nome com nova revisão (decisão 10).
-- Publicação direta, sem pré-moderação, para o gestor que a equipe marcar como confiável (decisão 16).
+- Publicação direta, sem pré-moderação, para o gestor que a equipe marcar como confiável (decisão 16): construída em 04/11/2026, só no fã-clube oficial, com a chave do admin (34.25).
 - Um código próprio do fã-clube (`inviteCodes.kind` novo, 20.14, opção c), se a cliente quiser o crédito sempre para o gestor.
 - Mais de um fã-clube por fã e um limite de fã-clubes por artista (decisão 12).
 - Atalhos no menu "+" e no menu "mais" da 1d (UP-48), e o destaque na Explorar.
@@ -12150,6 +12150,131 @@ Pedido do dono, em 26/10/2026: o "Meu fã-clube" estava carregado demais, tudo n
 **A publicação.** Só o EAS Update do canal preview de uma `main` com este PR, depois do `npm ci`, com o fingerprint igual ao do APK. Nada no servidor: a ordem com qualquer deploy é livre.
 
 **Como foi (27/10/2026).** O EAS Update do canal preview saiu às 11:52Z (08h52 em Brasília), publicado pelo Claude a pedido do dono, da pasta do deploy (`Projetos/imagineup-app-deploy`) na `main` `0e73164`, o merge do PR #54, sem mudança local. Antes dele: o diff desde `bdc56e6` (a `main` do EAS Update anterior, o do selo, 34.23) só no app (`src`) e na documentação, sem nada em `functions`, nas regras, nos índices, no `package.json`, no `package-lock.json`, no `app.config.ts` nem no `eas.json`; o `npm ci`; e o fingerprint Android `310056fd840b5459416c9926e46846b8c208aa76`, igual ao do APK. Os grupos: Android `76fdce0d-985b-432e-8c9a-e4412608d68f`, na runtime `310056fd`, e iOS `c240b8c5-24dd-4153-b883-ddfe09f2a2e3`, na `b8207e25`, os dois no topo do `eas update:list` da branch preview, com a mensagem "Fã-clube: o modo gestor do Meu fã-clube (PR #54, main 0e73164)". A mensagem foi passada no próprio comando, pelo Git Bash: o do `npm run update:preview` (`eas update --channel preview --environment preview`) com `--non-interactive --message "..."`, porque sem eles o script pede a mensagem num prompt. Nada no servidor. Falta a conferência no aparelho com o APK: o update baixa numa abertura do app e vale na seguinte (como no selo, 34.23).
+
+### 34.25 A publicação sem revisão do fã-clube oficial (04/11/2026)
+
+Pedido do dono de 04/11/2026. Ele perguntou como um fã-clube oficial, como o do Netto Brito, publica hoje: toda publicação passa pela revisão da equipe (decisão 16), e o selo de 34.23 só muda a aparência. Depois pediu a proposta da publicação direta, o item de 34.18 "Publicação direta, sem pré-moderação, para o gestor que a equipe marcar como confiável", e aprovou as quatro recomendações no mesmo dia ("Sim, siga"). Fica sem aditivo, como o resto do fã-clube. Branch `fa-clube-publicacao-direta` do app, criada da `main` `f044380` (o merge do PR #91), e a de mesmo nome do painel, criada da `main` `4fe1ae1`. Nada nativo nem pacote novo; o fingerprint Android segue `310056fd840b5459416c9926e46846b8c208aa76`.
+
+**As respostas do dono (04/11/2026), todas pela recomendação:**
+
+1. **Quem ganha:** só o fã-clube oficial, com uma chave separada do selo, "Publica sem revisão". A confiança é na pessoa que gere, e a equipe tira a chave sem tirar o selo. Trocados: todo oficial, automaticamente; e qualquer fã-clube ativo que o admin marcar.
+2. **A foto:** o texto e a foto vão ao ar na hora. Trocado: só o texto na hora, com a foto ainda em análise (quase nada mudaria).
+3. **A conferência depois:** a aba "Publicadas sem revisão" no painel, com "Conferida" e "Ocultar", contando no cartão "Aguardando a equipe". Trocado: sem aba, só as denúncias.
+4. **Quem liga a chave:** só o admin, como o selo. Trocado: o editor da seção Fã-clubes.
+
+**O risco, dito ao dono antes da escolha.** A foto vai ao ar sem ninguém olhar antes: o filtro da seção 30 confere só o texto, e a revisão era o que segurava a imagem de fã (decisão 16 e 34.11). Sem ela, seguram:
+- a chave só para poucos gestores, combinados com o artista;
+- a denúncia, com o motivo de imagem;
+- o bloqueio;
+- o ocultar da equipe;
+- a aba nova, que é o alarme da conferência.
+
+As notas de revisão das lojas (34.11) passam a dizer isso.
+
+**Servidor.**
+
+- **A chave:** `fanClubs/{clubId}` ganha `directPosts` (boolean), `directPostsAt` e `directPostsBy` (`{ uid, name }`).
+  - Desligada pelo `DIRECT_POSTS_OFF` do `store.ts`, que o `OFFICIAL_OFF` leva junto: o fã-clube nasce sem a chave, e tirar o selo, encerrar e a lápide da exclusão a tiram.
+  - A pausa mantém a chave, como o selo.
+  - O `fanClubRecord` só lê o `directPosts` com o `official`: a chave sem o selo não vale.
+- **As decisões do admin:** o `decideFanClub` ganha duas, no assunto `club`, só para o admin (o `ADMIN_DECISIONS`).
+  - O `allowDirectPosts` vale só no fã-clube ativo e oficial. Sem o selo, dá o erro novo `not-official` ("Só um fã-clube oficial publica sem revisão."). Com a chave já ligada, `ok` sem gravar.
+  - O `revokeDirectPosts` vale em qualquer status. Sem a chave, `ok` sem gravar.
+  - A auditoria ganha `fanClub.directPosts.allowed` e `fanClub.directPosts.revoked`, com os `details` de sempre do fã-clube.
+- **O envio (`createFanClubPost`), com a chave valendo:**
+  - A publicação nasce `published`, com o `direct: true`, o `publishedAt` e o `reviewedAt` null.
+  - O fã-clube ganha o que o Aprovar daria (o `postCount` mais 1 e o `lastPostAt`), sem mexer no `pendingPosts`.
+  - O limite de 3 em análise (`too_many_pending`) não vale, nem na publicação nem na vaga da foto.
+  - Continuam: o filtro de texto, os tetos do dia (`fanclub_post` e `fanclub_upload`), a foto só com o `photosAllowed` e o regulamento em dia.
+  - Toda publicação nova grava o `direct`, false na que vai para a revisão.
+- **O "Conferida":** a decisão nova `check`, no assunto `post`, para quem edita a seção (o `checkPost` em `panel.ts`).
+  - A publicação no ar com o `direct` ganha o `reviewedAt` e o `reviewedBy`, sem mudar o status, com a auditoria `fanClub.post.checked`.
+  - Já com o `reviewedAt` (a repetição, ou a aprovada antes), `ok` sem gravar.
+  - O status diferente do da tela é `stale-decision`. Fora do ar ou sem o `direct`, `invalid-request` com `field: 'decision'`.
+  - O Ocultar de sempre também grava o `reviewedAt` e tira da aba.
+- **A aba "Publicadas sem revisão":** a consulta `status == 'published'` e `reviewedAt == null`, pelo `publishedAt` crescente, com um índice composto novo (76). As regras do Firestore não mudam: a seção `fanClubs` já lê `fanClubPosts`.
+- **A API e a exportação:** a API manda o `directPosts` no `MyFanClubClub` (`GET /me/fan-club`). A exportação deixa o `directPostsBy` de fora, como o `officialBy`.
+- **O que não muda:** nenhuma função, rota, regra, teto nem fila nova.
+- **O seed:** o `seedFanClubDirectPost` liga a chave do "Netto de Coração" da Camila, depois das publicações revisadas, com o admin do seed, e manda uma publicação de texto que vai ao ar sem revisão. A aba nova nasce com uma. Rodar de novo não grava, e a chave tirada no painel local fica como está.
+
+**App.**
+
+- **O tipo:** o `MyFanClubClub` ganha o `directPosts`. A `api` de antes não manda, e o ausente conta como false.
+- **A nova publicação (`new-fan-club-post.tsx`), com a chave:**
+  - O card "Revisada pela equipe" vira "Vai ao ar na hora" ("Seu fã-clube é oficial: a publicação aparece para os fãs assim que você envia. A equipe confere depois."), sem as vagas das 3.
+  - As 3 em análise não seguram o envio.
+  - O sucesso olha o status da resposta, e não a chave da tela, porque a equipe pode ter mudado a chave no meio. No ar, anuncia "Publicado no seu fã-clube." e volta a Publicações em "No ar"; em análise, como antes.
+  - A publicação no ar refaz a página do fã-clube e a Início.
+- **O "+" do modo gestor (`postBlockOf`):** com a chave, as 3 em análise não seguram. O fã-clube fora do ar e o regulamento velho, sim.
+- **Os textos do modo gestor:**
+  - Em Publicações, a frase da revisão vira "Seu fã-clube é oficial: as publicações vão ao ar na hora, e a equipe confere depois.".
+  - No Painel, o atalho diz "N no ar · N em análise", sem o "de 3".
+- **As fixtures** não fingem a chave (`directPosts: false`).
+
+**Painel.** No `imagineup-admin`, branch `fa-clube-publicacao-direta`:
+
+- **A ficha do fã-clube:**
+  - Ao lado do Oficializar, só para o admin e só no fã-clube oficial e ativo, "Publicar sem revisão" e "Tirar a publicação sem revisão", cada um com a confirmação.
+  - A linha "Revisão" diz "Publica sem revisão desde ..., por ...".
+  - A confirmação do "Tirar a oficialização" avisa que a chave sai junto.
+  - O `not-official` e o `stale-decision` mostram a frase do servidor.
+- **A lista de publicações da ficha:**
+  - A marca "Sem revisão", em ciano, até a conferência e, depois, "Conferida por ...".
+  - A linha "Publicações" diz "a última foi ao ar em", porque a data agora vem também das publicações sem revisão.
+- **A aba "Publicadas sem revisão"** (`/fa-clubes?aba=sem-revisao`), depois da "Publicações para revisar":
+  - Da mais antiga para a mais nova, em páginas de 25, como as outras da seção.
+  - O card da fila de revisão, com "Conferida" e "Ocultar" para o admin e o editor da seção. O Leitor vê sem os botões.
+  - A publicação sai da lista na hora, também no `stale-decision` e no `fan-club-post-not-found`.
+- **As contagens:** o cartão "Aguardando a equipe" da Visão geral e o cabeçalho da seção contam as publicadas sem revisão.
+- **Logs, frases e README:**
+  - Nos Logs, "Publicação sem revisão ligada", "Publicação sem revisão tirada" e "Publicação de fã-clube conferida".
+  - O `not-official` entra nas frases de reserva, e o README ganha o trecho.
+
+**Testes.**
+- **Servidor:**
+  - O `parseDecision` com as três decisões (`panel.test.ts`).
+  - As três linhas do `audit-index.test.ts` e o `directPostsBy` no `omit` (`sources.test.ts`).
+  - O índice (`indexes.test.ts`: 28 do fã-clube e 76 no total).
+  - Nos emuladores, o `fan-club-posts.emulator.test.ts`, de ponta a ponta:
+    - o editor recebe `admin-only`, e o fã-clube sem o selo, `not-official`;
+    - o admin liga a chave, com a auditoria;
+    - a publicação de texto e a de foto vão ao ar na hora, com o limite de 3 cheio, com o `postCount` e o `pendingPosts` certos e as duas na página;
+    - a consulta da aba e o Conferida, com a repetição sem gravar;
+    - a publicação em análise não tem o que conferir, e o Ocultar tira da aba;
+    - tirar a chave traz o limite de volta, e tirar o selo leva a chave junto;
+    - a chave sem o selo, gravada à mão, não vale, e encerrar tira a chave.
+  - O seed no `panel-seed`.
+- **App:** o `postBlockOf` (`manager.test.ts`) e a nova publicação com a chave (`fan-club.test.tsx`: o "+" com as 3 cheias, o card, a volta em "No ar" e o anúncio).
+
+**A publicação** (escrita em 04/11/2026, antes do deploy). Parte do servidor de `77d52c9` (38.9). Cada passo com o ok do dono:
+
+1. O índice novo, pelo `rules:deploy`. As regras não mudam.
+2. As 70 funções, nos 5 lotes. O código é compartilhado: a `api` e a `decideFanClub` mudam, e o `OFFICIAL_OFF` também está na exclusão de conta.
+3. O EAS Update.
+4. O painel, por último. Antes das funções, o painel mostraria o botão e receberia `invalid-request` da `decideFanClub` de antes, sem gravar.
+
+A ordem importa num ponto só: ninguém liga a chave antes do EAS Update. Senão, o app de antes diz "Enviado para revisão" de uma publicação que já está no ar, e volta a "Em análise", vazia.
+
+**Conferência.** Em 04/11/2026, na branch `fa-clube-publicacao-direta`, com o fingerprint Android igual ao do APK (`310056fd840b5459416c9926e46846b8c208aa76`):
+
+- **Testes:**
+  - As funções no vitest: 76 arquivos e 2.766 testes.
+  - Os emuladores: 37 arquivos e 601 testes, com uma falha que já existe na `main` `f044380`. No `fan-club-mentions`, o teste do filtro, que só roda com a lista real do filtro na máquina, espera o `commentCount: 0` numa publicação que não grava o campo ao nascer. Foi conferido rodando o mesmo arquivo na `main`.
+  - O app no Jest: 191 suítes e 3.461 testes.
+  - O painel: 345 testes.
+  - O lint e os tipos do app, das funções e do painel, limpos. No `tsc` do app, só o erro de sempre do `phosphor-react-native`.
+  - O build do painel.
+- **Emulador Android, pelo Expo Go, com o seed e os emuladores,** como a Camila:
+  - Publicações com a frase nova.
+  - O "+" abriu a nova publicação com "Vai ao ar na hora".
+  - O envio de um texto voltou a Publicações em "No ar", com a publicação no topo, e a página pública a mostrou na hora.
+  - No Firestore do emulador, a publicação ficou `published`, com `direct: true` e o `reviewedAt` null. O fã-clube ficou com o `postCount` 4 e o `pendingPosts` 1, como estava.
+- **Painel local nos mesmos emuladores** (porta 3002, como a equipe de teste, admin):
+  - A aba com as duas publicadas sem revisão: a do seed e a do emulador.
+  - O "Conferida" pela `decideFanClub` de verdade ("Publicação de Camila Ribeiro conferida.", e a contagem de 2 para 1).
+  - Na ficha, "Publica sem revisão desde 4 nov, por Equipe de Teste" e a marca "Sem revisão".
+  - O "Tirar a publicação sem revisão" e o "Publicar sem revisão" de novo, com as frases de sucesso.
+  - As três ações nos Logs.
 
 ## 35. WhatsApp no resgate da loja
 

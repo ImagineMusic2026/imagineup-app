@@ -262,6 +262,8 @@ describe('publicar (34.5)', () => {
       publishedAt: null,
       reviewedAt: null,
       reviewedBy: null,
+      // Em análise, e não sem revisão (34.25).
+      direct: false,
       schemaVersion: 1,
     });
     expect(await read(`fanClubs/${clubId}`)).toMatchObject({ pendingPosts: 1, postCount: 0 });
@@ -1208,5 +1210,216 @@ describe('as cópias do autor e a exclusão da conta (34.5 e 34.7)', () => {
     });
     // A denúncia de quem denunciou fica (é de quem denunciou).
     expect(await exists(`fanClubReports/${bia.uid}_${liveId}`)).toBe(true);
+  });
+});
+
+describe('a publicação sem revisão do fã-clube oficial (34.25)', () => {
+  const decideClub = (who: Caller, clubId: string, decision: string, expected = 'active') =>
+    ok('decideFanClub', { subject: 'club', id: clubId, decision, expected }, who);
+
+  /** A aba "Publicadas sem revisão" do painel: no ar, sem o `reviewedAt`, da mais antiga. */
+  const unchecked = async (clubId: string) =>
+    (
+      await db
+        .collection('fanClubPosts')
+        .where('status', '==', 'published')
+        .where('reviewedAt', '==', null)
+        .orderBy('publishedAt', 'asc')
+        .get()
+    ).docs
+      .filter((doc) => doc.get('clubId') === clubId)
+      .map((doc) => doc.id);
+
+  it('só do admin e só no oficial: vai ao ar na hora, sem o limite de 3 em análise, e a equipe confere depois', async () => {
+    const call = api();
+    const admin = await seedMember(env, 'Admin', 'admin');
+    const editor = await seedMember(env, 'Editora', 'editor', ['fanClubs']);
+    const { fan, clubId, artistId } = await gestor(call, editor);
+    expect(await read(`fanClubs/${clubId}`)).toMatchObject({
+      directPosts: false,
+      directPostsAt: null,
+      directPostsBy: null,
+    });
+    // Três em análise antes da chave: o limite de 3 cheio.
+    const pending: string[] = [];
+    for (const text of ['Primeira', 'Segunda', 'Terceira']) {
+      const sent = await publish(call, fan, { text, photo: false });
+      expect(sent.body).toMatchObject({ status: 'pending' });
+      pending.push(sent.body.id as string);
+    }
+
+    // O editor da seção não liga nem tira: admin-only.
+    for (const decision of ['allowDirectPosts', 'revokeDirectPosts']) {
+      expect(
+        (
+          await failure(
+            'decideFanClub',
+            { subject: 'club', id: clubId, decision, expected: 'active' },
+            editor,
+          )
+        ).details?.reason,
+      ).toBe('admin-only');
+    }
+    // Sem o selo, o admin também não liga.
+    expect(
+      (
+        await failure(
+          'decideFanClub',
+          { subject: 'club', id: clubId, decision: 'allowDirectPosts', expected: 'active' },
+          admin,
+        )
+      ).details,
+    ).toMatchObject({ reason: 'not-official' });
+    expect(await audits('fanClub.directPosts.allowed')).toEqual([]);
+
+    await decideClub(admin, clubId, 'officialize');
+    expect(await decideClub(admin, clubId, 'allowDirectPosts')).toEqual({
+      ok: true,
+      subject: 'club',
+      id: clubId,
+      status: 'active',
+    });
+    expect(await read(`fanClubs/${clubId}`)).toMatchObject({
+      official: true,
+      directPosts: true,
+      directPostsAt: expect.any(Timestamp),
+      directPostsBy: { uid: admin.uid, name: 'Admin' },
+    });
+    expect((await audits('fanClub.directPosts.allowed'))[0]).toMatchObject({
+      section: 'fanClubs',
+      actorUid: admin.uid,
+      details: { clubId, artistId, fanUid: fan.uid },
+    });
+    // A mesma decisão de novo: ok, sem gravar nem auditar.
+    await decideClub(admin, clubId, 'allowDirectPosts');
+    expect(await audits('fanClub.directPosts.allowed')).toHaveLength(1);
+    expect((await call('GET', '/me/fan-club', { token: fan.token })).body).toMatchObject({
+      club: { official: true, directPosts: true, pendingPosts: 3, postCount: 0 },
+    });
+
+    // Vai ao ar na hora, com o limite de 3 em análise cheio.
+    const text = await publish(call, fan, { text: 'No ar na hora', photo: false });
+    expect(text).toMatchObject({
+      status: 200,
+      body: { status: 'published', publishedAt: expect.any(String), reviewedAt: null },
+    });
+    const textId = text.body.id as string;
+    expect(await read(`fanClubPosts/${textId}`)).toMatchObject({
+      status: 'published',
+      direct: true,
+      publishedAt: expect.any(Timestamp),
+      reviewedAt: null,
+      reviewedBy: null,
+    });
+    const slot = await uploaded(call, fan);
+    const photo = await publish(call, fan, { text: 'Com foto, na hora', photo: true });
+    expect(photo.body).toMatchObject({ status: 'published', kind: 'photo' });
+    const photoId = photo.body.id as string;
+    expect(await read(`fanClubPosts/${photoId}`)).toMatchObject({
+      direct: true,
+      media: { photo: { path: slot.photoPath }, thumb: { path: slot.thumbPath } },
+    });
+    expect(await opens((photo.body.photo as { url: string }).url)).toBe(true);
+    // O fã-clube: o postCount e o lastPostAt, e o pendingPosts como estava.
+    expect(await read(`fanClubs/${clubId}`)).toMatchObject({
+      pendingPosts: 3,
+      postCount: 2,
+      lastPostAt: expect.any(Timestamp),
+    });
+    // Na página, para os fãs, as duas; as três em análise, não.
+    const page = await call('GET', `/fan-clubs/${clubId}/posts`, { token: fan.token });
+    expect((page.body.items as { id: string }[]).map((item) => item.id)).toEqual([photoId, textId]);
+    expect(await unchecked(clubId)).toEqual([textId, photoId]);
+
+    // O Conferida: o editor da seção, e a publicação sai da aba.
+    expect(await decidePost(editor, textId, 'check', 'published')).toEqual({
+      ok: true,
+      subject: 'post',
+      id: textId,
+      status: 'published',
+    });
+    expect(await read(`fanClubPosts/${textId}`)).toMatchObject({
+      status: 'published',
+      reviewedAt: expect.any(Timestamp),
+      reviewedBy: { uid: editor.uid, name: 'Editora' },
+    });
+    expect((await audits('fanClub.post.checked'))[0]).toMatchObject({
+      section: 'fanClubs',
+      actorUid: editor.uid,
+      details: { fanClubPostId: textId, clubId, artistId, authorUid: fan.uid, reason: null },
+    });
+    await decidePost(editor, textId, 'check', 'published');
+    expect(await audits('fanClub.post.checked')).toHaveLength(1);
+    expect(await unchecked(clubId)).toEqual([photoId]);
+    // A em análise não tem o que conferir.
+    expect(
+      (
+        await failure(
+          'decideFanClub',
+          { subject: 'post', id: pending[0], decision: 'check', expected: 'pending' },
+          editor,
+        )
+      ).details,
+    ).toMatchObject({ reason: 'invalid-request', field: 'decision' });
+    // Ocultar também tira da aba: a equipe olhou.
+    await decidePost(editor, photoId, 'hide', 'published');
+    expect(await unchecked(clubId)).toEqual([]);
+    expect(await read(`fanClubs/${clubId}`)).toMatchObject({ postCount: 1 });
+
+    // Tirar a chave: volta a revisão, e o limite de 3 vale de novo.
+    expect((await decideClub(admin, clubId, 'revokeDirectPosts')).status).toBe('active');
+    expect(await read(`fanClubs/${clubId}`)).toMatchObject({
+      official: true,
+      directPosts: false,
+      directPostsAt: null,
+      directPostsBy: null,
+    });
+    expect((await audits('fanClub.directPosts.revoked'))[0]).toMatchObject({
+      details: { clubId, artistId, fanUid: fan.uid },
+    });
+    await decideClub(admin, clubId, 'revokeDirectPosts');
+    expect(await audits('fanClub.directPosts.revoked')).toHaveLength(1);
+    expect(await publish(call, fan, { text: 'Depois da chave', photo: false })).toMatchObject(
+      refusal('too_many_pending'),
+    );
+    // O que já foi ao ar fica.
+    expect(await read(`fanClubPosts/${textId}`)).toMatchObject({ status: 'published' });
+
+    // Tirar o selo leva a chave junto.
+    await decideClub(admin, clubId, 'allowDirectPosts');
+    await decideClub(admin, clubId, 'unofficialize');
+    expect(await read(`fanClubs/${clubId}`)).toMatchObject({
+      official: false,
+      directPosts: false,
+      directPostsBy: null,
+    });
+    expect((await call('GET', '/me/fan-club', { token: fan.token })).body).toMatchObject({
+      club: { official: false, directPosts: false },
+    });
+  });
+
+  it('a chave sem o selo não vale, e encerrar tira a chave', async () => {
+    const call = api();
+    const admin = await seedMember(env, 'Admin', 'admin');
+    const editor = await seedMember(env, 'Editora', 'editor', ['fanClubs']);
+    const { fan, clubId } = await gestor(call, editor);
+    // Um documento com a chave e sem o selo (gravado à mão): a publicação vai para a revisão.
+    await db.doc(`fanClubs/${clubId}`).update({ directPosts: true });
+    expect((await call('GET', '/me/fan-club', { token: fan.token })).body).toMatchObject({
+      club: { directPosts: false },
+    });
+    expect((await publish(call, fan, { text: 'Sem selo', photo: false })).body).toMatchObject({
+      status: 'pending',
+    });
+
+    await decideClub(admin, clubId, 'officialize');
+    await decideClub(admin, clubId, 'allowDirectPosts');
+    await decideClub(admin, clubId, 'close');
+    expect(await read(`fanClubs/${clubId}`)).toMatchObject({
+      status: 'closed',
+      official: false,
+      directPosts: false,
+      directPostsBy: null,
+    });
   });
 });

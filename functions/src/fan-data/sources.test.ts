@@ -231,7 +231,7 @@ describe('o filtro de campos (decisão 8)', () => {
       profileReports: [['round'], null],
       redemptions: [['updatedBy'], null],
       fanClubApplications: [['decidedBy'], null],
-      fanClubs: [['approvedBy', 'closedBy', 'featuredBy', 'officialBy'], null],
+      fanClubs: [['approvedBy', 'closedBy', 'featuredBy', 'officialBy', 'directPostsBy'], null],
       fanClubPosts: [['reviewedBy', 'mentions', 'mentionUids'], null],
       fanClubReports: [['round'], null],
       fanClubComments: [['hiddenBy', 'mentions', 'mentionUids'], null],

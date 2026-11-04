@@ -104,13 +104,15 @@ describe('a candidatura', () => {
 });
 
 describe('o fã-clube', () => {
-  it('pausar, reativar, tirar o destaque, oficializar e tirar a oficialização só com o status', () => {
+  it('pausar, reativar, tirar o destaque, o selo e a publicação sem revisão só com o status', () => {
     for (const decision of [
       'pause',
       'resume',
       'unfeature',
       'officialize',
       'unofficialize',
+      'allowDirectPosts',
+      'revokeDirectPosts',
     ] as const) {
       expect(club({ decision, expected: 'active' })).toEqual({
         subject: 'club',
@@ -180,6 +182,8 @@ describe('o fã-clube', () => {
     [{ decision: 'pause' }, 'expected'],
     [{ decision: 'pause', expected: 'ativo' }, 'expected'],
     [{ decision: 'officialize' }, 'expected'],
+    [{ decision: 'allowDirectPosts' }, 'expected'],
+    [{ decision: 'check', expected: 'active' }, 'decision'],
     [{ decision: 'verify', expected: 'active' }, 'decision'],
     [{ decision: 'close', expected: 'active', reason: 'account_deleted' }, 'reason'],
     [{ decision: 'feature', expected: 'active' }, 'featuredUntil'],
@@ -191,8 +195,8 @@ describe('o fã-clube', () => {
 });
 
 describe('a publicação (etapa 2)', () => {
-  it('aprovar, ocultar e reexibir só com o status; recusar com o motivo da lista', () => {
-    for (const decision of ['approve', 'hide', 'restore'] as const) {
+  it('aprovar, ocultar, reexibir e o Conferida (34.25) só com o status; recusar com o motivo da lista', () => {
+    for (const decision of ['approve', 'hide', 'restore', 'check'] as const) {
       expect(post({ decision, expected: 'pending' })).toEqual({
         subject: 'post',
         id: 'pub1',
@@ -213,6 +217,8 @@ describe('a publicação (etapa 2)', () => {
     [{ decision: 'pause', expected: 'pending' }, 'decision'],
     [{ decision: 'keep', expected: 'pending' }, 'decision'],
     [{ decision: 'approve' }, 'expected'],
+    [{ decision: 'check' }, 'expected'],
+    [{ decision: 'allowDirectPosts', expected: 'published' }, 'decision'],
     [{ decision: 'approve', expected: 'active' }, 'expected'],
     [{ decision: 'approve', expected: 1 }, 'expected'],
     [{ decision: 'reject', expected: 'pending' }, 'reason'],

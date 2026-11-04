@@ -19,6 +19,7 @@ const club = (patch: Partial<MyFanClubClub> = {}): MyFanClubClub => ({
   photosAllowed: true,
   featuredUntil: null,
   official: false,
+  directPosts: false,
   lastReward: null,
   available: true,
   unavailableReason: null,
@@ -143,5 +144,14 @@ describe('postBlockOf', () => {
     ).toBe('unavailable');
     expect(postBlockOf(club({ rulesOutdated: true, pendingPosts: 3 }))).toEqual({ kind: 'rules' });
     expect(postBlockOf(club({ pendingPosts: 3 }))).toEqual({ kind: 'full' });
+  });
+
+  it('na publicação sem revisão (34.25), as 3 em análise não seguram o "+"; o resto, sim', () => {
+    const direct = { official: true, directPosts: true, pendingPosts: 3 };
+    expect(postBlockOf(club(direct))).toBeNull();
+    expect(postBlockOf(club({ ...direct, rulesOutdated: true }))).toEqual({ kind: 'rules' });
+    expect(
+      postBlockOf(club({ ...direct, available: false, unavailableReason: 'paused' }))?.kind,
+    ).toBe('unavailable');
   });
 });

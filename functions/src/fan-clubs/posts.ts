@@ -506,7 +506,8 @@ type PublishContext = {
  * a central (`not_member`); o artista no ar e com o fã-clube aberto
  * (`artist_closed`); com foto, o `photosAllowed` (`photos_not_allowed`); a
  * versão do regulamento aceita (`rules_outdated`); e menos de 3 em análise
- * (`too_many_pending`). Duas rodadas de leitura: a candidatura; o fã-clube, o
+ * (`too_many_pending`), que não vale no fã-clube que publica sem revisão
+ * (34.25). Duas rodadas de leitura: a candidatura; o fã-clube, o
  * vínculo, o artista e o `artistPrivate`. A vaga de envio pede o mesmo, com
  * foto: abrir uma vaga para uma publicação que seria recusada só gastaria o
  * teto do dia.
@@ -543,7 +544,9 @@ async function readPublishContext(
   if (!isPublished(artistOf(artistSnap)) || !boxes.enabled) throw fanClubRefused('artist_closed');
   if (photo && !boxes.photosAllowed) throw fanClubRefused('photos_not_allowed');
   if (record.rulesVersion !== FAN_CLUB_RULES_VERSION) throw fanClubRefused('rules_outdated');
-  if (club.pendingPosts >= FAN_CLUB_PENDING_MAX) throw fanClubRefused('too_many_pending');
+  if (!club.directPosts && club.pendingPosts >= FAN_CLUB_PENDING_MAX) {
+    throw fanClubRefused('too_many_pending');
+  }
   return { club, clubRef };
 }
 
@@ -647,7 +650,11 @@ async function readPostMedia(
  * no `PUT /me/photo`; o `planAwards` sem entradas; e grava a publicação em
  * análise, com as cópias do perfil, as marcações (as `mentions` e os
  * `mentionUids`), o `pendingPosts` mais 1 e, com foto, apaga a vaga. Toda
- * publicação nasce em análise (decisão 16).
+ * publicação nasce em análise (decisão 16), menos a do fã-clube oficial com a
+ * publicação sem revisão (34.25): essa nasce `published`, com o `direct`, o
+ * `publishedAt` e o `reviewedAt` null (a aba "Publicadas sem revisão" do
+ * painel), e grava no fã-clube o que o Aprovar gravaria (o `postCount` mais 1
+ * e o `lastPostAt`), sem mexer no `pendingPosts`.
  */
 export async function createFanClubPost(
   tx: Transaction,
@@ -683,6 +690,8 @@ export async function createFanClubPost(
   countDailyAction(plan, fan, award, 'club_post');
 
   const at = tsOf(award.now);
+  const direct = context.club.directPosts;
+  const status: FanClubPostStatus = direct ? 'published' : 'pending';
   const copies = ownerCopiesOf(profile.data() ?? {});
   const ref = fanClubPostsOf(db).doc();
   const record: FanClubPostRecord = {
@@ -696,11 +705,12 @@ export async function createFanClubPost(
     kind: media ? 'photo' : 'text',
     text: input.text,
     media,
-    status: 'pending',
+    status,
     rejectReason: null,
     submittedAt: award.now,
-    publishedAt: null,
+    publishedAt: direct ? award.now : null,
     reviewedAt: null,
+    direct,
     reactionCount: 0,
     reactionCounts: emptyReactionCounts(),
     commentCount: 0,
@@ -718,15 +728,21 @@ export async function createFanClubPost(
     mentions,
     mentionUids,
     media,
-    status: 'pending',
+    status,
     rejectReason: null,
     submittedAt: at,
-    publishedAt: null,
+    publishedAt: direct ? at : null,
     reviewedAt: null,
     reviewedBy: null,
+    direct,
     schemaVersion: 1,
   });
-  tx.update(context.clubRef, { pendingPosts: context.club.pendingPosts + 1, updatedAt: at });
+  tx.update(
+    context.clubRef,
+    direct
+      ? { postCount: context.club.postCount + 1, lastPostAt: at, updatedAt: at }
+      : { pendingPosts: context.club.pendingPosts + 1, updatedAt: at },
+  );
   if (media) tx.delete(slotRef);
   return { body: ownPostView(record), plan };
 }

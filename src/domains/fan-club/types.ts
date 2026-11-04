@@ -80,6 +80,12 @@ export interface MyFanClubClub {
   featuredUntil: string | null;
   /** Oficializado pela equipe: o selo do fã-clube oficial (34.23). */
   official: boolean;
+  /**
+   * A publicação vai ao ar sem a revisão antes (34.25): só no oficial, com a
+   * chave do admin. Sem o limite de 3 em análise. A `api` de antes não manda:
+   * o ausente conta como false em todo uso (só testes de verdade, `!` e `?:`).
+   */
+  directPosts: boolean;
   lastReward: FanClubLastReward | null;
   available: boolean;
   unavailableReason: FanClubUnavailableReason | null;

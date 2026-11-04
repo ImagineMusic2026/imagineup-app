@@ -416,7 +416,9 @@ export function ManagerPosts({ club, filter, onFilter, bottomInset }: ManagerPos
             testID="fan-club-posts-filter"
           />
           <Text variant="caption" color={colors.textSecondary} testID="fan-club-posts-note">
-            {t('fanClub.manager.posts.note')}
+            {t(
+              club.directPosts ? 'fanClub.manager.posts.noteDirect' : 'fanClub.manager.posts.note',
+            )}
           </Text>
         </View>
       }

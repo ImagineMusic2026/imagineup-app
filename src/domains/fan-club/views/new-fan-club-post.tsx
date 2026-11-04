@@ -159,10 +159,31 @@ function PhotoThumb({ photo, preparing, disabled, onRemove }: PhotoThumbProps) {
 
 /**
  * "Revisada pela equipe" (no lugar do "Alcance previsto" da 4b): a equipe
- * confere antes de ir ao ar, as em análise e as vagas que sobram das 3. Um
- * foco só.
+ * confere antes de ir ao ar, as em análise e as vagas que sobram das 3. No
+ * fã-clube que publica sem revisão (34.25), "Vai ao ar na hora", sem as vagas.
+ * Um foco só.
  */
 function ReviewCard({ club }: { club: MyFanClubClub }) {
+  if (club.directPosts) {
+    return (
+      <Card
+        accessible
+        accessibilityLabel={t('fanClub.newPost.directLabel', {
+          title: t('fanClub.newPost.directTitle'),
+          body: t('fanClub.newPost.directLead'),
+        })}
+        style={styles.review}
+        testID="fan-club-post-direct"
+      >
+        <Text variant="overline" color={colors.textMuted}>
+          {t('fanClub.newPost.directTitle')}
+        </Text>
+        <Text variant="body" color={colors.textSecondary}>
+          {t('fanClub.newPost.directLead')}
+        </Text>
+      </Card>
+    );
+  }
   const pending = Math.min(club.pendingPosts, FAN_CLUB_PENDING_MAX);
   const free = FAN_CLUB_PENDING_MAX - pending;
   const freeWord = t(free === 1 ? 'fanClub.newPost.reviewFreeOne' : 'fanClub.newPost.reviewFree');
@@ -372,7 +393,7 @@ function NewPostForm({ club, failure, onFailure: setFailure }: NewPostFormProps)
       revealAboveKeyboard(scroll.current, bar.current, !reducedMotion);
     }
   };
-  const full = club.pendingPosts >= FAN_CLUB_PENDING_MAX;
+  const full = !club.directPosts && club.pendingPosts >= FAN_CLUB_PENDING_MAX;
   const blocked = full || club.rulesOutdated;
 
   // A galeria sem o recorte do sistema e o preparo em 4:5 na hora da escolha:
@@ -405,14 +426,19 @@ function NewPostForm({ club, failure, onFailure: setFailure }: NewPostFormProps)
       create.mutate(
         { text: form.text, photo: club.photosAllowed ? photo : null },
         {
-          onSuccess: () => {
+          onSuccess: (post) => {
+            // A que foi ao ar sem revisão (34.25) volta em "No ar"; a outra, em
+            // "Em análise". Quem diz é o status da resposta, e não a chave da
+            // tela: a equipe pode ter mudado a chave depois de a tela abrir.
+            const live = post.status === 'published';
             haptics.trigger('success');
-            AccessibilityInfo.announceForAccessibility(t('fanClub.newPost.sent'));
-            // De volta ao modo gestor, em Publicações, com a nova em análise
-            // (aberta a frio, troca por ele).
+            AccessibilityInfo.announceForAccessibility(
+              t(live ? 'fanClub.newPost.sentLive' : 'fanClub.newPost.sent'),
+            );
+            // De volta ao modo gestor, em Publicações (aberta a frio, troca por ele).
             router.dismissTo({
               pathname: '/meu-fa-clube',
-              params: { aba: 'publicacoes', filtro: 'em-analise' },
+              params: { aba: 'publicacoes', filtro: live ? 'no-ar' : 'em-analise' },
             });
           },
           onError: (error) => {

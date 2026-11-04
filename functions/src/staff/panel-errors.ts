@@ -47,7 +47,8 @@ export type PanelErrorReason =
   | 'fan-club-comment-not-found'
   | 'prize-not-allowed'
   | 'grant-id-reused'
-  | 'reward-not-prize';
+  | 'reward-not-prize'
+  | 'not-official';
 
 const ERRORS: Record<PanelErrorReason, [FunctionsErrorCode, string]> = {
   'invalid-request': ['invalid-argument', 'Pedido inválido.'],
@@ -118,6 +119,7 @@ const ERRORS: Record<PanelErrorReason, [FunctionsErrorCode, string]> = {
     'Esse reconhecimento já foi dado com outros valores. Abra o diálogo de novo.',
   ],
   'reward-not-prize': ['failed-precondition', 'Essa recompensa não é só para prêmios de fã-clube.'],
+  'not-official': ['failed-precondition', 'Só um fã-clube oficial publica sem revisão.'],
 };
 
 /** Erro das callables do bloco 11: código do Firebase, mensagem em pt-BR e `details: { reason, ... }`. */

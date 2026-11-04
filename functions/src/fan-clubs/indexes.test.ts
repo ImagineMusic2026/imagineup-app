@@ -70,6 +70,13 @@ const COMPOSITE: CompositeShape[] = [
     desc('publishedAt'),
   ]),
   shape('a fila de revisão', 'fanClubPosts', [asc('status'), asc('submittedAt')]),
+  // A aba "Publicadas sem revisão" (34.25): no ar com o `reviewedAt` null, da
+  // mais antiga para a mais nova.
+  shape('as publicadas sem revisão', 'fanClubPosts', [
+    asc('status'),
+    asc('reviewedAt'),
+    asc('publishedAt'),
+  ]),
   shape('as publicações do gestor', 'fanClubPosts', [asc('authorUid'), desc('submittedAt')]),
   shape('a ficha do fã-clube, em todos os status', 'fanClubPosts', [
     asc('clubId'),
@@ -201,9 +208,9 @@ const SINGLE: SingleFieldShape[] = [
 ];
 
 describe('os índices do fã-clube (34.6)', () => {
-  it('são 27 compostos do fã-clube (21 da seção 34 e 6 da 37), 75 no total (com os 4 do Suporte, seção 38)', () => {
-    expect(COMPOSITE).toHaveLength(27);
-    expect(file.indexes).toHaveLength(75);
+  it('são 28 compostos do fã-clube (21 da seção 34, 6 da 37 e 1 de 34.25), 76 no total (com os 4 do Suporte, seção 38)', () => {
+    expect(COMPOSITE).toHaveLength(28);
+    expect(file.indexes).toHaveLength(76);
   });
 
   it.each(COMPOSITE.map((item) => [item.name, item] as const))(

@@ -72,6 +72,7 @@ import {
   type CloseReason,
   type CommentDecision,
   type FanClubCommentStatus,
+  type FanClubPostRecord,
   type FanClubPostStatus,
   type FanClubRecord,
   type FanClubStatus,
@@ -83,6 +84,7 @@ import { NO_FILE_WORK, runFanClubFileWork, type FanClubFileWork } from './posts'
 import {
   applicationPrivateRef,
   applicationRef,
+  DIRECT_POSTS_OFF,
   FEATURE_OFF,
   fanClubCommentQueueRef,
   fanClubCommentRef,
@@ -113,6 +115,21 @@ import {
 export const DECISION_SUBJECTS = ['application', 'club', 'post', 'report', 'comment'] as const;
 export type DecisionSubject = (typeof DECISION_SUBJECTS)[number];
 
+/**
+ * As decisões do fã-clube só com o `expected`. `officialize` e
+ * `unofficialize`: o selo do fã-clube oficial, só do admin (34.23).
+ * `allowDirectPosts` e `revokeDirectPosts`: a publicação sem revisão do
+ * fã-clube oficial, também só do admin (34.25).
+ */
+type SimpleClubDecision =
+  | 'pause'
+  | 'resume'
+  | 'unfeature'
+  | 'officialize'
+  | 'unofficialize'
+  | 'allowDirectPosts'
+  | 'revokeDirectPosts';
+
 export type DecisionInput =
   | {
       subject: 'application';
@@ -140,8 +157,7 @@ export type DecisionInput =
   | {
       subject: 'club';
       id: string;
-      /** `officialize` e `unofficialize`: o selo do fã-clube oficial, só do admin (34.23). */
-      decision: 'pause' | 'resume' | 'unfeature' | 'officialize' | 'unofficialize';
+      decision: SimpleClubDecision;
       /** O status que a tela mostrou. */
       expected: FanClubStatus;
     }
@@ -165,7 +181,8 @@ export type DecisionInput =
   | {
       subject: 'post';
       id: string;
-      decision: 'approve' | 'hide' | 'restore';
+      /** `check`: o "Conferida" da publicação que foi ao ar sem revisão (34.25). */
+      decision: 'approve' | 'hide' | 'restore' | 'check';
       /** O status da publicação que a tela mostrou. */
       expected: FanClubPostStatus;
     }
@@ -242,12 +259,23 @@ const CLUB_DECISIONS = [
   'unfeature',
   'officialize',
   'unofficialize',
+  'allowDirectPosts',
+  'revokeDirectPosts',
   'reward',
 ] as const;
 
-/** As decisões só do admin (decisão 7 e 34.23): encerrar e o selo de oficial. */
-const ADMIN_DECISIONS: readonly string[] = ['close', 'officialize', 'unofficialize'];
-const POST_DECISIONS = ['approve', 'reject', 'hide', 'restore'] as const;
+/**
+ * As decisões só do admin (decisão 7, 34.23 e 34.25): encerrar, o selo de
+ * oficial e a publicação sem revisão.
+ */
+const ADMIN_DECISIONS: readonly string[] = [
+  'close',
+  'officialize',
+  'unofficialize',
+  'allowDirectPosts',
+  'revokeDirectPosts',
+];
+const POST_DECISIONS = ['approve', 'reject', 'hide', 'restore', 'check'] as const;
 const REPORT_DECISIONS = ['keep', 'action'] as const;
 
 /**
@@ -348,7 +376,7 @@ export function parseDecision(
     return {
       subject,
       id,
-      decision: decision as 'approve' | 'hide' | 'restore',
+      decision: decision as 'approve' | 'hide' | 'restore' | 'check',
       expected: shown,
     };
   }
@@ -380,7 +408,7 @@ export function parseDecision(
   return {
     subject,
     id,
-    decision: decision as 'pause' | 'resume' | 'unfeature' | 'officialize' | 'unofficialize',
+    decision: decision as SimpleClubDecision,
     expected: status,
   };
 }
@@ -665,7 +693,9 @@ async function featuredOthers(
  * (`artist-not-open`); encerrar apaga o privado e marca a candidatura:
  * `closedByStaff` com `staff`, ou o `canReapplyAt` de 30 dias e a rodada 0
  * com `owner_request`. Oficializar só o ativo; tirar o selo, em qualquer
- * status.
+ * status (e leva junto a publicação sem revisão). A publicação sem revisão
+ * (34.25): ligar só no ativo e oficial (o sem selo, `not-official`); tirar,
+ * em qualquer status. O que já foi ao ar fica.
  */
 async function decideClub(
   tx: Transaction,
@@ -811,6 +841,26 @@ async function decideClub(
       if (!club.official) return result(club.status);
       tx.update(ref, { ...OFFICIAL_OFF, updatedAt: at });
       audit(tx, db, 'fanClub.unofficialized', actor, details, at);
+      return result(club.status);
+    }
+    case 'allowDirectPosts': {
+      if (club.status !== 'active') throw notInStatus();
+      if (!club.official) throw panelError('not-official');
+      if (club.directPosts) return result('active');
+      tx.update(ref, {
+        directPosts: true,
+        directPostsAt: at,
+        directPostsBy: { uid: actor.uid, name: actor.name },
+        updatedAt: at,
+      });
+      audit(tx, db, 'fanClub.directPosts.allowed', actor, details, at);
+      return result('active');
+    }
+    case 'revokeDirectPosts': {
+      // O campo, e não o `directPosts` lido, que já vale false sem o selo.
+      if (snap.get('directPosts') !== true) return result(club.status);
+      tx.update(ref, { ...DIRECT_POSTS_OFF, updatedAt: at });
+      audit(tx, db, 'fanClub.directPosts.revoked', actor, details, at);
       return result(club.status);
     }
   }
@@ -1083,16 +1133,21 @@ function repeatedPostWork(
     case 'restore':
       return { ...NO_FILE_WORK, refresh: [postId] };
     case 'approve':
+    case 'check':
       return NO_FILE_WORK;
   }
 }
 
-/** O status que cada decisão da publicação deixa, e de onde ela sai (34.5). */
+/**
+ * O status que cada decisão da publicação deixa, e de onde ela sai (34.5). O
+ * `check` (34.25) não muda o status: tem caminho próprio (`checkPost`).
+ */
 const POST_TARGET = {
   approve: 'published',
   reject: 'rejected',
   hide: 'hidden',
   restore: 'published',
+  check: 'published',
 } as const satisfies Record<(typeof POST_DECISIONS)[number], FanClubPostStatus>;
 
 const POST_FROM = {
@@ -1100,6 +1155,7 @@ const POST_FROM = {
   reject: 'pending',
   hide: 'published',
   restore: 'hidden',
+  check: 'published',
 } as const satisfies Record<(typeof POST_DECISIONS)[number], FanClubPostStatus>;
 
 const POST_AUDIT = {
@@ -1107,7 +1163,52 @@ const POST_AUDIT = {
   reject: 'fanClub.post.rejected',
   hide: 'fanClub.post.hidden',
   restore: 'fanClub.post.restored',
+  check: 'fanClub.post.checked',
 } as const satisfies Record<(typeof POST_DECISIONS)[number], AuditAction>;
+
+/**
+ * O "Conferida" (34.25), na transação de quem chama, com a publicação já
+ * lida: a que foi ao ar sem revisão ganha o `reviewedAt` e o `reviewedBy` e
+ * sai da aba "Publicadas sem revisão". Já no ar com o `reviewedAt` (a
+ * repetição, ou uma que a equipe aprovou), `ok` sem gravar; o status diferente
+ * do da tela, `stale-decision`; fora do ar ou sem o `direct`,
+ * `invalid-request` com `field: 'decision'`. Nada nos arquivos nem no
+ * fã-clube.
+ */
+function checkPost(
+  tx: Transaction,
+  db: Firestore,
+  ref: DocumentReference,
+  post: FanClubPostRecord,
+  input: Extract<DecisionInput, { subject: 'post' }>,
+  options: { actor: Actor; now: number },
+): Decided {
+  const { actor, now } = options;
+  const done: Decided = {
+    result: { ok: true, subject: 'post', id: input.id, status: 'published' },
+    files: NO_FILE_WORK,
+  };
+  if (post.status === 'published' && post.reviewedAt !== null) return done;
+  if (post.status !== input.expected) throw panelError('stale-decision');
+  if (post.status !== 'published' || !post.direct) throw notInStatus();
+  const at = tsOf(now);
+  tx.update(ref, { reviewedAt: at, reviewedBy: { uid: actor.uid, name: actor.name } });
+  audit(
+    tx,
+    db,
+    POST_AUDIT.check,
+    actor,
+    {
+      fanClubPostId: post.id,
+      clubId: post.clubId,
+      artistId: post.artistId,
+      authorUid: post.authorUid,
+      reason: null,
+    },
+    at,
+  );
+  return done;
+}
 
 /**
  * A mídia com as URLs de agora, lidas no Storage (o `restore`: o ocultar
@@ -1148,6 +1249,7 @@ async function decidePost(
   if (!snap.exists) throw panelError('fan-club-post-not-found');
   const post = fanClubPostRecord(snap.id, snap.data() ?? {});
   if (post.authorUid === actor.uid) throw panelError('self');
+  if (input.decision === 'check') return checkPost(tx, db, ref, post, input, { actor, now });
   const target = POST_TARGET[input.decision];
   const done: Decided = {
     result: { ok: true, subject: 'post', id: input.id, status: target },

@@ -239,6 +239,7 @@ const club = (patch: Partial<MyFanClubClub> = {}): MyFanClubClub => ({
   photosAllowed: true,
   featuredUntil: null,
   official: false,
+  directPosts: false,
   lastReward: { at: '2026-10-18T15:00:00.000Z', points: 200, prize: true },
   available: true,
   unavailableReason: null,
@@ -1684,6 +1685,39 @@ describe('a nova publicação (34.9, item 6)', () => {
     expect(router.canGoBack()).toBe(false);
     expect(announced()).toContain('Enviado para revisão.');
     expect(mocked.openFanClubUpload).not.toHaveBeenCalled();
+  });
+
+  it('sem revisão (34.25): o "+" abre com as 3 em análise, "Vai ao ar na hora" sem as vagas, e volta em "No ar"', async () => {
+    mocked.fetchMyFanClub.mockResolvedValue(
+      manager({ official: true, directPosts: true, pendingPosts: 3, photosAllowed: false }),
+    );
+    mocked.createFanClubPost.mockResolvedValue(
+      ownPost({ status: 'published', publishedAt: '2026-11-04T12:00:00.000Z' }),
+    );
+    serverAnswers();
+    const view = renderRouter(appTree, { initialUrl: '/meu-fa-clube?aba=publicacoes' });
+
+    expect(
+      await screen.findByText(
+        'Seu fã-clube é oficial: as publicações vão ao ar na hora, e a equipe confere depois.',
+      ),
+    ).toBeTruthy();
+    fireEvent.press(screen.getByTestId('fan-club-new-post'));
+    await waitFor(() => expect(view.getPathname()).toBe('/meu-fa-clube/nova-publicacao'));
+    expect(screen.getByTestId('fan-club-post-direct')).toHaveProp(
+      'accessibilityLabel',
+      'Vai ao ar na hora. Seu fã-clube é oficial: a publicação aparece para os fãs assim que você envia. A equipe confere depois.',
+    );
+    expect(screen.queryByTestId('fan-club-post-review')).toBeNull();
+    fireEvent.changeText(screen.getByTestId('fan-club-post-text'), 'No ar agora!');
+    fireEvent.press(screen.getByTestId('fan-club-post-submit'));
+
+    await waitFor(() => expect(mocked.createFanClubPost).toHaveBeenCalled());
+    await waitFor(() => expect(view.getPathname()).toBe('/meu-fa-clube'));
+    expect(await screen.findByRole('header', { name: 'Publicações' })).toBeTruthy();
+    expect(screen.getByTestId('fan-club-posts-filter-no-ar')).toBeSelected();
+    expect(announced()).toContain('Publicado no seu fã-clube.');
+    expect(announced()).not.toContain('Enviado para revisão.');
   });
 
   it('o topo da 4b: "Cancelar", "Nova publicação", "Enviar", "Publicando como" e a revisão com as vagas', async () => {

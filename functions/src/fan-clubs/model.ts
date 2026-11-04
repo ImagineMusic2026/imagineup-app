@@ -214,6 +214,11 @@ export type FanClubRecord = {
   featuredUntil: string | null;
   /** Oficializado pela equipe: o selo do fã-clube oficial (34.23). */
   official: boolean;
+  /**
+   * A publicação do gestor vai ao ar sem a revisão antes (34.25): a chave
+   * ligada pelo admin e o selo de oficial, os dois. A chave sem o selo não vale.
+   */
+  directPosts: boolean;
   lastReward: { at: number | null; points: number | null; prize: boolean } | null;
   /** Os seguidores da cópia da noite (`counts.followers`, decisão 28): a ordem das listas. */
   followers: number;
@@ -306,6 +311,7 @@ export function fanClubRecord(id: string, data: Record<string, unknown>): FanClu
     featured: data.featured === true,
     featuredUntil: typeof data.featuredUntil === 'string' ? data.featuredUntil : null,
     official: data.official === true,
+    directPosts: data.official === true && data.directPosts === true,
     lastReward: reward
       ? {
           at: millisOf(reward.at),
@@ -964,6 +970,11 @@ export type FanClubPostRecord = {
   publishedAt: number | null;
   reviewedAt: number | null;
   /**
+   * Foi ao ar sem a revisão antes (34.25). Até a equipe conferir, fica
+   * `published` com o `reviewedAt` null, na aba "Publicadas sem revisão".
+   */
+  direct: boolean;
+  /**
    * Os contadores da Fase 2 (seção 37, 37.2), somados com `increment` na
    * transação da reação e do comentário: as reações (o total e por emoji) e
    * os comentários que aparecem. O ausente vale 0, sem carga nas publicações
@@ -1017,6 +1028,7 @@ export function fanClubPostRecord(id: string, data: Record<string, unknown>): Fa
     submittedAt: millisOf(data.submittedAt) ?? 0,
     publishedAt: millisOf(data.publishedAt),
     reviewedAt: millisOf(data.reviewedAt),
+    direct: data.direct === true,
     reactionCount: count(data.reactionCount),
     reactionCounts: reactionCountsOf(data.reactionCounts),
     commentCount: count(data.commentCount),

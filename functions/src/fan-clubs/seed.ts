@@ -1,7 +1,7 @@
 import type { Firestore } from 'firebase-admin/firestore';
 
 import { membershipRef, runJoinCentrals } from '../centrals/service';
-import type { FanPhotoFiles } from '../fan-profile/files';
+import { MISSING_FAN_PHOTO_FILES, type FanPhotoFiles } from '../fan-profile/files';
 import { parseLinkId } from '../invites/model';
 import { runInviteLinks } from '../invites/service';
 import { DEFAULT_POINTS_CONFIG } from '../points/config';
@@ -731,6 +731,60 @@ export async function seedFanClubPrize(
     { actor: input.actor, now, config: DEFAULT_POINTS_CONFIG, role: 'admin' },
   );
   result.granted = true;
+  return result;
+}
+
+/** A publicação da Camila que vai ao ar sem revisão (34.25), na aba "Publicadas sem revisão". */
+export const SEED_DIRECT_POST_TEXT =
+  'Passagem de som agora: o Netto testou a música nova. Quem vai estar lá no sábado?';
+
+export type SeedFanClubDirectPostResult = {
+  /** A publicação sem revisão foi ligada agora. */
+  allowed: boolean;
+  /** A publicação sem revisão da Camila nasceu agora. */
+  created: boolean;
+};
+
+/**
+ * A publicação sem revisão do fã-clube oficial da Camila (34.25), depois das
+ * publicações revisadas e das denúncias: o admin do seed liga a chave e a
+ * Camila publica um texto, que vai ao ar na hora, sem o `reviewedAt`, pelos
+ * núcleos de verdade (o ator de sistema, fora dos tetos). Só com o fã-clube
+ * ativo e oficial, e só quando a publicação ainda não existe: a chave tirada
+ * ou o selo tirado no painel local ficam como estão.
+ */
+export async function seedFanClubDirectPost(
+  db: Firestore,
+  input: { camilaUid: string; actor: { uid: string; name: string } },
+  now: number = Date.now(),
+): Promise<SeedFanClubDirectPostResult> {
+  const result: SeedFanClubDirectPostResult = { allowed: false, created: false };
+  const application = await applicationRef(db, input.camilaUid).get();
+  const clubId = application.exists
+    ? applicationRecord(input.camilaUid, application.data() ?? {}).clubId
+    : null;
+  if (clubId === null) return result;
+  const existing = await fanClubPostsOfAuthor(db, input.camilaUid).get();
+  if (existing.docs.some((doc) => doc.get('text') === SEED_DIRECT_POST_TEXT)) return result;
+  const club = await fanClubRef(db, clubId).get();
+  if (club.get('status') !== 'active' || club.get('official') !== true) return result;
+  if (club.get('directPosts') !== true) {
+    await runFanClubDecision(
+      db,
+      { subject: 'club', id: clubId, decision: 'allowDirectPosts', expected: 'active' },
+      { actor: input.actor, now },
+    );
+    result.allowed = true;
+  }
+  const options = { now, config: DEFAULT_POINTS_CONFIG, actor: SEED_ACTOR, game: NO_GAME };
+  await runCreateFanClubPost(
+    db,
+    MISSING_FAN_PHOTO_FILES,
+    input.camilaUid,
+    { text: SEED_DIRECT_POST_TEXT, photo: false },
+    options,
+  );
+  result.created = true;
   return result;
 }
 
