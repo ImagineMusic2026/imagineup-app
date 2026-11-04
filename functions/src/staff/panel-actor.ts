@@ -50,6 +50,7 @@ const SECTION_LABELS: Partial<Record<SectionId, string>> = {
   missions: 'Missões',
   ranking: 'Ranking e temporadas',
   rewards: 'Recompensas e resgates',
+  support: 'Suporte',
   audit: 'Logs e auditoria',
 };
 

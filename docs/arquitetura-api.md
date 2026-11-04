@@ -232,9 +232,9 @@ Mensagens: `invalid_request` "Pedido inválido."; `idempotency_key_required` "Fa
 
 Códigos que os próximos blocos vão criar entram nesta tabela quando nascerem. Não há limite de pedidos por minuto no bloco 1: o `maxInstances` segura o custo, e os limites de pontos não são erro (seção 5). A exceção, do bloco 4, é o teto diário de entradas em centrais (19.5), com 429 e `Retry-After`: sem ele, um script que entra e sai sem parar gravaria sem teto e inflaria os fluxos do painel. O bloco 6 faz o mesmo com curtidas, comentários, presenças, denúncias e bloqueios (21.7), o bloco 9, com as trocas de foto (24.8), o bloco 10, com os resgates (25.7), e o perfil novo, com os salvamentos do perfil e as trocas de nome (28.5).
 
-## 2. Mapa das 74 rotas
+## 2. Mapa das 75 rotas
 
-Os 26 endpoints que os `api.ts` do app já chamavam no levantamento de 05/10/2026, na tabela, e as rotas que os blocos seguintes trouxeram, nos parágrafos "Fora dos 26" embaixo dela. Na tabela, curtir e "Eu vou" contam como um endpoint cada, com `PUT` para fazer e `DELETE` para desfazer. Contando cada método e caminho, a `API_ROUTES` tem hoje 74 rotas, com as duas do perfil novo (seção 28), as duas das exigências das lojas (seção 29), as duas do contato do fã (seção 35), as 18 do fã-clube (seção 34, no ar desde 20/10/2026, 34.15) e as 10 da Fase 2 dele (seção 37), que estão no código e só vão ao ar com a publicação de 37.14. O `router.test.ts` prende as 74.
+Os 26 endpoints que os `api.ts` do app já chamavam no levantamento de 05/10/2026, na tabela, e as rotas que os blocos seguintes trouxeram, nos parágrafos "Fora dos 26" embaixo dela. Na tabela, curtir e "Eu vou" contam como um endpoint cada, com `PUT` para fazer e `DELETE` para desfazer. Contando cada método e caminho, a `API_ROUTES` tem hoje 75 rotas (74 até a seção 37 e, desde a 38, o `POST /me/support`), com as duas do perfil novo (seção 28), as duas das exigências das lojas (seção 29), as duas do contato do fã (seção 35), as 18 do fã-clube (seção 34, no ar desde 20/10/2026, 34.15) e as 10 da Fase 2 dele (seção 37), que estão no código e só vão ao ar com a publicação de 37.14. O `router.test.ts` prende as 74.
 
 | #   | Método e caminho                         | Função do app                                       | Bloco |
 | --- | ---------------------------------------- | --------------------------------------------------- | ----- |
@@ -286,6 +286,8 @@ Fora dos 26, novas no WhatsApp do resgate: `GET /me/contact` (o WhatsApp guardad
 Fora dos 26, novas no fã-clube (seção 34, 34.3), em `api/routes/fan-clubs.ts`, cada uma com a função dela em `fan-club/api.ts`: a candidatura, `GET /me/fan-club` (o estado do fã, que os Ajustes leem a cada abertura e que serve de trava para todas as telas do fã-clube, `fetchMyFanClub`), `GET /me/fan-club/artists` (`fetchFanClubArtists`), `POST` e `DELETE /me/fan-club/application` (`applyForFanClub` e `withdrawApplication`) e `PUT /me/fan-club/rules` (`acceptFanClubRules`); o "Meu fã-clube", `GET /me/fan-club/numbers` (`fetchMyFanClubNumbers`) e `GET /me/fan-club/posts` (`fetchMyFanClubPosts`); a publicação, `POST /me/fan-club/upload` (a vaga, `openFanClubUpload`), `POST /me/fan-club/posts` (`createFanClubPost`) e `DELETE /me/fan-club/posts/:postId` (`removeFanClubPost`); a página, `GET /artists/:artistId/fan-clubs` (`fetchArtistFanClubs`), `GET /fan-clubs/:clubId` (`fetchFanClub`) e `GET /fan-clubs/:clubId/posts` (`fetchFanClubPosts`); a denúncia, `POST /fan-club-posts/:postId/report` (`reportFanClubPost`); e o seguir, `PUT` e `DELETE /me/fan-club-follows/:clubId` (`followFanClub` e `unfollowFanClub`), `GET /me/fan-club-follows` (`fetchFollowedFanClubs`) e `GET /me/fan-club-feed` (a seção "Dos seus fã-clubes" da Início, `fetchFanClubFeed`). O `GET /rewards` ganhou o `prizes`, os pedidos de prêmio do gestor (34.3).
 
 Fora dos 26, novas na Fase 2 do fã-clube (seção 37, 37.3), também em `api/routes/fan-clubs.ts`, cada uma com a função dela em `fan-club/api.ts`: a publicação, `GET /fan-club-posts/:postId` (a tela da publicação, `fetchFanClubPost`); os comentários, `GET` e `POST /fan-club-posts/:postId/comments` (com as respostas pelo `?replyTo=`, `fetchFanClubComments` e `addFanClubComment`); a reação, `PUT` e `DELETE /fan-club-posts/:postId/reaction` (`setFanClubReaction` e `clearFanClubReaction`, o `DELETE` aceito do suspenso); a moderação, `POST /fan-club-comments/:commentId/report` (`reportFanClubComment`), `POST /fan-club-comments/:commentId/review` (o "Pedir revisão" do autor, `requestFanClubCommentReview`) e `PUT` e `DELETE /me/fan-club/hidden-comments/:commentId` (o ocultar e o reexibir do gestor, `hideFanClubComment` e `unhideFanClubComment`); e a sugestão do @, `GET /fan-clubs/:clubId/mentions` (`fetchFanClubMentions`). Das que já existiam, o `GET /fan-clubs/:clubId/posts` e o `GET /me/fan-club-feed` ganharam os contadores, a `myReaction` e as marcações; o `GET /me/fan-club/posts`, os contadores e as marcações; o `GET /me/fan-club/numbers`, o `engagement` (37.11); o `POST /me/fan-club/posts` resolve os @ do texto; e o `PUT /me/fan-club-follows/:clubId` aceita o corpo `{ memberNoticeVersion }` (37.3).
+
+Fora dos 26, nova no Suporte dos Ajustes (seção 38, 38.2): `POST /me/support` (a mensagem do fã à equipe, de um dos três tipos, `support/api.ts` `sendSupportMessage`), em `api/routes/support.ts`. É a 75ª da `API_ROUTES` e a única rota que cria e aceita o suspenso (38.1, decisão 6).
 
 Fora da tabela e da `API_ROUTES`, nova na seção 32: `GET /health`, sem login, sem App Check e sem Firestore, que responde 200 com `{"ok":true}` ao teste de disponibilidade (32.1, decisões 17 e 18). O app não chama. Ela vem antes de tudo no handler, e por isso a `API_ROUTES` seguia com 44 (46 desde a seção 35, 64 desde a 34 e 74 desde a 37); o `POST /health`, o `HEAD /health`, o `/health/` e o `/health/x` dão 404 `not_found`.
 
@@ -12989,6 +12991,139 @@ Pedido do dono de 03/11/2026, à noite, logo depois do EAS Update de 37.19, pelo
 - **O resto é o de 37.19:** o nome, com o selo do oficial quando houver, em cima; embaixo, o @ e o " · 2 min"; sem o nome, o @ em cima e o horário sozinho, sem o ponto; com a fonte grande, as duas linhas quebram. A bandeira do Denunciar segue no canto, na altura do autor, e o leitor de tela ouve o mesmo rótulo do autor.
 - **Testes:** em `navigation/__tests__/fan-club-post.test.tsx`, o teste do topo da tela da publicação agora confere o nome sozinho na linha de cima e o @ com o " · 3 h" na de baixo; o da página segue conferindo tudo na linha do nome. Os três de `fan-club/__tests__/post-author.test.tsx` (37.19) cobrem as duas linhas. Conferido no emulador Android pelo Expo Go com o seed, como a Bia: na tela da publicação, "Camila Ribeiro" com o selo em cima e "@camilarib · 2 min" embaixo; na página do fã-clube, tudo numa linha.
 - **Só app** (PR #88), sem servidor nem painel, e o fingerprint não muda. No ar pelo EAS Update do canal preview às 02:18Z de 04/11/2026 (a noite de 03/11 em Brasília), da `main` `1c0a5a2` (os grupos no fim de 37.14). Falta conferir no celular com o APK, com o rodapé dos Ajustes em `01a1a459`.
+
+## 38. Suporte nos Ajustes: Reportar problema, Sugerir funcionalidade e Feedback geral
+
+O fã manda à equipe, de dentro do app, um problema, uma sugestão ou um feedback, em texto livre, e a equipe lê na seção Suporte do painel. Esta seção é o contrato: decisões, a rota, a callable, os dados, as regras e os índices, o painel, o app, o seed, os testes, a publicação e o que fica para depois. Segue os padrões das seções 1 a 37 e só diz o que muda ou acrescenta.
+
+Origem: o pedido do dono de 03/11/2026, à noite, com dois prints de outro app (o FitFolio): a seção Suporte nas Configurações, com "Reportar problema", "Sugerir funcionalidade" e "Feedback geral", cada uma com ícone e seta, e a tela do "Reportar problema", com o X para fechar, o título e um campo de texto grande ("Descreva o problema..."). O visual e os componentes são os do app, e não os do outro app. A proposta do destino das mensagens (38.1) foi aprovada pelo dono no mesmo dia ("Sim, siga"), com as quatro perguntas respondidas pela recomendação: a rota da `api` com a lista no painel, uma seção nova "Suporte" no painel, sem resposta pela tela e o suspenso podendo mandar. A tela não está no Anexo I do contrato: segue sem aditivo, como o fã-clube.
+
+Estado: construído em 03 e 04/11/2026 nas branches `suporte-ajustes` do app (a partir da `main` `760297a`, o merge do PR #89) e `suporte-painel` do painel (a partir da `main` `24e22b7`), e conferido nos testes e nos emuladores (38.11). Nada publicado: a ordem está em 38.9, e cada passo pede o ok do dono.
+
+Trava do bloco: nada muda o fingerprint do app (`310056fd840b5459416c9926e46846b8c208aa76`). Nenhum pacote novo, nada no `app.config.ts`, no `package.json`, no `.gitignore` nem no `eas.json`: o app chega ao APK interno por EAS Update, depois do servidor. O aparelho do problema sai do `Platform` do React Native e do `expo-constants` e do `expo-updates`, que já estão instalados; o modelo do celular pediria o `expo-device`, nativo, e fica de fora. No servidor: uma rota nova na `api` (`POST /me/support`, a 75ª), uma callable nova (`resolveSupportMessage`, a 70ª função), uma coleção nova (`supportMessages`), uma seção nova da equipe (`support`), uma chave nova de teto do dia (`support_message`), quatro índices compostos (75) e duas isenções, e a regra do perfil (`users/{uid}`) lida também pela seção nova.
+
+Como era antes:
+
+- O fã falava com a equipe só por e-mail: o "Fale com a equipe" do Sobre dos Ajustes e o "Escrever para a equipe" da conta suspensa e do fã-clube abrem o app de e-mail com o `SUPPORT_EMAIL` (`src/config/links.ts`, seção 29, decisão 15). Os pedidos de dados da LGPD também chegam por esse e-mail (seção 32).
+- As denúncias (de comentário, de perfil, de publicação e de comentário de fã-clube) vão pela `api` a coleções próprias, lidas pela Moderação e pelos Fã-clubes do painel, mas só com os motivos de uma lista fechada, sem texto livre (21.3, 29.1, 34.6 e 37.4).
+- Nenhum caminho de texto livre do fã para a equipe dentro do app. O painel não guarda nem mostra o e-mail do fã.
+
+### 38.1 Decisões
+
+1. **As mensagens vão pela `api` a uma coleção própria, e a equipe lê no painel.** Trocado: o "Enviar" abrir o app de e-mail com o texto pronto, sem servidor. O e-mail tira o fã do app, depende de um app de e-mail configurado e mistura as mensagens com o resto da caixa da equipe; a coleção dá a lista com os filtros e o "resolvida".
+2. **Três tipos, uma rota só:** `problem` (Reportar problema), `idea` (Sugerir funcionalidade) e `feedback` (Feedback geral), no campo `kind`. A tela é a mesma, com o título, o rótulo e o texto de dentro de cada tipo.
+3. **O texto de 1 a 2.000 caracteres, em várias linhas,** limpo pelo `cleanMultiline` (o das publicações do fã-clube, 34.1) e com toda linha visível. Sem o filtro da seção 30: a mensagem nunca aparece para outro fã, e o palavrão de quem reporta um problema não deve barrar o relato.
+4. **O "Reportar problema" leva o aparelho:** o sistema (`android` ou `ios`), a versão dele, a do app e o id curto do EAS Update (o mesmo do rodapé dos Ajustes, seção 29, decisão 17). Nada que identifique a pessoa. A tela avisa que essas versões vão junto. A sugestão e o feedback vão sem.
+5. **Teto do dia `support_message`, 5 mensagens somando os três tipos,** no `actionCaps` (o painel ajusta, com o rótulo "Mensagens de suporte"). Não vale ponto: mandar mensagem não pode virar jeito de pontuar.
+6. **O suspenso manda** (`allowSuspended: true`): a única rota que cria e aceita o suspenso, porque é um caminho dele até a equipe, como o "Escrever para a equipe" do aviso. O teto do dia segura o abuso.
+7. **A seção nova `support` ("Suporte") no painel,** depois da Moderação e antes dos Logs. Trocado: uma aba dentro da Moderação, que não mexeria nas permissões, mas misturaria a fila do que é contra as regras com a do que o fã quer contar. O admin vê sempre; o editor e o Leitor, com a seção liberada. Resolver e reabrir: o admin ou o editor com a seção.
+8. **Sem resposta pela tela.** O app não tem notificação (fora do contrato), e guardar o e-mail da conta com a mensagem iria contra a regra de nenhum dado do fã guardar o e-mail no Firestore. A tela diz que a equipe lê todas as mensagens, mas não responde por aqui, e que, para receber resposta, o fã usa o "Fale com a equipe". O "Fale com a equipe" continua no Sobre, como estava.
+9. **O nome e o @ não ficam na mensagem:** o painel lê `users/{uid}` ao vivo, um `get` por fã, como a denúncia de perfil (29.1, decisão 2). A regra do perfil ganha a seção `support`, só no `get`.
+10. **A mensagem sai com a conta e entra na exportação dos dados do fã** (seção 32): a fonte `supportMessages`, na parte `mensagensDeSuporte`, sem o `resolvedBy` (o uid e o nome de quem é da equipe).
+
+### 38.2 Rota
+
+| Método e caminho   | Grava | Função do app                         | Resposta               |
+| ------------------ | ----- | ------------------------------------- | ---------------------- |
+| `POST /me/support` | sim   | `support/api.ts` `sendSupportMessage` | `SupportMessageResult` |
+
+Corpo, com `Idempotency-Key`:
+
+```json
+{
+  "kind": "problem",
+  "text": "A agenda fica em branco.",
+  "device": { "platform": "android", "osVersion": "14", "appVersion": "0.1.0", "updateId": "01a1a459" }
+}
+```
+
+Resposta: `{ "id": "<id da mensagem>", "status": "sent" }`.
+
+- `validate`, sem leitura, pelo `parseSupportMessage` (`support/model.ts`): 400 `invalid_request` com `details.field`: `body` (não é objeto), a chave desconhecida, `kind` (fora da lista), `text` (não é texto, vazio depois de limpo, acima de 2.000, com linha invisível, ou o bruto acima de 4.000) e `device`. O `device` é obrigatório no `problem`, com as quatro chaves (`platform` da lista; os outros três `null` ou de 1 a 40 caracteres numa linha visível, e a chave ausente vale `null`); nos outros tipos, só ausente ou `null`.
+- Recusas, na ordem: o ritmo de 27.3 (429 `rate_limited`); a chave (400 `idempotency_key_required`); 403 `not_fan` e 503 `profile_not_ready` (o `runIdempotent`; o suspenso passa); 429 `too_many_requests` com `details: { limit, action: 'support' }` e o `Retry-After` até a meia-noite de São Paulo.
+- A gravação (`sendSupportMessage`, `support/service.ts`): o teto, o `planAwards` sem lançamento (marca o fã ativo do dia) e o `create` da mensagem, com o id automático. A mesma chave devolve a mesma mensagem, sem gravar outra.
+- Arquivos: `support/model.ts` (os tipos, os tetos e o `parseSupportMessage`, puros), `support/store.ts`, `support/service.ts`, `api/routes/support.ts` e os tipos `SupportKind`, `SupportDevice`, `SupportMessageBody` e `SupportMessageResult` em `api/contract.ts` (o espelho no app é `src/domains/support/types.ts`). O teto: a chave `support_message` no `DailyActionKey`, no `ACTION_CAP_KEYS` (no fim) e no `DEFAULT_ACTION_CAPS`, e a ação `support` no `DAILY_CAPS`.
+
+### 38.3 Callable `resolveSupportMessage`
+
+`{ id, action: 'resolve' | 'reopen' }`, pelo `onPanelCall({ cors: PANEL_ORIGINS })`, logo depois da `decideFanClub` no `functions/src/index.ts`, com 256 MiB (1/6 de vCPU; com a `api` cheia, as outras somam uns 11,83, e a soma fica em uns 19,83 de 20). O ator vem do `readPanelActor` com a seção `support` e edição, lido direto e de novo na transação: sem login, `unauthenticated`; fora da equipe ativa, `not-staff`; sem a seção ou só com leitura, `no-section`. Os erros próprios (`support/errors.ts`, `supportPanelError`): `invalid-request` com `field: 'id'` ou `field: 'action'`, e `message-not-found` (`not-found`, "Essa mensagem não existe mais.", a mensagem que saiu com a conta). No estado pedido, `{ ok: true, status }` sem gravar nem auditar. Resolver grava `status: 'resolved'`, o `resolvedAt` e o `resolvedBy` (`{ uid, name }`); reabrir volta ao `open`, com os dois `null`. A auditoria vai na mesma transação: `support.message.resolved` ou `support.message.reopened`, na seção `support` (`SECTION_BY_PREFIX`), com o `targetUid` null e `details: { supportMessageId, fanUid, kind }`, nunca o texto nem o aparelho; os alvos são `fan:<uid>` e `supportMessage:<id>` (o `supportMessageId` no `DETAIL_TARGETS`, no molde do fã-clube, 34.8). Saída `{ ok: true, status }`.
+
+### 38.4 Dados
+
+`supportMessages/{id}`, uma por envio:
+
+| Campo           | Tipo                            | O que é                                                                          |
+| --------------- | ------------------------------- | -------------------------------------------------------------------------------- |
+| `uid`           | string                          | o fã que mandou                                                                  |
+| `kind`          | `problem`, `idea` ou `feedback` | o tipo                                                                           |
+| `text`          | string                          | o texto limpo, de 1 a 2.000                                                      |
+| `device`        | objeto ou null                  | no `problem`, `{ platform, osVersion, appVersion, updateId }`; nos outros, null  |
+| `status`        | `open` ou `resolved`            | nasce `open`                                                                     |
+| `createdAt`     | Timestamp                       | o "agora" do pedido                                                              |
+| `resolvedAt`    | Timestamp ou null               | quando foi resolvida (null ao reabrir)                                           |
+| `resolvedBy`    | `{ uid, name }` ou null         | quem resolveu (null ao reabrir)                                                  |
+| `schemaVersion` | 1                               |                                                                                  |
+
+LGPD (seção 32): a fonte `supportMessages` na `FAN_DATA_SOURCES` (a 12ª parte, `mensagensDeSuporte`, depois das reações de fã-clube, com o `omit` do `resolvedBy`), e a exclusão pelo `removeSupportMessagesOf` (`support/service.ts`), que o `deleteUserData` chama depois do `removeFanClubData`: em páginas de 200, num lote cada. A auditoria fica, só com o id e o tipo.
+
+### 38.5 Regras e índices
+
+- `supportMessages/{messageId}`: a seção `support` lê e lista; ninguém grava pelo cliente (o fã manda pela `api` e não lê de volta).
+- `users/{uid}`: o `get` ganha o `canSeeSection('support')`, para o card mostrar o nome e o @ de quem mandou; o `list` não muda.
+- Quatro índices compostos de `supportMessages` (75 no total): `status` com `createdAt` decrescente (as abertas), `status` com `resolvedAt` decrescente (as resolvidas) e os dois com o `kind` no meio (o filtro de tipo). A exportação lê por `uid` com o índice automático. Duas isenções: o `text` e o `device`, que ninguém consulta.
+
+### 38.6 Painel
+
+No `imagineup-admin`, branch `suporte-painel`: a seção `support` ("Suporte", ícone de boia) em `src/lib/staff.ts`, que a lateral, a lista de seções da Equipe, a porta de acesso e o filtro dos Logs leem; a página `/suporte`, com as abas Abertas e Resolvidas, o filtro de tipo (Todos, Problema, Sugestão, Feedback), páginas de 20 com "Carregar mais" e a contagem das abertas (um `count()` só com o `status`, sem índice composto); o card com o tipo, a data e a hora de São Paulo, o texto inteiro (sem HTML, com as quebras de linha), a linha do aparelho no problema ("Android 14 · app 0.1.0 · update 01a1a459"), o nome e o @ do fã (ou "Conta não encontrada"), o "Abrir a ficha" só para quem vê Fãs e, nas resolvidas, quem resolveu e quando; e os botões "Marcar como resolvida" e "Reabrir", só para o admin e o editor com a seção. Nos Logs, as duas ações e o alvo `supportMessage` ("Mensagem de suporte", com o atalho para `/suporte`). Na régua, a chave `support_message`; na exportação, o rótulo da parte nova. O README do painel ganhou a seção.
+
+### 38.7 App
+
+- **Ajustes:** a seção "Suporte" entre "Privacidade e segurança" e "Sobre", no molde do menu de referência (26/10/2026): "Reportar problema" (`CircleAlert`), "Sugerir funcionalidade" (`Lightbulb`) e "Feedback geral" (`MessageSquareText`), cada uma com o `MenuRow`, só o título e a seta. O "Fale com a equipe" segue no Sobre.
+- **As telas:** uma rota só, `/suporte/[tipo]` (`problema`, `sugestao` e `feedback`, pelo `SUPPORT_SLUGS`), na pilha raiz, fora das abas e sem a tab bar, com push padrão, como as telas de conta. O `SupportMessageScreen` mora no domínio de composição `settings` (lê a versão do app do `settings/version.ts`), e os dados no domínio novo `support` (`types.ts`, `consts.ts`, `api.ts` e `queries.ts`, com o `useSendSupportMessageMutation`). O topo é o `BackHeader` com o X à esquerda e o título no meio, como o "Editar perfil". O campo é o `TextInput` de sempre, com o rótulo só para o leitor, o texto de dentro de cada tipo ("Descreva o problema...", "Conte sua ideia..." e "Conte o que você achou do app..."), o teclado já aberto (o `autoFocus` e, porque no Android o campo que monta durante a animação da pilha foca antes de a janela estar pronta, o foco de novo no `transitionEnd`), oito linhas de altura (o `minLines`, novo no `TextInput`, padrão 3) e o contador de 2.000 embaixo, fora do leitor e somado à dica do campo. Embaixo, o aviso da resposta (e, no problema, o das versões) e o "Enviar".
+- **O envio:** pelo react-hook-form com o zod (o texto sem espaço nas pontas, de 1 a 2.000; vazio, "Escreva a mensagem antes de enviar.", anunciado). Sem rede, o botão fica desligado, e a tela diz "Sem conexão. Conecte-se para enviar.". Sem fila offline e sem nova tentativa sozinha; a nova tentativa do mesmo texto depois de uma falha incerta repete a chave. A recusa aparece embaixo do aviso, anunciada, pelo `actionRefusal(error, 'support')` (o teto do dia: "Você chegou ao limite de mensagens de hoje. Tente amanhã."; o resto, "Não deu para enviar agora. Tente de novo."). O alerta global do suspenso fica desligado (`meta: { suspendedAlert: false }`), porque a rota aceita o suspenso. Sem a API (o Expo Go sem o `.env`), o envio é fingido pelas fixtures, sem sair do aparelho.
+- **Enviada:** a tela troca o formulário pelo "Mensagem enviada", com o ícone de confirmação, "Obrigado! A equipe do ImagineUP lê todas as mensagens." e o "Fechar", com a vibração de sucesso e o anúncio.
+- **Sair:** sem texto, o X fecha na hora. Com texto, o X e o voltar do Android perguntam "Descartar a mensagem?" ("Continuar escrevendo" ou "Descartar"), e o gesto do iOS fica desligado (`useStayOnScreen` em `confirm`). Enquanto o envio vai, a tela fica presa.
+- **Fontes:** o domínio `support` no `DataDomain` e no `SERVER_DOMAINS`, e a ação `support` no `RefusalAction`.
+
+### 38.8 Testes
+
+- Funções (vitest): `support/model.test.ts` (o corpo, a tabela das recusas, o aparelho, a resolução e o id), e os de antes com os números novos: a `API_ROUTES` com 75, a lista das rotas que aceitam o suspenso com o `POST /me/support`, os 75 índices, a parte e a fonte nova da exportação, o `DAILY_CAPS`, o `DEFAULT_ACTION_CAPS`, o `SECTION_IDS` e as duas linhas do `audit-index.test.ts`.
+- Emuladores: `functions/test/support.emulator.test.ts` (a gravação dos três tipos, o 400 com o campo, a mesma chave, o teto do dia com o 429, o suspenso, a exclusão de conta, a callable com o admin, o editor, o Leitor, a seção errada, a mensagem que não existe e a auditoria sem o texto) e o `fan-data.emulator.test.ts` com uma mensagem no fã de tudo.
+- Regras: `tests/support-rules.test.ts` (a seção lê e lista, os outros não; ninguém grava; o perfil por `get`, sem `list`). Num worktree em `.claude/worktrees`, o `testMatch` do preset não entra na pasta com ponto: as regras rodam por uma config de fora, sem o preset, com o `testRegex` (as 15 suítes, 220 testes, em 04/11/2026).
+- App (Jest): `src/navigation/__tests__/support.test.tsx` (as três telas, o endereço errado, o aviso do problema, o envio com o aparelho e a chave, o vazio, o teto do dia, a falha incerta com a mesma chave, o offline, as fixtures, o X com e sem texto e o "Fechar") e o `settings.test.tsx` com a seção nova na ordem e as três linhas abrindo a rota na pilha raiz.
+- Painel: os testes da branch `suporte-painel` (rótulos, linha do aparelho, consultas, leituras com o dublê, callable, seção e Logs).
+
+### 38.9 Publicação
+
+Cada passo com o ok do dono, nesta ordem, da `main` com o merge do PR do app:
+
+1. `npm run rules:deploy`: as regras (a coleção nova e o `get` do perfil) e os 4 índices compostos e as 2 isenções. Esperar os índices ficarem prontos.
+2. As funções, nos lotes de sempre, com a `api` no primeiro e a `resolveSupportMessage` no último (70 funções; o diff desde `21d086b` leva também as três do LinkedIn, 28.20). Toda função que lê o `SECTION_IDS` (as da equipe) ou o `DEFAULT_ACTION_CAPS` precisa do código novo: por isso as 70, e não só as que mudaram.
+3. O `allUsers` da `resolveSupportMessage` (60 chamáveis).
+4. O painel (o PR do `imagineup-admin`), depois do servidor: sem a seção no servidor, a Equipe não salva a seção nova, e a lista não lê.
+5. O EAS Update do canal preview, por último, com o `npm ci` e o fingerprint `310056fd` antes: antes do servidor, o "Enviar" responderia 404.
+
+Depois de publicar, o admin libera a seção Suporte para quem da equipe vai ler as mensagens (o admin já vê).
+
+### 38.10 Seed
+
+O `seedSupport` (`support/seed.ts`), chamado pelo `scripts/seed-emulators.mjs` depois do fã-clube e antes dos números de 60 dias: o problema da Bia (com o aparelho, há 30 minutos) e a sugestão da Duda (há 90 minutos), abertos, e o feedback da Camila (de ontem), resolvido pela equipe de teste pelo núcleo da callable. Ids fixos (`seed-suporte-problema`, `seed-suporte-sugestao` e `seed-suporte-feedback`): rodar de novo não grava outra mensagem nem resolve de novo. O seed é o ator: não conta no teto.
+
+### 38.11 Conferência
+
+Em 04/11/2026, na branch `suporte-ajustes`, com o fingerprint Android igual ao do APK (`310056fd840b5459416c9926e46846b8c208aa76`):
+
+- **Testes:** as funções no vitest (76 arquivos, 2.754 testes e 4 pulados), o app no Jest (191 suítes, 3.459 testes), as regras do Firestore e do Storage nos emuladores (as 15 suítes, 220 testes) e, nos emuladores de Auth, Firestore, Functions e Storage, os arquivos `support`, `fan-data`, `staff`, `audit-index` e `panel-seed` (63 testes). Os tipos do app, dos testes e das funções e o lint limpos; o único erro do `tsc` do app é o do `phosphor-react-native` dentro do `node_modules`, que já existe na `main`.
+- **Seed:** rodado duas vezes; a segunda não grava nada ("Suporte: 0 mensagens agora e 0 resolvida agora").
+- **Emulador Android, pelo Expo Go, com o seed e os emuladores:** como a Camila, os Ajustes com a seção Suporte entre "Privacidade e segurança" e "Sobre"; "Reportar problema" abre com o X, o título, o campo focado com o cursor e o teclado aberto (o `autoFocus` sozinho não abria o teclado no Android, e o foco no `transitionEnd` resolveu); o texto, o contador e o "Enviar" gravaram em `supportMessages` o tipo `problem`, o texto, o aparelho (`android`, `16`, `0.1.0` e o id curto do update do Expo Go), o status `open`, e o teto do dia `support_message` da Camila foi a 1; a tela virou o "Mensagem enviada". As telas da sugestão e do feedback, com os textos de dentro delas e o aviso sem a linha das versões. O emulador tem o teclado físico ligado: o Gboard aparece flutuante nas capturas.
+- **Painel local nos mesmos emuladores** (`suporte-painel`, porta 3001, como a equipe de teste): a seção Suporte com as três mensagens abertas (a da Camila, mandada pelo emulador Android, e as do seed), o "Marcar como resolvida" pela callable de verdade ("Mensagem de Camila Ribeiro resolvida.", a contagem de 3 para 2) e a aba Resolvidas com quem resolveu e quando.
+
+### 38.12 O que fica para depois
+
+- Responder ao fã pelo app (pede notificação ou uma caixa de mensagens no app, fora do contrato).
+- Anexar a captura da tela ao problema (pede o envio de arquivo, no molde da foto do fã-clube).
+- O modelo do celular no problema (pede o `expo-device`, nativo: build nova).
+- Por quanto tempo guardar: hoje a mensagem fica até a conta sair; um prazo (por exemplo, apagar as resolvidas depois de um ano) entra com a política de privacidade da cliente (UP-45).
 
 ## Armadilhas
 

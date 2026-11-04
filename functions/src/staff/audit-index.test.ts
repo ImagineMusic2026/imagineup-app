@@ -592,6 +592,17 @@ const ROWS: Record<AuditAction, Row> = {
       'fanClubComment:c1',
     ],
   },
+  // O Suporte (seção 38, 38.3): o fã em `fanUid` e a mensagem em `supportMessageId`.
+  'support.message.resolved': {
+    details: { supportMessageId: 'msg1', fanUid: 'uid-bia', kind: 'problem' },
+    section: 'support',
+    targets: ['fan:uid-bia', 'supportMessage:msg1'],
+  },
+  'support.message.reopened': {
+    details: { supportMessageId: 'msg1', fanUid: 'uid-bia', kind: 'idea' },
+    section: 'support',
+    targets: ['fan:uid-bia', 'supportMessage:msg1'],
+  },
 };
 
 describe('auditIndex: uma linha por ação', () => {

@@ -18,6 +18,7 @@ const DOMAINS: DataDomain[] = [
   'profile',
   'rewards',
   'fanClub',
+  'support',
 ];
 
 /** O data-source com o env dado, carregado de novo. */
@@ -40,7 +41,7 @@ describe('fonte de cada domínio', () => {
     expect(usesFixtures()).toBe(true);
   });
 
-  it('com a API, a carteira (bloco 1), as centrais (bloco 4), o convite (bloco 5), o mural e a agenda (bloco 6), as missões e conquistas (bloco 7), o ranking (bloco 8), o @ e a foto (bloco 9), a loja (bloco 10) e o fã-clube (seção 34) vão para o servidor: nada fica nas fixtures', () => {
+  it('com a API, a carteira (bloco 1), as centrais (bloco 4), o convite (bloco 5), o mural e a agenda (bloco 6), as missões e conquistas (bloco 7), o ranking (bloco 8), o @ e a foto (bloco 9), a loja (bloco 10), o fã-clube (seção 34) e o Suporte (seção 38) vão para o servidor: nada fica nas fixtures', () => {
     const { sourceOf, usesFixtures, SERVER_DOMAINS } = load({
       apiUrl: 'https://southamerica-east1-imagine-up-app.cloudfunctions.net/api',
     });
@@ -56,6 +57,7 @@ describe('fonte de cada domínio', () => {
       'profile',
       'rewards',
       'fanClub',
+      'support',
     ]);
     expect(DOMAINS.filter((domain) => sourceOf(domain) === 'api')).toEqual([...DOMAINS]);
     // Com o bloco 10, nenhum domínio fica nas fixtures: o cache todo vai para o

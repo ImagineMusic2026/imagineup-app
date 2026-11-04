@@ -786,7 +786,55 @@
     "versionMeta": "Versão {{version}}",
     "versionMetaUpdate": "Versão {{version}}, atualização de {{date}} ({{id}})",
     "versionLabel": "Versão do app, {{version}}",
-    "versionLabelUpdate": "Versão do app, {{version}}, atualização de {{date}} ({{id}})"
+    "versionLabelUpdate": "Versão do app, {{version}}, atualização de {{date}} ({{id}})",
+    "support": "Suporte",
+    "reportProblem": "Reportar problema",
+    "reportProblemHint": "Abre a tela para contar um problema à equipe",
+    "suggestFeature": "Sugerir funcionalidade",
+    "suggestFeatureHint": "Abre a tela para mandar uma sugestão à equipe",
+    "generalFeedback": "Feedback geral",
+    "generalFeedbackHint": "Abre a tela para mandar a sua opinião sobre o app"
+  },
+  "support": {
+    "problem": {
+      "title": "Reportar problema",
+      "placeholder": "Descreva o problema...",
+      "label": "O problema",
+      "device": "Junto vão a versão do app e a do sistema do seu celular, para a equipe achar o problema."
+    },
+    "idea": {
+      "title": "Sugerir funcionalidade",
+      "placeholder": "Conte sua ideia...",
+      "label": "A sua ideia"
+    },
+    "feedback": {
+      "title": "Feedback geral",
+      "placeholder": "Conte o que você achou do app...",
+      "label": "O seu feedback"
+    },
+    "counter": "{{count}}/{{max}}",
+    "counterLabel": "{{count}} de {{max}} caracteres",
+    "note": "A equipe lê todas as mensagens, mas não responde por aqui. Para receber resposta, use \"Fale com a equipe\", nos Ajustes.",
+    "send": "Enviar",
+    "sendLabel": "Enviar a mensagem",
+    "offline": "Sem conexão. Conecte-se para enviar.",
+    "required": "Escreva a mensagem antes de enviar.",
+    "sent": {
+      "title": "Mensagem enviada",
+      "body": "Obrigado! A equipe do ImagineUP lê todas as mensagens.",
+      "close": "Fechar",
+      "announce": "Mensagem enviada. Obrigado!"
+    },
+    "discard": {
+      "title": "Descartar a mensagem?",
+      "message": "O que você escreveu não vai ser enviado.",
+      "keep": "Continuar escrevendo",
+      "confirm": "Descartar"
+    },
+    "errors": {
+      "dailyLimit": "Você chegou ao limite de mensagens de hoje. Tente amanhã.",
+      "generic": "Não deu para enviar agora. Tente de novo."
+    }
   },
   "editProfile": {
     "title": "Editar perfil",

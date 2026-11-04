@@ -755,6 +755,17 @@ if (camilaUid) {
   );
 }
 
+// O Suporte dos Ajustes (seção 38, 38.10): o problema da Bia e a sugestão da
+// Duda abertos, e o feedback da Camila resolvido pela equipe de teste (ids
+// fixos: rodar de novo não grava).
+const { seedSupport } = functionsBuild('support');
+const support = await withFirestore((db) =>
+  seedSupport(db, (email) => fanUidsByEmail.get(email) ?? rankingUids.get(email), staffActor),
+);
+console.log(
+  `Suporte: ${support.sent} mensagens agora e ${support.resolved} resolvida agora (3 no total: o problema da Bia e a sugestão da Duda abertos, o feedback da Camila resolvido).`,
+);
+
 // Os números de 60 dias por último, depois de tudo que grava em dias passados.
 const statsSeed = functionsFile('points/stats-seed');
 const statsNow = Date.now();

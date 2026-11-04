@@ -407,6 +407,8 @@ describe('tetos do dia e o limite da missão (bloco 7)', () => {
       // A Fase 2 do fã-clube (seção 37, 37.5): as trocas de reação e os comentários.
       fanclub_reaction_set: 300,
       fanclub_comment_sent: 100,
+      // O Suporte dos Ajustes (seção 38, 38.1).
+      support_message: 5,
     });
   });
 

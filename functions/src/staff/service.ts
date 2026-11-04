@@ -174,6 +174,8 @@ export type AuditAction =
   | 'fanClub.comment.kept'
   | 'fanClub.comment.hidden'
   | 'fanClub.comment.restored'
+  | 'support.message.resolved'
+  | 'support.message.reopened'
   | 'config.seeded';
 
 /**
@@ -192,7 +194,10 @@ export type AuditAction =
  * comentários de fã-clube (`fanClub.comment.*` e a etapa do fã-clube do
  * `fan.comments.hidden`, seção 37, 37.6) vão em `details.fanClubCommentId` e
  * `details.fanClubCommentIds`, nunca em `commentId` (o alvo `comment:` do
- * Mural), com as publicações em `details.fanClubPostIds` no lote.
+ * Mural), com as publicações em `details.fanClubPostIds` no lote. As do
+ * Suporte (`support.message.*`, seção 38, 38.3) levam
+ * `details: { supportMessageId, fanUid, kind }`, nunca o texto da mensagem
+ * nem o aparelho, com o targetUid null.
  */
 export type AuditEntry = {
   action: AuditAction;

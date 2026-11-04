@@ -138,10 +138,15 @@ service cloud.firestore {
     // fans lê e lista os perfis (a lista, a busca e a ficha da seção Fãs), e a
     // com moderation lê qualquer perfil (o autor de um comentário) e lista só
     // os suspensos (a consulta precisa de where('suspendedAt', '!=', null)).
+    // Desde o Suporte (seção 38, 38.5), a com support lê o perfil de quem
+    // mandou a mensagem (o nome e o @ no card), sem listar.
     // A suspensão (suspendedAt, suspensionReason) e as chaves da busca
     // (searchKeys) são do servidor; o fã suspenso não grava nem o primeiro nome.
     match /users/{uid} {
-      allow get: if isSelf(uid) || canSeeSection('fans') || canSeeSection('moderation');
+      allow get: if isSelf(uid)
+        || canSeeSection('fans')
+        || canSeeSection('moderation')
+        || canSeeSection('support');
       allow list: if canSeeSection('fans')
         || (canSeeSection('moderation') && resource.data.get('suspendedAt', null) != null);
 
@@ -584,6 +589,14 @@ service cloud.firestore {
 
     match /fanClubHideLog/{id} {
       allow read: if canSeeSection('fanClubs');
+      allow write: if false;
+    }
+
+    // As mensagens do Suporte dos Ajustes (seção 38, 38.5): o fã manda pela
+    // API (POST /me/support) e não lê de volta; a seção support do painel lê
+    // e lista, e a equipe resolve e reabre pela callable resolveSupportMessage.
+    match /supportMessages/{messageId} {
+      allow read: if canSeeSection('support');
       allow write: if false;
     }
 

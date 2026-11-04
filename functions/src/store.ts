@@ -11,6 +11,7 @@ import { detachReferrals, referralRef, removeInviteData } from './invites/servic
 import { dayKey } from './points/model';
 import { removeFanEngagement } from './posts/service';
 import { cancelFanRedemptions } from './rewards/service';
+import { removeSupportMessagesOf } from './support/service';
 import { emptyShardDelta, pickShard, shardRef, shardWrite } from './points/stats';
 import {
   profileDisplayName,
@@ -235,6 +236,7 @@ export async function deleteUserData(
   await leaveAllCentrals(db, uid);
   await removeFanEngagement(db, uid);
   await removeFanClubData(db, uid);
+  await removeSupportMessagesOf(db, uid);
   await cancelFanRedemptions(db, uid);
   await db.recursiveDelete(profile);
   await referralRef(db, uid).delete();

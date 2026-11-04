@@ -4,7 +4,8 @@ import { isVisibleLine } from '../visible-line';
 /**
  * Seções do painel, na ordem da lateral. Admin sempre tem todas. A `fanClubs`
  * (Fã-clubes, docs/arquitetura-api.md, seção 34, decisão 5) fica ao lado de
- * Fãs e de Artistas.
+ * Fãs e de Artistas; a `support` (Suporte, seção 38, decisão 7), depois da
+ * Moderação.
  */
 export const SECTION_IDS = [
   'overview',
@@ -16,6 +17,7 @@ export const SECTION_IDS = [
   'missions',
   'rewards',
   'moderation',
+  'support',
   'audit',
 ] as const;
 

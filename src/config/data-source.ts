@@ -37,7 +37,9 @@ export type DataDomain =
    * página, o seguir e a Início. As rotas estão na `api` desde as etapas 1 a
    * 4 de 34.14, e nenhuma tela as chama antes das etapas 7 e 8.
    */
-  | 'fanClub';
+  | 'fanClub'
+  /** O Suporte dos Ajustes (seção 38): /me/support. */
+  | 'support';
 
 /**
  * Domínios com rota no servidor. Cada bloco acrescenta o seu no commit que
@@ -55,6 +57,7 @@ export const SERVER_DOMAINS: ReadonlySet<DataDomain> = new Set<DataDomain>([
   'profile',
   'rewards',
   'fanClub',
+  'support',
 ]);
 
 /**
@@ -81,6 +84,7 @@ const ALL_DOMAINS: readonly DataDomain[] = [
   'profile',
   'rewards',
   'fanClub',
+  'support',
 ];
 
 /** true enquanto algum domínio ainda lê das fixtures (o estado em memória delas importa). */

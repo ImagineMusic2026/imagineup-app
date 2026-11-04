@@ -734,7 +734,7 @@ describe('as rotas da moderação dos comentários (seção 37, etapa 3 de 37.13
     expect(matchRoute(API_ROUTES, 'GET', '/me/fan-club/hidden-comments').kind).toBe('not_found');
   });
 
-  it('a API tem 74 rotas: as 64 de antes e as 10 da Fase 2 (5 da etapa 1, 1 da etapa 2 e 4 da etapa 3)', () => {
-    expect(API_ROUTES).toHaveLength(74);
+  it('a API tem 75 rotas: as 64 de antes, as 10 da Fase 2 (5 da etapa 1, 1 da etapa 2 e 4 da etapa 3) e a do Suporte (seção 38)', () => {
+    expect(API_ROUTES).toHaveLength(75);
   });
 });

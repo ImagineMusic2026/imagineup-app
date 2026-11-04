@@ -1,11 +1,14 @@
 import { router } from 'expo-router';
 import {
   Ban,
+  CircleAlert,
   FileText,
   KeyRound,
+  Lightbulb,
   LogOut,
   Mail,
   MessageCircle,
+  MessageSquareText,
   ScrollText,
   Shield,
   UserPen,
@@ -20,6 +23,7 @@ import { PRIVACY_URL, SUPPORT_EMAIL, TERMS_URL } from '@/config/links';
 import { useSignOut } from '@/domains/auth';
 import { SuspendedNotice } from '@/domains/profile';
 import { useRewardsRulesUrl } from '@/domains/rewards';
+import { SUPPORT_SLUGS } from '@/domains/support';
 import { isFirebaseConfigured } from '@/firebase';
 import { useTabBarInset } from '@/hooks/use-tab-bar-inset';
 import { t } from '@/i18n';
@@ -55,9 +59,10 @@ function versionTexts({ version, update }: AppVersionInfo): { meta?: string; lab
  * conta, juntos, com "Editar perfil" (bloco 9) e "Trocar e-mail" e "Trocar
  * senha" (só na conta com senha, frente D); o fã-clube, só com a resposta do
  * servidor novo (seção 34); a privacidade e a segurança, juntas, com "Fãs
- * bloqueados" (frente B) e as páginas dos termos e da privacidade; o "Sobre"
- * (frente C), com o regulamento (só com o endereço no cache da loja) e o
- * contato; a zona de perigo, com o Sair na cor de perigo; e, no rodapé, o
+ * bloqueados" (frente B) e as páginas dos termos e da privacidade; o Suporte
+ * (seção 38), com "Reportar problema", "Sugerir funcionalidade" e "Feedback
+ * geral", que abrem a tela de cada um; o "Sobre" (frente C), com o
+ * regulamento (só com o endereço no cache da loja) e o contato; a zona de perigo, com o Sair na cor de perigo; e, no rodapé, o
  * nome e a versão. Excluir conta fica no fim do "Editar perfil", a última
  * opção. Sair não pede confirmação (dá para entrar de novo) e por isso não
  * leva a seta de "abre outra tela". As páginas abrem no navegador dentro do
@@ -149,6 +154,32 @@ export function SettingsScreen() {
           accessibilityRole="link"
           accessibilityHint={t('settings.pageHint')}
           testID="settings-privacy"
+        />
+      </MenuSection>
+      <MenuSection title={t('settings.support')}>
+        <MenuRow
+          icon={CircleAlert}
+          title={t('settings.reportProblem')}
+          trailing="chevron"
+          onPress={() => router.push(`/suporte/${SUPPORT_SLUGS.problem}`)}
+          accessibilityHint={t('settings.reportProblemHint')}
+          testID="settings-report-problem"
+        />
+        <MenuRow
+          icon={Lightbulb}
+          title={t('settings.suggestFeature')}
+          trailing="chevron"
+          onPress={() => router.push(`/suporte/${SUPPORT_SLUGS.idea}`)}
+          accessibilityHint={t('settings.suggestFeatureHint')}
+          testID="settings-suggest-feature"
+        />
+        <MenuRow
+          icon={MessageSquareText}
+          title={t('settings.generalFeedback')}
+          trailing="chevron"
+          onPress={() => router.push(`/suporte/${SUPPORT_SLUGS.feedback}`)}
+          accessibilityHint={t('settings.generalFeedbackHint')}
+          testID="settings-general-feedback"
         />
       </MenuSection>
       <MenuSection title={t('settings.about')}>

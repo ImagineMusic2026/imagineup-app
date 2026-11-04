@@ -26,7 +26,9 @@ import { ApiError, isAccountSuspended, isContentRefusal } from './errors';
  *   `clubComment`, comentar e responder (o teto `club_comment`, com a frase
  *   do filtro); `clubCommentReport`, denunciar um comentário, e
  *   `clubCommentReview`, o "Pedir revisão" (os dois no teto `report` de
- *   sempre); `clubCommentHide`, o ocultar e o reexibir do gestor, sem teto.
+ *   sempre); `clubCommentHide`, o ocultar e o reexibir do gestor, sem teto;
+ * - `support`: a mensagem do Suporte dos Ajustes (seção 38, o teto
+ *   `support_message`; livre para o suspenso).
  */
 export type RefusalAction =
   | 'like'
@@ -56,7 +58,8 @@ export type RefusalAction =
   | 'clubComment'
   | 'clubCommentReport'
   | 'clubCommentReview'
-  | 'clubCommentHide';
+  | 'clubCommentHide'
+  | 'support';
 
 /**
  * - `suspended`: 403 `account_suspended` (26.6);
@@ -182,6 +185,7 @@ const PHRASES: Record<RefusalAction, ActionPhrases> = {
     notFound: 'fanClub.commentNotFound',
     generic: 'fanClub.refusal.hideError',
   },
+  support: { dailyLimit: 'support.errors.dailyLimit', generic: 'support.errors.generic' },
 };
 
 /** A frase do teto do dia da ação (o `Alert` "Limite de hoje" e os avisos). */

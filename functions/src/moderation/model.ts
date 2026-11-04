@@ -14,6 +14,7 @@ import {
   PROFILE_SAVES_PER_DAY,
 } from '../fan-profile/model';
 import { dayKey, nextDayStart, type DailyActionKey, type DayStats } from '../points/model';
+import { SUPPORT_MESSAGES_PER_DAY } from '../support/model';
 
 // Moderação mínima do bloco 6 e os tetos do dia das ações que gravam, puro:
 // nada aqui lê ou grava o Firestore. Provisória até as regras da cliente
@@ -64,7 +65,8 @@ export const REDEEMS_PER_DAY = 10;
  * decisão 11); `club_follow`, seguir um fã-clube (seção 34, decisão 34);
  * `club_react` e `club_comment`, dar ou trocar a reação e comentar numa
  * publicação de fã-clube (seção 37, 37.5). A denúncia de comentário de
- * fã-clube e o pedido de revisão contam no `report` de sempre.
+ * fã-clube e o pedido de revisão contam no `report` de sempre. `support`, a
+ * mensagem do Suporte dos Ajustes (seção 38, 38.1).
  */
 export type CapAction =
   | 'like'
@@ -82,7 +84,8 @@ export type CapAction =
   | 'club_upload'
   | 'club_follow'
   | 'club_react'
-  | 'club_comment';
+  | 'club_comment'
+  | 'support';
 
 export const DAILY_CAPS: Record<CapAction, { key: DailyActionKey; limit: number }> = {
   like: { key: 'like_set', limit: LIKES_PER_DAY },
@@ -101,6 +104,7 @@ export const DAILY_CAPS: Record<CapAction, { key: DailyActionKey; limit: number 
   club_follow: { key: 'fanclub_follow', limit: FAN_CLUB_FOLLOWS_PER_DAY },
   club_react: { key: 'fanclub_reaction_set', limit: FAN_CLUB_REACTIONS_PER_DAY },
   club_comment: { key: 'fanclub_comment_sent', limit: FAN_CLUB_COMMENTS_PER_DAY },
+  support: { key: 'support_message', limit: SUPPORT_MESSAGES_PER_DAY },
 };
 
 /**

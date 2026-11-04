@@ -1485,6 +1485,9 @@ describe('suspensão do fã (bloco 11)', () => {
         'DELETE /me/fan-club-follows/:clubId',
         // A Fase 2 do fã-clube (seção 37, 37.8): tirar a reação é de desfazer.
         'DELETE /fan-club-posts/:postId/reaction',
+        // O Suporte (seção 38, decisão 6): a exceção que cria, o caminho do
+        // suspenso até a equipe.
+        'POST /me/support',
       ].sort(),
     );
     // Toda rota que lê ignora a trava (ela mora no runIdempotent).

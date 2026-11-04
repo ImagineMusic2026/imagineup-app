@@ -30,6 +30,8 @@ const SECTION_BY_PREFIX: Record<string, AuditSection> = {
   redemption: 'rewards',
   // O fã-clube gerido pelo fã (seção 34, 34.8).
   fanClub: 'fanClubs',
+  // O Suporte dos Ajustes (seção 38, 38.3).
+  support: 'support',
 };
 
 const SECTION_BY_ACTION: Record<string, AuditSection> = {
@@ -93,6 +95,9 @@ const DETAIL_TARGETS: readonly [field: string, type: string][] = [
   ['fanClubPostIds', 'fanClubPost'],
   ['fanClubCommentId', 'fanClubComment'],
   ['fanClubCommentIds', 'fanClubComment'],
+  // O Suporte (seção 38, 38.3): a mensagem em `supportMessageId`, e o fã que
+  // mandou em `fanUid`, como o gestor do fã-clube.
+  ['supportMessageId', 'supportMessage'],
 ];
 
 /** Id que vira alvo: texto de 1 a 200 caracteres, sem `/`. */
@@ -119,7 +124,8 @@ export type AuditIndex = { section: AuditSection | null; targets: string[] };
  * comentários e as ferramentas de fã da Moderação; `missions` para a régua,
  * missões, conquistas, a meta e a carga inicial; `ranking` para as outras de
  * temporada; `rewards` para a loja; `fans` para o ajuste, a busca por e-mail
- * e os pedidos de dados (seção 32); `fanClubs` para o fã-clube (seção 34).
+ * e os pedidos de dados (seção 32); `fanClubs` para o fã-clube (seção 34);
+ * `support` para as mensagens do Suporte (seção 38).
  * Alvos: o `targetUid` (da equipe nas ações da Equipe, do fã nas ações de
  * fã), o `details.uid` das ações de fã e os ids de `details` (cada campo de
  * `DETAIL_TARGETS`, um id ou uma lista), sem repetir, até 50. `details` torto

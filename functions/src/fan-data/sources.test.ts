@@ -67,7 +67,7 @@ describe('a lista das fontes', () => {
 });
 
 describe('as partes longas', () => {
-  it('as 11 partes, na ordem do arquivo (32.3; as publicações do fã-clube desde a seção 34, os comentários e as reações desde a 37)', () => {
+  it('as 12 partes, na ordem do arquivo (32.3; as publicações do fã-clube desde a seção 34, os comentários e as reações desde a 37, as mensagens do Suporte desde a 38)', () => {
     expect(FAN_DATA_PARTS).toEqual([
       'extrato',
       'pontosPorCentral',
@@ -80,6 +80,7 @@ describe('as partes longas', () => {
       'publicacoesDeFaClube',
       'comentariosDeFaClube',
       'reacoesDeFaClube',
+      'mensagensDeSuporte',
     ]);
   });
 
@@ -120,6 +121,7 @@ describe('as partes longas', () => {
           field: 'authorUid',
         },
         reacoesDeFaClube: { kind: 'equal', collection: 'fanClubReactions', field: 'uid' },
+        mensagensDeSuporte: { kind: 'equal', collection: 'supportMessages', field: 'uid' },
       },
     );
   });
@@ -235,6 +237,7 @@ describe('o filtro de campos (decisão 8)', () => {
       fanClubComments: [['hiddenBy', 'mentions', 'mentionUids'], null],
       fanClubCommentReports: [['round'], null],
       'fanClubHideLog.manager': [['authorUid'], null],
+      supportMessages: [['resolvedBy'], null],
     });
     expect(PROFILE_TECHNICAL_FIELDS).toEqual(['searchKeys', 'signupCounted', 'photoPath']);
   });
@@ -292,6 +295,7 @@ describe('o que a exclusão faz', () => {
       fanClubReactions: 'deleted',
       fanClubCommentReports: 'deleted',
       'fanClubHideLog.manager': 'deleted',
+      supportMessages: 'deleted',
       moderationQueue: 'kept',
       profileReportQueue: 'kept',
       fanClubReportQueue: 'kept',

@@ -93,6 +93,12 @@ export interface TextInputProps extends Omit<NativeTextInputProps, 'style'> {
    * @, mostrado embaixo do card; o contador da bio).
    */
   accessibilityStatus?: string;
+  /**
+   * No campo de várias linhas, a altura mínima da caixa em linhas de texto
+   * (padrão 3, a bio; a mensagem do Suporte usa uma caixa maior). A caixa
+   * inteira continua sendo o campo: tocar em qualquer ponto abre o teclado.
+   */
+  minLines?: number;
 }
 
 const REST_BORDER: Record<TextInputVariant, string> = {
@@ -139,6 +145,7 @@ export const TextInput = forwardRef<NativeTextInput, TextInputProps>(function Te
     labelHidden = false,
     footer,
     accessibilityStatus,
+    minLines = MULTILINE_MIN_LINES,
     onFocus,
     onBlur,
     ...props
@@ -159,7 +166,7 @@ export const TextInput = forwardRef<NativeTextInput, TextInputProps>(function Te
   );
 
   // A primeira linha do texto, com a fonte do sistema: o ícone e o prefixo do
-  // campo de várias linhas ficam na altura dela, e a caixa tem 3 delas.
+  // campo de várias linhas ficam na altura dela, e a caixa tem `minLines` delas.
   const lineHeight = typography.input.lineHeight * Math.min(fontScale, MAX_FONT_SCALE);
   const firstLine = multiline
     ? { top: INPUT_PADDING_MULTILINE, bottom: undefined, height: lineHeight }
@@ -221,7 +228,7 @@ export const TextInput = forwardRef<NativeTextInput, TextInputProps>(function Te
           styles[variant],
           multiline && {
             alignItems: 'flex-start',
-            minHeight: lineHeight * MULTILINE_MIN_LINES + INPUT_PADDING_MULTILINE * 2,
+            minHeight: lineHeight * minLines + INPUT_PADDING_MULTILINE * 2,
           },
           borderStyle,
         ]}

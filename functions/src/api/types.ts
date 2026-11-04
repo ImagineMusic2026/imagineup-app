@@ -124,7 +124,9 @@ export type WriteRoute = RouteBase & {
    * true nas rotas que desfazem ou protegem o fã (sair da central, descurtir,
    * desfazer o "Eu vou", tirar a própria foto, bloquear e desbloquear): o fã
    * suspenso continua podendo (bloco 11, 26.5). As outras recusam o suspenso
-   * com 403 `account_suspended`. Rota nova que cria ou soma não leva.
+   * com 403 `account_suspended`. Rota nova que cria ou soma não leva, com uma
+   * exceção: a mensagem do Suporte (`POST /me/support`, seção 38, decisão 6),
+   * um caminho do suspenso até a equipe.
    */
   allowSuspended?: boolean;
   handle: (ctx: WriteContext) => Promise<WorkResult>;

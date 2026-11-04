@@ -201,9 +201,9 @@ const SINGLE: SingleFieldShape[] = [
 ];
 
 describe('os índices do fã-clube (34.6)', () => {
-  it('são 27 compostos do fã-clube (21 da seção 34 e 6 da 37), 71 no total', () => {
+  it('são 27 compostos do fã-clube (21 da seção 34 e 6 da 37), 75 no total (com os 4 do Suporte, seção 38)', () => {
     expect(COMPOSITE).toHaveLength(27);
-    expect(file.indexes).toHaveLength(71);
+    expect(file.indexes).toHaveLength(75);
   });
 
   it.each(COMPOSITE.map((item) => [item.name, item] as const))(

@@ -816,6 +816,11 @@ describe('o arquivo de um fã com dado em toda fonte, e a exclusão', () => {
       expect((await reactTo(invitee, fanClubPostId, 'clap')).status).toBe(200);
       expect((await report(inviter, `/fan-club-comments/${enzoSeen}/report`)).status).toBe(200);
       expect((await as(fan)('PUT', `/me/fan-club/hidden-comments/${enzoHidden}`)).status).toBe(200);
+      // O Suporte dos Ajustes (seção 38, 38.4): uma mensagem do fã, que vai ao
+      // arquivo e sai com a conta.
+      expect(
+        (await as(fan)('POST', '/me/support', { kind: 'idea', text: 'Salvar os posts.' })).status,
+      ).toBe(200);
 
       // A equipe: um ajuste, um pedido recusado e um comentário ocultado.
       await ok(
