@@ -559,6 +559,11 @@ describe('o autor no topo do card, no estilo do X, nas três telas (pedido do do
     expect(within(author).getByTestId('fan-club-post-p1-author-time').props.children).toMatch(
       /^· 19 de out/u,
     );
+    // Na página, o @ e o horário seguem na linha do nome (as duas linhas são só da Início).
+    expect(within(card).queryByTestId('fan-club-post-p1-author-meta')).not.toBeOnTheScreen();
+    expect(
+      within(within(card).getByTestId('fan-club-post-p1-author-line')).getByText('@thalitasan'),
+    ).toBeTruthy();
     // A data de baixo do texto saiu: o horário fica só na linha do autor.
     const body = screen.getByTestId('fan-club-post-p1-body');
     expect(within(body).queryByText('19 out')).not.toBeOnTheScreen();
@@ -589,6 +594,15 @@ describe('o autor no topo do card, no estilo do X, nas três telas (pedido do do
         includeHiddenElements: true,
       }),
     ).not.toBeOnTheScreen();
+    // Só na Início, o @ e o horário descem para baixo do nome (37.19).
+    const nameLine = within(card).getByTestId('home-fan-club-post-p1-author-line');
+    expect(within(nameLine).getByText('Thalita Santos')).toBeTruthy();
+    expect(within(nameLine).queryByText('@thalitasan')).not.toBeOnTheScreen();
+    const meta = within(card).getByTestId('home-fan-club-post-p1-author-meta');
+    expect(within(meta).getByText('@thalitasan')).toBeTruthy();
+    expect(within(meta).getByTestId('home-fan-club-post-p1-author-time').props.children).toMatch(
+      /^· \d{1,2} de \p{L}{3}/u,
+    );
 
     fireEvent.press(within(card).getByRole('link', { name: 'Thalita Santos, @thalitasan' }));
     expect(await screen.findByText('fan')).toBeTruthy();

@@ -144,7 +144,8 @@ function focusSoon(target: RefObject<View | null>): ReturnType<typeof setTimeout
  * página e na tela da publicação, a bandeira vai para a linha do autor. Na
  * Início, o nome do fã-clube fica em cima do autor, como o nome da comunidade
  * no X, com a bandeira na linha dele, e o selo do oficial fica só ao lado do
- * nome do fã-clube.
+ * nome do fã-clube. Na noite do mesmo dia, pelo print do dono da Início, o @
+ * e o horário descem para a linha de baixo do nome, só nela (37.19).
  */
 export function FanClubPostCard({
   post,
@@ -283,6 +284,8 @@ export function FanClubPostCard({
         now={now}
         // Na Início, o selo já está ao lado do nome do fã-clube, logo em cima.
         official={post.clubOfficial && !clubRow}
+        // Na Início, o card é estreito: o @ e o horário descem para baixo do nome (37.19).
+        stacked={feed}
         onOpen={onOpenAuthor ? () => onOpenAuthor(post) : undefined}
         style={canReport && !clubRow && styles.reportReserve}
         testID={testID ? `${testID}-author` : undefined}
