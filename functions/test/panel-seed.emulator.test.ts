@@ -17,6 +17,8 @@ import {
   SEED_FAN_CLUB_HIDDEN_COMMENT,
   SEED_FAN_CLUB_POSTS,
   SEED_FAN_CLUB_SPAM_COMMENT,
+  SEED_DIRECT_POST_TEXT,
+  seedFanClubDirectPost,
   seedFanClubEngagement,
   seedFanClubFollows,
   seedFanClubLink,
@@ -257,6 +259,8 @@ async function seed(ranking: Map<string, string>): Promise<void> {
   );
   // A recompensa "Só para prêmios" e o prêmio da Camila (etapa 5).
   await seedFanClubPrize(db, { camilaUid: 'camila', actor: ACTOR }, T0);
+  // A publicação sem revisão do fã-clube oficial da Camila (34.25).
+  await seedFanClubDirectPost(db, { camilaUid: 'camila', actor: ACTOR }, T0);
   // A candidatura pendente da Duda, que entra antes no Nenho (etapa 10).
   await seedFanClubPending(db, 'duda', T0);
   await seedPanelStats(db, T0);
@@ -534,7 +538,8 @@ describe('o seed das telas do painel (26.13)', () => {
     const posts = (await db.collection('fanClubPosts').where('authorUid', '==', 'camila').get())
       .docs;
     const byText = new Map(posts.map((doc) => [doc.get('text') as string, doc]));
-    expect(posts).toHaveLength(SEED_FAN_CLUB_POSTS.length);
+    // As três revisadas e a sem revisão (34.25).
+    expect(posts).toHaveLength(SEED_FAN_CLUB_POSTS.length + 1);
     const [photoItem, textItem, pendingItem] = SEED_FAN_CLUB_POSTS;
     const photoPost = byText.get(photoItem!.text)!;
     expect(photoPost.data()).toMatchObject({
@@ -550,7 +555,21 @@ describe('o seed das telas do painel (26.13)', () => {
     });
     expect(byText.get(textItem!.text)!.data()).toMatchObject({ kind: 'text', status: 'published' });
     expect(byText.get(pendingItem!.text)!.data()).toMatchObject({ status: 'pending' });
-    expect(await read(`fanClubs/${clubId}`)).toMatchObject({ postCount: 2, pendingPosts: 1 });
+    // A sem revisão (34.25): a chave ligada pelo admin do seed, e a publicação
+    // no ar sem o `reviewedAt`, na aba "Publicadas sem revisão".
+    expect(byText.get(SEED_DIRECT_POST_TEXT)!.data()).toMatchObject({
+      status: 'published',
+      direct: true,
+      reviewedAt: null,
+      reviewedBy: null,
+    });
+    expect(await read(`fanClubs/${clubId}`)).toMatchObject({
+      postCount: 3,
+      pendingPosts: 1,
+      directPosts: true,
+      directPostsBy: { uid: SEED_STAFF_ADMIN.uid, name: SEED_STAFF_ADMIN.displayName },
+    });
+    expect(audit.filter((entry) => entry.action === 'fanClub.directPosts.allowed')).toHaveLength(1);
     expect(await read(`fanClubReportQueue/${photoPost.id}`)).toMatchObject({
       status: 'open',
       round: 1,

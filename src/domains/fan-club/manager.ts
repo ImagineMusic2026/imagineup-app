@@ -47,8 +47,8 @@ export function postsIn(posts: readonly OwnFanClubPost[], filter: PostFilter): O
 
 /**
  * Por que o "+" não abre a nova publicação, na ordem do servidor: o fã-clube
- * fora do ar (com o motivo), o regulamento velho e as 3 em análise. Null: pode
- * publicar.
+ * fora do ar (com o motivo), o regulamento velho e as 3 em análise (que não
+ * valem no fã-clube que publica sem revisão, 34.25). Null: pode publicar.
  */
 export type PostBlock =
   { kind: 'unavailable'; key: TranslationKey } | { kind: 'rules' } | { kind: 'full' } | null;
@@ -63,6 +63,6 @@ export function postBlockOf(club: MyFanClubClub): PostBlock {
     };
   }
   if (club.rulesOutdated) return { kind: 'rules' };
-  if (club.pendingPosts >= FAN_CLUB_PENDING_MAX) return { kind: 'full' };
+  if (!club.directPosts && club.pendingPosts >= FAN_CLUB_PENDING_MAX) return { kind: 'full' };
   return null;
 }

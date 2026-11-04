@@ -432,8 +432,9 @@ export const FAN_DATA_SOURCES: readonly FanDataSource[] = [
     label: 'fanClubs com ownerUid ==',
     place: { in: 'first', key: 'faClubes' },
     read: { kind: 'equal', collection: 'fanClubs', field: 'ownerUid' },
-    // O uid e o nome de quem é da equipe e aprovou, encerrou, destacou ou oficializou.
-    omit: ['approvedBy', 'closedBy', 'featuredBy', 'officialBy'],
+    // O uid e o nome de quem é da equipe e aprovou, encerrou, destacou,
+    // oficializou ou ligou a publicação sem revisão (34.25).
+    omit: ['approvedBy', 'closedBy', 'featuredBy', 'officialBy', 'directPostsBy'],
     deletion: {
       effect: 'stripped',
       note: 'vira lápide: encerrado, sem o dono, as cópias e o nome (decisão 21)',

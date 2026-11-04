@@ -767,6 +767,8 @@ function clubView(club: ClubRecord, record: ApplicationRecord, now: Date): MyFan
     photosAllowed: !TEXT_ONLY_ARTISTS.has(club.artistId),
     featuredUntil: club.status === 'active' ? featuredUntilOf(club, now) : null,
     official: club.official,
+    // As fixtures não fingem a publicação sem revisão (34.25): tudo vai para a revisão.
+    directPosts: false,
     lastReward: lastRewardOf(club, now),
     available: unavailableReason === null,
     unavailableReason,

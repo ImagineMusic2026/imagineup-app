@@ -365,6 +365,7 @@ export {
 } from './panel';
 export {
   SEED_CAMILA_FAN_CLUB,
+  SEED_DIRECT_POST_TEXT,
   SEED_DUDA_FAN_CLUB,
   SEED_FAN_CLUB_COMMENTS,
   SEED_FAN_CLUB_FOLLOWER,
@@ -374,6 +375,7 @@ export {
   SEED_FAN_CLUB_REACTIONS,
   SEED_FAN_CLUB_SPAM_COMMENT,
   SEED_TEXT_ONLY_ARTIST,
+  seedFanClubDirectPost,
   seedFanClubEngagement,
   seedFanClubFollows,
   seedFanClubLink,
@@ -384,6 +386,7 @@ export {
   seedFanClubs,
   type SeedFanClubActor,
   type SeedFanClubComment,
+  type SeedFanClubDirectPostResult,
   type SeedFanClubEngagementResult,
   type SeedFanClubFollowsResult,
   type SeedFanClubModerationResult,

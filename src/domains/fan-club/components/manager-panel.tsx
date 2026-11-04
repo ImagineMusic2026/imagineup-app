@@ -488,8 +488,16 @@ export function ManagerPanel({ mine, club, next, onOpen }: ManagerPanelProps) {
       <Shortcut
         icon={FileText}
         title={t('fanClub.manager.tabs.posts')}
-        body={t('fanClub.manager.panel.posts', posts)}
-        accessibilityLabel={t('fanClub.manager.panel.postsLabel', posts)}
+        body={t(
+          club.directPosts ? 'fanClub.manager.panel.postsDirect' : 'fanClub.manager.panel.posts',
+          posts,
+        )}
+        accessibilityLabel={t(
+          club.directPosts
+            ? 'fanClub.manager.panel.postsDirectLabel'
+            : 'fanClub.manager.panel.postsLabel',
+          posts,
+        )}
         accessibilityHint={t('fanClub.manager.panel.postsHint')}
         tone="plain"
         onPress={() => onOpen('publicacoes')}

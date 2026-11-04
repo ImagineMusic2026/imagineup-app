@@ -758,6 +758,11 @@ export type MyFanClubClub = {
   featuredUntil: string | null;
   /** Oficializado pela equipe: o selo do fã-clube oficial (34.23). */
   official: boolean;
+  /**
+   * A publicação vai ao ar sem a revisão antes (34.25): só no oficial, com a
+   * chave do admin. Sem o limite de 3 em análise.
+   */
+  directPosts: boolean;
   /** O último reconhecimento, sem a nota da equipe. */
   lastReward: { at: string | null; points: number | null; prize: boolean } | null;
   available: boolean;

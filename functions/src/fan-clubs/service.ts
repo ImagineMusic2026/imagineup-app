@@ -173,6 +173,7 @@ export function clubView(
     photosAllowed: boxes.enabled && boxes.photosAllowed,
     featuredUntil: isFeaturedNow(club, now) ? club.featuredUntil : null,
     official: club.official,
+    directPosts: club.directPosts,
     lastReward: club.lastReward ? { ...club.lastReward, at: iso(club.lastReward.at) } : null,
     available: unavailableReason === null,
     unavailableReason,

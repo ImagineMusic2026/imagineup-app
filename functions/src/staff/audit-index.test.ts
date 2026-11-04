@@ -453,6 +453,17 @@ const ROWS: Record<AuditAction, Row> = {
     section: 'fanClubs',
     targets: ['artist:nettobrito', 'fanClub:clube1', 'fan:uid-camila'],
   },
+  // A publicação sem revisão do fã-clube oficial (34.25), só do admin.
+  'fanClub.directPosts.allowed': {
+    details: { clubId: 'clube1', artistId: 'nettobrito', fanUid: 'uid-camila' },
+    section: 'fanClubs',
+    targets: ['artist:nettobrito', 'fanClub:clube1', 'fan:uid-camila'],
+  },
+  'fanClub.directPosts.revoked': {
+    details: { clubId: 'clube1', artistId: 'nettobrito', fanUid: 'uid-camila' },
+    section: 'fanClubs',
+    targets: ['artist:nettobrito', 'fanClub:clube1', 'fan:uid-camila'],
+  },
   // O Recompensar (etapa 5): a recompensa e o pedido de prêmio viram alvos, e
   // nunca o cupom nem a mensagem, que não vão aos `details`.
   'fanClub.rewarded': {
@@ -511,6 +522,18 @@ const ROWS: Record<AuditAction, Row> = {
     targets: ['artist:nettobrito', 'fan:uid-camila', 'fanClub:clube1', 'fanClubPost:pub1'],
   },
   'fanClub.post.restored': {
+    details: {
+      fanClubPostId: 'pub1',
+      clubId: 'clube1',
+      artistId: 'nettobrito',
+      authorUid: 'uid-camila',
+      reason: null,
+    },
+    section: 'fanClubs',
+    targets: ['artist:nettobrito', 'fan:uid-camila', 'fanClub:clube1', 'fanClubPost:pub1'],
+  },
+  // O "Conferida" da publicação que foi ao ar sem revisão (34.25).
+  'fanClub.post.checked': {
     details: {
       fanClubPostId: 'pub1',
       clubId: 'clube1',

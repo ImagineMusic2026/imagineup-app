@@ -556,11 +556,16 @@ export function useCreateFanClubPostMutation() {
     retry: false,
     meta: { suspendedAlert: false },
     onMutate: startedBy,
-    onSuccess: (_post, _variables, started) => {
+    onSuccess: (post, _variables, started) => {
       attempt.current = null;
       if (!sameSession(started)) return;
       void client.invalidateQueries({ queryKey: fanClubKeys.myPosts() });
       void client.invalidateQueries({ queryKey: fanClubKeys.mine() });
+      // A que foi ao ar sem revisão (34.25) já está na página e na Início.
+      if (post.status === 'published') {
+        void client.invalidateQueries({ queryKey: fanClubKeys.clubPosts(post.clubId) });
+        void client.invalidateQueries({ queryKey: fanClubKeys.feed() });
+      }
     },
     onError: (error) => {
       if (!isUncertainFailure(error)) attempt.current = null;

@@ -212,6 +212,7 @@ const ownClub = (patch: Partial<MyFanClubClub> = {}): MyFanClubClub => ({
   photosAllowed: true,
   featuredUntil: null,
   official: false,
+  directPosts: false,
   lastReward: null,
   available: true,
   unavailableReason: null,

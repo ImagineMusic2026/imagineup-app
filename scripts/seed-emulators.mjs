@@ -744,6 +744,15 @@ if (camilaUid) {
   console.log(
     `Prêmio do fã-clube: a recompensa "Só para prêmios" ${clubPrize.reward ? 'cadastrada agora' : 'já estava'}, e o prêmio da Camila (200 pontos e o ingresso de cortesia, com o cupom) ${clubPrize.granted ? 'dado agora' : 'já tinha sido dado'}.`,
   );
+  // A publicação sem revisão do fã-clube oficial da Camila (34.25), depois das
+  // revisadas: o admin liga a chave e ela publica na hora. Rodar de novo não grava.
+  const { seedFanClubDirectPost } = functionsBuild('fan-clubs');
+  const clubDirect = await withFirestore((db) =>
+    seedFanClubDirectPost(db, { camilaUid, actor: staffActor }),
+  );
+  console.log(
+    `Publicação sem revisão: a chave do fã-clube da Camila ${clubDirect.allowed ? 'ligada agora' : 'já estava ligada (ou tirada no painel)'}, e a publicação dela ${clubDirect.created ? 'no ar agora, para a aba Publicadas sem revisão' : 'já existia'}.`,
+  );
   // A candidatura pendente da Duda (etapa 10), por último: rodar de novo não grava.
   const { seedFanClubPending } = functionsBuild('fan-clubs');
   const clubPending = await withFirestore((db) => seedFanClubPending(db, fanUids.duda));
@@ -751,7 +760,7 @@ if (camilaUid) {
     `Candidatura pendente: a da Duda para o Nenho ${clubPending.applied ? `entrou agora${clubPending.joined ? ', depois da entrada dela na central' : ''}` : 'já estava'}.`,
   );
   console.log(
-    'Fã-clube: a Camila gere o fã-clube do Netto, com seguidores, comentários e reações, um comentário oculto por ela com o pedido de revisão, um comentário de propaganda denunciado, uma publicação em análise, uma denúncia e um prêmio; a Duda espera a aprovação.',
+    'Fã-clube: a Camila gere o fã-clube do Netto, com seguidores, comentários e reações, um comentário oculto por ela com o pedido de revisão, um comentário de propaganda denunciado, uma publicação em análise, uma no ar sem revisão (a chave ligada), uma denúncia e um prêmio; a Duda espera a aprovação.',
   );
 }
 
