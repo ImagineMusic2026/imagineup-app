@@ -27,8 +27,9 @@ export interface FanClubPostAuthorProps {
   now: Date;
   /**
    * Em duas linhas: o nome (com o selo) em cima e, embaixo dele, o @ e o
-   * horário. Só na Início (pedido do dono de 03/11/2026, 37.19), onde o card
-   * é estreito; na página e na tela da publicação, numa linha só.
+   * horário. Na Início (pedido do dono de 03/11/2026, 37.19), onde o card é
+   * estreito, e na tela da publicação (no mesmo dia, 37.20); na página do
+   * fã-clube, numa linha só.
    */
   stacked?: boolean;
   /** Abre o perfil público do autor; sem ele (a própria publicação), o autor só se lê. */
@@ -64,8 +65,8 @@ export function postAuthorLabel(author: FanClubPerson, official: boolean): strin
  * a data). No molde do autor do comentário (`FanClubCommentRow`), com o
  * avatar do autor do post do Mural: um pressável só, que abre o perfil
  * público. Com a fonte grande, o nome não corta, e o @ e o horário descem
- * para baixo dele. Na Início (o `stacked`, 37.19), o @ e o horário ficam
- * sempre na linha de baixo do nome.
+ * para baixo dele. Na Início e na tela da publicação (o `stacked`, 37.19 e
+ * 37.20), o @ e o horário ficam sempre na linha de baixo do nome.
  */
 export function FanClubPostAuthor({
   post,
@@ -158,7 +159,7 @@ const styles = StyleSheet.create({
     gap: spacing.listGap,
     minHeight: layout.minTouchTarget,
   },
-  // O nome em cima e, embaixo, o @ e o horário (o `stacked`, na Início).
+  // O nome em cima e, embaixo, o @ e o horário (o `stacked`, na Início e na publicação).
   stack: {
     flex: 1,
     minWidth: 0,

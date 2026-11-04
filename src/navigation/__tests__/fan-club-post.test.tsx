@@ -492,15 +492,20 @@ describe('o autor no topo do card, no estilo do X, nas três telas (pedido do do
   const HOUR = 3_600_000;
   const hoursAgo = (hours: number) => new Date(Date.now() - hours * HOUR).toISOString();
 
-  it('o avatar, o nome, o @ e o " · 3 h" numa linha, que abre o perfil do gestor', async () => {
+  it('o avatar, o nome e, embaixo dele, o @ e o " · 3 h", que abre o perfil do gestor', async () => {
     mocked.fetchFanClubPost.mockResolvedValue(details({ publishedAt: hoursAgo(3) }));
     const view = await openPost();
 
     const card = screen.getByTestId('fan-club-post-card');
     const author = within(card).getByRole('link', { name: 'Thalita Santos, @thalitasan' });
     expect(author).toHaveProp('accessibilityHint', 'Abre o perfil de Thalita Santos');
-    expect(within(author).getByText('@thalitasan')).toBeTruthy();
-    expect(within(author).getByText('· 3 h')).toBeTruthy();
+    // Como na Início, o @ e o horário descem para baixo do nome (37.20).
+    const nameLine = within(author).getByTestId('fan-club-post-card-author-line');
+    expect(within(nameLine).getByText('Thalita Santos')).toBeTruthy();
+    expect(within(nameLine).queryByText('@thalitasan')).not.toBeOnTheScreen();
+    const meta = within(author).getByTestId('fan-club-post-card-author-meta');
+    expect(within(meta).getByText('@thalitasan')).toBeTruthy();
+    expect(within(meta).getByText('· 3 h')).toBeTruthy();
     // O horário subiu para o topo: embaixo do texto não fica o "há 3 h" de antes.
     expect(within(card).queryByText('há 3 h')).not.toBeOnTheScreen();
     expect(screen.getByTestId('fan-club-post-card-body').props.accessibilityLabel).toBe(
@@ -559,7 +564,8 @@ describe('o autor no topo do card, no estilo do X, nas três telas (pedido do do
     expect(within(author).getByTestId('fan-club-post-p1-author-time').props.children).toMatch(
       /^· 19 de out/u,
     );
-    // Na página, o @ e o horário seguem na linha do nome (as duas linhas são só da Início).
+    // Na página, o @ e o horário seguem na linha do nome (as duas linhas são da
+    // Início e da tela da publicação).
     expect(within(card).queryByTestId('fan-club-post-p1-author-meta')).not.toBeOnTheScreen();
     expect(
       within(within(card).getByTestId('fan-club-post-p1-author-line')).getByText('@thalitasan'),
@@ -594,7 +600,7 @@ describe('o autor no topo do card, no estilo do X, nas três telas (pedido do do
         includeHiddenElements: true,
       }),
     ).not.toBeOnTheScreen();
-    // Só na Início, o @ e o horário descem para baixo do nome (37.19).
+    // Na Início, o @ e o horário descem para baixo do nome (37.19).
     const nameLine = within(card).getByTestId('home-fan-club-post-p1-author-line');
     expect(within(nameLine).getByText('Thalita Santos')).toBeTruthy();
     expect(within(nameLine).queryByText('@thalitasan')).not.toBeOnTheScreen();

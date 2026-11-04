@@ -574,6 +574,8 @@ function PostContent({ post, updatedAt }: { post: FanClubPostDetails; updatedAt:
           post={current}
           now={now}
           variant="page"
+          // Como na Início, o @ e o horário embaixo do nome do autor (37.20).
+          authorStacked
           // O próprio autor não abre o próprio perfil daqui, como nos comentários.
           onOpenAuthor={
             post.author.uid === uid

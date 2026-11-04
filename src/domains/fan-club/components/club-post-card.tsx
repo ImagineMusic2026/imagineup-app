@@ -60,6 +60,12 @@ export interface FanClubPostCardProps {
    *   a página) em cima do autor, o texto em 4 linhas e a miniatura ao lado.
    */
   variant: FanClubPostCardVariant;
+  /**
+   * O @ e o horário embaixo do nome do autor, fora da Início, que já os tem
+   * sempre assim (37.19): na tela da publicação (pedido do dono de
+   * 03/11/2026, 37.20). Sem ele, na página do fã-clube, numa linha só.
+   */
+  authorStacked?: boolean;
   /** Quem vê não é o gestor: o Denunciar aparece (a própria publicação não se denuncia). */
   canReport: boolean;
   /**
@@ -145,12 +151,15 @@ function focusSoon(target: RefObject<View | null>): ReturnType<typeof setTimeout
  * Início, o nome do fã-clube fica em cima do autor, como o nome da comunidade
  * no X, com a bandeira na linha dele, e o selo do oficial fica só ao lado do
  * nome do fã-clube. Na noite do mesmo dia, pelo print do dono da Início, o @
- * e o horário descem para a linha de baixo do nome, só nela (37.19).
+ * e o horário descem para a linha de baixo do nome (37.19); logo depois,
+ * pelo print da tela da publicação, também nela (37.20), e a página do
+ * fã-clube segue numa linha só.
  */
 export function FanClubPostCard({
   post,
   now,
   variant,
+  authorStacked = false,
   canReport,
   canReact,
   onShare,
@@ -284,8 +293,9 @@ export function FanClubPostCard({
         now={now}
         // Na Início, o selo já está ao lado do nome do fã-clube, logo em cima.
         official={post.clubOfficial && !clubRow}
-        // Na Início, o card é estreito: o @ e o horário descem para baixo do nome (37.19).
-        stacked={feed}
+        // Na Início (o card é estreito, 37.19) e na tela da publicação (37.20), o @
+        // e o horário descem para baixo do nome.
+        stacked={feed || authorStacked}
         onOpen={onOpenAuthor ? () => onOpenAuthor(post) : undefined}
         style={canReport && !clubRow && styles.reportReserve}
         testID={testID ? `${testID}-author` : undefined}
