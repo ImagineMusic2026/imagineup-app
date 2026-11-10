@@ -446,7 +446,10 @@ export const moderateComment = onPanelCall({ cors: PANEL_ORIGINS }, async (reque
 
 const gameDeps = (): ConfigPanelDeps => ({ db: getFirestore() });
 
-/** Valores, limites, tetos do dia e níveis (a régua). */
+/**
+ * Valores, limites, tetos do dia e níveis (a régua) e, desde a seção 39, a
+ * chave e o ciclo do check-in diário: é por aqui que o check-in liga e desliga.
+ */
 export const updatePointsConfig = onPanelCall({ cors: PANEL_ORIGINS }, async (request) => {
   const result = await changePointsConfig(gameDeps(), request.auth, request.data);
   logger.info('Régua alterada.', { actorUid: request.auth?.uid, version: result.version });
@@ -611,7 +614,10 @@ export const updateSeasonGoal = onPanelCall({ cors: PANEL_ORIGINS }, async (requ
   return result;
 });
 
-/** Cria uma conquista como rascunho (regra de nível, de primeira vez ou de ranking). */
+/**
+ * Cria uma conquista como rascunho (regra de nível, de primeira vez, de
+ * ranking ou, desde a seção 39, de sequência de check-in).
+ */
 export const createAchievement = onPanelCall({ cors: PANEL_ORIGINS }, async (request) => {
   const result = await addAchievement(gameDeps(), request.auth, request.data);
   logger.info('Conquista criada.', {

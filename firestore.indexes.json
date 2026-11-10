@@ -662,6 +662,7 @@
     { "collectionGroup": "wallets", "fieldPath": "missions", "indexes": [] },
     { "collectionGroup": "wallets", "fieldPath": "achievements", "indexes": [] },
     { "collectionGroup": "wallets", "fieldPath": "seasonMissions", "indexes": [] },
+    { "collectionGroup": "wallets", "fieldPath": "checkin", "indexes": [] },
     { "collectionGroup": "statsShards", "fieldPath": "byMission", "indexes": [] },
     { "collectionGroup": "statsShards", "fieldPath": "byAchievement", "indexes": [] },
     { "collectionGroup": "config", "fieldPath": "missions", "indexes": [] },

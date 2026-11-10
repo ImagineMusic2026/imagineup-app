@@ -3,11 +3,12 @@ import { Stack } from 'expo-router';
 import { Tabs } from 'expo-router/js-tabs';
 import { act, fireEvent, renderRouter, screen, waitFor } from 'expo-router/testing-library';
 import { getDoc, onSnapshot } from 'firebase/firestore';
-import { AccessibilityInfo, Text } from 'react-native';
+import { AccessibilityInfo, ScrollView, Text } from 'react-native';
 
 import SettingsRoute from '@/app/(tabs)/(perfil)/ajustes';
 import ProfileRoute from '@/app/(tabs)/(perfil)/perfil';
 import { buildFanCentralsFixture, followFixture } from '@/domains/artists/fixtures';
+import { checkinFixture, checkinKeys, type CheckinState } from '@/domains/checkin';
 import { profileKeys } from '@/domains/profile';
 import { buildMyAchievementsFixture, buildMyProgressFixture } from '@/domains/profile/fixtures';
 import { buildMyRankFixture } from '@/domains/ranking/fixtures';
@@ -136,14 +137,26 @@ const announcements = () =>
     .mocked(AccessibilityInfo.announceForAccessibilityWithOptions)
     .mock.calls.map(([text]) => text);
 
-/** A API por rota: o que não vier em `failing` responde como as fixtures. */
-function mockApi(failing: readonly string[]): void {
+/** Quantas vezes cada rota foi pedida. */
+function callsByUrl(): Record<string, number> {
+  const counts: Record<string, number> = {};
+  for (const [url] of get.mock.calls) counts[url] = (counts[url] ?? 0) + 1;
+  return counts;
+}
+
+/**
+ * A API por rota: o que não vier em `failing` responde como as fixtures. O
+ * check-in diário (`/me/checkin`, seção 39) só responde quando o teste dá a
+ * resposta em `extra`: sem ela, a rota falha, como numa `api` fora do ar.
+ */
+function mockApi(failing: readonly string[], extra: Record<string, () => unknown> = {}): void {
   mockDataSource = 'api';
   const answers: Record<string, () => unknown> = {
     '/me/wallet': () => fixtureWallet.get(),
     '/me/progress': () => buildMyProgressFixture(),
     '/me/achievements': () => buildMyAchievementsFixture(NOW),
     '/me/centrals': () => buildFanCentralsFixture(),
+    ...extra,
   };
   get.mockImplementation(async (url: string) => {
     if (failing.includes(url)) throw new Error('fora do ar');
@@ -159,6 +172,7 @@ beforeEach(() => {
   mockDataSource = 'fixtures';
   fixtureWallet.reset();
   followFixture.reset();
+  checkinFixture.reset();
   // Como no app no modo fixtures: consulta não pausa offline.
   client = new QueryClient({
     defaultOptions: { queries: { retry: false, gcTime: Infinity, networkMode: 'always' } },
@@ -467,8 +481,137 @@ describe('perfil (1e)', () => {
 
     fireEvent.press(await screen.findByRole('button', { name: 'Tentar de novo' }));
 
-    await waitFor(() => expect(get).toHaveBeenCalledTimes(5));
+    // As buscas da abertura, uma por rota, com a do check-in diário (a pílula
+    // da sequência, seção 39, sem resposta neste teste), e a nova tentativa
+    // só das centrais.
+    await waitFor(() =>
+      expect(callsByUrl()).toEqual({
+        '/me/wallet': 1,
+        '/me/progress': 1,
+        '/me/achievements': 1,
+        '/me/centrals': 2,
+        '/me/checkin': 1,
+      }),
+    );
     expect(await screen.findByText('Não deu para carregar suas centrais.')).toBeTruthy();
     expect(announcements()).not.toContain('Centrais carregadas.');
+  });
+});
+
+// A sequência do check-in diário (seção 39) na 1e: a pílula embaixo do nível,
+// só com a chave do servidor ligada e a sequência valendo, sem mexer no rótulo
+// do topo nem no do nível.
+describe('perfil (1e): a sequência do check-in diário', () => {
+  const STREAK = 'Sequência de check-in: 4 dias seguidos';
+
+  /** A resposta do servidor com a chave ligada: 4 dias seguidos, o de hoje por fazer. */
+  const pending = (fields: Partial<CheckinState> = {}): CheckinState => ({
+    enabled: true,
+    checkedInToday: false,
+    streak: 4,
+    best: 4,
+    cycle: [3, 3, 4, 4, 5, 6, 15],
+    cycleDay: 5,
+    todayPoints: 5,
+    resetsAt: new Date(Date.now() + 4 * 60 * 60 * 1000).toISOString(),
+    ...fields,
+  });
+
+  it('nas fixtures, o check-in de exemplo nasce desligado, como a chave do servidor: a pílula não aparece na 1e', async () => {
+    renderRouter(appTree, { initialUrl: '/perfil' });
+
+    expect(await screen.findByRole('progressbar', { name: toNextLevel('2.520') })).toBeTruthy();
+    // A resposta de exemplo chegou, com a chave desligada.
+    await waitFor(() =>
+      expect(client.getQueryData(checkinKeys.state())).toMatchObject({ enabled: false }),
+    );
+    expect(screen.queryByTestId('checkin-streak', hidden)).toBeNull();
+    expect(screen.queryByText(/seguidos?/, hidden)).toBeNull();
+    expect(announcements()).toEqual([]);
+  });
+
+  it('nas fixtures, com o exemplo ligado (uma demonstração), a pílula vem embaixo do nível, com rótulo próprio, e o topo e o nível seguem como eram', async () => {
+    checkinFixture.setEnabled(true);
+    renderRouter(appTree, { initialUrl: '/perfil' });
+
+    expect(await screen.findByLabelText(STREAK)).toBeTruthy();
+    expect(screen.getByText('4 dias seguidos')).toBeTruthy();
+    expect(screen.getByLabelText(HERO)).toBeTruthy();
+    expect(screen.getByRole('progressbar', { name: toNextLevel('2.520') })).toBeTruthy();
+    // É estado, e não ação.
+    expect(screen.queryByRole('button', { name: /dias seguidos/ })).toBeNull();
+    expect(announcements()).toEqual([]);
+  });
+
+  it('com a API e a chave ligada, a pílula mostra a sequência do servidor, com um pedido só', async () => {
+    mockApi([], { '/me/checkin': () => pending({ streak: 12, best: 30 }) });
+    renderRouter(appTree, { initialUrl: '/perfil' });
+
+    expect(await screen.findByLabelText('Sequência de check-in: 12 dias seguidos')).toBeTruthy();
+    await screen.findByTestId('profile-central-nettobrito');
+    await screen.findByLabelText('Top 20, conquistada');
+    // A abertura da 1e: uma busca por rota, a do check-in entre elas.
+    expect(callsByUrl()).toEqual({
+      '/me/wallet': 1,
+      '/me/progress': 1,
+      '/me/achievements': 1,
+      '/me/centrals': 1,
+      '/me/checkin': 1,
+    });
+    expect(announcements()).toEqual([]);
+  });
+
+  it.each<[string, () => unknown]>([
+    ['a chave desligada', () => pending({ enabled: false, streak: 0, cycle: [], cycleDay: 0 })],
+    ['a sequência em 0', () => pending({ streak: 0, cycleDay: 1, todayPoints: 3 })],
+    [
+      'a consulta falhando',
+      () => {
+        throw new Error('fora do ar');
+      },
+    ],
+  ])(
+    'com %s, a pílula não aparece e nada é anunciado: o resto da 1e segue',
+    async (_name, answer) => {
+      mockApi([], { '/me/checkin': answer });
+      renderRouter(appTree, { initialUrl: '/perfil' });
+
+      expect(await screen.findByRole('progressbar', { name: toNextLevel('2.520') })).toBeTruthy();
+      await screen.findByTestId('profile-central-nettobrito');
+      await waitFor(() => expect(callsByUrl()['/me/checkin']).toBe(1));
+      expect(screen.queryByTestId('checkin-streak', hidden)).toBeNull();
+      expect(screen.queryByText(/seguidos?/, hidden)).toBeNull();
+      // A falha do check-in não é falha do perfil: nenhum aviso, nenhum "Tentar de novo".
+      expect(announcements()).toEqual([]);
+      expect(screen.queryByRole('button', { name: 'Tentar de novo' })).toBeNull();
+    },
+  );
+
+  it('o puxar para atualizar busca o check-in de novo junto com o resto', async () => {
+    let state = pending();
+    mockApi([], { '/me/checkin': () => state });
+    renderRouter(appTree, { initialUrl: '/perfil' });
+    expect(await screen.findByLabelText(STREAK)).toBeTruthy();
+    await screen.findByTestId('profile-central-nettobrito');
+    await screen.findByLabelText('Top 20, conquistada');
+
+    // O check-in de hoje foi feito em outro lugar (a Início).
+    state = pending({ checkedInToday: true, streak: 5, best: 5 });
+    const [scroll] = screen
+      .UNSAFE_getAllByType(ScrollView)
+      .filter((node) => node.props.refreshControl);
+    if (!scroll) throw new Error('a rolagem da 1e não tem o puxar para atualizar');
+    await act(async () => {
+      await scroll.props.refreshControl.props.onRefresh();
+    });
+
+    expect(await screen.findByLabelText('Sequência de check-in: 5 dias seguidos')).toBeTruthy();
+    expect(callsByUrl()).toEqual({
+      '/me/wallet': 2,
+      '/me/progress': 2,
+      '/me/achievements': 2,
+      '/me/centrals': 2,
+      '/me/checkin': 2,
+    });
   });
 });

@@ -5,10 +5,11 @@ import { isVisibleLine } from '../visible-line';
 
 // Conquistas do bloco 7, puro: nada aqui lê ou grava o Firestore. O catálogo
 // (config/achievements, com a lista provisória como padrão do código), as
-// regras de desbloqueio (nível e primeira vez aqui; a de posição no ranking,
-// no retrato semanal e na virada do bloco 8, ranking/jobs.ts) e a montagem
-// da 1e. Do núcleo de pontos, nada: o nível chega pronto (o número do degrau,
-// calculado por quem chama). docs/arquitetura-api.md, 22.6.
+// regras de desbloqueio (nível, primeira vez e, desde a seção 39, sequência
+// de check-in aqui; a de posição no ranking, no retrato semanal e na virada
+// do bloco 8, ranking/jobs.ts) e a montagem da 1e. Do núcleo de pontos, nada:
+// o nível e a melhor sequência chegam prontos, calculados por quem chama.
+// docs/arquitetura-api.md, 22.6.
 
 /** As ações que a regra `first` conhece: as dos ticks, mais a primeira missão concluída. */
 export const FIRST_ACTIONS = [
@@ -22,10 +23,15 @@ export const FIRST_ACTIONS = [
 ] as const;
 export type FirstAction = (typeof FIRST_ACTIONS)[number];
 
+/**
+ * `streak` é a sequência de check-in diário (seção 39): `days` dias seguidos.
+ * Os marcos do check-in só dão conquista, nunca pontos a mais.
+ */
 export type AchievementRule =
   | { type: 'level'; level: number }
   | { type: 'first'; action: FirstAction }
-  | { type: 'rank'; top: number };
+  | { type: 'rank'; top: number }
+  | { type: 'streak'; days: number };
 
 export type AchievementTone = 'action' | 'points' | 'events';
 export type AchievementStatus = 'draft' | 'active' | 'archived';
@@ -45,6 +51,9 @@ export const ACHIEVEMENT_LEVEL_MAX = 50;
  * em instantes diferentes, e as posições delas podem andar um pouco (23.5).
  */
 export const ACHIEVEMENT_RANK_MAX = 200;
+/** Dias seguidos de check-in que uma conquista de sequência pode pedir (o dia 1 é o primeiro check-in). */
+export const ACHIEVEMENT_STREAK_MIN = 2;
+export const ACHIEVEMENT_STREAK_MAX = 1_000;
 /** As peças da linha de conquistas da 1e (`ACHIEVEMENT_SLOTS` do app). */
 export const ACHIEVEMENT_HIGHLIGHTS = 4;
 /** Desbloqueadas entre os destaques: as 3 mais novas, e depois as bloqueadas. */
@@ -220,6 +229,14 @@ function readRule(value: unknown): AchievementRule | null {
       ? { type: 'rank', top: value.top }
       : null;
   }
+  if (value.type === 'streak') {
+    return isInt(value.days) &&
+      value.days >= ACHIEVEMENT_STREAK_MIN &&
+      value.days <= ACHIEVEMENT_STREAK_MAX &&
+      Object.keys(value).length === 2
+      ? { type: 'streak', days: value.days }
+      : null;
+  }
   return null;
 }
 
@@ -320,6 +337,9 @@ function parseAchievementField<K extends keyof AchievementInput>(
         if (isRecord(value) && value.type === 'level') {
           throw new ConfigValidationError('achievement.rule.level');
         }
+        if (isRecord(value) && value.type === 'streak') {
+          throw new ConfigValidationError('achievement.rule.days');
+        }
         fail();
       }
       return rule as AchievementInput[K];
@@ -393,7 +413,16 @@ export type UnlockOutcome = {
  * nível que o XP lido já alcançava (a régua mudou depois da última gravação)
  * entra com a data `readAt` (o `updatedAt` da carteira lida), a mesma que o
  * `GET /me/achievements` já mostrava, e fora do anúncio; o resto, com `now`.
- * Conquista não dá pontos e nunca é revogada.
+ * A de sequência (seção 39) sai quando o `streakBest` alcança os dias da
+ * regra, sempre com `now` e com o anúncio. O núcleo de pontos só passa a
+ * melhor sequência do fã (que só cresce) no cálculo em que o passo do
+ * check-in rodou para ele: ele pediu o check-in, a chave está ligada e o dia
+ * saiu `checked` ou `already`. Em qualquer outra gravação passa 0, e nenhuma
+ * de sequência destrava. Na API, só o `POST /me/checkin` pede o check-in, e a
+ * resposta dele leva as recompensas: o fã é sempre avisado. A publicada depois
+ * chega a quem já tinha a sequência no check-in seguinte dele (também no
+ * segundo toque do dia), nunca em silêncio por outra rota. Conquista não dá
+ * pontos e nunca é revogada.
  */
 export function unlockAchievements(input: {
   catalog: readonly AchievementRecord[];
@@ -401,6 +430,11 @@ export function unlockAchievements(input: {
   levelBefore: number;
   levelAfter: number;
   firsts: ReadonlySet<FirstAction>;
+  /**
+   * A melhor sequência de check-in do fã (`wallets/{uid}.checkin.best`) depois
+   * do passo do check-in deste cálculo; 0 quando o passo não rodou para ele.
+   */
+  streakBest: number;
   now: number;
   readAt: number | null;
 }): UnlockOutcome {
@@ -421,6 +455,10 @@ export function unlockAchievements(input: {
         announced.push(entry);
       }
     } else if (rule.type === 'first' && input.firsts.has(rule.action)) {
+      owned[item.id] = input.now;
+      added.push(entry);
+      announced.push(entry);
+    } else if (rule.type === 'streak' && input.streakBest >= rule.days) {
       owned[item.id] = input.now;
       added.push(entry);
       announced.push(entry);

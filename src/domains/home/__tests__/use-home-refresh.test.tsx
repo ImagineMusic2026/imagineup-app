@@ -3,6 +3,7 @@ import { act, renderHook, waitFor } from '@testing-library/react-native';
 import type { ReactNode } from 'react';
 
 import { buildFanCentralsFixture } from '@/domains/artists/fixtures';
+import { checkinKeys, useCheckinQuery } from '@/domains/checkin';
 import { fanClubKeys } from '@/domains/fan-club';
 import { buildDailyMissionFixture } from '@/domains/missions/fixtures';
 import { buildFeedPageFixture } from '@/domains/posts/fixtures';
@@ -39,6 +40,15 @@ function wrapper({ children }: { children: ReactNode }) {
 
 function callsTo(url: string): number {
   return get.mock.calls.filter(([called]) => called === url).length;
+}
+
+/** Promessa que o teste resolve quando quiser. */
+function deferred<T>() {
+  let resolve: (value: T) => void = () => undefined;
+  const promise = new Promise<T>((done) => {
+    resolve = done;
+  });
+  return { promise, resolve };
 }
 
 beforeEach(() => {
@@ -117,6 +127,53 @@ describe('puxar para atualizar a home', () => {
     await act(() => result.current.refresh());
     expect(client.getQueryState(fanClubKeys.feed())?.isInvalidated).toBe(true);
     expect(get.mock.calls.some(([url]) => String(url).includes('fan-club'))).toBe(false);
+  });
+
+  it('o check-in diário (seção 39) busca de novo junto, pela chave, só quando já veio: sem a seção na tela, nada é pedido', async () => {
+    const { result } = await renderLoaded();
+    await act(() => result.current.refresh());
+    // O puxar não cria a consulta: quem pergunta é a seção, e só ela.
+    expect(client.getQueryState(checkinKeys.state())).toBeUndefined();
+
+    client.setQueryData(checkinKeys.state(), { enabled: false });
+    await act(() => result.current.refresh());
+    expect(client.getQueryState(checkinKeys.state())?.isInvalidated).toBe(true);
+    expect(get.mock.calls.some(([url]) => String(url).includes('checkin'))).toBe(false);
+  });
+
+  it('o indicador não espera o check-in diário (seção 39): sai com as quatro buscas da home, e a do check-in segue por fora', async () => {
+    // A resposta da chave desligada: mesmo sem card, a seção da Início deixa a consulta ativa.
+    const off = { enabled: false, cycle: [], resetsAt: '2026-11-11T03:00:00.000Z' };
+    const late = deferred<{ data: unknown }>();
+    const others = get.getMockImplementation();
+    let asked = 0;
+    get.mockImplementation(((url: string) => {
+      if (url !== '/me/checkin') return others?.(url);
+      asked += 1;
+      return asked === 1 ? Promise.resolve({ data: off }) : late.promise;
+    }) as never);
+    const { result } = renderHook(() => ({ checkin: useCheckinQuery(), home: useHomeRefresh() }), {
+      wrapper,
+    });
+    await waitFor(() => ROUTES.forEach((url) => expect(callsTo(url)).toBe(1)));
+    await waitFor(() => expect(result.current.checkin.isSuccess).toBe(true));
+
+    act(() => {
+      void result.current.home.refresh();
+    });
+    expect(result.current.home.refreshing).toBe(true);
+
+    // As quatro buscas da home acabaram e o indicador saiu, com a do check-in ainda sem resposta.
+    await waitFor(() => expect(result.current.home.refreshing).toBe(false));
+    ROUTES.forEach((url) => expect(callsTo(url)).toBe(2));
+    expect(callsTo('/me/checkin')).toBe(2);
+    expect(result.current.checkin.fetchStatus).toBe('fetching');
+
+    // A resposta atrasada chega por fora, sem acender o indicador de novo.
+    late.resolve({ data: off });
+    await waitFor(() => expect(result.current.checkin.fetchStatus).toBe('idle'));
+    expect(result.current.home.refreshing).toBe(false);
+    expect(callsTo('/me/checkin')).toBe(2);
   });
 
   it('sem internet, o indicador não fica girando: as buscas esperam a rede e voltam sozinhas', async () => {

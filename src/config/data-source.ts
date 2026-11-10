@@ -39,7 +39,14 @@ export type DataDomain =
    */
   | 'fanClub'
   /** O Suporte dos Ajustes (seção 38): /me/support. */
-  | 'support';
+  | 'support'
+  /**
+   * O check-in diário com sequência (seção 39): /me/checkin. A chave que
+   * liga é do servidor (`config/points.checkin.enabled`, que nasce
+   * desligada): com ela desligada, ou com a `api` de antes (o 404), o app não
+   * mostra nada.
+   */
+  | 'checkin';
 
 /**
  * Domínios com rota no servidor. Cada bloco acrescenta o seu no commit que
@@ -58,6 +65,7 @@ export const SERVER_DOMAINS: ReadonlySet<DataDomain> = new Set<DataDomain>([
   'rewards',
   'fanClub',
   'support',
+  'checkin',
 ]);
 
 /**
@@ -85,6 +93,7 @@ const ALL_DOMAINS: readonly DataDomain[] = [
   'rewards',
   'fanClub',
   'support',
+  'checkin',
 ];
 
 /** true enquanto algum domínio ainda lê das fixtures (o estado em memória delas importa). */

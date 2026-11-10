@@ -28,7 +28,11 @@ import { ApiError, isAccountSuspended, isContentRefusal } from './errors';
  *   `clubCommentReview`, o "Pedir revisão" (os dois no teto `report` de
  *   sempre); `clubCommentHide`, o ocultar e o reexibir do gestor, sem teto;
  * - `support`: a mensagem do Suporte dos Ajustes (seção 38, o teto
- *   `support_message`; livre para o suspenso).
+ *   `support_message`; livre para o suspenso);
+ * - `checkin`: o toque em "Fazer check-in" do check-in diário, sem teto do
+ *   dia (o servidor só aceita um por dia e responde o segundo sem erro). A
+ *   chave desligada (409 `checkin_disabled`) tem a frase dela no domínio
+ *   (`checkin/describe-checkin.ts`).
  */
 export type RefusalAction =
   | 'like'
@@ -59,7 +63,8 @@ export type RefusalAction =
   | 'clubCommentReport'
   | 'clubCommentReview'
   | 'clubCommentHide'
-  | 'support';
+  | 'support'
+  | 'checkin';
 
 /**
  * - `suspended`: 403 `account_suspended` (26.6);
@@ -186,6 +191,7 @@ const PHRASES: Record<RefusalAction, ActionPhrases> = {
     generic: 'fanClub.refusal.hideError',
   },
   support: { dailyLimit: 'support.errors.dailyLimit', generic: 'support.errors.generic' },
+  checkin: { generic: 'checkin.error' },
 };
 
 /** A frase do teto do dia da ação (o `Alert` "Limite de hoje" e os avisos). */

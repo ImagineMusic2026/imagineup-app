@@ -13,6 +13,7 @@ import {
   type AchievementsConfig,
 } from '../achievements/model';
 import { CENTRAL_ENTRIES_PER_DAY } from '../centrals/model';
+import { parseCheckinConfig, validateCheckinInput, type CheckinConfig } from '../checkin/model';
 import { ConfigValidationError } from '../config-validation';
 import {
   FAN_CLUB_APPLIES_PER_DAY,
@@ -60,9 +61,10 @@ import {
 
 // Valores, limites diários, tetos do dia e régua (config/points), a temporada
 // (config/season) e, desde o bloco 7, o catálogo de missões com a meta da
-// temporada (config/missions) e o de conquistas (config/achievements).
-// Versionados, com padrão no código para quando o documento não existe.
-// Contrato em docs/arquitetura-api.md, seções 9 e 22.
+// temporada (config/missions) e o de conquistas (config/achievements). Desde
+// a seção 39, config/points leva também a chave e o ciclo do check-in diário
+// (`checkin`). Versionados, com padrão no código para quando o documento não
+// existe. Contrato em docs/arquitetura-api.md, seções 9, 22 e 39.
 
 export { ConfigValidationError };
 
@@ -132,7 +134,9 @@ export const ACTION_CAP_MAX = 10_000;
  * repetem os das fixtures. Os de verdade vêm da cliente (UP-9) e mudam pelo
  * painel, sem código. A reação e o comentário no fã-clube nascem em 0
  * (decisão 12 de 36.1), com os limites do dia do Mural, que só valem quando o
- * valor sair de 0 (37.5).
+ * valor sair de 0 (37.5). O check-in diário (seção 39) nasce com a chave
+ * desligada e o ciclo 3, 3, 4, 4, 5, 6 e 15; o limite do dia dele é sempre
+ * null, como o da missão.
  */
 export const DEFAULT_POINTS_CONFIG: PointsConfig = {
   version: 0,
@@ -156,6 +160,7 @@ export const DEFAULT_POINTS_CONFIG: PointsConfig = {
     invite_signup: 20,
     fanclub_like: 50,
     fanclub_comment: 20,
+    checkin: null,
   },
   levels: [
     { number: 1, name: 'Primeiro passo', minXp: 0 },
@@ -170,6 +175,7 @@ export const DEFAULT_POINTS_CONFIG: PointsConfig = {
     { number: 10, name: 'Lenda', minXp: 40_000 },
   ],
   actionCaps: { ...DEFAULT_ACTION_CAPS },
+  checkin: parseCheckinConfig(undefined),
 };
 
 export const VALUE_MAX = 10_000;
@@ -258,7 +264,9 @@ const versionOf = (value: unknown): number | null => (isInt(value) && value >= 0
  * campo, o que veio no documento. Origem desconhecida é ignorada (aviso);
  * valor inválido volta ao padrão só nele, e régua inválida volta inteira
  * (erro no log). Origem nova no código entra com o padrão dela e não derruba
- * os valores que a equipe ajustou nas outras.
+ * os valores que a equipe ajustou nas outras. O bloco do check-in (seção 39)
+ * que falta no documento salvo vale o padrão do código, com a chave
+ * desligada (`parseCheckinConfig`).
  */
 export function parsePointsConfig(data: unknown, log: ConfigLog = defaultLog): PointsConfig {
   const config: PointsConfig = {
@@ -267,6 +275,7 @@ export function parsePointsConfig(data: unknown, log: ConfigLog = defaultLog): P
     dailyLimits: { ...DEFAULT_POINTS_CONFIG.dailyLimits },
     levels: DEFAULT_POINTS_CONFIG.levels.map((level) => ({ ...level })),
     actionCaps: { ...DEFAULT_POINTS_CONFIG.actionCaps },
+    checkin: parseCheckinConfig(undefined),
   };
   if (data === undefined || data === null) return config;
   if (!isRecord(data)) {
@@ -299,9 +308,10 @@ export function parsePointsConfig(data: unknown, log: ConfigLog = defaultLog): P
       for (const [source, limit] of Object.entries(data.dailyLimits)) {
         if (!(EARN_SOURCES as readonly string[]).includes(source)) {
           log.warn('config/points.dailyLimits com origem desconhecida.', { source });
-        } else if (source === 'mission') {
-          // Sempre sem limite: uma conclusão `capped` não pagaria mais no período (22.1, decisão 7).
-          if (limit !== null) log.error('config/points.dailyLimits.mission precisa ser null.');
+        } else if (source === 'mission' || source === 'checkin') {
+          // Sempre sem limite: uma conclusão `capped` não pagaria mais no período (22.1,
+          // decisão 7), e o check-in já é um por dia (seção 39).
+          if (limit !== null) log.error(`config/points.dailyLimits.${source} precisa ser null.`);
         } else if (!validLimit(limit)) {
           log.error('config/points.dailyLimits inválido: valendo o padrão.', { source, limit });
         } else {
@@ -333,6 +343,8 @@ export function parsePointsConfig(data: unknown, log: ConfigLog = defaultLog): P
       log.error('config/points.levels inválido: valendo a régua padrão.');
     }
   }
+
+  if (data.checkin !== undefined) config.checkin = parseCheckinConfig(data.checkin, log);
   return config;
 }
 
@@ -503,6 +515,8 @@ export type PointsConfigInput = {
   dailyLimits?: Partial<Record<EarnSource, number | null>>;
   levels?: Level[];
   actionCaps?: Partial<Record<DailyActionKey, number>>;
+  /** A chave e o ciclo do check-in (seção 39): só o que veio, sobreposto ao de agora. */
+  checkin?: Partial<CheckinConfig>;
 };
 
 /**
@@ -514,7 +528,7 @@ export function validatePointsConfigInput(input: unknown): PointsConfigInput {
   if (!isRecord(input)) throw new ConfigValidationError('');
   const out: PointsConfigInput = {};
   for (const key of Object.keys(input)) {
-    if (!['values', 'dailyLimits', 'levels', 'actionCaps'].includes(key)) {
+    if (!['values', 'dailyLimits', 'levels', 'actionCaps', 'checkin'].includes(key)) {
       throw new ConfigValidationError(key);
     }
   }
@@ -533,8 +547,10 @@ export function validatePointsConfigInput(input: unknown): PointsConfigInput {
     if (!isRecord(input.dailyLimits)) throw new ConfigValidationError('dailyLimits');
     const limits: Partial<Record<EarnSource, number | null>> = {};
     for (const [source, limit] of Object.entries(input.dailyLimits)) {
-      // A missão só aceita null (22.1, decisão 7); as outras, de 1 a 1.000 ou null.
-      const valid = source === 'mission' ? limit === null : validLimit(limit);
+      // A missão e o check-in só aceitam null (22.1, decisão 7; seção 39); as
+      // outras, de 1 a 1.000 ou null.
+      const valid =
+        source === 'mission' || source === 'checkin' ? limit === null : validLimit(limit);
       if (!(EARN_SOURCES as readonly string[]).includes(source) || !valid) {
         throw new ConfigValidationError(`dailyLimits.${source}`);
       }
@@ -557,6 +573,7 @@ export function validatePointsConfigInput(input: unknown): PointsConfigInput {
     if (!validLevels(input.levels)) throw new ConfigValidationError('levels');
     out.levels = input.levels.map(({ number, name, minXp }) => ({ number, name, minXp }));
   }
+  if (input.checkin !== undefined) out.checkin = validateCheckinInput(input.checkin);
   return out;
 }
 
@@ -605,7 +622,8 @@ export function validateSeasonInput(input: unknown, field = 'season'): SeasonInp
  * A configuração de uma carga do cache: valores, limites e régua, a
  * temporada, o catálogo de missões (com a meta da temporada), o de conquistas
  * e o jogo montado deles (o índice das missões por tipo de ação, 22.1,
- * decisão 1).
+ * decisão 1). O catálogo de conquistas daqui é o do lado do fã: com a chave
+ * do check-in desligada, vem sem as de sequência (`fanAchievements`, seção 39).
  */
 export type LoadedConfig = {
   points: PointsConfig;
@@ -647,12 +665,39 @@ export function gameOf(missions: MissionsConfig, achievements: AchievementsConfi
   };
 }
 
-/** A carga com o que veio de cada documento (o que falta vale o padrão do código). */
+/**
+ * O catálogo de conquistas que o lado do fã usa (seção 39): com a chave do
+ * check-in desligada, as conquistas de sequência ficam de fora, e nem o
+ * desbloqueio (`game.achievements`) nem o "X de N" do `GET /me/achievements`
+ * as veem. Com a chave ligada, o catálogo inteiro. As callables do painel leem
+ * config/achievements direto e continuam listando, editando e reordenando
+ * todas, com a chave ligada ou não.
+ */
+export function fanAchievements(
+  achievements: AchievementsConfig,
+  checkin: Pick<CheckinConfig, 'enabled'>,
+): AchievementsConfig {
+  if (checkin.enabled) return achievements;
+  const visible = achievements.achievements.filter((item) => item.rule.type !== 'streak');
+  return visible.length === achievements.achievements.length
+    ? achievements
+    : { ...achievements, achievements: visible };
+}
+
+/**
+ * A carga com o que veio de cada documento (o que falta vale o padrão do
+ * código). O catálogo de conquistas passa pela chave do check-in
+ * (`fanAchievements`): é aqui que os dois documentos se encontram.
+ */
 export function buildLoadedConfig(parts: Partial<Omit<LoadedConfig, 'game'>> = {}): LoadedConfig {
+  const points = parts.points ?? parsePointsConfig(undefined);
   const missions = parts.missions ?? { ...EMPTY_MISSIONS_CONFIG, missions: [] };
-  const achievements = parts.achievements ?? DEFAULT_ACHIEVEMENTS_CONFIG;
+  const achievements = fanAchievements(
+    parts.achievements ?? DEFAULT_ACHIEVEMENTS_CONFIG,
+    points.checkin,
+  );
   return {
-    points: parts.points ?? parsePointsConfig(undefined),
+    points,
     season: parts.season ?? { ...DEFAULT_SEASON_CONFIG },
     missions,
     achievements,

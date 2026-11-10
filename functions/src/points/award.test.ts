@@ -22,9 +22,11 @@ import {
   emptyCentral,
   emptyRewards,
   emptyWallet,
+  NO_GAME,
   type AwardEntry,
   type CentralState,
   type GameConfig,
+  type PointsConfig,
   type WalletState,
 } from './model';
 
@@ -607,5 +609,303 @@ describe('plano sem fã (aprovar e entregar um pedido)', () => {
     addRedemptionCounts(plan, [{ rewardId: 'ingressos', kind: 'delivered' }]);
     applyAwards(tx, db, plan);
     expect(writes).toEqual([{ op: 'set', path: 'statsDaily/2026-10-05/statsShards/7' }]);
+  });
+});
+
+// --- Check-in diário com sequência (seção 39) -----------------------------------------
+
+describe('check-in diário no plano e na carteira (seção 39)', () => {
+  const NOW = Date.parse('2026-10-05T15:00:00.000Z');
+  const DAY_MS = 24 * 60 * 60 * 1000;
+  const ON: PointsConfig = {
+    ...DEFAULT_POINTS_CONFIG,
+    checkin: { enabled: true, cycle: [3, 3, 4, 4, 5, 6, 15] },
+  };
+  const award = (config: PointsConfig) => ({
+    now: NOW,
+    config,
+    shard: 0,
+    actor: { type: 'fan' as const, uid: 'fa', name: null },
+    game: NO_GAME,
+  });
+  /** O retrato de quem chama sem marca de atividade: só o check-in pode gravar a carteira. */
+  const caller = (wallet: WalletState = emptyWallet()): FanContext => ({
+    ...context('fa'),
+    wallet,
+    activity: null,
+  });
+  const SEASON_DOC = {
+    version: 1,
+    season: {
+      id: 'temporada-sao-joao',
+      name: 'São João',
+      startsAt: Timestamp.fromMillis(NOW - 18 * DAY_MS),
+      endsAt: Timestamp.fromMillis(NOW + 12 * DAY_MS),
+      leaderTitle: null,
+    },
+  };
+
+  /** Um Firestore falso: guarda os caminhos lidos no getAll e o que foi gravado. */
+  function fakeStore(existing: Record<string, Record<string, unknown>> = {}) {
+    const reads: string[] = [];
+    const writes: { op: string; path: string; data: Record<string, unknown> }[] = [];
+    const ref = (path: string): unknown => ({
+      path,
+      id: path.slice(path.lastIndexOf('/') + 1),
+      collection: (name: string) => ({ doc: (id: string) => ref(`${path}/${name}/${id}`) }),
+    });
+    const db = {
+      collection: (name: string) => ({ doc: (id: string) => ref(`${name}/${id}`) }),
+    } as unknown as Firestore;
+    const snap = (path: string) => ({
+      exists: path in existing,
+      data: () => existing[path],
+      get: (field: string) => existing[path]?.[field],
+    });
+    const write = (op: string) => (r: { path: string }, data: Record<string, unknown>) =>
+      void writes.push({ op, path: r.path, data });
+    const tx = {
+      getAll: async (...refs: { path: string }[]) => {
+        reads.push(...refs.map((item) => item.path));
+        return refs.map((item) => snap(item.path));
+      },
+      create: write('create'),
+      update: write('update'),
+      set: write('set'),
+    } as unknown as Transaction;
+    return { db, tx, reads, writes };
+  }
+
+  it('o pedido de check-in entra no fã junto das entradas, só quando é true', () => {
+    const fan = context('uid-a');
+    expect(mergeFanAwards([{ uid: 'uid-a', fan, entries: [], checkin: true }]).fans).toEqual([
+      { uid: 'uid-a', fan, entries: [], ticks: [], checkin: true },
+    ]);
+    // Chega na segunda entrada do mesmo fã (o plano junta as duas).
+    const merged = mergeFanAwards([
+      { uid: 'uid-a', fan, entries: [comment('c1')] },
+      { uid: 'uid-a', entries: [], checkin: true },
+    ]);
+    expect(merged.fans).toEqual([
+      { uid: 'uid-a', fan, entries: [comment('c1')], ticks: [], checkin: true },
+    ]);
+    for (const input of [
+      { uid: 'uid-a', entries: [] },
+      { uid: 'uid-a', entries: [], checkin: false },
+    ]) {
+      expect('checkin' in mergeFanAwards([input]).fans[0]!).toBe(false);
+    }
+  });
+
+  it('com a chave ligada, lê a temporada e o lançamento do dia, paga o ciclo e os pontos entram na temporada', async () => {
+    const fan = caller();
+    const { db, tx, reads } = fakeStore({ 'config/season': SEASON_DOC });
+    const plan = await planAwards(
+      tx,
+      db,
+      [{ uid: 'fa', fan, entries: [], checkin: true }],
+      award(ON),
+    );
+    expect(reads).toEqual(['config/season', 'wallets/fa/ledger/checkin:2026-10-05']);
+    expect(plan.pointsAwarded).toBe(3);
+    expect(plan.checkin).toEqual({
+      status: 'checked',
+      record: { streak: 1, best: 1, lastDay: '2026-10-05' },
+      cycleDay: 1,
+      points: 3,
+    });
+    expect(plan.fans[0]!.wallet!.state).toMatchObject({
+      balance: 3,
+      seasonId: 'temporada-sao-joao',
+      seasonPoints: 3,
+      checkin: { streak: 1, best: 1, lastDay: '2026-10-05' },
+    });
+    expect(plan.caller).toBe(fan);
+  });
+
+  it('o plano gravado: a carteira com a sequência, o lançamento checkin:<dia> e o shard', async () => {
+    const stored = { ...emptyWallet(), exists: true, balance: 100, xp: 100 };
+    stored.checkin = { streak: 6, best: 6, lastDay: '2026-10-04' };
+    const { db, tx, writes } = fakeStore();
+    const plan = await planAwards(
+      tx,
+      db,
+      [{ uid: 'fa', fan: caller(stored), entries: [], checkin: true }],
+      award(ON),
+    );
+    applyAwards(tx, db, plan);
+    expect(writes.map((write) => [write.op, write.path])).toEqual([
+      ['update', 'wallets/fa'],
+      ['create', 'wallets/fa/ledger/checkin:2026-10-05'],
+      ['set', 'statsDaily/2026-10-05/statsShards/0'],
+    ]);
+    expect(writes[0]!.data).toMatchObject({
+      balance: 115,
+      xp: 115,
+      checkin: { streak: 7, best: 7, lastDay: '2026-10-05' },
+      updatedAt: Timestamp.fromMillis(NOW),
+    });
+    expect(writes[1]!.data).toMatchObject({
+      uid: 'fa',
+      kind: 'earn',
+      source: 'checkin',
+      eventId: '2026-10-05',
+      points: 15,
+      artistId: null,
+      subject: null,
+      subjectTitle: null,
+      createdAt: Timestamp.fromMillis(NOW),
+    });
+    // A carteira lida no pedido não muda.
+    expect(stored.checkin).toEqual({ streak: 6, best: 6, lastDay: '2026-10-04' });
+  });
+
+  it('o lançamento do dia que já existe no extrato não paga de novo, e a sequência é gravada', async () => {
+    const stored = { ...emptyWallet(), exists: true, balance: 100 };
+    stored.checkin = { streak: 2, best: 2, lastDay: '2026-10-04' };
+    const { db, tx, writes } = fakeStore({ 'wallets/fa/ledger/checkin:2026-10-05': { points: 4 } });
+    const plan = await planAwards(
+      tx,
+      db,
+      [{ uid: 'fa', fan: caller(stored), entries: [], checkin: true }],
+      award(ON),
+    );
+    expect(plan.results).toEqual([
+      { uid: 'fa', entryId: 'checkin:2026-10-05', status: 'duplicate', points: 0 },
+    ]);
+    expect(plan.pointsAwarded).toBe(0);
+    applyAwards(tx, db, plan);
+    expect(writes.map((write) => [write.op, write.path])).toEqual([['update', 'wallets/fa']]);
+    expect(writes[0]!.data).toMatchObject({
+      balance: 100,
+      checkin: { streak: 3, best: 3, lastDay: '2026-10-05' },
+    });
+  });
+
+  it('o segundo pedido do dia lê o mesmo e não grava nada', async () => {
+    const stored = { ...emptyWallet(), exists: true, balance: 103 };
+    stored.checkin = { streak: 1, best: 1, lastDay: '2026-10-05' };
+    const { db, tx, reads, writes } = fakeStore({
+      'wallets/fa/ledger/checkin:2026-10-05': { points: 3 },
+    });
+    const plan = await planAwards(
+      tx,
+      db,
+      [{ uid: 'fa', fan: caller(stored), entries: [], checkin: true }],
+      award(ON),
+    );
+    expect(reads).toEqual(['config/season', 'wallets/fa/ledger/checkin:2026-10-05']);
+    expect(plan.checkin).toMatchObject({ status: 'already', points: 0 });
+    applyAwards(tx, db, plan);
+    expect(writes).toEqual([]);
+  });
+
+  it('com a chave desligada, o pedido não lê nem grava nada', async () => {
+    const stored = { ...emptyWallet(), exists: true, balance: 100 };
+    for (const fan of [caller(), caller(stored)]) {
+      const { db, tx, reads, writes } = fakeStore({ 'config/season': SEASON_DOC });
+      const plan = await planAwards(
+        tx,
+        db,
+        [{ uid: 'fa', fan, entries: [], checkin: true }],
+        award(DEFAULT_POINTS_CONFIG),
+      );
+      expect(reads).toEqual([]);
+      expect(plan.pointsAwarded).toBe(0);
+      expect(plan.fans).toEqual([{ uid: 'fa', wallet: null, ledger: [], centrals: [] }]);
+      expect(plan.shard).toBeNull();
+      expect('checkin' in plan).toBe(false);
+      applyAwards(tx, db, plan);
+      expect(writes).toEqual([]);
+    }
+  });
+
+  it('a carteira lê a sequência gravada; sem o campo ou com ele fora do formato, a vazia', () => {
+    const empty = { streak: 0, best: 0, lastDay: null };
+    expect(walletFromDoc(undefined).checkin).toEqual(empty);
+    // A carteira de antes do check-in (toda a produção): sem o campo.
+    expect(walletFromDoc({ balance: 12_480, xp: 12_480 }).checkin).toEqual(empty);
+    expect(
+      walletFromDoc({ checkin: { streak: 4, best: 9, lastDay: '2026-10-04' } }).checkin,
+    ).toEqual({ streak: 4, best: 9, lastDay: '2026-10-04' });
+    for (const checkin of [
+      null,
+      'sequência',
+      { streak: '4', best: 4, lastDay: '2026-10-04' },
+      { streak: 4, best: 4, lastDay: Timestamp.fromMillis(NOW) },
+      { streak: -1, best: 4, lastDay: '2026-10-04' },
+    ]) {
+      expect(walletFromDoc({ balance: 10, checkin }).checkin).toEqual(empty);
+    }
+  });
+
+  it('a gravação só leva o campo depois do primeiro check-in: sem ele, nem o create nem o update tocam no checkin', () => {
+    const { db, tx, writes } = fakeStore();
+    const without = { ...emptyWallet(), exists: true, balance: 10 };
+    const withStreak = {
+      ...without,
+      checkin: { streak: 4, best: 9, lastDay: '2026-10-04' },
+    };
+    const plan: AwardPlan = {
+      day: '2026-10-05',
+      results: [],
+      pointsAwarded: 0,
+      fans: [
+        { uid: 'sem-update', wallet: { create: false, state: without }, ledger: [], centrals: [] },
+        { uid: 'sem-create', wallet: { create: true, state: without }, ledger: [], centrals: [] },
+        {
+          uid: 'com-update',
+          wallet: { create: false, state: withStreak },
+          ledger: [],
+          centrals: [],
+        },
+        {
+          uid: 'com-create',
+          wallet: { create: true, state: withStreak },
+          ledger: [],
+          centrals: [],
+        },
+      ],
+      shard: null,
+      now: NOW,
+      shardIndex: 0,
+      caller: null,
+      rewards: emptyRewards(),
+      activeSeasonId: null,
+      centralsRead: new Map(),
+    };
+    applyAwards(tx, db, plan);
+    const dataOf = (uid: string) => writes.find((write) => write.path === `wallets/${uid}`)!;
+    expect(dataOf('sem-update').op).toBe('update');
+    expect(dataOf('sem-create').op).toBe('create');
+    for (const uid of ['sem-update', 'sem-create']) {
+      expect('checkin' in dataOf(uid).data, uid).toBe(false);
+      // O resto da carteira vai como sempre.
+      expect(dataOf(uid).data, uid).toMatchObject({ balance: 10, achievements: {} });
+    }
+    for (const uid of ['com-update', 'com-create']) {
+      expect(dataOf(uid).data.checkin, uid).toEqual({
+        streak: 4,
+        best: 9,
+        lastDay: '2026-10-04',
+      });
+    }
+    // O objeto gravado é uma cópia: não é o do estado calculado.
+    expect(dataOf('com-update').data.checkin).not.toBe(withStreak.checkin);
+  });
+
+  it('qualquer gravação com a chave desligada (um comentário) não põe o campo na carteira', async () => {
+    const { db, tx, writes } = fakeStore();
+    const plan = await planAwards(
+      tx,
+      db,
+      [{ uid: 'fa', fan: caller(), entries: [comment('c1')] }],
+      award(DEFAULT_POINTS_CONFIG),
+    );
+    applyAwards(tx, db, plan);
+    const created = writes.find((write) => write.path === 'wallets/fa')!;
+    expect(created.op).toBe('create');
+    expect(created.data).toMatchObject({ balance: 2 });
+    expect('checkin' in created.data).toBe(false);
   });
 });

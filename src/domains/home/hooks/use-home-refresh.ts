@@ -3,6 +3,7 @@ import { useRef, useState } from 'react';
 
 import { useMyRsvpsQuery } from '@/domains/agenda';
 import { useFanCentralsQuery } from '@/domains/artists';
+import { checkinKeys } from '@/domains/checkin';
 import { fanClubKeys } from '@/domains/fan-club';
 import { useDailyMissionQuery } from '@/domains/missions';
 import { useFeedQuery } from '@/domains/posts';
@@ -12,12 +13,14 @@ import { haptics } from '@/services/haptics';
 /**
  * Puxar para atualizar da home: missão do dia, centrais, mural e presenças,
  * juntos, e "Dos seus fã-clubes" (seção 34), só quando ela já veio (depois
- * da trava; antes, nada é pedido). O perfil não entra: a escuta do Firestore
- * já o mantém em dia. O
- * ranking (1f e 1d, montadas nas outras abas) busca de novo junto, só a
- * primeira página: o "você é #12" sai da mesma conta do card "Você", e as
- * telas não podem discordar. O indicador fica só durante o puxão do fã, não
- * nas buscas de fundo.
+ * da trava; antes, nada é pedido), e o check-in diário (seção 39), pela
+ * chave: a seção dele busca de novo por fora, sem segurar o indicador (como
+ * na 1e), e depois do 404 da `api` de antes nada é pedido (a trava do
+ * `useCheckinQuery`). O perfil não entra: a escuta do Firestore já o mantém
+ * em dia. O ranking (1f e 1d, montadas nas outras abas) busca de novo junto,
+ * só a primeira página: o "você é #12" sai da mesma conta do card "Você", e
+ * as telas não podem discordar. O indicador fica só durante o puxão do fã,
+ * não nas buscas de fundo.
  *
  * Sem rede (com a API), as buscas pausam até ela voltar, e a promessa do
  * `refetch` só resolve nessa hora: o indicador sai assim que alguma pausa, em
@@ -44,6 +47,8 @@ export function useHomeRefresh() {
     const id = pulls.current;
     setPull(id);
     refreshRanking(queryClient);
+    // Fora da espera, como na 1e: o indicador não depende da rota do check-in.
+    void queryClient.invalidateQueries({ queryKey: checkinKeys.state() });
     await Promise.allSettled([
       mission.refetch(),
       centrals.refetch(),

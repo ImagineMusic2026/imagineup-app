@@ -145,8 +145,8 @@ export type UnlockedAchievement = { id: string; title: string };
 
 /**
  * As recompensas da ação para quem chama (22.2), nas respostas das rotas que
- * gravam curtir, comentar, "Eu vou", entrar e seguir: os quatro campos vão
- * sempre. Opcionais no app.
+ * gravam curtir, comentar, "Eu vou", entrar e seguir, e na do check-in diário
+ * (seção 39): os quatro campos vão sempre. Opcionais no app.
  */
 export type ActionRewards = {
   completedMissions: CompletedMission[];
@@ -1183,3 +1183,41 @@ export type SupportMessageBody = {
 
 /** Resposta de `POST /me/support`: o id da mensagem gravada. */
 export type SupportMessageResult = { id: string; status: 'sent' };
+
+// --- Check-in diário com sequência (seção 39) ---------------------------------------
+// O espelho no app é src/domains/checkin/types.ts: mudou um, mude o outro.
+
+/**
+ * O check-in do fã (`GET /me/checkin` e o `checkin` da resposta do POST).
+ * Todas as chaves vão sempre. Com a chave desligada: `enabled` false, os
+ * números em 0 e o ciclo vazio. O aparelho não calcula o dia de São Paulo, a
+ * sequência nem os pontos: tudo vem daqui.
+ */
+export type CheckinState = {
+  /** A chave do check-in (`config/points.checkin.enabled`). */
+  enabled: boolean;
+  /** O fã já fez o check-in de hoje. */
+  checkedInToday: boolean;
+  /** Os dias seguidos que valem agora: 0 sem sequência ou depois de um dia perdido. */
+  streak: number;
+  /** A melhor sequência de todas. */
+  best: number;
+  /** Os pontos de cada dia do ciclo (7 valores); vazio com a chave desligada. */
+  cycle: number[];
+  /**
+   * O lugar de hoje no ciclo, de 1 ao tamanho dele: o do check-in feito hoje
+   * ou o que o de hoje vai ocupar; 0 com a chave desligada.
+   */
+  cycleDay: number;
+  /** Quanto vale o check-in de hoje pelo ciclo de agora; 0 com a chave desligada. */
+  todayPoints: number;
+  /** ISO da próxima meia-noite de São Paulo: quando o check-in de hoje termina. */
+  resetsAt: string;
+};
+
+/**
+ * Resposta de `POST /me/checkin`: o que o check-in rendeu, as recompensas da
+ * ação e o estado depois dele. O segundo toque no mesmo dia responde 200 com
+ * `pointsAwarded` 0 e o mesmo estado.
+ */
+export type CheckinResult = PointsAward & ActionRewards & { checkin: CheckinState };

@@ -1,17 +1,21 @@
 import { Timestamp, type Firestore } from 'firebase-admin/firestore';
 import { describe, expect, it, vi } from 'vitest';
 
+import { DEFAULT_ACHIEVEMENTS_CONFIG, type AchievementRecord } from '../achievements/model';
+import { myAchievements } from '../achievements/service';
 import {
   buildLoadedConfig,
   ConfigValidationError,
   createConfigSource,
   DEFAULT_POINTS_CONFIG,
+  fanAchievements,
   parsePointsConfig,
   parseSeasonConfig,
   staticConfigSource,
   validatePointsConfigInput,
   validateSeasonInput,
 } from './config';
+import { emptyWallet } from './model';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const NOW = Date.parse('2026-10-05T15:00:00.000Z');
@@ -530,5 +534,216 @@ describe('a carga com o jogo (bloco 7)', () => {
     expect(loaded.game.missions.byAction.size).toBe(0);
     expect(loaded.game.seasonGoal).toBeNull();
     expect(buildLoadedConfig().achievements.achievements).toHaveLength(10);
+  });
+});
+
+// --- Check-in diário: a chave e o ciclo em config/points (seção 39) -------------------
+
+describe('o bloco do check-in em config/points (seção 39)', () => {
+  const CYCLE = [3, 3, 4, 4, 5, 6, 15];
+
+  it('o padrão do código: a chave desligada, o ciclo de 7 valores e o limite do dia sempre null', () => {
+    expect(DEFAULT_POINTS_CONFIG.checkin).toEqual({ enabled: false, cycle: CYCLE });
+    expect(DEFAULT_POINTS_CONFIG.dailyLimits.checkin).toBeNull();
+    expect(DEFAULT_POINTS_CONFIG.values).not.toHaveProperty('checkin');
+  });
+
+  it('o documento salvo antes do check-in (sem o bloco) lê o padrão, em silêncio, numa cópia', () => {
+    const log = spyLog();
+    // O config/points de produção: gravado pelo painel antes de o código conhecer o bloco.
+    const config = parsePointsConfig(
+      {
+        version: 7,
+        values: { like: 1, comment: 3 },
+        dailyLimits: { like: 40, mission: null },
+        actionCaps: { like_set: 200 },
+        levels: DEFAULT_POINTS_CONFIG.levels,
+      },
+      log,
+    );
+    expect(config.checkin).toEqual({ enabled: false, cycle: CYCLE });
+    expect(config.dailyLimits.checkin).toBeNull();
+    expect(config.values).toMatchObject({ like: 1, comment: 3 });
+    expect(log.warn).not.toHaveBeenCalled();
+    expect(log.error).not.toHaveBeenCalled();
+    // Cada leitura devolve o próprio ciclo: mexer nele não mexe no padrão.
+    expect(config.checkin.cycle).not.toBe(DEFAULT_POINTS_CONFIG.checkin.cycle);
+    config.checkin.cycle[0] = 999;
+    expect(parsePointsConfig(undefined, log).checkin.cycle).toEqual(CYCLE);
+    expect(DEFAULT_POINTS_CONFIG.checkin.cycle).toEqual(CYCLE);
+  });
+
+  it('o bloco que o painel gravou vale: a chave e o ciclo', () => {
+    const config = parsePointsConfig(
+      { version: 8, checkin: { enabled: true, cycle: [1, 2, 3, 4, 5, 6, 7] } },
+      spyLog(),
+    );
+    expect(config.checkin).toEqual({ enabled: true, cycle: [1, 2, 3, 4, 5, 6, 7] });
+    // Só o `true` liga.
+    expect(
+      parsePointsConfig({ version: 8, checkin: { enabled: 'true' } }, spyLog()).checkin.enabled,
+    ).toBe(false);
+  });
+
+  it('ciclo inválido volta inteiro ao padrão, com erro no log, sem derrubar a chave nem o resto', () => {
+    const log = spyLog();
+    const config = parsePointsConfig(
+      { version: 9, values: { like: 1 }, checkin: { enabled: true, cycle: [1, 2, 3] } },
+      log,
+    );
+    expect(config.checkin).toEqual({ enabled: true, cycle: CYCLE });
+    expect(config.values.like).toBe(1);
+    expect(log.error).toHaveBeenCalledOnce();
+  });
+
+  it('o limite diário do check-in é sempre null na leitura, como o da missão', () => {
+    const log = spyLog();
+    expect(
+      parsePointsConfig({ version: 1, dailyLimits: { checkin: 5 } }, log).dailyLimits.checkin,
+    ).toBeNull();
+    expect(log.error).toHaveBeenCalledOnce();
+  });
+
+  it('validação estrita: o bloco aceita só a chave, só o ciclo ou os dois', () => {
+    expect(validatePointsConfigInput({ checkin: { enabled: true } })).toEqual({
+      checkin: { enabled: true },
+    });
+    expect(validatePointsConfigInput({ checkin: { cycle: [1, 2, 3, 4, 5, 6, 999] } })).toEqual({
+      checkin: { cycle: [1, 2, 3, 4, 5, 6, 999] },
+    });
+    expect(
+      validatePointsConfigInput({ values: { like: 1 }, checkin: { enabled: false, cycle: CYCLE } }),
+    ).toEqual({ values: { like: 1 }, checkin: { enabled: false, cycle: CYCLE } });
+    expect(validatePointsConfigInput({ dailyLimits: { checkin: null } })).toEqual({
+      dailyLimits: { checkin: null },
+    });
+  });
+
+  it.each([
+    [{ checkin: null }, 'checkin'],
+    [{ checkin: true }, 'checkin'],
+    [{ checkin: {} }, 'checkin'],
+    [{ checkin: { bonus: 50 } }, 'checkin'],
+    [{ checkin: { enabled: 'sim' } }, 'checkin.enabled'],
+    [{ checkin: { cycle: [1, 2, 3] } }, 'checkin.cycle'],
+    [{ checkin: { cycle: [0, 3, 4, 4, 5, 6, 15] } }, 'checkin.cycle.0'],
+    [{ checkin: { cycle: [3, 3, 4, 4, 5, 6, 1_000] } }, 'checkin.cycle.6'],
+    // O check-in não tem valor por evento nem limite do dia.
+    [{ values: { checkin: 3 } }, 'values.checkin'],
+    [{ dailyLimits: { checkin: 5 } }, 'dailyLimits.checkin'],
+  ])('recusa %j em %s', (input, field) => {
+    expect(fieldOf(() => validatePointsConfigInput(input))).toBe(field);
+  });
+});
+
+describe('a chave do check-in e as conquistas de sequência na carga (seção 39)', () => {
+  const streak = (days: number, extra: Partial<AchievementRecord> = {}): AchievementRecord => ({
+    id: `sequencia-${days}`,
+    title: `${days} dias seguidos`,
+    icon: 'flame',
+    tone: 'action',
+    rule: { type: 'streak', days },
+    status: 'active',
+    activatedAt: NOW,
+    createdAt: NOW,
+    updatedAt: NOW,
+    ...extra,
+  });
+  const DEFAULT_IDS = DEFAULT_ACHIEVEMENTS_CONFIG.achievements.map((item) => item.id);
+  // O catálogo que o painel gravou: as 10 de sempre, uma de sequência no meio,
+  // outra no fim e um rascunho de sequência.
+  const catalog = () => ({
+    version: 6,
+    achievements: [
+      ...DEFAULT_ACHIEVEMENTS_CONFIG.achievements.slice(0, 3),
+      streak(7),
+      ...DEFAULT_ACHIEVEMENTS_CONFIG.achievements.slice(3),
+      streak(30),
+      streak(100, { status: 'draft', activatedAt: null }),
+    ],
+  });
+  const ALL_IDS = catalog().achievements.map((item) => item.id);
+  const points = (enabled: boolean) => ({
+    ...DEFAULT_POINTS_CONFIG,
+    checkin: { enabled, cycle: [3, 3, 4, 4, 5, 6, 15] },
+  });
+
+  it('com a chave desligada, as de sequência ficam fora do que o fã usa: o jogo e o catálogo da carga', () => {
+    const raw = catalog();
+    const loaded = buildLoadedConfig({ points: points(false), achievements: raw });
+    expect(loaded.game.achievements.map((item) => item.id)).toEqual(DEFAULT_IDS);
+    expect(loaded.achievements.achievements.map((item) => item.id)).toEqual(DEFAULT_IDS);
+    expect(loaded.achievements.version).toBe(6);
+    // O catálogo que veio do documento não muda: o painel segue vendo as 13.
+    expect(raw.achievements.map((item) => item.id)).toEqual(ALL_IDS);
+    expect(raw.achievements).toHaveLength(13);
+  });
+
+  it('com a chave ligada, o catálogo inteiro, na ordem do painel', () => {
+    const raw = catalog();
+    const loaded = buildLoadedConfig({ points: points(true), achievements: raw });
+    expect(loaded.game.achievements.map((item) => item.id)).toEqual(ALL_IDS);
+    expect(loaded.achievements).toBe(raw);
+  });
+
+  it('sem config/points (o padrão do código), a chave está desligada e as de sequência não aparecem', () => {
+    const loaded = buildLoadedConfig({ achievements: catalog() });
+    expect(loaded.points.checkin.enabled).toBe(false);
+    expect(loaded.game.achievements.map((item) => item.id)).toEqual(DEFAULT_IDS);
+  });
+
+  it('catálogo sem conquista de sequência passa como veio, com a chave ligada ou não', () => {
+    const raw = { version: 2, achievements: DEFAULT_ACHIEVEMENTS_CONFIG.achievements };
+    expect(fanAchievements(raw, { enabled: false })).toBe(raw);
+    expect(fanAchievements(raw, { enabled: true })).toBe(raw);
+    expect(buildLoadedConfig().game.achievements).toHaveLength(10);
+  });
+
+  it('o "X de N" do GET /me/achievements: 10 com a chave desligada, 12 com ela ligada (o rascunho não conta)', () => {
+    const view = (enabled: boolean) =>
+      myAchievements(
+        { ...emptyWallet(), exists: true, achievements: { 'sequencia-7': NOW } },
+        buildLoadedConfig({ points: points(enabled), achievements: catalog() }),
+      );
+    // Desligada, a de sequência que o fã já tinha some da conta, como a arquivada (fica na carteira).
+    expect(view(false)).toMatchObject({ unlockedCount: 0, totalCount: 10 });
+    expect(view(false).highlights.map((item) => item.id)).not.toContain('sequencia-7');
+    expect(view(true)).toMatchObject({ unlockedCount: 1, totalCount: 12 });
+    expect(view(true).highlights[0]!.id).toBe('sequencia-7');
+  });
+
+  it('a carga do cache aplica a chave: os dois documentos se encontram no mesmo getAll', async () => {
+    const doc = (id: string) => ({ id });
+    const snap = (data: unknown) => ({ data: () => data });
+    const saved = {
+      version: 6,
+      achievements: catalog().achievements.map((item) => ({
+        ...item,
+        activatedAt: item.activatedAt === null ? null : Timestamp.fromMillis(item.activatedAt),
+        createdAt: Timestamp.fromMillis(item.createdAt),
+        updatedAt: Timestamp.fromMillis(item.updatedAt),
+      })),
+    };
+    const load = (checkin: unknown) => {
+      const getAll = vi.fn(() =>
+        Promise.resolve([
+          snap({ version: 3, ...(checkin === undefined ? {} : { checkin }) }),
+          snap(undefined),
+          snap(undefined),
+          snap(saved),
+        ]),
+      );
+      const db = { getAll, collection: () => ({ doc }) } as unknown as Firestore;
+      return createConfigSource(db, { now: () => NOW, log: spyLog() }).get();
+    };
+    // O config/points de produção, sem o bloco: desligada.
+    expect((await load(undefined)).game.achievements.map((item) => item.id)).toEqual(DEFAULT_IDS);
+    expect(
+      (await load({ enabled: false, cycle: [3, 3, 4, 4, 5, 6, 15] })).achievements.achievements,
+    ).toHaveLength(10);
+    const on = await load({ enabled: true, cycle: [3, 3, 4, 4, 5, 6, 15] });
+    expect(on.points.checkin.enabled).toBe(true);
+    expect(on.game.achievements.map((item) => item.id)).toEqual(ALL_IDS);
+    expect(on.achievements.achievements).toHaveLength(13);
   });
 });

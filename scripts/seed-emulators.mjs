@@ -154,8 +154,27 @@
  * fã-clube e comenta propaganda na publicação da foto, denunciado pela Bia como
  * spam (o item com o tipo report), para a aba Comentários e o ocultar em lote.
  *
- * Rodar de novo não muda nada. Depois da meia-noite, o progresso do dia volta
- * a 0, como o de qualquer fã: para ver de novo o 3 de 5 e o 2 de 5, feche os
+ * Check-in diário (functions/lib/checkin, docs/arquitetura-api.md, seção 39):
+ * logo depois da carga da versão 1, num passo à parte, a chave
+ * `checkin.enabled` ligada em config/points (só aqui, no emulador: a carga é a
+ * mesma de produção e nunca liga) e as quatro conquistas de sequência no ar
+ * (7, 30, 100 e 365 dias seguidos, com a chama em rosa), criadas e publicadas
+ * pelos núcleos das callables do painel, com o admin do seed e a auditoria de
+ * verdade; a 1e passa a contar 14 conquistas. Depois da semana da carteira, a
+ * Camila ganha 4 dias seguidos de check-in até ontem, pelo mesmo núcleo da
+ * rota, com o ciclo zerado: nenhum lançamento entra e nenhum número da
+ * carteira muda (12.480, 4.120 e +840), e o card da Início abre no 5º dia do
+ * ciclo, por fazer. A sequência só está viva no dia do seed, como o resto dos
+ * dados relativos ao dia: no dia seguinte, sem o check-in, ela já se perdeu e
+ * o card volta ao dia 1. Para ver de novo, feche os emuladores e rode o seed
+ * outra vez.
+ *
+ * Rodar de novo não muda nada. O seed interrompido no meio (Ctrl+C, emulador
+ * que caiu) pode deixar um passo pela metade que rodar de novo não conserta (a
+ * conquista de sequência criada e ainda em rascunho fica em rascunho; só a
+ * sequência da Camila é completada pela rodada seguinte): feche os emuladores
+ * e rode o seed outra vez. Depois da meia-noite, o progresso do dia volta a 0,
+ * como o de qualquer fã: para ver de novo o 3 de 5 e o 2 de 5, feche os
  * emuladores (os dados somem) e rode o seed outra vez.
  *
  * Só funciona contra o emulador local (127.0.0.1:9099): estas senhas não servem
@@ -480,6 +499,19 @@ console.log(
   `Configuração inicial: ${gameConfig.length > 0 ? `${gameConfig.join(' e ')} na versão 1 agora` : 'config/points e config/achievements já existiam'}.`,
 );
 
+// O check-in diário (seção 39), num passo à parte, depois da carga e nunca
+// dentro dela (a carga também roda em produção, onde a chave nasce desligada):
+// a chave ligada em config/points e as quatro conquistas de sequência, pelos
+// núcleos das callables do painel, com o admin do seed. Rodar de novo não grava.
+const checkinConfig = await withFirestore((db) =>
+  functionsBuild('checkin').seedCheckinConfig(db, {
+    uid: functionsFile('staff/seed').SEED_STAFF_ADMIN.uid,
+  }),
+);
+console.log(
+  `Check-in diário: a chave ${checkinConfig.enabled ? 'ligada agora' : 'já estava ligada'} em config/points (só no emulador) e ${checkinConfig.achievements} conquistas de sequência criadas agora (4 no total: 7, 30, 100 e 365 dias seguidos).`,
+);
+
 const invitees = [];
 const visitors = [];
 const engagementFans = {};
@@ -543,6 +575,14 @@ if (camilaUid) {
   const { seedCamilaWallet } = functionsBuild('points');
   await withFirestore((db) => seedCamilaWallet(db, camilaUid, { steps: 'week' }));
   console.log('Carteira da Camila: saldo 12.480, temporada 4.120, Netto e Nenho, +840 na semana.');
+  // A sequência de check-in dela (seção 39), depois da semana e antes dos
+  // números de 60 dias: 4 dias até ontem, com o ciclo zerado (a carteira e o
+  // extrato não mudam). Rodar de novo não grava.
+  const { seedCamilaCheckins } = functionsBuild('checkin');
+  const checkins = await withFirestore((db) => seedCamilaCheckins(db, camilaUid));
+  console.log(
+    `Check-in da Camila: ${checkins} agora (4 dias seguidos até a véspera do seed, valendo 0; no dia do seed, o 5º dia do ciclo fica por fazer).`,
+  );
 }
 await withFirestore((db) => seedRankingWeek(db, rankingUids));
 console.log(

@@ -1,4 +1,5 @@
 import { followFixture, JOIN_CENTRAL_POINTS } from '@/domains/artists/fixtures';
+import { checkinFixture } from '@/domains/checkin/fixtures';
 import {
   buildMissionsFixture,
   missionsFixture,
@@ -94,6 +95,14 @@ describe('carteira nas fixtures (build sem a API)', () => {
   it('o resgate desconta só o saldo', () => {
     expect(rewardsFixture.redeem('videochamada', 'resgate-1', 8_500, NOW).balance).toBe(3_980);
   });
+
+  it('o check-in diário (seção 39) rende o valor do dia do ciclo nos três contadores', () => {
+    // O exemplo nasce desligado, como a chave do servidor: o teste liga.
+    checkinFixture.setEnabled(true);
+    // O quinto dia seguido da Camila do seed vale 5.
+    expect(checkinFixture.checkin('checkin-1').pointsAwarded).toBe(5);
+    expect(fixtureWallet.get()).toEqual({ balance: 12_485, xp: 12_485, seasonPoints: 4_125 });
+  });
 });
 
 describe('carteira na API (emuladores no bloco 1)', () => {
@@ -128,6 +137,15 @@ describe('carteira na API (emuladores no bloco 1)', () => {
       (item) => item.id === 'm-presenca-show',
     );
     expect(mission).toMatchObject({ status: 'completed', progress: { current: 1, target: 1 } });
+    expect(fixtureWallet.get()).toEqual(INITIAL);
+  });
+
+  it('o check-in diário (seção 39) acontece e a sequência anda, mas rende 0 e a carteira não muda', () => {
+    checkinFixture.setEnabled(true);
+    expect(checkinFixture.checkin('checkin-1')).toMatchObject({
+      pointsAwarded: 0,
+      checkin: { checkedInToday: true, streak: 5 },
+    });
     expect(fixtureWallet.get()).toEqual(INITIAL);
   });
 

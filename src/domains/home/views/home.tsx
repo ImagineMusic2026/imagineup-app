@@ -6,6 +6,7 @@ import { EmptyState } from '@/components/empty-state';
 import { Screen } from '@/components/screen';
 import { SectionHeader } from '@/components/section-header';
 import { useFanCentralsQuery } from '@/domains/artists';
+import { CheckinSection } from '@/domains/checkin';
 import { FanClubFeedSection } from '@/domains/fan-club';
 import { DailyMissionSection, useDailyMissionQuery } from '@/domains/missions';
 import { PostDivider, PostRow, PostRowsSkeleton, useFeedQuery, type Post } from '@/domains/posts';
@@ -29,13 +30,16 @@ function postItemType(post: Post): 'event' | 'media' | 'text' {
  * Tudo o que vem antes do mural, de ponta a ponta (o carrossel sai da margem).
  * Fora de foco, a missão do dia que conclui não festeja: quem fala é a tela
  * que o fã está vendo (a 1g, quando a conclusão chega por lá). A conta
- * suspensa tem o aviso fixo logo embaixo da saudação (seção 29, frente E).
+ * suspensa tem o aviso fixo logo embaixo da saudação (seção 29, frente E). O
+ * check-in diário (seção 39) vem antes da missão do dia, só com a chave do
+ * servidor ligada: sem ela, a seção não desenha nem anuncia nada.
  */
 function HomeListHeader({ focused }: { focused: boolean }) {
   return (
     <View>
       <HomeHeader />
       <SuspendedNotice style={styles.suspended} />
+      <CheckinSection style={styles.checkin} />
       <DailyMissionSection celebrate={focused} style={styles.mission} />
       <CentralsSection />
       {/* "Dos seus fã-clubes" (seção 34): só depois da trava e só com publicação. */}
@@ -116,10 +120,11 @@ function useAnnounceHomeFailures(postCount: number): void {
 }
 
 /**
- * 1b. Home gamificada: saudação com o avatar, missão do dia, "Suas centrais",
- * "Dos seus fã-clubes" (seção 34, só com publicação) e o mural "Do seu
- * fandom", numa FlashList só que rola junto. O header e o mural passam por
- * baixo da tab bar. Puxar para baixo atualiza tudo.
+ * 1b. Home gamificada: saudação com o avatar, o check-in diário (seção 39,
+ * só com a chave do servidor ligada), missão do dia, "Suas centrais", "Dos
+ * seus fã-clubes" (seção 34, só com publicação) e o mural "Do seu fandom",
+ * numa FlashList só que rola junto. O header e o mural passam por baixo da
+ * tab bar. Puxar para baixo atualiza tudo.
  */
 export function HomeScreen() {
   const bottomInset = useTabBarInset();
@@ -175,6 +180,11 @@ const styles = StyleSheet.create({
   suspended: {
     marginTop: spacing.metaGap,
     marginHorizontal: spacing.gutter,
+  },
+  // Os 4 de baixo somam aos 6 de cima da missão: 10 entre os dois cards.
+  checkin: {
+    marginTop: spacing.metaGap,
+    marginBottom: spacing.xs,
   },
   mission: {
     marginTop: spacing.metaGap,

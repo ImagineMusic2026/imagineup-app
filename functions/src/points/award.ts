@@ -7,6 +7,7 @@ import {
   type Transaction,
 } from 'firebase-admin/firestore';
 
+import { parseCheckinRecord } from '../checkin/model';
 import {
   applyMissionTicks,
   candidateMissions,
@@ -26,6 +27,7 @@ import {
   activityMarks,
   cloneWallet,
   computeAwards,
+  dayKey,
   emptyCentral,
   emptyWallet,
   entryArtistId,
@@ -92,6 +94,12 @@ export type FanAwards = {
    * vem antes das gravações do domínio. Fã sem perfil: ignoradas.
    */
   ticks?: MissionTick[];
+  /**
+   * O fã pede o check-in de hoje (seção 39): o núcleo decide o dia, paga o
+   * valor do ciclo e guarda a sequência. Só vale com a chave ligada
+   * (`config.checkin.enabled`); com ela desligada, o plano ignora o pedido.
+   */
+  checkin?: boolean;
 };
 
 export type AwardContext = {
@@ -245,6 +253,8 @@ export function walletFromDoc(data: DocumentData | undefined): WalletState {
     goalReached: parseGoalReached(data.goalReached),
     missions: parseMissions(data.missions),
     achievements: parseAchievements(data.achievements),
+    // Sem o campo (toda carteira de antes do check-in) ou com ele fora do formato: vazio.
+    checkin: parseCheckinRecord(data.checkin),
     updatedAt: millis(data.updatedAt),
   };
 }
@@ -353,12 +363,15 @@ export function mergeFanAwards(fans: readonly FanAwards[]): {
         entries: [...fan.entries],
         fan: fan.fan,
         ticks: [...(fan.ticks ?? [])],
+        // O pedido de check-in (seção 39) só entra quando é true.
+        ...(fan.checkin === true ? { checkin: true } : {}),
       });
       continue;
     }
     merged.entries.push(...fan.entries);
     merged.ticks!.push(...(fan.ticks ?? []));
     merged.fan ??= fan.fan;
+    if (fan.checkin === true) merged.checkin = true;
   }
   return { fans: [...byUid.values()], caller };
 }
@@ -390,7 +403,9 @@ export function missionsToRead(
  * e a carteira dos outros fãs) e calcula. Sem lançamentos e sem unidades de
  * missão, não lê nada: dá para chamar depois das gravações do domínio (só a
  * atividade de quem chama). O mesmo uid repetido vira uma entrada só
- * (mergeFanAwards).
+ * (mergeFanAwards). O pedido de check-in (seção 39) conta como lançamento só
+ * com a chave ligada: aí a temporada é lida (os pontos entram nela) e o
+ * lançamento `checkin:<dia>` também; com a chave desligada, nada a mais é lido.
  */
 export async function planAwards(
   tx: Transaction,
@@ -400,7 +415,10 @@ export async function planAwards(
 ): Promise<AwardPlan> {
   const { fans, caller } = mergeFanAwards(input);
   const game = ctx.game ?? NO_GAME;
-  const hasEntries = fans.some((fan) => fan.entries.length > 0 || (fan.ticks?.length ?? 0) > 0);
+  const checkinAsked = (fan: FanAwards) => fan.checkin === true && ctx.config.checkin.enabled;
+  const hasEntries = fans.some(
+    (fan) => fan.entries.length > 0 || (fan.ticks?.length ?? 0) > 0 || checkinAsked(fan),
+  );
   const refs: DocumentReference[] = [];
   const at = (ref: DocumentReference) => refs.push(ref) - 1;
 
@@ -413,6 +431,8 @@ export async function planAwards(
         ...missions.map(({ mission, periodKey }) =>
           ledgerId({ source: 'mission', eventId: missionEventId(mission.id, periodKey) }),
         ),
+        // O lançamento do check-in de hoje, que o núcleo monta (seção 39).
+        ...(checkinAsked(fan) ? [ledgerId({ source: 'checkin', eventId: dayKey(ctx.now) })] : []),
       ]),
     ];
     const artistIds = [
@@ -443,6 +463,7 @@ export async function planAwards(
     wallet: fan.fan ? fan.fan.wallet : walletFromDoc(snaps[walletAt]!.data()),
     entries: fan.entries,
     ticks: fan.ticks ?? [],
+    ...(fan.checkin === true ? { checkin: true } : {}),
     existingLedger: new Set(ledger.filter(({ index }) => snaps[index]!.exists).map(({ id }) => id)),
     centrals: new Map(
       centrals.map(({ id, index }) => [id, centralFromDoc(id, snaps[index]!.data())]),
@@ -497,8 +518,8 @@ export function setCentralMember(
 /**
  * As recompensas do plano para a resposta da ação (22.2): os quatro campos,
  * sempre (listas vazias, null e false quando nada aconteceu). Valem para
- * curtir, comentar, "Eu vou", entrar e seguir; desfazer, sair, denunciar,
- * bloquear e o convite não mandam.
+ * curtir, comentar, "Eu vou", entrar, seguir e o check-in diário (seção 39);
+ * desfazer, sair, denunciar, bloquear e o convite não mandam.
  */
 export function rewardsOf(plan: Pick<AwardPlan, 'rewards'>): ActionRewards {
   return {
@@ -528,7 +549,10 @@ function periodFields(state: MissionPeriodState | null): DocumentData | null {
 /**
  * Os campos da carteira, inteiros a cada gravação: o `missions`, o
  * `achievements` e o `goalReached` vão sempre juntos com o resto (22.17), e
- * um `update` que esquecesse um deles apagaria o progresso.
+ * um `update` que esquecesse um deles apagaria o progresso. A exceção é o
+ * `checkin` (seção 39): só vai depois do primeiro check-in (`lastDay` com
+ * dia). Sem ele, o `create` não leva o campo e o `update` não toca nele: com
+ * a chave desligada, nenhuma carteira ganha o campo.
  */
 function walletFields(state: WalletState, now: Timestamp): DocumentData {
   const achievements: DocumentData = {};
@@ -554,6 +578,15 @@ function walletFields(state: WalletState, now: Timestamp): DocumentData {
       weekly: periodFields(state.missions.weekly),
     },
     achievements,
+    ...(state.checkin.lastDay !== null
+      ? {
+          checkin: {
+            streak: state.checkin.streak,
+            best: state.checkin.best,
+            lastDay: state.checkin.lastDay,
+          },
+        }
+      : {}),
     updatedAt: now,
   };
 }

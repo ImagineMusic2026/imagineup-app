@@ -10,6 +10,7 @@ import { parseIdempotencyKey, requestFingerprint, runIdempotent } from './idempo
 import { matchRoute, normalizePath } from './router';
 import { agendaRoutes } from './routes/agenda';
 import { centralRoutes } from './routes/centrals';
+import { checkinRoutes } from './routes/checkin';
 import { fanClubRoutes } from './routes/fan-clubs';
 import { fanRoutes } from './routes/fans';
 import { inviteRoutes } from './routes/invites';
@@ -67,6 +68,7 @@ export const API_ROUTES: readonly ApiRoute[] = [
   ...rewardRoutes,
   ...fanClubRoutes,
   ...supportRoutes,
+  ...checkinRoutes,
 ];
 
 /** Sem o segredo do convite nas dependências, só as rotas do convite falham (500). */

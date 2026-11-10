@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { AgendaError } from '../agenda/model';
 import { CentralError } from '../centrals/model';
+import { CheckinError } from '../checkin/model';
 import {
   FAN_CLUB_MEMBER_NOTICE_VERSION,
   FAN_CLUB_PRIZE_NOTICE,
@@ -12,7 +13,7 @@ import {
 import { InviteError } from '../invites/model';
 import { ProfileEditError } from '../fan-profile/model';
 import { DailyCapError, ModerationError } from '../moderation/model';
-import { staticConfigSource } from '../points/config';
+import { DEFAULT_POINTS_CONFIG, staticConfigSource } from '../points/config';
 import { PostError } from '../posts/model';
 import { RewardError } from '../rewards/model';
 import {
@@ -22,6 +23,7 @@ import {
   createApiHandler,
   createRateLimiter,
   HEALTH_BODY,
+  idempotencyDocId,
 } from './index';
 import type { ApiDeps, ApiRequest, ApiRoute } from './types';
 
@@ -2488,5 +2490,331 @@ describe('fã-clube gerido pelo fã (seção 34)', () => {
       );
       expect(sent.status, JSON.stringify(body)).toBe(500);
     }
+  });
+});
+
+describe('check-in diário (seção 39)', () => {
+  const CYCLE = [3, 3, 4, 4, 5, 6, 15];
+  const ON = { ...DEFAULT_POINTS_CONFIG, checkin: { enabled: true, cycle: CYCLE } };
+  // O relógio do teste é meio-dia de 05/10/2026 em São Paulo: a meia-noite seguinte.
+  const RESETS_AT = '2026-10-06T03:00:00.000Z';
+  const OFF_STATE = {
+    enabled: false,
+    checkedInToday: false,
+    streak: 0,
+    best: 0,
+    cycle: [],
+    cycleDay: 0,
+    todayPoints: 0,
+    resetsAt: RESETS_AT,
+  };
+  const NO_REWARDS = {
+    completedMissions: [],
+    levelUp: null,
+    unlockedAchievements: [],
+    missionsChanged: false,
+  };
+  const key = { 'Idempotency-Key': 'chave-checkin-0001' };
+  const KEY_DOC = `idempotency/${idempotencyDocId('uid-camila', 'chave-checkin-0001')}`;
+  const PROFILE = { 'users/uid-camila': { displayName: 'Camila Ribeiro' } };
+
+  /** Firestore falso com transação: guarda os caminhos lidos e o que foi gravado. */
+  function fakeDb(existing: Record<string, Record<string, unknown>> = {}) {
+    const reads: string[] = [];
+    const writes: { op: string; path: string; data: Record<string, unknown> }[] = [];
+    const read = (path: string) => {
+      reads.push(path);
+      return {
+        exists: path in existing,
+        data: () => existing[path],
+        get: (field: string) => existing[path]?.[field],
+      };
+    };
+    const ref = (path: string): unknown => ({
+      path,
+      id: path.slice(path.lastIndexOf('/') + 1),
+      get: async () => read(path),
+      collection: (name: string) => ({ doc: (id: string) => ref(`${path}/${name}/${id}`) }),
+    });
+    const write = (op: string) => (target: { path: string }, data: Record<string, unknown>) =>
+      void writes.push({ op, path: target.path, data });
+    const db = {
+      collection: (name: string) => ({ doc: (id: string) => ref(`${name}/${id}`) }),
+      runTransaction: async <T>(fn: (tx: unknown) => Promise<T>) =>
+        fn({
+          getAll: async (...refs: { path: string }[]) => refs.map((item) => read(item.path)),
+          get: async (target: { path: string }) => read(target.path),
+          create: write('create'),
+          set: write('set'),
+          update: write('update'),
+        }),
+    } as unknown as Firestore;
+    return { db, reads, writes };
+  }
+
+  /** O handler com a configuração dada (o padrão: a chave desligada). */
+  async function callWith(req: ApiRequest, db: Firestore, points = DEFAULT_POINTS_CONFIG) {
+    const handler = createApiHandler({
+      db,
+      auth,
+      now: () => NOW,
+      random: () => 0,
+      config: staticConfigSource({ points }),
+    });
+    const { res, sent } = response();
+    await handler(req, res);
+    return sent;
+  }
+
+  it('GET /me/checkin com a chave desligada (o padrão): 200 com enabled false e tudo zerado, sem ler o Firestore', async () => {
+    const sent = await call(request('GET', '/me/checkin'), API_ROUTES, noReads);
+    expect(sent).toEqual({
+      status: 200,
+      headers: { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' },
+      body: OFF_STATE,
+    });
+    // Sem perfil também: a rota só lê.
+    const other = await call(
+      request('GET', '/me/checkin', { headers: { Authorization: 'Bearer token-sem-email' } }),
+      API_ROUTES,
+      noReads,
+    );
+    expect(other).toMatchObject({ status: 200, body: OFF_STATE });
+    expect(logger.error).not.toHaveBeenCalled();
+  });
+
+  it('GET /me/checkin com a chave ligada lê só a carteira: o fã novo começa do dia 1', async () => {
+    const { db, reads } = fakeDb();
+    const sent = await callWith(request('GET', '/me/checkin'), db, ON);
+    expect(sent).toMatchObject({
+      status: 200,
+      body: {
+        enabled: true,
+        checkedInToday: false,
+        streak: 0,
+        best: 0,
+        cycle: CYCLE,
+        cycleDay: 1,
+        todayPoints: 3,
+        resetsAt: RESETS_AT,
+      },
+    });
+    expect(reads).toEqual(['wallets/uid-camila']);
+  });
+
+  it.each([
+    ['fez ontem o 4º dia: o de hoje está por fazer', '2026-10-04', false, 4, 5, 5],
+    ['fez hoje o 4º dia', '2026-10-05', true, 4, 4, 4],
+    ['perdeu um dia: a sequência some e a melhor fica', '2026-10-03', false, 0, 1, 3],
+  ])('GET /me/checkin com a sequência guardada, %s', async (_, lastDay, done, streak, day, pts) => {
+    const { db } = fakeDb({
+      'wallets/uid-camila': { balance: 40, checkin: { streak: 4, best: 9, lastDay } },
+    });
+    const sent = await callWith(request('GET', '/me/checkin'), db, ON);
+    expect(sent.body).toEqual({
+      enabled: true,
+      checkedInToday: done,
+      streak,
+      best: 9,
+      cycle: CYCLE,
+      cycleDay: day,
+      todayPoints: pts,
+      resetsAt: RESETS_AT,
+    });
+  });
+
+  it('POST /me/checkin exige a Idempotency-Key, antes de ler; grava, sem corpo conferido e sem aceitar o suspenso', async () => {
+    const sent = await call(request('POST', '/me/checkin'), API_ROUTES, noReads);
+    expect(sent.status).toBe(400);
+    expect(sent.body).toEqual({
+      code: 'idempotency_key_required',
+      message: 'Falta a chave de idempotência.',
+    });
+    const route = API_ROUTES.find(
+      (item) => item.method === 'POST' && item.pattern === '/me/checkin',
+    );
+    expect(route).toMatchObject({ writes: true });
+    expect(route && 'allowSuspended' in route).toBe(false);
+    expect(route?.validate).toBeUndefined();
+  });
+
+  it('POST /me/checkin com a chave desligada: 409 checkin_disabled, sem gravar nada (nem a chave, nem a atividade)', async () => {
+    const { db, writes } = fakeDb(PROFILE);
+    const sent = await callWith(request('POST', '/me/checkin', { headers: key }), db);
+    expect(sent.status).toBe(409);
+    expect(sent.body).toEqual({
+      code: 'checkin_disabled',
+      message: 'O check-in diário não está disponível agora.',
+    });
+    expect(writes).toEqual([]);
+    expect(logger.error).not.toHaveBeenCalled();
+    expect(logger.info).toHaveBeenCalledWith(
+      'api',
+      expect.objectContaining({
+        route: 'POST /me/checkin',
+        status: 409,
+        code: 'checkin_disabled',
+        replayed: false,
+      }),
+    );
+  });
+
+  it('POST /me/checkin com a chave ligada: paga o dia 1, responde o estado novo e guarda a mesma resposta na chave', async () => {
+    const { db, reads, writes } = fakeDb(PROFILE);
+    // O corpo, se vier, é ignorado.
+    const sent = await callWith(
+      request('POST', '/me/checkin', { headers: key, body: { streak: 99 } }),
+      db,
+      ON,
+    );
+    const body = {
+      pointsAwarded: 3,
+      checkin: {
+        enabled: true,
+        checkedInToday: true,
+        streak: 1,
+        best: 1,
+        cycle: CYCLE,
+        cycleDay: 1,
+        todayPoints: 3,
+        resetsAt: RESETS_AT,
+      },
+      ...NO_REWARDS,
+    };
+    expect(sent.status).toBe(200);
+    expect(sent.body).toEqual(body);
+    expect(sent.headers).not.toHaveProperty('Idempotency-Replayed');
+    expect(reads).toEqual([
+      KEY_DOC,
+      'users/uid-camila',
+      'wallets/uid-camila',
+      'config/season',
+      'wallets/uid-camila/ledger/checkin:2026-10-05',
+    ]);
+    expect(writes.map((write) => [write.op, write.path])).toEqual([
+      ['create', 'wallets/uid-camila'],
+      ['create', 'wallets/uid-camila/ledger/checkin:2026-10-05'],
+      ['set', 'statsDaily/2026-10-05/statsShards/0'],
+      ['create', KEY_DOC],
+    ]);
+    expect(writes[0]!.data).toMatchObject({
+      balance: 3,
+      xp: 3,
+      checkin: { streak: 1, best: 1, lastDay: '2026-10-05' },
+      // O check-in é uma gravação pela API: marca o fã ativo no dia.
+      activity: { lastDay: '2026-10-05' },
+    });
+    expect(writes[1]!.data).toMatchObject({ source: 'checkin', eventId: '2026-10-05', points: 3 });
+    // A chave guarda a resposta como JSON do Firestore: igual à que saiu.
+    expect(writes[3]!.data).toMatchObject({ status: 200, body, route: 'POST /me/checkin' });
+  });
+
+  it('o segundo toque do dia, com outra chave: 200 com 0 ponto e o mesmo estado, sem mexer na carteira', async () => {
+    const { db, writes } = fakeDb({
+      ...PROFILE,
+      'wallets/uid-camila': {
+        balance: 3,
+        xp: 3,
+        checkin: { streak: 1, best: 1, lastDay: '2026-10-05' },
+        activity: { lastDay: '2026-10-05', lastWeek: '2026-W41', lastMonth: '2026-10' },
+      },
+      'wallets/uid-camila/ledger/checkin:2026-10-05': { points: 3 },
+    });
+    const sent = await callWith(request('POST', '/me/checkin', { headers: key }), db, ON);
+    expect(sent.status).toBe(200);
+    expect(sent.body).toMatchObject({
+      pointsAwarded: 0,
+      checkin: { checkedInToday: true, streak: 1, best: 1, cycleDay: 1, todayPoints: 3 },
+      ...NO_REWARDS,
+    });
+    // Só a chave de idempotência é gravada.
+    expect(writes.map((write) => [write.op, write.path])).toEqual([['create', KEY_DOC]]);
+  });
+
+  it('o fã suspenso não faz check-in: 403 account_suspended, com a chave ligada ou não', async () => {
+    for (const points of [ON, DEFAULT_POINTS_CONFIG]) {
+      const { db, writes } = fakeDb({
+        'users/uid-camila': { displayName: 'Camila Ribeiro', suspendedAt: 'suspensa' },
+      });
+      const sent = await callWith(request('POST', '/me/checkin', { headers: key }), db, points);
+      expect(sent.status).toBe(403);
+      expect(sent.body).toMatchObject({ code: 'account_suspended' });
+      expect(writes).toEqual([]);
+    }
+  });
+
+  it.each([
+    ['a conta sem perfil', 503, 'profile_not_ready', {}],
+    ['a conta só da equipe', 403, 'not_fan', { 'staff/uid-camila': { status: 'active' } }],
+  ])(
+    'a ordem das recusas do POST: %s é recusada antes do 409 da chave desligada (%i %s), sem gravar',
+    async (_, status, code, existing) => {
+      // Com a chave desligada (o padrão) e com ela ligada: a resposta é a mesma.
+      for (const points of [DEFAULT_POINTS_CONFIG, ON]) {
+        const { db, reads, writes } = fakeDb(existing);
+        const sent = await callWith(request('POST', '/me/checkin', { headers: key }), db, points);
+        expect(sent.status).toBe(status);
+        expect(sent.body).toMatchObject({ code });
+        expect(writes).toEqual([]);
+        // O perfil é conferido antes do trabalho da rota: a chave do check-in nem é olhada.
+        expect(reads).toEqual([
+          KEY_DOC,
+          'users/uid-camila',
+          'wallets/uid-camila',
+          'staff/uid-camila',
+        ]);
+      }
+    },
+  );
+
+  it('a chave de idempotência guardada com o check-in ligado é repetida também com ele desligado: 200 com Idempotency-Replayed, sem gravar', async () => {
+    // O check-in feito com a chave ligada: o pedido grava a chave de idempotência dele.
+    const first = fakeDb(PROFILE);
+    const paid = await callWith(request('POST', '/me/checkin', { headers: key }), first.db, ON);
+    expect(paid.body).toMatchObject({ pointsAwarded: 3, checkin: { streak: 1 } });
+    const stored = first.writes.find((write) => write.path === KEY_DOC)!;
+
+    // O mesmo pedido de novo, com a mesma chave, depois de o painel desligar o check-in.
+    const { db, reads, writes } = fakeDb({ ...PROFILE, [KEY_DOC]: stored.data });
+    const sent = await callWith(request('POST', '/me/checkin', { headers: key }), db);
+    expect(sent.status).toBe(200);
+    expect(sent.body).toEqual(paid.body);
+    expect(sent.headers['Idempotency-Replayed']).toBe('true');
+    // A resposta guardada volta antes de a rota olhar a chave do check-in: nada é pago nem gravado.
+    expect(writes).toEqual([]);
+    expect(reads).toEqual([KEY_DOC, 'users/uid-camila', 'wallets/uid-camila']);
+    expect(logger.info).toHaveBeenLastCalledWith(
+      'api',
+      expect.objectContaining({ route: 'POST /me/checkin', status: 200, replayed: true }),
+    );
+
+    // A mesma chave com outro pedido segue sendo 422, e não o 409 do check-in desligado.
+    const other = await callWith(
+      request('POST', '/me/checkin', { headers: key, body: { outro: true } }),
+      db,
+    );
+    expect(other.status).toBe(422);
+    expect(other.body).toMatchObject({ code: 'idempotency_key_reused' });
+    expect(writes).toEqual([]);
+  });
+
+  it('a recusa do domínio (CheckinError) vira o 409 no formato combinado', async () => {
+    const routes: ApiRoute[] = [
+      {
+        method: 'GET',
+        pattern: '/teste/checkin',
+        writes: false,
+        handle: async () => {
+          throw new CheckinError('checkin_disabled');
+        },
+      },
+    ];
+    const sent = await call(request('GET', '/teste/checkin'), routes);
+    expect(sent.status).toBe(409);
+    expect(sent.body).toEqual({
+      code: 'checkin_disabled',
+      message: 'O check-in diário não está disponível agora.',
+    });
+    expect(logger.error).not.toHaveBeenCalled();
   });
 });
