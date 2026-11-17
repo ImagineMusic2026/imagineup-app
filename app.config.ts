@@ -50,6 +50,14 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
       monochromeImage: './assets/images/android-icon-monochrome.png',
     },
     predictiveBackGestureEnabled: false,
+    // A foto do perfil sai do seletor do sistema, que não pede permissão de
+    // mídia. A política de fotos e vídeos do Google Play recusa app com
+    // READ_MEDIA_IMAGES ou READ_MEDIA_VIDEO sem ser de galeria: o bloqueio
+    // tira as duas do manifesto final, venham de onde vierem (24.12 da nota).
+    blockedPermissions: [
+      'android.permission.READ_MEDIA_IMAGES',
+      'android.permission.READ_MEDIA_VIDEO',
+    ],
   },
   plugins: [
     'expo-router',
