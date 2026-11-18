@@ -349,8 +349,9 @@ function TabSwipeArea({
       const from = pager.position.get();
       // O dedo para a esquerda leva a página para a aba de índice maior.
       const towardTarget = (to - from) * -event.velocityX > 0 ? Math.abs(event.velocityX) : 0;
-      // A volta ao soltar anima também com reduzir movimento, a única exceção do
-      // app (decisão do dono de 03/11/2026): ela continua o gesto do fã, como o
+      // A volta ao soltar anima também com reduzir movimento, uma das duas
+      // exceções do app (decisão do dono de 03/11/2026; a outra é a frase da
+      // abertura): ela continua o gesto do fã, como o
       // pager do sistema e a rolagem com impulso, que não seguem a escala de
       // animação do Android. Seca, a página pulava até o fim num quadro ao
       // soltar, e o Instagram, no mesmo aparelho, desacelerava por 300 a 700 ms

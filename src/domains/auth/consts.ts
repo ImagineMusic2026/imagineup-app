@@ -11,6 +11,12 @@ export { PRIVACY_URL, TERMS_URL } from '@/config/links';
 export const PROFILE_WAIT_MS = 20_000;
 
 /**
+ * Quanto o momento "Conta criada" fica na tela antes de as telas de conta
+ * apagarem: o bastante para ler duas linhas curtas. Os testes zeram.
+ */
+export const ACCOUNT_CREATED_HOLD_MS = 1100;
+
+/**
  * Etapas da barra do cadastro e da escolha de artistas (1l): o cadastro é a 1
  * e os artistas, a 2. O protótipo desenha 3 segmentos, mas a terceira etapa
  * não foi definida.

@@ -5,7 +5,7 @@ import { Polygon } from 'react-native-svg';
 import { createStackEntrance } from '@/hooks/use-stack-fade';
 import { colors, motion } from '@/theme';
 
-import { BrandBars, type BrandBarsProps } from '..';
+import { BrandBars, brandBarsWidth, type BrandBarsProps } from '..';
 
 const mockReducedMotion = jest.fn(() => false);
 jest.mock('@/hooks/use-prefers-reduced-motion', () => ({
@@ -78,6 +78,25 @@ describe('BrandBars', () => {
     render(<BrandBars size="hero" />);
     // 3 barras de 4 com vãos de 2,5.
     expect(screen.root).toHaveStyle({ width: 17, height: 21 });
+  });
+
+  it('moment: as barras grandes do momento "Conta criada", nas medidas do desenho', () => {
+    render(<BrandBars size="moment" />);
+    // Rosa, com as opacidades das grandes.
+    expect(bars().map((bar) => bar.fill)).toEqual(Array(3).fill(colors.accent));
+    expect(bars().map((bar) => bar.opacity)).toEqual([1, 0.6, 0.28]);
+    // Barras de 9 por 48, com 5,5 entre uma e outra.
+    expect(bars().map((bar) => bar.footLeft.x)).toEqual([0, 14.5, 29]);
+    for (const bar of bars()) {
+      expect(bar.topRight.x - bar.topLeft.x).toBeCloseTo(9, 2);
+      expect(bar.footRight.x - bar.footLeft.x).toBeCloseTo(9, 2);
+      expect(bar.footLeft.y - bar.topLeft.y).toBe(48);
+      // A mesma inclinação do logo, na altura delas.
+      expect(bar.topLeft.x - bar.footLeft.x).toBeCloseTo(48 * Math.tan((22 * Math.PI) / 180), 1);
+    }
+    // A caixa que o anel centraliza: 3 barras de 9 com vãos de 5,5.
+    expect(screen.root).toHaveStyle({ width: 38, height: 48 });
+    expect(brandBarsWidth('moment')).toBe(38);
   });
 
   it('as opacidades podem ser trocadas por prop', () => {

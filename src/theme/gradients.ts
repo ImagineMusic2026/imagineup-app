@@ -36,8 +36,19 @@ const ink = (alpha: number) => withAlpha(palette.ink, alpha);
  * O texto por cima fica na faixa quase opaca do fim.
  */
 const scrims = {
-  // 1k, tela cheia.
-  auth: { colors: [ink(0.55), ink(0.4), ink(0.97)], locations: [0, 0.32, 0.74] },
+  // 1k, tela cheia, sobre a parede de fotos: ela aparece em cima e some antes
+  // do meio da tela, onde começam o título e a frase.
+  auth: {
+    colors: [ink(0.5), ink(0.16), ink(0.9), ink(1)],
+    locations: [0, 0.2, 0.47, 0.56],
+  },
+  // 1k com a fonte grande: o texto passa da altura da tela e sobe para cima da
+  // parede, então o véu fecha desde o topo.
+  authLarge: { colors: [ink(0.82), ink(0.9), ink(1)], locations: [0, 0.3, 0.5] },
+  // As perguntas da entrada (uma por tela), por cima do `auth`: a parede só
+  // aparece de leve atrás do logo. É o complemento do `auth` que fica
+  // embaixo: os dois juntos dão o véu do desenho (.8, .95 e 1 em 0, .15 e .27).
+  authQuestion: { colors: [ink(0.6), ink(0.93), ink(1)], locations: [0, 0.15, 0.27] },
   // Entrar com e-mail e cadastro, por cima do `auth`.
   authForm: { colors: [ink(0.25), ink(0.88), ink(1)], locations: [0, 0.24, 0.38] },
   // Card de artista da 1l.
@@ -89,9 +100,6 @@ export const gradients = {
     locations: [0, 1],
     angle: 150,
   } as const satisfies LinearGradientToken,
-  // Fundo da abertura (1k) enquanto a foto não é entregue: o rosa para roxo do
-  // placeholder, fixo (não sai do id), sob o véu e as listras da 1k.
-  authPhotoFallback: [palette.pink, palette.purple] as const,
   /**
    * Placeholder de foto, igual ao do site: listras `stripes.placeholder`, um
    * brilho branco no canto de cima e um gradiente de 150° com um par escolhido

@@ -88,6 +88,8 @@ export const typography = {
   bodyXs: { fontFamily: fonts.manropeRegular, fontSize: 11.5, lineHeight: 16.5 },
   input: { fontFamily: fonts.manropeMedium, fontSize: 15, lineHeight: 20 },
   inputCompact: { fontFamily: fonts.manropeMedium, fontSize: 13.5, lineHeight: 18 },
+  // O campo das perguntas da entrada (uma por tela): grande e centralizado.
+  inputHero: { fontFamily: fonts.manropeMedium, fontSize: 20, lineHeight: 26 },
   buttonAlt: { fontFamily: fonts.manropeBold, fontSize: 14, lineHeight: 17 },
   label: { fontFamily: fonts.manropeBold, fontSize: 13, lineHeight: 16 },
   tabItem: { fontFamily: fonts.manropeSemiBold, fontSize: 12.5, lineHeight: 15 },

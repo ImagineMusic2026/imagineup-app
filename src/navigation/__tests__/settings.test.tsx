@@ -19,7 +19,11 @@ import DeleteAccountRoute from '@/app/excluir-conta';
 import SettingsRoute from '@/app/(tabs)/(perfil)/ajustes';
 import { PRIVACY_URL, SUPPORT_EMAIL, TERMS_URL } from '@/config/links';
 import { useAuthListener } from '@/domains/auth';
-import { handOffEmail, readHandedOffEmail } from '@/domains/auth/email-handoff';
+import {
+  clearHandedOffEmail,
+  handOffEmail,
+  readHandedOffEmail,
+} from '@/domains/auth/email-handoff';
 import { useSessionGate } from '@/hooks/use-session-gate';
 import { api } from '@/services/api';
 import { queryClient, queryPersister } from '@/services/query';
@@ -543,6 +547,29 @@ describe('excluir conta', () => {
     await waitFor(() => expect(view.getPathname()).toBe('/entrar'));
     expect(queryClient.getQueryData(['profile', 'me', 'uid-descarte'])).toBeUndefined();
     expect(removeClient).toHaveBeenCalled();
+  });
+
+  it('a exclusão esquece o e-mail guardado para o login (o da troca de e-mail que não chegou a entrar)', async () => {
+    jest.mocked(deleteUser).mockResolvedValue(undefined);
+    handOffEmail('descarte.novo@teste.imagineup');
+    renderRouter(appTree, { initialUrl: '/excluir-conta' });
+
+    fireEvent.press(screen.getByRole('button', { name: DELETE }));
+
+    await waitFor(() => expect(deleteUser).toHaveBeenCalledWith(mockUser));
+    await waitFor(() => expect(readHandedOffEmail()).toBeNull());
+  });
+
+  it('a exclusão que falha deixa o e-mail guardado como estava', async () => {
+    jest.mocked(deleteUser).mockRejectedValueOnce(firebaseError('auth/network-request-failed'));
+    handOffEmail('descarte.novo@teste.imagineup');
+    renderRouter(appTree, { initialUrl: '/excluir-conta' });
+
+    fireEvent.press(screen.getByRole('button', { name: DELETE }));
+
+    await waitFor(() => expect(haptics.trigger).toHaveBeenCalledWith('error'));
+    expect(readHandedOffEmail()).toBe('descarte.novo@teste.imagineup');
+    clearHandedOffEmail();
   });
 
   it('login antigo: pede a senha, reautentica com a credencial de e-mail e só então exclui', async () => {

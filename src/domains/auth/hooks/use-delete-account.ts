@@ -7,6 +7,7 @@ import { haptics } from '@/services/haptics';
 import { useSessionStore } from '@/stores/session';
 
 import { deleteAccount, deleteAccountFailure, signOut, type DeleteAccountFailure } from '../api';
+import { clearHandedOffEmail } from '../email-handoff';
 
 export interface DeleteAccountVariables {
   /** Só depois que o Firebase pediu o login recente (`needsPassword`). */
@@ -32,13 +33,16 @@ export const DELETE_ACCOUNT_ERRORS: Record<DeleteAccountFailure, TranslationKey>
  * Sessão que já não existe (conta excluída em outro aparelho, token
  * revogado) sai da conta também aqui, para o guard levar à entrada. O convite
  * amarrado à conta excluída sai do aparelho (sair da conta não o apaga: ele
- * volta a valer se a mesma conta entrar de novo dentro do prazo).
+ * volta a valer se a mesma conta entrar de novo dentro do prazo). O e-mail
+ * guardado para o login (o da troca de e-mail que não chegou a entrar) também
+ * sai, como no Sair: o entrar abriria na senha de uma conta que não existe mais.
  */
 export function useDeleteAccount() {
   return useMutation<void, Error, DeleteAccountVariables>({
     mutationFn: async ({ password }) => {
       const uid = useSessionStore.getState().user?.uid ?? null;
       await deleteAccount(password);
+      clearHandedOffEmail();
       if (uid) await clearBoundInvite(uid).catch(() => undefined);
     },
     networkMode: 'always',

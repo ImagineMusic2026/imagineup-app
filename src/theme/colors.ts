@@ -85,6 +85,9 @@ export const colors = {
   borderStrong: 'rgba(255, 255, 255, 0.1)',
   // Etapa não feita e trilho do anel do avatar.
   trackStrong: 'rgba(255, 255, 255, 0.13)',
+  // Linha parada do campo das perguntas da entrada (uma por tela): 3,15:1 sobre
+  // o fundo, acima do mínimo de 3:1 para o contorno de um controle.
+  fieldLine: 'rgba(255, 255, 255, 0.35)',
   borderGlass: 'rgba(255, 255, 255, 0.14)',
   // Botão contornado, selo de data sobre foto, pílula "gestão oficial".
   borderOutline: 'rgba(255, 255, 255, 0.16)',
