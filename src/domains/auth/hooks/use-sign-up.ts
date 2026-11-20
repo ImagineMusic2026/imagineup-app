@@ -1,7 +1,7 @@
 import { useMutation } from '@tanstack/react-query';
 import { AccessibilityInfo } from 'react-native';
 
-import { bindPendingInvite, clearBoundInvite, type BoundInvite } from '@/domains/invites';
+import { bindPendingInvite, clearBoundInvite, clearPendingInvite, type BoundInvite } from '@/domains/invites';
 import { t } from '@/i18n';
 import { haptics } from '@/services/haptics';
 import { usePreferencesStore } from '@/stores/preferences';
@@ -39,6 +39,23 @@ export interface SignUpOptions {
 // O fã que parou no estágio "código recusado" continua seguro nas telas de
 // conta: a função que solta fica aqui, para o "Continuar" soltar depois.
 let heldRelease: (() => void) | null = null;
+let heldGoogleInvite: { uid: string; release: () => void } | null = null;
+
+export function holdGoogleInvite(uid: string, release: () => void): void {
+  releaseHeldGoogleInvite();
+  heldGoogleInvite = { uid, release };
+}
+
+export function hasPendingGoogleInvite(): boolean {
+  return heldGoogleInvite !== null && heldGoogleInvite.uid === useSessionStore.getState().user?.uid;
+}
+
+export function releaseHeldGoogleInvite(expectedUid?: string): void {
+  if (expectedUid !== undefined && heldGoogleInvite?.uid !== expectedUid) return;
+  const invite = heldGoogleInvite;
+  heldGoogleInvite = null;
+  invite?.release();
+}
 
 /**
  * Solta o fã do estágio "código recusado" (uma vez; sem estágio, não faz
@@ -46,10 +63,15 @@ let heldRelease: (() => void) | null = null;
  * estágio sem passar pelos botões, a trava não pode ficar, senão a conta, já
  * logada, segue presa nas telas de conta até o app reiniciar.
  */
-export function releaseHeldSignUp(): void {
+export function releaseHeldEmailSignUp(): void {
   const release = heldRelease;
   heldRelease = null;
   release?.();
+}
+
+export function releaseHeldSignUp(): void {
+  releaseHeldEmailSignUp();
+  releaseHeldGoogleInvite();
 }
 
 /**
@@ -169,6 +191,11 @@ export function useFinishSignUp() {
   return useMutation<SignUpOutcome, Error, { inviteCode: string }>({
     mutationFn: async ({ inviteCode }) => {
       const uid = useSessionStore.getState().user?.uid ?? null;
+      const googleUid = heldGoogleInvite?.uid;
+      if (googleUid && googleUid !== uid) {
+        releaseHeldGoogleInvite(googleUid);
+        return { status: 'done' };
+      }
       if (uid && inviteCode.trim()) {
         const bound = await bindPendingInvite(uid, inviteCode).catch(() => null);
         if (bound) {
@@ -177,10 +204,12 @@ export function useFinishSignUp() {
         }
       } else if (uid) {
         await clearBoundInvite(uid).catch(() => undefined);
+        if (googleUid === uid) await clearPendingInvite().catch(() => undefined);
       }
       haptics.trigger('success');
       await playAuthExit();
-      releaseHeldSignUp();
+      if (googleUid) releaseHeldGoogleInvite(googleUid);
+      else releaseHeldEmailSignUp();
       return { status: 'done' };
     },
     networkMode: 'always',

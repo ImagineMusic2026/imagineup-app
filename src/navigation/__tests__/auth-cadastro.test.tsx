@@ -17,6 +17,7 @@ import {
 
 import AuthLayout from '@/app/(auth)/_layout';
 import SignUpRoute from '@/app/(auth)/cadastro';
+import GoogleInviteRoute from '@/app/(auth)/codigo-de-convite';
 import WelcomeRoute from '@/app/(auth)/entrar';
 import SignInRoute from '@/app/(auth)/entrar-com-email';
 import InviteRoute from '@/app/convite/[codigo]';
@@ -25,6 +26,7 @@ import { sendInviteClaim } from '@/domains/auth/api';
 import { QuestionLayout } from '@/domains/auth/components/question-layout';
 import { clearHandedOffEmail } from '@/domains/auth/email-handoff';
 import * as authExit from '@/domains/auth/hooks/use-auth-exit';
+import { holdGoogleInvite } from '@/domains/auth/hooks/use-sign-up';
 import { readBoundInvite, readPendingInvite, savePendingInvite } from '@/domains/invites';
 import * as focusAfterTransition from '@/hooks/use-focus-after-transition';
 import { useSessionGate } from '@/hooks/use-session-gate';
@@ -79,6 +81,11 @@ jest.mock('@/config/data-source', () => ({
   usesFixtures: () => true,
 }));
 
+let mockGoogleAvailable = false;
+jest.mock('@/domains/auth/hooks/use-google-entry', () => ({
+  useGoogleEntry: () => ({ available: mockGoogleAvailable, isPending: false, error: null }),
+}));
+
 // Um teste desliga o Firebase para ver a tela sem configuração.
 let mockFirebaseConfigured = true;
 jest.mock('@/firebase', () => ({
@@ -125,6 +132,7 @@ const appTree = {
   '(auth)/entrar': WelcomeRoute,
   '(auth)/entrar-com-email': SignInRoute,
   '(auth)/cadastro': SignUpRoute,
+  '(auth)/codigo-de-convite': GoogleInviteRoute,
   'convite/[codigo]': InviteRoute,
 };
 
@@ -367,6 +375,7 @@ beforeEach(async () => {
   jest.clearAllMocks();
   clearHandedOffEmail();
   mockFirebaseConfigured = true;
+  mockGoogleAvailable = false;
   // Cada teste diz o que o Firebase e o servidor respondem; sem dizer, dá certo.
   createUser.mockReset().mockResolvedValue({ user } as unknown as UserCredential);
   claim.mockReset().mockImplementation(async () => ({ status: 'claimed' }));
@@ -418,6 +427,19 @@ describe('entrada no app', () => {
 });
 
 describe('cadastro: uma pergunta por vez', () => {
+  it('mostra a entrada com Google só na pergunta do e-mail', async () => {
+    mockGoogleAvailable = true;
+    openSignUp();
+
+    const googleButton = { name: t('auth.google.continue') };
+    expect(screen.getByRole('button', googleButton)).toBeTruthy();
+    expect(screen.getByRole('link', { name: t('auth.terms.termsLink') })).toBeTruthy();
+
+    await answerEmail();
+
+    expect(screen.queryByRole('button', googleButton)).toBeNull();
+  });
+
   it('os dois nomes de teste continuam com os caracteres invisíveis', () => {
     expect(NAME_WITH_ISOLATES.startsWith(' \u2066')).toBe(true);
     expect(NAME_WITH_ISOLATES.endsWith('\u2069 ')).toBe(true);
@@ -1216,6 +1238,19 @@ describe('cadastro: os erros do envio', () => {
 });
 
 describe('cadastro: código de convite', () => {
+  it('sai do convite do Google se a conta perde a sessão', async () => {
+    const session = useSessionStore.getState();
+    session.setSignedIn(user);
+    holdGoogleInvite(user.uid, session.holdAuth());
+    renderRouter(appTree, { initialUrl: '/codigo-de-convite' });
+
+    expect(title(t('auth.signUp.inviteStepTitle'))).toBeTruthy();
+    act(() => session.setSignedOut());
+
+    expect(await screen.findByText(t('auth.welcome.createAccount'))).toBeTruthy();
+    expect(useSessionStore.getState().authHolds).toBe(0);
+  });
+
   it('o código do link guardado aparece na pergunta do nome e vai no envio sem abrir o desvio: quem manda é a sincronização', async () => {
     await savePendingInvite('k7p3m9qx', { path: '/post/p-clipe', utm: {} });
     openSignUp();

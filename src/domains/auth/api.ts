@@ -3,6 +3,7 @@ import {
   createUserWithEmailAndPassword,
   deleteUser,
   EmailAuthProvider,
+  GoogleAuthProvider,
   onAuthStateChanged,
   reauthenticateWithCredential,
   sendPasswordResetEmail,
@@ -31,6 +32,12 @@ import {
 import { getDb, getFirebaseAuth, isFirebaseConfigured } from '@/firebase';
 import type { TranslationKey } from '@/i18n';
 import { api, ApiError } from '@/services/api';
+import {
+  googleIdToken,
+  GoogleSignInError,
+  revokeGoogleAccess,
+  signOutGoogle,
+} from '@/services/google-sign-in';
 import type { SessionUser } from '@/stores/session';
 import { displayNameOrNull } from '@/utils/visible-line';
 
@@ -41,16 +48,17 @@ export function toSessionUser(user: User): SessionUser {
     uid: user.uid,
     email: user.email,
     displayName: user.displayName,
-    photoURL: user.photoURL,
+    // A foto pública continua sendo a enviada no perfil do ImagineUP.
+    photoURL: user.providerData?.some((info) => info.providerId === 'google.com') ? null : user.photoURL,
     // Sem a lista (usuário montado à mão), conta como sem senha: as linhas de
     // trocar senha e e-mail só aparecem com certeza.
     hasPassword: user.providerData?.some((info) => info.providerId === 'password') ?? false,
   };
 }
 
-/** Por enquanto, só e-mail e senha; Apple, Google e o login automático vêm depois (aprovado). */
-export async function signInWithEmail(email: string, password: string): Promise<void> {
-  await signInWithEmailAndPassword(getFirebaseAuth(), email, password);
+export async function signInWithEmail(email: string, password: string): Promise<User> {
+  const { user } = await signInWithEmailAndPassword(getFirebaseAuth(), email, password);
+  return user;
 }
 
 export interface SignUpInput {
@@ -316,8 +324,11 @@ export async function sendPasswordReset(email: string): Promise<void> {
   }
 }
 
-export async function signOut(): Promise<void> {
-  await firebaseSignOut(getFirebaseAuth());
+export async function signOut(expectedUid?: string | null): Promise<void> {
+  const auth = getFirebaseAuth();
+  if (expectedUid !== undefined && auth.currentUser && auth.currentUser.uid !== expectedUid) return;
+  await firebaseSignOut(auth);
+  void signOutGoogle();
 }
 
 /** Não há conta logada para a ação (a sessão caiu por fora do app). */
@@ -328,10 +339,17 @@ export class SessionEndedError extends Error {
   }
 }
 
+class GoogleDeletionError extends Error {
+  constructor(readonly failure: 'needsGoogle' | 'wrongGoogleAccount' | 'googleUnavailable') {
+    super(failure);
+  }
+}
+
+export type DeleteAccountOutcome = 'deleted' | 'canceled';
+
 /**
- * Exclui a conta no Firebase Auth. Com `password`, reautentica antes com a
- * credencial de e-mail: o Firebase recusa a exclusão
- * (`auth/requires-recent-login`) quando o login foi há muito tempo. O perfil
+ * Exclui a conta no Firebase Auth. Se o Firebase pedir um login recente,
+ * reautentica a mesma conta com a senha ou com o Google. O perfil
  * (`users/{uid}`) e a reserva do @ são apagados no servidor, pela função
  * `deleteUserProfile`; o app não apaga nada no Firestore. A exclusão é uma
  * só chamada ao Auth: ou a conta some, ou fica como estava.
@@ -340,31 +358,79 @@ export class SessionEndedError extends Error {
  * logada, ou sem e-mail para reautenticar, devolve `SessionEndedError`: o fã
  * entra de novo e a exclusão passa.
  */
-export async function deleteAccount(password?: string): Promise<void> {
+export async function deleteAccount(
+  password?: string,
+  confirmGoogle = false,
+  expectedUid?: string,
+): Promise<DeleteAccountOutcome> {
   const auth = getFirebaseAuth();
   await auth.authStateReady();
   const user = auth.currentUser;
   if (!user) throw new SessionEndedError();
-  if (password !== undefined) {
-    // Só e-mail e senha por enquanto; Apple e Google vão reautenticar pelo provedor deles.
+  if (expectedUid && user.uid !== expectedUid) return 'canceled';
+  const hasGoogle = user.providerData?.some((info) => info.providerId === 'google.com') ?? false;
+  const googleOnly = hasGoogle && !toSessionUser(user).hasPassword;
+
+  if (confirmGoogle) {
+    if (!googleOnly) return 'canceled';
+    const google = await googleIdToken().catch((error: unknown) => {
+      if (error instanceof GoogleSignInError) throw new GoogleDeletionError('googleUnavailable');
+      throw error;
+    });
+    if (!google) return 'canceled';
+    if (auth.currentUser?.uid !== user.uid) return 'canceled';
+    try {
+      // O Firebase valida que o token pertence à conta original e não entra em outra.
+      await reauthenticateWithCredential(user, GoogleAuthProvider.credential(google.idToken));
+    } catch (error) {
+      if (auth.currentUser?.uid !== user.uid) return 'canceled';
+      void signOutGoogle();
+      if (error instanceof FirebaseError && error.code === 'auth/user-mismatch') {
+        throw new GoogleDeletionError('wrongGoogleAccount');
+      }
+      if (error instanceof FirebaseError && error.code === 'auth/invalid-credential') {
+        throw new GoogleDeletionError('googleUnavailable');
+      }
+      throw error;
+    }
+  } else if (password !== undefined) {
     if (!user.email) throw new SessionEndedError('Conta sem e-mail para reautenticar.');
     await reauthenticateWithCredential(user, EmailAuthProvider.credential(user.email, password));
   }
-  await deleteUser(user);
+
+  if (auth.currentUser?.uid !== user.uid) return 'canceled';
+  try {
+    await deleteUser(user);
+  } catch (error) {
+    if (googleOnly && error instanceof FirebaseError && error.code === 'auth/requires-recent-login') {
+      throw new GoogleDeletionError('needsGoogle');
+    }
+    throw error;
+  }
+  if (confirmGoogle) void revokeGoogleAccess();
+  else if (hasGoogle) void signOutGoogle();
+  return 'deleted';
 }
 
 /**
  * Por que a exclusão não passou:
- * - `needsPassword`: o login é antigo, e o Firebase pede a senha de novo;
- * - `wrongPassword`: a senha da reautenticação não confere;
+ * - `needsPassword`, `needsGoogle`: o Firebase pede um login recente;
+ * - `wrongPassword`, `wrongGoogleAccount`, `googleUnavailable`: a reautenticação falhou;
  * - `sessionEnded`: a conta já não está logada (ou sumiu, ou foi desativada);
  * - `network`, `tooManyRequests` e `unknown`: a conta continua como estava.
  */
 export type DeleteAccountFailure =
-  'needsPassword' | 'wrongPassword' | 'network' | 'tooManyRequests' | 'sessionEnded' | 'unknown';
+  | GoogleDeletionError['failure']
+  | 'needsPassword'
+  | 'wrongPassword'
+  | 'network'
+  | 'tooManyRequests'
+  | 'sessionEnded'
+  | 'unknown';
 
 export function deleteAccountFailure(error: unknown): DeleteAccountFailure {
   if (error instanceof SessionEndedError) return 'sessionEnded';
+  if (error instanceof GoogleDeletionError) return error.failure;
   if (!(error instanceof FirebaseError)) return 'unknown';
   switch (error.code) {
     case 'auth/requires-recent-login':

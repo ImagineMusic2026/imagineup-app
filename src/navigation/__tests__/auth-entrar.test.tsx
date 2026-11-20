@@ -26,6 +26,7 @@ import {
   handOffEmail,
   readHandedOffEmail,
 } from '@/domains/auth/email-handoff';
+import type { GoogleEntryOutcome } from '@/domains/auth/hooks/use-google-entry';
 import * as focusAfterTransition from '@/hooks/use-focus-after-transition';
 import { t } from '@/i18n';
 import { haptics } from '@/services/haptics';
@@ -73,6 +74,17 @@ jest.mock('@/config/env', () => ({
 jest.mock('@/config/data-source', () => ({
   sourceOf: () => 'fixtures',
   usesFixtures: () => true,
+}));
+
+let mockGoogleAvailable = false;
+const mockGoogleSignIn = jest.fn<Promise<GoogleEntryOutcome | undefined>, []>();
+jest.mock('@/domains/auth/hooks/use-google-entry', () => ({
+  useGoogleEntry: () => ({
+    available: mockGoogleAvailable,
+    isPending: false,
+    error: null,
+    signIn: mockGoogleSignIn,
+  }),
 }));
 
 // Configurado, como no app; um teste desliga para ver o aviso de quem roda sem o `.env`.
@@ -230,6 +242,8 @@ beforeEach(async () => {
   jest.clearAllMocks();
   clearHandedOffEmail();
   mockFirebaseConfigured = true;
+  mockGoogleAvailable = false;
+  mockGoogleSignIn.mockReset();
   // Cada teste diz o que o Firebase responde; sem dizer, dá certo.
   jest
     .mocked(signInWithEmailAndPassword)
@@ -246,6 +260,22 @@ afterEach(() => {
 });
 
 describe('entrar com e-mail: a pergunta do e-mail', () => {
+  it('oferece o Google no e-mail e abre a senha quando a conta precisa ser vinculada', async () => {
+    mockGoogleAvailable = true;
+    mockGoogleSignIn.mockResolvedValue({ status: 'link', email: EMAIL });
+    openSignIn();
+
+    const googleLabel = t('auth.google.continue');
+    await act(async () => {
+      fireEvent.press(button(googleLabel));
+    });
+    expect(mockGoogleSignIn).toHaveBeenCalledTimes(1);
+    expect(await screen.findByRole('header', { name: PASSWORD_TITLE })).toBeTruthy();
+    expect(pill()).toBeTruthy();
+    expect(screen.getByText(t('auth.google.linkPassword'))).toBeTruthy();
+    expect(screen.queryByRole('button', { name: googleLabel })).toBeNull();
+  });
+
   it('abre na pergunta do e-mail, com o foco no campo, sem pílula nem senha', () => {
     openSignIn();
 
