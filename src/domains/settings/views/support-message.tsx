@@ -1,5 +1,5 @@
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useLocalSearchParams, useNavigation, type NativeStackNavigationProp } from 'expo-router';
+import { useLocalSearchParams } from 'expo-router';
 import { CircleCheck } from 'lucide-react-native';
 import { useEffect, useRef } from 'react';
 import { Controller, useForm, useWatch } from 'react-hook-form';
@@ -26,6 +26,7 @@ import {
   useSendSupportMessageMutation,
   type SupportKind,
 } from '@/domains/support';
+import { useFocusAfterTransition } from '@/hooks/use-focus-after-transition';
 import { useIsOnline } from '@/hooks/use-is-online';
 import { useStayOnScreen } from '@/hooks/use-stay-on-screen';
 import { t, type TranslationKey } from '@/i18n';
@@ -72,24 +73,6 @@ const supportSchema = z.object({
 });
 
 type SupportForm = z.infer<typeof supportSchema>;
-
-/**
- * O teclado já aberto: no Android, o `autoFocus` de um campo que monta durante
- * a animação da pilha foca antes de a janela estar pronta, e o teclado não
- * sobe (conferido no emulador em 04/11/2026). O foco vai de novo ao campo
- * quando a entrada da tela termina; no iOS, e com o reduzir movimento, o
- * `autoFocus` já resolveu, e focar de novo não muda nada.
- */
-function useFocusAfterTransition(input: { current: NativeTextInput | null }): void {
-  const navigation = useNavigation<NativeStackNavigationProp<Record<string, object | undefined>>>();
-  useEffect(
-    () =>
-      navigation.addListener('transitionEnd', (event) => {
-        if (!event.data.closing) input.current?.focus();
-      }),
-    [navigation, input],
-  );
-}
 
 interface SupportFormProps {
   kind: SupportKind;

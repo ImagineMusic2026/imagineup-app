@@ -35,9 +35,14 @@ import {
  * - `default`: os formulários do app;
  * - `glass`: as telas de conta, sobre a foto da 1k;
  * - `bare`: sem borda nem fundo, para os campos dentro do card de um grupo (a
- *   tela "Editar perfil"); o foco aparece numa linha embaixo do campo.
+ *   tela "Editar perfil"); o foco aparece numa linha embaixo do campo;
+ * - `hero`: o campo das perguntas da entrada (uma por tela, de uma linha só):
+ *   sem caixa, com o texto grande no centro e só a linha de baixo, que fica à
+ *   vista também fora do foco. O título da pergunta faz de rótulo visível: vai
+ *   com `labelHidden`. Erro e dica saem embaixo, também no centro. O texto do
+ *   campo cresce com a fonte do sistema só até 1,5 (`HERO_MAX_FONT_SCALE`).
  */
-export type TextInputVariant = 'default' | 'glass' | 'bare';
+export type TextInputVariant = 'default' | 'glass' | 'bare' | 'hero';
 
 export interface TextInputProps extends Omit<NativeTextInputProps, 'style'> {
   label: string;
@@ -66,7 +71,8 @@ export interface TextInputProps extends Omit<NativeTextInputProps, 'style'> {
   /**
    * Ação à direita, dentro do campo (o olho da senha): use `TextInputAction`.
    * Um status sem toque (o check do @) vai com `pointerEvents="none"` e oculto
-   * do leitor, e o texto dele chega pelo `accessibilityStatus`.
+   * do leitor, e o texto dele chega pelo `accessibilityStatus`. No `hero`, o
+   * texto ganha à esquerda a largura que a ação ocupa, para seguir no centro.
    */
   trailing?: ReactNode;
   /**
@@ -106,10 +112,18 @@ const REST_BORDER: Record<TextInputVariant, string> = {
   glass: colors.borderGlass,
   // Sem linha parada: o card do grupo desenha as divisórias, e a linha só aparece no foco.
   bare: colors.transparent,
+  // A linha é o único contorno do campo: fica à vista também fora do foco.
+  hero: colors.fieldLine,
 };
 
 // Altura mínima do campo de várias linhas (a bio), em linhas de texto.
 const MULTILINE_MIN_LINES = 3;
+
+// No `hero`, a fonte do campo para em 1,5: os 20 viram 30 pt, o tamanho que o
+// campo comum (15) atinge a 200%. O campo tem uma linha só e não quebra: a
+// 200% seriam 40 pt, e um e-mail comum não cabe na linha. O título da
+// pergunta, o erro e a dica seguem crescendo até 200%.
+const HERO_MAX_FONT_SCALE = 1.5;
 
 /** Erro e dica numa frase só para o leitor, com a pausa de um ponto entre eles. */
 function joinSentences(...parts: (string | undefined)[]): string | undefined {
@@ -154,9 +168,14 @@ export const TextInput = forwardRef<NativeTextInput, TextInputProps>(function Te
 ) {
   const [focused, setFocused] = useState(false);
   const [prefixWidth, setPrefixWidth] = useState(0);
+  // No `hero`, a largura que a ação da direita ocupa, repetida à esquerda do
+  // texto. Nasce na medida do `TextInputAction`, para o texto não andar depois
+  // da primeira medida, e o `onLayout` corrige se a ação for outra.
+  const [trailingWidth, setTrailingWidth] = useState<number>(layout.minTouchTarget);
   const { fontScale } = useWindowDimensions();
   const failed = !!error || invalid;
   const bare = variant === 'bare';
+  const hero = variant === 'hero';
   const multiline = !!props.multiline;
   const hasLeading = !!leadingIcon || !!leadingGlyph;
   const borderStyle = useFocusBorder(
@@ -179,7 +198,7 @@ export const TextInput = forwardRef<NativeTextInput, TextInputProps>(function Te
   const input = (
     <NativeTextInput
       ref={ref}
-      maxFontSizeMultiplier={MAX_FONT_SCALE}
+      maxFontSizeMultiplier={hero ? HERO_MAX_FONT_SCALE : MAX_FONT_SCALE}
       textAlignVertical={multiline ? 'top' : undefined}
       {...props}
       accessibilityLabel={label}
@@ -197,9 +216,12 @@ export const TextInput = forwardRef<NativeTextInput, TextInputProps>(function Te
       }}
       style={[
         styles.input,
+        hero && styles.inputHero,
         multiline && styles.inputMultiline,
         textStart !== undefined && { paddingLeft: textStart },
         !!trailing && styles.inputBeforeTrailing,
+        // Com a ação só de um lado, o centro do texto sairia do centro do campo.
+        hero && !!trailing && { paddingLeft: trailingWidth },
         // Com o anexo, o texto fica com a altura dele (2 linhas no mínimo) e
         // o anexo vem logo embaixo, na mesma caixa.
         !!attachment && [
@@ -267,8 +289,14 @@ export const TextInput = forwardRef<NativeTextInput, TextInputProps>(function Te
         ) : null}
         {trailing ? (
           <View
+            onLayout={
+              hero
+                ? (event) => setTrailingWidth(Math.round(event.nativeEvent.layout.width))
+                : undefined
+            }
             style={[
               styles.trailing,
+              hero && styles.trailingHero,
               multiline && (trailingAtEnd ? styles.trailingMultilineEnd : styles.trailingMultiline),
             ]}
           >
@@ -282,6 +310,7 @@ export const TextInput = forwardRef<NativeTextInput, TextInputProps>(function Te
             <Text
               variant="caption"
               color={colors.danger}
+              style={hero ? styles.heroMessage : undefined}
               accessibilityElementsHidden
               importantForAccessibility="no"
             >
@@ -292,6 +321,7 @@ export const TextInput = forwardRef<NativeTextInput, TextInputProps>(function Te
             <Text
               variant="caption"
               color={colors.textMuted}
+              style={hero ? styles.heroMessage : undefined}
               accessibilityElementsHidden
               importantForAccessibility="no"
             >
@@ -348,6 +378,8 @@ const ACTION_ICON_SIZE = 20;
 const LEADING_ICON_SIZE = 18;
 // Em cima e embaixo do texto no campo de várias linhas.
 const INPUT_PADDING_MULTILINE = spacing.md;
+// No `hero`, do texto até a linha de baixo (12 no desenho das perguntas).
+const HERO_LINE_GAP = spacing.md;
 
 /**
  * Botão de ícone para o `trailing` do campo (olho da senha): alvo de 44 dentro
@@ -401,6 +433,15 @@ const styles = StyleSheet.create({
     borderBottomWidth: borderWidths.default,
     backgroundColor: colors.transparent,
   },
+  // O texto num alvo de 44 e, com uma folga, a linha de baixo: mais forte que
+  // a do `bare`, porque é o único contorno do campo.
+  hero: {
+    minHeight: layout.minTouchTarget + HERO_LINE_GAP + borderWidths.strong,
+    paddingBottom: HERO_LINE_GAP,
+    borderWidth: 0,
+    borderBottomWidth: borderWidths.strong,
+    backgroundColor: colors.transparent,
+  },
   // Sem lineHeight: num campo de uma linha, o iOS desalinha o texto com ele.
   input: {
     flex: 1,
@@ -409,6 +450,16 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontFamily: typography.input.fontFamily,
     fontSize: typography.input.fontSize,
+  },
+  // O texto grande das perguntas, no centro e de ponta a ponta da linha. Sem a
+  // folga de cima e de baixo que o tema do Android põe em todo campo: somada ao
+  // texto de 20, ela passaria dos 44 do alvo.
+  inputHero: {
+    paddingHorizontal: 0,
+    paddingVertical: 0,
+    textAlign: 'center',
+    fontFamily: typography.inputHero.fontFamily,
+    fontSize: typography.inputHero.fontSize,
   },
   inputMultiline: {
     lineHeight: typography.input.lineHeight,
@@ -450,6 +501,10 @@ const styles = StyleSheet.create({
   trailing: {
     paddingRight: spacing.xs,
   },
+  // Sem caixa, a ação fica rente ao fim da linha.
+  trailingHero: {
+    paddingRight: 0,
+  },
   trailingMultiline: {
     alignSelf: 'flex-start',
   },
@@ -463,6 +518,10 @@ const styles = StyleSheet.create({
   bareMessages: {
     paddingHorizontal: spacing.lg,
     paddingBottom: spacing.sm,
+  },
+  // No `hero`, erro e dica acompanham o texto do campo, no centro.
+  heroMessage: {
+    textAlign: 'center',
   },
   action: {
     width: layout.minTouchTarget,

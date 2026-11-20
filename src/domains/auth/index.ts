@@ -1,4 +1,5 @@
 export { signOut } from './api';
+export { preloadPhotoWall, releasePhotoWall } from './components/photo-wall';
 export { ENTRY_STEP_COUNT } from './consts';
 export { useAuthListener } from './hooks/use-auth-listener';
 export { useInviteSync } from './hooks/use-invite-sync';

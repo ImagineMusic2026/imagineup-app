@@ -14,10 +14,10 @@ import {
   type ViewStyle,
 } from 'react-native';
 
-import { Text } from '@/components/text';
+import { MAX_FONT_SCALE, Text } from '@/components/text';
 import { borderWidths, colors, layout, radii, spacing, typography } from '@/theme';
 
-import { TextInput, TextInputAction } from '..';
+import { TextInput, TextInputAction, type TextInputVariant } from '..';
 
 jest.mock('@/hooks/use-prefers-reduced-motion', () => ({
   usePrefersReducedMotion: () => false,
@@ -356,5 +356,191 @@ describe('TextInput nos cards da tela "Editar perfil"', () => {
     expect(StyleSheet.flatten(input.props.style).paddingLeft).toBeUndefined();
     expect(input.props.textAlignVertical).toBeUndefined();
     expect(input.props.accessibilityHint).toBeUndefined();
+  });
+});
+
+describe('TextInput nas perguntas da entrada (uma por tela)', () => {
+  /** A caixa do campo: no `hero`, como no `bare`, é a que só tem a linha de baixo. */
+  const heroFieldStyle = bareFieldStyle;
+
+  const eye = <TextInputAction icon={Eye} onPress={jest.fn()} accessibilityLabel="Mostrar senha" />;
+
+  it('hero: sem fundo, sem borda em volta e sem raio; só a linha de baixo, mais forte e sempre à vista', () => {
+    render(<TextInput label="E-mail" labelHidden variant="hero" />);
+    expect(heroFieldStyle()).toMatchObject({
+      borderWidth: 0,
+      borderBottomWidth: borderWidths.strong,
+      backgroundColor: colors.transparent,
+      borderColor: colors.fieldLine,
+    });
+    expect(heroFieldStyle().borderRadius).toBeUndefined();
+  });
+
+  it('hero: a linha vai a rosa no foco, e o erro vence o foco', () => {
+    const { rerender } = render(<TextInput label="E-mail" labelHidden variant="hero" />);
+    fireEvent(screen.getByLabelText('E-mail'), 'focus');
+    expect(heroFieldStyle().borderColor).toBe(colors.accent);
+
+    rerender(
+      <TextInput label="E-mail" labelHidden variant="hero" error="Digite um e-mail válido." />,
+    );
+    expect(heroFieldStyle().borderColor).toBe(colors.danger);
+
+    fireEvent(screen.getByLabelText('E-mail'), 'blur');
+    expect(heroFieldStyle().borderColor).toBe(colors.danger);
+  });
+
+  it('hero: o texto fica num alvo de 44, com a folga do desenho até a linha', () => {
+    render(<TextInput label="E-mail" labelHidden variant="hero" />);
+    expect(heroFieldStyle()).toMatchObject({
+      minHeight: layout.minTouchTarget + spacing.md + borderWidths.strong,
+      paddingBottom: spacing.md,
+    });
+  });
+
+  it('hero: o texto digitado fica no centro, de ponta a ponta da linha, na fonte do token inputHero', () => {
+    render(<TextInput label="E-mail" labelHidden variant="hero" />);
+    const input = screen.getByLabelText('E-mail');
+    expect(input).toHaveStyle({
+      textAlign: 'center',
+      paddingHorizontal: 0,
+      paddingVertical: 0,
+      fontFamily: typography.inputHero.fontFamily,
+      fontSize: typography.inputHero.fontSize,
+      color: colors.text,
+    });
+    const style = StyleSheet.flatten(input.props.style);
+    expect(style.paddingLeft).toBeUndefined();
+    // Como nos outros campos de uma linha: com lineHeight, o iOS desalinha o texto.
+    expect(style.lineHeight).toBeUndefined();
+  });
+
+  it('hero: a fonte do campo cresce só até 1,5, os 30 pt que o campo comum atinge a 200%', () => {
+    render(<TextInput label="E-mail" labelHidden variant="hero" placeholder="Seu e-mail" />);
+    // A linha é uma só e não quebra: a 200% um e-mail comum não caberia nela.
+    expect(screen.getByLabelText('E-mail')).toHaveProp('maxFontSizeMultiplier', 1.5);
+    // O mesmo tamanho na tela: os 20 do hero a 1,5 e os 15 do campo comum a 200%.
+    expect(typography.inputHero.fontSize * 1.5).toBe(typography.input.fontSize * MAX_FONT_SCALE);
+  });
+
+  it('hero: o erro e a dica não levam o teto do campo: crescem até 200% e quebram a linha', () => {
+    render(
+      <TextInput
+        label="Senha"
+        labelHidden
+        variant="hero"
+        error="Senha curta"
+        hint="Pelo menos 6 caracteres"
+      />,
+    );
+    for (const message of ['Senha curta', 'Pelo menos 6 caracteres']) {
+      const text = screen.getByText(message, { includeHiddenElements: true });
+      expect(text).toHaveProp('maxFontSizeMultiplier', MAX_FONT_SCALE);
+      expect(text.props.numberOfLines).toBeUndefined();
+    }
+  });
+
+  it.each<TextInputVariant>(['default', 'glass', 'bare'])(
+    'fora do hero (%s), o campo segue crescendo até 200%',
+    (variant) => {
+      render(<TextInput label="E-mail" variant={variant} />);
+      expect(screen.getByLabelText('E-mail')).toHaveProp('maxFontSizeMultiplier', MAX_FONT_SCALE);
+    },
+  );
+
+  it('hero com a ação da direita: o texto ganha à esquerda a largura dela e segue no centro', () => {
+    render(<TextInput label="Senha" labelHidden variant="hero" secureTextEntry trailing={eye} />);
+
+    // Sem caixa, a ação fica rente ao fim da linha.
+    const box = hostBox(screen.getByRole('button', { name: 'Mostrar senha' }));
+    expect(box).toHaveStyle({ paddingRight: 0 });
+    // Antes da primeira medida, já vale a largura do alvo de 44 da ação.
+    expect(screen.getByLabelText('Senha')).toHaveStyle({
+      textAlign: 'center',
+      paddingLeft: layout.minTouchTarget,
+      paddingRight: 0,
+    });
+
+    // Uma ação de outra largura: a medida corrige.
+    fireEvent(box, 'layout', { nativeEvent: { layout: { width: 59.6, height: 44, x: 0, y: 0 } } });
+    expect(screen.getByLabelText('Senha')).toHaveStyle({ paddingLeft: 60, paddingRight: 0 });
+  });
+
+  it('hero: erro e dica saem embaixo, no centro, e chegam ao leitor pelo próprio campo', () => {
+    render(
+      <TextInput
+        label="Senha"
+        labelHidden
+        variant="hero"
+        error="Senha curta"
+        hint="Pelo menos 6 caracteres"
+      />,
+    );
+    expect(screen.getByText('Senha curta', { includeHiddenElements: true })).toHaveStyle({
+      textAlign: 'center',
+      color: colors.danger,
+    });
+    expect(
+      screen.getByText('Pelo menos 6 caracteres', { includeHiddenElements: true }),
+    ).toHaveStyle({ textAlign: 'center', color: colors.textMuted });
+    expect(screen.queryByText('Senha curta')).toBeNull();
+    expect(screen.queryByText('Pelo menos 6 caracteres')).toBeNull();
+    expect(screen.getByLabelText('Senha')).toHaveProp(
+      'accessibilityHint',
+      'Senha curta. Pelo menos 6 caracteres.',
+    );
+  });
+
+  it('hero: o resto do contrato não muda (rótulo só para o leitor, status na dica, ref)', () => {
+    const ref = createRef<NativeTextInput>();
+    render(
+      <TextInput
+        ref={ref}
+        label="Nome"
+        labelHidden
+        variant="hero"
+        placeholder="Seu nome"
+        accessibilityStatus="É o nome que os outros fãs veem."
+      />,
+    );
+    const input = screen.getByLabelText('Nome');
+    expect(input).toHaveProp('accessibilityHint', 'É o nome que os outros fãs veem.');
+    expect(input).toHaveProp('placeholderTextColor', colors.textMuted);
+    expect(screen.queryByText('Nome', { includeHiddenElements: true })).toBeNull();
+    expect(
+      screen.queryByText('É o nome que os outros fãs veem.', { includeHiddenElements: true }),
+    ).toBeNull();
+    expect(ref.current).not.toBeNull();
+  });
+
+  it('fora do hero, nada muda: a ação não mexe no começo do texto, e erro e dica não vão ao centro', () => {
+    render(
+      <TextInput
+        label="Senha"
+        variant="glass"
+        error="Senha curta"
+        hint="Pelo menos 6 caracteres"
+        trailing={eye}
+      />,
+    );
+
+    const box = hostBox(screen.getByRole('button', { name: 'Mostrar senha' }));
+    expect(box).toHaveStyle({ paddingRight: spacing.xs });
+    expect(box.props.onLayout).toBeUndefined();
+
+    const input = StyleSheet.flatten(screen.getByLabelText('Senha').props.style);
+    expect(input).toMatchObject({
+      paddingHorizontal: spacing.lg,
+      paddingRight: 0,
+      fontSize: typography.input.fontSize,
+    });
+    expect(input.paddingLeft).toBeUndefined();
+    expect(input.paddingVertical).toBeUndefined();
+    expect(input.textAlign).toBeUndefined();
+
+    for (const message of ['Senha curta', 'Pelo menos 6 caracteres']) {
+      const text = screen.getByText(message, { includeHiddenElements: true });
+      expect(StyleSheet.flatten(text.props.style).textAlign).toBeUndefined();
+    }
   });
 });

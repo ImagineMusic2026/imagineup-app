@@ -25,6 +25,17 @@ import { playAuthExit } from './use-auth-exit';
 export type SignUpOutcome =
   { status: 'done' } | { status: 'inviteRejected'; reason: InviteRejection };
 
+/** O que a tela de cadastro pede ao envio. */
+export interface SignUpOptions {
+  /**
+   * Roda com a conta pronta e o toque de sucesso dado, antes de as telas de
+   * conta apagarem: a tela mostra o "Conta criada" e devolve a promessa do
+   * tempo de lê-lo. Só no cadastro que segue direto: parado no estágio
+   * "código recusado", ele não roda, nem depois, no "Continuar" do estágio.
+   */
+  beforeExit?: () => Promise<void>;
+}
+
 // O fã que parou no estágio "código recusado" continua seguro nas telas de
 // conta: a função que solta fica aqui, para o "Continuar" soltar depois.
 let heldRelease: (() => void) | null = null;
@@ -82,14 +93,15 @@ async function claimTypedCode(bound: BoundInvite): Promise<InviteRejection | nul
  *    nele, sem esperar a gravação;
  * 4. com o código digitado, espera o claim (até 8 s): recusado (não existe ou
  *    não vale), para no estágio "código recusado", ainda segurando o fã;
- * 5. apaga as telas de conta em fade e solta o fã. O convite do link vai pela
- *    sincronização (`useInviteSync`), assim que o fã é solto.
+ * 5. espera a tela mostrar o "Conta criada" (`beforeExit`), apaga as telas de
+ *    conta em fade e solta o fã. O convite do link vai pela sincronização
+ *    (`useInviteSync`), assim que o fã é solto.
  *
  * A conta nasce logada no passo 1, e o guard tiraria a tela na hora: o
  * `holdAuth` segura o fã fora até o passo 5. Quem troca para a escolha de
  * artistas é o guard, quando ele solta.
  */
-export function useSignUp() {
+export function useSignUp({ beforeExit }: SignUpOptions = {}) {
   return useMutation<SignUpOutcome, Error, SignUpForm>({
     mutationFn: async (form) => {
       releaseHeldSignUp();
@@ -120,6 +132,12 @@ export function useSignUp() {
           }
         }
         haptics.trigger('success');
+        try {
+          await beforeExit?.();
+        } catch {
+          // A conta já existe: o momento que falha não vira "não foi possível
+          // criar a conta", e o cadastro segue para a saída sem ele.
+        }
         await playAuthExit();
         return { status: 'done' };
       } finally {

@@ -24,10 +24,20 @@
     "password": "Senha",
     "showPassword": "Mostrar senha",
     "hidePassword": "Esconder senha",
+    "emailPlaceholder": "Seu e-mail",
+    "passwordPlaceholder": "Sua senha",
+    "emailPill": "Trocar o e-mail {{email}}",
+    "emptyHint": "Preencha o campo para continuar.",
     "missingConfig": "O Firebase ainda não foi configurado. Preencha o arquivo .env a partir do .env.example.",
     "welcome": {
       "title": "ImagineUP",
-      "lead": "A central de fãs oficial dos artistas da Imagine. Siga, comente e ganhe pontos levando gente nova pro fandom.",
+      "tagline": {
+        "follow": "Siga",
+        "comment": "Comente",
+        "earn": "Ganhe",
+        "points": "pontos",
+        "label": "Siga. Comente. Ganhe pontos."
+      },
       "createAccount": "Criar minha conta",
       "haveAccount": "Já tenho conta"
     },
@@ -39,17 +49,16 @@
     },
     "signIn": {
       "title": "Bom te ver de novo",
-      "lead": "Entre com o e-mail e a senha da sua conta.",
       "submit": "Entrar",
       "forgot": "Esqueci minha senha",
-      "forgotNeedsEmail": "Digite seu e-mail para receber o link.",
       "resetSent": "Se existir uma conta com esse e-mail, enviamos um link para criar uma senha nova.",
+      "resetSentShort": "Pedido enviado. Confira seu e-mail.",
+      "emailQuestion": "Qual é o e-mail da sua conta?",
+      "passwordTitle": "Digite sua senha",
       "noAccount": "Ainda não tem conta?",
       "createAccount": "Criar conta"
     },
     "signUp": {
-      "title": "Crie sua conta",
-      "lead": "Leva menos de um minuto. Depois você escolhe seus artistas.",
       "name": "Seu nome",
       "nameHint": "É assim que você aparece no ranking e nos comentários.",
       "passwordHint": "Pelo menos {{min}} caracteres.",
@@ -67,7 +76,24 @@
         "notAllowed": "Esse código não vale para esta conta."
       },
       "continue": "Continuar",
-      "skipInvite": "Continuar sem código"
+      "skipInvite": "Continuar sem código",
+      "emailTitle": "Qual é o seu e-mail?",
+      "nameTitle": "Como você se chama?",
+      "passwordTitle": "Crie uma senha",
+      "haveInvite": "Tenho um código de convite",
+      "inviteApplied": "Convite {{code}} · Trocar",
+      "inviteAppliedLabel": "Convite {{code}}. Trocar o código.",
+      "inviteStepTitle": "Qual é o código do convite?",
+      "created": {
+        "title": "Conta criada!",
+        "lead": "Agora escolha seus artistas."
+      },
+      "strength": {
+        "short": "Curta",
+        "good": "Boa",
+        "strong": "Forte",
+        "status": "Força da senha: {{level}}."
+      }
     },
     "errors": {
       "invalidCredentials": "E-mail ou senha incorretos.",

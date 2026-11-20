@@ -521,6 +521,9 @@ export function authErrorMessageKey(error: unknown, action: AuthAction = 'signIn
     case 'auth/email-already-in-use':
       return 'auth.errors.emailInUse';
     case 'auth/weak-password':
+    // A política de senha do projeto, como na troca de senha: sem ela aqui, o
+    // cadastro dizia só que não foi possível criar a conta, sem apontar a senha.
+    case 'auth/password-does-not-meet-requirements':
       return 'auth.errors.weakPassword';
     case 'auth/operation-not-allowed':
       return 'auth.errors.notAllowed';
