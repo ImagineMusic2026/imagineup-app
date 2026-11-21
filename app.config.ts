@@ -1,4 +1,5 @@
 import type { ConfigContext, ExpoConfig } from 'expo/config';
+import { withAndroidManifest } from 'expo/config-plugins';
 
 /**
  * Projeto no expo.dev, na conta da cliente. O ID aparece na página do projeto
@@ -12,7 +13,7 @@ const EAS_PROJECT_ID = '6984e734-3efc-40bc-8b9b-4d65bffbe085';
 const BUNDLE_ID = 'br.com.imaginegroup.imagineup';
 const BACKGROUND_COLOR = '#0B0B10';
 
-export default ({ config }: ConfigContext): ExpoConfig => ({
+const getAppConfig = ({ config }: ConfigContext): ExpoConfig => ({
   ...config,
   name: 'ImagineUP',
   slug: EXPO_SLUG,
@@ -88,3 +89,21 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     eas: EAS_PROJECT_ID ? { projectId: EAS_PROJECT_ID } : {},
   },
 });
+
+export default (context: ConfigContext): ExpoConfig =>
+  withAndroidManifest(getAppConfig(context), (config) => {
+    const features = (config.modResults.manifest['uses-feature'] ??= []);
+    const optionalFeatures = ['android.hardware.screen.portrait', 'android.hardware.wifi'];
+
+    // O Google Play infere esses requisitos pela orientação e por ACCESS_WIFI_STATE.
+    for (const name of optionalFeatures) {
+      const declaration = features.find((feature) => feature.$['android:name'] === name);
+      if (declaration) {
+        declaration.$['android:required'] = 'false';
+      } else {
+        features.push({ $: { 'android:name': name, 'android:required': 'false' } });
+      }
+    }
+
+    return config;
+  });
