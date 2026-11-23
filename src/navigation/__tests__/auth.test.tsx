@@ -13,6 +13,7 @@ import { PhotoWall } from '@/domains/auth/components/photo-wall';
 import { t } from '@/i18n';
 import { haptics } from '@/services/haptics';
 import { useSessionStore } from '@/stores/session';
+import { colors } from '@/theme';
 
 // A abertura (1k) e o que é comum às telas de conta do grupo `(auth)`: o
 // fundo com a parede de fotos, a troca entre a abertura, o cadastro e o entrar
@@ -77,6 +78,13 @@ function RootLayout() {
 }
 
 /**
+ * A pilha nativa do react-native-screens aparece no teste como o componente
+ * nativo dela, com as props que o iOS usa. (Tipada como string: o tipo de
+ * elemento do React só lista os componentes nativos da web.)
+ */
+const NATIVE_STACK: string = 'RNSScreenStack';
+
+/**
  * O grupo `(auth)` de verdade, pelos próprios arquivos de rota: a pilha com o
  * fundo da 1k e as três telas de conta. Assim a rota fina que aponta para cada
  * tela (`/entrar` é a abertura) também fica travada.
@@ -109,6 +117,19 @@ describe('entrada no app', () => {
     // A parede é do fundo do grupo, atrás da pilha: uma só, e fora do leitor de tela.
     expect(screen.UNSAFE_getAllByType(PhotoWall)).toHaveLength(1);
     expect(screen.queryAllByRole('image')).toHaveLength(0);
+  });
+
+  it('a pilha do grupo deixa o fundo à vista: o contêiner nativo dela é transparente', () => {
+    renderRouter(appTree, { initialUrl: '/entrar' });
+    // O Expo Router pinta o contêiner nativo de cada pilha com o fundo do tema.
+    // No iOS, o da pilha do grupo cobria a parede, o véu, as listras e o logo,
+    // que ficam atrás dela. A busca fica dentro do grupo (o `AuthLayout` é a
+    // própria `AuthStack`), para a raiz do teste não entrar na conta.
+    const stacks = screen
+      .UNSAFE_getByType(AuthLayout)
+      .findAll((node) => node.type === NATIVE_STACK);
+    expect(stacks).toHaveLength(1);
+    expect(stacks[0].props.nativeContainerBackgroundColor).toBe(colors.transparent);
   });
 
   it('a abertura leva ao cadastro e a entrar com e-mail, e o link de baixo de cada um troca entre eles', async () => {
