@@ -8,6 +8,7 @@ export { AuthStack } from './views/auth-stack';
 export { ChangeEmailScreen } from './views/change-email';
 export { ChangePasswordScreen } from './views/change-password';
 export { DeleteAccountScreen } from './views/delete-account';
+export { GoogleInviteScreen } from './views/google-invite';
 export { SignInScreen } from './views/sign-in';
 export { SignUpScreen } from './views/sign-up';
 export { WelcomeScreen } from './views/welcome';

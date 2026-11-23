@@ -26,6 +26,7 @@ import { authErrorMessageKey, type InviteRejection } from '../api';
 import { AccountMoment, type AccountMomentPhase } from '../components/account-moment';
 import { EmailPill } from '../components/email-pill';
 import { FormFooter } from '../components/form-footer';
+import { GoogleButton } from '../components/google-button';
 import { PasswordField } from '../components/password-field';
 import { PasswordMeter, passwordMeterStatus } from '../components/password-meter';
 import { QuestionLayout, type QuestionLayoutProps } from '../components/question-layout';
@@ -35,8 +36,9 @@ import { TermsNotice } from '../components/terms-notice';
 import { ACCOUNT_CREATED_HOLD_MS, ENTRY_STEP_COUNT } from '../consts';
 import { handOffEmail } from '../email-handoff';
 import { backToWelcome, normalizedEmail } from '../entry-questions';
+import { useGoogleEntry } from '../hooks/use-google-entry';
 import {
-  releaseHeldSignUp,
+  releaseHeldEmailSignUp,
   useFinishSignUp,
   useSignUp,
   type SignUpOutcome,
@@ -137,6 +139,7 @@ const goToSignIn = () => router.replace('/entrar-com-email');
  * parede de fotos do fundo apareceria por um instante.
  */
 export function SignUpScreen() {
+  const googleEntry = useGoogleEntry();
   // A conta deste envio já nasceu: o momento passa a dizer "Conta criada".
   const [created, setCreated] = useState(false);
   const signUp = useSignUp({
@@ -197,9 +200,10 @@ export function SignUpScreen() {
   const notConfigured = !isFirebaseConfigured;
   const stage = rejection !== null;
   const pending = signUp.isPending || finish.isPending;
+  const googlePending = googleEntry.isPending;
   // Sem volta: um envio em andamento (a conta nascendo, o convite sendo
   // conferido) ou a conta que já existe (o estágio).
-  const locked = pending || stage;
+  const locked = pending || googlePending || stage;
   // O momento dura o envio, que só termina depois de as telas de conta
   // apagarem. Quem tira a tela em seguida é o guard; se ele não trocar a pilha
   // (a sessão caiu no meio do caminho), a pergunta volta, e o fã não fica
@@ -258,7 +262,7 @@ export function SignUpScreen() {
 
   // A tela que some no estágio "código recusado" sem passar pelos botões (um
   // link aberto por fora, por exemplo) solta o fã: a trava não fica sem tela.
-  useEffect(() => releaseHeldSignUp, []);
+  useEffect(() => releaseHeldEmailSignUp, []);
 
   // O código do link guardado vai para o formulário se o fã ainda não decidiu
   // o convite, mesmo que o desvio nunca apareça. No estágio "código recusado",
@@ -304,6 +308,7 @@ export function SignUpScreen() {
    */
   const goTo = (next: SignUpStep): void => {
     if (signUp.isError || signUp.isSuccess) signUp.reset();
+    if (googleEntry.error) googleEntry.reset();
     setMoves((count) => count + 1);
     setStep(next);
   };
@@ -324,6 +329,19 @@ export function SignUpScreen() {
   const edited = (changed: 'email' | 'name' | 'password'): void => {
     if (formState.errors[changed]) clearErrors(changed);
     if (signUp.isError) signUp.reset();
+    if (googleEntry.error) googleEntry.reset();
+  };
+
+  const enterWithGoogle = async (): Promise<void> => {
+    if (locked) return;
+    Keyboard.dismiss();
+    const outcome = await googleEntry.signIn();
+    if (outcome?.status === 'askInvite') {
+      router.replace('/codigo-de-convite');
+    } else if (outcome?.status === 'link') {
+      handOffEmail(outcome.email, 'googleLink');
+      goToSignIn();
+    }
   };
 
   // O e-mail e o nome: confere só o campo da pergunta e segue para a próxima.
@@ -455,6 +473,8 @@ export function SignUpScreen() {
   let notice: QuestionLayoutProps['notice'];
   if (notConfigured) {
     notice = { text: t('auth.missingConfig'), tone: 'danger' };
+  } else if (visible === 'email' && googleEntry.error) {
+    notice = { text: t(googleEntry.error), tone: 'danger' };
   } else if (submitErrorKey && !emailRefusal && !passwordRefusal) {
     notice = { text: t(submitErrorKey), tone: 'danger' };
   }
@@ -476,6 +496,7 @@ export function SignUpScreen() {
         question={t('auth.signUp.haveAccount')}
         actionLabel={t('auth.signUp.signIn')}
         onAction={goToSignIn}
+        disabled={googlePending}
       />
     );
   } else if (step === 'name') {
@@ -531,10 +552,11 @@ export function SignUpScreen() {
             <StepFooter
               // No estágio a conta já existe: não há pergunta para onde voltar.
               onBack={stage ? undefined : back}
+              backDisabled={googlePending}
               label={action.label}
               onPress={action.run}
               loading={stage && finish.isPending}
-              disabled={empty || (visible === 'password' && notConfigured)}
+              disabled={empty || googlePending || (visible === 'password' && notConfigured)}
               accessibilityHint={empty ? t('auth.emptyHint') : undefined}
             />
           }
@@ -557,6 +579,7 @@ export function SignUpScreen() {
                     labelHidden
                     placeholder={t('auth.emailPlaceholder')}
                     value={value}
+                    editable={!googlePending}
                     onChangeText={(text) => {
                       onChange(text);
                       edited('email');
@@ -582,7 +605,15 @@ export function SignUpScreen() {
                   label={t('auth.signUp.signIn')}
                   accessibilityLabel={t('auth.signUp.signInWithEmail')}
                   onPress={signInWithThisEmail}
+                  disabled={googlePending}
                   style={styles.link}
+                />
+              ) : null}
+              {visible === 'email' && googleEntry.available ? (
+                <GoogleButton
+                  onPress={() => void enterWithGoogle()}
+                  loading={googlePending}
+                  disabled={pending}
                 />
               ) : null}
             </StepField>

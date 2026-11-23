@@ -2,9 +2,10 @@
  * Por que o e-mail chega pronto à tela de entrar:
  * - `prefill`: só para não digitar de novo;
  * - `emailInUse`: o cadastro descobriu, ao criar a conta, que o e-mail já tem
- *   uma. A tela de entrar abre na senha e diz por quê.
+ *   uma. A tela de entrar abre na senha e diz por quê;
+ * - `googleLink`: recebe a senha da conta existente antes de vincular o Google.
  */
-export type EmailHandoffReason = 'prefill' | 'emailInUse';
+export type EmailHandoffReason = 'prefill' | 'emailInUse' | 'googleLink';
 
 /**
  * E-mail que o cadastro passa para o entrar quando ele já tem conta. Fica só

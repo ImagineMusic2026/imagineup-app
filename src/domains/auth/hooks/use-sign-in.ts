@@ -1,11 +1,12 @@
 import { useMutation } from '@tanstack/react-query';
-import { AccessibilityInfo } from 'react-native';
+import { AccessibilityInfo, Alert } from 'react-native';
 
 import { t } from '@/i18n';
 import { haptics } from '@/services/haptics';
 import { useSessionStore } from '@/stores/session';
 
 import { authErrorMessageKey, signInWithEmail } from '../api';
+import { linkPendingGoogle, type GoogleLinkOutcome } from '../google-entry';
 import type { SignInForm } from '../schemas';
 import { playAuthExit } from './use-auth-exit';
 
@@ -17,12 +18,19 @@ export function useSignIn() {
   return useMutation<void, Error, SignInForm>({
     mutationFn: async ({ email, password }) => {
       const release = useSessionStore.getState().holdAuth();
+      let linked: GoogleLinkOutcome | null;
       try {
-        await signInWithEmail(email, password);
+        const user = await signInWithEmail(email, password);
+        linked = await linkPendingGoogle(user);
         haptics.trigger('success');
         await playAuthExit();
       } finally {
         release();
+      }
+      if (linked === 'linked') {
+        AccessibilityInfo.announceForAccessibilityWithOptions(t('auth.google.linked'), { queue: true });
+      } else if (linked === 'failed') {
+        Alert.alert(t('auth.google.linkFailed'), t('auth.google.linkFailedDetails'));
       }
     },
     onError: (error) => {

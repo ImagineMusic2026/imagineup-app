@@ -41,6 +41,19 @@
       "createAccount": "Criar minha conta",
       "haveAccount": "Já tenho conta"
     },
+    "google": {
+      "continue": "Continuar com Google",
+      "signingIn": "Abrindo o login com Google",
+      "linkPassword": "Confirme a senha do ImagineUP para vincular sua conta do Google.",
+      "linked": "Sua conta do Google foi vinculada.",
+      "linkFailed": "Não foi possível vincular o Google",
+      "linkFailedDetails": "Você entrou com sua senha. Para vincular o Google, tente novamente pela tela de entrada.",
+      "errors": {
+        "playServices": "Atualize o Google Play Services para continuar com Google.",
+        "unavailable": "O login com Google está indisponível neste aparelho.",
+        "unknown": "Não foi possível continuar com Google. Tente novamente."
+      }
+    },
     "terms": {
       "continue": "Ao continuar, você aceita os {{terms}} e a {{privacy}} da Imagine Music.",
       "signUp": "Ao criar a conta, você aceita os {{terms}} e a {{privacy}}.",
@@ -1044,11 +1057,15 @@
     "passwordLead": "Por segurança, confirme sua senha para excluir a conta.",
     "password": "Sua senha",
     "confirm": "Confirmar e excluir",
+    "confirmGoogle": "Confirmar com Google e excluir",
     "offline": "Sem internet. Conecte-se para excluir a conta.",
     "done": "Sua conta foi excluída.",
     "errors": {
       "needsPassword": "Por segurança, confirme sua senha para excluir a conta.",
+      "needsGoogle": "Por segurança, confirme a conta do Google usada no ImagineUP para excluir a conta.",
       "wrongPassword": "Senha incorreta.",
+      "wrongGoogleAccount": "Escolha a conta do Google vinculada ao seu perfil do ImagineUP.",
+      "googleUnavailable": "Não foi possível confirmar com Google. Entre novamente no ImagineUP para excluir a conta.",
       "network": "Sem conexão. Sua conta continua como estava. Confira a internet e tente de novo.",
       "tooManyRequests": "Muitas tentativas. Espere um pouco e tente de novo.",
       "sessionEnded": "Sua sessão terminou. Entre de novo para excluir a conta.",
