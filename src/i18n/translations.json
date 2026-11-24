@@ -66,6 +66,7 @@
       "forgot": "Esqueci minha senha",
       "resetSent": "Se existir uma conta com esse e-mail, enviamos um link para criar uma senha nova.",
       "resetSentShort": "Pedido enviado. Confira seu e-mail.",
+      "googleOnlyHint": "Já entrou com o Google em outro aparelho? Toque em “{{action}}” para criar uma senha.",
       "emailQuestion": "Qual é o e-mail da sua conta?",
       "passwordTitle": "Digite sua senha",
       "noAccount": "Ainda não tem conta?",

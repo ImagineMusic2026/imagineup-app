@@ -8,6 +8,7 @@ import {
   renderRouter,
   screen,
   waitFor,
+  within,
 } from 'expo-router/testing-library';
 import { FirebaseError } from 'firebase/app';
 import {
@@ -129,6 +130,8 @@ const PASSWORD_TITLE = t('auth.signIn.passwordTitle');
 const EMPTY_HINT = t('auth.emptyHint');
 const IN_USE = t('auth.errors.emailInUse');
 const RESET_SENT = t('auth.signIn.resetSentShort');
+// O caminho da conta que só entra com o Google, onde não há o botão dele (o iPhone).
+const GOOGLE_ONLY_HINT = t('auth.signIn.googleOnlyHint', { action: t('auth.signIn.forgot') });
 
 // O campo da pergunta à vista. O da outra pergunta segue montado, guardado
 // fora do leitor de tela: as buscas comuns não o acham.
@@ -630,7 +633,9 @@ describe('entrar com e-mail: a senha', () => {
     expect(screen.getByText(message, { includeHiddenElements: true })).toBeTruthy();
     // E só nele: acima do pé, a mesma frase seria lida duas vezes.
     expect(screen.queryByText(message)).toBeNull();
-    expect(announce()).toHaveBeenCalledWith(message);
+    // Sem o botão do Google (o padrão destes testes, como no iPhone), o anúncio
+    // leva junto o aviso que aparece acima do pé.
+    expect(announce()).toHaveBeenCalledWith(`${message} ${GOOGLE_ONLY_HINT}`);
     expect(haptics.trigger).toHaveBeenCalledWith('error');
     expect(useSessionStore.getState().authHolds).toBe(0);
     // A pergunta e o e-mail seguem os mesmos, para corrigir a senha ou trocar o e-mail.
@@ -640,6 +645,134 @@ describe('entrar com e-mail: a senha', () => {
     fireEvent.changeText(passwordField(), 'senha-certa');
     await waitFor(() => expect(passwordField().props.accessibilityHint).toBeUndefined());
     expect(screen.queryByText(message, { includeHiddenElements: true })).not.toBeOnTheScreen();
+    expect(screen.queryByText(GOOGLE_ONLY_HINT)).not.toBeOnTheScreen();
+  });
+
+  it('sem o botão do Google (o iPhone), a senha recusada mostra embaixo do link o caminho da conta que só entra com o Google, e pedir o link troca o aviso pela confirmação', async () => {
+    jest
+      .mocked(signInWithEmailAndPassword)
+      .mockRejectedValueOnce(new FirebaseError('auth/invalid-credential', 'recusada'));
+    await openPasswordStep();
+
+    await submitPassword('senha-errada');
+
+    expect(await screen.findByText(GOOGLE_ONLY_HINT)).toBeTruthy();
+    // Na rolagem, com o campo e o link, e não no pé fixo: com a fonte grande e
+    // o teclado aberto, uma frase longa no pé tirava o link da vista.
+    expect(within(screen.getByTestId('question-field')).getByText(GOOGLE_ONLY_HINT)).toBeTruthy();
+    // O aviso leva ao link que está logo acima, pelo nome que o fã vê nele.
+    expect(GOOGLE_ONLY_HINT).toContain(`“${t('auth.signIn.forgot')}”`);
+    // Nada de outra plataforma no app de iPhone (diretriz 2.3.10 da App Store).
+    expect(GOOGLE_ONLY_HINT).not.toMatch(/android|google play/i);
+
+    await act(async () => {
+      fireEvent.press(forgot());
+    });
+
+    expect(await screen.findByText(RESET_SENT)).toBeTruthy();
+    expect(screen.queryByText(GOOGLE_ONLY_HINT)).toBeNull();
+    expect(sendPasswordResetEmail).toHaveBeenCalledWith({}, EMAIL);
+  });
+
+  it('com o botão do Google no aparelho, a senha recusada fica só no campo, sem o aviso da conta que só entra com o Google', async () => {
+    mockGoogleAvailable = true;
+    jest
+      .mocked(signInWithEmailAndPassword)
+      .mockRejectedValueOnce(new FirebaseError('auth/invalid-credential', 'recusada'));
+    await openPasswordStep();
+    const message = t('auth.errors.invalidCredentials');
+
+    await submitPassword('senha-errada');
+
+    await waitFor(() => expect(passwordField()).toHaveProp('accessibilityHint', message));
+    expect(announce()).toHaveBeenCalledWith(message);
+    expect(screen.queryByText(GOOGLE_ONLY_HINT)).toBeNull();
+  });
+
+  it('o link pedido enquanto a senha vai: com a confirmação antes da recusa, nem a tela nem o anúncio trazem o aviso', async () => {
+    let refuse: (error: Error) => void = () => undefined;
+    jest.mocked(signInWithEmailAndPassword).mockReturnValueOnce(
+      new Promise<UserCredential>((_resolve, reject) => {
+        refuse = reject;
+      }),
+    );
+    await openPasswordStep();
+    await submitPassword('senha-errada');
+
+    await act(async () => {
+      fireEvent.press(forgot());
+    });
+    expect(await screen.findByText(RESET_SENT)).toBeTruthy();
+
+    await act(async () => {
+      refuse(new FirebaseError('auth/invalid-credential', 'recusada'));
+    });
+
+    // O link acabou de ser pedido: mandar tocar nele de novo seria contra a tela.
+    const message = t('auth.errors.invalidCredentials');
+    await waitFor(() => expect(announce()).toHaveBeenLastCalledWith(message));
+    expect(screen.getByText(RESET_SENT)).toBeTruthy();
+    expect(screen.queryByText(GOOGLE_ONLY_HINT)).toBeNull();
+  });
+
+  it('o link pedido enquanto a senha vai: com a recusa antes da confirmação, o aviso não aparece nem é anunciado', async () => {
+    let refuse: (error: Error) => void = () => undefined;
+    let finish: () => void = () => undefined;
+    jest.mocked(signInWithEmailAndPassword).mockReturnValueOnce(
+      new Promise<UserCredential>((_resolve, reject) => {
+        refuse = reject;
+      }),
+    );
+    jest.mocked(sendPasswordResetEmail).mockReturnValueOnce(
+      new Promise<void>((resolve) => {
+        finish = resolve;
+      }),
+    );
+    await openPasswordStep();
+    await submitPassword('senha-errada');
+    await act(async () => {
+      fireEvent.press(forgot());
+    });
+    // A tela já mostra o pedido andando (o TanStack Query avisa no ciclo seguinte).
+    await waitFor(() => expect(forgot()).toBeDisabled());
+
+    await act(async () => {
+      refuse(new FirebaseError('auth/invalid-credential', 'recusada'));
+    });
+
+    // O pedido ainda anda, com o link desligado: o aviso mandaria tocar nele.
+    const message = t('auth.errors.invalidCredentials');
+    await waitFor(() => expect(announce()).toHaveBeenLastCalledWith(message));
+    expect(screen.queryByText(GOOGLE_ONLY_HINT)).toBeNull();
+
+    await act(async () => {
+      finish();
+    });
+    expect(await screen.findByText(RESET_SENT)).toBeTruthy();
+    expect(screen.queryByText(GOOGLE_ONLY_HINT)).toBeNull();
+  });
+
+  it('o fã que volta ao e-mail com a senha indo não ouve o aviso quando a recusa chega', async () => {
+    let refuse: (error: Error) => void = () => undefined;
+    jest.mocked(signInWithEmailAndPassword).mockReturnValueOnce(
+      new Promise<UserCredential>((_resolve, reject) => {
+        refuse = reject;
+      }),
+    );
+    await openPasswordStep();
+    await submitPassword('senha-errada');
+
+    fireEvent.press(pill());
+    expect(title(EMAIL_TITLE)).toBeTruthy();
+    await act(async () => {
+      refuse(new FirebaseError('auth/invalid-credential', 'recusada'));
+    });
+
+    // Na pergunta do e-mail não há o link: o aviso não cabe nem no anúncio.
+    await waitFor(() =>
+      expect(announce()).toHaveBeenLastCalledWith(t('auth.errors.invalidCredentials')),
+    );
+    expect(screen.queryByText(GOOGLE_ONLY_HINT)).toBeNull();
   });
 
   it('a credencial recusada não acompanha o fã que volta para trocar o e-mail', async () => {
@@ -674,6 +807,8 @@ describe('entrar com e-mail: a senha', () => {
       expect(await screen.findByText(t(key))).toBeTruthy();
       expect(announce()).toHaveBeenCalledWith(t(key));
       expect(passwordField().props.accessibilityHint).toBeUndefined();
+      // O aviso da conta que só entra com o Google é só da senha recusada.
+      expect(screen.queryByText(GOOGLE_ONLY_HINT)).toBeNull();
 
       // Voltou a digitar: a mensagem sai.
       fireEvent.changeText(passwordField(), 'outra-senha');
