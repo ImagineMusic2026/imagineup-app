@@ -21,10 +21,18 @@ export interface GoogleButtonProps {
   onPress: () => void;
   loading: boolean;
   disabled?: boolean;
+  /**
+   * Mostra embaixo do botão o aviso de que criar a conta aceita os Termos e a
+   * Política. Vale sempre no cadastro. No entrar, só quando a tela abriu sem a
+   * abertura embaixo (por um link do app): pela abertura, o aviso dela ("Ao
+   * continuar, você aceita...") já cobre quem cria a conta pelo Google ali, e
+   * a tela fica mais limpa (pedido do dono de 24/11/2026).
+   */
+  showTerms: boolean;
 }
 
 /** Alternativa ao e-mail na primeira pergunta das telas de conta. */
-export function GoogleButton({ onPress, loading, disabled = false }: GoogleButtonProps) {
+export function GoogleButton({ onPress, loading, disabled = false, showTerms }: GoogleButtonProps) {
   const [fontLoaded] = useFonts(googleFonts);
   const label = t('auth.google.continue');
   const inactive = loading || disabled;
@@ -60,12 +68,14 @@ export function GoogleButton({ onPress, loading, disabled = false }: GoogleButto
           ) : null}
         </View>
       </PressableScale>
-      <View
-        pointerEvents={inactive ? 'none' : 'auto'}
-        importantForAccessibility={inactive ? 'no-hide-descendants' : 'auto'}
-      >
-        <TermsNotice variant="signUp" />
-      </View>
+      {showTerms ? (
+        <View
+          pointerEvents={inactive ? 'none' : 'auto'}
+          importantForAccessibility={inactive ? 'no-hide-descendants' : 'auto'}
+        >
+          <TermsNotice variant="signUp" />
+        </View>
+      ) : null}
     </View>
   );
 }
