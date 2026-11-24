@@ -4,13 +4,14 @@ import { useEffect, useRef, useState } from 'react';
 import { Controller, useForm, useWatch } from 'react-hook-form';
 import { Keyboard, StyleSheet, View, type TextInput as NativeTextInput } from 'react-native';
 
+import { Text } from '@/components/text';
 import { TextInput } from '@/components/text-input';
 import { TextLink } from '@/components/text-link';
 import { isFirebaseConfigured } from '@/firebase';
 import { useFocusAfterTransition } from '@/hooks/use-focus-after-transition';
 import { useStayOnScreen } from '@/hooks/use-stay-on-screen';
 import { t } from '@/i18n';
-import { spacing } from '@/theme';
+import { colors, spacing } from '@/theme';
 import { announceFirstError } from '@/utils/form-errors';
 
 import { authErrorMessageKey } from '../api';
@@ -26,7 +27,7 @@ import { backToWelcome, normalizedEmail } from '../entry-questions';
 import { forgetPendingGoogleLink } from '../google-entry';
 import { useGoogleEntry } from '../hooks/use-google-entry';
 import { usePasswordReset } from '../hooks/use-password-reset';
-import { useSignIn } from '../hooks/use-sign-in';
+import { googleOnlyHint, useSignIn } from '../hooks/use-sign-in';
 import { signInSchema, type SignInForm } from '../schemas';
 
 /** As duas perguntas do entrar: o e-mail da conta e, depois, a senha dela. */
@@ -53,7 +54,6 @@ type SignInField = (typeof FIELD_ORDER)[number];
  * redondo do pé fazem o mesmo: na senha, voltam ao e-mail; no e-mail, saem.
  */
 export function SignInScreen() {
-  const signIn = useSignIn();
   const googleEntry = useGoogleEntry();
   // O anúncio do pedido é a frase curta, a mesma que aparece acima do pé.
   const passwordReset = usePasswordReset('auth.signIn.resetSentShort');
@@ -64,6 +64,13 @@ export function SignInScreen() {
   }));
   const startsAtPassword = handoff.email !== null;
   const [step, setStep] = useState<SignInStep>(startsAtPassword ? 'password' : 'email');
+  const onEmail = step === 'email';
+  // Sem o botão do Google aqui (o iPhone), a senha recusada traz embaixo do
+  // "Esqueci minha senha" o caminho da conta que só entra com o Google. Só na
+  // pergunta da senha e sem pedido do link em curso ou respondido: aí vale a
+  // resposta do pedido. A mesma conta decide o anúncio (`googleOnlyHint`).
+  const googleOnlyHintShown = !googleEntry.available && !onEmail && passwordReset.isIdle;
+  const signIn = useSignIn({ googleOnlyHintShown });
   const [linkingGoogle, setLinkingGoogle] = useState(handoff.reason === 'googleLink');
   const ownsGoogleLink = useRef(handoff.reason === 'googleLink');
   // Quantas vezes o próprio fã trocou de pergunta (`goTo`): só aí o foco do
@@ -83,13 +90,13 @@ export function SignInScreen() {
 
   const disabled = !isFirebaseConfigured;
   const googlePending = googleEntry.isPending;
-  const onEmail = step === 'email';
   const email = normalizedEmail(typedEmail);
   // O botão do pé fica apagado só com o campo da pergunta vazio.
   const empty = onEmail ? typedEmail.trim() === '' : typedPassword === '';
   const errorKey = signIn.isError ? authErrorMessageKey(signIn.error) : null;
   // Credencial recusada: o erro é do campo da senha. O resto vai acima do pé.
   const rejected = errorKey === 'auth.errors.invalidCredentials';
+  const rejectionHint = googleOnlyHint(errorKey, googleOnlyHintShown);
   // O aviso do cadastro ("Esse e-mail já tem conta") só vale para o e-mail que
   // ele mandou: trocado na pílula, a frase sai.
   const inUse = handoff.reason === 'emailInUse' && email === handoff.email;
@@ -372,6 +379,15 @@ export function SignInScreen() {
             haptic={null}
             style={styles.forgot}
           />
+          {/* Embaixo do link, e não acima do pé: o pé fica fora da rolagem, e
+              uma frase longa nele, com a fonte grande e o teclado aberto num
+              aparelho baixo, tirava da vista o próprio link. Depois dele, o
+              link não sai do lugar quando o aviso entra. */}
+          {rejectionHint ? (
+            <Text variant="caption" color={colors.textSecondary} style={styles.hint}>
+              {rejectionHint}
+            </Text>
+          ) : null}
         </StepField>
       </View>
     </QuestionLayout>
@@ -385,5 +401,11 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
     marginTop: spacing.cardPadding,
     paddingHorizontal: spacing.md,
+  },
+  // Centrado como o link, com o mesmo recuo do texto dele.
+  hint: {
+    marginTop: spacing.xs,
+    paddingHorizontal: spacing.md,
+    textAlign: 'center',
   },
 });
