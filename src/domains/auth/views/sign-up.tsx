@@ -614,6 +614,7 @@ export function SignUpScreen() {
                   onPress={() => void enterWithGoogle()}
                   loading={googlePending}
                   disabled={pending}
+                  showTerms
                 />
               ) : null}
             </StepField>

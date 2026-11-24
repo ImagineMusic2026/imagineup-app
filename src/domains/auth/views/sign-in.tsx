@@ -77,6 +77,12 @@ export function SignInScreen() {
   // leitor vai ao título. A volta ao e-mail pela rede de segurança do envio
   // não o leva, para o anúncio do erro ser ouvido inteiro.
   const [moves, setMoves] = useState(0);
+  // O aviso dos Termos embaixo do Google: pela abertura (ou pelo cadastro que
+  // ela abriu), o fã já viu o "Ao continuar, você aceita..." dela, e o entrar
+  // fica sem o aviso, mais limpo (pedido do dono de 24/11/2026). Aberto a frio
+  // por um link do app, sem a abertura embaixo, o aviso volta, porque o Google
+  // pode criar uma conta nova ali. Lido uma vez, na montagem.
+  const [showGoogleTerms] = useState(() => !router.canGoBack());
   const { control, handleSubmit, formState, trigger, clearErrors, getFieldState, setValue } =
     useForm<SignInForm>({
       resolver: zodResolver(signInSchema),
@@ -332,6 +338,7 @@ export function SignInScreen() {
               onPress={() => void enterWithGoogle()}
               loading={googlePending}
               disabled={signIn.isPending}
+              showTerms={showGoogleTerms}
             />
           ) : null}
         </StepField>

@@ -279,6 +279,28 @@ describe('entrar com e-mail: a pergunta do e-mail', () => {
     expect(screen.queryByRole('button', { name: googleLabel })).toBeNull();
   });
 
+  it('pela abertura, o entrar com o Google fica sem o aviso dos Termos: o aviso da abertura já cobre quem cria a conta por ele', async () => {
+    mockGoogleAvailable = true;
+    renderRouter(appTree, { initialUrl: '/entrar' });
+    fireEvent.press(screen.getByRole('button', { name: t('auth.welcome.haveAccount') }));
+
+    expect(await screen.findByRole('button', { name: t('auth.google.continue') })).toBeTruthy();
+    // A busca fica na pergunta do entrar: o aviso da abertura segue montado embaixo.
+    const question = within(screen.getByTestId('question-field'));
+    expect(question.queryByRole('link', { name: t('auth.terms.termsLink') })).toBeNull();
+    expect(question.queryByRole('link', { name: t('auth.terms.privacyLink') })).toBeNull();
+  });
+
+  it('aberto a frio por um link do app, sem a abertura embaixo, o entrar mostra o aviso dos Termos com o Google', async () => {
+    mockGoogleAvailable = true;
+    openSignIn();
+
+    expect(await screen.findByRole('button', { name: t('auth.google.continue') })).toBeTruthy();
+    const question = within(screen.getByTestId('question-field'));
+    expect(question.getByRole('link', { name: t('auth.terms.termsLink') })).toBeTruthy();
+    expect(question.getByRole('link', { name: t('auth.terms.privacyLink') })).toBeTruthy();
+  });
+
   it('abre na pergunta do e-mail, com o foco no campo, sem pílula nem senha', () => {
     openSignIn();
 
