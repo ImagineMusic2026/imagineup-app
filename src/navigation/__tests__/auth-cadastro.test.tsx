@@ -1,7 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { router, Stack } from 'expo-router';
-import { act, fireEvent, renderRouter, screen, waitFor } from 'expo-router/testing-library';
+import { act, fireEvent, renderRouter, screen, waitFor, within } from 'expo-router/testing-library';
 import { FirebaseError } from 'firebase/app';
 import { createUserWithEmailAndPassword, updateProfile, type UserCredential } from 'firebase/auth';
 import { onSnapshot } from 'firebase/firestore';
@@ -17,7 +17,7 @@ import {
 
 import AuthLayout from '@/app/(auth)/_layout';
 import SignUpRoute from '@/app/(auth)/cadastro';
-import GoogleInviteRoute from '@/app/(auth)/codigo-de-convite';
+import SocialInviteRoute from '@/app/(auth)/codigo-de-convite';
 import WelcomeRoute from '@/app/(auth)/entrar';
 import SignInRoute from '@/app/(auth)/entrar-com-email';
 import InviteRoute from '@/app/convite/[codigo]';
@@ -26,11 +26,12 @@ import { sendInviteClaim } from '@/domains/auth/api';
 import { QuestionLayout } from '@/domains/auth/components/question-layout';
 import { clearHandedOffEmail } from '@/domains/auth/email-handoff';
 import * as authExit from '@/domains/auth/hooks/use-auth-exit';
-import { holdGoogleInvite } from '@/domains/auth/hooks/use-sign-up';
+import { holdSocialInvite } from '@/domains/auth/hooks/use-sign-up';
+import type { SocialEntryOutcome } from '@/domains/auth/hooks/use-social-entry';
 import { readBoundInvite, readPendingInvite, savePendingInvite } from '@/domains/invites';
 import * as focusAfterTransition from '@/hooks/use-focus-after-transition';
 import { useSessionGate } from '@/hooks/use-session-gate';
-import { t } from '@/i18n';
+import { t, type TranslationKey } from '@/i18n';
 import { ApiError } from '@/services/api';
 import { haptics } from '@/services/haptics';
 import { usePreferencesStore } from '@/stores/preferences';
@@ -82,8 +83,39 @@ jest.mock('@/config/data-source', () => ({
 }));
 
 let mockGoogleAvailable = false;
+let mockGooglePending = false;
+let mockGoogleError: TranslationKey | null = null;
+const mockGoogleSignIn = jest.fn<Promise<SocialEntryOutcome | undefined>, []>();
+const mockGoogleReset = jest.fn(() => {
+  mockGoogleError = null;
+});
 jest.mock('@/domains/auth/hooks/use-google-entry', () => ({
-  useGoogleEntry: () => ({ available: mockGoogleAvailable, isPending: false, error: null }),
+  useGoogleEntry: () => ({
+    available: mockGoogleAvailable,
+    isPending: mockGooglePending,
+    error: mockGoogleError,
+    signIn: mockGoogleSignIn,
+    reset: mockGoogleReset,
+  }),
+}));
+
+// A Apple (seção 39), no lugar do núcleo da entrada: a tela só decide o que
+// fazer com o resultado. O botão é o falso do `jest.setup.js`.
+let mockAppleAvailable = false;
+let mockApplePending = false;
+let mockAppleError: TranslationKey | null = null;
+const mockAppleSignIn = jest.fn<Promise<SocialEntryOutcome | undefined>, []>();
+const mockAppleReset = jest.fn(() => {
+  mockAppleError = null;
+});
+jest.mock('@/domains/auth/hooks/use-apple-entry', () => ({
+  useAppleEntry: () => ({
+    available: mockAppleAvailable,
+    isPending: mockApplePending,
+    error: mockAppleError,
+    signIn: mockAppleSignIn,
+    reset: mockAppleReset,
+  }),
 }));
 
 // Um teste desliga o Firebase para ver a tela sem configuração.
@@ -132,7 +164,7 @@ const appTree = {
   '(auth)/entrar': WelcomeRoute,
   '(auth)/entrar-com-email': SignInRoute,
   '(auth)/cadastro': SignUpRoute,
-  '(auth)/codigo-de-convite': GoogleInviteRoute,
+  '(auth)/codigo-de-convite': SocialInviteRoute,
   'convite/[codigo]': InviteRoute,
 };
 
@@ -376,6 +408,13 @@ beforeEach(async () => {
   clearHandedOffEmail();
   mockFirebaseConfigured = true;
   mockGoogleAvailable = false;
+  mockGooglePending = false;
+  mockGoogleError = null;
+  mockGoogleSignIn.mockReset();
+  mockAppleAvailable = false;
+  mockApplePending = false;
+  mockAppleError = null;
+  mockAppleSignIn.mockReset();
   // Cada teste diz o que o Firebase e o servidor respondem; sem dizer, dá certo.
   createUser.mockReset().mockResolvedValue({ user } as unknown as UserCredential);
   claim.mockReset().mockImplementation(async () => ({ status: 'claimed' }));
@@ -1241,7 +1280,7 @@ describe('cadastro: código de convite', () => {
   it('sai do convite do Google se a conta perde a sessão', async () => {
     const session = useSessionStore.getState();
     session.setSignedIn(user);
-    holdGoogleInvite(user.uid, session.holdAuth());
+    holdSocialInvite(user.uid, session.holdAuth());
     renderRouter(appTree, { initialUrl: '/codigo-de-convite' });
 
     expect(title(t('auth.signUp.inviteStepTitle'))).toBeTruthy();
@@ -1633,5 +1672,166 @@ describe('cadastro: código de convite', () => {
     });
     await waitFor(() => expect(view.getPathname()).toBe('/entrar'));
     expect(holds()).toBe(0);
+  });
+});
+
+describe('cadastro: a Apple e o Google na pergunta do e-mail (seção 39)', () => {
+  const APPLE_LABEL = 'Continuar com a Apple';
+  const GOOGLE_LABEL = t('auth.google.continue');
+  const termsBox = () => screen.getByTestId('social-entry-terms', { includeHiddenElements: true });
+
+  /** A entrada do provedor que cria a conta e para na pergunta do código, como o núcleo faz. */
+  async function asksInvite(): Promise<SocialEntryOutcome> {
+    const session = useSessionStore.getState();
+    session.setSignedIn(user);
+    holdSocialInvite(user.uid, session.holdAuth());
+    return { status: 'askInvite' };
+  }
+
+  it('no iPhone, a Apple aparece só na pergunta do e-mail, dentro dela, sempre com o aviso dos Termos', async () => {
+    mockAppleAvailable = true;
+    openSignUp();
+
+    const question = within(screen.getByTestId('question-field'));
+    expect(question.getByRole('button', { name: APPLE_LABEL })).toBeTruthy();
+    expect(question.queryByRole('button', { name: GOOGLE_LABEL })).toBeNull();
+    expect(question.getByTestId('social-entry-terms')).toBeTruthy();
+    expect(question.getByRole('link', { name: t('auth.terms.termsLink') })).toBeTruthy();
+
+    await answerEmail();
+    expect(screen.queryByRole('button', { name: APPLE_LABEL })).toBeNull();
+  });
+
+  it.each([
+    ['pela Apple', () => (mockAppleAvailable = true), APPLE_LABEL],
+    ['pelo Google', () => (mockGoogleAvailable = true), GOOGLE_LABEL],
+  ])('a conta nova %s vai à pergunta do código de convite', async (_, show, label) => {
+    show();
+    mockAppleSignIn.mockImplementation(asksInvite);
+    mockGoogleSignIn.mockImplementation(asksInvite);
+    const view = openSignUp();
+
+    await act(async () => {
+      fireEvent.press(button(label));
+    });
+
+    await waitFor(() => expect(view.getPathname()).toBe('/codigo-de-convite'));
+    expect(await screen.findByRole('header', { name: INVITE_TITLE })).toBeTruthy();
+  });
+
+  it('o Google numa conta de senha do mesmo e-mail leva ao entrar, na senha, para vincular', async () => {
+    mockGoogleAvailable = true;
+    mockGoogleSignIn.mockResolvedValue({ status: 'link', email: EMAIL });
+    const view = openSignUp();
+
+    await act(async () => {
+      fireEvent.press(button(GOOGLE_LABEL));
+    });
+
+    await waitFor(() => expect(view.getPathname()).toBe('/entrar-com-email'));
+    expect(await screen.findByText(t('auth.google.linkPassword'))).toBeTruthy();
+    expect(screen.getByRole('header', { name: t('auth.signIn.passwordTitle') })).toBeTruthy();
+  });
+
+  it('com a Apple em curso: o campo não edita, o pé, o voltar e o "Entrar" desligam, os Termos saem do leitor e o voltar do Android fica preso', async () => {
+    mockAppleAvailable = true;
+    const android = watchAndroidBack();
+    openSignUp();
+    mockApplePending = true;
+    // Digitar desenha a tela de novo, agora com a Apple em curso.
+    fireEvent.changeText(emailField(), EMAIL);
+
+    expect(emailField().props.editable).toBe(false);
+    expect(next()).toBeDisabled();
+    expect(back()).toBeDisabled();
+    expect(button(t('auth.signUp.signIn'))).toBeDisabled();
+    expect(termsBox().props).toMatchObject({
+      pointerEvents: 'none',
+      accessibilityElementsHidden: true,
+      importantForAccessibility: 'no-hide-descendants',
+    });
+    expect(android.press()).toBe(true);
+    expect(title(EMAIL_TITLE)).toBeTruthy();
+  });
+
+  it('com o cadastro por e-mail em curso, a Apple não recebe toque: o botão nem está à vista', async () => {
+    mockAppleAvailable = true;
+    holdProfile();
+    await openPasswordStep();
+    await createAccount();
+
+    expect(screen.queryByRole('button', { name: APPLE_LABEL })).toBeNull();
+    expect(screen.queryByTestId('apple-button', { includeHiddenElements: true })).toBeNull();
+    expect(mockAppleSignIn).not.toHaveBeenCalled();
+  });
+
+  it('o erro da Apple aparece acima do pé e sai quando o fã volta a digitar', async () => {
+    mockAppleAvailable = true;
+    mockAppleError = 'auth.apple.errors.unknown';
+    openSignUp();
+
+    expect(screen.getByText(t('auth.apple.errors.unknown'))).toBeTruthy();
+
+    fireEvent.changeText(emailField(), 'c');
+    expect(mockAppleReset).toHaveBeenCalled();
+    await waitFor(() => expect(screen.queryByText(t('auth.apple.errors.unknown'))).toBeNull());
+  });
+});
+
+describe('cadastro: a pergunta do código da conta nova pelo provedor', () => {
+  /** A conta nova do provedor, parada na pergunta do código, como o núcleo a deixa. */
+  function heldAtInvite() {
+    const session = useSessionStore.getState();
+    session.setSignedIn(user);
+    holdSocialInvite(user.uid, session.holdAuth());
+    return renderRouter(appTree, { initialUrl: '/codigo-de-convite' });
+  }
+
+  it('"Continuar sem código" tira o convite amarrado e o do link, e solta o fã', async () => {
+    await savePendingInvite('k7p3m9qx', { path: '/post/p-clipe', utm: {} });
+    heldAtInvite();
+    // O código do link chega no campo.
+    await waitFor(() => expect(inviteField().props.value).toBe('K7P3M9QX'));
+
+    await act(async () => {
+      fireEvent.press(button(SKIP_INVITE));
+    });
+
+    await waitFor(() => expect(holds()).toBe(0));
+    expect(await readPendingInvite()).toBeNull();
+    expect(await readBoundInvite(user.uid)).toBeNull();
+    expect(claim).not.toHaveBeenCalled();
+  });
+
+  it('"Continuar" com o código aceito manda o convite e solta o fã', async () => {
+    heldAtInvite();
+    fireEvent.changeText(inviteField(), 'K7P3M9QX');
+
+    await act(async () => {
+      fireEvent.press(button(t('common.continue')));
+    });
+
+    await waitFor(() => expect(holds()).toBe(0));
+    expect(claim).toHaveBeenCalledWith(
+      expect.objectContaining({ code: 'K7P3M9QX', uid: user.uid }),
+    );
+  });
+
+  it('o código recusado: o erro no campo, o toque de erro e o anúncio, e o fã segue seguro', async () => {
+    claim.mockRejectedValueOnce(
+      new ApiError('notFound', 'Convite não encontrado.', 404, 'invite_not_found'),
+    );
+    heldAtInvite();
+    fireEvent.changeText(inviteField(), 'ERRADO12');
+
+    await act(async () => {
+      fireEvent.press(button(t('common.continue')));
+    });
+
+    const message = t('auth.signUp.inviteRejected.notFound');
+    await waitFor(() => expect(announce()).toHaveBeenCalledWith(message));
+    expect(haptics.trigger).toHaveBeenCalledWith('error');
+    expect(inviteField().props.accessibilityHint).toContain(message);
+    expect(holds()).toBe(1);
   });
 });

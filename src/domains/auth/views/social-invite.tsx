@@ -15,8 +15,8 @@ import { QuestionLayout } from '../components/question-layout';
 import { StepFooter } from '../components/step-footer';
 import { ENTRY_STEP_COUNT } from '../consts';
 import {
-  hasPendingGoogleInvite,
-  releaseHeldGoogleInvite,
+  hasPendingSocialInvite,
+  releaseHeldSocialInvite,
   useFinishSignUp,
 } from '../hooks/use-sign-up';
 import { inviteCodeField } from '../schemas';
@@ -26,10 +26,13 @@ const REJECTION_MESSAGES: Record<InviteRejection, TranslationKey> = {
   notAllowed: 'auth.signUp.inviteRejected.notAllowed',
 };
 
-/** A conta criada pelo Google pode aplicar um convite antes da escolha de artistas. */
-export function GoogleInviteScreen() {
+/**
+ * A conta criada pelo Google ou pela Apple pode aplicar um convite antes da
+ * escolha de artistas.
+ */
+export function SocialInviteScreen() {
   const uid = useSessionStore((state) => state.user?.uid ?? null);
-  const [inviteOwner] = useState(() => (hasPendingGoogleInvite() ? uid : null));
+  const [inviteOwner] = useState(() => (hasPendingSocialInvite() ? uid : null));
   const active = inviteOwner !== null && inviteOwner === uid;
   const [draft, setDraft] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -40,7 +43,7 @@ export function GoogleInviteScreen() {
   useStayOnScreen(active);
 
   useEffect(() => {
-    if (active) return () => releaseHeldGoogleInvite(inviteOwner);
+    if (active) return () => releaseHeldSocialInvite(inviteOwner);
     router.replace('/entrar');
   }, [active, inviteOwner]);
 
@@ -104,7 +107,7 @@ export function GoogleInviteScreen() {
   return (
     <QuestionLayout
       progress={{ current: 1, total: ENTRY_STEP_COUNT, fill: 1 }}
-      stepKey="google-invite"
+      stepKey="social-invite"
       title={t('auth.signUp.inviteStepTitle')}
       lead={t('auth.signUp.inviteCodeHint')}
       secondary={

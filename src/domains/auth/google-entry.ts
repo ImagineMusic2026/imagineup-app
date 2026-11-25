@@ -13,14 +13,11 @@ import type { TranslationKey } from '@/i18n';
 import { GoogleSignInError, googleIdToken, signOutGoogle } from '@/services/google-sign-in';
 
 import { SessionEndedError } from './api';
+import type { SocialSignInResult } from './social-entry';
 
 type GooglePasswordLink = { email: string; credential: OAuthCredential };
 let pendingLink: GooglePasswordLink | null = null;
 let linkCleanup: Promise<void> | undefined;
-
-export type GoogleSignInResult =
-  | { kind: 'signedIn'; user: User; isNewUser: boolean }
-  | { kind: 'link'; email: string };
 
 export function forgetPendingGoogleLink(): void {
   if (!pendingLink) return;
@@ -28,7 +25,7 @@ export function forgetPendingGoogleLink(): void {
   linkCleanup = signOutGoogle();
 }
 
-export async function signInWithGoogle(): Promise<GoogleSignInResult | null> {
+export async function signInWithGoogle(): Promise<SocialSignInResult | null> {
   forgetPendingGoogleLink();
   await linkCleanup;
   const auth = getFirebaseAuth();
@@ -46,6 +43,7 @@ export async function signInWithGoogle(): Promise<GoogleSignInResult | null> {
       kind: 'signedIn',
       user: result.user,
       isNewUser: getAdditionalUserInfo(result)?.isNewUser === true,
+      profileName: result.user.displayName,
     };
   } catch (error) {
     if (

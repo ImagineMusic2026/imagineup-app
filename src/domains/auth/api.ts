@@ -1,9 +1,11 @@
+import { AppleAuthenticationCredentialState } from 'expo-apple-authentication';
 import { FirebaseError } from 'firebase/app';
 import {
   createUserWithEmailAndPassword,
   deleteUser,
   EmailAuthProvider,
   GoogleAuthProvider,
+  OAuthProvider,
   onAuthStateChanged,
   reauthenticateWithCredential,
   sendPasswordResetEmail,
@@ -12,9 +14,11 @@ import {
   updatePassword,
   updateProfile,
   verifyBeforeUpdateEmail,
+  type Auth,
   type User,
 } from 'firebase/auth';
 import { doc, onSnapshot, serverTimestamp, updateDoc } from 'firebase/firestore';
+import { Platform } from 'react-native';
 
 import { sourceOf } from '@/config/data-source';
 import {
@@ -32,6 +36,7 @@ import {
 import { getDb, getFirebaseAuth, isFirebaseConfigured } from '@/firebase';
 import type { TranslationKey } from '@/i18n';
 import { api, ApiError } from '@/services/api';
+import { appleCredential, appleCredentialState } from '@/services/apple-sign-in';
 import {
   googleIdToken,
   GoogleSignInError,
@@ -41,6 +46,13 @@ import {
 import type { SessionUser } from '@/stores/session';
 import { displayNameOrNull } from '@/utils/visible-line';
 
+// Nunca o `./apple-entry`, que importa este arquivo: o ciclo de import.
+import {
+  APPLE_PROVIDER_ID,
+  appleUidOf,
+  clearPendingAppleNameOf,
+  revokeAppleToken,
+} from './apple-account';
 import { PROFILE_WAIT_MS } from './consts';
 
 export function toSessionUser(user: User): SessionUser {
@@ -49,7 +61,9 @@ export function toSessionUser(user: User): SessionUser {
     email: user.email,
     displayName: user.displayName,
     // A foto pública continua sendo a enviada no perfil do ImagineUP.
-    photoURL: user.providerData?.some((info) => info.providerId === 'google.com') ? null : user.photoURL,
+    photoURL: user.providerData?.some((info) => info.providerId === 'google.com')
+      ? null
+      : user.photoURL,
     // Sem a lista (usuário montado à mão), conta como sem senha: as linhas de
     // trocar senha e e-mail só aparecem com certeza.
     hasPassword: user.providerData?.some((info) => info.providerId === 'password') ?? false,
@@ -339,8 +353,17 @@ export class SessionEndedError extends Error {
   }
 }
 
-class GoogleDeletionError extends Error {
-  constructor(readonly failure: 'needsGoogle' | 'wrongGoogleAccount' | 'googleUnavailable') {
+/** A exclusão parou num passo que o app conhece (a confirmação que falta ou que falhou). */
+class DeletionError extends Error {
+  constructor(
+    readonly failure:
+      | 'needsPassword'
+      | 'needsGoogle'
+      | 'wrongGoogleAccount'
+      | 'googleUnavailable'
+      | 'wrongAppleAccount'
+      | 'appleUnavailable',
+  ) {
     super(failure);
   }
 }
@@ -348,11 +371,158 @@ class GoogleDeletionError extends Error {
 export type DeleteAccountOutcome = 'deleted' | 'canceled';
 
 /**
+ * O provedor que abriu a sessão (o `signInProvider` do ID token: `password`,
+ * `google.com`, `apple.com`), ou `null` quando o token não sai. Ler o token
+ * pode encerrar uma sessão invalidada (o `_logoutIfInvalidated` do SDK): quem
+ * chama confere a sessão depois. O usuário montado à mão, sem o método, também
+ * dá `null`.
+ */
+export async function sessionSignInProvider(user: User): Promise<string | null> {
+  try {
+    return (await user.getIdTokenResult()).signInProvider ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * A conta da exclusão ainda é a da sessão. Sem sessão nenhuma (a leitura do
+ * token a encerrou, a conta caiu por fora), `SessionEndedError`; com a sessão
+ * de outra conta, `false`, e a exclusão para sem erro.
+ */
+function stillSameSession(auth: Auth, user: User): boolean {
+  if (!auth.currentUser) throw new SessionEndedError();
+  return auth.currentUser.uid === user.uid;
+}
+
+/**
+ * Como a exclusão confirma a Apple da conta, só no iPhone (39.4):
+ * - `apple`: a folha da Apple reautentica, e o código dela revoga o acesso;
+ * - `appleLinked`: a senha confirma, e a folha da Apple só tenta revogar;
+ * - `null`: sem a Apple na conta, ou fora do iPhone (como antes).
+ */
+export type AppleDeletionMode = 'apple' | 'appleLinked' | null;
+
+async function appleDeletionModeFor(user: User): Promise<AppleDeletionMode> {
+  // Android e conta sem Apple: nem lê o token.
+  if (Platform.OS !== 'ios' || appleUidOf(user) === null) return null;
+  if ((await sessionSignInProvider(user)) === APPLE_PROVIDER_ID) return 'apple';
+  // No iPhone só a senha ou a Apple confirmam (o Google é só do Android): a
+  // conta sem senha nunca cai em needsPassword.
+  return toSessionUser(user).hasPassword ? 'appleLinked' : 'apple';
+}
+
+/**
+ * O modo da Apple na exclusão da conta da sessão `expectedUid`, para a tela
+ * escrever o botão e o aviso antes do toque. Fora do iPhone, sem Firebase, com
+ * outra sessão ou com erro, `null`.
+ */
+export async function appleDeletionMode(expectedUid: string): Promise<AppleDeletionMode> {
+  if (Platform.OS !== 'ios' || !isFirebaseConfigured) return null;
+  try {
+    const auth = getFirebaseAuth();
+    await auth.authStateReady();
+    const user = auth.currentUser;
+    if (!user || user.uid !== expectedUid) return null;
+    return await appleDeletionModeFor(user);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * A sessão aberta pela Apple (ou a conta só da Apple): a folha da Apple sempre,
+ * que reautentica e traz o código da revogação. A ordem é a folha, a
+ * reautenticação, a revogação e só então o `deleteUser`, com a sessão
+ * conferida depois de cada espera. A folha fechada é `canceled`, sem mudar
+ * nada; outra Conta Apple é `wrongAppleAccount`, e o resto da Apple,
+ * `appleUnavailable`, nunca o campo da senha.
+ */
+async function deleteWithApple(
+  auth: Auth,
+  user: User,
+  appleUid: string | null,
+): Promise<DeleteAccountOutcome> {
+  let apple;
+  try {
+    apple = await appleCredential();
+  } catch {
+    throw new DeletionError('appleUnavailable');
+  }
+  if (!apple) return 'canceled';
+  if (!stillSameSession(auth, user)) return 'canceled';
+  try {
+    // O Firebase confere que o token da Apple é da conta original.
+    await reauthenticateWithCredential(
+      user,
+      new OAuthProvider(APPLE_PROVIDER_ID).credential({
+        idToken: apple.identityToken,
+        rawNonce: apple.rawNonce,
+      }),
+    );
+  } catch (error) {
+    if (!stillSameSession(auth, user)) return 'canceled';
+    if (error instanceof FirebaseError && error.code === 'auth/user-mismatch') {
+      throw new DeletionError('wrongAppleAccount');
+    }
+    if (
+      error instanceof FirebaseError &&
+      (error.code === 'auth/invalid-credential' || error.code === 'auth/missing-or-invalid-nonce')
+    ) {
+      throw new DeletionError('appleUnavailable');
+    }
+    throw error;
+  }
+  if (auth.currentUser?.uid !== user.uid) return 'canceled';
+  // Antes do `deleteUser`: a revogação leva o ID token da conta viva. Nunca lança.
+  if (apple.authorizationCode) await revokeAppleToken(apple.authorizationCode, user);
+  if (!stillSameSession(auth, user)) return 'canceled';
+  try {
+    await deleteUser(user);
+  } catch (error) {
+    if (error instanceof FirebaseError && error.code === 'auth/requires-recent-login') {
+      throw new DeletionError('appleUnavailable');
+    }
+    throw error;
+  }
+  if (appleUid) await clearPendingAppleNameOf(appleUid).catch(() => undefined);
+  return 'deleted';
+}
+
+/**
+ * A Apple ligada a uma sessão de senha, no iPhone, depois da senha e antes do
+ * `deleteUser`: a tentativa de revogar, sem reautenticar pela Apple. A folha
+ * sempre autoriza a Conta Apple que está no iPhone: com a credencial da conta
+ * já fora dele (`REVOKED`, `NOT_FOUND`, `TRANSFERRED`), ela nem abre, para não
+ * deixar uma autorização do ImagineUP em outra Conta Apple. O código só vai ao
+ * REST quando a folha volta com o `user` da Apple desta conta: o de outra Conta
+ * Apple revogaria o acesso de outra pessoa. Cancelada, com outra Conta Apple
+ * ou com erro, a exclusão segue sem revogar.
+ */
+async function revokeLinkedApple(auth: Auth, user: User, appleUid: string): Promise<void> {
+  const state = await appleCredentialState(appleUid);
+  // Nada a revogar neste iPhone; o estado desconhecido (`null`) abre a folha.
+  if (state !== null && state !== AppleAuthenticationCredentialState.AUTHORIZED) return;
+  const apple = await appleCredential().catch(() => null);
+  // Cancelou, outra Conta Apple ou erro.
+  if (!apple || apple.user !== appleUid || !apple.authorizationCode) return;
+  if (auth.currentUser?.uid !== user.uid) return;
+  await revokeAppleToken(apple.authorizationCode, user);
+}
+
+/**
  * Exclui a conta no Firebase Auth. Se o Firebase pedir um login recente,
  * reautentica a mesma conta com a senha ou com o Google. O perfil
  * (`users/{uid}`) e a reserva do @ são apagados no servidor, pela função
  * `deleteUserProfile`; o app não apaga nada no Firestore. A exclusão é uma
  * só chamada ao Auth: ou a conta some, ou fica como estava.
+ *
+ * Com a Apple na conta, no iPhone (39.4): a sessão da Apple (ou a conta só da
+ * Apple) confirma pela folha da Apple (`deleteWithApple`); a Apple ligada a
+ * uma sessão de senha pede a senha já no primeiro toque (`needsPassword`) e,
+ * depois dela, tenta revogar a Apple (`revokeLinkedApple`). O nome guardado da
+ * Apple dessa conta sai do aparelho com ela. Fora do iPhone e sem a Apple,
+ * nada muda: nem o token é lido.
  *
  * Espera a sessão confirmada (o app abre com a sessão presumida). Sem conta
  * logada, ou sem e-mail para reautenticar, devolve `SessionEndedError`: o fã
@@ -370,11 +540,16 @@ export async function deleteAccount(
   if (expectedUid && user.uid !== expectedUid) return 'canceled';
   const hasGoogle = user.providerData?.some((info) => info.providerId === 'google.com') ?? false;
   const googleOnly = hasGoogle && !toSessionUser(user).hasPassword;
+  // Lido antes: a lista de provedores some com a conta.
+  const appleUid = appleUidOf(user);
+  const apple = await appleDeletionModeFor(user);
+  if (!stillSameSession(auth, user)) return 'canceled';
+  if (apple === 'apple') return deleteWithApple(auth, user, appleUid);
 
   if (confirmGoogle) {
     if (!googleOnly) return 'canceled';
     const google = await googleIdToken().catch((error: unknown) => {
-      if (error instanceof GoogleSignInError) throw new GoogleDeletionError('googleUnavailable');
+      if (error instanceof GoogleSignInError) throw new DeletionError('googleUnavailable');
       throw error;
     });
     if (!google) return 'canceled';
@@ -386,27 +561,37 @@ export async function deleteAccount(
       if (auth.currentUser?.uid !== user.uid) return 'canceled';
       void signOutGoogle();
       if (error instanceof FirebaseError && error.code === 'auth/user-mismatch') {
-        throw new GoogleDeletionError('wrongGoogleAccount');
+        throw new DeletionError('wrongGoogleAccount');
       }
       if (error instanceof FirebaseError && error.code === 'auth/invalid-credential') {
-        throw new GoogleDeletionError('googleUnavailable');
+        throw new DeletionError('googleUnavailable');
       }
       throw error;
     }
   } else if (password !== undefined) {
     if (!user.email) throw new SessionEndedError('Conta sem e-mail para reautenticar.');
     await reauthenticateWithCredential(user, EmailAuthProvider.credential(user.email, password));
+  } else if (apple === 'appleLinked') {
+    // A confirmação no primeiro toque: a revogação vem depois de um login recente.
+    throw new DeletionError('needsPassword');
   }
 
+  // Depois da senha, antes do `deleteUser`.
+  if (apple === 'appleLinked' && appleUid) await revokeLinkedApple(auth, user, appleUid);
   if (auth.currentUser?.uid !== user.uid) return 'canceled';
   try {
     await deleteUser(user);
   } catch (error) {
-    if (googleOnly && error instanceof FirebaseError && error.code === 'auth/requires-recent-login') {
-      throw new GoogleDeletionError('needsGoogle');
+    if (
+      googleOnly &&
+      error instanceof FirebaseError &&
+      error.code === 'auth/requires-recent-login'
+    ) {
+      throw new DeletionError('needsGoogle');
     }
     throw error;
   }
+  if (appleUid) await clearPendingAppleNameOf(appleUid).catch(() => undefined);
   if (confirmGoogle) void revokeGoogleAccess();
   else if (hasGoogle) void signOutGoogle();
   return 'deleted';
@@ -414,14 +599,15 @@ export async function deleteAccount(
 
 /**
  * Por que a exclusão não passou:
- * - `needsPassword`, `needsGoogle`: o Firebase pede um login recente;
- * - `wrongPassword`, `wrongGoogleAccount`, `googleUnavailable`: a reautenticação falhou;
+ * - `needsPassword`, `needsGoogle`: o Firebase pede um login recente (e a Apple
+ *   ligada a uma sessão de senha, no iPhone, pede a senha já no primeiro toque);
+ * - `wrongPassword`, `wrongGoogleAccount`, `googleUnavailable`, `wrongAppleAccount`,
+ *   `appleUnavailable`: a reautenticação falhou;
  * - `sessionEnded`: a conta já não está logada (ou sumiu, ou foi desativada);
  * - `network`, `tooManyRequests` e `unknown`: a conta continua como estava.
  */
 export type DeleteAccountFailure =
-  | GoogleDeletionError['failure']
-  | 'needsPassword'
+  | DeletionError['failure']
   | 'wrongPassword'
   | 'network'
   | 'tooManyRequests'
@@ -430,7 +616,7 @@ export type DeleteAccountFailure =
 
 export function deleteAccountFailure(error: unknown): DeleteAccountFailure {
   if (error instanceof SessionEndedError) return 'sessionEnded';
-  if (error instanceof GoogleDeletionError) return error.failure;
+  if (error instanceof DeletionError) return error.failure;
   if (!(error instanceof FirebaseError)) return 'unknown';
   switch (error.code) {
     case 'auth/requires-recent-login':

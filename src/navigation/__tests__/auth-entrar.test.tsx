@@ -20,6 +20,7 @@ import { AccessibilityInfo, BackHandler, TextInput } from 'react-native';
 
 import AuthLayout from '@/app/(auth)/_layout';
 import SignUpRoute from '@/app/(auth)/cadastro';
+import SocialInviteRoute from '@/app/(auth)/codigo-de-convite';
 import WelcomeRoute from '@/app/(auth)/entrar';
 import SignInRoute from '@/app/(auth)/entrar-com-email';
 import {
@@ -28,8 +29,9 @@ import {
   readHandedOffEmail,
 } from '@/domains/auth/email-handoff';
 import type { GoogleEntryOutcome } from '@/domains/auth/hooks/use-google-entry';
+import { holdSocialInvite } from '@/domains/auth/hooks/use-sign-up';
 import * as focusAfterTransition from '@/hooks/use-focus-after-transition';
-import { t } from '@/i18n';
+import { t, type TranslationKey } from '@/i18n';
 import { haptics } from '@/services/haptics';
 import { useSessionStore } from '@/stores/session';
 
@@ -78,13 +80,39 @@ jest.mock('@/config/data-source', () => ({
 }));
 
 let mockGoogleAvailable = false;
+let mockGooglePending = false;
+let mockGoogleError: TranslationKey | null = null;
 const mockGoogleSignIn = jest.fn<Promise<GoogleEntryOutcome | undefined>, []>();
+const mockGoogleReset = jest.fn(() => {
+  mockGoogleError = null;
+});
 jest.mock('@/domains/auth/hooks/use-google-entry', () => ({
   useGoogleEntry: () => ({
     available: mockGoogleAvailable,
-    isPending: false,
-    error: null,
+    isPending: mockGooglePending,
+    error: mockGoogleError,
     signIn: mockGoogleSignIn,
+    reset: mockGoogleReset,
+  }),
+}));
+
+// A Apple (seção 39), no lugar do núcleo da entrada: a tela só decide o que
+// fazer com o resultado. O botão é o falso do `jest.setup.js`, com o rótulo
+// que o sistema escreveria.
+let mockAppleAvailable = false;
+let mockApplePending = false;
+let mockAppleError: TranslationKey | null = null;
+const mockAppleSignIn = jest.fn<Promise<GoogleEntryOutcome | undefined>, []>();
+const mockAppleReset = jest.fn(() => {
+  mockAppleError = null;
+});
+jest.mock('@/domains/auth/hooks/use-apple-entry', () => ({
+  useAppleEntry: () => ({
+    available: mockAppleAvailable,
+    isPending: mockApplePending,
+    error: mockAppleError,
+    signIn: mockAppleSignIn,
+    reset: mockAppleReset,
   }),
 }));
 
@@ -120,6 +148,7 @@ const appTree = {
   '(auth)/entrar': WelcomeRoute,
   '(auth)/entrar-com-email': SignInRoute,
   '(auth)/cadastro': SignUpRoute,
+  '(auth)/codigo-de-convite': SocialInviteRoute,
 };
 
 const EMAIL = 'camila@x.com';
@@ -246,7 +275,13 @@ beforeEach(async () => {
   clearHandedOffEmail();
   mockFirebaseConfigured = true;
   mockGoogleAvailable = false;
+  mockGooglePending = false;
+  mockGoogleError = null;
   mockGoogleSignIn.mockReset();
+  mockAppleAvailable = false;
+  mockApplePending = false;
+  mockAppleError = null;
+  mockAppleSignIn.mockReset();
   // Cada teste diz o que o Firebase responde; sem dizer, dá certo.
   jest
     .mocked(signInWithEmailAndPassword)
@@ -1154,5 +1189,129 @@ describe('entrar com e-mail: o e-mail que chega pronto', () => {
     await answerEmail('bia@x.com');
     expect(pill('bia@x.com')).toBeTruthy();
     expect(screen.queryByText(IN_USE)).toBeNull();
+  });
+});
+
+describe('entrar com e-mail: a Apple e o Google na pergunta do e-mail (seção 39)', () => {
+  const APPLE_LABEL = 'Continuar com a Apple';
+  const GOOGLE_LABEL = t('auth.google.continue');
+  const NEW_USER = { uid: 'conta-nova', email: EMAIL, displayName: null, photoURL: null };
+  const termsBox = () => screen.getByTestId('social-entry-terms', { includeHiddenElements: true });
+
+  /** A entrada do provedor que cria a conta e para na pergunta do código, como o núcleo faz. */
+  async function asksInvite(): Promise<GoogleEntryOutcome> {
+    const session = useSessionStore.getState();
+    session.setSignedIn(NEW_USER);
+    holdSocialInvite(NEW_USER.uid, session.holdAuth());
+    return { status: 'askInvite' };
+  }
+
+  it('no iPhone, a Apple aparece só na pergunta do e-mail, dentro dela, com o aviso dos Termos de quem abre a frio', async () => {
+    mockAppleAvailable = true;
+    openSignIn();
+
+    const question = within(screen.getByTestId('question-field'));
+    expect(question.getByRole('button', { name: APPLE_LABEL })).toBeTruthy();
+    expect(question.queryByRole('button', { name: GOOGLE_LABEL })).toBeNull();
+    expect(question.getByTestId('social-entry-terms')).toBeTruthy();
+    expect(question.getByRole('link', { name: t('auth.terms.termsLink') })).toBeTruthy();
+
+    await answerEmail();
+    expect(screen.queryByRole('button', { name: APPLE_LABEL })).toBeNull();
+  });
+
+  it('pela abertura, a Apple fica sem o aviso dos Termos', async () => {
+    mockAppleAvailable = true;
+    renderRouter(appTree, { initialUrl: '/entrar' });
+    fireEvent.press(button(t('auth.welcome.haveAccount')));
+
+    expect(await screen.findByRole('button', { name: APPLE_LABEL })).toBeTruthy();
+    const question = within(screen.getByTestId('question-field'));
+    expect(
+      question.queryByTestId('social-entry-terms', { includeHiddenElements: true }),
+    ).toBeNull();
+  });
+
+  it('o toque na Apple entra uma vez, por ela', async () => {
+    mockAppleAvailable = true;
+    mockGoogleAvailable = true;
+    mockAppleSignIn.mockResolvedValue({ status: 'canceled' });
+    openSignIn();
+
+    await act(async () => {
+      fireEvent.press(button(APPLE_LABEL));
+    });
+
+    expect(mockAppleSignIn).toHaveBeenCalledTimes(1);
+    expect(mockGoogleSignIn).not.toHaveBeenCalled();
+    expect(screen.getByRole('header', { name: EMAIL_TITLE })).toBeTruthy();
+  });
+
+  it.each([
+    ['pela Apple', () => (mockAppleAvailable = true), APPLE_LABEL],
+    ['pelo Google', () => (mockGoogleAvailable = true), GOOGLE_LABEL],
+  ])('a conta nova %s vai à pergunta do código de convite', async (_, show, label) => {
+    show();
+    mockAppleSignIn.mockImplementation(asksInvite);
+    mockGoogleSignIn.mockImplementation(asksInvite);
+    const view = openSignIn();
+
+    await act(async () => {
+      fireEvent.press(button(label));
+    });
+
+    await waitFor(() => expect(view.getPathname()).toBe('/codigo-de-convite'));
+    expect(
+      await screen.findByRole('header', { name: t('auth.signUp.inviteStepTitle') }),
+    ).toBeTruthy();
+  });
+
+  it('com a Apple em curso: o campo não edita, o pé, o voltar e o "Criar conta" desligam, os Termos saem do leitor e o voltar do Android fica preso', async () => {
+    mockAppleAvailable = true;
+    const androidBack = watchAndroidBack();
+    openSignIn();
+    mockApplePending = true;
+    // Digitar desenha a tela de novo, agora com a Apple em curso.
+    fireEvent.changeText(emailField(), EMAIL);
+
+    expect(emailField().props.editable).toBe(false);
+    expect(next()).toBeDisabled();
+    expect(back()).toBeDisabled();
+    expect(button(t('auth.signIn.createAccount'))).toBeDisabled();
+    expect(termsBox().props).toMatchObject({
+      pointerEvents: 'none',
+      accessibilityElementsHidden: true,
+      importantForAccessibility: 'no-hide-descendants',
+    });
+    expect(androidBack.press()).toBe(true);
+    expect(screen.getByRole('header', { name: EMAIL_TITLE })).toBeTruthy();
+  });
+
+  it('com a senha indo, o toque na Apple não faz nada', async () => {
+    mockAppleAvailable = true;
+    jest.mocked(signInWithEmailAndPassword).mockReturnValue(new Promise(() => undefined));
+    await openPasswordStep();
+    await submitPassword();
+    // A tela não fica presa enquanto entra: o fã volta ao e-mail.
+    fireEvent.press(back());
+    await screen.findByRole('header', { name: EMAIL_TITLE });
+
+    expect(screen.getByTestId('apple-button').props.pointerEvents).toBe('none');
+    await act(async () => {
+      fireEvent.press(button(APPLE_LABEL));
+    });
+    expect(mockAppleSignIn).not.toHaveBeenCalled();
+  });
+
+  it('o erro da Apple aparece acima do pé e sai quando o fã volta a digitar', async () => {
+    mockAppleAvailable = true;
+    mockAppleError = 'auth.apple.errors.unknown';
+    openSignIn();
+
+    expect(screen.getByText(t('auth.apple.errors.unknown'))).toBeTruthy();
+
+    fireEvent.changeText(emailField(), 'c');
+    expect(mockAppleReset).toHaveBeenCalled();
+    await waitFor(() => expect(screen.queryByText(t('auth.apple.errors.unknown'))).toBeNull());
   });
 });

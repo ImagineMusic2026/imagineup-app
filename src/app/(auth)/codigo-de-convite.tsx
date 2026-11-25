@@ -1,3 +1,3 @@
-import { GoogleInviteScreen } from '@/domains/auth';
+import { SocialInviteScreen } from '@/domains/auth';
 
-export default GoogleInviteScreen;
+export default SocialInviteScreen;

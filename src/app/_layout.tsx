@@ -16,7 +16,13 @@ import { StatusBar } from 'expo-status-bar';
 import { useEffect } from 'react';
 
 import { preloadLogo } from '@/components/logo';
-import { preloadPhotoWall, releasePhotoWall, useAuthListener, useInviteSync } from '@/domains/auth';
+import {
+  preloadPhotoWall,
+  releasePhotoWall,
+  useAppleCredentialCheck,
+  useAuthListener,
+  useInviteSync,
+} from '@/domains/auth';
 import { useSessionGate } from '@/hooks/use-session-gate';
 import { useStackScreenOptions } from '@/hooks/use-stack-screen-options';
 import { AppProviders } from '@/providers/app-providers';
@@ -30,6 +36,9 @@ if (!isRunningInExpoGo()) SplashScreen.setOptions({ duration: 300, fade: true })
 
 export default function RootLayout() {
   useAuthListener();
+  // A Apple em cada sessão: a disponibilidade, o nome guardado e, no iPhone, a
+  // credencial revogada que tira a sessão da Apple (seção 39).
+  useAppleCredentialCheck();
   // Manda o convite amarrado à conta da sessão e a visita do link que abriu o app.
   useInviteSync();
   const [fontsLoaded, fontError] = useFonts({
