@@ -17,7 +17,7 @@ import {
 
 /**
  * O check-in diário com sequência nos emuladores (docs/arquitetura-api.md,
- * seção 39). Com a chave desligada (o padrão do código), pela `api` de
+ * seção 40). Com a chave desligada (o padrão do código), pela `api` de
  * verdade: o GET responde `enabled: false`, o POST recusa com 409 e nada é
  * gravado. Com a chave ligada, o handler da `api` no processo do teste, com o
  * ID token de verdade do emulador de Auth, o Firestore do emulador, a

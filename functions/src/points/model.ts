@@ -41,7 +41,7 @@ import {
 // Núcleo de pontos, puro: nada aqui lê ou grava o Firestore. O award.ts lê,
 // chama computeAwards e grava o resultado. Contrato em docs/arquitetura-api.md
 // (seções 4, 5 e 7; missões, conquistas e nível do bloco 7 na seção 22; o
-// check-in diário na seção 39).
+// check-in diário na seção 40).
 
 // Os dias de São Paulo moram em day.ts desde o bloco 7; daqui saem como antes.
 export { dayKey, monthKey, nextDayStart, shiftDay, TIME_ZONE, weekKey } from '../day';
@@ -51,7 +51,7 @@ export { dayKey, monthKey, nextDayStart, shiftDay, TIME_ZONE, weekKey } from '..
  * tabela da nota. `fanclub_like` e `fanclub_comment` são a reação e o
  * comentário nas publicações do fã-clube (seção 37, 37.5): nascem em 0, sem
  * central, sem assunto e fora das missões gerais. `checkin` é o check-in
- * diário (seção 39): os pontos vêm do ciclo de `config.checkin`, e o
+ * diário (seção 40): os pontos vêm do ciclo de `config.checkin`, e o
  * lançamento é montado só pelo núcleo (`checkin: true` no fã), nunca pela
  * rota; sem central, sem assunto, sem título e fora das missões.
  */
@@ -119,7 +119,7 @@ export type PointsConfig = {
    * painel desde o bloco 7 (22.1, decisão 13). Contam ações, pagas ou não.
    */
   actionCaps: Record<DailyActionKey, number>;
-  /** A chave e o ciclo do check-in diário (seção 39); a chave nasce desligada. */
+  /** A chave e o ciclo do check-in diário (seção 40); a chave nasce desligada. */
   checkin: CheckinConfig;
 };
 
@@ -307,7 +307,7 @@ export type WalletState = {
   /** Conquistas desbloqueadas, com a data em ms; nunca saem (bloco 7). */
   achievements: Record<string, number>;
   /**
-   * A sequência do check-in diário (seção 39). Vazia (`lastDay` null) em quem
+   * A sequência do check-in diário (seção 40). Vazia (`lastDay` null) em quem
    * nunca fez: assim o campo nem é gravado na carteira.
    */
   checkin: CheckinRecord;
@@ -541,7 +541,7 @@ export function assertValidEntry(entry: AwardEntry): void {
       throw invalid(`Origem desconhecida: ${entry.source}`);
     }
     // O lançamento do check-in é montado só pelo núcleo, com o dia e os pontos
-    // do ciclo (seção 39): a rota pede com `checkin: true` no fã.
+    // do ciclo (seção 40): a rota pede com `checkin: true` no fã.
     if (entry.source === 'checkin') {
       throw invalid('O check-in não entra como lançamento da rota: o núcleo monta o dele.');
     }
@@ -664,7 +664,7 @@ export type FanInput = {
   /** As unidades das missões (bloco 7), na ordem; sem perfil, ignoradas. */
   ticks?: readonly MissionTick[];
   /**
-   * O fã pede o check-in de hoje (seção 39); só vem quando é true. Com a chave
+   * O fã pede o check-in de hoje (seção 40); só vem quando é true. Com a chave
    * desligada, sem perfil ou suspenso (quem não chama), é ignorado.
    */
   checkin?: boolean;
@@ -728,7 +728,7 @@ export function emptyRewards(): ActionRewards {
 }
 
 /**
- * O check-in de quem chama neste cálculo (seção 39): só existe quando ele
+ * O check-in de quem chama neste cálculo (seção 40): só existe quando ele
  * pediu e a chave está ligada.
  */
 export type CheckinAward = {
@@ -753,7 +753,7 @@ export type ComputeOutput = {
   rewards: ActionRewards;
   /** A temporada ativa no "agora" do cálculo, ou null (a central nova do `member`, bloco 8). */
   activeSeasonId: string | null;
-  /** O check-in de quem chama, quando ele pediu e a chave está ligada (seção 39). */
+  /** O check-in de quem chama, quando ele pediu e a chave está ligada (seção 40). */
   checkin?: CheckinAward;
 };
 
@@ -805,7 +805,7 @@ export function missionEntry(mission: MissionRecord, periodKey: string): AwardEn
 }
 
 /**
- * O lançamento do check-in do dia (seção 39): os pontos do dia no ciclo e o
+ * O lançamento do check-in do dia (seção 40): os pontos do dia no ciclo e o
  * evento `checkin:<dia de São Paulo>`, que nunca paga duas vezes. Sem central,
  * sem assunto e sem título. Só o núcleo monta (o `assertValidEntry` recusa a
  * origem nos lançamentos da rota).
@@ -827,7 +827,7 @@ function checkinEntry(day: string, points: number): AwardEntry {
  * temporada e as conquistas. A carteira é gravada também quando só o
  * progresso mudou, só uma conquista nasceu ou só a meta foi marcada.
  *
- * Check-in diário (seção 39): com a chave ligada e o `checkin` do fã, depois
+ * Check-in diário (seção 40): com a chave ligada e o `checkin` do fã, depois
  * dos lançamentos da rota e antes das missões, o `planCheckin` decide o dia.
  * No check-in novo, o lançamento `checkin:<dia>` paga o valor do ciclo (não
  * entra com o valor 0) e a sequência é guardada sempre, pague ou não: a trava
@@ -1052,7 +1052,7 @@ export function computeAwards(input: ComputeInput): ComputeOutput {
 
     for (const entry of fan.entries) apply(entry);
 
-    // Check-in diário (seção 39): só com a chave ligada. O do suspenso que não
+    // Check-in diário (seção 40): só com a chave ligada. O do suspenso que não
     // chama não anda (26.6), como as missões dele.
     const checkinRuns = fan.checkin === true && !fan.suspended && config.checkin.enabled;
     if (checkinRuns) {
@@ -1140,7 +1140,7 @@ export function computeAwards(input: ComputeInput): ComputeOutput {
         // saiu `checked` ou `already`): aí vai a melhor sequência depois do
         // passo. Em qualquer outra gravação vai 0, e nenhuma de sequência sai.
         // Na API, só o `POST /me/checkin` pede o check-in, e a resposta dele
-        // leva as recompensas: o fã é sempre avisado (seção 39).
+        // leva as recompensas: o fã é sempre avisado (seção 40).
         streakBest: checkinRuns ? wallet.checkin.best : 0,
         now,
         readAt: fan.wallet.updatedAt,

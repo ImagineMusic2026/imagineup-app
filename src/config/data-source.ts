@@ -41,7 +41,7 @@ export type DataDomain =
   /** O Suporte dos Ajustes (seção 38): /me/support. */
   | 'support'
   /**
-   * O check-in diário com sequência (seção 39): /me/checkin. A chave que
+   * O check-in diário com sequência (seção 40): /me/checkin. A chave que
    * liga é do servidor (`config/points.checkin.enabled`, que nasce
    * desligada): com ela desligada, ou com a `api` de antes (o 404), o app não
    * mostra nada.

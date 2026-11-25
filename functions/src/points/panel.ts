@@ -23,7 +23,7 @@ import type { PointsConfig, SeasonInfo } from './model';
 
 // As callables da régua e da temporada (bloco 7, docs/arquitetura-api.md,
 // 22.8): `updatePointsConfig` (valores, limites, tetos do dia, níveis e, desde
-// a seção 39, a chave e o ciclo do check-in diário), com a seção missions, e
+// a seção 40, a chave e o ciclo do check-in diário), com a seção missions, e
 // `updateSeason`, antecipado do bloco 8, com a seção ranking, mais estrito no
 // bloco 8 (23.10). As telas são do bloco 11 (imagineup-admin).
 
@@ -40,7 +40,7 @@ const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b)
 /**
  * updatePointsConfig: os campos mandados sobrepõem os de agora (ausente não
  * muda); `dailyLimits.mission` e `dailyLimits.checkin` só aceitam null (22.1,
- * decisão 7; seção 39). Régua com menos degraus do que uma conquista de nível
+ * decisão 7; seção 40). Régua com menos degraus do que uma conquista de nível
  * não arquivada pede é recusada (`level-in-use`, com
  * `details.achievementIds`), lendo config/achievements na transação (sem o
  * documento, vale a lista padrão). O bloco `checkin` aceita só a chave, só o
@@ -98,7 +98,7 @@ export async function changePointsConfig(
           throw gamePanelError('level-in-use', { achievementIds: blocked.map((item) => item.id) });
         }
       }
-      // Ligar ou desligar o check-in é o que se procura depois na auditoria (seção 39).
+      // Ligar ou desligar o check-in é o que se procura depois na auditoria (seção 40).
       const checkinEnabled =
         next.checkin.enabled === current.checkin.enabled
           ? {}

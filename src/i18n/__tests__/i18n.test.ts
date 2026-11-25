@@ -43,7 +43,7 @@ describe('translations.json', () => {
     expect(dashes).toEqual([]);
   });
 
-  it('os textos do check-in diário (seção 39) não prometem lembrete nem notificação, que estão fora do contrato', () => {
+  it('os textos do check-in diário (seção 40) não prometem lembrete nem notificação, que estão fora do contrato', () => {
     const texts = allTexts(translations.checkin);
     expect(texts.length).toBeGreaterThan(0);
     expect(texts.filter((text) => /lembr|notific|avis/i.test(text))).toEqual([]);

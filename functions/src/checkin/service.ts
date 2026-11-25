@@ -11,7 +11,7 @@ import {
 } from '../points/award';
 import { CheckinError, checkinView } from './model';
 
-// O check-in do dia pelo servidor (docs/arquitetura-api.md, seção 39): na
+// O check-in do dia pelo servidor (docs/arquitetura-api.md, seção 40): na
 // transação do runIdempotent do `POST /me/checkin`, na ordem de sempre. Quem
 // decide o dia, paga o valor do ciclo e guarda a sequência é o núcleo de
 // pontos (`checkin: true` no planAwards, como as unidades das missões): aqui

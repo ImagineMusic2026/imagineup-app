@@ -2,7 +2,7 @@ import type { CheckinState } from '../api/contract';
 import { ConfigValidationError } from '../config-validation';
 import { dayKey, nextDayStart, shiftDay } from '../day';
 
-// Check-in diário com sequência (seção 39 de docs/arquitetura-api.md), puro:
+// Check-in diário com sequência (seção 40 de docs/arquitetura-api.md), puro:
 // nada aqui lê ou grava o Firestore. A chave e o ciclo de pontos
 // (config/points.checkin), o estado do fã (wallets/{uid}.checkin), a regra do
 // dia e a montagem da resposta das rotas. O núcleo de pontos importa daqui
@@ -241,7 +241,7 @@ export function planCheckin(
 }
 
 /**
- * O estado do check-in como as rotas respondem (`CheckinState`, seção 39).
+ * O estado do check-in como as rotas respondem (`CheckinState`, seção 40).
  * Com a chave desligada, tudo zerado e o ciclo vazio, sem olhar o estado do
  * fã. Com ela ligada e o check-in de hoje feito, a sequência guardada e o
  * lugar dela no ciclo; ainda por fazer, a sequência viva (0 depois de um dia

@@ -1,4 +1,4 @@
-// Check-in diário com sequência (docs/arquitetura-api.md, seção 39): o modelo
+// Check-in diário com sequência (docs/arquitetura-api.md, seção 40): o modelo
 // puro (a chave e o ciclo de config/points.checkin, a sequência guardada em
 // wallets/{uid}.checkin, a regra do dia e a resposta das rotas), o núcleo do
 // `POST /me/checkin` e o seed dos emuladores, que carrega o build

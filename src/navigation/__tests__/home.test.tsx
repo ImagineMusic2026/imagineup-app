@@ -406,7 +406,7 @@ describe('home (1b) quando algo não carrega', () => {
   });
 });
 
-// O check-in diário (seção 39), entre o aviso da conta suspensa e a missão do
+// O check-in diário (seção 40), entre o aviso da conta suspensa e a missão do
 // dia: só com a chave do servidor ligada, e em silêncio quando não aparece.
 describe('home (1b): o check-in diário', () => {
   const HOUR_MS = 60 * 60 * 1000;

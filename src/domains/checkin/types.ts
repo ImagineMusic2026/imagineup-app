@@ -1,4 +1,4 @@
-// O check-in diário com sequência (docs/arquitetura-api.md, seção 39): o
+// O check-in diário com sequência (docs/arquitetura-api.md, seção 40): o
 // espelho do contrato de `functions/src/api/contract.ts` (a parte do
 // check-in). Mudou um, mude o outro. O dia (o de São Paulo), a sequência e os
 // pontos são sempre do servidor: o app só mostra o que ele manda.

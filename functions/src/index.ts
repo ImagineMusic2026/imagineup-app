@@ -447,7 +447,7 @@ export const moderateComment = onPanelCall({ cors: PANEL_ORIGINS }, async (reque
 const gameDeps = (): ConfigPanelDeps => ({ db: getFirestore() });
 
 /**
- * Valores, limites, tetos do dia e níveis (a régua) e, desde a seção 39, a
+ * Valores, limites, tetos do dia e níveis (a régua) e, desde a seção 40, a
  * chave e o ciclo do check-in diário: é por aqui que o check-in liga e desliga.
  */
 export const updatePointsConfig = onPanelCall({ cors: PANEL_ORIGINS }, async (request) => {
@@ -616,7 +616,7 @@ export const updateSeasonGoal = onPanelCall({ cors: PANEL_ORIGINS }, async (requ
 
 /**
  * Cria uma conquista como rascunho (regra de nível, de primeira vez, de
- * ranking ou, desde a seção 39, de sequência de check-in).
+ * ranking ou, desde a seção 40, de sequência de check-in).
  */
 export const createAchievement = onPanelCall({ cors: PANEL_ORIGINS }, async (request) => {
   const result = await addAchievement(gameDeps(), request.auth, request.data);

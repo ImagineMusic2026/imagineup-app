@@ -1362,9 +1362,9 @@ describe('ajuste da equipe e suspensão (bloco 11)', () => {
   });
 });
 
-// --- Check-in diário com sequência (seção 39) -----------------------------------------
+// --- Check-in diário com sequência (seção 40) -----------------------------------------
 
-describe('check-in diário no cálculo (seção 39)', () => {
+describe('check-in diário no cálculo (seção 40)', () => {
   const TODAY = '2026-10-05';
   const YESTERDAY = '2026-10-04';
   const ON: PointsConfig = {

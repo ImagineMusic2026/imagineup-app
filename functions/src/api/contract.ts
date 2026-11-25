@@ -146,7 +146,7 @@ export type UnlockedAchievement = { id: string; title: string };
 /**
  * As recompensas da ação para quem chama (22.2), nas respostas das rotas que
  * gravam curtir, comentar, "Eu vou", entrar e seguir, e na do check-in diário
- * (seção 39): os quatro campos vão sempre. Opcionais no app.
+ * (seção 40): os quatro campos vão sempre. Opcionais no app.
  */
 export type ActionRewards = {
   completedMissions: CompletedMission[];
@@ -1184,7 +1184,7 @@ export type SupportMessageBody = {
 /** Resposta de `POST /me/support`: o id da mensagem gravada. */
 export type SupportMessageResult = { id: string; status: 'sent' };
 
-// --- Check-in diário com sequência (seção 39) ---------------------------------------
+// --- Check-in diário com sequência (seção 40) ---------------------------------------
 // O espelho no app é src/domains/checkin/types.ts: mudou um, mude o outro.
 
 /**

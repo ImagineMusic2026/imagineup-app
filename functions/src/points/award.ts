@@ -95,7 +95,7 @@ export type FanAwards = {
    */
   ticks?: MissionTick[];
   /**
-   * O fã pede o check-in de hoje (seção 39): o núcleo decide o dia, paga o
+   * O fã pede o check-in de hoje (seção 40): o núcleo decide o dia, paga o
    * valor do ciclo e guarda a sequência. Só vale com a chave ligada
    * (`config.checkin.enabled`); com ela desligada, o plano ignora o pedido.
    */
@@ -363,7 +363,7 @@ export function mergeFanAwards(fans: readonly FanAwards[]): {
         entries: [...fan.entries],
         fan: fan.fan,
         ticks: [...(fan.ticks ?? [])],
-        // O pedido de check-in (seção 39) só entra quando é true.
+        // O pedido de check-in (seção 40) só entra quando é true.
         ...(fan.checkin === true ? { checkin: true } : {}),
       });
       continue;
@@ -403,7 +403,7 @@ export function missionsToRead(
  * e a carteira dos outros fãs) e calcula. Sem lançamentos e sem unidades de
  * missão, não lê nada: dá para chamar depois das gravações do domínio (só a
  * atividade de quem chama). O mesmo uid repetido vira uma entrada só
- * (mergeFanAwards). O pedido de check-in (seção 39) conta como lançamento só
+ * (mergeFanAwards). O pedido de check-in (seção 40) conta como lançamento só
  * com a chave ligada: aí a temporada é lida (os pontos entram nela) e o
  * lançamento `checkin:<dia>` também; com a chave desligada, nada a mais é lido.
  */
@@ -431,7 +431,7 @@ export async function planAwards(
         ...missions.map(({ mission, periodKey }) =>
           ledgerId({ source: 'mission', eventId: missionEventId(mission.id, periodKey) }),
         ),
-        // O lançamento do check-in de hoje, que o núcleo monta (seção 39).
+        // O lançamento do check-in de hoje, que o núcleo monta (seção 40).
         ...(checkinAsked(fan) ? [ledgerId({ source: 'checkin', eventId: dayKey(ctx.now) })] : []),
       ]),
     ];
@@ -518,7 +518,7 @@ export function setCentralMember(
 /**
  * As recompensas do plano para a resposta da ação (22.2): os quatro campos,
  * sempre (listas vazias, null e false quando nada aconteceu). Valem para
- * curtir, comentar, "Eu vou", entrar, seguir e o check-in diário (seção 39);
+ * curtir, comentar, "Eu vou", entrar, seguir e o check-in diário (seção 40);
  * desfazer, sair, denunciar, bloquear e o convite não mandam.
  */
 export function rewardsOf(plan: Pick<AwardPlan, 'rewards'>): ActionRewards {
@@ -550,7 +550,7 @@ function periodFields(state: MissionPeriodState | null): DocumentData | null {
  * Os campos da carteira, inteiros a cada gravação: o `missions`, o
  * `achievements` e o `goalReached` vão sempre juntos com o resto (22.17), e
  * um `update` que esquecesse um deles apagaria o progresso. A exceção é o
- * `checkin` (seção 39): só vai depois do primeiro check-in (`lastDay` com
+ * `checkin` (seção 40): só vai depois do primeiro check-in (`lastDay` com
  * dia). Sem ele, o `create` não leva o campo e o `update` não toca nele: com
  * a chave desligada, nenhuma carteira ganha o campo.
  */

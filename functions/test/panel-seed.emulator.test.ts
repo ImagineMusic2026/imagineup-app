@@ -112,7 +112,7 @@ import { localApi, signIn, useEmulators } from './support';
  * reações (etapa 1 de 37.13) e a moderação dos comentários (etapa 3): o
  * comentário do rank-40 oculto pela Camila, com o pedido de revisão, e a
  * propaganda do Promo, que passa a seguir, denunciada pela Bia. Desde o
- * check-in diário (seção 39), logo depois da carga da versão 1, a chave
+ * check-in diário (seção 40), logo depois da carga da versão 1, a chave
  * ligada e as quatro conquistas de sequência pelo admin do seed e, depois da
  * semana da carteira, os 4 dias seguidos da Camila até ontem, com o ciclo
  * zerado: nenhum número dela nem total fechado muda. No fim, a rodada que
@@ -188,7 +188,7 @@ async function seed(ranking: Map<string, string>): Promise<void> {
     await seedStaffMember(db, env.auth, member, 'senha-da-equipe', T0);
   }
   await seedGameConfig(db, T0);
-  // O check-in diário (seção 39): a chave e as conquistas de sequência, num passo à parte.
+  // O check-in diário (seção 40): a chave e as conquistas de sequência, num passo à parte.
   await seedCheckinConfig(db, ACTOR, T0);
   await seedPastSeasons(db, ranking, 'camila', { now: T0 });
   await seedCamilaWallet(db, 'camila', { now: T0, steps: 'early' });
@@ -353,7 +353,7 @@ describe('o seed das telas do painel (26.13)', () => {
       email: 'rank-48@teste.imagineup',
       password: 'fa-do-ranking',
     });
-    // A Camila também: o check-in dela é conferido pela API (seção 39).
+    // A Camila também: o check-in dela é conferido pela API (seção 40).
     await env.auth.createUser({
       uid: 'camila',
       email: FANS.camila.email,
@@ -387,7 +387,7 @@ describe('o seed das telas do painel (26.13)', () => {
     expect(loadedCatalog).toMatchObject({ version: 1, updatedBy: null });
     expect(loadedCatalog.achievements).toHaveLength(10);
 
-    // O check-in diário (seção 39), no passo à parte do seed: o admin do seed
+    // O check-in diário (seção 40), no passo à parte do seed: o admin do seed
     // liga a chave (a versão 2 de config/points, com o ciclo padrão e o resto
     // da régua igual) e cria e publica as quatro conquistas de sequência (duas
     // versões cada: a 9 de config/achievements), com a auditoria de verdade.
@@ -609,7 +609,7 @@ describe('o seed das telas do painel (26.13)', () => {
     expect(audit.filter((entry) => entry.action === 'wallet.adjusted')).toEqual([]);
     expect(audit.filter((entry) => entry.action === 'config.seeded')).toHaveLength(2);
     expect(audit.filter((entry) => entry.action === 'season.closed')).toHaveLength(2);
-    // O check-in (seção 39): a chave ligada e as quatro conquistas de sequência
+    // O check-in (seção 40): a chave ligada e as quatro conquistas de sequência
     // criadas e publicadas, pelo admin do seed, na seção Missões.
     const keyOn = audit.filter((entry) => entry.action === 'points.config.updated');
     expect(keyOn).toHaveLength(1);

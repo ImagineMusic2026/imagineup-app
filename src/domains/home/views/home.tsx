@@ -31,7 +31,7 @@ function postItemType(post: Post): 'event' | 'media' | 'text' {
  * Fora de foco, a missão do dia que conclui não festeja: quem fala é a tela
  * que o fã está vendo (a 1g, quando a conclusão chega por lá). A conta
  * suspensa tem o aviso fixo logo embaixo da saudação (seção 29, frente E). O
- * check-in diário (seção 39) vem antes da missão do dia, só com a chave do
+ * check-in diário (seção 40) vem antes da missão do dia, só com a chave do
  * servidor ligada: sem ela, a seção não desenha nem anuncia nada.
  */
 function HomeListHeader({ focused }: { focused: boolean }) {
@@ -120,7 +120,7 @@ function useAnnounceHomeFailures(postCount: number): void {
 }
 
 /**
- * 1b. Home gamificada: saudação com o avatar, o check-in diário (seção 39,
+ * 1b. Home gamificada: saudação com o avatar, o check-in diário (seção 40,
  * só com a chave do servidor ligada), missão do dia, "Suas centrais", "Dos
  * seus fã-clubes" (seção 34, só com publicação) e o mural "Do seu fandom",
  * numa FlashList só que rola junto. O header e o mural passam por baixo da

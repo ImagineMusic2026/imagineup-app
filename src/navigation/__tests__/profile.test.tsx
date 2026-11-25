@@ -146,7 +146,7 @@ function callsByUrl(): Record<string, number> {
 
 /**
  * A API por rota: o que não vier em `failing` responde como as fixtures. O
- * check-in diário (`/me/checkin`, seção 39) só responde quando o teste dá a
+ * check-in diário (`/me/checkin`, seção 40) só responde quando o teste dá a
  * resposta em `extra`: sem ela, a rota falha, como numa `api` fora do ar.
  */
 function mockApi(failing: readonly string[], extra: Record<string, () => unknown> = {}): void {
@@ -482,7 +482,7 @@ describe('perfil (1e)', () => {
     fireEvent.press(await screen.findByRole('button', { name: 'Tentar de novo' }));
 
     // As buscas da abertura, uma por rota, com a do check-in diário (a pílula
-    // da sequência, seção 39, sem resposta neste teste), e a nova tentativa
+    // da sequência, seção 40, sem resposta neste teste), e a nova tentativa
     // só das centrais.
     await waitFor(() =>
       expect(callsByUrl()).toEqual({
@@ -498,7 +498,7 @@ describe('perfil (1e)', () => {
   });
 });
 
-// A sequência do check-in diário (seção 39) na 1e: a pílula embaixo do nível,
+// A sequência do check-in diário (seção 40) na 1e: a pílula embaixo do nível,
 // só com a chave do servidor ligada e a sequência valendo, sem mexer no rótulo
 // do topo nem no do nível.
 describe('perfil (1e): a sequência do check-in diário', () => {

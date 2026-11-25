@@ -96,7 +96,7 @@ describe('carteira nas fixtures (build sem a API)', () => {
     expect(rewardsFixture.redeem('videochamada', 'resgate-1', 8_500, NOW).balance).toBe(3_980);
   });
 
-  it('o check-in diário (seção 39) rende o valor do dia do ciclo nos três contadores', () => {
+  it('o check-in diário (seção 40) rende o valor do dia do ciclo nos três contadores', () => {
     // O exemplo nasce desligado, como a chave do servidor: o teste liga.
     checkinFixture.setEnabled(true);
     // O quinto dia seguido da Camila do seed vale 5.
@@ -140,7 +140,7 @@ describe('carteira na API (emuladores no bloco 1)', () => {
     expect(fixtureWallet.get()).toEqual(INITIAL);
   });
 
-  it('o check-in diário (seção 39) acontece e a sequência anda, mas rende 0 e a carteira não muda', () => {
+  it('o check-in diário (seção 40) acontece e a sequência anda, mas rende 0 e a carteira não muda', () => {
     checkinFixture.setEnabled(true);
     expect(checkinFixture.checkin('checkin-1')).toMatchObject({
       pointsAwarded: 0,

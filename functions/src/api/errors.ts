@@ -112,7 +112,7 @@ export const API_ERRORS: Record<ApiErrorCode, { status: number; message: string 
     message: 'Você trocou o @ há pouco. Tente de novo mais tarde.',
   },
   fan_club_refused: { status: 409, message: 'Isso não pode ser feito no fã-clube agora.' },
-  // O check-in diário com a chave desligada (seção 39): o app esconde o card e busca o estado de novo.
+  // O check-in diário com a chave desligada (seção 40): o app esconde o card e busca o estado de novo.
   checkin_disabled: { status: 409, message: 'O check-in diário não está disponível agora.' },
   payload_too_large: { status: 413, message: 'Pedido grande demais.' },
   idempotency_key_reused: { status: 422, message: 'Esta chave já foi usada em outro pedido.' },

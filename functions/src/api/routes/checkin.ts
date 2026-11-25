@@ -5,7 +5,7 @@ import { readWallet } from '../../points/wallet';
 import type { CheckinResult, CheckinState } from '../contract';
 import type { ApiRoute } from '../types';
 
-// O check-in diário com sequência (seção 39 de docs/arquitetura-api.md), atrás
+// O check-in diário com sequência (seção 40 de docs/arquitetura-api.md), atrás
 // da chave `config/points.checkin.enabled`, que nasce desligada. O GET só lê e
 // não exige perfil, como os outros; o POST grava no runIdempotent, sem corpo
 // (o que vier é ignorado) e sem aceitar o fã suspenso (cria e soma: 403).

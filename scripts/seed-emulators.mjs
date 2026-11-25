@@ -154,7 +154,7 @@
  * fã-clube e comenta propaganda na publicação da foto, denunciado pela Bia como
  * spam (o item com o tipo report), para a aba Comentários e o ocultar em lote.
  *
- * Check-in diário (functions/lib/checkin, docs/arquitetura-api.md, seção 39):
+ * Check-in diário (functions/lib/checkin, docs/arquitetura-api.md, seção 40):
  * logo depois da carga da versão 1, num passo à parte, a chave
  * `checkin.enabled` ligada em config/points (só aqui, no emulador: a carga é a
  * mesma de produção e nunca liga) e as quatro conquistas de sequência no ar
@@ -499,7 +499,7 @@ console.log(
   `Configuração inicial: ${gameConfig.length > 0 ? `${gameConfig.join(' e ')} na versão 1 agora` : 'config/points e config/achievements já existiam'}.`,
 );
 
-// O check-in diário (seção 39), num passo à parte, depois da carga e nunca
+// O check-in diário (seção 40), num passo à parte, depois da carga e nunca
 // dentro dela (a carga também roda em produção, onde a chave nasce desligada):
 // a chave ligada em config/points e as quatro conquistas de sequência, pelos
 // núcleos das callables do painel, com o admin do seed. Rodar de novo não grava.
@@ -575,7 +575,7 @@ if (camilaUid) {
   const { seedCamilaWallet } = functionsBuild('points');
   await withFirestore((db) => seedCamilaWallet(db, camilaUid, { steps: 'week' }));
   console.log('Carteira da Camila: saldo 12.480, temporada 4.120, Netto e Nenho, +840 na semana.');
-  // A sequência de check-in dela (seção 39), depois da semana e antes dos
+  // A sequência de check-in dela (seção 40), depois da semana e antes dos
   // números de 60 dias: 4 dias até ontem, com o ciclo zerado (a carteira e o
   // extrato não mudam). Rodar de novo não grava.
   const { seedCamilaCheckins } = functionsBuild('checkin');

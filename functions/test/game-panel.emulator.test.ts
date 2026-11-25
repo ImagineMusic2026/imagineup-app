@@ -128,7 +128,7 @@ describe('carga da versão 1 (seedGameConfig, bloco 11, 26.9)', () => {
       actionCaps: DEFAULT_POINTS_CONFIG.actionCaps,
       levels: DEFAULT_POINTS_CONFIG.levels,
     });
-    // O bloco do check-in diário vai na carga com a chave desligada (seção 39):
+    // O bloco do check-in diário vai na carga com a chave desligada (seção 40):
     // a mesma carga roda em produção, e quem liga a chave é o painel.
     expect(points!.checkin).toEqual({ enabled: false, cycle: [3, 3, 4, 4, 5, 6, 15] });
     expect(points!.dailyLimits.checkin).toBeNull();
@@ -251,7 +251,7 @@ describe('régua (updatePointsConfig)', () => {
     ).toMatchObject({ reason: 'invalid-request', field: 'dailyLimits.mission' });
   });
 
-  it('o bloco do check-in (seção 39): liga só a chave, muda só o ciclo, audita a chave e não some no salvar de outro bloco', async () => {
+  it('o bloco do check-in (seção 40): liga só a chave, muda só o ciclo, audita a chave e não some no salvar de outro bloco', async () => {
     const editor = await seedMember(env, 'Editora', 'editor', ['missions']);
     const CYCLE = [3, 3, 4, 4, 5, 6, 15];
     const NEW_CYCLE = [1, 2, 3, 4, 5, 6, 7];
@@ -379,7 +379,7 @@ describe('régua (updatePointsConfig)', () => {
     expect(await audits('points.config.updated')).toHaveLength(0);
   });
 
-  it('o config/points de produção, salvo antes do check-in e sem o bloco, lido do Firestore: desligado, não paga nem grava; o painel liga e o POST paga; desliga e o POST recusa de novo (seção 39)', async () => {
+  it('o config/points de produção, salvo antes do check-in e sem o bloco, lido do Firestore: desligado, não paga nem grava; o painel liga e o POST paga; desliga e o POST recusa de novo (seção 40)', async () => {
     const editor = await seedMember(env, 'Editora', 'editor', ['missions']);
     const CYCLE = [3, 3, 4, 4, 5, 6, 15];
     // O documento como o painel de antes gravou: a versão 7, um valor fora do
@@ -1015,7 +1015,7 @@ describe('conquistas', () => {
     });
   });
 
-  it('a conquista de sequência de check-in (seção 39): o painel cria, publica, edita e reordena com a chave desligada, e o fã só a vê com a chave ligada', async () => {
+  it('a conquista de sequência de check-in (seção 40): o painel cria, publica, edita e reordena com a chave desligada, e o fã só a vê com a chave ligada', async () => {
     const editor = await seedMember(env, 'Editora', 'editor', ['missions']);
     const achievement = {
       title: '7 dias seguidos',

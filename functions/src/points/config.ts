@@ -62,7 +62,7 @@ import {
 // Valores, limites diários, tetos do dia e régua (config/points), a temporada
 // (config/season) e, desde o bloco 7, o catálogo de missões com a meta da
 // temporada (config/missions) e o de conquistas (config/achievements). Desde
-// a seção 39, config/points leva também a chave e o ciclo do check-in diário
+// a seção 40, config/points leva também a chave e o ciclo do check-in diário
 // (`checkin`). Versionados, com padrão no código para quando o documento não
 // existe. Contrato em docs/arquitetura-api.md, seções 9, 22 e 39.
 
@@ -134,7 +134,7 @@ export const ACTION_CAP_MAX = 10_000;
  * repetem os das fixtures. Os de verdade vêm da cliente (UP-9) e mudam pelo
  * painel, sem código. A reação e o comentário no fã-clube nascem em 0
  * (decisão 12 de 36.1), com os limites do dia do Mural, que só valem quando o
- * valor sair de 0 (37.5). O check-in diário (seção 39) nasce com a chave
+ * valor sair de 0 (37.5). O check-in diário (seção 40) nasce com a chave
  * desligada e o ciclo 3, 3, 4, 4, 5, 6 e 15; o limite do dia dele é sempre
  * null, como o da missão.
  */
@@ -264,7 +264,7 @@ const versionOf = (value: unknown): number | null => (isInt(value) && value >= 0
  * campo, o que veio no documento. Origem desconhecida é ignorada (aviso);
  * valor inválido volta ao padrão só nele, e régua inválida volta inteira
  * (erro no log). Origem nova no código entra com o padrão dela e não derruba
- * os valores que a equipe ajustou nas outras. O bloco do check-in (seção 39)
+ * os valores que a equipe ajustou nas outras. O bloco do check-in (seção 40)
  * que falta no documento salvo vale o padrão do código, com a chave
  * desligada (`parseCheckinConfig`).
  */
@@ -310,7 +310,7 @@ export function parsePointsConfig(data: unknown, log: ConfigLog = defaultLog): P
           log.warn('config/points.dailyLimits com origem desconhecida.', { source });
         } else if (source === 'mission' || source === 'checkin') {
           // Sempre sem limite: uma conclusão `capped` não pagaria mais no período (22.1,
-          // decisão 7), e o check-in já é um por dia (seção 39).
+          // decisão 7), e o check-in já é um por dia (seção 40).
           if (limit !== null) log.error(`config/points.dailyLimits.${source} precisa ser null.`);
         } else if (!validLimit(limit)) {
           log.error('config/points.dailyLimits inválido: valendo o padrão.', { source, limit });
@@ -515,7 +515,7 @@ export type PointsConfigInput = {
   dailyLimits?: Partial<Record<EarnSource, number | null>>;
   levels?: Level[];
   actionCaps?: Partial<Record<DailyActionKey, number>>;
-  /** A chave e o ciclo do check-in (seção 39): só o que veio, sobreposto ao de agora. */
+  /** A chave e o ciclo do check-in (seção 40): só o que veio, sobreposto ao de agora. */
   checkin?: Partial<CheckinConfig>;
 };
 
@@ -547,7 +547,7 @@ export function validatePointsConfigInput(input: unknown): PointsConfigInput {
     if (!isRecord(input.dailyLimits)) throw new ConfigValidationError('dailyLimits');
     const limits: Partial<Record<EarnSource, number | null>> = {};
     for (const [source, limit] of Object.entries(input.dailyLimits)) {
-      // A missão e o check-in só aceitam null (22.1, decisão 7; seção 39); as
+      // A missão e o check-in só aceitam null (22.1, decisão 7; seção 40); as
       // outras, de 1 a 1.000 ou null.
       const valid =
         source === 'mission' || source === 'checkin' ? limit === null : validLimit(limit);
@@ -623,7 +623,7 @@ export function validateSeasonInput(input: unknown, field = 'season'): SeasonInp
  * temporada, o catálogo de missões (com a meta da temporada), o de conquistas
  * e o jogo montado deles (o índice das missões por tipo de ação, 22.1,
  * decisão 1). O catálogo de conquistas daqui é o do lado do fã: com a chave
- * do check-in desligada, vem sem as de sequência (`fanAchievements`, seção 39).
+ * do check-in desligada, vem sem as de sequência (`fanAchievements`, seção 40).
  */
 export type LoadedConfig = {
   points: PointsConfig;
@@ -666,7 +666,7 @@ export function gameOf(missions: MissionsConfig, achievements: AchievementsConfi
 }
 
 /**
- * O catálogo de conquistas que o lado do fã usa (seção 39): com a chave do
+ * O catálogo de conquistas que o lado do fã usa (seção 40): com a chave do
  * check-in desligada, as conquistas de sequência ficam de fora, e nem o
  * desbloqueio (`game.achievements`) nem o "X de N" do `GET /me/achievements`
  * as veem. Com a chave ligada, o catálogo inteiro. As callables do painel leem

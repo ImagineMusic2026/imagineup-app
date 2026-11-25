@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
 // O núcleo de pontos importa os modelos das missões, das conquistas e, desde a
-// seção 39, do check-in diário (valores). Se eles importassem um valor do
+// seção 40, do check-in diário (valores). Se eles importassem um valor do
 // núcleo, o ciclo quebraria a carga em tempo de execução: aqui o núcleo falha
 // ao carregar, e os três modelos precisam carregar sem ele (só `import type`,
 // 22.2).
@@ -23,7 +23,7 @@ describe('carga dos modelos do bloco 7', () => {
     expect(typeof model.unlockAchievements).toBe('function');
   });
 
-  it('o modelo do check-in diário carrega sem o points/model.ts (seção 39)', async () => {
+  it('o modelo do check-in diário carrega sem o points/model.ts (seção 40)', async () => {
     const model = await import('../checkin/model.js');
     expect(typeof model.planCheckin).toBe('function');
     expect(typeof model.parseCheckinConfig).toBe('function');

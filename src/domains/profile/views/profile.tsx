@@ -163,7 +163,7 @@ function pointsNumbers(points: Points): ReactNode {
 
 /**
  * O selo, a barra e o "Faltam ..." do nível, embaixo da bio. Com o nível na
- * tela, a sequência do check-in diário (seção 39) vem logo embaixo, numa
+ * tela, a sequência do check-in diário (seção 40) vem logo embaixo, numa
  * pílula com foco próprio, fora do rótulo do nível: ela só aparece com a
  * chave do servidor ligada e a sequência valendo, e, como chega depois do
  * bloco, entra em fade por valor animado, sem `entering`.
@@ -349,7 +349,7 @@ function useAnnounceProfileFailures(focused: boolean): void {
  * dele, o nome, o @ e a cidade do Firestore (a escuta o mantém em dia) e,
  * embaixo deles, o saldo para resgatar (abre o extrato), os convidados e as
  * temporadas; embaixo do avatar, a bio, as redes, o nível com a barra até o
- * próximo, a sequência do check-in diário (seção 39, só com a chave ligada)
+ * próximo, a sequência do check-in diário (seção 40, só com a chave ligada)
  * e os botões "Editar perfil" e "Convidar amigos"; depois, as conquistas e as
  * centrais do fã. Tudo o que é ponto vem do servidor. O brilho rosa com as
  * listras fica parado no topo e o conteúdo rola por cima; puxar para baixo

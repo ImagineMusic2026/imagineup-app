@@ -152,7 +152,7 @@ describe('linha do extrato', () => {
     );
   });
 
-  it('o check-in diário (seção 39): pontos em lima com o calendário, sem central e sem título', () => {
+  it('o check-in diário (seção 40): pontos em lima com o calendário, sem central e sem título', () => {
     // O id do servidor é `checkin:<dia>`; o lançamento não leva central nem assunto.
     const checkin = entry('checkin:2026-09-29', {
       source: 'checkin',

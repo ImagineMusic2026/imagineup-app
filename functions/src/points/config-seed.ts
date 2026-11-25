@@ -37,7 +37,7 @@ export async function readGameConfigSeed(db: Firestore): Promise<GameConfigDoc[]
  * falta, cria o documento e a cópia em `versions/1`, com `version: 1`,
  * `updatedAt` e `updatedBy: null`, e uma auditoria `config.seeded` (sem
  * autor, "Carga inicial"). config/points recebe os valores, limites, tetos, a
- * régua e o bloco do check-in diário do padrão (seção 39: a chave desligada,
+ * régua e o bloco do check-in diário do padrão (seção 40: a chave desligada,
  * sempre; esta carga também roda em produção, e quem liga a chave é o painel);
  * config/achievements, a lista provisória com as datas desta gravação
  * (`activatedAt` nas ativas). Devolve os documentos criados: rodar de novo

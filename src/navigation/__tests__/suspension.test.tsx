@@ -469,7 +469,7 @@ describe('o onboarding do suspenso', () => {
   });
 });
 
-// O check-in diário (seção 39) não tem caminho próprio para o suspenso: a
+// O check-in diário (seção 40) não tem caminho próprio para o suspenso: a
 // recusa segue o de sempre, com o `Alert` do app, e o card fica na tela.
 describe('o check-in diário do suspenso', () => {
   it('o toque recusado com 403 abre o Alert "Conta suspensa", sem anúncio por cima dele, e o card fica com a frase', async () => {

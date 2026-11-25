@@ -14,7 +14,7 @@ import { useMyAchievementsQuery, useMyProgressQuery, useWalletQuery } from '../q
 
 /**
  * Puxar para atualizar do perfil (1e): saldo, nível, conquistas e centrais,
- * juntos, e a sequência do check-in diário (seção 39), pela chave: a pílula
+ * juntos, e a sequência do check-in diário (seção 40), pela chave: a pílula
  * busca de novo por fora, sem segurar o indicador, e depois do 404 da `api`
  * de antes nada é pedido (a trava do `useCheckinQuery`). O perfil básico não
  * entra: a escuta do Firestore já o mantém em dia. O ranking (1f e 1d,

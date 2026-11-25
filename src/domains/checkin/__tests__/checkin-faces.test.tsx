@@ -105,7 +105,7 @@ function measure(content: 'checkin-card' | 'checkin-done', height: number): void
 /**
  * O conteúdo medido de uma face: quem tem o `onLayout` da `Expandable`. Fora do
  * fluxo do recorte, ele é medido também com a face fechada; no fluxo, num
- * recorte de altura 0, a face fechada nunca abria no aparelho (seção 39, 39.8).
+ * recorte de altura 0, a face fechada nunca abria no aparelho (seção 40, 40.8).
  */
 function measuredContent(content: 'checkin-card' | 'checkin-done') {
   let node = screen.getByTestId(content, hidden).parent;

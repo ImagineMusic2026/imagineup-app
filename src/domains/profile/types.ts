@@ -297,7 +297,7 @@ export type LedgerSource =
    */
   | 'fanclub_like'
   | 'fanclub_comment'
-  /** O check-in diário (seção 39): o valor do dia do ciclo, sem central e sem título. */
+  /** O check-in diário (seção 40): o valor do dia do ciclo, sem central e sem título. */
   | 'checkin';
 
 /**

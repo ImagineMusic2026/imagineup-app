@@ -81,7 +81,7 @@ describe('leitura e validação', () => {
       ['tone', { tone: 'rosa' }],
       ['rule', { rule: { type: 'first', action: 'dance' } }],
       ['rule.level', { rule: { type: 'level', level: 1 } }],
-      // A sequência de check-in (seção 39): de 2 a 1.000 dias.
+      // A sequência de check-in (seção 40): de 2 a 1.000 dias.
       ['rule.days', { rule: { type: 'streak', days: 1 } }],
     ] as const) {
       let error: unknown;
@@ -269,7 +269,7 @@ describe('a 1e (achievementsView)', () => {
   });
 });
 
-describe('conquista de sequência de check-in (seção 39)', () => {
+describe('conquista de sequência de check-in (seção 40)', () => {
   const streak = (days: number, extra: Partial<AchievementRecord> = {}): AchievementRecord => ({
     id: `sequencia-${days}`,
     title: `${days} dias seguidos`,

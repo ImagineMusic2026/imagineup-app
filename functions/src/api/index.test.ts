@@ -2493,7 +2493,7 @@ describe('fã-clube gerido pelo fã (seção 34)', () => {
   });
 });
 
-describe('check-in diário (seção 39)', () => {
+describe('check-in diário (seção 40)', () => {
   const CYCLE = [3, 3, 4, 4, 5, 6, 15];
   const ON = { ...DEFAULT_POINTS_CONFIG, checkin: { enabled: true, cycle: CYCLE } };
   // O relógio do teste é meio-dia de 05/10/2026 em São Paulo: a meia-noite seguinte.

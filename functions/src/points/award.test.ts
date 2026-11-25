@@ -612,9 +612,9 @@ describe('plano sem fã (aprovar e entregar um pedido)', () => {
   });
 });
 
-// --- Check-in diário com sequência (seção 39) -----------------------------------------
+// --- Check-in diário com sequência (seção 40) -----------------------------------------
 
-describe('check-in diário no plano e na carteira (seção 39)', () => {
+describe('check-in diário no plano e na carteira (seção 40)', () => {
   const NOW = Date.parse('2026-10-05T15:00:00.000Z');
   const DAY_MS = 24 * 60 * 60 * 1000;
   const ON: PointsConfig = {

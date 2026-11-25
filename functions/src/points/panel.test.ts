@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { DEFAULT_POINTS_CONFIG } from './config';
 import { changePointsConfig } from './panel';
 
-// O bloco do check-in diário no `updatePointsConfig` (seção 39), com um
+// O bloco do check-in diário no `updatePointsConfig` (seção 40), com um
 // Firestore falso: o documento de config/points é gravado inteiro (`tx.set`
 // sem merge), então o bloco precisa estar no pedido conferido, no documento
 // novo e na lista dos campos da auditoria, ou some no salvar de outro bloco.
@@ -77,7 +77,7 @@ async function change(points: Record<string, unknown> | null, data: Record<strin
   };
 }
 
-describe('updatePointsConfig e o bloco do check-in (seção 39)', () => {
+describe('updatePointsConfig e o bloco do check-in (seção 40)', () => {
   it('liga só a chave no documento salvo sem o bloco: o resto fica, o ciclo é o padrão e a auditoria leva a chave', async () => {
     const { result, writes, doc, audit } = await change(SAVED_BEFORE, {
       expectedVersion: 7,

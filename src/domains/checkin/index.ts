@@ -1,4 +1,4 @@
-// O check-in diário com sequência (docs/arquitetura-api.md, seção 39): o card
+// O check-in diário com sequência (docs/arquitetura-api.md, seção 40): o card
 // da Início, a pílula da sequência da 1e, o estado e as fixtures. Fica atrás
 // da chave do servidor (`config/points.checkin.enabled`, que nasce desligada):
 // com ela desligada, ou com a `api` de antes (o 404), nada daqui aparece. Os

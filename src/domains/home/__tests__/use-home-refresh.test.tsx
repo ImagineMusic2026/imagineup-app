@@ -129,7 +129,7 @@ describe('puxar para atualizar a home', () => {
     expect(get.mock.calls.some(([url]) => String(url).includes('fan-club'))).toBe(false);
   });
 
-  it('o check-in diário (seção 39) busca de novo junto, pela chave, só quando já veio: sem a seção na tela, nada é pedido', async () => {
+  it('o check-in diário (seção 40) busca de novo junto, pela chave, só quando já veio: sem a seção na tela, nada é pedido', async () => {
     const { result } = await renderLoaded();
     await act(() => result.current.refresh());
     // O puxar não cria a consulta: quem pergunta é a seção, e só ela.
@@ -141,7 +141,7 @@ describe('puxar para atualizar a home', () => {
     expect(get.mock.calls.some(([url]) => String(url).includes('checkin'))).toBe(false);
   });
 
-  it('o indicador não espera o check-in diário (seção 39): sai com as quatro buscas da home, e a do check-in segue por fora', async () => {
+  it('o indicador não espera o check-in diário (seção 40): sai com as quatro buscas da home, e a do check-in segue por fora', async () => {
     // A resposta da chave desligada: mesmo sem card, a seção da Início deixa a consulta ativa.
     const off = { enabled: false, cycle: [], resetsAt: '2026-11-11T03:00:00.000Z' };
     const late = deferred<{ data: unknown }>();

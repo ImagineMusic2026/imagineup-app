@@ -734,12 +734,12 @@ describe('as rotas da moderação dos comentários (seção 37, etapa 3 de 37.13
     expect(matchRoute(API_ROUTES, 'GET', '/me/fan-club/hidden-comments').kind).toBe('not_found');
   });
 
-  it('a API tem 77 rotas: as 64 de antes, as 10 da Fase 2 (5 da etapa 1, 1 da etapa 2 e 4 da etapa 3), a do Suporte (seção 38) e as 2 do check-in diário (seção 39)', () => {
+  it('a API tem 77 rotas: as 64 de antes, as 10 da Fase 2 (5 da etapa 1, 1 da etapa 2 e 4 da etapa 3), a do Suporte (seção 38) e as 2 do check-in diário (seção 40)', () => {
     expect(API_ROUTES).toHaveLength(77);
   });
 });
 
-describe('rotas do check-in diário (seção 39)', () => {
+describe('rotas do check-in diário (seção 40)', () => {
   it('GET /me/checkin só lê e POST /me/checkin grava; os outros métodos são 405', () => {
     expect(matchRoute(API_ROUTES, 'GET', '/me/checkin')).toMatchObject({
       kind: 'match',

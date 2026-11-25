@@ -5,7 +5,7 @@ import { isVisibleLine } from '../visible-line';
 
 // Conquistas do bloco 7, puro: nada aqui lê ou grava o Firestore. O catálogo
 // (config/achievements, com a lista provisória como padrão do código), as
-// regras de desbloqueio (nível, primeira vez e, desde a seção 39, sequência
+// regras de desbloqueio (nível, primeira vez e, desde a seção 40, sequência
 // de check-in aqui; a de posição no ranking, no retrato semanal e na virada
 // do bloco 8, ranking/jobs.ts) e a montagem da 1e. Do núcleo de pontos, nada:
 // o nível e a melhor sequência chegam prontos, calculados por quem chama.
@@ -24,7 +24,7 @@ export const FIRST_ACTIONS = [
 export type FirstAction = (typeof FIRST_ACTIONS)[number];
 
 /**
- * `streak` é a sequência de check-in diário (seção 39): `days` dias seguidos.
+ * `streak` é a sequência de check-in diário (seção 40): `days` dias seguidos.
  * Os marcos do check-in só dão conquista, nunca pontos a mais.
  */
 export type AchievementRule =
@@ -413,7 +413,7 @@ export type UnlockOutcome = {
  * nível que o XP lido já alcançava (a régua mudou depois da última gravação)
  * entra com a data `readAt` (o `updatedAt` da carteira lida), a mesma que o
  * `GET /me/achievements` já mostrava, e fora do anúncio; o resto, com `now`.
- * A de sequência (seção 39) sai quando o `streakBest` alcança os dias da
+ * A de sequência (seção 40) sai quando o `streakBest` alcança os dias da
  * regra, sempre com `now` e com o anúncio. O núcleo de pontos só passa a
  * melhor sequência do fã (que só cresce) no cálculo em que o passo do
  * check-in rodou para ele: ele pediu o check-in, a chave está ligada e o dia

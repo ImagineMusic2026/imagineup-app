@@ -17,7 +17,7 @@ import type { CallerAuth } from '../staff/service';
 import { runCheckin } from './service';
 
 // O check-in diário no seed dos emuladores (scripts/seed-emulators.mjs, que
-// carrega este build; docs/arquitetura-api.md, seção 39): a chave ligada em
+// carrega este build; docs/arquitetura-api.md, seção 40): a chave ligada em
 // config/points, as quatro conquistas de sequência no ar e a Camila com 4 dias
 // seguidos até ontem, para o card da Início abrir no 5º dia. Nunca roda em
 // produção: o script fixa o emulador. Em produção a chave nasce desligada (a

@@ -284,7 +284,7 @@ describe('actionRefusal: o fã-clube', () => {
   });
 });
 
-// O check-in diário (seção 39): só a frase genérica. O servidor aceita um por
+// O check-in diário (seção 40): só a frase genérica. O servidor aceita um por
 // dia e responde o segundo sem erro, então não há teto do dia; a chave
 // desligada (409 `checkin_disabled`) tem a frase dela no domínio.
 describe('actionRefusal: o check-in diário', () => {

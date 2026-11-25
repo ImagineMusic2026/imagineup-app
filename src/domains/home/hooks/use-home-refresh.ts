@@ -13,7 +13,7 @@ import { haptics } from '@/services/haptics';
 /**
  * Puxar para atualizar da home: missão do dia, centrais, mural e presenças,
  * juntos, e "Dos seus fã-clubes" (seção 34), só quando ela já veio (depois
- * da trava; antes, nada é pedido), e o check-in diário (seção 39), pela
+ * da trava; antes, nada é pedido), e o check-in diário (seção 40), pela
  * chave: a seção dele busca de novo por fora, sem segurar o indicador (como
  * na 1e), e depois do 404 da `api` de antes nada é pedido (a trava do
  * `useCheckinQuery`). O perfil não entra: a escuta do Firestore já o mantém

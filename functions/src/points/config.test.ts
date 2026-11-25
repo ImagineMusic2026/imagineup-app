@@ -537,9 +537,9 @@ describe('a carga com o jogo (bloco 7)', () => {
   });
 });
 
-// --- Check-in diário: a chave e o ciclo em config/points (seção 39) -------------------
+// --- Check-in diário: a chave e o ciclo em config/points (seção 40) -------------------
 
-describe('o bloco do check-in em config/points (seção 39)', () => {
+describe('o bloco do check-in em config/points (seção 40)', () => {
   const CYCLE = [3, 3, 4, 4, 5, 6, 15];
 
   it('o padrão do código: a chave desligada, o ciclo de 7 valores e o limite do dia sempre null', () => {
@@ -636,7 +636,7 @@ describe('o bloco do check-in em config/points (seção 39)', () => {
   });
 });
 
-describe('a chave do check-in e as conquistas de sequência na carga (seção 39)', () => {
+describe('a chave do check-in e as conquistas de sequência na carga (seção 40)', () => {
   const streak = (days: number, extra: Partial<AchievementRecord> = {}): AchievementRecord => ({
     id: `sequencia-${days}`,
     title: `${days} dias seguidos`,
