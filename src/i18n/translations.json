@@ -528,6 +528,47 @@
       "achievement": "Conquista nova: {{title}}."
     }
   },
+  "checkin": {
+    "badge": "Check-in diário",
+    "streak": "{{count}} dias seguidos",
+    "streakOne": "1 dia seguido",
+    "streakNone": "Comece sua sequência",
+    "endsIn": "Termina em {{time}}",
+    "endsInSpoken": "Termina em {{time}}.",
+    "summary": "Check-in diário. {{streak}}.",
+    "today": "Hoje",
+    "day": "Dia {{day}}",
+    "track": {
+      "label": "Dia {{day}} de {{total}}. O check-in de hoje vale {{points}}.",
+      "last": "O dia {{total}} vale {{points}}."
+    },
+    "action": "Fazer check-in",
+    "actionWithPoints": "Fazer check-in {{points}}",
+    "actionLabel": "Fazer check-in, vale {{points}}",
+    "actionHint": "Marca o seu check-in de hoje",
+    "offline": "Sem internet. Conecte-se para fazer o check-in.",
+    "error": "Não deu para fazer o check-in. Tente de novo.",
+    "unavailable": "O check-in diário não está disponível agora.",
+    "done": {
+      "today": "Check-in de hoje feito",
+      "todaySpoken": "Check-in de hoje feito.",
+      "earned": "{{points}} hoje",
+      "earnedSpoken": "Rendeu {{points}}.",
+      "next": "Amanhã vale {{points}}",
+      "summary": "Check-in feito. {{streak}}.",
+      "nextSpoken": "Amanhã vale {{points}}."
+    },
+    "header": {
+      "pending": "Check-in de hoje por fazer",
+      "pendingWithPoints": "Check-in de hoje por fazer, vale {{points}}",
+      "done": "Check-in de hoje feito. {{streak}}.",
+      "openHint": "Abre o check-in diário",
+      "closeHint": "Fecha o check-in diário"
+    },
+    "profile": {
+      "label": "Sequência de check-in: {{streak}}"
+    }
+  },
   "rewards": {
     "title": "Resgatar",
     "loading": "Carregando as recompensas",
@@ -778,7 +819,8 @@
       "redeem_refund": "Resgate devolvido",
       "fanclub_prize": "Prêmio do fã-clube",
       "fanclub_like": "Reação no fã-clube",
-      "fanclub_comment": "Comentário no fã-clube"
+      "fanclub_comment": "Comentário no fã-clube",
+      "checkin": "Check-in diário"
     },
     "days": {
       "today": "Hoje",

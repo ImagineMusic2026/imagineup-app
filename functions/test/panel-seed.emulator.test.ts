@@ -6,6 +6,12 @@ import { describe, expect, it } from 'vitest';
 
 import { seedEvents } from '../src/agenda';
 import { seedCamilaCentrals, seedCentrals } from '../src/centrals';
+import {
+  CAMILA_SEED_STREAK,
+  SEED_STREAK_ACHIEVEMENTS,
+  seedCamilaCheckins,
+  seedCheckinConfig,
+} from '../src/checkin';
 import { FILTER_ENTRIES } from '../src/content-filter/terms';
 import { dayKey, shiftDay } from '../src/day';
 import {
@@ -48,7 +54,7 @@ import {
   seedProfileModeration,
   seedSuspension,
 } from '../src/moderation';
-import { seedCamilaWallet } from '../src/points';
+import { createConfigSource, DEFAULT_POINTS_CONFIG, seedCamilaWallet } from '../src/points';
 import { seedGameConfig } from '../src/points/config-seed';
 import {
   buildSeedStats,
@@ -105,7 +111,12 @@ import { localApi, signIn, useEmulators } from './support';
  * central. Na Fase 2 (seção 37), depois dos seguidores, os comentários e as
  * reações (etapa 1 de 37.13) e a moderação dos comentários (etapa 3): o
  * comentário do rank-40 oculto pela Camila, com o pedido de revisão, e a
- * propaganda do Promo, que passa a seguir, denunciada pela Bia.
+ * propaganda do Promo, que passa a seguir, denunciada pela Bia. Desde o
+ * check-in diário (seção 40), logo depois da carga da versão 1, a chave
+ * ligada e as quatro conquistas de sequência pelo admin do seed e, depois da
+ * semana da carteira, os 4 dias seguidos da Camila até ontem, com o ciclo
+ * zerado: nenhum número dela nem total fechado muda. No fim, a rodada que
+ * parou no meio da sequência dela, que a rodada seguinte completa.
  */
 const env = useEmulators('painel-seed', ['api', 'createUserProfile']);
 const { db, bucket } = env;
@@ -177,6 +188,8 @@ async function seed(ranking: Map<string, string>): Promise<void> {
     await seedStaffMember(db, env.auth, member, 'senha-da-equipe', T0);
   }
   await seedGameConfig(db, T0);
+  // O check-in diário (seção 40): a chave e as conquistas de sequência, num passo à parte.
+  await seedCheckinConfig(db, ACTOR, T0);
   await seedPastSeasons(db, ranking, 'camila', { now: T0 });
   await seedCamilaWallet(db, 'camila', { now: T0, steps: 'early' });
   await seedCamilaCentrals(db, 'camila', { now: T0 });
@@ -184,6 +197,8 @@ async function seed(ranking: Map<string, string>): Promise<void> {
   await seedRankingBase(db, ranking, { now: T0 });
   await seedRankingSnapshot(db, { now: T0 });
   await seedCamilaWallet(db, 'camila', { now: T0, steps: 'week' });
+  // A sequência de check-in da Camila, depois da semana, como o script.
+  await seedCamilaCheckins(db, 'camila', T0);
   await seedRankingWeek(db, ranking, { now: T0 });
   await seedMissionsCatalog(db, T0);
   await seedCamilaLikes(db, 'camila', T0);
@@ -338,6 +353,12 @@ describe('o seed das telas do painel (26.13)', () => {
       email: 'rank-48@teste.imagineup',
       password: 'fa-do-ranking',
     });
+    // A Camila também: o check-in dela é conferido pela API (seção 40).
+    await env.auth.createUser({
+      uid: 'camila',
+      email: FANS.camila.email,
+      password: 'fa-de-teste-1',
+    });
     await seed(ranking);
 
     // A equipe: três contas, uma de cada nível, sem perfil de fã.
@@ -355,9 +376,106 @@ describe('o seed das telas do painel (26.13)', () => {
     expect(await signIn('editora@teste.imagineup', 'senha-da-equipe')).toBeTruthy();
     expect((await read('staff/seed-editora'))!.sections).not.toContain('artists');
 
-    // A versão 1 dos catálogos, com as duas auditorias da carga.
-    expect(await read('config/points')).toMatchObject({ version: 1, updatedBy: null });
-    expect(await read('config/achievements')).toMatchObject({ version: 1, updatedBy: null });
+    // A versão 1 dos catálogos, com as duas auditorias da carga. A carga nunca
+    // liga a chave do check-in, e a lista dela não tem conquista de sequência.
+    expect(await read('config/points/versions/1')).toMatchObject({
+      version: 1,
+      updatedBy: null,
+      checkin: { enabled: false, cycle: [3, 3, 4, 4, 5, 6, 15] },
+    });
+    const loadedCatalog = (await read('config/achievements/versions/1'))!;
+    expect(loadedCatalog).toMatchObject({ version: 1, updatedBy: null });
+    expect(loadedCatalog.achievements).toHaveLength(10);
+
+    // O check-in diário (seção 40), no passo à parte do seed: o admin do seed
+    // liga a chave (a versão 2 de config/points, com o ciclo padrão e o resto
+    // da régua igual) e cria e publica as quatro conquistas de sequência (duas
+    // versões cada: a 9 de config/achievements), com a auditoria de verdade.
+    const pointsDoc = (await read('config/points'))!;
+    expect(pointsDoc).toMatchObject({
+      version: 2,
+      updatedBy: ACTOR,
+      values: DEFAULT_POINTS_CONFIG.values,
+      levels: DEFAULT_POINTS_CONFIG.levels,
+    });
+    expect(pointsDoc.checkin).toEqual({ enabled: true, cycle: [3, 3, 4, 4, 5, 6, 15] });
+    expect(await read('config/points/versions/2')).toEqual(pointsDoc);
+    const catalogDoc = (await read('config/achievements'))!;
+    expect(catalogDoc).toMatchObject({ version: 9, updatedBy: ACTOR });
+    expect(catalogDoc.achievements).toHaveLength(14);
+    expect(SEED_STREAK_ACHIEVEMENTS.map((item) => item.days)).toEqual([7, 30, 100, 365]);
+    // Os quatro títulos, escritos aqui e não lidos da constante do seed: um
+    // nome trocado nela não passa.
+    expect(catalogDoc.achievements.slice(10).map((item: { title: string }) => item.title)).toEqual([
+      '7 dias seguidos',
+      '30 dias seguidos',
+      '100 dias seguidos',
+      'Um ano inteiro',
+    ]);
+    for (const [index, item] of SEED_STREAK_ACHIEVEMENTS.entries()) {
+      const record = catalogDoc.achievements[10 + index];
+      expect(record, item.title).toMatchObject({
+        title: item.title,
+        icon: 'flame',
+        tone: 'action',
+        rule: { type: 'streak', days: item.days },
+        status: 'active',
+        activatedAt: Timestamp.fromMillis(T0),
+      });
+      // O id é gerado pelo núcleo da callable: o título em slug e 4 caracteres.
+      expect(record.id).toMatch(/^[a-z0-9-]+-[a-z0-9]{4}$/);
+    }
+
+    // A Camila: 4 dias seguidos até ontem, pelo núcleo da rota, com o ciclo
+    // zerado. Só a sequência entra na carteira: nenhum lançamento é de
+    // check-in, e os números do protótipo ficam (o XP 12.480, a temporada
+    // 4.120 e os +840 da semana; o saldo de 12.480 mais os 200 do prêmio do
+    // fã-clube, e os 23 lançamentos mais o do prêmio).
+    const camila = (await read('wallets/camila'))!;
+    expect(camila.checkin).toEqual({
+      streak: CAMILA_SEED_STREAK,
+      best: CAMILA_SEED_STREAK,
+      lastDay: YESTERDAY,
+    });
+    expect(CAMILA_SEED_STREAK).toBe(4);
+    expect(camila).toMatchObject({ balance: 12_680, xp: 12_480, seasonPoints: 4_120 });
+    const weekEarned = Object.values(camila.days as Record<string, { earned: number }>).reduce(
+      (sum, day) => sum + day.earned,
+      0,
+    );
+    expect(weekEarned).toBe(840);
+    const camilaLedger = await db.collection('wallets/camila/ledger').get();
+    expect(camilaLedger.size).toBe(24);
+    expect(
+      camilaLedger.docs
+        .filter((doc) => doc.id.startsWith('checkin:') || doc.get('source') === 'checkin')
+        .map((doc) => doc.id),
+    ).toEqual([]);
+    // Pela API, no dia do seed: o 5º dia do ciclo por fazer e as 14 conquistas no "de N".
+    const camilaToken = await signIn(FANS.camila.email, 'fa-de-teste-1');
+    const seeded = createConfigSource(db, { ttlMs: 0 });
+    const onSeedDay = localApi(env, { now: () => T0, config: seeded });
+    expect((await onSeedDay('GET', '/me/checkin', { token: camilaToken })).body).toEqual({
+      enabled: true,
+      checkedInToday: false,
+      streak: 4,
+      best: 4,
+      cycle: [3, 3, 4, 4, 5, 6, 15],
+      cycleDay: 5,
+      todayPoints: 5,
+      resetsAt: '2026-10-08T03:00:00.000Z',
+    });
+    expect((await onSeedDay('GET', '/me/achievements', { token: camilaToken })).body).toMatchObject(
+      { totalCount: 14 },
+    );
+    // A sequência do seed só vale no dia dele: no dia seguinte, sem check-in, já se perdeu.
+    const nextDay = localApi(env, { now: () => T0 + DAY_MS, config: seeded });
+    expect((await nextDay('GET', '/me/checkin', { token: camilaToken })).body).toMatchObject({
+      checkedInToday: false,
+      streak: 0,
+      best: 4,
+      cycleDay: 1,
+    });
 
     // A foto e a fila da Moderação.
     const spam = (await read('users/spam'))!;
@@ -491,6 +609,18 @@ describe('o seed das telas do painel (26.13)', () => {
     expect(audit.filter((entry) => entry.action === 'wallet.adjusted')).toEqual([]);
     expect(audit.filter((entry) => entry.action === 'config.seeded')).toHaveLength(2);
     expect(audit.filter((entry) => entry.action === 'season.closed')).toHaveLength(2);
+    // O check-in (seção 40): a chave ligada e as quatro conquistas de sequência
+    // criadas e publicadas, pelo admin do seed, na seção Missões.
+    const keyOn = audit.filter((entry) => entry.action === 'points.config.updated');
+    expect(keyOn).toHaveLength(1);
+    expect(keyOn[0]).toMatchObject({
+      actorUid: SEED_STAFF_ADMIN.uid,
+      actorName: SEED_STAFF_ADMIN.displayName,
+      section: 'missions',
+      details: { fields: ['checkin'], checkinEnabled: true, fromVersion: 1, toVersion: 2 },
+    });
+    expect(audit.filter((entry) => entry.action === 'achievement.created')).toHaveLength(4);
+    expect(audit.filter((entry) => entry.action === 'achievement.published')).toHaveLength(4);
     expect(audit.find((entry) => entry.action === 'fan.suspended')).toMatchObject({
       actorUid: SEED_STAFF_ADMIN.uid,
       section: 'moderation',
@@ -951,6 +1081,28 @@ describe('o seed das telas do painel (26.13)', () => {
     const before = await dump();
     await seed(ranking);
     expect(await dump()).toEqual(before);
+    // Os passos do check-in sozinhos, de novo e também dias depois: nada a gravar.
+    expect(await seedCheckinConfig(db, ACTOR, T0)).toEqual({ enabled: false, achievements: 0 });
+    expect(await seedCamilaCheckins(db, 'camila', T0)).toBe(0);
+    expect(await seedCamilaCheckins(db, 'camila', T0 + 3 * DAY_MS)).toBe(0);
+    expect(await dump()).toEqual(before);
+
+    // A primeira rodada interrompida no meio da sequência da Camila (2 dos 4
+    // check-ins gravados, o último de 3 dias atrás): a rodada seguinte faz só
+    // os dois que faltam, com o ciclo zerado, e a carteira volta a ser a do
+    // seed completo. Só o `updatedAt` muda: fica o do último check-in.
+    const complete = (await read('wallets/camila'))!;
+    await db.doc('wallets/camila').update({
+      checkin: { streak: 2, best: 2, lastDay: shiftDay(TODAY, -3) },
+    });
+    expect(await seedCamilaCheckins(db, 'camila', T0)).toBe(2);
+    const repaired = (await read('wallets/camila'))!;
+    expect(repaired.checkin).toEqual({ streak: 4, best: 4, lastDay: YESTERDAY });
+    expect({ ...repaired, updatedAt: null }).toEqual({ ...complete, updatedAt: null });
+    expect((await db.collection('wallets/camila/ledger').get()).size).toBe(24);
+    // Completa, a sequência não é mais tocada.
+    expect(await seedCamilaCheckins(db, 'camila', T0)).toBe(0);
+    expect((await read('wallets/camila'))!.updatedAt).toEqual(repaired.updatedAt);
 
     // Resolvido o item no painel local e apagada a bio do Promo depois, o seed
     // não reabre: a denúncia só vai sem o item (sem a trava, a Bia reabriria,

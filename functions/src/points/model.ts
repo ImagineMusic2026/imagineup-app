@@ -4,6 +4,12 @@ import {
   type FirstAction,
 } from '../achievements/model';
 import { HANDLE_PATTERN } from '../artists/model';
+import {
+  EMPTY_CHECKIN_RECORD,
+  planCheckin,
+  type CheckinConfig,
+  type CheckinRecord,
+} from '../checkin/model';
 import { dayKey, monthKey, shiftDay, weekKey } from '../day';
 import {
   applyMissionTicks,
@@ -34,7 +40,8 @@ import {
 
 // Núcleo de pontos, puro: nada aqui lê ou grava o Firestore. O award.ts lê,
 // chama computeAwards e grava o resultado. Contrato em docs/arquitetura-api.md
-// (seções 4, 5 e 7; missões, conquistas e nível do bloco 7 na seção 22).
+// (seções 4, 5 e 7; missões, conquistas e nível do bloco 7 na seção 22; o
+// check-in diário na seção 40).
 
 // Os dias de São Paulo moram em day.ts desde o bloco 7; daqui saem como antes.
 export { dayKey, monthKey, nextDayStart, shiftDay, TIME_ZONE, weekKey } from '../day';
@@ -43,7 +50,10 @@ export { dayKey, monthKey, nextDayStart, shiftDay, TIME_ZONE, weekKey } from '..
  * Origens que rendem pontos. Origem nova é mudança de código: tipo, padrão e a
  * tabela da nota. `fanclub_like` e `fanclub_comment` são a reação e o
  * comentário nas publicações do fã-clube (seção 37, 37.5): nascem em 0, sem
- * central, sem assunto e fora das missões gerais.
+ * central, sem assunto e fora das missões gerais. `checkin` é o check-in
+ * diário (seção 40): os pontos vêm do ciclo de `config.checkin`, e o
+ * lançamento é montado só pelo núcleo (`checkin: true` no fã), nunca pela
+ * rota; sem central, sem assunto, sem título e fora das missões.
  */
 export const EARN_SOURCES = [
   'like',
@@ -55,10 +65,14 @@ export const EARN_SOURCES = [
   'invite_signup',
   'fanclub_like',
   'fanclub_comment',
+  'checkin',
 ] as const;
 export type EarnSource = (typeof EARN_SOURCES)[number];
 
-/** Origens com valor na configuração. A missão leva os pontos dela, explícitos. */
+/**
+ * Origens com valor na configuração. A missão leva os pontos dela, explícitos,
+ * e o check-in, os do dia dele no ciclo: nenhum dos dois entra aqui.
+ */
 export const VALUE_SOURCES = [
   'like',
   'comment',
@@ -94,7 +108,10 @@ export type PointsConfig = {
   /** 0 é o padrão do código; o painel grava 1, 2, 3... */
   version: number;
   values: Record<ValueSource, number>;
-  /** Eventos pagos por dia de São Paulo; null é sem limite. A missão é sempre null (22.1, decisão 7). */
+  /**
+   * Eventos pagos por dia de São Paulo; null é sem limite. A missão é sempre
+   * null (22.1, decisão 7), e o check-in também: o dia dele já é um só.
+   */
   dailyLimits: Record<EarnSource, number | null>;
   levels: Level[];
   /**
@@ -102,6 +119,8 @@ export type PointsConfig = {
    * painel desde o bloco 7 (22.1, decisão 13). Contam ações, pagas ou não.
    */
   actionCaps: Record<DailyActionKey, number>;
+  /** A chave e o ciclo do check-in diário (seção 40); a chave nasce desligada. */
+  checkin: CheckinConfig;
 };
 
 /**
@@ -154,7 +173,7 @@ export type AwardEntry =
       eventId: string;
       artistId?: string | null;
       subject?: Subject | null;
-      /** Só na missão: os pontos dela. */
+      /** Só na missão (os pontos dela) e no check-in montado pelo núcleo (os do dia no ciclo). */
       points?: number;
       /** Só na missão, obrigatório: o título dela agora (o `subjectTitle` do extrato). */
       title?: string;
@@ -287,6 +306,11 @@ export type WalletState = {
   missions: MissionsState;
   /** Conquistas desbloqueadas, com a data em ms; nunca saem (bloco 7). */
   achievements: Record<string, number>;
+  /**
+   * A sequência do check-in diário (seção 40). Vazia (`lastDay` null) em quem
+   * nunca fez: assim o campo nem é gravado na carteira.
+   */
+  checkin: CheckinRecord;
   /** O `updatedAt` da carteira lida, em ms: a data da conquista de nível que já valia (22.6). */
   updatedAt: number | null;
 };
@@ -336,6 +360,7 @@ export function emptyWallet(): WalletState {
     goalReached: null,
     missions: emptyMissionsState(),
     achievements: {},
+    checkin: { ...EMPTY_CHECKIN_RECORD },
     updatedAt: null,
   };
 }
@@ -515,6 +540,11 @@ export function assertValidEntry(entry: AwardEntry): void {
     if (!(EARN_SOURCES as readonly string[]).includes(entry.source)) {
       throw invalid(`Origem desconhecida: ${entry.source}`);
     }
+    // O lançamento do check-in é montado só pelo núcleo, com o dia e os pontos
+    // do ciclo (seção 40): a rota pede com `checkin: true` no fã.
+    if (entry.source === 'checkin') {
+      throw invalid('O check-in não entra como lançamento da rota: o núcleo monta o dele.');
+    }
     if (entry.source === 'mission' ? !isPositiveInt(entry.points) : entry.points !== undefined) {
       throw invalid('Só a missão leva pontos explícitos, inteiros maiores que 0.');
     }
@@ -633,7 +663,15 @@ export type FanInput = {
   entries: readonly AwardEntry[];
   /** As unidades das missões (bloco 7), na ordem; sem perfil, ignoradas. */
   ticks?: readonly MissionTick[];
-  /** Ids de lançamento que já estão no extrato (os das missões que podem concluir inclusive). */
+  /**
+   * O fã pede o check-in de hoje (seção 40); só vem quando é true. Com a chave
+   * desligada, sem perfil ou suspenso (quem não chama), é ignorado.
+   */
+  checkin?: boolean;
+  /**
+   * Ids de lançamento que já estão no extrato (os das missões que podem
+   * concluir e o do check-in de hoje inclusive).
+   */
   existingLedger: ReadonlySet<string>;
   /** Cada central citada nas entradas (e nas missões que podem concluir), lida (ou vazia). */
   centrals: ReadonlyMap<string, CentralState>;
@@ -689,6 +727,21 @@ export function emptyRewards(): ActionRewards {
   return { completedMissions: [], levelUp: null, unlockedAchievements: [], missionsChanged: false };
 }
 
+/**
+ * O check-in de quem chama neste cálculo (seção 40): só existe quando ele
+ * pediu e a chave está ligada.
+ */
+export type CheckinAward = {
+  /** `checked`: o check-in de hoje entrou agora; `already`: o de hoje já estava feito. */
+  status: 'checked' | 'already';
+  /** O estado depois do cálculo (o lido, sem mudar, no `already`). */
+  record: CheckinRecord;
+  /** O lugar da sequência no ciclo, de 1 ao tamanho dele. */
+  cycleDay: number;
+  /** O que o check-in pagou de fato: 0 no `already`, no dia que vale 0 e no lançamento que já existia. */
+  points: number;
+};
+
 export type ComputeOutput = {
   day: string;
   results: AwardResult[];
@@ -700,6 +753,8 @@ export type ComputeOutput = {
   rewards: ActionRewards;
   /** A temporada ativa no "agora" do cálculo, ou null (a central nova do `member`, bloco 8). */
   activeSeasonId: string | null;
+  /** O check-in de quem chama, quando ele pediu e a chave está ligada (seção 40). */
+  checkin?: CheckinAward;
 };
 
 /** Cópia da carteira que dá para mudar sem tocar na lida (os dias, a atividade e as missões inclusive). */
@@ -715,6 +770,7 @@ export function cloneWallet(wallet: WalletState): WalletState {
     goalReached: wallet.goalReached ? { ...wallet.goalReached } : null,
     missions: cloneMissionsState(wallet.missions),
     achievements: { ...wallet.achievements },
+    checkin: { ...wallet.checkin },
   };
 }
 
@@ -749,6 +805,16 @@ export function missionEntry(mission: MissionRecord, periodKey: string): AwardEn
 }
 
 /**
+ * O lançamento do check-in do dia (seção 40): os pontos do dia no ciclo e o
+ * evento `checkin:<dia de São Paulo>`, que nunca paga duas vezes. Sem central,
+ * sem assunto e sem título. Só o núcleo monta (o `assertValidEntry` recusa a
+ * origem nos lançamentos da rota).
+ */
+function checkinEntry(day: string, points: number): AwardEntry {
+  return { kind: 'earn', source: 'checkin', eventId: day, points };
+}
+
+/**
  * Calcula o efeito dos lançamentos de cada fã, em ordem: cada um parte do
  * resultado do anterior. Não grava nada; o award.ts grava o que voltar.
  * Recusa a transação inteira (PointsError) com resgate maior que o saldo ou
@@ -760,6 +826,16 @@ export function missionEntry(mission: MissionRecord, periodKey: string): AwardEn
  * mesmo caminho (o que já está no extrato sai `duplicate`). Depois, a meta da
  * temporada e as conquistas. A carteira é gravada também quando só o
  * progresso mudou, só uma conquista nasceu ou só a meta foi marcada.
+ *
+ * Check-in diário (seção 40): com a chave ligada e o `checkin` do fã, depois
+ * dos lançamentos da rota e antes das missões, o `planCheckin` decide o dia.
+ * No check-in novo, o lançamento `checkin:<dia>` paga o valor do ciclo (não
+ * entra com o valor 0) e a sequência é guardada sempre, pague ou não: a trava
+ * do dia é o `lastDay` da carteira, e o id do lançamento é só a segunda. No
+ * `already` nada muda. Com a chave desligada, o pedido é ignorado inteiro. A
+ * conquista de sequência só destrava no cálculo em que este passo rodou para
+ * o fã (com `checked` ou `already`): fora dele, o desbloqueio recebe a
+ * sequência 0, e nenhuma outra gravação a dá.
  */
 export function computeAwards(input: ComputeInput): ComputeOutput {
   const { now, config, actor } = input;
@@ -771,6 +847,7 @@ export function computeAwards(input: ComputeInput): ComputeOutput {
   const shard = emptyShardDelta();
   let pointsAwarded = 0;
   const rewards = emptyRewards();
+  let checkin: CheckinAward | undefined;
   const uids = new Set<string>();
 
   for (const fan of input.fans) {
@@ -834,8 +911,11 @@ export function computeAwards(input: ComputeInput): ComputeOutput {
       let centralTotalDelta = 0;
 
       if (entry.kind === 'earn') {
+        // A missão e o check-in levam os pontos deles; as outras, o valor da configuração.
         const value =
-          entry.source === 'mission' ? entry.points : config.values[entry.source as ValueSource];
+          entry.source === 'mission' || entry.source === 'checkin'
+            ? entry.points
+            : config.values[entry.source as ValueSource];
         const p = typeof value === 'number' && Number.isFinite(value) ? Math.trunc(value) : 0;
         if (p <= 0) return result('zero');
         const limit = config.dailyLimits[entry.source] ?? null;
@@ -972,6 +1052,32 @@ export function computeAwards(input: ComputeInput): ComputeOutput {
 
     for (const entry of fan.entries) apply(entry);
 
+    // Check-in diário (seção 40): só com a chave ligada. O do suspenso que não
+    // chama não anda (26.6), como as missões dele.
+    const checkinRuns = fan.checkin === true && !fan.suspended && config.checkin.enabled;
+    if (checkinRuns) {
+      const planned = planCheckin(wallet.checkin, day, config.checkin.cycle);
+      let paid = 0;
+      if (planned.status === 'checked') {
+        if (planned.points > 0) {
+          const outcome = apply(checkinEntry(day, planned.points));
+          if (outcome.status === 'applied') paid = outcome.points;
+        }
+        // A sequência é guardada com qualquer status do lançamento (o dia que
+        // vale 0 nem lança): a trava do dia é o `lastDay`.
+        wallet.checkin = planned.next;
+        changed = true;
+      }
+      if (isCaller) {
+        checkin = {
+          status: planned.status,
+          record: { ...wallet.checkin },
+          cycleDay: planned.cycleDay,
+          points: paid,
+        };
+      }
+    }
+
     // Missões (22.4, passos 3 a 5): a troca de período, as unidades e as conclusões.
     // As do suspenso que não chama não andam (26.6).
     const ticks = fan.suspended ? [] : (fan.ticks ?? []);
@@ -1029,6 +1135,13 @@ export function computeAwards(input: ComputeInput): ComputeOutput {
         levelBefore: levelBefore.number,
         levelAfter: levelAfter.number,
         firsts,
+        // A conquista de sequência só destrava no cálculo em que o passo do
+        // check-in rodou para este fã (ele pediu, a chave está ligada e o dia
+        // saiu `checked` ou `already`): aí vai a melhor sequência depois do
+        // passo. Em qualquer outra gravação vai 0, e nenhuma de sequência sai.
+        // Na API, só o `POST /me/checkin` pede o check-in, e a resposta dele
+        // leva as recompensas: o fã é sempre avisado (seção 40).
+        streakBest: checkinRuns ? wallet.checkin.best : 0,
         now,
         readAt: fan.wallet.updatedAt,
       });
@@ -1066,5 +1179,6 @@ export function computeAwards(input: ComputeInput): ComputeOutput {
     shard: isEmptyShardDelta(shard) ? null : shard,
     rewards,
     activeSeasonId: season?.id ?? null,
+    ...(checkin ? { checkin } : {}),
   };
 }

@@ -283,3 +283,30 @@ describe('actionRefusal: o fã-clube', () => {
     expect(phrase(suspended, 'clubWithdraw')).toEqual({ type: 'suspended', text: SHORT });
   });
 });
+
+// O check-in diário (seção 40): só a frase genérica. O servidor aceita um por
+// dia e responde o segundo sem erro, então não há teto do dia; a chave
+// desligada (409 `checkin_disabled`) tem a frase dela no domínio.
+describe('actionRefusal: o check-in diário', () => {
+  const GENERIC = 'Não deu para fazer o check-in. Tente de novo.';
+
+  it('a falha incerta, o 404 e o 409 da chave desligada ficam com a genérica', () => {
+    expect(phrase(network, 'checkin')).toEqual({ type: null, text: GENERIC });
+    expect(phrase(new Error('x'), 'checkin')).toEqual({ type: null, text: GENERIC });
+    expect(phrase(notFound, 'checkin')).toEqual({ type: null, text: GENERIC });
+    expect(phrase(new ApiError('validation', 'fora', 409, 'checkin_disabled'), 'checkin')).toEqual({
+      type: null,
+      text: GENERIC,
+    });
+  });
+
+  it('não tem teto do dia: o 429 do teto cai na genérica, e o ritmo tem a frase dele', () => {
+    expect(phrase(dailyLimit, 'checkin')).toEqual({ type: null, text: GENERIC });
+    expect(t(dailyLimitKey('checkin'))).toBe(GENERIC);
+    expect(phrase(rateLimited, 'checkin')).toEqual({ type: 'rateLimited', text: RATE });
+  });
+
+  it('o suspenso fica com a frase de sempre (o `Alert` "Conta suspensa" é o do app)', () => {
+    expect(phrase(suspended, 'checkin')).toEqual({ type: 'suspended', text: SHORT });
+  });
+});

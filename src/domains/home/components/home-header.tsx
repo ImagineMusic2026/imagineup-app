@@ -1,4 +1,5 @@
 import { router } from 'expo-router';
+import type { ReactNode } from 'react';
 import { StyleSheet, useWindowDimensions, View } from 'react-native';
 
 import { Avatar } from '@/components/avatar';
@@ -23,13 +24,21 @@ const NAME_SKELETON_WIDTH = 160;
 // Cor estável do avatar antes de a sessão dizer quem é o fã.
 const UNKNOWN_FAN_ID = 'fa';
 
+export interface HomeHeaderProps {
+  /**
+   * O que fica à esquerda do avatar, como o ícone do check-in diário (seção
+   * 40): um alvo de 44, que some sem empurrar nada.
+   */
+  accessory?: ReactNode;
+}
+
 /**
  * Header da home (1b): "Boa noite," e o nome inteiro do fã, com o avatar de
  * anel rosa para lima à direita, que abre o Perfil. O nome vem do perfil do
  * Firestore; enquanto ele não chega, fica o da sessão, e sem nenhum dos dois,
  * um esqueleto (ou "fã", se o perfil não pôde ser lido).
  */
-export function HomeHeader() {
+export function HomeHeader({ accessory }: HomeHeaderProps = {}) {
   const { uid, name, photoURL, loading } = useFanIdentity();
   const { fontScale } = useWindowDimensions();
   // A saudação troca sozinha quando o período muda com a tela aberta.
@@ -62,13 +71,22 @@ export function HomeHeader() {
           </Text>
         )}
       </View>
-      <PressableScale
-        onPress={() => router.navigate('/perfil')}
-        accessibilityLabel={t('home.openProfile')}
-        style={styles.avatarTarget}
-      >
-        <Avatar name={name} id={uid ?? UNKNOWN_FAN_ID} photoUrl={photoURL} size="xl" ring="brand" />
-      </PressableScale>
+      <View style={styles.trailing}>
+        {accessory}
+        <PressableScale
+          onPress={() => router.navigate('/perfil')}
+          accessibilityLabel={t('home.openProfile')}
+          style={styles.avatarTarget}
+        >
+          <Avatar
+            name={name}
+            id={uid ?? UNKNOWN_FAN_ID}
+            photoUrl={photoURL}
+            size="xl"
+            ring="brand"
+          />
+        </PressableScale>
+      </View>
     </View>
   );
 }
@@ -85,6 +103,12 @@ const styles = StyleSheet.create({
   },
   copy: {
     flex: 1,
+    gap: spacing.xxs,
+  },
+  // O ícone do check-in e o avatar lado a lado, com os alvos de 44 encostados.
+  trailing: {
+    flexDirection: 'row',
+    alignItems: 'center',
     gap: spacing.xxs,
   },
   avatarTarget: {

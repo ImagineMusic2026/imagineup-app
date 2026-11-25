@@ -1,3 +1,5 @@
+import { CalendarCheck, Flame } from 'lucide-react-native';
+
 import {
   buildLedgerItems,
   isLedgerGain,
@@ -50,6 +52,7 @@ describe('linha do extrato', () => {
     ['adjustment', 'Ajuste da equipe'],
     ['seed', 'Ajuste'],
     ['fanclub_prize', 'Prêmio do fã-clube'],
+    ['checkin', 'Check-in diário'],
     ['bonus_de_amanha', 'Pontos'],
   ])('a origem %s vira "%s" (a desconhecida cai em "Pontos")', (source, title) => {
     expect(ledgerRowLabel(entry('x', { source }), NOW)).toMatch(new RegExp(`^${title},`));
@@ -147,6 +150,31 @@ describe('linha do extrato', () => {
     expect(ledgerRowLabel(prize, NOW)).toBe(
       'Prêmio do fã-clube, mais 200 pontos, em 27 de setembro às 15:00.',
     );
+  });
+
+  it('o check-in diário (seção 40): pontos em lima com o calendário, sem central e sem título', () => {
+    // O id do servidor é `checkin:<dia>`; o lançamento não leva central nem assunto.
+    const checkin = entry('checkin:2026-09-29', {
+      source: 'checkin',
+      points: 5,
+      xpDelta: 5,
+      seasonDelta: 5,
+      artistId: null,
+      artistName: null,
+      centralSeasonDelta: 0,
+      centralTotalDelta: 0,
+      createdAt: at(0, 8, 15),
+    });
+    const source = ledgerSource(checkin);
+    expect(source).toMatchObject({ icon: CalendarCheck, tone: 'points', context: 'none' });
+    // A chama fica com a missão concluída: as duas linhas não se confundem na lista.
+    expect(ledgerSource({ source: 'mission' }).icon).toBe(Flame);
+    expect(isVisibleLedgerEntry(checkin)).toBe(true);
+    expect(isLedgerGain(checkin)).toBe(true);
+    expect(ledgerContext(checkin)).toBeNull();
+    expect(ledgerValueText(checkin)).toBe('+5');
+    expect(ledgerMeta(checkin)).toBe('08:15');
+    expect(ledgerRowLabel(checkin, NOW)).toBe('Check-in diário, mais 5 pontos, hoje às 08:15.');
   });
 
   it('o ajuste sem saldo mostra o XP ou a temporada; o só de central fica de fora', () => {

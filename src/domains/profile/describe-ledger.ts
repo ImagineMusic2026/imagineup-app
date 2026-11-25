@@ -1,6 +1,7 @@
 import { isSameDay, subDays } from 'date-fns';
 import {
   Award,
+  CalendarCheck,
   Flame,
   Gift,
   Heart,
@@ -102,6 +103,14 @@ const SOURCES: Readonly<Record<string, SourceSpec>> = {
     title: 'ledger.sources.fanclub_comment',
     icon: MessageCircle,
     tone: 'action',
+    context: 'none',
+  },
+  // O check-in diário (seção 40): pontos em lima, com o calendário (a chama já
+  // é a da missão concluída), sem central e sem título.
+  checkin: {
+    title: 'ledger.sources.checkin',
+    icon: CalendarCheck,
+    tone: 'points',
     context: 'none',
   },
 };

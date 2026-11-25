@@ -18,6 +18,7 @@ import EditProfileRoute from '@/app/editar-perfil';
 import PostRoute from '@/app/post/[postId]';
 import RewardDetailsRoute from '@/app/recompensa/[recompensaId]';
 import { followFixture } from '@/domains/artists/fixtures';
+import { checkinFixture } from '@/domains/checkin';
 import { missionsFixture } from '@/domains/missions';
 import { useArtistSelection } from '@/domains/onboarding/hooks/use-artist-selection';
 import { moderationFixture, postsFixture } from '@/domains/posts/fixtures';
@@ -178,6 +179,7 @@ beforeEach(() => {
   fixtureWallet.reset();
   followFixture.reset();
   rewardsFixture.reset();
+  checkinFixture.reset();
   resetRefusalAlerts();
   useSuspensionStore.getState().reset();
   client = createQueryClient({
@@ -464,5 +466,43 @@ describe('o onboarding do suspenso', () => {
     expect(screen.queryByText(t('onboarding.chooseArtists.saveError'))).toBeNull();
     expect(announced()).not.toContain(t('onboarding.chooseArtists.saveError'));
     await waitFor(() => expect(alertTitles()).toEqual(['Conta suspensa']));
+  });
+});
+
+// O check-in diário (seção 40) não tem caminho próprio para o suspenso: a
+// recusa segue o de sempre, com o `Alert` do app, e o card fica na tela.
+describe('o check-in diário do suspenso', () => {
+  it('o toque recusado com 403 abre o Alert "Conta suspensa", sem anúncio por cima dele, e o card fica com a frase', async () => {
+    // O exemplo nasce desligado, como a chave do servidor: o teste liga, e o
+    // `beforeEach` volta ao padrão.
+    checkinFixture.setEnabled(true);
+    const checkin = jest.spyOn(checkinFixture, 'checkin').mockImplementation(() => {
+      throw SUSPENDED();
+    });
+    renderRouter(appTree, { initialUrl: '/' });
+
+    // O card abre pelo ícone do calendário, na saudação.
+    fireEvent.press(
+      await screen.findByRole('button', { name: 'Check-in de hoje por fazer, vale 5 pontos' }),
+    );
+    fireEvent.press(await screen.findByRole('button', { name: 'Fazer check-in, vale 5 pontos' }));
+
+    await waitFor(() => expect(alertTitles()).toEqual(['Conta suspensa']));
+    expect(checkin).toHaveBeenCalledTimes(1);
+    expect(await screen.findByText(SHORT)).toBeTruthy();
+    // O card segue aberto, sem o "Check-in de hoje feito" e sem pontos.
+    expect(screen.getByRole('button', { name: 'Fazer check-in, vale 5 pontos' })).toBeTruthy();
+    expect(screen.queryByText('Check-in de hoje feito')).toBeNull();
+    expect(fixtureWallet.get().balance).toBe(12_480);
+    // Com o Alert aberto, a frase não é anunciada por cima dele.
+    const queued = jest
+      .mocked(AccessibilityInfo.announceForAccessibilityWithOptions)
+      .mock.calls.map(([text]) => text);
+    expect(queued).not.toContain(SHORT);
+    expect(announced()).not.toContain(SHORT);
+    expect(haptics.trigger).toHaveBeenCalledWith('error');
+    await waitFor(() =>
+      expect(useSuspensionStore.getState()).toMatchObject({ refusals: 1, alerts: 1 }),
+    );
   });
 });

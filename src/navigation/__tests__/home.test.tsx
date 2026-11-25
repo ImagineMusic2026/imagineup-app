@@ -1,4 +1,10 @@
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { FlashList } from '@shopify/flash-list';
+import {
+  focusManager,
+  onlineManager,
+  QueryClient,
+  QueryClientProvider,
+} from '@tanstack/react-query';
 import { Stack } from 'expo-router';
 import { Tabs } from 'expo-router/js-tabs';
 import {
@@ -14,11 +20,18 @@ import { AccessibilityInfo, Platform, Text } from 'react-native';
 
 import HomeRoute from '@/app/(tabs)/(inicio)/index';
 import { buildFanCentralsFixture } from '@/domains/artists/fixtures';
+import {
+  checkinFixture,
+  checkinKeys,
+  type CheckinResult,
+  type CheckinState,
+} from '@/domains/checkin';
 import { missionKeys, type Mission } from '@/domains/missions';
 import { buildDailyMissionFixture } from '@/domains/missions/fixtures';
 import { buildFeedPageFixture } from '@/domains/posts/fixtures';
 import { t } from '@/i18n';
 import { api } from '@/services/api';
+import { ApiError } from '@/services/api/errors';
 import { haptics } from '@/services/haptics';
 import { usePreferencesStore } from '@/stores/preferences';
 import { useSessionStore } from '@/stores/session';
@@ -37,7 +50,9 @@ jest.mock('@/firebase', () => ({
   getDb: () => ({}),
   isFirebaseConfigured: true,
 }));
-jest.mock('@/services/api', () => ({ api: { get: jest.fn(), request: jest.fn() } }));
+jest.mock('@/services/api', () => ({
+  api: { get: jest.fn(), request: jest.fn(), post: jest.fn() },
+}));
 
 // Sem .env no Jest: fixtures, e o aviso de configuração não polui a saída. Os
 // testes de falha trocam para a API, com o axios falso respondendo por rota.
@@ -67,6 +82,7 @@ jest.mock('@shopify/flash-list/dist/recyclerview/utils/measureLayout', () => {
 
 const getDocMock = jest.mocked(getDoc);
 const get = jest.mocked(api.get);
+const post = jest.mocked(api.post);
 
 type Router = ReturnType<typeof renderRouter>;
 type StateNode = { routes?: { name: string; state?: StateNode }[] };
@@ -169,6 +185,8 @@ const headerLabel = (name: string) => t('home.greetingLabel', { greeting: greeti
 beforeEach(() => {
   jest.clearAllMocks();
   mockDataSource = 'fixtures';
+  // O check-in de exemplo volta ao padrão, desligado: o teste que conta com ele liga.
+  checkinFixture.reset();
   client = new QueryClient({
     defaultOptions: { queries: { retry: false, gcTime: Infinity } },
   });
@@ -202,6 +220,8 @@ const announcements = () =>
     .mock.calls.map(([text]) => text);
 
 afterEach(() => {
+  focusManager.setFocused(undefined);
+  onlineManager.setOnline(true);
   client.clear();
   jest.restoreAllMocks();
 });
@@ -383,5 +403,225 @@ describe('home (1b) quando algo não carrega', () => {
 
     fireEvent.press(await screen.findByRole('button', { name: t('home.centrals.join') }));
     await waitFor(() => expect(view.getPathname()).toBe('/explorar'));
+  });
+});
+
+// O check-in diário (seção 40): o ícone do calendário na saudação, ao lado do
+// avatar, e o card que ele abre, entre o aviso da conta suspensa e a missão do
+// dia. Só com a chave do servidor ligada, e em silêncio quando não aparece.
+describe('home (1b): o check-in diário', () => {
+  const HOUR_MS = 60 * 60 * 1000;
+  const PENDING_ICON = 'Check-in de hoje por fazer, vale 5 pontos';
+  const DONE_ICON = 'Check-in de hoje feito. 5 dias seguidos.';
+  const OPEN = 'Check-in diário. 4 dias seguidos. Termina em 4 horas.';
+  const DONE_FOOTER = 'Check-in de hoje feito. Rendeu 5 pontos. Amanhã vale 6 pontos.';
+  const ACTION = 'Fazer check-in, vale 5 pontos';
+  const hidden = { includeHiddenElements: true } as const;
+
+  /** A resposta do servidor com a chave ligada: 4 dias seguidos, o de hoje por fazer. */
+  const pending = (): CheckinState => ({
+    enabled: true,
+    checkedInToday: false,
+    streak: 4,
+    best: 4,
+    cycle: [3, 3, 4, 4, 5, 6, 15],
+    cycleDay: 5,
+    todayPoints: 5,
+    // Daqui a 4 h e meia: "Termina em 4 h".
+    resetsAt: new Date(Date.now() + 4.5 * HOUR_MS).toISOString(),
+  });
+
+  const callsTo = (url: string): number =>
+    get.mock.calls.filter(([called]) => called === url).length;
+
+  /** Os cabeçalhos da tela, na ordem em que o leitor passa por eles. */
+  const headers = (): string[] =>
+    screen.getAllByRole('header').map((node) => node.props.accessibilityLabel as string);
+
+  it('nas fixtures, o check-in de exemplo nasce desligado, como a chave do servidor: nada dele aparece na Início', async () => {
+    renderRouter(appTree, { initialUrl: '/' });
+
+    expect(await screen.findByText('Leve 5 pessoas para o clipe novo do Netto')).toBeTruthy();
+    await screen.findByRole('button', { name: 'Netto Brito, você é o 12º' });
+    // A resposta de exemplo chegou, com a chave desligada.
+    await waitFor(() =>
+      expect(client.getQueryData(checkinKeys.state())).toMatchObject({ enabled: false }),
+    );
+    expect(screen.queryByTestId('checkin-section', hidden)).toBeNull();
+    expect(screen.queryByTestId('checkin-header-button', hidden)).toBeNull();
+    expect(screen.queryByText(/check-in/i, hidden)).toBeNull();
+    expect(announcements()).toEqual([]);
+    expect(haptics.trigger).not.toHaveBeenCalled();
+  });
+
+  it('nas fixtures, com o exemplo ligado (uma demonstração), o ícone abre o card com a sequência do seed', async () => {
+    checkinFixture.setEnabled(true);
+    renderRouter(appTree, { initialUrl: '/' });
+
+    fireEvent.press(await screen.findByRole('button', { name: PENDING_ICON }));
+    expect(
+      await screen.findByRole('header', { name: /^Check-in diário\. 4 dias seguidos\./ }),
+    ).toBeTruthy();
+    expect(screen.getByRole('button', { name: ACTION })).toBeTruthy();
+    expect(jest.mocked(haptics.trigger).mock.calls).toEqual([['selection']]);
+  });
+
+  it('com a chave ligada, o ícone vem na saudação, antes do avatar, e o card, fechado, abre no toque entre a saudação e a missão do dia', async () => {
+    mockApi({ '/me/checkin': async () => pending() });
+    renderRouter(appTree, { initialUrl: '/' });
+
+    const icon = await screen.findByRole('button', { name: PENDING_ICON });
+    expect(screen.getByTestId('checkin-header-dot')).toBeTruthy();
+    // Na fileira da saudação, o ícone vem logo antes do avatar.
+    const buttons = screen.getAllByRole('button').map((node) => node.props.accessibilityLabel);
+    expect(buttons.indexOf(t('home.openProfile'))).toBe(buttons.indexOf(PENDING_ICON) + 1);
+    // Fechado, o card não está entre os cabeçalhos: a missão do dia vem logo depois da saudação.
+    await screen.findByRole('header', { name: /^Missão de hoje/ });
+    expect(headers().findIndex((label) => /^Missão de hoje/.test(label))).toBe(1);
+    expect(screen.queryByRole('header', { name: OPEN })).toBeNull();
+    await screen.findByRole('button', { name: 'Netto Brito, você é o 12º' });
+    expect(announcements()).toEqual([]);
+    expect(haptics.trigger).not.toHaveBeenCalled();
+
+    fireEvent.press(icon);
+    expect(await screen.findByRole('header', { name: OPEN })).toBeTruthy();
+    const order = headers();
+    // Depois da saudação e antes da missão do dia.
+    expect(order.indexOf(OPEN)).toBe(1);
+    expect(order.findIndex((label) => /^Missão de hoje/.test(label))).toBe(2);
+    expect(screen.getByRole('button', { name: ACTION })).toBeEnabled();
+    expect(
+      screen.getByRole('progressbar', {
+        name: 'Dia 5 de 7. O check-in de hoje vale 5 pontos. O dia 7 vale 15 pontos.',
+      }),
+    ).toBeTruthy();
+    expect(announcements()).toEqual([]);
+  });
+
+  it('com a chave desligada, nada do check-in aparece, nada é anunciado e nada vibra', async () => {
+    mockApi({
+      '/me/checkin': async () => ({
+        enabled: false,
+        checkedInToday: false,
+        streak: 0,
+        best: 0,
+        cycle: [],
+        cycleDay: 0,
+        todayPoints: 0,
+        resetsAt: pending().resetsAt,
+      }),
+    });
+    renderRouter(appTree, { initialUrl: '/' });
+
+    expect(await screen.findByText('Leve 5 pessoas para o clipe novo do Netto')).toBeTruthy();
+    await screen.findByRole('button', { name: 'Netto Brito, você é o 12º' });
+    await waitFor(() => expect(callsTo('/me/checkin')).toBe(1));
+    expect(screen.queryByTestId('checkin-section', hidden)).toBeNull();
+    expect(screen.queryByTestId('checkin-header-button', hidden)).toBeNull();
+    expect(screen.queryByText(/check-in/i, hidden)).toBeNull();
+    expect(announcements()).toEqual([]);
+    expect(haptics.trigger).not.toHaveBeenCalled();
+  });
+
+  it('com a api de antes do check-in (o 404), nada aparece, e nem o puxar para atualizar, nem a volta do app, nem a da rede perguntam de novo', async () => {
+    mockApi({
+      '/me/checkin': () =>
+        Promise.reject(new ApiError('notFound', 'Rota não encontrada.', 404, 'not_found')),
+    });
+    renderRouter(appTree, { initialUrl: '/' });
+
+    expect(await screen.findByText('Leve 5 pessoas para o clipe novo do Netto')).toBeTruthy();
+    await screen.findByText('Saiu o clipe de “Sonho de Amor”, gravado no São João de Irará.');
+    await waitFor(() => expect(callsTo('/me/checkin')).toBe(1));
+    expect(screen.queryByTestId('checkin-section', hidden)).toBeNull();
+    expect(screen.queryByTestId('checkin-header-button', hidden)).toBeNull();
+    expect(announcements()).toEqual([]);
+
+    await act(async () => {
+      await screen.UNSAFE_getByType(FlashList).props.refreshControl.props.onRefresh();
+    });
+
+    // A missão do dia e as centrais buscaram de novo; o check-in, depois do 404, não.
+    expect(callsTo('/missions/daily')).toBe(2);
+    expect(callsTo('/me/centrals')).toBe(2);
+    expect(callsTo('/me/checkin')).toBe(1);
+
+    // Nem na volta do app para a frente, nem na volta da rede, que levam as outras a buscar.
+    await act(async () => {
+      focusManager.setFocused(false);
+      focusManager.setFocused(true);
+    });
+    await waitFor(() => expect(callsTo('/missions/daily')).toBe(3));
+    await waitFor(() => expect(callsTo('/me/centrals')).toBe(3));
+    await act(async () => {
+      onlineManager.setOnline(false);
+      onlineManager.setOnline(true);
+    });
+    await waitFor(() => expect(callsTo('/missions/daily')).toBe(4));
+    await waitFor(() => expect(callsTo('/me/centrals')).toBe(4));
+    expect(callsTo('/me/checkin')).toBe(1);
+    expect(screen.queryByTestId('checkin-section', hidden)).toBeNull();
+    expect(announcements()).toEqual([]);
+  });
+
+  it('o puxar para atualizar busca o check-in de novo, e a chave ligada no servidor passa a aparecer', async () => {
+    let state: CheckinState = { ...pending(), enabled: false, cycle: [], cycleDay: 0 };
+    mockApi({ '/me/checkin': async () => state });
+    renderRouter(appTree, { initialUrl: '/' });
+    await screen.findByText('Saiu o clipe de “Sonho de Amor”, gravado no São João de Irará.');
+    await waitFor(() => expect(callsTo('/me/checkin')).toBe(1));
+    expect(screen.queryByTestId('checkin-section', hidden)).toBeNull();
+
+    // O dono ligou a chave no painel.
+    state = pending();
+    await act(async () => {
+      await screen.UNSAFE_getByType(FlashList).props.refreshControl.props.onRefresh();
+    });
+
+    expect(await screen.findByRole('button', { name: PENDING_ICON })).toBeTruthy();
+    expect(callsTo('/me/checkin')).toBe(2);
+  });
+
+  it('o toque em "Fazer check-in" marca o dia e sobe o "+N", e o card fecha sozinho, sem mexer na missão do dia', async () => {
+    const state = pending();
+    const result: CheckinResult = {
+      pointsAwarded: 5,
+      completedMissions: [],
+      levelUp: null,
+      unlockedAchievements: [],
+      missionsChanged: false,
+      checkin: { ...state, checkedInToday: true, streak: 5, best: 5 },
+    };
+    mockApi({ '/me/checkin': async () => state });
+    post.mockResolvedValue({ data: result });
+    renderRouter(appTree, { initialUrl: '/' });
+
+    fireEvent.press(await screen.findByRole('button', { name: PENDING_ICON }));
+    fireEvent.press(await screen.findByRole('button', { name: ACTION }));
+
+    expect(await screen.findByLabelText(DONE_FOOTER)).toBeTruthy();
+    expect(screen.queryByRole('button', { name: ACTION })).toBeNull();
+    expect(screen.queryByRole('header', { name: OPEN })).toBeNull();
+    expect(screen.getByRole('button', { name: DONE_ICON })).toBeTruthy();
+    expect(screen.queryByTestId('checkin-header-dot')).toBeNull();
+    expect(post).toHaveBeenCalledTimes(1);
+    expect(post).toHaveBeenCalledWith('/me/checkin', null, {
+      headers: { 'Idempotency-Key': expect.stringMatching(/^checkin-/) },
+    });
+    expect(screen.getByTestId('checkin-points', hidden)).toHaveTextContent('+5');
+    await waitFor(() =>
+      expect(announcements()).toEqual(['Check-in feito. 5 dias seguidos. Mais 5 pontos.']),
+    );
+    expect(jest.mocked(haptics.trigger).mock.calls).toEqual([
+      ['selection'],
+      ['confirm'],
+      ['pointsEarned'],
+    ]);
+    // O estado veio da resposta do toque, e o check-in não anda missão.
+    expect(callsTo('/me/checkin')).toBe(1);
+    expect(callsTo('/missions/daily')).toBe(1);
+    // A missão do dia segue embaixo, como estava. O card fechar sozinho, com o
+    // relógio falso, fica no `checkin-section.test.tsx`.
+    expect(screen.getByText('Leve 5 pessoas para o clipe novo do Netto')).toBeTruthy();
   });
 });

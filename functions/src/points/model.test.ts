@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { DEFAULT_ACHIEVEMENTS_CONFIG } from '../achievements/model';
+import { DEFAULT_ACHIEVEMENTS_CONFIG, type AchievementRecord } from '../achievements/model';
 import {
   keyDigest,
   missionIndex,
@@ -8,17 +8,19 @@ import {
   type MissionTick,
   type SeasonGoalConfig,
 } from '../missions/model';
-import { DEFAULT_POINTS_CONFIG } from './config';
+import { buildLoadedConfig, DEFAULT_POINTS_CONFIG } from './config';
 import {
   activityMarks,
   assertValidEntry,
   computeAwards,
+  EARN_SOURCES,
   emptyCentral,
   emptyWallet,
   levelForXp,
   PointsError,
   seasonsPlayed,
   trimDays,
+  VALUE_SOURCES,
   weekEarned,
   type ActivityMarks,
   type AwardEntry,
@@ -1357,5 +1359,636 @@ describe('ajuste da equipe e suspensão (bloco 11)', () => {
       'redeem_refund:UP-AAAA11',
       expect.stringMatching(/^mission:m-um-amigo:/),
     ]);
+  });
+});
+
+// --- Check-in diário com sequência (seção 40) -----------------------------------------
+
+describe('check-in diário no cálculo (seção 40)', () => {
+  const TODAY = '2026-10-05';
+  const YESTERDAY = '2026-10-04';
+  const ON: PointsConfig = {
+    ...DEFAULT_POINTS_CONFIG,
+    checkin: { enabled: true, cycle: [3, 3, 4, 4, 5, 6, 15] },
+  };
+  const streak = (days: number, lastDay: string | null, best = days) => ({
+    streak: days,
+    best,
+    lastDay,
+  });
+  /** O fã que pede o check-in de hoje. */
+  const checkin = (extra: Partial<FanInput> = {}): FanInput => fan({ checkin: true, ...extra });
+  const milestone = (days: number): AchievementRecord => ({
+    id: `sequencia-${days}`,
+    title: `${days} dias seguidos`,
+    icon: 'flame',
+    tone: 'action',
+    rule: { type: 'streak', days },
+    status: 'active',
+    activatedAt: NOW - DAY_MS,
+    createdAt: NOW - DAY_MS,
+    updatedAt: NOW - DAY_MS,
+  });
+  const CATALOG = [...DEFAULT_ACHIEVEMENTS_CONFIG.achievements, milestone(7), milestone(30)];
+  const game = (extra: Partial<GameConfig> = {}): GameConfig => ({
+    missions: missionIndex({ version: 1, missions: [] }),
+    achievements: CATALOG,
+    seasonGoal: null,
+    ...extra,
+  });
+
+  it('a origem existe só para ganhar, sem valor na configuração: quem dá os pontos é o ciclo', () => {
+    expect(EARN_SOURCES).toContain('checkin');
+    expect(VALUE_SOURCES).not.toContain('checkin');
+    expect(DEFAULT_POINTS_CONFIG.values).not.toHaveProperty('checkin');
+    expect(DEFAULT_POINTS_CONFIG.dailyLimits.checkin).toBeNull();
+    expect(DEFAULT_POINTS_CONFIG.checkin).toEqual({
+      enabled: false,
+      cycle: [3, 3, 4, 4, 5, 6, 15],
+    });
+  });
+
+  it('a carteira vazia nasce com a sequência vazia, uma cópia por carteira', () => {
+    expect(emptyWallet().checkin).toEqual({ streak: 0, best: 0, lastDay: null });
+    expect(emptyWallet().checkin).not.toBe(emptyWallet().checkin);
+  });
+
+  it('o primeiro check-in paga o dia 1 do ciclo e entra no saldo, no XP, na temporada e no dia', () => {
+    const out = compute([checkin()], { config: ON });
+    expect(out.results).toEqual([
+      { uid: 'fa', entryId: 'checkin:2026-10-05', status: 'applied', points: 3 },
+    ]);
+    expect(out.pointsAwarded).toBe(3);
+    expect(out.checkin).toEqual({
+      status: 'checked',
+      record: streak(1, TODAY),
+      cycleDay: 1,
+      points: 3,
+    });
+    const plan = out.fans[0]!;
+    expect(plan.wallet).toMatchObject({
+      create: true,
+      state: {
+        balance: 3,
+        xp: 3,
+        earnedTotal: 3,
+        seasonId: SEASON.id,
+        seasonPoints: 3,
+        seasonPointsAt: NOW,
+        days: { '2026-10-05': { earned: 3, count: { checkin: 1 } } },
+        checkin: streak(1, TODAY),
+      },
+    });
+    // Sem central, sem assunto e sem título.
+    expect(plan.centrals).toEqual([]);
+    expect(plan.ledger).toHaveLength(1);
+    expect(plan.ledger[0]).toMatchObject({
+      id: 'checkin:2026-10-05',
+      data: {
+        kind: 'earn',
+        source: 'checkin',
+        eventId: '2026-10-05',
+        points: 3,
+        xpDelta: 3,
+        seasonDelta: 3,
+        artistId: null,
+        centralSeasonDelta: 0,
+        centralTotalDelta: 0,
+        seasonId: SEASON.id,
+        subject: null,
+        subjectTitle: null,
+        balanceAfter: 3,
+        xpAfter: 3,
+        seasonPointsAfter: 3,
+        day: '2026-10-05',
+        createdAt: NOW,
+      },
+    });
+    expect(out.shard!.totals).toMatchObject({ earned: 3, earnedEvents: 1 });
+    expect(out.shard!.bySource).toEqual({ checkin: { points: 3, events: 1 } });
+    expect(out.shard!.byArtist).toEqual({});
+  });
+
+  it.each([
+    [1, 2, 2, 3],
+    [4, 5, 5, 5],
+    [6, 7, 7, 15],
+    [7, 8, 1, 3],
+    [13, 14, 7, 15],
+    [14, 15, 1, 3],
+  ])(
+    'fez ontem o dia %i: hoje é o dia %i, no lugar %i do ciclo, e paga %i',
+    (stored, next, cycleDay, points) => {
+      const out = compute(
+        [checkin({ wallet: wallet({ balance: 100, checkin: streak(stored, YESTERDAY) }) })],
+        { config: ON },
+      );
+      expect(out.checkin).toEqual({
+        status: 'checked',
+        record: streak(next, TODAY),
+        cycleDay,
+        points,
+      });
+      expect(out.pointsAwarded).toBe(points);
+      expect(out.fans[0]!.wallet!.state).toMatchObject({
+        balance: 100 + points,
+        checkin: streak(next, TODAY),
+      });
+    },
+  );
+
+  it('perdeu um dia: volta ao dia 1; os pontos de antes e a melhor sequência ficam', () => {
+    const read = wallet({ balance: 100, xp: 100, checkin: streak(4, '2026-10-03', 9) });
+    const out = compute([checkin({ wallet: read })], { config: ON });
+    expect(out.checkin).toEqual({
+      status: 'checked',
+      record: streak(1, TODAY, 9),
+      cycleDay: 1,
+      points: 3,
+    });
+    expect(out.fans[0]!.wallet!.state).toMatchObject({
+      balance: 103,
+      xp: 103,
+      checkin: streak(1, TODAY, 9),
+    });
+    // A carteira lida (o retrato do pedido) não muda: o cálculo trabalha numa cópia.
+    expect(read.checkin).toEqual(streak(4, '2026-10-03', 9));
+    expect(out.fans[0]!.wallet!.state.checkin).not.toBe(read.checkin);
+  });
+
+  it('o segundo pedido do mesmo dia não paga nem grava nada', () => {
+    const out = compute(
+      [
+        checkin({
+          wallet: wallet({ balance: 105, checkin: streak(5, TODAY) }),
+          existingLedger: new Set(['checkin:2026-10-05']),
+          activity: noActivity,
+        }),
+      ],
+      { config: ON },
+    );
+    expect(out.results).toEqual([]);
+    expect(out.pointsAwarded).toBe(0);
+    expect(out.fans[0]).toEqual({ uid: 'fa', wallet: null, ledger: [], centrals: [] });
+    expect(out.shard).toBeNull();
+    expect(out.checkin).toEqual({
+      status: 'already',
+      record: streak(5, TODAY),
+      cycleDay: 5,
+      points: 0,
+    });
+  });
+
+  it('o dia guardado posterior ao do pedido não anda para trás (o tempo só anda para a frente)', () => {
+    const out = compute(
+      [checkin({ wallet: wallet({ checkin: streak(5, '2026-10-06') }), activity: noActivity })],
+      { config: ON },
+    );
+    expect(out.fans[0]!.wallet).toBeNull();
+    expect(out.results).toEqual([]);
+    expect(out.checkin).toMatchObject({ status: 'already', record: streak(5, '2026-10-06') });
+  });
+
+  it('meia-noite em São Paulo: 02:59:59,999Z ainda é o dia anterior, e 03:00:00,000Z já é o seguinte', () => {
+    const read = wallet({ checkin: streak(3, TODAY) });
+    const before = compute([checkin({ wallet: read, activity: noActivity })], {
+      config: ON,
+      now: Date.parse('2026-10-06T02:59:59.999Z'),
+    });
+    expect(before.checkin).toMatchObject({ status: 'already', record: streak(3, TODAY) });
+    expect(before.fans[0]!.wallet).toBeNull();
+
+    const after = compute([checkin({ wallet: read })], {
+      config: ON,
+      now: Date.parse('2026-10-06T03:00:00.000Z'),
+    });
+    expect(after.results).toEqual([
+      { uid: 'fa', entryId: 'checkin:2026-10-06', status: 'applied', points: 4 },
+    ]);
+    expect(after.checkin).toEqual({
+      status: 'checked',
+      record: streak(4, '2026-10-06'),
+      cycleDay: 4,
+      points: 4,
+    });
+  });
+
+  it('dois pedidos fora de ordem na virada: o de 00:00:00,010 grava, e o de 23:59:59,950 depois dele não muda nada', () => {
+    // O pedido carimbado depois da meia-noite grava primeiro...
+    const first = compute([checkin({ wallet: wallet({ checkin: streak(4, TODAY) }) })], {
+      config: ON,
+      now: Date.parse('2026-10-06T03:00:00.010Z'),
+    });
+    expect(first.checkin).toMatchObject({ status: 'checked', record: streak(5, '2026-10-06') });
+    const stored = first.fans[0]!.wallet!.state;
+    // ...e o carimbado antes dela chega depois, com a carteira já no dia novo.
+    const late = compute(
+      [
+        checkin({
+          wallet: stored,
+          existingLedger: new Set(['checkin:2026-10-05']),
+          activity: noActivity,
+        }),
+      ],
+      { config: ON, now: Date.parse('2026-10-06T02:59:59.950Z') },
+    );
+    expect(late.day).toBe('2026-10-05');
+    expect(late.results).toEqual([]);
+    expect(late.pointsAwarded).toBe(0);
+    expect(late.fans[0]!.wallet).toBeNull();
+    expect(late.checkin).toEqual({
+      status: 'already',
+      record: streak(5, '2026-10-06'),
+      cycleDay: 5,
+      points: 0,
+    });
+  });
+
+  it('o dia que vale 0 não lança nada, mas a sequência é guardada (o ciclo zerado do seed)', () => {
+    const zero: PointsConfig = { ...ON, checkin: { enabled: true, cycle: [0, 0, 0, 0, 0, 0, 0] } };
+    const read = wallet({
+      balance: 50,
+      xp: 80,
+      earnedTotal: 80,
+      seasonId: SEASON.id,
+      seasonPoints: 20,
+      days: { '2026-10-04': { earned: 7, count: { comment: 1 } } },
+      checkin: streak(2, YESTERDAY),
+    });
+    const out = compute([checkin({ wallet: read })], { config: zero });
+    expect(out.results).toEqual([]);
+    expect(out.pointsAwarded).toBe(0);
+    expect(out.shard).toBeNull();
+    const plan = out.fans[0]!;
+    expect(plan.ledger).toEqual([]);
+    expect(plan.wallet).toEqual({
+      create: false,
+      state: { ...read, checkin: streak(3, TODAY) },
+    });
+    expect(out.checkin).toEqual({
+      status: 'checked',
+      record: streak(3, TODAY),
+      cycleDay: 3,
+      points: 0,
+    });
+  });
+
+  it('o lançamento do dia que já está no extrato sai duplicate, e a sequência anda mesmo assim: a trava é o lastDay', () => {
+    const out = compute(
+      [
+        checkin({
+          wallet: wallet({ balance: 40, checkin: streak(4, YESTERDAY) }),
+          existingLedger: new Set(['checkin:2026-10-05']),
+        }),
+      ],
+      { config: ON },
+    );
+    expect(out.results).toEqual([
+      { uid: 'fa', entryId: 'checkin:2026-10-05', status: 'duplicate', points: 0 },
+    ]);
+    expect(out.pointsAwarded).toBe(0);
+    expect(out.fans[0]!.ledger).toEqual([]);
+    expect(out.fans[0]!.wallet!.state).toMatchObject({ balance: 40, checkin: streak(5, TODAY) });
+    expect(out.checkin).toEqual({
+      status: 'checked',
+      record: streak(5, TODAY),
+      cycleDay: 5,
+      points: 0,
+    });
+  });
+
+  it('fora da janela da temporada, o check-in entra só no saldo e no XP', () => {
+    const out = compute([checkin()], { config: ON, season: { ...SEASON, endsAt: NOW } });
+    expect(out.fans[0]!.wallet!.state).toMatchObject({
+      balance: 3,
+      xp: 3,
+      seasonPoints: 0,
+      seasonId: null,
+    });
+    expect(out.fans[0]!.ledger[0]!.data).toMatchObject({ seasonDelta: 0, seasonId: null });
+  });
+
+  it('não anda missão nem dispara conquista de primeira vez', () => {
+    const mission: MissionRecord = {
+      id: 'm-curtir',
+      title: 'Curta 1 post',
+      action: 'like',
+      target: null,
+      goal: 1,
+      period: 'daily',
+      rewardPoints: 10,
+      featured: false,
+      startsAt: NOW - DAY_MS,
+      endsAt: null,
+      status: 'active',
+      activatedAt: NOW - DAY_MS,
+      createdAt: NOW - DAY_MS,
+      updatedAt: NOW - DAY_MS,
+    };
+    const out = compute([checkin()], {
+      config: ON,
+      game: game({ missions: missionIndex({ version: 1, missions: [mission] }) }),
+    });
+    expect(out.pointsAwarded).toBe(3);
+    expect(out.rewards).toEqual({
+      completedMissions: [],
+      levelUp: null,
+      unlockedAchievements: [],
+      missionsChanged: false,
+    });
+    expect(out.fans[0]!.wallet!.state.missions).toEqual({ daily: null, weekly: null });
+    expect(out.fans[0]!.wallet!.state.achievements).toEqual({});
+  });
+
+  it('com a meta da temporada por pontos, o check-in avisa que as missões mudaram e pode bater a meta', () => {
+    const goal = (target: number): SeasonGoalConfig => ({
+      seasonId: SEASON.id,
+      title: 'Semana do arrocha',
+      description: 'Some pontos na temporada.',
+      reachedDescription: null,
+      metric: 'points',
+      target,
+    });
+    const far = compute([checkin()], { config: ON, game: game({ seasonGoal: goal(1_000) }) });
+    expect(far.rewards.missionsChanged).toBe(true);
+    expect(far.fans[0]!.wallet!.state.goalReached).toBeNull();
+    const reached = compute([checkin()], { config: ON, game: game({ seasonGoal: goal(3) }) });
+    expect(reached.fans[0]!.wallet!.state.goalReached).toEqual({ seasonId: SEASON.id, at: NOW });
+  });
+
+  it('o check-in que cruza o degrau sobe o nível e destrava a conquista de nível', () => {
+    const out = compute([checkin({ wallet: wallet({ xp: 1_498, balance: 10 }) })], {
+      config: ON,
+      game: game(),
+    });
+    expect(out.rewards.levelUp).toEqual({ number: 3, name: 'Pé de serra', minXp: 1_500 });
+    expect(out.rewards.unlockedAchievements).toEqual([{ id: 'pe-de-serra', title: 'Pé de serra' }]);
+  });
+
+  it.each([
+    [5, []],
+    [6, [{ id: 'sequencia-7', title: '7 dias seguidos' }]],
+    [29, [{ id: 'sequencia-30', title: '30 dias seguidos' }]],
+  ])(
+    'com %i dias até ontem, o check-in de hoje anuncia %j na mesma resposta',
+    (stored, unlocked) => {
+      const owned: Record<string, number> = stored >= 7 ? { 'sequencia-7': NOW - 20 * DAY_MS } : {};
+      const out = compute(
+        [checkin({ wallet: wallet({ checkin: streak(stored, YESTERDAY), achievements: owned }) })],
+        { config: ON, game: game() },
+      );
+      expect(out.rewards.unlockedAchievements).toEqual(unlocked);
+      expect(out.fans[0]!.wallet!.state.achievements).toEqual({
+        ...owned,
+        ...Object.fromEntries(unlocked.map((item) => [item.id, NOW])),
+      });
+      expect(out.shard!.byAchievement).toEqual(
+        Object.fromEntries(unlocked.map((item) => [item.id, { unlocked: 1 }])),
+      );
+    },
+  );
+
+  // A conquista de sequência só destrava no cálculo em que o passo do check-in
+  // rodou para o fã: assim ela sai sempre na resposta do `POST /me/checkin`. A
+  // carteira dos casos abaixo já tinha a sequência quando a conquista foi
+  // publicada (a de agora até se perdeu: vale a melhor, que só cresce).
+  const LATE = streak(1, '2026-09-01', 40);
+
+  it.each<[string, Partial<FanInput>, string[]]>([
+    ['num comentário', { entries: [comment('c1')] }, []],
+    [
+      'no primeiro comentário, que dá só a conquista dele',
+      {
+        entries: [comment('c1')],
+        ticks: [{ action: 'comment', key: 'c1', on: { postId: 'p1', artistIds: [] } }],
+      },
+      ['puxa-conversa'],
+    ],
+    [
+      'numa gravação sem lançamento, só com a atividade do dia',
+      { activity: { ...noActivity, newDay: true } },
+      [],
+    ],
+  ])('a conquista de sequência não sai fora do check-in: %s', (_, extra, ids) => {
+    const out = compute([fan({ wallet: wallet({ checkin: LATE }), ...extra })], {
+      config: ON,
+      game: game(),
+    });
+    expect(out.rewards.unlockedAchievements.map((item) => item.id)).toEqual(ids);
+    // A carteira é gravada (pelo comentário ou pela atividade), sem conquista de sequência.
+    const stored = out.fans[0]!.wallet!.state;
+    expect(Object.keys(stored.achievements)).toEqual(ids);
+    expect(Object.keys(out.shard!.byAchievement)).toEqual(ids);
+    // A outra gravação não mexe na sequência guardada.
+    expect(stored.checkin).toEqual(LATE);
+    expect(out.checkin).toBeUndefined();
+  });
+
+  it('a conquista publicada depois chega no check-in seguinte de quem já tinha a melhor sequência, com o anúncio', () => {
+    const out = compute([checkin({ wallet: wallet({ checkin: LATE }) })], {
+      config: ON,
+      game: game(),
+    });
+    // O dia perdido voltou a sequência ao dia 1: quem destrava é a melhor.
+    expect(out.checkin).toEqual({
+      status: 'checked',
+      record: streak(1, TODAY, 40),
+      cycleDay: 1,
+      points: 3,
+    });
+    expect(out.rewards.unlockedAchievements).toEqual([
+      { id: 'sequencia-7', title: '7 dias seguidos' },
+      { id: 'sequencia-30', title: '30 dias seguidos' },
+    ]);
+    expect(out.fans[0]!.wallet!.state.achievements).toEqual({
+      'sequencia-7': NOW,
+      'sequencia-30': NOW,
+    });
+    expect(out.shard!.byAchievement).toEqual({
+      'sequencia-7': { unlocked: 1 },
+      'sequencia-30': { unlocked: 1 },
+    });
+  });
+
+  it('também no segundo toque do dia: o check-in já feito destrava e anuncia a conquista publicada depois dele, sem pagar', () => {
+    const out = compute(
+      [
+        checkin({
+          wallet: wallet({ balance: 105, checkin: streak(8, TODAY) }),
+          existingLedger: new Set(['checkin:2026-10-05']),
+          activity: noActivity,
+        }),
+      ],
+      { config: ON, game: game() },
+    );
+    expect(out.checkin).toEqual({
+      status: 'already',
+      record: streak(8, TODAY),
+      cycleDay: 1,
+      points: 0,
+    });
+    expect(out.results).toEqual([]);
+    expect(out.pointsAwarded).toBe(0);
+    expect(out.rewards.unlockedAchievements).toEqual([
+      { id: 'sequencia-7', title: '7 dias seguidos' },
+    ]);
+    // A carteira é gravada só pela conquista: o saldo e a sequência ficam, sem lançamento.
+    const plan = out.fans[0]!;
+    expect(plan.ledger).toEqual([]);
+    expect(plan.wallet).toMatchObject({
+      create: false,
+      state: {
+        balance: 105,
+        checkin: streak(8, TODAY),
+        achievements: { 'sequencia-7': NOW },
+      },
+    });
+    expect(out.shard!.byAchievement).toEqual({ 'sequencia-7': { unlocked: 1 } });
+    // Quem já tem a conquista não a recebe de novo no toque seguinte.
+    const again = compute(
+      [
+        checkin({
+          wallet: plan.wallet!.state,
+          existingLedger: new Set(['checkin:2026-10-05']),
+          activity: noActivity,
+        }),
+      ],
+      { config: ON, game: game() },
+    );
+    expect(again.rewards.unlockedAchievements).toEqual([]);
+    expect(again.fans[0]!.wallet).toBeNull();
+  });
+
+  it('o check-in de um fã não destrava a conquista de sequência de outro fã do mesmo cálculo', () => {
+    const out = compute(
+      [
+        checkin({ uid: 'quem-chama' }),
+        fan({ uid: 'outro', wallet: wallet({ checkin: LATE }), entries: [comment('c1')] }),
+      ],
+      { config: ON, game: game() },
+    );
+    expect(out.checkin).toMatchObject({ status: 'checked', record: streak(1, TODAY) });
+    expect(out.rewards.unlockedAchievements).toEqual([]);
+    // O comentário do outro fã entra, e a carteira dele fica sem a conquista.
+    const other = out.fans.find((item) => item.uid === 'outro')!;
+    expect(other.ledger.map((entry) => entry.id)).toEqual(['comment:c1']);
+    expect(other.wallet!.state.achievements).toEqual({});
+    expect(other.wallet!.state.checkin).toEqual(LATE);
+    expect(out.shard!.byAchievement).toEqual({});
+  });
+
+  it('sem o jogo (o caminho fora da API que não passa nada), a sequência anda e nada destrava', () => {
+    const out = compute([checkin({ wallet: wallet({ checkin: streak(6, YESTERDAY) }) })], {
+      config: ON,
+    });
+    expect(out.checkin).toMatchObject({ status: 'checked', record: streak(7, TODAY) });
+    expect(out.rewards.unlockedAchievements).toEqual([]);
+    expect(out.fans[0]!.wallet!.state.achievements).toEqual({});
+  });
+
+  describe('com a chave desligada, nada acontece', () => {
+    // O padrão do código: `checkin.enabled` false.
+    const OFF = DEFAULT_POINTS_CONFIG;
+
+    it('o pedido de check-in é ignorado inteiro: nem carteira, nem extrato, nem shard, nem resultado', () => {
+      // Com o jogo sem o filtro da carga e a melhor sequência acima dos marcos: a
+      // chave desligada também segura o desbloqueio, e não só o filtro.
+      const read = wallet({ balance: 10, checkin: streak(40, YESTERDAY) });
+      const out = compute([checkin({ wallet: read, activity: noActivity })], {
+        config: OFF,
+        game: game(),
+      });
+      expect(out.results).toEqual([]);
+      expect(out.pointsAwarded).toBe(0);
+      expect(out.fans[0]).toEqual({ uid: 'fa', wallet: null, ledger: [], centrals: [] });
+      expect(out.shard).toBeNull();
+      expect('checkin' in out).toBe(false);
+      expect(read.checkin).toEqual(streak(40, YESTERDAY));
+    });
+
+    it('o fã novo que pede o check-in não ganha carteira', () => {
+      const out = compute([checkin({ activity: noActivity })], { config: OFF, game: game() });
+      expect(out.fans[0]!.wallet).toBeNull();
+      expect(out.rewards.unlockedAchievements).toEqual([]);
+    });
+
+    it('junto de outra ação, só a ação entra: a sequência fica vazia e o campo não nasce', () => {
+      const out = compute([checkin({ entries: [comment('c1')] })], { config: OFF });
+      expect(out.results).toEqual([
+        { uid: 'fa', entryId: 'comment:c1', status: 'applied', points: 2 },
+      ]);
+      expect(out.fans[0]!.ledger.map((entry) => entry.id)).toEqual(['comment:c1']);
+      expect(out.fans[0]!.wallet!.state.checkin).toEqual({ streak: 0, best: 0, lastDay: null });
+      expect(out.fans[0]!.wallet!.state.days['2026-10-05']!.count).toEqual({ comment: 1 });
+      expect('checkin' in out).toBe(false);
+    });
+
+    it('as conquistas de sequência saem do jogo da carga: nem o check-in pedido por quem tem a melhor sequência guardada destrava', () => {
+      const achievements = { version: 3, achievements: CATALOG };
+      const read = wallet({ checkin: streak(40, YESTERDAY) });
+      const loaded = (config: PointsConfig) =>
+        buildLoadedConfig({ points: config, achievements }).game;
+      const play = (config: PointsConfig) =>
+        compute([checkin({ wallet: read, entries: [comment('c1')] })], {
+          config,
+          game: loaded(config),
+        });
+      expect(loaded(OFF).achievements.some((item) => item.rule.type === 'streak')).toBe(false);
+      const off = play(OFF);
+      expect(off.results[0]).toMatchObject({ status: 'applied' });
+      expect(off.rewards.unlockedAchievements).toEqual([]);
+      expect(off.fans[0]!.wallet!.state.achievements).toEqual({});
+      // A mesma carga com a chave ligada destrava as duas, no check-in.
+      expect(play(ON).rewards.unlockedAchievements.map((item) => item.id)).toEqual([
+        'sequencia-7',
+        'sequencia-30',
+      ]);
+    });
+  });
+
+  it('o check-in é de quem pede: o de outro fã anda sem entrar no resultado nem nos pontos de quem chama', () => {
+    const out = compute(
+      [fan({ uid: 'quem-chama' }), checkin({ uid: 'outro', wallet: wallet({ balance: 1 }) })],
+      { config: ON },
+    );
+    expect(out.pointsAwarded).toBe(0);
+    expect(out.checkin).toBeUndefined();
+    const other = out.fans.find((item) => item.uid === 'outro')!;
+    expect(other.wallet!.state).toMatchObject({ balance: 4, checkin: streak(1, TODAY) });
+  });
+
+  it('o suspenso que não chama e o fã sem perfil não fazem check-in (26.6)', () => {
+    const out = compute(
+      [
+        fan({ uid: 'quem-chama' }),
+        // A melhor sequência acima dos marcos e o jogo com eles: a suspensão também
+        // segura o desbloqueio.
+        checkin({
+          uid: 'suspenso',
+          suspended: true,
+          wallet: wallet({ checkin: streak(40, YESTERDAY) }),
+        }),
+        checkin({ uid: 'excluido', hasProfile: false }),
+      ],
+      { config: ON, game: game() },
+    );
+    expect(out.results).toEqual([]);
+    expect(out.fans.map((item) => [item.uid, item.wallet])).toEqual([
+      ['quem-chama', null],
+      ['suspenso', null],
+    ]);
+    expect(out.shard).toBeNull();
+  });
+
+  it('a rota não manda o lançamento do check-in: só o núcleo monta (o pedido é `checkin: true`)', () => {
+    const entry: AwardEntry = { kind: 'earn', source: 'checkin', eventId: '2026-10-05' };
+    expect(() => assertValidEntry(entry)).toThrow(PointsError);
+    expect(() => assertValidEntry(entry)).toThrow(/check-in/);
+    expect(() => assertValidEntry({ ...entry, points: 15 })).toThrow(/check-in/);
+    expect(() => compute([fan({ entries: [entry] })], { config: ON })).toThrow(/check-in/);
+    // Pontos explícitos continuam só da missão.
+    expect(() =>
+      assertValidEntry({ kind: 'earn', source: 'comment', eventId: 'c', points: 5 }),
+    ).toThrow(/missão/);
   });
 });

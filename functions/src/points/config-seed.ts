@@ -36,10 +36,12 @@ export async function readGameConfigSeed(db: Firestore): Promise<GameConfigDoc[]
  * Numa transação, lê config/points e config/achievements e, para cada um que
  * falta, cria o documento e a cópia em `versions/1`, com `version: 1`,
  * `updatedAt` e `updatedBy: null`, e uma auditoria `config.seeded` (sem
- * autor, "Carga inicial"). config/points recebe os valores, limites, tetos e
- * a régua do padrão; config/achievements, a lista provisória com as datas
- * desta gravação (`activatedAt` nas ativas). Devolve os documentos criados:
- * rodar de novo não grava nada.
+ * autor, "Carga inicial"). config/points recebe os valores, limites, tetos, a
+ * régua e o bloco do check-in diário do padrão (seção 40: a chave desligada,
+ * sempre; esta carga também roda em produção, e quem liga a chave é o painel);
+ * config/achievements, a lista provisória com as datas desta gravação
+ * (`activatedAt` nas ativas). Devolve os documentos criados: rodar de novo
+ * não grava nada.
  */
 export async function seedGameConfig(
   db: Firestore,
@@ -69,8 +71,8 @@ export async function seedGameConfig(
       created.push(name);
     };
     if (!points!.exists) {
-      const { values, dailyLimits, actionCaps, levels } = parsePointsConfig(undefined);
-      create('points', pointsConfigRef(db), { values, dailyLimits, actionCaps, levels });
+      const { values, dailyLimits, actionCaps, levels, checkin } = parsePointsConfig(undefined);
+      create('points', pointsConfigRef(db), { values, dailyLimits, actionCaps, levels, checkin });
     }
     if (!achievements!.exists) {
       create('achievements', achievementsConfigRef(db), {

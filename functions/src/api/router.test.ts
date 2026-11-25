@@ -734,7 +734,48 @@ describe('as rotas da moderação dos comentários (seção 37, etapa 3 de 37.13
     expect(matchRoute(API_ROUTES, 'GET', '/me/fan-club/hidden-comments').kind).toBe('not_found');
   });
 
-  it('a API tem 75 rotas: as 64 de antes, as 10 da Fase 2 (5 da etapa 1, 1 da etapa 2 e 4 da etapa 3) e a do Suporte (seção 38)', () => {
-    expect(API_ROUTES).toHaveLength(75);
+  it('a API tem 77 rotas: as 64 de antes, as 10 da Fase 2 (5 da etapa 1, 1 da etapa 2 e 4 da etapa 3), a do Suporte (seção 38) e as 2 do check-in diário (seção 40)', () => {
+    expect(API_ROUTES).toHaveLength(77);
+  });
+});
+
+describe('rotas do check-in diário (seção 40)', () => {
+  it('GET /me/checkin só lê e POST /me/checkin grava; os outros métodos são 405', () => {
+    expect(matchRoute(API_ROUTES, 'GET', '/me/checkin')).toMatchObject({
+      kind: 'match',
+      route: { method: 'GET', pattern: '/me/checkin', writes: false },
+      params: {},
+    });
+    expect(matchRoute(API_ROUTES, 'POST', '/me/checkin')).toMatchObject({
+      kind: 'match',
+      route: { method: 'POST', pattern: '/me/checkin', writes: true },
+      params: {},
+    });
+    for (const method of ['PUT', 'DELETE']) {
+      expect(matchRoute(API_ROUTES, method, '/me/checkin')).toEqual({
+        kind: 'method_not_allowed',
+        allow: ['GET', 'POST'],
+      });
+    }
+  });
+
+  it('/me/checkin convive com as rotas de me e não tem filha', () => {
+    for (const path of ['/me/wallet', '/me/progress', '/me/ledger', '/me/achievements']) {
+      expect(matchRoute(API_ROUTES, 'GET', path)).toMatchObject({
+        kind: 'match',
+        route: { pattern: path },
+      });
+    }
+    expect(matchRoute(API_ROUTES, 'GET', '/me/checkin/').kind).toBe('match');
+    expect(matchRoute(API_ROUTES, 'GET', '/me/checkin/2026-11-10').kind).toBe('not_found');
+    expect(matchRoute(API_ROUTES, 'POST', '/checkin').kind).toBe('not_found');
+  });
+
+  it('as duas vêm no fim da tabela, depois da do Suporte', () => {
+    expect(API_ROUTES.slice(-3).map((route) => `${route.method} ${route.pattern}`)).toEqual([
+      'POST /me/support',
+      'GET /me/checkin',
+      'POST /me/checkin',
+    ]);
   });
 });

@@ -296,7 +296,9 @@ export type LedgerSource =
    * só aparecem no extrato quando a equipe sobe o valor no painel.
    */
   | 'fanclub_like'
-  | 'fanclub_comment';
+  | 'fanclub_comment'
+  /** O check-in diário (seção 40): o valor do dia do ciclo, sem central e sem título. */
+  | 'checkin';
 
 /**
  * Uma linha do extrato de pontos (`GET /me/ledger`, blocos 1, 7 e 10). O app

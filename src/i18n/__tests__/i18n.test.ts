@@ -42,4 +42,13 @@ describe('translations.json', () => {
     const dashes = allTexts(translations).filter((text) => /[\u2013\u2014]/.test(text));
     expect(dashes).toEqual([]);
   });
+
+  it('os textos do check-in diário (seção 40) não prometem lembrete nem notificação, que estão fora do contrato', () => {
+    const texts = allTexts(translations.checkin);
+    expect(texts.length).toBeGreaterThan(0);
+    expect(texts.filter((text) => /lembr|notific|avis/i.test(text))).toEqual([]);
+    // O plural é por chave irmã, escolhida num helper puro (`checkin/describe-checkin.ts`).
+    expect(t('checkin.streak', { count: 4 })).toBe('4 dias seguidos');
+    expect(t('checkin.streakOne')).toBe('1 dia seguido');
+  });
 });

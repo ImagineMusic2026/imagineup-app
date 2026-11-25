@@ -33,6 +33,12 @@ export interface ExpandableProps {
   open: boolean;
   /** O valor do `useExpandProgress`, quando outra peça anda junto. */
   progress?: SharedValue<number>;
+  /**
+   * No Android, compõe o bloco fora da tela enquanto ele apaga: com camadas
+   * umas sobre as outras (o card do check-in, com fundo, borda e botão), cada
+   * uma apagaria sozinha. Quem não pede segue como era.
+   */
+  needsOffscreenAlphaCompositing?: boolean;
   children: ReactNode;
   style?: StyleProp<ViewStyle>;
   testID?: string;
@@ -40,12 +46,19 @@ export interface ExpandableProps {
 
 /**
  * Bloco que abre embaixo de quem o controla (as opções da foto e as do gênero
- * na tela "Editar perfil"). O conteúdo fica sempre montado e medido, e a
- * altura anda por valor animado: montar com `entering` ou animar com
- * `LinearTransition` já apagou a tela no Android. Fechado, sai do leitor de
- * tela e do toque.
+ * na tela "Editar perfil") e as duas faces do check-in diário da Início. O
+ * conteúdo fica sempre montado e medido, e a altura anda por valor animado:
+ * montar com `entering` ou animar com `LinearTransition` já apagou a tela no
+ * Android. Fechado, sai do leitor de tela e do toque.
  */
-export function Expandable({ open, progress, children, style, testID }: ExpandableProps) {
+export function Expandable({
+  open,
+  progress,
+  needsOffscreenAlphaCompositing,
+  children,
+  style,
+  testID,
+}: ExpandableProps) {
   const own = useExpandProgress(open);
   const value = progress ?? own;
   const height = useSharedValue(0);
@@ -57,6 +70,7 @@ export function Expandable({ open, progress, children, style, testID }: Expandab
 
   return (
     <Animated.View
+      needsOffscreenAlphaCompositing={needsOffscreenAlphaCompositing}
       pointerEvents={open ? 'auto' : 'none'}
       accessibilityElementsHidden={!open}
       importantForAccessibility={open ? 'auto' : 'no-hide-descendants'}

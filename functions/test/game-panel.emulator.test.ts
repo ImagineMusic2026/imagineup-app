@@ -128,6 +128,10 @@ describe('carga da versão 1 (seedGameConfig, bloco 11, 26.9)', () => {
       actionCaps: DEFAULT_POINTS_CONFIG.actionCaps,
       levels: DEFAULT_POINTS_CONFIG.levels,
     });
+    // O bloco do check-in diário vai na carga com a chave desligada (seção 40):
+    // a mesma carga roda em produção, e quem liga a chave é o painel.
+    expect(points!.checkin).toEqual({ enabled: false, cycle: [3, 3, 4, 4, 5, 6, 15] });
+    expect(points!.dailyLimits.checkin).toBeNull();
     expect(await read('config/points/versions/1')).toEqual(points);
     const achievements = await read('config/achievements');
     expect(achievements!.version).toBe(1);
@@ -245,6 +249,289 @@ describe('régua (updatePointsConfig)', () => {
         editor,
       ),
     ).toMatchObject({ reason: 'invalid-request', field: 'dailyLimits.mission' });
+  });
+
+  it('o bloco do check-in (seção 40): liga só a chave, muda só o ciclo, audita a chave e não some no salvar de outro bloco', async () => {
+    const editor = await seedMember(env, 'Editora', 'editor', ['missions']);
+    const CYCLE = [3, 3, 4, 4, 5, 6, 15];
+    const NEW_CYCLE = [1, 2, 3, 4, 5, 6, 7];
+    /** As auditorias da régua, na ordem das versões. */
+    const history = async () =>
+      (await audits('points.config.updated')).sort(
+        (a, b) => (a.details.toVersion as number) - (b.details.toVersion as number),
+      );
+
+    // Só a chave: o ciclo fica o do padrão, e o resto da régua também.
+    expect(
+      await ok('updatePointsConfig', { expectedVersion: 0, checkin: { enabled: true } }, editor),
+    ).toEqual({ ok: true, version: 1 });
+    const first = (await read('config/points'))!;
+    expect(first).toMatchObject({
+      version: 1,
+      values: DEFAULT_POINTS_CONFIG.values,
+      levels: DEFAULT_POINTS_CONFIG.levels,
+      actionCaps: DEFAULT_POINTS_CONFIG.actionCaps,
+      dailyLimits: { mission: null, checkin: null, comment: 20 },
+      updatedBy: { name: 'Editora' },
+    });
+    expect(first.checkin).toEqual({ enabled: true, cycle: CYCLE });
+    expect(await read('config/points/versions/1')).toEqual(first);
+    expect((await history()).map((entry) => entry.details)).toEqual([
+      { fields: ['checkin'], checkinEnabled: true, fromVersion: 0, toVersion: 1 },
+    ]);
+    expect((await history())[0]).toMatchObject({ section: 'missions', targets: [] });
+
+    // Só o ciclo: a chave continua ligada, e a auditoria não repete a chave.
+    expect(
+      await ok('updatePointsConfig', { expectedVersion: 1, checkin: { cycle: NEW_CYCLE } }, editor),
+    ).toEqual({ ok: true, version: 2 });
+    expect((await read('config/points'))!.checkin).toEqual({ enabled: true, cycle: NEW_CYCLE });
+    expect((await history())[1]!.details).toEqual({
+      fields: ['checkin'],
+      fromVersion: 1,
+      toVersion: 2,
+    });
+
+    // Salvar outro bloco não perde o do check-in (o documento é gravado inteiro).
+    expect(
+      await ok('updatePointsConfig', { expectedVersion: 2, values: { like: 3 } }, editor),
+    ).toEqual({ ok: true, version: 3 });
+    const third = (await read('config/points'))!;
+    expect(third.checkin).toEqual({ enabled: true, cycle: NEW_CYCLE });
+    expect(third.values).toMatchObject({ like: 3 });
+    expect((await history())[2]!.details).toEqual({
+      fields: ['values'],
+      fromVersion: 2,
+      toVersion: 3,
+    });
+
+    // O bloco inteiro igual ao de agora: nada mudou, nada gravado.
+    expect(
+      await ok(
+        'updatePointsConfig',
+        { expectedVersion: 3, checkin: { enabled: true, cycle: NEW_CYCLE } },
+        editor,
+      ),
+    ).toEqual({ ok: true, version: 3 });
+    expect(await history()).toHaveLength(3);
+
+    // Desligar junto de outro campo: os dois em `fields`, e o valor novo da chave.
+    expect(
+      await ok(
+        'updatePointsConfig',
+        { expectedVersion: 3, values: { like: 4 }, checkin: { enabled: false } },
+        editor,
+      ),
+    ).toEqual({ ok: true, version: 4 });
+    expect((await history())[3]!.details).toEqual({
+      fields: ['values', 'checkin'],
+      checkinEnabled: false,
+      fromVersion: 3,
+      toVersion: 4,
+    });
+    // O que as funções leem: a chave desligada, com o ciclo que a equipe deixou.
+    const loaded = await createConfigSource(db, { ttlMs: 0 }).get();
+    expect(loaded.points.checkin).toEqual({ enabled: false, cycle: NEW_CYCLE });
+    expect(loaded.points.dailyLimits.checkin).toBeNull();
+    expect(loaded.points.version).toBe(4);
+  });
+
+  it('o bloco do check-in fora do formato: invalid-request com o campo, sem gravar; o Leitor não liga a chave', async () => {
+    const editor = await seedMember(env, 'Editora', 'editor', ['missions']);
+    const viewer = await seedMember(env, 'Leitor', 'viewer', ['missions']);
+    for (const [checkin, field] of [
+      [{ enabled: 'sim' }, 'checkin.enabled'],
+      [{ cycle: [3, 3, 4] }, 'checkin.cycle'],
+      // O 0 é recusado: quem desliga o check-in é a chave.
+      [{ cycle: [3, 3, 4, 4, 5, 6, 0] }, 'checkin.cycle.6'],
+      // O teto de um dia do ciclo é 999 (o da régua, 10.000, é outro).
+      [{ cycle: [3, 1_000, 4, 4, 5, 6, 15] }, 'checkin.cycle.1'],
+      [{}, 'checkin'],
+      [{ enabled: true, bonus: 50 }, 'checkin'],
+      [null, 'checkin'],
+    ] as const) {
+      expect(
+        await failure('updatePointsConfig', { expectedVersion: 0, checkin }, editor),
+        JSON.stringify(checkin),
+      ).toMatchObject({ reason: 'invalid-request', field });
+    }
+    // O check-in não tem limite do dia nem valor por evento.
+    expect(
+      await failure(
+        'updatePointsConfig',
+        { expectedVersion: 0, dailyLimits: { checkin: 5 } },
+        editor,
+      ),
+    ).toMatchObject({ reason: 'invalid-request', field: 'dailyLimits.checkin' });
+    expect(
+      await failure('updatePointsConfig', { expectedVersion: 0, values: { checkin: 3 } }, editor),
+    ).toMatchObject({ reason: 'invalid-request', field: 'values.checkin' });
+    expect(
+      (
+        await failure(
+          'updatePointsConfig',
+          { expectedVersion: 0, checkin: { enabled: true } },
+          viewer,
+        )
+      ).reason,
+    ).toBe('no-section');
+    expect(await exists('config/points')).toBe(false);
+    expect(await audits('points.config.updated')).toHaveLength(0);
+  });
+
+  it('o config/points de produção, salvo antes do check-in e sem o bloco, lido do Firestore: desligado, não paga nem grava; o painel liga e o POST paga; desliga e o POST recusa de novo (seção 40)', async () => {
+    const editor = await seedMember(env, 'Editora', 'editor', ['missions']);
+    const CYCLE = [3, 3, 4, 4, 5, 6, 15];
+    // O documento como o painel de antes gravou: a versão 7, um valor fora do
+    // padrão, os limites do dia sem `checkin` e nenhum bloco `checkin`.
+    const saved = {
+      version: 7,
+      values: { ...DEFAULT_POINTS_CONFIG.values, comment: 3 },
+      dailyLimits: Object.fromEntries(
+        Object.entries(DEFAULT_POINTS_CONFIG.dailyLimits).filter(
+          ([source]) => source !== 'checkin',
+        ),
+      ),
+      levels: DEFAULT_POINTS_CONFIG.levels,
+      actionCaps: DEFAULT_POINTS_CONFIG.actionCaps,
+      updatedAt: Timestamp.fromMillis(Date.parse('2026-11-01T15:00:00.000Z')),
+      updatedBy: { uid: 'admin-de-antes', name: 'Admin' },
+    };
+    expect(saved.dailyLimits).toMatchObject({ comment: 20, mission: null });
+    expect(saved.dailyLimits).not.toHaveProperty('checkin');
+    expect(saved).not.toHaveProperty('checkin');
+    await db.doc('config/points').set(saved);
+
+    // A api no processo do teste, com o relógio fixo (terça-feira, 10/11/2026,
+    // meio-dia em São Paulo) e a configuração lida do Firestore a cada pedido.
+    // Nunca a `api` de verdade: ela guarda a configuração por 60 s, e a chave
+    // ligada ficaria na memória dela para os arquivos seguintes.
+    const NOW = Date.parse('2026-11-10T15:00:00.000Z');
+    const logged: string[] = [];
+    const config = createConfigSource(db, {
+      ttlMs: 0,
+      log: { warn: (message) => logged.push(message), error: (message) => logged.push(message) },
+    });
+    const api = localApi(env, { now: () => NOW, config });
+    const fan = await signUpFan(db);
+    let keys = 0;
+    const key = () => `chave-regua-checkin-${++keys}`;
+    const checkIn = () => api('POST', '/me/checkin', { token: fan.token, key: key() });
+    const state = () => api('GET', '/me/checkin', { token: fan.token });
+    const wallet = () => db.doc(`wallets/${fan.uid}`).get();
+    const storedKeys = async () =>
+      (await db.collection('idempotency').where('uid', '==', fan.uid).get()).size;
+    const OFF = {
+      status: 200,
+      body: {
+        enabled: false,
+        checkedInToday: false,
+        streak: 0,
+        best: 0,
+        cycle: [],
+        cycleDay: 0,
+        todayPoints: 0,
+        resetsAt: '2026-11-11T03:00:00.000Z',
+      },
+    };
+    const REFUSED = {
+      status: 409,
+      body: { code: 'checkin_disabled', message: 'O check-in diário não está disponível agora.' },
+    };
+
+    // 1. Desligado (o documento não tem o bloco): o que as funções leem é o
+    // documento salvo, em silêncio, e o check-in não existe para o fã.
+    const loaded = await config.get();
+    expect(loaded.points).toMatchObject({
+      version: 7,
+      values: { comment: 3 },
+      checkin: { enabled: false, cycle: CYCLE },
+    });
+    expect(loaded.points.dailyLimits.checkin).toBeNull();
+    expect(await state()).toEqual(OFF);
+    expect(await checkIn()).toEqual(REFUSED);
+    expect((await wallet()).exists).toBe(false);
+    expect(await storedKeys()).toBe(0);
+    // A gravação de outra rota (a mensagem do Suporte) cria a carteira sem o campo.
+    const sent = await api('POST', '/me/support', {
+      token: fan.token,
+      key: key(),
+      body: { kind: 'idea', text: 'Um check-in diário seria legal.' },
+    });
+    expect(sent.status).toBe(200);
+    const created = (await wallet()).data()!;
+    expect(created).toMatchObject({ balance: 0, xp: 0 });
+    expect(created).not.toHaveProperty('checkin');
+    expect(logged).toEqual([]);
+
+    // 2. O painel liga a chave, pela callable de verdade: a versão 8 ganha o
+    // bloco, com o ciclo padrão, e o resto da régua fica como estava.
+    expect(
+      await ok('updatePointsConfig', { expectedVersion: 7, checkin: { enabled: true } }, editor),
+    ).toEqual({ ok: true, version: 8 });
+    const on = (await read('config/points'))!;
+    expect(on).toMatchObject({
+      version: 8,
+      values: { comment: 3 },
+      dailyLimits: { mission: null, checkin: null },
+      updatedBy: { name: 'Editora' },
+    });
+    expect(on.checkin).toEqual({ enabled: true, cycle: CYCLE });
+    // O POST paga o dia 1 do ciclo, com a configuração que veio do Firestore.
+    const checkin = {
+      enabled: true,
+      checkedInToday: true,
+      streak: 1,
+      best: 1,
+      cycle: CYCLE,
+      cycleDay: 1,
+      todayPoints: 3,
+      resetsAt: '2026-11-11T03:00:00.000Z',
+    };
+    expect(await checkIn()).toEqual({
+      status: 200,
+      body: {
+        pointsAwarded: 3,
+        checkin,
+        completedMissions: [],
+        levelUp: null,
+        unlockedAchievements: [],
+        missionsChanged: false,
+      },
+    });
+    expect(await state()).toEqual({ status: 200, body: checkin });
+    const paid = await wallet();
+    expect(paid.data()).toMatchObject({ balance: 3, xp: 3, earnedTotal: 3 });
+    expect(paid.get('checkin')).toEqual({ streak: 1, best: 1, lastDay: '2026-11-10' });
+    // O lançamento leva a versão nova da régua: a que o painel acabou de gravar.
+    expect(await read(`wallets/${fan.uid}/ledger/checkin:2026-11-10`)).toMatchObject({
+      kind: 'earn',
+      source: 'checkin',
+      eventId: '2026-11-10',
+      points: 3,
+      balanceAfter: 3,
+      configVersion: 8,
+    });
+
+    // 3. O painel desliga: o POST volta a recusar, e a carteira fica como estava.
+    expect(
+      await ok('updatePointsConfig', { expectedVersion: 8, checkin: { enabled: false } }, editor),
+    ).toEqual({ ok: true, version: 9 });
+    expect(await checkIn()).toEqual(REFUSED);
+    expect(await state()).toEqual(OFF);
+    expect((await wallet()).updateTime).toEqual(paid.updateTime);
+    expect((await db.collection(`wallets/${fan.uid}/ledger`).get()).size).toBe(1);
+    // As duas chaves guardadas são as dos pedidos aceitos: o Suporte e o check-in pago.
+    expect(await storedKeys()).toBe(2);
+    expect(logged).toEqual([]);
+    // A auditoria das duas mudanças, na ordem das versões, com o valor novo da chave.
+    const history = (await audits('points.config.updated'))
+      .map((entry) => entry.details)
+      .sort((a, b) => (a.toVersion as number) - (b.toVersion as number));
+    expect(history).toEqual([
+      { fields: ['checkin'], checkinEnabled: true, fromVersion: 7, toVersion: 8 },
+      { fields: ['checkin'], checkinEnabled: false, fromVersion: 8, toVersion: 9 },
+    ]);
   });
 
   it('régua com menos degraus do que uma conquista de nível pede: level-in-use, também sem config/achievements', async () => {
@@ -725,6 +1012,96 @@ describe('conquistas', () => {
     // As 10 da lista padrão (o Top 20 no ar desde o bloco 8) sem a arquivada.
     expect((await api('GET', '/me/achievements', { token: fan.token })).body).toMatchObject({
       totalCount: 9,
+    });
+  });
+
+  it('a conquista de sequência de check-in (seção 40): o painel cria, publica, edita e reordena com a chave desligada, e o fã só a vê com a chave ligada', async () => {
+    const editor = await seedMember(env, 'Editora', 'editor', ['missions']);
+    const achievement = {
+      title: '7 dias seguidos',
+      icon: 'flame',
+      tone: 'action',
+      rule: { type: 'streak', days: 7 },
+    };
+    // Os dias fora de 2 a 1.000 voltam com o campo da regra.
+    for (const days of [1, 1_001, 7.5]) {
+      expect(
+        await failure(
+          'createAchievement',
+          { expectedVersion: 0, achievement: { ...achievement, rule: { type: 'streak', days } } },
+          editor,
+        ),
+        String(days),
+      ).toMatchObject({ reason: 'invalid-request', field: 'achievement.rule.days' });
+    }
+    const created = await ok<{ achievementId: string; version: number }>(
+      'createAchievement',
+      { expectedVersion: 0, achievement },
+      editor,
+    );
+    expect(created.achievementId).toMatch(/^7-dias-seguidos-[a-z0-9]{4}$/);
+    await ok(
+      'setAchievementStatus',
+      { expectedVersion: 1, achievementId: created.achievementId, status: 'active' },
+      editor,
+    );
+    // Publicada, a regra trava como as outras; o título segue editável.
+    expect(
+      (
+        await failure(
+          'updateAchievement',
+          {
+            expectedVersion: 2,
+            achievementId: created.achievementId,
+            changes: { rule: { type: 'streak', days: 10 } },
+          },
+          editor,
+        )
+      ).reason,
+    ).toBe('achievement-locked');
+    await ok(
+      'updateAchievement',
+      {
+        expectedVersion: 2,
+        achievementId: created.achievementId,
+        changes: { title: 'Uma semana inteira' },
+      },
+      editor,
+    );
+    // O painel reordena o catálogo inteiro, com a de sequência, sem a chave ligada.
+    const ids = [
+      created.achievementId,
+      ...DEFAULT_ACHIEVEMENTS_CONFIG.achievements.map((item) => item.id),
+    ];
+    await ok('reorderAchievements', { expectedVersion: 3, achievementIds: ids }, editor);
+    const stored = (await read('config/achievements'))!;
+    expect(stored.version).toBe(4);
+    expect(stored.achievements.map((item: { id: string }) => item.id)).toEqual(ids);
+    expect(stored.achievements[0]).toMatchObject({
+      id: created.achievementId,
+      title: 'Uma semana inteira',
+      status: 'active',
+      rule: { type: 'streak', days: 7 },
+    });
+
+    // Com a chave desligada (sem config/points), o lado do fã não a vê.
+    const fan = await signUpFan(db);
+    const api = localApi(env, {
+      now: () => Date.now(),
+      config: createConfigSource(db, { ttlMs: 0 }),
+    });
+    const off = await createConfigSource(db, { ttlMs: 0 }).get();
+    expect(off.game.achievements.map((item) => item.id)).toEqual(ids.slice(1));
+    expect((await api('GET', '/me/achievements', { token: fan.token })).body).toMatchObject({
+      totalCount: 10,
+    });
+    // O painel liga a chave: a conquista entra no jogo e no "de N", na ordem do catálogo.
+    await ok('updatePointsConfig', { expectedVersion: 0, checkin: { enabled: true } }, editor);
+    const on = await createConfigSource(db, { ttlMs: 0 }).get();
+    expect(on.game.achievements.map((item) => item.id)).toEqual(ids);
+    expect((await api('GET', '/me/achievements', { token: fan.token })).body).toMatchObject({
+      unlockedCount: 0,
+      totalCount: 11,
     });
   });
 });

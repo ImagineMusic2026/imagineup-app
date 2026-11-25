@@ -6,6 +6,7 @@ import { EmptyState } from '@/components/empty-state';
 import { Screen } from '@/components/screen';
 import { SectionHeader } from '@/components/section-header';
 import { useFanCentralsQuery } from '@/domains/artists';
+import { CheckinHeaderButton, CheckinSection, useCheckinPanel } from '@/domains/checkin';
 import { FanClubFeedSection } from '@/domains/fan-club';
 import { DailyMissionSection, useDailyMissionQuery } from '@/domains/missions';
 import { PostDivider, PostRow, PostRowsSkeleton, useFeedQuery, type Post } from '@/domains/posts';
@@ -29,13 +30,18 @@ function postItemType(post: Post): 'event' | 'media' | 'text' {
  * Tudo o que vem antes do mural, de ponta a ponta (o carrossel sai da margem).
  * Fora de foco, a missão do dia que conclui não festeja: quem fala é a tela
  * que o fã está vendo (a 1g, quando a conclusão chega por lá). A conta
- * suspensa tem o aviso fixo logo embaixo da saudação (seção 29, frente E).
+ * suspensa tem o aviso fixo logo embaixo da saudação (seção 29, frente E). O
+ * check-in diário (seção 40) é o ícone do calendário na saudação, ao lado do
+ * avatar, e o card que ele abre, antes da missão do dia; os dois só com a
+ * chave do servidor ligada: sem ela, nada aparece nem é anunciado.
  */
 function HomeListHeader({ focused }: { focused: boolean }) {
+  const checkin = useCheckinPanel();
   return (
     <View>
-      <HomeHeader />
+      <HomeHeader accessory={<CheckinHeaderButton panel={checkin} active={focused} />} />
       <SuspendedNotice style={styles.suspended} />
+      <CheckinSection panel={checkin} />
       <DailyMissionSection celebrate={focused} style={styles.mission} />
       <CentralsSection />
       {/* "Dos seus fã-clubes" (seção 34): só depois da trava e só com publicação. */}
@@ -116,10 +122,11 @@ function useAnnounceHomeFailures(postCount: number): void {
 }
 
 /**
- * 1b. Home gamificada: saudação com o avatar, missão do dia, "Suas centrais",
- * "Dos seus fã-clubes" (seção 34, só com publicação) e o mural "Do seu
- * fandom", numa FlashList só que rola junto. O header e o mural passam por
- * baixo da tab bar. Puxar para baixo atualiza tudo.
+ * 1b. Home gamificada: saudação com o avatar, o check-in diário (seção 40,
+ * só com a chave do servidor ligada), missão do dia, "Suas centrais", "Dos
+ * seus fã-clubes" (seção 34, só com publicação) e o mural "Do seu fandom",
+ * numa FlashList só que rola junto. O header e o mural passam por baixo da
+ * tab bar. Puxar para baixo atualiza tudo.
  */
 export function HomeScreen() {
   const bottomInset = useTabBarInset();
