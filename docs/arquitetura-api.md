@@ -1,6 +1,6 @@
 # Arquitetura da API do app
 
-Nota de arquitetura do servidor do ImagineUP. Ela diz como o app fala com as Cloud Functions, onde moram os pontos, como o ponto é lançado e como o painel lê os números. Vale para o bloco 1 (base do servidor e núcleo de pontos) e deixa a estrutura pronta para os blocos seguintes. O bloco 4 (centrais de verdade) está na seção 19, o bloco 5 (convite com atribuição e origem do fã), na seção 20, o bloco 6 (mural e agenda com conteúdo real), na seção 21, o bloco 7 (missões, níveis, conquistas e extrato), na seção 22, o bloco 8 (ranking e temporadas), na seção 23, o bloco 9 (perfil editável), na seção 24, o bloco 10 (loja e resgate), na seção 25, o bloco 11 (telas do painel), na seção 26, a proteção contra abuso, na seção 27, o perfil novo (bio, gênero, conta privada, redes, a edição pela API e o perfil público), na seção 28, as exigências das lojas (denúncia de perfil, bloqueados, Sobre, conta, suspensão, 429 e Explorar), na seção 29, o filtro do que o fã publica, na seção 30, a proteção da produção (cópias do banco, alertas e o registro de acesso), na seção 31, a moderação do @, os pedidos de dados e o aviso de api fora do ar, na seção 32, o fã-clube gerido pelo fã, com o prêmio ao gestor, na seção 34 (o desenho de 16/10/2026, construído nas 10 etapas de 34.14, em 19 e 20/10/2026, 34.22), o WhatsApp no resgate da loja (UP-66), na seção 35, as decisões do dono sobre as telas 4a a 4g do fã-clube (UP-67), na seção 36, ainda sem código, e a Fase 2 delas (comentários, reações e menções), na seção 37, construída nas etapas 1 a 7 de 37.13, em 27/10/2026, e no ar desde 01/11/2026. O Suporte nos Ajustes (Reportar problema, Sugerir funcionalidade e Feedback geral) está na seção 38, no ar desde 04/11/2026.
+Nota de arquitetura do servidor do ImagineUP. Ela diz como o app fala com as Cloud Functions, onde moram os pontos, como o ponto é lançado e como o painel lê os números. Vale para o bloco 1 (base do servidor e núcleo de pontos) e deixa a estrutura pronta para os blocos seguintes. O bloco 4 (centrais de verdade) está na seção 19, o bloco 5 (convite com atribuição e origem do fã), na seção 20, o bloco 6 (mural e agenda com conteúdo real), na seção 21, o bloco 7 (missões, níveis, conquistas e extrato), na seção 22, o bloco 8 (ranking e temporadas), na seção 23, o bloco 9 (perfil editável), na seção 24, o bloco 10 (loja e resgate), na seção 25, o bloco 11 (telas do painel), na seção 26, a proteção contra abuso, na seção 27, o perfil novo (bio, gênero, conta privada, redes, a edição pela API e o perfil público), na seção 28, as exigências das lojas (denúncia de perfil, bloqueados, Sobre, conta, suspensão, 429 e Explorar), na seção 29, o filtro do que o fã publica, na seção 30, a proteção da produção (cópias do banco, alertas e o registro de acesso), na seção 31, a moderação do @, os pedidos de dados e o aviso de api fora do ar, na seção 32, o fã-clube gerido pelo fã, com o prêmio ao gestor, na seção 34 (o desenho de 16/10/2026, construído nas 10 etapas de 34.14, em 19 e 20/10/2026, 34.22), o WhatsApp no resgate da loja (UP-66), na seção 35, as decisões do dono sobre as telas 4a a 4g do fã-clube (UP-67), na seção 36, ainda sem código, e a Fase 2 delas (comentários, reações e menções), na seção 37, construída nas etapas 1 a 7 de 37.13, em 27/10/2026, e no ar desde 01/11/2026. O Suporte nos Ajustes (Reportar problema, Sugerir funcionalidade e Feedback geral) está na seção 38, no ar desde 04/11/2026. A entrada com a Apple no iPhone, com o núcleo que ela divide com o Google do Android, está na seção 39.
 
 Em produção desde 04/11/2026: o servidor de todas as seções, com a 34, a Fase 2 de 37 e o Suporte de 38 (70 funções e 75 índices compostos, todas no código de `77d52c9`), e o app delas no canal preview da EAS (o último EAS Update, de 04/11/2026, saiu da mesma `main` `77d52c9`). Os blocos 1 e 4 a 10 saíram em 07/10/2026, o servidor do bloco 11 em 08/10/2026, as seções 27 e 28 de 08 a 09/10/2026, as seções 29, 30 e 31 em 14/10/2026, a seção 32 em 15/10/2026 (UTC; a noite de 14/10 em Brasília), a seção 35 em 19/10/2026 e a seção 34 em 20/10/2026. O relato de cada publicação está em 26.21 (a da seção 35, em 35.10, e a da 34, em 34.15). O selo do fã-clube oficial (34.23, PR #50) saiu em 27/10/2026 (UTC; a noite de 26/10 em Brasília): as cinco funções da lista de 34.23 e o EAS Update, com o botão do painel já no ar desde as 23:35Z de 26/10 (como foi, em 34.23). A Fase 2 do fã-clube (seção 37) saiu em 01/11/2026 (UTC; a noite de domingo em Brasília), da `main` `21d086b`: as regras e os 6 índices novos, as 69 funções nos 5 lotes e o EAS Update, com o painel do PR #29 do `imagineup-admin` no ar desde antes do servidor (como foi, em 37.14). O LinkedIn fora do perfil (28.20) saiu em 02/11/2026 no app, pelo EAS Update, e no painel, e as três funções dele subiram com o servidor do Suporte, em 04/11/2026 (como foi, em 28.20). Além do LinkedIn, saíram depois da Fase 2 outros onze EAS Updates do canal preview, só de app, de 02 a 04/11/2026 (UTC; o primeiro ainda na noite de 01/11 em Brasília): o card do fã-clube que abre a publicação (37.9, PR #69), o deslizar entre as abas (PRs #72 a #74), o aviso da conta privada fora do Editar perfil (28.21, PR #75), a volta ao soltar do deslize animada também com reduzir movimento (PR #77) o nome da capa da central numa linha quando cabe (19.18, PR #79), o autor no topo do card da publicação do fã-clube, no estilo do X, nas três telas (37.17, PRs #81 e #82), o horário dos comentários do fã-clube como o da publicação (37.18, PR #84), na Início, o @ e o horário embaixo do nome do autor (37.19, PR #86) e, na tela da publicação, também (37.20, PR #88). A lista dos doze, com as horas e os grupos, está no fim de 37.14. O Suporte nos Ajustes (seção 38) saiu em 04/11/2026 (de madrugada em Brasília, e o EAS Update às 08h18), da `main` `77d52c9`: o painel do PR #31 do `imagineup-admin` antes do servidor, as regras com os 4 índices novos (75), as 70 funções nos 5 lotes, com a `resolveSupportMessage` nova, e o EAS Update (como foi, em 38.9). Nas lojas, o app saiu pelo canal `production` da EAS: o Android na Play Store desde 21/11/2026 (versão 4) e o iOS no TestFlight desde 23/11/2026 (build 3). O primeiro EAS Update de produção do iOS, o da abertura com o fundo de volta (PR #96, `main` `ba2e3b0`), saiu em 23/11/2026, às 21:20Z, só para o iOS (a seção EAS do `CLAUDE.md`).
 
@@ -39,6 +39,7 @@ Quem mexe no servidor lê esta nota antes. Mudou uma decisão daqui? Mude a nota
 28. WhatsApp no resgate da loja (seção 35, UP-66, decisão do dono de 19/10/2026): todo resgate pede o WhatsApp do fã, obrigatório no app, já preenchido com o número guardado e editável; o número mora no contato do fã da seção 34, `users/{uid}/contact/main`, privado nas regras (desde a etapa 1 da seção 34, quem edita Fã-clubes lê o de quem tem candidatura), como celular brasileiro com DDD em E.164 (`parseWhatsapp`, igual no servidor e no app), gravado na transação do resgate e nunca no pedido; o fã lê e troca o dele pelo `GET` e o `PUT /me/contact` (a 45ª e a 46ª rotas, no desenho da seção 34; o número fora do disco no app), e a equipe com Recompensas vê o número de agora no "Ver contatos" dos pedidos abertos, com o link `wa.me`, sem o número na auditoria; o app de antes resgata sem o campo, e o servidor aceita; a exportação ganha o `contato`, e a exclusão o leva com o perfil; 68 funções, nenhum índice, fila ou TTL novo, e o fingerprint do app não muda.
 29. As telas 4a a 4g do fã-clube (seção 36, UP-67, decisões do dono de 27/10/2026; sem código, menos a Fase 2, construída pela seção 37, item 30): por liberalidade, sem aditivo, como o fã-clube; a candidatura continua, com 18 anos ou mais declarados e o @ escolhido; o nome continua Fã-clube, com o Gestor, o "feito por @gestor" em toda tela e a resposta pelo @, e a capa e o ícone sem a foto do artista; membro é quem segue; o gestor vê uma lista mínima dos membros (o nome, o @ e a data, só de quem seguiu depois do aviso e sem as contas privadas), que vai ao ar sem esperar o texto de privacidade da cliente; sem a posição entre os fã-clubes e sem o "Quem mais traz gente"; uma taxa de engajamento simples, só informativa, com a Fase 2; os pontos gerados só na Temporada e no total; os seguidores comentam e curtem, o comentário vai ao ar pelo filtro, a denúncia vai à equipe em até 24 horas úteis e o gestor só oculta, com o aviso e o "Pedir revisão" para o autor; comentar e curtir rendem 0 ponto, em chaves próprias do `config/points`, mudáveis no painel, e não contam nas missões gerais; moderadores só na Fase 5. Pela trava da seção, nas Fases 1 a 6, nenhuma função nova e o fingerprint do app não muda.
 30. Fase 2 do fã-clube (seção 37, o desenho de 27/10/2026 com as respostas do dono sobre as reações e as menções, construído no mesmo dia nas etapas 1 a 7 de 37.13 e no ar desde 01/11/2026): os seguidores e o gestor comentam, reagem e marcam pelo @; tocar curte e segurar abre 5 emojis fixos, com uma reação por fã em cada publicação; a resposta é de um nível, sem comentário fixado; o @ marca qualquer fã e os artistas, vira link pela pessoa (o uid ou a central, resolvidos no envio) e não avisa quem é marcado, e o filtro confere os @ resolvidos como palavra; a sugestão do @ começa pela conversa, busca só pelo começo do @ e nunca diz quem segue; os comentários e as reações em coleções de raiz próprias (`fanClubComments` e `fanClubReactions`), com os contadores no próprio `fanClubPosts` por `increment`; o gestor oculta, o autor vê "Oculto pelo gestor" e pede revisão, e a equipe decide as denúncias e os pedidos numa fila própria (`fanClubCommentQueue`), pela `decideFanClub` com o assunto `comment`, com o registro do ocultar em `fanClubHideLog`; 0 ponto nas origens `fanclub_like` e `fanclub_comment`, com os tetos `fanclub_reaction_set` e `fanclub_comment_sent`; a taxa de 30 dias pelos dias nos 16 shards do fã-clube; 10 rotas novas (74), 6 índices compostos (71) e 5 isenções, nenhuma função nova (69), e o fingerprint do app não muda; o app sai por EAS Update, e o painel, numa conversa à parte guiada pelo README de 37.10, depois das funções no ar (37.14).
+31. Entrada social (seção 39, aprovada pelo dono em 24/11/2026, a partir do rascunho do PR #25): o Google (só no Android, PR #95) e a Apple (só no iPhone) dividem o núcleo da entrada (`useSocialEntry`), e a conta nova sem convite para na pergunta do código (`/codigo-de-convite`); a Apple é o botão nativo `CONTINUE` e `WHITE`, fora do Expo Go, na pergunta do e-mail de entrar e de criar conta, com o nonce do `expo-crypto` (o SHA-256 para a Apple, o bruto para o Firebase) e o nome que ela manda guardado no aparelho antes do `signInWithCredential`; a exclusão vai pelo provedor da sessão, e a da Apple abre a folha, reautentica e revoga pelo REST (`CODE`, com o `X-Ios-Bundle-Identifier`) antes do `deleteUser`; a credencial revogada (`REVOKED`) tira só a sessão da Apple, nunca durante a exclusão; e a `version` do app sai do fingerprint (`fingerprint.config.js`), num PR que muda os dois runtimes (os builds 0.1.1).
 
 ## 1. Formato da API
 
@@ -13265,6 +13266,277 @@ Em 04/11/2026, na branch `suporte-ajustes`, com o fingerprint Android igual ao d
 - Anexar a captura da tela ao problema (pede o envio de arquivo, no molde da foto do fã-clube).
 - O modelo do celular no problema (pede o `expo-device`, nativo: build nova).
 - Por quanto tempo guardar: hoje a mensagem fica até a conta sair; um prazo (por exemplo, apagar as resolvidas depois de um ano) entra com a política de privacidade da cliente (UP-45).
+
+## 39. Entrar com a Apple no iPhone
+
+O fã entra e cria a conta com a Apple no iPhone, pelo botão nativo "Continuar com a Apple" na pergunta do e-mail de entrar e de criar conta. O Google segue só no Android (PR #95), e os dois dividem o mesmo núcleo da entrada. Esta seção é o contrato do app: as decisões, o núcleo com o Google, as contas, a exclusão com a revogação, a conferência da credencial e o nome guardado, os arquivos, os textos, os consoles, a configuração e o fingerprint, os testes, a publicação, as perguntas, o que fica fora e as armadilhas. O servidor não muda: o `createUserProfile` e o `deleteUserProfile` tratam a conta da Apple como qualquer conta do Auth, e as provas do Auth no emulador estão em 39.10.
+
+Origem: o rascunho do PR #25 (branch `login-social-video`, commit `7a19ce2`, com a seção 33 dele), o desenho aprovado pelo dono em 24/11/2026 (D1 a D12) e as respostas dele aos pontos em aberto, no mesmo dia (39.1).
+
+Estado: construído em 24 e 25/11/2026 na branch `entrar-com-apple`, a partir da `main` `a88c70b` (o merge do PR #99), e conferido nos testes (39.10). Os consoles da Apple e do Firebase ficaram prontos em 24/11/2026 (39.8). Falta o build 0.1.1 das duas lojas, a conferência no TestFlight e em produção (39.15) e os textos públicos (39.12).
+
+Trava do bloco: muda o fingerprint das duas plataformas (39.9). Os builds 0.1.0 das lojas não recebem esta seção por EAS Update: o iPhone só tem a Apple a partir do build 0.1.1, e o Android 0.1.1 também é um build novo (o `expo-crypto` tem módulo nativo nos dois sistemas).
+
+Como era antes:
+
+- O iPhone entrava só com e-mail e senha. O Google entrava só no Android (PR #95), pelo `signInWithCredential`, com o fluxo inteiro dentro do `useGoogleEntry`.
+- A exclusão da conta confirmava a senha ou o Google só depois do `auth/requires-recent-login`, e nada revogava o acesso de um provedor além do `revokeAccess` do Google.
+- A seção 33 desta nota é o rascunho sem merge da Apple, do Google de outubro e do vídeo. As referências a ela ficam; o item 26 das decisões segue reservado para ela.
+
+### 39.1 Decisões
+
+- **D1, o botão:** o botão nativo da Apple (`AppleAuthenticationButton`, tipo `CONTINUE`, estilo `WHITE`, raio `radii.cta` e 50 de altura) só no iPhone, fora do Expo Go e com o `isAvailableAsync` do sistema, na pergunta do e-mail de entrar e de criar conta, antes do Google. Sem exceção para os emuladores no Expo Go: o token do Expo Go sai com os identificadores dele. A resposta é pedida uma vez por abertura do app (o `_layout.tsx` a pede logo na montagem), e o botão nasce no primeiro quadro das telas de conta, sem aparecer depois embaixo do teclado. A margem da HIG (1/10 da altura) vem do `gap` do grupo mais a margem de baixo do botão: 8 no total.
+- **D2, o nonce e o nome:** o nonce bruto sai do `randomUUID` do `expo-crypto`, novo a cada folha; a Apple recebe o SHA-256 dele em hex, e o Firebase, o bruto (`new OAuthProvider('apple.com').credential({ idToken, rawNonce })`). A credencial do Firebase não leva o nome: o nome que a Apple manda só na primeira entrada de cada pessoa é guardado no aparelho antes do `signInWithCredential` e vai ao Auth sem nome e ao perfil sem nome (39.5).
+- **D3, o núcleo dividido:** a entrada pela Apple e pelo Google é o mesmo `useSocialEntry`, com as conferências do Google de antes, sem mudar o comportamento do Google (39.2). A Apple é um provedor confiável: não tem o modo "ligar".
+- **D4, as contas, sem código:** o que o Firebase faz quando a Apple encontra uma conta de senha ou do Google com o mesmo e-mail, e o e-mail de retransmissão (39.3).
+- **D5, a exclusão:** pelo provedor da sessão. A sessão da Apple confirma pela folha da Apple, e o código dela revoga o acesso pelo REST (`CODE`, com o `X-Ios-Bundle-Identifier`) antes do `deleteUser`. A Apple ligada a uma sessão de senha pede a senha já no primeiro toque e, depois dela, tenta revogar (39.4).
+- **D6, a credencial:** o estado da credencial da Apple na abertura e a cada aviso de revogação. Só a sessão da Apple sai, só com o `REVOKED` e nunca com a exclusão em andamento (39.5).
+- **D7, os Ajustes:** sem mudança (decisão do dono de 24/11/2026, ponto 1 abaixo). A regra de 26/10/2026 continua: nenhuma linha dos Ajustes leva a descrição cinza embaixo, nem o "Sair". O objetivo da D7, nunca mostrar um e-mail talvez de retransmissão, já está cumprido: os Ajustes não mostram e-mail nenhum.
+- **D8, o Android:** nada muda. O botão da Apple não aparece, a exclusão não lê o token e a conferência da credencial não roda. A conta só da Apple entra no Android pelo "Esqueci minha senha" (39.3).
+- **D9, a configuração:** os pacotes pelo `npx expo install`, o plugin listado, o `usesAppleSignIn`, o `CFBundleAllowMixedLocalizations` escrito no `ios.infoPlist` e a `version` fora do fingerprint (`fingerprint.config.js`). O `eas.json` ficaria como estava; com o ok do dono (ponto 3 abaixo), o `submit.production.ios` entra neste PR (39.9).
+- **D10, os testes:** os falsos da Apple e do `expo-crypto` no `jest.setup.js`, as suítes novas do app e as provas do Auth no emulador (39.10).
+- **D11, os textos:** "Conta Apple", o nome de hoje da Apple em pt-BR. O título do botão e o rótulo dele no VoiceOver são do sistema: a exceção documentada à regra do `t()`. A exclusão não promete o que não está provado: a revogação é uma tentativa, ainda sem conferência num aparelho (39.7).
+- **D12, a nota:** esta seção, a 39, e o item 31 das decisões em uma página. As referências à seção 33 ficam.
+
+Esta seção troca, para a Apple, as decisões 2, 6, 9, 12 e 16 da seção 33 do rascunho (branch `login-social-video`), que segue a referência do vídeo nos posts.
+
+**Respostas do dono de 24/11/2026 aos pontos em aberto do plano:**
+
+1. **D7:** os Ajustes ficam como estão, sem o "Entrou com a Apple" no "Sair".
+2. **`CFBundleAllowMixedLocalizations`:** `false`, escrito no `ios.infoPlist`. O build 0.1.0 da loja não tem a chave, o que vale como `false`: a interface do sistema dentro do app segue o idioma do app, o pt-BR do `CFBundleDevelopmentRegion`, como o resto do app. Sem a chave, o plugin da Apple poria `true`, e o botão da Apple e os menus do sistema passariam ao idioma do aparelho num iPhone fora do pt-BR. A conferência do TestFlight fica: o botão diz "Continuar com a Apple" num iPhone em pt-BR e num em inglês (39.15).
+3. **`eas.json`:** o `submit.production.ios` (`ascAppId` `6838384976` e `appleTeamId` `7ZZK67PB7L`) entra neste PR, como exceção à D9, porque os dois fingerprints mudam de qualquer jeito. O `eas submit` do iOS não pede mais a edição local e temporária do `ascAppId`.
+4. **A dica da senha no iPhone (PR #98):** fica como está, sem citar a Apple.
+5. **Os EAS Updates dos builds 0.1.0:** nenhum pendente no merge (39.11).
+6. **Os consoles:** prontos em 24/11/2026 (39.8).
+7. **O build iOS 0.1.1:** interativo, no terminal do dono, e nunca pelo `.eas/workflows/testflight-ios.yml` (39.11).
+
+### 39.2 O núcleo da entrada social e o Google
+
+**`useSocialEntry(provider, available)`** (`src/domains/auth/hooks/use-social-entry.ts`), o núcleo que a Apple e o Google dividem, na mesma ordem e com as mesmas conferências que o `useGoogleEntry` tinha antes:
+
+1. Um toque por vez (a trava `active`). Indisponível, nada.
+2. O `releaseHeldSignUp` solta uma trava guardada de antes, e o `holdAuth` segura o fã nas telas de conta antes da folha.
+3. A folha do provedor (`provider.signIn`). Fechada, a trava sai. O modo "ligar" (só o Google) devolve o e-mail.
+4. A conta do resultado tem de ser a da sessão (senão, erro). A conta nova zera a escolha de artistas, e a sessão vai para o store.
+5. A conta nova amarra o convite do link (`bindPendingInvite` com o código guardado), espera o perfil (`waitForProfile`) e confere a sessão de novo. O nome vai ao perfil sem nome, sem esperar (`settleNewProfileName`). Sem convite amarrado, a entrada para na pergunta do código (`/codigo-de-convite`), com a trava guardada (`holdSocialInvite`) até ela seguir.
+6. A conta que já existe pergunta as centrais (`GET /me/centrals`, até 3 s, o `EXISTING_ACCOUNT_CHECK_MS`): com centrais, pula a escolha de artistas; sem, volta a ela; sem resposta, fica o que o aparelho tem.
+7. O toque de sucesso, a saída das telas de conta em fade (`playAuthExit`) e a trava solta, menos a guardada para a pergunta do código.
+
+O início é anunciado ao leitor de tela (`signingInKey`), e o erro dá o toque de erro e a frase do provedor (`errorKey`). A mutação não entra na fila offline (`networkMode: 'always'`) e não tenta de novo.
+
+**O provedor** (`SocialProvider`, em `social-entry.ts`): a folha (`signIn`), as duas frases, o nome do perfil sem nome (`settleNewProfileName`) e o nome nos avisos de desenvolvimento. O Google (`useGoogleEntry`) leva ao perfil o nome da conta do Google, como antes; a Apple (`useAppleEntry`), o nome que ela mandou (`settlePendingAppleName`, que também tira a chave guardada) ou, sem ele, o nome da conta.
+
+**Os botões** (`SocialEntryButtons`): a Apple antes do Google, na pergunta do e-mail. Um provedor em curso desliga o outro, e o envio do e-mail e da senha desliga os dois. O aviso dos Termos ("Ao criar a conta, você aceita...") vai uma vez só, embaixo dos botões: sempre no cadastro; no entrar, só com a tela aberta a frio, sem a abertura embaixo (PR #99, pedido do dono de 24/11/2026). Com qualquer coisa em curso, o aviso sai do toque e dos dois leitores de tela (`offstage`). O `GoogleButton` ficou só com o botão.
+
+**As telas** (`sign-in.tsx` e `sign-up.tsx`): o `enterWith(entry)` serve aos dois provedores. Com um provedor em curso (`socialPending`), o campo não edita, o pé, o voltar e o link da outra tela desligam, e o voltar do Android fica preso. O erro do provedor aparece acima do pé, só na pergunta do e-mail, e sai quando o fã volta a digitar ou troca de pergunta. A conta nova sem convite vai a `/codigo-de-convite` (`SocialInviteScreen`, o antigo `GoogleInviteScreen`), com o "Continuar" e o "Continuar sem código" do `useFinishSignUp`.
+
+**O Google, como ficou do PR #95 ao PR #99** (até aqui só no código):
+
+- **Só no Android**, fora do Expo Go e com o `EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID` (`isGoogleSignInAvailable`). No iPhone, o Google pediria o cliente iOS e o esquema de volta no app (o plugin do pacote, como no rascunho do PR #25), e a diretriz 4.8 da App Store passaria a exigir a Apple na mesma build.
+- **O modo "ligar":** fora do Gmail, uma conta de senha no mesmo e-mail dá `auth/account-exists-with-different-credential`. A credencial fica na memória, e o entrar abre na senha com "Confirme a senha do ImagineUP para vincular sua conta do Google."; depois da senha, o `linkPendingGoogle` liga o Google à mesma conta. Com o Gmail, o Google é confiável e sobrescreve a conta de senha sem e-mail confirmado, como a Apple (39.3).
+- **A dica da senha no iPhone (PR #98):** sem o botão do Google no aparelho, a senha recusada mostra embaixo do "Esqueci minha senha" o caminho da conta que só entra com o Google. O sinal de iPhone é a falta do botão do Google, e a frase não cita o Android (diretriz 2.3.10 da App Store). Ela continua sem citar a Apple (ponto 4).
+- **Os Termos no entrar só a frio** (PR #99): o aviso da abertura já cobre quem cria a conta por um provedor pela abertura.
+
+**Por que a Apple não tem o modo "ligar":** para o Firebase, a Apple é sempre confiável. Ela não esbarra numa conta de senha do mesmo e-mail: entra nela (39.3).
+
+### 39.3 Contas, provedores e dados
+
+**O que o Firebase guarda por provedor** (o registro do Auth; o perfil `users/{uid}` não muda de forma):
+
+| Provedor | `email` | `displayName` | `photoURL` | Observação |
+| --- | --- | --- | --- | --- |
+| E-mail e senha | o digitado | o do `updateProfile` do cadastro | `null` | não confirmado |
+| Google (só no Android) | o da conta Google | o nome do Google | a foto do Google (fora da sessão do app) | confiável só no Gmail |
+| Apple (só no iPhone) | o de verdade ou o de retransmissão (no domínio `privaterelay.appleid.com`) | `null` até o `updateProfile` do app | `null` | sempre confiável; o `uid` da Apple no `providerData` é o `user` da folha |
+
+**A mesma pessoa com dois métodos, em produção** (uma conta por e-mail, a regra do projeto no Firebase):
+
+| Antes | Depois | Resultado |
+| --- | --- | --- |
+| E-mail e senha (o app nunca confirma o e-mail) | Apple, no mesmo e-mail de verdade | a Apple sobrescreve, calada: o mesmo uid e os mesmos dados; a senha sai e o `hasPassword` vira falso; os outros aparelhos saem; o `isNewUser` vem falso, e a entrada segue como a de uma conta que já existe |
+| Google fora do Gmail (no Android) | Apple, no mesmo e-mail de verdade | a Apple, confiável, sobrescreve o Google não confiável, com o mesmo uid. Depois, no Android, o Google dá o `auth/account-exists-with-different-credential`, e o modo "ligar" pede uma senha que não existe: a saída é o "Esqueci minha senha" e então o "ligar" |
+| Apple | Google com o Gmail, no mesmo e-mail | os dois ficam ligados, sem erro |
+| Apple com o e-mail de retransmissão | qualquer outro método | outra conta, com outro uid, para a mesma pessoa |
+| Apple, só ela | o Android | sem o botão da Apple no Android, o fã entra pelo "Esqueci minha senha": o link cria a senha na mesma conta (D8) |
+
+- **Sign in with Apple at Work and School** (a Conta Apple gerenciada pela escola ou pela empresa) pode vir sem e-mail confirmado. O Firebase recusa, e o fã vê a frase genérica da Apple ("Não foi possível continuar com a Apple. Tente novamente.").
+- **O e-mail de retransmissão** só entrega a mensagem com o remetente registrado na Apple (39.8). O painel não acha pelo e-mail de verdade o fã que escondeu o e-mail: a equipe busca pelo @ ou pelo nome, e a página de exclusão pela web precisa pedir também o @.
+- **Convite e equipe:** como nas outras contas. O fã com o e-mail de retransmissão vira outra pessoa para a chave do convite, o mesmo limite de um e-mail novo.
+
+O emulador do Auth não confere o token nem o nonce e não aplica tudo o que a produção aplica (39.10 e 39.14): a sobrescrita do Google pela Apple e a saída dos outros aparelhos só se provam em produção.
+
+### 39.4 A exclusão e a revogação
+
+**O modo da Apple** (`appleDeletionMode`, só no iPhone, e o `useAppleDeletionMode` da tela, que escreve o botão e o aviso antes do toque):
+
+- Sem a Apple no `providerData`, ou fora do iPhone: `null`, e a exclusão é a de antes. Nem o token é lido.
+- O token da sessão diz `apple.com`: `apple`.
+- Fora disso, com a senha na conta: `appleLinked`. Sem a senha: `apple` (no iPhone, só a senha ou a Apple confirmam; o Google é só do Android), e a conta sem senha nunca cai no campo da senha.
+
+A ordem das leituras importa: o `providerData` vem antes, e só a conta com a Apple lê o ID token. Ler o token pode encerrar uma sessão invalidada (o `_logoutIfInvalidated` do SDK), e ler o token de toda conta trocaria o `sessionEnded` de hoje (o toque de erro e o anúncio) por um cancelar calado. Depois de cada espera que pode encerrar a sessão, a conferência se divide: sem sessão, `SessionEndedError`; com a sessão de outra conta, `canceled`.
+
+**A sessão da Apple** (`deleteWithApple`), na ordem:
+
+1. A folha da Apple ("Confirmar com a Apple e excluir", com a frase de que o ImagineUP também pede à Apple para desligar o login). Fechada, `canceled`, sem mudar nada; com erro, `appleUnavailable`.
+2. A sessão conferida.
+3. A reautenticação com o token da folha e o nonce bruto. Outra Conta Apple (`auth/user-mismatch`) é `wrongAppleAccount`; o token recusado (`auth/invalid-credential`, `auth/missing-or-invalid-nonce`) é `appleUnavailable`.
+4. A sessão conferida de novo: a de outra conta é `canceled`, sem revogar e sem excluir.
+5. A revogação (`revokeAppleToken`), antes do `deleteUser`: `POST` em `identitytoolkit.googleapis.com/v2/accounts:revokeToken` com a chave do app, o corpo `{ providerId: 'apple.com', tokenType: 'CODE', token, idToken }` (o ID token da reautenticação recém-feita) e o cabeçalho `X-Ios-Bundle-Identifier` (`IOS_BUNDLE_ID`, conferido contra o `app.config.ts`). O `revokeAccessToken` do SDK JS não serve: manda `ACCESS_TOKEN`, e o fluxo nativo só traz o código. Prazo de 10 s; nunca lança, e a falha não trava a exclusão. Só manda com a sessão da conta que sai, antes e depois do token; com o emulador, que não tem a rota, nem tenta. Sem o código na folha, segue sem revogar.
+6. A sessão conferida, e o `deleteUser`. O `auth/requires-recent-login` aqui é `appleUnavailable`, nunca o campo da senha.
+
+**A Apple ligada a uma sessão de senha** (`appleLinked`): o primeiro toque já pede a senha (`needsPassword`), porque a revogação vem depois de um login recente e antes do `deleteUser`. Depois da senha, o `revokeLinkedApple` lê o estado da credencial (`getCredentialStateAsync`, sem folha): com `REVOKED`, `NOT_FOUND` ou `TRANSFERRED`, nada a revogar neste iPhone, e a folha nem abre. A folha sempre autoriza a Conta Apple que está no iPhone; abrir para outra Conta Apple deixaria nela uma autorização do ImagineUP. Com `AUTHORIZED` ou o estado desconhecido, a folha abre, sem reautenticar pela Apple, e o código só vai ao REST quando ela volta com o `user` da Apple desta conta. Cancelada, com outra Conta Apple ou com erro, a conta é excluída do mesmo jeito: a tela avisa isso antes ("Sua conta também entra com a Apple...").
+
+**O resto:**
+
+- As falhas novas (`wrongAppleAccount` e `appleUnavailable`) aparecem na legenda vermelha embaixo do botão, com o toque de erro e o anúncio. A folha cancelada não mostra nada, e o botão fica livre.
+- Enquanto a exclusão corre, o `deletingAccount` da sessão segura o `REVOKED` da conferência da Apple (39.5): a revogação da própria exclusão dispara o aviso. Sem a conta excluída, ele volta a falso no `useDeleteAccount`; excluída, sai com a sessão (`setSignedOut`).
+- Excluída a conta, o nome guardado da Apple dela sai do aparelho (`clearPendingAppleNameOf`), como o e-mail guardado e o convite amarrado. O de outra Conta Apple fica.
+- **Android:** a exclusão de antes, sem folha e sem revogar (limite aceito: a conta da Apple no Android só existe com a senha criada pelo "Esqueci minha senha").
+- **Limites aceitos:** a exclusão pela equipe (no painel ou pela LGPD) não revoga a Apple; a revogação feita com um `deleteUser` que falha depois deixa a conta sem o acesso da Apple (o fã entra de novo pela folha, que autoriza de novo, ou pela senha).
+
+### 39.5 A conferência da credencial e o nome guardado
+
+`useAppleCredentialCheck`, no `_layout.tsx` raiz, logo depois do `useAuthListener`:
+
+- **A disponibilidade** da Apple, uma vez por abertura, no iPhone com o Firebase configurado (D1).
+- **O nome guardado** (`settleSessionAppleName`), em toda sessão confirmada, por qualquer jeito de entrar: com o app fechado entre o `signInWithCredential` e o perfil com nome, a sessão fica salva e não há entrada seguinte. Só a chave da Apple desta conta conta (o `user` da chave igual ao `uid` da Apple no `providerData`): o nome vai ao Auth sem nome e ao perfil sem nome, lido em até 3 s, e a chave sai quando o perfil tem nome. Enquanto uma entrada segura o fã (`authHolds`), quem cuida do nome é ela.
+- **A credencial**, só no iPhone e só com a Apple no `providerData`: o estado na abertura e a cada aviso de revogação (`addRevokeListener`). O estado não pede o token. Só o `REVOKED` faz alguma coisa, e nunca com a exclusão em andamento. Quem decide se a sessão sai é o `signsOutOnRevoke`: o token diz `apple.com`, sai; outro provedor (a senha com a Apple ligada), fica; sem o token, sai só a conta que tem a Apple como único provedor. A saída limpa o e-mail guardado para o login, como o "Sair". O erro do estado não faz nada. No Android, o pacote devolve `undefined` no lugar da inscrição, e nada roda.
+
+**A chave** `@imagineup/apple-pending-name/v1` guarda `{ appleUserId, name }`: o nome que a Apple manda uma vez, com o `user` da Apple, até o perfil ter nome. Ela é gravada antes do `signInWithCredential`; se a gravação falhar, o nome da memória ainda vale nesta entrada.
+
+### 39.6 O app: arquivos
+
+| Recurso | Caminho |
+| --- | --- |
+| A folha, o nonce, o estado da credencial, o aviso de revogação e a disponibilidade, uma vez por abertura | `src/services/apple-sign-in.ts` |
+| O `uid` da Apple, o nome guardado e a revogação (sem React e sem o `api.ts`) | `src/domains/auth/apple-account.ts` |
+| A entrada com a Apple, o nome no Auth e no perfil e quem sai com o `REVOKED` | `src/domains/auth/apple-entry.ts` |
+| Os tipos do provedor | `src/domains/auth/social-entry.ts` |
+| O núcleo da entrada | `src/domains/auth/hooks/use-social-entry.ts` |
+| A Apple e o Google no núcleo | `hooks/use-apple-entry.ts` e `hooks/use-google-entry.ts` |
+| A conferência da credencial e o nome na sessão | `hooks/use-apple-credential-check.ts` (no `_layout.tsx`) |
+| O modo da Apple na tela de exclusão | `hooks/use-apple-deletion-mode.ts` |
+| A exclusão pelo provedor e o `sessionSignInProvider` | `src/domains/auth/api.ts` |
+| Os botões | `components/apple-button.tsx`, `components/google-button.tsx` e `components/social-entry-buttons.tsx` |
+| A pergunta do código da conta nova | `views/social-invite.tsx` (rota `(auth)/codigo-de-convite`) |
+| A exclusão em andamento | `src/stores/session.ts` (`deletingAccount`) |
+| A chave do nome | `src/storage/storage/keys.ts` (`ApplePendingName`) |
+| Os prazos e o bundle ID | `src/domains/auth/consts.ts` (`EXISTING_ACCOUNT_CHECK_MS`, `APPLE_REVOKE_TIMEOUT_MS` e `IOS_BUNDLE_ID`) |
+
+O `api.ts` nunca importa o `apple-entry.ts`, que importa ele: o `apple-account.ts` fica no meio, para o ciclo de import não fechar.
+
+### 39.7 Textos
+
+No `translations.json`, sem travessão, sem meia-risca e sem endereço de e-mail (o teste do i18n confere os dois):
+
+- `auth.apple.signingIn`: "Abrindo o login com a Apple".
+- `auth.apple.errors.unavailable`: "O login com a Apple está indisponível neste aparelho."; `auth.apple.errors.unknown`: "Não foi possível continuar com a Apple. Tente novamente."
+- `deleteAccount.appleLead`, `deleteAccount.appleLinkedNotice` e `deleteAccount.confirmApple` ("Confirmar com a Apple e excluir").
+- `deleteAccount.errors.wrongAppleAccount` (a Conta Apple deste iPhone não é a do perfil; a folha nativa não escolhe a conta, então o fã troca nos Ajustes do iPhone) e `deleteAccount.errors.appleUnavailable`.
+
+O rótulo do botão da Apple é do sistema: não há chave para ele. Com o `CFBundleAllowMixedLocalizations` em `false`, ele segue o idioma do app, e o TestFlight confere que diz "Continuar com a Apple" (39.15).
+
+### 39.8 Consoles e contas
+
+Prontos em 24/11/2026, conferidos pelo dono:
+
+- **Apple Developer, App ID `br.com.imaginegroup.imagineup`:** o Sign In with Apple ligado, como primary App ID. O campo das notificações servidor a servidor fica vazio (39.13).
+- **Services ID `br.com.imaginegroup.imagineup.signin`:** com o domínio `imagine-up-app.firebaseapp.com` e o retorno `https://imagine-up-app.firebaseapp.com/__/auth/handler`, ligado ao App ID.
+- **A chave do Sign in with Apple:** "ImagineUP Sign in with Apple", Key ID `6G9HF34RJ9`. O arquivo `.p8` fica fora de qualquer repositório e nunca entra numa nota, num commit ou no chat.
+- **Sign in with Apple for Email Communication:** o remetente `noreply@imagine-up-app.firebaseapp.com` registrado, com o SPF conferido.
+- **Firebase Auth:** o provedor Apple ligado, com o Services ID e o "OAuth code flow configuration" (Team ID `7ZZK67PB7L`, o Key ID e a chave), que a revogação pede.
+
+Pendente, com a cliente: o domínio de e-mail da equipe como remetente da retransmissão, com o SPF e o DKIM.
+
+### 39.9 Configuração, pacotes e fingerprint
+
+- **Pacotes:** `expo-apple-authentication` `~57.0.2` e `expo-crypto` `~57.0.4`, pelo `npx expo install`, as versões do `bundledNativeModules.json` da SDK 57. Nenhum dos dois tem script de instalação (o `allowScripts` não muda).
+- **`app.config.ts`:** a `version` `0.1.1`; o `ios.usesAppleSignIn` (com o pacote instalado, o entitlement vem do plugin, e a chave só avisa no prebuild se o pacote faltar); o `CFBundleAllowMixedLocalizations: false` no `ios.infoPlist`; e o plugin `'expo-apple-authentication'` no fim da lista. O plugin põe o entitlement `com.apple.developer.applesignin` (`['Default']`) e o `CFBundleAllowMixedLocalizations` só quando a chave falta (`?? true`); o prebuild já o aplica sozinho com o pacote instalado, e listado fica explícito.
+- **`CFBundleAllowMixedLocalizations`:** vale para o app inteiro (o botão da Apple, o menu de editar texto, as folhas do sistema). Escrito como `false` (ponto 2 de 39.1), para uma mudança do plugin não o trocar em silêncio.
+- **`fingerprint.config.js`:** `sourceSkips: ['ExpoConfigVersions', 'PackageJsonAndroidAndIosScriptsIfNotContainRun']`. O `ExpoConfigVersions` tira a `version` (e o `android.versionCode` e o `ios.buildNumber`) do fingerprint: a versão sobe a cada envio às lojas e, sozinha, não muda o nativo. O `sourceSkips` troca o padrão do `@expo/fingerprint` em vez de somar a ele, por isso o padrão vem escrito de novo. Um arquivo que não carrega vira `{}`, e um nome de chave errado sai calado: o teste do `apple-account` trava o conteúdo.
+- **`eas.json`:** o `submit.production.ios` com o `ascAppId` e o `appleTeamId` (ponto 3 de 39.1); o resto igual.
+- **O que entra nos dois fingerprints:** o `app.config.ts` resolvido (sem a `version` desde agora); o `eas.json` inteiro e o `.easignore`, se existir; os scripts do `package.json` que têm `run` (o padrão que fica); o `.gitignore`; os arquivos de cada plugin listado; o autolinking e as pastas nativas dos pacotes. Depois dos builds 0.1.1, qualquer commit que mexa neles muda os dois runtimes.
+- **Os runtimes:** antes, na `main` `a88c70b`, Android `6924bd1b370b3dd93d49799cbdf57c29573359c4` e iOS `031ba9e485a80abfc582a8c9711676ad180d5e8d` (os builds 0.1.0 das lojas); depois, na branch `entrar-com-apple`, Android `a7c110e3a2ec0320a0794bf7dfe243a3c578bf96` e iOS `e78af876143c09a663c1762f9b9b8d5c5c6d445f`, com a `version` fora do hash. Mudaram nos dois o `eas.json`, o `expoConfig`, o autolinking e os arquivos do plugin da Apple; no iOS, as pastas `ios` dos dois pacotes; no Android, a pasta `android` do `expo-crypto`. Os builds novos são o iOS 0.1.1 e o Android 0.1.1 (versionCode 5).
+- **`ITSAppUsesNonExemptEncryption`** fica `false`: o `expo-crypto` só calcula o resumo (o SHA-256 do nonce), e o módulo de cifra AES do pacote não é usado.
+- **A versão nos Ajustes** vem do manifesto do update que está rodando: depois de uma subida de versão sem mudança nativa, um update pode mostrar uma versão mais nova num binário mais velho.
+
+### 39.10 Testes
+
+**App (Jest),** em 25/11/2026: 217 suítes e 4.037 testes, com os tipos e o lint limpos. As suítes novas:
+
+- `src/services/__tests__/apple-sign-in.test.ts`: a disponibilidade (iPhone numa build própria, Android, Expo Go, o sistema sem a Apple), a pergunta uma vez por abertura, o nonce (o SHA-256 de `nonce-bruto-1`, novo a cada folha), a folha cancelada e com erro, o nome numa linha, o estado da credencial e o aviso de revogação.
+- `src/domains/auth/__tests__/apple-account.test.ts`: o `uid` da Apple, o nome guardado, a revogação (a forma do pedido, o prazo de 10 s, o emulador, a sessão de outra conta antes e durante o token) e as travas do `app.config.ts` (o bundle ID, o plugin, o `usesAppleSignIn` e o `CFBundleAllowMixedLocalizations` em `false`) e do `fingerprint.config.js`.
+- `src/domains/auth/__tests__/apple-entry.test.ts`: a entrada com o nonce bruto e o nome guardado antes, as conferências da sessão, o nome no Auth e no perfil, o nome na sessão restaurada, o `signsOutOnRevoke` e as frases de erro.
+- `src/domains/auth/__tests__/delete-account-apple.test.ts`: o `sessionSignInProvider`, os modos, a sessão da Apple (a ordem e cada falha), a Apple ligada (a senha no primeiro toque, o estado da credencial, a folha e a revogação), o Android de antes, o nome que sai com a conta e as falhas.
+- `src/domains/auth/__tests__/use-social-entry.test.tsx`: o núcleo com um provedor falso (a trava, o convite, as centrais, as conferências, o toque duplo, os anúncios) e o Google e a Apple ligados a ele.
+- `src/domains/auth/__tests__/apple-credential-check.test.tsx`: o `REVOKED` só na sessão da Apple, a exclusão em andamento, a conta sem a Apple, o Android, a disponibilidade na abertura e o nome guardado.
+- `src/domains/auth/__tests__/social-entry-buttons.test.tsx`: o botão nativo (um foco só, o tipo, o estilo, o raio e a altura), os estados de desligado e de ocupado, os Termos uma vez só e o Google só.
+- `src/navigation/__tests__/delete-account.test.tsx`: a tela de exclusão com a sessão da Apple, a Apple ligada, o Google e a senha, com a conferência da Apple montada.
+- `auth-entrar.test.tsx` e `auth-cadastro.test.tsx` ganharam a Apple na pergunta do e-mail, a ida à pergunta do código pelos dois provedores, o provedor em curso, o erro dele e os botões da pergunta do código. Os casos do Google de antes ficam como estavam: são a prova de que o Google não mudou.
+
+**O falso da Apple** (`jest.setup.js`): o padrão é "indisponível", para o botão nunca aparecer numa suíte que não pede por ele, e no Jest o `isRunningInExpoGo()` também é verdadeiro (o jest-expo mocka o módulo nativo `ExpoGo`). O resto responde como um iPhone (a credencial de quem já entrou, o `AUTHORIZED`, o `mockEmitRevoked`), e o botão é uma `View` com o rótulo do sistema. O `expo-crypto` é o crypto do Node. Os testes da Apple limpam com `jest.clearAllMocks()`, nunca com o `resetAllMocks()`.
+
+**Funções:** os testes de unidade (76 arquivos, 2.766 testes) e as provas do Auth do login social nos emuladores, em `functions/test/profile.emulator.test.ts` e `functions/test/support.ts`, trazidas do rascunho (`7a19ce2`) sem mudar código de produção: o token do provedor pelo `accounts:signInWithIdp`, o nome e o @ da conta nova, o provedor da sessão no token, a Apple confiável na conta do Google não confiável e a conta só com a Apple que volta pelo "Esqueci minha senha". O emulador aceita as claims em JSON, não confere o token nem o nonce e não tira o Google da conta como a produção. Em 25/11/2026, o `npm run test:functions` (com o Java 21 do Android Studio no `JAVA_HOME`) passou nos 37 arquivos e 611 testes dos emuladores de Auth, Firestore, Functions e Storage, com os 8 casos novos do `profile.emulator.test.ts`; nenhum caso do rascunho precisou ser tirado. Os tipos das funções (`npm --prefix functions run typecheck`) limpos.
+
+### 39.11 Publicação
+
+**O estado no merge (25/11/2026):** nenhum EAS Update pendente para os builds 0.1.0 das lojas. O iOS 0.1.0 roda o update `ea017a70`, publicado da `main` `218e019`; o PR #99 (`a88c70b`) não muda nada à vista no iOS. O Android roda o update `f4772562`, publicado da `a88c70b`. Depois do merge, a `main` só serve aos builds 0.1.1: um conserto para os binários 0.1.0 sai de uma branch a partir da `a88c70b`, com os dois fingerprints conferidos antes do update.
+
+Cada passo com o ok do dono, nesta ordem:
+
+1. **O build iOS 0.1.1**, do commit do merge, interativo, no terminal do dono, seguindo a receita do kit da loja: `eas build -p ios --profile production`. É ele que sincroniza a capacidade Sign In with Apple no App ID e gera o perfil de provisionamento novo, com o entitlement. Nunca pelo `.eas/workflows/testflight-ios.yml`: aquele workflow roda sem interação, não sincroniza capacidades e reaproveita um perfil sem o entitlement.
+2. **O build Android 0.1.1** (versionCode 5), do mesmo commit: `eas build -p android --profile production`.
+3. **Os runtimes** no expo.dev iguais aos de 39.9 (`a7c110e3...` e `e78af876...`).
+4. **O envio do iOS:** `eas submit -p ios --profile production`, que já lê o `ascAppId` e o `appleTeamId` do `eas.json`, sem edição local.
+5. **A App Store Connect 0.1.1:** o What's New (obrigatório da segunda versão em diante), a frase da Description sobre e-mail e senha, as Review Notes (onde fica o botão da Apple e a exclusão com a revogação), nada sobre o Android (diretriz 2.3.10) e o lançamento manual.
+6. **O Android** pelo Play Console.
+7. **Antes do envio à Apple:** a Política, os Termos e o FAQ do site (repositório do site), com a Apple (39.12).
+
+### 39.12 Perguntas para o dono
+
+As perguntas 1 a 7 do plano foram respondidas em 24/11/2026 (39.1). Seguem em aberto:
+
+- O domínio de e-mail da equipe como remetente da retransmissão, com o SPF e o DKIM (com a cliente, 39.8).
+- Antes do envio da 0.1.1: o site (a Política, os Termos, o FAQ e a página de exclusão, que precisa pedir também o @ para o e-mail de retransmissão) e os textos da App Store Connect.
+- Se a revogação não se confirmar no TestFlight (39.15): o plano B, uma função com o `.p8` no Secret Manager.
+
+### 39.13 Fora desta seção
+
+- A Apple no Android (o fluxo web da Apple).
+- As notificações servidor a servidor da Apple (o campo do App ID fica vazio): a revogação feita fora do app só chega a ele pelo `REVOKED` da conferência.
+- A revogação pela exclusão feita no painel ou pela LGPD.
+- Os extras do PR #25: a linha do último jeito de entrar e o pulo da escolha de artistas (1l) do rascunho. O núcleo de hoje só confere as centrais da conta que já existe (39.2).
+- Uma pergunta do nome para a conta da Apple que chega sem nome.
+- O site e a política (repositório do site).
+
+### 39.14 Armadilhas
+
+- **A ordem do nonce:** a Apple recebe o SHA-256 em hex e o Firebase, o bruto. Ao contrário, o Firebase recusa com `auth/missing-or-invalid-nonce`.
+- **O `revokeAccessToken` do SDK JS** manda `ACCESS_TOKEN`; o fluxo nativo só traz o código. A revogação vai pelo REST, com `CODE` e o `X-Ios-Bundle-Identifier`.
+- **O emulador do Auth** não tem a rota `revokeToken`, não confere o token nem o nonce, trata como confiável qualquer `email_verified` verdadeiro e não tira o Google da conta na sobrescrita.
+- **O plugin se aplica sozinho** com o pacote instalado, e um build iOS sem o pacote (e sem o entitlement) desligaria a capacidade no App ID, pela sincronização do `eas build`. Tirar a Apple é tirar o pacote.
+- **O botão nativo:** precisa de largura e altura no `style`; não aceita `backgroundColor` nem `borderRadius` (é o `cornerRadius`); não tem estado desligado nem ocupado; o rótulo é do sistema. A caixa de fora não leva papel nem rótulo, senão o leitor acha dois focos.
+- **O pacote no Android:** o `addRevokeListener` devolve `undefined`, e as outras chamadas lançam o `UnavailabilityError`. O serviço não chama nada fora do iOS.
+- **No Jest:** o falso do jest-expo devolve promessas vazias e um nonce vazio (por isso os falsos próprios no `jest.setup.js`), e o `isRunningInExpoGo()` é verdadeiro. Com o toque tirado (`pointerEvents: 'none'`), o `fireEvent.press` do Testing Library sobe até a prop `onPress` do componente de fora, o que o aparelho nunca faz: o teste do botão inativo toca a prop do botão nativo.
+- **O `sourceSkips` troca o padrão**, e um `fingerprint.config.js` quebrado ou com o nome de chave errado é ignorado em silêncio: rode a conferência do fingerprint (39.9) antes de todo build nativo.
+- **O `eas.json`, o `.easignore`, os scripts do `package.json`, o `.gitignore` e os arquivos dos plugins listados** entram nos dois fingerprints: depois dos builds 0.1.1, qualquer commit neles muda os dois runtimes. Uma edição local do `eas.json` para o `eas submit` tem de voltar antes de qualquer update ou conferência do fingerprint.
+- **Uma versão nova do `expo-apple-authentication`** muda também o runtime do Android (o plugin e o `package.json` dele entram nos dois).
+- **A versão nos Ajustes** vem do update que está rodando (39.9).
+- **O `CFBundleAllowMixedLocalizations`** vale para o app inteiro: escrito como `false`, a interface do sistema segue o pt-BR do app.
+- **Só o `REVOKED` tira a sessão**, e só a da Apple: o erro e o `NOT_FOUND` do estado não fazem nada (o simulador responde `NOT_FOUND`).
+- **Ler o ID token pode encerrar uma sessão invalidada:** só a conta com a Apple o lê na exclusão, e a sessão é conferida depois.
+- **Nunca o Prettier nesta nota** (a lista de decisões pula o item 26 de propósito).
+
+### 39.15 O que conferir no TestFlight e em produção
+
+Nada daqui se prova no Jest:
+
+- **O botão:** à vista com o teclado aberto num iPhone de 4,7 polegadas (HIG); o VoiceOver lê "Continuar com a Apple" uma vez só.
+- **O idioma:** com o `CFBundleAllowMixedLocalizations` em `false`, um iPhone em pt-BR e um em inglês, na pergunta do e-mail (o título do botão) e no menu de editar de um campo: o botão diz "Continuar com a Apple" nos dois.
+- **A primeira entrada:** traz o nome para o perfil; a segunda chega sem ele. O `uid` da Apple no `providerData` é o `user` da folha. O e-mail de retransmissão cria outra conta.
+- **A exclusão:** revoga, e em Ajustes, Conta Apple, "Iniciar Sessão com a Apple", o ImagineUP deixa de aparecer. Se ainda aparecer, o dono decide o plano B (39.12). Uma conta ligada num iPhone com outra Conta Apple não abre a folha.
+- **O `REVOKED`:** tirar o app da Conta Apple tira a sessão da Apple.
+- **Os builds:** o `eas build -p ios`, interativo, sincroniza a capacidade; os runtimes no expo.dev iguais aos de 39.9.
 
 ## Armadilhas
 

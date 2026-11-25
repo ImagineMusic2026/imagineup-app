@@ -27,10 +27,17 @@ interface SessionState {
    * liga e desliga, para um fluxo nunca soltar o que outro segurou.
    */
   authHolds: number;
+  /**
+   * A exclusão da conta em andamento: a conferência da Apple ignora o
+   * `REVOKED`, porque a própria exclusão revoga a Apple antes do `deleteUser`
+   * (seção 39.4). Sai com a sessão (`setSignedOut`).
+   */
+  deletingAccount: boolean;
   setSignedIn: (user: SessionUser) => void;
   setSignedOut: () => void;
   /** Segura o fã nas telas de conta. Devolve a função que solta (vale uma vez só). */
   holdAuth: () => () => void;
+  setDeletingAccount: (deleting: boolean) => void;
 }
 
 /**
@@ -42,8 +49,9 @@ export const useSessionStore = create<SessionState>()((set) => ({
   status: 'loading',
   user: null,
   authHolds: 0,
+  deletingAccount: false,
   setSignedIn: (user) => set({ status: 'signedIn', user }),
-  setSignedOut: () => set({ status: 'signedOut', user: null }),
+  setSignedOut: () => set({ status: 'signedOut', user: null, deletingAccount: false }),
   holdAuth: () => {
     set((state) => ({ authHolds: state.authHolds + 1 }));
     let released = false;
@@ -53,4 +61,5 @@ export const useSessionStore = create<SessionState>()((set) => ({
       set((state) => ({ authHolds: Math.max(0, state.authHolds - 1) }));
     };
   },
+  setDeletingAccount: (deleting) => set({ deletingAccount: deleting }),
 }));

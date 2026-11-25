@@ -1,7 +1,12 @@
 import { useMutation } from '@tanstack/react-query';
 import { AccessibilityInfo } from 'react-native';
 
-import { bindPendingInvite, clearBoundInvite, clearPendingInvite, type BoundInvite } from '@/domains/invites';
+import {
+  bindPendingInvite,
+  clearBoundInvite,
+  clearPendingInvite,
+  type BoundInvite,
+} from '@/domains/invites';
 import { t } from '@/i18n';
 import { haptics } from '@/services/haptics';
 import { usePreferencesStore } from '@/stores/preferences';
@@ -39,21 +44,23 @@ export interface SignUpOptions {
 // O fã que parou no estágio "código recusado" continua seguro nas telas de
 // conta: a função que solta fica aqui, para o "Continuar" soltar depois.
 let heldRelease: (() => void) | null = null;
-let heldGoogleInvite: { uid: string; release: () => void } | null = null;
+// A conta nova criada pelo Google ou pela Apple, parada na pergunta do código
+// de convite (`/codigo-de-convite`): a trava fica aqui até ela seguir.
+let heldSocialInvite: { uid: string; release: () => void } | null = null;
 
-export function holdGoogleInvite(uid: string, release: () => void): void {
-  releaseHeldGoogleInvite();
-  heldGoogleInvite = { uid, release };
+export function holdSocialInvite(uid: string, release: () => void): void {
+  releaseHeldSocialInvite();
+  heldSocialInvite = { uid, release };
 }
 
-export function hasPendingGoogleInvite(): boolean {
-  return heldGoogleInvite !== null && heldGoogleInvite.uid === useSessionStore.getState().user?.uid;
+export function hasPendingSocialInvite(): boolean {
+  return heldSocialInvite !== null && heldSocialInvite.uid === useSessionStore.getState().user?.uid;
 }
 
-export function releaseHeldGoogleInvite(expectedUid?: string): void {
-  if (expectedUid !== undefined && heldGoogleInvite?.uid !== expectedUid) return;
-  const invite = heldGoogleInvite;
-  heldGoogleInvite = null;
+export function releaseHeldSocialInvite(expectedUid?: string): void {
+  if (expectedUid !== undefined && heldSocialInvite?.uid !== expectedUid) return;
+  const invite = heldSocialInvite;
+  heldSocialInvite = null;
   invite?.release();
 }
 
@@ -71,7 +78,7 @@ export function releaseHeldEmailSignUp(): void {
 
 export function releaseHeldSignUp(): void {
   releaseHeldEmailSignUp();
-  releaseHeldGoogleInvite();
+  releaseHeldSocialInvite();
 }
 
 /**
@@ -185,15 +192,16 @@ export function useSignUp({ beforeExit }: SignUpOptions = {}) {
  * amarra de novo (chave nova, porque a anterior foi recusada) e espera o
  * claim; recusado de novo, fica no estágio. Sem código ("Continuar sem
  * código"), ou com o claim aceito ou incerto, apaga as telas de conta em fade
- * e solta o fã.
+ * e solta o fã. Também é o da pergunta do código da conta nova criada pelo
+ * Google ou pela Apple (`/codigo-de-convite`).
  */
 export function useFinishSignUp() {
   return useMutation<SignUpOutcome, Error, { inviteCode: string }>({
     mutationFn: async ({ inviteCode }) => {
       const uid = useSessionStore.getState().user?.uid ?? null;
-      const googleUid = heldGoogleInvite?.uid;
-      if (googleUid && googleUid !== uid) {
-        releaseHeldGoogleInvite(googleUid);
+      const socialUid = heldSocialInvite?.uid;
+      if (socialUid && socialUid !== uid) {
+        releaseHeldSocialInvite(socialUid);
         return { status: 'done' };
       }
       if (uid && inviteCode.trim()) {
@@ -204,11 +212,11 @@ export function useFinishSignUp() {
         }
       } else if (uid) {
         await clearBoundInvite(uid).catch(() => undefined);
-        if (googleUid === uid) await clearPendingInvite().catch(() => undefined);
+        if (socialUid === uid) await clearPendingInvite().catch(() => undefined);
       }
       haptics.trigger('success');
       await playAuthExit();
-      if (googleUid) releaseHeldGoogleInvite(googleUid);
+      if (socialUid) releaseHeldSocialInvite(socialUid);
       else releaseHeldEmailSignUp();
       return { status: 'done' };
     },

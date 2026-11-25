@@ -12,7 +12,9 @@ import { PERSIST_MAX_AGE_MS } from './client';
 /**
  * Suba este número sempre que o formato de algo salvo no cache mudar. Ele viaja
  * no JS, então vale também para EAS Update; a `version` do app não serviria,
- * porque entra no fingerprint e mudá-la cortaria o update dos binários.
+ * porque ela muda a cada envio às lojas, e não a cada formato do cache, e o
+ * mesmo update chega a binários de versões diferentes (o `fingerprint.config.js`
+ * a deixa fora do fingerprint).
  */
 export const QUERY_CACHE_VERSION = 1;
 

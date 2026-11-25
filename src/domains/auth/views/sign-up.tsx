@@ -26,17 +26,19 @@ import { authErrorMessageKey, type InviteRejection } from '../api';
 import { AccountMoment, type AccountMomentPhase } from '../components/account-moment';
 import { EmailPill } from '../components/email-pill';
 import { FormFooter } from '../components/form-footer';
-import { GoogleButton } from '../components/google-button';
 import { PasswordField } from '../components/password-field';
 import { PasswordMeter, passwordMeterStatus } from '../components/password-meter';
 import { QuestionLayout, type QuestionLayoutProps } from '../components/question-layout';
+import { SocialEntryButtons } from '../components/social-entry-buttons';
 import { offstage, StepField } from '../components/step-field';
 import { StepFooter } from '../components/step-footer';
 import { TermsNotice } from '../components/terms-notice';
 import { ACCOUNT_CREATED_HOLD_MS, ENTRY_STEP_COUNT } from '../consts';
 import { handOffEmail } from '../email-handoff';
 import { backToWelcome, normalizedEmail } from '../entry-questions';
+import { useAppleEntry } from '../hooks/use-apple-entry';
 import { useGoogleEntry } from '../hooks/use-google-entry';
+import type { SocialEntry } from '../hooks/use-social-entry';
 import {
   releaseHeldEmailSignUp,
   useFinishSignUp,
@@ -140,6 +142,7 @@ const goToSignIn = () => router.replace('/entrar-com-email');
  */
 export function SignUpScreen() {
   const googleEntry = useGoogleEntry();
+  const appleEntry = useAppleEntry();
   // A conta deste envio já nasceu: o momento passa a dizer "Conta criada".
   const [created, setCreated] = useState(false);
   const signUp = useSignUp({
@@ -200,10 +203,12 @@ export function SignUpScreen() {
   const notConfigured = !isFirebaseConfigured;
   const stage = rejection !== null;
   const pending = signUp.isPending || finish.isPending;
-  const googlePending = googleEntry.isPending;
+  // A entrada por um provedor em curso: o Google (Android) ou a Apple (iPhone).
+  const socialPending = googleEntry.isPending || appleEntry.isPending;
+  const socialError = googleEntry.error ?? appleEntry.error;
   // Sem volta: um envio em andamento (a conta nascendo, o convite sendo
-  // conferido) ou a conta que já existe (o estágio).
-  const locked = pending || googlePending || stage;
+  // conferido, a entrada por um provedor) ou a conta que já existe (o estágio).
+  const locked = pending || socialPending || stage;
   // O momento dura o envio, que só termina depois de as telas de conta
   // apagarem. Quem tira a tela em seguida é o guard; se ele não trocar a pilha
   // (a sessão caiu no meio do caminho), a pergunta volta, e o fã não fica
@@ -306,9 +311,15 @@ export function SignUpScreen() {
    * Troca de pergunta. O que sobrou do último envio (o erro, que é da
    * pergunta em que apareceu) não passa para a seguinte.
    */
+  /** O erro da última entrada por um provedor sai, só do provedor que tem um. */
+  const clearSocialErrors = (): void => {
+    if (googleEntry.error) googleEntry.reset();
+    if (appleEntry.error) appleEntry.reset();
+  };
+
   const goTo = (next: SignUpStep): void => {
     if (signUp.isError || signUp.isSuccess) signUp.reset();
-    if (googleEntry.error) googleEntry.reset();
+    clearSocialErrors();
     setMoves((count) => count + 1);
     setStep(next);
   };
@@ -329,13 +340,15 @@ export function SignUpScreen() {
   const edited = (changed: 'email' | 'name' | 'password'): void => {
     if (formState.errors[changed]) clearErrors(changed);
     if (signUp.isError) signUp.reset();
-    if (googleEntry.error) googleEntry.reset();
+    clearSocialErrors();
   };
 
-  const enterWithGoogle = async (): Promise<void> => {
+  // Entra pelo provedor tocado. O modo "ligar" só vem do Google (a Apple é
+  // confiável e nunca esbarra numa conta de senha).
+  const enterWith = async (entry: SocialEntry): Promise<void> => {
     if (locked) return;
     Keyboard.dismiss();
-    const outcome = await googleEntry.signIn();
+    const outcome = await entry.signIn();
     if (outcome?.status === 'askInvite') {
       router.replace('/codigo-de-convite');
     } else if (outcome?.status === 'link') {
@@ -473,8 +486,8 @@ export function SignUpScreen() {
   let notice: QuestionLayoutProps['notice'];
   if (notConfigured) {
     notice = { text: t('auth.missingConfig'), tone: 'danger' };
-  } else if (visible === 'email' && googleEntry.error) {
-    notice = { text: t(googleEntry.error), tone: 'danger' };
+  } else if (visible === 'email' && socialError) {
+    notice = { text: t(socialError), tone: 'danger' };
   } else if (submitErrorKey && !emailRefusal && !passwordRefusal) {
     notice = { text: t(submitErrorKey), tone: 'danger' };
   }
@@ -496,7 +509,7 @@ export function SignUpScreen() {
         question={t('auth.signUp.haveAccount')}
         actionLabel={t('auth.signUp.signIn')}
         onAction={goToSignIn}
-        disabled={googlePending}
+        disabled={socialPending}
       />
     );
   } else if (step === 'name') {
@@ -552,11 +565,11 @@ export function SignUpScreen() {
             <StepFooter
               // No estágio a conta já existe: não há pergunta para onde voltar.
               onBack={stage ? undefined : back}
-              backDisabled={googlePending}
+              backDisabled={socialPending}
               label={action.label}
               onPress={action.run}
               loading={stage && finish.isPending}
-              disabled={empty || googlePending || (visible === 'password' && notConfigured)}
+              disabled={empty || socialPending || (visible === 'password' && notConfigured)}
               accessibilityHint={empty ? t('auth.emptyHint') : undefined}
             />
           }
@@ -579,7 +592,7 @@ export function SignUpScreen() {
                     labelHidden
                     placeholder={t('auth.emailPlaceholder')}
                     value={value}
-                    editable={!googlePending}
+                    editable={!socialPending}
                     onChangeText={(text) => {
                       onChange(text);
                       edited('email');
@@ -605,14 +618,28 @@ export function SignUpScreen() {
                   label={t('auth.signUp.signIn')}
                   accessibilityLabel={t('auth.signUp.signInWithEmail')}
                   onPress={signInWithThisEmail}
-                  disabled={googlePending}
+                  disabled={socialPending}
                   style={styles.link}
                 />
               ) : null}
-              {visible === 'email' && googleEntry.available ? (
-                <GoogleButton
-                  onPress={() => void enterWithGoogle()}
-                  loading={googlePending}
+              {visible === 'email' ? (
+                <SocialEntryButtons
+                  google={
+                    googleEntry.available
+                      ? {
+                          onPress: () => void enterWith(googleEntry),
+                          loading: googleEntry.isPending,
+                        }
+                      : null
+                  }
+                  apple={
+                    appleEntry.available
+                      ? {
+                          onPress: () => void enterWith(appleEntry),
+                          loading: appleEntry.isPending,
+                        }
+                      : null
+                  }
                   disabled={pending}
                   showTerms
                 />

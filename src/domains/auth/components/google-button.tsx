@@ -6,8 +6,6 @@ import { Text } from '@/components/text';
 import { t } from '@/i18n';
 import { borderWidths, opacities, radii, spacing } from '@/theme';
 
-import { TermsNotice } from './terms-notice';
-
 // https://developers.google.com/identity/branding-guidelines
 const googleLogo = require('../../../../assets/branding/google/g-logo.png');
 const googleFonts = {
@@ -21,67 +19,52 @@ export interface GoogleButtonProps {
   onPress: () => void;
   loading: boolean;
   disabled?: boolean;
-  /**
-   * Mostra embaixo do botão o aviso de que criar a conta aceita os Termos e a
-   * Política. Vale sempre no cadastro. No entrar, só quando a tela abriu sem a
-   * abertura embaixo (por um link do app): pela abertura, o aviso dela ("Ao
-   * continuar, você aceita...") já cobre quem cria a conta pelo Google ali, e
-   * a tela fica mais limpa (pedido do dono de 24/11/2026).
-   */
-  showTerms: boolean;
 }
 
-/** Alternativa ao e-mail na primeira pergunta das telas de conta. */
-export function GoogleButton({ onPress, loading, disabled = false, showTerms }: GoogleButtonProps) {
+/**
+ * Alternativa ao e-mail na primeira pergunta das telas de conta, só no
+ * Android. O grupo dos provedores e o aviso dos Termos ficam no
+ * `SocialEntryButtons`.
+ */
+export function GoogleButton({ onPress, loading, disabled = false }: GoogleButtonProps) {
   const [fontLoaded] = useFonts(googleFonts);
   const label = t('auth.google.continue');
   const inactive = loading || disabled;
 
   return (
-    <View style={styles.group}>
-      <PressableScale
-        onPress={onPress}
-        accessibilityLabel={label}
-        accessibilityState={{ busy: loading }}
-        disabled={inactive}
-        style={[styles.touchTarget, inactive && styles.inactive]}
-      >
-        <View style={styles.button}>
-          <Image
-            source={googleLogo}
-            accessible={false}
-            importantForAccessibility="no"
-            resizeMode="contain"
-            style={[styles.logo, loading && styles.hidden]}
-          />
-          <Text
-            variant="buttonAlt"
-            color={BUTTON_TEXT}
-            style={[styles.label, fontLoaded && styles.googleFont, loading && styles.hidden]}
-          >
-            {label}
-          </Text>
-          {loading ? (
-            <View style={styles.spinner}>
-              <ActivityIndicator color={BUTTON_TEXT} />
-            </View>
-          ) : null}
-        </View>
-      </PressableScale>
-      {showTerms ? (
-        <View
-          pointerEvents={inactive ? 'none' : 'auto'}
-          importantForAccessibility={inactive ? 'no-hide-descendants' : 'auto'}
+    <PressableScale
+      onPress={onPress}
+      accessibilityLabel={label}
+      accessibilityState={{ busy: loading }}
+      disabled={inactive}
+      style={[styles.touchTarget, inactive && styles.inactive]}
+    >
+      <View style={styles.button}>
+        <Image
+          source={googleLogo}
+          accessible={false}
+          importantForAccessibility="no"
+          resizeMode="contain"
+          style={[styles.logo, loading && styles.hidden]}
+        />
+        <Text
+          variant="buttonAlt"
+          color={BUTTON_TEXT}
+          style={[styles.label, fontLoaded && styles.googleFont, loading && styles.hidden]}
         >
-          <TermsNotice variant="signUp" />
-        </View>
-      ) : null}
-    </View>
+          {label}
+        </Text>
+        {loading ? (
+          <View style={styles.spinner}>
+            <ActivityIndicator color={BUTTON_TEXT} />
+          </View>
+        ) : null}
+      </View>
+    </PressableScale>
   );
 }
 
 const styles = StyleSheet.create({
-  group: { marginTop: spacing.lg, alignItems: 'center', gap: spacing.xs },
   touchTarget: { minHeight: MIN_TOUCH_TARGET, justifyContent: 'center', maxWidth: '100%' },
   button: {
     minHeight: 40,

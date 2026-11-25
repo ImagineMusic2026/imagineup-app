@@ -27,6 +27,8 @@ export const DELETE_ACCOUNT_ERRORS: Record<DeleteAccountFailure, TranslationKey>
   wrongPassword: 'deleteAccount.errors.wrongPassword',
   wrongGoogleAccount: 'deleteAccount.errors.wrongGoogleAccount',
   googleUnavailable: 'deleteAccount.errors.googleUnavailable',
+  wrongAppleAccount: 'deleteAccount.errors.wrongAppleAccount',
+  appleUnavailable: 'deleteAccount.errors.appleUnavailable',
   network: 'deleteAccount.errors.network',
   tooManyRequests: 'deleteAccount.errors.tooManyRequests',
   sessionEnded: 'deleteAccount.errors.sessionEnded',
@@ -46,12 +48,23 @@ export const DELETE_ACCOUNT_ERRORS: Record<DeleteAccountFailure, TranslationKey>
  * volta a valer se a mesma conta entrar de novo dentro do prazo). O e-mail
  * guardado para o login (o da troca de e-mail que não chegou a entrar) também
  * sai, como no Sair: o entrar abriria na senha de uma conta que não existe mais.
+ *
+ * Enquanto a exclusão corre, o `deletingAccount` da sessão segura o `REVOKED`
+ * da conferência da Apple, porque a própria exclusão revoga a Apple antes do
+ * `deleteUser` (39.4). Sem a conta excluída (cancelada, com erro), ele volta a
+ * falso aqui; excluída, ele sai com a sessão (`setSignedOut`).
  */
 export function useDeleteAccount() {
   const uid = useSessionStore((state) => state.user?.uid ?? null);
   return useMutation<DeleteAccountOutcome, Error, DeleteAccountVariables, string | null>({
     mutationFn: async ({ password, confirmGoogle }) => {
-      const outcome = await deleteAccount(password, confirmGoogle, uid ?? undefined);
+      useSessionStore.getState().setDeletingAccount(true);
+      let outcome: DeleteAccountOutcome | undefined;
+      try {
+        outcome = await deleteAccount(password, confirmGoogle, uid ?? undefined);
+      } finally {
+        if (outcome !== 'deleted') useSessionStore.getState().setDeletingAccount(false);
+      }
       if (outcome === 'canceled') return outcome;
       clearHandedOffEmail();
       if (uid) await clearBoundInvite(uid).catch(() => undefined);
@@ -70,7 +83,9 @@ export function useDeleteAccount() {
     onError: (error, _variables, originatingUid) => {
       const failure = deleteAccountFailure(error);
       if (failure === 'sessionEnded') signOut(originatingUid ?? null).catch(() => undefined);
-      haptics.trigger(failure === 'needsPassword' || failure === 'needsGoogle' ? 'warning' : 'error');
+      haptics.trigger(
+        failure === 'needsPassword' || failure === 'needsGoogle' ? 'warning' : 'error',
+      );
       // A mensagem aparece na tela; o leitor de tela precisa ouvir também.
       AccessibilityInfo.announceForAccessibility(t(DELETE_ACCOUNT_ERRORS[failure]));
     },

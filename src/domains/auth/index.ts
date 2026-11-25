@@ -1,6 +1,7 @@
 export { signOut } from './api';
 export { preloadPhotoWall, releasePhotoWall } from './components/photo-wall';
 export { ENTRY_STEP_COUNT } from './consts';
+export { useAppleCredentialCheck } from './hooks/use-apple-credential-check';
 export { useAuthListener } from './hooks/use-auth-listener';
 export { useInviteSync } from './hooks/use-invite-sync';
 export { useSignOut } from './hooks/use-sign-out';
@@ -8,7 +9,7 @@ export { AuthStack } from './views/auth-stack';
 export { ChangeEmailScreen } from './views/change-email';
 export { ChangePasswordScreen } from './views/change-password';
 export { DeleteAccountScreen } from './views/delete-account';
-export { GoogleInviteScreen } from './views/google-invite';
 export { SignInScreen } from './views/sign-in';
 export { SignUpScreen } from './views/sign-up';
+export { SocialInviteScreen } from './views/social-invite';
 export { WelcomeScreen } from './views/welcome';

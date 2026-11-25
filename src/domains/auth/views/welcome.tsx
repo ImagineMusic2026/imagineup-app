@@ -57,9 +57,11 @@ const MIDDLE_SPACE_SHARE = 1;
  * 1k, abertura: tudo no centro, sobre a parede de fotos. O nome com as barras
  * da marca, a frase uma parte por vez ("Siga", "Comente", "Ganhe pontos") e,
  * no pé, "Criar minha conta" (botão rosa), "Já tenho conta" (link rosa) e o
- * aviso dos termos. Apple e Google entram numa etapa seguinte. A parede, o
- * véu, as listras e o logo são do fundo compartilhado do grupo `(auth)`, que
- * fica parado quando o fã vai para as perguntas.
+ * aviso dos termos. Os botões de provedor não ficam aqui: o Google (no
+ * Android) e a Apple (no iPhone) moram na pergunta do e-mail de entrar e de
+ * criar conta (seção 39 de docs/arquitetura-api.md). A parede, o véu, as
+ * listras e o logo são do fundo compartilhado do grupo `(auth)`, que fica
+ * parado quando o fã vai para as perguntas.
  *
  * Na entrada, o nome, o botão, o link e os termos sobem 12 pt e aparecem um
  * depois do outro (60 ms entre eles, `RiseIn`), as barras da marca acendem uma

@@ -17,17 +17,19 @@ import { announceFirstError } from '@/utils/form-errors';
 import { authErrorMessageKey } from '../api';
 import { EmailPill } from '../components/email-pill';
 import { FormFooter } from '../components/form-footer';
-import { GoogleButton } from '../components/google-button';
 import { PasswordField } from '../components/password-field';
 import { QuestionLayout, type QuestionLayoutProps } from '../components/question-layout';
+import { SocialEntryButtons } from '../components/social-entry-buttons';
 import { StepField } from '../components/step-field';
 import { StepFooter } from '../components/step-footer';
 import { clearHandedOffEmail, readEmailHandoffReason, readHandedOffEmail } from '../email-handoff';
 import { backToWelcome, normalizedEmail } from '../entry-questions';
 import { forgetPendingGoogleLink } from '../google-entry';
+import { useAppleEntry } from '../hooks/use-apple-entry';
 import { useGoogleEntry } from '../hooks/use-google-entry';
 import { usePasswordReset } from '../hooks/use-password-reset';
 import { googleOnlyHint, useSignIn } from '../hooks/use-sign-in';
+import type { SocialEntry } from '../hooks/use-social-entry';
 import { signInSchema, type SignInForm } from '../schemas';
 
 /** As duas perguntas do entrar: o e-mail da conta e, depois, a senha dela. */
@@ -55,6 +57,7 @@ type SignInField = (typeof FIELD_ORDER)[number];
  */
 export function SignInScreen() {
   const googleEntry = useGoogleEntry();
+  const appleEntry = useAppleEntry();
   // O anúncio do pedido é a frase curta, a mesma que aparece acima do pé.
   const passwordReset = usePasswordReset('auth.signIn.resetSentShort');
   // O e-mail que chega pronto, com o motivo. Lido uma vez, na montagem.
@@ -77,12 +80,13 @@ export function SignInScreen() {
   // leitor vai ao título. A volta ao e-mail pela rede de segurança do envio
   // não o leva, para o anúncio do erro ser ouvido inteiro.
   const [moves, setMoves] = useState(0);
-  // O aviso dos Termos embaixo do Google: pela abertura (ou pelo cadastro que
-  // ela abriu), o fã já viu o "Ao continuar, você aceita..." dela, e o entrar
-  // fica sem o aviso, mais limpo (pedido do dono de 24/11/2026). Aberto a frio
-  // por um link do app, sem a abertura embaixo, o aviso volta, porque o Google
-  // pode criar uma conta nova ali. Lido uma vez, na montagem.
-  const [showGoogleTerms] = useState(() => !router.canGoBack());
+  // O aviso dos Termos embaixo dos botões de provedor: pela abertura (ou pelo
+  // cadastro que ela abriu), o fã já viu o "Ao continuar, você aceita..." dela,
+  // e o entrar fica sem o aviso, mais limpo (pedido do dono de 24/11/2026).
+  // Aberto a frio por um link do app, sem a abertura embaixo, o aviso volta,
+  // porque o Google ou a Apple podem criar uma conta nova ali. Lido uma vez, na
+  // montagem.
+  const [showProviderTerms] = useState(() => !router.canGoBack());
   const { control, handleSubmit, formState, trigger, clearErrors, getFieldState, setValue } =
     useForm<SignInForm>({
       resolver: zodResolver(signInSchema),
@@ -95,7 +99,9 @@ export function SignInScreen() {
   const [typedEmail, typedPassword] = useWatch({ control, name: FIELD_ORDER });
 
   const disabled = !isFirebaseConfigured;
-  const googlePending = googleEntry.isPending;
+  // A entrada por um provedor em curso: o Google (Android) ou a Apple (iPhone).
+  const socialPending = googleEntry.isPending || appleEntry.isPending;
+  const socialError = googleEntry.error ?? appleEntry.error;
   const email = normalizedEmail(typedEmail);
   // O botão do pé fica apagado só com o campo da pergunta vazio.
   const empty = onEmail ? typedEmail.trim() === '' : typedPassword === '';
@@ -153,6 +159,12 @@ export function SignInScreen() {
     if (!passwordReset.isPending) passwordReset.reset();
   };
 
+  /** O erro da última entrada por um provedor sai, só do provedor que tem um. */
+  const clearSocialErrors = (): void => {
+    if (googleEntry.error) googleEntry.reset();
+    if (appleEntry.error) appleEntry.reset();
+  };
+
   /**
    * Troca de pergunta. O que sobrou de uma tentativa (o erro do envio, o
    * pedido do link da senha que já terminou) não passa para a outra.
@@ -160,7 +172,7 @@ export function SignInScreen() {
   const goTo = (next: SignInStep): void => {
     clearFinishedReset();
     clearSubmitError();
-    if (googleEntry.error) googleEntry.reset();
+    clearSocialErrors();
     setMoves((count) => count + 1);
     setStep(next);
   };
@@ -176,19 +188,21 @@ export function SignInScreen() {
 
   // Na senha, o voltar do Android volta ao e-mail, e o gesto do iOS fica
   // desligado (ele sairia da tela, e não da pergunta).
-  useStayOnScreen(googlePending ? 'locked' : onEmail ? 'free' : 'confirm', backToEmail);
+  useStayOnScreen(socialPending ? 'locked' : onEmail ? 'free' : 'confirm', backToEmail);
 
   // Voltou a digitar: o erro do campo sai, e com ele o do último envio.
   const edited = (changed: SignInField): void => {
     if (formState.errors[changed]) clearErrors(changed);
     clearSubmitError();
-    if (googleEntry.error) googleEntry.reset();
+    clearSocialErrors();
   };
 
-  const enterWithGoogle = async (): Promise<void> => {
-    if (googlePending || signIn.isPending) return;
+  // Entra pelo provedor tocado. O modo "ligar" só vem do Google (a Apple é
+  // confiável e nunca esbarra numa conta de senha).
+  const enterWith = async (entry: SocialEntry): Promise<void> => {
+    if (socialPending || signIn.isPending) return;
     Keyboard.dismiss();
-    const outcome = await googleEntry.signIn();
+    const outcome = await entry.signIn();
     if (outcome?.status === 'askInvite') {
       router.replace('/codigo-de-convite');
     } else if (outcome?.status === 'link') {
@@ -202,7 +216,7 @@ export function SignInScreen() {
   };
 
   const continueToPassword = async (): Promise<void> => {
-    if (googlePending) return;
+    if (socialPending) return;
     // Só o e-mail é conferido aqui: a senha é a pergunta seguinte.
     if (await trigger('email', { shouldFocus: true })) {
       goTo('password');
@@ -215,7 +229,7 @@ export function SignInScreen() {
   const submit = handleSubmit(
     (values) => {
       // O "ir" do teclado não passa pelo botão desativado: um envio por vez.
-      if (signIn.isPending || googlePending || disabled) return;
+      if (signIn.isPending || socialPending || disabled) return;
       clearFinishedReset();
       signIn.mutate(values);
     },
@@ -241,8 +255,8 @@ export function SignInScreen() {
   let notice: QuestionLayoutProps['notice'];
   if (disabled) {
     notice = { text: t('auth.missingConfig'), tone: 'danger' };
-  } else if (onEmail && googleEntry.error) {
-    notice = { text: t(googleEntry.error), tone: 'danger' };
+  } else if (onEmail && socialError) {
+    notice = { text: t(socialError), tone: 'danger' };
   } else if (!onEmail) {
     if (errorKey && !rejected) {
       notice = { text: t(errorKey), tone: 'danger' };
@@ -276,7 +290,7 @@ export function SignInScreen() {
             question={t('auth.signIn.noAccount')}
             actionLabel={t('auth.signIn.createAccount')}
             onAction={() => router.replace('/cadastro')}
-            disabled={googlePending}
+            disabled={socialPending}
           />
         ) : undefined
       }
@@ -284,11 +298,11 @@ export function SignInScreen() {
         // O "próximo" e o "ir" do teclado fazem o mesmo que o botão, sem fechar o teclado.
         <StepFooter
           onBack={onEmail ? backToWelcome : backToEmail}
-          backDisabled={googlePending}
+          backDisabled={socialPending}
           label={t(onEmail ? 'common.continue' : 'auth.signIn.submit')}
           onPress={() => void (onEmail ? continueToPassword() : submit())}
           loading={!onEmail && signIn.isPending}
-          disabled={empty || googlePending || (!onEmail && disabled)}
+          disabled={empty || socialPending || (!onEmail && disabled)}
           accessibilityHint={empty ? t('auth.emptyHint') : undefined}
         />
       }
@@ -313,7 +327,7 @@ export function SignInScreen() {
                 labelHidden
                 placeholder={t('auth.emailPlaceholder')}
                 value={value}
-                editable={!googlePending}
+                editable={!socialPending}
                 onChangeText={(text) => {
                   onChange(text);
                   edited('email');
@@ -333,12 +347,20 @@ export function SignInScreen() {
               />
             )}
           />
-          {onEmail && googleEntry.available ? (
-            <GoogleButton
-              onPress={() => void enterWithGoogle()}
-              loading={googlePending}
+          {onEmail ? (
+            <SocialEntryButtons
+              google={
+                googleEntry.available
+                  ? { onPress: () => void enterWith(googleEntry), loading: googleEntry.isPending }
+                  : null
+              }
+              apple={
+                appleEntry.available
+                  ? { onPress: () => void enterWith(appleEntry), loading: appleEntry.isPending }
+                  : null
+              }
               disabled={signIn.isPending}
-              showTerms={showGoogleTerms}
+              showTerms={showProviderTerms}
             />
           ) : null}
         </StepField>
