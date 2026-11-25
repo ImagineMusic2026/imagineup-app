@@ -10,6 +10,18 @@ import { AuthBackdrop } from '../components/auth-backdrop';
 import { AuthEntranceContext } from '../hooks/use-auth-entrance';
 import { useAuthStackFade } from '../hooks/use-auth-exit';
 
+// O Expo Router 57 pinta o contêiner nativo de cada pilha com o fundo do tema
+// (`nativeContainerStyle`). No iOS, esse contêiner (a view do
+// UINavigationController) fica entre o fundo da 1k e as telas transparentes, e
+// cobria a parede, o véu, as listras e o logo com um preto liso. Aqui ele fica
+// transparente; atrás dele já estão o fundo da 1k e a raiz escura da pilha. No
+// Android a prop não faz nada. O `unstable_nativeProps` é instável no Expo
+// Router: a cada atualização dele, o `src/navigation/__tests__/auth.test.tsx`
+// confere que a cor ainda chega à pilha nativa.
+const NATIVE_STACK_PROPS = {
+  nativeContainerStyle: { backgroundColor: colors.transparent },
+};
+
 /**
  * Pilha do grupo `(auth)`: abertura (1k), entrar com e-mail e cadastro. O fundo
  * da 1k fica atrás da pilha e as telas são transparentes, então a foto e o logo
@@ -35,6 +47,7 @@ export function AuthStack() {
         <AuthBackdrop entrance={fade.entrance} />
         <AuthEntranceContext value={fade.entrance}>
           <Stack
+            unstable_nativeProps={NATIVE_STACK_PROPS}
             screenOptions={{
               ...screenOptions,
               contentStyle: styles.screen,

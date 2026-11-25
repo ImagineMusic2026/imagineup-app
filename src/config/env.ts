@@ -46,3 +46,11 @@ function parseFirebaseEnv(): FirebaseEnv | null {
 
 /** `null` enquanto o .env não estiver preenchido: o app abre, mas não autentica. */
 export const firebaseEnv = parseFirebaseEnv();
+
+const googleClientId = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID?.trim();
+
+/** O ID do cliente OAuth Web do mesmo projeto Firebase usado pelo app. */
+export const googleWebClientId =
+  googleClientId && /^[\w-]+\.apps\.googleusercontent\.com$/.test(googleClientId)
+    ? googleClientId
+    : undefined;

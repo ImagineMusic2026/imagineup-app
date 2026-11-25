@@ -1,9 +1,11 @@
-import { StyleSheet, type StyleProp, type ViewStyle } from 'react-native';
+import type { LucideIcon } from 'lucide-react-native';
+import { StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 
+import { Icon } from '@/components/icon';
 import { PressableScale } from '@/components/pressable-scale';
 import { Text } from '@/components/text';
 import { haptics, type HapticEvent } from '@/services/haptics';
-import { colors, layout, opacities, type TypographyVariant } from '@/theme';
+import { colors, layout, opacities, spacing, type TypographyVariant } from '@/theme';
 import { withAlpha } from '@/utils/color';
 
 /**
@@ -38,6 +40,11 @@ export interface TextLinkProps {
   /** Padrão: `tap` no avulso; nenhum no trecho dentro do texto (termos). */
   haptic?: HapticEvent | null;
   disabled?: boolean;
+  /**
+   * Só no avulso: ícone decorativo antes do texto, na cor dele ("Tenho um
+   * código de convite"). O leitor de tela ouve só o rótulo.
+   */
+  icon?: LucideIcon;
   /** Quando o texto visível sozinho não diz aonde vai ("Ver todos" → "Ver todos os artistas"). */
   accessibilityLabel?: string;
   accessibilityHint?: string;
@@ -63,6 +70,7 @@ export function TextLink({
   underline,
   haptic,
   disabled = false,
+  icon,
   accessibilityLabel,
   accessibilityHint,
   style,
@@ -105,15 +113,26 @@ export function TextLink({
       testID={testID}
       style={[styles.target, disabled && styles.inactive, style]}
     >
-      <Text variant={textVariant} color={TONE_COLOR[tone]} style={textStyle}>
-        {label}
-      </Text>
+      {icon ? (
+        <View style={styles.withIcon}>
+          <Icon icon={icon} size={ICON_SIZE} color={TONE_COLOR[tone]} />
+          <Text variant={textVariant} color={TONE_COLOR[tone]} style={textStyle}>
+            {label}
+          </Text>
+        </View>
+      ) : (
+        <Text variant={textVariant} color={TONE_COLOR[tone]} style={textStyle}>
+          {label}
+        </Text>
+      )}
     </PressableScale>
   );
 }
 
 // Sublinhado na cor do texto a .35, como nos termos da 1k (o Android usa a cor do texto).
 const UNDERLINE_ALPHA = 0.35;
+// O ícone do link avulso, do tamanho do desenho ("Tenho um código de convite").
+const ICON_SIZE = 16;
 
 const styles = StyleSheet.create({
   target: {
@@ -124,6 +143,12 @@ const styles = StyleSheet.create({
   },
   inactive: {
     opacity: opacities.disabled,
+  },
+  // O ícone a 7 do texto, os dois no meio da linha.
+  withIcon: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.chipGap,
   },
   underlineAccent: {
     textDecorationLine: 'underline',

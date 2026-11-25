@@ -27,6 +27,7 @@ import {
   waitForProfile,
 } from '../api';
 import { INVITE_CLAIM_WAIT_MS } from '../consts';
+import * as authExit from '../hooks/use-auth-exit';
 import { usePasswordReset } from '../hooks/use-password-reset';
 import { useFinishSignUp, useSignUp } from '../hooks/use-sign-up';
 
@@ -276,6 +277,112 @@ describe('cadastro (useSignUp)', () => {
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(useSessionStore.getState().authHolds).toBe(0);
     warn.mockRestore();
+  });
+});
+
+describe('o momento "Conta criada" (beforeExit)', () => {
+  /** O tempo do momento na tela, que o teste termina quando quer. */
+  function heldMoment() {
+    let finish: () => void = () => undefined;
+    const shown = new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    return { beforeExit: jest.fn(() => shown), finish };
+  }
+
+  it('roda com a conta pronta e o toque de sucesso dado, e as telas de conta só apagam quando ele termina', async () => {
+    const firebase = fakeFirebase();
+    const exit = jest.spyOn(authExit, 'playAuthExit');
+    const moment = heldMoment();
+    const { result } = renderHook(() => useSignUp({ beforeExit: moment.beforeExit }), { wrapper });
+
+    act(() => result.current.mutate(form));
+    await waitFor(() => expect(listen).toHaveBeenCalled());
+    // Enquanto o perfil não nasce, a conta não está pronta: nada de momento.
+    expect(moment.beforeExit).not.toHaveBeenCalled();
+
+    act(() => firebase.profileArrives());
+    await waitFor(() => expect(moment.beforeExit).toHaveBeenCalledTimes(1));
+    expect(haptics.trigger).toHaveBeenCalledWith('success');
+    // O momento está na tela: o fã segue seguro, e a saída ainda não começou.
+    expect(exit).not.toHaveBeenCalled();
+    expect(useSessionStore.getState().authHolds).toBe(1);
+    expect(result.current.isPending).toBe(true);
+
+    await act(async () => moment.finish());
+    await waitFor(() => expect(result.current.data).toEqual({ status: 'done' }));
+    expect(exit).toHaveBeenCalledTimes(1);
+    expect(useSessionStore.getState().authHolds).toBe(0);
+    exit.mockRestore();
+  });
+
+  it('com código digitado, vem depois de o servidor aceitar o convite', async () => {
+    const firebase = fakeFirebase();
+    const beforeExit = jest.fn(async () => undefined);
+    const { result } = renderHook(() => useSignUp({ beforeExit }), { wrapper });
+
+    act(() => result.current.mutate({ ...form, inviteCode: 'CAMILA12' }));
+    await waitFor(() => expect(listen).toHaveBeenCalled());
+    act(() => firebase.profileArrives());
+
+    await waitFor(() => expect(result.current.data).toEqual({ status: 'done' }));
+    expect(beforeExit).toHaveBeenCalledTimes(1);
+    expect(claim.mock.invocationCallOrder[0]).toBeLessThan(
+      beforeExit.mock.invocationCallOrder[0] ?? 0,
+    );
+  });
+
+  it('parado no código recusado, não roda, nem depois, no "Continuar sem código"', async () => {
+    claim.mockRejectedValueOnce(new ApiError('notFound', 'x', 404, 'invite_not_found'));
+    const firebase = fakeFirebase();
+    const beforeExit = jest.fn(async () => undefined);
+    const { result } = renderHook(
+      () => ({ signUp: useSignUp({ beforeExit }), finish: useFinishSignUp() }),
+      { wrapper },
+    );
+
+    act(() => result.current.signUp.mutate({ ...form, inviteCode: 'ERRADO12' }));
+    await waitFor(() => expect(listen).toHaveBeenCalled());
+    act(() => firebase.profileArrives());
+    await waitFor(() => expect(result.current.signUp.data?.status).toBe('inviteRejected'));
+    expect(beforeExit).not.toHaveBeenCalled();
+    expect(useSessionStore.getState().authHolds).toBe(1);
+
+    // "Conta criada" é só do cadastro que segue direto.
+    act(() => result.current.finish.mutate({ inviteCode: '' }));
+    await waitFor(() => expect(result.current.finish.data).toEqual({ status: 'done' }));
+    expect(beforeExit).not.toHaveBeenCalled();
+    expect(useSessionStore.getState().authHolds).toBe(0);
+  });
+
+  it('o momento que falha não vira erro de cadastro: a conta existe, e o fã segue', async () => {
+    const firebase = fakeFirebase();
+    const beforeExit = jest.fn(async () => {
+      throw new Error('a tela saiu no meio');
+    });
+    const { result } = renderHook(() => useSignUp({ beforeExit }), { wrapper });
+
+    act(() => result.current.mutate(form));
+    await waitFor(() => expect(listen).toHaveBeenCalled());
+    act(() => firebase.profileArrives());
+
+    await waitFor(() => expect(result.current.data).toEqual({ status: 'done' }));
+    expect(beforeExit).toHaveBeenCalledTimes(1);
+    expect(haptics.trigger).not.toHaveBeenCalledWith('error');
+    expect(useSessionStore.getState().authHolds).toBe(0);
+  });
+
+  it('conta que não nasceu não tem momento', async () => {
+    fakeFirebase();
+    createUser.mockRejectedValueOnce(new FirebaseError('auth/network-request-failed', 'rede'));
+    const beforeExit = jest.fn(async () => undefined);
+    const { result } = renderHook(() => useSignUp({ beforeExit }), { wrapper });
+
+    act(() => result.current.mutate(form));
+
+    await waitFor(() => expect(result.current.isError).toBe(true));
+    expect(beforeExit).not.toHaveBeenCalled();
+    expect(useSessionStore.getState().authHolds).toBe(0);
   });
 });
 
@@ -624,6 +731,7 @@ describe('mensagens de erro do Firebase', () => {
     ['auth/invalid-email', 'signUp', 'validation.emailInvalid'],
     ['auth/email-already-in-use', 'signUp', 'auth.errors.emailInUse'],
     ['auth/weak-password', 'signUp', 'auth.errors.weakPassword'],
+    ['auth/password-does-not-meet-requirements', 'signUp', 'auth.errors.weakPassword'],
     ['auth/operation-not-allowed', 'signUp', 'auth.errors.notAllowed'],
     ['auth/too-many-requests', 'passwordReset', 'auth.errors.tooManyRequests'],
     ['auth/network-request-failed', 'signUp', 'auth.errors.network'],

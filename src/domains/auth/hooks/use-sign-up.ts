@@ -1,7 +1,12 @@
 import { useMutation } from '@tanstack/react-query';
 import { AccessibilityInfo } from 'react-native';
 
-import { bindPendingInvite, clearBoundInvite, type BoundInvite } from '@/domains/invites';
+import {
+  bindPendingInvite,
+  clearBoundInvite,
+  clearPendingInvite,
+  type BoundInvite,
+} from '@/domains/invites';
 import { t } from '@/i18n';
 import { haptics } from '@/services/haptics';
 import { usePreferencesStore } from '@/stores/preferences';
@@ -25,9 +30,39 @@ import { playAuthExit } from './use-auth-exit';
 export type SignUpOutcome =
   { status: 'done' } | { status: 'inviteRejected'; reason: InviteRejection };
 
+/** O que a tela de cadastro pede ao envio. */
+export interface SignUpOptions {
+  /**
+   * Roda com a conta pronta e o toque de sucesso dado, antes de as telas de
+   * conta apagarem: a tela mostra o "Conta criada" e devolve a promessa do
+   * tempo de lê-lo. Só no cadastro que segue direto: parado no estágio
+   * "código recusado", ele não roda, nem depois, no "Continuar" do estágio.
+   */
+  beforeExit?: () => Promise<void>;
+}
+
 // O fã que parou no estágio "código recusado" continua seguro nas telas de
 // conta: a função que solta fica aqui, para o "Continuar" soltar depois.
 let heldRelease: (() => void) | null = null;
+// A conta nova criada pelo Google ou pela Apple, parada na pergunta do código
+// de convite (`/codigo-de-convite`): a trava fica aqui até ela seguir.
+let heldSocialInvite: { uid: string; release: () => void } | null = null;
+
+export function holdSocialInvite(uid: string, release: () => void): void {
+  releaseHeldSocialInvite();
+  heldSocialInvite = { uid, release };
+}
+
+export function hasPendingSocialInvite(): boolean {
+  return heldSocialInvite !== null && heldSocialInvite.uid === useSessionStore.getState().user?.uid;
+}
+
+export function releaseHeldSocialInvite(expectedUid?: string): void {
+  if (expectedUid !== undefined && heldSocialInvite?.uid !== expectedUid) return;
+  const invite = heldSocialInvite;
+  heldSocialInvite = null;
+  invite?.release();
+}
 
 /**
  * Solta o fã do estágio "código recusado" (uma vez; sem estágio, não faz
@@ -35,10 +70,15 @@ let heldRelease: (() => void) | null = null;
  * estágio sem passar pelos botões, a trava não pode ficar, senão a conta, já
  * logada, segue presa nas telas de conta até o app reiniciar.
  */
-export function releaseHeldSignUp(): void {
+export function releaseHeldEmailSignUp(): void {
   const release = heldRelease;
   heldRelease = null;
   release?.();
+}
+
+export function releaseHeldSignUp(): void {
+  releaseHeldEmailSignUp();
+  releaseHeldSocialInvite();
 }
 
 /**
@@ -82,14 +122,15 @@ async function claimTypedCode(bound: BoundInvite): Promise<InviteRejection | nul
  *    nele, sem esperar a gravação;
  * 4. com o código digitado, espera o claim (até 8 s): recusado (não existe ou
  *    não vale), para no estágio "código recusado", ainda segurando o fã;
- * 5. apaga as telas de conta em fade e solta o fã. O convite do link vai pela
- *    sincronização (`useInviteSync`), assim que o fã é solto.
+ * 5. espera a tela mostrar o "Conta criada" (`beforeExit`), apaga as telas de
+ *    conta em fade e solta o fã. O convite do link vai pela sincronização
+ *    (`useInviteSync`), assim que o fã é solto.
  *
  * A conta nasce logada no passo 1, e o guard tiraria a tela na hora: o
  * `holdAuth` segura o fã fora até o passo 5. Quem troca para a escolha de
  * artistas é o guard, quando ele solta.
  */
-export function useSignUp() {
+export function useSignUp({ beforeExit }: SignUpOptions = {}) {
   return useMutation<SignUpOutcome, Error, SignUpForm>({
     mutationFn: async (form) => {
       releaseHeldSignUp();
@@ -120,6 +161,12 @@ export function useSignUp() {
           }
         }
         haptics.trigger('success');
+        try {
+          await beforeExit?.();
+        } catch {
+          // A conta já existe: o momento que falha não vira "não foi possível
+          // criar a conta", e o cadastro segue para a saída sem ele.
+        }
         await playAuthExit();
         return { status: 'done' };
       } finally {
@@ -145,12 +192,18 @@ export function useSignUp() {
  * amarra de novo (chave nova, porque a anterior foi recusada) e espera o
  * claim; recusado de novo, fica no estágio. Sem código ("Continuar sem
  * código"), ou com o claim aceito ou incerto, apaga as telas de conta em fade
- * e solta o fã.
+ * e solta o fã. Também é o da pergunta do código da conta nova criada pelo
+ * Google ou pela Apple (`/codigo-de-convite`).
  */
 export function useFinishSignUp() {
   return useMutation<SignUpOutcome, Error, { inviteCode: string }>({
     mutationFn: async ({ inviteCode }) => {
       const uid = useSessionStore.getState().user?.uid ?? null;
+      const socialUid = heldSocialInvite?.uid;
+      if (socialUid && socialUid !== uid) {
+        releaseHeldSocialInvite(socialUid);
+        return { status: 'done' };
+      }
       if (uid && inviteCode.trim()) {
         const bound = await bindPendingInvite(uid, inviteCode).catch(() => null);
         if (bound) {
@@ -159,10 +212,12 @@ export function useFinishSignUp() {
         }
       } else if (uid) {
         await clearBoundInvite(uid).catch(() => undefined);
+        if (socialUid === uid) await clearPendingInvite().catch(() => undefined);
       }
       haptics.trigger('success');
       await playAuthExit();
-      releaseHeldSignUp();
+      if (socialUid) releaseHeldSocialInvite(socialUid);
+      else releaseHeldEmailSignUp();
       return { status: 'done' };
     },
     networkMode: 'always',

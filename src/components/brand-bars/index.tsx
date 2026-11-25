@@ -17,9 +17,10 @@ import { colors, motion } from '@/theme';
  * - `pill`: pílula de saldo (1h), sobre lima;
  * - `badge`: selo de nível (1e);
  * - `title`: ao lado do nome do artista (1d);
- * - `hero`: ao lado do "ImagineUP" (1k).
+ * - `hero`: ao lado do "ImagineUP" (1k);
+ * - `moment`: dentro do anel do momento "Conta criada" do cadastro.
  */
-export type BrandBarsSize = 'pill' | 'badge' | 'title' | 'hero';
+export type BrandBarsSize = 'pill' | 'badge' | 'title' | 'hero' | 'moment';
 
 /** `soft` (1, .6, .3) nas pequenas; `bold` (1, .6, .28) nas grandes em rosa. */
 export type BrandBarsOpacities = 'soft' | 'bold';
@@ -54,6 +55,7 @@ const DEFAULT_OPACITIES: Record<BrandBarsSize, BrandBarsOpacities> = {
   badge: 'soft',
   title: 'bold',
   hero: 'bold',
+  moment: 'bold',
 };
 
 // Medidas do próprio desenho da marca, como o path de um ícone.
@@ -62,6 +64,7 @@ const MEASURES: Record<BrandBarsSize, { width: number; height: number; gap: numb
   badge: { width: 2.5, height: 9, gap: 1.5 },
   title: { width: 4, height: 20, gap: 2.5 },
   hero: { width: 4, height: 21, gap: 2.5 },
+  moment: { width: 9, height: 48, gap: 5.5 },
 };
 
 // Intervalo entre uma barra e a seguinte quando elas acendem.

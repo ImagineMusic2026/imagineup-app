@@ -321,7 +321,7 @@ describe('"Trocar e-mail" (seção 29, frente D)', () => {
     await waitFor(() => expect(view.getPathname()).toBe('/entrar'));
   });
 
-  it('a sessão que cai sozinha depois do link: a entrada já vem com o e-mail novo', async () => {
+  it('a sessão que cai sozinha depois do link: a entrada já vem com o e-mail novo, direto na senha', async () => {
     const view = await openFromSettings();
     fill(NEW_EMAIL);
     fireEvent.press(screen.getByRole('button', { name: SUBMIT }));
@@ -332,7 +332,15 @@ describe('"Trocar e-mail" (seção 29, frente D)', () => {
     await waitFor(() => expect(view.getPathname()).toBe('/entrar'));
     act(() => router.push('/entrar-com-email'));
 
-    await waitFor(() => expect(screen.getByLabelText('E-mail')).toHaveProp('value', NEW_EMAIL));
+    // O entrar pula a pergunta do e-mail: abre na senha, com o e-mail novo na pílula.
+    expect(await screen.findByRole('header', { name: 'Digite sua senha' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: `Trocar o e-mail ${NEW_EMAIL}` })).toBeTruthy();
+    expect(screen.getByLabelText('Senha')).toBeTruthy();
+    expect(screen.queryByLabelText('E-mail')).toBeNull();
+    // O aviso "Esse e-mail já tem conta" é só de quem vem do cadastro.
+    expect(screen.queryByText('Esse e-mail já tem conta. Entre com ele.')).toBeNull();
+    // Lido uma vez: a próxima entrada na tela começa pela pergunta do e-mail.
+    expect(readHandedOffEmail()).toBeNull();
   });
 
   it('"Sair" depois do "Enviado": a entrada vem sem o e-mail novo, que ainda não entra', async () => {
@@ -349,7 +357,10 @@ describe('"Trocar e-mail" (seção 29, frente D)', () => {
     await waitFor(() => expect(view.getPathname()).toBe('/entrar'));
     act(() => router.push('/entrar-com-email'));
 
+    // O entrar começa pela pergunta do e-mail, vazia, sem pílula nem senha.
     await waitFor(() => expect(screen.getByLabelText('E-mail')).toHaveProp('value', ''));
+    expect(screen.getByRole('header', { name: 'Bom te ver de novo' })).toBeTruthy();
+    expect(screen.queryByLabelText('Senha')).toBeNull();
     expect(readHandedOffEmail()).toBeNull();
   });
 });

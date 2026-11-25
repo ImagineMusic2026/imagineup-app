@@ -24,12 +24,42 @@
     "password": "Senha",
     "showPassword": "Mostrar senha",
     "hidePassword": "Esconder senha",
+    "emailPlaceholder": "Seu e-mail",
+    "passwordPlaceholder": "Sua senha",
+    "emailPill": "Trocar o e-mail {{email}}",
+    "emptyHint": "Preencha o campo para continuar.",
     "missingConfig": "O Firebase ainda não foi configurado. Preencha o arquivo .env a partir do .env.example.",
     "welcome": {
       "title": "ImagineUP",
-      "lead": "A central de fãs oficial dos artistas da Imagine. Siga, comente e ganhe pontos levando gente nova pro fandom.",
+      "tagline": {
+        "follow": "Siga",
+        "comment": "Comente",
+        "earn": "Ganhe",
+        "points": "pontos",
+        "label": "Siga. Comente. Ganhe pontos."
+      },
       "createAccount": "Criar minha conta",
       "haveAccount": "Já tenho conta"
+    },
+    "google": {
+      "continue": "Continuar com Google",
+      "signingIn": "Abrindo o login com Google",
+      "linkPassword": "Confirme a senha do ImagineUP para vincular sua conta do Google.",
+      "linked": "Sua conta do Google foi vinculada.",
+      "linkFailed": "Não foi possível vincular o Google",
+      "linkFailedDetails": "Você entrou com sua senha. Para vincular o Google, tente novamente pela tela de entrada.",
+      "errors": {
+        "playServices": "Atualize o Google Play Services para continuar com Google.",
+        "unavailable": "O login com Google está indisponível neste aparelho.",
+        "unknown": "Não foi possível continuar com Google. Tente novamente."
+      }
+    },
+    "apple": {
+      "signingIn": "Abrindo o login com a Apple",
+      "errors": {
+        "unavailable": "O login com a Apple está indisponível neste aparelho.",
+        "unknown": "Não foi possível continuar com a Apple. Tente novamente."
+      }
     },
     "terms": {
       "continue": "Ao continuar, você aceita os {{terms}} e a {{privacy}} da Imagine Music.",
@@ -39,17 +69,17 @@
     },
     "signIn": {
       "title": "Bom te ver de novo",
-      "lead": "Entre com o e-mail e a senha da sua conta.",
       "submit": "Entrar",
       "forgot": "Esqueci minha senha",
-      "forgotNeedsEmail": "Digite seu e-mail para receber o link.",
       "resetSent": "Se existir uma conta com esse e-mail, enviamos um link para criar uma senha nova.",
+      "resetSentShort": "Pedido enviado. Confira seu e-mail.",
+      "googleOnlyHint": "Já entrou com o Google em outro aparelho? Toque em “{{action}}” para criar uma senha.",
+      "emailQuestion": "Qual é o e-mail da sua conta?",
+      "passwordTitle": "Digite sua senha",
       "noAccount": "Ainda não tem conta?",
       "createAccount": "Criar conta"
     },
     "signUp": {
-      "title": "Crie sua conta",
-      "lead": "Leva menos de um minuto. Depois você escolhe seus artistas.",
       "name": "Seu nome",
       "nameHint": "É assim que você aparece no ranking e nos comentários.",
       "passwordHint": "Pelo menos {{min}} caracteres.",
@@ -67,7 +97,24 @@
         "notAllowed": "Esse código não vale para esta conta."
       },
       "continue": "Continuar",
-      "skipInvite": "Continuar sem código"
+      "skipInvite": "Continuar sem código",
+      "emailTitle": "Qual é o seu e-mail?",
+      "nameTitle": "Como você se chama?",
+      "passwordTitle": "Crie uma senha",
+      "haveInvite": "Tenho um código de convite",
+      "inviteApplied": "Convite {{code}} · Trocar",
+      "inviteAppliedLabel": "Convite {{code}}. Trocar o código.",
+      "inviteStepTitle": "Qual é o código do convite?",
+      "created": {
+        "title": "Conta criada!",
+        "lead": "Agora escolha seus artistas."
+      },
+      "strength": {
+        "short": "Curta",
+        "good": "Boa",
+        "strong": "Forte",
+        "status": "Força da senha: {{level}}."
+      }
     },
     "errors": {
       "invalidCredentials": "E-mail ou senha incorretos.",
@@ -1050,11 +1097,20 @@
     "passwordLead": "Por segurança, confirme sua senha para excluir a conta.",
     "password": "Sua senha",
     "confirm": "Confirmar e excluir",
+    "confirmGoogle": "Confirmar com Google e excluir",
+    "appleLead": "Por segurança, confirme com a Apple para excluir a conta. O ImagineUP também pede à Apple para desligar o login com a sua Conta Apple.",
+    "appleLinkedNotice": "Sua conta também entra com a Apple. Depois da senha, a Apple pode pedir uma confirmação para desligar o login com a sua Conta Apple. Se você cancelar essa etapa, a conta é excluída mesmo assim.",
+    "confirmApple": "Confirmar com a Apple e excluir",
     "offline": "Sem internet. Conecte-se para excluir a conta.",
     "done": "Sua conta foi excluída.",
     "errors": {
       "needsPassword": "Por segurança, confirme sua senha para excluir a conta.",
+      "needsGoogle": "Por segurança, confirme a conta do Google usada no ImagineUP para excluir a conta.",
       "wrongPassword": "Senha incorreta.",
+      "wrongGoogleAccount": "Escolha a conta do Google vinculada ao seu perfil do ImagineUP.",
+      "googleUnavailable": "Não foi possível confirmar com Google. Entre novamente no ImagineUP para excluir a conta.",
+      "wrongAppleAccount": "A Conta Apple deste iPhone não é a do seu perfil do ImagineUP. Entre nos Ajustes do iPhone com a Conta Apple que você usou aqui e tente de novo.",
+      "appleUnavailable": "Não foi possível confirmar com a Apple. Tente de novo.",
       "network": "Sem conexão. Sua conta continua como estava. Confira a internet e tente de novo.",
       "tooManyRequests": "Muitas tentativas. Espere um pouco e tente de novo.",
       "sessionEnded": "Sua sessão terminou. Entre de novo para excluir a conta.",

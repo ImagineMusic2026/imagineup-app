@@ -16,7 +16,13 @@ import { StatusBar } from 'expo-status-bar';
 import { useEffect } from 'react';
 
 import { preloadLogo } from '@/components/logo';
-import { useAuthListener, useInviteSync } from '@/domains/auth';
+import {
+  preloadPhotoWall,
+  releasePhotoWall,
+  useAppleCredentialCheck,
+  useAuthListener,
+  useInviteSync,
+} from '@/domains/auth';
 import { useSessionGate } from '@/hooks/use-session-gate';
 import { useStackScreenOptions } from '@/hooks/use-stack-screen-options';
 import { AppProviders } from '@/providers/app-providers';
@@ -30,6 +36,9 @@ if (!isRunningInExpoGo()) SplashScreen.setOptions({ duration: 300, fade: true })
 
 export default function RootLayout() {
   useAuthListener();
+  // A Apple em cada sessão: a disponibilidade, o nome guardado e, no iPhone, a
+  // credencial revogada que tira a sessão da Apple (seção 39).
+  useAppleCredentialCheck();
   // Manda o convite amarrado à conta da sessão e a visita do link que abriu o app.
   useInviteSync();
   const [fontsLoaded, fontError] = useFonts({
@@ -53,6 +62,16 @@ export default function RootLayout() {
   useEffect(() => {
     if (fontsSettled) preloadLogo();
   }, [fontsSettled]);
+
+  // As capas da parede são só da abertura: carregam logo depois das fontes,
+  // ainda com a sessão por conhecer, para já estarem na memória quando a
+  // abertura aparece, e saem dela quando se sabe que o fã está dentro da
+  // conta. Quem abre o app com a sessão já conhecida e logada não as carrega.
+  useEffect(() => {
+    if (!fontsSettled) return;
+    if (sessionReady && signedIn) releasePhotoWall();
+    else preloadPhotoWall();
+  }, [fontsSettled, sessionReady, signedIn]);
 
   useEffect(() => {
     if (ready) SplashScreen.hideAsync().catch(() => undefined);

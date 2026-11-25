@@ -1,4 +1,5 @@
 import { fireEvent, render, screen } from '@testing-library/react-native';
+import { Ticket } from 'lucide-react-native';
 
 import { Text } from '@/components/text';
 import { haptics } from '@/services/haptics';
@@ -70,6 +71,17 @@ describe('TextLink', () => {
     expect(onPress).toHaveBeenCalledTimes(1);
     expect(trigger).not.toHaveBeenCalled();
     expect(screen.queryByRole('button')).toBeNull();
+  });
+
+  it('sozinho, com ícone: ele vem antes do texto, na cor dele e a 7, e o leitor ouve só o rótulo', () => {
+    render(<TextLink label="Tenho um código de convite" icon={Ticket} onPress={jest.fn()} />);
+    const link = screen.getByRole('button', { name: 'Tenho um código de convite' });
+    const icon = link.findByType(Ticket);
+    expect(icon.props).toMatchObject({ size: 16, color: colors.accent });
+    // A caixa (em host) em volta do texto: a fileira do ícone com ele.
+    let row = screen.getByText('Tenho um código de convite').parent;
+    while (row && typeof row.type !== 'string') row = row.parent;
+    expect(row).toHaveStyle({ flexDirection: 'row', alignItems: 'center', gap: 7 });
   });
 
   it('o tom de texto vem sublinhado; o rosa, não', () => {

@@ -12,6 +12,7 @@ import type { BoundInvite, PendingInvite } from '@/domains/invites';
 import { api, ApiError, type ApiErrorKind } from '@/services/api';
 
 import {
+  authErrorMessageKey,
   buildClaimBody,
   buildVisitBody,
   changeEmailFailure,
@@ -297,5 +298,23 @@ describe('trocar a senha e o e-mail (seção 29, frente D)', () => {
     expect(changeEmailFailure(new SessionEndedError())).toBe('sessionEnded');
     expect(changePasswordFailure(new Error('x'))).toBe('unknown');
     expect(changeEmailFailure(new Error('x'))).toBe('unknown');
+  });
+});
+
+describe('a senha que a política do projeto recusa, no cadastro', () => {
+  // Com uma política de senha ligada no Firebase, o medidor do cadastro pode
+  // dizer "Boa" e a conta não nascer: a mensagem tem de apontar a senha.
+  it.each(['auth/weak-password', 'auth/password-does-not-meet-requirements'])(
+    '%s vira "Escolha uma senha mais forte", como na troca de senha',
+    (code) => {
+      expect(authErrorMessageKey(firebaseError(code), 'signUp')).toBe('auth.errors.weakPassword');
+      expect(changePasswordFailure(firebaseError(code))).toBe('weakPassword');
+    },
+  );
+
+  it('outro código do Firebase segue na mensagem genérica do cadastro', () => {
+    expect(authErrorMessageKey(firebaseError('auth/internal-error'), 'signUp')).toBe(
+      'auth.errors.signUpUnknown',
+    );
   });
 });
