@@ -5,11 +5,10 @@ import { borderWidths, colors, tints } from '@/theme';
 import { withAlpha } from '@/utils/color';
 
 import { CheckinCard, type CheckinCardProps } from '../components/checkin-card';
-import { CheckinDoneRow } from '../components/checkin-done-row';
 import type { CheckinState } from '../types';
 
-// O card do check-in de hoje e a linha do "Check-in feito", só com o estado
-// que o servidor manda: o cabeçalho, a trilha num elemento só e o botão.
+// O card do check-in, por fazer e feito, só com o estado que o servidor
+// manda: o cabeçalho, a trilha num elemento só e o botão ou o pé do "feito".
 
 /** 20 h de São Paulo de 10 de novembro de 2026: faltam 4 horas para a meia-noite. */
 const NOW = new Date('2026-11-10T23:00:00.000Z');
@@ -225,30 +224,68 @@ describe('o botão do check-in', () => {
   });
 });
 
-describe('linha do check-in feito', () => {
+describe('card com o check-in de hoje feito', () => {
   const done = state({ checkedInToday: true, streak: 5, best: 5 });
 
-  it('é um elemento só, o cabeçalho da seção, com a sequência e o valor de amanhã', () => {
-    render(<CheckinDoneRow state={done} />);
-    const row = screen.getByRole('header', {
-      name: 'Check-in feito. 5 dias seguidos. Amanhã vale 6 pontos.',
-    });
-    expect(row).toHaveProp('accessible', true);
-    expect(screen.getByText('Check-in feito')).toBeTruthy();
-    expect(screen.getByText('5 dias seguidos · Amanhã vale +6')).toBeTruthy();
-    // O valor de amanhã, em lima; o resto da linha, apagado.
-    expect(screen.getByText('+6')).toHaveStyle({ color: colors.points });
-    // Sem toque: é estado, e não ação.
+  it('o topo diz só a sequência: o prazo sai, porque o de hoje já está feito', () => {
+    renderCard({ state: done });
+    expect(screen.getByRole('header', { name: 'Check-in diário. 5 dias seguidos.' })).toBeTruthy();
+    expect(screen.getByText('5 dias seguidos')).toBeTruthy();
+    expect(screen.queryByText(/Termina em/)).toBeNull();
+  });
+
+  it('o dia de hoje entra nos feitos da trilha, e o pé do "feito" toma o lugar do botão', () => {
+    renderCard({ state: done });
+    expect(
+      screen.getByRole('progressbar', {
+        name: 'Dia 5 de 7. O check-in de hoje vale 5 pontos. O dia 7 vale 15 pontos.',
+      }),
+    ).toHaveProp('accessibilityValue', { min: 0, max: 7, now: 5 });
+    expect(within(screen.getByTestId('checkin-cell-5')).UNSAFE_getByType(Check)).toBeTruthy();
+    expect(screen.queryByText('Hoje')).toBeNull();
+    // Sem toque: o card aberto depois do check-in é estado, e não ação.
     expect(screen.queryByRole('button')).toBeNull();
+    expect(screen.queryByTestId('checkin-action')).toBeNull();
+  });
+
+  it('o pé é um elemento só, com o que rendeu hoje e o valor de amanhã, os dois em lima', () => {
+    renderCard({ state: done });
+    const footer = screen.getByTestId('checkin-done');
+    expect(footer).toHaveProp('accessible', true);
+    expect(footer).toHaveProp(
+      'accessibilityLabel',
+      'Check-in de hoje feito. Rendeu 5 pontos. Amanhã vale 6 pontos.',
+    );
+    // Texto, e não cabeçalho: o cabeçalho do card é o topo.
+    expect(footer).not.toHaveProp('accessibilityRole', 'header');
+    expect(within(footer).getByText('Check-in de hoje feito')).toBeTruthy();
+    expect(within(footer).getByText('+5 hoje · Amanhã vale +6')).toBeTruthy();
+    expect(within(footer).getByText('+5')).toHaveStyle({ color: colors.points });
+    expect(within(footer).getByText('+6')).toHaveStyle({ color: colors.points });
   });
 
   it('no último dia do ciclo, amanhã vale o primeiro de novo', () => {
-    render(<CheckinDoneRow state={state({ checkedInToday: true, streak: 7, cycleDay: 7 })} />);
-    expect(
-      screen.getByRole('header', {
-        name: 'Check-in feito. 7 dias seguidos. Amanhã vale 3 pontos.',
+    renderCard({ state: state({ checkedInToday: true, streak: 7, cycleDay: 7, todayPoints: 15 }) });
+    const footer = screen.getByTestId('checkin-done');
+    expect(footer).toHaveProp(
+      'accessibilityLabel',
+      'Check-in de hoje feito. Rendeu 15 pontos. Amanhã vale 3 pontos.',
+    );
+    expect(within(footer).getByText('+15 hoje · Amanhã vale +3')).toBeTruthy();
+  });
+
+  it('com o ciclo zerado, o pé fica só com o "Check-in de hoje feito"', () => {
+    renderCard({
+      state: state({
+        checkedInToday: true,
+        streak: 5,
+        cycle: [0, 0, 0, 0, 0, 0, 0],
+        todayPoints: 0,
       }),
-    ).toBeTruthy();
-    expect(screen.getByText('+3')).toBeTruthy();
+    });
+    const footer = screen.getByTestId('checkin-done');
+    expect(footer).toHaveProp('accessibilityLabel', 'Check-in de hoje feito.');
+    expect(within(footer).getByText('Check-in de hoje feito')).toBeTruthy();
+    expect(within(footer).queryByText(/hoje ·|Amanhã/)).toBeNull();
   });
 });

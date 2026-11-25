@@ -481,14 +481,18 @@ describe('o check-in diário do suspenso', () => {
     });
     renderRouter(appTree, { initialUrl: '/' });
 
+    // O card abre pelo ícone do calendário, na saudação.
+    fireEvent.press(
+      await screen.findByRole('button', { name: 'Check-in de hoje por fazer, vale 5 pontos' }),
+    );
     fireEvent.press(await screen.findByRole('button', { name: 'Fazer check-in, vale 5 pontos' }));
 
     await waitFor(() => expect(alertTitles()).toEqual(['Conta suspensa']));
     expect(checkin).toHaveBeenCalledTimes(1);
     expect(await screen.findByText(SHORT)).toBeTruthy();
-    // O card segue aberto, sem o "Check-in feito" e sem pontos.
+    // O card segue aberto, sem o "Check-in de hoje feito" e sem pontos.
     expect(screen.getByRole('button', { name: 'Fazer check-in, vale 5 pontos' })).toBeTruthy();
-    expect(screen.queryByText('Check-in feito')).toBeNull();
+    expect(screen.queryByText('Check-in de hoje feito')).toBeNull();
     expect(fixtureWallet.get().balance).toBe(12_480);
     // Com o Alert aberto, a frase não é anunciada por cima dele.
     const queued = jest

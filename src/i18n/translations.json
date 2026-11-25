@@ -550,10 +550,20 @@
     "error": "Não deu para fazer o check-in. Tente de novo.",
     "unavailable": "O check-in diário não está disponível agora.",
     "done": {
-      "title": "Check-in feito",
+      "today": "Check-in de hoje feito",
+      "todaySpoken": "Check-in de hoje feito.",
+      "earned": "{{points}} hoje",
+      "earnedSpoken": "Rendeu {{points}}.",
       "next": "Amanhã vale {{points}}",
       "summary": "Check-in feito. {{streak}}.",
       "nextSpoken": "Amanhã vale {{points}}."
+    },
+    "header": {
+      "pending": "Check-in de hoje por fazer",
+      "pendingWithPoints": "Check-in de hoje por fazer, vale {{points}}",
+      "done": "Check-in de hoje feito. {{streak}}.",
+      "openHint": "Abre o check-in diário",
+      "closeHint": "Fecha o check-in diário"
     },
     "profile": {
       "label": "Sequência de check-in: {{streak}}"

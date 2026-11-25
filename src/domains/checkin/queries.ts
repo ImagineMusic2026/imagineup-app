@@ -107,8 +107,8 @@ interface Attempt {
  * uma recusa ou com o dia virado (a resposta guardada de ontem não é a de
  * hoje).
  *
- * No sucesso, o estado novo entra no cache na hora (o card encolhe para o
- * "Check-in feito"), por cima da busca do estado que ainda estivesse indo,
+ * No sucesso, o estado novo entra no cache na hora (o card troca o botão pelo
+ * pé do "feito"), por cima da busca do estado que ainda estivesse indo,
  * cancelada antes: ela saiu antes do toque e traria o estado de antes. A
  * resposta de um toque perto da meia-noite de São Paulo que chega depois da
  * virada traz o dia que acabou (o prazo dela já passou): o estado de hoje
@@ -117,7 +117,9 @@ interface Attempt {
  * anúncio do check-in e de tudo o que ele rendeu; sem pontos (o segundo toque
  * do dia), só o anúncio, na fila. O saldo nunca é escrito aqui: com pontos, a
  * carteira (com o nível e o extrato) e o ranking buscam de novo; as missões e
- * as conquistas, pelo que a resposta disser (`rewardsRefresh`).
+ * as conquistas, pelo que a resposta disser (`rewardsRefresh`). Cada check-in
+ * que deu certo com a tela aberta soma 1 em `completed`, que o card usa para
+ * fechar sozinho depois do toque, e só dele.
  *
  * Na falha, o toque de erro e a frase, anunciada na fila e mostrada embaixo
  * do botão (`failure`). Depois da falha incerta (rede, prazo, 5xx), a
@@ -132,6 +134,7 @@ interface Attempt {
 export function useCheckinMutation() {
   const client = useQueryClient();
   const [award, setAward] = useState<CheckinAward | null>(null);
+  const [completed, setCompleted] = useState(0);
   const awards = useRef(0);
   const attempt = useRef<Attempt | null>(null);
   const inFlight = useRef(false);
@@ -172,6 +175,7 @@ export function useCheckinMutation() {
       }
       // Chegou com a tela fechada: só o cache. A festa fica para quem estiver à vista.
       if (!mounted.current) return;
+      if (result.checkin.checkedInToday) setCompleted((count) => count + 1);
       const done = result.checkin.checkedInToday ? checkinAnnouncement(result.checkin) : null;
       // Sem pontos não há "+N": o botão que tinha o foco sumiu, e o fã ouve o resultado.
       if (done && result.pointsAwarded <= 0) {
@@ -228,5 +232,5 @@ export function useCheckinMutation() {
     ? checkinRefusal(mutation.error).key
     : null;
 
-  return { checkin, award, isPending: mutation.isPending, failure };
+  return { checkin, award, completed, isPending: mutation.isPending, failure };
 }

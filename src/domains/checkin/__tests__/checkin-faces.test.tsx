@@ -9,14 +9,16 @@ import { haptics } from '@/services/haptics';
 import { useSessionStore } from '@/stores/session';
 import { motion } from '@/theme';
 
-import { CheckinSection } from '../components/checkin-section';
+import { CheckinHeaderButton } from '../components/checkin-header-button';
+import { CLOSE_AFTER_CHECKIN_MS, CheckinSection } from '../components/checkin-section';
+import { useCheckinPanel } from '../hooks/use-checkin-panel';
 import { checkinKeys } from '../keys';
 import type { CheckinResult, CheckinState } from '../types';
 
-// A troca das duas faces do check-in (o card aberto e a linha do "Check-in
-// feito") como o fã a vê: a altura e a opacidade de cada face, com a animação
-// e com reduzir movimento. O que o toque busca, anuncia e vibra fica no
-// `checkin-section.test.tsx`.
+// O card do check-in abrindo e fechando pelo ícone do calendário, e o pulso
+// do ícone, como o fã vê: a altura e a opacidade do card, o halo e o fade de
+// entrada, com a animação e com reduzir movimento. O que o toque busca,
+// anuncia e vibra fica no `checkin-section.test.tsx`.
 
 // Esta suíte roda com o Reanimated de verdade, e não com o mock do
 // `jest.setup.js`: o mock refaz cada valor animado a cada render e calcula o
@@ -68,17 +70,19 @@ const RESULT: CheckinResult = {
   checkin: DONE,
 };
 
-const CLOSED = 'Check-in feito. 5 dias seguidos. Amanhã vale 6 pontos.';
 const ACTION = 'Fazer check-in, vale 5 pontos';
+const DONE_FOOTER = 'Check-in de hoje feito. Rendeu 5 pontos. Amanhã vale 6 pontos.';
 
-// No aparelho, quem dá a altura de cada face é o `onLayout` do conteúdo dela;
-// o Jest não tem layout. São alturas de exemplo, diferentes uma da outra.
-const CARD_HEIGHT = 203;
-const ROW_HEIGHT = 68;
+// No aparelho, quem dá a altura do card é o `onLayout` do conteúdo dele; o
+// Jest não tem layout. São alturas de exemplo: com o botão e com o pé do "feito".
+const CARD_HEIGHT = 213;
+const DONE_HEIGHT = 196;
 /** Um quadro: o tempo de o Reanimated aplicar um valor que mudou. */
 const FRAME_MS = 17;
 /** A troca inteira, com folga. */
 const SWAP_MS = motion.duration.base + 2 * FRAME_MS;
+/** O teto do halo, o do `checkin-header-button.tsx`. */
+const HALO_OPACITY = 0.35;
 
 /** Promessa que o teste resolve quando quiser. */
 function deferred<T>() {
@@ -95,22 +99,33 @@ function wrapper({ children }: { children: ReactNode }) {
   return <QueryClientProvider client={client}>{children}</QueryClientProvider>;
 }
 
-/** O conteúdo de uma face medido, como o `onLayout` do aparelho faria. */
-function measure(content: 'checkin-card' | 'checkin-done', height: number): void {
-  fireEvent(screen.getByTestId(content, hidden), 'layout', {
+/** A Início em miniatura: o ícone do calendário e o card que ele abre, como na `HomeListHeader`. */
+function CheckinHome() {
+  const panel = useCheckinPanel();
+  return (
+    <>
+      <CheckinHeaderButton panel={panel} />
+      <CheckinSection panel={panel} />
+    </>
+  );
+}
+
+/** O conteúdo do card medido, como o `onLayout` do aparelho faria. */
+function measure(height: number): void {
+  fireEvent(measuredContent(), 'layout', {
     nativeEvent: { layout: { x: 0, y: 0, width: 360, height } },
   });
 }
 
 /**
- * O conteúdo medido de uma face: quem tem o `onLayout` da `Expandable`. Fora do
- * fluxo do recorte, ele é medido também com a face fechada; no fluxo, num
- * recorte de altura 0, a face fechada nunca abria no aparelho (seção 40, 40.8).
+ * O conteúdo medido do card: quem tem o `onLayout` da `Expandable`. Fora do
+ * fluxo do recorte, ele é medido também com o card fechado; no fluxo, num
+ * recorte de altura 0, o bloco fechado nunca abria no aparelho (seção 40, 40.8).
  */
-function measuredContent(content: 'checkin-card' | 'checkin-done') {
-  let node = screen.getByTestId(content, hidden).parent;
+function measuredContent() {
+  let node = screen.getByTestId('checkin-card', hidden).parent;
   while (node && typeof node.props.onLayout !== 'function') node = node.parent;
-  if (!node) throw new Error(`Sem o conteúdo medido de ${content}.`);
+  if (!node) throw new Error('Sem o conteúdo medido do card.');
   return node;
 }
 
@@ -121,9 +136,9 @@ function pass(ms: number): void {
   });
 }
 
-/** A face do card (o de hoje por fazer) e a da linha do "Check-in feito". */
-const cardFace = () => screen.getByTestId('checkin-open', hidden);
-const rowFace = () => screen.getByTestId('checkin-closed', hidden);
+const panel = () => screen.getByTestId('checkin-panel', hidden);
+const halo = () => screen.getByTestId('checkin-header-halo', hidden);
+const icon = () => screen.getByTestId('checkin-header-button');
 
 /** A resposta chega e a tela troca de estado, sem o tempo da animação passar. */
 async function settle(answer: () => void = () => undefined): Promise<void> {
@@ -160,130 +175,121 @@ afterEach(() => {
   jest.restoreAllMocks();
 });
 
-/** O card na tela, com as duas faces medidas, e o toque sem resposta ainda. */
-async function renderAndTap(): Promise<() => void> {
-  get.mockResolvedValue({ data: PENDING });
-  const answer = deferred<{ data: CheckinResult }>();
-  post.mockReturnValue(answer.promise);
-  render(<CheckinSection />, { wrapper });
-  const button = await screen.findByRole('button', { name: ACTION });
-  measure('checkin-card', CARD_HEIGHT);
-  measure('checkin-done', ROW_HEIGHT);
+/** O ícone na tela, com o card aberto pelo toque e medido. */
+async function renderOpen(state: CheckinState = PENDING): Promise<void> {
+  get.mockResolvedValue({ data: state });
+  render(<CheckinHome />, { wrapper });
+  fireEvent.press(await screen.findByTestId('checkin-header-button'));
+  measure(state.checkedInToday ? DONE_HEIGHT : CARD_HEIGHT);
   pass(SWAP_MS);
-  // Antes do toque: o card aberto na medida dele, e a linha fechada.
-  expect(cardFace()).toHaveAnimatedStyle({ height: CARD_HEIGHT, opacity: 1 });
-  expect(rowFace()).toHaveAnimatedStyle({ height: 0, opacity: 0 });
-  fireEvent.press(button);
-  return () => answer.resolve({ data: RESULT });
 }
 
-describe('as faces do check-in: a troca depois do toque', () => {
-  it('o card fecha até a altura 0, apagado, e a linha do "Check-in feito" abre até a medida dela, as duas juntas e sem troca seca', async () => {
-    const answer = await renderAndTap();
-    await settle(answer);
-    expect(screen.getByRole('header', { name: CLOSED })).toBeTruthy();
+describe('o card do check-in: abrir e fechar pelo ícone', () => {
+  it('nasce fechado, com altura 0 e apagado, e abre no toque do ícone até a medida dele, sem troca seca', async () => {
+    get.mockResolvedValue({ data: PENDING });
+    render(<CheckinHome />, { wrapper });
+    await screen.findByTestId('checkin-header-button');
+    pass(SWAP_MS);
+    // Fechado, o card nem monta: a Início não pula quando o estado chega.
+    expect(panel()).toHaveAnimatedStyle({ height: 0, opacity: 0 });
+    expect(screen.queryByTestId('checkin-card', hidden)).toBeNull();
 
-    // No começo do caminho, nenhuma das duas chegou: o card ainda aparece, e a linha já aparece.
+    fireEvent.press(icon());
+    measure(CARD_HEIGHT);
+    // No começo do caminho, o card já aparece e ainda não chegou.
     pass(2 * FRAME_MS);
-    const card = getAnimatedStyle(cardFace());
-    const row = getAnimatedStyle(rowFace());
-    expect(card.opacity).toBeGreaterThan(0);
-    expect(card.opacity).toBeLessThan(1);
-    expect(card.height).toBeGreaterThan(0);
-    expect(card.height).toBeLessThan(CARD_HEIGHT);
-    expect(row.opacity).toBeGreaterThan(0);
-    expect(row.opacity).toBeLessThan(1);
-    expect(row.height).toBeGreaterThan(0);
-    expect(row.height).toBeLessThan(ROW_HEIGHT);
+    const opening = getAnimatedStyle(panel());
+    expect(opening.opacity).toBeGreaterThan(0);
+    expect(opening.opacity).toBeLessThan(1);
+    expect(opening.height).toBeGreaterThan(0);
+    expect(opening.height).toBeLessThan(CARD_HEIGHT);
     // Um valor só anda as duas coisas: a altura acompanha a opacidade.
-    expect(card.height).toBeCloseTo(Number(card.opacity) * CARD_HEIGHT);
-    expect(row.height).toBeCloseTo(Number(row.opacity) * ROW_HEIGHT);
+    expect(opening.height).toBeCloseTo(Number(opening.opacity) * CARD_HEIGHT);
 
     pass(SWAP_MS);
-    expect(cardFace()).toHaveAnimatedStyle({ height: 0, opacity: 0 });
-    expect(rowFace()).toHaveAnimatedStyle({ height: ROW_HEIGHT, opacity: 1 });
-    // O card fechado sai do toque e do leitor; a linha entra.
-    expect(cardFace()).toHaveProp('pointerEvents', 'none');
-    expect(cardFace()).toHaveProp('accessibilityElementsHidden', true);
-    expect(rowFace()).toHaveProp('pointerEvents', 'auto');
-    expect(rowFace()).toHaveProp('accessibilityElementsHidden', false);
+    expect(panel()).toHaveAnimatedStyle({ height: CARD_HEIGHT, opacity: 1 });
+    expect(panel()).toHaveProp('pointerEvents', 'auto');
+    expect(panel()).toHaveProp('accessibilityElementsHidden', false);
+    expect(screen.getByRole('button', { name: ACTION })).toBeEnabled();
   });
 
-  it('com reduzir movimento, a troca é na hora, e a seção nasce inteira, sem o fade', async () => {
-    mockReducedMotion = true;
-    get.mockResolvedValue({ data: PENDING });
-    const answer = deferred<{ data: CheckinResult }>();
-    post.mockReturnValue(answer.promise);
-    render(<CheckinSection />, { wrapper });
-    const button = await screen.findByRole('button', { name: ACTION });
-    // Sem fade de entrada: a seção já nasce com a opacidade inteira.
-    expect(screen.getByTestId('checkin-section')).toHaveAnimatedStyle({ opacity: 1 });
-    measure('checkin-card', CARD_HEIGHT);
-    measure('checkin-done', ROW_HEIGHT);
-    pass(FRAME_MS);
-    expect(cardFace()).toHaveAnimatedStyle({ height: CARD_HEIGHT, opacity: 1 });
-    expect(rowFace()).toHaveAnimatedStyle({ height: 0, opacity: 0 });
-
-    fireEvent.press(button);
-    await settle(() => answer.resolve({ data: RESULT }));
-    expect(screen.getByRole('header', { name: CLOSED })).toBeTruthy();
-
-    // Um quadro depois, as duas faces já estão no fim: nada andou no caminho.
-    pass(FRAME_MS);
-    expect(cardFace()).toHaveAnimatedStyle({ height: 0, opacity: 0 });
-    expect(rowFace()).toHaveAnimatedStyle({ height: ROW_HEIGHT, opacity: 1 });
-  });
-
-  it('sem reduzir movimento, a seção entra em fade por valor animado, do 0 ao 1', async () => {
-    get.mockResolvedValue({ data: PENDING });
-    render(<CheckinSection />, { wrapper });
-    await settle();
-    // Um quadro depois de a resposta chegar, a seção ainda está no caminho.
-    pass(FRAME_MS);
-    const entering = getAnimatedStyle(screen.getByTestId('checkin-section', hidden));
-    expect(entering.opacity).toBeLessThan(1);
+  it('o segundo toque no ícone fecha o card, animado, e ele sai do toque e do leitor', async () => {
+    await renderOpen();
+    fireEvent.press(icon());
+    pass(2 * FRAME_MS);
+    const closing = getAnimatedStyle(panel());
+    expect(closing.height).toBeGreaterThan(0);
+    expect(closing.height).toBeLessThan(CARD_HEIGHT);
 
     pass(SWAP_MS);
-    expect(screen.getByTestId('checkin-section')).toHaveAnimatedStyle({ opacity: 1 });
+    expect(panel()).toHaveAnimatedStyle({ height: 0, opacity: 0 });
+    expect(panel()).toHaveProp('pointerEvents', 'none');
+    expect(panel()).toHaveProp('accessibilityElementsHidden', true);
+    expect(panel()).toHaveProp('importantForAccessibility', 'no-hide-descendants');
+    // O card fica montado, para abrir de novo animado.
+    expect(screen.getByTestId('checkin-card', hidden)).toBeTruthy();
+  });
+
+  it('o conteúdo do card fica fora do fluxo do recorte, e por isso o card fechado também é medido', async () => {
+    await renderOpen();
+    expect(StyleSheet.flatten(measuredContent().props.style)).toMatchObject({
+      position: 'absolute',
+      top: 0,
+      left: 0,
+      right: 0,
+    });
   });
 });
 
-describe('as faces do check-in: sem o toque', () => {
-  it('o conteúdo das duas faces fica fora do fluxo do recorte, e por isso a face fechada também é medida', async () => {
-    get.mockResolvedValue({ data: PENDING });
-    render(<CheckinSection />, { wrapper });
-    await screen.findByRole('button', { name: ACTION });
-    for (const content of ['checkin-card', 'checkin-done'] as const) {
-      expect(StyleSheet.flatten(measuredContent(content).props.style)).toMatchObject({
-        position: 'absolute',
-        top: 0,
-        left: 0,
-        right: 0,
-      });
-    }
-  });
+describe('o card do check-in: depois do toque', () => {
+  it('fica aberto com o pé do "feito" o tempo do "+N" e fecha sozinho, animado', async () => {
+    const answer = deferred<{ data: CheckinResult }>();
+    post.mockReturnValue(answer.promise);
+    await renderOpen();
+    fireEvent.press(screen.getByRole('button', { name: ACTION }));
+    await settle(() => answer.resolve({ data: RESULT }));
+    expect(screen.getByLabelText(DONE_FOOTER)).toBeTruthy();
+    measure(DONE_HEIGHT);
 
-  it('com o check-in de hoje já feito, só a linha aparece, na medida dela, e o card nem monta', async () => {
-    get.mockResolvedValue({ data: DONE });
-    render(<CheckinSection />, { wrapper });
-    expect(await screen.findByRole('header', { name: CLOSED })).toBeTruthy();
-    // Antes da medida, a face aberta ainda não tem altura; com ela, abre de uma vez.
-    expect(rowFace()).toHaveAnimatedStyle({ height: 0, opacity: 1 });
-    measure('checkin-done', ROW_HEIGHT);
-    pass(FRAME_MS);
-    expect(rowFace()).toHaveAnimatedStyle({ height: ROW_HEIGHT, opacity: 1 });
-    expect(cardFace()).toHaveAnimatedStyle({ height: 0, opacity: 0 });
-    expect(screen.queryByTestId('checkin-card', hidden)).toBeNull();
-  });
+    // Quase no fim do tempo, o card segue aberto, na medida nova.
+    pass(CLOSE_AFTER_CHECKIN_MS - FRAME_MS);
+    expect(panel()).toHaveAnimatedStyle({ height: DONE_HEIGHT, opacity: 1 });
 
-  it('do feito ao por fazer com a seção montada (o dia do servidor virou), o card abre na medida dele, com o botão de volta e ligado, e a linha fecha', async () => {
-    get.mockResolvedValue({ data: DONE });
-    render(<CheckinSection />, { wrapper });
-    expect(await screen.findByRole('header', { name: CLOSED })).toBeTruthy();
-    measure('checkin-done', ROW_HEIGHT);
+    // O tempo acabou: o card fecha a partir do quadro seguinte.
+    pass(2 * FRAME_MS);
+    pass(2 * FRAME_MS);
+    const closing = getAnimatedStyle(panel());
+    expect(closing.height).toBeLessThan(DONE_HEIGHT);
+    expect(closing.height).toBeGreaterThan(0);
+
     pass(SWAP_MS);
+    expect(panel()).toHaveAnimatedStyle({ height: 0, opacity: 0 });
+    expect(icon()).toHaveProp('accessibilityState', expect.objectContaining({ expanded: false }));
+  });
 
-    // O estado de hoje chega com a seção na tela: outro prazo, o check-in por fazer.
+  it('se o fã fecha o card antes do tempo, ele não abre nem fecha de novo sozinho', async () => {
+    const answer = deferred<{ data: CheckinResult }>();
+    post.mockReturnValue(answer.promise);
+    await renderOpen();
+    fireEvent.press(screen.getByRole('button', { name: ACTION }));
+    await settle(() => answer.resolve({ data: RESULT }));
+
+    fireEvent.press(icon());
+    pass(CLOSE_AFTER_CHECKIN_MS + SWAP_MS);
+    expect(panel()).toHaveAnimatedStyle({ height: 0, opacity: 0 });
+
+    // Aberto de novo, fica: o fechar sozinho é só depois do toque do check-in.
+    fireEvent.press(icon());
+    pass(CLOSE_AFTER_CHECKIN_MS + SWAP_MS);
+    expect(panel()).toHaveProp('pointerEvents', 'auto');
+    expect(screen.getByLabelText(DONE_FOOTER)).toBeTruthy();
+  });
+
+  it('do feito ao por fazer com o card aberto (o dia do servidor virou), o botão volta, ligado, e o card não fecha sozinho', async () => {
+    await renderOpen(DONE);
+    expect(screen.getByLabelText(DONE_FOOTER)).toBeTruthy();
+
+    // O estado de hoje chega com o card na tela: outro prazo, o check-in por fazer.
     await settle(() => {
       client.setQueryData<CheckinState>(checkinKeys.state(), {
         ...PENDING,
@@ -294,19 +300,85 @@ describe('as faces do check-in: sem o toque', () => {
         resetsAt: '2026-11-12T03:00:00.000Z',
       });
     });
-    const button = screen.getByRole('button', { name: 'Fazer check-in, vale 6 pontos' });
-    expect(button).toBeEnabled();
-    // O card montou agora, dentro da face fechada: a medida chega, e ele abre.
-    measure('checkin-card', CARD_HEIGHT);
-    pass(SWAP_MS);
-    expect(cardFace()).toHaveAnimatedStyle({ height: CARD_HEIGHT, opacity: 1 });
-    expect(cardFace()).toHaveProp('pointerEvents', 'auto');
-    expect(cardFace()).toHaveProp('accessibilityElementsHidden', false);
-    expect(rowFace()).toHaveAnimatedStyle({ height: 0, opacity: 0 });
-    expect(rowFace()).toHaveProp('pointerEvents', 'none');
-    expect(screen.queryByRole('header', { name: CLOSED })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Fazer check-in, vale 6 pontos' })).toBeEnabled();
     expect(
       screen.getByRole('header', { name: 'Check-in diário. 5 dias seguidos. Termina em 1 dia.' }),
     ).toBeTruthy();
+    pass(CLOSE_AFTER_CHECKIN_MS + SWAP_MS);
+    expect(panel()).toHaveProp('pointerEvents', 'auto');
+    expect(panel()).toHaveAnimatedStyle({ opacity: 1 });
+  });
+});
+
+describe('o ícone do check-in: o fade e o pulso', () => {
+  it('sem reduzir movimento, o ícone entra em fade por valor animado, do 0 ao 1', async () => {
+    get.mockResolvedValue({ data: PENDING });
+    render(<CheckinHome />, { wrapper });
+    await settle();
+    pass(FRAME_MS);
+    expect(getAnimatedStyle(screen.getByTestId('checkin-header', hidden)).opacity).toBeLessThan(1);
+
+    pass(SWAP_MS);
+    expect(screen.getByTestId('checkin-header')).toHaveAnimatedStyle({ opacity: 1 });
+  });
+
+  it('com o de hoje por fazer e o card fechado, o halo cresce e apaga em laço; aberto, para', async () => {
+    get.mockResolvedValue({ data: PENDING });
+    render(<CheckinHome />, { wrapper });
+    await screen.findByTestId('checkin-header-button');
+    pass(400);
+    const pulse = getAnimatedStyle(halo());
+    expect(pulse.opacity).toBeGreaterThan(0);
+    expect(pulse.opacity).toBeLessThan(HALO_OPACITY);
+    // E de novo, no ciclo seguinte: é um laço, e não um pulso só.
+    pass(1600);
+    const again = getAnimatedStyle(halo());
+    expect(again.opacity).toBeGreaterThan(0);
+    expect(again.opacity).toBeLessThan(HALO_OPACITY);
+
+    fireEvent.press(icon());
+    pass(FRAME_MS);
+    expect(halo()).toHaveAnimatedStyle({ opacity: 0 });
+  });
+
+  it('com a Início fora de vista (outra aba, uma tela por cima), o halo não pulsa, e a bolinha fica', async () => {
+    get.mockResolvedValue({ data: PENDING });
+    function AwayHome() {
+      const away = useCheckinPanel();
+      return <CheckinHeaderButton panel={away} active={false} />;
+    }
+    render(<AwayHome />, { wrapper });
+    await screen.findByTestId('checkin-header-button');
+    pass(400);
+    expect(halo()).toHaveAnimatedStyle({ opacity: 0 });
+    expect(screen.getByTestId('checkin-header-dot')).toBeTruthy();
+  });
+
+  it('com o de hoje feito, nem halo nem bolinha', async () => {
+    get.mockResolvedValue({ data: DONE });
+    render(<CheckinHome />, { wrapper });
+    await screen.findByTestId('checkin-header-button');
+    pass(400);
+    expect(halo()).toHaveAnimatedStyle({ opacity: 0 });
+    expect(screen.queryByTestId('checkin-header-dot')).toBeNull();
+  });
+
+  it('com reduzir movimento, o ícone nasce inteiro, sem o fade, o halo não pulsa, a bolinha fica e o card abre e fecha na hora', async () => {
+    mockReducedMotion = true;
+    get.mockResolvedValue({ data: PENDING });
+    render(<CheckinHome />, { wrapper });
+    await screen.findByTestId('checkin-header-button');
+    expect(screen.getByTestId('checkin-header')).toHaveAnimatedStyle({ opacity: 1 });
+    pass(400);
+    expect(halo()).toHaveAnimatedStyle({ opacity: 0 });
+    expect(screen.getByTestId('checkin-header-dot')).toBeTruthy();
+
+    fireEvent.press(icon());
+    measure(CARD_HEIGHT);
+    pass(FRAME_MS);
+    expect(panel()).toHaveAnimatedStyle({ height: CARD_HEIGHT, opacity: 1 });
+    fireEvent.press(icon());
+    pass(FRAME_MS);
+    expect(panel()).toHaveAnimatedStyle({ height: 0, opacity: 0 });
   });
 });

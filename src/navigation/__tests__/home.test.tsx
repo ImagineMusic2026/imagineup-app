@@ -406,12 +406,15 @@ describe('home (1b) quando algo não carrega', () => {
   });
 });
 
-// O check-in diário (seção 40), entre o aviso da conta suspensa e a missão do
-// dia: só com a chave do servidor ligada, e em silêncio quando não aparece.
+// O check-in diário (seção 40): o ícone do calendário na saudação, ao lado do
+// avatar, e o card que ele abre, entre o aviso da conta suspensa e a missão do
+// dia. Só com a chave do servidor ligada, e em silêncio quando não aparece.
 describe('home (1b): o check-in diário', () => {
   const HOUR_MS = 60 * 60 * 1000;
+  const PENDING_ICON = 'Check-in de hoje por fazer, vale 5 pontos';
+  const DONE_ICON = 'Check-in de hoje feito. 5 dias seguidos.';
   const OPEN = 'Check-in diário. 4 dias seguidos. Termina em 4 horas.';
-  const CLOSED = 'Check-in feito. 5 dias seguidos. Amanhã vale 6 pontos.';
+  const DONE_FOOTER = 'Check-in de hoje feito. Rendeu 5 pontos. Amanhã vale 6 pontos.';
   const ACTION = 'Fazer check-in, vale 5 pontos';
   const hidden = { includeHiddenElements: true } as const;
 
@@ -445,42 +448,54 @@ describe('home (1b): o check-in diário', () => {
       expect(client.getQueryData(checkinKeys.state())).toMatchObject({ enabled: false }),
     );
     expect(screen.queryByTestId('checkin-section', hidden)).toBeNull();
+    expect(screen.queryByTestId('checkin-header-button', hidden)).toBeNull();
     expect(screen.queryByText(/check-in/i, hidden)).toBeNull();
     expect(announcements()).toEqual([]);
     expect(haptics.trigger).not.toHaveBeenCalled();
   });
 
-  it('nas fixtures, com o exemplo ligado (uma demonstração), o card vem com a sequência do seed', async () => {
+  it('nas fixtures, com o exemplo ligado (uma demonstração), o ícone abre o card com a sequência do seed', async () => {
     checkinFixture.setEnabled(true);
     renderRouter(appTree, { initialUrl: '/' });
 
+    fireEvent.press(await screen.findByRole('button', { name: PENDING_ICON }));
     expect(
       await screen.findByRole('header', { name: /^Check-in diário\. 4 dias seguidos\./ }),
     ).toBeTruthy();
     expect(screen.getByRole('button', { name: ACTION })).toBeTruthy();
-    expect(haptics.trigger).not.toHaveBeenCalled();
+    expect(jest.mocked(haptics.trigger).mock.calls).toEqual([['selection']]);
   });
 
-  it('com a chave ligada, o card vem antes da missão do dia, sem anúncio e sem toque', async () => {
+  it('com a chave ligada, o ícone vem na saudação, antes do avatar, e o card, fechado, abre no toque entre a saudação e a missão do dia', async () => {
     mockApi({ '/me/checkin': async () => pending() });
     renderRouter(appTree, { initialUrl: '/' });
 
-    expect(await screen.findByRole('header', { name: OPEN })).toBeTruthy();
+    const icon = await screen.findByRole('button', { name: PENDING_ICON });
+    expect(screen.getByTestId('checkin-header-dot')).toBeTruthy();
+    // Na fileira da saudação, o ícone vem logo antes do avatar.
+    const buttons = screen.getAllByRole('button').map((node) => node.props.accessibilityLabel);
+    expect(buttons.indexOf(t('home.openProfile'))).toBe(buttons.indexOf(PENDING_ICON) + 1);
+    // Fechado, o card não está entre os cabeçalhos: a missão do dia vem logo depois da saudação.
     await screen.findByRole('header', { name: /^Missão de hoje/ });
+    expect(headers().findIndex((label) => /^Missão de hoje/.test(label))).toBe(1);
+    expect(screen.queryByRole('header', { name: OPEN })).toBeNull();
+    await screen.findByRole('button', { name: 'Netto Brito, você é o 12º' });
+    expect(announcements()).toEqual([]);
+    expect(haptics.trigger).not.toHaveBeenCalled();
+
+    fireEvent.press(icon);
+    expect(await screen.findByRole('header', { name: OPEN })).toBeTruthy();
     const order = headers();
-    const mission = order.findIndex((label) => /^Missão de hoje/.test(label));
     // Depois da saudação e antes da missão do dia.
     expect(order.indexOf(OPEN)).toBe(1);
-    expect(mission).toBe(2);
+    expect(order.findIndex((label) => /^Missão de hoje/.test(label))).toBe(2);
     expect(screen.getByRole('button', { name: ACTION })).toBeEnabled();
     expect(
       screen.getByRole('progressbar', {
         name: 'Dia 5 de 7. O check-in de hoje vale 5 pontos. O dia 7 vale 15 pontos.',
       }),
     ).toBeTruthy();
-    await screen.findByRole('button', { name: 'Netto Brito, você é o 12º' });
     expect(announcements()).toEqual([]);
-    expect(haptics.trigger).not.toHaveBeenCalled();
   });
 
   it('com a chave desligada, nada do check-in aparece, nada é anunciado e nada vibra', async () => {
@@ -502,6 +517,7 @@ describe('home (1b): o check-in diário', () => {
     await screen.findByRole('button', { name: 'Netto Brito, você é o 12º' });
     await waitFor(() => expect(callsTo('/me/checkin')).toBe(1));
     expect(screen.queryByTestId('checkin-section', hidden)).toBeNull();
+    expect(screen.queryByTestId('checkin-header-button', hidden)).toBeNull();
     expect(screen.queryByText(/check-in/i, hidden)).toBeNull();
     expect(announcements()).toEqual([]);
     expect(haptics.trigger).not.toHaveBeenCalled();
@@ -518,6 +534,7 @@ describe('home (1b): o check-in diário', () => {
     await screen.findByText('Saiu o clipe de “Sonho de Amor”, gravado no São João de Irará.');
     await waitFor(() => expect(callsTo('/me/checkin')).toBe(1));
     expect(screen.queryByTestId('checkin-section', hidden)).toBeNull();
+    expect(screen.queryByTestId('checkin-header-button', hidden)).toBeNull();
     expect(announcements()).toEqual([]);
 
     await act(async () => {
@@ -561,11 +578,11 @@ describe('home (1b): o check-in diário', () => {
       await screen.UNSAFE_getByType(FlashList).props.refreshControl.props.onRefresh();
     });
 
-    expect(await screen.findByRole('header', { name: OPEN })).toBeTruthy();
+    expect(await screen.findByRole('button', { name: PENDING_ICON })).toBeTruthy();
     expect(callsTo('/me/checkin')).toBe(2);
   });
 
-  it('o toque em "Fazer check-in" troca o card pela linha do "Check-in feito" e sobe o "+N", sem mexer na missão do dia', async () => {
+  it('o toque em "Fazer check-in" marca o dia e sobe o "+N", e o card fecha sozinho, sem mexer na missão do dia', async () => {
     const state = pending();
     const result: CheckinResult = {
       pointsAwarded: 5,
@@ -579,11 +596,14 @@ describe('home (1b): o check-in diário', () => {
     post.mockResolvedValue({ data: result });
     renderRouter(appTree, { initialUrl: '/' });
 
+    fireEvent.press(await screen.findByRole('button', { name: PENDING_ICON }));
     fireEvent.press(await screen.findByRole('button', { name: ACTION }));
 
-    expect(await screen.findByRole('header', { name: CLOSED })).toBeTruthy();
+    expect(await screen.findByLabelText(DONE_FOOTER)).toBeTruthy();
     expect(screen.queryByRole('button', { name: ACTION })).toBeNull();
     expect(screen.queryByRole('header', { name: OPEN })).toBeNull();
+    expect(screen.getByRole('button', { name: DONE_ICON })).toBeTruthy();
+    expect(screen.queryByTestId('checkin-header-dot')).toBeNull();
     expect(post).toHaveBeenCalledTimes(1);
     expect(post).toHaveBeenCalledWith('/me/checkin', null, {
       headers: { 'Idempotency-Key': expect.stringMatching(/^checkin-/) },
@@ -592,11 +612,16 @@ describe('home (1b): o check-in diário', () => {
     await waitFor(() =>
       expect(announcements()).toEqual(['Check-in feito. 5 dias seguidos. Mais 5 pontos.']),
     );
-    expect(jest.mocked(haptics.trigger).mock.calls).toEqual([['confirm'], ['pointsEarned']]);
+    expect(jest.mocked(haptics.trigger).mock.calls).toEqual([
+      ['selection'],
+      ['confirm'],
+      ['pointsEarned'],
+    ]);
     // O estado veio da resposta do toque, e o check-in não anda missão.
     expect(callsTo('/me/checkin')).toBe(1);
     expect(callsTo('/missions/daily')).toBe(1);
-    // A missão do dia segue embaixo, como estava.
+    // A missão do dia segue embaixo, como estava. O card fechar sozinho, com o
+    // relógio falso, fica no `checkin-section.test.tsx`.
     expect(screen.getByText('Leve 5 pessoas para o clipe novo do Netto')).toBeTruthy();
   });
 });

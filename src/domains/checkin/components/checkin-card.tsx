@@ -3,9 +3,10 @@ import { StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 
 import { Button } from '@/components/button';
 import { Icon } from '@/components/icon';
+import { IconTile } from '@/components/icon-tile';
 import { Text } from '@/components/text';
 import { t, type TranslationKey } from '@/i18n';
-import { borderWidths, colors, layout, radii, spacing, tints } from '@/theme';
+import { borderWidths, colors, fonts, layout, radii, spacing, tints } from '@/theme';
 import { withAlpha } from '@/utils/color';
 
 import {
@@ -14,10 +15,13 @@ import {
   checkinCells,
   checkinSummary,
   doneCycleDays,
+  doneFooterLabel,
+  doneMeta,
   endsInText,
   streakText,
   trackLabel,
   type CheckinCell,
+  type PointsText,
 } from '../describe-checkin';
 import type { CheckinState } from '../types';
 
@@ -96,6 +100,50 @@ function CheckinTrack({ state }: { state: CheckinState }) {
   );
 }
 
+/** Um valor em lima no meio do texto: "+5 hoje", "Amanhã vale +6". */
+function PointsSpan({ text }: { text: PointsText }) {
+  return (
+    <>
+      {text.before}
+      <Text variant="caption" style={styles.points}>
+        {text.points}
+      </Text>
+      {text.after}
+    </>
+  );
+}
+
+/**
+ * O pé do card com o check-in de hoje feito, no lugar do botão: o check no
+ * quadro lima, "Check-in de hoje feito" e, embaixo, quanto rendeu e quanto
+ * vale o de amanhã, com os valores em lima. Um elemento só para o leitor:
+ * "Check-in de hoje feito. Rendeu 5 pontos. Amanhã vale 6 pontos."
+ */
+function CheckinDoneFooter({ state }: { state: CheckinState }) {
+  const { earned, next } = doneMeta(state);
+
+  return (
+    <View
+      accessible
+      accessibilityLabel={doneFooterLabel(state)}
+      testID="checkin-done"
+      style={styles.done}
+    >
+      <IconTile icon={Check} tone="points" />
+      <View style={styles.doneTexts}>
+        <Text variant="label">{t('checkin.done.today')}</Text>
+        {earned || next ? (
+          <Text variant="caption" color={colors.textMuted} style={styles.doneMeta}>
+            {earned ? <PointsSpan text={earned} /> : null}
+            {earned && next ? ' · ' : null}
+            {next ? <PointsSpan text={next} /> : null}
+          </Text>
+        ) : null}
+      </View>
+    </View>
+  );
+}
+
 export interface CheckinCardProps {
   state: CheckinState;
   /** Relógio do "Termina em 4 h". */
@@ -111,18 +159,19 @@ export interface CheckinCardProps {
 }
 
 /**
- * Card do check-in de hoje, ainda por fazer. Escuro, na regra de cor do app:
- * rosa para a ação (o botão), lima só para os pontos e para os dias feitos. O
- * card lima da missão do dia, logo embaixo, segue o único bloco lima da
- * Início. Não é pressável: tem o botão dentro.
+ * Card do check-in de hoje, que o ícone do calendário abre. Escuro, na regra
+ * de cor do app: rosa para a ação (o botão), lima só para os pontos e para os
+ * dias feitos. O card lima da missão do dia, logo embaixo, segue o único bloco
+ * lima da Início. Não é pressável: tem o botão dentro.
  *
  * O selo com o prazo e, embaixo, a chama com a sequência são lidos juntos e
- * abrem a seção como cabeçalho ("Check-in diário. 4 dias seguidos. Termina em
+ * abrem o card como cabeçalho ("Check-in diário. 4 dias seguidos. Termina em
  * 4 horas."), como o topo do card da missão do dia; depois vêm a trilha, um
  * elemento só, e o botão "Fazer check-in +5", com o valor por extenso no
  * rótulo. Sem internet, o botão fica desligado e diz o motivo na dica e
  * embaixo dele; a falha do toque aparece no mesmo lugar (o anúncio dela é do
- * hook).
+ * hook). Com o de hoje feito, o prazo sai, o dia entra na trilha como feito e
+ * o pé do "Check-in de hoje feito" toma o lugar do botão.
  */
 export function CheckinCard({
   state,
@@ -133,7 +182,8 @@ export function CheckinCard({
   onCheckin,
   style,
 }: CheckinCardProps) {
-  const endsIn = endsInText(state, now);
+  const done = state.checkedInToday;
+  const endsIn = done ? null : endsInText(state, now);
   // Sem rede, o motivo do botão desligado vem antes da falha de antes.
   const message = !online ? t('checkin.offline') : failure ? t(failure) : null;
 
@@ -158,32 +208,38 @@ export function CheckinCard({
         </View>
       </View>
       <CheckinTrack state={state} />
-      <Button
-        label={actionText(state)}
-        variant="primary"
-        size="md"
-        // Dentro do card com borda, o brilho rosa do botão sairia cortado no recorte.
-        glow={false}
-        loading={pending}
-        disabled={!online}
-        haptic="confirm"
-        onPress={onCheckin}
-        accessibilityLabel={actionLabel(state)}
-        // Desligado sem rede: o leitor ouve o motivo no próprio botão, antes do aviso embaixo.
-        accessibilityHint={t(online ? 'checkin.actionHint' : 'checkin.offline')}
-        testID="checkin-action"
-        style={styles.action}
-      />
-      {message ? (
-        <Text
-          variant="caption"
-          color={online && failure ? colors.danger : colors.textMuted}
-          testID="checkin-message"
-          style={styles.message}
-        >
-          {message}
-        </Text>
-      ) : null}
+      {done ? (
+        <CheckinDoneFooter state={state} />
+      ) : (
+        <>
+          <Button
+            label={actionText(state)}
+            variant="primary"
+            size="md"
+            // Dentro do card com borda, o brilho rosa do botão sairia cortado no recorte.
+            glow={false}
+            loading={pending}
+            disabled={!online}
+            haptic="confirm"
+            onPress={onCheckin}
+            accessibilityLabel={actionLabel(state)}
+            // Desligado sem rede: o leitor ouve o motivo no próprio botão, antes do aviso embaixo.
+            accessibilityHint={t(online ? 'checkin.actionHint' : 'checkin.offline')}
+            testID="checkin-action"
+            style={styles.action}
+          />
+          {message ? (
+            <Text
+              variant="caption"
+              color={online && failure ? colors.danger : colors.textMuted}
+              testID="checkin-message"
+              style={styles.message}
+            >
+              {message}
+            </Text>
+          ) : null}
+        </>
+      )}
     </View>
   );
 }
@@ -256,5 +312,23 @@ const styles = StyleSheet.create({
   },
   message: {
     marginTop: spacing.sm,
+  },
+  // O pé do "feito" na altura do botão que ele troca: o quadro e os dois textos.
+  done: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.itemGap,
+    marginTop: spacing.cardPadding,
+  },
+  doneTexts: {
+    flex: 1,
+    minWidth: 0,
+  },
+  doneMeta: {
+    marginTop: spacing.metaGap,
+  },
+  points: {
+    fontFamily: fonts.manropeBold,
+    color: colors.points,
   },
 });

@@ -100,11 +100,12 @@ export function endsInText(state: CheckinState, now: Date): string | null {
 }
 
 /**
- * O topo do card num rótulo só, o cabeçalho da seção: "Check-in diário. 4
- * dias seguidos. Termina em 4 horas."
+ * O topo do card num rótulo só, o cabeçalho dele: "Check-in diário. 4 dias
+ * seguidos. Termina em 4 horas." Com o de hoje feito, sem o prazo.
  */
 export function checkinSummary(state: CheckinState, now: Date): string {
   const summary = t('checkin.summary', { streak: streakText(state.streak) });
+  if (state.checkedInToday) return summary;
   const time = formatTimeLeftSpoken(state.resetsAt, now);
   return time ? `${summary} ${t('checkin.endsInSpoken', { time })}` : summary;
 }
@@ -193,19 +194,47 @@ export function nextCheckinPoints(state: CheckinState): number {
   return state.cycle[state.cycleDay % total] ?? 0;
 }
 
+/** Um texto com o valor no meio, em pedaços, para o valor sair em lima. */
+export interface PointsText {
+  before: string;
+  /** "+6". */
+  points: string;
+  after: string;
+}
+
+function pointsText(key: 'checkin.done.earned' | 'checkin.done.next', points: number): PointsText {
+  const [before = '', after = ''] = t(key).split('{{points}}');
+  return { before, points: formatPointsDelta(points), after };
+}
+
 /**
- * A linha de baixo do "Check-in feito" em três pedaços, para o valor de
- * amanhã sair em lima: "5 dias seguidos · Amanhã vale ", "+6" e o resto. Sem
- * valor para amanhã (o ciclo com 0), só a sequência.
+ * A linha de baixo do "Check-in de hoje feito", no pé do card: quanto o de
+ * hoje rendeu ("+5 hoje") e quanto vale o de amanhã ("Amanhã vale +6"), cada
+ * um só quando vale mais que 0 (o ciclo com 0 num dia).
  */
-export function doneMeta(
-  state: CheckinState,
-): { before: string; points: string; after: string } | { text: string } {
-  const streak = streakText(state.streak);
+export function doneMeta(state: CheckinState): {
+  earned: PointsText | null;
+  next: PointsText | null;
+} {
   const next = nextCheckinPoints(state);
-  if (next <= 0) return { text: streak };
-  const [before = '', after = ''] = t('checkin.done.next').split('{{points}}');
-  return { before: `${streak} · ${before}`, points: formatPointsDelta(next), after };
+  return {
+    earned: state.todayPoints > 0 ? pointsText('checkin.done.earned', state.todayPoints) : null,
+    next: next > 0 ? pointsText('checkin.done.next', next) : null,
+  };
+}
+
+/**
+ * O pé do card com o de hoje feito num rótulo só: "Check-in de hoje feito.
+ * Rendeu 5 pontos. Amanhã vale 6 pontos."
+ */
+export function doneFooterLabel(state: CheckinState): string {
+  const parts = [t('checkin.done.todaySpoken')];
+  if (state.todayPoints > 0) {
+    parts.push(t('checkin.done.earnedSpoken', { points: formatPointsSpoken(state.todayPoints) }));
+  }
+  const next = nextCheckinPoints(state);
+  if (next > 0) parts.push(t('checkin.done.nextSpoken', { points: formatPointsSpoken(next) }));
+  return parts.join(' ');
 }
 
 /** O anúncio do check-in que deu certo: "Check-in feito. 5 dias seguidos." */
@@ -214,14 +243,18 @@ export function checkinAnnouncement(state: CheckinState): string {
 }
 
 /**
- * A linha do check-in feito num rótulo só: "Check-in feito. 5 dias seguidos.
- * Amanhã vale 6 pontos."
+ * O ícone do calendário no topo da Início para o leitor de tela: "Check-in de
+ * hoje por fazer, vale 5 pontos" ou, feito, "Check-in de hoje feito. 5 dias
+ * seguidos." A bolinha e o pulso são só desenho: quem diz o estado é o rótulo.
  */
-export function doneLabel(state: CheckinState): string {
-  const summary = checkinAnnouncement(state);
-  const next = nextCheckinPoints(state);
-  if (next <= 0) return summary;
-  return `${summary} ${t('checkin.done.nextSpoken', { points: formatPointsSpoken(next) })}`;
+export function headerButtonLabel(state: CheckinState): string {
+  if (state.checkedInToday) {
+    return t('checkin.header.done', { streak: streakText(state.streak) });
+  }
+  if (state.todayPoints <= 0) return t('checkin.header.pending');
+  return t('checkin.header.pendingWithPoints', {
+    points: formatPointsSpoken(state.todayPoints),
+  });
 }
 
 /** A pílula da 1e para o leitor de tela: "Sequência de check-in: 4 dias seguidos". */

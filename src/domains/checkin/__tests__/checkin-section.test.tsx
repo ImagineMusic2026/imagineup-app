@@ -21,18 +21,22 @@ import { resetRefusalAlerts } from '@/services/refusal-alert';
 import { useSessionStore } from '@/stores/session';
 import { useSuspensionStore } from '@/stores/suspension';
 
-import { CheckinSection } from '../components/checkin-section';
+import { CheckinHeaderButton } from '../components/checkin-header-button';
+import { CLOSE_AFTER_CHECKIN_MS, CheckinSection } from '../components/checkin-section';
 import { CheckinStreakPill } from '../components/checkin-streak-pill';
 import { checkinFixture } from '../fixtures';
+import { useCheckinPanel } from '../hooks/use-checkin-panel';
 import { checkinKeys } from '../keys';
 import type { CheckinResult, CheckinState } from '../types';
 
-// A seção do check-in da Início e a pílula da 1e, com a consulta de verdade:
-// o silêncio enquanto nada aparece (a chave desligada, a `api` de antes, a
-// carga e a falha), o toque que troca o card pela linha do "Check-in feito"
-// com o "+N", o botão sem internet, a falha do toque e a virada do dia. O
-// desenho da troca (a altura medida de cada face, o reduzir movimento) fica
-// no `checkin-faces.test.tsx`, com o Reanimated de verdade.
+// O check-in da Início (o ícone do calendário e o card que ele abre) e a
+// pílula da 1e, com a consulta de verdade: o silêncio enquanto nada aparece
+// (a chave desligada, a `api` de antes, a carga e a falha), o ícone com a
+// bolinha, o card que abre e fecha no toque dele, o toque do check-in que
+// marca o dia, sobe o "+N" e fecha o card sozinho, o botão sem internet, a
+// falha do toque e a virada do dia. O desenho da abertura (a altura medida, o
+// pulso, o reduzir movimento) fica no `checkin-faces.test.tsx`, com o
+// Reanimated de verdade.
 
 // O api.ts importa o axios do app, que puxa o Firebase (ESM no Jest).
 jest.mock('@/services/api', () => ({ api: { get: jest.fn(), post: jest.fn() } }));
@@ -95,8 +99,13 @@ const network = () => new ApiError('network', 'sem rede');
 const timeout = () => new ApiError('timeout', 'prazo');
 const server = () => new ApiError('server', 'caiu', 503);
 
+/** O ícone do calendário, com o de hoje por fazer e feito. */
+const PENDING_ICON = 'Check-in de hoje por fazer, vale 5 pontos';
+const DONE_ICON = 'Check-in de hoje feito. 5 dias seguidos.';
+/** O topo do card, por fazer e feito, e o pé do "feito". */
 const OPEN = 'Check-in diário. 4 dias seguidos. Termina em 4 horas.';
-const CLOSED = 'Check-in feito. 5 dias seguidos. Amanhã vale 6 pontos.';
+const DONE_HEADER = 'Check-in diário. 5 dias seguidos.';
+const DONE_FOOTER = 'Check-in de hoje feito. Rendeu 5 pontos. Amanhã vale 6 pontos.';
 const ACTION = 'Fazer check-in, vale 5 pontos';
 
 /** Promessa que o teste resolve quando quiser. */
@@ -112,6 +121,28 @@ let client: QueryClient;
 
 function wrapper({ children }: { children: ReactNode }) {
   return <QueryClientProvider client={client}>{children}</QueryClientProvider>;
+}
+
+/** A Início em miniatura: o ícone do calendário e o card que ele abre, como na `HomeListHeader`. */
+function CheckinHome() {
+  const panel = useCheckinPanel();
+  return (
+    <>
+      <CheckinHeaderButton panel={panel} />
+      <CheckinSection panel={panel} />
+    </>
+  );
+}
+
+/** O toque no ícone do calendário, que abre o card (ou fecha, se estiver aberto). */
+async function toggleCard(): Promise<void> {
+  fireEvent.press(await screen.findByTestId('checkin-header-button'));
+}
+
+/** Abre o card pelo ícone e devolve o botão do check-in de hoje. */
+async function openAction() {
+  await toggleCard();
+  return screen.findByRole('button', { name: ACTION });
 }
 
 /**
@@ -181,6 +212,9 @@ beforeEach(() => {
   jest
     .spyOn(AccessibilityInfo, 'announceForAccessibilityWithOptions')
     .mockImplementation(() => undefined);
+  jest.spyOn(AccessibilityInfo, 'sendAccessibilityEvent').mockImplementation(() => undefined);
+  // O mock do RN é um `jest.fn` que o `restoreAllMocks` não volta: cada teste começa sem leitor de tela.
+  jest.spyOn(AccessibilityInfo, 'isScreenReaderEnabled').mockResolvedValue(false);
 });
 
 afterEach(() => {
@@ -192,11 +226,11 @@ afterEach(() => {
   jest.restoreAllMocks();
 });
 
-describe('seção do check-in: o que aparece', () => {
+describe('check-in da Início: o que aparece', () => {
   it('nas fixtures, o check-in de exemplo nasce desligado, como a chave do servidor: nada aparece, nada é anunciado e nada vibra', async () => {
     render(
       <>
-        <CheckinSection />
+        <CheckinHome />
         <CheckinStreakPill />
       </>,
       { wrapper },
@@ -210,38 +244,65 @@ describe('seção do check-in: o que aparece', () => {
     expect(haptics.trigger).not.toHaveBeenCalled();
   });
 
-  it('carregando não mostra nada; com a resposta, o card do dia entra, sem anúncio e sem toque', async () => {
+  it('carregando não mostra nada; com a resposta, o ícone entra com a bolinha e o card nasce fechado, sem anúncio e sem toque', async () => {
     // O exemplo nasce desligado: o teste que conta com ele liga, e o `afterEach` volta ao padrão.
     checkinFixture.setEnabled(true);
-    render(<CheckinSection />, { wrapper });
+    render(<CheckinHome />, { wrapper });
     expect(screen.toJSON()).toBeNull();
 
-    expect(await screen.findByRole('header', { name: OPEN })).toBeTruthy();
-    expect(screen.getByRole('button', { name: ACTION })).toBeEnabled();
-    // A linha do "Check-in feito" já está montada (com medida para a troca
-    // animada), fechada: fora da tela, do leitor e do toque.
-    expect(screen.queryByText('Check-in feito')).toBeNull();
-    expect(screen.getByText('Check-in feito', hidden)).toBeTruthy();
-    const open = screen.getByTestId('checkin-open');
-    expect(open).toHaveProp('pointerEvents', 'auto');
-    expect(open).toHaveStyle({ opacity: 1 });
-    const closed = screen.getByTestId('checkin-closed', hidden);
-    expect(closed).toHaveProp('pointerEvents', 'none');
-    expect(closed).toHaveProp('accessibilityElementsHidden', true);
-    expect(closed).toHaveProp('importantForAccessibility', 'no-hide-descendants');
-    expect(closed).toHaveStyle({ height: 0, opacity: 0 });
-    // No Android, cada face apaga composta fora da tela (o fundo, a borda e o botão juntos).
-    expect(open).toHaveProp('needsOffscreenAlphaCompositing', true);
-    expect(closed).toHaveProp('needsOffscreenAlphaCompositing', true);
+    const icon = await screen.findByRole('button', { name: PENDING_ICON });
+    expect(icon).toHaveProp('accessibilityHint', 'Abre o check-in diário');
+    expect(icon).toHaveProp('accessibilityState', expect.objectContaining({ expanded: false }));
+    expect(screen.getByTestId('checkin-header-dot')).toBeTruthy();
+    // O card fechado nem monta, e o bloco dele tem altura 0: fora da tela, do leitor e do toque.
+    expect(screen.queryByTestId('checkin-card', hidden)).toBeNull();
+    expect(screen.queryByRole('header', { name: OPEN })).toBeNull();
+    const panel = screen.getByTestId('checkin-panel', hidden);
+    expect(panel).toHaveProp('pointerEvents', 'none');
+    expect(panel).toHaveProp('accessibilityElementsHidden', true);
+    expect(panel).toHaveProp('importantForAccessibility', 'no-hide-descendants');
+    expect(panel).toHaveStyle({ height: 0, opacity: 0 });
+    // No Android, o card apaga composto fora da tela (o fundo, a borda e o botão juntos).
+    expect(panel).toHaveProp('needsOffscreenAlphaCompositing', true);
     expect(announcements()).toEqual([]);
     expect(haptics.trigger).not.toHaveBeenCalled();
+  });
+
+  it('o toque no ícone abre o card do dia, e o segundo toque fecha', async () => {
+    checkinFixture.setEnabled(true);
+    render(<CheckinHome />, { wrapper });
+
+    expect(await openAction()).toBeEnabled();
+    expect(screen.getByRole('header', { name: OPEN })).toBeTruthy();
+    const icon = screen.getByRole('button', { name: PENDING_ICON });
+    expect(icon).toHaveProp('accessibilityHint', 'Fecha o check-in diário');
+    expect(icon).toHaveProp('accessibilityState', expect.objectContaining({ expanded: true }));
+    const panel = screen.getByTestId('checkin-panel');
+    expect(panel).toHaveProp('pointerEvents', 'auto');
+    expect(panel).toHaveProp('accessibilityElementsHidden', false);
+    expect(panel).toHaveStyle({ opacity: 1 });
+    // Aberto, a bolinha continua: o de hoje segue por fazer.
+    expect(screen.getByTestId('checkin-header-dot')).toBeTruthy();
+    expect(jest.mocked(haptics.trigger).mock.calls).toEqual([['selection']]);
+
+    fireEvent.press(icon);
+    expect(screen.queryByRole('header', { name: OPEN })).toBeNull();
+    expect(screen.queryByRole('button', { name: ACTION })).toBeNull();
+    expect(screen.getByTestId('checkin-panel', hidden)).toHaveProp('pointerEvents', 'none');
+    expect(screen.getByRole('button', { name: PENDING_ICON })).toHaveProp(
+      'accessibilityState',
+      expect.objectContaining({ expanded: false }),
+    );
+    // Fechado pelo fã, o card fica montado, para abrir de novo animado.
+    expect(screen.getByTestId('checkin-card', hidden)).toBeTruthy();
+    expect(announcements()).toEqual([]);
   });
 
   it('o estado fica fora do disco: o "feito hoje" de uma abertura não aparece na seguinte', async () => {
     mockDataSource = 'api';
     get.mockResolvedValue({ data: DONE });
-    render(<CheckinSection />, { wrapper });
-    expect(await screen.findByRole('header', { name: CLOSED })).toBeTruthy();
+    render(<CheckinHome />, { wrapper });
+    expect(await screen.findByRole('button', { name: DONE_ICON })).toBeTruthy();
 
     const query = client.getQueryCache().find({ queryKey: checkinKeys.state() });
     if (!query) throw new Error('a consulta do check-in não está no cache');
@@ -252,23 +313,30 @@ describe('seção do check-in: o que aparece', () => {
     expect(shouldPersistQuery(query, true)).toBe(false);
   });
 
-  it('com o check-in de hoje já feito, só a linha do "Check-in feito", sem o card', async () => {
+  it('com o check-in de hoje já feito, o ícone sem a bolinha, e o card abre com o pé do "feito", sem botão', async () => {
     mockDataSource = 'api';
     get.mockResolvedValue({ data: DONE });
-    render(<CheckinSection />, { wrapper });
+    render(<CheckinHome />, { wrapper });
 
-    expect(await screen.findByRole('header', { name: CLOSED })).toBeTruthy();
-    expect(screen.queryByRole('button')).toBeNull();
-    // O card nem monta: só entra quando o de hoje está por fazer.
+    const icon = await screen.findByRole('button', { name: DONE_ICON });
+    expect(screen.queryByTestId('checkin-header-dot')).toBeNull();
     expect(screen.queryByTestId('checkin-card', hidden)).toBeNull();
+
+    fireEvent.press(icon);
+    expect(screen.getByRole('header', { name: DONE_HEADER })).toBeTruthy();
+    expect(screen.getByLabelText(DONE_FOOTER)).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /Fazer check-in/ })).toBeNull();
     expect(announcements()).toEqual([]);
-    expect(haptics.trigger).not.toHaveBeenCalled();
+    expect(jest.mocked(haptics.trigger).mock.calls).toEqual([['selection']]);
+    // Aberto sem o toque do check-in, fica: o fechar sozinho é só depois dele.
+    act(() => jest.advanceTimersByTime(CLOSE_AFTER_CHECKIN_MS * 2));
+    expect(screen.getByLabelText(DONE_FOOTER)).toBeTruthy();
   });
 
   it('com a chave desligada, nada aparece, nada é anunciado e nada vibra', async () => {
     mockDataSource = 'api';
     get.mockResolvedValue({ data: OFF });
-    render(<CheckinSection />, { wrapper });
+    render(<CheckinHome />, { wrapper });
 
     await settled('success');
     expect(screen.toJSON()).toBeNull();
@@ -280,7 +348,7 @@ describe('seção do check-in: o que aparece', () => {
   it('com a api de antes do check-in (o 404), nada aparece e a consulta não pergunta de novo', async () => {
     mockDataSource = 'api';
     get.mockRejectedValue(routeMissing());
-    const view = render(<CheckinSection />, { wrapper });
+    const view = render(<CheckinHome />, { wrapper });
 
     await settled('error');
     expect(screen.toJSON()).toBeNull();
@@ -292,7 +360,7 @@ describe('seção do check-in: o que aparece', () => {
     await refocus();
     await reconnect();
     view.unmount();
-    render(<CheckinSection />, { wrapper });
+    render(<CheckinHome />, { wrapper });
     render(<CheckinStreakPill />, { wrapper });
     await pull();
     await refocus();
@@ -307,11 +375,11 @@ describe('seção do check-in: o que aparece', () => {
     expect(haptics.trigger).not.toHaveBeenCalled();
   });
 
-  it('o 404 de uma busca de novo, com o card na tela (a api voltou a ser a de antes), tira o card, e nada pergunta de novo', async () => {
+  it('o 404 de uma busca de novo, com o card aberto (a api voltou a ser a de antes), tira o ícone e o card, e nada pergunta de novo', async () => {
     mockDataSource = 'api';
     get.mockResolvedValueOnce({ data: PENDING }).mockRejectedValue(routeMissing());
-    render(<CheckinSection />, { wrapper });
-    expect(await screen.findByRole('header', { name: OPEN })).toBeTruthy();
+    render(<CheckinHome />, { wrapper });
+    await openAction();
 
     await pull();
     await waitFor(() =>
@@ -331,14 +399,14 @@ describe('seção do check-in: o que aparece', () => {
     expect(announcements()).toEqual([]);
   });
 
-  it('só o 404 trava: o 403 de uma busca de novo esconde o card, e a busca seguinte pergunta de novo e o traz de volta', async () => {
+  it('só o 404 trava: o 403 de uma busca de novo esconde o ícone e o card, e a busca seguinte pergunta de novo e traz o ícone, com o card fechado', async () => {
     mockDataSource = 'api';
     get
       .mockResolvedValueOnce({ data: PENDING })
       .mockRejectedValueOnce(forbidden())
       .mockResolvedValue({ data: PENDING });
-    render(<CheckinSection />, { wrapper });
-    expect(await screen.findByRole('header', { name: OPEN })).toBeTruthy();
+    render(<CheckinHome />, { wrapper });
+    await openAction();
 
     await pull();
     expect(client.getQueryState(checkinKeys.state())?.status).toBe('error');
@@ -350,7 +418,11 @@ describe('seção do check-in: o que aparece', () => {
 
     // A recusa esconde enquanto for o erro da consulta: a volta do app pergunta de novo.
     await refocus();
-    expect(await screen.findByRole('header', { name: OPEN })).toBeTruthy();
+    const icon = await screen.findByRole('button', { name: PENDING_ICON });
+    // O card volta fechado: ele fecha quando o estado some.
+    expect(icon).toHaveProp('accessibilityState', expect.objectContaining({ expanded: false }));
+    expect(screen.queryByRole('header', { name: OPEN })).toBeNull();
+    fireEvent.press(icon);
     expect(screen.getByRole('button', { name: ACTION })).toBeEnabled();
     expect(get).toHaveBeenCalledTimes(3);
     expect(announcements()).toEqual([]);
@@ -359,7 +431,7 @@ describe('seção do check-in: o que aparece', () => {
   it('a consulta que falha sem resposta não mostra nada nem anuncia, e a busca seguinte pergunta de novo', async () => {
     mockDataSource = 'api';
     get.mockRejectedValueOnce(network()).mockResolvedValue({ data: PENDING });
-    render(<CheckinSection />, { wrapper });
+    render(<CheckinHome />, { wrapper });
 
     await settled('error');
     expect(screen.toJSON()).toBeNull();
@@ -368,24 +440,25 @@ describe('seção do check-in: o que aparece', () => {
     await act(async () => {
       await client.invalidateQueries({ queryKey: checkinKeys.state() });
     });
-    expect(await screen.findByRole('header', { name: OPEN })).toBeTruthy();
+    expect(await screen.findByRole('button', { name: PENDING_ICON })).toBeTruthy();
     expect(get).toHaveBeenCalledTimes(2);
   });
 
-  it('a busca de novo que falha por rede deixa o card que já estava; a que volta 404 tira', async () => {
+  it('a busca de novo que falha por rede deixa o card aberto que já estava; a que volta 404 tira', async () => {
     mockDataSource = 'api';
     get
       .mockResolvedValueOnce({ data: PENDING })
       .mockRejectedValueOnce(network())
       .mockRejectedValueOnce(routeMissing());
-    render(<CheckinSection />, { wrapper });
-    expect(await screen.findByRole('header', { name: OPEN })).toBeTruthy();
+    render(<CheckinHome />, { wrapper });
+    await openAction();
 
     await act(async () => {
       await client.invalidateQueries({ queryKey: checkinKeys.state() });
     });
     expect(client.getQueryState(checkinKeys.state())?.status).toBe('error');
     expect(screen.getByRole('header', { name: OPEN })).toBeTruthy();
+    expect(screen.getByRole('button', { name: PENDING_ICON })).toBeTruthy();
 
     await act(async () => {
       await client.invalidateQueries({ queryKey: checkinKeys.state() });
@@ -400,36 +473,27 @@ describe('seção do check-in: o que aparece', () => {
   it('a resposta fora do formato (o corpo de outra rota) não mostra nada', async () => {
     mockDataSource = 'api';
     get.mockResolvedValue({ data: { season: null, missions: [] } });
-    render(<CheckinSection />, { wrapper });
+    render(<CheckinHome />, { wrapper });
 
     await settled('success');
     expect(screen.toJSON()).toBeNull();
   });
 });
 
-describe('seção do check-in: o toque', () => {
-  it('troca o card pela linha do "Check-in feito" e sobe o "+N", com um toque e um anúncio só', async () => {
+describe('check-in da Início: o toque', () => {
+  it('marca o dia, sobe o "+N" com um toque e um anúncio só, e o card fecha sozinho, sem mexer no foco', async () => {
     checkinFixture.setEnabled(true);
-    render(<CheckinSection />, { wrapper });
-    fireEvent.press(await screen.findByRole('button', { name: ACTION }));
+    render(<CheckinHome />, { wrapper });
+    fireEvent.press(await openAction());
 
-    expect(await screen.findByRole('header', { name: CLOSED })).toBeTruthy();
-    // O card encolhe e sai do leitor e do toque; o botão que tinha o foco some com ele.
-    expect(screen.queryByRole('button')).toBeNull();
-    expect(screen.queryByRole('header', { name: OPEN })).toBeNull();
-    const open = screen.getByTestId('checkin-open', hidden);
-    expect(open).toHaveProp('pointerEvents', 'none');
-    expect(open).toHaveProp('accessibilityElementsHidden', true);
-    expect(open).toHaveProp('importantForAccessibility', 'no-hide-descendants');
-    // Fechado de verdade, e não só fora do toque e do leitor: sem altura e apagado.
-    expect(open).toHaveStyle({ height: 0, opacity: 0 });
-    const closed = screen.getByTestId('checkin-closed');
-    expect(closed).toHaveProp('pointerEvents', 'auto');
-    expect(closed).toHaveProp('accessibilityElementsHidden', false);
-    // A altura da linha aberta é a medida do `onLayout`, que o mock do
-    // Reanimated não leva ao estilo: quem prova é o `checkin-faces.test.tsx`.
-    expect(closed).toHaveStyle({ opacity: 1 });
+    // O pé do "feito" toma o lugar do botão, e o dia de hoje entra na trilha como feito.
+    expect(await screen.findByLabelText(DONE_FOOTER)).toBeTruthy();
+    expect(screen.getByRole('header', { name: DONE_HEADER })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: ACTION })).toBeNull();
     expect(screen.getByTestId('checkin-points', hidden)).toHaveTextContent('+5');
+    // O ícone já diz o feito, sem a bolinha.
+    expect(screen.getByRole('button', { name: DONE_ICON })).toBeTruthy();
+    expect(screen.queryByTestId('checkin-header-dot')).toBeNull();
     // Os pontos entram na carteira de exemplo; a tela não escreve saldo.
     expect(fixtureWallet.get().balance).toBe(12_480 + 5);
 
@@ -438,13 +502,64 @@ describe('seção do check-in: o toque', () => {
         ['Check-in feito. 5 dias seguidos. Mais 5 pontos.', { queue: true }],
       ]),
     );
-    // O toque do botão e o do ganho: nada mais vibra.
-    expect(jest.mocked(haptics.trigger).mock.calls).toEqual([['confirm'], ['pointsEarned']]);
+    // O toque do ícone, o do botão e o do ganho: nada mais vibra.
+    expect(jest.mocked(haptics.trigger).mock.calls).toEqual([
+      ['selection'],
+      ['confirm'],
+      ['pointsEarned'],
+    ]);
 
-    // A pílula some no tempo dela, e a linha fica.
-    act(() => jest.advanceTimersByTime(1000));
+    // Passado o tempo do "+N", o card fecha sozinho. Ninguém leva o foco: com
+    // o leitor de tela ligado, o card não fecha (o caso seguinte).
+    act(() => jest.advanceTimersByTime(CLOSE_AFTER_CHECKIN_MS));
     expect(screen.queryByTestId('checkin-points', hidden)).toBeNull();
-    expect(screen.getByRole('header', { name: CLOSED })).toBeTruthy();
+    expect(screen.queryByLabelText(DONE_FOOTER)).toBeNull();
+    expect(screen.getByTestId('checkin-panel', hidden)).toHaveProp('pointerEvents', 'none');
+    const icon = screen.getByRole('button', { name: DONE_ICON });
+    expect(icon).toHaveProp('accessibilityState', expect.objectContaining({ expanded: false }));
+    expect(AccessibilityInfo.sendAccessibilityEvent).not.toHaveBeenCalled();
+
+    // O toque no ícone abre de novo, com a sequência, o que rendeu e o valor de amanhã.
+    fireEvent.press(icon);
+    expect(screen.getByLabelText(DONE_FOOTER)).toBeTruthy();
+    expect(screen.getByRole('header', { name: DONE_HEADER })).toBeTruthy();
+  });
+
+  it('com o leitor de tela ligado, o card não fecha sozinho: o anúncio do check-in não é cortado, e o fã fecha pelo ícone', async () => {
+    jest.spyOn(AccessibilityInfo, 'isScreenReaderEnabled').mockResolvedValue(true);
+    checkinFixture.setEnabled(true);
+    render(<CheckinHome />, { wrapper });
+    fireEvent.press(await openAction());
+
+    expect(await screen.findByLabelText(DONE_FOOTER)).toBeTruthy();
+    await waitFor(() =>
+      expect(announcements()).toEqual([
+        ['Check-in feito. 5 dias seguidos. Mais 5 pontos.', { queue: true }],
+      ]),
+    );
+    act(() => jest.advanceTimersByTime(CLOSE_AFTER_CHECKIN_MS * 2));
+    expect(screen.getByLabelText(DONE_FOOTER)).toBeTruthy();
+    expect(screen.getByTestId('checkin-panel')).toHaveProp('pointerEvents', 'auto');
+
+    fireEvent.press(screen.getByRole('button', { name: DONE_ICON }));
+    expect(screen.queryByLabelText(DONE_FOOTER)).toBeNull();
+  });
+
+  it('o "feito" que chega por uma busca (o check-in feito noutro aparelho) troca o botão pelo pé do "feito" e deixa o card aberto', async () => {
+    mockDataSource = 'api';
+    get.mockResolvedValueOnce({ data: PENDING }).mockResolvedValue({ data: DONE });
+    render(<CheckinHome />, { wrapper });
+    await openAction();
+
+    await pull();
+    expect(await screen.findByLabelText(DONE_FOOTER)).toBeTruthy();
+    expect(screen.getByRole('button', { name: DONE_ICON })).toBeTruthy();
+    // Sem o toque do fã, sem festa e sem fechar sozinho.
+    act(() => jest.advanceTimersByTime(CLOSE_AFTER_CHECKIN_MS * 2));
+    expect(screen.getByLabelText(DONE_FOOTER)).toBeTruthy();
+    expect(screen.queryByTestId('checkin-points', hidden)).toBeNull();
+    expect(post).not.toHaveBeenCalled();
+    expect(announcements()).toEqual([]);
   });
 
   it('com a API, manda um POST só, põe o estado da resposta no cache e busca de novo o que os pontos mudam', async () => {
@@ -456,9 +571,9 @@ describe('seção do check-in: o toque', () => {
     client.setQueryData(profileKeys.achievements(), { unlockedCount: 6 });
     client.setQueryData(missionKeys.list(), { season: null, missions: [] });
     client.setQueryData(rankingKeys.season(), null);
-    render(<CheckinSection />, { wrapper });
+    render(<CheckinHome />, { wrapper });
 
-    const button = await screen.findByRole('button', { name: ACTION });
+    const button = await openAction();
     fireEvent.press(button);
     // O segundo toque, antes de a resposta chegar, não manda outro pedido.
     fireEvent.press(button);
@@ -479,10 +594,9 @@ describe('seção do check-in: o toque', () => {
     });
 
     expect(
-      await screen.findByRole('header', {
-        name: 'Check-in feito. 7 dias seguidos. Amanhã vale 3 pontos.',
-      }),
+      await screen.findByLabelText('Check-in de hoje feito. Rendeu 15 pontos. Amanhã vale 3 pontos.'),
     ).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Check-in de hoje feito. 7 dias seguidos.' })).toBeTruthy();
     expect(client.getQueryData(checkinKeys.state())).toMatchObject({
       checkedInToday: true,
       streak: 7,
@@ -504,28 +618,32 @@ describe('seção do check-in: o toque', () => {
     );
   });
 
-  it('sem pontos (o segundo toque do dia, feito em outro aparelho), a linha entra sem o "+N" e o fã ouve o resultado', async () => {
+  it('sem pontos (o segundo toque do dia, feito em outro aparelho), o pé do "feito" entra sem o "+N", o fã ouve o resultado e o card fecha sozinho', async () => {
     mockDataSource = 'api';
     get.mockResolvedValue({ data: PENDING });
     post.mockResolvedValue({ data: result({ pointsAwarded: 0 }) });
     client.setQueryData(profileKeys.wallet(), { balance: 12_480 });
-    render(<CheckinSection />, { wrapper });
+    render(<CheckinHome />, { wrapper });
 
-    fireEvent.press(await screen.findByRole('button', { name: ACTION }));
+    fireEvent.press(await openAction());
 
-    expect(await screen.findByRole('header', { name: CLOSED })).toBeTruthy();
+    expect(await screen.findByLabelText(DONE_FOOTER)).toBeTruthy();
     expect(screen.queryByTestId('checkin-points', hidden)).toBeNull();
     expect(announcements()).toEqual([['Check-in feito. 5 dias seguidos.', { queue: true }]]);
-    expect(jest.mocked(haptics.trigger).mock.calls).toEqual([['confirm']]);
+    expect(jest.mocked(haptics.trigger).mock.calls).toEqual([['selection'], ['confirm']]);
     // Sem pontos, a carteira não busca de novo.
     expect(client.getQueryState(profileKeys.wallet())?.isInvalidated).toBe(false);
+
+    act(() => jest.advanceTimersByTime(CLOSE_AFTER_CHECKIN_MS));
+    expect(screen.queryByLabelText(DONE_FOOTER)).toBeNull();
+    expect(screen.getByRole('button', { name: DONE_ICON })).toBeTruthy();
   });
 
   it('sem internet, o botão fica desligado: o check-in não entra na fila offline', async () => {
     mockDataSource = 'api';
     get.mockResolvedValue({ data: PENDING });
-    render(<CheckinSection />, { wrapper });
-    const button = await screen.findByRole('button', { name: ACTION });
+    render(<CheckinHome />, { wrapper });
+    const button = await openAction();
 
     act(() => onlineManager.setOnline(false));
 
@@ -543,26 +661,32 @@ describe('seção do check-in: o toque', () => {
   });
 });
 
-describe('seção do check-in: a falha do toque', () => {
+describe('check-in da Início: a falha do toque', () => {
   const ERROR = 'Não deu para fazer o check-in. Tente de novo.';
 
   it('a falha incerta mostra a frase embaixo do botão, anuncia na fila e tenta de novo com a mesma chave', async () => {
     mockDataSource = 'api';
     get.mockResolvedValue({ data: PENDING });
     post.mockRejectedValueOnce(network()).mockResolvedValue({ data: result() });
-    render(<CheckinSection />, { wrapper });
+    render(<CheckinHome />, { wrapper });
 
-    fireEvent.press(await screen.findByRole('button', { name: ACTION }));
+    fireEvent.press(await openAction());
 
     await waitFor(() => expect(screen.getByTestId('checkin-message')).toHaveTextContent(ERROR));
     expect(announcements()).toEqual([[ERROR, { queue: true }]]);
-    expect(jest.mocked(haptics.trigger).mock.calls).toEqual([['confirm'], ['error']]);
-    // O card fica, com o botão ligado: o servidor pode ter gravado, e a chave se repete.
+    expect(jest.mocked(haptics.trigger).mock.calls).toEqual([
+      ['selection'],
+      ['confirm'],
+      ['error'],
+    ]);
+    // O card fica aberto, com o botão ligado: o servidor pode ter gravado, e a chave se repete.
+    expect(screen.getByRole('header', { name: OPEN })).toBeTruthy();
+    act(() => jest.advanceTimersByTime(CLOSE_AFTER_CHECKIN_MS * 2));
     expect(screen.getByRole('header', { name: OPEN })).toBeTruthy();
     expect(get).toHaveBeenCalledTimes(1);
 
     fireEvent.press(screen.getByRole('button', { name: ACTION }));
-    expect(await screen.findByRole('header', { name: CLOSED })).toBeTruthy();
+    expect(await screen.findByLabelText(DONE_FOOTER)).toBeTruthy();
     expect(post).toHaveBeenCalledTimes(2);
     const [first, second] = sentKeys();
     expect(first).toMatch(/^checkin-/);
@@ -582,9 +706,9 @@ describe('seção do check-in: a falha do toque', () => {
       post.mockRejectedValueOnce(failure()).mockResolvedValue({ data: result() });
       client.setQueryData(profileKeys.wallet(), { balance: 12_480 });
       client.setQueryData(rankingKeys.season(), null);
-      render(<CheckinSection />, { wrapper });
+      render(<CheckinHome />, { wrapper });
 
-      fireEvent.press(await screen.findByRole('button', { name: ACTION }));
+      fireEvent.press(await openAction());
       await waitFor(() => expect(screen.getByTestId('checkin-message')).toHaveTextContent(ERROR));
 
       expect(client.getQueryState(profileKeys.wallet())?.isInvalidated).toBe(true);
@@ -596,7 +720,7 @@ describe('seção do check-in: a falha do toque', () => {
 
       // O novo toque repete a chave, recebe a resposta guardada e festeja.
       fireEvent.press(screen.getByRole('button', { name: ACTION }));
-      expect(await screen.findByRole('header', { name: CLOSED })).toBeTruthy();
+      expect(await screen.findByLabelText(DONE_FOOTER)).toBeTruthy();
       const [first, second] = sentKeys();
       expect(first).toMatch(/^checkin-/);
       expect(second).toBe(first);
@@ -617,14 +741,14 @@ describe('seção do check-in: a falha do toque', () => {
       .mockRejectedValueOnce(new ApiError('validation', 'x', 400, 'invalid_request'))
       .mockResolvedValue({ data: result() });
     client.setQueryData(profileKeys.wallet(), { balance: 12_480 });
-    render(<CheckinSection />, { wrapper });
+    render(<CheckinHome />, { wrapper });
 
-    fireEvent.press(await screen.findByRole('button', { name: ACTION }));
+    fireEvent.press(await openAction());
     await waitFor(() => expect(screen.getByTestId('checkin-message')).toHaveTextContent(ERROR));
     // A recusa é clara: nada foi gravado, e a carteira não busca de novo.
     expect(client.getQueryState(profileKeys.wallet())?.isInvalidated).toBe(false);
     fireEvent.press(screen.getByRole('button', { name: ACTION }));
-    expect(await screen.findByRole('header', { name: CLOSED })).toBeTruthy();
+    expect(await screen.findByLabelText(DONE_FOOTER)).toBeTruthy();
 
     const [first, second] = sentKeys();
     expect(second).toMatch(/^checkin-/);
@@ -638,14 +762,14 @@ describe('seção do check-in: a falha do toque', () => {
     ],
     ['a api de antes (404)', routeMissing],
   ])(
-    'com %s, o estado busca de novo e o card some, com o aviso ao leitor',
+    'com %s, o estado busca de novo e o ícone e o card somem, com o aviso ao leitor',
     async (_name, refusal) => {
       mockDataSource = 'api';
       get.mockResolvedValueOnce({ data: PENDING }).mockResolvedValue({ data: OFF });
       post.mockRejectedValue(refusal());
-      render(<CheckinSection />, { wrapper });
+      render(<CheckinHome />, { wrapper });
 
-      fireEvent.press(await screen.findByRole('button', { name: ACTION }));
+      fireEvent.press(await openAction());
 
       await waitFor(() =>
         expect(screen.queryByTestId('checkin-section', hidden)).not.toBeOnTheScreen(),
@@ -667,9 +791,9 @@ describe('seção do check-in: a falha do toque', () => {
     mockDataSource = 'api';
     get.mockResolvedValue({ data: PENDING });
     post.mockRejectedValue(new ApiError('forbidden', 'suspensa', 403, 'account_suspended'));
-    render(<CheckinSection />, { wrapper });
+    render(<CheckinHome />, { wrapper });
 
-    fireEvent.press(await screen.findByRole('button', { name: ACTION }));
+    fireEvent.press(await openAction());
 
     await waitFor(() =>
       expect(screen.getByTestId('checkin-message')).toHaveTextContent(
@@ -682,26 +806,32 @@ describe('seção do check-in: a falha do toque', () => {
   });
 });
 
-describe('seção do check-in: a virada do dia', () => {
-  it('à meia-noite de São Paulo, o estado de ontem some e o de hoje chega, com o check-in aberto de novo', async () => {
+describe('check-in da Início: a virada do dia', () => {
+  it('à meia-noite de São Paulo, o estado de ontem some e o de hoje chega, com o ícone pulsando e o card fechado', async () => {
     checkinFixture.setEnabled(true);
-    render(<CheckinSection />, { wrapper });
-    fireEvent.press(await screen.findByRole('button', { name: ACTION }));
-    expect(await screen.findByRole('header', { name: CLOSED })).toBeTruthy();
+    render(<CheckinHome />, { wrapper });
+    fireEvent.press(await openAction());
+    expect(await screen.findByLabelText(DONE_FOOTER)).toBeTruthy();
+    act(() => jest.advanceTimersByTime(CLOSE_AFTER_CHECKIN_MS));
 
-    // Um minuto antes da meia-noite, a linha de hoje continua.
-    act(() => jest.advanceTimersByTime(4 * HOUR_MS - 60_000));
-    expect(screen.getByRole('header', { name: CLOSED })).toBeTruthy();
+    // Um minuto antes da meia-noite, o ícone de hoje continua feito.
+    act(() => jest.advanceTimersByTime(4 * HOUR_MS - 60_000 - CLOSE_AFTER_CHECKIN_MS));
+    expect(screen.getByRole('button', { name: DONE_ICON })).toBeTruthy();
 
     // Passou da meia-noite: o servidor de exemplo já está no dia seguinte, o sexto do ciclo.
     act(() => jest.advanceTimersByTime(2 * 60_000));
+    const icon = await screen.findByRole('button', {
+      name: 'Check-in de hoje por fazer, vale 6 pontos',
+    });
+    expect(screen.getByTestId('checkin-header-dot')).toBeTruthy();
+    expect(icon).toHaveProp('accessibilityState', expect.objectContaining({ expanded: false }));
+    expect(screen.queryByRole('button', { name: DONE_ICON })).toBeNull();
+
+    fireEvent.press(icon);
     expect(
-      await screen.findByRole('header', {
-        name: 'Check-in diário. 5 dias seguidos. Termina em 23 horas.',
-      }),
+      screen.getByRole('header', { name: 'Check-in diário. 5 dias seguidos. Termina em 23 horas.' }),
     ).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Fazer check-in, vale 6 pontos' })).toBeEnabled();
-    expect(screen.queryByRole('header', { name: CLOSED })).toBeNull();
   });
 
   it('com o dia virado e a busca falhando, nada de ontem fica na tela, e a busca sai de novo a cada minuto', async () => {
@@ -717,8 +847,8 @@ describe('seção do check-in: a virada do dia', () => {
       .mockResolvedValueOnce({ data: DONE })
       .mockRejectedValueOnce(network())
       .mockResolvedValue({ data: tomorrow });
-    render(<CheckinSection />, { wrapper });
-    expect(await screen.findByRole('header', { name: CLOSED })).toBeTruthy();
+    render(<CheckinHome />, { wrapper });
+    expect(await screen.findByRole('button', { name: DONE_ICON })).toBeTruthy();
 
     act(() => jest.advanceTimersByTime(4 * HOUR_MS + 1000));
     await waitFor(() => expect(get).toHaveBeenCalledTimes(2));
@@ -727,8 +857,11 @@ describe('seção do check-in: a virada do dia', () => {
 
     // A volta seguinte do relógio pergunta de novo, e o dia novo chega: a sequência se perdeu.
     act(() => jest.advanceTimersByTime(60_000));
+    fireEvent.press(
+      await screen.findByRole('button', { name: 'Check-in de hoje por fazer, vale 3 pontos' }),
+    );
     expect(
-      await screen.findByRole('header', {
+      screen.getByRole('header', {
         name: 'Check-in diário. Comece sua sequência. Termina em 23 horas.',
       }),
     ).toBeTruthy();
@@ -741,12 +874,10 @@ describe('seção do check-in: a virada do dia', () => {
     // O aparelho diz 0:05 do dia 11; para o servidor ainda é dia 10, e o prazo é o mesmo.
     jest.setSystemTime(new Date('2026-11-11T03:05:00.000Z'));
     get.mockResolvedValue({ data: PENDING });
-    render(<CheckinSection />, { wrapper });
+    render(<CheckinHome />, { wrapper });
 
-    expect(
-      await screen.findByRole('header', { name: 'Check-in diário. 4 dias seguidos.' }),
-    ).toBeTruthy();
-    expect(screen.getByRole('button', { name: ACTION })).toBeEnabled();
+    expect(await openAction()).toBeEnabled();
+    expect(screen.getByRole('header', { name: 'Check-in diário. 4 dias seguidos.' })).toBeTruthy();
     expect(get).toHaveBeenCalledTimes(1);
 
     // De minuto em minuto, pergunta de novo, sem tirar o card.
@@ -772,14 +903,14 @@ describe('pílula da sequência na 1e', () => {
     checkinFixture.setEnabled(true);
     render(
       <>
-        <CheckinSection />
+        <CheckinHome />
         <CheckinStreakPill />
       </>,
       { wrapper },
     );
     expect(await screen.findByLabelText('Sequência de check-in: 4 dias seguidos')).toBeTruthy();
 
-    fireEvent.press(screen.getByRole('button', { name: ACTION }));
+    fireEvent.press(await openAction());
 
     expect(await screen.findByLabelText('Sequência de check-in: 5 dias seguidos')).toBeTruthy();
   });
@@ -817,19 +948,19 @@ describe('pílula da sequência na 1e', () => {
   });
 });
 
-describe('seção do check-in: a resposta fora de hora', () => {
+describe('check-in da Início: a resposta fora de hora', () => {
   it('a falha incerta de ontem não repete a chave hoje: a resposta guardada seria a do outro dia', async () => {
     mockDataSource = 'api';
-    // O dia do servidor virou com a seção na tela (o relógio do aparelho está
+    // O dia do servidor virou com o card na tela (o relógio do aparelho está
     // atrasado): a busca de novo traz o estado de hoje, com outro prazo.
     const today: CheckinState = { ...PENDING, resetsAt: '2026-11-12T03:00:00.000Z' };
     get.mockResolvedValueOnce({ data: PENDING }).mockResolvedValue({ data: today });
     post.mockRejectedValueOnce(network()).mockResolvedValue({
       data: result({ checkin: { ...today, checkedInToday: true, streak: 5, best: 5 } }),
     });
-    render(<CheckinSection />, { wrapper });
+    render(<CheckinHome />, { wrapper });
 
-    fireEvent.press(await screen.findByRole('button', { name: ACTION }));
+    fireEvent.press(await openAction());
     await waitFor(() => expect(screen.getByTestId('checkin-message')).toBeTruthy());
 
     await act(async () => {
@@ -842,19 +973,19 @@ describe('seção do check-in: a resposta fora de hora', () => {
     ).toBeTruthy();
 
     fireEvent.press(screen.getByRole('button', { name: ACTION }));
-    expect(await screen.findByRole('header', { name: CLOSED })).toBeTruthy();
+    expect(await screen.findByLabelText(DONE_FOOTER)).toBeTruthy();
     const [first, second] = sentKeys();
     expect(second).toMatch(/^checkin-/);
     expect(second).not.toBe(first);
   });
 
-  it('a busca do estado que saiu antes do toque e chega depois da resposta dele não reabre o card', async () => {
+  it('a busca do estado que saiu antes do toque e chega depois da resposta dele não volta o card para o de hoje por fazer', async () => {
     mockDataSource = 'api';
     const late = deferred<{ data: CheckinState }>();
     get.mockResolvedValueOnce({ data: PENDING }).mockReturnValueOnce(late.promise);
     post.mockResolvedValue({ data: result() });
-    render(<CheckinSection />, { wrapper });
-    const button = await screen.findByRole('button', { name: ACTION });
+    render(<CheckinHome />, { wrapper });
+    const button = await openAction();
     // Uma busca de novo (a volta do app, o puxar para atualizar) sai e fica sem resposta.
     act(() => {
       void client.invalidateQueries({ queryKey: checkinKeys.state() });
@@ -862,7 +993,7 @@ describe('seção do check-in: a resposta fora de hora', () => {
     await waitFor(() => expect(get).toHaveBeenCalledTimes(2));
 
     fireEvent.press(button);
-    expect(await screen.findByRole('header', { name: CLOSED })).toBeTruthy();
+    expect(await screen.findByLabelText(DONE_FOOTER)).toBeTruthy();
 
     // A resposta dela, lida antes de o check-in gravar, chega por último.
     await act(async () => {
@@ -874,12 +1005,13 @@ describe('seção do check-in: a resposta fora de hora', () => {
       fetchStatus: 'idle',
       data: { checkedInToday: true, streak: 5 },
     });
-    expect(screen.getByRole('header', { name: CLOSED })).toBeTruthy();
+    expect(screen.getByLabelText(DONE_FOOTER)).toBeTruthy();
+    expect(screen.getByRole('button', { name: DONE_ICON })).toBeTruthy();
     expect(screen.queryByRole('button', { name: ACTION })).toBeNull();
     expect(get).toHaveBeenCalledTimes(2);
   });
 
-  it('a resposta de um toque perto da meia-noite que chega depois da virada busca o estado de hoje na hora, sem ficar no "feito" de ontem', async () => {
+  it('a resposta de um toque perto da meia-noite que chega depois da virada busca o estado de hoje na hora, sem ficar no "feito" de ontem, e o card aberto não fecha sozinho', async () => {
     mockDataSource = 'api';
     // 23:59:50 de São Paulo: faltam 10 segundos para o dia do check-in acabar.
     jest.setSystemTime(new Date('2026-11-11T02:59:50.000Z'));
@@ -895,8 +1027,8 @@ describe('seção do check-in: a resposta fora de hora', () => {
     get.mockResolvedValueOnce({ data: PENDING }).mockResolvedValue({ data: nextDay });
     const answer = deferred<{ data: CheckinResult }>();
     post.mockReturnValue(answer.promise);
-    render(<CheckinSection />, { wrapper });
-    fireEvent.press(await screen.findByRole('button', { name: ACTION }));
+    render(<CheckinHome />, { wrapper });
+    fireEvent.press(await openAction());
 
     // O servidor gravou o de ontem antes da meia-noite; a resposta chega depois dela.
     jest.setSystemTime(new Date('2026-11-11T03:00:05.000Z'));
@@ -912,6 +1044,9 @@ describe('seção do check-in: a resposta fora de hora', () => {
       checkedInToday: false,
       cycleDay: 6,
     });
+    // O de hoje voltou a estar por fazer: o fechar sozinho do de ontem não vale.
+    act(() => jest.advanceTimersByTime(CLOSE_AFTER_CHECKIN_MS * 2));
+    expect(screen.getByRole('button', { name: 'Fazer check-in, vale 6 pontos' })).toBeTruthy();
   });
 
   it('a resposta que chega com a seção fora da tela só acerta o cache: sem "+N", sem anúncio e sem toque', async () => {
@@ -920,9 +1055,9 @@ describe('seção do check-in: a resposta fora de hora', () => {
     const answer = deferred<{ data: CheckinResult }>();
     post.mockReturnValue(answer.promise);
     client.setQueryData(profileKeys.wallet(), { balance: 12_480 });
-    const view = render(<CheckinSection />, { wrapper });
+    const view = render(<CheckinHome />, { wrapper });
 
-    fireEvent.press(await screen.findByRole('button', { name: ACTION }));
+    fireEvent.press(await openAction());
     await waitFor(() => expect(post).toHaveBeenCalledTimes(1));
     view.unmount();
     jest.mocked(haptics.trigger).mockClear();
@@ -944,9 +1079,9 @@ describe('seção do check-in: a resposta fora de hora', () => {
     const answer = deferred<{ data: CheckinResult }>();
     post.mockReturnValue(answer.promise);
     client.setQueryData(profileKeys.wallet(), { balance: 12_480 });
-    render(<CheckinSection />, { wrapper });
+    render(<CheckinHome />, { wrapper });
 
-    fireEvent.press(await screen.findByRole('button', { name: ACTION }));
+    fireEvent.press(await openAction());
     await waitFor(() => expect(post).toHaveBeenCalledTimes(1));
     // Outro fã entrou no aparelho antes de a resposta chegar.
     act(() => {

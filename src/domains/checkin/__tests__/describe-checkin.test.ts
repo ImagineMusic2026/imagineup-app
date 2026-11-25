@@ -9,9 +9,10 @@ import {
   checkinRollover,
   checkinSummary,
   doneCycleDays,
-  doneLabel,
+  doneFooterLabel,
   doneMeta,
   endsInText,
+  headerButtonLabel,
   isCheckinUnavailable,
   isDefinitiveRefusal,
   isMissingRoute,
@@ -189,6 +190,24 @@ describe('os textos do check-in', () => {
     expect(checkinSummary(state(), late)).toBe('Check-in diário. 4 dias seguidos.');
   });
 
+  it('com o de hoje feito, o topo diz só a sequência: o prazo não vale mais', () => {
+    expect(checkinSummary(DONE, NOW)).toBe('Check-in diário. 5 dias seguidos.');
+  });
+
+  it.each<[string, CheckinState, string]>([
+    ['por fazer, com o valor de hoje', state(), 'Check-in de hoje por fazer, vale 5 pontos'],
+    ['por fazer, valendo 1', state({ todayPoints: 1 }), 'Check-in de hoje por fazer, vale 1 ponto'],
+    ['por fazer, valendo 0 (o ciclo zerado)', state({ todayPoints: 0 }), 'Check-in de hoje por fazer'],
+    ['feito', DONE, 'Check-in de hoje feito. 5 dias seguidos.'],
+    [
+      'feito no primeiro dia',
+      state({ checkedInToday: true, streak: 1, cycleDay: 1, todayPoints: 3 }),
+      'Check-in de hoje feito. 1 dia seguido.',
+    ],
+  ])('o ícone do calendário, %s', (_name, value, label) => {
+    expect(headerButtonLabel(value)).toBe(label);
+  });
+
   it.each<[string, CheckinState, string, string]>([
     ['com o valor de hoje', state(), 'Fazer check-in +5', 'Fazer check-in, vale 5 pontos'],
     ['valendo 1', state({ todayPoints: 1 }), 'Fazer check-in +1', 'Fazer check-in, vale 1 ponto'],
@@ -302,31 +321,51 @@ describe('o check-in feito', () => {
     expect(nextCheckinPoints(value)).toBe(points);
   });
 
-  it('a linha de baixo vem em pedaços, para o valor de amanhã sair em lima', () => {
+  it('o pé do card vem em pedaços, para os valores de hoje e de amanhã saírem em lima', () => {
     expect(doneMeta(DONE)).toEqual({
-      before: '5 dias seguidos · Amanhã vale ',
-      points: '+6',
-      after: '',
+      earned: { before: '', points: '+5', after: ' hoje' },
+      next: { before: 'Amanhã vale ', points: '+6', after: '' },
     });
-    expect(doneMeta(state({ checkedInToday: true, streak: 1, cycleDay: 1 }))).toEqual({
-      before: '1 dia seguido · Amanhã vale ',
-      points: '+3',
-      after: '',
+    expect(
+      doneMeta(state({ checkedInToday: true, streak: 1, cycleDay: 1, todayPoints: 3 })),
+    ).toEqual({
+      earned: { before: '', points: '+3', after: ' hoje' },
+      next: { before: 'Amanhã vale ', points: '+3', after: '' },
     });
   });
 
-  it('o rótulo e o anúncio dizem a sequência; o rótulo, também o valor de amanhã', () => {
-    expect(checkinAnnouncement(DONE)).toBe('Check-in feito. 5 dias seguidos.');
-    expect(doneLabel(DONE)).toBe('Check-in feito. 5 dias seguidos. Amanhã vale 6 pontos.');
-    expect(doneLabel(state({ checkedInToday: true, streak: 1, cycleDay: 1 }))).toBe(
-      'Check-in feito. 1 dia seguido. Amanhã vale 3 pontos.',
+  it('o pé do card num rótulo só, com o que rendeu hoje e o valor de amanhã', () => {
+    expect(doneFooterLabel(DONE)).toBe(
+      'Check-in de hoje feito. Rendeu 5 pontos. Amanhã vale 6 pontos.',
+    );
+    expect(doneFooterLabel(state({ checkedInToday: true, todayPoints: 1, cycle: [1, 1] }))).toBe(
+      'Check-in de hoje feito. Rendeu 1 ponto. Amanhã vale 1 ponto.',
     );
   });
 
-  it('com o dia seguinte valendo 0 (o ciclo zerado), só a sequência', () => {
-    const zeroed = state({ checkedInToday: true, streak: 5, cycle: [0, 0, 0, 0, 0, 0, 0] });
-    expect(doneMeta(zeroed)).toEqual({ text: '5 dias seguidos' });
-    expect(doneLabel(zeroed)).toBe('Check-in feito. 5 dias seguidos.');
+  it('o anúncio do toque que deu certo diz a sequência', () => {
+    expect(checkinAnnouncement(DONE)).toBe('Check-in feito. 5 dias seguidos.');
+    expect(checkinAnnouncement(state({ checkedInToday: true, streak: 1, cycleDay: 1 }))).toBe(
+      'Check-in feito. 1 dia seguido.',
+    );
+  });
+
+  it('o valor que é 0 sai do pé: com o ciclo zerado, só o "Check-in de hoje feito"', () => {
+    const zeroed = state({
+      checkedInToday: true,
+      streak: 5,
+      cycle: [0, 0, 0, 0, 0, 0, 0],
+      todayPoints: 0,
+    });
+    expect(doneMeta(zeroed)).toEqual({ earned: null, next: null });
+    expect(doneFooterLabel(zeroed)).toBe('Check-in de hoje feito.');
+
+    const freeToday = state({ checkedInToday: true, cycle: [0, 4], cycleDay: 1, todayPoints: 0 });
+    expect(doneMeta(freeToday)).toEqual({
+      earned: null,
+      next: { before: 'Amanhã vale ', points: '+4', after: '' },
+    });
+    expect(doneFooterLabel(freeToday)).toBe('Check-in de hoje feito. Amanhã vale 4 pontos.');
   });
 });
 

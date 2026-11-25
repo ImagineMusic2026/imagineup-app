@@ -1,84 +1,138 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
-import Animated from 'react-native-reanimated';
 
 import { pillMinHeight } from '@/components/pill';
 import { PointsToast } from '@/components/points-toast';
 // O `Expandable` pelo arquivo: o index do perfil puxa o Firebase e fecharia um ciclo (a 1e).
 import { Expandable } from '@/domains/profile/components/expandable';
 import { useIsOnline } from '@/hooks/use-is-online';
+import { useScreenReaderEnabled } from '@/hooks/use-screen-reader-enabled';
 import { layout, spacing } from '@/theme';
 
-import { useCheckin } from '../hooks/use-checkin';
-import { useEnterFade } from '../hooks/use-enter-fade';
+import type { CheckinPanel } from '../hooks/use-checkin-panel';
 import { useCheckinMutation } from '../queries';
 import type { CheckinState } from '../types';
 import { CheckinCard } from './checkin-card';
-import { CheckinDoneRow } from './checkin-done-row';
 
 // A faixa do "+N": larga o bastante para a pílula não quebrar o número.
 const TOAST_WIDTH = layout.minTouchTarget * 2;
+// Depois do check-in, o card fica aberto o bastante para o "+N" subir (0,7 s)
+// e o dia marcado aparecer na trilha, e fecha sozinho.
+export const CLOSE_AFTER_CHECKIN_MS = 1500;
+// O espaço até a saudação e até a missão do dia, dentro do recorte: fechado,
+// o card não ocupa nada. Os 4 de baixo somam aos 6 de cima da missão: 10
+// entre os dois cards.
+const GAP_TOP = spacing.metaGap;
+const GAP_BOTTOM = spacing.xs;
 
 export interface CheckinSectionProps {
-  /** Vai na seção inteira (a margem até a saudação e até a missão do dia). */
+  panel: CheckinPanel;
+  /** Vai no conteúdo do card, dentro do recorte, depois do espaço de cima e de baixo. */
   style?: StyleProp<ViewStyle>;
 }
 
 /**
- * O check-in diário pronto para a Início, entre o aviso da conta suspensa e a
- * missão do dia. Só aparece com a resposta do servidor e a chave ligada:
+ * O card do check-in diário da Início, embaixo da saudação, que o ícone do
+ * calendário abre e fecha (`useCheckinPanel`, desenho do dono de 25/11/2026).
+ * Nasce fechado e só existe com a resposta do servidor e a chave ligada:
  * carregando, com a chave desligada, com a `api` de antes (o 404) ou com a
  * consulta falhando sem resposta, não mostra nada, sem esqueleto, sem erro,
- * sem anúncio e sem toque (a tela sobe). Com o dia virado, some até o estado
- * de hoje chegar. Quando chega, entra em fade por valor animado
- * (`useEnterFade`).
+ * sem anúncio e sem toque. Fechado, tem altura 0: a Início não pula quando o
+ * estado chega.
  */
-export function CheckinSection({ style }: CheckinSectionProps) {
-  const { state, now } = useCheckin();
-  if (!state) return null;
-  return <CheckinFaces state={state} now={now} style={style} />;
+export function CheckinSection({ panel, style }: CheckinSectionProps) {
+  if (!panel.state) return null;
+  return (
+    <CheckinPanelView
+      state={panel.state}
+      now={panel.now}
+      open={panel.open}
+      onClose={panel.close}
+      style={style}
+    />
+  );
 }
 
 /**
- * As duas faces do check-in: o card aberto (o de hoje por fazer) e a linha do
- * "Check-in feito". A troca de uma para a outra, quando o servidor responde
- * ao toque, anda por altura e opacidade num valor animado, na hora com
- * reduzir movimento, sem `entering` nem `LinearTransition`. Cada face é um
- * `Expandable` do perfil (a peça da casa para o bloco que abre e fecha): o
- * conteúdo fica fora do fluxo do recorte, então a face fechada, com altura 0,
- * já tem a medida quando abre. Com o conteúdo no fluxo de um recorte de
- * altura 0, como na primeira versão daqui, a linha do "Check-in feito" não
- * abria no aparelho depois do toque (Android, Expo Go). A linha fica sempre
- * montada; o card, desde a primeira vez que aparece. No Android, cada face
- * apaga composta fora da tela: sem isso, o fundo do card, a borda e o botão
- * apagariam cada um sozinho no meio da troca.
- *
- * O "+N" sobe do canto de cima, à direita, onde a linha do "Check-in feito"
- * fica vazia, e mora sempre aqui, fora dos recortes das faces: dentro do
- * card, sairia cortado quando ele encolhe, e montado junto com o ganho,
- * ignoraria o gatilho.
+ * Fecha o card passado o `CLOSE_AFTER_CHECKIN_MS` depois de cada check-in que
+ * deu certo com ele aberto (o `completed` da mutação), e só dele: o estado
+ * "feito" que chega por uma busca (o check-in feito noutro aparelho) troca o
+ * botão pelo pé do "feito" e deixa o card aberto. Nada fecha se o fã fechar
+ * antes, se o dia virar e o de hoje voltar a estar por fazer (a resposta de um
+ * toque perto da meia-noite), ou com o leitor de tela ligado: lá, o card fica
+ * aberto para o anúncio do check-in não ser cortado, e o fã fecha pelo ícone.
  */
-function CheckinFaces({
+function useCloseAfterCheckin(
+  completed: number,
+  day: string,
+  open: boolean,
+  onClose: () => void,
+): void {
+  const screenReader = useScreenReaderEnabled();
+  const [seen, setSeen] = useState(completed);
+  // O dia (o `resetsAt`) em que o check-in pediu para fechar, ou null. O dia, e
+  // não o "feito": a resposta do toque e o estado no cache podem chegar à tela
+  // em renders diferentes, e a do toque perto da meia-noite pode nem aparecer.
+  const [closingDay, setClosingDay] = useState<string | null>(null);
+  if (completed !== seen) {
+    setSeen(completed);
+    setClosingDay(open && !screenReader ? day : null);
+  }
+  if (closingDay !== null && (!open || screenReader || day !== closingDay)) setClosingDay(null);
+  const closing = closingDay !== null;
+
+  useEffect(() => {
+    if (!closing) return;
+    const timer = setTimeout(() => {
+      setClosingDay(null);
+      onClose();
+    }, CLOSE_AFTER_CHECKIN_MS);
+    return () => clearTimeout(timer);
+  }, [closing, onClose]);
+}
+
+/**
+ * O card abre e fecha por altura e opacidade num valor animado (o `Expandable`
+ * do perfil, com o conteúdo fora do fluxo do recorte), na hora com reduzir
+ * movimento, sem `entering` nem `LinearTransition`. Ele só monta na primeira
+ * vez que abre e fica montado para fechar animado. No Android, apaga composto
+ * fora da tela: sem isso, o fundo do card, a borda e o botão apagariam cada um
+ * sozinho.
+ *
+ * O "+N" sobe do canto de cima, à direita, e mora sempre aqui, fora do
+ * recorte: dentro do card, sairia cortado quando ele fecha, e montado junto
+ * com o ganho, ignoraria o gatilho. A seção fica por cima da missão do dia,
+ * para o "+N" de um check-in cuja resposta chega com o card já fechado não
+ * sumir embaixo dela.
+ */
+function CheckinPanelView({
   state,
   now,
+  open,
+  onClose,
   style,
 }: {
   state: CheckinState;
   now: Date;
+  open: boolean;
+  onClose: () => void;
   style?: StyleProp<ViewStyle>;
 }) {
-  const fade = useEnterFade();
   const online = useIsOnline();
-  const { checkin, award, isPending, failure } = useCheckinMutation();
-  const done = state.checkedInToday;
-  // O card só monta quando o de hoje está por fazer; depois, fica para a troca animada.
-  const [opened, setOpened] = useState(!done);
-  if (!done && !opened) setOpened(true);
+  const { checkin, award, completed, isPending, failure } = useCheckinMutation();
+  useCloseAfterCheckin(completed, state.resetsAt, open, onClose);
+  const [mounted, setMounted] = useState(open);
+  if (open && !mounted) setMounted(true);
 
   return (
-    <Animated.View testID="checkin-section" style={[style, fade]}>
-      <Expandable open={!done} needsOffscreenAlphaCompositing testID="checkin-open">
-        {opened ? (
+    <View testID="checkin-section" style={styles.section}>
+      <Expandable
+        open={open}
+        needsOffscreenAlphaCompositing
+        style={[styles.content, style]}
+        testID="checkin-panel"
+      >
+        {mounted ? (
           <CheckinCard
             state={state}
             now={now}
@@ -89,9 +143,6 @@ function CheckinFaces({
           />
         ) : null}
       </Expandable>
-      <Expandable open={done} needsOffscreenAlphaCompositing testID="checkin-closed">
-        <CheckinDoneRow state={state} />
-      </Expandable>
       <View pointerEvents="none" style={styles.toastAnchor}>
         <PointsToast
           points={award?.points ?? 0}
@@ -101,15 +152,22 @@ function CheckinFaces({
           testID="checkin-points"
         />
       </View>
-    </Animated.View>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  // A pílula nasce inteira dentro da seção, a 8 da borda de cima, e sobe dali.
+  section: {
+    zIndex: 1,
+  },
+  content: {
+    paddingTop: GAP_TOP,
+    paddingBottom: GAP_BOTTOM,
+  },
+  // A pílula nasce inteira dentro do card, a 8 da borda de cima dele, e sobe dali.
   toastAnchor: {
     position: 'absolute',
-    top: pillMinHeight.sm + spacing.sm,
+    top: GAP_TOP + pillMinHeight.sm + spacing.sm,
     right: spacing.gutter,
     width: TOAST_WIDTH,
   },
