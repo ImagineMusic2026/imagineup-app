@@ -1,8 +1,12 @@
 import { fireEvent, render, screen } from '@testing-library/react-native';
+import { Image } from 'expo-image';
+import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
+import { StyleSheet } from 'react-native';
 
 import { t } from '@/i18n';
 import { haptics } from '@/services/haptics';
+import { gradients, layout } from '@/theme';
 
 import { CentralTile } from '../components/central-tile';
 import type { Artist } from '../types';
@@ -50,6 +54,28 @@ describe('CentralTile', () => {
     expect(screen.getByText(t('explore.member'))).toBeOnTheScreen();
     expect(screen.getByText('1 fã')).toBeOnTheScreen();
     expect(screen.getAllByRole('button')).toHaveLength(1);
+  });
+
+  it('a foto ocupa o card todo, sem véu por cima: o único véu é o do texto, preso ao topo dele', () => {
+    render(<CentralTile artist={NETTO} member />);
+    const [veil, ...others] = screen.UNSAFE_getAllByType(LinearGradient);
+    expect(others).toHaveLength(0);
+    expect(veil.props.colors).toEqual(gradients.scrims.centralTileCopy.colors);
+    const { fade, below } = layout.centralTileVeil;
+    expect(StyleSheet.flatten(veil.props.style)).toMatchObject({
+      top: -fade,
+      height: fade + below,
+    });
+  });
+
+  it('a foto 3:4 sobe um quarto da sobra, para o rosto sair acima do texto', () => {
+    render(
+      <CentralTile artist={{ ...NETTO, photoURL: 'https://example.com/netto.jpg' }} member={false} />,
+    );
+    expect(screen.UNSAFE_getByType(Image).props.contentPosition).toEqual({
+      top: '25%',
+      left: '50%',
+    });
   });
 
   it('tocar abre a central', () => {

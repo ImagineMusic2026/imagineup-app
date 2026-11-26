@@ -26,6 +26,16 @@ describe('PhotoCard', () => {
     expect(screen.getByText('Meet & greet com o Netto')).toBeTruthy();
   });
 
+  it('sem preset (o card da central), a foto fica limpa, sem véu no card todo', () => {
+    render(
+      <PhotoCard uri={null} fallback={{ kind: 'brand', seed: 'nettobrito' }}>
+        <Text>Netto Brito</Text>
+      </PhotoCard>,
+    );
+    expect(screen.UNSAFE_queryAllByType(LinearGradient)).toHaveLength(0);
+    expect(screen.getByText('Netto Brito')).toBeTruthy();
+  });
+
   it('com a medida esperada (destaques da 1h e da 1m), o placeholder sai em SVG no primeiro quadro', () => {
     render(
       <PhotoCard

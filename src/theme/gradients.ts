@@ -1,6 +1,7 @@
 import { withAlpha } from '@/utils/color';
 
 import { colors, palette, photoFallbackPairs } from './colors';
+import { layout } from './spacings';
 
 /** Duas cores ou mais, como o `expo-linear-gradient` e o Skia pedem. */
 export type GradientStops = readonly [string, string, ...string[]];
@@ -32,6 +33,14 @@ export interface LinearGradientToken {
 const ink = (alpha: number) => withAlpha(palette.ink, alpha);
 
 /**
+ * Onde termina a curva do véu do card da central, em fração da caixa dele
+ * (`layout.centralTileVeil`: a curva em cima, o véu cheio embaixo).
+ */
+const CENTRAL_FADE_END =
+  layout.centralTileVeil.fade / (layout.centralTileVeil.fade + layout.centralTileVeil.below);
+const centralFade = (t: number) => t * CENTRAL_FADE_END;
+
+/**
  * Véus escuros sobre foto, de cima para baixo, com as paradas do protótipo.
  * O texto por cima fica na faixa quase opaca do fim.
  */
@@ -56,6 +65,25 @@ const scrims = {
   // Acima do texto do card de artista, quando a fonte grande quebra o nome e
   // ele sobe para fora da faixa escura do `artistTile`.
   artistTileCopy: { colors: [ink(0), ink(0.99)], locations: [0, 1] },
+  // Card da central na grade da Explorar: a foto fica limpa no card todo, e o
+  // véu escurece só atrás do nome e do "N fãs", preso ao texto. Na curva de
+  // cima, ele vai do transparente ao véu em smoothstep (3t² − 2t³, sem quina
+  // nas pontas); dali para baixo, o véu cheio, que deixa o "N fãs" (branco a
+  // .6) acima de 5:1 mesmo sobre foto branca. É um degradê só: em duas
+  // camadas, a linha de pixel da emenda escurecia em dobro e riscava o nome.
+  centralTileCopy: {
+    colors: [ink(0), ink(0.06), ink(0.21), ink(0.41), ink(0.61), ink(0.76), ink(0.82), ink(0.82)],
+    locations: [
+      0,
+      centralFade(1 / 6),
+      centralFade(2 / 6),
+      centralFade(3 / 6),
+      centralFade(4 / 6),
+      centralFade(5 / 6),
+      centralFade(1),
+      1,
+    ],
+  },
   // Capa da 1d: escurece em cima (botões) e embaixo (nome).
   cover: { colors: [ink(0.7), ink(0), ink(0.55), ink(1)], locations: [0, 0.34, 0.66, 1] },
   // Destaque da 1h.
