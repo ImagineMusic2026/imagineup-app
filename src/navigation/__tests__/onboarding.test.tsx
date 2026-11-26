@@ -1,13 +1,14 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Stack } from 'expo-router';
 import { act, fireEvent, renderRouter, screen, waitFor } from 'expo-router/testing-library';
-import { AccessibilityInfo, Text } from 'react-native';
+import { AccessibilityInfo, Dimensions, Text } from 'react-native';
 
 import OnboardingLayout, {
   unstable_settings as onboardingSettings,
 } from '@/app/(onboarding)/_layout';
 import ChooseArtistsRoute from '@/app/(onboarding)/artistas';
 import AllArtistsRoute from '@/app/(onboarding)/todos-artistas';
+import { centralTileHeight } from '@/domains/artists';
 import { buildArtistsFixture, followFixture } from '@/domains/artists/fixtures';
 import type { FollowArtistsResult } from '@/domains/artists/types';
 import { useArtistSelection } from '@/domains/onboarding/hooks/use-artist-selection';
@@ -20,6 +21,7 @@ import { haptics } from '@/services/haptics';
 import { queryClient as appQueryClient } from '@/services/query/client';
 import { usePreferencesStore } from '@/stores/preferences';
 import { useSessionStore } from '@/stores/session';
+import { layout, spacing } from '@/theme';
 
 // O build do Firebase que o Jest resolve é ESM. A 1l não fala com ele, mas a
 // barra de etapas vem do domínio de conta, que importa o Firebase.
@@ -187,15 +189,19 @@ describe('escolha de artistas (1l)', () => {
   it('mostra os 4 artistas em destaque, o "+18 artistas" e a busca, com a etapa 2 de 2', async () => {
     renderRouter(appTree, { initialUrl: '/artistas' });
 
+    // Os cards de artista são 4:5 da coluna; as células tracejadas, sem foto, mais baixas.
+    const height = centralTileHeight(Dimensions.get('window').width, spacing.gutterOnboarding);
     for (const name of [NETTO, NENHO, JUNINHO, cardName('Rock Salles', '96 mil')]) {
-      expect(await screen.findByRole('button', { name, selected: false })).toBeOnTheScreen();
+      const card = await screen.findByRole('button', { name, selected: false });
+      expect(card).toBeOnTheScreen();
+      expect(card).toHaveStyle({ height });
     }
     expect(
       screen.getByRole('button', { name: t('onboarding.chooseArtists.moreLabel', { count: 18 }) }),
-    ).toBeOnTheScreen();
+    ).toHaveStyle({ minHeight: layout.artistTileHeight });
     expect(
       screen.getByRole('button', { name: t('onboarding.chooseArtists.searchLabel') }),
-    ).toBeOnTheScreen();
+    ).toHaveStyle({ minHeight: layout.artistTileHeight });
     expect(
       screen.getByRole('progressbar', {
         name: t('components.stepProgress.label', { current: 2, total: 2 }),
@@ -223,7 +229,9 @@ describe('escolha de artistas (1l)', () => {
     // O que foi escolhido atrás já vem marcado na sheet. A tela de trás fica fora do
     // leitor de tela enquanto a sheet está aberta, então só os cards da sheet aparecem.
     fireEvent.changeText(search, 'netto');
-    expect(screen.getByRole('button', { name: NETTO, selected: true })).toBeOnTheScreen();
+    expect(screen.getByRole('button', { name: NETTO, selected: true })).toHaveStyle({
+      height: centralTileHeight(Dimensions.get('window').width, spacing.gutterOnboarding),
+    });
 
     // Os que só a sheet mostra.
     fireEvent.changeText(search, 'artista 2');

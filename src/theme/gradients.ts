@@ -60,17 +60,13 @@ const scrims = {
   authQuestion: { colors: [ink(0.6), ink(0.93), ink(1)], locations: [0, 0.15, 0.27] },
   // Entrar com e-mail e cadastro, por cima do `auth`.
   authForm: { colors: [ink(0.25), ink(0.88), ink(1)], locations: [0, 0.24, 0.38] },
-  // Card de artista da 1l.
-  artistTile: { colors: [ink(0), ink(0.99)], locations: [0.26, 0.52] },
-  // Acima do texto do card de artista, quando a fonte grande quebra o nome e
-  // ele sobe para fora da faixa escura do `artistTile`.
-  artistTileCopy: { colors: [ink(0), ink(0.99)], locations: [0, 1] },
-  // Card da central na grade da Explorar: a foto fica limpa no card todo, e o
-  // véu escurece só atrás do nome e do "N fãs", preso ao texto. Na curva de
-  // cima, ele vai do transparente ao véu em smoothstep (3t² − 2t³, sem quina
-  // nas pontas); dali para baixo, o véu cheio, que deixa o "N fãs" (branco a
-  // .6) acima de 5:1 mesmo sobre foto branca. É um degradê só: em duas
-  // camadas, a linha de pixel da emenda escurecia em dobro e riscava o nome.
+  // Card da central na grade da Explorar e card de artista da 1l e da sheet de
+  // todos os artistas: a foto fica limpa no card todo, e o véu escurece só
+  // atrás do nome e do "N fãs", preso ao texto. Na curva de cima, ele vai do
+  // transparente ao véu em smoothstep (3t² − 2t³, sem quina nas pontas); dali
+  // para baixo, o véu cheio, que deixa o "N fãs" (branco a .6) acima de 5:1
+  // mesmo sobre foto branca. É um degradê só: em duas camadas, a linha de
+  // pixel da emenda escurecia em dobro e riscava o nome.
   centralTileCopy: {
     colors: [ink(0), ink(0.06), ink(0.21), ink(0.41), ink(0.61), ink(0.76), ink(0.82), ink(0.82)],
     locations: [

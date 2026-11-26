@@ -16,7 +16,7 @@ import { Scrim } from '@/components/scrim';
 import { Text } from '@/components/text';
 import { artistCardLabel, fansText, type Artist } from '@/domains/artists';
 import { usePrefersReducedMotion } from '@/hooks/use-prefers-reduced-motion';
-import { borderWidths, colors, gradients, layout, motion, radii, spacing } from '@/theme';
+import { borderWidths, colors, layout, motion, radii, spacing } from '@/theme';
 import { withAlpha } from '@/utils/color';
 import { selectionAccessibility } from '@/utils/selection-accessibility';
 
@@ -28,6 +28,8 @@ export interface ArtistSelectCardProps {
   onToggle: (artistId: string) => void;
   /** Enquanto a escolha é salva, os cards travam. */
   disabled?: boolean;
+  /** Altura do card, da grade: 4:5 da coluna (`centralTileHeight`, de `artists`). */
+  height: number;
   style?: StyleProp<ViewStyle>;
   /** Para levar o foco do leitor de tela ao card (a lista que voltou depois de um erro). */
   ref?: Ref<View>;
@@ -48,11 +50,11 @@ const MARK_START_SCALE = 0.6;
 const CHECK_DELAY_MS = 80;
 
 // O nome quebra em até 2 linhas com a fonte grande (a 200%, "Juninho Moraes"
-// não cabe numa). Acima do texto, o véu do próprio bloco escurece a foto que o
-// `artistTile` ainda deixa ver; com a fonte padrão, ele cai na faixa já escura.
+// não cabe numa). O véu fica preso ao texto, como no card da central na
+// Explorar: a curva de `centralTileCopy` termina no topo do nome, e o véu cheio
+// segue até passar do pé do card, que corta o resto.
 const NAME_LINES = 2;
-const COPY_FADE = spacing.xl;
-const COPY_VEIL = gradients.scrims.artistTileCopy.colors[1];
+const { fade: VEIL_FADE, below: VEIL_BELOW } = layout.centralTileVeil;
 
 /**
  * Borda e marca que andam juntas com a escolha: a borda rosa entra em fade
@@ -105,14 +107,17 @@ function useSelectionMotion(artistId: string, selected: boolean) {
  * Card de artista da escolha (1l) e da sheet de todos os artistas. O card
  * inteiro é um pressável só, que liga e desliga a escolha: caixa de marcar no
  * Android, botão com "selecionado" no iOS. Foto, véu, marca e textos ficam
- * dentro dele, sem papel próprio. A altura é fixa: a borda de 2 do escolhido é
- * uma camada por cima, e nada pula no toque.
+ * dentro dele, sem papel próprio. O card é 4:5 da coluna, como o da central na
+ * Explorar: a foto 3:4 ocupa o card todo, presa no topo, sem véu por cima, e o
+ * véu fica só atrás do nome e dos fãs. A altura é fixa (vem da grade): a borda
+ * de 2 do escolhido é uma camada por cima, e nada pula no toque.
  */
 export function ArtistSelectCard({
   artist,
   selected,
   onToggle,
   disabled = false,
+  height,
   style,
   ref,
 }: ArtistSelectCardProps) {
@@ -128,7 +133,7 @@ export function ArtistSelectCard({
       accessibilityRole={role}
       accessibilityState={state}
       accessibilityLabel={artistCardLabel(artist)}
-      style={[styles.card, style]}
+      style={[styles.card, { height }, style]}
     >
       <RemoteImage
         uri={artist.photoURL}
@@ -136,11 +141,9 @@ export function ArtistSelectCard({
         contentPosition="top"
         style={StyleSheet.absoluteFill}
       />
-      <Scrim preset="artistTile" />
 
       <View style={styles.copy}>
-        <View pointerEvents="none" style={styles.copyVeil} />
-        <Scrim preset="artistTileCopy" style={styles.copyFade} />
+        <Scrim preset="centralTileCopy" style={styles.copyVeil} />
         <Text variant="buttonSmall" numberOfLines={NAME_LINES}>
           {artist.name}
         </Text>
@@ -169,6 +172,8 @@ export function ArtistSelectCard({
 export interface SelectableArtistCardProps {
   artist: Artist;
   disabled?: boolean;
+  /** Altura do card, da grade (4:5 da coluna). */
+  height: number;
   style?: StyleProp<ViewStyle>;
   ref?: Ref<View>;
 }
@@ -177,7 +182,13 @@ export interface SelectableArtistCardProps {
  * O card ligado à escolha compartilhada entre a 1l e a sheet de todos os
  * artistas: cada card só renderiza de novo quando a escolha dele muda.
  */
-export function SelectableArtistCard({ artist, disabled, style, ref }: SelectableArtistCardProps) {
+export function SelectableArtistCard({
+  artist,
+  disabled,
+  height,
+  style,
+  ref,
+}: SelectableArtistCardProps) {
   const selected = useIsArtistSelected(artist.id);
   const toggle = useArtistSelection((state) => state.toggle);
   return (
@@ -187,6 +198,7 @@ export function SelectableArtistCard({ artist, disabled, style, ref }: Selectabl
       selected={selected}
       onToggle={toggle}
       disabled={disabled}
+      height={height}
       style={style}
     />
   );
@@ -194,7 +206,6 @@ export function SelectableArtistCard({ artist, disabled, style, ref }: Selectabl
 
 const styles = StyleSheet.create({
   card: {
-    height: layout.artistTileHeight,
     borderRadius: radii.lg,
     overflow: 'hidden',
     backgroundColor: colors.surfaceRaised,
@@ -205,19 +216,12 @@ const styles = StyleSheet.create({
     right: spacing.gridGap,
     bottom: spacing.listGap,
   },
-  // Do topo do texto até o pé do card, de borda a borda.
+  // De borda a borda: a curva acima do texto e o véu atrás dele até passar do
+  // pé do card, que corta o resto.
   copyVeil: {
-    position: 'absolute',
-    top: 0,
-    left: -spacing.gridGap,
-    right: -spacing.gridGap,
-    bottom: -spacing.listGap,
-    backgroundColor: COPY_VEIL,
-  },
-  // A faixa logo acima do texto, do transparente ao véu.
-  copyFade: {
-    top: -COPY_FADE,
-    bottom: '100%',
+    top: -VEIL_FADE,
+    bottom: 'auto',
+    height: VEIL_FADE + VEIL_BELOW,
     left: -spacing.gridGap,
     right: -spacing.gridGap,
   },

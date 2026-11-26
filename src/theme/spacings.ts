@@ -91,11 +91,14 @@ export const layout = {
   eventHeroMinHeight: 186,
   rewardHeroMinHeight: 196,
   rewardTileHeight: 74,
+  // Altura mínima das células tracejadas da 1l ("+N artistas" e "Buscar por
+  // nome"), sem foto; o card de artista é 4:5 da coluna (`centralTileAspect`).
   artistTileHeight: 154,
-  // Card da central na grade da Explorar, largura sobre altura: 4:5 da coluna,
-  // para a foto 3:4 da central sair quase inteira (escolha do dono, 26/11/2026).
+  // Card da central, largura sobre altura: 4:5 da coluna, na grade da Explorar,
+  // na 1l e na sheet de todos os artistas, para a foto 3:4 sair quase inteira
+  // (escolha do dono, 26/11/2026).
   centralTileAspect: 4 / 5,
-  // Véu do card da central (grade da Explorar), preso ao topo do texto: a
+  // Véu do card da central (Explorar, 1l e sheet), preso ao topo do texto: a
   // curva do degradê acima dele (`fade`) e o véu que segue para baixo
   // (`below`), mais comprido que o texto com a fonte a 200% até o pé do card,
   // que corta o resto.

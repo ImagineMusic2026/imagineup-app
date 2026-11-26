@@ -2,12 +2,13 @@ import { StyleSheet, View } from 'react-native';
 import Animated, { FadeOut } from 'react-native-reanimated';
 
 import { Skeleton, SkeletonGroup } from '@/components/skeleton';
-import { borderWidths, colors, layout, motion, radii, spacing } from '@/theme';
+import { borderWidths, colors, motion, radii, spacing } from '@/theme';
+
+import { TILE_COLUMNS } from '../grid';
 
 // Barras do nome e dos fãs, nas medidas do texto que vai chegar.
 const NAME_BAR = { height: 12, width: '52%' } as const;
 const FANS_BAR = { height: 9, width: '32%' } as const;
-const COLUMNS = 2;
 
 function SkeletonCard({ height }: { height: number }) {
   return (
@@ -29,8 +30,8 @@ export interface ArtistGridSkeletonProps {
   count: number;
   /** O que o leitor de tela ouve no foco único ("Carregando os artistas"), via `t()`. */
   accessibilityLabel: string;
-  /** Altura de cada card: a do card da 1l, ou a da grade da Explorar (4:5 da coluna). */
-  tileHeight?: number;
+  /** Altura de cada card: a da grade de quem chama (4:5 da coluna, `centralTileHeight`). */
+  tileHeight: number;
 }
 
 /**
@@ -46,15 +47,15 @@ export interface ArtistGridSkeletonProps {
 export function ArtistGridSkeleton({
   count,
   accessibilityLabel,
-  tileHeight = layout.artistTileHeight,
+  tileHeight,
 }: ArtistGridSkeletonProps) {
-  const rows = Math.ceil(count / COLUMNS);
+  const rows = Math.ceil(count / TILE_COLUMNS);
   return (
     <Animated.View exiting={FadeOut.delay(motion.duration.fast).duration(motion.duration.base)}>
       <SkeletonGroup accessibilityLabel={accessibilityLabel} style={styles.grid}>
         {Array.from({ length: rows }, (_, row) => (
           <View key={row} style={styles.row}>
-            {Array.from({ length: COLUMNS }, (_, column) => (
+            {Array.from({ length: TILE_COLUMNS }, (_, column) => (
               <SkeletonCard key={column} height={tileHeight} />
             ))}
           </View>

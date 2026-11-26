@@ -20,6 +20,8 @@ import { useAgendaQuery } from '@/domains/agenda';
 import {
   ArtistGridSkeleton,
   CentralTile,
+  centralTileHeight,
+  TILE_COLUMNS,
   useArtistsQuery,
   useFanCentralsQuery,
 } from '@/domains/artists';
@@ -30,7 +32,6 @@ import { t } from '@/i18n';
 import { colors, spacing } from '@/theme';
 
 import { ShowsSection } from '../components/shows-section';
-import { centralTileHeight, GRID_COLUMNS } from '../grid';
 import { useExploreRefresh } from '../hooks/use-explore-refresh';
 import { exploreCentrals, type ExploreCentral } from '../showcase';
 
@@ -135,7 +136,7 @@ function CentralsPlaceholder({
 export function ExploreScreen() {
   const bottomInset = useTabBarInset();
   // O card da central é 4:5 da coluna, e o esqueleto tem a mesma altura.
-  const tileHeight = centralTileHeight(useWindowDimensions().width);
+  const tileHeight = centralTileHeight(useWindowDimensions().width, spacing.gutter);
   // A raiz da aba fica montada embaixo da agenda e do artista: as falhas só
   // são anunciadas com ela à vista.
   const focused = useIsFocused();
@@ -176,7 +177,7 @@ export function ExploreScreen() {
     <Screen padded={false} contentStyle={styles.screen}>
       <FlashList<ExploreCentral>
         data={items}
-        numColumns={GRID_COLUMNS}
+        numColumns={TILE_COLUMNS}
         keyExtractor={(item) => item.artist.id}
         renderItem={({ item }) => (
           <View style={styles.cell}>

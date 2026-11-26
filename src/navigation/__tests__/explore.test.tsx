@@ -9,16 +9,16 @@ import AgendaRoute from '@/app/(tabs)/(explorar,ranking)/agenda';
 import ExploreRoute from '@/app/(tabs)/(explorar)/explorar';
 import { buildAgendaPageFixture, rsvpFixture } from '@/domains/agenda/fixtures';
 import type { AgendaEvent, AgendaPage } from '@/domains/agenda/types';
-import { artistKeys } from '@/domains/artists';
+import { artistKeys, centralTileHeight } from '@/domains/artists';
 import { followFixture } from '@/domains/artists/fixtures';
 import type { Artist, FanCentral } from '@/domains/artists/types';
-import { centralTileHeight } from '@/domains/explore/grid';
 import { missionsFixture } from '@/domains/missions';
 import { t } from '@/i18n';
 import { api } from '@/services/api';
 import { ApiError } from '@/services/api/errors';
 import { fixtureWallet, setFixtureNow } from '@/services/fixtures';
 import { haptics } from '@/services/haptics';
+import { spacing } from '@/theme';
 
 // O build do Firebase que o Jest resolve é ESM; a presença invalida a carteira
 // do domínio de perfil, que lê o Firestore.
@@ -232,7 +232,9 @@ describe('Explorar: a vitrine das centrais (seção 29, frente G)', () => {
     });
     expect(netto).toHaveProp('accessibilityHint', t('explore.tileHint'));
     // O card é 4:5 da coluna da tela (a altura mínima; a fonte grande o cresce).
-    expect(netto).toHaveStyle({ minHeight: centralTileHeight(Dimensions.get('window').width) });
+    expect(netto).toHaveStyle({
+      minHeight: centralTileHeight(Dimensions.get('window').width, spacing.gutter),
+    });
     expect(
       screen.getByRole('button', { name: tileName('Rock Salles', '96 mil') }),
     ).toBeOnTheScreen();
