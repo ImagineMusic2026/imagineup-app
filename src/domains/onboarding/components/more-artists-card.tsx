@@ -56,8 +56,11 @@ export function MoreArtistsCard({
 }
 
 const styles = StyleSheet.create({
+  // Sem foto, a célula fica mais baixa que o card de artista (4:5) quando está
+  // numa fileira só dela; dividindo a fileira com um artista, estica até ele.
   card: {
-    height: layout.artistTileHeight,
+    minHeight: layout.artistTileHeight,
+    flexGrow: 1,
     alignItems: 'center',
     justifyContent: 'center',
     gap: spacing.gridGap,

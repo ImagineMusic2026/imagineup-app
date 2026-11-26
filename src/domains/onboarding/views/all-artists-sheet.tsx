@@ -6,6 +6,7 @@ import {
   AccessibilityInfo,
   Platform,
   StyleSheet,
+  useWindowDimensions,
   View,
   type TextInput as NativeTextInput,
 } from 'react-native';
@@ -16,7 +17,13 @@ import { BackButton } from '@/components/header';
 import { SheetGrabber } from '@/components/sheet-grabber';
 import { Text } from '@/components/text';
 import { TextInput } from '@/components/text-input';
-import { ArtistGridSkeleton, filterArtists, sortByOrder } from '@/domains/artists';
+import {
+  ArtistGridSkeleton,
+  centralTileHeight,
+  filterArtists,
+  sortByOrder,
+  TILE_COLUMNS,
+} from '@/domains/artists';
 import { t } from '@/i18n';
 import { colors, spacing } from '@/theme';
 
@@ -24,7 +31,6 @@ import { SelectableArtistCard } from '../components/artist-select-card';
 import { FEATURED_COUNT } from '../consts';
 import { useArtistsLoad, useFocusAfterRecovery } from '../hooks/use-artists-load';
 
-const COLUMNS = 2;
 const isIOS = Platform.OS === 'ios';
 
 /** Aberta a frio, sem a 1l embaixo, a sheet volta para ela. */
@@ -48,6 +54,8 @@ const HALF_GAP = spacing.itemGap / 2;
 export function AllArtistsSheetScreen() {
   const { buscar } = useLocalSearchParams<{ buscar?: string }>();
   const insets = useSafeAreaInsets();
+  // O card de artista é 4:5 da coluna, como na 1l, e o esqueleto tem a mesma altura.
+  const tileHeight = centralTileHeight(useWindowDimensions().width, spacing.gutterOnboarding);
   const { artists, state, retrying, retry } = useArtistsLoad();
   const [query, setQuery] = useState('');
   const searchRef = useRef<NativeTextInput>(null);
@@ -98,11 +106,11 @@ export function AllArtistsSheetScreen() {
       {state === 'ready' ? (
         <FlashList
           data={results}
-          numColumns={COLUMNS}
+          numColumns={TILE_COLUMNS}
           keyExtractor={(artist) => artist.id}
           renderItem={({ item }) => (
             <View style={styles.cell}>
-              <SelectableArtistCard artist={item} />
+              <SelectableArtistCard artist={item} height={tileHeight} />
             </View>
           )}
           ListEmptyComponent={
@@ -133,6 +141,7 @@ export function AllArtistsSheetScreen() {
         <View style={styles.loading}>
           <ArtistGridSkeleton
             count={FEATURED_COUNT}
+            tileHeight={tileHeight}
             accessibilityLabel={t('onboarding.chooseArtists.loading')}
           />
         </View>

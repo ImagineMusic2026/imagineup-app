@@ -1,6 +1,6 @@
 import { router } from 'expo-router';
 import { useEffect, useRef, useState, type ReactElement, type Ref } from 'react';
-import { AccessibilityInfo, ScrollView, StyleSheet, View } from 'react-native';
+import { AccessibilityInfo, ScrollView, StyleSheet, useWindowDimensions, View } from 'react-native';
 
 import { BottomActionBar } from '@/components/bottom-action-bar';
 import { Button } from '@/components/button';
@@ -8,7 +8,12 @@ import { EmptyState } from '@/components/empty-state';
 import { Screen } from '@/components/screen';
 import { StepProgress } from '@/components/step-progress';
 import { Text } from '@/components/text';
-import { ArtistGridSkeleton, type Artist } from '@/domains/artists';
+import {
+  ArtistGridSkeleton,
+  centralTileHeight,
+  TILE_COLUMNS,
+  type Artist,
+} from '@/domains/artists';
 import { ENTRY_STEP_COUNT } from '@/domains/auth';
 import { t } from '@/i18n';
 import { actionRefusal } from '@/services/api/refusal';
@@ -30,8 +35,6 @@ import {
   splitFeatured,
 } from '../selection';
 
-const COLUMNS = 2;
-
 function openAllArtists(search: boolean): void {
   router.push(
     search ? { pathname: '/todos-artistas', params: { buscar: '1' } } : '/todos-artistas',
@@ -41,19 +44,19 @@ function openAllArtists(search: boolean): void {
 /** Linhas de duas células; a última, sozinha, fica com meia largura. */
 function GridRows({ cells }: { cells: ReactElement[] }) {
   const rows: ReactElement[][] = [];
-  for (let index = 0; index < cells.length; index += COLUMNS) {
-    rows.push(cells.slice(index, index + COLUMNS));
+  for (let index = 0; index < cells.length; index += TILE_COLUMNS) {
+    rows.push(cells.slice(index, index + TILE_COLUMNS));
   }
   return (
     <View style={styles.grid}>
       {rows.map((row, rowIndex) => (
         <View key={rowIndex} style={styles.row}>
           {row.map((cell, column) => (
-            <CascadeIn key={cell.key} index={rowIndex * COLUMNS + column} style={styles.cell}>
+            <CascadeIn key={cell.key} index={rowIndex * TILE_COLUMNS + column} style={styles.cell}>
               {cell}
             </CascadeIn>
           ))}
-          {row.length < COLUMNS ? <View style={styles.cell} /> : null}
+          {row.length < TILE_COLUMNS ? <View style={styles.cell} /> : null}
         </View>
       ))}
     </View>
@@ -63,11 +66,13 @@ function GridRows({ cells }: { cells: ReactElement[] }) {
 interface ArtistGridProps {
   artists: readonly Artist[];
   locked: boolean;
+  /** Altura do card de artista: 4:5 da coluna. */
+  tileHeight: number;
   /** O primeiro card, para o foco do leitor de tela. */
   firstCardRef: Ref<View>;
 }
 
-function ArtistGrid({ artists, locked, firstCardRef }: ArtistGridProps) {
+function ArtistGrid({ artists, locked, tileHeight, firstCardRef }: ArtistGridProps) {
   const { featured, rest } = splitFeatured(artists);
   const cells = featured.map((artist, index) => (
     <SelectableArtistCard
@@ -75,6 +80,7 @@ function ArtistGrid({ artists, locked, firstCardRef }: ArtistGridProps) {
       ref={index === 0 ? firstCardRef : undefined}
       artist={artist}
       disabled={locked}
+      height={tileHeight}
     />
   ));
   if (rest.length > 0) {
@@ -109,6 +115,8 @@ export function ChooseArtistsScreen() {
   const finish = useFinishOnboarding();
   const [barHeight, setBarHeight] = useState(0);
   const firstCardRef = useRef<View>(null);
+  // O card de artista é 4:5 da coluna, como na Explorar, e o esqueleto tem a mesma altura.
+  const tileHeight = centralTileHeight(useWindowDimensions().width, spacing.gutterOnboarding);
 
   // Saiu da escolha (onboarding concluído, sessão que caiu): a próxima começa vazia.
   useEffect(() => clearSelection, [clearSelection]);
@@ -170,7 +178,12 @@ export function ChooseArtistsScreen() {
 
         <View style={styles.body}>
           {gridState === 'ready' && artists ? (
-            <ArtistGrid artists={artists} locked={saving} firstCardRef={firstCardRef} />
+            <ArtistGrid
+              artists={artists}
+              locked={saving}
+              tileHeight={tileHeight}
+              firstCardRef={firstCardRef}
+            />
           ) : gridState === 'error' ? (
             <EmptyState
               tone="error"
@@ -181,6 +194,7 @@ export function ChooseArtistsScreen() {
           ) : (
             <ArtistGridSkeleton
               count={FEATURED_COUNT}
+              tileHeight={tileHeight}
               accessibilityLabel={t('onboarding.chooseArtists.loading')}
             />
           )}

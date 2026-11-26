@@ -44,10 +44,11 @@ function openCentral(artistId: string): void {
  * foto da central, 3:4, ocupa o card todo, presa no topo: só uma lasca de
  * baixo fica de fora, atrás do texto. Nada de véu por cima da foto; só o texto
  * tem o seu, que começa transparente e escurece até o contraste do texto (o
- * véu do card da 1l fechava a partir da metade do card e cobria o rosto). O
- * card inteiro é um alvo só ("Netto Brito, 412 mil fãs, você está na
- * central", dica "Abre a central"), e nada dentro dele é pressável. A altura é
- * mínima, não fixa: com a fonte a 200%, o card cresce.
+ * véu antigo, o da 1l, fechava a partir da metade do card e cobria o rosto; a
+ * 1l passou a usar o mesmo véu deste card). O card inteiro é um alvo só
+ * ("Netto Brito, 412 mil fãs, você está na central", dica "Abre a central"), e
+ * nada dentro dele é pressável. A altura é mínima, não fixa: com a fonte a
+ * 200%, o card cresce.
  */
 export function CentralTile({ artist, member, minHeight, style, testID }: CentralTileProps) {
   const card = artistCardLabel(artist);

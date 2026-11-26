@@ -10,6 +10,7 @@ export {
   type CentralCardProps,
 } from './components/central-card';
 export { CentralTile, type CentralTileProps } from './components/central-tile';
+export { centralTileHeight, TILE_COLUMNS } from './grid';
 export {
   artistKeys,
   artistMutationKeys,
