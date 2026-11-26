@@ -24,9 +24,27 @@ export const motion = {
     rise: 12,
     step: 60,
   },
+  // Bloco grande que abre empurrando a tela (o card do check-in da Início, o
+  // `RevealExpandable`). Com o `base` e o `out`, três quartos do caminho saíam
+  // nos primeiros 50 ms, e o dono viu o card "abrir na hora" (25/11/2026): a
+  // altura desce no `standard`, devagar o bastante para se ver, e sobe mais
+  // rápido no `inOut`; o conteúdo entra em fade, descendo `rise`, um pouco
+  // depois de a altura começar, e sai antes de ela fechar.
+  reveal: {
+    open: 420,
+    close: 300,
+    contentDelay: 80,
+    contentIn: 280,
+    contentOut: 160,
+    rise: 12,
+    // Aberto, a troca de altura do conteúdo (o botão que vira o pé do "feito").
+    resize: 250,
+  },
   easing: {
     out: Easing.bezier(0.23, 1, 0.32, 1),
     inOut: Easing.bezier(0.65, 0, 0.35, 1),
+    // Sai devagar e assenta macio: metade do caminho em 20% do tempo, e não em 5%.
+    standard: Easing.bezier(0.2, 0, 0, 1),
   },
   spring: {
     gentle: { damping: 18, stiffness: 220, mass: 0.7 },
