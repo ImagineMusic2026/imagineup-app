@@ -3,7 +3,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { router, Stack } from 'expo-router';
 import { Tabs } from 'expo-router/js-tabs';
 import { act, fireEvent, renderRouter, screen, waitFor } from 'expo-router/testing-library';
-import { AccessibilityInfo, Text } from 'react-native';
+import { AccessibilityInfo, Dimensions, Text } from 'react-native';
 
 import AgendaRoute from '@/app/(tabs)/(explorar,ranking)/agenda';
 import ExploreRoute from '@/app/(tabs)/(explorar)/explorar';
@@ -12,6 +12,7 @@ import type { AgendaEvent, AgendaPage } from '@/domains/agenda/types';
 import { artistKeys } from '@/domains/artists';
 import { followFixture } from '@/domains/artists/fixtures';
 import type { Artist, FanCentral } from '@/domains/artists/types';
+import { centralTileHeight } from '@/domains/explore/grid';
 import { missionsFixture } from '@/domains/missions';
 import { t } from '@/i18n';
 import { api } from '@/services/api';
@@ -230,6 +231,8 @@ describe('Explorar: a vitrine das centrais (seção 29, frente G)', () => {
       name: tileName('Netto Brito', '412 mil', true),
     });
     expect(netto).toHaveProp('accessibilityHint', t('explore.tileHint'));
+    // O card é 4:5 da coluna da tela (a altura mínima; a fonte grande o cresce).
+    expect(netto).toHaveStyle({ minHeight: centralTileHeight(Dimensions.get('window').width) });
     expect(
       screen.getByRole('button', { name: tileName('Rock Salles', '96 mil') }),
     ).toBeOnTheScreen();

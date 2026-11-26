@@ -92,6 +92,9 @@ export const layout = {
   rewardHeroMinHeight: 196,
   rewardTileHeight: 74,
   artistTileHeight: 154,
+  // Card da central na grade da Explorar, largura sobre altura: 4:5 da coluna,
+  // para a foto 3:4 da central sair quase inteira (escolha do dono, 26/11/2026).
+  centralTileAspect: 4 / 5,
   // Véu do card da central (grade da Explorar), preso ao topo do texto: a
   // curva do degradê acima dele (`fade`) e o véu que segue para baixo
   // (`below`), mais comprido que o texto com a fonte a 200% até o pé do card,

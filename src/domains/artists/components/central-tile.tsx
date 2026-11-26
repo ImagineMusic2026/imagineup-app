@@ -18,6 +18,8 @@ export interface CentralTileProps {
   artist: Artist;
   /** O fã está nesta central: a pílula "Na central" e o rótulo dizem isso. */
   member: boolean;
+  /** Altura mínima, da grade: 4:5 da coluna (`centralTileHeight`, da Explorar). */
+  minHeight: number;
   style?: StyleProp<ViewStyle>;
   testID?: string;
 }
@@ -25,10 +27,6 @@ export interface CentralTileProps {
 // O nome quebra em até 2 linhas com a fonte grande, como no card da 1l.
 const NAME_LINES = 2;
 const MEMBER_ICON_SIZE = 10;
-// A foto da central é 3:4 e o card é mais largo que alto: ela sobra embaixo.
-// Ela sobe um quarto dessa sobra (o `object-position` do CSS), e o rosto, que
-// nas fotos das centrais fica no terço de cima, sai inteiro acima do texto.
-const PHOTO_POSITION = { top: '25%', left: '50%' } as const;
 // O véu fica preso ao texto, e não ao card: com a fonte grande, o nome quebra,
 // o bloco sobe, e o véu sobe junto. Altura fixa, para a curva do degradê
 // (`centralTileCopy`) terminar sempre no topo do texto.
@@ -40,25 +38,27 @@ function openCentral(artistId: string): void {
 }
 
 /**
- * Card de uma central na grade da Explorar (seção 29, frente G), nas medidas do
- * card da 1l: a foto (o placeholder de marca sem ela), o nome, "N fãs" e, nas
- * centrais do fã, a pílula "Na central". A foto ocupa o card todo, sem véu por
- * cima dela; só o texto tem o seu, que começa transparente e escurece até o
- * contraste do texto (o véu da 1l fechava a partir da metade do card e cobria
- * o rosto). O card inteiro é um alvo só ("Netto Brito, 412 mil fãs, você está
- * na central", dica "Abre a central"), e nada dentro dele é pressável. A altura
- * é mínima, não fixa: com a fonte a 200%, o card cresce.
+ * Card de uma central na grade da Explorar (seção 29, frente G): a foto (o
+ * placeholder de marca sem ela), o nome, "N fãs" e, nas centrais do fã, a
+ * pílula "Na central". O card é 4:5 da coluna (a altura vem da grade), e a
+ * foto da central, 3:4, ocupa o card todo, presa no topo: só uma lasca de
+ * baixo fica de fora, atrás do texto. Nada de véu por cima da foto; só o texto
+ * tem o seu, que começa transparente e escurece até o contraste do texto (o
+ * véu do card da 1l fechava a partir da metade do card e cobria o rosto). O
+ * card inteiro é um alvo só ("Netto Brito, 412 mil fãs, você está na
+ * central", dica "Abre a central"), e nada dentro dele é pressável. A altura é
+ * mínima, não fixa: com a fonte a 200%, o card cresce.
  */
-export function CentralTile({ artist, member, style, testID }: CentralTileProps) {
+export function CentralTile({ artist, member, minHeight, style, testID }: CentralTileProps) {
   const card = artistCardLabel(artist);
 
   return (
     <PhotoCard
       uri={artist.photoURL}
       fallback={{ kind: 'brand', seed: artist.id }}
-      minHeight={layout.artistTileHeight}
+      minHeight={minHeight}
       radius={radii.lg}
-      contentPosition={PHOTO_POSITION}
+      contentPosition="top"
       topLeft={
         member ? (
           <Pill
@@ -87,8 +87,8 @@ export function CentralTile({ artist, member, style, testID }: CentralTileProps)
 }
 
 const styles = StyleSheet.create({
-  // As medidas do card da 1l: o texto a 11 dos lados e a 10 do pé, a pílula
-  // a 9 do topo, e a borda neutra em volta.
+  // Os recuos do card da 1l: o texto a 11 dos lados e a 10 do pé, a pílula a
+  // 9 do topo, e a borda neutra em volta.
   card: {
     paddingTop: spacing.tileGap,
     paddingHorizontal: spacing.gridGap,

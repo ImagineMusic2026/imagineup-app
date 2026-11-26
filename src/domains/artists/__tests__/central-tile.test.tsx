@@ -24,6 +24,8 @@ const NETTO: Artist = {
   fanCount: 412_000,
   order: 0,
 };
+// A altura da grade da Explorar numa tela de 393 de largura (4:5 da coluna).
+const HEIGHT = 216;
 
 beforeEach(() => {
   jest.clearAllMocks();
@@ -36,7 +38,7 @@ afterEach(() => {
 
 describe('CentralTile', () => {
   it('fora da central: um alvo só com o nome e os fãs, sem a marca', () => {
-    render(<CentralTile artist={NETTO} member={false} />);
+    render(<CentralTile artist={NETTO} member={false} minHeight={HEIGHT} />);
     const tile = screen.getByRole('button', { name: 'Netto Brito, 412 mil fãs' });
     expect(tile).toHaveProp('accessibilityHint', t('explore.tileHint'));
     expect(screen.getByText('Netto Brito')).toBeOnTheScreen();
@@ -47,7 +49,7 @@ describe('CentralTile', () => {
   });
 
   it('na central: a pílula "Na central", e o leitor ouve isso no mesmo foco', () => {
-    render(<CentralTile artist={{ ...NETTO, fanCount: 1 }} member />);
+    render(<CentralTile artist={{ ...NETTO, fanCount: 1 }} member minHeight={HEIGHT} />);
     expect(
       screen.getByRole('button', { name: 'Netto Brito, 1 fã, você está na central' }),
     ).toBeOnTheScreen();
@@ -57,7 +59,7 @@ describe('CentralTile', () => {
   });
 
   it('a foto ocupa o card todo, sem véu por cima: o único véu é o do texto, preso ao topo dele', () => {
-    render(<CentralTile artist={NETTO} member />);
+    render(<CentralTile artist={NETTO} member minHeight={HEIGHT} />);
     const [veil, ...others] = screen.UNSAFE_getAllByType(LinearGradient);
     expect(others).toHaveLength(0);
     expect(veil.props.colors).toEqual(gradients.scrims.centralTileCopy.colors);
@@ -68,18 +70,22 @@ describe('CentralTile', () => {
     });
   });
 
-  it('a foto 3:4 sobe um quarto da sobra, para o rosto sair acima do texto', () => {
+  it('a altura mínima vem da grade, e a foto 3:4 fica presa no topo', () => {
     render(
-      <CentralTile artist={{ ...NETTO, photoURL: 'https://example.com/netto.jpg' }} member={false} />,
+      <CentralTile
+        artist={{ ...NETTO, photoURL: 'https://example.com/netto.jpg' }}
+        member={false}
+        minHeight={HEIGHT}
+      />,
     );
-    expect(screen.UNSAFE_getByType(Image).props.contentPosition).toEqual({
-      top: '25%',
-      left: '50%',
+    expect(screen.getByRole('button', { name: 'Netto Brito, 412 mil fãs' })).toHaveStyle({
+      minHeight: HEIGHT,
     });
+    expect(screen.UNSAFE_getByType(Image).props.contentPosition).toBe('top');
   });
 
   it('tocar abre a central', () => {
-    render(<CentralTile artist={NETTO} member={false} />);
+    render(<CentralTile artist={NETTO} member={false} minHeight={HEIGHT} />);
     fireEvent.press(screen.getByRole('button', { name: 'Netto Brito, 412 mil fãs' }));
     expect(router.push).toHaveBeenCalledWith({
       pathname: '/artista/[artistaId]',
