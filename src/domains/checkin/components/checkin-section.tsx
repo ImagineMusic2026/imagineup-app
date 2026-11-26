@@ -3,8 +3,8 @@ import { StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 
 import { pillMinHeight } from '@/components/pill';
 import { PointsToast } from '@/components/points-toast';
-// O `Expandable` pelo arquivo: o index do perfil puxa o Firebase e fecharia um ciclo (a 1e).
-import { Expandable } from '@/domains/profile/components/expandable';
+// O `RevealExpandable` pelo arquivo: o index do perfil puxa o Firebase e fecharia um ciclo (a 1e).
+import { RevealExpandable } from '@/domains/profile/components/expandable';
 import { useIsOnline } from '@/hooks/use-is-online';
 import { useScreenReaderEnabled } from '@/hooks/use-screen-reader-enabled';
 import { layout, spacing } from '@/theme';
@@ -92,12 +92,15 @@ function useCloseAfterCheckin(
 }
 
 /**
- * O card abre e fecha por altura e opacidade num valor animado (o `Expandable`
- * do perfil, com o conteúdo fora do fluxo do recorte), na hora com reduzir
- * movimento, sem `entering` nem `LinearTransition`. Ele só monta na primeira
- * vez que abre e fica montado para fechar animado. No Android, apaga composto
- * fora da tela: sem isso, o fundo do card, a borda e o botão apagariam cada um
- * sozinho.
+ * O card abre e fecha como gaveta, o `RevealExpandable` do perfil (os tempos
+ * de `motion.reveal`, com o conteúdo fora do fluxo do recorte), na hora com
+ * reduzir movimento, sem `entering` nem `LinearTransition`. Ele monta fechado,
+ * com altura 0, fora do toque e do leitor, assim que o estado chega: medido
+ * antes do primeiro toque, abre todas as vezes pelo mesmo caminho. Montado só
+ * na primeira abertura, ele começava o caminho com a altura 0 e pulava para
+ * quase aberto quando a medida chegava (o "abre na hora" do dono, 25/11/2026).
+ * No Android, apaga composto fora da tela: sem isso, o fundo do card, a borda
+ * e o botão apagariam cada um sozinho.
  *
  * O "+N" sobe do canto de cima, à direita, e mora sempre aqui, fora do
  * recorte: dentro do card, sairia cortado quando ele fecha, e montado junto
@@ -121,28 +124,24 @@ function CheckinPanelView({
   const online = useIsOnline();
   const { checkin, award, completed, isPending, failure } = useCheckinMutation();
   useCloseAfterCheckin(completed, state.resetsAt, open, onClose);
-  const [mounted, setMounted] = useState(open);
-  if (open && !mounted) setMounted(true);
 
   return (
     <View testID="checkin-section" style={styles.section}>
-      <Expandable
+      <RevealExpandable
         open={open}
         needsOffscreenAlphaCompositing
         style={[styles.content, style]}
         testID="checkin-panel"
       >
-        {mounted ? (
-          <CheckinCard
-            state={state}
-            now={now}
-            online={online}
-            pending={isPending}
-            failure={failure}
-            onCheckin={checkin}
-          />
-        ) : null}
-      </Expandable>
+        <CheckinCard
+          state={state}
+          now={now}
+          online={online}
+          pending={isPending}
+          failure={failure}
+          onCheckin={checkin}
+        />
+      </RevealExpandable>
       <View pointerEvents="none" style={styles.toastAnchor}>
         <PointsToast
           points={award?.points ?? 0}

@@ -254,9 +254,12 @@ describe('check-in da Início: o que aparece', () => {
     expect(icon).toHaveProp('accessibilityHint', 'Abre o check-in diário');
     expect(icon).toHaveProp('accessibilityState', expect.objectContaining({ expanded: false }));
     expect(screen.getByTestId('checkin-header-dot')).toBeTruthy();
-    // O card fechado nem monta, e o bloco dele tem altura 0: fora da tela, do leitor e do toque.
-    expect(screen.queryByTestId('checkin-card', hidden)).toBeNull();
+    // O card fechado já monta, para estar medido no primeiro toque, num bloco de
+    // altura 0: fora da tela, do leitor e do toque.
+    expect(screen.getByTestId('checkin-card', hidden)).toBeTruthy();
+    expect(screen.queryByTestId('checkin-card')).toBeNull();
     expect(screen.queryByRole('header', { name: OPEN })).toBeNull();
+    expect(screen.queryByRole('button', { name: ACTION })).toBeNull();
     const panel = screen.getByTestId('checkin-panel', hidden);
     expect(panel).toHaveProp('pointerEvents', 'none');
     expect(panel).toHaveProp('accessibilityElementsHidden', true);
@@ -293,8 +296,9 @@ describe('check-in da Início: o que aparece', () => {
       'accessibilityState',
       expect.objectContaining({ expanded: false }),
     );
-    // Fechado pelo fã, o card fica montado, para abrir de novo animado.
+    // Fechado pelo fã, o card segue montado, só fora do leitor e do toque.
     expect(screen.getByTestId('checkin-card', hidden)).toBeTruthy();
+    expect(screen.queryByTestId('checkin-card')).toBeNull();
     expect(announcements()).toEqual([]);
   });
 
@@ -320,7 +324,7 @@ describe('check-in da Início: o que aparece', () => {
 
     const icon = await screen.findByRole('button', { name: DONE_ICON });
     expect(screen.queryByTestId('checkin-header-dot')).toBeNull();
-    expect(screen.queryByTestId('checkin-card', hidden)).toBeNull();
+    expect(screen.queryByTestId('checkin-card')).toBeNull();
 
     fireEvent.press(icon);
     expect(screen.getByRole('header', { name: DONE_HEADER })).toBeTruthy();
