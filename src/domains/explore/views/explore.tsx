@@ -2,7 +2,14 @@ import { FlashList } from '@shopify/flash-list';
 import { useIsFocused } from 'expo-router';
 import { Search } from 'lucide-react-native';
 import { useEffect, useRef, useState } from 'react';
-import { AccessibilityInfo, Platform, RefreshControl, StyleSheet, View } from 'react-native';
+import {
+  AccessibilityInfo,
+  Platform,
+  RefreshControl,
+  StyleSheet,
+  useWindowDimensions,
+  View,
+} from 'react-native';
 
 import { EmptyState } from '@/components/empty-state';
 import { LargeTitleHeader } from '@/components/header';
@@ -23,10 +30,10 @@ import { t } from '@/i18n';
 import { colors, spacing } from '@/theme';
 
 import { ShowsSection } from '../components/shows-section';
+import { centralTileHeight, GRID_COLUMNS } from '../grid';
 import { useExploreRefresh } from '../hooks/use-explore-refresh';
 import { exploreCentrals, type ExploreCentral } from '../showcase';
 
-const COLUMNS = 2;
 // A primeira tela da grade enquanto as centrais carregam.
 const SKELETON_TILES = 6;
 const isIOS = Platform.OS === 'ios';
@@ -77,11 +84,13 @@ function ExploreHeader({ query, onQueryChange, now }: ExploreHeaderProps) {
 function CentralsPlaceholder({
   state,
   query,
+  tileHeight,
   retrying,
   onRetry,
 }: {
   state: CentralsState;
   query: string;
+  tileHeight: number;
   retrying: boolean;
   onRetry: () => void;
 }) {
@@ -89,7 +98,11 @@ function CentralsPlaceholder({
     case 'loading':
       return (
         <View style={styles.inset}>
-          <ArtistGridSkeleton count={SKELETON_TILES} accessibilityLabel={t('explore.loading')} />
+          <ArtistGridSkeleton
+            count={SKELETON_TILES}
+            tileHeight={tileHeight}
+            accessibilityLabel={t('explore.loading')}
+          />
         </View>
       );
     case 'error':
@@ -121,6 +134,8 @@ function CentralsPlaceholder({
  */
 export function ExploreScreen() {
   const bottomInset = useTabBarInset();
+  // O card da central é 4:5 da coluna, e o esqueleto tem a mesma altura.
+  const tileHeight = centralTileHeight(useWindowDimensions().width);
   // A raiz da aba fica montada embaixo da agenda e do artista: as falhas só
   // são anunciadas com ela à vista.
   const focused = useIsFocused();
@@ -161,13 +176,14 @@ export function ExploreScreen() {
     <Screen padded={false} contentStyle={styles.screen}>
       <FlashList<ExploreCentral>
         data={items}
-        numColumns={COLUMNS}
+        numColumns={GRID_COLUMNS}
         keyExtractor={(item) => item.artist.id}
         renderItem={({ item }) => (
           <View style={styles.cell}>
             <CentralTile
               artist={item.artist}
               member={item.member}
+              minHeight={tileHeight}
               testID={`explore-central-${item.artist.id}`}
             />
           </View>
@@ -177,6 +193,7 @@ export function ExploreScreen() {
           <CentralsPlaceholder
             state={state}
             query={query}
+            tileHeight={tileHeight}
             retrying={artists.isFetching}
             onRetry={() => void artists.refetch()}
           />

@@ -9,9 +9,9 @@ const NAME_BAR = { height: 12, width: '52%' } as const;
 const FANS_BAR = { height: 9, width: '32%' } as const;
 const COLUMNS = 2;
 
-function SkeletonCard() {
+function SkeletonCard({ height }: { height: number }) {
   return (
-    <View style={styles.card}>
+    <View testID="artist-grid-skeleton-card" style={[styles.card, { height }]}>
       <Skeleton tone="line" height={NAME_BAR.height} width={NAME_BAR.width} radius={radii.pill} />
       <Skeleton
         tone="line"
@@ -29,6 +29,8 @@ export interface ArtistGridSkeletonProps {
   count: number;
   /** O que o leitor de tela ouve no foco único ("Carregando os artistas"), via `t()`. */
   accessibilityLabel: string;
+  /** Altura de cada card: a do card da 1l, ou a da grade da Explorar (4:5 da coluna). */
+  tileHeight?: number;
 }
 
 /**
@@ -38,9 +40,14 @@ export interface ArtistGridSkeletonProps {
  * entra por cima: sumindo num quadro, sobravam quadros vazios até a grade
  * montar (os cards levam alguns quadros para desenhar). Com reduzir
  * movimento, sai na hora (o Reanimated segue a opção do sistema). A
- * quantidade vem de quem chama: o esqueleto não importa o `onboarding`.
+ * quantidade e a altura vêm de quem chama: o esqueleto não importa o
+ * `onboarding` nem o `explore`.
  */
-export function ArtistGridSkeleton({ count, accessibilityLabel }: ArtistGridSkeletonProps) {
+export function ArtistGridSkeleton({
+  count,
+  accessibilityLabel,
+  tileHeight = layout.artistTileHeight,
+}: ArtistGridSkeletonProps) {
   const rows = Math.ceil(count / COLUMNS);
   return (
     <Animated.View exiting={FadeOut.delay(motion.duration.fast).duration(motion.duration.base)}>
@@ -48,7 +55,7 @@ export function ArtistGridSkeleton({ count, accessibilityLabel }: ArtistGridSkel
         {Array.from({ length: rows }, (_, row) => (
           <View key={row} style={styles.row}>
             {Array.from({ length: COLUMNS }, (_, column) => (
-              <SkeletonCard key={column} />
+              <SkeletonCard key={column} height={tileHeight} />
             ))}
           </View>
         ))}
@@ -67,7 +74,6 @@ const styles = StyleSheet.create({
   },
   card: {
     flex: 1,
-    height: layout.artistTileHeight,
     justifyContent: 'flex-end',
     paddingHorizontal: spacing.gridGap,
     paddingBottom: spacing.listGap,

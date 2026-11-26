@@ -21,7 +21,11 @@ import { radii, spacing, type ScrimPreset } from '@/theme';
 interface PhotoCardBaseProps {
   uri: string | null | undefined;
   fallback: RemoteImageFallback;
-  scrim: ScrimPreset;
+  /**
+   * Véu sobre a foto inteira. Sem ele, a foto fica limpa e quem chama escurece
+   * só atrás do próprio texto (o card da central, na grade da Explorar).
+   */
+  scrim?: ScrimPreset;
   /** Altura mínima, não fixa: com a fonte a 200% o card cresce. */
   minHeight?: number;
   radius?: number;
@@ -66,7 +70,8 @@ export type PhotoCardProps = StaticPhotoCardProps | PressablePhotoCardProps;
 
 /**
  * Foto de ponta a ponta com véu e o conteúdo embaixo: destaque da loja (1h,
- * pressável, sem botão dentro) e do show (1m, não pressável, com botões dentro).
+ * pressável, sem botão dentro), do show (1m, não pressável, com botões dentro)
+ * e o card da central na grade da Explorar (sem véu no card todo).
  */
 export function PhotoCard(props: PhotoCardProps) {
   const {
@@ -99,7 +104,7 @@ export function PhotoCard(props: PhotoCardProps) {
         fallbackSize={fallbackSize}
         style={StyleSheet.absoluteFill}
       />
-      <Scrim preset={scrim} />
+      {scrim ? <Scrim preset={scrim} /> : null}
       {topLeft ? <View style={styles.topLeft}>{topLeft}</View> : null}
       {children ? <View style={styles.content}>{children}</View> : null}
     </>
