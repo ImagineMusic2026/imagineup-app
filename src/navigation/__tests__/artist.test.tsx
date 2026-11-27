@@ -602,7 +602,8 @@ describe('página do artista (1d)', () => {
     expect(share).toHaveBeenCalledWith(
       expect.objectContaining({
         url: expect.stringMatching(/\/artista\/nettobrito\?ref=CAMILA12$/),
-        message: 'Entra na central de Netto Brito no ImagineUP',
+        message:
+          'Entra na central de Netto Brito no ImagineUP. Use o meu código de convite: CAMILA12',
       }),
     );
   });

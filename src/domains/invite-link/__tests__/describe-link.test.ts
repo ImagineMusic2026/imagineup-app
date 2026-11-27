@@ -16,6 +16,7 @@ const POST: InviteTarget = { kind: 'post', postId: 'p-clipe', artistName: 'Netto
 const POST_LOADING: InviteTarget = { kind: 'post', postId: 'p-clipe', artistName: null };
 const EVENT: InviteTarget = { kind: 'event', showTitle: 'São João de Irará' };
 const EVENT_UNKNOWN: InviteTarget = { kind: 'event', showTitle: null };
+const ARTIST: InviteTarget = { kind: 'artist', artistId: 'nettobrito', artistName: 'Netto Brito' };
 const APP: InviteTarget = { kind: 'app' };
 
 describe('link do convite', () => {
@@ -45,9 +46,40 @@ describe('link do convite', () => {
       EVENT_UNKNOWN,
       'Vem pro ImagineUP, a central de fãs dos artistas da Imagine Music',
     ],
+    ['central', ARTIST, 'Entra na central de Netto Brito no ImagineUP'],
     ['app', APP, 'Vem pro ImagineUP, a central de fãs dos artistas da Imagine Music'],
-  ])('a mensagem que vai junto: %s', (_name, target, message) => {
-    expect(inviteMessage(target)).toBe(message);
+  ])('a mensagem que vai junto, sem o código (não carregou): %s', (_name, target, message) => {
+    expect(inviteMessage(target, null)).toBe(message);
+  });
+
+  it.each<[string, InviteTarget, string]>([
+    [
+      'post',
+      POST,
+      'Olha esse post de Netto Brito no ImagineUP. Use o meu código de convite: CAMILA12',
+    ],
+    [
+      'show',
+      EVENT,
+      'Vamos juntos? São João de Irará está na agenda do ImagineUP. Use o meu código de convite: CAMILA12',
+    ],
+    [
+      'show sem nome',
+      EVENT_UNKNOWN,
+      'Vem pro ImagineUP, a central de fãs dos artistas da Imagine Music. Use o meu código de convite: CAMILA12',
+    ],
+    [
+      'central',
+      ARTIST,
+      'Entra na central de Netto Brito no ImagineUP. Use o meu código de convite: CAMILA12',
+    ],
+    [
+      'app',
+      APP,
+      'Vem pro ImagineUP, a central de fãs dos artistas da Imagine Music. Use o meu código de convite: CAMILA12',
+    ],
+  ])('a mensagem leva o código escrito, para digitar no cadastro: %s', (_name, target, message) => {
+    expect(inviteMessage(target, 'CAMILA12')).toBe(message);
   });
 
   it('leva o código do fã no ?ref= e mostra o endereço sem o https', () => {

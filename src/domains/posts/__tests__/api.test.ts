@@ -123,12 +123,12 @@ describe('compartilhar um post', () => {
     jest.restoreAllMocks();
   });
 
-  it('o link é o do post, com o código de convite do fã', async () => {
+  it('o link é o do post, com o código de convite do fã, que vai também escrito', async () => {
     const spy = share();
     Platform.OS = 'android';
     await sharePost(post, 'CAMILA12');
     expect(spy).toHaveBeenCalledWith({
-      message: `Olha esse post de Netto Brito no ImagineUP\n${SHARE_LINK_BASE}${postPath('p-clipe')}?ref=CAMILA12`,
+      message: `Olha esse post de Netto Brito no ImagineUP. Use o meu código de convite: CAMILA12\n${SHARE_LINK_BASE}${postPath('p-clipe')}?ref=CAMILA12`,
     });
   });
 
@@ -137,7 +137,7 @@ describe('compartilhar um post', () => {
     Platform.OS = 'ios';
     await sharePost(post, 'CAMILA12');
     expect(spy).toHaveBeenCalledWith({
-      message: 'Olha esse post de Netto Brito no ImagineUP',
+      message: 'Olha esse post de Netto Brito no ImagineUP. Use o meu código de convite: CAMILA12',
       url: `${SHARE_LINK_BASE}/post/p-clipe?ref=CAMILA12`,
     });
   });
