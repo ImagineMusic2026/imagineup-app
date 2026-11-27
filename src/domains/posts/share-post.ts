@@ -14,10 +14,13 @@ export function postPath(postId: string): string {
  * Abre a folha de compartilhar do sistema com o link do post e o código de
  * convite do fã (`?ref=`), que o `+native-intent` lê do outro lado. Quem
  * credita os pontos é a API, quando alguém abre o link no app ou se cadastra
- * por ele: nada de "+N" na hora. No iOS o link vai no campo próprio (com ele
- * também na mensagem, sairia duas vezes); no Android, na mensagem. Devolve se
- * a folha voltou compartilhada (no Android, o sistema sempre diz que sim; no
- * iOS, cancelar volta `dismissedAction`).
+ * por ele: nada de "+N" na hora. O código vai também escrito na mensagem,
+ * como no compartilhar do fã-clube: o link `https` abre o site, e não o app,
+ * e quem instala pela loja só fica atribuído se digitar o código (20.15 da
+ * nota). No iOS o link vai no campo próprio (com ele também na mensagem,
+ * sairia duas vezes); no Android, na mensagem. Devolve se a folha voltou
+ * compartilhada (no Android, o sistema sempre diz que sim; no iOS, cancelar
+ * volta `dismissedAction`).
  */
 export async function sharePost(
   post: Pick<Post, 'id' | 'artist'>,
@@ -25,7 +28,9 @@ export async function sharePost(
   linkBase?: string,
 ): Promise<boolean> {
   const url = buildInviteUrl(inviteCode, postPath(post.id), linkBase);
-  const message = t('post.shareMessage', { artist: post.artist.name });
+  const message = inviteCode
+    ? t('post.shareMessageCode', { artist: post.artist.name, code: inviteCode })
+    : t('post.shareMessage', { artist: post.artist.name });
   const result = await Share.share(
     Platform.OS === 'ios' ? { message, url } : { message: `${message}\n${url}` },
   );

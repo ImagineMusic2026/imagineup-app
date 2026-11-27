@@ -68,18 +68,30 @@ export function inviteTargetText(target: InviteTarget): string {
   }
 }
 
-/** O texto que vai junto com o link na folha de compartilhar. */
-export function inviteMessage(target: InviteTarget): string {
+/**
+ * O texto que vai junto com o link na folha de compartilhar. Com o código, ele
+ * vai também escrito, como no compartilhar do fã-clube: o link `https` abre o
+ * site, e não o app, e quem instala pela loja só fica atribuído se digitar o
+ * código no cadastro (20.15 da nota). Sem o código (não carregou), a mensagem
+ * sai sem ele.
+ */
+export function inviteMessage(target: InviteTarget, code: string | null): string {
   if (target.kind === 'post' && target.artistName) {
-    return t('post.shareMessage', { artist: target.artistName });
+    return code
+      ? t('post.shareMessageCode', { artist: target.artistName, code })
+      : t('post.shareMessage', { artist: target.artistName });
   }
   if (target.kind === 'event' && target.showTitle) {
-    return t('invite.message.event', { show: target.showTitle });
+    return code
+      ? t('invite.message.eventCode', { show: target.showTitle, code })
+      : t('invite.message.event', { show: target.showTitle });
   }
   if (target.kind === 'artist' && target.artistName) {
-    return t('artist.shareMessage', { name: target.artistName });
+    return code
+      ? t('artist.shareMessageCode', { name: target.artistName, code })
+      : t('artist.shareMessage', { name: target.artistName });
   }
-  return t('invite.message.app');
+  return code ? t('invite.message.appCode', { code }) : t('invite.message.app');
 }
 
 export interface InviteLinkDisplay {

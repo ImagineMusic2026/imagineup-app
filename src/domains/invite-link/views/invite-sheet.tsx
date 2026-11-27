@@ -113,7 +113,7 @@ export function InviteSheetScreen() {
 
   const share = (): void => {
     // Fechar a folha sem escolher ninguém também resolve; erro do sistema não tem o que mostrar.
-    shareInvite(link.url, inviteMessage(target))
+    shareInvite(link.url, inviteMessage(target, code))
       .then((shared) => {
         if (!shared || !code) return;
         register.mutate({

@@ -79,12 +79,29 @@ describe('compartilhar um post conta o link', () => {
 
     result.current(POST);
     await waitFor(() => expect(put).toHaveBeenCalledTimes(1));
-    expect(spy).toHaveBeenCalledWith(
-      expect.objectContaining({ url: 'https://imagineup.app/post/p-clipe?ref=K7P3M9QX' }),
-    );
+    expect(spy).toHaveBeenCalledWith({
+      message: 'Olha esse post de Netto Brito no ImagineUP. Use o meu código de convite: K7P3M9QX',
+      url: 'https://imagineup.app/post/p-clipe?ref=K7P3M9QX',
+    });
     expect(put).toHaveBeenCalledWith('/me/invite/links/post%3Ap-clipe', undefined, {
       headers: { 'Idempotency-Key': expect.any(String) },
     });
+  });
+
+  it('no Android, o código escrito e o link vão juntos na mensagem', async () => {
+    Platform.OS = 'android';
+    const spy = jest.spyOn(Share, 'share').mockResolvedValue({ action: Share.sharedAction });
+    const { result } = renderHook(() => useSharePost(), { wrapper });
+    await inviteLoaded();
+
+    result.current(POST);
+    await waitFor(() => expect(spy).toHaveBeenCalled());
+    expect(spy).toHaveBeenCalledWith({
+      message:
+        'Olha esse post de Netto Brito no ImagineUP. Use o meu código de convite: K7P3M9QX\n' +
+        'https://imagineup.app/post/p-clipe?ref=K7P3M9QX',
+    });
+    await waitFor(() => expect(put).toHaveBeenCalledTimes(1));
   });
 
   it('folha fechada sem compartilhar (iOS): não conta', async () => {
@@ -106,14 +123,15 @@ describe('compartilhar um post conta o link', () => {
 
     result.current(POST);
     await waitFor(() => expect(spy).toHaveBeenCalled());
-    expect(spy).toHaveBeenCalledWith(
-      expect.objectContaining({ url: 'https://imagineup-painel.vercel.app/post/p-clipe' }),
-    );
+    expect(spy).toHaveBeenCalledWith({
+      message: 'Olha esse post de Netto Brito no ImagineUP',
+      url: 'https://imagineup-painel.vercel.app/post/p-clipe',
+    });
     await new Promise((resolve) => setTimeout(resolve, 20));
     expect(put).not.toHaveBeenCalled();
   });
 
-  it('a central conta como artist:<id>', async () => {
+  it('a central conta como artist:<id>, com o código escrito na mensagem', async () => {
     jest.spyOn(Share, 'share').mockResolvedValue({ action: Share.sharedAction });
     const { result } = renderHook(() => useShareArtist(), { wrapper });
     await inviteLoaded();
@@ -126,9 +144,11 @@ describe('compartilhar um post conta o link', () => {
         expect.anything(),
       ),
     );
-    expect(Share.share).toHaveBeenCalledWith(
-      expect.objectContaining({ url: 'https://imagineup.app/artista/nettobrito?ref=K7P3M9QX' }),
-    );
+    expect(Share.share).toHaveBeenCalledWith({
+      message:
+        'Entra na central de Netto Brito no ImagineUP. Use o meu código de convite: K7P3M9QX',
+      url: 'https://imagineup.app/artista/nettobrito?ref=K7P3M9QX',
+    });
   });
 });
 

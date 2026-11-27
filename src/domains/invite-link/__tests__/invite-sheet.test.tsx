@@ -110,7 +110,9 @@ describe('sheet "Gerar meu link"', () => {
     fireEvent.press(shareButton());
     expect(Share.share).toHaveBeenCalledWith(
       expect.objectContaining({
-        message: expect.stringContaining('Olha esse post de Netto Brito no ImagineUP'),
+        message: expect.stringContaining(
+          'Olha esse post de Netto Brito no ImagineUP. Use o meu código de convite: CAMILA12',
+        ),
       }),
     );
     const [content] = jest.mocked(Share.share).mock.calls[0] ?? [];
@@ -132,7 +134,7 @@ describe('sheet "Gerar meu link"', () => {
     expect(Share.share).toHaveBeenCalledWith(
       expect.objectContaining({
         message: expect.stringContaining(
-          'Vamos juntos? São João de Irará está na agenda do ImagineUP',
+          'Vamos juntos? São João de Irará está na agenda do ImagineUP. Use o meu código de convite: CAMILA12',
         ),
       }),
     );

@@ -13,8 +13,9 @@ export function artistPath(artistId: string): string {
  * Abre a folha de compartilhar do sistema com o link da central e o código de
  * convite do fã (`?ref=`), que o `+native-intent` lê do outro lado, como o
  * compartilhar do post. Quem credita os pontos é a API, quando alguém abre o
- * link no app ou se cadastra por ele. No iOS o link vai no campo próprio; no
- * Android, na mensagem. Devolve se a folha voltou compartilhada.
+ * link no app ou se cadastra por ele. O código vai também escrito na
+ * mensagem, como no post. No iOS o link vai no campo próprio; no Android, na
+ * mensagem. Devolve se a folha voltou compartilhada.
  */
 export async function shareArtist(
   artist: Pick<ArtistDetails, 'id' | 'name'>,
@@ -22,7 +23,9 @@ export async function shareArtist(
   linkBase?: string,
 ): Promise<boolean> {
   const url = buildInviteUrl(inviteCode, artistPath(artist.id), linkBase);
-  const message = t('artist.shareMessage', { name: artist.name });
+  const message = inviteCode
+    ? t('artist.shareMessageCode', { name: artist.name, code: inviteCode })
+    : t('artist.shareMessage', { name: artist.name });
   const result = await Share.share(
     Platform.OS === 'ios' ? { message, url } : { message: `${message}\n${url}` },
   );
