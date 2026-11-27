@@ -7,6 +7,7 @@ import {
   type BoundInvite,
   type PendingInvite,
 } from '@/domains/invites';
+import { markInviteSettled } from '@/stores/invite-settled';
 import { useSessionStore } from '@/stores/session';
 
 import {
@@ -39,7 +40,9 @@ export function sessionIsFor(uid: string): boolean {
 /**
  * Manda o convite amarrado. Sucesso ou recusa definitiva (a lista de
  * `isFinalInviteRejection`): ele sai do aparelho, se ainda for o mesmo. O
- * resto fica para a próxima rodada, com a mesma chave.
+ * resto fica para a próxima rodada, com a mesma chave. Com o sucesso, a
+ * conta fica marcada como resolvida, e a linha "Tenho um código de convite"
+ * some dos Ajustes (20.18).
  */
 export async function deliverBoundInvite(bound: BoundInvite): Promise<BoundDelivery> {
   try {
@@ -50,6 +53,7 @@ export async function deliverBoundInvite(bound: BoundInvite): Promise<BoundDeliv
     return 'rejected';
   }
   await clearBoundInvite(bound.uid, bound.idempotencyKey);
+  markInviteSettled(bound.uid);
   return 'sent';
 }
 

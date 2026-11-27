@@ -10,6 +10,7 @@ import {
   savePendingInvite,
 } from '@/domains/invites';
 import { ApiError } from '@/services/api';
+import { useInviteSettledStore } from '@/stores/invite-settled';
 import { useSessionStore } from '@/stores/session';
 
 import { currentAccountTimes, sendInviteClaim, sendInviteVisit } from '../api';
@@ -66,6 +67,7 @@ beforeEach(async () => {
   claim.mockImplementation(async () => ({ status: 'claimed' }));
   visit.mockImplementation(async () => ({ status: 'received' }));
   accountTimes.mockReturnValue(null);
+  useInviteSettledStore.setState({ settled: {}, hydrated: true });
   onlineManager.setOnline(true);
   appStateListener = null;
   jest.spyOn(AppState, 'addEventListener').mockImplementation((_type, listener) => {
@@ -80,7 +82,7 @@ afterEach(() => {
 });
 
 describe('convite amarrado (o claim)', () => {
-  it('vai só para o uid dele, com a chave dele, e sai do aparelho', async () => {
+  it('vai só para o uid dele, com a chave dele, sai do aparelho e a conta fica resolvida (20.18)', async () => {
     const bound = await bindPendingInvite('uid-bia', 'CAMILA12');
     signIn('uid-bia');
     const { unmount } = renderHook(() => useInviteSync());
@@ -88,6 +90,8 @@ describe('convite amarrado (o claim)', () => {
     await waitFor(() => expect(claim).toHaveBeenCalledTimes(1));
     expect(claim).toHaveBeenCalledWith(bound);
     await waitFor(async () => expect(await readBoundInvite('uid-bia')).toBeNull());
+    // A linha "Tenho um código de convite" some dos Ajustes desta conta.
+    expect(useInviteSettledStore.getState().settled['uid-bia']).toBeDefined();
     unmount();
   });
 
@@ -98,16 +102,20 @@ describe('convite amarrado (o claim)', () => {
     ['invite_not_found', 404],
     ['invite_not_allowed', 409],
     ['idempotency_key_reused', 422],
-  ])('recusa definitiva %s (%s): o convite sai do aparelho', async (code, status) => {
-    claim.mockRejectedValueOnce(new ApiError('validation', 'x', status, code));
-    await bindPendingInvite('uid-bia', 'CAMILA12');
-    signIn('uid-bia');
-    const { unmount } = renderHook(() => useInviteSync());
+  ])(
+    'recusa definitiva %s (%s): o convite sai do aparelho, e a conta não fica resolvida',
+    async (code, status) => {
+      claim.mockRejectedValueOnce(new ApiError('validation', 'x', status, code));
+      await bindPendingInvite('uid-bia', 'CAMILA12');
+      signIn('uid-bia');
+      const { unmount } = renderHook(() => useInviteSync());
 
-    await waitFor(() => expect(claim).toHaveBeenCalled());
-    await waitFor(async () => expect(await readBoundInvite('uid-bia')).toBeNull());
-    unmount();
-  });
+      await waitFor(() => expect(claim).toHaveBeenCalled());
+      await waitFor(async () => expect(await readBoundInvite('uid-bia')).toBeNull());
+      expect(useInviteSettledStore.getState().settled['uid-bia']).toBeUndefined();
+      unmount();
+    },
+  );
 
   it.each([
     ['o getIdToken que falhou antes de sair (unknown sem status)', new ApiError('unknown', 'x')],

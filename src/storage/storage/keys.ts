@@ -11,6 +11,12 @@ export enum StorageKeys {
   LegacyPendingInvite = '@imagineup/pending-invite/v1',
   /** Os convites amarrados às contas criadas no aparelho, por uid. */
   InviteClaims = '@imagineup/invite-claims/v1',
+  /**
+   * As contas que já resolveram o convite neste aparelho, por uid: o código foi
+   * aceito ou a conta já tinha um (20.18). Some com a linha "Tenho um código
+   * de convite" dos Ajustes.
+   */
+  InviteSettled = '@imagineup/invite-settled/v1',
   /** O último prêmio do fã-clube que o gestor viu, por uid (seção 34, decisão 51). */
   FanClubPrizeSeen = '@imagineup/fan-club-prize-seen/v1',
   /**

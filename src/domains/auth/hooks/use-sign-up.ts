@@ -9,6 +9,7 @@ import {
 } from '@/domains/invites';
 import { t } from '@/i18n';
 import { haptics } from '@/services/haptics';
+import { markInviteSettled } from '@/stores/invite-settled';
 import { usePreferencesStore } from '@/stores/preferences';
 import { useSessionStore } from '@/stores/session';
 
@@ -83,7 +84,8 @@ export function releaseHeldSignUp(): void {
 
 /**
  * O claim do código digitado no cadastro, esperado por até 8 s:
- * - aceito: o convite sai do aparelho;
+ * - aceito: o convite sai do aparelho, e a conta fica marcada como resolvida
+ *   (a linha do código some dos Ajustes, 20.18);
  * - recusado com o código que o fã conserta (404 ou 409): o convite sai e a
  *   recusa volta, para a tela pedir outro código;
  * - outra recusa definitiva: o convite sai e o cadastro segue;
@@ -100,7 +102,10 @@ async function claimTypedCode(bound: BoundInvite): Promise<InviteRejection | nul
       sendInviteClaim(bound).then(() => 'sent' as const),
       deadline,
     ]);
-    if (result === 'sent') await clearBoundInvite(bound.uid, bound.idempotencyKey);
+    if (result === 'sent') {
+      await clearBoundInvite(bound.uid, bound.idempotencyKey);
+      markInviteSettled(bound.uid);
+    }
     return null;
   } catch (error) {
     if (!isFinalInviteRejection(error)) return null;

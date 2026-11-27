@@ -865,6 +865,8 @@
     "changeEmailHint": "Abre a troca de e-mail",
     "changePassword": "Trocar senha",
     "changePasswordHint": "Abre a troca de senha",
+    "inviteCode": "Tenho um código de convite",
+    "inviteCodeHint": "Abre o campo do código de quem te convidou",
     "about": "Sobre",
     "privacy": "Política de privacidade",
     "terms": "Termos de uso",
@@ -1129,6 +1131,35 @@
       "unknown": "Não deu para excluir a conta agora. Ela continua como estava."
     },
     "passwordRequired": "Digite sua senha."
+  },
+  "inviteCode": {
+    "title": "Código de convite",
+    "lead": "Se alguém te convidou para o ImagineUP, digite o código de quem te chamou. Ele vale nos 7 primeiros dias da sua conta.",
+    "field": "Código de convite",
+    "fieldHint": "O código vem no link ou na mensagem de quem te convidou.",
+    "empty": "Digite o código de quem te convidou.",
+    "self": "Esse é o seu código. Digite o de quem te convidou.",
+    "submit": "Usar o código",
+    "submitHint": "Registra o convite na sua conta",
+    "offline": "Sem internet. Conecte-se para usar o código.",
+    "pending": "Não deu para confirmar agora. O app manda o código sozinho quando a conexão voltar.",
+    "failed": "Não deu para usar o código agora. Tente de novo mais tarde.",
+    "close": "Fechar",
+    "done": {
+      "title": "Convite registrado",
+      "body": "O código {{code}} ficou registrado na sua conta.",
+      "announce": "Convite registrado."
+    },
+    "already": {
+      "title": "Sua conta já tem um convite",
+      "body": "Cada conta registra um convite só, e o da sua já está nela.",
+      "announce": "Sua conta já tem um convite."
+    },
+    "tooOld": {
+      "title": "O prazo do convite passou",
+      "body": "O código de convite vale só nos 7 primeiros dias da conta.",
+      "announce": "O prazo do convite passou."
+    }
   },
   "changePassword": {
     "title": "Trocar senha",

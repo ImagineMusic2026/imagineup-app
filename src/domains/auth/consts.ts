@@ -53,6 +53,13 @@ export const FRESH_ACCOUNT_SIGN_IN_MS = 60_000;
 export const AUTO_BIND_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 
 /**
+ * Até quando a conta aceita um código de convite, desde o `createdAt` do
+ * perfil: a cópia do `INVITE_CLAIM_WINDOW_MS` do servidor (20.1, decisão 2),
+ * que decide de verdade. Mudou um, mude o outro.
+ */
+export const INVITE_CLAIM_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
+
+/**
  * Quanto a entrada pelo Google ou pela Apple numa conta que já existe espera o
  * `GET /me/centrals` para decidir a escolha de artistas e, com o nome guardado
  * da Apple, a leitura do perfil (seção 39). Passou disso, segue com o que o

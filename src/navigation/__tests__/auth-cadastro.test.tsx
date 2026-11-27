@@ -34,6 +34,7 @@ import { useSessionGate } from '@/hooks/use-session-gate';
 import { t, type TranslationKey } from '@/i18n';
 import { ApiError } from '@/services/api';
 import { haptics } from '@/services/haptics';
+import { useInviteSettledStore } from '@/stores/invite-settled';
 import { usePreferencesStore } from '@/stores/preferences';
 import { useSessionStore } from '@/stores/session';
 
@@ -1332,6 +1333,7 @@ describe('cadastro: código de convite', () => {
   });
 
   it('código digitado no desvio: volta ao nome com o código na linha, e vai ao servidor no envio', async () => {
+    useInviteSettledStore.setState({ settled: {}, hydrated: true });
     openSignUp();
     await answerEmail();
     fireEvent.changeText(nameField(), NAME);
@@ -1360,6 +1362,8 @@ describe('cadastro: código de convite', () => {
     expect(claim).toHaveBeenCalledWith(
       expect.objectContaining({ uid: 'nova', code: 'CAMILA12', via: 'code' }),
     );
+    // Aceito no cadastro, a conta fica resolvida: a linha do código não aparece nos Ajustes (20.18).
+    await waitFor(() => expect(useInviteSettledStore.getState().settled['nova']).toBeDefined());
   });
 
   it('o "próximo" do teclado confirma o código, como o botão', async () => {

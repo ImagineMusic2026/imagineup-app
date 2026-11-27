@@ -1,3 +1,4 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { onlineManager, QueryClientProvider } from '@tanstack/react-query';
 import { router, Stack } from 'expo-router';
 import { Tabs } from 'expo-router/js-tabs';
@@ -16,6 +17,7 @@ import type { ReactNode } from 'react';
 import { AccessibilityInfo, BackHandler, Linking, Text } from 'react-native';
 
 import DeleteAccountRoute from '@/app/excluir-conta';
+import InviteCodeRoute from '@/app/tenho-um-codigo';
 import SettingsRoute from '@/app/(tabs)/(perfil)/ajustes';
 import { PRIVACY_URL, SUPPORT_EMAIL, TERMS_URL } from '@/config/links';
 import { useAuthListener } from '@/domains/auth';
@@ -24,10 +26,12 @@ import {
   handOffEmail,
   readHandedOffEmail,
 } from '@/domains/auth/email-handoff';
+import { readBoundInvite } from '@/domains/invites';
 import { useSessionGate } from '@/hooks/use-session-gate';
-import { api } from '@/services/api';
+import { api, ApiError } from '@/services/api';
 import { queryClient, queryPersister } from '@/services/query';
 import { haptics } from '@/services/haptics';
+import { useInviteSettledStore } from '@/stores/invite-settled';
 import { usePreferencesStore } from '@/stores/preferences';
 import { useSessionStore } from '@/stores/session';
 import { colors, spacing } from '@/theme';
@@ -73,7 +77,11 @@ jest.mock('@/firebase', () => ({
   getDb: () => ({}),
   isFirebaseConfigured: true,
 }));
-jest.mock('@/services/api', () => ({ api: { get: jest.fn(), post: jest.fn() } }));
+// Os erros de verdade: o código de convite (20.18) confere as recusas pelo ApiError.
+jest.mock('@/services/api', () => ({
+  ...jest.requireActual('@/services/api/errors'),
+  api: { get: jest.fn(), post: jest.fn() },
+}));
 jest.mock('@/config/env', () => ({
   firebaseEnv: null,
   apiUrl: undefined,
@@ -135,6 +143,7 @@ function RootLayout() {
           <Stack.Screen name="editar-perfil" />
           <Stack.Screen name="trocar-senha" />
           <Stack.Screen name="trocar-email" />
+          <Stack.Screen name="tenho-um-codigo" />
           <Stack.Screen name="suporte/[tipo]" />
           <Stack.Screen name="excluir-conta" />
         </Stack.Protected>
@@ -173,6 +182,7 @@ const appTree = {
   'editar-perfil': label('editar perfil'),
   'trocar-senha': label('trocar senha'),
   'trocar-email': label('trocar email'),
+  'tenho-um-codigo': InviteCodeRoute,
   'suporte/[tipo]': label('suporte'),
   'excluir-conta': DeleteAccountRoute,
   '(tabs)/(inicio,explorar,ranking,perfil)/artista/[artistaId]': label('artist'),
@@ -235,6 +245,8 @@ beforeEach(() => {
     hasCompletedOnboarding: true,
     lastSessionUid: 'uid-descarte',
   });
+  useInviteSettledStore.setState({ settled: {}, hydrated: true });
+  // Sem o `createdAt`, a conta fica fora da janela do código de convite (20.18).
   queryClient.setQueryData(['profile', 'me', 'uid-descarte'], { username: 'fa711224' });
   jest.spyOn(haptics, 'trigger').mockImplementation(() => undefined);
   jest.spyOn(AccessibilityInfo, 'announceForAccessibility').mockImplementation(() => undefined);
@@ -251,7 +263,7 @@ afterEach(() => {
 
 /** As linhas dos Ajustes, as divisórias e os avisos, pelo testID (o rodapé da versão é o último). */
 const MENU_ROW =
-  /^settings-(menu-divider|edit-profile|change-email|change-password|fan-club|fan-club-follows|blocked-fans|terms|privacy|report-problem|suggest-feature|general-feedback|rules|contact|contact-error|sign-out|delete-account|version)$/;
+  /^settings-(menu-divider|edit-profile|change-email|change-password|invite-code|fan-club|fan-club-follows|blocked-fans|terms|privacy|report-problem|suggest-feature|general-feedback|rules|contact|contact-error|sign-out|delete-account|version)$/;
 
 /** Os cabeçalhos e as linhas na ordem da tela: prende cada linha à seção dela. */
 function menuOrder(): string[] {
@@ -855,5 +867,193 @@ describe('as páginas, o Sobre e o rodapé (seção 29, frente C)', () => {
       'accessibilityLabel',
       'Versão do app, 0.1.0, atualização de 13 out (a1b2c3d4)',
     );
+  });
+});
+
+describe('o código de convite depois do cadastro (20.18)', () => {
+  const DAY = 24 * 60 * 60 * 1000;
+  const post = jest.mocked(api.post);
+  const FIELD = 'invite-code-field';
+
+  /** O perfil nasceu há `days` dias. */
+  function profileCreated(days: number): void {
+    queryClient.setQueryData(['profile', 'me', 'uid-descarte'], {
+      username: 'fa711224',
+      createdAt: new Date(Date.now() - days * DAY).toISOString(),
+    });
+  }
+
+  /** Abre a tela pela linha dos Ajustes. */
+  async function openInviteCode() {
+    const view = renderRouter(appTree, { initialUrl: '/ajustes' });
+    fireEvent.press(screen.getByTestId('settings-invite-code'));
+    await waitFor(() => expect(view.getPathname()).toBe('/tenho-um-codigo'));
+    return view;
+  }
+
+  function sendCode(text: string): void {
+    fireEvent.changeText(screen.getByTestId(FIELD), text);
+    fireEvent.press(screen.getByTestId('invite-code-submit'));
+  }
+
+  beforeEach(async () => {
+    await AsyncStorage.clear();
+    profileCreated(1);
+    post.mockResolvedValue({ data: { status: 'claimed' } });
+  });
+
+  it('nos 7 primeiros dias, "Tenho um código de convite" fecha o Perfil e conta e abre a tela fora das abas', async () => {
+    setSessionPassword(true);
+    const view = renderRouter(appTree, { initialUrl: '/ajustes' });
+
+    expect(menuOrder().slice(0, 7)).toEqual([
+      'Ajustes',
+      'Perfil e conta',
+      'settings-edit-profile',
+      'settings-change-email',
+      'settings-change-password',
+      'settings-invite-code',
+      'settings-menu-divider',
+    ]);
+    const row = screen.getByRole('button', { name: 'Tenho um código de convite' });
+    expect(row).toHaveProp('accessibilityHint', 'Abre o campo do código de quem te convidou');
+
+    fireEvent.press(row);
+    await waitFor(() => expect(view.getPathname()).toBe('/tenho-um-codigo'));
+    expect(view.getSegments()).toEqual(['tenho-um-codigo']);
+    expect(screen.getByText(/digite o código de quem te chamou/)).toBeTruthy();
+  });
+
+  it.each<[string, () => void]>([
+    ['a conta de 8 dias', () => profileCreated(8)],
+    [
+      'o perfil sem a data',
+      () => queryClient.setQueryData(['profile', 'me', 'uid-descarte'], { username: 'fa711224' }),
+    ],
+    [
+      'a conta que já resolveu o convite neste aparelho',
+      () =>
+        useInviteSettledStore.setState({ settled: { 'uid-descarte': '2026-11-27T00:00:00.000Z' } }),
+    ],
+    ['antes de o disco responder', () => useInviteSettledStore.setState({ hydrated: false })],
+  ])('sem a linha: %s', (_name, arrange) => {
+    arrange();
+    renderRouter(appTree, { initialUrl: '/ajustes' });
+    expect(screen.queryByTestId('settings-invite-code')).toBeNull();
+  });
+
+  it('sem código, o erro fica no campo, é anunciado e nada sai', async () => {
+    mockDataSource = 'api';
+    await openInviteCode();
+    sendCode('  ');
+
+    expect(await screen.findByText('Digite o código de quem te convidou.', hidden)).toBeTruthy();
+    expect(announced()).toContain('Digite o código de quem te convidou.');
+    expect(post).not.toHaveBeenCalled();
+  });
+
+  it('aceito: a resposta toma o lugar do formulário, com o código, e a linha some dos Ajustes', async () => {
+    mockDataSource = 'api';
+    const view = await openInviteCode();
+    sendCode('k7p3-m9qx');
+
+    expect(await screen.findByText('Convite registrado')).toBeTruthy();
+    expect(screen.getByText('O código K7P3M9QX ficou registrado na sua conta.')).toBeTruthy();
+    expect(screen.queryByTestId(FIELD)).toBeNull();
+    expect(announced()).toContain('Convite registrado.');
+    expect(haptics.trigger).toHaveBeenCalledWith('success');
+    // O código vai normalizado, como via code, com a chave do convite e o token só desta conta.
+    expect(post).toHaveBeenCalledWith(
+      '/invites/claim',
+      { code: 'K7P3M9QX', via: 'code', link: null, openedAt: null },
+      {
+        headers: { 'Idempotency-Key': expect.stringMatching(/^invite-K7P3M9QX-/) },
+        sessionUid: 'uid-descarte',
+      },
+    );
+
+    fireEvent.press(screen.getByTestId('invite-code-close'));
+    await waitFor(() => expect(view.getPathname()).toBe('/ajustes'));
+    expect(screen.queryByTestId('settings-invite-code')).toBeNull();
+  });
+
+  it('a conta que já tinha convite: a resposta diz, e a linha some', async () => {
+    mockDataSource = 'api';
+    post.mockResolvedValueOnce({ data: { status: 'already_claimed' } });
+    await openInviteCode();
+    sendCode('K7P3M9QX');
+
+    expect(await screen.findByText('Sua conta já tem um convite')).toBeTruthy();
+    expect(announced()).toContain('Sua conta já tem um convite.');
+    expect(useInviteSettledStore.getState().settled['uid-descarte']).toBeDefined();
+  });
+
+  it.each<[string, ApiError, string]>([
+    [
+      'o código que não existe',
+      new ApiError('notFound', 'x', 404, 'invite_not_found'),
+      'Não achamos esse código. Confira com quem te convidou.',
+    ],
+    [
+      'o próprio código',
+      new ApiError('validation', 'x', 409, 'invite_not_allowed', { reason: 'self' }),
+      'Esse é o seu código. Digite o de quem te convidou.',
+    ],
+  ])(
+    '%s: o erro fica no campo, para corrigir, e sai quando o fã volta a digitar',
+    async (_name, error, message) => {
+      mockDataSource = 'api';
+      post.mockRejectedValueOnce(error);
+      await openInviteCode();
+      sendCode('K7P3M9QX');
+
+      // O erro do campo chega ao leitor pelo próprio campo: o texto embaixo fica fora dele.
+      expect(await screen.findByText(message, hidden)).toBeTruthy();
+      expect(announced()).toContain(message);
+      expect(haptics.trigger).toHaveBeenCalledWith('error');
+      expect(useInviteSettledStore.getState().settled['uid-descarte']).toBeUndefined();
+
+      fireEvent.changeText(screen.getByTestId(FIELD), 'K7P3M9Q');
+      expect(screen.queryByText(message, hidden)).toBeNull();
+    },
+  );
+
+  it('fora dos 7 dias pelo servidor: a resposta diz que o prazo passou', async () => {
+    mockDataSource = 'api';
+    post.mockRejectedValueOnce(
+      new ApiError('validation', 'x', 409, 'invite_not_allowed', { reason: 'account_too_old' }),
+    );
+    await openInviteCode();
+    sendCode('K7P3M9QX');
+
+    expect(await screen.findByText('O prazo do convite passou')).toBeTruthy();
+    expect(
+      screen.getByText('O código de convite vale só nos 7 primeiros dias da conta.'),
+    ).toBeTruthy();
+  });
+
+  it('sem resposta certa: avisa que o app manda sozinho, e o código fica amarrado à conta', async () => {
+    mockDataSource = 'api';
+    post.mockRejectedValueOnce(new ApiError('network', 'x'));
+    await openInviteCode();
+    sendCode('K7P3M9QX');
+
+    const message =
+      'Não deu para confirmar agora. O app manda o código sozinho quando a conexão voltar.';
+    expect(await screen.findByText(message)).toBeTruthy();
+    expect(announced()).toContain(message);
+    await expect(readBoundInvite('uid-descarte')).resolves.toEqual(
+      expect.objectContaining({ code: 'K7P3M9QX', via: 'code' }),
+    );
+  });
+
+  it('sem internet, o botão desliga e diz por quê, no próprio botão', async () => {
+    await openInviteCode();
+    act(() => onlineManager.setOnline(false));
+
+    const button = screen.getByRole('button', { name: 'Usar o código' });
+    expect(button).toBeDisabled();
+    expect(button).toHaveProp('accessibilityHint', 'Sem internet. Conecte-se para usar o código.');
+    expect(screen.getByText('Sem internet. Conecte-se para usar o código.')).toBeTruthy();
   });
 });
