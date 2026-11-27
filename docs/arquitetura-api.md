@@ -2196,6 +2196,34 @@ Feita em 07/10/2026, com a carga dos cadastros em 08/10/2026 (como foi, em 26.21
 - Na exclusão, o código sai logo depois do perfil, e os `referrals` de quem foi trazido ficam, sem o `inviterUid`.
 - `inviteLinks` e `inviteVisitors`, e não `links` e `visitors`: subcoleção com nome genérico cai na regra de grupo de outra.
 
+### 20.18 O código depois do cadastro
+
+Pedido do dono de 27/11/2026, depois da conferência do convite (20.15). Quem pulou a pergunta do código no cadastro, ou fechou o app nela (a conta nova pela Apple ou pelo Google), não tinha onde digitar o código depois, embora o servidor aceite o claim até 7 dias depois de o perfil nascer (decisão 2). Só app: o servidor não muda, e a mudança vai por EAS Update.
+
+- **A linha:** "Tenho um código de convite", a última do "Perfil e conta" dos Ajustes, com o ícone `Ticket` e a dica "Abre o campo do código de quem te convidou".
+  - Aparece só nos 7 primeiros dias da conta: o `inviteWindowOpen` (`auth/invite-code.ts`) confere o `createdAt` do perfil, o mesmo do servidor, na hora em que os Ajustes abrem. O `INVITE_CLAIM_WINDOW_MS` de `auth/consts.ts` é a cópia do servidor: mudou um, mude o outro.
+  - Também some quando a conta já resolveu o convite neste aparelho. Sem a data do perfil, não aparece.
+- **A marca de resolvido:** o `useInviteSettledStore` (`src/stores/invite-settled.ts`, na chave `@imagineup/invite-settled/v1`), no molde da marca do prêmio do fã-clube, guarda o uid e a data.
+  - Grava quando um claim volta `claimed` ou `already_claimed`: no cadastro (`claimTypedCode`), na sincronização (`deliverBoundInvite`) e nesta tela.
+  - Antes de o disco responder (`hydrated`), a linha não aparece, para não piscar.
+  - A marca só esconde a linha; quem decide é o servidor. Noutro aparelho, sem a marca, a linha aparece, e o servidor responde que a conta já tem convite.
+- **A tela:** `/tenho-um-codigo` (`InviteCodeScreen`, no domínio `settings`), na pilha raiz, fora das abas e com push padrão, como o "Trocar senha".
+  - Tem o título "Código de convite", a frase de abertura, o campo (com a dica de onde vem o código) e o botão "Usar o código".
+  - O código passa pelo `normalizeInviteCode`: vazio ou fora do formato, o erro fica no campo e é anunciado.
+  - Sem internet, o botão desliga e diz por quê, no próprio botão. Enquanto o envio vai, a tela fica presa.
+- **O envio:** o `applyInviteCode` (`auth/invite-code.ts`, pelo `useApplyInviteCode`) amarra o código à conta pelo `bindPendingInvite` (`via: 'code'`, ou `'link'` quando é o do link guardado) e manda o `POST /invites/claim`. Ele espera a resposta, sem o prazo de 8 s do cadastro:
+  - `claimed`: o formulário dá lugar à resposta, como no Suporte: "Convite registrado", "O código CODIGO ficou registrado na sua conta." e "Fechar";
+  - `already_claimed`: "Sua conta já tem um convite";
+  - 409 `invite_not_allowed` com o `details.reason` `account_too_old`: "O prazo do convite passou";
+  - 404 `invite_not_found` e 409 `self`: o erro fica no campo, para corrigir ("Não achamos esse código. Confira com quem te convidou." e "Esse é o seu código. Digite o de quem te convidou.");
+  - outra recusa definitiva (`isFinalInviteRejection`): "Não deu para usar o código agora. Tente de novo mais tarde.";
+  - sem resposta certa: "Não deu para confirmar agora. O app manda o código sozinho quando a conexão voltar.". O convite fica amarrado, com a mesma chave, para a sincronização (20.11).
+- **Testes:**
+  - a janela e as respostas, em `auth/__tests__/invite-code.test.ts`;
+  - a linha, a tela e as respostas, em `navigation/__tests__/settings.test.tsx`;
+  - a marca no cadastro (`auth-cadastro.test.tsx`) e na sincronização (`invite-sync.test.tsx`).
+- **Fica para depois do EAS Update:** a dica da página Baixar do site ainda diz que a pergunta do código não volta se o app fechar. Ela passa a citar os Ajustes quando esta tela chegar aos celulares.
+
 ## 21. Bloco 6: mural e agenda com conteúdo real
 
 O mural e a agenda passam a vir do servidor. A equipe publica posts e shows pelo painel, o fã curte, comenta e confirma presença de verdade, e o app ganha a moderação mínima que as lojas pedem para conteúdo de usuário. Esta seção é o contrato do bloco 6: rotas, coleções, transações, contagens, moderação, callables do painel, regras, efeitos no painel, exclusão de conta, mudanças no app, seed e testes. Ela segue os padrões dos blocos 1, 4 e 5 (seções 1 a 20) e só diz o que muda ou acrescenta.

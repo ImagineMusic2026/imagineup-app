@@ -11,6 +11,7 @@ import {
   MessageSquareText,
   ScrollText,
   Shield,
+  Ticket,
   UserPen,
 } from 'lucide-react-native';
 import { useState } from 'react';
@@ -20,14 +21,15 @@ import { LargeTitleHeader } from '@/components/header';
 import { Screen } from '@/components/screen';
 import { Text } from '@/components/text';
 import { PRIVACY_URL, SUPPORT_EMAIL, TERMS_URL } from '@/config/links';
-import { useSignOut } from '@/domains/auth';
-import { SuspendedNotice } from '@/domains/profile';
+import { inviteWindowOpen, useSignOut } from '@/domains/auth';
+import { SuspendedNotice, useMyProfileQuery } from '@/domains/profile';
 import { useRewardsRulesUrl } from '@/domains/rewards';
 import { SUPPORT_SLUGS } from '@/domains/support';
 import { isFirebaseConfigured } from '@/firebase';
 import { useTabBarInset } from '@/hooks/use-tab-bar-inset';
 import { t } from '@/i18n';
 import { openSupportEmail, openWebPage } from '@/services/web-page';
+import { useInviteSettledStore } from '@/stores/invite-settled';
 import { useSessionStore } from '@/stores/session';
 import { colors, spacing } from '@/theme';
 
@@ -56,8 +58,10 @@ function versionTexts({ version, update }: AppVersionInfo): { meta?: string; lab
  * do dono: linhas soltas, sem card, cada uma com o ícone simples, só o título
  * e a seta, e uma linha fina entre as seções. De cima para baixo: o aviso da
  * conta suspensa (só com a suspensão, seção 29, frente E); o perfil e a
- * conta, juntos, com "Editar perfil" (bloco 9) e "Trocar e-mail" e "Trocar
- * senha" (só na conta com senha, frente D); o fã-clube, só com a resposta do
+ * conta, juntos, com "Editar perfil" (bloco 9), "Trocar e-mail" e "Trocar
+ * senha" (só na conta com senha, frente D) e "Tenho um código de convite"
+ * (só nos 7 primeiros dias da conta e enquanto ela não resolveu o convite
+ * neste aparelho, 20.18); o fã-clube, só com a resposta do
  * servidor novo (seção 34); a privacidade e a segurança, juntas, com "Fãs
  * bloqueados" (frente B) e as páginas dos termos e da privacidade; o Suporte
  * (seção 38), com "Reportar problema", "Sugerir funcionalidade" e "Feedback
@@ -78,6 +82,16 @@ export function SettingsScreen() {
   const canChangeCredentials = useSessionStore(
     (state) => state.user?.hasPassword === true && isFirebaseConfigured,
   );
+  const uid = useSessionStore((state) => state.user?.uid ?? null);
+  const profile = useMyProfileQuery();
+  // A hora em que os Ajustes abriram: a janela de 7 dias se confere uma vez por abertura.
+  const [openedAt] = useState(() => Date.now());
+  // Antes de o disco responder, a conta conta como resolvida: a linha não pisca.
+  const inviteSettled = useInviteSettledStore(
+    (state) => !state.hydrated || (uid !== null && state.settled[uid] !== undefined),
+  );
+  const showInviteCode =
+    uid !== null && !inviteSettled && inviteWindowOpen(profile.data?.createdAt, openedAt);
   const signOut = useSignOut();
   const rulesUrl = useRewardsRulesUrl();
   const [contactFailed, setContactFailed] = useState(false);
@@ -125,6 +139,16 @@ export function SettingsScreen() {
               testID="settings-change-password"
             />
           </>
+        ) : null}
+        {showInviteCode ? (
+          <MenuRow
+            icon={Ticket}
+            title={t('settings.inviteCode')}
+            trailing="chevron"
+            onPress={() => router.push('/tenho-um-codigo')}
+            accessibilityHint={t('settings.inviteCodeHint')}
+            testID="settings-invite-code"
+          />
         ) : null}
       </MenuSection>
       <FanClubSection />
