@@ -11,6 +11,7 @@ import { registerPostMutationDefaults } from '@/domains/posts';
 import { registerProfileQueryDefaults, SuspensionWatcher } from '@/domains/profile';
 import { useAnnounceOffline } from '@/hooks/use-announce-offline';
 import { usePrefersReducedMotion } from '@/hooks/use-prefers-reduced-motion';
+import { ALREADY_ENTERED, StackEntranceGate, type StackEntrance } from '@/hooks/use-stack-fade';
 import { persistOptions, queryClient, setupReactQueryForReactNative } from '@/services/query';
 import { colors, navigationTheme } from '@/theme';
 
@@ -30,7 +31,16 @@ function resumeOfflineMutations(): void {
   queryClient.resumePausedMutations().catch(() => undefined);
 }
 
-export function AppProviders({ children }: { children: ReactNode }) {
+interface AppProvidersProps {
+  children: ReactNode;
+  /**
+   * O portão da entrada das pilhas (`StackEntranceGate`): o `_layout` raiz o
+   * fecha enquanto a abertura da marca cobre a tela. Sem ele, não espera.
+   */
+  entranceGate?: StackEntrance;
+}
+
+export function AppProviders({ children, entranceGate = ALREADY_ENTERED }: AppProvidersProps) {
   useEffect(() => setupReactQueryForReactNative(), []);
   useAnnounceOffline();
   // O Reanimated lê "reduzir movimento" só na abertura do app. Espelhar o valor
@@ -49,7 +59,9 @@ export function AppProviders({ children }: { children: ReactNode }) {
       >
         {/* As recusas de conta suspensa: o perfil busca de novo e, quando cabe, o Alert. */}
         <SuspensionWatcher />
-        <ThemeProvider value={navigationTheme}>{children}</ThemeProvider>
+        <ThemeProvider value={navigationTheme}>
+          <StackEntranceGate value={entranceGate}>{children}</StackEntranceGate>
+        </ThemeProvider>
       </PersistQueryClientProvider>
     </GestureHandlerRootView>
   );

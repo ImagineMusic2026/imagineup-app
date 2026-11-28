@@ -13,8 +13,9 @@ import { useFonts } from 'expo-font';
 import { Stack } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 
+import { LaunchSplash, launchSplashPlayed } from '@/components/launch-splash';
 import { preloadLogo } from '@/components/logo';
 import {
   preloadPhotoWall,
@@ -23,16 +24,21 @@ import {
   useAuthListener,
   useInviteSync,
 } from '@/domains/auth';
+import { usePrefersReducedMotion } from '@/hooks/use-prefers-reduced-motion';
 import { useSessionGate } from '@/hooks/use-session-gate';
+import { createStackEntrance } from '@/hooks/use-stack-fade';
 import { useStackScreenOptions } from '@/hooks/use-stack-screen-options';
 import { AppProviders } from '@/providers/app-providers';
-import { colors, radii } from '@/theme';
+import { colors, motion, radii } from '@/theme';
 
 export { ErrorBoundary } from '@/components/error-boundary';
 
 SplashScreen.preventAutoHideAsync().catch(() => undefined);
-// O Expo Go não aceita opções de splash e avisa a cada abertura.
-if (!isRunningInExpoGo()) SplashScreen.setOptions({ duration: 300, fade: true });
+// O Expo Go não aceita opções de splash e avisa a cada abertura. O fade é o
+// que a abertura da marca espera antes da batida (`motion.launch.handoff`).
+if (!isRunningInExpoGo()) {
+  SplashScreen.setOptions({ duration: motion.launch.handoff, fade: true });
+}
 
 export default function RootLayout() {
   useAuthListener();
@@ -52,6 +58,13 @@ export default function RootLayout() {
   });
   const { ready: sessionReady, signedIn, onboarded } = useSessionGate();
   const stackScreenOptions = useStackScreenOptions();
+  // A abertura da marca (`LaunchSplash`), uma vez por execução do app: a
+  // primeira tela monta por baixo dela e só entra quando ela começa a sair.
+  // Com reduzir movimento, a splash nativa sai direto para a tela, como antes.
+  const reducedMotion = usePrefersReducedMotion();
+  const [launch] = useState(() => !reducedMotion && !launchSplashPlayed());
+  const [launchGate] = useState(() => createStackEntrance(!launch));
+  const [launchDone, setLaunchDone] = useState(!launch);
 
   const fontsSettled = fontsLoaded || !!fontError;
   const ready = fontsSettled && sessionReady;
@@ -73,14 +86,16 @@ export default function RootLayout() {
     else preloadPhotoWall();
   }, [fontsSettled, sessionReady, signedIn]);
 
+  // Com a abertura, quem tira a splash nativa é ela, quando o símbolo dela já
+  // está na tela, no lugar do da splash.
   useEffect(() => {
-    if (ready) SplashScreen.hideAsync().catch(() => undefined);
-  }, [ready]);
+    if (ready && !launch) SplashScreen.hideAsync().catch(() => undefined);
+  }, [launch, ready]);
 
   if (!ready) return null;
 
   return (
-    <AppProviders>
+    <AppProviders entranceGate={launchGate}>
       <StatusBar style="light" />
       <Stack screenOptions={stackScreenOptions}>
         <Stack.Protected guard={!signedIn}>
@@ -246,6 +261,9 @@ export default function RootLayout() {
         {/* Fora dos guards: guarda o código do convite e segue para uma rota permitida. */}
         <Stack.Screen name="convite/[codigo]" options={{ animation: 'none' }} />
       </Stack>
+      {launchDone ? null : (
+        <LaunchSplash onLeave={() => launchGate.enter()} onDone={() => setLaunchDone(true)} />
+      )}
     </AppProviders>
   );
 }
