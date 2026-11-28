@@ -13971,7 +13971,15 @@ No emulador Android, pelo Expo Go, em 27/11/2026, com gravação a 30 quadros po
 - a 1k entra como na `main`: a frase em laço e o título sem batida;
 - com a escala de transição do sistema em 0 (reduzir movimento), a 1k aparece direto, sem a abertura.
 
-O Expo Go tem a splash dele (branca, com o ícone), então a troca da splash nativa para a abertura só se confere num build: no celular depois do EAS Update (41.5) ou num build de desenvolvimento.
+O Expo Go tem a splash dele (branca, com o ícone), então a troca da splash nativa para a abertura só se confere num build: no celular depois do EAS Update (41.5) ou num build de desenvolvimento. Em 28/11/2026, o mesmo teste no emulador com o JS em modo de produção (`expo start --no-dev --minify`) também bateu.
+
+No Android do dono, em 28/11/2026, com o celular ligado ao PC por cabo (adb): um Xiaomi 25080RABDG, com Android 16, HyperOS 3.0, a 0.1.1 da loja e o update `01a22044`.
+
+- **Primeiro, a abertura não aparecia** (a logo parada e depois a 1k). A "Escala de animação de transição" das Opções do desenvolvedor estava em 0, e o Android, o React Native (`AccessibilityInfo`) e o Reanimated leem o `transition_animation_scale` em 0 como reduzir movimento (41.1, decisão 6). O "Remover animações" da acessibilidade estava desligado.
+- **Com a escala em 1x**, com o ok do dono, que pediu para deixar assim, a gravação pelo adb mostrou:
+  - a logo da abertura carregou do update em 152 ms, e o sistema tirou a splash no primeiro quadro do app;
+  - a logo do sistema passa para a abertura sem pulo, no mesmo lugar e no mesmo tamanho;
+  - a seta bate, e a 1k entra em seguida.
 
 ### 41.5 Publicação
 
@@ -13983,7 +13991,8 @@ O Expo Go tem a splash dele (branca, com o ícone), então a troca da splash nat
 
 ### 41.6 O que fica para depois
 
-- Conferir num celular Android e num iPhone que a troca da splash nativa para a abertura não aparece.
+- Conferir num iPhone que a troca da splash nativa para a abertura não aparece. No Android, ela foi conferida em 41.4.
+- No Android, num início "morno" (o processo ainda vivo e a tela do app recriada), a logo do sistema volta sem a batida, que roda uma vez por execução do JS (41.1, decisão 1). No Android 16 é raro: o voltar deixa o app em segundo plano, e a abertura a frio tem a batida.
 - A branch `codex/animacao-entrada` ficou sem uso.
 
 ## Armadilhas
@@ -14009,3 +14018,4 @@ O Expo Go tem a splash dele (branca, com o ícone), então a troca da splash nat
 - Código de antes com documentos novos: as funções de antes tiram do catálogo, na gravação seguinte, a conquista de sequência que não conhecem, e o `updatePointsConfig` de antes regrava o `config/points` sem o bloco do check-in, com a chave caindo para desligada sem rastro nos Logs. Com uma conquista de sequência no catálogo ou com a chave ligada, nada de painel nem de funções de antes (40.11).
 - No Android, a splash do `expo-splash-screen` segura o desenho da tela inteira (um `OnPreDrawListener` no conteúdo) até o `hideAsync`. O `onDisplay` do expo-image chega mesmo assim, porque avisa quando a imagem vai para a view, e não quando ela é desenhada; um gatilho que esperasse um quadro desenhado para tirar a splash nunca dispararia (41.1).
 - O mock do Reanimated tem o `interpolate` vazio (devolve `undefined`): o teste que confere um `transform` calculado troca o `interpolate` por uma conta em linha reta (`launch-splash.test.tsx`, 41.3).
+- No Android, a "Escala de animação de transição" das Opções do desenvolvedor em 0 conta como reduzir movimento, mesmo com o "Remover animações" da acessibilidade desligado. O React Native e o Reanimated leem o `transition_animation_scale`, e o app desliga a abertura e as outras animações. Antes de achar que uma animação sumiu num aparelho, conferir com `adb shell settings get global transition_animation_scale` (41.4).
