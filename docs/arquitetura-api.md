@@ -13915,7 +13915,7 @@ Em 25/11/2026, a gaveta (40.8), no mesmo aparelho virtual Android, com o Expo Go
 
 Origem: o pedido do dono de 27/11/2026, uma animação da logo na abertura do app. A primeira versão, feita com o Codex na branch `codex/animacao-entrada` (commit `e3f163b`), batia a seta e o "UP" do título na tela de boas-vindas (1k). Vista no emulador, o dono decidiu, em 27/11/2026: "coloca na tela da logo a com animação e na tela de login inicial ali deixa sem para n ficar muito poluido de informação". A batida foi para a tela da logo (a splash), e a 1k ficou como está na `main`.
 
-Estado: construída em 27/11/2026 na branch `abertura-batida-logo` do app, a partir da `main` `c236067`, e conferida nos testes e no emulador Android pelo Expo Go (41.4). Da branch do Codex, só vieram as poses da batida.
+Estado: construída em 27/11/2026 na branch `abertura-batida-logo` do app, a partir da `main` `c236067`, e conferida nos testes e no emulador Android pelo Expo Go (41.4). Da branch do Codex, só vieram as poses da batida. No ar desde 28/11/2026, com o merge do PR #111 (`main` `8804e99`) e o EAS Update do canal `production` (41.5).
 
 Trava: nada muda o fingerprint dos builds 0.1.1 (Android `a7c110e3a2ec0320a0794bf7dfe243a3c578bf96` e iOS `e78af876143c09a663c1762f9b9b8d5c5c6d445f`). Nenhum pacote novo, nada no `app.config.ts`, e a splash e o ícone intocados. Chega aos celulares por EAS Update.
 
@@ -13975,7 +13975,11 @@ O Expo Go tem a splash dele (branca, com o ícone), então a troca da splash nat
 
 ### 41.5 Publicação
 
-Pelo EAS Update do canal `production`, com o ok do dono, depois do merge.
+- **Merge:** o PR #111, com o CI verde (check, firestore-rules e functions), às 03:37Z de 28/11/2026, na `main` `8804e99`.
+- **EAS Update do canal `production`:** às 03:48Z de 28/11/2026 (00:48 em Brasília), com o ok do dono. Saiu da pasta do deploy no `8804e99`, sem `npm ci` (nenhuma dependência mudou desde `3bf27b5`) e com os fingerprints do 0.1.1:
+  - o grupo `b358e7cd` no Android (runtime `a7c110e3`);
+  - o grupo `1f438842` no iPhone (runtime `e78af876`);
+  - o rodapé dos Ajustes em 28/11 e `01a22044`.
 
 ### 41.6 O que fica para depois
 
