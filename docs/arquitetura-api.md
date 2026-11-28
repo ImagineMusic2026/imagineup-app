@@ -13911,6 +13911,77 @@ Em 25/11/2026, a gaveta (40.8), no mesmo aparelho virtual Android, com o Expo Go
 - A nota de revisão das lojas: a chave ligou em 26/11/2026, depois da aprovação, e ligar depois da aprovação uma função que o revisor não viu é o risco da 2.3.1 da App Store (34.11). A próxima build para as lojas descreve o check-in nas notas de revisão.
 - O aviso fixo da conta suspensa e o `ledger.empty`, que não citam o check-in (40.8): rever com a chave ligada.
 
+## 41. A abertura da marca: a batida da seta na splash
+
+Origem: o pedido do dono de 27/11/2026, uma animação da logo na abertura do app. A primeira versão, feita com o Codex na branch `codex/animacao-entrada` (commit `e3f163b`), batia a seta e o "UP" do título na tela de boas-vindas (1k). Vista no emulador, o dono decidiu, em 27/11/2026: "coloca na tela da logo a com animação e na tela de login inicial ali deixa sem para n ficar muito poluido de informação". A batida foi para a tela da logo (a splash), e a 1k ficou como está na `main`.
+
+Estado: construída em 27/11/2026 na branch `abertura-batida-logo` do app, a partir da `main` `c236067`, e conferida nos testes e no emulador Android pelo Expo Go (41.4). Da branch do Codex, só vieram as poses da batida.
+
+Trava: nada muda o fingerprint dos builds 0.1.1 (Android `a7c110e3a2ec0320a0794bf7dfe243a3c578bf96` e iOS `e78af876143c09a663c1762f9b9b8d5c5c6d445f`). Nenhum pacote novo, nada no `app.config.ts`, e a splash e o ícone intocados. Chega aos celulares por EAS Update.
+
+### 41.1 Decisões
+
+1. **Uma vez por abertura a frio, para todo mundo.** A volta do segundo plano não repete, e o `_layout` raiz que monta de novo na mesma execução do JS (o "Tentar de novo" do ErrorBoundary) também não.
+2. **Uma cópia da splash nativa, e não uma tela nova.** A abertura (`LaunchSplash`) desenha a mesma imagem (`assets/images/splash-icon.png`), contida no mesmo quadrado de 96 x 96 no meio da tela, sobre o mesmo `#0B0B10`, e por isso a troca da splash nativa para ela não aparece. A medida vem do plugin do `expo-splash-screen` 57:
+   - no Android, o PNG contido em 96 dp no meio de uma tela de 288 dp, sem fundo de ícone;
+   - no iPhone, a imagem de 96 pt no centro, com `scaleAspectFit`.
+3. **A batida é a da prévia do Codex**, com o pulo na proporção da seta da splash (96 de altura, e não os 76 da 1k): parada por 70 ms, agacha girando -7 graus, pula girando 8 graus e esticando, assenta e para. São 1150 ms, com a curva suave entre as poses.
+4. **A ordem:**
+   - a splash nativa só sai quando a seta da abertura já está na tela (o `onDisplay` do expo-image);
+   - a batida espera o fade da splash nativa (300 ms, o `duration` do `SplashScreen.setOptions`);
+   - depois da batida, a abertura sai em fade em 300 ms (`motion.launch`).
+
+   A primeira tela (a 1k, a 1l ou as abas) monta por baixo, apagada, e só entra quando a abertura começa a sair. O fade da pilha e a entrada da 1k cruzam com a saída da abertura, como cruzavam com o fade da splash nativa.
+
+5. **Sem a imagem em 1 s, ou com erro nela, a abertura não aparece.** A splash nativa sai direto para a primeira tela, como antes, e nada segura o app por causa dela.
+6. **Com reduzir movimento, não há abertura.** A splash nativa sai direto para a tela, como antes. O `_layout` raiz decide isso na primeira montagem.
+7. **É decorativa:** fica fora do leitor de tela e segura o toque só até começar a sair.
+8. **O custo:** na abertura a frio, a primeira tela aparece uns 1,75 s mais tarde (300 + 1150 + 300 ms).
+
+### 41.2 App
+
+- **`src/components/launch-splash/index.tsx`:** o `LaunchSplash` (`onLeave` quando começa a sair, `onDone` quando some), o `launchSplashPlayed()` e o `LAUNCH_IMAGE_TIMEOUT_MS`.
+- **`src/app/_layout.tsx`:**
+  - decide a abertura na primeira montagem;
+  - com ela, deixa de tirar a splash nativa, porque quem tira é a abertura;
+  - monta a abertura depois da `Stack`, dentro do `AppProviders`.
+- **`src/hooks/use-stack-fade.ts`:** o portão `StackEntranceGate`, um contexto com uma `StackEntrance`.
+  - Com o portão fechado, o primeiro `onLayout` da pilha só arma a entrada.
+  - A pilha que sai antes de ele abrir não entra mais.
+  - O `AppProviders` recebe o portão (`entranceGate`) e o passa às pilhas; sem ele, nada espera.
+- **`src/theme/motion.ts`:** o `motion.launch` (`handoff`, `beat` e `fade`). O `setOptions` do `_layout` raiz usa o `handoff`.
+
+### 41.3 Testes
+
+- **`launch-splash.test.tsx` (8 testes):**
+  - a cópia da splash: a caixa, a imagem, o fundo e a pose parada;
+  - decorativa e segurando o toque;
+  - a splash nativa só sai com a seta na tela;
+  - a ordem, com os tempos;
+  - sem a imagem a tempo e com erro nela;
+  - desmontada no meio;
+  - uma vez por execução.
+- **`use-stack-fade.test.tsx` (3 testes a mais):** a pilha espera o portão, com o portão já aberto entra no primeiro layout, e a que sai antes de ele abrir não entra.
+
+### 41.4 Conferência
+
+No emulador Android, pelo Expo Go, em 27/11/2026, com gravação a 30 quadros por segundo:
+
+- a seta fica parada uns 300 ms, bate, para de novo e sai em fade cruzado com a 1k;
+- a 1k entra como na `main`: a frase em laço e o título sem batida;
+- com a escala de transição do sistema em 0 (reduzir movimento), a 1k aparece direto, sem a abertura.
+
+O Expo Go tem a splash dele (branca, com o ícone), então a troca da splash nativa para a abertura só se confere num build: no celular depois do EAS Update (41.5) ou num build de desenvolvimento.
+
+### 41.5 Publicação
+
+Pelo EAS Update do canal `production`, com o ok do dono, depois do merge.
+
+### 41.6 O que fica para depois
+
+- Conferir num celular Android e num iPhone que a troca da splash nativa para a abertura não aparece.
+- A branch `codex/animacao-entrada` ficou sem uso.
+
 ## Armadilhas
 
 - Na transação, todas as leituras vêm antes de qualquer gravação. Por isso o `award` tem duas fases e a ordem da rota é fixa (seção 5).
@@ -13932,3 +14003,5 @@ Em 25/11/2026, a gaveta (40.8), no mesmo aparelho virtual Android, com o Expo Go
 - Bloco que abre e fecha por altura animada precisa do conteúdo fora do fluxo, como no `Expandable` do perfil. No fluxo, dentro de um recorte de altura 0, a face fechada nunca é medida e nunca abre no aparelho, e o Jest com o mock da casa segue verde; no check-in, o `checkin-faces.test.tsx`, com o Reanimated de verdade, prende o conteúdo fora do fluxo (40.8 e 40.13).
 - No emulador Android com o Expo Go e as animações do sistema ligadas, a Início escurece um ou dois segundos depois de carregar, também na `main` (visto em 10/11/2026 com a `91a5da3`): o log mostra o Reanimated falhando ao atualizar as views ("synchronouslyUpdateUIProps failed", "Unable to find SurfaceMountingManager for tag"), e o fade de entrada das abas (`useStackFade`) fica na opacidade 0 depois de um novo render. Para conferir no aparelho, ligue o "reduzir movimento" (`adb shell settings put global transition_animation_scale 0`), e toda entrada nasce visível; para ver uma animação, use uma cópia de rascunho do app com o fade de entrada das abas desligado (40.13). Não é defeito do check-in e pede uma investigação própria (40.14).
 - Código de antes com documentos novos: as funções de antes tiram do catálogo, na gravação seguinte, a conquista de sequência que não conhecem, e o `updatePointsConfig` de antes regrava o `config/points` sem o bloco do check-in, com a chave caindo para desligada sem rastro nos Logs. Com uma conquista de sequência no catálogo ou com a chave ligada, nada de painel nem de funções de antes (40.11).
+- No Android, a splash do `expo-splash-screen` segura o desenho da tela inteira (um `OnPreDrawListener` no conteúdo) até o `hideAsync`. O `onDisplay` do expo-image chega mesmo assim, porque avisa quando a imagem vai para a view, e não quando ela é desenhada; um gatilho que esperasse um quadro desenhado para tirar a splash nunca dispararia (41.1).
+- O mock do Reanimated tem o `interpolate` vazio (devolve `undefined`): o teste que confere um `transform` calculado troca o `interpolate` por uma conta em linha reta (`launch-splash.test.tsx`, 41.3).

@@ -40,6 +40,15 @@ export const motion = {
     // Aberto, a troca de altura do conteúdo (o botão que vira o pé do "feito").
     resize: 250,
   },
+  // A abertura da marca (`LaunchSplash`), por cima da splash nativa: a espera
+  // do fade dela antes de o símbolo se mexer (o mesmo `duration` do
+  // `SplashScreen.setOptions` no `_layout` raiz), a batida do símbolo e a
+  // saída para a primeira tela, no tempo do fade da splash nativa.
+  launch: {
+    handoff: 300,
+    beat: 1150,
+    fade: 300,
+  },
   easing: {
     out: Easing.bezier(0.23, 1, 0.32, 1),
     inOut: Easing.bezier(0.65, 0, 0.35, 1),

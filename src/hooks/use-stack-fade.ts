@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { createContext, useContext, useEffect, useRef, useState } from 'react';
 import { useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 
 import { motion } from '@/theme';
@@ -71,6 +71,16 @@ export function createStackEntrance(entered = false): StackEntranceTrigger {
 /** Fora de uma pilha que entra em fade, a entrada já aconteceu: quem assina começa na hora. */
 export const ALREADY_ENTERED: StackEntrance = createStackEntrance(true);
 
+const EntranceGateContext = createContext<StackEntrance>(ALREADY_ENTERED);
+
+/**
+ * Segura a entrada das pilhas enquanto a abertura da marca (`LaunchSplash`)
+ * cobre a tela: a primeira pilha monta por baixo dela e só entra quando ela
+ * começa a sair, como entrava quando a splash nativa saía. Sem o portão (e
+ * depois que ele abre), a entrada não espera.
+ */
+export const StackEntranceGate = EntranceGateContext.Provider;
+
 /**
  * Apaga a pilha até o fundo escuro e resolve quando ela some. A troca de grupo
  * na pilha raiz (`Stack.Protected`) não anima: quem vai trocar de grupo chama
@@ -98,11 +108,16 @@ export function playStackExit(stack: FadingStack): Promise<void> {
  * na montagem, terminava por trás da pilha apagada, e por um estado do React
  * começava uns 300 ms depois do fade, com o JS ocupado. Com reduzir
  * movimento, a entrada já nasce feita.
+ *
+ * Debaixo da abertura da marca (`StackEntranceGate`), o `onLayout` só arma a
+ * entrada, que começa quando o portão abre.
  */
 export function useStackFade(stack: FadingStack) {
   const reducedMotion = usePrefersReducedMotion();
+  const gate = useContext(EntranceGateContext);
   const opacity = useSharedValue(reducedMotion ? 1 : 0);
   const started = useRef(false);
+  const cancelGate = useRef<(() => void) | undefined>(undefined);
   const [entrance] = useState(() => createStackEntrance(reducedMotion));
 
   // Reduzir movimento ligado com a pilha já montada: ela fica inteira na hora.
@@ -110,15 +125,20 @@ export function useStackFade(stack: FadingStack) {
     if (reducedMotion) opacity.set(1);
   }, [opacity, reducedMotion]);
 
+  // A pilha que sai antes de o portão abrir não entra mais.
+  useEffect(() => () => cancelGate.current?.(), []);
+
   const onLayout = (): void => {
     if (started.current) return;
     started.current = true;
-    opacity.set(
-      reducedMotion
-        ? 1
-        : withTiming(1, { duration: motion.duration.slow, easing: motion.easing.out }),
-    );
-    entrance.enter();
+    cancelGate.current = gate.onEnter(() => {
+      opacity.set(
+        reducedMotion
+          ? 1
+          : withTiming(1, { duration: motion.duration.slow, easing: motion.easing.out }),
+      );
+      entrance.enter();
+    });
   };
 
   useEffect(() => {

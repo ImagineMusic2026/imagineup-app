@@ -6,7 +6,9 @@ import Animated, * as Reanimated from 'react-native-reanimated';
 import { motion } from '@/theme';
 
 import {
+  createStackEntrance,
   playStackExit,
+  StackEntranceGate,
   useStackFade,
   type FadingStack,
   type StackEntrance,
@@ -134,5 +136,55 @@ describe('useStackFade', () => {
 
   it('sem a pilha montada, a saída resolve na hora', async () => {
     await expect(playStackExit('auth')).resolves.toBeUndefined();
+  });
+
+  it('debaixo da abertura da marca, a pilha só entra quando o portão abre', () => {
+    const gate = createStackEntrance();
+    render(
+      <StackEntranceGate value={gate}>
+        <FadingGroup stack="auth" />
+      </StackEntranceGate>,
+    );
+    const start = jest.fn();
+    entrance?.onEnter(start);
+
+    // A abertura cobre a tela: o layout só arma a entrada.
+    fireEvent(screen.getByTestId('group'), 'layout', layout);
+    expect(screen.getByTestId('group')).toHaveStyle({ opacity: 0 });
+    expect(timing).not.toHaveBeenCalled();
+    expect(start).not.toHaveBeenCalled();
+
+    act(() => gate.enter());
+    expect(timing).toHaveBeenCalledWith(
+      1,
+      expect.objectContaining({ duration: motion.duration.slow, easing: motion.easing.out }),
+    );
+    expect(start).toHaveBeenCalledTimes(1);
+  });
+
+  it('com o portão já aberto, entra no primeiro layout, como sem ele', () => {
+    const gate = createStackEntrance();
+    gate.enter();
+    render(
+      <StackEntranceGate value={gate}>
+        <FadingGroup stack="tabs" />
+      </StackEntranceGate>,
+    );
+    fireEvent(screen.getByTestId('group'), 'layout', layout);
+    expect(timing).toHaveBeenCalledTimes(1);
+  });
+
+  it('a pilha que sai antes de o portão abrir não entra mais', () => {
+    const gate = createStackEntrance();
+    const view = render(
+      <StackEntranceGate value={gate}>
+        <FadingGroup stack="tabs" />
+      </StackEntranceGate>,
+    );
+    fireEvent(screen.getByTestId('group'), 'layout', layout);
+    view.unmount();
+
+    gate.enter();
+    expect(timing).not.toHaveBeenCalled();
   });
 });
